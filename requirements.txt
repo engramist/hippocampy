@@ -1,0 +1,26 @@
+# SideQuest Brain Daemon — Python Dependencies
+# Pin all versions for reproducibility.
+
+# Graph + vector database (ARCHIVED Oct 2025 — do not upgrade, watch RyuGraph fork)
+kuzu==0.11.3
+
+# Embeddings (384-dim — matches FLOAT[384] schema; changing requires full re-embedding)
+sentence-transformers==3.3.1
+
+# NLP / NER / dependency parsing (en_core_web_md required — sm has no dep parser)
+spacy==3.8.3
+# After pip install, run: python -m spacy download en_core_web_md
+
+# LLM provider abstraction (OpenAI-SDK-compatible for Ollama + cloud providers)
+openai==1.58.1
+
+# Web server (Memory Control Panel — M7)
+fastapi==0.115.6
+uvicorn==0.32.1
+
+# Config
+tomli==2.2.1      # TOML parser for Python < 3.11; stdlib tomllib used on 3.11+
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.24.0

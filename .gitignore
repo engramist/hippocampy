@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Kùzu database files (local data — never commit)
+*.db
+*.wal
+sidequests_db/
+
+# Logs
+*.log
+
+# Secrets / API keys
+.env
+*.env
+
+# macOS
+.DS_Store
+
+# Unix socket (runtime artifact)
+*.sock
+
+# Local queue (degraded mode — runtime artifact)
+*.queue.jsonl

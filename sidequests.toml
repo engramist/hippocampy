@@ -1,0 +1,44 @@
+# SideQuest Brain Daemon — Configuration
+# See CLAUDE.md for full documentation on each setting.
+
+[llm]
+provider = "ollama"           # ollama | openai | anthropic | google
+model = "llama3.1:8b"
+base_url = "http://localhost:11434"   # ollama only
+# api_key loaded from env var for cloud providers:
+#   OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY
+
+[embeddings]
+model = "sentence-transformers/all-MiniLM-L6-v2"   # 384-dim — matches FLOAT[384] schema
+# WARNING: changing this model requires full re-embedding of all nodes.
+# Run: sidequests reembed --confirm
+
+[nlp]
+spacy_model = "en_core_web_md"   # requires trained dependency parser for Step 1b verb patterns
+# en_core_web_sm will NOT work — no trained dep parser
+
+[ingestion]
+max_ingest_chars = 4000   # passive ingestion (conversational turns only)
+# truncates at last sentence boundary — long docs use Open Brain pipeline (M6)
+
+[quest]
+auto_complete_days = 30   # suggest Quest completion after N days with no new messages (0 = disabled)
+
+[hebbian]
+co_occurrence_threshold = 10   # CO_OCCURS_WITH count before LLM auto-promotion attempt
+
+[pruning]
+# Synaptic Pruning — Ebbinghaus Forgetting Curve modeled per node type.
+# Values 0–1; lower = faster decay. Power user setting — defaults work for most users.
+decay_rate.global_constraint  = 0.999   # half-strength in ~2 years
+decay_rate.global_preference  = 0.999
+decay_rate.decision           = 0.995   # half-strength in ~140 days
+decay_rate.constraint         = 0.995
+decay_rate.requirement        = 0.990   # half-strength in ~70 days
+decay_rate.action_item        = 0.980   # half-strength in ~35 days
+decay_rate.message            = 0.970   # half-strength in ~23 days
+decay_rate.document_extract   = 0.970
+
+archive_threshold       = 0.10   # archive node when pathway_strength falls below this
+resurrection_threshold  = 0.85   # un-archive if similarity to active node exceeds this
+sweep_interval_seconds  = 300    # background sweep: pruning + confidence re-scoring + resurrection
