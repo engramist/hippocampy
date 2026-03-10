@@ -2,35 +2,14 @@
 mcp_engine/graph/kuzu_client.py — Kùzu Abstraction Layer
 
 THIS IS THE ONLY FILE THAT IMPORTS KUZU.
-All loop steps, tools, and the daemon call methods here — never import kuzu directly.
 Migration to Neo4j or another provider = rewrite this file only.
+All other modules call methods here — never import kuzu directly.
 
-Responsibilities:
-  - Own the READ_WRITE kuzu.Database connection (Brain Daemon only)
-  - Provide execute() with asyncio.Lock wrapping all writes
-  - Provide read-only connection factory for adapters
-  - Wrap all Kùzu-specific syntax:
-      - DDL: CREATE NODE TABLE, CREATE REL TABLE
-      - HNSW: CREATE VECTOR INDEX, CALL QUERY_VECTOR_INDEX(...)
-      - Filtered search: CALL project_graph(...)
-      - MERGE with ON CREATE / ON MATCH SET
-  - Multi-table vector search: UNION ALL across per-table indexes
-
-Concurrency rules:
-  - Brain Daemon: single READ_WRITE connection + asyncio.Lock on all writes
-  - MCP adapters: kuzu.Database(path, read_only=True) — no write access possible
-  - Background sweep: acquires write lock per table (not one giant transaction)
-    to keep write-lock windows short
-
-Kùzu version: pinned to kuzu==0.11.3 (archived Oct 2025)
-Watch RyuGraph fork for migration path.
-
-M1 scope: implement connection management + execute() + DDL helpers.
-M2 scope: add vector search methods.
+Kùzu version: kuzu==0.11.3 (archived Oct 2025, pinned)
 """
 
 import asyncio
-# import kuzu  # uncomment when implementing
+import kuzu
 
 _write_lock = asyncio.Lock()
 
@@ -39,28 +18,59 @@ class KuzuClient:
     """Sole interface to the Kùzu database."""
 
     def __init__(self, db_path: str, read_only: bool = False):
-        # TODO M1: open kuzu.Database(db_path, read_only=read_only)
-        # TODO M1: open kuzu.Connection(db)
-        self.db_path = db_path
+        self.db = kuzu.Database(db_path, read_only=read_only)
+        self.conn = kuzu.Connection(self.db)
         self.read_only = read_only
 
-    async def execute(self, query: str, params: dict = None):
-        """Execute a Cypher query. Acquires write lock for non-read-only connections."""
-        # TODO M1: implement with asyncio.Lock for writes
-        pass
-
-    async def vector_search(self, query_embedding: list, limit: int = 10,
-                            active_only: bool = True) -> list:
+    def execute(self, query: str, params: dict = None):
         """
-        Search across all artifact node tables using UNION ALL on per-table HNSW indexes.
-        Uses projected graphs to prefilter archived/confidence_low nodes when active_only=True.
-
-        Returns list of {node_id, node_type, text_raw, pathway_strength, score} dicts.
+        Execute a Cypher query synchronously.
+        For write operations, caller must hold _write_lock.
+        Returns the Kùzu QueryResult object.
         """
-        # TODO M2: implement UNION ALL across Decision, Constraint, Requirement,
-        #          ActionItem, GlobalConstraint, GlobalPreference, Message, DocumentExtract
-        pass
+        if params:
+            return self.conn.execute(query, params)
+        return self.conn.execute(query)
 
-    async def close(self):
-        # TODO M1: close connection + database
-        pass
+    async def execute_write(self, query: str, params: dict = None):
+        """
+        Execute a write query with the asyncio write lock held.
+        Use this for all INSERT / MERGE / SET / DELETE operations.
+        """
+        async with _write_lock:
+            return self.execute(query, params)
+
+    def create_vector_index(self, table: str, property: str, index_name: str):
+        """
+        Create an HNSW vector index on a node table property.
+        Requires FLOAT[384] fixed-dimension type (not FLOAT[]).
+        One index per node table. Called at schema init.
+        """
+        # Implementation note: Kùzu 0.11.3 vector index syntax
+        self.execute(
+            f"CALL CREATE_VECTOR_INDEX('{table}', '{property}', '{index_name}')"
+        )
+
+    def vector_search(self, index_name: str, query_embedding: list[float],
+                      limit: int) -> list[dict]:
+        """
+        Query a single HNSW index. Returns list of (node, score) results.
+        For multi-table search, call this per table and UNION results in Python.
+        """
+        # Implementation note (multi-table): caller builds UNION ALL in Python
+        # by calling this method per table, merging + sorting by score.
+        # Phase 1+ upgrade: EmbeddingNode architectural pattern for single unified index.
+        result = self.execute(
+            f"CALL QUERY_VECTOR_INDEX('{index_name}', {limit}, $embedding) "
+            f"YIELD node, score RETURN node, score",
+            {"embedding": query_embedding}
+        )
+        rows = []
+        while result.has_next():
+            row = result.get_next()
+            rows.append({"node": row[0], "score": row[1]})
+        return rows
+
+    def close(self):
+        del self.conn
+        del self.db

@@ -1,38 +1,54 @@
 """
 mcp_engine/graph/embeddings.py — Sentence-Transformers Wrapper
 
-Model: sentence-transformers/all-MiniLM-L6-v2
-Output: FLOAT[384] vectors — matches Kùzu FLOAT[384] schema declaration.
-
-WARNING: Changing the model requires full re-embedding of all nodes in the graph.
-Run: sidequests reembed --confirm
-
-Pre-warming: model is loaded at daemon startup to avoid cold-start latency
-on first ingestion call (~90MB load into memory).
-
-M1 scope: implement embed() + embed_batch() + pre-warm at startup.
+Model: sentence-transformers/all-MiniLM-L6-v2 (384-dim)
+Pre-warmed at daemon startup to avoid cold-start latency on first message.
 """
 
-# from sentence_transformers import SentenceTransformer  # uncomment when implementing
+from sentence_transformers import SentenceTransformer
 
 EMBEDDING_DIM = 384
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
+_model: SentenceTransformer | None = None
 
-class EmbeddingClient:
 
-    def __init__(self, model_name: str = MODEL_NAME):
-        # TODO M1: load SentenceTransformer(model_name)
-        # Called at daemon startup to pre-warm (avoids cold-start on first message)
-        self.model_name = model_name
-        self.dim = EMBEDDING_DIM
+def get_model(model_name: str = MODEL_NAME) -> SentenceTransformer:
+    """Lazy singleton — loads once, reused for all embed calls."""
+    global _model
+    if _model is None:
+        _model = SentenceTransformer(model_name)
+    return _model
 
-    def embed(self, text: str) -> list[float]:
-        """Embed a single string. Returns list of 384 floats."""
-        # TODO M1: return model.encode(text).tolist()
-        pass
 
-    def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """Embed a list of strings. Used for centroid bootstrap at M1."""
-        # TODO M1: return model.encode(texts).tolist()
-        pass
+def prewarm(model_name: str = MODEL_NAME) -> None:
+    """Called at daemon startup to load model into memory before first request."""
+    get_model(model_name)
+
+
+def embed(text: str, model_name: str = MODEL_NAME) -> list[float]:
+    """Embed a single string. Returns list of 384 floats."""
+    return get_model(model_name).encode(text, normalize_embeddings=True).tolist()
+
+
+def embed_batch(texts: list[str], model_name: str = MODEL_NAME) -> list[list[float]]:
+    """
+    Embed a list of strings efficiently.
+    Used for centroid bootstrap at M1 (105 seed examples).
+    Returns list of 384-float vectors, one per input text.
+    """
+    return get_model(model_name).encode(
+        texts, normalize_embeddings=True, show_progress_bar=False
+    ).tolist()
+
+
+def mean_pool(embeddings: list[list[float]]) -> list[float]:
+    """Compute the mean of a list of embedding vectors. Used for centroid computation."""
+    if not embeddings:
+        raise ValueError("Cannot mean-pool empty list")
+    dim = len(embeddings[0])
+    result = [0.0] * dim
+    for emb in embeddings:
+        for i, v in enumerate(emb):
+            result[i] += v
+    return [v / len(embeddings) for v in result]
