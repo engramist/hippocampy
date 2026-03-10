@@ -353,3 +353,150 @@ async def test_diff_since_returns_structured_keys():
     assert "requirements" in result
     assert "action_items" in result
     assert result["since_iso"] == "2024-01-01T00:00:00"
+
+
+# ---------------------------------------------------------------------------
+# notify_turn M5 quest wiring
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_notify_turn_creates_main_quest_when_repo_provided():
+    """notify_turn with repo_root triggers MainQuest creation."""
+    from mcp_engine.tools import notify_turn, init_loop_queue
+    import asyncio
+
+    init_loop_queue(asyncio.Queue())
+
+    writes = []
+
+    class MockQueryResult:
+        def has_next(self): return False  # quest doesn't exist yet
+
+    class MockDB:
+        def execute(self, query, params=None):
+            return MockQueryResult()
+        async def execute_write(self, query, params=None):
+            writes.append(query)
+
+    result = await notify_turn(
+        {
+            "role":       "user",
+            "content":    "We decided to use PostgreSQL",
+            "session_id": "sess-001",
+            "repo_root":  "/repo/myapp",
+            "git_branch": "main",
+        },
+        MockDB(),
+        {"embeddings": {"model": "sentence-transformers/all-MiniLM-L6-v2"},
+         "ingestion": {"max_ingest_chars": 4000}}
+    )
+
+    assert result["status"] == "queued"
+    assert result["quest_id"] != ""  # quest_id returned
+
+    combined = " ".join(writes)
+    assert "MainQuest" in combined       # quest was created
+    assert "WORKING_ON" in combined      # session linked to quest
+    assert "Message" in combined         # message was stored
+    assert "SENT_IN" in combined         # message linked to session
+
+
+@pytest.mark.asyncio
+async def test_notify_turn_skips_quest_wiring_without_repo():
+    """notify_turn without repo_root skips quest creation (legacy mode)."""
+    from mcp_engine.tools import notify_turn, init_loop_queue
+    import asyncio
+
+    init_loop_queue(asyncio.Queue())
+
+    writes = []
+
+    class MockDB:
+        def execute(self, query, params=None): return None
+        async def execute_write(self, query, params=None):
+            writes.append(query)
+
+    result = await notify_turn(
+        {"role": "user", "content": "Some message", "session_id": "sess-002"},
+        MockDB(),
+        {"embeddings": {"model": "sentence-transformers/all-MiniLM-L6-v2"},
+         "ingestion": {"max_ingest_chars": 4000}}
+    )
+
+    assert result["status"] == "queued"
+    assert result["quest_id"] == ""      # no quest resolved
+
+    combined = " ".join(writes)
+    assert "MainQuest" not in combined   # no quest creation attempted
+    assert "Message" in combined         # message still stored
+
+
+@pytest.mark.asyncio
+async def test_notify_turn_empty_content_skipped():
+    """Empty content returns skipped without any DB writes."""
+    from mcp_engine.tools import notify_turn
+
+    writes = []
+
+    class MockDB:
+        async def execute_write(self, query, params=None):
+            writes.append(query)
+
+    result = await notify_turn(
+        {"role": "user", "content": "   ", "session_id": "s"},
+        MockDB(),
+        {}
+    )
+
+    assert result["status"] == "skipped"
+    assert len(writes) == 0
+
+
+# ---------------------------------------------------------------------------
+# current_truth M5 quest_context in response
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_current_truth_returns_quest_context_for_branch_scope():
+    """current_truth with quest_id returns quest_context in response."""
+    from mcp_engine.tools import current_truth
+
+    class MockQueryResult:
+        def has_next(self): return False
+
+    class MockDB:
+        def vector_search(self, index_name, embedding, limit):
+            return []
+        def execute(self, query, params=None):
+            return MockQueryResult()
+
+    result = await current_truth(
+        {
+            "query":      "database choice",
+            "session_id": "s1",
+            "scope":      "branch",
+            "quest_id":   "abc123",
+        },
+        MockDB(),
+        {"embeddings": {"model": "sentence-transformers/all-MiniLM-L6-v2"}}
+    )
+
+    assert "results" in result
+    assert "quest_context" in result
+    assert isinstance(result["quest_context"], dict)
+
+
+@pytest.mark.asyncio
+async def test_current_truth_empty_query_returns_empty():
+    from mcp_engine.tools import current_truth
+
+    class MockDB:
+        pass
+
+    result = await current_truth(
+        {"query": "", "session_id": "s1"},
+        MockDB(),
+        {}
+    )
+    assert result["results"] == []
+    assert result["quest_context"] == {}
