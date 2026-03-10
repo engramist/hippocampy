@@ -269,7 +269,7 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS DERIVED_FROM (FROM DocumentExtract TO Document)",
     "CREATE REL TABLE IF NOT EXISTS ESTABLISHED (FROM Message TO Decision, FROM Message TO Constraint, FROM DocumentExtract TO Decision, FROM DocumentExtract TO Constraint)",
     # Audit trail
-    "CREATE REL TABLE IF NOT EXISTS DEPRECATED_BY (FROM Decision TO Decision, FROM Constraint TO Constraint)",
+    "CREATE REL TABLE IF NOT EXISTS DEPRECATED_BY (FROM Concept TO Concept, FROM Decision TO Decision, FROM Constraint TO Constraint)",
     "CREATE REL TABLE IF NOT EXISTS TRIGGERED (FROM Message TO MergeEvent)",
     "CREATE REL TABLE IF NOT EXISTS UPDATES_PATHWAY (FROM MergeEvent TO Concept)",
     # Session provenance
