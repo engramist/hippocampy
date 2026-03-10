@@ -42,3 +42,6 @@ decay_rate.document_extract   = 0.970
 archive_threshold       = 0.10   # archive node when pathway_strength falls below this
 resurrection_threshold  = 0.85   # un-archive if similarity to active node exceeds this
 sweep_interval_seconds  = 300    # background sweep: pruning + confidence re-scoring + resurrection
+
+[web]
+port = 7799   # Memory Control Panel — http://127.0.0.1:7799 (local only)

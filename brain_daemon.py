@@ -22,6 +22,8 @@ import signal
 import socket
 from pathlib import Path
 
+import uvicorn
+
 from mcp_engine.config import load_config
 from mcp_engine.graph.kuzu_client import KuzuClient
 from mcp_engine.graph import embeddings as emb
@@ -91,6 +93,10 @@ class BrainDaemon:
         # Start background sweep
         sweep_interval = self.config.get("pruning", {}).get("sweep_interval_seconds", 300)
         asyncio.create_task(self._background_sweep(sweep_interval))
+
+        # Start Memory Control Panel web server (M7)
+        web_port = self.config.get("web", {}).get("port", 7799)
+        asyncio.create_task(self._start_web_server(web_port))
 
         # Start IPC server
         await self._run_ipc_server()
@@ -208,6 +214,27 @@ class BrainDaemon:
                 print(f"[Loop] Error processing message {message_id}: {e}")
             finally:
                 self._loop_queue.task_done()
+
+    # ------------------------------------------------------------------
+    # Memory Control Panel web server (M7)
+    # ------------------------------------------------------------------
+
+    async def _start_web_server(self, port: int):
+        """
+        Start the FastAPI Memory Control Panel on 127.0.0.1 only.
+        Runs as a background asyncio task alongside the IPC server.
+        """
+        from web.server import create_app
+        app = create_app(self.db)
+        config = uvicorn.Config(
+            app,
+            host="127.0.0.1",   # NEVER 0.0.0.0 — local-only by design
+            port=port,
+            log_level="error",
+        )
+        server = uvicorn.Server(config)
+        print(f"Memory Control Panel: http://127.0.0.1:{port}")
+        await server.serve()
 
     # ------------------------------------------------------------------
     # Background sweep (M4 — stub for now)

@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SideQuest Memory Control Panel</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+  /* Header */
+  header { background: #1a1d2e; border-bottom: 1px solid #2d3748;
+           padding: 12px 24px; display: flex; align-items: center; gap: 16px; }
+  header h1 { font-size: 1.1rem; font-weight: 600; color: #a78bfa; }
+  #status-dot { width: 8px; height: 8px; border-radius: 50%; background: #48bb78;
+                flex-shrink: 0; }
+  #status-dot.offline { background: #fc8181; }
+  #stats-bar { margin-left: auto; display: flex; gap: 16px; font-size: 0.75rem;
+               color: #718096; }
+  #stats-bar span b { color: #e2e8f0; }
+  /* Tabs */
+  nav { background: #1a1d2e; border-bottom: 1px solid #2d3748;
+        display: flex; padding: 0 24px; }
+  nav button { background: none; border: none; color: #718096; padding: 12px 16px;
+               cursor: pointer; font-size: 0.85rem; border-bottom: 2px solid transparent;
+               transition: all .15s; }
+  nav button:hover { color: #e2e8f0; }
+  nav button.active { color: #a78bfa; border-bottom-color: #a78bfa; }
+  /* Panels */
+  .panel { display: none; padding: 24px; max-width: 1200px; margin: 0 auto; }
+  .panel.active { display: block; }
+  /* Graph */
+  #graph-panel { padding: 0; max-width: 100%; }
+  #graph-svg { width: 100%; height: calc(100vh - 105px); }
+  /* Cards */
+  .card { background: #1a1d2e; border: 1px solid #2d3748; border-radius: 8px;
+          padding: 16px; margin-bottom: 12px; }
+  .card-header { display: flex; align-items: flex-start; gap: 12px;
+                 margin-bottom: 8px; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px;
+         font-size: 0.7rem; font-weight: 600; flex-shrink: 0; margin-top: 1px; }
+  .tag.Concept     { background: #2d3748; color: #a0aec0; }
+  .tag.Decision    { background: #1a365d; color: #63b3ed; }
+  .tag.Constraint  { background: #2d1b69; color: #b794f4; }
+  .tag.Requirement { background: #1a3a2a; color: #68d391; }
+  .tag.ActionItem  { background: #3d2100; color: #f6ad55; }
+  .tag.MainQuest   { background: #1a1a3d; color: #76e4f7; }
+  .tag.SideQuest   { background: #1a2d1a; color: #9ae6b4; }
+  .card-text { flex: 1; font-size: 0.88rem; line-height: 1.5; color: #cbd5e0; }
+  .card-meta { font-size: 0.72rem; color: #4a5568; margin-top: 4px; }
+  .card-actions { display: flex; gap: 8px; margin-top: 12px; }
+  button.btn { padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer;
+               font-size: 0.82rem; font-weight: 500; transition: opacity .15s; }
+  button.btn:hover { opacity: 0.85; }
+  button.btn-confirm { background: #276749; color: #9ae6b4; }
+  button.btn-reject  { background: #742a2a; color: #feb2b2; }
+  button.btn-rollback { background: #7b341e; color: #fbd38d; }
+  button.btn-export   { background: #2c3e6e; color: #90cdf4; }
+  button.btn-refresh  { background: #2d3748; color: #a0aec0; font-size: 0.75rem;
+                        padding: 4px 10px; }
+  .section-title { font-size: 0.8rem; color: #4a5568; text-transform: uppercase;
+                   letter-spacing: .05em; margin-bottom: 16px; display: flex;
+                   align-items: center; gap: 8px; }
+  .badge { background: #2d3748; color: #a0aec0; border-radius: 9999px;
+           padding: 2px 8px; font-size: 0.72rem; }
+  .empty { color: #4a5568; font-size: 0.88rem; text-align: center;
+           padding: 40px 0; }
+  /* Confidence bar */
+  .conf-bar { height: 3px; border-radius: 2px; background: #2d3748;
+              margin-top: 6px; overflow: hidden; }
+  .conf-fill { height: 100%; background: #a78bfa; transition: width .3s; }
+  /* Quests */
+  .quest-card { border-left: 3px solid #a78bfa; margin-bottom: 8px; }
+  .quest-card.side { border-left-color: #68d391; margin-left: 20px; }
+  /* Export bar */
+  .export-bar { display: flex; gap: 8px; margin-bottom: 20px; }
+  /* Ledger table */
+  table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+  th { text-align: left; color: #4a5568; font-size: 0.72rem; text-transform: uppercase;
+       letter-spacing: .05em; padding: 8px 12px; border-bottom: 1px solid #2d3748; }
+  td { padding: 10px 12px; border-bottom: 1px solid #1a1d2e; color: #cbd5e0;
+       vertical-align: top; }
+  tr:hover td { background: rgba(255,255,255,.02); }
+  .strength-cell { font-family: monospace; color: #a78bfa; }
+  .status-confirmed { color: #68d391; }
+  .status-uncertain { color: #f6ad55; }
+  /* Toast */
+  #toast { position: fixed; bottom: 24px; right: 24px; background: #276749;
+           color: #9ae6b4; padding: 10px 18px; border-radius: 8px; font-size: 0.84rem;
+           opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 9999; }
+  #toast.show { opacity: 1; }
+  #toast.error { background: #742a2a; color: #feb2b2; }
+  /* Graph legend */
+  #graph-legend { position: absolute; top: 120px; right: 24px; background: #1a1d2e;
+                  border: 1px solid #2d3748; border-radius: 8px; padding: 12px 16px;
+                  font-size: 0.75rem; }
+  #graph-legend div { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .rollback-badge { background: #7b341e; color: #fbd38d; padding: 1px 6px;
+                    border-radius: 4px; font-size: 0.7rem; }
+  .already-rb { opacity: 0.5; }
+</style>
+</head>
+<body>
+
+<header>
+  <div id="status-dot"></div>
+  <h1>SideQuest Memory Control Panel</h1>
+  <div id="stats-bar">
+    <span>Concepts: <b id="stat-concept">—</b></span>
+    <span>Decisions: <b id="stat-decision">—</b></span>
+    <span>Constraints: <b id="stat-constraint">—</b></span>
+    <span>Messages: <b id="stat-message">—</b></span>
+    <span>Merges: <b id="stat-mergeevent">—</b></span>
+  </div>
+</header>
+
+<nav>
+  <button class="active" onclick="showTab('graph')">Graph</button>
+  <button onclick="showTab('open-loops')">Open Loops <span id="loop-badge" class="badge">0</span></button>
+  <button onclick="showTab('merges')">Merge Events</button>
+  <button onclick="showTab('ledger')">Constraint Ledger</button>
+  <button onclick="showTab('quests')">Quests</button>
+</nav>
+
+<!-- Graph Panel -->
+<div id="graph-panel" class="panel active">
+  <svg id="graph-svg"></svg>
+  <div id="graph-legend">
+    <div><div class="legend-dot" style="background:#63b3ed"></div>Decision</div>
+    <div><div class="legend-dot" style="background:#b794f4"></div>Constraint</div>
+    <div><div class="legend-dot" style="background:#a0aec0"></div>Concept</div>
+    <div><div class="legend-dot" style="background:#76e4f7"></div>MainQuest</div>
+    <div><div class="legend-dot" style="background:#9ae6b4"></div>SideQuest</div>
+    <div><div class="legend-dot" style="background:#f6ad55"></div>Soft-lock</div>
+  </div>
+</div>
+
+<!-- Open Loops Panel -->
+<div id="open-loops-panel" class="panel">
+  <div class="section-title">
+    Open Loops (Soft-Lock Queue)
+    <span id="ol-count" class="badge">0</span>
+    <button class="btn btn-refresh" onclick="loadOpenLoops()">↻ Refresh</button>
+  </div>
+  <div id="loops-list"><div class="empty">Loading…</div></div>
+</div>
+
+<!-- Merge Events Panel -->
+<div id="merges-panel" class="panel">
+  <div class="section-title">
+    Merge Events
+    <span id="me-count" class="badge">0</span>
+    <button class="btn btn-refresh" onclick="loadMergeEvents()">↻ Refresh</button>
+  </div>
+  <div id="merges-list"><div class="empty">Loading…</div></div>
+</div>
+
+<!-- Constraint Ledger Panel -->
+<div id="ledger-panel" class="panel">
+  <div class="section-title">
+    Constraint Ledger
+    <span id="ledger-count" class="badge">0</span>
+  </div>
+  <div class="export-bar">
+    <button class="btn btn-export" onclick="exportLedger('md')">⬇ Export Markdown</button>
+    <button class="btn btn-export" onclick="exportLedger('json')">⬇ Export JSON</button>
+    <button class="btn btn-refresh" onclick="loadLedger()">↻ Refresh</button>
+  </div>
+  <div id="ledger-table"><div class="empty">Loading…</div></div>
+</div>
+
+<!-- Quests Panel -->
+<div id="quests-panel" class="panel">
+  <div class="section-title">
+    Quests
+    <span id="q-count" class="badge">0</span>
+    <button class="btn btn-refresh" onclick="loadQuests()">↻ Refresh</button>
+  </div>
+  <div id="quests-list"><div class="empty">Loading…</div></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
+function toast(msg, isError = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show' + (isError ? ' error' : '');
+  setTimeout(() => el.className = '', 2800);
+}
+
+async function apiFetch(path, opts = {}) {
+  try {
+    const r = await fetch(path, opts);
+    if (!r.ok) {
+      const txt = await r.text();
+      throw new Error(`${r.status}: ${txt}`);
+    }
+    return await r.json();
+  } catch (e) {
+    throw e;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Stats
+// ---------------------------------------------------------------------------
+async function loadStats() {
+  try {
+    const d = await apiFetch('/api/stats');
+    document.getElementById('stat-concept').textContent    = d.concept    ?? '—';
+    document.getElementById('stat-decision').textContent   = d.decision   ?? '—';
+    document.getElementById('stat-constraint').textContent = d.constraint ?? '—';
+    document.getElementById('stat-message').textContent    = d.message    ?? '—';
+    document.getElementById('stat-mergeevent').textContent = d.mergeevent ?? '—';
+    document.getElementById('status-dot').className = '';
+  } catch {
+    document.getElementById('status-dot').className = 'offline';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tab navigation
+// ---------------------------------------------------------------------------
+const TABS = ['graph', 'open-loops', 'merges', 'ledger', 'quests'];
+function showTab(name) {
+  TABS.forEach(t => {
+    document.getElementById(t + '-panel').classList.remove('active');
+    document.querySelectorAll('nav button')[TABS.indexOf(t)].classList.remove('active');
+  });
+  document.getElementById(name + '-panel').classList.add('active');
+  document.querySelectorAll('nav button')[TABS.indexOf(name)].classList.add('active');
+  if (name === 'graph' && !graphLoaded) loadGraph();
+  if (name === 'open-loops') loadOpenLoops();
+  if (name === 'merges') loadMergeEvents();
+  if (name === 'ledger') loadLedger();
+  if (name === 'quests') loadQuests();
+}
+
+// ---------------------------------------------------------------------------
+// Graph visualization (D3.js force-directed)
+// ---------------------------------------------------------------------------
+let graphLoaded = false;
+const NODE_COLORS = {
+  Decision:    '#63b3ed',
+  Constraint:  '#b794f4',
+  MainQuest:   '#76e4f7',
+  SideQuest:   '#9ae6b4',
+  Requirement: '#68d391',
+  ActionItem:  '#f6ad55',
+  Concept:     '#718096',
+};
+
+async function loadGraph() {
+  graphLoaded = true;
+  let data;
+  try { data = await apiFetch('/api/graph'); }
+  catch { return; }
+
+  const svg   = d3.select('#graph-svg');
+  const W     = svg.node().clientWidth;
+  const H     = svg.node().clientHeight;
+  svg.selectAll('*').remove();
+
+  if (!data.nodes.length) {
+    svg.append('text').attr('x', W/2).attr('y', H/2)
+       .attr('text-anchor', 'middle').attr('fill', '#4a5568')
+       .text('No graph data yet. Send some messages to build memory.');
+    return;
+  }
+
+  const g = svg.append('g');
+  svg.call(d3.zoom().scaleExtent([0.1, 4])
+    .on('zoom', e => g.attr('transform', e.transform)));
+
+  const sim = d3.forceSimulation(data.nodes)
+    .force('link',   d3.forceLink(data.edges).id(d => d.id).distance(80))
+    .force('charge', d3.forceManyBody().strength(-200))
+    .force('center', d3.forceCenter(W/2, H/2))
+    .force('collision', d3.forceCollide(20));
+
+  // Edges
+  const link = g.append('g').selectAll('line')
+    .data(data.edges).join('line')
+    .attr('stroke', d => d.type === 'DEPRECATED_BY' ? '#fc8181' :
+                        d.type === 'BELONGS_TO' ? '#76e4f7' : '#2d3748')
+    .attr('stroke-width', d => d.type === 'CO_OCCURS_WITH' ? (d.strength||0)*2 : 1.5)
+    .attr('stroke-dasharray', d => d.type === 'DEPRECATED_BY' ? '4,3' : null)
+    .attr('stroke-opacity', 0.6);
+
+  // Nodes
+  const node = g.append('g').selectAll('circle')
+    .data(data.nodes).join('circle')
+    .attr('r', d => d.type === 'MainQuest' ? 14 : d.type === 'SideQuest' ? 10 : 7)
+    .attr('fill', d => d.soft_lock ? '#f6ad55' : (NODE_COLORS[d.type] || '#718096'))
+    .attr('stroke', '#0f1117').attr('stroke-width', 1.5)
+    .call(d3.drag()
+      .on('start', (e,d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; })
+      .on('drag',  (e,d) => { d.fx=e.x; d.fy=e.y; })
+      .on('end',   (e,d) => { if (!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }));
+
+  // Labels
+  const label = g.append('g').selectAll('text')
+    .data(data.nodes).join('text')
+    .text(d => d.label.length > 30 ? d.label.slice(0,30)+'…' : d.label)
+    .attr('font-size', 10).attr('fill', '#a0aec0')
+    .attr('dy', d => (d.type === 'MainQuest' ? 14 : 7) + 12)
+    .attr('text-anchor', 'middle').attr('pointer-events', 'none');
+
+  // Tooltip
+  const tip = d3.select('body').append('div')
+    .style('position','fixed').style('background','#1a1d2e')
+    .style('border','1px solid #2d3748').style('border-radius','6px')
+    .style('padding','8px 12px').style('font-size','0.78rem')
+    .style('color','#e2e8f0').style('pointer-events','none')
+    .style('opacity',0).style('z-index',9000).style('max-width','280px');
+
+  node.on('mouseover', (e, d) => {
+    tip.style('opacity', 1)
+       .html(`<b>${d.type}</b>${d.gist_class ? ` / ${d.gist_class}` : ''}<br>
+              ${d.label}<br>
+              <span style="color:#718096">strength: ${(d.pathway_strength||0).toFixed(2)} |
+              conf: ${(d.confidence||0).toFixed(2)}${d.soft_lock ? ' ⚠ soft-lock' : ''}</span>`);
+  }).on('mousemove', e => {
+    tip.style('left', (e.clientX+14)+'px').style('top', (e.clientY-10)+'px');
+  }).on('mouseout', () => tip.style('opacity', 0));
+
+  sim.on('tick', () => {
+    link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+    node.attr('cx', d => d.x).attr('cy', d => d.y);
+    label.attr('x', d => d.x).attr('y', d => d.y);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Open Loops
+// ---------------------------------------------------------------------------
+async function loadOpenLoops() {
+  const list = document.getElementById('loops-list');
+  let data;
+  try { data = await apiFetch('/api/open-loops'); }
+  catch (e) { list.innerHTML = `<div class="empty">Error: ${e.message}</div>`; return; }
+
+  document.getElementById('ol-count').textContent = data.count;
+  document.getElementById('loop-badge').textContent = data.count;
+
+  if (!data.items.length) {
+    list.innerHTML = '<div class="empty">No open loops — all memory is confirmed. ✓</div>';
+    return;
+  }
+  list.innerHTML = data.items.map(item => `
+    <div class="card" id="loop-${item.node_id}">
+      <div class="card-header">
+        <span class="tag ${item.node_type}">${item.node_type}</span>
+        <div class="card-text">${escHtml(item.text_raw)}
+          <div class="conf-bar"><div class="conf-fill" style="width:${(item.confidence*100).toFixed(0)}%"></div></div>
+          <div class="card-meta">confidence: ${(item.confidence||0).toFixed(2)} · ${item.created_at?.slice(0,10) || ''}</div>
+        </div>
+      </div>
+      <div class="card-actions">
+        <button class="btn btn-confirm" onclick="confirmNode('${item.node_id}')">✓ Confirm</button>
+        <button class="btn btn-reject"  onclick="rejectNode('${item.node_id}')">✗ Reject</button>
+      </div>
+    </div>`).join('');
+}
+
+async function confirmNode(nodeId) {
+  try {
+    await apiFetch(`/api/confirm/${nodeId}`, {method: 'POST'});
+    document.getElementById('loop-' + nodeId)?.remove();
+    toast('Node confirmed ✓');
+    loadStats();
+  } catch (e) { toast('Confirm failed: ' + e.message, true); }
+}
+
+async function rejectNode(nodeId) {
+  try {
+    await apiFetch(`/api/reject/${nodeId}`, {method: 'POST'});
+    document.getElementById('loop-' + nodeId)?.remove();
+    toast('Node rejected and archived');
+    loadStats();
+  } catch (e) { toast('Reject failed: ' + e.message, true); }
+}
+
+// ---------------------------------------------------------------------------
+// Merge Events
+// ---------------------------------------------------------------------------
+async function loadMergeEvents() {
+  const list = document.getElementById('merges-list');
+  let data;
+  try { data = await apiFetch('/api/merge-events'); }
+  catch (e) { list.innerHTML = `<div class="empty">Error: ${e.message}</div>`; return; }
+
+  document.getElementById('me-count').textContent = data.count;
+
+  if (!data.events.length) {
+    list.innerHTML = '<div class="empty">No merge events recorded yet.</div>';
+    return;
+  }
+  list.innerHTML = data.events.map(ev => `
+    <div class="card ${ev.already_rolled_back ? 'already-rb' : ''}" id="me-${ev.merge_event_id}">
+      <div class="card-header">
+        <span class="tag Concept">${ev.merge_type === 'contradiction' ? 'Contradiction' : 'Additive'}</span>
+        <div class="card-text">
+          <b>${ev.merge_event_id.slice(0,8)}…</b>
+          ${ev.already_rolled_back ? '<span class="rollback-badge">Rolled back</span>' : ''}
+          <div class="card-meta">
+            pre-strength: ${(ev.pre_pathway_strength||0).toFixed(2)} ·
+            delta: ${(ev.delta_pathway_strength||0).toFixed(2)} ·
+            ${ev.created_at?.slice(0,10) || ''}
+          </div>
+          <div class="card-meta" style="margin-top:4px;word-break:break-all">${escHtml(ev.metadata_patch || '')}</div>
+        </div>
+      </div>
+      ${!ev.already_rolled_back ? `
+      <div class="card-actions">
+        <button class="btn btn-rollback" onclick="rollbackMerge('${ev.merge_event_id}')">↩ Rollback</button>
+      </div>` : ''}
+    </div>`).join('');
+}
+
+async function rollbackMerge(mergeEventId) {
+  if (!confirm('Rollback this MergeEvent? This will restore the old concept and archive the new one.')) return;
+  try {
+    await apiFetch(`/api/merge-events/${mergeEventId}`, {method: 'DELETE'});
+    toast('MergeEvent rolled back ↩');
+    loadMergeEvents();
+    loadStats();
+  } catch (e) { toast('Rollback failed: ' + e.message, true); }
+}
+
+// ---------------------------------------------------------------------------
+// Constraint Ledger
+// ---------------------------------------------------------------------------
+async function loadLedger() {
+  const container = document.getElementById('ledger-table');
+  let data;
+  try { data = await apiFetch('/api/export/constraint-ledger.json'); }
+  catch (e) { container.innerHTML = `<div class="empty">Error: ${e.message}</div>`; return; }
+
+  document.getElementById('ledger-count').textContent = data.count;
+
+  if (!data.constraints.length) {
+    container.innerHTML = '<div class="empty">No active constraints.</div>';
+    return;
+  }
+  container.innerHTML = `<table>
+    <thead><tr><th>#</th><th>Status</th><th>Strength</th><th>Scope</th><th>Constraint</th><th>Created</th></tr></thead>
+    <tbody>${data.constraints.map((c,i) => `
+      <tr>
+        <td style="color:#4a5568">${i+1}</td>
+        <td class="${c.confidence_low ? 'status-uncertain' : 'status-confirmed'}">${c.confidence_low ? '?' : '✓'}</td>
+        <td class="strength-cell">${(c.pathway_strength||0).toFixed(2)}</td>
+        <td><span class="tag ${c.table}">${c.table === 'GlobalConstraint' ? 'Global' : 'Branch'}</span></td>
+        <td>${escHtml(c.text_raw)}</td>
+        <td style="color:#4a5568;white-space:nowrap">${c.created_at?.slice(0,10) || ''}</td>
+      </tr>`).join('')}
+    </tbody></table>`;
+}
+
+function exportLedger(fmt) {
+  const url = fmt === 'md' ? '/api/export/constraint-ledger' : '/api/export/constraint-ledger.json';
+  const a = document.createElement('a');
+  a.href = url; a.download = fmt === 'md' ? 'constraint-ledger.md' : 'constraint-ledger.json';
+  a.click();
+}
+
+// ---------------------------------------------------------------------------
+// Quests
+// ---------------------------------------------------------------------------
+async function loadQuests() {
+  const list = document.getElementById('quests-list');
+  let data;
+  try { data = await apiFetch('/api/quests'); }
+  catch (e) { list.innerHTML = `<div class="empty">Error: ${e.message}</div>`; return; }
+
+  document.getElementById('q-count').textContent = data.count;
+
+  if (!data.quests.length) {
+    list.innerHTML = '<div class="empty">No quests yet. Start working in a git repo to create a MainQuest.</div>';
+    return;
+  }
+  list.innerHTML = data.quests.map(q => `
+    <div class="card quest-card">
+      <div class="card-header">
+        <span class="tag MainQuest">MainQuest</span>
+        <div class="card-text">
+          <b>${escHtml(q.name)}</b>
+          <div class="card-meta">${escHtml(q.purpose || '')} · ${q.created_at?.slice(0,10) || ''}</div>
+        </div>
+        <span class="tag" style="background:#1a3a2a;color:#68d391">${q.status || 'active'}</span>
+      </div>
+      ${q.side_quests?.map(sq => `
+        <div class="card quest-card side" style="margin-top:8px;margin-bottom:0">
+          <div class="card-header">
+            <span class="tag SideQuest">SideQuest</span>
+            <div class="card-text">
+              <b>${escHtml(sq.name)}</b>
+              <div class="card-meta">${escHtml(sq.purpose || '')} · ${sq.created_at?.slice(0,10) || ''}</div>
+            </div>
+          </div>
+        </div>`).join('') || ''}
+    </div>`).join('');
+}
+
+// ---------------------------------------------------------------------------
+// Utils
+// ---------------------------------------------------------------------------
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+loadStats();
+setInterval(loadStats, 30000);
+loadGraph();
+</script>
+</body>
+</html>
