@@ -1,27 +1,34 @@
-"""
-Step 1 — Zoning / NER (spaCy)
+"""Step 1 — Zoning / NER (spaCy). Zero LLM cost."""
 
-Extracts raw concepts from a message: people, objects, places, actions, quantities, events.
-Zero LLM cost. Fast, deterministic.
+import spacy
 
-Model: en_core_web_md (trained dependency parser required for Step 1b)
-       en_core_web_sm will NOT work — no trained dep parser.
-
-Output: list of typed Entity objects passed to Step 1b and Step 2.
-
-M3 scope: implement this step.
-"""
-
-# import spacy  # uncomment when implementing
-# nlp = spacy.load("en_core_web_md")
+_nlp = None
 
 
-def extract_entities(text: str) -> list[dict]:
+def get_nlp(model_name: str = "en_core_web_md"):
+    global _nlp
+    if _nlp is None:
+        _nlp = spacy.load(model_name)
+    return _nlp
+
+
+def extract_entities(text: str, model_name: str = "en_core_web_md") -> tuple:
     """
-    Run spaCy NER on text.
-    Returns list of {text, label, start, end} dicts.
-    Entity labels: PERSON, ORG, PRODUCT, GPE, DATE, CARDINAL, etc.
-    Used by Step 1b (dep parser) and Step 2 (gist classification).
+    Run spaCy NER + dependency parse on text.
+    Returns (doc, entities) where entities is a list of dicts.
+    doc is kept for Step 1b (dep parser reuses it — no double parse).
     """
-    # TODO M3: implement
-    pass
+    nlp = get_nlp(model_name)
+    doc = nlp(text)
+
+    entities = [
+        {
+            "text":  ent.text,
+            "label": ent.label_,   # PERSON, ORG, PRODUCT, GPE, DATE, CARDINAL, etc.
+            "start": ent.start_char,
+            "end":   ent.end_char,
+        }
+        for ent in doc.ents
+    ]
+
+    return doc, entities

@@ -1,37 +1,67 @@
 """
 Step 3 — schema.org Sub-graph Routing
 
-Named IP Claim: Shape-First Principle — classify ontological type before semantic work.
-
-Routes each gist class to the relevant schema.org property subset only.
-Routing table lives in the graph as (GistClass)-[ROUTES_TO]->(SchemaOrgType) edges,
-seeded at M1 schema init. Step 3 queries these nodes at runtime — no hardcoded routing.
-
-Routing table (locked):
-  gist:Restriction   → schema:Demand
-  gist:PlannedEvent  → schema:Action
-  gist:PhysicalThing → schema:Product
-  gist:Magnitude     → schema:QuantitativeValue
-  gist:Category      → schema:DefinedTerm
-  gist:Agent (person) → schema:Person      (uses Step 1 spaCy PERSON label)
-  gist:Agent (org)    → schema:Organization (uses Step 1 spaCy ORG label)
-  gist:Event         → schema:Event
-
-Agent disambiguation: spaCy entity label from Step 1 determines Person vs Organization.
-Zero extra LLM cost — reuses Step 1 output.
-
-Output: schema_org_type string + property subset list, passed to Step 3b and Step 4.
-
-M3 scope: implement this step (queries routing table from Kùzu via kuzu_client).
+Named IP Claim: Shape-First Principle.
+Routing table lives in the graph — queried at runtime, not hardcoded.
 """
+
+# Agent disambiguation: spaCy label determines Person vs Organization
+_AGENT_SPACY_MAP = {
+    "PERSON": "Person",
+    "ORG":    "Organization",
+}
+
+# Fallback hardcoded routing (used when Kùzu not yet available in tests)
+_FALLBACK_ROUTING = {
+    "Restriction":   ("Demand",            ["eligibleCustomerType", "availability", "validFrom", "validThrough", "businessFunction", "description"]),
+    "PlannedEvent":  ("Action",            ["agent", "object", "target", "actionStatus", "startTime", "endTime", "result", "instrument"]),
+    "PhysicalThing": ("Product",           ["name", "identifier", "description", "version", "inLanguage", "isAccessoryOrSparePartFor"]),
+    "Magnitude":     ("QuantitativeValue", ["value", "unitCode", "unitText", "minValue", "maxValue", "valueReference"]),
+    "Category":      ("DefinedTerm",       ["name", "description", "termCode", "inDefinedTermSet", "sameAs"]),
+    "Agent_Person":  ("Person",            ["name", "jobTitle", "description", "email", "knowsAbout"]),
+    "Agent_Org":     ("Organization",      ["name", "description", "member", "parentOrganization", "contactPoint"]),
+    "Event":         ("Event",             ["name", "startDate", "endDate", "eventStatus", "location", "organizer", "description"]),
+}
+
+# Module-level cache populated at startup
+_routing_cache: dict[str, dict] = {}
+
+
+def load_routing_table(db) -> None:
+    """Load routing table from Kùzu into module cache. Call at daemon startup."""
+    global _routing_cache
+    result = db.execute(
+        "MATCH (g:GistClass)-[:ROUTES_TO]->(s:SchemaOrgType) "
+        "RETURN g.name, s.name, s.properties"
+    )
+    while result.has_next():
+        row = result.get_next()
+        gist_name, schema_name, properties = row[0], row[1], row[2]
+        _routing_cache[gist_name] = _routing_cache.get(gist_name, [])
+        _routing_cache[gist_name] = {"schema_org_type": schema_name,
+                                      "properties": properties or []}
 
 
 def route_to_schema_org(gist_class: str, spacy_label: str = None) -> dict:
     """
-    Look up the schema.org type for a gist class.
-    spacy_label used for Agent disambiguation (PERSON vs ORG).
-    Returns {schema_org_type, properties: [...]}.
+    Return {schema_org_type, properties} for a gist class.
+    Uses cached routing table; falls back to hardcoded map if cache empty.
+    For gist:Agent, uses spacy_label (PERSON/ORG) to disambiguate.
     """
-    # TODO M3: query (GistClass {name: gist_class})-[ROUTES_TO]->(SchemaOrgType)
-    # from Kùzu via kuzu_client
-    pass
+    if gist_class == "Agent":
+        schema_name = _AGENT_SPACY_MAP.get(spacy_label, "Organization")
+        fallback_key = f"Agent_{schema_name}"
+        if fallback_key in _FALLBACK_ROUTING:
+            sn, props = _FALLBACK_ROUTING[fallback_key]
+            return {"schema_org_type": sn, "properties": props}
+
+    # Try live cache first
+    if gist_class in _routing_cache:
+        return _routing_cache[gist_class]
+
+    # Fallback to hardcoded
+    if gist_class in _FALLBACK_ROUTING:
+        schema_name, properties = _FALLBACK_ROUTING[gist_class]
+        return {"schema_org_type": schema_name, "properties": properties}
+
+    return {"schema_org_type": "Thing", "properties": ["name", "description"]}

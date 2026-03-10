@@ -5,8 +5,11 @@ Entry point. On startup:
   1. Load sidequests.toml
   2. Pre-warm sentence-transformers model
   3. Initialize Kùzu schema (idempotent)
-  4. Start Unix domain socket IPC server (JSON-RPC 2.0)
-  5. Start background sweep asyncio task
+  4. Load gist centroids + schema.org routing table
+  5. Initialize LLM client (Ollama default; degrades gracefully if unavailable)
+  6. Start Loop worker asyncio task (Gated Consolidation Loop, M3+)
+  7. Start Unix domain socket IPC server (JSON-RPC 2.0)
+  8. Start background sweep asyncio task
 
 IPC: JSON-RPC 2.0 over ~/.sidequests/brain.sock
 Concurrency: single asyncio event loop, asyncio.Lock for all Kùzu writes.
@@ -23,7 +26,10 @@ from mcp_engine.config import load_config
 from mcp_engine.graph.kuzu_client import KuzuClient
 from mcp_engine.graph import embeddings as emb
 from mcp_engine.schema import init_schema
-from mcp_engine.tools import TOOL_HANDLERS
+from mcp_engine.tools import TOOL_HANDLERS, init_loop_queue
+from mcp_engine.llm.provider import create_llm_client
+from mcp_engine.loop import step2_gist, step3_schema_org
+from mcp_engine.loop.orchestrator import run_loop
 
 SOCKET_PATH = Path.home() / ".sidequests" / "brain.sock"
 DB_PATH     = Path.home() / ".sidequests" / "brain.db"
@@ -36,9 +42,12 @@ SEED_PATH   = Path(__file__).parent.parent / (
 class BrainDaemon:
 
     def __init__(self, config: dict):
-        self.config = config
-        self.db = KuzuClient(str(DB_PATH))
-        self.running = False
+        self.config      = config
+        self.db          = KuzuClient(str(DB_PATH))
+        self.running     = False
+        self._llm_client = None   # set in start()
+        self._centroids  = {}     # set in start()
+        self._loop_queue: asyncio.Queue = asyncio.Queue()
 
     # ------------------------------------------------------------------
     # Startup
@@ -57,6 +66,27 @@ class BrainDaemon:
         # Initialize Kùzu schema (idempotent)
         seed_path = self._resolve_seed_path()
         init_schema(self.db, str(seed_path), embedding_model)
+
+        # Load gist centroids (needed by Step 2 System 1 classifier)
+        self._centroids = step2_gist.load_centroids(self.db)
+        print(f"Loaded {len(self._centroids)} gist centroids.")
+
+        # Load schema.org routing table into module cache (needed by Step 3)
+        step3_schema_org.load_routing_table(self.db)
+        print("Loaded schema.org routing table.")
+
+        # Initialize LLM client (degrades gracefully to System 1 if unavailable)
+        self._llm_client = create_llm_client(self.config)
+        if self._llm_client:
+            print(f"LLM provider ready: {self.config.get('llm', {}).get('provider', 'ollama')}")
+        else:
+            print("LLM provider unavailable. Loop running in System 1 (embedding) only mode.")
+
+        # Wire loop queue into tools module
+        init_loop_queue(self._loop_queue)
+
+        # Start Loop worker (Gated Consolidation Loop, M3)
+        asyncio.create_task(self._loop_worker())
 
         # Start background sweep
         sweep_interval = self.config.get("pruning", {}).get("sweep_interval_seconds", 300)
@@ -144,6 +174,40 @@ class BrainDaemon:
                 "jsonrpc": "2.0", "id": req_id,
                 "error": {"code": -32000, "message": str(e)}
             }
+
+    # ------------------------------------------------------------------
+    # Gated Consolidation Loop worker (M3)
+    # ------------------------------------------------------------------
+
+    async def _loop_worker(self):
+        """
+        Reads (message_id, text) tuples from the queue and runs the
+        Gated Consolidation Loop on each. Runs as a long-lived background task.
+        Errors are logged and swallowed — one bad message never kills the worker.
+        """
+        print("Loop worker started.")
+        while True:
+            message_id, text = await self._loop_queue.get()
+            try:
+                summary = await run_loop(
+                    message_id=message_id,
+                    text=text,
+                    db=self.db,
+                    llm_client=self._llm_client,
+                    config=self.config,
+                    centroids=self._centroids,
+                )
+                print(
+                    f"[Loop] msg={message_id[:8]} "
+                    f"entities={summary['entities_found']} "
+                    f"concepts={summary['concepts_stored']} "
+                    f"relations={summary['relations_found']} "
+                    f"noise={summary['noise_count']}"
+                )
+            except Exception as e:
+                print(f"[Loop] Error processing message {message_id}: {e}")
+            finally:
+                self._loop_queue.task_done()
 
     # ------------------------------------------------------------------
     # Background sweep (M4 — stub for now)

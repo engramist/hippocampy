@@ -5,11 +5,25 @@ The IPC server in brain_daemon.py dispatches JSON-RPC calls here.
 All writes go through db.execute_write() to respect the asyncio write lock.
 """
 
+import asyncio
 import uuid
 from datetime import datetime, timezone
 
 from mcp_engine.graph.kuzu_client import KuzuClient
 from mcp_engine.graph import embeddings as emb
+
+# ---------------------------------------------------------------------------
+# M3 runtime state — initialized by brain_daemon.py at startup
+# ---------------------------------------------------------------------------
+
+# Queue of (message_id, text) tuples for the Gated Consolidation Loop worker
+_loop_queue: asyncio.Queue | None = None
+
+
+def init_loop_queue(queue: asyncio.Queue) -> None:
+    """Called once by BrainDaemon.start() after the event loop is running."""
+    global _loop_queue
+    _loop_queue = queue
 
 # ---------------------------------------------------------------------------
 # M2 Tools
@@ -83,7 +97,9 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
         {"session_id": session_id, "message_id": message_id}
     )
 
-    # TODO M3: enqueue message_id for Gated Consolidation Loop processing
+    # Enqueue for Gated Consolidation Loop processing (M3+)
+    if _loop_queue is not None:
+        await _loop_queue.put((message_id, content))
 
     return {"status": "queued", "message_id": message_id}
 
