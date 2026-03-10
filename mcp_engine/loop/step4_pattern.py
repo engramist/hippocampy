@@ -11,6 +11,7 @@ Confidence gate (not blocking — all above noise floor enter the graph):
   > 0.90  → Concept node, full confidence; if artifact type identified → REIFIED_AS
 """
 
+from __future__ import annotations
 import re
 
 NOISE_FLOOR        = 0.60

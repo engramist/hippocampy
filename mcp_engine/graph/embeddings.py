@@ -5,12 +5,14 @@ Model: sentence-transformers/all-MiniLM-L6-v2 (384-dim)
 Pre-warmed at daemon startup to avoid cold-start latency on first message.
 """
 
+from __future__ import annotations
+from typing import Optional
 from sentence_transformers import SentenceTransformer
 
 EMBEDDING_DIM = 384
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
-_model: SentenceTransformer | None = None
+_model: Optional[SentenceTransformer] = None
 
 
 def get_model(model_name: str = MODEL_NAME) -> SentenceTransformer:

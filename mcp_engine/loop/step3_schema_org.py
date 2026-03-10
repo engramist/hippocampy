@@ -6,9 +6,10 @@ Routing table lives in the graph — queried at runtime, not hardcoded.
 """
 
 # Agent disambiguation: spaCy label determines Person vs Organization
+# Values must match the suffix used in _FALLBACK_ROUTING keys ("Agent_Person", "Agent_Org")
 _AGENT_SPACY_MAP = {
     "PERSON": "Person",
-    "ORG":    "Organization",
+    "ORG":    "Org",
 }
 
 # Fallback hardcoded routing (used when Kùzu not yet available in tests)

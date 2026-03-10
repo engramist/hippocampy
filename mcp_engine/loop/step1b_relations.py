@@ -5,6 +5,10 @@ Zero LLM cost. Reuses spaCy doc from Step 1 — no double parse.
 Extracts nsubj → verb → dobj triples, matches verb lemma to named relation types.
 """
 
+VALID_RELATION_TYPES = {
+    "REQUIRES", "ENABLES", "REPLACES", "CONTRADICTS", "PART_OF",
+}
+
 VERB_PATTERNS: dict[str, str] = {
     "require":     "REQUIRES",
     "need":        "REQUIRES",
