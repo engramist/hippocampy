@@ -23,6 +23,7 @@ from mcp_engine.config import load_config
 from mcp_engine.graph.kuzu_client import KuzuClient
 from mcp_engine.graph import embeddings as emb
 from mcp_engine.schema import init_schema
+from mcp_engine.tools import TOOL_HANDLERS
 
 SOCKET_PATH = Path.home() / ".sidequests" / "brain.sock"
 DB_PATH     = Path.home() / ".sidequests" / "brain.db"
@@ -123,21 +124,26 @@ class BrainDaemon:
             await writer.wait_closed()
 
     async def _dispatch(self, request: dict) -> dict:
-        """
-        Route JSON-RPC method calls to tool handlers.
-        M2: notify_turn, current_truth
-        M5: branch_quest, complete_quest, diff_since, get_open_loops
-        """
+        """Route JSON-RPC method calls to tool handlers in mcp_engine/tools.py."""
         method = request.get("method", "")
         params = request.get("params", {})
         req_id = request.get("id")
 
-        # TODO M2: import and call tools from mcp_engine/tools.py
-        return {
-            "jsonrpc": "2.0",
-            "id": req_id,
-            "error": {"code": -32601, "message": f"Method not yet implemented: {method}"}
-        }
+        handler = TOOL_HANDLERS.get(method)
+        if not handler:
+            return {
+                "jsonrpc": "2.0", "id": req_id,
+                "error": {"code": -32601, "message": f"Unknown method: {method}"}
+            }
+
+        try:
+            result = await handler(params, self.db, self.config)
+            return {"jsonrpc": "2.0", "id": req_id, "result": result}
+        except Exception as e:
+            return {
+                "jsonrpc": "2.0", "id": req_id,
+                "error": {"code": -32000, "message": str(e)}
+            }
 
     # ------------------------------------------------------------------
     # Background sweep (M4 — stub for now)
