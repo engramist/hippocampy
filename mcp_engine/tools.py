@@ -353,6 +353,23 @@ async def get_open_loops(params: dict, db: KuzuClient, config: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# M8 — analogical_search
+# ---------------------------------------------------------------------------
+
+async def analogical_search(params: dict, db: KuzuClient, config: dict) -> dict:
+    """
+    Cross-quest semantic search (M8).
+    Finds similar decisions, constraints, and requirements from ANY historical
+    MainQuest — not just the current branch.
+
+    params: {query, current_quest_id?, limit, min_similarity?}
+    Returns {results, query, cross_quest, searched_tables}.
+    """
+    from mcp_engine.analogical import analogical_search as _search
+    return await _search(params, db, config)
+
+
+# ---------------------------------------------------------------------------
 # M6 — ingest_document
 # ---------------------------------------------------------------------------
 
@@ -385,10 +402,11 @@ async def ingest_document(params: dict, db, config: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 TOOL_HANDLERS = {
-    "notify_turn":    notify_turn,
-    "current_truth":  current_truth,
-    "branch_quest":   branch_quest,
-    "diff_since":     diff_since,
-    "get_open_loops": get_open_loops,
-    "ingest_document": ingest_document,
+    "notify_turn":      notify_turn,
+    "current_truth":    current_truth,
+    "branch_quest":     branch_quest,
+    "diff_since":       diff_since,
+    "get_open_loops":   get_open_loops,
+    "ingest_document":  ingest_document,
+    "analogical_search": analogical_search,
 }

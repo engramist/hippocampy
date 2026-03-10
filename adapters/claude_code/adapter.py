@@ -140,6 +140,25 @@ TOOLS = [
         },
     },
     {
+        "name": "analogical_search",
+        "description": (
+            "Search across ALL historical MainQuests for similar decisions, "
+            "constraints, and requirements. Use when starting a new project or "
+            "feature that might benefit from past architectural patterns."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query":            {"type": "string"},
+                "current_quest_id": {"type": "string",
+                                     "description": "Exclude results from this quest."},
+                "limit":            {"type": "integer", "default": 5},
+                "min_similarity":   {"type": "number", "default": 0.70},
+            },
+            "required": ["query"],
+        },
+    },
+    {
         "name": "ingest_document",
         "description": (
             "Ingest a local file into the Brain's knowledge graph. "
@@ -309,6 +328,19 @@ async def handle_mcp_request(request: dict) -> dict:
         if tool_name == "get_open_loops":
             try:
                 result = await _call_brain("get_open_loops", tool_input)
+                _daemon_online = True
+                return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
+            except RuntimeError as e:
+                if "DAEMON_OFFLINE" in str(e):
+                    _daemon_online = False
+                    return ok({"content": [{"type": "text",
+                                            "text": '{"error": "daemon_offline"}'}]})
+                return err(-32000, str(e))
+
+        # --- analogical_search ---
+        if tool_name == "analogical_search":
+            try:
+                result = await _call_brain("analogical_search", tool_input)
                 _daemon_online = True
                 return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
             except RuntimeError as e:
