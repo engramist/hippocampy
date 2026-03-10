@@ -353,13 +353,42 @@ async def get_open_loops(params: dict, db: KuzuClient, config: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# M6 — ingest_document
+# ---------------------------------------------------------------------------
+
+async def ingest_document(params: dict, db, config: dict) -> dict:
+    """
+    Ingest a local file into the graph as Document + DocumentExtract nodes.
+    Runs chunking, embedding, and DERIVED_FROM wiring.
+    Queues each extract for the Gated Consolidation Loop.
+
+    params: {file_path, quest_id?}
+    """
+    file_path = params.get("file_path", "").strip()
+    quest_id  = params.get("quest_id", "")
+
+    if not file_path:
+        return {"error": "file_path is required"}
+
+    from mcp_engine.ingest import ingest_document as _ingest
+    return await _ingest(
+        db=db,
+        file_path=file_path,
+        config=config,
+        loop_queue=_loop_queue,
+        quest_id=quest_id,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Dispatch table
 # ---------------------------------------------------------------------------
 
 TOOL_HANDLERS = {
-    "notify_turn":   notify_turn,
-    "current_truth": current_truth,
-    "branch_quest":  branch_quest,
-    "diff_since":    diff_since,
+    "notify_turn":    notify_turn,
+    "current_truth":  current_truth,
+    "branch_quest":   branch_quest,
+    "diff_since":     diff_since,
     "get_open_loops": get_open_loops,
+    "ingest_document": ingest_document,
 }

@@ -139,6 +139,24 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "ingest_document",
+        "description": (
+            "Ingest a local file into the Brain's knowledge graph. "
+            "Chunks the file, embeds each chunk, and queues for the Consolidation Loop. "
+            "Idempotent: re-ingestion is skipped if the file hasn't changed."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string",
+                              "description": "Absolute path to the file to ingest."},
+                "quest_id":  {"type": "string",
+                              "description": "Optional quest_id to link extracts to."},
+            },
+            "required": ["file_path"],
+        },
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -291,6 +309,19 @@ async def handle_mcp_request(request: dict) -> dict:
         if tool_name == "get_open_loops":
             try:
                 result = await _call_brain("get_open_loops", tool_input)
+                _daemon_online = True
+                return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
+            except RuntimeError as e:
+                if "DAEMON_OFFLINE" in str(e):
+                    _daemon_online = False
+                    return ok({"content": [{"type": "text",
+                                            "text": '{"error": "daemon_offline"}'}]})
+                return err(-32000, str(e))
+
+        # --- ingest_document ---
+        if tool_name == "ingest_document":
+            try:
+                result = await _call_brain("ingest_document", tool_input)
                 _daemon_online = True
                 return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
             except RuntimeError as e:
