@@ -51,7 +51,9 @@ def test_step1b_requires_relation():
     rels = extract_relations(doc, entities)
     # Should extract at least one REQUIRES relation
     rel_types = [r["relation_type"] for r in rels]
-    assert len(rels) >= 0  # may be empty if entities don't align — check structure
+    # T9 fix: assert >= 0 was a tautology and never fails. spaCy's dep parser
+    # on this sentence reliably extracts "Authentication"-REQUIRES-"token".
+    assert len(rels) >= 1, f"Expected at least one REQUIRES relation, got: {rels}"
     for r in rels:
         assert "head" in r
         assert "tail" in r
@@ -113,9 +115,14 @@ def test_step2_noise_below_floor():
     assert result["system"] in ("noise", "2_degraded")
 
 
-def test_step2_llm_fallback_called_in_gray_zone():
-    """Gray zone (0.60–0.85) triggers LLM client call."""
-    from mcp_engine.loop.step2_gist import classify_concept, SYSTEM1_THRESHOLD, NOISE_FLOOR
+def test_step2_llm_fallback_called_in_gray_zone(monkeypatch):
+    """
+    Gray zone (0.60–0.85) triggers LLM client call.
+    T9 fix: use controlled vectors to guarantee gray zone similarity,
+    rather than relying on real embedding distances which may vary.
+    """
+    import math
+    from mcp_engine.loop import step2_gist
     from mcp_engine.graph import embeddings as emb
 
     class MockLLM:
@@ -127,21 +134,31 @@ def test_step2_llm_fallback_called_in_gray_zone():
 
     mock_llm = MockLLM()
 
-    # Craft a centroid that gives exactly 0.70 similarity (gray zone)
-    # by taking the embedding and slightly perturbing it
-    text = "project template"
-    vector = emb.embed(text)
-    # Scale centroid slightly — cosine similarity won't be 1.0 but > NOISE_FLOOR
-    # Use a centroid that is 70% of the vector (will have ~1.0 cos sim due to normalization)
-    # Better approach: pick a different text for centroid to get gray zone
-    centroid_vec = emb.embed("software category label")  # related but different
-    centroids = {"Category": centroid_vec}
+    # Build a unit vector and a centroid at exactly 0.70 cosine similarity.
+    # If v = [1, 0, 0, ...] and c = [0.70, sqrt(1-0.70^2), 0, ...], cos(v,c) = 0.70.
+    dim = 384
+    unit_vec = [0.0] * dim
+    unit_vec[0] = 1.0
 
-    result = classify_concept(text, "sentence-transformers/all-MiniLM-L6-v2",
-                              centroids, llm_client=mock_llm)
+    cos_target = 0.70
+    gray_centroid = [0.0] * dim
+    gray_centroid[0] = cos_target
+    gray_centroid[1] = math.sqrt(1.0 - cos_target ** 2)  # already normalized
 
-    # Result must be a valid classification
-    assert result["gist_class"] is not None or result["system"] == "noise"
+    # Monkeypatch embed to return our controlled unit vector
+    monkeypatch.setattr(emb, "embed", lambda text, model_name=None: unit_vec)
+
+    centroids = {"Category": gray_centroid}
+    result = step2_gist.classify_concept(
+        "any text", "sentence-transformers/all-MiniLM-L6-v2",
+        centroids, llm_client=mock_llm
+    )
+
+    # Cosine similarity = 0.70 → gray zone → LLM must be called
+    assert mock_llm.called, "LLM should have been called for gray-zone similarity 0.70"
+    assert result["gist_class"] == "Category"
+    assert result["system"] == "2"
+    assert result["confidence"] == pytest.approx(0.78, abs=0.01)
 
 
 # ---------------------------------------------------------------------------
@@ -508,7 +525,8 @@ async def test_step7_apply_additive_updates_strength():
 
     class MockDB:
         def execute(self, query, params=None):
-            return MockQueryResult([0.5, "2024-01-01T00:00:00+00:00"])
+            # Now returns [pathway_strength, last_accessed_at, created_at]
+            return MockQueryResult([0.5, None, "2024-01-01T00:00:00+00:00"])
         async def execute_write(self, query, params=None):
             calls.append(params)
 
@@ -516,7 +534,7 @@ async def test_step7_apply_additive_updates_strength():
     assert result["action"] == "additive"
     assert result["new_strength"] > 0.5
     assert len(calls) == 1  # one write call
-    assert calls[0]["strength"] > 0.5
+    assert calls[0]["increment"] > 0  # atomic increment value
 
 
 @pytest.mark.asyncio
@@ -562,10 +580,13 @@ async def test_step7_co_occurs_with_single_pair():
     n = await write_co_occurs_with(["aaa", "bbb"], 0.7, MockDB(),
                                    "2024-01-01T00:00:00+00:00")
     assert n == 1
+    # L17 fix: now batched into a single UNWIND call — one write with pairs list
     assert len(writes) == 1
+    pairs = writes[0]["pairs"]
+    assert len(pairs) == 1
     # Sorted: "aaa" < "bbb" so a_id=aaa, b_id=bbb
-    assert writes[0]["a_id"] == "aaa"
-    assert writes[0]["b_id"] == "bbb"
+    assert pairs[0]["a_id"] == "aaa"
+    assert pairs[0]["b_id"] == "bbb"
 
 
 @pytest.mark.asyncio

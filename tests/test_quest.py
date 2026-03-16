@@ -81,13 +81,13 @@ async def test_get_or_create_main_quest_returns_existing():
 
     writes = []
 
-    class MockQueryResult:
-        def has_next(self): return True   # already exists
-        def get_next(self): return ["existing-id"]
-
     class MockDB:
         def execute(self, query, params=None):
-            return MockQueryResult()
+            # MERGE doesn't call execute() — this mock is unused but kept for clarity
+            class R:
+                def has_next(self): return False
+                def get_next(self): return []
+            return R()
         async def execute_write(self, query, params=None):
             writes.append(params)
 
@@ -98,7 +98,9 @@ async def test_get_or_create_main_quest_returns_existing():
     )
 
     assert quest_id == compute_quest_id("/repo/myapp", "main")
-    assert len(writes) == 0  # no write — already existed
+    # MERGE always writes (ON MATCH updates last_active_at) — idempotent, not skipped
+    assert len(writes) == 1
+    assert writes[0]["quest_id"] == quest_id
 
 
 # ---------------------------------------------------------------------------
@@ -500,3 +502,167 @@ async def test_current_truth_empty_query_returns_empty():
     )
     assert result["results"] == []
     assert result["quest_context"] == {}
+
+
+# ---------------------------------------------------------------------------
+# maybe_synthesize_purpose — T4 coverage
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_maybe_synthesize_purpose_skips_when_no_llm():
+    """Returns False immediately when llm_client is None."""
+    from mcp_engine.quest import maybe_synthesize_purpose
+
+    class MockDB:
+        def execute(self, q, p=None): return None
+
+    result = await maybe_synthesize_purpose(
+        MockDB(), "msg-1", "artifact text", None,
+        "sentence-transformers/all-MiniLM-L6-v2", "2024-01-01T00:00:00+00:00"
+    )
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_maybe_synthesize_purpose_skips_when_session_not_found():
+    """Returns False when message has no linked session."""
+    from mcp_engine.quest import maybe_synthesize_purpose
+
+    class MockResult:
+        def has_next(self): return False   # no session found
+
+    class MockDB:
+        def execute(self, q, p=None): return MockResult()
+
+    class FakeLLM:
+        async def achat(self, messages): return "some purpose"
+
+    result = await maybe_synthesize_purpose(
+        MockDB(), "msg-1", "artifact", FakeLLM(),
+        "sentence-transformers/all-MiniLM-L6-v2", "2024-01-01T00:00:00+00:00"
+    )
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_maybe_synthesize_purpose_skips_when_already_set():
+    """Returns False when Session.purpose is already non-empty."""
+    from mcp_engine.quest import maybe_synthesize_purpose
+
+    call_count = [0]
+
+    class MockResult:
+        def has_next(self): return True
+        def get_next(self): return ["sess-1", "Already synthesized purpose."]
+
+    class MockDB:
+        def execute(self, q, p=None): return MockResult()
+        async def execute_write(self, q, p=None):
+            call_count[0] += 1
+
+    class FakeLLM:
+        async def achat(self, messages): return "new purpose"
+
+    result = await maybe_synthesize_purpose(
+        MockDB(), "msg-1", "artifact", FakeLLM(),
+        "sentence-transformers/all-MiniLM-L6-v2", "2024-01-01T00:00:00+00:00"
+    )
+    assert result is False
+    assert call_count[0] == 0   # no writes performed
+
+
+@pytest.mark.asyncio
+async def test_maybe_synthesize_purpose_writes_on_empty_session():
+    """Returns True and writes purpose to Session when session has no purpose."""
+    from mcp_engine.quest import maybe_synthesize_purpose
+
+    writes = []
+    query_idx = [0]
+
+    def mock_execute(q, p=None):
+        idx = query_idx[0]
+        query_idx[0] += 1
+
+        class R:
+            _row = None
+            def has_next(self): return self._row is not None
+            def get_next(self): return self._row
+
+        r = R()
+        if idx == 0:
+            # First query: look up session — found, purpose empty
+            r._row = ["sess-1", ""]
+            r.has_next = lambda: True
+            r.get_next = lambda: ["sess-1", ""]
+        elif idx == 1:
+            # Second query: look up MainQuest for session
+            r._row = ["quest-1", "myapp [main]"]
+            r.has_next = lambda: True
+            r.get_next = lambda: ["quest-1", "myapp [main]"]
+        else:
+            # Third query: context messages
+            r.has_next = lambda: False
+        return r
+
+    class MockDB:
+        def execute(self, q, p=None): return mock_execute(q, p)
+        async def execute_write(self, q, p=None): writes.append({"query": q, "params": p})
+
+    class FakeLLM:
+        async def achat(self, messages):
+            return "Building an AI memory system for local use."
+
+    result = await maybe_synthesize_purpose(
+        MockDB(), "msg-1", "Use Kùzu as primary database", FakeLLM(),
+        "sentence-transformers/all-MiniLM-L6-v2", "2024-01-01T00:00:00+00:00"
+    )
+    assert result is True
+    # At least one write to Session.purpose
+    combined = " ".join(w["query"] for w in writes)
+    assert "Session" in combined or "session" in combined.lower()
+    # Purpose text should appear in write params
+    assert any(
+        w["params"] is not None and "Building an AI memory system" in str(w["params"])
+        for w in writes
+    )
+
+
+@pytest.mark.asyncio
+async def test_maybe_synthesize_purpose_uses_achat_when_available():
+    """Uses achat() (async) when the LLM client supports it."""
+    from mcp_engine.quest import maybe_synthesize_purpose
+
+    achat_called = [False]
+    query_idx = [0]
+
+    def mock_execute(q, p=None):
+        idx = query_idx[0]
+        query_idx[0] += 1
+
+        class R:
+            def has_next(self): return False
+
+        if idx == 0:
+            class R:  # noqa: F811
+                def has_next(self): return True
+                def get_next(self): return ["sess-x", ""]
+        elif idx == 1:
+            class R:  # noqa: F811
+                def has_next(self): return True
+                def get_next(self): return ["q-x", "project"]
+        return R()
+
+    class MockDB:
+        def execute(self, q, p=None): return mock_execute(q, p)
+        async def execute_write(self, q, p=None): pass
+
+    class FakeLLM:
+        async def achat(self, messages):
+            achat_called[0] = True
+            return "Some purpose."
+
+    await maybe_synthesize_purpose(
+        MockDB(), "msg-2", "artifact", FakeLLM(),
+        "sentence-transformers/all-MiniLM-L6-v2", "2024-01-01T00:00:00+00:00"
+    )
+    assert achat_called[0] is True

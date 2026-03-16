@@ -20,6 +20,7 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -83,7 +84,7 @@ def create_app(db) -> FastAPI:
     # ------------------------------------------------------------------
 
     @app.get("/api/stats")
-    async def get_stats():
+    def get_stats():  # W1: sync → FastAPI runs in threadpool, no event loop blocking
         """Node counts per artifact table (archived=false only)."""
         counts = {}
         for table, pk in ARTIFACT_TABLES + [
@@ -110,7 +111,7 @@ def create_app(db) -> FastAPI:
     # ------------------------------------------------------------------
 
     @app.get("/api/graph")
-    async def get_graph():
+    def get_graph():  # W1: sync → FastAPI runs in threadpool
         """
         Return nodes + edges for a D3.js force-directed graph.
         Samples the strongest/most recent nodes from each artifact table.
@@ -253,7 +254,7 @@ def create_app(db) -> FastAPI:
     # ------------------------------------------------------------------
 
     @app.get("/api/open-loops")
-    async def get_open_loops():
+    def get_open_loops():  # W1: sync → FastAPI runs in threadpool
         """
         Return all nodes with confidence_low=true and archived=false.
         These await user confirmation or rejection in the UI.
@@ -291,7 +292,9 @@ def create_app(db) -> FastAPI:
         """
         for table, id_col in ARTIFACT_TABLES:
             try:
-                r = db.execute(
+                # W1 fix: run blocking db.execute() in threadpool
+                r = await asyncio.to_thread(
+                    db.execute,
                     f"MATCH (n:{table} {{{id_col}: $nid}}) RETURN n.{id_col}",
                     {"nid": node_id}
                 )
@@ -313,7 +316,9 @@ def create_app(db) -> FastAPI:
         """Archive a soft-lock node (user rejects the extraction)."""
         for table, id_col in ARTIFACT_TABLES:
             try:
-                r = db.execute(
+                # W1 fix: run blocking db.execute() in threadpool
+                r = await asyncio.to_thread(
+                    db.execute,
                     f"MATCH (n:{table} {{{id_col}: $nid}}) RETURN n.{id_col}",
                     {"nid": node_id}
                 )
@@ -335,7 +340,7 @@ def create_app(db) -> FastAPI:
     # ------------------------------------------------------------------
 
     @app.get("/api/merge-events")
-    async def get_merge_events():
+    def get_merge_events():  # W1: sync → FastAPI runs in threadpool
         """List recent MergeEvents with rollback metadata."""
         events = []
         try:
@@ -373,9 +378,10 @@ def create_app(db) -> FastAPI:
           3. Mark MergeEvent metadata as rolled_back=true
         Additive MergeEvents: only restore strength on linked Concept.
         """
-        # Fetch MergeEvent
+        # Fetch MergeEvent — W1 fix: use to_thread for blocking read
         try:
-            r = db.execute(
+            r = await asyncio.to_thread(
+                db.execute,
                 "MATCH (me:MergeEvent {merge_event_id: $meid}) "
                 "RETURN me.metadata_patch, me.pre_pathway_strength",
                 {"meid": merge_event_id}
@@ -420,6 +426,14 @@ def create_app(db) -> FastAPI:
                         "MATCH (c:Concept {concept_id: $id}) "
                         "SET c.archived = true",
                         {"id": new_id}
+                    )
+                    # W2 fix: remove DEPRECATED_BY edge to restore clean graph state
+                    await db.execute_write(
+                        "MATCH (old:Concept {concept_id: $old_id})"
+                        "-[d:DEPRECATED_BY]->"
+                        "(new:Concept {concept_id: $new_id}) "
+                        "DELETE d",
+                        {"old_id": old_id, "new_id": new_id}
                     )
                     result.update({"old_concept_restored": old_id,
                                    "new_concept_archived": new_id})
@@ -525,7 +539,7 @@ def create_app(db) -> FastAPI:
     # ------------------------------------------------------------------
 
     @app.get("/api/quests")
-    async def get_quests():
+    def get_quests():  # W1: sync → FastAPI runs in threadpool
         """List all MainQuests with nested SideQuests."""
         quests    = []
         quest_map: dict[str, dict] = {}

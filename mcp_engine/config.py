@@ -5,6 +5,7 @@ Loads sidequests.toml using stdlib tomllib (Python 3.11+) or tomli fallback.
 Returns a plain dict — all modules read config from this dict.
 """
 
+from __future__ import annotations
 import sys
 from pathlib import Path
 

@@ -23,9 +23,9 @@ import os
 
 class LLMClient:
     """
-    Thin synchronous wrapper around an OpenAI-SDK-compatible chat endpoint.
-    Synchronous because Loop steps run in the asyncio event loop thread
-    (Ollama latency is acceptable for the expected message rate).
+    Wrapper around an OpenAI-SDK-compatible chat endpoint.
+    Provides both sync chat() for backward compat and async achat()
+    that offloads the blocking network call to a thread pool.
     """
 
     def __init__(self, client, model: str):
@@ -34,8 +34,8 @@ class LLMClient:
 
     def chat(self, messages: list[dict]) -> str:
         """
-        Send a chat request. Returns the response content as a string.
-        Raises on connection/timeout errors — callers should catch Exception.
+        Synchronous chat — blocks the calling thread.
+        Use achat() from async code to avoid blocking the event loop.
         """
         response = self._client.chat.completions.create(
             model=self._model,
@@ -43,6 +43,15 @@ class LLMClient:
             temperature=0.0,
         )
         return response.choices[0].message.content or ""
+
+    async def achat(self, messages: list[dict]) -> str:
+        """
+        Async chat — offloads blocking LLM call to a thread pool.
+        Use this from async code (loop steps, sweep, quest synthesis).
+        Fixes S1: sync LLM calls were blocking the asyncio event loop.
+        """
+        import asyncio
+        return await asyncio.to_thread(self.chat, messages)
 
 
 def create_llm_client(config: dict):

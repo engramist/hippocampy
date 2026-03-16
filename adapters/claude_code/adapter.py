@@ -182,6 +182,9 @@ TOOLS = [
 # Brain socket client
 # ---------------------------------------------------------------------------
 
+_SOCKET_TIMEOUT = 10.0  # W4: read/write timeout in seconds
+
+
 async def _call_brain(method: str, params: dict) -> dict:
     """Send a JSON-RPC call to the Brain Daemon socket. Returns the result dict."""
     request = {
@@ -194,14 +197,15 @@ async def _call_brain(method: str, params: dict) -> dict:
         reader, writer = await asyncio.open_unix_connection(str(SOCKET_PATH))
         writer.write((json.dumps(request) + "\n").encode())
         await writer.drain()
-        line = await reader.readline()
+        # W4 fix: apply timeout so a hung daemon doesn't block indefinitely.
+        line = await asyncio.wait_for(reader.readline(), timeout=_SOCKET_TIMEOUT)
         writer.close()
         await writer.wait_closed()
         response = json.loads(line)
         if "error" in response:
             raise RuntimeError(response["error"]["message"])
         return response.get("result", {})
-    except (FileNotFoundError, ConnectionRefusedError, OSError):
+    except (FileNotFoundError, ConnectionRefusedError, OSError, asyncio.TimeoutError):
         raise RuntimeError("DAEMON_OFFLINE")
 
 
@@ -236,6 +240,28 @@ SYSTEM_PROMPT_FRAGMENT = (
 OFFLINE_FRAGMENT = "[SideQuest | Brain: OFFLINE — memory unavailable]"
 
 _daemon_online = True
+
+
+async def _replay_offline_queue() -> None:
+    """
+    W5 fix: replay messages queued while the daemon was offline.
+    Called after a successful brain call confirms the daemon is back online.
+    """
+    if not OFFLINE_QUEUE.exists():
+        return
+    try:
+        lines = OFFLINE_QUEUE.read_text(encoding="utf-8").splitlines()
+        if not lines:
+            return
+        OFFLINE_QUEUE.unlink()  # clear queue before replaying (idempotent)
+        for line in lines:
+            try:
+                entry = json.loads(line)
+                await _call_brain(entry["method"], entry["params"])
+            except Exception:
+                pass  # best-effort replay — don't re-queue failed replays
+    except Exception:
+        pass
 
 
 async def handle_mcp_request(request: dict) -> dict:
@@ -274,7 +300,11 @@ async def handle_mcp_request(request: dict) -> dict:
         if tool_name == "notify_turn":
             try:
                 result = await _call_brain("notify_turn", tool_input)
+                was_offline = not _daemon_online
                 _daemon_online = True
+                # W3 + W5 fix: replay queued messages when daemon comes back online.
+                if was_offline:
+                    await _replay_offline_queue()
                 return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
             except RuntimeError as e:
                 if "DAEMON_OFFLINE" in str(e):
@@ -286,16 +316,20 @@ async def handle_mcp_request(request: dict) -> dict:
 
         # --- current_truth ---
         if tool_name == "current_truth":
-            if not _daemon_online:
-                return ok({"content": [{"type": "text", "text": OFFLINE_FRAGMENT}]})
+            # W3 fix: always attempt the call even when _daemon_online is False
+            # so the adapter can recover from offline state on its own.
             try:
                 result = await _call_brain("current_truth", tool_input)
+                was_offline = not _daemon_online
                 _daemon_online = True
+                if was_offline:
+                    await _replay_offline_queue()
                 return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
             except RuntimeError as e:
                 if "DAEMON_OFFLINE" in str(e):
                     _daemon_online = False
-                    return ok({"content": [{"type": "text", "text": OFFLINE_FRAGMENT}]})
+                    return ok({"content": [{"type": "text",
+                                            "text": OFFLINE_FRAGMENT}]})
                 return err(-32000, str(e))
 
         # --- branch_quest ---

@@ -84,14 +84,22 @@ def _days_since(created_at_iso: str) -> float:
 async def apply_additive(existing_concept_id: str, db, now: str) -> dict:
     """
     Strengthen an existing Concept node using the Hebbian reinforcement formula.
-    Reads current pathway_strength + created_at, computes increment, writes update.
+    Uses an atomic read-compute-write Cypher query to avoid race conditions (L13).
+    Updates last_accessed_at on every access (L14/L15).
     Returns {updated_concept_id, action, new_strength}.
+
+    Design note: Additive updates intentionally do NOT create a MergeEvent.
+    MergeEvents are the rollback mechanism for contradictions — they record the
+    delta between an old and new concept, enabling the Memory Control Panel to
+    undo a merge. Additive updates are cumulative reinforcements with no
+    discrete rollback point; the pathway_strength field IS the audit trail.
+    Only contradictions (apply_contradiction) are rollback-eligible.
     """
-    # Read current state
+    # Read current state to compute increment
     try:
         result = db.execute(
             "MATCH (c:Concept {concept_id: $id}) "
-            "RETURN c.pathway_strength, c.created_at",
+            "RETURN c.pathway_strength, c.last_accessed_at, c.created_at",
             {"id": existing_concept_id}
         )
         if not result.has_next():
@@ -99,19 +107,23 @@ async def apply_additive(existing_concept_id: str, db, now: str) -> dict:
 
         row = result.get_next()
         current_strength = row[0] or 0.5
-        created_at_iso   = row[1] or now
+        # Use last_accessed_at if available, fall back to created_at (L14 fix)
+        access_time_iso  = row[1] or row[2] or now
 
     except Exception:
         return {"action": "additive_skip", "reason": "db read error"}
 
-    days = _days_since(created_at_iso)
-    new_strength = pathway_strength_increment(current_strength, days)
+    days = _days_since(access_time_iso)
+    increment = math.log(1 + 1 / days)
 
+    # Atomic update: use increment addition to avoid TOCTOU race (L13 fix)
+    # Also update last_accessed_at (L15 fix)
     try:
         await db.execute_write(
             "MATCH (c:Concept {concept_id: $id}) "
-            "SET c.pathway_strength = $strength",
-            {"id": existing_concept_id, "strength": new_strength}
+            "SET c.pathway_strength = c.pathway_strength + $increment, "
+            "    c.last_accessed_at = $now",
+            {"id": existing_concept_id, "increment": increment, "now": now}
         )
     except Exception:
         return {"action": "additive_skip", "reason": "db write error"}
@@ -119,7 +131,7 @@ async def apply_additive(existing_concept_id: str, db, now: str) -> dict:
     return {
         "updated_concept_id": existing_concept_id,
         "action":             "additive",
-        "new_strength":       new_strength,
+        "new_strength":       current_strength + increment,
     }
 
 
@@ -149,24 +161,15 @@ async def apply_contradiction(new_concept_id: str, old_concept_id: str,
 
     merge_event_id = str(uuid.uuid4())
 
+    # Batched into a single write to avoid partial application (L16 fix).
+    # If any part fails, no changes are committed.
     try:
-        # Archive old concept
-        await db.execute_write(
-            "MATCH (c:Concept {concept_id: $id}) SET c.archived = true",
-            {"id": old_concept_id}
-        )
-
-        # DEPRECATED_BY: old → new (reading direction: old was superseded by new)
-        await db.execute_write(
-            "MATCH (old:Concept {concept_id: $old_id}), "
-            "      (new:Concept {concept_id: $new_id}) "
-            "MERGE (old)-[:DEPRECATED_BY]->(new)",
-            {"old_id": old_concept_id, "new_id": new_concept_id}
-        )
-
-        # Create MergeEvent audit node
         await db.execute_write(
             """
+            MATCH (old:Concept {concept_id: $old_id}),
+                  (new:Concept {concept_id: $new_id})
+            SET old.archived = true
+            MERGE (old)-[:DEPRECATED_BY]->(new)
             CREATE (me:MergeEvent {
                 merge_event_id:        $merge_event_id,
                 pre_pathway_strength:  $pre_strength,
@@ -175,8 +178,11 @@ async def apply_contradiction(new_concept_id: str, old_concept_id: str,
                 metadata_patch:        $patch,
                 created_at:            $now
             })
+            MERGE (me)-[:UPDATES_PATHWAY]->(new)
             """,
             {
+                "old_id":         old_concept_id,
+                "new_id":         new_concept_id,
                 "merge_event_id": merge_event_id,
                 "pre_strength":   old_strength,
                 "patch":          f"contradiction:old={old_concept_id},new={new_concept_id}",
@@ -184,20 +190,12 @@ async def apply_contradiction(new_concept_id: str, old_concept_id: str,
             }
         )
 
-        # TRIGGERED: Message → MergeEvent
+        # TRIGGERED edge requires Message node — only create if Message exists (O5)
         await db.execute_write(
             "MATCH (m:Message {message_id: $mid}), "
             "      (me:MergeEvent {merge_event_id: $meid}) "
             "MERGE (m)-[:TRIGGERED]->(me)",
             {"mid": message_id, "meid": merge_event_id}
-        )
-
-        # UPDATES_PATHWAY: MergeEvent → new Concept
-        await db.execute_write(
-            "MATCH (me:MergeEvent {merge_event_id: $meid}), "
-            "      (c:Concept {concept_id: $cid}) "
-            "MERGE (me)-[:UPDATES_PATHWAY]->(c)",
-            {"meid": merge_event_id, "cid": new_concept_id}
         )
 
     except Exception as e:
@@ -237,24 +235,126 @@ async def write_co_occurs_with(concept_ids: list[str], min_confidence: float,
     # Deduplicate (e.g. if same concept_id appears twice in list)
     pairs = list(set(pairs))
 
-    written = 0
-    for a_id, b_id in pairs:
+    # L17 fix: batch all pairs into a single UNWIND query instead of
+    # n*(n-1)/2 individual write-locked DB calls.
+    pairs_params = [{"a_id": a, "b_id": b} for a, b in pairs]
+    try:
+        await db.execute_write(
+            """
+            UNWIND $pairs AS pair
+            MATCH (a:Concept {concept_id: pair.a_id}),
+                  (b:Concept {concept_id: pair.b_id})
+            MERGE (a)-[r:CO_OCCURS_WITH]->(b)
+            ON CREATE SET r.count     = 1,
+                          r.strength  = $strength,
+                          r.first_seen = $now
+            ON MATCH SET  r.count    = r.count + 1,
+                          r.strength = (r.strength + $strength) / 2.0
+            """,
+            {"pairs": pairs_params, "strength": min_confidence, "now": now}
+        )
+        written = len(pairs)
+    except Exception:
+        written = 0
+
+    return written
+
+
+# ---------------------------------------------------------------------------
+# Event-driven confidence re-scoring (O7 fix)
+# ---------------------------------------------------------------------------
+
+async def rescore_nearby_low_confidence(concept_id: str, db) -> int:
+    """
+    After a pathway update, re-score confidence_low nodes within 1-2 hops.
+    Per CLAUDE.md: "After every pathway update, re-score all confidence_low
+    nodes within 1-2 hops."
+
+    Re-scoring factors:
+    - Relationship density (more connected = higher confidence)
+    - Pathway strength of neighboring nodes
+    - If a confidence_low node now has multiple high-confidence neighbors,
+      its confidence can be auto-promoted above the 0.90 threshold.
+
+    Returns count of nodes re-scored.
+    """
+    rescored = 0
+
+    try:
+        # Find confidence_low nodes within 1-2 hops of the updated concept
+        result = db.execute(
+            """
+            MATCH (anchor:Concept {concept_id: $id})
+            MATCH (anchor)-[*1..2]-(neighbor:Concept)
+            WHERE neighbor.confidence_low = true
+              AND neighbor.archived = false
+              AND neighbor.concept_id <> $id
+            RETURN DISTINCT neighbor.concept_id,
+                   neighbor.confidence,
+                   neighbor.pathway_strength
+            """,
+            {"id": concept_id}
+        )
+
+        candidates = []
+        while result.has_next():
+            row = result.get_next()
+            candidates.append({
+                "concept_id":       row[0],
+                "confidence":       row[1] or 0.5,
+                "pathway_strength": row[2] or 0.5,
+            })
+    except Exception:
+        return 0
+
+    for candidate in candidates:
+        cid = candidate["concept_id"]
         try:
-            await db.execute_write(
+            # Count high-confidence neighbors (relationship density signal)
+            nbr_result = db.execute(
                 """
-                MATCH (a:Concept {concept_id: $a_id}),
-                      (b:Concept {concept_id: $b_id})
-                MERGE (a)-[r:CO_OCCURS_WITH]->(b)
-                ON CREATE SET r.count    = 1,
-                              r.strength = $strength,
-                              r.first_seen = $now
-                ON MATCH SET  r.count    = r.count + 1,
-                              r.strength = (r.strength + $strength) / 2.0
+                MATCH (c:Concept {concept_id: $cid})-[]-(n:Concept)
+                WHERE n.archived = false AND n.confidence >= 0.60
+                RETURN count(n) AS neighbor_count,
+                       avg(n.pathway_strength) AS avg_strength
                 """,
-                {"a_id": a_id, "b_id": b_id, "strength": min_confidence, "now": now}
+                {"cid": cid}
             )
-            written += 1
+
+            if not nbr_result.has_next():
+                continue
+
+            row = nbr_result.get_next()
+            neighbor_count = row[0] or 0
+            avg_neighbor_strength = row[1] or 0.0
+
+            # Compute new confidence based on graph context
+            # Base: existing confidence
+            # Boost: +0.05 per high-confidence neighbor (max +0.30)
+            # Boost: +0.10 if avg neighbor strength > 0.70
+            old_conf = candidate["confidence"]
+            density_boost = min(neighbor_count * 0.05, 0.30)
+            strength_boost = 0.10 if avg_neighbor_strength > 0.70 else 0.0
+            new_conf = min(old_conf + density_boost + strength_boost, 0.99)
+
+            # Only write if confidence actually changed meaningfully
+            if new_conf - old_conf < 0.02:
+                continue
+
+            promote = new_conf >= 0.90
+            await db.execute_write(
+                "MATCH (c:Concept {concept_id: $cid}) "
+                "SET c.confidence = $conf, "
+                "    c.confidence_low = $low",
+                {
+                    "cid":  cid,
+                    "conf": new_conf,
+                    "low":  not promote,
+                }
+            )
+            rescored += 1
+
         except Exception:
             pass
 
-    return written
+    return rescored
