@@ -149,6 +149,33 @@ def test_chunk_byte_offsets_are_valid():
         assert chunk["text"].strip() in extracted or extracted in chunk["text"].strip()
 
 
+def test_chunk_byte_offsets_correct_for_multibyte_utf8():
+    """M3 regression: text[:char_idx].encode() correctly converts char→byte offsets
+    even when text contains multi-byte UTF-8 characters (emoji, CJK, accented)."""
+    from mcp_engine.ingest import chunk_document
+    # Mix of ASCII, 2-byte (accented), 3-byte (CJK), and 4-byte (emoji) codepoints
+    text = (
+        "Café résumé — standard design.\n\n"
+        "日本語テキスト for internationalization testing.\n\n"
+        "Emoji in text: 🚀 and 🎯 are four-byte codepoints that inflate byte counts."
+    )
+    encoded = text.encode("utf-8")
+    chunks = chunk_document(text)
+    assert len(chunks) > 0, "Expected at least one chunk"
+    for chunk in chunks:
+        assert chunk["byte_start"] >= 0
+        assert chunk["byte_end"] > chunk["byte_start"]
+        assert chunk["byte_end"] <= len(encoded), (
+            f"byte_end {chunk['byte_end']} exceeds encoded length {len(encoded)}"
+        )
+        # Critically: decode the byte slice — must not raise UnicodeDecodeError
+        # and must round-trip to the original chunk text
+        extracted = encoded[chunk["byte_start"]:chunk["byte_end"]].decode("utf-8")
+        assert chunk["text"].strip() in extracted or extracted.strip() in chunk["text"], (
+            f"Byte slice mismatch for chunk starting with: {chunk['text'][:30]!r}"
+        )
+
+
 def test_chunk_line_numbers_are_positive():
     from mcp_engine.ingest import chunk_document
     text = "Line 1.\n\nLine 3 paragraph with enough content to survive the merge threshold.\n"
@@ -467,3 +494,81 @@ def test_adapter_ingest_document_requires_file_path():
     from adapters.claude_code.adapter import TOOLS
     tool = next(t for t in TOOLS if t["name"] == "ingest_document")
     assert "file_path" in tool["inputSchema"]["required"]
+
+
+# ---------------------------------------------------------------------------
+# T10 — Path traversal + symlink security tests
+# ---------------------------------------------------------------------------
+
+def test_validate_path_blocks_traversal_via_dotdot(tmp_path):
+    """Path with .. that would escape project_root is rejected."""
+    from mcp_engine.ingest import validate_path
+    # Create a real file inside tmp_path
+    allowed = tmp_path / "project"
+    allowed.mkdir()
+    real_file = tmp_path / "secret.txt"
+    real_file.write_text("secret content")
+
+    # Path using .. to escape the project root
+    traversal = str(allowed / ".." / "secret.txt")
+    with pytest.raises(ValueError, match="outside the allowed directory"):
+        validate_path(traversal, project_root=str(allowed))
+
+
+def test_validate_path_blocks_symlink_traversal(tmp_path):
+    """Symlink pointing outside project_root is rejected after realpath resolution."""
+    from mcp_engine.ingest import validate_path
+    project = tmp_path / "project"
+    project.mkdir()
+
+    # File outside the project
+    outside = tmp_path / "outside.txt"
+    outside.write_text("sensitive data")
+
+    # Symlink inside the project pointing to the outside file
+    link = project / "link.txt"
+    link.symlink_to(outside)
+
+    with pytest.raises(ValueError, match="outside the allowed directory"):
+        validate_path(str(link), project_root=str(project))
+
+
+def test_validate_path_allows_file_inside_root(tmp_path):
+    """A legitimate file inside project_root passes the confinement check."""
+    from mcp_engine.ingest import validate_path
+    project = tmp_path / "project"
+    project.mkdir()
+    legitimate = project / "notes.md"
+    legitimate.write_text("# Notes\n\nSome content here.\n")
+
+    result = validate_path(str(legitimate), project_root=str(project))
+    assert result == legitimate.resolve()
+
+
+def test_validate_path_no_project_root_skips_confinement_check(tmp_path):
+    """Without project_root, confinement check is skipped (backward compat)."""
+    from mcp_engine.ingest import validate_path
+    f = tmp_path / "doc.md"
+    f.write_text("hello")
+    # Should succeed — no confinement check performed
+    result = validate_path(str(f), project_root=None)
+    assert result == f.resolve()
+
+
+def test_validate_path_blocks_absolute_escape(tmp_path):
+    """Absolute path to /tmp or / is blocked when project_root is set."""
+    from mcp_engine.ingest import validate_path
+    project = tmp_path / "project"
+    project.mkdir()
+
+    # Create a real file in /tmp (should exist)
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as tf:
+        tf.write(b"data")
+        outside_path = tf.name
+
+    try:
+        with pytest.raises(ValueError, match="outside the allowed directory"):
+            validate_path(outside_path, project_root=str(project))
+    finally:
+        os.unlink(outside_path)

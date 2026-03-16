@@ -18,6 +18,7 @@ context over future messages.
 """
 
 import json
+import re
 
 VALID_CLASSIFICATIONS = {"additive", "contradiction", "uncertain"}
 
@@ -65,8 +66,12 @@ def arbitrate(new_concept: dict, candidates: list[dict],
 
     try:
         raw = llm_client.chat([{"role": "user", "content": prompt}])
-        raw = raw.strip().strip("```json").strip("```").strip()
-        result = json.loads(raw)
+        # L11 fix: extract first {...} block to handle preamble, trailing text,
+        # varying fence styles (```json, ```JSON, no fence).
+        match = re.search(r'\{[^}]+\}', raw, re.DOTALL)
+        if not match:
+            return _uncertain([c["concept_id"] for c in top], "LLM returned no JSON")
+        result = json.loads(match.group())
 
         classification = result.get("classification", "uncertain")
         if classification not in VALID_CLASSIFICATIONS:
@@ -74,7 +79,13 @@ def arbitrate(new_concept: dict, candidates: list[dict],
 
         ref_idx = result.get("referenced_index")
         referenced_ids = []
-        if ref_idx and isinstance(ref_idx, int) and 1 <= ref_idx <= len(top):
+        # L12 fix: coerce string/float LLM outputs to int before range check.
+        if ref_idx is not None:
+            try:
+                ref_idx = int(ref_idx)
+            except (TypeError, ValueError):
+                ref_idx = None
+        if ref_idx is not None and 1 <= ref_idx <= len(top):
             referenced_ids = [top[ref_idx - 1]["concept_id"]]
 
         return {

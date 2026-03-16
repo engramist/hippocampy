@@ -5,6 +5,7 @@ Run once at Brain Daemon startup (idempotent — uses IF NOT EXISTS throughout).
 Creates all node/relationship tables, seeds ontology, bootstraps gist centroids.
 """
 
+from __future__ import annotations
 import re
 from pathlib import Path
 
@@ -29,6 +30,7 @@ NODE_TABLES = {
         pathway_strength DOUBLE,
         archived      BOOLEAN,
         created_at    TIMESTAMP,
+        last_accessed_at TIMESTAMP,
         PRIMARY KEY (concept_id)
     """,
 
@@ -131,6 +133,7 @@ NODE_TABLES = {
         pathway_strength DOUBLE,
         archived        BOOLEAN,
         created_at      TIMESTAMP,
+        last_active_at  TIMESTAMP,
         PRIMARY KEY (quest_id)
     """,
 
@@ -226,6 +229,16 @@ NODE_TABLES = {
         name     STRING,
         centroid FLOAT[384],
         PRIMARY KEY (name)
+    """,
+
+    "GistExample": """
+        example_id  STRING,
+        text        STRING,
+        embedding   FLOAT[384],
+        gist_class  STRING,
+        source      STRING,
+        created_at  TIMESTAMP,
+        PRIMARY KEY (example_id)
     """,
 
     "SchemaOrgType": """
@@ -360,6 +373,12 @@ def _bootstrap_centroids(db: KuzuClient, seed_path: str,
 
         vectors = emb.embed_batch(sentences, model_name=embedding_model)
         centroid = emb.mean_pool(vectors)
+        # L1 fix: mean-pooling normalized vectors does NOT yield a normalized
+        # vector. L2-normalize the centroid so cosine similarity scores are
+        # accurate and System 1 thresholds (0.85) behave as intended.
+        norm = sum(v * v for v in centroid) ** 0.5
+        if norm > 0:
+            centroid = [v / norm for v in centroid]
 
         db.execute(
             "MATCH (g:GistClass {name: $name}) SET g.centroid = $centroid",
@@ -378,6 +397,13 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
                 embedding_model: str) -> None:
     """
     Initialize Kùzu schema. Idempotent — safe to call on every daemon startup.
+
+    SC1 note: schema init uses db.execute() (sync, bypasses asyncio write lock)
+    because it runs synchronously during startup before the event loop is
+    serving requests. The asyncio lock guards concurrent writes between live
+    coroutines — schema init is single-threaded and runs first. This is safe
+    as long as init_schema() is always called before BrainDaemon.start() hands
+    off to asyncio. Do not call init_schema() after the event loop starts.
 
     Steps:
       1. Create all node tables (IF NOT EXISTS)
@@ -412,8 +438,11 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
             gist_classes_seen.add(gist_name)
 
         if schema_name not in schema_types_seen:
+            # SC2 fix: MERGE on name only, then SET properties, to avoid
+            # duplicate nodes if the properties list changes between versions.
             db.execute(
-                "MERGE (s:SchemaOrgType {name: $name, properties: $props})",
+                "MERGE (s:SchemaOrgType {name: $name}) "
+                "SET s.properties = $props",
                 {"name": schema_name, "props": properties}
             )
             schema_types_seen.add(schema_name)

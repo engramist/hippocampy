@@ -17,10 +17,13 @@ Concurrency: single asyncio event loop, asyncio.Lock for all Kùzu writes.
 
 import asyncio
 import json
+import logging
 import os
 import signal
 import socket
 from pathlib import Path
+
+_logger = logging.getLogger(__name__)
 
 import uvicorn
 
@@ -32,13 +35,13 @@ from mcp_engine.tools import TOOL_HANDLERS, init_loop_queue
 from mcp_engine.llm.provider import create_llm_client
 from mcp_engine.loop import step2_gist, step3_schema_org
 from mcp_engine.loop.orchestrator import run_loop
+from mcp_engine.sweep import run_sweep
 
 SOCKET_PATH = Path.home() / ".sidequests" / "brain.sock"
 DB_PATH     = Path.home() / ".sidequests" / "brain.db"
-SEED_PATH   = Path(__file__).parent.parent / (
-    "Library/CloudStorage/OneDrive-ChurchofJesusChrist"
-    "/my-documents/SideQuest/InvertorsDocs/GistSeedExamples.md"
-)
+# D3 fix: package-relative seed path — GistSeedExamples.md lives alongside
+# the repo, not in a hardcoded OneDrive path that only works on DJ's machine.
+SEED_PATH   = Path(__file__).parent / "InvertorsDocs" / "GistSeedExamples.md"
 
 
 class BrainDaemon:
@@ -87,16 +90,44 @@ class BrainDaemon:
         # Wire loop queue into tools module
         init_loop_queue(self._loop_queue)
 
+        # D2 fix: attach done callbacks so task crashes are logged and the task
+        # is restarted rather than silently dying.
+        def _restart_on_failure(task: asyncio.Task, coro_factory, *args):
+            exc = task.exception() if not task.cancelled() else None
+            if exc:
+                _logger.exception(
+                    "Background task '%s' died unexpectedly — restarting",
+                    task.get_name(), exc_info=exc,
+                )
+                new_task = asyncio.create_task(coro_factory(*args),
+                                               name=task.get_name())
+                new_task.add_done_callback(
+                    lambda t: _restart_on_failure(t, coro_factory, *args)
+                )
+
         # Start Loop worker (Gated Consolidation Loop, M3)
-        asyncio.create_task(self._loop_worker())
+        loop_task = asyncio.create_task(self._loop_worker(), name="loop_worker")
+        loop_task.add_done_callback(
+            lambda t: _restart_on_failure(t, self._loop_worker)
+        )
 
         # Start background sweep
         sweep_interval = self.config.get("pruning", {}).get("sweep_interval_seconds", 300)
-        asyncio.create_task(self._background_sweep(sweep_interval))
+        sweep_task = asyncio.create_task(
+            self._background_sweep(sweep_interval), name="background_sweep"
+        )
+        sweep_task.add_done_callback(
+            lambda t: _restart_on_failure(t, self._background_sweep, sweep_interval)
+        )
 
         # Start Memory Control Panel web server (M7)
         web_port = self.config.get("web", {}).get("port", 7799)
-        asyncio.create_task(self._start_web_server(web_port))
+        web_task = asyncio.create_task(
+            self._start_web_server(web_port), name="web_server"
+        )
+        web_task.add_done_callback(
+            lambda t: _restart_on_failure(t, self._start_web_server, web_port)
+        )
 
         # Start IPC server
         await self._run_ipc_server()
@@ -120,7 +151,7 @@ class BrainDaemon:
     # ------------------------------------------------------------------
 
     async def _run_ipc_server(self):
-        SOCKET_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SOCKET_PATH.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 
         # Clean up stale socket from previous crash
         if SOCKET_PATH.exists():
@@ -237,19 +268,33 @@ class BrainDaemon:
         await server.serve()
 
     # ------------------------------------------------------------------
-    # Background sweep (M4 — stub for now)
+    # Background sweep — Synaptic Pruning + Hebbian Trigger 2
     # ------------------------------------------------------------------
 
     async def _background_sweep(self, interval_seconds: int):
         """
-        Periodic sweep: confidence re-scoring + pathway decay + archive + resurrection.
+        Periodic sweep: pathway decay, archive, resurrection, Hebbian Trigger 2.
         Runs per-table to keep write-lock windows short.
-        # Implementation note: acquire write lock per table, not one giant transaction.
+        First run is deferred by one full interval to let the daemon warm up.
         """
         while True:
             await asyncio.sleep(interval_seconds)
-            # TODO M4: implement sweep
-            pass
+            try:
+                summary = await run_sweep(
+                    db=self.db,
+                    config=self.config,
+                    llm_client=self._llm_client,
+                )
+                print(
+                    f"[Sweep] decayed={summary['decayed']} "
+                    f"archived={summary['archived']} "
+                    f"resurrected={summary['resurrected']} "
+                    f"promoted={summary['promoted']} "
+                    f"centroids={summary.get('centroids_updated', 0)} "
+                    f"errors={summary['errors']}"
+                )
+            except Exception as e:
+                print(f"[Sweep] Error during sweep: {e}")
 
     # ------------------------------------------------------------------
     # Shutdown
@@ -261,6 +306,11 @@ class BrainDaemon:
         if SOCKET_PATH.exists():
             SOCKET_PATH.unlink()
         print("Brain Daemon stopped.")
+        # D1 fix: stop the event loop so the process exits cleanly.
+        try:
+            asyncio.get_running_loop().stop()
+        except RuntimeError:
+            pass
 
 
 # ---------------------------------------------------------------------------

@@ -8,10 +8,19 @@ All other modules call methods here — never import kuzu directly.
 Kùzu version: kuzu==0.11.3 (archived Oct 2025, pinned)
 """
 
+from __future__ import annotations
 import asyncio
 import kuzu
 
-_write_lock = asyncio.Lock()
+# S4 fix: Lock lazy-initialized to avoid creation before an event loop exists.
+_write_lock: asyncio.Lock | None = None
+
+
+def _get_write_lock() -> asyncio.Lock:
+    global _write_lock
+    if _write_lock is None:
+        _write_lock = asyncio.Lock()
+    return _write_lock
 
 
 class KuzuClient:
@@ -36,9 +45,11 @@ class KuzuClient:
         """
         Execute a write query with the asyncio write lock held.
         Use this for all INSERT / MERGE / SET / DELETE operations.
+        S3 fix: Kùzu I/O runs in a thread so it doesn't block the event loop
+        while the lock is held.
         """
-        async with _write_lock:
-            return self.execute(query, params)
+        async with _get_write_lock():
+            return await asyncio.to_thread(self.execute, query, params)
 
     def create_vector_index(self, table: str, property: str, index_name: str):
         """

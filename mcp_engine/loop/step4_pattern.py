@@ -24,7 +24,9 @@ _DECISION_SIGNALS = [
     r"\bfinalized\b", r"\bsettled on\b",
 ]
 _CONSTRAINT_SIGNALS = [
-    r"\bmust\b", r"\bmust not\b", r"\bnever\b", r"\balways\b",
+    # L6 fix: "must not" listed first and matched as a single unit to prevent
+    # "must" pattern double-counting the same text.
+    r"\bmust not\b", r"\bmust(?!\s+not)\b", r"\bnever\b", r"\balways\b",
     r"\bforbidden\b", r"\brequired\b", r"\bshall not\b", r"\bno .+? allowed\b",
     r"\bmandatory\b", r"\bprohibited\b", r"\bnon-negotiable\b",
 ]
@@ -55,8 +57,27 @@ def _match_signals(text: str, patterns: list[str]) -> int:
     return sum(1 for p in patterns if re.search(p, text_lower))
 
 
+def _entity_sentence(full_text: str, entity_text: str) -> str:
+    """
+    L5 fix: extract the sentence(s) containing entity_text from full_text
+    so signal matching is scoped to entity context, not the whole message.
+    Falls back to full_text if the entity can't be located.
+    """
+    lower_full = full_text.lower()
+    lower_entity = entity_text.lower()
+    pos = lower_full.find(lower_entity)
+    if pos == -1:
+        return full_text
+    # Find sentence boundaries around pos
+    sent_start = max(0, full_text.rfind(".", 0, pos) + 1)
+    sent_end_match = full_text.find(".", pos)
+    sent_end = sent_end_match + 1 if sent_end_match != -1 else len(full_text)
+    return full_text[sent_start:sent_end].strip() or full_text
+
+
 def classify_artifact(text: str, gist_class: str | None,
-                      schema_org_type: str | None) -> dict:
+                      schema_org_type: str | None,
+                      entity_text: str | None = None) -> dict:
     """
     Classify text into an artifact type using ontological context + keyword signals.
     Returns {artifact_type, confidence, confidence_low, should_proceed}.
@@ -67,12 +88,15 @@ def classify_artifact(text: str, gist_class: str | None,
     if not gist_class:
         return _noise_result()
 
+    # L5 fix: score signals against entity-local sentence context, not full message.
+    match_text = _entity_sentence(text, entity_text) if entity_text else text
+
     # Score each artifact type by signal count
     scores = {
-        "decision":    _match_signals(text, _DECISION_SIGNALS),
-        "constraint":  _match_signals(text, _CONSTRAINT_SIGNALS),
-        "requirement": _match_signals(text, _REQUIREMENT_SIGNALS),
-        "action_item": _match_signals(text, _ACTION_SIGNALS),
+        "decision":    _match_signals(match_text, _DECISION_SIGNALS),
+        "constraint":  _match_signals(match_text, _CONSTRAINT_SIGNALS),
+        "requirement": _match_signals(match_text, _REQUIREMENT_SIGNALS),
+        "action_item": _match_signals(match_text, _ACTION_SIGNALS),
     }
 
     best_type = max(scores, key=lambda k: scores[k])

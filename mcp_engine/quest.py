@@ -33,58 +33,48 @@ async def get_or_create_main_quest(db, repo_root: str, git_branch: str,
                                     embedding_model: str, now: str) -> str:
     """
     MERGE a MainQuest node by its deterministic quest_id.
-    ON CREATE: embed the quest name, set initial fields.
-    ON MATCH:  update last_active_at (not in schema — uses created_at as proxy).
+    ON CREATE: embed the quest name, set all initial fields.
+    ON MATCH:  update last_active_at to track inactivity for auto-complete.
     Returns the quest_id string.
     """
     quest_id = compute_quest_id(repo_root, git_branch)
     name     = f"{_basename(repo_root)} [{git_branch}]"
 
-    # Check if it already exists
-    try:
-        result = db.execute(
-            "MATCH (q:MainQuest {quest_id: $qid}) RETURN q.quest_id",
-            {"qid": quest_id}
-        )
-        if result.has_next():
-            return quest_id  # already exists
-    except Exception:
-        pass
-
-    # Create new MainQuest
+    # Always compute embedding — needed by ON CREATE branch
     vector = emb.embed(name, model_name=embedding_model)
+
     try:
         await db.execute_write(
             """
-            CREATE (q:MainQuest {
-                quest_id:         $quest_id,
-                name:             $name,
-                status:           'active',
-                completed_at:     null,
-                purpose:          $purpose,
-                text_raw:         $name,
-                embedding:        $embedding,
-                embedding_model:  $embedding_model,
-                embedding_dim:    $embedding_dim,
-                confidence:       1.0,
-                confidence_low:   false,
-                pathway_strength: 1.0,
-                archived:         false,
-                created_at:       $created_at
-            })
+            MERGE (q:MainQuest {quest_id: $quest_id})
+            ON CREATE SET q.name             = $name,
+                          q.status           = 'active',
+                          q.completed_at     = null,
+                          q.purpose          = $purpose,
+                          q.text_raw         = $name,
+                          q.embedding        = $embedding,
+                          q.embedding_model  = $embedding_model,
+                          q.embedding_dim    = $embedding_dim,
+                          q.confidence       = 1.0,
+                          q.confidence_low   = false,
+                          q.pathway_strength = 1.0,
+                          q.archived         = false,
+                          q.created_at       = $now,
+                          q.last_active_at   = $now
+            ON MATCH SET  q.last_active_at   = $now
             """,
             {
-                "quest_id":       quest_id,
-                "name":           name,
-                "purpose":        f"Project work on {name}",
-                "embedding":      vector,
+                "quest_id":        quest_id,
+                "name":            name,
+                "purpose":         f"Project work on {name}",
+                "embedding":       vector,
                 "embedding_model": embedding_model,
-                "embedding_dim":  len(vector),
-                "created_at":     now,
+                "embedding_dim":   len(vector),
+                "now":             now,
             }
         )
     except Exception:
-        pass  # may already exist (race condition on first startup)
+        pass
 
     return quest_id
 
@@ -330,6 +320,125 @@ def _query_artifacts(db, quest_id: str, label: str, pk: str,
         pass
 
     return results
+
+
+async def maybe_synthesize_purpose(db, message_id: str, artifact_text: str,
+                                    llm_client, embedding_model: str, now: str) -> bool:
+    """
+    M5: Synthesize Quest/Session purpose after the first confirmed (>90%) artifact.
+
+    Checks if Session.purpose is already set. If empty, gathers recent messages
+    from the session, calls LLM for a 1-2 sentence purpose, and writes it to
+    both Session.purpose and MainQuest.purpose (both confidence_low=true — inferred,
+    not user-confirmed).
+
+    Returns True if synthesis was performed, False if skipped (already set or
+    no session found).
+    """
+    if llm_client is None:
+        return False
+
+    # Look up the session this message was sent in
+    session_id = quest_id = quest_name = ""
+    session_purpose = None
+    try:
+        r = db.execute(
+            "MATCH (m:Message {message_id: $mid})-[:SENT_IN]->(s:Session) "
+            "RETURN s.session_id, s.purpose",
+            {"mid": message_id},
+        )
+        if r.has_next():
+            row = r.get_next()
+            session_id     = row[0] or ""
+            session_purpose = row[1]
+    except Exception:
+        return False
+
+    if not session_id:
+        return False  # message not linked to a session
+
+    # Skip if purpose already synthesized for this session
+    if session_purpose:
+        return False
+
+    # Look up the MainQuest this session is working on
+    try:
+        r = db.execute(
+            "MATCH (s:Session {session_id: $sid})-[:WORKING_ON]->(q:MainQuest) "
+            "RETURN q.quest_id, q.name",
+            {"sid": session_id},
+        )
+        if r.has_next():
+            row = r.get_next()
+            quest_id   = row[0] or ""
+            quest_name = row[1] or ""
+    except Exception:
+        pass
+
+    # Gather recent messages from this session for context (up to 8)
+    context_messages = []
+    try:
+        r = db.execute(
+            "MATCH (m:Message)-[:SENT_IN]->(s:Session {session_id: $sid}) "
+            "RETURN m.text_raw, m.role "
+            "ORDER BY m.created_at ASC "
+            "LIMIT 8",
+            {"sid": session_id},
+        )
+        while r.has_next():
+            row = r.get_next()
+            context_messages.append(f"{row[1] or 'user'}: {row[0] or ''}")
+    except Exception:
+        pass
+
+    prompt = (
+        f"You are summarizing the purpose of a software development session.\n\n"
+        f"Quest name: {quest_name or 'Unknown'}\n"
+        f"First confirmed artifact: {artifact_text}\n\n"
+        f"Recent messages:\n" + "\n".join(context_messages[-5:]) + "\n\n"
+        f"Write a 1-2 sentence purpose statement describing what this session/quest "
+        f"is trying to accomplish. Be specific and concrete. "
+        f"Respond with the purpose statement only, no preamble."
+    )
+
+    purpose = ""
+    try:
+        # S1 fix: use achat() to avoid blocking the event loop
+        if hasattr(llm_client, 'achat'):
+            purpose = (await llm_client.achat([{"role": "user", "content": prompt}])).strip()
+        else:
+            purpose = llm_client.chat([{"role": "user", "content": prompt}]).strip()
+        if not purpose:
+            return False
+    except Exception:
+        return False
+
+    # Write purpose to Session (confidence_low=true — inferred)
+    try:
+        await db.execute_write(
+            "MATCH (s:Session {session_id: $sid}) SET s.purpose = $purpose",
+            {"sid": session_id, "purpose": purpose},
+        )
+    except Exception:
+        pass
+
+    # Write purpose to MainQuest if it doesn't already have one
+    if quest_id:
+        try:
+            await db.execute_write(
+                "MATCH (q:MainQuest {quest_id: $qid}) "
+                "WHERE q.purpose = $default OR q.purpose IS NULL "
+                "SET q.purpose = $purpose",
+                {
+                    "qid":     quest_id,
+                    "default": f"Project work on {quest_name}",
+                    "purpose": purpose,
+                },
+            )
+        except Exception:
+            pass
+
+    return True
 
 
 def _basename(path: str) -> str:

@@ -359,8 +359,10 @@ def test_rollback_contradiction_merge():
     assert data["rolled_back"] is True
     assert data["old_concept_restored"] == "old123"
     assert data["new_concept_archived"] == "new456"
-    # Should have 3 writes: un-archive old, archive new, update metadata
-    assert len(writes) == 3
+    # Should have 4 writes: un-archive old, archive new, delete DEPRECATED_BY, update metadata
+    assert len(writes) == 4
+    # W2 fix: verify DEPRECATED_BY edge removal is included
+    assert any("DEPRECATED_BY" in w["q"] and "DELETE" in w["q"] for w in writes)
 
 
 def test_rollback_already_rolled_back_returns_409():

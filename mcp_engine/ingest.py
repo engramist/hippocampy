@@ -73,16 +73,29 @@ _SENTENCE_END_RE = re.compile(r"[.!?](?:\s|$)")
 # Security
 # ---------------------------------------------------------------------------
 
-def validate_path(file_path: str) -> Path:
+def validate_path(file_path: str, project_root: str | None = None) -> Path:
     """
     Canonicalize and validate a file path for safe ingestion.
     Raises ValueError if path is unsafe or extension not allowed.
     Returns the resolved absolute Path.
+
+    I3 fix: if project_root is provided, the resolved path must be a
+    descendant of it — this blocks symlink traversal to files outside the
+    allowed directory even after realpath() resolves them.
     """
     resolved = Path(os.path.realpath(file_path))
 
-    # Block symlinks that escaped via realpath — should be fine after realpath,
-    # but explicitly check the suffix is allowlisted
+    # I3 fix: directory confinement check
+    if project_root is not None:
+        root = Path(os.path.realpath(project_root))
+        try:
+            resolved.relative_to(root)
+        except ValueError:
+            raise ValueError(
+                f"Path '{resolved}' is outside the allowed directory '{root}'. "
+                "Symlink traversal and path escapes are not permitted."
+            )
+
     suffix = resolved.suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         raise ValueError(
@@ -226,8 +239,11 @@ def _split_oversized(text: str, base_offset: int) -> list[tuple[int, int, str]]:
         if matches:
             cut = matches[-1].end()
         else:
-            # No sentence boundary — hard cut at word boundary
-            cut = window.rfind(" ", 0, MAX_CHUNK_CHARS) or MAX_CHUNK_CHARS
+            # I2 fix: rfind returns -1 when no space found; using `or` would
+            # evaluate -1 as truthy and slice to second-to-last char, causing
+            # an infinite loop if the chunk never shrinks. Explicit -1 check.
+            idx = window.rfind(" ", 0, MAX_CHUNK_CHARS)
+            cut = idx if idx != -1 else MAX_CHUNK_CHARS
 
         result.append((offset, offset + cut, remaining[:cut]))
         remaining = remaining[cut:].lstrip()

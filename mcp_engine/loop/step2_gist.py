@@ -49,7 +49,9 @@ def classify_concept(entity_text: str, embedding_model: str,
                      llm_client=None) -> dict:
     """
     Classify a single concept into a gist class.
-    Returns {gist_class, confidence, system: "1"|"2"|"noise"}.
+    Returns {gist_class, confidence, system: "1"|"2"|"noise", vector: list[float]}.
+    The "vector" key is always included so callers can store System 2 examples
+    without re-computing the embedding.
     """
     vector = emb.embed(entity_text, model_name=embedding_model)
 
@@ -63,18 +65,22 @@ def classify_concept(entity_text: str, embedding_model: str,
             best_class = class_name
 
     if best_score >= SYSTEM1_THRESHOLD:
-        return {"gist_class": best_class, "confidence": best_score, "system": "1"}
+        return {"gist_class": best_class, "confidence": best_score,
+                "system": "1", "vector": vector}
 
     if best_score < NOISE_FLOOR:
-        return {"gist_class": None, "confidence": best_score, "system": "noise"}
+        return {"gist_class": None, "confidence": best_score,
+                "system": "noise", "vector": vector}
 
     # System 2: LLM disambiguation
     if llm_client is None:
         # Ollama unavailable — store as confidence_low with best System 1 guess
         return {"gist_class": best_class, "confidence": best_score,
-                "system": "2_degraded", "confidence_low": True}
+                "system": "2_degraded", "confidence_low": True, "vector": vector}
 
-    return _classify_with_llm(entity_text, llm_client)
+    result = _classify_with_llm(entity_text, llm_client)
+    result["vector"] = vector
+    return result
 
 
 def _classify_with_llm(entity_text: str, llm_client) -> dict:
@@ -96,8 +102,10 @@ def _classify_with_llm(entity_text: str, llm_client) -> dict:
         result = json.loads(raw)
         class_name = result.get("class", "")
         confidence = float(result.get("confidence", 0.7))
+        # L2 fix: return noise for unrecognized classes rather than silently
+        # misclassifying as the first entry ("Restriction").
         if class_name not in GIST_CLASSES:
-            class_name = GIST_CLASSES[0]  # fallback
+            return {"gist_class": None, "confidence": 0.0, "system": "noise"}
         return {"gist_class": class_name, "confidence": confidence, "system": "2"}
     except Exception:
         return {"gist_class": None, "confidence": 0.0, "system": "noise"}

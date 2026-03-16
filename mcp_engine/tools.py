@@ -7,9 +7,12 @@ All writes go through db.execute_write() to respect the asyncio write lock.
 
 from __future__ import annotations
 import asyncio
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
+
+_logger = logging.getLogger(__name__)
 
 # KuzuClient imported only for type checking — kuzu is a C extension not needed
 # during unit tests (db is always a mock or real object passed in at runtime).
@@ -54,7 +57,14 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
 
     max_chars = config.get("ingestion", {}).get("max_ingest_chars", 4000)
     if len(content) > max_chars:
-        content = content[:max_chars].rsplit(".", 1)[0] + "."
+        # D5 fix: fall back to word boundary if no sentence period found.
+        truncated = content[:max_chars]
+        idx = truncated.rfind(".")
+        if idx > 0:
+            content = truncated[:idx + 1]
+        else:
+            idx = truncated.rfind(" ")
+            content = (truncated[:idx] if idx > 0 else truncated) + "…"
 
     if not content.strip():
         return {"status": "skipped", "reason": "empty content"}
@@ -158,11 +168,15 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
     query_vector = emb.embed(query, model_name=embedding_model)
 
     # Vector search across artifact tables
+    # D6 fix: include Concept nodes — they are the majority of extracted entities
+    # and most have not been reified to specific artifact types. Without this,
+    # most of the graph is invisible to current_truth.
     artifact_tables = [
+        ("Concept",          "concept_emb_idx",           "concept_id"),
         ("Decision",         "decision_emb_idx",         "decision_id"),
         ("Constraint",       "constraint_emb_idx",        "constraint_id"),
         ("Requirement",      "requirement_emb_idx",       "requirement_id"),
-        ("ActionItem",       "action_item_emb_idx",       "action_item_id"),
+        ("ActionItem",       "actionitem_emb_idx",        "action_item_id"),
         ("GlobalConstraint", "globalconstraint_emb_idx",  "global_constraint_id"),
         ("GlobalPreference", "globalpreference_emb_idx",  "global_preference_id"),
     ]
@@ -177,23 +191,28 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
                 node = row["node"]
                 if node.get("archived", False):
                     continue
-                node_id = (node.get("decision_id") or node.get("constraint_id")
+                node_id = (node.get("concept_id")
+                           or node.get("decision_id") or node.get("constraint_id")
                            or node.get("requirement_id") or node.get("action_item_id")
                            or node.get("global_constraint_id")
                            or node.get("global_preference_id", "unknown"))
+                ps = node.get("pathway_strength", 0.0) or 0.0
+                conf = node.get("confidence", 0.0) or 0.0
+                # D4 fix: use the product when both are non-zero; fall back to
+                # similarity score only when either is genuinely absent/zero.
+                rank = (ps * conf) if (ps > 0.0 and conf > 0.0) else row["score"]
                 all_results.append({
                     "node_id":          node_id,
                     "node_type":        table_name,
                     "text_raw":         node.get("text_raw", ""),
-                    "confidence":       node.get("confidence", 0.0),
+                    "confidence":       conf,
                     "confidence_low":   node.get("confidence_low", True),
-                    "pathway_strength": node.get("pathway_strength", 0.0),
+                    "pathway_strength": ps,
                     "similarity":       row["score"],
-                    "_rank": (node.get("pathway_strength", 0.0) * node.get("confidence", 0.0))
-                              or row["score"],
+                    "_rank":            rank,
                 })
         except Exception:
-            pass
+            _logger.exception("current_truth vector search failed for table %s", table_name)
 
     all_results.sort(key=lambda r: r["_rank"], reverse=True)
     for r in all_results:
