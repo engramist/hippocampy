@@ -205,3 +205,25 @@ MCP servers can deliver system prompt instructions via `prompts/list` + `prompts
 **Pattern for new projects:** Add a `CLAUDE.md` to any project folder where you want the Brain active. The `sidequests setup` command should write this automatically — currently it does not (future fix).
 
 **Files changed:** `adapters/claude_code/adapter.py`, `adapters/gemini_cli/adapter.py`, `~/Desktop/sidequests-test/CLAUDE.md`
+
+---
+
+### ISSUE-011 · TIMESTAMP type mismatch — STRING cannot be implicitly cast
+**Symptom:**
+```
+MCP error -32000: Binder exception: Expression $created_at has data type STRING
+but expected TIMESTAMP. Implicit cast is not supported.
+```
+`notify_turn` fired but failed when writing the Message node to Kùzu.
+
+**Root cause:** All `created_at`, `started_at`, `last_active_at`, `completed_at` parameters were passed as ISO 8601 strings (from `datetime.now(timezone.utc).isoformat()`). Kùzu 0.11.3 does not implicitly cast `STRING → TIMESTAMP` when a column is declared `TIMESTAMP`. The value must be explicitly converted in the Cypher query.
+
+**Fix:** Wrap every `$timestamp_param` in `timestamp()` in the Cypher query string:
+```cypher
+-- Before:
+created_at: $created_at
+-- After:
+created_at: timestamp($created_at)
+```
+
+**Files changed:** `mcp_engine/tools.py`, `mcp_engine/ingest.py`, `mcp_engine/quest.py`, `mcp_engine/loop/orchestrator.py`
