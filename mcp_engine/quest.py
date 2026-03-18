@@ -59,9 +59,9 @@ async def get_or_create_main_quest(db, repo_root: str, git_branch: str,
                           q.confidence_low   = false,
                           q.pathway_strength = 1.0,
                           q.archived         = false,
-                          q.created_at       = $now,
-                          q.last_active_at   = $now
-            ON MATCH SET  q.last_active_at   = $now
+                          q.created_at       = timestamp($now),
+                          q.last_active_at   = timestamp($now)
+            ON MATCH SET  q.last_active_at   = timestamp($now)
             """,
             {
                 "quest_id":        quest_id,
@@ -89,11 +89,11 @@ async def get_or_create_session(db, session_id: str, quest_id: str, now: str) ->
         await db.execute_write(
             """
             MERGE (s:Session {session_id: $sid})
-            ON CREATE SET s.started_at     = $now,
-                          s.last_active_at = $now,
+            ON CREATE SET s.started_at     = timestamp($now),
+                          s.last_active_at = timestamp($now),
                           s.onboarded      = false,
                           s.purpose        = ''
-            ON MATCH SET  s.last_active_at = $now
+            ON MATCH SET  s.last_active_at = timestamp($now)
             """,
             {"sid": session_id, "now": now}
         )
@@ -137,7 +137,7 @@ async def create_side_quest(db, name: str, purpose: str, parent_quest_id: str,
                 confidence_low:   false,
                 pathway_strength: 1.0,
                 archived:         false,
-                created_at:       $created_at
+                created_at:       timestamp($created_at)
             })
             """,
             {

@@ -380,7 +380,7 @@ async def ingest_document(db, file_path: str, config: dict,
                     confidence_low:  false,
                     pathway_strength: 1.0,
                     archived:        false,
-                    created_at:      $created_at
+                    created_at:      timestamp($created_at)
                 })
                 """,
                 {

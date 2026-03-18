@@ -324,7 +324,7 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
                 confidence_low:   $confidence_low,
                 pathway_strength: $pathway_strength,
                 archived:         false,
-                created_at:       $created_at,
+                created_at:       timestamp($created_at),
                 last_accessed_at: $created_at
             })
             """,
@@ -383,7 +383,7 @@ async def _reify_concept(concept_id: str, artifact_type: str, entity: dict,
                 confidence_low:    false,
                 pathway_strength:  $pathway_strength,
                 archived:          false,
-                created_at:        $created_at
+                created_at:        timestamp($created_at)
             }})
             """,
             {
@@ -442,7 +442,7 @@ async def _save_gist_example(text: str, vector: list[float], gist_class: str,
                 embedding:  $embedding,
                 gist_class: $gist_class,
                 source:     'system2',
-                created_at: $created_at
+                created_at: timestamp($created_at)
             })
             """,
             {
