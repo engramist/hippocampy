@@ -409,7 +409,8 @@ def test_codex_adapter_has_all_tools():
     from adapters.codex.adapter import TOOLS
     names = {t["name"] for t in TOOLS}
     expected = {"notify_turn", "current_truth", "branch_quest", "diff_since",
-                "get_open_loops", "analogical_search", "ingest_document"}
+                "get_open_loops", "analogical_search", "ingest_document",
+                "explore_graph", "complete_quest"}
     assert names == expected
 
 
@@ -452,7 +453,7 @@ def test_codex_adapter_server_info_name():
         resp = await handle_mcp_request(req)
         return resp
 
-    resp = asyncio.get_event_loop().run_until_complete(_run())
+    resp = asyncio.run(_run())
     info = resp["result"]["serverInfo"]
     assert "codex" in info["name"]
 

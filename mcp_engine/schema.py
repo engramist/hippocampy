@@ -268,6 +268,23 @@ NODE_TABLES = {
         created_at           TIMESTAMP,
         PRIMARY KEY (merge_event_id)
     """,
+
+    # B11 — Lesson node (synthesized at quest completion, feeds analogical reasoning)
+    "Lesson": """
+        lesson_id        STRING,
+        text_raw         STRING,
+        embedding        FLOAT[384],
+        embedding_model  STRING,
+        embedding_dim    INT64,
+        obstacle_summary STRING,
+        source_quest_id  STRING,
+        confidence       DOUBLE,
+        confidence_low   BOOLEAN,
+        pathway_strength DOUBLE,
+        archived         BOOLEAN,
+        created_at       TIMESTAMP,
+        PRIMARY KEY (lesson_id)
+    """,
 }
 
 # ---------------------------------------------------------------------------
@@ -311,6 +328,8 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS IMPLEMENTS   (FROM Concept TO Concept, confidence DOUBLE, inferred_by STRING, inferred_at TIMESTAMP)",
     "CREATE REL TABLE IF NOT EXISTS EXTENDS      (FROM Concept TO Concept, confidence DOUBLE, inferred_by STRING, inferred_at TIMESTAMP)",
     "CREATE REL TABLE IF NOT EXISTS ALTERNATIVE_TO (FROM Concept TO Concept, confidence DOUBLE, inferred_by STRING, inferred_at TIMESTAMP)",
+    # B11 — Lesson
+    "CREATE REL TABLE IF NOT EXISTS PRODUCED_LESSON (FROM MainQuest TO Lesson)",
 ]
 
 # ---------------------------------------------------------------------------
@@ -464,6 +483,7 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         "Concept", "Decision", "Constraint", "Requirement", "ActionItem",
         "GlobalConstraint", "GlobalPreference", "MainQuest", "SideQuest",
         "Message", "DocumentExtract", "Label",
+        "Lesson",  # B11
     ]
     for table in embedding_tables:
         index_name = f"{table.lower()}_emb_idx"

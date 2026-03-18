@@ -9,12 +9,25 @@ import math
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.dirname(__file__))  # make conftest importable
+
+# Import the SPACY_AVAILABLE flag installed by conftest.py
+try:
+    from conftest import SPACY_AVAILABLE
+except ImportError:
+    SPACY_AVAILABLE = False
+
+_needs_spacy = pytest.mark.skipif(
+    not SPACY_AVAILABLE,
+    reason="spaCy not compatible with this Python version"
+)
 
 
 # ---------------------------------------------------------------------------
 # Step 1 — NER
 # ---------------------------------------------------------------------------
 
+@_needs_spacy
 def test_step1_ner_extracts_entities():
     from mcp_engine.loop.step1_ner import extract_entities
     doc, entities = extract_entities("Apple released the iPhone 16 in California.")
@@ -24,6 +37,7 @@ def test_step1_ner_extracts_entities():
     assert any("Apple" in t or "iPhone" in t or "California" in t for t in texts)
 
 
+@_needs_spacy
 def test_step1_ner_returns_doc_and_list():
     from mcp_engine.loop.step1_ner import extract_entities
     doc, entities = extract_entities("Google is based in Mountain View.")
@@ -34,6 +48,7 @@ def test_step1_ner_returns_doc_and_list():
         assert "label" in e
 
 
+@_needs_spacy
 def test_step1_ner_empty_text():
     from mcp_engine.loop.step1_ner import extract_entities
     doc, entities = extract_entities("")
@@ -44,6 +59,7 @@ def test_step1_ner_empty_text():
 # Step 1b — Verb patterns
 # ---------------------------------------------------------------------------
 
+@_needs_spacy
 def test_step1b_requires_relation():
     from mcp_engine.loop.step1_ner import extract_entities
     from mcp_engine.loop.step1b_relations import extract_relations
@@ -62,6 +78,7 @@ def test_step1b_requires_relation():
         assert r["inferred_by"] == "system"
 
 
+@_needs_spacy
 def test_step1b_relation_types_are_valid():
     from mcp_engine.loop.step1b_relations import extract_relations, VALID_RELATION_TYPES
     from mcp_engine.loop.step1_ner import extract_entities

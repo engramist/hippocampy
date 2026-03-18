@@ -176,6 +176,44 @@ TOOLS = [
             "required": ["file_path"],
         },
     },
+    {
+        "name": "explore_graph",
+        "description": (
+            "Traverse the knowledge graph from a known node. Use when current_truth "
+            "returns a relevant node and you want to see what it connects to. "
+            "Returns neighboring nodes and edges up to 3 hops."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "start_node_id":     {"type": "string",
+                                      "description": "ID of the node to start from (from current_truth results)."},
+                "relationship_type": {"type": "string",
+                                      "description": "Filter to a specific edge type (e.g. REQUIRES, ENABLES)."},
+                "direction":         {"type": "string",
+                                      "enum": ["outgoing", "incoming", "both"],
+                                      "default": "both"},
+                "depth":             {"type": "integer", "default": 1,
+                                      "description": "Traversal depth 1–3."},
+            },
+            "required": ["start_node_id"],
+        },
+    },
+    {
+        "name": "complete_quest",
+        "description": (
+            "Mark the current Quest as completed. Triggers lesson synthesis "
+            "from confirmed artifacts. Completed quests feed cross-project analogical reasoning."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "quest_id": {"type": "string",
+                             "description": "The quest_id to mark completed."},
+            },
+            "required": ["quest_id"],
+        },
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -384,10 +422,10 @@ async def handle_mcp_request(request: dict) -> dict:
                                             "text": '{"error": "daemon_offline"}'}]})
                 return err(-32000, str(e))
 
-        # --- ingest_document ---
-        if tool_name == "ingest_document":
+        # --- ingest_document, explore_graph, complete_quest (and future tools) ---
+        if tool_name in ("ingest_document", "explore_graph", "complete_quest"):
             try:
-                result = await _call_brain("ingest_document", tool_input)
+                result = await _call_brain(tool_name, tool_input)
                 _daemon_online = True
                 return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
             except RuntimeError as e:

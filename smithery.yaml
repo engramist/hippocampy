@@ -1,0 +1,69 @@
+# smithery.yaml — Smithery MCP Server Definition
+# https://smithery.ai/docs/server-definition
+#
+# NOTE: Only publish after provisional patent is filed.
+# Run `npx @smithery/cli validate` to verify this file before submission.
+
+name: sidequests-brain
+description: >
+  Persistent AI memory with a Gated Consolidation Loop.
+  Automatically captures decisions, constraints, and plans from your conversations
+  into a graph-native Kùzu knowledge base. Provides cross-session and cross-project
+  memory retrieval via semantic vector search and graph traversal.
+version: "0.1.0"
+author: SideQuests
+license: UNLICENSED
+homepage: https://github.com/yourusername/sidequests-brain
+
+install:
+  pip: sidequests-brain
+  post_install:
+    - python -m spacy download en_core_web_md
+    - sidequests setup
+
+server:
+  command: sidequests-daemon
+  args: []
+  env: {}
+
+tools:
+  - name: notify_turn
+    description: >
+      Forward conversation turns to the Brain for background memory processing.
+      Call after every response — response is always instant, never blocks.
+  - name: current_truth
+    description: >
+      Retrieve relevant memory before answering architecture or past-decision questions.
+      Searches the knowledge graph using semantic vector search.
+  - name: branch_quest
+    description: >
+      Create a SideQuest for tracking a tangent exploration separately from the main project.
+  - name: diff_since
+    description: >
+      Return decisions, constraints, and requirements created since a prior session.
+  - name: get_open_loops
+    description: >
+      Return unresolved tentative knowledge nodes awaiting confirmation.
+  - name: analogical_search
+    description: >
+      Search across ALL historical projects for similar decisions and patterns.
+      Surfaces relevant past architectural choices when starting new work.
+  - name: ingest_document
+    description: >
+      Ingest a local file into the knowledge graph with semantic chunking and provenance tracking.
+
+clients:
+  - claude-code
+  - claude-desktop
+  - codex
+  - gemini-cli
+
+categories:
+  - memory
+  - knowledge-graph
+  - productivity
+  - developer-tools
+
+requires:
+  - python >= "3.11"
+  - ollama  # Local LLM (recommended); cloud providers (OpenAI, Anthropic, Google) also supported

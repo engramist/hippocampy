@@ -38,12 +38,14 @@ from mcp_engine.graph import embeddings as emb
 
 # Artifact tables to search across quests.
 # GlobalConstraint / GlobalPreference are workspace-scope, always included.
+# Lesson nodes (B11) included for cross-project lesson recall.
 CROSS_QUEST_TABLES = [
     ("Decision",         "decision_emb_idx",          "decision_id"),
     ("Constraint",       "constraint_emb_idx",         "constraint_id"),
     ("Requirement",      "requirement_emb_idx",        "requirement_id"),
     ("GlobalConstraint", "globalconstraint_emb_idx",   "global_constraint_id"),
     ("GlobalPreference", "globalpreference_emb_idx",   "global_preference_id"),
+    ("Lesson",           "lesson_emb_idx",             "lesson_id"),   # B11
 ]
 
 # Default thresholds
@@ -150,7 +152,8 @@ async def analogical_search(params: dict, db, config: dict) -> dict:
                 or node.get("constraint_id")
                 or node.get("requirement_id")
                 or node.get("global_constraint_id")
-                or node.get("global_preference_id", "unknown")
+                or node.get("global_preference_id")
+                or node.get("lesson_id", "unknown")
             )
 
             # Attempt quest attribution (degrades to empty dict gracefully)

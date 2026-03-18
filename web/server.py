@@ -25,9 +25,17 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Response
-from fastapi.responses import HTMLResponse, JSONResponse
+import logging
+import uuid
+
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+
+_logger = logging.getLogger(__name__)
+
+# Registry of active SSE connections: connection_id → asyncio.Queue
+_sse_connections: dict[str, asyncio.Queue] = {}
 
 STATIC_DIR = Path(__file__).parent / "static"
 WEB_VERSION = "0.1.0"
@@ -49,12 +57,15 @@ ARTIFACT_TABLES = [
 # App factory
 # ---------------------------------------------------------------------------
 
-def create_app(db) -> FastAPI:
+def create_app(db, config: dict | None = None) -> FastAPI:
     """
-    Create the FastAPI app with a db reference.
+    Create the FastAPI app with a db reference and optional config dict.
     Called by BrainDaemon.start() with the live KuzuClient.
     For tests, pass a mock db that implements .execute() and .execute_write().
+
+    config is used by the SSE /mcp endpoint to pass to tool handlers.
     """
+    _config = config or {}
     app = FastAPI(
         title="SideQuest Memory Control Panel",
         version=WEB_VERSION,
@@ -592,5 +603,128 @@ def create_app(db) -> FastAPI:
             pass
 
         return {"quests": quests, "count": len(quests)}
+
+    # ------------------------------------------------------------------
+    # B3 — MCP-over-SSE transport (ChatGPT Desktop / any SSE-capable client)
+    #
+    # Usage:
+    #   1. Client connects to GET /sse → receives "event: endpoint" with POST URL
+    #   2. Client POSTs JSON-RPC requests to /mcp?connection_id=<id>
+    #   3. Server dispatches to tool handlers, streams response back via SSE
+    #
+    # Security: endpoint bound to 127.0.0.1 by the server runner — same as all
+    # other endpoints. No token auth needed (local-only access by design).
+    # ------------------------------------------------------------------
+
+    @app.get("/sse")
+    async def mcp_sse(request: Request):
+        """
+        Open an MCP SSE stream. First event tells the client where to POST requests.
+        Sends keepalive comments every 30 s to prevent proxy/firewall timeout.
+        """
+        connection_id = str(uuid.uuid4())
+        queue: asyncio.Queue = asyncio.Queue()
+        _sse_connections[connection_id] = queue
+
+        async def event_generator():
+            try:
+                # First event: tell client where to POST
+                yield f"event: endpoint\ndata: /mcp?connection_id={connection_id}\n\n"
+
+                while True:
+                    # Check if client disconnected
+                    if await request.is_disconnected():
+                        break
+                    try:
+                        data = await asyncio.wait_for(queue.get(), timeout=30.0)
+                        yield f"event: message\ndata: {json.dumps(data)}\n\n"
+                    except asyncio.TimeoutError:
+                        # Keepalive — SSE comment (colon prefix = no-op to client)
+                        yield ": keepalive\n\n"
+            finally:
+                _sse_connections.pop(connection_id, None)
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
+        )
+
+    @app.post("/mcp")
+    async def mcp_post(request: Request):
+        """
+        Receive a JSON-RPC request from an SSE client, dispatch to tool handlers,
+        push the response to the open SSE stream.
+        """
+        connection_id = request.query_params.get("connection_id", "")
+        queue = _sse_connections.get(connection_id)
+        if not queue:
+            return JSONResponse(
+                {"error": "No active SSE connection for this connection_id"},
+                status_code=400
+            )
+
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+
+        response = await _dispatch_mcp(body, db, _config)
+        if response is not None:
+            await queue.put(response)
+
+        return JSONResponse({"status": "ok"})
+
+    async def _dispatch_mcp(request: dict, _db, _cfg: dict) -> dict | None:
+        """
+        Dispatch a JSON-RPC MCP request to tool handlers — same logic as
+        the brain_daemon IPC dispatcher but runs in-process (no socket hop).
+        Handles: initialize, notifications/initialized, tools/list, tools/call.
+        """
+        from mcp_engine.tools import TOOL_HANDLERS
+        from adapters.claude_code.adapter import TOOLS as _TOOLS
+
+        method = request.get("method", "")
+        params = request.get("params", {})
+        req_id = request.get("id")
+
+        def ok(result):
+            return {"jsonrpc": "2.0", "id": req_id, "result": result}
+
+        def err(code, message):
+            return {"jsonrpc": "2.0", "id": req_id,
+                    "error": {"code": code, "message": message}}
+
+        if method == "initialize":
+            return ok({
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "sidequests-brain-sse", "version": WEB_VERSION},
+            })
+
+        if method == "notifications/initialized":
+            return None
+
+        if method == "tools/list":
+            return ok({"tools": _TOOLS})
+
+        if method == "tools/call":
+            tool_name = params.get("name", "")
+            tool_args = params.get("arguments", {})
+            handler = TOOL_HANDLERS.get(tool_name)
+            if not handler:
+                return err(-32601, f"Unknown tool: {tool_name}")
+            try:
+                result = await handler(tool_args, _db, _cfg)
+                return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
+            except Exception as e:
+                _logger.exception("SSE tool dispatch error for %s", tool_name)
+                return err(-32000, str(e))
+
+        return err(-32601, f"Unknown method: {method}")
 
     return app
