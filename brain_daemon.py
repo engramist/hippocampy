@@ -196,6 +196,16 @@ class BrainDaemon:
         params = request.get("params", {})
         req_id = request.get("id")
 
+        # MCP protocol introspection methods
+        if method == "initialize":
+            return {"jsonrpc": "2.0", "id": req_id,
+                    "result": {"protocolVersion": "2024-11-05",
+                               "serverInfo": {"name": "sidequests-brain", "version": "0.1.0"},
+                               "capabilities": {"tools": {}}}}
+        if method == "tools/list":
+            tools = [{"name": name} for name in TOOL_HANDLERS]
+            return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": tools}}
+
         handler = TOOL_HANDLERS.get(method)
         if not handler:
             return {

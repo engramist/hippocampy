@@ -18,8 +18,9 @@ def start_daemon() -> None:
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
+    import asyncio
     import brain_daemon
-    brain_daemon.main()
+    asyncio.run(brain_daemon.main())
 
 
 def stop_daemon() -> None:

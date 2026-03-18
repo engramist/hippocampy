@@ -6,7 +6,6 @@ build-backend = "hatchling.build"
 name = "sidequests-brain"
 version = "0.1.0"
 description = "Persistent AI memory with a Gated Consolidation Loop and graph-native Kùzu knowledge base"
-readme = "README.md"
 license = { text = "UNLICENSED" }
 requires-python = ">=3.11"
 authors = [

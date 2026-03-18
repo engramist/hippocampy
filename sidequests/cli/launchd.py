@@ -38,20 +38,39 @@ def write_plist() -> Path:
     - Starts at login (RunAtLoad: true)
     - Restarts on crash (KeepAlive: true)
     - Logs stdout + stderr to ~/.sidequests/daemon.log
+
+    Uses the system Python with PYTHONPATH pointing at the venv's site-packages
+    to avoid launchd TCC permission errors reading pyvenv.cfg when the venv
+    lives under a TCC-protected directory (Desktop, Documents, Downloads).
     """
+    import shutil
+    import sysconfig
+
     PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     daemon = _daemon_script()
-    # If it's a Python script, run it with the current interpreter
+
+    # Resolve the real Python interpreter — avoid venv wrapper scripts which
+    # require reading pyvenv.cfg (blocked by launchd TCC on Desktop/Documents).
+    # Use system python3.12 / python3 with explicit PYTHONPATH instead.
+    system_python = shutil.which("python3.12") or shutil.which("python3") or sys.executable
+
+    # Build PYTHONPATH: venv site-packages first, then project root
+    site_packages = sysconfig.get_path("purelib")  # venv site-packages
+    project_root  = str(Path(__file__).parent.parent.parent)
+    pythonpath    = f"{site_packages}:{project_root}"
+
     if daemon.endswith(".py"):
-        program_args = [sys.executable, daemon]
+        program_args = [system_python, daemon]
     else:
-        program_args = [daemon]
+        # Installed script — run as a module via system python with PYTHONPATH
+        program_args = [system_python, "-m", "sidequests.daemon"]
 
     plist_data = {
         "Label":                LABEL,
         "ProgramArguments":     program_args,
+        "EnvironmentVariables": {"PYTHONPATH": pythonpath},
         "RunAtLoad":            True,
         "KeepAlive":            True,
         "StandardOutPath":      str(LOG_PATH),
