@@ -188,3 +188,20 @@ This writes to `~/.claude.json` instead of the project's `.mcp.json`.
 | 1 | launchd venv TCC block — daemon doesn't auto-start at login | Medium | Workaround: `sidequests start &` manually |
 | 2 | `sidequests setup` registers MCP locally not globally | Low | Fixed manually; setup.py needs update |
 | 3 | No `README.md` — PyPI publish blocked (also blocked on patent) | Low | Deferred |
+
+---
+
+### ISSUE-010 · `notify_turn` never called — Brain receives no data
+**Symptom:** `current_truth` returns `results: []` even after decisions were stated in Claude Code. The Brain DB is empty despite the adapter being connected.
+
+**Root cause:** The `SYSTEM_PROMPT_FRAGMENT` (which tells Claude to call `notify_turn` after every response and `current_truth` before answering past-decision questions) existed in both adapters but was never delivered to the LLM. The "Wrote 2 memories" shown in Claude Code was Claude Code's own built-in memory system — not the Brain. The Brain received zero `notify_turn` calls.
+
+MCP servers can deliver system prompt instructions via `prompts/list` + `prompts/get` endpoints, but neither adapter implemented them. Claude Code also reads `CLAUDE.md` from the project directory at startup.
+
+**Fix:**
+1. Added `prompts/list` + `prompts/get` handlers to `claude_code/adapter.py` and `gemini_cli/adapter.py`
+2. Added `CLAUDE.md` to `sidequests-test` with `notify_turn` + `current_truth` instructions
+
+**Pattern for new projects:** Add a `CLAUDE.md` to any project folder where you want the Brain active. The `sidequests setup` command should write this automatically — currently it does not (future fix).
+
+**Files changed:** `adapters/claude_code/adapter.py`, `adapters/gemini_cli/adapter.py`, `~/Desktop/sidequests-test/CLAUDE.md`
