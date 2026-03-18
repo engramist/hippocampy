@@ -58,8 +58,9 @@ class KuzuClient:
         One index per node table. Called at schema init.
         """
         # Implementation note: Kùzu 0.11.3 vector index syntax
+        # Kùzu 0.11.3 argument order: (table, index_name, property)
         self.execute(
-            f"CALL CREATE_VECTOR_INDEX('{table}', '{property}', '{index_name}')"
+            f"CALL CREATE_VECTOR_INDEX('{table}', '{index_name}', '{property}')"
         )
 
     def vector_search(self, index_name: str, query_embedding: list[float],

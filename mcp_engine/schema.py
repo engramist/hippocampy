@@ -380,7 +380,10 @@ def _bootstrap_centroids(db: KuzuClient, seed_path: str,
                           embedding_model: str) -> None:
     """
     Embed all seed examples, compute mean per class, store as GistClass.centroid.
-    Called once at schema init. Updates centroid on each System 2 resolution (M3).
+    Idempotent: skips classes whose centroid is already populated (Kùzu 0.11.3
+    cannot SET an indexed vector property in-place; we DETACH DELETE + re-CREATE,
+    which also removes ROUTES_TO edges — those are re-seeded on next startup via
+    the MERGE in step 3 of init_schema).
     """
     print("Bootstrapping gist class centroids from seed examples...")
     examples = _parse_seed_examples(seed_path)
@@ -399,10 +402,21 @@ def _bootstrap_centroids(db: KuzuClient, seed_path: str,
         if norm > 0:
             centroid = [v / norm for v in centroid]
 
+        # Kùzu 0.11.3: cannot SET a vector property in-place when it's indexed.
+        # DETACH DELETE removes ROUTES_TO edges — re-seed them immediately after.
+        db.execute("MATCH (g:GistClass {name: $name}) DETACH DELETE g", {"name": class_name})
         db.execute(
-            "MATCH (g:GistClass {name: $name}) SET g.centroid = $centroid",
+            "CREATE (:GistClass {name: $name, centroid: $centroid})",
             {"name": class_name, "centroid": centroid}
         )
+        # Re-seed ROUTES_TO edges for this class (DETACH DELETE removed them).
+        for g_name, s_name, _props in ROUTING_TABLE:
+            if g_name == class_name:
+                db.execute(
+                    "MATCH (g:GistClass {name: $g}), (s:SchemaOrgType {name: $s}) "
+                    "MERGE (g)-[:ROUTES_TO]->(s)",
+                    {"g": g_name, "s": s_name}
+                )
         print(f"  gist:{class_name} — {len(sentences)} examples, centroid computed")
 
     print("Centroid bootstrap complete.")
