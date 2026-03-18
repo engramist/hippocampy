@@ -100,7 +100,7 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
             confidence_low:  true,
             pathway_strength: 0.0,
             archived:        false,
-            created_at:      $created_at
+            created_at:      timestamp($created_at)
         })
         """,
         {
@@ -437,7 +437,7 @@ async def complete_quest(params: dict, db, config: dict) -> dict:
     try:
         await db.execute_write(
             "MATCH (q:MainQuest {quest_id: $qid}) "
-            "SET q.status = 'completed', q.completed_at = $now",
+            "SET q.status = 'completed', q.completed_at = timestamp($now)",
             {"qid": quest_id, "now": now}
         )
     except Exception:
@@ -445,7 +445,7 @@ async def complete_quest(params: dict, db, config: dict) -> dict:
         try:
             await db.execute_write(
                 "MATCH (q:SideQuest {quest_id: $qid}) "
-                "SET q.status = 'completed', q.completed_at = $now",
+                "SET q.status = 'completed', q.completed_at = timestamp($now)",
                 {"qid": quest_id, "now": now}
             )
         except Exception as e:
@@ -545,7 +545,7 @@ async def _synthesize_lesson(quest_id: str, db, config: dict) -> None:
                 confidence_low:   true,
                 pathway_strength: 0.70,
                 archived:         false,
-                created_at:       $created_at
+                created_at:       timestamp($created_at)
             })
             """,
             {
