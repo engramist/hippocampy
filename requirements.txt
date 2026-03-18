@@ -21,6 +21,9 @@ uvicorn==0.32.1
 # Config
 tomli==2.2.1      # TOML parser for Python < 3.11; stdlib tomllib used on 3.11+
 
+# CLI
+click>=8.1
+
 # Testing
 pytest==8.3.4
 pytest-asyncio==0.24.0

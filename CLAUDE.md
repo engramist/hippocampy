@@ -240,6 +240,7 @@ Also refines any Step 1b edge that has low confidence from ambiguous syntax. Res
 | Plan sense | "we will", "next step", "plan to", future-tense action language |
 | Entity sense | Known graph entity mentioned by name or near-match embedding |
 | Contradiction sense | Step 5 retrieval finds 0.75–0.92 similarity to existing confirmed node |
+| Anomaly / Security sense | Content contradicts a high-confidence GlobalConstraint (pathway_strength > 0.8) — flags potential prompt injection or goal hijacking |
 
 No human confirmation required. Uncertain nodes enter as tentative knowledge, re-scored continuously.
 

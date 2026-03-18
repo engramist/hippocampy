@@ -4,6 +4,8 @@ This document serves as the official record for the conception and development o
 
 ## Journal of Updates
 
+March 16, 2026: B12 IP formalization. (1) Added Section 5.5.E "Out-of-Band Behavioral Integrity Monitoring" — named IP claim documenting the Brain Daemon's architectural isolation as a security property. The out-of-band process model means LLM prompt injection cannot alter the Brain's logic or stored GlobalConstraints. Step 4 Contradiction sense fires when notify_turn content conflicts with a high-confidence GlobalConstraint, providing passive conversation-layer security monitoring without explicit rules. (2) Added Claim #6 "Cocktail Party Effect (Selective Attention for Memory Formation)" to Section 5.7 — formalized the selective attention biomimetic principle as a distinct novelty claim. (3) Added Claim #7 "Out-of-Band Behavioral Integrity Monitoring via Contradiction Detection" to Section 5.7 — distinguished from Cocktail Party Effect: same Step 4 mechanism, positive vs. negative signal interpretation. Flagged to patent attorney as distinct claim from Cocktail Party Effect. (4) Updated CLAUDE.md with Anomaly/Security sense row in the Cocktail Party Effect sensory table.
+
 March 7, 2026: Major architectural refinement session. (1) Corrected the Gated Consolidation Loop to a precise 7-step biomimetic sequence: NER Zoning → gist Rapid Classification → schema.org Sub-graph Routing → Heuristic Pattern Matching → Dual-Scope Retrieval → Contradiction Arbitration → Pathway Update. (2) Repositioned Dynamic Hybrid Ontology Routing (Steps 2–3) to PRECEDE pattern matching, enabling faster and more accurate confidence scoring — knowing the ontological shape of a concept before pattern matching dramatically narrows the template search space. (3) Explicitly integrated Kahneman's 'Thinking Fast and Slow' dual-process theory as a named biomimetic principle: Step 2 gist classification implements a System 1 (embedding similarity, sub-millisecond) / System 2 (LLM fallback for ambiguous cases) hybrid classifier. This is now a named novelty claim. (4) Specified a configurable LLM provider abstraction (Ollama default, GPT/Claude/Gemini as opt-in cloud providers). Uses an OpenAI-SDK-compatible interface so Ollama and cloud providers share the same code path. (5) Updated Phase 0 architecture: removed OpenClaw fork. Phase 0 is now a standalone Brain Daemon + direct MCP STDIO adapters for Claude Code and Codex. OpenClaw fork is deferred to a later phase. (6) Defined Quest Lifecycle: MainQuest auto-created from git repo root hash + branch; manual SideQuest branching in Phase 0, with roadmap to full auto-detection via topic divergence embedding.
 
 March 6, 2026: Integrated "Analogical Reasoning" (Cross-Quest Experience Transfer) into the Biomimetic Heuristic Engine. Documented the system's ability to infer learnings from historically distinct projects (e.g., pulling AWS deployment constraints from a project 3 months ago into a brand new MainQuest) without manual context loading. Added the "Cross-Project Analogical Test" to the Acceptance Criteria.
@@ -208,6 +210,22 @@ Phase 1: Publish standalone MCP STDIO adapters for popular ecosystem tools (Clau
 
 Phase 2: Future consideration of remote/hosted enterprise variants only after filing IP and proving local security paradigms.
 
+E. Out-of-Band Behavioral Integrity Monitoring (Named IP Claim):
+The Brain Daemon operates as a separate process from any LLM session. It receives conversation content via notify_turn (fire-and-forget) and processes it through the Gated Consolidation Loop independently.
+
+Security properties of this architecture:
+1. Architectural isolation: The Brain Daemon cannot be prompt-injected through the LLM's context window — it is a different OS process running its own logic. Malicious content injected into the LLM's context has no execution path to alter the Brain's processing rules or its stored GlobalConstraints.
+2. GlobalConstraints as policy baseline: The decay rate of 0.999/day means security-class constraints are effectively permanent (~2 years to half-strength), providing a stable, long-lived policy baseline that survives across projects, sessions, and model upgrades.
+3. Contradiction sense fires automatically: When notify_turn content conflicts with a high-confidence GlobalConstraint, the Gated Consolidation Loop Step 4 Contradiction sense fires, flagging the content without requiring any explicit security rules or a separate monitoring system.
+
+Scope (important for patent claim precision):
+• Conversation-layer only — detects constraint override language and goal hijacking attempts in conversation content.
+• Does NOT detect OS-level actions (filesystem writes, network calls, subprocess execution).
+• Detects: prompt injection attempts that try to override constraints, goal hijacking ("ignore previous instructions"), and constraint violation language.
+
+Distinction from Cocktail Party Effect (important for claim separation):
+The Cocktail Party Effect is the selective attention mechanism for memory formation — it fires on decision language, plan language, and entity mentions, forming the positive signal that writes to the graph. Out-of-Band Behavioral Integrity Monitoring applies the same Step 4 confidence gate to a negative signal — content that contradicts established policy. Both use the same architectural mechanism (the Contradiction sense in Step 4 of the Gated Consolidation Loop), but the Cocktail Party Effect is about knowledge acquisition and the Behavioral Integrity Monitor is about policy enforcement. These are distinct claims.
+
 5.6. Evaluation & Proof of Efficacy (Internal Benchmark):
 To definitively prove the value of the Gated Consolidation Loop against competitors, the system will be evaluated against a brutal internal benchmark.
 
@@ -243,6 +261,11 @@ While universal memory layers exist, they focus on unstructured vector retrieval
 4. Availability Heuristic (Dual-Scope Retrieval): The candidate retrieval step models the Availability Heuristic — surfacing what the system has 'seen before' via branch-scoped and global-scoped vector similarity, mimicking how humans recall relevant prior experiences.
 
 5. Gated Consolidation Loop mechanisms: Tiered confidence gating, strict LLM contradiction guardrails, deterministic dual-pointer reversible merges, and pathway_strength decay all contribute to a system that transforms passive memory into an active, self-correcting cognitive processor.
+
+6. Cocktail Party Effect (Selective Attention for Memory Formation): The Brain Daemon passively receives all conversation turns via notify_turn. The Step 4 confidence gate acts as a selective attention filter — most conversation noise passes through unrecorded; only specific signal patterns (decision language, constraint language, entity mentions, contradictions to existing knowledge) cause the Brain to fire and write to the graph. This is biomimetically modeled on the cocktail party effect, where the human auditory system selectively attends to salient signals (one's own name, emotional language) from a background of undifferentiated noise.
+
+7. Out-of-Band Behavioral Integrity Monitoring via Contradiction Detection:
+An AI memory system operating as a separate process from the LLM session, where high-confidence policy constraints (GlobalConstraint nodes with pathway_strength decay rate ≥ 0.999/day) serve as a persistent security baseline, and the Contradiction sense (Step 4, Gated Consolidation Loop) automatically flags conversational content that conflicts with established constraints, providing prompt injection detection and goal hijacking detection without requiring explicit security rules or a separate monitoring system. The architectural separation (Brain Daemon ≠ LLM process) is itself the security property: malicious content injected into the LLM's context window has no execution path to alter the Brain's logic, stored constraints, or processing rules.
 
 The explicit Quest-oriented UX and Constraint Ledger serve as the highly marketable structural outputs of this proprietary method.
 

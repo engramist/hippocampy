@@ -1,0 +1,33 @@
+{
+  "name": "sidequests-brain",
+  "version": "0.1.0",
+  "description": "Persistent AI memory with a Gated Consolidation Loop and graph-native knowledge base. Automatically captures decisions, constraints, and plans from your conversations.",
+  "author": "SideQuests",
+  "license": "UNLICENSED",
+  "entry_point": {
+    "command": "python",
+    "args": ["adapters/claude_desktop/adapter.py"]
+  },
+  "permissions": [
+    "filesystem_read",
+    "filesystem_write"
+  ],
+  "lifecycle": {
+    "install": "mcpb/install.sh",
+    "uninstall": "mcpb/uninstall.sh"
+  },
+  "mcp_protocol_version": "2024-11-05",
+  "server_info": {
+    "name": "sidequests-brain-desktop",
+    "version": "0.1.0"
+  },
+  "tools": [
+    "notify_turn",
+    "current_truth",
+    "branch_quest",
+    "diff_since",
+    "get_open_loops",
+    "analogical_search",
+    "ingest_document"
+  ]
+}

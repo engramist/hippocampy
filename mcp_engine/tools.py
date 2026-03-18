@@ -417,6 +417,417 @@ async def ingest_document(params: dict, db, config: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# B11 — complete_quest + Lesson synthesis
+# ---------------------------------------------------------------------------
+
+async def complete_quest(params: dict, db, config: dict) -> dict:
+    """
+    Mark a quest as completed and trigger background Lesson synthesis.
+
+    params: {quest_id}
+    Returns: {status, quest_id}
+    """
+    quest_id = params.get("quest_id", "").strip()
+    if not quest_id:
+        return {"error": "quest_id is required"}
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Mark MainQuest as completed
+    try:
+        await db.execute_write(
+            "MATCH (q:MainQuest {quest_id: $qid}) "
+            "SET q.status = 'completed', q.completed_at = $now",
+            {"qid": quest_id, "now": now}
+        )
+    except Exception:
+        # Try SideQuest
+        try:
+            await db.execute_write(
+                "MATCH (q:SideQuest {quest_id: $qid}) "
+                "SET q.status = 'completed', q.completed_at = $now",
+                {"qid": quest_id, "now": now}
+            )
+        except Exception as e:
+            _logger.error("complete_quest: could not mark %s completed: %s", quest_id, e)
+            return {"error": str(e)}
+
+    # B11: synthesize lesson in background (fire-and-forget)
+    asyncio.create_task(_synthesize_lesson(quest_id, db, config))
+
+    return {"status": "completed", "quest_id": quest_id}
+
+
+async def _synthesize_lesson(quest_id: str, db, config: dict) -> None:
+    """
+    Background coroutine: synthesize a Lesson node from quest artifacts.
+
+    1. Query the top confirmed artifacts linked to this quest
+    2. Ask LLM to synthesize the hardest obstacle and key lesson
+    3. Store as Lesson node (confidence_low=true) + PRODUCED_LESSON edge
+    """
+    try:
+        from mcp_engine.llm.provider import create_llm_client
+        from mcp_engine.graph import embeddings as emb
+
+        embedding_model = config.get("embeddings", {}).get(
+            "model", "sentence-transformers/all-MiniLM-L6-v2"
+        )
+
+        # Gather up to 10 confirmed artifacts from this quest
+        artifact_rows = []
+        for table, pk in [("Decision", "decision_id"), ("Constraint", "constraint_id"),
+                           ("Requirement", "requirement_id")]:
+            try:
+                r = db.execute(
+                    f"MATCH (a:{table}) WHERE a.archived = false "
+                    f"AND a.confidence_low = false "
+                    f"RETURN a.text_raw, a.confidence "
+                    f"ORDER BY a.pathway_strength DESC LIMIT 5"
+                )
+                while r.has_next():
+                    row = r.get_next()
+                    artifact_rows.append(f"[{table}] {row[0]}")
+            except Exception:
+                pass
+
+        if not artifact_rows:
+            _logger.info("_synthesize_lesson: no confirmed artifacts for quest %s", quest_id)
+            return
+
+        artifacts_text = "\n".join(artifact_rows[:10])
+
+        # Create LLM client — skip if unavailable
+        llm = create_llm_client(config)
+        if llm is None:
+            _logger.warning("_synthesize_lesson: LLM unavailable for quest %s", quest_id)
+            return
+
+        prompt = (
+            "Given these artifacts from a completed project quest:\n\n"
+            f"{artifacts_text}\n\n"
+            "Synthesize in 1-2 sentences:\n"
+            "1. The hardest obstacle overcome\n"
+            "2. The key lesson learned that would help someone doing similar work\n\n"
+            'Return JSON only: {"lesson": "...", "obstacle": "..."}'
+        )
+
+        import json as _json
+        response_text = await asyncio.to_thread(llm.chat, prompt)
+
+        try:
+            data = _json.loads(response_text)
+            lesson_text    = data.get("lesson", "").strip()
+            obstacle_text  = data.get("obstacle", "").strip()
+        except Exception:
+            lesson_text   = response_text.strip()[:500]
+            obstacle_text = ""
+
+        if not lesson_text:
+            return
+
+        # Embed, store Lesson node, link PRODUCED_LESSON
+        vector    = await asyncio.to_thread(emb.embed, lesson_text, embedding_model)
+        lesson_id = str(uuid.uuid4())
+        now       = datetime.now(timezone.utc).isoformat()
+
+        await db.execute_write(
+            """
+            CREATE (l:Lesson {
+                lesson_id:        $lesson_id,
+                text_raw:         $text_raw,
+                embedding:        $embedding,
+                embedding_model:  $embedding_model,
+                embedding_dim:    $embedding_dim,
+                obstacle_summary: $obstacle_summary,
+                source_quest_id:  $source_quest_id,
+                confidence:       0.70,
+                confidence_low:   true,
+                pathway_strength: 0.70,
+                archived:         false,
+                created_at:       $created_at
+            })
+            """,
+            {
+                "lesson_id":       lesson_id,
+                "text_raw":        lesson_text,
+                "embedding":       vector,
+                "embedding_model": embedding_model,
+                "embedding_dim":   len(vector),
+                "obstacle_summary": obstacle_text,
+                "source_quest_id": quest_id,
+                "created_at":      now,
+            }
+        )
+
+        # Link MainQuest → Lesson
+        try:
+            await db.execute_write(
+                "MATCH (q:MainQuest {quest_id: $qid}), (l:Lesson {lesson_id: $lid}) "
+                "CREATE (q)-[:PRODUCED_LESSON]->(l)",
+                {"qid": quest_id, "lid": lesson_id}
+            )
+        except Exception:
+            pass  # Quest may be a SideQuest — no PRODUCED_LESSON for SideQuest yet
+
+        _logger.info("_synthesize_lesson: stored lesson %s for quest %s", lesson_id, quest_id)
+
+    except Exception as e:
+        _logger.exception("_synthesize_lesson error for quest %s: %s", quest_id, e)
+
+
+# ---------------------------------------------------------------------------
+# B10 — explore_graph (directed graph traversal)
+# ---------------------------------------------------------------------------
+
+# Traversal is constrained to allowlisted relationship types.
+# No arbitrary Cypher — prevents unbounded queries.
+_TRAVERSABLE_RELS = frozenset({
+    "REQUIRES", "ENABLES", "REPLACES", "CONTRADICTS", "PART_OF",
+    "CHOSEN_OVER", "IMPLEMENTS", "EXTENDS", "ALTERNATIVE_TO",
+    "CO_OCCURS_WITH", "REIFIED_AS", "DEPRECATED_BY",
+    "BELONGS_TO", "DERIVED_FROM", "ESTABLISHED",
+    "HAS_PREF_LABEL", "HAS_ALT_LABEL",
+    "PRODUCED_LESSON",
+})
+
+# Node tables to search when resolving start_node_id
+_NODE_TABLES: list[tuple[str, str]] = [
+    ("Concept",          "concept_id"),
+    ("Decision",         "decision_id"),
+    ("Constraint",       "constraint_id"),
+    ("Requirement",      "requirement_id"),
+    ("ActionItem",       "action_item_id"),
+    ("GlobalConstraint", "global_constraint_id"),
+    ("GlobalPreference", "global_preference_id"),
+    ("MainQuest",        "quest_id"),
+    ("SideQuest",        "quest_id"),
+    ("Message",          "message_id"),
+    ("Document",         "document_id"),
+    ("Lesson",           "lesson_id"),   # B11
+]
+
+_MAX_DEPTH = 3
+
+
+async def explore_graph(params: dict, db, config: dict) -> dict:
+    """
+    Directed graph traversal from a known node.
+
+    params:
+      start_node_id:    str (required) — any node's primary key
+      relationship_type: str (optional) — filter to one rel type
+      direction:        str — "outgoing" | "incoming" | "both" (default)
+      depth:            int — 1–3 (default 1; capped at _MAX_DEPTH)
+
+    Returns:
+      {start_node_id, start_node_type, nodes, edges}
+      nodes: [{node_id, node_type, text_raw, confidence, pathway_strength}]
+      edges: [{source, target, type}]
+
+    Security:
+      - Only allowlisted relationship types
+      - Depth capped at 3
+      - Read-only (uses db.execute, never execute_write)
+      - No arbitrary Cypher input
+    """
+    start_id  = params.get("start_node_id", "").strip()
+    rel_type  = params.get("relationship_type", "").strip().upper()
+    direction = params.get("direction", "both")
+    depth     = min(int(params.get("depth", 1)), _MAX_DEPTH)
+
+    if not start_id:
+        return {"error": "start_node_id is required"}
+
+    if rel_type and rel_type not in _TRAVERSABLE_RELS:
+        return {
+            "error": f"Unknown relationship type: {rel_type}",
+            "allowed": sorted(_TRAVERSABLE_RELS),
+        }
+
+    if direction not in ("outgoing", "incoming", "both"):
+        direction = "both"
+
+    # ── Find start node ────────────────────────────────────────────────────
+    start_table = None
+    for table, pk in _NODE_TABLES:
+        try:
+            r = db.execute(
+                f"MATCH (n:{table}) WHERE n.{pk} = $id RETURN n LIMIT 1",
+                {"id": start_id}
+            )
+            if r.has_next():
+                start_table = table
+                break
+        except Exception:
+            continue
+
+    if start_table is None:
+        return {
+            "start_node_id":   start_id,
+            "start_node_type": None,
+            "nodes":           [],
+            "edges":           [],
+            "error":           "start_node_id not found in any node table",
+        }
+
+    # ── Build traversal query ──────────────────────────────────────────────
+    # Kuzu variable-length path syntax: (a)-[r*1..N]-(b)
+    # Direction determines edge pattern.
+    depth_range = f"1..{depth}"
+
+    if rel_type:
+        rel_pattern = f"[r:{rel_type}*{depth_range}]"
+    else:
+        rel_pattern = f"[r*{depth_range}]"
+
+    if direction == "outgoing":
+        edge_pattern = f"-{rel_pattern}->"
+    elif direction == "incoming":
+        edge_pattern = f"<-{rel_pattern}-"
+    else:
+        edge_pattern = f"-{rel_pattern}-"
+
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    seen_ids: set[str] = set()
+
+    # Iterative single-hop traversal (more compatible with Kuzu 0.11.3)
+    # than variable-length path queries, which may have limitations.
+    _traverse_iterative(
+        db=db,
+        start_id=start_id,
+        start_table=start_table,
+        rel_type=rel_type,
+        direction=direction,
+        depth=depth,
+        nodes=nodes,
+        edges=edges,
+        seen_ids=seen_ids,
+    )
+
+    return {
+        "start_node_id":   start_id,
+        "start_node_type": start_table,
+        "nodes":           nodes,
+        "edges":           edges,
+    }
+
+
+def _traverse_iterative(
+    db,
+    start_id: str,
+    start_table: str,
+    rel_type: str,
+    direction: str,
+    depth: int,
+    nodes: list,
+    edges: list,
+    seen_ids: set,
+    _current_depth: int = 0,
+) -> None:
+    """
+    Iterative BFS traversal. Kuzu 0.11.3 variable-length paths have
+    syntax edge cases, so we do hop-by-hop instead.
+    """
+    if _current_depth >= depth:
+        return
+
+    frontier = [(start_id, start_table)]
+    for hop in range(depth):
+        next_frontier = []
+        for node_id, node_table in frontier:
+            pk = _pk_for_table(node_table)
+            if pk is None:
+                continue
+
+            # Build per-table queries for each known node type
+            for target_table, target_pk in _NODE_TABLES:
+                try:
+                    if rel_type:
+                        rel_clause_out = f"[r:{rel_type}]"
+                        rel_clause_in  = f"[r:{rel_type}]"
+                    else:
+                        rel_clause_out = "[r]"
+                        rel_clause_in  = "[r]"
+
+                    queries = []
+                    if direction in ("outgoing", "both"):
+                        queries.append((
+                            f"MATCH (a:{node_table})-{rel_clause_out}->(b:{target_table}) "
+                            f"WHERE a.{pk} = $id "
+                            f"RETURN b.{target_pk}, b.text_raw, b.confidence, b.pathway_strength, "
+                            f"type(r) AS rel_type",
+                            node_id, "out"
+                        ))
+                    if direction in ("incoming", "both"):
+                        # Use <- syntax so mock and real queries are unambiguous
+                        if rel_type:
+                            rel_clause_inc = f"[r:{rel_type}]"
+                        else:
+                            rel_clause_inc = "[r]"
+                        queries.append((
+                            f"MATCH (a:{node_table})<-{rel_clause_inc}-(b:{target_table}) "
+                            f"WHERE a.{pk} = $id "
+                            f"RETURN b.{target_pk}, b.text_raw, b.confidence, b.pathway_strength, "
+                            f"type(r) AS rel_type",
+                            node_id, "in"
+                        ))
+
+                    for query, qid, qdir in queries:
+                        try:
+                            r = db.execute(query, {"id": qid})
+                            while r.has_next():
+                                row = r.get_next()
+                                neighbor_id  = str(row[0]) if row[0] is not None else None
+                                text_raw     = str(row[1]) if row[1] is not None else ""
+                                confidence   = float(row[2]) if row[2] is not None else 0.0
+                                pathway_str  = float(row[3]) if row[3] is not None else 0.0
+                                edge_rel     = str(row[4]) if row[4] is not None else rel_type
+
+                                if neighbor_id and neighbor_id not in seen_ids:
+                                    seen_ids.add(neighbor_id)
+                                    nodes.append({
+                                        "node_id":          neighbor_id,
+                                        "node_type":        target_table,
+                                        "text_raw":         text_raw[:200],
+                                        "confidence":       confidence,
+                                        "pathway_strength": pathway_str,
+                                    })
+                                    next_frontier.append((neighbor_id, target_table))
+
+                                if neighbor_id:
+                                    if qdir == "out":
+                                        edges.append({
+                                            "source": node_id,
+                                            "target": neighbor_id,
+                                            "type":   edge_rel,
+                                        })
+                                    else:
+                                        edges.append({
+                                            "source": neighbor_id,
+                                            "target": node_id,
+                                            "type":   edge_rel,
+                                        })
+                        except Exception:
+                            pass
+                except Exception:
+                    continue
+
+        frontier = next_frontier
+        if not frontier:
+            break
+
+
+def _pk_for_table(table: str) -> str | None:
+    """Return the primary key column name for a node table."""
+    for t, pk in _NODE_TABLES:
+        if t == table:
+            return pk
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Dispatch table
 # ---------------------------------------------------------------------------
 
@@ -424,8 +835,10 @@ TOOL_HANDLERS = {
     "notify_turn":      notify_turn,
     "current_truth":    current_truth,
     "branch_quest":     branch_quest,
+    "complete_quest":   complete_quest,
     "diff_since":       diff_since,
     "get_open_loops":   get_open_loops,
     "ingest_document":  ingest_document,
     "analogical_search": analogical_search,
+    "explore_graph":    explore_graph,
 }
