@@ -330,6 +330,13 @@ async def handle_mcp_request(request: dict) -> dict:
     if method == "tools/list":
         return ok({"tools": TOOLS})
 
+    if method == "prompts/list":
+        return ok({"prompts": [{"name": "sidequests-system", "description": "SideQuests Brain instructions"}]})
+
+    if method == "prompts/get":
+        return ok({"description": "SideQuests Brain instructions",
+                   "messages": [{"role": "user", "content": {"type": "text", "text": SYSTEM_PROMPT_FRAGMENT}}]})
+
     if method == "tools/call":
         tool_name  = params.get("name", "")
         tool_input = _inject_git_context(params.get("arguments", {}))
