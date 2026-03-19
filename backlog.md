@@ -340,6 +340,46 @@ include a clickable localhost link to the relevant Memory Control Panel view.
 
 ---
 
+### B16 · Task-Based Model Routing
+Allow different Loop steps to use different LLM providers/models, optimizing for cost and latency
+per cognitive task. Inspired by OpenClaw power-user workflows (Matthew Berman "trifecta" pattern).
+
+**What it does:**
+- Extend `sidequests.toml` to support per-step LLM overrides:
+  ```toml
+  [llm]
+  provider = "ollama"              # default for all steps
+  model = "llama3.1:8b"
+
+  [llm.step6_arbitration]          # override for contradiction arbitration
+  provider = "anthropic"
+  model = "claude-sonnet-4-6"
+
+  [llm.quest_purpose]              # override for purpose synthesis
+  provider = "openai"
+  model = "gpt-4.1-mini"
+  ```
+- Steps without an override use the default `[llm]` block
+- `LLMClient` resolves the correct provider/model per caller context
+
+**Why it matters:**
+- Step 2 System 2 disambiguation and Step 3b relation extraction are tractable for small local models
+  (type context narrows the search space). No reason to burn cloud tokens on them.
+- Step 6 contradiction arbitration is the hardest reasoning task — benefits most from frontier models.
+- Power users (developers, researchers) will want this control. Consumer users never see it — defaults
+  just work.
+
+**Files to modify:**
+- `sidequests.toml` — add per-step override schema
+- `mcp_engine/llm/provider.py` — resolve per-step model from config
+- `mcp_engine/loop/step2_gist.py`, `step3b_relations.py`, `step6_arbitration.py` — pass step identifier
+  to `LLMClient`
+- `tests/test_llm_routing.py` — verify correct model resolution per step
+
+**Dependencies:** None — `LLMClient` already supports multiple providers. This is config + routing logic.
+
+---
+
 ## Brainstorming Parking Lot
 _Ideas raised in conversation — not yet decided or scheduled._
 
@@ -350,3 +390,4 @@ _Ideas raised in conversation — not yet decided or scheduled._
 - `sidequests review` CLI for `confidence_low` nodes (pre-M7 audit tool)
 - Multi-machine sync (shared Brain Daemon across devices — significant architecture change)
 - Action-Oriented Routing — export graph artifacts to real-world targets (shared folders, email drafts, calendar events). Phase 3+ polish, doesn't prove engine. (Source: Clay/ChatGPT analysis, March 2026)
+- Voice/Audio Ingestion — Whisper transcription of voice memos → feed transcript into existing Loop pipeline. Valid Phase 3 use case (async ingestion while driving/walking). The Loop already processes text; voice is just a transcription step upstream. Don't build audio infrastructure before engine is proven across text domains. (Source: OpenClaw/Berman analysis, March 2026)
