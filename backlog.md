@@ -288,6 +288,58 @@ The current installation process is fragile and manual — requires hand-editing
 
 ---
 
+## P6 — Consumer Readiness
+
+### B14 · Proactive Insight Surfacing
+The Brain currently ingests silently — no feedback loop tells the user what was captured. This is the
+biggest consumer-readiness gap. Normal users need to feel the system is alive and working for them.
+
+**What it does:**
+- After the Loop processes a message and stores artifacts, surface a brief summary back to the user
+- Options (not mutually exclusive, evaluate during implementation):
+  - **System prompt injection:** Add a count/summary to the always-on fragment (e.g., `[SideQuest | 3 new insights captured]`)
+  - **MCP resource:** Expose a `insights_since_last_check` resource the LLM can reference naturally
+  - **Menu bar badge:** If native Mac wrapper is built (see parking lot), show a badge count
+- Summary should be minimal — "Captured: 2 decisions, 1 constraint" not a full dump
+- Must not add latency to the LLM session (fire-and-forget still applies)
+
+**Why it matters:**
+- Clay's invisible enrichment works because users see the *result* (better answers). SideQuest's
+  enrichment is truly invisible — users have no signal the Brain is working until they ask `current_truth`
+- Consumer trust requires visible value. "I'm listening and learning" needs proof.
+
+**Files to modify:**
+- `mcp_engine/tools.py` — new resource or tool for insight summary
+- `adapters/claude_code/adapter.py` — surface insight count in system prompt or as a resource
+- `mcp_engine/loop/step7_pathway.py` — emit summary event after pathway update
+
+**Dependencies:** None — can be built independently of other backlog items.
+
+---
+
+### B15 · Deep-Link Handoff (Chat → Memory Control Panel)
+When the LLM references graph data (via `current_truth` or after Brain captures something significant),
+include a clickable localhost link to the relevant Memory Control Panel view.
+
+**What it does:**
+- `current_truth` responses include a `panel_url` field with a deep link to the relevant graph view
+- LLM naturally includes the link in its response: `[View decision graph](http://127.0.0.1:7799/quests/abc123/decisions)`
+- Memory Control Panel (M7) routes handle deep links to specific quests, nodes, or graph views
+
+**Why it matters:**
+- This is the Clay "Open in Clay" pattern — seamless transition from conversational to visual UI
+- The Memory Control Panel already exists (M7). This just wires chat responses to it.
+- Non-technical users get a "click to see more" experience instead of needing to know the URL
+
+**Files to modify:**
+- `mcp_engine/tools.py` — add `panel_url` to `current_truth` response schema
+- `web/server.py` — ensure deep-link routes exist for quest/node/graph views
+- Adapter system prompt — instruct LLM to surface links when relevant
+
+**Dependencies:** M7 (Memory Control Panel) must have routable views.
+
+---
+
 ## Brainstorming Parking Lot
 _Ideas raised in conversation — not yet decided or scheduled._
 
@@ -297,3 +349,4 @@ _Ideas raised in conversation — not yet decided or scheduled._
 - Windows + Linux install stories (launchd equivalent)
 - `sidequests review` CLI for `confidence_low` nodes (pre-M7 audit tool)
 - Multi-machine sync (shared Brain Daemon across devices — significant architecture change)
+- Action-Oriented Routing — export graph artifacts to real-world targets (shared folders, email drafts, calendar events). Phase 3+ polish, doesn't prove engine. (Source: Clay/ChatGPT analysis, March 2026)
