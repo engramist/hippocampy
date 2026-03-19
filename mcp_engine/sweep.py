@@ -225,7 +225,7 @@ async def _resurrect_archived(
                 # SW2 fix: fetch more results since we'll filter out archived
                 # neighbors. HNSW doesn't support prefiltering in 0.11.3, so
                 # we over-fetch and postfilter to active nodes only.
-                neighbors = db.vector_search(index_name, embedding, 20)
+                neighbors = db.vector_search(table, index_name, embedding, 20)
                 for neighbor in neighbors:
                     node  = neighbor["node"]
                     score = neighbor["score"]
@@ -359,7 +359,7 @@ async def _hebbian_promote(
                 f"MERGE (a)-[r:{rel_type}]->(b) "
                 f"ON CREATE SET r.confidence  = $conf, "
                 f"              r.inferred_by = 'LLM', "
-                f"              r.inferred_at = $now "
+                f"              r.inferred_at = timestamp($now) "
                 f"ON MATCH SET  r.confidence  = $conf",
                 {
                     "a_id": pair["a_id"],

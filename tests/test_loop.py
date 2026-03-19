@@ -55,6 +55,47 @@ def test_step1_ner_empty_text():
     assert entities == []
 
 
+def test_step1_junk_filter_rejects_box_drawing():
+    from mcp_engine.loop.step1_ner import _is_junk_entity
+    assert _is_junk_entity("╮") is True
+    assert _is_junk_entity("─────────") is True
+    assert _is_junk_entity("│") is True
+    assert _is_junk_entity("╭──╮") is True
+
+
+def test_step1_junk_filter_rejects_uuids():
+    from mcp_engine.loop.step1_ner import _is_junk_entity
+    assert _is_junk_entity("1b38edeb-7e6d-4023-8bd8-6d95bd30273b") is True
+    assert _is_junk_entity("35997791-1232-4022-bb63-2a4379d0c990") is True
+
+
+def test_step1_junk_filter_rejects_formatting_artifacts():
+    from mcp_engine.loop.step1_ner import _is_junk_entity
+    assert _is_junk_entity("▟▀ Plan") is True     # < 40% alnum
+    assert _is_junk_entity("/auth\n  ") is True    # embedded newline
+    assert _is_junk_entity("") is True
+    assert _is_junk_entity("   ") is True
+
+
+def test_step1_junk_filter_rejects_numbers():
+    from mcp_engine.loop.step1_ner import _is_junk_entity
+    assert _is_junk_entity("0.92") is True
+    assert _is_junk_entity("03") is True
+    assert _is_junk_entity("18") is True
+    assert _is_junk_entity("384") is True
+    assert _is_junk_entity("1.0") is True
+
+
+def test_step1_junk_filter_keeps_real_entities():
+    from mcp_engine.loop.step1_ner import _is_junk_entity
+    assert _is_junk_entity("PostgreSQL") is False
+    assert _is_junk_entity("SQLAlchemy") is False
+    assert _is_junk_entity("JWT") is False
+    assert _is_junk_entity("REST API") is False
+    assert _is_junk_entity("the user database") is False
+    assert _is_junk_entity("Google") is False
+
+
 # ---------------------------------------------------------------------------
 # Step 1b — Verb patterns
 # ---------------------------------------------------------------------------
@@ -151,13 +192,13 @@ def test_step2_llm_fallback_called_in_gray_zone(monkeypatch):
 
     mock_llm = MockLLM()
 
-    # Build a unit vector and a centroid at exactly 0.70 cosine similarity.
-    # If v = [1, 0, 0, ...] and c = [0.70, sqrt(1-0.70^2), 0, ...], cos(v,c) = 0.70.
+    # Build a unit vector and a centroid at exactly 0.35 cosine similarity.
+    # Gray zone for all-MiniLM-L6-v2 is 0.25–0.50.
     dim = 384
     unit_vec = [0.0] * dim
     unit_vec[0] = 1.0
 
-    cos_target = 0.70
+    cos_target = 0.35
     gray_centroid = [0.0] * dim
     gray_centroid[0] = cos_target
     gray_centroid[1] = math.sqrt(1.0 - cos_target ** 2)  # already normalized
@@ -171,8 +212,8 @@ def test_step2_llm_fallback_called_in_gray_zone(monkeypatch):
         centroids, llm_client=mock_llm
     )
 
-    # Cosine similarity = 0.70 → gray zone → LLM must be called
-    assert mock_llm.called, "LLM should have been called for gray-zone similarity 0.70"
+    # Cosine similarity = 0.35 → gray zone (0.25–0.50) → LLM must be called
+    assert mock_llm.called, "LLM should have been called for gray-zone similarity 0.35"
     assert result["gist_class"] == "Category"
     assert result["system"] == "2"
     assert result["confidence"] == pytest.approx(0.78, abs=0.01)
@@ -322,6 +363,33 @@ def test_step4_restriction_prior_soft_lock():
     assert result["confidence_low"] is True   # below HARD_LOCK
 
 
+def test_step4_single_decision_signal_with_gist_crosses_hard_lock():
+    """One keyword hit + gist agreement should reach full confidence (>0.90)."""
+    from mcp_engine.loop.step4_pattern import classify_artifact, HARD_LOCK
+    # "Category" gist has prior_type="decision" → gist agrees with keyword signal
+    result = classify_artifact(
+        "We decided to use SQLAlchemy as the ORM.",
+        "Category", "DefinedTerm"
+    )
+    assert result["should_proceed"] is True
+    assert result["artifact_type"] == "decision"
+    assert result["confidence"] >= HARD_LOCK
+    assert result["confidence_low"] is False
+
+
+def test_step4_single_constraint_signal_with_gist_crosses_hard_lock():
+    """One constraint keyword + Restriction gist should reach full confidence."""
+    from mcp_engine.loop.step4_pattern import classify_artifact, HARD_LOCK
+    result = classify_artifact(
+        "All endpoints must require JWT authentication.",
+        "Restriction", "Demand"
+    )
+    assert result["should_proceed"] is True
+    assert result["artifact_type"] == "constraint"
+    assert result["confidence"] >= HARD_LOCK
+    assert result["confidence_low"] is False
+
+
 def test_step4_no_gist_class_returns_noise():
     from mcp_engine.loop.step4_pattern import classify_artifact
     result = classify_artifact("some text", None, None)
@@ -355,7 +423,7 @@ def test_step5_filters_below_threshold():
     from mcp_engine.loop.step5_retrieval import retrieve_candidates, MATCH_THRESHOLD
 
     class MockDB:
-        def vector_search(self, index_name, embedding, limit):
+        def vector_search(self, table_name, index_name, embedding, limit):
             return [
                 {"node": {"concept_id": "abc", "text_raw": "low sim", "archived": False,
                           "pathway_strength": 0.5, "confidence": 0.7,
@@ -372,7 +440,7 @@ def test_step5_filters_archived_nodes():
     from mcp_engine.loop.step5_retrieval import retrieve_candidates
 
     class MockDB:
-        def vector_search(self, index_name, embedding, limit):
+        def vector_search(self, table_name, index_name, embedding, limit):
             return [
                 {"node": {"concept_id": "abc", "text_raw": "archived node", "archived": True,
                           "pathway_strength": 0.8, "confidence": 0.9,
@@ -389,7 +457,7 @@ def test_step5_filters_self():
     from mcp_engine.loop.step5_retrieval import retrieve_candidates
 
     class MockDB:
-        def vector_search(self, index_name, embedding, limit):
+        def vector_search(self, table_name, index_name, embedding, limit):
             return [
                 {"node": {"concept_id": "self-id", "text_raw": "self", "archived": False,
                           "pathway_strength": 1.0, "confidence": 1.0,
@@ -406,7 +474,7 @@ def test_step5_returns_sorted_by_similarity():
     from mcp_engine.loop.step5_retrieval import retrieve_candidates
 
     class MockDB:
-        def vector_search(self, index_name, embedding, limit):
+        def vector_search(self, table_name, index_name, embedding, limit):
             return [
                 {"node": {"concept_id": "low", "text_raw": "low", "archived": False,
                           "pathway_strength": 0.5, "confidence": 0.7,

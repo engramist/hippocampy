@@ -42,7 +42,7 @@ def _make_db(rows_by_query=None, vector_results=None):
         async def execute_write(self, q, p=None):
             self.written.append({"q": q, "p": p})
 
-        def vector_search(self, index_name, vec, limit):
+        def vector_search(self, table_name, index_name, vec, limit):
             return vector_results.get(index_name, [])
 
     return MockDB()

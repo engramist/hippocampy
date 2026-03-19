@@ -109,7 +109,8 @@ async def run_loop(message_id: str, text: str, db, llm_client,
 
     for entity in entities:
         gist_result = classify_concept(
-            entity["text"], embedding_model, centroids, llm_client
+            entity["text"], embedding_model, centroids, llm_client,
+            context=text,
         )
 
         if gist_result["system"] == "noise":
@@ -325,7 +326,7 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
                 pathway_strength: $pathway_strength,
                 archived:         false,
                 created_at:       timestamp($created_at),
-                last_accessed_at: $created_at
+                last_accessed_at: timestamp($created_at)
             })
             """,
             {
@@ -486,7 +487,7 @@ async def _store_relation(rel: dict, db, now: str):
               AND h.archived = false AND t.archived = false
             MERGE (h)-[r:{rel_type}]->(t)
             ON CREATE SET r.confidence = $confidence, r.inferred_by = $inferred_by,
-                          r.inferred_at = $now
+                          r.inferred_at = timestamp($now)
             """,
             {
                 "head":        rel["head"],

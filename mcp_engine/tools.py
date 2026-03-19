@@ -186,7 +186,7 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
 
     for table_name, index_name, pk in artifact_tables:
         try:
-            rows = db.vector_search(index_name, query_vector, per_table_limit)
+            rows = db.vector_search(table_name, index_name, query_vector, per_table_limit)
             for row in rows:
                 node = row["node"]
                 if node.get("archived", False):

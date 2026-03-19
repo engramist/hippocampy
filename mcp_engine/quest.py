@@ -40,28 +40,45 @@ async def get_or_create_main_quest(db, repo_root: str, git_branch: str,
     quest_id = compute_quest_id(repo_root, git_branch)
     name     = f"{_basename(repo_root)} [{git_branch}]"
 
-    # Always compute embedding — needed by ON CREATE branch
-    vector = emb.embed(name, model_name=embedding_model)
+    # Check if MainQuest already exists
+    r = db.execute(
+        "MATCH (q:MainQuest {quest_id: $qid}) RETURN q.quest_id",
+        {"qid": quest_id}
+    )
+    exists = r.has_next()
 
-    try:
+    if exists:
+        # Just update last_active_at — no embedding write (Kuzu HNSW index
+        # blocks SET on indexed vector columns; only CREATE can set them).
         await db.execute_write(
             """
-            MERGE (q:MainQuest {quest_id: $quest_id})
-            ON CREATE SET q.name             = $name,
-                          q.status           = 'active',
-                          q.completed_at     = null,
-                          q.purpose          = $purpose,
-                          q.text_raw         = $name,
-                          q.embedding        = $embedding,
-                          q.embedding_model  = $embedding_model,
-                          q.embedding_dim    = $embedding_dim,
-                          q.confidence       = 1.0,
-                          q.confidence_low   = false,
-                          q.pathway_strength = 1.0,
-                          q.archived         = false,
-                          q.created_at       = timestamp($now),
-                          q.last_active_at   = timestamp($now)
-            ON MATCH SET  q.last_active_at   = timestamp($now)
+            MATCH (q:MainQuest {quest_id: $quest_id})
+            SET q.last_active_at = timestamp($now)
+            """,
+            {"quest_id": quest_id, "now": now}
+        )
+    else:
+        # CREATE new MainQuest with embedding (HNSW-safe)
+        vector = emb.embed(name, model_name=embedding_model)
+        await db.execute_write(
+            """
+            CREATE (q:MainQuest {
+                quest_id:        $quest_id,
+                name:            $name,
+                status:          'active',
+                completed_at:    null,
+                purpose:         $purpose,
+                text_raw:        $name,
+                embedding:       $embedding,
+                embedding_model: $embedding_model,
+                embedding_dim:   $embedding_dim,
+                confidence:      1.0,
+                confidence_low:  false,
+                pathway_strength: 1.0,
+                archived:        false,
+                created_at:      timestamp($now),
+                last_active_at:  timestamp($now)
+            })
             """,
             {
                 "quest_id":        quest_id,
@@ -73,8 +90,6 @@ async def get_or_create_main_quest(db, repo_root: str, git_branch: str,
                 "now":             now,
             }
         )
-    except Exception:
-        pass
 
     return quest_id
 
@@ -108,7 +123,11 @@ async def get_or_create_session(db, session_id: str, quest_id: str, now: str) ->
             {"sid": session_id, "qid": quest_id}
         )
     except Exception:
-        pass
+        import logging
+        logging.getLogger(__name__).exception(
+            "get_or_create_session failed for session_id=%s quest_id=%s",
+            session_id, quest_id,
+        )
 
 
 async def create_side_quest(db, name: str, purpose: str, parent_quest_id: str,

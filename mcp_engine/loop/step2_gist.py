@@ -9,8 +9,11 @@ System 2: Ollama LLM call for ambiguous 0.60–0.85 range.
 import json
 from mcp_engine.graph import embeddings as emb
 
-SYSTEM1_THRESHOLD = 0.85
-NOISE_FLOOR       = 0.60
+# Calibrated for all-MiniLM-L6-v2 (384-dim).
+# Seed examples vs own centroid score ~0.50-0.60; cross-class ~0.20-0.35.
+# Original thresholds (0.85/0.60) were unreachable for this model.
+SYSTEM1_THRESHOLD = 0.50
+NOISE_FLOOR       = 0.25
 
 GIST_CLASSES = [
     "Restriction", "PlannedEvent", "PhysicalThing",
@@ -46,20 +49,34 @@ def load_centroids(db) -> dict[str, list[float]]:
 
 def classify_concept(entity_text: str, embedding_model: str,
                      centroids: dict[str, list[float]],
-                     llm_client=None) -> dict:
+                     llm_client=None,
+                     context: str = "") -> dict:
     """
     Classify a single concept into a gist class.
     Returns {gist_class, confidence, system: "1"|"2"|"noise", vector: list[float]}.
     The "vector" key is always included so callers can store System 2 examples
     without re-computing the embedding.
+
+    context: the full message or surrounding sentence. Used for System 1
+    centroid comparison when the bare entity text is too short to classify
+    (e.g. "PostgreSQL" alone scores below noise floor, but
+    "We decided to use PostgreSQL" clearly maps to a gist class).
+    The entity's own embedding is always stored for retrieval.
     """
     vector = emb.embed(entity_text, model_name=embedding_model)
 
-    # System 1: compare against all class centroids
+    # System 1: compare against all class centroids.
+    # Use context-enriched embedding for classification when available,
+    # but always return the entity's own embedding for storage/retrieval.
+    if context and context.strip() != entity_text.strip():
+        classify_vector = emb.embed(context, model_name=embedding_model)
+    else:
+        classify_vector = vector
+
     best_class = None
     best_score = -1.0
     for class_name, centroid in centroids.items():
-        score = _cosine_sim(vector, centroid)
+        score = _cosine_sim(classify_vector, centroid)
         if score > best_score:
             best_score = score
             best_class = class_name

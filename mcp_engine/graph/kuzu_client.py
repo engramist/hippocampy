@@ -63,24 +63,27 @@ class KuzuClient:
             f"CALL CREATE_VECTOR_INDEX('{table}', '{index_name}', '{property}')"
         )
 
-    def vector_search(self, index_name: str, query_embedding: list[float],
-                      limit: int) -> list[dict]:
+    def vector_search(self, table_name: str, index_name: str,
+                      query_embedding: list[float], limit: int) -> list[dict]:
         """
         Query a single HNSW index. Returns list of (node, score) results.
         For multi-table search, call this per table and UNION results in Python.
         """
-        # Implementation note (multi-table): caller builds UNION ALL in Python
-        # by calling this method per table, merging + sorting by score.
-        # Phase 1+ upgrade: EmbeddingNode architectural pattern for single unified index.
+        # Kùzu 0.11.3 QUERY_VECTOR_INDEX signature:
+        #   (table_name, index_name, query_vector, k)
+        # Kùzu 0.11.3 yields (node, distance) — distance is L2, lower = closer.
+        # Convert to similarity score (1 / (1 + distance)) for callers.
         result = self.execute(
-            f"CALL QUERY_VECTOR_INDEX('{index_name}', {limit}, $embedding) "
-            f"YIELD node, score RETURN node, score",
+            f"CALL QUERY_VECTOR_INDEX('{table_name}', '{index_name}', $embedding, {limit}) "
+            f"YIELD node, distance RETURN node, distance",
             {"embedding": query_embedding}
         )
         rows = []
         while result.has_next():
             row = result.get_next()
-            rows.append({"node": row[0], "score": row[1]})
+            distance = row[1]
+            score = 1.0 / (1.0 + distance)
+            rows.append({"node": row[0], "score": score})
         return rows
 
     def close(self):

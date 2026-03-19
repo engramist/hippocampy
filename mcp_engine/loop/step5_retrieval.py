@@ -48,7 +48,7 @@ def retrieve_candidates(embedding: list[float], exclude_id: str,
     quest_id scoping is deferred to M5 (MainQuest wiring).
     """
     try:
-        raw = db.vector_search("concept_emb_idx", embedding, limit + _FETCH_HEADROOM)
+        raw = db.vector_search("Concept", "concept_emb_idx", embedding, limit + _FETCH_HEADROOM)
     except Exception:
         # L9 fix: log the error so persistent index failures are visible.
         # Returning [] causes the orchestrator to treat this as "no match",
