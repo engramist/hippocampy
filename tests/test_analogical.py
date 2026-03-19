@@ -64,7 +64,7 @@ async def test_analogical_search_empty_query():
     from mcp_engine.analogical import analogical_search
 
     class MockDB:
-        def vector_search(self, idx, vec, limit): return []
+        def vector_search(self, table_name, idx, vec, limit): return []
 
     result = await analogical_search({"query": ""}, MockDB(), {})
     assert result["results"] == []
@@ -79,7 +79,7 @@ async def test_analogical_search_returns_cross_quest_flag():
         def has_next(self): return False
 
     class MockDB:
-        def vector_search(self, idx, vec, limit): return []
+        def vector_search(self, table_name, idx, vec, limit): return []
         def execute(self, q, p=None): return EmptyResult()
 
     result = await analogical_search(
@@ -100,7 +100,7 @@ async def test_analogical_search_returns_results_above_threshold():
         def has_next(self): return False
 
     class MockDB:
-        def vector_search(self, index_name, vec, limit):
+        def vector_search(self, table_name, index_name, vec, limit):
             if "decision" in index_name:
                 return [
                     {"node": {"decision_id": "did1", "text_raw": "Use PostgreSQL",
@@ -134,7 +134,7 @@ async def test_analogical_search_excludes_archived_nodes():
         def has_next(self): return False
 
     class MockDB:
-        def vector_search(self, index_name, vec, limit):
+        def vector_search(self, table_name, index_name, vec, limit):
             if "decision" in index_name:
                 return [
                     {"node": {"decision_id": "did-archived", "text_raw": "Old choice",
@@ -162,7 +162,7 @@ async def test_analogical_search_excludes_current_quest():
         def get_next(self): return ["quest-current", "current project"]
 
     class MockDB:
-        def vector_search(self, index_name, vec, limit):
+        def vector_search(self, table_name, index_name, vec, limit):
             if "decision" in index_name:
                 return [
                     {"node": {"decision_id": "did1", "text_raw": "Use Redis",
@@ -191,7 +191,7 @@ async def test_analogical_search_includes_cross_quest_results():
         def get_next(self): return ["quest-other", "other project"]
 
     class MockDB:
-        def vector_search(self, index_name, vec, limit):
+        def vector_search(self, table_name, index_name, vec, limit):
             if "decision" in index_name:
                 return [
                     {"node": {"decision_id": "did1", "text_raw": "Use Redis for sessions",
@@ -221,7 +221,7 @@ async def test_analogical_search_respects_limit():
         def has_next(self): return False
 
     class LimitDB:
-        def vector_search(self, index_name, vec, limit):
+        def vector_search(self, table_name, index_name, vec, limit):
             if "decision" in index_name:
                 return [
                     {"node": {"decision_id": f"did{i}", "text_raw": f"Decision {i}",
@@ -249,7 +249,7 @@ async def test_analogical_search_results_sorted_by_similarity():
         def has_next(self): return False
 
     class MockDB:
-        def vector_search(self, index_name, vec, limit):
+        def vector_search(self, table_name, index_name, vec, limit):
             if "decision" in index_name:
                 return [
                     {"node": {"decision_id": "low",  "text_raw": "Low similarity",
@@ -281,7 +281,7 @@ async def test_analogical_search_searches_multiple_tables():
     searched = []
 
     class MultiTableDB:
-        def vector_search(self, index_name, vec, limit):
+        def vector_search(self, table_name, index_name, vec, limit):
             searched.append(index_name)
             return []
         def execute(self, q, p=None): return EmptyResult()
@@ -307,7 +307,7 @@ def test_find_similar_quests_empty_when_no_current_quest():
 
     class MockDB:
         def execute(self, q, p=None): return None
-        def vector_search(self, i, v, l): return []
+        def vector_search(self, t, i, v, l): return []
 
     result = find_similar_quests("", MockDB(), {})
     assert result == []
@@ -322,7 +322,7 @@ def test_find_similar_quests_skips_current_quest():
 
     class MockDB:
         def execute(self, q, p=None): return EmbResult()
-        def vector_search(self, index_name, vec, limit):
+        def vector_search(self, table_name, index_name, vec, limit):
             return [
                 {"node": {"quest_id": "q-current", "name": "Current Project",
                            "purpose": "", "status": "active"},
@@ -344,7 +344,7 @@ def test_find_similar_quests_returns_empty_on_db_error():
     class BrokenDB:
         def execute(self, q, p=None):
             raise RuntimeError("broken")
-        def vector_search(self, i, v, l):
+        def vector_search(self, t, i, v, l):
             raise RuntimeError("broken")
 
     result = find_similar_quests("q-any", BrokenDB(), {})
@@ -360,7 +360,7 @@ def test_find_similar_quests_returns_empty_when_no_embedding():
 
     class MockDB:
         def execute(self, q, p=None): return NoEmbResult()
-        def vector_search(self, i, v, l): return []
+        def vector_search(self, t, i, v, l): return []
 
     result = find_similar_quests("q-any", MockDB(), {})
     assert result == []
@@ -378,7 +378,7 @@ async def test_analogical_search_tool_handler():
         def has_next(self): return False
 
     class MockDB:
-        def vector_search(self, i, v, l): return []
+        def vector_search(self, t, i, v, l): return []
         def execute(self, q, p=None): return EmptyResult()
 
     result = await tool_handler(
@@ -395,7 +395,7 @@ async def test_analogical_search_tool_empty_query():
     from mcp_engine.tools import analogical_search as tool_handler
 
     class MockDB:
-        def vector_search(self, i, v, l): return []
+        def vector_search(self, t, i, v, l): return []
 
     result = await tool_handler({"query": ""}, MockDB(), {})
     assert result["results"] == []

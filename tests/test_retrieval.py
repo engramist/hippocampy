@@ -30,7 +30,7 @@ class MockVectorSearchDB:
     def __init__(self, results_by_index: dict):
         self._results = results_by_index  # {index_name: [{"node": ..., "score": ...}]}
 
-    def vector_search(self, index_name, embedding, limit):
+    def vector_search(self, table_name, index_name, embedding, limit):
         return self._results.get(index_name, [])
 
 

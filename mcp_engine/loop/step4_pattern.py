@@ -27,8 +27,10 @@ _CONSTRAINT_SIGNALS = [
     # L6 fix: "must not" listed first and matched as a single unit to prevent
     # "must" pattern double-counting the same text.
     r"\bmust not\b", r"\bmust(?!\s+not)\b", r"\bnever\b", r"\balways\b",
-    r"\bforbidden\b", r"\brequired\b", r"\bshall not\b", r"\bno .+? allowed\b",
+    r"\bforbidden\b", r"\brequired?\b", r"\bshall not\b", r"\bno .+? allowed\b",
     r"\bmandatory\b", r"\bprohibited\b", r"\bnon-negotiable\b",
+    r"\bmake sure\b", r"\bensure\b", r"\bno .+? except\b",
+    r"\bno unauthenticated\b", r"\bno unauthorized\b",
 ]
 _REQUIREMENT_SIGNALS = [
     r"\bwe need\b", r"\bwe require\b", r"\bshould\b", r"\bneeds to\b",
@@ -110,14 +112,16 @@ def classify_artifact(text: str, gist_class: str | None,
         confidence = prior_conf
         artifact_type = prior_type
     else:
-        # Scale keyword hits → confidence: 1 hit ≈ 0.75, 2+ hits ≈ 0.90+
-        confidence = min(0.65 + (best_score * 0.12), 0.97)
+        # Scale keyword hits → confidence: 1 hit ≈ 0.82, 2+ hits → 0.97
+        confidence = min(0.67 + (best_score * 0.15), 0.97)
         artifact_type = best_type
 
-    # Boost confidence if gist class agrees with the inferred artifact type
+    # Boost confidence if gist class agrees AND keyword signals were found.
+    # A keyword match + gist agreement is strong evidence (1 hit + agree = 0.92).
+    # Gist prior alone (no keyword signals) stays below HARD_LOCK.
     prior_type, _ = _GIST_ARTIFACT_PRIOR.get(gist_class, (None, 0))
-    if prior_type == artifact_type:
-        confidence = min(confidence + 0.05, 0.98)
+    if prior_type == artifact_type and best_score > 0:
+        confidence = min(confidence + 0.10, 0.98)
 
     if confidence < NOISE_FLOOR:
         return _noise_result()

@@ -457,10 +457,10 @@ async def _upsert_document(db, document_id: str, location_uri: str, title: str,
             MERGE (d:Document {document_id: $document_id})
             ON CREATE SET d.location_uri     = $location_uri,
                           d.content_hash     = $content_hash,
-                          d.last_modified_at = $now,
+                          d.last_modified_at = timestamp($now),
                           d.mime_type        = $mime_type
             ON MATCH SET  d.content_hash     = $content_hash,
-                          d.last_modified_at = $now
+                          d.last_modified_at = timestamp($now)
             """,
             {
                 "document_id":  document_id,

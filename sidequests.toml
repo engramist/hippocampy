@@ -4,7 +4,7 @@
 [llm]
 provider = "ollama"           # ollama | openai | anthropic | google
 model = "llama3.1:8b"
-base_url = "http://localhost:11434"   # ollama only
+base_url = "http://localhost:11434/v1"   # ollama OpenAI-compatible endpoint
 # api_key loaded from env var for cloud providers:
 #   OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY
 

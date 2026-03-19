@@ -280,11 +280,12 @@ def _inject_git_context(params: dict) -> dict:
 SYSTEM_PROMPT_FRAGMENT = (
     "[SideQuest | Brain: ACTIVE]\n"
     "Project memory is active. Decisions and constraints are captured automatically.\n"
-    "Both user and assistant turns are forwarded via notify_turn.\n"
     "Before answering about past choices → current_truth\n"
     "Starting something that may resemble past work → analogical_search\n"
-    "Exploring a tangent? → branch_quest(name, purpose)\n"
-    "After every response → notify_turn(role='assistant', content=<response>, session_id=<id>)"
+    "Exploring a tangent? → offer branch_quest\n"
+    "LAST action of every turn → notify_turn(role='assistant', content=<response>, session_id=<id>)\n"
+    "IMPORTANT: notify_turn is fire-and-forget. Call it exactly ONCE per turn. "
+    "After it returns, STOP — no more text, reasoning, or tool calls."
 )
 
 OFFLINE_FRAGMENT = "[SideQuest | Brain: OFFLINE — memory unavailable]"
@@ -327,8 +328,11 @@ async def handle_mcp_request(request: dict) -> dict:
 
     # MCP lifecycle
     if method == "initialize":
+        # Negotiate protocol version — respond with whichever version the
+        # client requested (Gemini CLI 0.34+ sends "2025-06-18").
+        client_version = params.get("protocolVersion", "2024-11-05")
         return ok({
-            "protocolVersion": "2024-11-05",
+            "protocolVersion": client_version,
             "capabilities": {"tools": {}},
             "serverInfo": {"name": "sidequests-brain-gemini", "version": "0.1.0"},
         })
@@ -338,6 +342,10 @@ async def handle_mcp_request(request: dict) -> dict:
 
     if method == "tools/list":
         return ok({"tools": TOOLS})
+
+    # Gemini CLI probes resources/list during discovery — return empty list
+    if method == "resources/list":
+        return ok({"resources": []})
 
     if method == "prompts/list":
         return ok({"prompts": [{"name": "sidequests-system", "description": "SideQuests Brain instructions"}]})

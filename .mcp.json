@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "sidequests-brain": {
+      "command": "/Users/djshelton/Desktop/GitProjects/sidequests-brain/.venv/bin/python3.12",
+      "args": [
+        "/Users/djshelton/Desktop/GitProjects/sidequests-brain/adapters/claude_code/adapter.py"
+      ]
+    }
+  }
+}

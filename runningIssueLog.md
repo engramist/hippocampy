@@ -227,3 +227,98 @@ created_at: timestamp($created_at)
 ```
 
 **Files changed:** `mcp_engine/tools.py`, `mcp_engine/ingest.py`, `mcp_engine/quest.py`, `mcp_engine/loop/orchestrator.py`
+
+---
+
+## Session: 2026-03-18 — Gemini CLI Debugging + End-to-End Fix
+
+---
+
+### ISSUE-012 · `QUERY_VECTOR_INDEX` wrong argument count + wrong YIELD column
+**Symptom:** `current_truth` returned empty results. Vector search silently failed.
+
+**Root cause (two bugs):**
+1. `vector_search()` passed 3 args `(index_name, embedding, k)` but Kùzu 0.11.3 expects 4: `(table_name, index_name, embedding, k)`.
+2. YIELD used `score` but Kùzu 0.11.3 yields `(node, distance)` not `(node, score)`.
+
+**Fix:**
+- Added `table_name` as first parameter to `vector_search()` method
+- Changed YIELD from `score` to `distance`
+- Added distance→similarity conversion: `score = 1.0 / (1.0 + distance)`
+- Updated all 5 callers to pass `table_name`
+
+**Files changed:** `mcp_engine/graph/kuzu_client.py`, `mcp_engine/tools.py`, `mcp_engine/analogical.py`, `mcp_engine/sweep.py`, `mcp_engine/loop/step5_retrieval.py`
+
+---
+
+### ISSUE-013 · Daemon readline buffer overflow on large payloads
+**Symptom:** Gemini CLI `notify_turn` with large assistant responses caused silent connection drops.
+
+**Root cause:** `asyncio.start_unix_server` defaults to 64KB readline limit. Gemini CLI sends full assistant responses (often >64KB) in a single `notify_turn` JSON-RPC message.
+
+**Fix:** Set `limit=4*1024*1024` (4MB) on the Unix socket server.
+
+**Files changed:** `brain_daemon.py`
+
+---
+
+### ISSUE-014 · Gemini CLI MCP protocol version mismatch + missing `resources/list`
+**Symptom:** Gemini CLI showed "Disconnected" for the sidequests-brain MCP server.
+
+**Root cause (two bugs):**
+1. Adapter hardcoded `protocolVersion: "2024-11-05"` in initialize response. Gemini CLI sends `2025-06-18` and expects it echoed back.
+2. Gemini CLI calls `resources/list` during initialization — adapter returned "Unknown method" error.
+
+**Fix:**
+- Echo client's requested `protocolVersion` from the `initialize` params
+- Added `resources/list` handler returning `{"resources": []}`
+- Applied same fixes to `claude_code/adapter.py` for consistency
+
+**Files changed:** `adapters/gemini_cli/adapter.py`, `adapters/claude_code/adapter.py`
+
+---
+
+### ISSUE-015 · spaCy NER misses software/tech entity names
+**Symptom:** Message "We decided to use PostgreSQL over MySQL for the user database because of better JSON support" extracted only "JSON" (mislabeled as NORP). PostgreSQL, MySQL, and other technical terms were invisible to the Loop.
+
+**Root cause:** spaCy `en_core_web_md` NER is trained on news corpora — recognizes PERSON, ORG, GPE but not software names, frameworks, or technical concepts.
+
+**Fix:** Added noun chunk fallback to `step1_ner.py`. When NER finds ≤1 entity, supplement with noun chunks (filtered for pronouns/stopwords). This catches "PostgreSQL", "MySQL", "the user database", "better JSON support" etc.
+
+**Files changed:** `mcp_engine/loop/step1_ner.py`
+
+---
+
+### ISSUE-016 · Step 2 gist classification thresholds unreachable for all-MiniLM-L6-v2
+**Symptom:** Every concept classified as noise — zero concepts survived Step 2 to enter the graph.
+
+**Root cause:** Original thresholds (System1=0.85, NoiseFloor=0.60) were calibrated for hypothetical high-scoring embeddings. all-MiniLM-L6-v2 produces cosine similarities of ~0.20–0.58 against mean-pooled centroids. Everything fell below the noise floor.
+
+**Fix:**
+- Recalibrated: `SYSTEM1_THRESHOLD = 0.50`, `NOISE_FLOOR = 0.25`
+- Added `context` parameter to `classify_concept()` — uses full message embedding for centroid comparison (single words like "PostgreSQL" have no semantic signal alone), returns entity's own embedding for storage/retrieval
+
+**Files changed:** `mcp_engine/loop/step2_gist.py`, `mcp_engine/loop/orchestrator.py`
+
+---
+
+### ISSUE-017 · Additional TIMESTAMP wrapping needed in sweep.py, step7_pathway.py, ingest.py
+**Symptom:** Various `Binder exception: STRING cannot be implicitly cast to TIMESTAMP` errors during sweep and pathway update operations.
+
+**Root cause:** Same root cause as ISSUE-011 but in additional files not caught in the initial fix.
+
+**Fix:** Wrapped `$now`, `$created_at`, `$last_modified_at`, `$inferred_at` in `timestamp()` across all remaining Cypher queries.
+
+**Files changed:** `mcp_engine/sweep.py` (1 fix), `mcp_engine/loop/step7_pathway.py` (3 fixes), `mcp_engine/ingest.py` (2 fixes), `mcp_engine/loop/orchestrator.py` (1 additional fix)
+
+---
+
+### Updated Known Remaining Issues
+
+| # | Issue | Severity | Status |
+|---|-------|----------|--------|
+| 1 | launchd venv TCC block — daemon doesn't auto-start at login | Medium | Workaround: `sidequests start &` manually |
+| 2 | `sidequests setup` registers MCP locally not globally | Low | Fixed manually; setup.py needs update |
+| 3 | No `README.md` — PyPI publish blocked (also blocked on patent) | Low | Deferred |
+| 4 | Gemini CLI requires `gemini trust` per project folder | Low | User must run manually |
+| 5 | Installation process requires too many manual steps | High | Backlog B13 tracks full fix |

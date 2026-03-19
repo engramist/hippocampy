@@ -122,7 +122,7 @@ async def apply_additive(existing_concept_id: str, db, now: str) -> dict:
         await db.execute_write(
             "MATCH (c:Concept {concept_id: $id}) "
             "SET c.pathway_strength = c.pathway_strength + $increment, "
-            "    c.last_accessed_at = $now",
+            "    c.last_accessed_at = timestamp($now)",
             {"id": existing_concept_id, "increment": increment, "now": now}
         )
     except Exception:
@@ -176,7 +176,7 @@ async def apply_contradiction(new_concept_id: str, old_concept_id: str,
                 delta_pathway_strength: 0.0,
                 alias_added:           [],
                 metadata_patch:        $patch,
-                created_at:            $now
+                created_at:            timestamp($now)
             })
             MERGE (me)-[:UPDATES_PATHWAY]->(new)
             """,
@@ -247,7 +247,7 @@ async def write_co_occurs_with(concept_ids: list[str], min_confidence: float,
             MERGE (a)-[r:CO_OCCURS_WITH]->(b)
             ON CREATE SET r.count     = 1,
                           r.strength  = $strength,
-                          r.first_seen = $now
+                          r.first_seen = timestamp($now)
             ON MATCH SET  r.count    = r.count + 1,
                           r.strength = (r.strength + $strength) / 2.0
             """,

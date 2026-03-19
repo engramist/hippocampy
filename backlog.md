@@ -153,8 +153,8 @@ Files to create:
 
 ---
 
-### B8 · Gemini CLI Adapter
-`adapters/gemini_cli/adapter.py` — not yet started. Gemini CLI MCP support open-sourced mid-2025. Same stdio pattern as Claude Code and Codex adapters.
+### B8 · Gemini CLI Adapter — DONE
+`adapters/gemini_cli/adapter.py` — completed 2026-03-18. Protocol version negotiation, `resources/list`, and full tool surface implemented. Requires `gemini trust` per project folder.
 
 ---
 
@@ -252,6 +252,39 @@ Notes:
 - No implementation work needed — Step 4 Contradiction sense + GlobalConstraint nodes already do this
 - Memory Control Panel (M7) is the natural surface for displaying flagged anomalies
 - Future: configurable alert threshold (e.g., only flag contradictions against nodes with pathway_strength > 0.8)
+
+---
+
+## P0 — Installation Experience (Critical — Blocking Adoption)
+
+### B13 · Guided Installer with LLM Provider Choice
+The current installation process is fragile and manual — requires hand-editing config files, manually installing Ollama, pulling models, running multiple CLI commands, and debugging cascading failures. This is the #1 adoption blocker.
+
+**What it should do:**
+- Single entry point: `sidequests install` (or a `.dmg` / native installer on macOS)
+- Interactive wizard asks one key question upfront: **"Do you want a free local model (Ollama) or bring your own API keys?"**
+  - **Local (Ollama):** Auto-install Ollama via Homebrew (macOS) or package manager (Linux), pull the default model (`llama3.1:8b`), verify it's running
+  - **Cloud (BYOK):** Prompt for provider choice (OpenAI / Anthropic / Google) and API key, validate the key works with a test call
+- Auto-detect installed AI clients (Claude Code, Claude Desktop, Codex, Gemini CLI, ChatGPT Desktop)
+- Register MCP adapters for all detected clients (user scope, not project-local)
+- Write `sidequests.toml` with correct provider config
+- Run full smoke test: LLM ping + embedding model load + Kùzu schema init + spaCy model download + `tools/list` round-trip
+- Print clear pass/fail report with actionable fix instructions for any failures
+- Must be idempotent — safe to re-run
+
+**Potential distribution formats:**
+- `.dmg` with drag-to-install (macOS — best for non-technical users)
+- Homebrew formula: `brew install sidequests-brain`
+- `pipx install sidequests-brain` (developer audience)
+- `.mcpb` bundle for Claude Desktop one-click install (see B2)
+
+**Dependencies to auto-install:**
+- Ollama (if local model chosen)
+- spaCy `en_core_web_md` model
+- sentence-transformers model (auto-downloaded on first use, but should pre-warm)
+- Kùzu schema init
+
+**Supersedes:** B1 (`sidequests setup` CLI) — B13 is the full vision; B1 is the MVP subset.
 
 ---
 

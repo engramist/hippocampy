@@ -318,8 +318,10 @@ async def handle_mcp_request(request: dict) -> dict:
 
     # MCP lifecycle
     if method == "initialize":
+        # Negotiate protocol version — echo back whatever the client requests
+        client_version = params.get("protocolVersion", "2024-11-05")
         return ok({
-            "protocolVersion": "2024-11-05",
+            "protocolVersion": client_version,
             "capabilities": {"tools": {}},
             "serverInfo": {"name": "sidequests-brain", "version": "0.1.0"},
         })
@@ -329,6 +331,10 @@ async def handle_mcp_request(request: dict) -> dict:
 
     if method == "tools/list":
         return ok({"tools": TOOLS})
+
+    # Some MCP clients probe resources/list during discovery — return empty
+    if method == "resources/list":
+        return ok({"resources": []})
 
     if method == "prompts/list":
         return ok({"prompts": [{"name": "sidequests-system", "description": "SideQuests Brain instructions"}]})

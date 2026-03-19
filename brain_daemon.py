@@ -157,8 +157,10 @@ class BrainDaemon:
         if SOCKET_PATH.exists():
             SOCKET_PATH.unlink()
 
+        # 4 MB limit — notify_turn payloads can be large (full assistant responses)
         server = await asyncio.start_unix_server(
-            self._handle_connection, path=str(SOCKET_PATH)
+            self._handle_connection, path=str(SOCKET_PATH),
+            limit=4 * 1024 * 1024,
         )
         self.running = True
         print(f"Brain Daemon listening on {SOCKET_PATH}")
@@ -236,6 +238,7 @@ class BrainDaemon:
         while True:
             message_id, text = await self._loop_queue.get()
             try:
+                print(f"[Loop] Processing: {text[:120]!r}")
                 summary = await run_loop(
                     message_id=message_id,
                     text=text,

@@ -132,7 +132,7 @@ async def analogical_search(params: dict, db, config: dict) -> dict:
 
     for table_name, index_name, pk_col in CROSS_QUEST_TABLES:
         try:
-            rows = db.vector_search(index_name, query_vector, per_table)
+            rows = db.vector_search(table_name, index_name, query_vector, per_table)
         except Exception:
             continue
 
@@ -225,7 +225,7 @@ def find_similar_quests(current_quest_id: str, db, config: dict,
     # Vector search for similar quests
     similar = []
     try:
-        rows = db.vector_search("mainquest_emb_idx", current_embedding, limit + 1)
+        rows = db.vector_search("MainQuest", "mainquest_emb_idx", current_embedding, limit + 1)
         for row in rows:
             node = row["node"]
             qid  = node.get("quest_id", "")

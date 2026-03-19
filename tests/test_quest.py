@@ -467,7 +467,7 @@ async def test_current_truth_returns_quest_context_for_branch_scope():
         def has_next(self): return False
 
     class MockDB:
-        def vector_search(self, index_name, embedding, limit):
+        def vector_search(self, table_name, index_name, embedding, limit):
             return []
         def execute(self, query, params=None):
             return MockQueryResult()

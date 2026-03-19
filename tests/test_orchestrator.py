@@ -44,7 +44,7 @@ class MockWriteLog:
 
         return Empty()
 
-    def vector_search(self, index_name, embedding, limit):
+    def vector_search(self, table_name, index_name, embedding, limit):
         return []   # no candidates → no contradiction, pure create path
 
     async def execute_write(self, query, params=None):

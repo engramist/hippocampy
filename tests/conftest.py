@@ -20,7 +20,10 @@ def pytest_configure(config):
 # ---------------------------------------------------------------------------
 SPACY_AVAILABLE = False
 try:
-    import spacy as _real_spacy          # noqa: F401 — test-import only
+    import spacy as _real_spacy
+    # Import alone isn't enough — spaCy 3.x loads on Python 3.14 but
+    # pydantic v1 compat is broken, so spacy.load() fails at runtime.
+    _real_spacy.load("en_core_web_md")
     SPACY_AVAILABLE = True
 except Exception:
     # Build a minimal stub that satisfies `import spacy` without side-effects.
