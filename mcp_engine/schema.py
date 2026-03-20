@@ -216,6 +216,7 @@ NODE_TABLES = {
         token_limit         INT64,
         loaded_node_count   INT32,
         last_injection_at   TIMESTAMP,
+        last_loop_summary   STRING,
         PRIMARY KEY (session_id)
     """,
 

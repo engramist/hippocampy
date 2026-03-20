@@ -246,9 +246,9 @@ async def test_loop_worker_continues_after_error(monkeypatch):
     import brain_daemon as bd_module
     monkeypatch.setattr(bd_module, "run_loop", mock_run_loop)
 
-    # Enqueue bad message then good message (3-tuples: message_id, text, role)
-    await daemon._loop_queue.put(("msg-bad", "bad", "user"))
-    await daemon._loop_queue.put(("msg-good", "good text", "user"))
+    # Enqueue bad message then good message (4-tuples: message_id, text, role, session_id)
+    await daemon._loop_queue.put(("msg-bad", "bad", "user", "s1"))
+    await daemon._loop_queue.put(("msg-good", "good text", "user", "s1"))
 
     # Run worker in background task, cancel it after both messages processed
     task = asyncio.create_task(daemon._loop_worker())
