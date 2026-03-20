@@ -246,3 +246,28 @@ def test_bootstrap_centroids_skips_empty_class(tmp_path):
     # Should not raise
     _bootstrap_centroids(MockDB(), str(seed_file),
                           "sentence-transformers/all-MiniLM-L6-v2")
+
+
+def test_real_seed_file_has_diverse_examples():
+    """GistSeedExamples.md has domain-diverse examples (B-centroid-diversity)."""
+    from mcp_engine.schema import _parse_seed_examples
+    from pathlib import Path
+
+    seed_file = Path(__file__).parent.parent / "InvertorsDocs" / "GistSeedExamples.md"
+    if not seed_file.exists():
+        pytest.skip("Seed file not found")
+
+    result = _parse_seed_examples(str(seed_file))
+
+    # Every class should have at least 40 examples (original ~15 + professional ~15 + consumer ~15)
+    for class_name in ["Restriction", "PlannedEvent", "PhysicalThing",
+                       "Magnitude", "Category", "Agent", "Event"]:
+        assert class_name in result, f"Missing class: {class_name}"
+        assert len(result[class_name]) >= 40, (
+            f"gist:{class_name} has only {len(result[class_name])} examples, "
+            f"expected >= 40 after Phase 1 + Phase 2 diversity merge"
+        )
+
+    # Total should be > 300
+    total = sum(len(v) for v in result.values())
+    assert total >= 300, f"Total examples {total} < 300"

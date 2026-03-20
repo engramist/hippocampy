@@ -1,0 +1,117 @@
+{
+  "qwen2.5:3b": {
+    "accuracy": 0.6842105263157895,
+    "json_failures": 0,
+    "avg_latency_ms": 931.6026574089414,
+    "step2": {
+      "correct": 20,
+      "total": 28,
+      "latency": 608.1361430031913,
+      "json_failures": 0
+    },
+    "step3b": {
+      "correct": 3,
+      "total": 5,
+      "latency": 786.6813659667969,
+      "json_failures": 0
+    },
+    "step6": {
+      "correct": 3,
+      "total": 5,
+      "latency": 1399.990463256836,
+      "json_failures": 0
+    }
+  },
+  "llama3.2:3b": {
+    "accuracy": 0.6052631578947368,
+    "json_failures": 0,
+    "avg_latency_ms": 975.1481470607577,
+    "step2": {
+      "correct": 18,
+      "total": 28,
+      "latency": 952.3373416491917,
+      "json_failures": 0
+    },
+    "step3b": {
+      "correct": 3,
+      "total": 5,
+      "latency": 847.997236251831,
+      "json_failures": 0
+    },
+    "step6": {
+      "correct": 2,
+      "total": 5,
+      "latency": 1125.10986328125,
+      "json_failures": 0
+    }
+  },
+  "qwen2.5:1.5b": {
+    "accuracy": 0.6578947368421053,
+    "json_failures": 0,
+    "avg_latency_ms": 979.1066152708871,
+    "step2": {
+      "correct": 20,
+      "total": 28,
+      "latency": 830.4727503231594,
+      "json_failures": 0
+    },
+    "step3b": {
+      "correct": 3,
+      "total": 5,
+      "latency": 765.9041404724121,
+      "json_failures": 0
+    },
+    "step6": {
+      "correct": 2,
+      "total": 5,
+      "latency": 1340.9429550170898,
+      "json_failures": 0
+    }
+  },
+  "phi3.5": {
+    "accuracy": 0.6578947368421053,
+    "json_failures": 1,
+    "avg_latency_ms": 785.7316931088766,
+    "step2": {
+      "correct": 17,
+      "total": 28,
+      "latency": 614.3919825553894,
+      "json_failures": 1
+    },
+    "step3b": {
+      "correct": 3,
+      "total": 5,
+      "latency": 748.7849712371826,
+      "json_failures": 0
+    },
+    "step6": {
+      "correct": 5,
+      "total": 5,
+      "latency": 994.0181255340576,
+      "json_failures": 0
+    }
+  },
+  "llama3.1:8b": {
+    "accuracy": 0.631578947368421,
+    "json_failures": 0,
+    "avg_latency_ms": 1410.5380387533278,
+    "step2": {
+      "correct": 17,
+      "total": 28,
+      "latency": 1141.9299159731183,
+      "json_failures": 0
+    },
+    "step3b": {
+      "correct": 3,
+      "total": 5,
+      "latency": 1421.2395191192627,
+      "json_failures": 0
+    },
+    "step6": {
+      "correct": 4,
+      "total": 5,
+      "latency": 1668.4446811676025,
+      "json_failures": 0
+    }
+  }
+}
