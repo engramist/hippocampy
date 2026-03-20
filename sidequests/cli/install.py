@@ -670,9 +670,15 @@ class AdapterRegistrar:
         return True
 
     def _register_chatgpt_desktop(self) -> bool:
-        """Print instructions for ChatGPT Desktop (SSE connector)."""
-        click.echo("    [i] ChatGPT Desktop — paste this URL in Settings > Apps:")
-        click.echo("        http://127.0.0.1:7799/sse")
+        """Print setup instructions for ChatGPT Desktop (SSE connector)."""
+        click.echo("    [ok] ChatGPT Desktop — SSE endpoint ready")
+        click.echo("")
+        click.echo("    To connect ChatGPT Desktop:")
+        click.echo("      1. Open ChatGPT Desktop")
+        click.echo("      2. Go to Settings → MCP Servers (or Apps → Add Connector)")
+        click.echo("      3. Add server URL: http://127.0.0.1:7799/sse")
+        click.echo("      4. Save — all SideQuest tools will appear automatically")
+        click.echo("")
         return True
 
     @staticmethod
