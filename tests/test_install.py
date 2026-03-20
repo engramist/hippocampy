@@ -1,0 +1,495 @@
+"""
+tests/test_install.py — Tests for sidequests install command.
+
+All external operations are mocked:
+- subprocess.run (Homebrew, Ollama, pip, spaCy, launchctl)
+- urllib.request.urlopen (Ollama health check)
+- click.prompt (user input)
+- File I/O (config files, plist)
+- OpenAI client (BYOK validation)
+"""
+
+import sys
+import os
+import json
+import pytest
+import subprocess
+from pathlib import Path
+from unittest.mock import patch, MagicMock, call
+
+# Ensure the project root is in sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+class TestOllamaInstaller:
+
+    def test_is_installed_true(self):
+        """Returns True when ollama is in PATH."""
+        with patch("shutil.which", return_value="/opt/homebrew/bin/ollama"):
+            from sidequests.cli.install import OllamaInstaller
+            assert OllamaInstaller.is_installed() is True
+
+    def test_is_installed_false(self):
+        """Returns False when ollama is not in PATH."""
+        with patch("shutil.which", return_value=None):
+            from sidequests.cli.install import OllamaInstaller
+            assert OllamaInstaller.is_installed() is False
+
+    def test_is_running_true(self):
+        """Returns True when Ollama server responds."""
+        with patch("urllib.request.urlopen") as mock_url:
+            mock_url.return_value.__enter__ = lambda s: s
+            mock_url.return_value.__exit__ = MagicMock(return_value=False)
+            from sidequests.cli.install import OllamaInstaller
+            assert OllamaInstaller.is_running() is True
+
+    def test_is_running_false(self):
+        """Returns False when Ollama server is unreachable."""
+        with patch("urllib.request.urlopen", side_effect=ConnectionRefusedError):
+            from sidequests.cli.install import OllamaInstaller
+            assert OllamaInstaller.is_running() is False
+
+    def test_has_model_true(self):
+        """Returns True when model appears in ollama list output."""
+        mock_result = MagicMock(stdout="NAME\nllama3.1:8b\n", returncode=0)
+        with patch("subprocess.run", return_value=mock_result):
+            from sidequests.cli.install import OllamaInstaller
+            assert OllamaInstaller.has_model("llama3.1:8b") is True
+
+    def test_has_model_false(self):
+        """Returns False when model not in ollama list output."""
+        mock_result = MagicMock(stdout="NAME\nmistral:7b\n", returncode=0)
+        with patch("subprocess.run", return_value=mock_result):
+            from sidequests.cli.install import OllamaInstaller
+            assert OllamaInstaller.has_model("llama3.1:8b") is False
+
+    def test_install_no_homebrew(self):
+        """Returns False and prints message when brew not available."""
+        with patch("shutil.which", return_value=None):
+            from sidequests.cli.install import OllamaInstaller
+            inst = OllamaInstaller()
+            assert inst.install() is False
+
+    def test_install_brew_succeeds(self):
+        """Returns True when brew install ollama succeeds."""
+        def which_side_effect(name):
+            if name == "brew":
+                return "/opt/homebrew/bin/brew"
+            if name == "ollama":
+                return "/opt/homebrew/bin/ollama"
+            return None
+
+        with patch("shutil.which", side_effect=which_side_effect):
+            mock_result = MagicMock(returncode=0)
+            with patch("subprocess.run", return_value=mock_result):
+                from sidequests.cli.install import OllamaInstaller
+                inst = OllamaInstaller()
+                assert inst.install() is True
+
+    def test_install_brew_fails(self):
+        """Returns False when brew install returns non-zero."""
+        def which_side_effect(name):
+            return "/opt/homebrew/bin/brew" if name == "brew" else None
+
+        with patch("shutil.which", side_effect=which_side_effect):
+            mock_result = MagicMock(returncode=1, stderr="Error")
+            with patch("subprocess.run", return_value=mock_result):
+                from sidequests.cli.install import OllamaInstaller
+                inst = OllamaInstaller()
+                assert inst.install() is False
+
+    def test_pull_model_already_exists(self):
+        """Skips pull when model already available."""
+        mock_result = MagicMock(stdout="NAME\nllama3.1:8b\n", returncode=0)
+        with patch("subprocess.run", return_value=mock_result):
+            from sidequests.cli.install import OllamaInstaller
+            inst = OllamaInstaller()
+            assert inst.pull_model("llama3.1:8b") is True
+
+    def test_pull_model_download(self):
+        """Pulls model when not already available."""
+        call_count = [0]
+        def run_side_effect(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:  # ollama list
+                return MagicMock(stdout="NAME\n", returncode=0)
+            return MagicMock(returncode=0)  # ollama pull
+
+        with patch("subprocess.run", side_effect=run_side_effect):
+            from sidequests.cli.install import OllamaInstaller
+            inst = OllamaInstaller()
+            assert inst.pull_model("llama3.1:8b") is True
+
+class TestBYOKValidator:
+
+    def test_validate_key_success(self):
+        """Returns True when API call succeeds."""
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = MagicMock()
+
+        with patch("sidequests.cli.install.OpenAI", return_value=mock_client):
+            from sidequests.cli.install import BYOKValidator
+            v = BYOKValidator()
+            assert v.validate_key("openai", "sk-test123") is True
+
+    def test_validate_key_auth_error(self):
+        """Returns False on authentication error."""
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = Exception("401 Unauthorized")
+
+        with patch("sidequests.cli.install.OpenAI", return_value=mock_client):
+            from sidequests.cli.install import BYOKValidator
+            v = BYOKValidator()
+            assert v.validate_key("openai", "bad-key") is False
+
+    def test_prompt_api_key_from_env(self, monkeypatch):
+        """Uses env var when user confirms."""
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-from-env")
+        with patch("click.confirm", return_value=True):
+            from sidequests.cli.install import BYOKValidator
+            v = BYOKValidator()
+            assert v.prompt_api_key("openai") == "sk-from-env"
+
+    def test_prompt_api_key_manual(self, monkeypatch):
+        """Prompts manually when env var not set."""
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        with patch("click.prompt", return_value="sk-manual"):
+            from sidequests.cli.install import BYOKValidator
+            v = BYOKValidator()
+            assert v.prompt_api_key("openai") == "sk-manual"
+
+class TestVenvManager:
+
+    def test_exists_true(self, tmp_path):
+        """Returns True when venv python3 binary exists."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+        from sidequests.cli.install import VenvManager
+        vm = VenvManager(venv_dir=tmp_path)
+        assert vm.exists() is True
+
+    def test_exists_false(self, tmp_path):
+        """Returns False when venv does not exist."""
+        from sidequests.cli.install import VenvManager
+        vm = VenvManager(venv_dir=tmp_path / "nonexistent")
+        assert vm.exists() is False
+
+    def test_create_skips_existing(self, tmp_path):
+        """Skips creation when venv already exists."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+        from sidequests.cli.install import VenvManager
+        vm = VenvManager(venv_dir=tmp_path)
+        assert vm.create() is True
+
+    def test_create_new_venv(self, tmp_path):
+        """Creates venv when it does not exist."""
+        venv_dir = tmp_path / "new_venv"
+        mock_result = MagicMock(returncode=0)
+
+        with patch("subprocess.run", return_value=mock_result):
+            from sidequests.cli.install import VenvManager
+            vm = VenvManager(venv_dir=venv_dir)
+            # Simulate that venv python appears after creation
+            with patch.object(vm, "exists", side_effect=[False, True]):
+                # Need to create the bin dir to make final check pass
+                (venv_dir / "bin").mkdir(parents=True)
+                (venv_dir / "bin" / "python3").touch()
+                assert vm.create() is True
+
+    def test_install_deps_success(self, tmp_path):
+        """Returns True when pip install succeeds."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+        (tmp_path / "bin" / "pip3").touch()
+        mock_result = MagicMock(returncode=0)
+
+        with patch("subprocess.run", return_value=mock_result):
+            from sidequests.cli.install import VenvManager
+            vm = VenvManager(venv_dir=tmp_path)
+            assert vm.install_deps() is True
+
+    def test_install_deps_pip_failure(self, tmp_path):
+        """Returns False when pip install fails."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "pip3").touch()
+        mock_result = MagicMock(returncode=1, stderr="ERROR: No matching distribution")
+
+        with patch("subprocess.run", return_value=mock_result):
+            from sidequests.cli.install import VenvManager
+            vm = VenvManager(venv_dir=tmp_path)
+            assert vm.install_deps() is False
+
+    def test_install_spacy_already_present(self, tmp_path):
+        """Skips download when model already installed."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+        mock_result = MagicMock(returncode=0)
+
+        with patch("subprocess.run", return_value=mock_result):
+            from sidequests.cli.install import VenvManager
+            vm = VenvManager(venv_dir=tmp_path)
+            assert vm.install_spacy_model() is True
+
+    def test_prewarm_embeddings_success(self, tmp_path):
+        """Returns True when embedding pre-warm succeeds."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+        mock_result = MagicMock(returncode=0)
+
+        with patch("subprocess.run", return_value=mock_result):
+            from sidequests.cli.install import VenvManager
+            vm = VenvManager(venv_dir=tmp_path)
+            assert vm.prewarm_embeddings() is True
+
+class TestConfigWriter:
+
+    def test_write_ollama_config(self, tmp_path):
+        """Writes correct config for Ollama provider."""
+        config_path = tmp_path / "config.toml"
+        from sidequests.cli.install import ConfigWriter
+        ConfigWriter.write(
+            {"provider": "ollama", "model": "llama3.1:8b"},
+            config_path=config_path
+        )
+        content = config_path.read_text()
+        assert 'provider = "ollama"' in content
+        assert 'model = "llama3.1:8b"' in content
+
+    def test_write_byok_config(self, tmp_path):
+        """Writes correct config for cloud provider."""
+        config_path = tmp_path / "config.toml"
+        from sidequests.cli.install import ConfigWriter
+        with patch("sidequests.cli.install.SIDEQUESTS_HOME", tmp_path):
+            ConfigWriter.write(
+                {"provider": "openai", "model": "gpt-4o-mini",
+                 "api_key": "sk-test", "env_var": "OPENAI_API_KEY"},
+                config_path=config_path
+            )
+        content = config_path.read_text()
+        assert 'provider = "openai"' in content
+        assert 'model = "gpt-4o-mini"' in content
+        # API key should NOT be in the TOML
+        assert "sk-test" not in content
+
+    def test_write_creates_env_file(self, tmp_path, monkeypatch):
+        """Creates .env file with API key for BYOK providers."""
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        config_path = tmp_path / "config.toml"
+        with patch("sidequests.cli.install.SIDEQUESTS_HOME", tmp_path):
+            from sidequests.cli.install import ConfigWriter
+            ConfigWriter.write(
+                {"provider": "openai", "model": "gpt-4o-mini",
+                 "api_key": "sk-secret", "env_var": "OPENAI_API_KEY"},
+                config_path=config_path
+            )
+        env_file = tmp_path / ".env"
+        assert env_file.exists()
+        assert "sk-secret" in env_file.read_text()
+
+    def test_write_idempotent(self, tmp_path):
+        """Running write twice does not corrupt the file."""
+        config_path = tmp_path / "config.toml"
+        from sidequests.cli.install import ConfigWriter
+        ConfigWriter.write(
+            {"provider": "ollama", "model": "llama3.1:8b"},
+            config_path=config_path
+        )
+        ConfigWriter.write(
+            {"provider": "ollama", "model": "llama3.1:8b"},
+            config_path=config_path
+        )
+        content = config_path.read_text()
+        assert content.count('provider = "ollama"') == 1
+
+class TestSchemaInitializer:
+
+    def test_init_success(self, tmp_path):
+        """Returns True when schema init script succeeds."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+        mock_result = MagicMock(returncode=0, stdout="...SCHEMA_OK\n", stderr="")
+
+        with patch("subprocess.run", return_value=mock_result):
+            from sidequests.cli.install import VenvManager, SchemaInitializer
+            vm = VenvManager(venv_dir=tmp_path)
+            si = SchemaInitializer(vm)
+            assert si.init() is True
+
+    def test_init_failure(self, tmp_path):
+        """Returns False when schema init script fails."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+        mock_result = MagicMock(returncode=1, stdout="", stderr="ImportError: kuzu")
+
+        with patch("subprocess.run", return_value=mock_result):
+            from sidequests.cli.install import VenvManager, SchemaInitializer
+            vm = VenvManager(venv_dir=tmp_path)
+            si = SchemaInitializer(vm)
+            assert si.init() is False
+
+class TestAdapterRegistrar:
+
+    def test_claude_code_global_scope(self, tmp_path):
+        """Claude Code registers with --scope user, not project-local."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+
+        calls = []
+        def mock_run(*args, **kwargs):
+            calls.append(args[0] if args else kwargs.get("args"))
+            return MagicMock(returncode=0)
+
+        with patch("subprocess.run", side_effect=mock_run):
+            with patch("shutil.which", return_value="/usr/local/bin/claude"):
+                from sidequests.cli.install import VenvManager, AdapterRegistrar
+                vm = VenvManager(venv_dir=tmp_path)
+                reg = AdapterRegistrar(vm)
+                result = reg._register_claude_code()
+                assert result is True
+                # Verify --scope user was passed
+                add_call = [c for c in calls if c and "add" in str(c)]
+                assert any("--scope" in str(c) and "user" in str(c) for c in add_call)
+
+    def test_claude_desktop_writes_config(self, tmp_path):
+        """Claude Desktop writes to the correct config file."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+
+        config_path = tmp_path / "claude_desktop_config.json"
+
+        with patch("platform.system", return_value="Darwin"):
+            with patch("sidequests.cli.install.Path.home", return_value=tmp_path):
+                from sidequests.cli.install import VenvManager, AdapterRegistrar
+                vm = VenvManager(venv_dir=tmp_path)
+                reg = AdapterRegistrar(vm)
+                # Directly test _merge_mcp_config
+                adapter_path = Path("/fake/adapter.py")
+                reg._merge_mcp_config(config_path, "sidequests-brain", {
+                    "command": str(vm.python),
+                    "args": [str(adapter_path)],
+                })
+                config = json.loads(config_path.read_text())
+                assert "sidequests-brain" in config["mcpServers"]
+
+    def test_detect_no_clients(self):
+        """Returns empty dict when no clients detected."""
+        with patch("sidequests.cli.detect.detect_installed_clients",
+                   return_value={"claude-code": False, "claude-desktop": False,
+                                 "codex": False, "chatgpt-desktop": False,
+                                 "gemini-cli": False}):
+            from sidequests.cli.install import VenvManager, AdapterRegistrar
+            vm = MagicMock()
+            reg = AdapterRegistrar(vm)
+            results = reg.register_all()
+            assert results == {}
+
+class TestDaemonSetup:
+
+    def test_plist_uses_venv_site_packages(self, tmp_path, monkeypatch):
+        """Plist PYTHONPATH points to ~/.sidequests/venv/ site-packages."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+        monkeypatch.setattr("sidequests.cli.launchd.PLIST_PATH",
+                           tmp_path / "test.plist")
+        monkeypatch.setattr("sidequests.cli.launchd.LOG_PATH",
+                           tmp_path / "test.log")
+
+        with patch("shutil.which", return_value="/usr/bin/python3"):
+            from sidequests.cli.install import VenvManager, DaemonSetup
+            vm = VenvManager(venv_dir=tmp_path)
+            with patch.object(vm, "site_packages_dir",
+                            return_value=tmp_path / "lib" / "python3.12" / "site-packages"):
+                ds = DaemonSetup(vm)
+                plist_path = ds._write_plist()
+
+                import plistlib
+                with open(plist_path, "rb") as f:
+                    plist = plistlib.load(f)
+
+                pythonpath = plist["EnvironmentVariables"]["PYTHONPATH"]
+                assert str(tmp_path) in pythonpath
+                assert "site-packages" in pythonpath
+
+    def test_plist_includes_env_vars(self, tmp_path, monkeypatch):
+        """Plist includes API key env vars from .env file."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+        monkeypatch.setattr("sidequests.cli.launchd.PLIST_PATH",
+                           tmp_path / "test.plist")
+        monkeypatch.setattr("sidequests.cli.launchd.LOG_PATH",
+                           tmp_path / "test.log")
+
+        env_file = tmp_path / ".env"
+        env_file.write_text('OPENAI_API_KEY="sk-test123"\n')
+
+        with patch("shutil.which", return_value="/usr/bin/python3"):
+            with patch("sidequests.cli.install.SIDEQUESTS_HOME", tmp_path):
+                from sidequests.cli.install import VenvManager, DaemonSetup
+                vm = VenvManager(venv_dir=tmp_path)
+                with patch.object(vm, "site_packages_dir",
+                                return_value=tmp_path / "lib" / "python3.12" / "site-packages"):
+                    ds = DaemonSetup(vm)
+                    plist_path = ds._write_plist()
+
+                    import plistlib
+                    with open(plist_path, "rb") as f:
+                        plist = plistlib.load(f)
+
+                    assert plist["EnvironmentVariables"]["OPENAI_API_KEY"] == "sk-test123"
+
+class TestIdempotency:
+
+    def test_full_install_idempotent(self, tmp_path):
+        """Running write twice does not corrupt state."""
+        config_path = tmp_path / "config.toml"
+
+        from sidequests.cli.install import ConfigWriter
+        ConfigWriter.write(
+            {"provider": "ollama", "model": "llama3.1:8b"},
+            config_path=config_path
+        )
+        first_content = config_path.read_text()
+
+        ConfigWriter.write(
+            {"provider": "ollama", "model": "llama3.1:8b"},
+            config_path=config_path
+        )
+        second_content = config_path.read_text()
+
+        assert first_content == second_content
+
+    def test_venv_skips_if_exists(self, tmp_path):
+        """VenvManager.create() returns True without calling subprocess if venv exists."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+
+        with patch("subprocess.run") as mock_run:
+            from sidequests.cli.install import VenvManager
+            vm = VenvManager(venv_dir=tmp_path)
+            assert vm.create() is True
+            mock_run.assert_not_called()
+
+class TestFailureModes:
+
+    def test_ollama_pull_timeout(self):
+        """Returns False when ollama pull exceeds timeout."""
+        def run_side_effect(*args, **kwargs):
+            if "list" in str(args):
+                return MagicMock(stdout="NAME\n", returncode=0)
+            raise subprocess.TimeoutExpired(cmd="ollama pull", timeout=600)
+
+        with patch("subprocess.run", side_effect=run_side_effect):
+            from sidequests.cli.install import OllamaInstaller
+            inst = OllamaInstaller()
+            assert inst.pull_model("llama3.1:8b") is False
+
+    def test_schema_init_timeout(self, tmp_path):
+        """Returns False when schema init exceeds timeout."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+
+        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="python", timeout=120)):
+            from sidequests.cli.install import VenvManager, SchemaInitializer
+            vm = VenvManager(venv_dir=tmp_path)
+            si = SchemaInitializer(vm)
+            assert si.init() is False

@@ -33,9 +33,16 @@ def cli() -> None:
     help="Project root for .mcp.json (Claude Code). Defaults to current directory.",
 )
 def setup(target: str, project_root: str | None) -> None:
-    """Detect AI clients, register adapters, and start the Brain Daemon."""
+    """[Deprecated — use `sidequests install`] Detect AI clients, register adapters, and start the Brain Daemon."""
     from sidequests.cli.setup import run_setup
     run_setup(target=target, project_root=project_root)
+
+
+@cli.command()
+def install() -> None:
+    """One-command installer: LLM setup, dependencies, schema, adapters, daemon."""
+    from sidequests.cli.install import run_install
+    run_install()
 
 
 @cli.command()
