@@ -134,6 +134,9 @@ NODE_TABLES = {
         archived        BOOLEAN,
         created_at      TIMESTAMP,
         last_active_at  TIMESTAMP,
+        git_repo_root       STRING,
+        purpose_embedding   FLOAT[384],
+        routing_method      STRING,
         PRIMARY KEY (quest_id)
     """,
 
@@ -205,6 +208,14 @@ NODE_TABLES = {
         last_active_at TIMESTAMP,
         onboarded      BOOLEAN,
         purpose        STRING,
+        routing_state       STRING,
+        routing_confidence  DOUBLE,
+        routing_method      STRING,
+        content_embedding   FLOAT[384],
+        token_estimate      INT64,
+        token_limit         INT64,
+        loaded_node_count   INT32,
+        last_injection_at   TIMESTAMP,
         PRIMARY KEY (session_id)
     """,
 
@@ -314,6 +325,7 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS HAS_PREF_LABEL (FROM Concept TO Label, FROM Decision TO Label, FROM Constraint TO Label, FROM Requirement TO Label, FROM ActionItem TO Label)",
     "CREATE REL TABLE IF NOT EXISTS HAS_ALT_LABEL (FROM Concept TO Label, FROM Decision TO Label, FROM Constraint TO Label, FROM Requirement TO Label, FROM ActionItem TO Label)",
     "CREATE REL TABLE IF NOT EXISTS HAS_HIDDEN_LABEL (FROM Concept TO Label, FROM Decision TO Label, FROM Constraint TO Label, FROM Requirement TO Label, FROM ActionItem TO Label)",
+    "CREATE REL TABLE IF NOT EXISTS LOADED (FROM Session TO Concept, FROM Session TO Decision, FROM Session TO Constraint, FROM Session TO Requirement, FROM Session TO ActionItem, FROM Session TO GlobalConstraint, FROM Session TO GlobalPreference, injected_at TIMESTAMP, token_estimate INT32, source STRING)",
     # Concept promotion
     "CREATE REL TABLE IF NOT EXISTS REIFIED_AS (FROM Concept TO Decision, FROM Concept TO Constraint, FROM Concept TO Requirement, FROM Concept TO ActionItem)",
     # Hebbian implicit layer
@@ -330,6 +342,7 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS ALTERNATIVE_TO (FROM Concept TO Concept, confidence DOUBLE, inferred_by STRING, inferred_at TIMESTAMP)",
     # B11 — Lesson
     "CREATE REL TABLE IF NOT EXISTS PRODUCED_LESSON (FROM MainQuest TO Lesson)",
+    "CREATE REL TABLE IF NOT EXISTS REROUTED_FROM (FROM Session TO MainQuest, rerouted_at TIMESTAMP, reason STRING)",
 ]
 
 # ---------------------------------------------------------------------------

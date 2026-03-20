@@ -74,6 +74,8 @@ async def test_get_or_create_main_quest_creates_on_first_call():
     assert writes[0]["quest_id"] == expected
     assert "myapp" in writes[0]["name"]
     assert "main" in writes[0]["name"]
+    assert "routing_method" in writes[0]
+    assert writes[0]["routing_method"] == "git"
 
 
 @pytest.mark.asyncio
@@ -84,10 +86,9 @@ async def test_get_or_create_main_quest_returns_existing():
 
     class MockDB:
         def execute(self, query, params=None):
-            # MERGE doesn't call execute() — this mock is unused but kept for clarity
             class R:
-                def has_next(self): return False
-                def get_next(self): return []
+                def has_next(self): return True
+                def get_next(self): return [compute_quest_id("/repo/myapp", "main")]
             return R()
         async def execute_write(self, query, params=None):
             writes.append(params)
@@ -116,14 +117,18 @@ async def test_get_or_create_session_writes_session_and_link():
 
     class MockDB:
         async def execute_write(self, query, params=None):
-            writes.append(query)
+            writes.append({"query": query, "params": params})
 
     await get_or_create_session(MockDB(), "sess-123", "quest-abc",
                                  "2024-01-01T00:00:00+00:00")
 
-    combined = " ".join(writes)
+    combined = " ".join(w["query"] for w in writes)
     assert "MERGE" in combined         # idempotent
     assert "WORKING_ON" in combined    # quest link
+
+    session_write = next(w for w in writes if "MERGE" in w["query"])
+    assert "routing_state" in session_write["query"]
+    assert "locked" in session_write["query"]
 
 
 # ---------------------------------------------------------------------------
@@ -245,12 +250,15 @@ def test_detect_git_context_in_known_repo():
     assert "sidequests-brain" in repo_root
 
 
-def test_inject_git_context_adds_fields():
-    from adapters.claude_code.adapter import _inject_git_context, _REPO_ROOT, _GIT_BRANCH
+def test_inject_context_adds_fields():
+    from adapters.claude_code.adapter import _inject_context, _REPO_ROOT, _GIT_BRANCH
     params = {"query": "test", "session_id": "s1"}
-    result = _inject_git_context(params)
-    assert result["repo_root"]  == _REPO_ROOT
-    assert result["git_branch"] == _GIT_BRANCH
+    result = _inject_context(params)
+    if _REPO_ROOT:
+        assert result["repo_root"]  == _REPO_ROOT
+    if _GIT_BRANCH:
+        assert result["git_branch"] == _GIT_BRANCH
+    assert result["workspace_path"] != ""
     assert result["query"]      == "test"   # original keys preserved
 
 
@@ -405,8 +413,8 @@ async def test_notify_turn_creates_main_quest_when_repo_provided():
 
 
 @pytest.mark.asyncio
-async def test_notify_turn_skips_quest_wiring_without_repo():
-    """notify_turn without repo_root skips quest creation (legacy mode)."""
+async def test_notify_turn_resolves_quest_semantically_without_repo():
+    """notify_turn without repo_root triggers semantic routing via hippocampus."""
     from mcp_engine.tools import notify_turn, init_loop_queue
     import asyncio
 
@@ -414,8 +422,11 @@ async def test_notify_turn_skips_quest_wiring_without_repo():
 
     writes = []
 
+    class MockResult:
+        def has_next(self): return False
+
     class MockDB:
-        def execute(self, query, params=None): return None
+        def execute(self, query, params=None): return MockResult()
         async def execute_write(self, query, params=None):
             writes.append(query)
 
@@ -427,10 +438,10 @@ async def test_notify_turn_skips_quest_wiring_without_repo():
     )
 
     assert result["status"] == "queued"
-    assert result["quest_id"] == ""      # no quest resolved
+    assert result["quest_id"] != ""      # semantic routing produced a UUID
 
     combined = " ".join(writes)
-    assert "MainQuest" not in combined   # no quest creation attempted
+    assert "MainQuest" in combined       # quest was created semantically
     assert "Message" in combined         # message still stored
 
 

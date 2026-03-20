@@ -39,7 +39,7 @@ ADAPTER_MODULES = [
 EXPECTED_TOOLS = {
     "notify_turn", "current_truth", "branch_quest", "diff_since",
     "get_open_loops", "analogical_search", "ingest_document", "explore_graph",
-    "complete_quest",
+    "complete_quest", "set_quest", "context_status",
 }
 
 # Expected serverInfo name per adapter
@@ -183,6 +183,7 @@ TOOL_CALLS = [
     ("ingest_document",  {"file_path": "/tmp/test.md"}),
     ("explore_graph",    {"start_node_id": "abc-123"}),
     ("complete_quest",   {"quest_id": "quest-xyz"}),
+    ("set_quest",        {"session_id": "s1", "quest_name": "New Project"}),
 ]
 
 
@@ -366,24 +367,23 @@ async def test_codex_short_circuits_when_offline(patched, monkeypatch, tmp_path)
 # 6. Git Context Injection
 # ---------------------------------------------------------------------------
 
-def test_inject_git_context_adds_keys(adapter):
-    """_inject_git_context adds repo_root and git_branch to params dict."""
+def test_inject_context_adds_keys(adapter):
+    """_inject_context adds repo_root, git_branch, and workspace_path to params dict."""
     original = {"query": "test", "session_id": "s"}
-    result = adapter._inject_git_context(original)
+    result = adapter._inject_context(original)
 
-    assert "repo_root" in result
-    assert "git_branch" in result
+    assert "workspace_path" in result
     # Original params preserved
     assert result["query"] == "test"
     assert result["session_id"] == "s"
 
 
-def test_inject_git_context_does_not_mutate_original(adapter):
-    """_inject_git_context returns a new dict; original is unchanged."""
+def test_inject_context_does_not_mutate_original(adapter):
+    """_inject_context returns a new dict; original is unchanged."""
     original = {"foo": "bar"}
-    result = adapter._inject_git_context(original)
+    result = adapter._inject_context(original)
 
-    assert "repo_root" not in original
+    assert "workspace_path" not in original
     assert result is not original
 
 

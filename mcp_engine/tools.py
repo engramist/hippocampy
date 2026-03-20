@@ -76,13 +76,39 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
     message_id = str(uuid.uuid4())
     now        = datetime.now(timezone.utc).isoformat()
 
-    # M5: resolve MainQuest + upsert Session before writing message
+    # Route session via Hippocampus (all sessions, not just git)
     quest_id = ""
     if repo_root:
+        # Legacy git path — fast and deterministic
         quest_id = await get_or_create_main_quest(
             db, repo_root, git_branch, embedding_model, now
         )
         await get_or_create_session(db, session_id, quest_id, now)
+    else:
+        # Semantic routing — no git context available
+        from mcp_engine.hippocampus import route_session
+        try:
+            result = await route_session(
+                db, session_id, content, embedding_model,
+                workspace_path=params.get("workspace_path", ""),
+                config=config,
+            )
+            quest_id = result.quest_id
+        except Exception:
+            _logger.exception("hippocampus.route_session failed")
+
+    # B18: Set token_limit from adapter if provided
+    token_limit = params.get("token_limit", 0)
+    if token_limit and session_id != "unknown":
+        try:
+            await db.execute_write(
+                "MATCH (s:Session {session_id: $sid}) "
+                "WHERE s.token_limit IS NULL OR s.token_limit = 0 "
+                "SET s.token_limit = $limit",
+                {"sid": session_id, "limit": int(token_limit)}
+            )
+        except Exception:
+            pass
 
     # Write Message node
     await db.execute_write(
@@ -115,6 +141,15 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
         }
     )
 
+    # B18: Update token estimate for this message
+    if session_id != "unknown":
+        from mcp_engine.working_memory import update_token_estimate, estimate_tokens
+        try:
+            msg_tokens = estimate_tokens(content)
+            await update_token_estimate(db, session_id, msg_tokens)
+        except Exception:
+            pass
+
     # Link Message → Session
     if session_id != "unknown":
         await db.execute_write(
@@ -125,6 +160,18 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
             """,
             {"session_id": session_id, "message_id": message_id}
         )
+
+    # Update routing strength for subsequent messages (not the first)
+    if quest_id and not repo_root:
+        from mcp_engine.hippocampus import update_routing_strength, get_active_quests_with_embeddings
+        try:
+            quests = get_active_quests_with_embeddings(db)
+            quest_emb = next((q["purpose_embedding"] for q in quests
+                              if q["quest_id"] == quest_id), None)
+            if quest_emb:
+                await update_routing_strength(db, session_id, vector, quest_emb)
+        except Exception:
+            pass
 
     # Enqueue for Gated Consolidation Loop (M3+)
     if _loop_queue is not None:
@@ -160,10 +207,22 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
         "model", "sentence-transformers/all-MiniLM-L6-v2"
     )
 
-    # Resolve quest_id if not provided but git context is
+    # Resolve quest_id: prefer explicit, then git hash, then session binding
     if not quest_id and repo_root:
         from mcp_engine.quest import compute_quest_id
         quest_id = compute_quest_id(repo_root, git_branch)
+    if not quest_id and session_id != "unknown":
+        # Resolve via Session → WORKING_ON → MainQuest
+        try:
+            r = db.execute(
+                "MATCH (s:Session {session_id: $sid})-[:WORKING_ON]->(q:MainQuest) "
+                "RETURN q.quest_id",
+                {"sid": session_id}
+            )
+            if r.has_next():
+                quest_id = r.get_next()[0] or ""
+        except Exception:
+            pass
 
     query_vector = emb.embed(query, model_name=embedding_model)
 
@@ -215,15 +274,68 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
             _logger.exception("current_truth vector search failed for table %s", table_name)
 
     all_results.sort(key=lambda r: r["_rank"], reverse=True)
+
+    # B18: Smart deduplication — demote already-loaded nodes
+    if session_id != "unknown":
+        from mcp_engine.working_memory import get_loaded_node_ids, deduplicate_results
+        try:
+            loaded_ids = get_loaded_node_ids(db, session_id)
+            if loaded_ids:
+                all_results = deduplicate_results(all_results, loaded_ids)
+        except Exception:
+            _logger.debug("current_truth dedup failed for session %s", session_id)
+
     for r in all_results:
-        del r["_rank"]
+        if "_rank" in r:
+            del r["_rank"]
 
     # M5: include quest context for branch scope
     quest_ctx = {}
     if quest_id and scope in ("branch", "both"):
         quest_ctx = get_quest_context(db, quest_id, limit=5)
 
-    return {"results": all_results[:limit], "quest_context": quest_ctx}
+    final_results = all_results[:limit]
+
+    # B18: Track what was loaded into this session
+    if session_id != "unknown" and final_results:
+        from mcp_engine.working_memory import (
+            track_loaded, update_token_estimate, estimate_tokens,
+            check_context_health, get_session_token_state
+        )
+        try:
+            await track_loaded(db, session_id, final_results, source="current_truth")
+            # Update token estimate for injected content
+            injected_tokens = sum(estimate_tokens(r.get("text_raw", "")) for r in final_results)
+            await update_token_estimate(db, session_id, injected_tokens)
+        except Exception:
+            _logger.debug("current_truth load tracking failed for session %s", session_id)
+
+    # B18: Add bloat warning if applicable
+    bloat_warning = None
+    if session_id != "unknown":
+        try:
+            bloat_warning = check_context_health(db, session_id)
+        except Exception:
+            pass
+
+    response = {"results": final_results, "quest_context": quest_ctx}
+    if bloat_warning:
+        response["bloat_warning"] = bloat_warning
+
+    # B18: Add handoff candidates if this is a new session
+    if quest_id and session_id != "unknown":
+        from mcp_engine.working_memory import get_handoff_context
+        try:
+            state = get_session_token_state(db, session_id)
+            if state["loaded_nodes"] == 0:
+                # Fresh session — include handoff context
+                handoff = get_handoff_context(db, quest_id, session_id)
+                if handoff:
+                    response["handoff_from_prior_session"] = handoff
+        except Exception:
+            pass
+
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -827,6 +939,114 @@ def _pk_for_table(table: str) -> str | None:
     return None
 
 
+async def set_quest(params: dict, db: KuzuClient, config: dict) -> dict:
+    """
+    Explicit user override: bind session to a named quest.
+    Creates new quest if name doesn't match existing.
+    Sets routing_state = "locked", routing_confidence = 1.0.
+
+    params: {session_id, quest_name, quest_id?}
+    """
+    session_id = params.get("session_id", "").strip()
+    quest_name = params.get("quest_name", "").strip()
+    quest_id   = params.get("quest_id", "").strip()
+
+    if not session_id:
+        return {"error": "session_id is required"}
+    if not quest_name and not quest_id:
+        return {"error": "quest_name or quest_id is required"}
+
+    embedding_model = config.get("embeddings", {}).get(
+        "model", "sentence-transformers/all-MiniLM-L6-v2"
+    )
+
+    # Find existing quest by name or ID
+    found_id = ""
+    if quest_id:
+        try:
+            r = db.execute(
+                "MATCH (q:MainQuest {quest_id: $qid}) RETURN q.quest_id",
+                {"qid": quest_id}
+            )
+            if r.has_next():
+                found_id = r.get_next()[0]
+        except Exception:
+            pass
+    elif quest_name:
+        try:
+            r = db.execute(
+                "MATCH (q:MainQuest) WHERE q.name = $name AND q.status = 'active' "
+                "RETURN q.quest_id LIMIT 1",
+                {"name": quest_name}
+            )
+            if r.has_next():
+                found_id = r.get_next()[0]
+        except Exception:
+            pass
+
+    if not found_id:
+        # Create new quest
+        from mcp_engine.hippocampus import create_new_quest
+        content_embedding = emb.embed(quest_name, model_name=embedding_model)
+        found_id = await create_new_quest(
+            db, quest_name, content_embedding, embedding_model
+        )
+
+    # Bind session with locked state
+    from mcp_engine.hippocampus import _bind_session
+    await _bind_session(db, session_id, found_id, 1.0, "explicit", "locked")
+
+    return {"quest_id": found_id, "quest_name": quest_name, "routing_state": "locked"}
+
+
+async def context_status(params: dict, db: KuzuClient, config: dict) -> dict:
+    """
+    Check the health of the current context window.
+
+    params: {session_id}
+    Returns: {token_estimate, token_limit, utilization, loaded_nodes,
+              bloat_warning, handoff_available, handoff_nodes}
+    """
+    session_id = params.get("session_id", "").strip()
+    if not session_id:
+        return {"error": "session_id is required"}
+
+    from mcp_engine.working_memory import (
+        get_session_token_state, check_context_health, get_handoff_context
+    )
+
+    state = get_session_token_state(db, session_id)
+    warning = check_context_health(db, session_id)
+
+    # Check for handoff availability
+    quest_id = ""
+    try:
+        r = db.execute(
+            "MATCH (s:Session {session_id: $sid})-[:WORKING_ON]->(q:MainQuest) "
+            "RETURN q.quest_id",
+            {"sid": session_id}
+        )
+        if r.has_next():
+            quest_id = r.get_next()[0] or ""
+    except Exception:
+        pass
+
+    handoff_nodes = 0
+    if quest_id:
+        handoff = get_handoff_context(db, quest_id, session_id)
+        handoff_nodes = len(handoff)
+
+    return {
+        "token_estimate": state["estimated_tokens"],
+        "token_limit": state["token_limit"],
+        "utilization": round(state["utilization"], 3),
+        "loaded_nodes": state["loaded_nodes"],
+        "bloat_warning": warning,
+        "handoff_available": handoff_nodes > 0,
+        "handoff_nodes": handoff_nodes,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Dispatch table
 # ---------------------------------------------------------------------------
@@ -841,4 +1061,6 @@ TOOL_HANDLERS = {
     "ingest_document":  ingest_document,
     "analogical_search": analogical_search,
     "explore_graph":    explore_graph,
+    "set_quest":        set_quest,
+    "context_status":   context_status,
 }
