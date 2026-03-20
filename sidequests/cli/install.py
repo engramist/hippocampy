@@ -599,9 +599,23 @@ class AdapterRegistrar:
         settings_path.write_text(json.dumps(settings, indent=2))
 
     def _register_claude_desktop(self) -> bool:
-        """Register Claude Desktop adapter."""
-        adapter_path = (self._adapters_dir / "claude_desktop" / "adapter.py").resolve()
+        """Register Claude Desktop via plugin directory."""
+        plugin_dir = PROJECT_ROOT / "plugin"
+        if not plugin_dir.exists():
+            click.echo("    [!] Plugin directory not found at plugin/")
+            return False
 
+        click.echo("    [ok] Claude Desktop — SideQuests plugin ready")
+        click.echo("")
+        click.echo("    To install the plugin:")
+        click.echo(f"      1. Open Claude Desktop → Cowork tab")
+        click.echo(f"      2. Click 'Customize' → upload plugin folder:")
+        click.echo(f"         {plugin_dir}")
+        click.echo(f"      3. Or via CLI: claude plugins add {plugin_dir}")
+        click.echo("")
+
+        # Fallback for non-Cowork users: also register via stdio config
+        adapter_path = (self._adapters_dir / "claude_desktop" / "adapter.py").resolve()
         if platform.system() == "Darwin":
             config_path = (
                 Path.home() / "Library" / "Application Support"
@@ -613,15 +627,13 @@ class AdapterRegistrar:
                 / "claude_desktop_config.json"
             )
         else:
-            click.echo("    [!] Claude Desktop: unsupported platform")
-            return False
+            return True # Already printed plugin instructions
 
         config_path.parent.mkdir(parents=True, exist_ok=True)
         self._merge_mcp_config(config_path, "sidequests-brain", {
             "command": str(self.venv.python),
             "args": [str(adapter_path)],
         })
-        click.echo(f"    [ok] Claude Desktop — registered")
         return True
 
     def _register_codex(self) -> bool:

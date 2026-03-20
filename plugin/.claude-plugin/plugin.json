@@ -1,0 +1,8 @@
+{
+  "name": "sidequests-brain",
+  "version": "0.1.0",
+  "description": "AI memory that learns from every conversation. Automatically captures decisions, constraints, and plans — then recalls them when you need them. Works across Claude Desktop, Claude Code, Codex, and ChatGPT.",
+  "author": {
+    "name": "SideQuests"
+  }
+}
