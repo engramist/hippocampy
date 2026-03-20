@@ -230,18 +230,19 @@ class BrainDaemon:
 
     async def _loop_worker(self):
         """
-        Reads (message_id, text) tuples from the queue and runs the
+        Reads (message_id, text, role) tuples from the queue and runs the
         Gated Consolidation Loop on each. Runs as a long-lived background task.
         Errors are logged and swallowed — one bad message never kills the worker.
         """
         print("Loop worker started.")
         while True:
-            message_id, text = await self._loop_queue.get()
+            message_id, text, role = await self._loop_queue.get()
             try:
-                print(f"[Loop] Processing: {text[:120]!r}")
+                print(f"[Loop] Processing ({role}): {text[:120]!r}")
                 summary = await run_loop(
                     message_id=message_id,
                     text=text,
+                    role=role,
                     db=self.db,
                     llm_client=self._llm_client,
                     config=self.config,

@@ -230,7 +230,7 @@ async def test_loop_worker_continues_after_error(monkeypatch):
 
     processed = []
 
-    async def mock_run_loop(message_id, text, db, llm_client, config, centroids):
+    async def mock_run_loop(message_id, text, db, llm_client, config, centroids, role="user"):
         if text == "bad":
             raise RuntimeError("simulated loop failure")
         processed.append(message_id)
@@ -246,9 +246,9 @@ async def test_loop_worker_continues_after_error(monkeypatch):
     import brain_daemon as bd_module
     monkeypatch.setattr(bd_module, "run_loop", mock_run_loop)
 
-    # Enqueue bad message then good message
-    await daemon._loop_queue.put(("msg-bad", "bad"))
-    await daemon._loop_queue.put(("msg-good", "good text"))
+    # Enqueue bad message then good message (3-tuples: message_id, text, role)
+    await daemon._loop_queue.put(("msg-bad", "bad", "user"))
+    await daemon._loop_queue.put(("msg-good", "good text", "user"))
 
     # Run worker in background task, cancel it after both messages processed
     task = asyncio.create_task(daemon._loop_worker())

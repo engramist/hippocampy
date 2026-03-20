@@ -322,3 +322,25 @@ created_at: timestamp($created_at)
 | 3 | No `README.md` — PyPI publish blocked (also blocked on patent) | Low | Deferred |
 | 4 | Gemini CLI requires `gemini trust` per project folder | Low | User must run manually |
 | 5 | Installation process requires too many manual steps | High | Backlog B13 tracks full fix |
+
+---
+
+### ISSUE-025 · Decisions dropped as noise — NOISE_FLOOR too aggressive for all-MiniLM-L6-v2
+**Symptom:** "We decided to use SQLAlchemy as the ORM" processed by the Loop but zero concepts stored. `recent_decisions` always empty. JWT/constraint messages work fine.
+
+**Root cause:** Step 2 `NOISE_FLOOR = 0.25` is too high for `all-MiniLM-L6-v2` cosine similarity scores against gist class centroids. Decision-oriented sentences score 0.20–0.24 against PhysicalThing centroid — just below the noise floor. Constraint sentences score 0.40+ against Restriction centroid — well above. Additionally, seed examples are biased toward constraint/restriction language with no decision-making examples for PhysicalThing or Category.
+
+**Fix:** Lowered `NOISE_FLOOR` from 0.25 to 0.18 (still above cross-class noise range of 0.01–0.13). Added 5 decision-oriented seed examples to PhysicalThing and 3 to Category in `GistSeedExamples.md`.
+
+**Files changed:** `mcp_engine/loop/step2_gist.py`, `InvertorsDocs/GistSeedExamples.md`, `tests/test_loop.py`, `runningIssueLog.md`
+
+---
+
+### ISSUE-026 · Junk concepts leaking — ordinals, system terms, generic noun chunks
+**Symptom:** Concepts like "MainQuest", "first", "all endpoints", "the only exception", "a global dependency" stored in the graph. These are not meaningful user concepts — they're ordinals, SideQuests internal terms, or generic noun chunks.
+
+**Root cause:** `_is_junk_entity()` filter didn't cover ordinals (spaCy ORDINAL label), SideQuests system vocabulary (leaked from assistant responses via notify_turn), or generic noun chunks starting with determiners.
+
+**Fix:** Added ordinal regex, system terms set, and determiner-initial noun chunk filter to `step1_ner.py`.
+
+**Files changed:** `mcp_engine/loop/step1_ner.py`, `tests/test_loop.py`, `runningIssueLog.md`
