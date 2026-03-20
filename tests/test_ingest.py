@@ -428,11 +428,13 @@ async def test_ingest_document_queue_receives_extract_ids(tmp_path):
         queued_items.append(await queue.get())
 
     assert len(queued_items) == result["chunks_created"]
-    # Each item is (extract_id, text)
+    # Each item is (extract_id, text, role, session_id)
     for item in queued_items:
-        assert len(item) == 2
+        assert len(item) == 4
         assert isinstance(item[0], str)  # extract_id
         assert isinstance(item[1], str)  # text
+        assert item[2] == "user"
+        assert item[3] == "unknown"
 
 
 @pytest.mark.asyncio

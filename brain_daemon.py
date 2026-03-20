@@ -230,13 +230,13 @@ class BrainDaemon:
 
     async def _loop_worker(self):
         """
-        Reads (message_id, text, role) tuples from the queue and runs the
-        Gated Consolidation Loop on each. Runs as a long-lived background task.
-        Errors are logged and swallowed — one bad message never kills the worker.
+        Reads (message_id, text, role, session_id) tuples from the queue and
+        runs the Gated Consolidation Loop on each. Runs as a background task.
         """
         print("Loop worker started.")
         while True:
-            message_id, text, role = await self._loop_queue.get()
+            # B14: Added session_id to queue tuple
+            message_id, text, role, session_id = await self._loop_queue.get()
             try:
                 print(f"[Loop] Processing ({role}): {text[:120]!r}")
                 summary = await run_loop(
@@ -255,6 +255,18 @@ class BrainDaemon:
                     f"relations={summary['relations_found']} "
                     f"noise={summary['noise_count']}"
                 )
+
+                # B14: Persist loop summary to Session node
+                if summary and session_id != "unknown":
+                    try:
+                        await self.db.execute_write(
+                            "MATCH (s:Session {session_id: $sid}) "
+                            "SET s.last_loop_summary = $summary",
+                            {"sid": session_id, "summary": json.dumps(summary)}
+                        )
+                    except Exception:
+                        pass  # Non-critical
+
             except Exception as e:
                 print(f"[Loop] Error processing message {message_id}: {e}")
             finally:

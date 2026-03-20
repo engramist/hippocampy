@@ -175,9 +175,34 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
 
     # Enqueue for Gated Consolidation Loop (M3+)
     if _loop_queue is not None:
-        await _loop_queue.put((message_id, content, role))
+        await _loop_queue.put((message_id, content, role, session_id))
 
-    return {"status": "queued", "message_id": message_id, "quest_id": quest_id}
+    # B14: Read previous loop summary (completed by the time this fires)
+    insights = None
+    if session_id != "unknown":
+        import json as _json
+        try:
+            r = db.execute(
+                "MATCH (s:Session {session_id: $sid}) "
+                "RETURN s.last_loop_summary",
+                {"sid": session_id}
+            )
+            if r.has_next():
+                raw = r.get_next()[0]
+                if raw:
+                    insights = _json.loads(raw)
+        except Exception:
+            pass  # Non-critical
+
+    response = {
+        "status": "queued",
+        "message_id": message_id,
+        "quest_id": quest_id,
+    }
+    if insights:
+        response["insights"] = insights
+
+    return response
 
 
 # ---------------------------------------------------------------------------

@@ -410,7 +410,10 @@ async def ingest_document(db, file_path: str, config: dict,
 
             # Step 8 — Queue for Gated Consolidation Loop
             if loop_queue is not None:
-                await loop_queue.put((extract_id, chunk["text"]))
+                # B14: Use 4-tuple (extract_id, text, role, session_id)
+                # extracts are always 'user' role; session is 'unknown' as
+                # they aren't tied to a specific chat turn.
+                await loop_queue.put((extract_id, chunk["text"], "user", "unknown"))
 
         except Exception:
             continue
