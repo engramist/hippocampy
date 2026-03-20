@@ -21,11 +21,9 @@ from mcp_engine.graph import embeddings as emb
 
 def compute_quest_id(repo_root: str, git_branch: str) -> str:
     """
-    Deterministic quest_id from repo root path only.
-    All adapters connected to the same repo share the same MainQuest
-    regardless of branch — decisions carry across branches.
-    git_branch is accepted but ignored (kept for API compatibility).
-    Returns a 32-char hex string used as the quest PRIMARY KEY.
+    LEGACY: Deterministic quest_id from repo root path only.
+    Kept for backward compatibility with existing git-anchored quests.
+    New quests use UUID via hippocampus.create_new_quest().
     """
     raw = repo_root.strip()
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
@@ -65,31 +63,37 @@ async def get_or_create_main_quest(db, repo_root: str, git_branch: str,
         await db.execute_write(
             """
             CREATE (q:MainQuest {
-                quest_id:        $quest_id,
-                name:            $name,
-                status:          'active',
-                completed_at:    null,
-                purpose:         $purpose,
-                text_raw:        $name,
-                embedding:       $embedding,
-                embedding_model: $embedding_model,
-                embedding_dim:   $embedding_dim,
-                confidence:      1.0,
-                confidence_low:  false,
-                pathway_strength: 1.0,
-                archived:        false,
-                created_at:      timestamp($now),
-                last_active_at:  timestamp($now)
+                quest_id:           $quest_id,
+                name:               $name,
+                status:             'active',
+                completed_at:       null,
+                purpose:            $purpose,
+                text_raw:           $name,
+                embedding:          $embedding,
+                embedding_model:    $embedding_model,
+                embedding_dim:      $embedding_dim,
+                confidence:         1.0,
+                confidence_low:     false,
+                pathway_strength:   1.0,
+                archived:           false,
+                created_at:         timestamp($now),
+                last_active_at:     timestamp($now),
+                git_repo_root:      $git_repo_root,
+                purpose_embedding:  $purpose_embedding,
+                routing_method:     $routing_method
             })
             """,
             {
-                "quest_id":        quest_id,
-                "name":            name,
-                "purpose":         f"Project work on {name}",
-                "embedding":       vector,
-                "embedding_model": embedding_model,
-                "embedding_dim":   len(vector),
-                "now":             now,
+                "quest_id":          quest_id,
+                "name":              name,
+                "purpose":           f"Project work on {name}",
+                "embedding":         vector,
+                "embedding_model":   embedding_model,
+                "embedding_dim":     len(vector),
+                "now":               now,
+                "git_repo_root":     repo_root,
+                "purpose_embedding": vector,
+                "routing_method":    'git',
             }
         )
 
@@ -106,10 +110,13 @@ async def get_or_create_session(db, session_id: str, quest_id: str, now: str) ->
         await db.execute_write(
             """
             MERGE (s:Session {session_id: $sid})
-            ON CREATE SET s.started_at     = timestamp($now),
-                          s.last_active_at = timestamp($now),
-                          s.onboarded      = false,
-                          s.purpose        = ''
+            ON CREATE SET s.started_at          = timestamp($now),
+                          s.last_active_at      = timestamp($now),
+                          s.onboarded           = false,
+                          s.purpose             = '',
+                          s.routing_state       = 'locked',
+                          s.routing_confidence  = 0.95,
+                          s.routing_method      = 'git'
             ON MATCH SET  s.last_active_at = timestamp($now)
             """,
             {"sid": session_id, "now": now}

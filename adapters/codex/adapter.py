@@ -221,11 +221,51 @@ TOOLS = [
             "required": ["quest_id"],
         },
     },
+    {
+        "name": "set_quest",
+        "description": (
+            "Explicitly bind this session to a named project/quest. "
+            "Use when the user says 'this is about X' or starts a new project. "
+            "Creates a new quest if the name doesn't match an existing one."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id":  {"type": "string"},
+                "quest_name":  {"type": "string",
+                                "description": "Name of the quest to bind to."},
+                "quest_id":    {"type": "string",
+                                "description": "Optional: bind to a specific quest_id."},
+            },
+            "required": ["session_id", "quest_name"],
+        },
+    },
+    {
+        "name": "context_status",
+        "description": (
+            "Check the health of the current context window — token usage, "
+            "loaded knowledge, and handoff suggestions. Use when context feels "
+            "bloated or when starting a new session on an existing project."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string"},
+            },
+            "required": ["session_id"],
+        },
+    },
 ]
 
 # ---------------------------------------------------------------------------
 # Brain socket client
 # ---------------------------------------------------------------------------
+
+_SOCKET_TIMEOUT = 10.0
+
+# Token limits per known model family (conservative estimates)
+# Adapters can override via LLMProvider node in the graph
+_TOKEN_LIMIT = 128000  # default (Codex/GPT-4 class)
 
 async def _call_brain(method: str, params: dict) -> dict:
     """Send a JSON-RPC call to the Brain Daemon socket. Returns the result dict."""
@@ -262,9 +302,19 @@ def _queue_offline(method: str, params: dict) -> None:
         f.write(json.dumps(entry) + "\n")
 
 
-def _inject_git_context(params: dict) -> dict:
-    """Add repo_root + git_branch to any tool params dict."""
-    return {**params, "repo_root": _REPO_ROOT, "git_branch": _GIT_BRANCH}
+def _inject_context(params: dict) -> dict:
+    """Add available context signals to any tool params dict."""
+    ctx = {**params}
+    if _REPO_ROOT:
+        ctx["repo_root"] = _REPO_ROOT
+    if _GIT_BRANCH:
+        ctx["git_branch"] = _GIT_BRANCH
+    # workspace_path = CWD even without git (for hippocampus routing)
+    import os
+    ctx.setdefault("workspace_path", os.getcwd())
+    # B18: Send token_limit so Brain can track context window size
+    ctx.setdefault("token_limit", _TOKEN_LIMIT)
+    return ctx
 
 # ---------------------------------------------------------------------------
 # MCP STDIO server
@@ -314,7 +364,7 @@ async def handle_mcp_request(request: dict) -> dict:
 
     if method == "tools/call":
         tool_name  = params.get("name", "")
-        tool_input = _inject_git_context(params.get("arguments", {}))
+        tool_input = _inject_context(params.get("arguments", {}))
 
         # --- notify_turn ---
         if tool_name == "notify_turn":
@@ -350,9 +400,10 @@ async def handle_mcp_request(request: dict) -> dict:
 
         # --- all other tools: branch_quest, diff_since, get_open_loops,
         #                      analogical_search, ingest_document, explore_graph,
-        #                      complete_quest ---
+        #                      complete_quest, set_quest, context_status ---
         if tool_name in ("branch_quest", "diff_since", "get_open_loops",
-                         "analogical_search", "ingest_document", "explore_graph", "complete_quest"):
+                         "analogical_search", "ingest_document", "explore_graph",
+                         "complete_quest", "set_quest", "context_status"):
             try:
                 result = await _call_brain(tool_name, tool_input)
                 _daemon_online = True

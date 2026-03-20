@@ -410,7 +410,7 @@ def test_codex_adapter_has_all_tools():
     names = {t["name"] for t in TOOLS}
     expected = {"notify_turn", "current_truth", "branch_quest", "diff_since",
                 "get_open_loops", "analogical_search", "ingest_document",
-                "explore_graph", "complete_quest"}
+                "explore_graph", "complete_quest", "set_quest", "context_status"}
     assert names == expected
 
 
@@ -423,15 +423,14 @@ def test_codex_adapter_analogical_search_schema():
 
 
 def test_codex_adapter_git_context_functions_exist():
-    from adapters.codex.adapter import detect_git_context, _inject_git_context
+    from adapters.codex.adapter import detect_git_context, _inject_context
     repo, branch = detect_git_context()
     assert isinstance(repo, str)
     assert isinstance(branch, str)
 
     params = {"query": "auth"}
-    injected = _inject_git_context(params)
-    assert "repo_root" in injected
-    assert "git_branch" in injected
+    injected = _inject_context(params)
+    assert "workspace_path" in injected
     assert injected["query"] == "auth"
 
 
