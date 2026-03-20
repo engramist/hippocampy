@@ -171,6 +171,28 @@ Still a docstring stub. Needs full adapter integration tests covering:
 
 ## P5 — New Capabilities (Post-M8 Research)
 
+### B17 · Semantic Quest Routing ("The Hippocampus")
+Replace git-only MainQuest identification with a semantic routing mechanism that works for desktop apps and non-dev users. Two-phase System 1/2 routing: git context as one high-confidence signal, content embedding similarity for the rest. Progressive consolidation (tentative → consolidated → locked) with prediction error reconsolidation.
+
+New module: `mcp_engine/hippocampus.py`. New tool: `set_quest`. Schema changes: MainQuest gets `purpose_embedding`, `routing_method`; Session gets `routing_state`, `routing_confidence`. New relationship: `REROUTED_FROM`.
+
+Architecture doc: `B17-B18-architecture.md`. Dependency: None (builds on existing quest infrastructure). Implement before B18.
+
+IP claims: Semantic Quest Routing, Hippocampus Mechanism, Prediction Error Reconsolidation, Multi-Signal Routing Fusion.
+
+---
+
+### B18 · Context Window Awareness ("Working Memory")
+Model each LLM session as a tracked working memory buffer. Track which graph nodes are loaded in each context window via `LOADED` edges. Smart deduplication in `current_truth` (demote, don't exclude already-loaded nodes). Token estimation, bloat detection, session handoff intelligence.
+
+New module: `mcp_engine/working_memory.py`. New tool: `context_status`. Schema changes: Session gets `token_estimate`, `token_limit`, `loaded_node_count`; new `LOADED` relationship (multi-FROM).
+
+Architecture doc: `B17-B18-architecture.md`. Dependency: B17 (shared Session schema changes, `notify_turn` rewire).
+
+IP claims: Context Window as Working Memory Model, Smart Deduplication via Load Tracking, Session Handoff Intelligence, Bloat Detection via Token Estimation.
+
+---
+
 ### B10 · `explore_graph` Tool (Directed Graph Traversal)
 Inspired by RLM / MIT paper (arXiv:2512.24601). When `current_truth` returns insufficient context,
 let the LLM issue a directed traversal query rather than a blind vector search.
