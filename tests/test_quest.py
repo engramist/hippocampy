@@ -21,11 +21,12 @@ def test_quest_id_is_deterministic():
     assert id1 == id2
 
 
-def test_quest_id_different_branches():
+def test_quest_id_same_across_branches():
+    """Branches in the same repo share the same MainQuest — decisions carry across."""
     from mcp_engine.quest import compute_quest_id
     id_main   = compute_quest_id("/Users/dj/projects/myapp", "main")
     id_dev    = compute_quest_id("/Users/dj/projects/myapp", "dev")
-    assert id_main != id_dev
+    assert id_main == id_dev
 
 
 def test_quest_id_different_repos():
