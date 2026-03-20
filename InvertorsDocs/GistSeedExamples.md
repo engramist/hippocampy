@@ -71,6 +71,11 @@ not edge cases.
 13. "The claude_desktop_config.json file configures MCP for Claude desktop."
 14. "The GistClass and SchemaOrgType nodes form the ontology routing table in the graph."
 15. "The adapter is a thin STDIO proxy with no business logic of its own."
+16. "We decided to use SQLAlchemy as the ORM for its migration support."
+17. "We chose PostgreSQL over SQLite for the production database."
+18. "The team selected FastAPI as the web framework for the REST API."
+19. "We're using Redis as the caching layer instead of Memcached."
+20. "The project runs on Docker containers deployed to AWS ECS."
 
 ---
 
@@ -113,6 +118,9 @@ not edge cases.
 13. "A GlobalPreference is a workspace-level user preference applied across quests."
 14. "The gist ontology provides upper-level universal classes for concept classification."
 15. "schema.org sub-graphs provide domain-specific property shapes for each gist class."
+16. "We defined the project as a microservices architecture rather than a monolith."
+17. "The API versioning strategy is URL-based: /v1/, /v2/."
+18. "We categorized this as a P0 critical bug, not a feature request."
 
 ---
 

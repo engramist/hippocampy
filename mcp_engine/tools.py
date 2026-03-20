@@ -128,7 +128,7 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
 
     # Enqueue for Gated Consolidation Loop (M3+)
     if _loop_queue is not None:
-        await _loop_queue.put((message_id, content))
+        await _loop_queue.put((message_id, content, role))
 
     return {"status": "queued", "message_id": message_id, "quest_id": quest_id}
 

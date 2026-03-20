@@ -2,6 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Implementation Workflow
+
+**Follow `GEMINI-DELEGATION.md` for all implementation work.** Do not write code directly. Instead:
+1. Write a detailed `B-<feature>.md` plan (exact file paths, function signatures, logic, tests)
+2. Get DJ's approval on the plan
+3. Delegate to Gemini CLI: `gemini -p "Read B-<plan>.md and implement exactly as specified..." --yolo`
+4. Review Gemini's output, run tests, fix issues
+5. Commit when satisfied
+
 ## Project Mission
 
 **Side Quests — Phase 0: Standalone Brain Daemon** — Build a standalone local AI memory system backed by a Gated Consolidation Loop and a Graph-Native Kùzu database. The system exposes MCP STDIO adapters for Claude Code and Codex. OpenClaw integration is deferred to a later phase.

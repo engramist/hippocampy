@@ -41,11 +41,15 @@ from mcp_engine.graph import embeddings as emb
 
 
 async def run_loop(message_id: str, text: str, db, llm_client,
-                   config: dict, centroids: dict) -> dict:
+                   config: dict, centroids: dict,
+                   role: str = "user") -> dict:
     """
     Run the Gated Consolidation Loop on a single message.
     Returns a summary dict of what was created/stored.
     Designed to run as a background asyncio task — does not block notify_turn.
+
+    role: "user" or "assistant" — assistant turns get a confidence cap
+    in Step 4 to prevent hallucination poisoning of the graph.
     """
     embedding_model = config.get("embeddings", {}).get(
         "model", "sentence-transformers/all-MiniLM-L6-v2"
@@ -180,11 +184,13 @@ async def run_loop(message_id: str, text: str, db, llm_client,
     for entity in typed_entities:
         # Step 4 — Pattern Matching + Confidence Gating
         # L5 fix: pass entity_text so signal matching uses entity sentence context.
+        # ISSUE-024 fix: pass role so assistant turns get confidence cap.
         step4_result = classify_artifact(
             text,
             entity.get("gist_class"),
             entity.get("schema_org_type"),
             entity_text=entity.get("text"),
+            role=role,
         )
 
         if not step4_result["should_proceed"]:

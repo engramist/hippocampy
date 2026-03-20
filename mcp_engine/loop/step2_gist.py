@@ -13,7 +13,7 @@ from mcp_engine.graph import embeddings as emb
 # Seed examples vs own centroid score ~0.50-0.60; cross-class ~0.20-0.35.
 # Original thresholds (0.85/0.60) were unreachable for this model.
 SYSTEM1_THRESHOLD = 0.50
-NOISE_FLOOR       = 0.25
+NOISE_FLOOR       = 0.18
 
 GIST_CLASSES = [
     "Restriction", "PlannedEvent", "PhysicalThing",

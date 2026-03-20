@@ -16,6 +16,7 @@ import re
 
 NOISE_FLOOR        = 0.60
 HARD_LOCK          = 0.90
+ASSISTANT_CAP      = 0.85   # ISSUE-024: assistant turns can never cross HARD_LOCK
 
 # Cocktail Party Effect — five senses (keyword signals)
 _DECISION_SIGNALS = [
@@ -79,13 +80,19 @@ def _entity_sentence(full_text: str, entity_text: str) -> str:
 
 def classify_artifact(text: str, gist_class: str | None,
                       schema_org_type: str | None,
-                      entity_text: str | None = None) -> dict:
+                      entity_text: str | None = None,
+                      role: str = "user") -> dict:
     """
     Classify text into an artifact type using ontological context + keyword signals.
     Returns {artifact_type, confidence, confidence_low, should_proceed}.
 
     artifact_type: "decision" | "constraint" | "requirement" | "action_item" | "noise"
     should_proceed: True if confidence >= NOISE_FLOOR
+
+    ISSUE-024: role="assistant" caps confidence at ASSISTANT_CAP (0.85) to prevent
+    hallucination poisoning. Assistant-originated content can create Concepts and
+    confidence_low artifacts, but can never create confirmed (>90%) Decisions or
+    Constraints on its own. Only user-originated content crosses HARD_LOCK.
     """
     if not gist_class:
         return _noise_result()
@@ -125,6 +132,12 @@ def classify_artifact(text: str, gist_class: str | None,
 
     if confidence < NOISE_FLOOR:
         return _noise_result()
+
+    # ISSUE-024: assistant turns capped below HARD_LOCK — prevents hallucination
+    # poisoning. Assistant content enters as confidence_low=True and must be
+    # corroborated by user input or graph evidence to be promoted.
+    if role == "assistant":
+        confidence = min(confidence, ASSISTANT_CAP)
 
     return {
         "artifact_type":  artifact_type,

@@ -77,13 +77,36 @@ def test_step1_junk_filter_rejects_formatting_artifacts():
     assert _is_junk_entity("   ") is True
 
 
-def test_step1_junk_filter_rejects_numbers():
+def test_step1_junk_filter_numbers():
     from mcp_engine.loop.step1_ner import _is_junk_entity
     assert _is_junk_entity("0.92") is True
     assert _is_junk_entity("03") is True
     assert _is_junk_entity("18") is True
     assert _is_junk_entity("384") is True
     assert _is_junk_entity("1.0") is True
+
+
+def test_step1_junk_filter_ordinals():
+    """ISSUE-026: ordinal words should be filtered as junk."""
+    from mcp_engine.loop.step1_ner import _is_junk_entity
+    assert _is_junk_entity("first") is True
+    assert _is_junk_entity("Second") is True
+    assert _is_junk_entity("1st") is True
+    assert _is_junk_entity("3rd") is True
+
+
+def test_step1_junk_filter_system_terms():
+    """ISSUE-026: SideQuests internal vocabulary should be filtered."""
+    from mcp_engine.loop.step1_ner import _is_junk_entity
+    assert _is_junk_entity("MainQuest") is True
+    assert _is_junk_entity("SideQuest") is True
+    assert _is_junk_entity("Brain") is True
+    assert _is_junk_entity("current_truth") is True
+    assert _is_junk_entity("notify_turn") is True
+    # Real entities should still pass
+    assert _is_junk_entity("PostgreSQL") is False
+    assert _is_junk_entity("SQLAlchemy") is False
+    assert _is_junk_entity("JWT") is False
 
 
 def test_step1_junk_filter_keeps_real_entities():
@@ -217,6 +240,50 @@ def test_step2_llm_fallback_called_in_gray_zone(monkeypatch):
     assert result["gist_class"] == "Category"
     assert result["system"] == "2"
     assert result["confidence"] == pytest.approx(0.78, abs=0.01)
+
+
+def test_step2_decision_sentence_not_noise():
+    """ISSUE-025: decision sentences about tools must not be dropped as noise."""
+    from mcp_engine.loop.step2_gist import classify_concept, NOISE_FLOOR
+    from mcp_engine.graph import embeddings as emb
+    import numpy as np
+    from pathlib import Path
+    import re
+
+    # Build centroids from seed file (same as daemon does)
+    seed_path = Path('InvertorsDocs/GistSeedExamples.md')
+    seed_text = seed_path.read_text()
+    current_class = None
+    class_vectors = {}
+    for line in seed_text.split('\n'):
+        if line.startswith('## '):
+            match = re.search(r'gist:(\w+)', line)
+            if match:
+                current_class = match.group(1)
+                class_vectors[current_class] = []
+        elif re.match(r'\d+\.', line.strip()) and current_class:
+            m = re.search(r'"(.+?)"', line)
+            if m:
+                class_vectors[current_class].append(emb.embed(m.group(1)))
+
+    centroids = {}
+    for cls, vecs in class_vectors.items():
+        arr = np.array(vecs)
+        mean = arr.mean(axis=0)
+        norm = np.linalg.norm(mean)
+        centroids[cls] = (mean / norm).tolist() if norm > 0 else mean.tolist()
+
+    result = classify_concept(
+        "SQLAlchemy",
+        "sentence-transformers/all-MiniLM-L6-v2",
+        centroids,
+        None,  # no LLM — should still pass noise floor
+        context="We decided to use SQLAlchemy as the ORM because it has better migration support than raw SQL."
+    )
+    assert result["system"] != "noise", (
+        f"Decision sentence classified as noise (score={result['confidence']:.4f}, "
+        f"NOISE_FLOOR={NOISE_FLOOR}). Expected System 1 or System 2."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -413,6 +480,66 @@ def test_step4_action_keywords():
     )
     assert result["should_proceed"] is True
     assert result["artifact_type"] == "action_item"
+
+
+# ---------------------------------------------------------------------------
+# ISSUE-024 — Assistant confidence cap (hallucination poisoning fix)
+# ---------------------------------------------------------------------------
+
+def test_step4_assistant_role_capped_below_hard_lock():
+    """Assistant turns with strong signals should still be capped at ASSISTANT_CAP."""
+    from mcp_engine.loop.step4_pattern import classify_artifact, HARD_LOCK, ASSISTANT_CAP
+    # This same input crosses HARD_LOCK for role="user"
+    result_user = classify_artifact(
+        "We decided to use SQLAlchemy for the ORM.",
+        "Category", "DefinedTerm", role="user"
+    )
+    assert result_user["confidence"] > HARD_LOCK
+    assert result_user["confidence_low"] is False
+
+    # But for role="assistant", it's capped
+    result_asst = classify_artifact(
+        "We decided to use SQLAlchemy for the ORM.",
+        "Category", "DefinedTerm", role="assistant"
+    )
+    assert result_asst["confidence"] <= ASSISTANT_CAP
+    assert result_asst["confidence"] < HARD_LOCK
+    assert result_asst["confidence_low"] is True
+    assert result_asst["should_proceed"] is True  # still enters graph, just tentative
+
+
+def test_step4_assistant_constraint_stays_tentative():
+    """Assistant-originated constraints must not create confirmed Constraint nodes."""
+    from mcp_engine.loop.step4_pattern import classify_artifact, HARD_LOCK
+    result = classify_artifact(
+        "You must always use bcrypt with cost factor 12.",
+        "Restriction", "Demand", role="assistant"
+    )
+    assert result["artifact_type"] == "constraint"
+    assert result["confidence"] < HARD_LOCK
+    assert result["confidence_low"] is True
+
+
+def test_step4_user_role_unchanged():
+    """User turns are not affected by the assistant cap."""
+    from mcp_engine.loop.step4_pattern import classify_artifact, HARD_LOCK
+    result = classify_artifact(
+        "We must never use SQLite in production.",
+        "Restriction", "Demand", role="user"
+    )
+    assert result["confidence"] > HARD_LOCK
+    assert result["confidence_low"] is False
+
+
+def test_step4_default_role_is_user():
+    """Omitting role defaults to 'user' — no cap applied."""
+    from mcp_engine.loop.step4_pattern import classify_artifact, HARD_LOCK
+    result = classify_artifact(
+        "We decided to use Redis for caching.",
+        "Category", "DefinedTerm"
+    )
+    assert result["confidence"] > HARD_LOCK
+    assert result["confidence_low"] is False
 
 
 # ---------------------------------------------------------------------------

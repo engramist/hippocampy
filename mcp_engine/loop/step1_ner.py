@@ -24,6 +24,22 @@ _UUID_RE = re.compile(
 # Hex hash pattern: 32+ contiguous hex chars
 _HEX_HASH_RE = re.compile(r'^[0-9a-f]{32,}$', re.I)
 
+# Ordinal words — "first", "second", "1st", "2nd" etc.
+# These get extracted as ORDINAL entities by spaCy but aren't concepts.
+_ORDINAL_RE = re.compile(
+    r'^(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth'
+    r'|\d+(?:st|nd|rd|th))$', re.I
+)
+
+# SideQuests system vocabulary — internal terms that leak from assistant
+# responses via notify_turn. These are never real user concepts.
+_SYSTEM_TERMS = {
+    "mainquest", "sidequest", "sidequests", "brain", "brain daemon",
+    "current_truth", "notify_turn", "branch_quest", "complete_quest",
+    "diff_since", "explore_graph", "get_open_loops", "gated consolidation",
+    "cocktail party", "confidence_low", "pathway_strength",
+}
+
 
 def _is_junk_entity(text: str) -> bool:
     """
@@ -54,6 +70,14 @@ def _is_junk_entity(text: str) -> bool:
 
     # UUID or hex hash
     if _UUID_RE.match(stripped) or _HEX_HASH_RE.match(stripped):
+        return True
+
+    # Ordinal words — "first", "second", "1st", "2nd" etc.
+    if _ORDINAL_RE.match(stripped):
+        return True
+
+    # SideQuests system vocabulary
+    if stripped.lower() in _SYSTEM_TERMS:
         return True
 
     # Contains box-drawing or block element Unicode characters (terminal UI noise)
@@ -111,6 +135,17 @@ def extract_entities(text: str, model_name: str = "en_core_web_md") -> tuple:
             # Skip junk (terminal artifacts, UUIDs, formatting noise)
             if _is_junk_entity(chunk.text):
                 continue
+
+            # Skip noun chunks that start with determiners/quantifiers —
+            # "all endpoints", "the only exception", "a global dependency"
+            # are too generic to be concepts. Named entities from NER don't
+            # have this problem because spaCy already filtered them.
+            if chunk.root.dep_ in ("det", "nummod") or chunk.text.split()[0].lower() in (
+                "a", "an", "the", "all", "some", "any", "no", "every",
+                "this", "that", "these", "those", "each",
+            ):
+                continue
+
             entities.append({
                 "text":  chunk.text,
                 "label": "NOUN_CHUNK",
