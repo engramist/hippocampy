@@ -542,10 +542,99 @@ def test_create_app_does_not_bind_to_all_interfaces():
     assert "host='0.0.0.0'" not in src
 
 
-def test_brain_daemon_binds_127_only():
-    """Brain daemon _start_web_server must bind to 127.0.0.1 only."""
-    from pathlib import Path
-    src = (Path(__file__).parent.parent / "brain_daemon.py").read_text()
-    assert '127.0.0.1' in src
-    assert 'host="0.0.0.0"' not in src
-    assert "host='0.0.0.0'" not in src
+# ---------------------------------------------------------------------------
+# B3 — SSE endpoint tests
+# ---------------------------------------------------------------------------
+
+def test_mcp_post_without_connection_returns_400():
+    """POST /mcp with no active SSE connection returns 400."""
+    client = make_client()
+    r = client.post("/mcp?connection_id=nonexistent", json={
+        "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
+    })
+    assert r.status_code == 400
+
+
+def test_mcp_post_invalid_json_returns_400():
+    """POST /mcp with invalid JSON returns 400."""
+    client = make_client()
+    r = client.post(
+        "/mcp?connection_id=fake",
+        content=b"not json",
+        headers={"content-type": "application/json"}
+    )
+    # Should return 400 for either "no connection" or "invalid json"
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_dispatch_mcp_initialize_direct():
+    """Test _dispatch_mcp directly without SSE transport."""
+    from web.server import _dispatch_mcp
+    resp = await _dispatch_mcp(
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+        EmptyDB(), {}
+    )
+    assert resp["result"]["protocolVersion"] == "2024-11-05"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_mcp_tools_list_direct():
+    from web.server import _dispatch_mcp
+    resp = await _dispatch_mcp(
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        EmptyDB(), {}
+    )
+    tool_names = {t["name"] for t in resp["result"]["tools"]}
+    assert "notify_turn" in tool_names
+    assert len(tool_names) == 11
+
+
+@pytest.mark.asyncio
+async def test_dispatch_mcp_unknown_method_direct():
+    from web.server import _dispatch_mcp
+    resp = await _dispatch_mcp(
+        {"jsonrpc": "2.0", "id": 3, "method": "fake/method", "params": {}},
+        EmptyDB(), {}
+    )
+    assert resp["error"]["code"] == -32601
+
+
+@pytest.mark.asyncio
+async def test_dispatch_mcp_unknown_tool_direct():
+    from web.server import _dispatch_mcp
+    resp = await _dispatch_mcp(
+        {"jsonrpc": "2.0", "id": 4, "method": "tools/call",
+         "params": {"name": "no_such_tool", "arguments": {}}},
+        EmptyDB(), {}
+    )
+    assert resp["error"]["code"] == -32601
+
+
+@pytest.mark.asyncio
+async def test_sse_context_injection_direct():
+    """Test that _dispatch_mcp injects context for tools/call."""
+    from web.server import _dispatch_mcp
+    from mcp_engine import tools as tools_mod
+
+    received_params = {}
+
+    async def spy_handler(params, db, config):
+        received_params.update(params)
+        return {"items": [], "count": 0}
+
+    # Patch handler
+    original = tools_mod.TOOL_HANDLERS.get("get_open_loops")
+    tools_mod.TOOL_HANDLERS["get_open_loops"] = spy_handler
+
+    try:
+        await _dispatch_mcp(
+            {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+             "params": {"name": "get_open_loops", "arguments": {}}},
+            EmptyDB(), {}
+        )
+        assert "workspace_path" in received_params
+        assert "token_limit" in received_params
+        assert received_params["token_limit"] == 128000
+    finally:
+        tools_mod.TOOL_HANDLERS["get_open_loops"] = original

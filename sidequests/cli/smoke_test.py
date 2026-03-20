@@ -18,8 +18,9 @@ from pathlib import Path
 SOCKET_PATH = Path.home() / ".sidequests" / "brain.sock"
 
 EXPECTED_TOOLS = {
-    "notify_turn", "current_truth", "branch_quest",
-    "diff_since", "get_open_loops", "analogical_search", "ingest_document",
+    "notify_turn", "current_truth", "branch_quest", "diff_since",
+    "get_open_loops", "analogical_search", "ingest_document", "explore_graph",
+    "complete_quest", "set_quest", "context_status",
 }
 
 
@@ -91,14 +92,40 @@ async def smoke_test() -> dict:
     return {"checks": checks, "passed": passed}
 
 
+def check_sse_endpoint(port: int = 7799) -> bool:
+    """Verify the SSE endpoint is responding."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/sse",
+            headers={"Accept": "text/event-stream"}
+        )
+        resp = urllib.request.urlopen(req, timeout=3)
+        # Read just the first line to confirm event-stream
+        first_line = resp.readline().decode()
+        resp.close()
+        if "endpoint" in first_line or "event" in first_line:
+            return True
+        return False
+    except Exception:
+        return False
+
+
 def check_status() -> bool:
     """Print human-readable status and return True if all checks passed."""
     result = asyncio.run(smoke_test())
     for check in result["checks"]:
         icon = "✓" if check["passed"] else "✗"
         print(f"  [{icon}] {check['name']}: {check['detail']}")
-    if result["passed"]:
+
+    # SSE health check
+    sse_ok = check_sse_endpoint()
+    icon = "✓" if sse_ok else "✗"
+    detail = "Responding" if sse_ok else "Unreachable"
+    print(f"  [{icon}] SSE Endpoint: {detail}")
+
+    if result["passed"] and sse_ok:
         print("\nBrain Daemon is healthy.")
     else:
         print("\nSome checks failed. Run `sidequests start` to start the daemon.")
-    return result["passed"]
+    return result["passed"] and sse_ok

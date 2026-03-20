@@ -679,52 +679,64 @@ def create_app(db, config: dict | None = None) -> FastAPI:
 
         return JSONResponse({"status": "ok"})
 
-    async def _dispatch_mcp(request: dict, _db, _cfg: dict) -> dict | None:
-        """
-        Dispatch a JSON-RPC MCP request to tool handlers — same logic as
-        the brain_daemon IPC dispatcher but runs in-process (no socket hop).
-        Handles: initialize, notifications/initialized, tools/list, tools/call.
-        """
-        from mcp_engine.tools import TOOL_HANDLERS
-        from adapters.claude_code.adapter import TOOLS as _TOOLS
-
-        method = request.get("method", "")
-        params = request.get("params", {})
-        req_id = request.get("id")
-
-        def ok(result):
-            return {"jsonrpc": "2.0", "id": req_id, "result": result}
-
-        def err(code, message):
-            return {"jsonrpc": "2.0", "id": req_id,
-                    "error": {"code": code, "message": message}}
-
-        if method == "initialize":
-            return ok({
-                "protocolVersion": "2024-11-05",
-                "capabilities": {"tools": {}},
-                "serverInfo": {"name": "sidequests-brain-sse", "version": WEB_VERSION},
-            })
-
-        if method == "notifications/initialized":
-            return None
-
-        if method == "tools/list":
-            return ok({"tools": _TOOLS})
-
-        if method == "tools/call":
-            tool_name = params.get("name", "")
-            tool_args = params.get("arguments", {})
-            handler = TOOL_HANDLERS.get(tool_name)
-            if not handler:
-                return err(-32601, f"Unknown tool: {tool_name}")
-            try:
-                result = await handler(tool_args, _db, _cfg)
-                return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
-            except Exception as e:
-                _logger.exception("SSE tool dispatch error for %s", tool_name)
-                return err(-32000, str(e))
-
-        return err(-32601, f"Unknown method: {method}")
-
     return app
+
+
+def _inject_sse_context(tool_args: dict) -> dict:
+    """Inject context for SSE clients (no git repo, no workspace)."""
+    enriched = dict(tool_args)
+    enriched.setdefault("repo_root", "")
+    enriched.setdefault("git_branch", "")
+    enriched.setdefault("workspace_path", str(Path.home()))
+    enriched.setdefault("token_limit", 128000)  # GPT-4o default
+    return enriched
+
+
+async def _dispatch_mcp(request: dict, _db, _cfg: dict) -> dict | None:
+    """
+    Dispatch a JSON-RPC MCP request to tool handlers — same logic as
+    the brain_daemon IPC dispatcher but runs in-process (no socket hop).
+    Handles: initialize, notifications/initialized, tools/list, tools/call.
+    """
+    from mcp_engine.tools import TOOL_HANDLERS
+    from mcp_engine.tool_schemas import TOOLS as _TOOLS
+
+    method = request.get("method", "")
+    params = request.get("params", {})
+    req_id = request.get("id")
+
+    def ok(result):
+        return {"jsonrpc": "2.0", "id": req_id, "result": result}
+
+    def err(code, message):
+        return {"jsonrpc": "2.0", "id": req_id,
+                "error": {"code": code, "message": message}}
+
+    if method == "initialize":
+        return ok({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": "sidequests-brain-sse", "version": WEB_VERSION},
+        })
+
+    if method == "notifications/initialized":
+        return None
+
+    if method == "tools/list":
+        return ok({"tools": _TOOLS})
+
+    if method == "tools/call":
+        tool_name = params.get("name", "")
+        tool_args = params.get("arguments", {})
+        tool_args = _inject_sse_context(tool_args)
+        handler = TOOL_HANDLERS.get(tool_name)
+        if not handler:
+            return err(-32601, f"Unknown tool: {tool_name}")
+        try:
+            result = await handler(tool_args, _db, _cfg)
+            return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
+        except Exception as e:
+            _logger.exception("SSE tool dispatch error for %s", tool_name)
+            return err(-32000, str(e))
+
+    return err(-32601, f"Unknown method: {method}")
