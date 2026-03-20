@@ -21,11 +21,13 @@ from mcp_engine.graph import embeddings as emb
 
 def compute_quest_id(repo_root: str, git_branch: str) -> str:
     """
-    Deterministic quest_id from repo root path + branch name.
-    All adapters connected to the same repo+branch share the same MainQuest.
+    Deterministic quest_id from repo root path only.
+    All adapters connected to the same repo share the same MainQuest
+    regardless of branch — decisions carry across branches.
+    git_branch is accepted but ignored (kept for API compatibility).
     Returns a 32-char hex string used as the quest PRIMARY KEY.
     """
-    raw = f"{repo_root.strip()}:{git_branch.strip()}"
+    raw = repo_root.strip()
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
