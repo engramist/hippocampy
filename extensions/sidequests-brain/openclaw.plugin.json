@@ -1,0 +1,36 @@
+{
+  "id": "sidequests-brain",
+  "kind": "memory",
+  "name": "SideQuests Brain",
+  "description": "Graph-native AI memory powered by the Gated Consolidation Loop. Automatically captures decisions, constraints, and plans — then recalls them with full context across sessions.",
+  "version": "0.1.0",
+  "uiHints": {
+    "brainUrl": {
+      "label": "Brain Daemon URL",
+      "placeholder": "http://127.0.0.1:7799",
+      "help": "URL of the SideQuests Brain Daemon (must be running locally)"
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "brainUrl": {
+        "type": "string",
+        "default": "http://127.0.0.1:7799"
+      },
+      "autoCapture": {
+        "type": "boolean",
+        "default": true
+      },
+      "autoRecall": {
+        "type": "boolean",
+        "default": true
+      },
+      "sessionId": {
+        "type": "string",
+        "description": "Override session ID (auto-generated if omitted)"
+      }
+    }
+  }
+}
