@@ -310,6 +310,19 @@ The current installation process is fragile and manual — requires hand-editing
 
 ---
 
+### B19 · `sidequests uninstall` Command
+Reverse everything `sidequests install` does. Required before public release / beta testers.
+
+**What it does:**
+- Remove `sidequests-brain` MCP entry from all detected client configs (Claude Desktop, Claude Code `.mcp.json`, etc.)
+- Unload and remove the launchd plist (`~/Library/LaunchAgents/ai.sidequests.brain.plist`)
+- Optionally delete the Kùzu database and `sidequests.toml` (prompt user, default: keep data)
+- Optionally remove Ollama model (`ollama rm qwen2.5:3b`) if no other tools use it
+
+**Priority:** Before public release, not before wife demo. Follow-up to B13.
+
+---
+
 ## P6 — Consumer Readiness
 
 ### B14 · Proactive Insight Surfacing
