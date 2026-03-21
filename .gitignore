@@ -28,3 +28,5 @@ sidequests_db/
 
 # Local queue (degraded mode — runtime artifact)
 *.queue.jsonl
+extensions/sidequests-brain/node_modules/
+extensions/sidequests-brain/dist/
