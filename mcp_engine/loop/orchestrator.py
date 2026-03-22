@@ -142,23 +142,31 @@ async def run_loop(message_id: str, text: str, db, llm_client,
             "vector":          gist_result.get("vector"),
         })
 
-    # O4 fix: now that noise has been filtered, store Step 1b relations whose
-    # head AND tail survived Step 2 filtering (both in typed_entities).
+    # O4 fix: now that noise has been filtered, collect Step 1b relations.
+    # B32 fix part 1: DEFER actual storage until AFTER Step 4-7 loop creates Concept nodes.
+    # B32 fix part 2: No longer filter by "both endpoints must be NER entities" —
+    # _store_relation now calls _ensure_concept_exists for noun-chunk endpoints
+    # (e.g. "fast graph traversal", "persistent storage") that aren't in the NER
+    # entity list but ARE valid relation endpoints from the dep tree.
+    # Only filter: head entity must have survived Step 2 noise filter (we trust
+    # the NER subject; the object can be any noun chunk).
     surviving_texts = {e["text"].lower() for e in typed_entities}
     surviving_step1b = [
         r for r in step1b_relations
-        if r["head"].lower() in surviving_texts and r["tail"].lower() in surviving_texts
+        if r["head"].lower() in surviving_texts  # head must be a known entity
+        # tail can be any noun chunk — _ensure_concept_exists handles missing ones
     ]
     summary["relations_found"] += len(surviving_step1b)
-    for rel in surviving_step1b:
-        await _store_relation(rel, db, now)
 
     # Step 3b — Ollama semantic relation extraction
     # O6 fix: run for all entity pairs NOT already covered by a Step 1b edge,
     # not just when Step 1b found zero relations entirely.
+    # B32 fix: collect for deferred storage, same reason as above.
     step1b_covered_pairs = {
         (r["head"].lower(), r["tail"].lower()) for r in surviving_step1b
     }
+    deferred_relations: list[dict] = list(surviving_step1b)  # start with step1b
+
     if len(typed_entities) > 1:
         uncovered_pairs_exist = any(
             (e1["text"].lower(), e2["text"].lower()) not in step1b_covered_pairs
@@ -172,7 +180,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                 pair = (rel["head"].lower(), rel["tail"].lower())
                 if pair not in step1b_covered_pairs:
                     summary["relations_found"] += 1
-                    await _store_relation(rel, db, now)
+                    deferred_relations.append(rel)
 
     # ------------------------------------------------------------------
     # Steps 4–7 — Pattern matching → retrieval → arbitration → pathway
@@ -302,6 +310,11 @@ async def run_loop(message_id: str, text: str, db, llm_client,
     if len(concept_ids) > 1:
         min_conf = 0.60  # noise floor minimum
         await write_co_occurs_with(concept_ids, min_conf, db, now, co_threshold)
+
+    # B32 fix: flush deferred relations AFTER all Concept nodes are created.
+    # _store_relation will ensure both endpoints exist before creating the edge.
+    for rel in deferred_relations:
+        await _store_relation(rel, db, now, embedding_model=embedding_model)
 
     return summary
 
@@ -464,14 +477,71 @@ async def _save_gist_example(text: str, vector: list[float], gist_class: str,
         _logger.exception("_save_gist_example failed for class=%s", gist_class)
 
 
-async def _store_relation(rel: dict, db, now: str):
+async def _ensure_concept_exists(text: str, embedding_model: str, db, now: str) -> None:
     """
-    Store a named semantic relation between two existing Concept nodes.
+    B32 fix: Ensure a Concept node exists for the given text_raw.
+    If it already exists, do nothing. If it doesn't exist, create a minimal
+    confidence_low=True node. This is needed for relation endpoints that are
+    noun chunks (not NER entities) — they won't be created by the normal
+    Step 4-7 pipeline but need to exist for MERGE edges to work.
 
-    O2 fix: Only MATCH existing Concepts — never CREATE ghost nodes without
-    embeddings. If the head or tail Concept doesn't exist yet (hasn't been
-    processed by the Loop), the relation is silently skipped. It will be
-    picked up on a future message when both Concepts exist.
+    Uses MATCH first to avoid re-embedding if the node already exists.
+    """
+    # Check if concept already exists (case-insensitive)
+    try:
+        result = db.execute(
+            "MATCH (c:Concept) WHERE toLower(c.text_raw) = toLower($t) AND c.archived = false "
+            "RETURN c.concept_id LIMIT 1",
+            {"t": text}
+        )
+        if result.has_next():
+            return  # already exists
+    except Exception:
+        return  # on error, skip creation to avoid cascading failures
+
+    # Create minimal concept node with embedding
+    try:
+        vector = emb.embed(text, model_name=embedding_model)
+        await db.execute_write(
+            """
+            CREATE (c:Concept {
+                concept_id:       $concept_id,
+                text_raw:         $text_raw,
+                embedding:        $embedding,
+                embedding_model:  $embedding_model,
+                embedding_dim:    $embedding_dim,
+                gist_class:       '',
+                schema_org_type:  '',
+                confidence:       0.60,
+                confidence_low:   true,
+                pathway_strength: 0.60,
+                archived:         false,
+                created_at:       timestamp($created_at),
+                last_accessed_at: timestamp($created_at)
+            })
+            """,
+            {
+                "concept_id":      str(uuid.uuid4()),
+                "text_raw":        text,
+                "embedding":       vector,
+                "embedding_model": embedding_model,
+                "embedding_dim":   len(vector),
+                "created_at":      now,
+            }
+        )
+    except Exception:
+        _logger.debug("_ensure_concept_exists skipped for '%s' (may be duplicate)", text)
+
+
+async def _store_relation(rel: dict, db, now: str,
+                           embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"):
+    """
+    Store a named semantic relation between two Concept nodes.
+
+    B32 fix: If the head or tail Concept doesn't exist yet (e.g., it's a noun
+    chunk extracted by step1b rather than a NER entity), create a minimal
+    confidence_low Concept node so the edge can be stored. This replaces the
+    old "silently skip if not found" behaviour which produced zero graph edges.
 
     O3 note: Uses case-insensitive matching (toLower) to avoid duplicates
     from different capitalizations of the same entity name.
@@ -484,25 +554,55 @@ async def _store_relation(rel: dict, db, now: str):
     if rel_type not in valid_types:
         return
 
+    # Ensure both endpoints exist before creating the edge
+    await _ensure_concept_exists(rel["head"], embedding_model, db, now)
+    await _ensure_concept_exists(rel["tail"], embedding_model, db, now)
+
     try:
+        # B32 fix: Kuzu 0.11.3 has issues with MERGE on relationships when
+        # using MATCH+WHERE with toLower(). Use a two-step approach:
+        # 1. Look up both node IDs with separate queries
+        # 2. CREATE/MERGE the edge using node IDs directly.
+        h_result = db.execute(
+            "MATCH (c:Concept) WHERE toLower(c.text_raw) = toLower($t) AND c.archived = false "
+            "RETURN c.concept_id ORDER BY c.pathway_strength DESC LIMIT 1",
+            {"t": rel["head"]}
+        )
+        t_result = db.execute(
+            "MATCH (c:Concept) WHERE toLower(c.text_raw) = toLower($t) AND c.archived = false "
+            "RETURN c.concept_id ORDER BY c.pathway_strength DESC LIMIT 1",
+            {"t": rel["tail"]}
+        )
+
+        if not h_result.has_next() or not t_result.has_next():
+            _logger.warning("_store_relation: endpoint not found — head=%s tail=%s",
+                            rel["head"], rel["tail"])
+            return
+
+        head_id = h_result.get_next()[0]
+        tail_id = t_result.get_next()[0]
+
+        # Use inline property matching (same pattern as CO_OCCURS_WITH which works)
+        # rather than a WHERE clause — Kuzu 0.11.3 MERGE + WHERE has edge cases
         await db.execute_write(
             f"""
-            MATCH (h:Concept), (t:Concept)
-            WHERE toLower(h.text_raw) = toLower($head)
-              AND toLower(t.text_raw) = toLower($tail)
-              AND h.archived = false AND t.archived = false
+            MATCH (h:Concept {{concept_id: $hid}}),
+                  (t:Concept {{concept_id: $tid}})
             MERGE (h)-[r:{rel_type}]->(t)
-            ON CREATE SET r.confidence = $confidence, r.inferred_by = $inferred_by,
-                          r.inferred_at = timestamp($now)
+            ON CREATE SET r.confidence   = $confidence,
+                          r.inferred_by  = $inferred_by,
+                          r.inferred_at  = timestamp($now)
             """,
             {
-                "head":        rel["head"],
-                "tail":        rel["tail"],
+                "hid":         str(head_id),
+                "tid":         str(tail_id),
                 "confidence":  rel.get("confidence", 0.85),
                 "inferred_by": rel.get("inferred_by", "system"),
                 "now":         now,
             }
         )
+        _logger.warning("[B32] _store_relation: %s -[%s]-> %s (hid=%s tid=%s)",
+                        rel["head"], rel_type, rel["tail"], head_id, tail_id)
     except Exception:
         _logger.exception("_store_relation failed for %s -[%s]-> %s",
                           rel.get("head"), rel.get("relation_type"), rel.get("tail"))
