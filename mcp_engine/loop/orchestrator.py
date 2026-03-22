@@ -637,8 +637,8 @@ async def _store_relation(rel: dict, db, now: str,
                 "now":         now,
             }
         )
-        _logger.warning("[B32] _store_relation: %s -[%s]-> %s (hid=%s tid=%s)",
-                        rel["head"], rel_type, rel["tail"], head_id, tail_id)
+        _logger.debug("_store_relation stored: %s -[%s]-> %s (hid=%s tid=%s)",
+                      rel["head"], rel_type, rel["tail"], head_id, tail_id)
     except Exception:
         _logger.exception("_store_relation failed for %s -[%s]-> %s",
                           rel.get("head"), rel.get("relation_type"), rel.get("tail"))

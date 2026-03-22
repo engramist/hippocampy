@@ -619,10 +619,10 @@ rank = (ps * conf * 0.4) + (similarity * 0.4) + (recency * 0.2)
 
 ---
 
-### B33 · Bug: Duplicate Concept Nodes
-Multiple nodes with identical `text_raw` (e.g., 3 separate "JWT" Concept nodes). Should dedup on `(text_raw, node_type)` during consolidation or at query time.
-
-**Files:** `mcp_engine/loop/step1_ner.py`, `mcp_engine/loop/step6_arbitration.py`
+### B33 · Bug: Duplicate Concept Nodes — ✅ FIXED (2026-03-22)
+**Fix:** `_store_concept` now checks for exact `text_raw` match (case-insensitive) before CREATE. Dedup hit returns existing concept_id + bumps last_accessed_at + upgrades pathway_strength/confidence_low if new observation is more confident. Falls through on DB error so creation still proceeds safely.
+**Commit:** `3b8ae3d`
+**Tests:** 496 passed, 4 skipped
 
 ---
 
