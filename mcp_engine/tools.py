@@ -913,29 +913,30 @@ def _traverse_iterative(
                         rel_clause_in  = "[r]"
 
                     queries = []
-                    if direction in ("outgoing", "both"):
-                        queries.append((
-                            f"MATCH (a:{node_table})-{rel_clause_out}->(b:{target_table}) "
-                            f"WHERE a.{pk} = $id "
-                            f"RETURN b.{target_pk}, b.text_raw, b.confidence, b.pathway_strength, "
-                            f"type(r) AS rel_type",
-                            node_id, "out"
-                        ))
-                    if direction in ("incoming", "both"):
-                        # Use <- syntax so mock and real queries are unambiguous
-                        if rel_type:
-                            rel_clause_inc = f"[r:{rel_type}]"
-                        else:
-                            rel_clause_inc = "[r]"
-                        queries.append((
-                            f"MATCH (a:{node_table})<-{rel_clause_inc}-(b:{target_table}) "
-                            f"WHERE a.{pk} = $id "
-                            f"RETURN b.{target_pk}, b.text_raw, b.confidence, b.pathway_strength, "
-                            f"type(r) AS rel_type",
-                            node_id, "in"
-                        ))
+                    # B32 fix: Kuzu 0.11.3 doesn't have type() for relationship labels.
+                    # Use label(r) if available, or iterate over specific rel types.
+                    # Workaround: when rel_type is specified, use it directly.
+                    # When wildcard, we run a query per known rel type.
+                    iter_rels = [rel_type] if rel_type else sorted(_TRAVERSABLE_RELS)
+                    for iter_rel in iter_rels:
+                        rc_out = f"[r:{iter_rel}]"
+                        rc_in  = f"[r:{iter_rel}]"
+                        if direction in ("outgoing", "both"):
+                            queries.append((
+                                f"MATCH (a:{node_table})-{rc_out}->(b:{target_table}) "
+                                f"WHERE a.{pk} = $id "
+                                f"RETURN b.{target_pk}, b.text_raw, b.confidence, b.pathway_strength",
+                                node_id, "out", iter_rel,
+                            ))
+                        if direction in ("incoming", "both"):
+                            queries.append((
+                                f"MATCH (a:{node_table})<-{rc_in}-(b:{target_table}) "
+                                f"WHERE a.{pk} = $id "
+                                f"RETURN b.{target_pk}, b.text_raw, b.confidence, b.pathway_strength",
+                                node_id, "in", iter_rel,
+                            ))
 
-                    for query, qid, qdir in queries:
+                    for query, qid, qdir, qrel in queries:
                         try:
                             r = db.execute(query, {"id": qid})
                             while r.has_next():
@@ -944,7 +945,7 @@ def _traverse_iterative(
                                 text_raw     = str(row[1]) if row[1] is not None else ""
                                 confidence   = float(row[2]) if row[2] is not None else 0.0
                                 pathway_str  = float(row[3]) if row[3] is not None else 0.0
-                                edge_rel     = str(row[4]) if row[4] is not None else rel_type
+                                edge_rel     = qrel  # use the known rel type from the query
 
                                 if neighbor_id and neighbor_id not in seen_ids:
                                     seen_ids.add(neighbor_id)
@@ -971,7 +972,7 @@ def _traverse_iterative(
                                             "type":   edge_rel,
                                         })
                         except Exception:
-                            pass
+                            pass  # table+rel combo may not exist — normal for sparse schemas
                 except Exception:
                     continue
 
