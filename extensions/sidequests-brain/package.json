@@ -1,11 +1,13 @@
 {
-  "name": "@sidequests/openclaw-brain",
+  "name": "@sidequests/sidequests-brain",
   "version": "0.1.0",
   "description": "SideQuests Brain memory plugin for OpenClaw",
   "type": "module",
   "main": "src/index.ts",
   "openclaw": {
-    "extensions": ["./src/index.ts"],
+    "extensions": [
+      "./src/index.ts"
+    ],
     "install": {
       "localPath": "extensions/sidequests-brain",
       "defaultChoice": "local"

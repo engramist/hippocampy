@@ -605,6 +605,113 @@ def create_app(db, config: dict | None = None) -> FastAPI:
         return {"quests": quests, "count": len(quests)}
 
     # ------------------------------------------------------------------
+    # B39 — Thinking tab data (decisions, concepts, open loops)
+    # ------------------------------------------------------------------
+
+    @app.get("/api/thinking")
+    def get_thinking():  # W1: sync → FastAPI runs in threadpool
+        """
+        Return rich cognition data for the Mission Control Thinking tab.
+        Includes top decisions, top concepts, and open loop count.
+        """
+        result = {
+            "decisions": [],
+            "concepts": [],
+            "open_loops_count": 0,
+            "constraints": [],
+            "stats": {},
+        }
+
+        # Top decisions (by pathway_strength)
+        try:
+            r = db.execute(
+                "MATCH (d:Decision) WHERE d.archived = false "
+                "RETURN d.decision_id, d.text_raw, d.confidence, "
+                "       d.pathway_strength, d.confidence_low, d.created_at "
+                "ORDER BY d.pathway_strength DESC LIMIT 10"
+            )
+            while r.has_next():
+                row = r.get_next()
+                result["decisions"].append({
+                    "id": row[0],
+                    "text": row[1],
+                    "confidence": round(float(row[2] or 0), 3),
+                    "strength": round(float(row[3] or 0), 3),
+                    "soft_lock": bool(row[4]),
+                    "created_at": str(row[5]),
+                })
+        except Exception:
+            pass
+
+        # Top concepts (by pathway_strength, for tag cloud)
+        try:
+            r = db.execute(
+                "MATCH (c:Concept) WHERE c.archived = false "
+                "RETURN c.concept_id, c.text_raw, c.gist_class, "
+                "       c.pathway_strength, c.confidence_low "
+                "ORDER BY c.pathway_strength DESC LIMIT 25"
+            )
+            while r.has_next():
+                row = r.get_next()
+                result["concepts"].append({
+                    "id": row[0],
+                    "text": row[1],
+                    "gist_class": row[2],
+                    "strength": round(float(row[3] or 0), 3),
+                    "soft_lock": bool(row[4]),
+                })
+        except Exception:
+            pass
+
+        # Active constraints
+        try:
+            r = db.execute(
+                "MATCH (c:Constraint) WHERE c.archived = false "
+                "RETURN c.constraint_id, c.text_raw, c.confidence, "
+                "       c.pathway_strength, c.confidence_low "
+                "ORDER BY c.pathway_strength DESC LIMIT 10"
+            )
+            while r.has_next():
+                row = r.get_next()
+                result["constraints"].append({
+                    "id": row[0],
+                    "text": row[1],
+                    "confidence": round(float(row[2] or 0), 3),
+                    "strength": round(float(row[3] or 0), 3),
+                    "soft_lock": bool(row[4]),
+                })
+        except Exception:
+            pass
+
+        # Open loops count (confidence_low nodes not yet confirmed)
+        try:
+            total = 0
+            for table, _ in [("Concept", "concept_id"), ("Decision", "decision_id"),
+                              ("Constraint", "constraint_id")]:
+                r = db.execute(
+                    f"MATCH (n:{table}) WHERE n.confidence_low = true "
+                    f"AND n.archived = false RETURN count(n)"
+                )
+                if r.has_next():
+                    total += r.get_next()[0] or 0
+            result["open_loops_count"] = total
+        except Exception:
+            pass
+
+        # Node counts for stats panel
+        try:
+            for table, key in [("Concept", "concepts"), ("Decision", "decisions"),
+                                ("Constraint", "constraints"), ("MainQuest", "quests")]:
+                r = db.execute(
+                    f"MATCH (n:{table}) WHERE n.archived = false RETURN count(n)"
+                )
+                result["stats"][key] = r.get_next()[0] if r.has_next() else 0
+        except Exception:
+            pass
+
+        return result
+
+    # ------------------------------------------------------------------
     # B3 — MCP-over-SSE transport (ChatGPT Desktop / any SSE-capable client)
     #
     # Usage:

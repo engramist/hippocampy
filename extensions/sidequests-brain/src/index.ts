@@ -135,6 +135,8 @@ export default {
     // 1. Register tools — core memory tools for explicit LLM use
     // -------------------------------------------------------------------
 
+    console.log("[SideQuests Brain] Registering 5 memory tools...");
+
     api.registerTool(
       {
         name: "memory_recall",
@@ -261,6 +263,8 @@ export default {
       },
       { name: "memory_open_loops" }
     );
+
+    console.log("[SideQuests Brain] All 5 tools registered: memory_recall, memory_store, memory_search_analogies, memory_status, memory_open_loops");
 
     // -------------------------------------------------------------------
     // 2. Passive ingestion — forward all LLM turns to the Brain
