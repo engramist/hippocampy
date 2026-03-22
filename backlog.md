@@ -652,6 +652,35 @@ The hippocampus code references `git_repo_root` on the MainQuest table, but the 
 
 ---
 
+### B36 · Audit All Adapters/Plugins for Streamable HTTP Transport
+**Priority:** Medium  
+**Status:** Not started
+
+The Brain Daemon's web endpoint was upgraded to Streamable HTTP (MCP 2025-03-26) with SSE as fallback. Need to audit all integration points to ensure they use the modern transport where possible.
+
+**Current transport inventory:**
+
+| Integration | Transport | Status |
+|-------------|-----------|--------|
+| OpenClaw extension | Streamable HTTP (POST /mcp → direct JSON) | ✅ Upgraded 2026-03-21 |
+| Claude Code adapter | stdio → Unix socket IPC to daemon | ⚪ N/A (stdio, not HTTP) |
+| Claude Desktop adapter | stdio → Unix socket IPC to daemon | ⚪ N/A (stdio, not HTTP) |
+| Codex adapter | stdio → Unix socket IPC to daemon | ⚪ N/A (stdio, not HTTP) |
+| Gemini CLI adapter | stdio → Unix socket IPC to daemon | ⚪ N/A (stdio, not HTTP) |
+| ChatGPT Desktop | SSE (GET /sse) | 🟡 Should upgrade to Streamable HTTP |
+| Brain Daemon IPC (`_dispatch`) | Unix socket, no `tools/call` wrapper | 🟡 Uses raw method names, not MCP `tools/call` |
+| Plugin `.mcp.json` | SSE endpoint URL | 🟡 Should offer Streamable HTTP option |
+
+**Action items:**
+1. **ChatGPT Desktop:** Update `adapters/chatgpt_desktop/adapter.py` docs and test whether ChatGPT Desktop supports Streamable HTTP natively. If it does, update the instructions to use `POST /mcp` instead of `GET /sse`. Keep SSE fallback either way.
+2. **Brain Daemon IPC dispatch:** The Unix socket `_dispatch` in `brain_daemon.py` uses raw method names (e.g., `method: "notify_turn"`) while the web `_dispatch_mcp` uses MCP protocol (`method: "tools/call"`, `params.name: "notify_turn"`). This divergence could cause bugs. Consider unifying both dispatch paths to use `tools/call` wrapping.
+3. **Plugin `.mcp.json`:** Currently points to SSE endpoint. Add Streamable HTTP endpoint option for clients that support it.
+4. **Smithery listing (B5):** When publishing, ensure the Smithery server definition advertises Streamable HTTP as the primary transport.
+
+**Files:** `adapters/chatgpt_desktop/adapter.py`, `brain_daemon.py`, `.mcp.json`, `plugin/.mcp.json`, `smithery.yaml`
+
+---
+
 ## Brainstorming Parking Lot
 _Ideas raised in conversation — not yet decided or scheduled._
 
