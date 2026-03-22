@@ -441,13 +441,12 @@ async def _bind_session(
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
 
-    params = {
+    session_params = {
         "sid": session_id,
         "now": now,
         "routing_state": state,
         "routing_confidence": confidence,
         "routing_method": method,
-        "qid": quest_id,
     }
 
     set_clause = (
@@ -457,7 +456,7 @@ async def _bind_session(
     )
 
     if content_embedding:
-        params["content_embedding"] = content_embedding
+        session_params["content_embedding"] = content_embedding
         set_clause += ", s.content_embedding = $content_embedding"
 
     await db.execute_write(
@@ -471,9 +470,10 @@ async def _bind_session(
         ON MATCH SET  s.last_active_at = timestamp($now),
                       {set_clause}
         """,
-        params,
+        session_params,
     )
 
+    # B35 fix: separate params dict — Kuzu 0.11.3 rejects unused parameters
     await db.execute_write(
         "MATCH (s:Session {session_id: $sid}), (q:MainQuest {quest_id: $qid}) "
         "MERGE (s)-[:WORKING_ON]->(q)",
