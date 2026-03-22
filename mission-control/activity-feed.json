@@ -1,0 +1,181 @@
+[
+  {
+    "type": "session_start",
+    "message": "Work session starting \u2014 reading backlog, selecting highest priority item",
+    "source": "sideclaw",
+    "ts": "20:27:15",
+    "ts_raw": "2026-03-22T20:27:15.512566+00:00"
+  },
+  {
+    "agent": "SideClaw",
+    "type": "fix_verified",
+    "message": "B32 FIXED: explore_graph now returns edges. Root causes: (1) type() function doesnt exist in Kuzu 0.11.3, use named rel types in queries instead. (2) Relations stored before concept nodes created - fixed with deferred storage. (3) _ensure_concept_exists added for noun-chunk endpoints.",
+    "ts": "20:22:12",
+    "ts_raw": "2026-03-22T20:22:12.014435+00:00"
+  },
+  {
+    "agent": "SideClaw",
+    "type": "fix_applied",
+    "message": "B32: Fixed relation ordering bug in orchestrator.py \u2014 deferred _store_relation calls until after Step 4-7 Concept nodes are created. Also added Session.content_embedding migration to schema.py.",
+    "ts": "20:09:30",
+    "ts_raw": "2026-03-22T20:09:30.730181+00:00"
+  },
+  {
+    "agent": "SideClaw",
+    "type": "bug_found",
+    "message": "B32 root cause: relations stored before concept nodes created. Fixing orchestrator to defer relation storage to after step 7.",
+    "ts": "20:04:25",
+    "ts_raw": "2026-03-22T20:04:25.313664+00:00"
+  },
+  {
+    "agent": "SideClaw",
+    "type": "session_start",
+    "message": "Afternoon work session started. Reviewing backlog for highest-priority actionable item.",
+    "ts": "20:00:39",
+    "ts_raw": "2026-03-22T20:00:39.840401+00:00"
+  },
+  {
+    "agent": "\ud83e\udd9e SideClaw",
+    "tool": "Edit",
+    "icon": "\u270f\ufe0f",
+    "detail": "\u2192 kanban.json: B28 \u2192 under_review, MC-001 \u2192 completed",
+    "type": "tool",
+    "ts": "14:28:13",
+    "ts_raw": "2026-03-22T14:28:13.001615+00:00"
+  },
+  {
+    "agent": "\ud83e\udd9e SideClaw",
+    "tool": "message",
+    "icon": "\ud83d\udcac",
+    "detail": "B28: auto-recall hooks confirmed working \u2014 sidequests-memory injecting into context",
+    "type": "message",
+    "ts": "14:21:16",
+    "ts_raw": "2026-03-22T14:21:16.194590+00:00"
+  },
+  {
+    "agent": "\ud83e\udd9e SideClaw",
+    "tool": "Edit",
+    "icon": "\u270f\ufe0f",
+    "detail": "\u2192 openclaw.json: restored plugin config + added plugins.allow",
+    "type": "tool",
+    "ts": "14:21:16",
+    "ts_raw": "2026-03-22T14:21:16.194359+00:00"
+  },
+  {
+    "agent": "\ud83e\udd9e SideClaw",
+    "tool": "Edit",
+    "icon": "\u270f\ufe0f",
+    "detail": "\u2192 extensions/sidequests-brain/package.json: fixed plugin ID mismatch",
+    "type": "tool",
+    "ts": "14:21:16",
+    "ts_raw": "2026-03-22T14:21:16.194129+00:00"
+  },
+  {
+    "agent": "\ud83e\udd9e SideClaw",
+    "tool": "Write",
+    "icon": "\ud83d\udcdd",
+    "detail": "\u2192 plans/B28-tool-binding-fix.md",
+    "type": "tool",
+    "ts": "14:21:16",
+    "ts_raw": "2026-03-22T14:21:16.193916+00:00"
+  },
+  {
+    "agent": "\ud83e\udd9e SideClaw",
+    "tool": "Write",
+    "icon": "\ud83d\udcdd",
+    "detail": "\u2192 plans/B37-token-budget.md",
+    "type": "tool",
+    "ts": "14:21:16",
+    "ts_raw": "2026-03-22T14:21:16.193668+00:00"
+  },
+  {
+    "agent": "\ud83e\udd9e SideClaw",
+    "tool": "Edit",
+    "icon": "\u270f\ufe0f",
+    "detail": "\u2192 base.html: added Activity + Thinking nav tabs",
+    "type": "tool",
+    "ts": "14:21:16",
+    "ts_raw": "2026-03-22T14:21:16.193424+00:00"
+  },
+  {
+    "agent": "\ud83e\udd9e SideClaw",
+    "tool": "Edit",
+    "icon": "\u270f\ufe0f",
+    "detail": "\u2192 server.py: file-based activity feed, /api/activity/add endpoint",
+    "type": "tool",
+    "ts": "14:21:16",
+    "ts_raw": "2026-03-22T14:21:16.193096+00:00"
+  },
+  {
+    "agent": "\ud83e\udd9e SideClaw",
+    "tool": "Write",
+    "icon": "\ud83d\udcdd",
+    "detail": "\u2192 mission-control/templates/thinking.html (new tab)",
+    "type": "tool",
+    "ts": "14:21:16",
+    "ts_raw": "2026-03-22T14:21:16.192680+00:00"
+  },
+  {
+    "agent": "\ud83e\udd9e SideClaw",
+    "tool": "Write",
+    "icon": "\ud83d\udcdd",
+    "detail": "\u2192 mission-control/templates/activity.html (new tab)",
+    "type": "tool",
+    "ts": "14:21:16",
+    "ts_raw": "2026-03-22T14:21:16.192462+00:00"
+  },
+  {
+    "agent": "\ud83e\udd9e SideClaw",
+    "tool": "cron",
+    "icon": "\u23f0",
+    "detail": "\u2192 updated work sessions: Sonnet model + digest posting",
+    "type": "tool",
+    "ts": "14:21:16",
+    "ts_raw": "2026-03-22T14:21:16.192150+00:00"
+  },
+  {
+    "agent": "\ud83e\udd9e SideClaw",
+    "tool": "Edit",
+    "icon": "\u270f\ufe0f",
+    "detail": "\u2192 openclaw.json: added Sonnet fallback + tools.allow",
+    "type": "tool",
+    "ts": "14:21:16",
+    "ts_raw": "2026-03-22T14:21:16.191578+00:00"
+  },
+  {
+    "agent": "\ud83e\udd9e SideClaw",
+    "tool": "message",
+    "icon": "\ud83d\udcac",
+    "detail": "Activity feed now file-based \u2014 polling activity-feed.json every 5s",
+    "type": "message",
+    "ts": "13:56:02",
+    "ts_raw": "2026-03-22T13:56:02.320375+00:00"
+  },
+  {
+    "agent": "\ud83e\udd9e SideClaw",
+    "tool": "cron",
+    "icon": "\u23f0",
+    "detail": "\u2192 updated afternoon + night sessions with activity logging",
+    "type": "tool",
+    "ts": "13:56:02",
+    "ts_raw": "2026-03-22T13:56:02.319895+00:00"
+  },
+  {
+    "agent": "\ud83e\udd9e SideClaw",
+    "tool": "Write",
+    "icon": "\ud83d\udcdd",
+    "detail": "\u2192 mission-control/activity-feed.json (created)",
+    "type": "tool",
+    "ts": "13:56:02",
+    "ts_raw": "2026-03-22T13:56:02.319338+00:00"
+  },
+  {
+    "agent": "\ud83e\udd9e SideClaw",
+    "tool": "Edit",
+    "icon": "\u270f\ufe0f",
+    "detail": "\u2192 mission-control/server.py (activity feed refactor)",
+    "type": "tool",
+    "ts": "13:56:02",
+    "ts_raw": "2026-03-22T13:56:02.318018+00:00"
+  }
+]

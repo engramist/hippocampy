@@ -1,0 +1,14 @@
+[
+  {
+    "id": "digest-001",
+    "title": "Work Session",
+    "date": "2026-03-22 20:23 UTC",
+    "session_type": "scheduled",
+    "emoji": "\ud83e\udd9e",
+    "status": "complete",
+    "summary": "B32 FIXED: Zero edges in knowledge graph. 4 root causes fixed: (1) Relations stored before concept nodes existed \u2014 deferred to after step 4-7; (2) Noun-chunk endpoints never created as concepts \u2014 added _ensure_concept_exists(); (3) type() function doesnt exist in Kuzu 0.11.3, all explore_graph queries failed silently \u2014 iterate specific rel types; (4) Session.content_embedding missing from migrations \u2014 added. Commit: 51bb01d. Knowledge graph now has real edges. explore_graph works.",
+    "work_done": [],
+    "ideas": [],
+    "commit": null
+  }
+]

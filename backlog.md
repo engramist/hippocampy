@@ -608,12 +608,14 @@ rank = (ps * conf * 0.4) + (similarity * 0.4) + (recency * 0.2)
 
 ---
 
-### B32 · Bug: Zero Edges in Knowledge Graph
-The graph has 25+ nodes but 0 relationships. `explore_graph` returns empty for every node. The Consolidation Loop's Step 1b (relation extraction) and Step 3b (schema.org relations) may be failing silently or not creating edges.
+### B32 · Bug: Zero Edges in Knowledge Graph — ✅ FIXED (2026-03-22)
+**Root causes fixed:**
+1. Relations stored before concept nodes existed → deferred to after step 4-7 loop
+2. `_store_relation` silently dropped noun-chunk endpoints → added `_ensure_concept_exists()`
+3. `explore_graph` used `type(r)` which doesn't exist in Kuzu 0.11.3 → iterate specific rel types
+4. `Session.content_embedding` missing from migrations → added
 
-**Impact:** Graph traversal is useless. Cross-referencing decisions/constraints is impossible.
-
-**Files:** `mcp_engine/loop/step1b_relations.py`, `mcp_engine/loop/step3b_relations.py`, `mcp_engine/schema.py`
+**Commit:** `51bb01d`
 
 ---
 
@@ -678,6 +680,67 @@ The Brain Daemon's web endpoint was upgraded to Streamable HTTP (MCP 2025-03-26)
 4. **Smithery listing (B5):** When publishing, ensure the Smithery server definition advertises Streamable HTTP as the primary transport.
 
 **Files:** `adapters/chatgpt_desktop/adapter.py`, `brain_daemon.py`, `.mcp.json`, `plugin/.mcp.json`, `smithery.yaml`
+
+---
+
+## B37: Token Budget & Graceful Rate Limiting
+**Priority:** High | **Status:** Partially Complete (Phase 1+2 done, Phase 3 → B38)
+**Problem:** Opus 4.6 rate limits are tight. Heartbeats + work sessions + conversation can blow past TPM limits, causing 429 errors with no graceful fallback. When limits hit, SideClaw goes completely dark — no context preservation, no handoff.
+**Brainstorm areas:**
+- **Sonnet/Opus task routing:** Which tasks genuinely need Opus (architecture, review, complex debugging) vs Sonnet (routine checks, heartbeats, simple edits, monitoring)? Can cron jobs specify model per task?
+- **Token budget awareness:** Can we monitor remaining rate limit headroom and proactively downshift to Sonnet before hitting the wall?
+- **Graceful degradation:** When approaching limits, flush critical context to SideQuests Brain / memory files so the next session (on any model) can pick up immediately
+- **SideQuests as continuity layer:** If Brain has full context, hitting a rate limit becomes a non-event — spin up on Sonnet or wait for Opus cooldown, recall from Brain, continue seamlessly
+- **Rate limit headers:** Anthropic returns `retry-after` and usage headers — can OpenClaw read these and auto-switch models?
+- **Session cost tracking:** Use session_status to track token burn rate and alert before limits
+**Goal:** Never go dark again. Rate limits should trigger a smooth handoff, not a crash.
+
+---
+
+## B38: Graceful Rate Limit Handoff via SideQuests Brain
+**Priority:** High | **Status:** Backlog | **Depends on:** B28 (tool binding)
+**Problem:** When Opus hits a rate limit mid-session, context is lost. Even with Sonnet fallback (B37), active working context that was never written to files disappears.
+**Solution:** Use Brain as the continuity layer. When a session ends (gracefully or due to limit), flush working context to Brain + write a RESUME_POINT to memory files. Any new session can recall from Brain and continue seamlessly.
+**Requirements:**
+- B28 (tool binding) must work — Brain needs to be callable from within sessions
+- Session startup flow: check Brain for RESUME_POINT before starting fresh
+- Session end flow: flush working context, write handoff note
+- Cron session prompts updated to include resume-from-Brain logic
+**Goal:** Rate limits become non-events. Spin up on Sonnet, recall from Brain, keep going.
+
+---
+
+## B39: Mission Control — Thinking Tab (Brain Integration)
+**Priority:** High | **Status:** Stub built, wiring pending | **Depends on:** B28 (explicit tool calls)
+**Context:** The Thinking tab is deliberately designed as a live integration test for SideQuests Brain. When Brain is healthy, it surfaces rich context — decisions made, concepts formed, reasoning chains. When it's empty or shallow, that's a bug signal. This keeps us honest about whether Brain is delivering value.
+**What's built:** `mission-control/templates/thinking.html` — placeholder UI with "Coming Soon" state, shows B28 blocker, previews what will appear (Decisions, Concept Graph, Open Loops).
+**What needs building:**
+- Wire `/thinking` route to query Brain via `memory_recall` + `explore_graph` for recent decision nodes
+- Surface decisions with descriptions, timestamps, strength scores
+- Surface top concepts as a tag cloud (weighted by strength)
+- Surface open loops (tentative/unresolved nodes)
+- Set `brain_integrated = True` in server.py once B28 explicit tools are confirmed working
+- Auto-refresh every 30s
+**Design principle:** Tab only shows real data — no dummy data, no fallbacks. If Brain is offline or B28 isn't fixed, show the honest placeholder. This makes the tab a health indicator, not just a display.
+**Files:** `mission-control/server.py`, `mission-control/templates/thinking.html`
+
+---
+
+## B40: B28 Deep Dive — Explicit Tool Call Registration
+**Priority:** P0 | **Status:** In Progress (hooks work, explicit tools don't)
+**Context:** B28 partial fix confirmed: auto-recall hooks inject `<sidequests-memory>` context into every message. Brain service connects on startup. But `memory_recall` and other tools don't appear in agent tool list — explicit tool calls don't work.
+**What we know:**
+- `registerTool()` is being called correctly (same pattern as memory-lancedb)  
+- Service starts and connects to Brain
+- Hooks fire correctly (`before_agent_start`, `llm_input`, `llm_output`)
+- BUT tools not surfacing to agent — not visible in available tool list
+**Hypothesis:** The tool factory pattern in memory-core uses `api.runtime.tools.createMemorySearchTool()` — a runtime-provided factory. Our plugin passes a raw tool object. The `AnyAgentTool` type may require specific fields (schema format, execute signature) that differ from what we're providing.
+**Next steps:**
+1. Compare `AnyAgentTool` type definition in OpenClaw dist against our tool object shape
+2. Check if TypeBox `Type.Object()` schema format matches what OpenClaw expects for tool parameters
+3. Try a minimal single-tool plugin (one tool, simplest possible schema) to isolate
+4. Check if there's a `configSchema` or `inputSchema` field name difference
+**Files:** `extensions/sidequests-brain/src/index.ts`, OpenClaw `dist/plugin-sdk/plugins/types.d.ts`
 
 ---
 
