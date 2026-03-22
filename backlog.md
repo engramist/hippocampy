@@ -710,19 +710,14 @@ The Brain Daemon's web endpoint was upgraded to Streamable HTTP (MCP 2025-03-26)
 
 ---
 
-## B39: Mission Control — Thinking Tab (Brain Integration)
-**Priority:** High | **Status:** Stub built, wiring pending | **Depends on:** B28 (explicit tool calls)
-**Context:** The Thinking tab is deliberately designed as a live integration test for SideQuests Brain. When Brain is healthy, it surfaces rich context — decisions made, concepts formed, reasoning chains. When it's empty or shallow, that's a bug signal. This keeps us honest about whether Brain is delivering value.
-**What's built:** `mission-control/templates/thinking.html` — placeholder UI with "Coming Soon" state, shows B28 blocker, previews what will appear (Decisions, Concept Graph, Open Loops).
-**What needs building:**
-- Wire `/thinking` route to query Brain via `memory_recall` + `explore_graph` for recent decision nodes
-- Surface decisions with descriptions, timestamps, strength scores
-- Surface top concepts as a tag cloud (weighted by strength)
-- Surface open loops (tentative/unresolved nodes)
-- Set `brain_integrated = True` in server.py once B28 explicit tools are confirmed working
-- Auto-refresh every 30s
-**Design principle:** Tab only shows real data — no dummy data, no fallbacks. If Brain is offline or B28 isn't fixed, show the honest placeholder. This makes the tab a health indicator, not just a display.
-**Files:** `mission-control/server.py`, `mission-control/templates/thinking.html`
+## B39: Mission Control — Thinking Tab (Brain Integration) — ✅ DONE (2026-03-22)
+**Commit:** `2a702f5`
+**What was built:**
+- `web/server.py`: New `/api/thinking` endpoint — decisions (top 10 by strength), concepts (top 25), constraints (top 10), open_loops_count, stats summary
+- `mission-control/server.py`: `brain_integrated = True`, new `_brain_thinking()` helper, real data wired to /thinking route
+- `mission-control/templates/thinking.html`: Full live UI — stats bar (4 counters), decisions panel with strength %, constraints panel, concept tag cloud colored by strength tier (blue > 70%, grey > 40%, dim < 40%)
+- "Coming Soon / Blocked on B28" placeholder replaced with real data display
+- Brain offline state still shows proper error message
 
 ---
 
