@@ -886,6 +886,7 @@ def _traverse_iterative(
     edges: list,
     seen_ids: set,
     _current_depth: int = 0,
+    _seen_edges: set | None = None,
 ) -> None:
     """
     Iterative BFS traversal. Kuzu 0.11.3 variable-length paths have
@@ -893,6 +894,14 @@ def _traverse_iterative(
     """
     if _current_depth >= depth:
         return
+
+    # seen_edges prevents duplicate entries in the edges list.
+    # Each edge is a (source_id, target_id, rel_type) tuple.
+    # Without this, multi-hop BFS can re-discover the same edge from the
+    # reverse direction in a later hop (e.g. A→B found on hop 0 as outgoing,
+    # then found again on hop 1 from B as incoming with source=A, target=B).
+    if _seen_edges is None:
+        _seen_edges = set()
 
     frontier = [(start_id, start_table)]
     for hop in range(depth):
@@ -960,17 +969,23 @@ def _traverse_iterative(
 
                                 if neighbor_id:
                                     if qdir == "out":
-                                        edges.append({
-                                            "source": node_id,
-                                            "target": neighbor_id,
-                                            "type":   edge_rel,
-                                        })
+                                        edge_key = (node_id, neighbor_id, edge_rel)
+                                        if edge_key not in _seen_edges:
+                                            _seen_edges.add(edge_key)
+                                            edges.append({
+                                                "source": node_id,
+                                                "target": neighbor_id,
+                                                "type":   edge_rel,
+                                            })
                                     else:
-                                        edges.append({
-                                            "source": neighbor_id,
-                                            "target": node_id,
-                                            "type":   edge_rel,
-                                        })
+                                        edge_key = (neighbor_id, node_id, edge_rel)
+                                        if edge_key not in _seen_edges:
+                                            _seen_edges.add(edge_key)
+                                            edges.append({
+                                                "source": neighbor_id,
+                                                "target": node_id,
+                                                "type":   edge_rel,
+                                            })
                         except Exception:
                             pass  # table+rel combo may not exist — normal for sparse schemas
                 except Exception:
