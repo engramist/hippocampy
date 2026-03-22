@@ -325,10 +325,46 @@ async def run_loop(message_id: str, text: str, db, llm_client,
 
 async def _store_concept(entity: dict, step4: dict, vector: list[float],
                           embedding_model: str, db, now: str) -> str | None:
-    """Create a Concept node for an entity that cleared the noise floor."""
-    concept_id = str(uuid.uuid4())
+    """
+    Create a Concept node for an entity that cleared the noise floor.
+
+    B33 fix: check for exact text_raw duplicate (case-insensitive) before creating.
+    The Step 5 vector search catches *similar* concepts but can miss exact-match
+    duplicates when the embedding similarity falls below GRAY_ZONE_UPPER (e.g. on
+    the first occurrence in a new session). This guard prevents "JWT" creating 3
+    separate nodes across 3 sessions.
+    If an exact match exists, return the existing concept_id and bump its
+    last_accessed_at instead of creating a duplicate.
+    """
     confidence = step4["confidence"]
 
+    # B33: exact-match dedup before CREATE
+    try:
+        existing = db.execute(
+            "MATCH (c:Concept) WHERE toLower(c.text_raw) = toLower($t) AND c.archived = false "
+            "RETURN c.concept_id, c.pathway_strength LIMIT 1",
+            {"t": entity["text"]}
+        )
+        if existing.has_next():
+            row = existing.get_next()
+            existing_id, existing_ps = row[0], row[1]
+            # Bump last_accessed_at and upgrade confidence_low if we're now more confident
+            await db.execute_write(
+                "MATCH (c:Concept {concept_id: $id}) "
+                "SET c.last_accessed_at = timestamp($now), "
+                "    c.pathway_strength = CASE WHEN $ps > c.pathway_strength THEN $ps "
+                "                              ELSE c.pathway_strength END, "
+                "    c.confidence_low = CASE WHEN $conf >= 0.80 THEN false "
+                "                           ELSE c.confidence_low END",
+                {"id": existing_id, "now": now,
+                 "ps": max(confidence, 0.50), "conf": confidence}
+            )
+            _logger.debug("_store_concept: dedup hit for '%s' → %s", entity["text"], existing_id)
+            return existing_id
+    except Exception:
+        pass  # On error, fall through to create new node
+
+    concept_id = str(uuid.uuid4())
     try:  # noqa: SIM105 — structured logging on failure, return None sentinel
         await db.execute_write(
             """
