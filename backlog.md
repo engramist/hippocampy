@@ -415,6 +415,243 @@ per cognitive task. Inspired by OpenClaw power-user workflows (Matthew Berman "t
 
 ---
 
+## P7 — OpenClaw Integration (Discovered 2026-03-21)
+
+Issues found during live OpenClaw standalone install + plugin integration session.
+
+### B20 · OpenClaw Extension: Plugin ID Mismatch
+The `openclaw.plugin.json` uses `id: "sidequests-brain"` but the npm `package.json` uses a different name (`openclaw-brain`). This causes a persistent config warning on every gateway startup:
+```
+plugin id mismatch (manifest uses "sidequests-brain", entry hints "openclaw-brain")
+```
+
+**Fix:** Align `package.json` `name` field with `openclaw.plugin.json` `id` field. Both should be `sidequests-brain`.
+
+**Files:** `extensions/sidequests-brain/package.json`, `extensions/sidequests-brain/openclaw.plugin.json`
+
+---
+
+### B21 · OpenClaw Extension: Tools Not Surfaced to Agent Without Manual Config
+`api.registerTool()` registers tools at the gateway level, but the sandbox tool policy uses an allowlist. Plugin-registered tools are blocked by default — the user must manually add them to `tools.sandbox.tools.allow` in `openclaw.json`.
+
+**Fix:** The installer (`sidequests setup` / B1 / B13) must detect OpenClaw and automatically add the memory tools to the sandbox allowlist:
+```json
+"tools": {
+  "sandbox": {
+    "tools": {
+      "allow": ["memory_recall", "memory_store", "memory_search_analogies", "memory_status", "memory_open_loops"]
+    }
+  }
+}
+```
+
+**Files:** `sidequests/cli/setup.py` (or equivalent installer), `extensions/sidequests-brain/README.md` (document the manual step until installer handles it)
+
+---
+
+### B22 · OpenClaw Extension: `plugins.allow` Warning
+OpenClaw warns on every startup that `plugins.allow` is empty and non-bundled plugins auto-load. The installer should set `plugins.allow` to explicitly trust the sidequests-brain plugin:
+```json
+"plugins": {
+  "allow": ["sidequests-brain"]
+}
+```
+
+**Fix:** Add to installer config step. Low priority — cosmetic warning, no functional impact.
+
+**Files:** `sidequests/cli/setup.py`
+
+---
+
+### B23 · ~~OpenClaw Extension: SSE Connection Per Tool Call is Expensive~~ RESOLVED
+~~The `BrainClient.callTool()` method opens a new SSE connection per call.~~
+
+**Resolved 2026-03-21:** Upgraded to Streamable HTTP transport (MCP 2025-03-26). `POST /mcp` now returns results directly in the response body. Single HTTP round-trip per tool call. Commit: `feat: upgrade MCP transport from SSE to Streamable HTTP (2025-03-26)`
+
+---
+
+### B24 · OpenClaw Extension: Missing `memory_search`, `memory_get` Core Tool Aliases
+The OpenClaw `coding` tools profile expects `memory_search` and `memory_get` (core memory tools from the default `memory-core` plugin). When sidequests-brain replaces `memory-core`, these are missing:
+```
+tools.profile (coding) allowlist contains unknown entries (apply_patch, memory_search, memory_get)
+```
+
+**Fix:** Either register `memory_search` and `memory_get` as aliases for `memory_recall` in the extension, or document that the `coding` profile warning is harmless.
+
+**Files:** `extensions/sidequests-brain/src/index.ts`
+
+---
+
+### B25 · OpenClaw Installer: `sidequests setup --target openclaw`
+Add OpenClaw as a supported target in the installer. Should:
+1. Detect if `openclaw` CLI is installed (`which openclaw`)
+2. Install the extension: `openclaw plugins install <path>`
+3. Configure sandbox tool allowlist
+4. Configure `plugins.allow`
+5. Restart the gateway
+6. Verify: `openclaw sandbox explain` shows memory tools in allow list
+
+**Depends on:** B1/B13 (installer framework), B20-B22 (extension fixes)
+
+**Files:** `sidequests/cli/setup.py`
+
+---
+
+### B26 · Document: OpenClaw Standalone Install Guide
+Comprehensive install doc for OpenClaw standalone (not NemoClaw) with SideQuests Brain integration. Covers:
+- OpenClaw install via npm
+- OrbStack/Docker setup for sandbox
+- Sandbox image build
+- Gateway config (security hardening)
+- Discord bot setup
+- Brain Daemon + plugin wiring
+- Troubleshooting
+
+**Reference:** `~/Desktop/B-openclaw-standalone-install.md` (draft created 2026-03-21, needs updating with plugin steps)
+
+**Files:** `docs/openclaw-install.md`
+
+---
+
+### B28 · CRITICAL: `api.registerTool()` Does Not Surface Tools to Agent Sessions
+**GitHub Issue:** [#1](https://github.com/djs54/sidequests-brain/issues/1)
+
+The OpenClaw extension uses `api.registerTool()` to register 5 memory tools. They appear in the sandbox policy allowlist but are **never bound to the agent's tool list** at session time. The agent reports "Tool not found" when attempting to invoke any of them.
+
+**Impact:** Active memory recall is completely broken. Agent cannot query the knowledge graph on demand. Passive ingestion (hooks) still works.
+
+**Root cause:** The `api.registerTool()` API was written against an assumed plugin interface. OpenClaw's actual tool binding mechanism likely differs. Need to compare against bundled plugins (`memory-core`, `memory-lancedb`) to find the correct registration pattern.
+
+**Fix:**
+1. Read OpenClaw source for `memory-core` plugin — find how it registers `memory_search` and `memory_get`
+2. Replicate that pattern in `extensions/sidequests-brain/src/index.ts`
+3. Test with minimal single-tool plugin to isolate the issue
+4. Rewrite all 5 tool registrations to match
+
+**Files:** `extensions/sidequests-brain/src/index.ts`
+**Priority:** P0 — blocks all active memory features
+**Depends on:** None
+
+---
+
+### B27 · Extension: Passive Ingestion Event API Validation
+The extension uses `api.on("llm_input")`, `api.on("llm_output")`, and `api.on("before_agent_start")` — these event names were assumed from the OpenClaw plugin docs. Need to verify:
+1. Are these the correct event names in OpenClaw 2026.3.13?
+2. Is the event payload shape correct (`event.prompt`, `event.assistantTexts`)?
+3. Are hooks actually firing? (Gateway logs show "Connected" but no ingestion confirmation)
+
+**Fix:** Test each event by adding temporary logging. Adapt event names/payloads to match actual API.
+
+**Files:** `extensions/sidequests-brain/src/index.ts`
+
+---
+
+## P8 — Cross-Session Awareness (Discovered 2026-03-21)
+
+The core value proposition of SideQuests Brain as a memory system for OpenClaw agents: multiple sessions of the same agent share a persistent knowledge graph, so they all know what the others have been doing.
+
+### B29 · TEST CASE: Cross-Session Context Awareness
+**Status:** FAILING (2026-03-21)  
+**Priority:** P0 — this is the entire reason the Brain exists
+
+**Scenario:**
+1. Agent session A (TUI) does significant work — tests memory system, finds bugs, upgrades MCP transport, delegates to Gemini, commits code
+2. Agent session B (Discord) is asked "what are you working on?"
+3. Session B should recall session A's work via the Brain's knowledge graph
+
+**Expected:** Session B queries `current_truth` with the user's question and gets back recent decisions, actions, and context from session A's work — even though session B has no direct context of what session A did.
+
+**Actual (2026-03-21):** Session B gave a stale answer based on yesterday's markdown memory files. It had no awareness of session A's Streamable HTTP upgrade, Gemini delegation, or test results. The Brain was passively ingesting both sessions, but session B never queried it.
+
+**Root causes:**
+1. Passive ingestion hooks (`llm_input`/`llm_output`) may not be firing for all sessions (needs B27 validation)
+2. Even if ingestion works, the `before_agent_start` auto-recall hook may not inject enough context about cross-session work
+3. The agent's system prompt doesn't instruct it to check the Brain when asked about recent work — it defaults to reading markdown memory files instead
+4. `notify_turn` returns empty `quest_id` for non-git sessions, so cross-session work may not be linked to the same quest
+
+**Acceptance criteria:**
+- [ ] Session A stores a decision via conversation (e.g., "We decided to use Streamable HTTP")
+- [ ] Session B, started fresh with no shared context window, queries "What transport protocol did we choose?"
+- [ ] Session B's `current_truth` returns the Streamable HTTP decision from session A
+- [ ] Session B can give an informed answer without reading markdown files
+
+**Depends on:** B28 (tool binding), B27 (hook validation), working quest routing for non-git sessions
+
+**Files:** `extensions/sidequests-brain/src/index.ts` (hooks), `mcp_engine/tools.py` (current_truth), agent system prompt / SOUL.md
+
+---
+
+### B30 · Agent System Prompt: "Check the Brain First"
+The agent's SOUL.md and AGENTS.md currently instruct it to read markdown memory files on startup. Once the Brain is working end-to-end, the agent should be instructed to:
+1. Call `memory_recall` when asked about recent work, decisions, or context
+2. Prefer Brain results over stale markdown files
+3. Still write to markdown files as a fallback/backup (belt and suspenders)
+
+**Files:** `SOUL.md`, `AGENTS.md`, OpenClaw agent system prompt configuration
+
+**Depends on:** B29 (cross-session test passing), B28 (tool binding working)
+
+---
+
+### B31 · Improvement: Recall Ranking Needs Recency Factor
+When recalling memories, old high-pathway-strength nodes dominate over recently stored, highly relevant ones. A "Redis caching decision" stored 5 minutes ago loses to a "JWT" concept from 2 days ago.
+
+**Fix:** Add recency decay to the ranking formula in `current_truth`:
+```python
+from datetime import datetime, timezone
+days_old = (datetime.now(timezone.utc) - node_created_at).total_seconds() / 86400
+recency = 1.0 / (1 + days_old)
+rank = (ps * conf * 0.4) + (similarity * 0.4) + (recency * 0.2)
+```
+
+**Files:** `mcp_engine/tools.py` (`current_truth` function)
+
+---
+
+### B32 · Bug: Zero Edges in Knowledge Graph
+The graph has 25+ nodes but 0 relationships. `explore_graph` returns empty for every node. The Consolidation Loop's Step 1b (relation extraction) and Step 3b (schema.org relations) may be failing silently or not creating edges.
+
+**Impact:** Graph traversal is useless. Cross-referencing decisions/constraints is impossible.
+
+**Files:** `mcp_engine/loop/step1b_relations.py`, `mcp_engine/loop/step3b_relations.py`, `mcp_engine/schema.py`
+
+---
+
+### B33 · Bug: Duplicate Concept Nodes
+Multiple nodes with identical `text_raw` (e.g., 3 separate "JWT" Concept nodes). Should dedup on `(text_raw, node_type)` during consolidation or at query time.
+
+**Files:** `mcp_engine/loop/step1_ner.py`, `mcp_engine/loop/step6_arbitration.py`
+
+---
+
+### B34 · Bug: Junk Entities Still Leaking
+Despite earlier fixes (ISSUE-019, ISSUE-026), junk still enters the graph:
+- `"### Open Loops"` — markdown heading
+- `"to persist summaries"` — prepositional fragment
+- `"last_loop_summary"` — code variable name
+- `"constraints"` — generic word
+- `"Project Setup:**"` — markdown bold markers
+
+**Fix:** Extend `_is_junk_entity()` in `step1_ner.py`:
+- Filter text starting with `#` (markdown)
+- Filter fragments starting with prepositions
+- Filter snake_case/camelCase strings
+- Filter text containing `**` (markdown bold)
+- Minimum 3 chars for single-word entities
+
+**Files:** `mcp_engine/loop/step1_ner.py`
+
+---
+
+### B35 · Bug: `set_quest` Fails with Kuzu Schema Error
+`set_quest` tool returns: `Binder exception: Cannot find property git_repo_root for q.`
+
+The hippocampus code references `git_repo_root` on the MainQuest table, but the property doesn't exist in the schema (or was renamed).
+
+**Files:** `mcp_engine/hippocampus.py`, `mcp_engine/schema.py`
+
+---
+
 ## Brainstorming Parking Lot
 _Ideas raised in conversation — not yet decided or scheduled._
 
