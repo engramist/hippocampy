@@ -30,36 +30,10 @@ class BrainClient {
   }
 
   /**
-   * Call an MCP tool on the Brain Daemon via JSON-RPC 2.0 POST to /mcp.
-   * The SSE endpoint issues a connection_id on GET /sse, then accepts
-   * JSON-RPC POSTs at /mcp?connection_id=<id>. For simplicity, we
-   * first GET /sse to obtain a connection_id, then POST to /mcp.
+   * Call an MCP tool on the Brain Daemon via Streamable HTTP.
+   * Simple POST to /mcp, result comes back directly in response body.
    */
   async callTool(toolName: string, args: Record<string, unknown>): Promise<unknown> {
-    // Step 1: Get a connection ID from the SSE endpoint
-    const sseResp = await fetch(`${this.baseUrl}/sse`);
-    const reader = sseResp.body?.getReader();
-    if (!reader) throw new Error("No SSE stream");
-
-    const decoder = new TextDecoder();
-    let connectionId = "";
-
-    // Read until we get the endpoint event with connection_id
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      const text = decoder.decode(value);
-      const match = text.match(/connection_id=([a-f0-9-]+)/);
-      if (match) {
-        connectionId = match[1];
-        break;
-      }
-    }
-    reader.cancel();
-
-    if (!connectionId) throw new Error("Failed to get connection ID from SSE");
-
-    // Step 2: POST JSON-RPC to /mcp with the connection_id
     const rpcRequest = {
       jsonrpc: "2.0",
       id: ++this.requestId,
@@ -67,21 +41,26 @@ class BrainClient {
       params: { name: toolName, arguments: args },
     };
 
-    const resp = await fetch(
-      `${this.baseUrl}/mcp?connection_id=${connectionId}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(rpcRequest),
-      }
-    );
+    const resp = await fetch(`${this.baseUrl}/mcp`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+      },
+      body: JSON.stringify(rpcRequest),
+    });
 
-    if (!resp.ok) throw new Error(`Brain returned ${resp.status}`);
+    if (!resp.ok) {
+      throw new Error(`Brain returned HTTP ${resp.status}`);
+    }
 
     const rpcResp = await resp.json();
-    if (rpcResp.error) throw new Error(rpcResp.error.message);
 
-    // Extract text content from MCP response
+    if (rpcResp.error) {
+      throw new Error(`MCP error ${rpcResp.error.code}: ${rpcResp.error.message}`);
+    }
+
+    // Extract text content from MCP tool result
     const content = rpcResp.result?.content;
     if (content?.[0]?.type === "text") {
       try {
@@ -95,12 +74,23 @@ class BrainClient {
 
   async ping(): Promise<boolean> {
     try {
-      // Just check if the SSE endpoint responds
-      const resp = await fetch(`${this.baseUrl}/sse`, {
-        signal: AbortSignal.timeout(2000),
+      const resp = await fetch(`${this.baseUrl}/mcp`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 0,
+          method: "initialize",
+          params: {},
+        }),
+        signal: AbortSignal.timeout(3000),
       });
-      resp.body?.cancel();
-      return resp.ok;
+      if (!resp.ok) return false;
+      const data = await resp.json();
+      return !!data.result?.serverInfo;
     } catch {
       return false;
     }
@@ -365,7 +355,7 @@ export default {
         const alive = await brain.ping();
         if (alive) {
           console.log(
-            `[SideQuests Brain] Connected to Brain Daemon at ${cfg.brainUrl}`
+            `[SideQuests Brain] Connected to Brain Daemon at ${cfg.brainUrl} (Streamable HTTP)`
           );
         } else {
           console.warn(

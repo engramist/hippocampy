@@ -575,7 +575,7 @@ async def test_dispatch_mcp_initialize_direct():
         {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
         EmptyDB(), {}
     )
-    assert resp["result"]["protocolVersion"] == "2024-11-05"
+    assert resp["result"]["protocolVersion"] == "2025-03-26"
 
 
 @pytest.mark.asyncio
