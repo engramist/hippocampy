@@ -1,5 +1,29 @@
 [
   {
+    "id": "digest-003",
+    "title": "Afternoon Work Session #3 \u2014 B33 Duplicate Concept Nodes Fixed",
+    "date": "2026-03-22 20:40 UTC",
+    "session_type": "scheduled",
+    "emoji": "\ud83e\udd9e",
+    "status": "completed",
+    "summary": "Fixed B33: duplicate concept nodes in the graph. _store_concept now does a case-insensitive exact text_raw lookup before CREATE. Dedup hit returns existing concept_id and upgrades strength/confidence. 496 tests pass. Commit: 3b8ae3d.",
+    "work_done": [],
+    "ideas": [],
+    "commit": null
+  },
+  {
+    "id": "digest-002",
+    "title": "Afternoon Work Session #2 \u2014 B39 Mission Control Thinking Tab",
+    "date": "2026-03-22 20:33 UTC",
+    "session_type": "scheduled",
+    "emoji": "\ud83e\udd9e",
+    "status": "completed",
+    "summary": "",
+    "work_done": [],
+    "ideas": [],
+    "commit": null
+  },
+  {
     "id": "digest-001",
     "title": "Work Session",
     "date": "2026-03-22 20:23 UTC",

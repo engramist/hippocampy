@@ -1,5 +1,25 @@
 [
   {
+    "agent": "SideClaw",
+    "event": "B32-followup: fixing duplicate edges in explore_graph + debug log level cleanup",
+    "ts": "20:48:43",
+    "ts_raw": "2026-03-22T20:48:43.093311+00:00"
+  },
+  {
+    "message": "B33: Fixed duplicate concept nodes in graph. _store_concept now checks for exact text_raw match (case-insensitive) before CREATE \u2014 dedup hit returns existing concept_id and bumps last_accessed_at + upgrades confidence if applicable. 496 tests pass.",
+    "level": "info",
+    "source": "SideClaw",
+    "ts": "20:39:46",
+    "ts_raw": "2026-03-22T20:39:46.446083+00:00"
+  },
+  {
+    "type": "task_complete",
+    "message": "B39: Mission Control Thinking tab wired to Brain \u2014 /api/thinking endpoint live, real decisions/concepts/constraints rendering, brain_integrated=True",
+    "source": "sideclaw",
+    "ts": "20:33:22",
+    "ts_raw": "2026-03-22T20:33:22.012744+00:00"
+  },
+  {
     "type": "session_start",
     "message": "Work session starting \u2014 reading backlog, selecting highest priority item",
     "source": "sideclaw",
