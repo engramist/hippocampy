@@ -513,23 +513,18 @@ Comprehensive install doc for OpenClaw standalone (not NemoClaw) with SideQuests
 
 ---
 
-### B28 · CRITICAL: `api.registerTool()` Does Not Surface Tools to Agent Sessions
+### B28 · CRITICAL: `api.registerTool()` Does Not Surface Tools to Agent Sessions — ✅ FIXED (2026-03-22)
 **GitHub Issue:** [#1](https://github.com/djs54/sidequests-brain/issues/1)
 
-The OpenClaw extension uses `api.registerTool()` to register 5 memory tools. They appear in the sandbox policy allowlist but are **never bound to the agent's tool list** at session time. The agent reports "Tool not found" when attempting to invoke any of them.
+**Fix applied:**
+1. Fixed `package.json` name from `@sidequests/openclaw-brain` → `@sidequests/sidequests-brain` to match `openclaw.plugin.json` manifest ID
+2. Added `alsoAllow: ["group:plugins"]` to `tools` section in `~/.openclaw/openclaw.json`
+3. Reinstalled plugin with `openclaw plugins install --force`
 
-**Impact:** Active memory recall is completely broken. Agent cannot query the knowledge graph on demand. Passive ingestion (hooks) still works.
+**Verified (2026-03-22 smoke test):** All 5 tools (`memory_recall`, `memory_store`, `memory_search_analogies`, `memory_status`, `memory_open_loops`) return valid results from agent sessions. Passive ingestion continues working.
 
-**Root cause:** The `api.registerTool()` API was written against an assumed plugin interface. OpenClaw's actual tool binding mechanism likely differs. Need to compare against bundled plugins (`memory-core`, `memory-lancedb`) to find the correct registration pattern.
-
-**Fix:**
-1. Read OpenClaw source for `memory-core` plugin — find how it registers `memory_search` and `memory_get`
-2. Replicate that pattern in `extensions/sidequests-brain/src/index.ts`
-3. Test with minimal single-tool plugin to isolate the issue
-4. Rewrite all 5 tool registrations to match
-
-**Files:** `extensions/sidequests-brain/src/index.ts`
-**Priority:** P0 — blocks all active memory features
+**Files:** `extensions/sidequests-brain/package.json`, `extensions/sidequests-brain/src/index.ts`
+**Priority:** P0 — ✅ resolved
 **Depends on:** None
 
 ---
@@ -581,13 +576,14 @@ The core value proposition of SideQuests Brain as a memory system for OpenClaw a
 
 ---
 
-### B30 · Agent System Prompt: "Check the Brain First"
-The agent's SOUL.md and AGENTS.md currently instruct it to read markdown memory files on startup. Once the Brain is working end-to-end, the agent should be instructed to:
-1. Call `memory_recall` when asked about recent work, decisions, or context
-2. Prefer Brain results over stale markdown files
-3. Still write to markdown files as a fallback/backup (belt and suspenders)
+### B30 · Agent System Prompt: "Check the Brain First" — ✅ DONE (2026-03-22)
+**What was done:**
+- Added "🧠 SideQuests Brain — Active Memory System" section to AGENTS.md
+- Documents when to use `memory_recall`, `memory_store`, `memory_status`, `memory_open_loops`
+- Establishes Brain as primary source of truth, markdown files as backup
+- Graceful fallback if Brain tools unavailable
 
-**Files:** `SOUL.md`, `AGENTS.md`, OpenClaw agent system prompt configuration
+**Files:** `~/.openclaw/workspace/AGENTS.md`
 
 **Depends on:** B29 (cross-session test passing), B28 (tool binding working)
 
@@ -721,21 +717,10 @@ The Brain Daemon's web endpoint was upgraded to Streamable HTTP (MCP 2025-03-26)
 
 ---
 
-## B40: B28 Deep Dive — Explicit Tool Call Registration
-**Priority:** P0 | **Status:** In Progress (hooks work, explicit tools don't)
-**Context:** B28 partial fix confirmed: auto-recall hooks inject `<sidequests-memory>` context into every message. Brain service connects on startup. But `memory_recall` and other tools don't appear in agent tool list — explicit tool calls don't work.
-**What we know:**
-- `registerTool()` is being called correctly (same pattern as memory-lancedb)  
-- Service starts and connects to Brain
-- Hooks fire correctly (`before_agent_start`, `llm_input`, `llm_output`)
-- BUT tools not surfacing to agent — not visible in available tool list
-**Hypothesis:** The tool factory pattern in memory-core uses `api.runtime.tools.createMemorySearchTool()` — a runtime-provided factory. Our plugin passes a raw tool object. The `AnyAgentTool` type may require specific fields (schema format, execute signature) that differ from what we're providing.
-**Next steps:**
-1. Compare `AnyAgentTool` type definition in OpenClaw dist against our tool object shape
-2. Check if TypeBox `Type.Object()` schema format matches what OpenClaw expects for tool parameters
-3. Try a minimal single-tool plugin (one tool, simplest possible schema) to isolate
-4. Check if there's a `configSchema` or `inputSchema` field name difference
-**Files:** `extensions/sidequests-brain/src/index.ts`, OpenClaw `dist/plugin-sdk/plugins/types.d.ts`
+## B40: B28 Deep Dive — Explicit Tool Call Registration — ✅ RESOLVED (2026-03-22)
+**Priority:** P0 | **Status:** Done — resolved as part of B28 fix
+
+Root cause was the package name mismatch (`@sidequests/openclaw-brain` vs manifest ID `sidequests-brain`) combined with missing `group:plugins` allowlist entry. Once both were fixed and plugin reinstalled, all 5 tools surfaced correctly. The `registerTool()` pattern was correct all along — the plugin was simply failing to load due to the ID mismatch.
 
 ---
 
