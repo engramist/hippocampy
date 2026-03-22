@@ -282,9 +282,33 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
                            or node.get("global_preference_id", "unknown"))
                 ps = node.get("pathway_strength", 0.0) or 0.0
                 conf = node.get("confidence", 0.0) or 0.0
-                # D4 fix: use the product when both are non-zero; fall back to
-                # similarity score only when either is genuinely absent/zero.
-                rank = (ps * conf) if (ps > 0.0 and conf > 0.0) else row["score"]
+                similarity = row["score"]
+
+                # B31 fix: balanced ranking that weights similarity heavily.
+                # Old formula (ps * conf) caused stale high-strength nodes to
+                # dominate over semantically relevant new ones. New formula:
+                #   50% similarity (semantic match to query)
+                #   30% strength signal (pathway_strength * confidence)
+                #   20% recency (decays over days)
+                created_at = node.get("created_at")
+                recency = 1.0
+                if created_at:
+                    try:
+                        from datetime import datetime, timezone
+                        if hasattr(created_at, 'timestamp'):
+                            created_ts = created_at.timestamp()
+                        else:
+                            created_ts = datetime.fromisoformat(str(created_at).replace('Z', '+00:00')).timestamp()
+                        days_old = (datetime.now(timezone.utc).timestamp() - created_ts) / 86400
+                        recency = 1.0 / (1.0 + days_old)
+                    except Exception:
+                        recency = 0.5
+
+                strength = (ps * conf) if (ps > 0.0 and conf > 0.0) else 0.0
+                # Normalize strength to ~0-1 range (cap at 3.0 which is high)
+                strength_norm = min(strength / 3.0, 1.0)
+                rank = (similarity * 0.5) + (strength_norm * 0.3) + (recency * 0.2)
+
                 all_results.append({
                     "node_id":          node_id,
                     "node_type":        table_name,
@@ -292,7 +316,7 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
                     "confidence":       conf,
                     "confidence_low":   node.get("confidence_low", True),
                     "pathway_strength": ps,
-                    "similarity":       row["score"],
+                    "similarity":       similarity,
                     "_rank":            rank,
                 })
         except Exception:

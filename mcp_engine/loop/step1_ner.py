@@ -93,6 +93,40 @@ def _is_junk_entity(text: str) -> bool:
     if any(c in text for c in '\n\r\x00'):
         return True
 
+    # B34 fix: markdown headings (### Open Loops, ## Decisions, etc.)
+    if stripped.startswith('#'):
+        return True
+
+    # B34 fix: markdown bold markers leaking through (e.g. "Project Setup:**")
+    if '**' in stripped:
+        return True
+
+    # B34 fix: prepositional fragments ("to persist summaries", "for the database")
+    _PREP_STARTS = ('to ', 'for ', 'with ', 'from ', 'by ', 'in ', 'on ', 'at ', 'of ')
+    if stripped.lower().startswith(_PREP_STARTS):
+        return True
+
+    # B34 fix: snake_case or camelCase code identifiers
+    # snake_case: contains underscore between letters (e.g. "last_loop_summary")
+    if '_' in stripped and re.match(r'^[a-zA-Z][a-zA-Z0-9_]*$', stripped):
+        return True
+    # camelCase: lowercase start followed by uppercase (e.g. "questId", "loopSummary")
+    if re.match(r'^[a-z]+[A-Z]', stripped):
+        return True
+
+    # B34 fix: single generic words that aren't meaningful as standalone concepts
+    _GENERIC_WORDS = {
+        'constraints', 'decisions', 'requirements', 'session', 'sessions',
+        'quests', 'routes', 'setup', 'config', 'status', 'data',
+        'items', 'results', 'options', 'settings', 'parameters',
+    }
+    if stripped.lower() in _GENERIC_WORDS:
+        return True
+
+    # B34 fix: too short for a single word (< 3 chars, no spaces)
+    if ' ' not in stripped and len(stripped) < 3:
+        return True
+
     return False
 
 

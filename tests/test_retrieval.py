@@ -67,7 +67,12 @@ async def test_current_truth_excludes_archived():
 
 @pytest.mark.asyncio
 async def test_current_truth_rank_formula():
-    """D4 fix: rank = pathway_strength * confidence when both > 0."""
+    """B31 fix: balanced ranking — similarity (50%) + strength (30%) + recency (20%).
+    
+    With balanced ranking, a highly similar weak node should beat a less-similar
+    strong node. This prevents stale high-strength nodes from dominating results
+    when the user's query closely matches a newer, weaker node.
+    """
     from mcp_engine.tools import current_truth
 
     strong_node = _make_node("strong-1", "strong concept",
@@ -88,10 +93,12 @@ async def test_current_truth_rank_formula():
         db, config
     )
 
-    # strong_node has rank = 0.9*0.95 = 0.855; weak_node has rank = 0.1*0.1 = 0.01
-    # strong_node should rank first despite lower similarity score
+    # B31: With balanced ranking formula:
+    # weak_node:   sim=0.99*0.5 + strength_norm(0.01/3)*0.3 + recency*0.2 ≈ 0.50 + 0.001 + 0.2 = 0.70
+    # strong_node: sim=0.70*0.5 + strength_norm(0.855/3)*0.3 + recency*0.2 ≈ 0.35 + 0.086 + 0.2 = 0.64
+    # High-similarity weak node should rank first (the user's query is about THIS concept)
     ids = [r["node_id"] for r in result["results"]]
-    assert ids[0] == "strong-1"
+    assert ids[0] == "weak-1"
 
 
 @pytest.mark.asyncio

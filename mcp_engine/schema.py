@@ -466,6 +466,30 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         db.execute(f"CREATE NODE TABLE IF NOT EXISTS {table_name} ({fields})")
         print(f"  Node table: {table_name}")
 
+    # 1b. Schema migrations — add columns that may be missing from older DBs
+    _MIGRATIONS = [
+        # (table, column, type) — ALTER TABLE ADD COLUMN IF NOT EXISTS
+        ("MainQuest", "git_repo_root",     "STRING"),
+        ("MainQuest", "purpose_embedding", "FLOAT[384]"),
+        ("MainQuest", "routing_method",    "STRING"),
+        ("MainQuest", "last_active_at",    "TIMESTAMP"),
+        ("Session",   "routing_state",     "STRING"),
+        ("Session",   "routing_confidence", "DOUBLE"),
+        ("Session",   "routing_method",    "STRING"),
+        ("Session",   "token_estimate",    "INT64"),
+        ("Session",   "token_limit",       "INT64"),
+        ("Session",   "loaded_node_count", "INT64"),
+    ]
+    for table, col, col_type in _MIGRATIONS:
+        try:
+            db.execute(f"ALTER TABLE {table} ADD {col} {col_type}")
+            print(f"  Migration: added {table}.{col} ({col_type})")
+        except Exception as e:
+            if "already exists" in str(e).lower() or "property" in str(e).lower():
+                pass  # Column already exists — safe to ignore
+            else:
+                print(f"  Migration warning: {table}.{col}: {e}")
+
     # 2. Relationship tables
     for ddl in REL_TABLES:
         db.execute(ddl)
