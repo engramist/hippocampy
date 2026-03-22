@@ -654,13 +654,8 @@ def create_app(db, config: dict | None = None) -> FastAPI:
             },
         )
 
-    @app.post("/mcp")
-    async def mcp_post(request: Request):
-        """
-        Receive a JSON-RPC request from an SSE client, dispatch to tool handlers,
-        push the response to the open SSE stream.
-        """
-        connection_id = request.query_params.get("connection_id", "")
+    async def _mcp_post_legacy_sse(request: Request, connection_id: str):
+        """Legacy SSE transport (MCP 2024-11-05). Kept for ChatGPT Desktop adapter."""
         queue = _sse_connections.get(connection_id)
         if not queue:
             return JSONResponse(
@@ -678,6 +673,40 @@ def create_app(db, config: dict | None = None) -> FastAPI:
             await queue.put(response)
 
         return JSONResponse({"status": "ok"})
+
+    @app.post("/mcp")
+    async def mcp_post(request: Request):
+        """
+        Streamable HTTP transport (MCP 2025-03-26).
+        
+        Accepts JSON-RPC 2.0 requests and returns results directly in the
+        HTTP response body. No connection_id or SSE stream needed.
+        
+        Also supports legacy SSE transport via connection_id query param
+        for backwards compatibility with ChatGPT Desktop adapter.
+        """
+        # Legacy SSE transport — if connection_id is present, use old flow
+        connection_id = request.query_params.get("connection_id")
+        if connection_id:
+            return await _mcp_post_legacy_sse(request, connection_id)
+        
+        # Streamable HTTP transport — return result directly
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse(
+                {"jsonrpc": "2.0", "id": None,
+                 "error": {"code": -32700, "message": "Parse error"}},
+                status_code=400,
+            )
+        
+        result = await _dispatch_mcp(body, db, _config)
+        
+        # Notifications return no result
+        if result is None:
+            return Response(status_code=202)
+        
+        return JSONResponse(result)
 
     return app
 
@@ -714,7 +743,7 @@ async def _dispatch_mcp(request: dict, _db, _cfg: dict) -> dict | None:
 
     if method == "initialize":
         return ok({
-            "protocolVersion": "2024-11-05",
+            "protocolVersion": "2025-03-26",
             "capabilities": {"tools": {}},
             "serverInfo": {"name": "sidequests-brain-sse", "version": WEB_VERSION},
         })
