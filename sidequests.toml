@@ -8,6 +8,22 @@ base_url = "http://localhost:11434/v1"   # ollama OpenAI-compatible endpoint
 # api_key loaded from env var for cloud providers:
 #   OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY
 
+# B16 — Task-Based Model Routing (optional per-step overrides)
+# Each [llm.STEP_NAME] block overrides provider/model for that specific loop step.
+# Keys not present in the override inherit from the [llm] global block above.
+# Supported step names: step2_gist, step3b_relations, step6_arbitration, quest_purpose
+#
+# Example: use a frontier model for contradiction arbitration only
+# (Step 6 is the hardest reasoning task; Steps 2/3b are tractable for small models)
+#
+# [llm.step6_arbitration]
+# provider = "anthropic"
+# model    = "claude-sonnet-4-6"
+#
+# [llm.quest_purpose]
+# provider = "openai"
+# model    = "gpt-4.1-mini"
+
 [embeddings]
 model = "sentence-transformers/all-MiniLM-L6-v2"   # 384-dim — matches FLOAT[384] schema
 # WARNING: changing this model requires full re-embedding of all nodes.
