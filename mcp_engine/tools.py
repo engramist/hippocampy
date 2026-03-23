@@ -750,6 +750,8 @@ _TRAVERSABLE_RELS = frozenset({
     "BELONGS_TO", "DERIVED_FROM", "ESTABLISHED",
     "HAS_PREF_LABEL", "HAS_ALT_LABEL",
     "PRODUCED_LESSON",
+    # B43: session provenance traversal (Decision/Constraint/Requirement/ActionItem → Session)
+    "ESTABLISHED_IN",
 })
 
 # Node tables to search when resolving start_node_id
