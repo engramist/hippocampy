@@ -1,5 +1,33 @@
 [
   {
+    "task_id": "MC-005",
+    "detail": "activity-linked progress event",
+    "signal": "worker_progress",
+    "ts": "04:12:45",
+    "ts_raw": "2026-03-23T04:12:45.463822+00:00"
+  },
+  {
+    "task_id": "MC-005",
+    "detail": "activity-linked progress event",
+    "signal": "worker_progress",
+    "ts": "04:12:03",
+    "ts_raw": "2026-03-23T04:12:03.942934+00:00"
+  },
+  {
+    "task_id": "MC-005",
+    "detail": "activity-linked progress event",
+    "signal": "worker_progress",
+    "ts": "04:10:35",
+    "ts_raw": "2026-03-23T04:10:35.848732+00:00"
+  },
+  {
+    "agent": "crusty",
+    "action": "b43_complete",
+    "detail": "B43 ESTABLISHED_IN provenance \u2014 all 4 artifact types now write edges to Session. 499 tests passing. Committed 29847c7.",
+    "ts": "04:07:02",
+    "ts_raw": "2026-03-23T04:07:02.370706+00:00"
+  },
+  {
     "agent": "crusty",
     "action": "work_session_start",
     "detail": "Night seed session started. Tests passing 496/4. Targeting B43 (ESTABLISHED_IN provenance for Requirement + ActionItem).",
