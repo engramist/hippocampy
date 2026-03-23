@@ -11,6 +11,7 @@ import re
 import subprocess
 import asyncio
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from datetime import datetime, timezone, timedelta
 
 import httpx
@@ -33,6 +34,7 @@ MEMORY_PATH = Path(__file__).parent.parent.parent.parent / ".openclaw" / "worksp
 OPENCLAW_TOKEN = "0365c314e1df16b969f91da30f6efc5b226d2ac3c894643980e6781e943e43c8"
 OPENCLAW_URL = "http://127.0.0.1:18789"
 ACTIVITY_MAX = 200  # max events to keep
+MOUNTAIN_TZ = ZoneInfo("America/Denver")
 
 # ---------------------------------------------------------------------------
 # App
@@ -41,12 +43,81 @@ ACTIVITY_MAX = 200  # max events to keep
 app = FastAPI(title="SideQuests Mission Control", docs_url=None, redoc_url=None)
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+templates.env.filters["mt_full"] = lambda value: _format_timestamp(value, "full")
+templates.env.filters["mt_time"] = lambda value: _format_timestamp(value, "time")
+templates.env.filters["mt_compact"] = lambda value: _format_timestamp(value, "compact")
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _mountain_now() -> datetime:
+    return datetime.now(MOUNTAIN_TZ)
+
+
+def _parse_timestamp(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        text = str(value).strip()
+        try:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                dt = datetime.strptime(text, "%Y-%m-%d %H:%M UTC").replace(tzinfo=timezone.utc)
+            except ValueError:
+                try:
+                    dt = datetime.strptime(text, "%H:%M:%S").replace(
+                        year=_mountain_now().year,
+                        month=_mountain_now().month,
+                        day=_mountain_now().day,
+                        tzinfo=MOUNTAIN_TZ,
+                    )
+                except ValueError:
+                    try:
+                        cleaned = text.removesuffix(" MDT").strip()
+                        dt = datetime.strptime(cleaned, "%a %m/%d %I:%M %p").replace(
+                            year=_mountain_now().year,
+                            tzinfo=MOUNTAIN_TZ,
+                        )
+                    except ValueError:
+                        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(MOUNTAIN_TZ)
+
+
+def _format_timestamp(value, style: str = "full") -> str:
+    dt = _parse_timestamp(value)
+    if not dt:
+        return value or ""
+    if style == "time":
+        return dt.strftime("%-I:%M %p")
+    if style == "compact":
+        return dt.strftime("%-m/%-d %-I:%M %p")
+    return dt.strftime("%a %-m/%-d %-I:%M %p")
+
+
+def _display_agent(agent_name: str | None) -> str | None:
+    if agent_name == "SideClaw":
+        return "Claws"
+    return agent_name
+
+
+def _avatar_path(agent_name: str | None) -> str:
+    agent = (_display_agent(agent_name) or "").lower()
+    if agent == "claws":
+        return "/static/avatars/claws.png"
+    if agent == "crusty":
+        return "/static/avatars/crusty.png"
+    if agent == "gemini":
+        return "/static/avatars/gemini.png"
+    return ""
+
 
 def _read_kanban() -> dict:
     """Read kanban.json, return parsed dict."""
@@ -60,6 +131,61 @@ def _write_kanban(data: dict):
     """Write kanban.json atomically."""
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
     KANBAN_PATH.write_text(json.dumps(data, indent=2))
+
+
+def _append_task_note(task: dict, text: str):
+    note = (task.get("notes") or "").strip()
+    task["notes"] = f"{note} | {text}" if note else text
+
+
+def _clear_wait_fields(task: dict):
+    task["waiting_on"] = None
+    task["next_event"] = None
+    task["next_check_at"] = None
+
+
+def _apply_workflow_signal(task: dict, signal: str, detail: str = "", at: str | None = None):
+    ts = at or datetime.now(timezone.utc).isoformat()
+    task["last_signal_at"] = ts
+    if signal == "worker_started":
+        task["column"] = "in_progress"
+        task["phase"] = "running"
+        task["started_at"] = task.get("started_at") or ts
+    elif signal in {"worker_progress", "cron_progress"}:
+        task["column"] = "in_progress"
+        task["phase"] = task.get("phase") or "running"
+    elif signal in {"worker_completed", "cron_completed"}:
+        if task.get("on_success") and "review" in str(task.get("on_success", "")).lower():
+            task["column"] = "under_review"
+            task["phase"] = "under_review"
+        else:
+            task["column"] = "completed"
+            task["phase"] = "completed"
+            task["completed_at"] = task.get("completed_at") or ts
+        _clear_wait_fields(task)
+    elif signal in {"worker_failed", "cron_failed", "timer_expired"}:
+        task["column"] = "in_progress"
+        task["phase"] = "blocked"
+        task["waiting_on"] = "first_pass_diagnosis"
+        task["next_event"] = "diagnosis_and_reroute"
+        task["next_check_at"] = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
+    elif signal == "review_requested":
+        task["column"] = "under_review"
+        task["phase"] = "under_review"
+        task["waiting_on"] = "review_approved_or_rejected"
+        task["next_event"] = "review_decision"
+    elif signal == "review_approved":
+        task["column"] = "completed"
+        task["phase"] = "completed"
+        task["completed_at"] = task.get("completed_at") or ts
+        _clear_wait_fields(task)
+    elif signal == "review_rejected":
+        task["column"] = "in_progress"
+        task["phase"] = "blocked"
+        task["waiting_on"] = "rework"
+        task["next_event"] = "worker_started"
+    if detail:
+        _append_task_note(task, f"Signal {signal} @ {_format_timestamp(ts, 'compact')}: {detail}")
 
 
 async def _brain_stats() -> dict:
@@ -170,8 +296,7 @@ def _write_digest(entries: list):
     DIGEST_PATH.write_text(json.dumps(entries, indent=2))
 
 
-async def _cron_jobs() -> list:
-    """Fetch cron jobs from OpenClaw gateway."""
+async def _cron_jobs_raw() -> list:
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             resp = await client.get(
@@ -180,26 +305,31 @@ async def _cron_jobs() -> list:
             )
             if resp.status_code != 200:
                 return []
-            jobs = resp.json().get("jobs", [])
-            result = []
-            for j in jobs:
-                next_ms = j.get("state", {}).get("nextRunAtMs")
-                next_str = ""
-                if next_ms:
-                    dt = datetime.fromtimestamp(next_ms / 1000, tz=timezone.utc).astimezone()
-                    next_str = dt.strftime("%a %I:%M %p %Z")
-                sched = j.get("schedule", {})
-                sched_str = sched.get("expr", sched.get("kind", ""))
-                result.append({
-                    "id": j.get("id"),
-                    "name": j.get("name", "Unnamed"),
-                    "enabled": j.get("enabled", True),
-                    "schedule": sched_str,
-                    "next_run": next_str,
-                })
-            return result
+            return resp.json().get("jobs", [])
     except Exception:
         return []
+
+
+async def _cron_jobs() -> list:
+    """Fetch cron jobs from OpenClaw gateway."""
+    jobs = await _cron_jobs_raw()
+    result = []
+    for j in jobs:
+        next_ms = j.get("state", {}).get("nextRunAtMs")
+        next_str = ""
+        if next_ms:
+            dt = datetime.fromtimestamp(next_ms / 1000, tz=timezone.utc).astimezone(MOUNTAIN_TZ)
+            next_str = dt.strftime("%a %-I:%M %p")
+        sched = j.get("schedule", {})
+        sched_str = sched.get("expr", sched.get("kind", ""))
+        result.append({
+            "id": j.get("id"),
+            "name": j.get("name", "Unnamed"),
+            "enabled": j.get("enabled", True),
+            "schedule": sched_str,
+            "next_run": next_str,
+        })
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -222,12 +352,14 @@ async def dashboard(request: Request):
 
     # Agent status (derive from kanban — who has in_progress tasks?)
     agents = {}
+    agent_aliases = {"SideClaw": "Claws"}
     for task in kanban.get("tasks", []):
         agent = task.get("agent")
-        if agent and task.get("column") == "in_progress":
-            agents[agent] = {"status": "active", "task": task.get("title", ""), "model": task.get("model", "")}
+        display_agent = agent_aliases.get(agent, agent)
+        if display_agent and task.get("column") == "in_progress":
+            agents[display_agent] = {"status": "active", "task": task.get("title", ""), "model": task.get("model", "")}
     # Default agents
-    for name in ["SideClaw", "Gemini"]:
+    for name in ["Claws", "Crusty", "Gemini"]:
         if name not in agents:
             agents[name] = {"status": "idle", "task": "", "model": ""}
 
@@ -240,7 +372,7 @@ async def dashboard(request: Request):
         "git": git,
         "task_counts": task_counts,
         "agents": agents,
-        "now": datetime.now(timezone.utc).isoformat(),
+        "now": _format_timestamp(_mountain_now(), "full"),
     })
 
 
@@ -336,29 +468,37 @@ async def activity_agents():
     # Find last-seen time per agent
     last_seen: dict[str, str] = {}
     for ev in events:
-        a = ev.get("agent", "")
-        if a and a not in last_seen:
-            last_seen[a] = ev.get("ts", "")
+        raw_agent = ev.get("agent", "")
+        agent = _display_agent(raw_agent.replace("🦀 ", "").replace("🦞 ", "").replace("🧠 ", "").replace("✨ ", ""))
+        if agent and agent not in last_seen:
+            last_seen[agent] = _format_timestamp(ev.get("ts_raw") or ev.get("ts", ""), "time")
 
-    # Known agents — always show SideClaw, show others if seen recently
-    agents = {"🦞 SideClaw": last_seen.get("🦞 SideClaw", "")}
+    # Known agents — always show mission-control owners, plus any others seen recently
+    agents = {
+        "Claws": last_seen.get("Claws", ""),
+        "Crusty": last_seen.get("Crusty", ""),
+        "Gemini": last_seen.get("Gemini", ""),
+    }
     for a in last_seen:
         if a not in agents:
             agents[a] = last_seen[a]
 
     html = ""
-    for label, ts in agents.items():
-        name = label.split(" ", 1)[-1]
+    for name, ts in agents.items():
         task = in_progress.get(name, {})
         is_active = bool(task)
         dot = "bg-green-500 animate-pulse" if is_active else ("bg-blue-500" if ts else "bg-slate-600")
         status_text = task.get("title", f"Last active: {ts}" if ts else "Idle")
+        avatar = _avatar_path(name)
         html += f"""
         <div class="flex items-center space-x-3 bg-slate-800 rounded-lg px-4 py-3 border border-slate-700/50">
-            <div class="w-2.5 h-2.5 rounded-full {dot}"></div>
+            <div class="relative">
+                <img src="{avatar}" alt="{name}" class="w-9 h-9 rounded-full object-cover border border-slate-600" />
+                <div class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border border-slate-900 {dot}"></div>
+            </div>
             <div>
-                <div class="text-sm font-semibold text-slate-200">{label}</div>
-                <div class="text-[11px] text-slate-500 truncate max-w-[200px]">{status_text}</div>
+                <div class="text-sm font-semibold text-slate-200">{name}</div>
+                <div class="text-[11px] text-slate-500 truncate max-w-[220px]">{status_text}</div>
             </div>
         </div>"""
 
@@ -379,11 +519,12 @@ async def activity_feed():
     for ev in events[:100]:
         icon = TOOL_ICONS.get(ev.get("tool", ""), ev.get("icon", "🔧"))
         agent = ev.get("agent", "unknown")
-        agent_color = "text-blue-400" if "SideClaw" in agent else "text-purple-400" if "Gemini" in agent else "text-amber-400"
+        display_ts = _format_timestamp(ev.get("ts_raw") or ev.get("ts", ""), "time")
+        agent_color = "text-blue-400" if ("SideClaw" in agent or "Claws" in agent) else "text-purple-400" if "Gemini" in agent else "text-amber-400"
         detail_color = "text-slate-300" if ev.get("type") == "message" else "text-slate-400"
         html += f"""
         <div class="flex items-start space-x-3 px-5 py-2.5 hover:bg-slate-700/20 transition-colors">
-            <span class="text-slate-600 font-mono text-[10px] pt-0.5 w-16 flex-shrink-0">{ev.get('ts','')}</span>
+            <span class="text-slate-600 font-mono text-[10px] pt-0.5 w-20 flex-shrink-0">{display_ts}</span>
             <span class="{agent_color} font-semibold text-[11px] w-28 flex-shrink-0 truncate">{agent}</span>
             <span class="text-[13px] flex-shrink-0">{icon}</span>
             <span class="text-[11px] font-mono text-slate-400 flex-shrink-0 w-24 truncate">{ev.get('tool','')}</span>
@@ -452,6 +593,7 @@ async def thinking(request: Request):
 
 @app.get("/board", response_class=HTMLResponse)
 async def board(request: Request):
+    now = _format_timestamp(_mountain_now(), "full")
     kanban = _read_kanban()
     columns = kanban.get("columns", [])
     tasks = kanban.get("tasks", [])
@@ -549,6 +691,17 @@ async def kanban_add(request: Request):
         "completed_at": None,
         "commit": None,
         "rollback_commit": None,
+        "phase": body.get("phase", "backlog"),
+        "execution_mode": body.get("execution_mode"),
+        "run_ref": body.get("run_ref"),
+        "job_ref": body.get("job_ref"),
+        "waiting_on": body.get("waiting_on"),
+        "next_event": body.get("next_event"),
+        "next_check_at": body.get("next_check_at"),
+        "on_success": body.get("on_success"),
+        "on_failure": body.get("on_failure"),
+        "escalate_to": body.get("escalate_to"),
+        "last_signal_at": body.get("last_signal_at"),
         "notes": body.get("notes", ""),
     }
     kanban["tasks"].append(task)
@@ -557,8 +710,72 @@ async def kanban_add(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# Routes — API (for HTMX partial updates)
+# Routes — API (workflow + HTMX partial updates)
 # ---------------------------------------------------------------------------
+
+@app.post("/api/workflow/signal")
+async def workflow_signal(request: Request):
+    body = await request.json()
+    task_id = body.get("task_id")
+    signal = body.get("signal")
+    detail = body.get("detail", "")
+    at = body.get("at") or datetime.now(timezone.utc).isoformat()
+    if not task_id or not signal:
+        return JSONResponse({"error": "task_id and signal are required"}, status_code=400)
+
+    kanban = _read_kanban()
+    for task in kanban.get("tasks", []):
+        if task.get("id") == task_id:
+            _apply_workflow_signal(task, signal, detail=detail, at=at)
+            _write_kanban(kanban)
+            return JSONResponse({
+                "ok": True,
+                "task_id": task_id,
+                "signal": signal,
+                "phase": task.get("phase"),
+                "column": task.get("column"),
+            })
+    return JSONResponse({"error": f"task {task_id} not found"}, status_code=404)
+
+
+@app.post("/api/workflow/reconcile")
+async def workflow_reconcile():
+    kanban = _read_kanban()
+    jobs = await _cron_jobs_raw()
+    jobs_by_id = {j.get("id"): j for j in jobs}
+    now = datetime.now(timezone.utc)
+    updates = []
+
+    for task in kanban.get("tasks", []):
+        task_id = task.get("id")
+        if task.get("column") == "completed":
+            continue
+
+        job_id = task.get("job_ref")
+        if job_id and job_id in jobs_by_id:
+            job = jobs_by_id[job_id]
+            state = job.get("state", {})
+            last_run_ms = state.get("lastRunAtMs")
+            last_signal = _parse_timestamp(task.get("last_signal_at"))
+            if last_run_ms:
+                last_run_dt = datetime.fromtimestamp(last_run_ms / 1000, tz=timezone.utc)
+                if not last_signal or last_run_dt > last_signal.astimezone(timezone.utc):
+                    status = state.get("lastRunStatus") or state.get("lastStatus")
+                    detail = state.get("lastError", "") if status == "error" else f"Cron job {job.get('name', job_id)} completed"
+                    signal = "cron_failed" if status == "error" else "cron_completed"
+                    _apply_workflow_signal(task, signal, detail=detail, at=last_run_dt.isoformat())
+                    updates.append({"task_id": task_id, "signal": signal})
+                    continue
+
+        next_check = _parse_timestamp(task.get("next_check_at"))
+        if next_check and next_check.astimezone(timezone.utc) <= now and task.get("phase") not in {"completed", "under_review"}:
+            _apply_workflow_signal(task, "timer_expired", detail="Checkpoint expired without a newer completion signal", at=now.isoformat())
+            updates.append({"task_id": task_id, "signal": "timer_expired"})
+
+    if updates:
+        _write_kanban(kanban)
+    return JSONResponse({"ok": True, "updates": updates, "count": len(updates)})
+
 
 @app.get("/api/dashboard-data")
 async def dashboard_data():

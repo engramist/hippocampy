@@ -230,7 +230,7 @@ async def test_loop_worker_continues_after_error(monkeypatch):
 
     processed = []
 
-    async def mock_run_loop(message_id, text, db, llm_client, config, centroids, role="user"):
+    async def mock_run_loop(message_id, text, db, llm_client, config, centroids, role="user", session_id="unknown"):
         if text == "bad":
             raise RuntimeError("simulated loop failure")
         processed.append(message_id)

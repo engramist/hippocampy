@@ -223,3 +223,101 @@ async def test_run_loop_db_write_failure_is_swallowed():
         db, None, _CONFIG, _CENTROIDS,
     )
     assert isinstance(summary, dict)
+
+
+# ---------------------------------------------------------------------------
+# B43 — ESTABLISHED_IN edges written for all artifact types
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_run_loop_session_id_passed_through():
+    """
+    B43: When session_id is provided, run_loop accepts the parameter
+    without error and passes it through to _reify_concept internals.
+    """
+    from mcp_engine.loop.orchestrator import run_loop
+    db = MockWriteLog()
+    # session_id is a new param — should not raise TypeError
+    summary = await run_loop(
+        "msg-b43",
+        "We must use PostgreSQL as the database.",
+        db, None, _CONFIG, _CENTROIDS,
+        session_id="session-abc",
+    )
+    assert isinstance(summary, dict)
+    assert "message_id" in summary
+
+
+@pytest.mark.asyncio
+async def test_reify_concept_writes_established_in_edge():
+    """
+    B43: _reify_concept writes an ESTABLISHED_IN edge from the artifact to
+    the Session node when a valid session_id is provided.
+    """
+    from mcp_engine.loop.orchestrator import _reify_concept
+
+    db = MockWriteLog()
+
+    # Minimal entity to pass to _reify_concept
+    entity = {"text": "Use Postgres for storage"}
+
+    import asyncio
+    from mcp_engine.graph import embeddings as emb
+    vector = emb.embed("Use Postgres for storage")
+
+    await _reify_concept(
+        concept_id="concept-123",
+        artifact_type="decision",
+        entity=entity,
+        vector=vector,
+        embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+        db=db,
+        now="2026-03-23T04:00:00+00:00",
+        confidence=0.92,
+        message_id="msg-xyz",
+        session_id="session-abc",
+    )
+
+    # Should have written ESTABLISHED_IN edge
+    established_in_writes = [
+        w for w in db.writes
+        if "ESTABLISHED_IN" in w["query"]
+    ]
+    assert len(established_in_writes) == 1, (
+        f"Expected 1 ESTABLISHED_IN write, got {len(established_in_writes)}: {db.writes}"
+    )
+    assert established_in_writes[0]["params"]["sid"] == "session-abc"
+
+
+@pytest.mark.asyncio
+async def test_reify_concept_no_established_in_when_session_unknown():
+    """
+    B43: _reify_concept does NOT write ESTABLISHED_IN when session_id is 'unknown'.
+    """
+    from mcp_engine.loop.orchestrator import _reify_concept
+    from mcp_engine.graph import embeddings as emb
+
+    db = MockWriteLog()
+    entity = {"text": "Use Redis for caching"}
+    vector = emb.embed("Use Redis for caching")
+
+    await _reify_concept(
+        concept_id="concept-456",
+        artifact_type="requirement",
+        entity=entity,
+        vector=vector,
+        embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+        db=db,
+        now="2026-03-23T04:00:00+00:00",
+        confidence=0.95,
+        message_id="msg-xyz",
+        session_id="unknown",
+    )
+
+    established_in_writes = [
+        w for w in db.writes
+        if "ESTABLISHED_IN" in w["query"]
+    ]
+    assert len(established_in_writes) == 0, (
+        f"Expected 0 ESTABLISHED_IN writes for 'unknown' session, got {len(established_in_writes)}"
+    )

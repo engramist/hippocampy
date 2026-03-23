@@ -1,5 +1,17 @@
 [
   {
+    "id": "digest-004",
+    "title": "Work Session",
+    "date": "2026-03-22 20:54 UTC",
+    "session_type": "scheduled",
+    "emoji": "\ud83e\udd9e",
+    "status": "completed",
+    "summary": "**B32 Followup: Duplicate edges in explore_graph** \u2014 fixed. `_traverse_iterative` was missing edge deduplication. Multi-hop BFS re-discovered the same edge from reverse direction in later hops. Added `_seen_edges` set with `(source, target, rel_type)` keys. Also downgraded leftover `[B32]` warning log to debug. **B30: Agent Prompt** \u2014 added Brain-first recall instructions to AGENTS.md. Agent now knows to use `memory_recall` before markdown files, Brain = primary source of truth. **Status:** 496 tests passing, edges confirmed working via explore_graph, chain_count=4 (daily limit reached).",
+    "work_done": [],
+    "ideas": [],
+    "commit": "51733dc"
+  },
+  {
     "id": "digest-003",
     "title": "Afternoon Work Session #3 \u2014 B33 Duplicate Concept Nodes Fixed",
     "date": "2026-03-22 20:40 UTC",

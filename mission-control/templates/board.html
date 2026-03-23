@@ -48,13 +48,31 @@
                         </div>
                         <h3 class="text-sm font-bold text-slate-200 leading-tight mb-2 group-hover:text-blue-400 transition-colors">{{ task.title }}</h3>
                         
-                        {% if task.agent %}
-                        <div class="flex items-center space-x-2 mb-3">
-                            <div class="w-5 h-5 rounded-full bg-slate-700 flex items-center justify-center text-[10px]">
-                                {{ "🦞" if task.agent == "SideClaw" else "✨" if task.agent == "Gemini" else "🤖" }}
+                        {% set assignee = "Claws" if task.agent == "SideClaw" else task.agent %}
+                        {% set avatar = "/static/avatars/claws.png" if assignee == "Claws" else "/static/avatars/crusty.png" if assignee == "Crusty" else "/static/avatars/gemini.png" if assignee == "Gemini" else "" %}
+                        <div class="flex items-center justify-between mb-3 gap-2">
+                            <div class="flex items-center space-x-2 min-w-0">
+                                {% if avatar %}
+                                <img src="{{ avatar }}" alt="{{ assignee }}" class="w-6 h-6 rounded-full object-cover border border-slate-600 shrink-0">
+                                {% else %}
+                                <div class="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center text-[10px] shrink-0">•</div>
+                                {% endif %}
+                                <span class="text-[10px] uppercase tracking-wide text-slate-500">Assigned</span>
+                                <span class="text-[11px] text-slate-300 font-medium truncate">{{ assignee if assignee else "Unassigned" }}</span>
                             </div>
-                            <span class="text-[11px] text-slate-400 font-medium">{{ task.agent }}</span>
-                            <span class="text-[9px] text-slate-600 font-mono">({{ task.model }})</span>
+                            {% if task.model %}
+                            <span class="text-[9px] text-slate-600 font-mono shrink-0">{{ task.model }}</span>
+                            {% endif %}
+                        </div>
+
+                        {% if task.phase or task.execution_mode or task.waiting_on or task.next_check_at or task.escalate_to %}
+                        <div class="mb-3 grid grid-cols-1 gap-1.5 text-[10px]">
+                            {% if task.phase %}<div class="text-slate-400"><span class="uppercase tracking-wide text-slate-500">Phase</span>: {{ task.phase }}</div>{% endif %}
+                            {% if task.execution_mode %}<div class="text-slate-400"><span class="uppercase tracking-wide text-slate-500">Mode</span>: {{ task.execution_mode }}</div>{% endif %}
+                            {% if task.waiting_on %}<div class="text-slate-400"><span class="uppercase tracking-wide text-slate-500">Waiting</span>: {{ task.waiting_on }}</div>{% endif %}
+                            {% if task.next_event %}<div class="text-slate-400"><span class="uppercase tracking-wide text-slate-500">Next event</span>: {{ task.next_event }}</div>{% endif %}
+                            {% if task.next_check_at %}<div class="text-slate-400"><span class="uppercase tracking-wide text-slate-500">Next check</span>: {{ task.next_check_at|mt_time if 'T' in task.next_check_at else task.next_check_at }}</div>{% endif %}
+                            {% if task.escalate_to %}<div class="text-slate-400"><span class="uppercase tracking-wide text-slate-500">Escalate</span>: {{ task.escalate_to }}</div>{% endif %}
                         </div>
                         {% endif %}
 
@@ -65,9 +83,9 @@
                         <div class="flex items-center justify-between mt-4 pt-3 border-t border-slate-700/50">
                             <div class="text-[9px] text-slate-600 font-mono">
                                 {% if task.completed_at %}
-                                    DONE: {{ task.completed_at[11:16] }}
+                                    DONE: {{ task.completed_at|mt_time }}
                                 {% elif task.started_at %}
-                                    STRT: {{ task.started_at[11:16] }}
+                                    STRT: {{ task.started_at|mt_time }}
                                 {% endif %}
                             </div>
                             
