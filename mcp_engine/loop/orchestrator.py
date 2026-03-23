@@ -38,6 +38,7 @@ from mcp_engine.loop.step7_pathway   import (
     rescore_nearby_low_confidence,
 )
 from mcp_engine.graph import embeddings as emb
+from mcp_engine.llm.provider import create_llm_client_for_step  # B16
 
 
 async def run_loop(message_id: str, text: str, db, llm_client,
@@ -94,6 +95,14 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         pass
 
     # ------------------------------------------------------------------
+    # B16 — Resolve per-step LLM clients (task-based model routing)
+    # Falls back to the default llm_client if no override is configured.
+    # ------------------------------------------------------------------
+    llm_step2 = create_llm_client_for_step(config, "step2_gist") or llm_client
+    llm_step3b = create_llm_client_for_step(config, "step3b_relations") or llm_client
+    llm_step6 = create_llm_client_for_step(config, "step6_arbitration") or llm_client
+
+    # ------------------------------------------------------------------
     # Step 1 — NER (spaCy)
     # ------------------------------------------------------------------
     doc, entities = extract_entities(text, model_name=spacy_model)
@@ -117,7 +126,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
 
     for entity in entities:
         gist_result = classify_concept(
-            entity["text"], embedding_model, centroids, llm_client,
+            entity["text"], embedding_model, centroids, llm_step2,  # B16: per-step client
             context=text,
         )
 
@@ -178,7 +187,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
             for e2 in typed_entities[i+1:]
         )
         if uncovered_pairs_exist:
-            step3b_relations = extract_semantic_relations(typed_entities, text, llm_client)
+            step3b_relations = extract_semantic_relations(typed_entities, text, llm_step3b)  # B16
             # Only store relations for pairs not already handled by Step 1b
             for rel in step3b_relations:
                 pair = (rel["head"].lower(), rel["tail"].lower())
@@ -237,7 +246,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                 {**entity, "text": entity["text"]},
                 candidates,
                 text,
-                llm_client,
+                llm_step6,  # B16: per-step client (benefits most from frontier models)
             )
 
             if arb["classification"] == "additive":
