@@ -377,7 +377,8 @@ include a clickable localhost link to the relevant Memory Control Panel view.
 
 ---
 
-### B16 · Task-Based Model Routing
+### B16 · Task-Based Model Routing — ✅ DONE (2026-03-23)
+**Commit:** `41556c6`
 Allow different Loop steps to use different LLM providers/models, optimizing for cost and latency
 per cognitive task. Inspired by OpenClaw power-user workflows (Matthew Berman "trifecta" pattern).
 
