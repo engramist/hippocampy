@@ -319,7 +319,7 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS IN_WORKSPACE (FROM Session TO Workspace)",
     "CREATE REL TABLE IF NOT EXISTS WORKING_ON (FROM Session TO MainQuest, FROM Session TO SideQuest)",
     "CREATE REL TABLE IF NOT EXISTS SENT_IN (FROM Message TO Session)",
-    "CREATE REL TABLE IF NOT EXISTS ESTABLISHED_IN (FROM Decision TO Session, FROM Constraint TO Session)",
+    "CREATE REL TABLE IF NOT EXISTS ESTABLISHED_IN (FROM Decision TO Session, FROM Constraint TO Session, FROM Requirement TO Session, FROM ActionItem TO Session)",
     # Ontology routing (core IP — Shape-First Principle)
     "CREATE REL TABLE IF NOT EXISTS ROUTES_TO (FROM GistClass TO SchemaOrgType)",
     # SKOS labels
@@ -494,6 +494,48 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
                 pass  # Column already exists — safe to ignore
             else:
                 print(f"  Migration warning: {table}.{col}: {e}")
+
+    # 1c. Relationship table migrations — handle tables that need FROM clause expansion.
+    # Kùzu 0.11.3 doesn't support ALTER REL TABLE. We drop + recreate tables that
+    # have expanded FROM clauses. Only safe when no existing edges use the old types.
+    _REL_MIGRATIONS = [
+        # B43: ESTABLISHED_IN expanded to include Requirement and ActionItem.
+        # Old definition only had Decision + Constraint. No ESTABLISHED_IN edges
+        # were ever written in the old schema (edge code added in this commit),
+        # so DETACH DELETE is safe.
+        {
+            "table": "ESTABLISHED_IN",
+            "probe":  "MATCH ()-[e:ESTABLISHED_IN]->() RETURN count(e) AS cnt",
+            "new_ddl": "CREATE REL TABLE ESTABLISHED_IN "
+                        "(FROM Decision TO Session, FROM Constraint TO Session, "
+                        "FROM Requirement TO Session, FROM ActionItem TO Session)",
+        },
+    ]
+    for rmig in _REL_MIGRATIONS:
+        try:
+            # Check if existing table has the full definition by probing a
+            # Requirement→Session ESTABLISHED_IN edge (this will error if the
+            # FROM type isn't registered).
+            db.execute(
+                "MATCH (a:Requirement)-[:ESTABLISHED_IN]->(s:Session) "
+                "RETURN count(a) LIMIT 1"
+            )
+            # If it didn't raise — table already has Requirement. No migration needed.
+        except Exception:
+            # Table either doesn't exist or is missing Requirement as a FROM type.
+            # Drop and recreate (safe: no ESTABLISHED_IN edges ever existed before B43).
+            try:
+                existing = db.execute(rmig["probe"])
+                edge_count = existing.get_next()[0] if existing.has_next() else 0
+                if edge_count == 0:
+                    db.execute(f"DROP TABLE {rmig['table']}")
+                    db.execute(rmig["new_ddl"])
+                    print(f"  Rel migration: {rmig['table']} — expanded FROM types")
+                else:
+                    print(f"  Rel migration: {rmig['table']} — skipped ({edge_count} edges exist, manual migration needed)")
+            except Exception as drop_err:
+                # Table doesn't exist yet — DDL in step 2 will create it
+                print(f"  Rel migration: {rmig['table']} — will be created fresh: {drop_err}")
 
     # 2. Relationship tables
     for ddl in REL_TABLES:

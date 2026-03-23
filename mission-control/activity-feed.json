@@ -1,5 +1,24 @@
 [
   {
+    "agent": "crusty",
+    "action": "work_session_start",
+    "detail": "Night seed session started. Tests passing 496/4. Targeting B43 (ESTABLISHED_IN provenance for Requirement + ActionItem).",
+    "ts": "04:01:38",
+    "ts_raw": "2026-03-23T04:01:38.049776+00:00"
+  },
+  {
+    "agent": "SideClaw",
+    "event": "B30 done: Added Brain-first recall instructions to AGENTS.md. Agent now knows to use memory_recall before markdown files.",
+    "ts": "20:53:34",
+    "ts_raw": "2026-03-22T20:53:34.746301+00:00"
+  },
+  {
+    "agent": "SideClaw",
+    "event": "B32 followup: fixed duplicate edges in explore_graph BFS. Committed 51733dc. Tests still 496/4. Starting B30: agent prompt integration.",
+    "ts": "20:53:05",
+    "ts_raw": "2026-03-22T20:53:05.309542+00:00"
+  },
+  {
     "agent": "SideClaw",
     "event": "B32-followup: fixing duplicate edges in explore_graph + debug log level cleanup",
     "ts": "20:48:43",

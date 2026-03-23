@@ -42,7 +42,8 @@ from mcp_engine.graph import embeddings as emb
 
 async def run_loop(message_id: str, text: str, db, llm_client,
                    config: dict, centroids: dict,
-                   role: str = "user") -> dict:
+                   role: str = "user",
+                   session_id: str = "unknown") -> dict:
     """
     Run the Gated Consolidation Loop on a single message.
     Returns a summary dict of what was created/stored.
@@ -50,6 +51,9 @@ async def run_loop(message_id: str, text: str, db, llm_client,
 
     role: "user" or "assistant" — assistant turns get a confidence cap
     in Step 4 to prevent hallucination poisoning of the graph.
+
+    session_id: passed through to _reify_concept so ESTABLISHED_IN edges
+    (artifact → Session) are written for all artifact types (B43).
     """
     embedding_model = config.get("embeddings", {}).get(
         "model", "sentence-transformers/all-MiniLM-L6-v2"
@@ -264,6 +268,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                             entity, vector, embedding_model, db, now,
                             confidence=step4_result["confidence"],
                             message_id=message_id,
+                            session_id=session_id,
                         )
                         summary["reified"] += 1
                         if summary["reified"] == 1 and llm_client is not None:
@@ -297,6 +302,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                         entity, vector, embedding_model, db, now,
                         confidence=step4_result["confidence"],
                         message_id=message_id,
+                        session_id=session_id,
                     )
                     summary["reified"] += 1
                     if summary["reified"] == 1 and llm_client is not None:
@@ -406,10 +412,13 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
 
 async def _reify_concept(concept_id: str, artifact_type: str, entity: dict,
                           vector: list[float], embedding_model: str, db, now: str,
-                          confidence: float = 1.0, message_id: str = ""):
+                          confidence: float = 1.0, message_id: str = "",
+                          session_id: str = "unknown"):
     """
     Create specific artifact node + REIFIED_AS edge for >90% confident concepts.
     D7 fix: also creates (Message)-[ESTABLISHED]->(artifact) provenance edge.
+    B43 fix: also creates (artifact)-[ESTABLISHED_IN]->(Session) provenance edge
+    for Decision, Constraint, Requirement, and ActionItem.
     """
     import uuid as _uuid
 
@@ -477,6 +486,24 @@ async def _reify_concept(concept_id: str, artifact_type: str, entity: dict,
                 _logger.exception(
                     "ESTABLISHED edge failed for message_id=%s artifact_id=%s",
                     message_id, artifact_id,
+                )
+        # B43 fix: create ESTABLISHED_IN provenance edge from artifact to Session.
+        # Covers Decision, Constraint, Requirement, ActionItem — all reifiable types.
+        # This is the session-level "who established this?" audit trail.
+        if session_id and session_id != "unknown":
+            try:
+                await db.execute_write(
+                    f"""
+                    MATCH (a:{node_label} {{{pk_field}: $artifact_id}}),
+                          (s:Session {{session_id: $sid}})
+                    MERGE (a)-[:ESTABLISHED_IN]->(s)
+                    """,
+                    {"artifact_id": artifact_id, "sid": session_id}
+                )
+            except Exception:
+                _logger.exception(
+                    "ESTABLISHED_IN edge failed for artifact_id=%s session_id=%s",
+                    artifact_id, session_id,
                 )
     except Exception:
         _logger.exception("_reify_concept failed for concept_id=%s type=%s",

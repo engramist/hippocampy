@@ -189,6 +189,8 @@ New module: `mcp_engine/working_memory.py`. New tool: `context_status`. Schema c
 
 Architecture doc: `B17-B18-architecture.md`. Dependency: B17 (shared Session schema changes, `notify_turn` rewire).
 
+**Design constraint (from graph schema review, 2026-03-22):** Session is a supernode risk — it accumulates `SENT_IN` (every message), `LOADED` (every injected node), `WORKING_ON`, `USED`, `IN_WORKSPACE`, `REROUTED_FROM`. Implementation must include a session edge pruning strategy: archive stale `LOADED` edges aggressively, keep session-centric traversals narrow and task-specific, never use Session as a general-purpose hop for exploratory queries.
+
 IP claims: Context Window as Working Memory Model, Smart Deduplication via Load Tracking, Session Handoff Intelligence, Bloat Detection via Token Estimation.
 
 ---
@@ -513,6 +515,24 @@ Comprehensive install doc for OpenClaw standalone (not NemoClaw) with SideQuests
 
 ---
 
+### B41 · OpenClaw Integration: Ensure Brain Daemon Auto-Starts with Gateway Sessions
+When OpenClaw gateway starts, the SideQuests memory plugin currently only pings the Brain Daemon and logs a warning if `http://127.0.0.1:7799` is unreachable. This is correct for health reporting, but it creates a poor first-run experience because memory tools silently fail until the daemon is started separately.
+
+**Preferred fix:** Treat the Brain Daemon as a managed background service, not something spawned by the plugin. On macOS this should use the existing `launchd` path (`RunAtLoad` + `KeepAlive`) so the daemon is already running before OpenClaw starts, survives gateway restarts, and auto-recovers from crashes.
+
+**Optional fallback:** Add an opt-in plugin behavior in `extensions/sidequests-brain/src/index.ts` `start()` that attempts to launch the daemon when `brain.ping()` fails. This should be disabled by default and only used as a convenience fallback, since plugin-managed process launch is more fragile (paths, env, permissions, duplicate daemon risk).
+
+**Acceptance criteria:**
+- `sidequests install` or `sidequests setup --target openclaw` configures the Brain Daemon as a persistent user service where supported
+- After reboot/login, OpenClaw gateway sees the Brain Daemon as reachable without manual startup
+- If the daemon crashes, service management restarts it independently of OpenClaw
+- Plugin startup warning is updated to distinguish between "service not installed" and "daemon temporarily unreachable"
+- If plugin auto-launch fallback is added, it is explicitly opt-in and avoids spawning duplicate daemon instances
+
+**Files:** `sidequests/cli/install.py`, `sidequests/cli/setup.py`, `sidequests/cli/launchd.py`, `extensions/sidequests-brain/src/index.ts`, `docs/openclaw-install.md`
+
+---
+
 ### B28 · CRITICAL: `api.registerTool()` Does Not Surface Tools to Agent Sessions — ✅ FIXED (2026-03-22)
 **GitHub Issue:** [#1](https://github.com/djs54/sidequests-brain/issues/1)
 
@@ -721,6 +741,42 @@ The Brain Daemon's web endpoint was upgraded to Streamable HTTP (MCP 2025-03-26)
 **Priority:** P0 | **Status:** Done — resolved as part of B28 fix
 
 Root cause was the package name mismatch (`@sidequests/openclaw-brain` vs manifest ID `sidequests-brain`) combined with missing `group:plugins` allowlist entry. Once both were fixed and plugin reinstalled, all 5 tools surfaced correctly. The `registerTool()` pattern was correct all along — the plugin was simply failing to load due to the ID mismatch.
+
+---
+
+## P9 — Graph Shape Discipline (From Schema Review, 2026-03-22)
+
+Source: `docs/graph-schema-review.md` — external graph architecture review.
+
+### B42 · Document Concept→Artifact Retrieval Contract
+The `Concept → REIFIED_AS → Artifact` dual-layer design is intentional, but the retrieval contract is not documented outside CLAUDE.md. When does `current_truth` return Concepts vs artifact nodes vs both? How should callers interpret results when the same idea exists at both layers?
+
+**What it does:**
+- Document which layer `current_truth` searches (currently: artifact tables via `UNION ALL` across per-table HNSW indexes)
+- Define the canonical rule: when should something stay a `Concept` vs when it should be promoted and primarily retrieved as an artifact?
+- Clarify whether `explore_graph` should traverse through `REIFIED_AS` or start from artifact nodes directly
+- Add this as a design doc section in `B17-B18-architecture.md` or a standalone `docs/retrieval-contract.md`
+
+**Why it matters:** Without a documented contract, future retrieval work risks creating parallel truth layers where concept-layer and artifact-layer results compete in confusing ways.
+
+**Files:** `docs/retrieval-contract.md` or section in `B17-B18-architecture.md`
+**Priority:** P3 — design documentation, no code change
+
+---
+
+### B43 · Extend `ESTABLISHED_IN` Provenance to Requirement and ActionItem — ✅ DONE (2026-03-22)
+
+**What was done:**
+- Discovered `ESTABLISHED_IN` edges were defined in schema but never written anywhere in code — fixed for all 4 artifact types
+- `mcp_engine/schema.py`: Expanded `ESTABLISHED_IN` rel table FROM clause to include `Requirement` and `ActionItem`; added rel migration that DROP+RECREATEs the table on first startup (safe: zero edges existed)
+- `mcp_engine/loop/orchestrator.py`: Added `session_id` parameter to `run_loop()` and `_reify_concept()`; `_reify_concept` now writes `(artifact)-[:ESTABLISHED_IN]->(Session)` after creating the artifact node — covers Decision, Constraint, Requirement, ActionItem
+- `brain_daemon.py`: Pass `session_id` to `run_loop()` call in loop worker
+- `mcp_engine/tools.py`: Added `ESTABLISHED_IN` to `_TRAVERSABLE_RELS` in `explore_graph`
+
+**Bonus discovery:** `ESTABLISHED_IN` was never written before this commit — all 4 artifact types now have full session provenance from day one of B43.
+
+**Files:** `mcp_engine/schema.py`, `mcp_engine/loop/orchestrator.py`, `brain_daemon.py`, `mcp_engine/tools.py`
+**Priority:** P3 — ✅ resolved
 
 ---
 

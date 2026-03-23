@@ -247,6 +247,7 @@ class BrainDaemon:
                     llm_client=self._llm_client,
                     config=self.config,
                     centroids=self._centroids,
+                    session_id=session_id,
                 )
                 print(
                     f"[Loop] msg={message_id[:8]} "
