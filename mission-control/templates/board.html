@@ -30,7 +30,11 @@
             <!-- Task List -->
             <div class="flex-grow bg-slate-800/40 rounded-xl border border-slate-700/50 p-3 space-y-4 overflow-y-auto custom-scrollbar">
                 {% for task in by_column[col] %}
-                <div class="bg-slate-800 p-4 rounded-lg border border-slate-700 shadow-sm hover:border-slate-500 transition-colors group relative">
+                <div class="bg-slate-800 p-4 rounded-lg border {% if task.card_type == 'loop' %}border-cyan-700/50{% else %}border-slate-700{% endif %} shadow-sm hover:border-slate-500 transition-colors group relative cursor-pointer"
+                     hx-get="/api/kanban/card/{{ task.id }}"
+                     hx-target="#slideout-body"
+                     hx-swap="innerHTML"
+                     hx-on::before-request="openSlideout()">
                     <!-- Priority Strip -->
                     <div class="absolute left-0 top-4 bottom-4 w-1 rounded-r
                         {% if task.priority == 'critical' %}bg-red-500 animate-pulse
@@ -42,6 +46,9 @@
                     <div class="ml-2">
                         <div class="flex justify-between items-start mb-2">
                             <span class="text-[10px] font-mono text-slate-500">{{ task.id }}</span>
+                            {% if task.card_type == 'loop' %}
+                            <span class="text-[8px] font-bold text-cyan-400 uppercase bg-cyan-400/10 px-1 py-0.5 rounded border border-cyan-500/20">Loop</span>
+                            {% endif %}
                             {% if task.priority == 'critical' %}
                             <span class="text-[9px] font-bold text-red-400 uppercase bg-red-400/10 px-1.5 py-0.5 rounded border border-red-500/20">Critical</span>
                             {% endif %}
@@ -65,14 +72,50 @@
                             {% endif %}
                         </div>
 
+                        {% set state_badges = task|board_state_badges %}
+                        {% if state_badges %}
+                        <div class="mb-3 flex flex-wrap gap-1.5">
+                            {% for badge in state_badges %}
+                            <span class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border {{ badge.classes }}" title="{{ badge.label }}{% if badge.detail %}: {{ badge.detail }}{% endif %}">{{ badge.short }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
                         {% if task.phase or task.execution_mode or task.waiting_on or task.next_check_at or task.escalate_to %}
                         <div class="mb-3 grid grid-cols-1 gap-1.5 text-[10px]">
-                            {% if task.phase %}<div class="text-slate-400"><span class="uppercase tracking-wide text-slate-500">Phase</span>: {{ task.phase }}</div>{% endif %}
+                            {% if task.phase %}<div class="text-slate-400"><span class="uppercase tracking-wide text-slate-500">Phase</span>: <span class="{% if task.phase in ['blocked', 'chain_blocked'] %}text-red-400{% elif task.phase == 'running' %}text-green-400{% else %}text-slate-300{% endif %}">{{ task.phase }}</span></div>{% endif %}
+                            {% if task.handoff_ready is defined %}<div class="text-slate-400"><span class="uppercase tracking-wide text-slate-500">Handoff</span>: <span class="{% if task.handoff_ready %}text-green-400{% else %}text-amber-400{% endif %}">{{ 'ready' if task.handoff_ready else 'needs prep' }}</span></div>{% endif %}
                             {% if task.execution_mode %}<div class="text-slate-400"><span class="uppercase tracking-wide text-slate-500">Mode</span>: {{ task.execution_mode }}</div>{% endif %}
-                            {% if task.waiting_on %}<div class="text-slate-400"><span class="uppercase tracking-wide text-slate-500">Waiting</span>: {{ task.waiting_on }}</div>{% endif %}
+                            {% if task.waiting_on %}<div class="text-slate-400"><span class="uppercase tracking-wide text-slate-500">Waiting</span>: <span class="text-amber-300">{{ task.waiting_on }}</span></div>{% endif %}
                             {% if task.next_event %}<div class="text-slate-400"><span class="uppercase tracking-wide text-slate-500">Next event</span>: {{ task.next_event }}</div>{% endif %}
                             {% if task.next_check_at %}<div class="text-slate-400"><span class="uppercase tracking-wide text-slate-500">Next check</span>: {{ task.next_check_at|mt_time if 'T' in task.next_check_at else task.next_check_at }}</div>{% endif %}
                             {% if task.escalate_to %}<div class="text-slate-400"><span class="uppercase tracking-wide text-slate-500">Escalate</span>: {{ task.escalate_to }}</div>{% endif %}
+                        </div>
+                        {% endif %}
+
+                        {# MC-006B: Execution handles as first-class UI elements #}
+                        {% set handles = task|execution_handles %}
+                        {% if handles %}
+                        <div class="mb-3 flex flex-wrap gap-1.5">
+                            {% for h in handles %}
+                            <div class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border
+                                {% if h.status == 'active' %}border-green-500/30 bg-green-500/5
+                                {% elif h.status == 'stale' %}border-orange-500/30 bg-orange-500/5
+                                {% elif h.status == 'pending' %}border-amber-500/30 bg-amber-500/5
+                                {% elif h.status == 'failed' %}border-red-500/30 bg-red-500/5
+                                {% else %}border-slate-600/30 bg-slate-700/20{% endif %}"
+                                title="{{ h.field }}: {{ h.value }}">
+                                <span class="text-[8px] font-bold uppercase tracking-widest
+                                    {% if h.status == 'active' %}text-green-400
+                                    {% elif h.status == 'stale' %}text-orange-400
+                                    {% elif h.status == 'pending' %}text-amber-400
+                                    {% elif h.status == 'failed' %}text-red-400
+                                    {% else %}text-slate-500{% endif %}">{{ h.label }}</span>
+                                <span class="text-[9px] font-mono text-slate-400 max-w-[100px] truncate">{{ h.short }}</span>
+                                {% if h.status == 'active' %}<span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>{% endif %}
+                                {% if h.status == 'stale' %}<span class="w-1.5 h-1.5 rounded-full bg-orange-500"></span>{% endif %}
+                            </div>
+                            {% endfor %}
                         </div>
                         {% endif %}
 
@@ -118,6 +161,54 @@
     </div>
 </div>
 
-<!-- Auto-refresh meta tag -->
-<meta http-equiv="refresh" content="10">
+<!-- MC-014: Card detail slideout -->
+<div id="slideout-backdrop" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="closeSlideout()"></div>
+<div id="slideout-panel" class="fixed top-0 right-0 h-full w-full max-w-lg bg-slate-900 border-l border-slate-700 z-50 transform translate-x-full transition-transform duration-200 ease-out overflow-y-auto custom-scrollbar shadow-2xl">
+    <div id="slideout-body" class="p-6"></div>
+</div>
+
+<script>
+const slideoutBackdrop = document.getElementById('slideout-backdrop');
+const slideoutPanel = document.getElementById('slideout-panel');
+const slideoutBody = document.getElementById('slideout-body');
+
+function isSlideoutOpen() {
+    return !slideoutPanel.classList.contains('translate-x-full');
+}
+
+function openSlideout() {
+    slideoutBackdrop.classList.remove('hidden');
+    slideoutPanel.classList.remove('translate-x-full');
+}
+
+function closeSlideout() {
+    slideoutPanel.classList.add('translate-x-full');
+    slideoutBackdrop.classList.add('hidden');
+}
+
+slideoutPanel.addEventListener('click', function(e) {
+    e.stopPropagation();
+});
+
+slideoutBody.addEventListener('click', function(e) {
+    e.stopPropagation();
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && isSlideoutOpen()) closeSlideout();
+});
+
+// Stop form/button actions from bubbling up to the card click handler.
+document.querySelectorAll('form, form button').forEach(function(el) {
+    el.addEventListener('click', function(e) { e.stopPropagation(); });
+});
+
+// Refresh the board only while the slideout is closed so detail views stay open
+// until the user intentionally dismisses them.
+window.setInterval(function() {
+    if (!isSlideoutOpen()) {
+        window.location.reload();
+    }
+}, 10000);
+</script>
 {% endblock %}

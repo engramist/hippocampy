@@ -371,6 +371,15 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
     if bloat_warning:
         response["bloat_warning"] = bloat_warning
 
+    # B15: Deep-link panel_url — let the LLM surface a "View in Mission Control" link
+    mc_base = (config.get("mission_control", {}) or {}).get("base_url", "http://127.0.0.1:7800")
+    if mc_base:
+        # Top-level panel URL: thinking tab (decisions + concepts + constraints) is always useful
+        response["panel_url"] = f"{mc_base}/thinking"
+        # If we have a quest context, link directly to the board filtered by quest
+        if quest_id:
+            response["panel_url"] = f"{mc_base}/board"
+
     # B18: Add handoff candidates if this is a new session
     if quest_id and session_id != "unknown":
         from mcp_engine.working_memory import get_handoff_context
