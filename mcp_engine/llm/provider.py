@@ -8,6 +8,9 @@ Interface:
     client = create_llm_client(config)
     response_text = client.chat([{"role": "user", "content": "..."}])
 
+    # B16: Per-step routing
+    client = create_llm_client_for_step(config, step_name)
+
 Supported providers (configured in sidequests.toml [llm] section):
     ollama      → local Ollama server (OpenAI-compatible API)
     openai      → OpenAI cloud API
@@ -16,6 +19,17 @@ Supported providers (configured in sidequests.toml [llm] section):
 
 Returns None from create_llm_client() if provider is unavailable —
 callers must handle None gracefully (graceful degradation to System 1 only).
+
+B16 — Task-Based Model Routing:
+    Per-step LLM overrides use a merged config strategy.
+    Presence of [llm.step_name] in sidequests.toml overrides provider/model/base_url/api_key
+    for that step while inheriting any keys not explicitly set in the override block.
+
+    Step name keys (matching sidequests.toml override block names):
+        step2_gist          — System 1/2 classification (tractable for small models)
+        step3b_relations    — Relation extraction with type context (tractable for small models)
+        step6_arbitration   — Contradiction arbitration (benefits most from frontier models)
+        quest_purpose       — Quest purpose synthesis
 """
 
 import os
@@ -105,3 +119,48 @@ def create_llm_client(config: dict):
         print(f"[LLM] Could not initialize provider '{provider}': {e}. "
               f"Loop will run in degraded mode (System 1 only).")
         return None
+
+
+# ---------------------------------------------------------------------------
+# B16 — Task-Based Model Routing
+# ---------------------------------------------------------------------------
+
+def create_llm_client_for_step(config: dict, step_name: str):
+    """
+    Return an LLMClient for the given loop step, honouring per-step overrides.
+
+    Resolution order (first match wins):
+      1. config["llm"][step_name] — per-step override block
+      2. config["llm"]           — global default
+
+    The per-step block is merged with the global block: only the keys present
+    in the override (provider, model, base_url, api_key) are replaced; any
+    key absent from the override inherits its value from the global block.
+
+    This lets a minimal override like::
+
+        [llm.step6_arbitration]
+        provider = "anthropic"
+        model    = "claude-sonnet-4-6"
+
+    inherit base_url / api_key (loaded from env) from the global block without
+    repeating them in every override section.
+
+    Returns None if the resolved provider is unavailable.
+    """
+    base_cfg  = dict(config.get("llm", {}))
+    step_cfg  = base_cfg.pop(step_name, None)   # pop to avoid nested dicts confusing create_llm_client
+
+    if step_cfg:
+        # Merge: start from global defaults, overlay step-specific keys
+        merged_llm = {k: v for k, v in base_cfg.items() if not isinstance(v, dict)}
+        merged_llm.update(step_cfg)
+        merged_config = dict(config)
+        merged_config["llm"] = merged_llm
+    else:
+        # No override — strip any nested step dicts and use globals
+        clean_llm = {k: v for k, v in base_cfg.items() if not isinstance(v, dict)}
+        merged_config = dict(config)
+        merged_config["llm"] = clean_llm
+
+    return create_llm_client(merged_config)
