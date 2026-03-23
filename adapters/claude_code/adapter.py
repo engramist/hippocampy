@@ -132,7 +132,8 @@ SYSTEM_PROMPT_FRAGMENT = (
     "Decisions and constraints are captured automatically in the background.\n"
     "Before answering about past choices or architecture → current_truth\n"
     "Exploring a tangent? → branch_quest(name, purpose)\n"
-    "After every response → notify_turn(role='assistant', content=<response>, session_id=<id>)"
+    "After every response → notify_turn(role='assistant', content=<response>, session_id=<id>)\n"
+    "When current_truth returns a panel_url field, include it as a markdown link: [View in Mission Control](url)"
 )
 
 OFFLINE_FRAGMENT = "[SideQuest | Brain: OFFLINE — memory unavailable]"

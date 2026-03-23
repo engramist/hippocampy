@@ -1,0 +1,346 @@
+{# MC-014: Card detail slideout fragment — loaded via HTMX into the slideout panel #}
+{% set assignee = "Claws" if task.agent == "SideClaw" else task.agent %}
+{% set avatar = "/static/avatars/claws.png" if assignee == "Claws" else "/static/avatars/crusty.png" if assignee == "Crusty" else "/static/avatars/gemini.png" if assignee == "Gemini" else "" %}
+{% set risk_meta = task.risk_tier|risk_tier_meta %}
+{% set decision_meta = task.crusty_decision|crusty_decision_meta %}
+{% set state_badges = task|board_state_badges %}
+
+<!-- Header -->
+<div class="flex items-center justify-between mb-6">
+    <div class="flex items-center gap-3">
+        <span class="text-xs font-mono text-slate-500 bg-slate-800 px-2 py-1 rounded">{{ task.id }}</span>
+        {% if task.card_type == 'loop' %}
+        <span class="text-[9px] font-bold text-cyan-400 uppercase bg-cyan-400/10 px-2 py-1 rounded border border-cyan-500/20">Loop</span>
+        {% endif %}
+        <span class="text-[9px] font-bold uppercase px-2 py-1 rounded border
+            {% if task.priority == 'critical' %}text-red-400 bg-red-400/10 border-red-500/20
+            {% elif task.priority == 'high' %}text-orange-400 bg-orange-400/10 border-orange-500/20
+            {% elif task.priority == 'medium' %}text-blue-400 bg-blue-400/10 border-blue-500/20
+            {% else %}text-slate-400 bg-slate-700/50 border-slate-600/30{% endif %}">{{ task.priority or 'normal' }}</span>
+    </div>
+    <button onclick="closeSlideout()" class="text-slate-500 hover:text-slate-300 transition-colors p-1">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+    </button>
+</div>
+
+<h2 class="text-lg font-bold text-slate-100 mb-4 leading-snug">{{ task.title }}</h2>
+
+{% if state_badges %}
+<div class="flex flex-wrap gap-2 mb-4">
+    {% for badge in state_badges %}
+    <span class="text-[10px] font-bold uppercase px-2 py-1 rounded border {{ badge.classes }}" title="{{ badge.label }}{% if badge.detail %}: {{ badge.detail }}{% endif %}">{{ badge.label }}</span>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% set summary_text = task.notes or task.on_success or task.next_event or task.waiting_on or task.title %}
+<div class="mb-5 rounded-xl border border-blue-500/20 bg-blue-500/8 px-4 py-3">
+    <div class="text-[10px] uppercase tracking-widest text-blue-300/80 font-bold mb-1">What this card is doing</div>
+    <p class="text-sm text-slate-200 leading-relaxed">
+        {{ summary_text|truncate(220, True) }}
+    </p>
+</div>
+
+{% if task.phase in ['blocked', 'chain_blocked'] %}
+<div class="mb-5 rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3">
+    <div class="flex items-center gap-2 mb-1">
+        <span class="inline-flex text-[10px] font-bold uppercase px-2 py-1 rounded border text-red-300 bg-red-500/10 border-red-500/25">Blocked</span>
+        <span class="text-[10px] uppercase tracking-widest text-red-300/80 font-bold">Why it is blocked</span>
+    </div>
+    <p class="text-sm text-red-100 leading-relaxed">
+        {% if task.waiting_on %}
+        Waiting on {{ task.waiting_on|replace('_', ' ') }}.
+        {% elif task.next_event %}
+        Next unblock step: {{ task.next_event|replace('_', ' ') }}.
+        {% elif task.notes %}
+        {{ task.notes|truncate(180, True) }}
+        {% else %}
+        This card is currently blocked and needs attention before it can move forward.
+        {% endif %}
+    </p>
+</div>
+{% endif %}
+
+<!-- Agent & Model -->
+<div class="flex items-center gap-3 mb-6 pb-4 border-b border-slate-700/50">
+    {% if avatar %}
+    <img src="{{ avatar }}" alt="{{ assignee }}" class="w-8 h-8 rounded-full object-cover border border-slate-600">
+    {% else %}
+    <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs">•</div>
+    {% endif %}
+    <div>
+        <div class="text-sm text-slate-200 font-medium">{{ assignee if assignee else "Unassigned" }}</div>
+        {% if task.model %}<div class="text-[10px] text-slate-500 font-mono">{{ task.model }}</div>{% endif %}
+    </div>
+    <div class="ml-auto text-right">
+        <div class="text-[10px] uppercase tracking-wide text-slate-500">Column</div>
+        <div class="text-xs text-slate-300 font-medium">{{ task.column.replace('_', ' ') if task.column else '—' }}</div>
+    </div>
+</div>
+
+<!-- Blocked / Workflow Status — the primary reason for this slideout -->
+{% if task.phase or task.waiting_on or task.next_event or task.next_check_at or task.escalate_to or task.on_success or task.on_failure %}
+<div class="mb-6">
+    <h3 class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-3">Workflow Status</h3>
+    <div class="bg-slate-800/60 rounded-lg border border-slate-700/50 p-4 space-y-3">
+        {% if task.phase %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Phase</span>
+            <span class="text-sm font-medium
+                {% if task.phase == 'blocked' %}text-red-400
+                {% elif task.phase == 'running' %}text-green-400
+                {% elif task.phase == 'completed' %}text-blue-400
+                {% else %}text-slate-300{% endif %}">{{ task.phase }}</span>
+        </div>
+        {% endif %}
+        {% if task.waiting_on %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Waiting On</span>
+            <span class="text-sm text-amber-400 font-medium">{{ task.waiting_on }}</span>
+        </div>
+        {% endif %}
+        {% if task.next_event %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Next Event</span>
+            <span class="text-sm text-slate-300">{{ task.next_event }}</span>
+        </div>
+        {% endif %}
+        {% if task.next_check_at %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Next Check</span>
+            <span class="text-sm text-slate-300 font-mono">{{ task.next_check_at|mt_full if 'T' in (task.next_check_at or '') else task.next_check_at }}</span>
+        </div>
+        {% endif %}
+        {% if task.escalate_to %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Escalate To</span>
+            <span class="text-sm text-slate-300">{{ task.escalate_to }}</span>
+        </div>
+        {% endif %}
+        {% if task.on_success %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">On Success</span>
+            <span class="text-xs text-green-400/80">{{ task.on_success }}</span>
+        </div>
+        {% endif %}
+        {% if task.on_failure %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">On Failure</span>
+            <span class="text-xs text-red-400/80">{{ task.on_failure }}</span>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Risk & Escalation -->
+{% if task.risk_tier or task.risk_reason or task.blast_radius or task.reversibility or task.external_effects or task.cost_scope or task.dj_decision_required or task.dj_decision_question or task.crusty_decision or task.crusty_rationale or task.crusty_guardrails or task.crusty_rollback_plan or task.crusty_dj_question %}
+<div class="mb-6">
+    <h3 class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-3">Risk & Escalation</h3>
+    <div class="bg-slate-800/60 rounded-lg border border-slate-700/50 p-4 space-y-3">
+        {% if risk_meta %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Risk Tier</span>
+            <div class="space-y-1">
+                <span class="inline-flex text-[10px] font-bold uppercase px-2 py-1 rounded border {{ risk_meta.classes }}">{{ risk_meta.label }}</span>
+                {% if task.risk_reason %}<div class="text-xs text-slate-300 leading-relaxed">{{ task.risk_reason }}</div>{% endif %}
+            </div>
+        </div>
+        {% elif task.risk_reason %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Risk</span>
+            <span class="text-sm text-slate-300">{{ task.risk_reason }}</span>
+        </div>
+        {% endif %}
+        {% if task.blast_radius %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Blast Radius</span>
+            <span class="text-sm text-slate-300">{{ task.blast_radius }}</span>
+        </div>
+        {% endif %}
+        {% if task.reversibility %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Reversibility</span>
+            <span class="text-sm text-slate-300">{{ task.reversibility }}</span>
+        </div>
+        {% endif %}
+        {% if task.external_effects %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">External</span>
+            <span class="text-sm text-slate-300">{{ task.external_effects }}</span>
+        </div>
+        {% endif %}
+        {% if task.cost_scope %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Cost Scope</span>
+            <span class="text-sm text-slate-300">{{ task.cost_scope }}</span>
+        </div>
+        {% endif %}
+
+        {% if task.dj_decision_required or task.dj_decision_question or task.crusty_dj_question %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">DJ Decision</span>
+            <div class="space-y-1">
+                <span class="inline-flex text-[10px] font-bold uppercase px-2 py-1 rounded border {% if task.dj_decision_required %}text-fuchsia-300 bg-fuchsia-500/10 border-fuchsia-500/20{% else %}text-slate-300 bg-slate-700/40 border-slate-600/30{% endif %}">{{ 'Required' if task.dj_decision_required else 'Context Only' }}</span>
+                {% if task.dj_decision_question %}<div class="text-xs text-fuchsia-200 leading-relaxed">{{ task.dj_decision_question }}</div>{% endif %}
+                {% if task.crusty_dj_question and task.crusty_dj_question != task.dj_decision_question %}<div class="text-xs text-fuchsia-200/80 leading-relaxed">Crusty ask: {{ task.crusty_dj_question }}</div>{% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if decision_meta or task.crusty_rationale or task.crusty_guardrails or task.crusty_rollback_plan %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Crusty</span>
+            <div class="space-y-2">
+                {% if decision_meta %}<span class="inline-flex text-[10px] font-bold uppercase px-2 py-1 rounded border {{ decision_meta.classes }}">{{ decision_meta.label }}</span>{% endif %}
+                {% if task.crusty_rationale %}<div class="text-xs text-slate-300 leading-relaxed"><span class="text-slate-500 uppercase tracking-wide">Rationale</span> · {{ task.crusty_rationale }}</div>{% endif %}
+                {% if task.crusty_guardrails %}<div class="text-xs text-cyan-200 leading-relaxed"><span class="text-cyan-400 uppercase tracking-wide">Guardrails</span> · {{ task.crusty_guardrails }}</div>{% endif %}
+                {% if task.crusty_rollback_plan %}<div class="text-xs text-amber-200 leading-relaxed"><span class="text-amber-400 uppercase tracking-wide">Rollback</span> · {{ task.crusty_rollback_plan }}</div>{% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Execution Handles -->
+{% set handles = task|execution_handles %}
+{% if handles %}
+<div class="mb-6">
+    <h3 class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-3">Execution Handles</h3>
+    <div class="space-y-2">
+        {% for h in handles %}
+        <div class="flex items-center gap-3 bg-slate-800/60 rounded-lg border border-slate-700/50 px-4 py-2.5">
+            <span class="text-[9px] font-bold uppercase tracking-widest w-16 shrink-0
+                {% if h.status == 'active' %}text-green-400
+                {% elif h.status == 'stale' %}text-orange-400
+                {% elif h.status == 'pending' %}text-amber-400
+                {% elif h.status == 'failed' %}text-red-400
+                {% else %}text-slate-500{% endif %}">{{ h.label }}</span>
+            <span class="text-xs font-mono text-slate-300 break-all">{{ h.value }}</span>
+            {% if h.status == 'active' %}<span class="w-2 h-2 rounded-full bg-green-500 animate-pulse ml-auto shrink-0"></span>{% endif %}
+            {% if h.status == 'stale' %}<span class="w-2 h-2 rounded-full bg-orange-500 ml-auto shrink-0"></span>{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Execution & Handoff Metadata -->
+{% if task.execution_mode or task.handoff_ready is defined or task.backlog_ref or task.spec_path or task.handoff_contract %}
+<div class="mb-6">
+    <h3 class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-3">Execution Details</h3>
+    <div class="bg-slate-800/60 rounded-lg border border-slate-700/50 p-4 space-y-3">
+        {% if task.execution_mode %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Mode</span>
+            <span class="text-sm text-slate-300">{{ task.execution_mode }}</span>
+        </div>
+        {% endif %}
+        {% if task.backlog_ref %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Backlog Ref</span>
+            <span class="text-sm text-slate-300 font-mono">{{ task.backlog_ref }}</span>
+        </div>
+        {% endif %}
+        {% if task.handoff_ready is defined %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Handoff</span>
+            <span class="text-sm {% if task.handoff_ready %}text-green-400{% else %}text-amber-400{% endif %}">{{ 'Ready' if task.handoff_ready else 'Needs prep' }}</span>
+        </div>
+        {% endif %}
+        {% if task.spec_path %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Spec</span>
+            <span class="text-xs text-slate-400 font-mono break-all">{{ task.spec_path }}</span>
+        </div>
+        {% endif %}
+        {% if task.handoff_contract %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Contract</span>
+            <span class="text-xs text-slate-400 font-mono break-all">{{ task.handoff_contract }}</span>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Chaining -->
+{% if task.chain_next or task.chained_from or task.chain_depth %}
+<div class="mb-6">
+    <h3 class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-3">Chaining</h3>
+    <div class="bg-slate-800/60 rounded-lg border border-slate-700/50 p-4 space-y-3">
+        {% if task.chained_from %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">From</span>
+            <span class="text-sm text-slate-300 font-mono">{{ task.chained_from }}</span>
+        </div>
+        {% endif %}
+        {% if task.chain_depth %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Depth</span>
+            <span class="text-sm text-slate-300">{{ task.chain_depth }}</span>
+        </div>
+        {% endif %}
+        {% if task.chain_next %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Next</span>
+            <div class="space-y-1">
+                {% for c in task.chain_next %}
+                <div class="text-xs text-slate-400"><span class="font-mono text-slate-300">{{ c.id }}</span> — {{ c.title }}</div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Notes (full, unwrapped) -->
+{% if task.notes %}
+<div class="mb-6">
+    <h3 class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-3">Notes</h3>
+    <div class="bg-slate-800/60 rounded-lg border border-slate-700/50 p-4">
+        <p class="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap break-words">{{ task.notes }}</p>
+    </div>
+</div>
+{% endif %}
+
+<!-- Lifecycle Timestamps -->
+<div class="mb-6">
+    <h3 class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-3">Lifecycle</h3>
+    <div class="bg-slate-800/60 rounded-lg border border-slate-700/50 p-4 space-y-3">
+        {% if task.started_at %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Started</span>
+            <span class="text-xs text-slate-300 font-mono">{{ task.started_at|mt_full if 'T' in (task.started_at or '') else task.started_at or '—' }}</span>
+        </div>
+        {% endif %}
+        {% if task.completed_at %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Completed</span>
+            <span class="text-xs text-slate-300 font-mono">{{ task.completed_at|mt_full if 'T' in (task.completed_at or '') else task.completed_at or '—' }}</span>
+        </div>
+        {% endif %}
+        {% if task.last_signal_at %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Last Signal</span>
+            <span class="text-xs text-slate-300 font-mono">{{ task.last_signal_at|mt_full if 'T' in (task.last_signal_at or '') else task.last_signal_at }}</span>
+        </div>
+        {% endif %}
+        {% if task.commit %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Commit</span>
+            <span class="text-xs text-green-400 font-mono">{{ task.commit }}</span>
+        </div>
+        {% endif %}
+        {% if task.rollback_commit %}
+        <div class="flex items-start gap-3">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500 w-24 shrink-0 pt-0.5">Rollback To</span>
+            <span class="text-xs text-red-400/70 font-mono">{{ task.rollback_commit }}</span>
+        </div>
+        {% endif %}
+    </div>
+</div>

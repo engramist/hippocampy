@@ -45,3 +45,6 @@ sweep_interval_seconds  = 300    # background sweep: pruning + confidence re-sco
 
 [web]
 port = 7799   # Memory Control Panel — http://127.0.0.1:7799 (local only)
+
+[mission_control]
+base_url = "http://127.0.0.1:7800"   # Mission Control — deep-link panel_url base (B15)

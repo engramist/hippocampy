@@ -1,5 +1,53 @@
 [
   {
+    "id": "digest-008",
+    "title": "Workflow checkpoint",
+    "date": "2026-03-23 04:12 UTC",
+    "session_type": "scheduled",
+    "emoji": "\ud83e\udd9e",
+    "status": "completed",
+    "summary": "",
+    "work_done": [],
+    "ideas": [],
+    "commit": null
+  },
+  {
+    "id": "digest-007",
+    "title": "Workflow checkpoint",
+    "date": "2026-03-23 04:12 UTC",
+    "session_type": "scheduled",
+    "emoji": "\ud83e\udd9e",
+    "status": "completed",
+    "summary": "",
+    "work_done": [],
+    "ideas": [],
+    "commit": null
+  },
+  {
+    "id": "digest-006",
+    "title": "Workflow checkpoint",
+    "date": "2026-03-23 04:10 UTC",
+    "session_type": "scheduled",
+    "emoji": "\ud83e\udd9e",
+    "status": "completed",
+    "summary": "",
+    "work_done": [],
+    "ideas": [],
+    "commit": null
+  },
+  {
+    "id": "digest-005",
+    "title": "Work Session",
+    "date": "2026-03-23 04:07 UTC",
+    "session_type": "scheduled",
+    "emoji": "\ud83e\udd9e",
+    "status": "completed",
+    "summary": "B43: ESTABLISHED_IN Provenance for All Artifact Types \u2014 DONE. Discovered that ESTABLISHED_IN edges were schema-only and never written in code. Fixed: (1) expanded ESTABLISHED_IN rel table to include Requirement + ActionItem via rel migration, (2) added session_id param to run_loop() and _reify_concept(), (3) _reify_concept now writes (artifact)-[:ESTABLISHED_IN]->(Session) for all 4 types, (4) brain_daemon passes session_id through, (5) explore_graph can now traverse ESTABLISHED_IN. 3 new tests added. 499 passed, 4 skipped. Committed 29847c7 and pushed.",
+    "work_done": [],
+    "ideas": [],
+    "commit": "29847c7"
+  },
+  {
     "id": "digest-004",
     "title": "Work Session",
     "date": "2026-03-22 20:54 UTC",

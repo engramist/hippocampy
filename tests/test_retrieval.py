@@ -142,3 +142,68 @@ async def test_current_truth_confidence_low_flag_preserved():
 
     assert len(result["results"]) == 1
     assert result["results"][0]["confidence_low"] is True
+
+
+@pytest.mark.asyncio
+async def test_current_truth_panel_url_default():
+    """B15: current_truth includes panel_url pointing to Mission Control thinking tab."""
+    from mcp_engine.tools import current_truth
+
+    concept_node = _make_node("c-2", "some concept", pathway_strength=0.8, confidence=0.9)
+    db = MockVectorSearchDB({
+        "concept_emb_idx": [{"node": concept_node, "score": 0.85}],
+    })
+
+    config = {"embeddings": {"model": "sentence-transformers/all-MiniLM-L6-v2"}}
+    result = await current_truth(
+        {"query": "some concept", "session_id": "s1"},
+        db, config
+    )
+
+    # panel_url present and points to thinking tab (no quest_id in params)
+    assert "panel_url" in result
+    assert "127.0.0.1:7800" in result["panel_url"]
+    assert result["panel_url"].startswith("http://")
+
+
+@pytest.mark.asyncio
+async def test_current_truth_panel_url_custom_base():
+    """B15: mission_control.base_url config is respected."""
+    from mcp_engine.tools import current_truth
+
+    concept_node = _make_node("c-3", "custom base concept", pathway_strength=0.8, confidence=0.9)
+    db = MockVectorSearchDB({
+        "concept_emb_idx": [{"node": concept_node, "score": 0.85}],
+    })
+
+    config = {
+        "embeddings": {"model": "sentence-transformers/all-MiniLM-L6-v2"},
+        "mission_control": {"base_url": "http://10.0.0.5:7800"},
+    }
+    result = await current_truth(
+        {"query": "custom base concept", "session_id": "s1"},
+        db, config
+    )
+
+    assert "panel_url" in result
+    assert result["panel_url"].startswith("http://10.0.0.5:7800")
+
+
+@pytest.mark.asyncio
+async def test_current_truth_panel_url_board_when_quest_id():
+    """B15: panel_url points to /board when quest_id is in params."""
+    from mcp_engine.tools import current_truth
+
+    concept_node = _make_node("c-4", "quest concept", pathway_strength=0.8, confidence=0.9)
+    db = MockVectorSearchDB({
+        "concept_emb_idx": [{"node": concept_node, "score": 0.85}],
+    })
+
+    config = {"embeddings": {"model": "sentence-transformers/all-MiniLM-L6-v2"}}
+    result = await current_truth(
+        {"query": "quest concept", "session_id": "s1", "quest_id": "abc123"},
+        db, config
+    )
+
+    assert "panel_url" in result
+    assert "/board" in result["panel_url"]

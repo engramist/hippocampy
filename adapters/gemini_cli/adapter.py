@@ -145,7 +145,8 @@ SYSTEM_PROMPT_FRAGMENT = (
     "Exploring a tangent? → offer branch_quest\n"
     "LAST action of every turn → notify_turn(role='assistant', content=<response>, session_id=<id>)\n"
     "IMPORTANT: notify_turn is fire-and-forget. Call it exactly ONCE per turn. "
-    "After it returns, STOP — no more text, reasoning, or tool calls."
+    "After it returns, STOP — no more text, reasoning, or tool calls.\n"
+    "When current_truth returns a panel_url field, include it as a markdown link: [View in Mission Control](url)"
 )
 
 OFFLINE_FRAGMENT = "[SideQuest | Brain: OFFLINE — memory unavailable]"
