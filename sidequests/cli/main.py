@@ -18,7 +18,7 @@ def cli() -> None:
 @click.option(
     "--target",
     type=click.Choice(
-        ["claude-code", "claude-desktop", "codex",
+        ["claude-code", "claude-desktop", "codex", "codex-desktop",
          "chatgpt-desktop", "gemini-cli", "all"],
         case_sensitive=False,
     ),

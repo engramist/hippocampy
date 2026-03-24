@@ -1,7 +1,8 @@
 """
 sidequests/cli/detect.py — Detect installed AI clients.
 
-Checks for Claude Code, Claude Desktop, Codex, ChatGPT Desktop, and Gemini CLI
+Checks for Claude Code, Claude Desktop, Codex CLI, Codex Desktop,
+ChatGPT Desktop, and Gemini CLI
 using platform-appropriate detection methods (which/where for CLI tools,
 known app support directories for GUI apps).
 """
@@ -21,6 +22,7 @@ def detect_installed_clients() -> dict[str, bool]:
         "claude-code":      True,
         "claude-desktop":   False,
         "codex":            True,
+        "codex-desktop":    False,
         "chatgpt-desktop":  False,
         "gemini-cli":       False,
       }
@@ -29,7 +31,10 @@ def detect_installed_clients() -> dict[str, bool]:
       claude-code:     `which claude` succeeds (CLI tool in PATH)
       claude-desktop:  macOS: ~/Library/Application Support/Claude/ exists
                        Windows: %APPDATA%/Claude/ exists
-      codex:           `which codex` succeeds
+      codex:           `which codex` succeeds (Codex CLI)
+      codex-desktop:   macOS: ~/Library/Application Support/Codex/ OR
+               ~/Library/Application Support/com.openai.codex/ exists
+               Windows: %APPDATA%/Codex/ exists
       chatgpt-desktop: macOS: ~/Library/Application Support/com.openai.chat/ exists
                        Windows: %APPDATA%/ChatGPT/ exists
       gemini-cli:      `which gemini` succeeds
@@ -41,6 +46,7 @@ def detect_installed_clients() -> dict[str, bool]:
         "claude-code":     False,
         "claude-desktop":  False,
         "codex":           False,
+        "codex-desktop":   False,
         "chatgpt-desktop": False,
         "gemini-cli":      False,
     }
@@ -55,12 +61,17 @@ def detect_installed_clients() -> dict[str, bool]:
         clients["claude-desktop"] = (
             home / "Library" / "Application Support" / "Claude"
         ).exists()
+        clients["codex-desktop"] = (
+            (home / "Library" / "Application Support" / "Codex").exists()
+            or (home / "Library" / "Application Support" / "com.openai.codex").exists()
+        )
         clients["chatgpt-desktop"] = (
             home / "Library" / "Application Support" / "com.openai.chat"
         ).exists()
     elif system == "Windows":
         appdata = Path.home() / "AppData" / "Roaming"
         clients["claude-desktop"]  = (appdata / "Claude").exists()
+        clients["codex-desktop"]   = (appdata / "Codex").exists()
         clients["chatgpt-desktop"] = (appdata / "ChatGPT").exists()
     # Linux: GUI detection deferred (no standard location yet)
 

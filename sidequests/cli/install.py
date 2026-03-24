@@ -606,7 +606,7 @@ class AdapterRegistrar:
 
         if not any_detected:
             click.echo("    No AI clients detected.")
-            click.echo("    Install Claude Code, Claude Desktop, Codex, or Gemini CLI.")
+            click.echo("    Install Claude Code, Claude Desktop, Codex, Codex Desktop, or Gemini CLI.")
             return results
 
         click.echo("  Registering adapters...")
@@ -619,6 +619,9 @@ class AdapterRegistrar:
 
         if detected.get("codex"):
             results["codex"] = self._register_codex()
+
+        if detected.get("codex-desktop"):
+            results["codex-desktop"] = self._register_codex_desktop()
 
         if detected.get("gemini-cli"):
             results["gemini-cli"] = self._register_gemini_cli()
@@ -745,8 +748,46 @@ class AdapterRegistrar:
         """Register the Codex adapter in ~/.codex/config.toml."""
         adapter_path = (self._adapters_dir / "codex" / "adapter.py").resolve()
         config_path = Path.home() / ".codex" / "config.toml"
-        config_path.parent.mkdir(parents=True, exist_ok=True)
+        self._ensure_codex_entry(config_path, adapter_path)
+        click.echo(f"    [ok] Codex — registered at {config_path}")
+        return True
 
+    def _register_codex_desktop(self) -> bool:
+        """Register Codex Desktop using the Codex adapter MCP entry."""
+        adapter_path = (self._adapters_dir / "codex" / "adapter.py").resolve()
+        system = platform.system()
+
+        if system == "Darwin":
+            config_candidates = [
+                Path.home() / "Library" / "Application Support" / "Codex" / "config.toml",
+                Path.home() / "Library" / "Application Support" / "com.openai.codex" / "config.toml",
+                Path.home() / ".codex" / "config.toml",
+            ]
+        elif system == "Windows":
+            appdata = Path.home() / "AppData" / "Roaming"
+            config_candidates = [
+                appdata / "Codex" / "config.toml",
+                Path.home() / ".codex" / "config.toml",
+            ]
+        else:
+            click.echo("    [!] Codex Desktop unsupported on this platform; using Codex CLI config")
+            return self._register_codex()
+
+        config_path = None
+        for candidate in config_candidates:
+            if candidate.parent.exists() or candidate.exists():
+                config_path = candidate
+                break
+        if config_path is None:
+            config_path = config_candidates[-1]
+
+        self._ensure_codex_entry(config_path, adapter_path)
+        click.echo(f"    [ok] Codex Desktop — registered at {config_path}")
+        return True
+
+    def _ensure_codex_entry(self, config_path: Path, adapter_path: Path) -> None:
+        """Ensure a sidequests MCP entry exists in a Codex TOML config file."""
+        config_path.parent.mkdir(parents=True, exist_ok=True)
         existing = config_path.read_text() if config_path.exists() else ""
         entry_block = (
             f'\n[mcp_servers.sidequests]\n'
@@ -758,7 +799,6 @@ class AdapterRegistrar:
             with open(config_path, "a") as f:
                 f.write(entry_block)
 
-        click.echo("    [ok] Codex — registered")
         return True
 
     def _register_gemini_cli(self) -> bool:
