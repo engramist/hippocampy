@@ -7,6 +7,8 @@ venv/
 *.egg-info/
 dist/
 build/
+dist_preflight/
+*.mcpb
 
 # Kùzu database files (local data — never commit)
 *.db
