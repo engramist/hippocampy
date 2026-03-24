@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "sidequests-brain"
 version = "0.1.0"
 description = "Persistent AI memory with a Gated Consolidation Loop and graph-native Kùzu knowledge base"
+readme = { text = "SideQuests Brain: persistent AI memory with a graph-native Kùzu knowledge base and MCP adapters.", content-type = "text/markdown" }
 license = { text = "UNLICENSED" }
 requires-python = ">=3.11"
 authors = [
@@ -45,10 +46,12 @@ sidequests        = "sidequests.cli.main:cli"
 sidequests-daemon = "sidequests.daemon:main"
 
 [project.urls]
-Issues = "https://github.com/yourusername/sidequests-brain/issues"
+Homepage = "https://github.com/djs54/sidequests-brain"
+Issues = "https://github.com/djs54/sidequests-brain/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["sidequests", "mcp_engine", "adapters", "web"]
+include = ["sidequests/data/GistSeedExamples.md"]
 
 [tool.hatch.build.targets.sdist]
 include = [
@@ -60,6 +63,7 @@ include = [
     "sidequests.toml",
     "requirements.txt",
     "InvertorsDocs/GistSeedExamples.md",
+    "sidequests/data/GistSeedExamples.md",
     "README.md",
 ]
 

@@ -493,3 +493,177 @@ class TestFailureModes:
             vm = VenvManager(venv_dir=tmp_path)
             si = SchemaInitializer(vm)
             assert si.init() is False
+
+    def test_resolve_seed_examples_path_prefers_project_root(self, tmp_path, monkeypatch):
+        """Should prefer InvertorsDocs/GistSeedExamples.md if it exists."""
+        dev_root = tmp_path / "dev"
+        docs_dir = dev_root / "InvertorsDocs"
+        docs_dir.mkdir(parents=True)
+        seed_file = docs_dir / "GistSeedExamples.md"
+        seed_file.touch()
+
+        import sidequests.cli.install as install_mod
+        monkeypatch.setattr(install_mod, "PROJECT_ROOT", dev_root)
+
+        # Mock Path.exists to be true for this specific file
+        path = install_mod.resolve_seed_examples_path()
+        assert str(seed_file.resolve()) == path
+
+    def test_resolve_seed_examples_path_falls_back_to_package_data(self, tmp_path, monkeypatch):
+        """Should fall back to sidequests/data/GistSeedExamples.md if dev path missing."""
+        # PROJECT_ROOT points to a dir without InvertorsDocs
+        dev_root = tmp_path / "empty_dev"
+        dev_root.mkdir()
+        
+        # sidequests/data exists relative to the module
+        fake_mod_dir = tmp_path / "site-packages" / "sidequests" / "cli"
+        fake_mod_dir.mkdir(parents=True)
+        data_dir = tmp_path / "site-packages" / "sidequests" / "data"
+        data_dir.mkdir(parents=True)
+        seed_file = data_dir / "GistSeedExamples.md"
+        seed_file.touch()
+
+        import sidequests.cli.install as install_mod
+        monkeypatch.setattr(install_mod, "PROJECT_ROOT", dev_root)
+        
+        # We need to mock __file__ in the module to point to our fake_mod_dir
+        monkeypatch.setattr(install_mod, "__file__", str(fake_mod_dir / "install.py"))
+
+        path = install_mod.resolve_seed_examples_path()
+        assert str(seed_file.resolve()) == path
+
+    def test_resolve_seed_examples_path_raises_when_missing(self, tmp_path, monkeypatch):
+        """Should raise RuntimeError if no seed file found."""
+        dev_root = tmp_path / "empty_dev"
+        dev_root.mkdir()
+        
+        import sidequests.cli.install as install_mod
+        monkeypatch.setattr(install_mod, "PROJECT_ROOT", dev_root)
+        
+        # Point __file__ to somewhere with no ../data/
+        monkeypatch.setattr(install_mod, "__file__", str(tmp_path / "nowhere" / "install.py"))
+
+        with pytest.raises(RuntimeError, match="Could not find GistSeedExamples.md"):
+            install_mod.resolve_seed_examples_path()
+
+class TestLaunchdResolver:
+
+    def test_launchd_resolver_skips_pyenv_shim(self, monkeypatch):
+        """Should skip interpreters that resolve to pyenv shims."""
+        import sidequests.cli.launchd as launchd
+        
+        # 1. which("python3.12") returns a shim
+        # 2. which("python3") returns a real path
+        def fake_which(cmd):
+            if "3.12" in cmd: return "/Users/me/.pyenv/shims/python3.12"
+            return "/usr/local/bin/python3"
+            
+        monkeypatch.setattr(launchd.shutil, "which", fake_which)
+        
+        # Mock realpath for the shim
+        import os
+        original_realpath = os.path.realpath
+        def fake_realpath(path):
+            if ".pyenv/shims" in path: return "/Users/me/.pyenv/shims/python3.12"
+            return original_realpath(path)
+        monkeypatch.setattr(os.path, "realpath", fake_realpath)
+        
+        resolved = launchd.resolve_system_python()
+        assert resolved == "/usr/local/bin/python3"
+
+    def test_launchd_resolver_falls_back_to_sys_executable(self, monkeypatch):
+        """Should fall back to sys.executable if no other candidates work."""
+        import sidequests.cli.launchd as launchd
+        monkeypatch.setattr(launchd.shutil, "which", lambda cmd: None)
+        monkeypatch.setattr(os.path, "exists", lambda p: False)
+        
+        import sys
+        resolved = launchd.resolve_system_python()
+        assert resolved == os.path.realpath(sys.executable)
+
+class TestDaemonSetupReload:
+
+    def test_daemon_setup_best_effort_process_cleanup_called(self, tmp_path, monkeypatch):
+        """setup() should attempt to pkill stale processes."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+        
+        import sidequests.cli.install as install_mod
+        from sidequests.cli.install import VenvManager, DaemonSetup
+        
+        vm = VenvManager(venv_dir=tmp_path)
+        ds = DaemonSetup(vm)
+        
+        # Mock platform.system to be Darwin
+        monkeypatch.setattr(install_mod.platform, "system", lambda: "Darwin")
+        
+        # Mock _write_plist, unload_plist, load_plist
+        monkeypatch.setattr(ds, "_write_plist", lambda: Path("/tmp/test.plist"))
+        
+        import sidequests.cli.launchd as launchd
+        monkeypatch.setattr(launchd, "unload_plist", MagicMock())
+        monkeypatch.setattr(launchd, "load_plist", MagicMock(returncode=0))
+        
+        # Capture pkill calls
+        pkills = []
+        def fake_run(args, **kwargs):
+            if args[0] == "pkill":
+                pkills.append(args)
+            return MagicMock(returncode=0)
+        
+        monkeypatch.setattr(install_mod.subprocess, "run", fake_run)
+        
+        ds.setup()
+        
+        assert any("brain_daemon.py" in str(arg) for arg in pkills)
+        assert any("sidequests.daemon" in str(arg) for arg in pkills)
+
+    def test_daemon_setup_forces_unload_then_load_even_when_not_loaded(self, tmp_path, monkeypatch):
+        """setup() should call unload_plist regardless of current state."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+        
+        import sidequests.cli.install as install_mod
+        from sidequests.cli.install import VenvManager, DaemonSetup
+        
+        vm = VenvManager(venv_dir=tmp_path)
+        ds = DaemonSetup(vm)
+        
+        monkeypatch.setattr(install_mod.platform, "system", lambda: "Darwin")
+        monkeypatch.setattr(ds, "_write_plist", lambda: Path("/tmp/test.plist"))
+        
+        import sidequests.cli.launchd as launchd
+        unload_mock = MagicMock()
+        load_mock = MagicMock(return_value=True)
+        monkeypatch.setattr(launchd, "unload_plist", unload_mock)
+        monkeypatch.setattr(launchd, "load_plist", load_mock)
+        monkeypatch.setattr(launchd, "is_loaded", lambda: False) # Simulate NOT loaded
+        
+        monkeypatch.setattr(install_mod.subprocess, "run", lambda *a, **k: MagicMock(returncode=0))
+        
+        ds.setup()
+        
+        unload_mock.assert_called_once()
+        load_mock.assert_called_once()
+
+    def test_daemon_setup_write_plist_uses_launchd_resolver(self, tmp_path, monkeypatch):
+        """DaemonSetup._write_plist should use resolve_system_python."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+        
+        from sidequests.cli.install import VenvManager, DaemonSetup
+        import sidequests.cli.launchd as launchd
+        
+        vm = VenvManager(venv_dir=tmp_path)
+        ds = DaemonSetup(vm)
+        
+        monkeypatch.setattr(launchd, "PLIST_PATH", tmp_path / "test.plist")
+        monkeypatch.setattr(launchd, "LOG_PATH", tmp_path / "test.log")
+        
+        resolver_mock = MagicMock(return_value="/usr/bin/python3.concrete")
+        monkeypatch.setattr(launchd, "resolve_system_python", resolver_mock)
+        
+        with patch.object(vm, "site_packages_dir", return_value=tmp_path):
+            ds._write_plist()
+            
+        resolver_mock.assert_called_once()
