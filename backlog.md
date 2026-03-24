@@ -338,34 +338,20 @@ Notes:
 
 ## P0 — Installation Experience (Critical — Blocking Adoption)
 
-### B13 · Guided Installer with LLM Provider Choice
-The current installation process is fragile and manual — requires hand-editing config files, manually installing Ollama, pulling models, running multiple CLI commands, and debugging cascading failures. This is the #1 adoption blocker.
+### B13 · Guided Installer with LLM Provider Choice — ✅ DONE (2026-03-24)
+**What was built:**
+- Single entry point: `sidequests install` with a multi-step guided flow.
+- LLM Provider Choice: Integrated Ollama auto-install (macOS/Linux) and BYOK (OpenAI/Anthropic/Google) with real-time key validation.
+- Linux support: Auto-install Ollama via `apt-get`, `dnf`, or `pacman`.
+- Explicit reporting: Final pass/fail report with actionable fix hints for every failed step.
+- LLM Connectivity check: Explicit verification of local/cloud API connectivity before proceeding.
+- Automated client registration: Detects and configures Claude Code, Claude Desktop, Codex, and Gemini CLI.
+- Idempotency: Safe to re-run; skips already completed or valid steps.
+- Unified smoke test: Validates the entire stack (daemon, tools, schema, SSE) at the end of the run.
 
-**What it should do:**
-- Single entry point: `sidequests install` (or a `.dmg` / native installer on macOS)
-- Interactive wizard asks one key question upfront: **"Do you want a free local model (Ollama) or bring your own API keys?"**
-  - **Local (Ollama):** Auto-install Ollama via Homebrew (macOS) or package manager (Linux), pull the default model (`llama3.1:8b`), verify it's running
-  - **Cloud (BYOK):** Prompt for provider choice (OpenAI / Anthropic / Google) and API key, validate the key works with a test call
-- Auto-detect installed AI clients (Claude Code, Claude Desktop, Codex, Gemini CLI, ChatGPT Desktop)
-- Register MCP adapters for all detected clients (user scope, not project-local)
-- Write `sidequests.toml` with correct provider config
-- Run full smoke test: LLM ping + embedding model load + Kùzu schema init + spaCy model download + `tools/list` round-trip
-- Print clear pass/fail report with actionable fix instructions for any failures
-- Must be idempotent — safe to re-run
-
-**Potential distribution formats:**
-- `.dmg` with drag-to-install (macOS — best for non-technical users)
-- Homebrew formula: `brew install sidequests-brain`
-- `pipx install sidequests-brain` (developer audience)
-- `.mcpb` bundle for Claude Desktop one-click install (see B2)
-
-**Dependencies to auto-install:**
-- Ollama (if local model chosen)
-- spaCy `en_core_web_md` model
-- sentence-transformers model (auto-downloaded on first use, but should pre-warm)
-- Kùzu schema init
-
-**Supersedes:** B1 (`sidequests setup` CLI) — B13 is the full vision; B1 is the MVP subset.
+**Files modified:**
+- `sidequests/cli/install.py`
+- `tests/test_install.py`
 
 ---
 
