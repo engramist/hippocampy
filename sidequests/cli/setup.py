@@ -91,6 +91,52 @@ def _register_codex(project_root: Path) -> None:
         print(f"  [=] Codex — already registered in {config_path}")
 
 
+def _register_codex_desktop(project_root: Path) -> None:
+    """Register Codex Desktop using the same Codex adapter entry."""
+    adapter_path = (_ADAPTERS_DIR / "codex" / "adapter.py").resolve()
+    system = platform.system()
+
+    if system == "Darwin":
+        config_candidates = [
+            Path.home() / "Library" / "Application Support" / "Codex" / "config.toml",
+            Path.home() / "Library" / "Application Support" / "com.openai.codex" / "config.toml",
+            Path.home() / ".codex" / "config.toml",
+        ]
+    elif system == "Windows":
+        appdata = Path.home() / "AppData" / "Roaming"
+        config_candidates = [
+            appdata / "Codex" / "config.toml",
+            Path.home() / ".codex" / "config.toml",
+        ]
+    else:
+        print("  [!] Codex Desktop: unsupported platform — falling back to Codex CLI config")
+        _register_codex(project_root)
+        return
+
+    config_path = None
+    for candidate in config_candidates:
+        if candidate.parent.exists() or candidate.exists():
+            config_path = candidate
+            break
+    if config_path is None:
+        config_path = config_candidates[-1]
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    existing = config_path.read_text() if config_path.exists() else ""
+    entry_block = (
+        f'\n[mcp_servers.sidequests]\n'
+        f'command = "{sys.executable}"\n'
+        f'args = ["{adapter_path}"]\n'
+    )
+
+    if "mcp_servers.sidequests" not in existing:
+        with open(config_path, "a") as f:
+            f.write(entry_block)
+        print(f"  [✓] Codex Desktop — config updated at {config_path}")
+    else:
+        print(f"  [=] Codex Desktop — already registered in {config_path}")
+
+
 def _register_chatgpt_desktop() -> None:
     """Print instructions for ChatGPT Desktop (SSE connector URL)."""
     print("  [i] ChatGPT Desktop — paste this URL in Settings > Apps > Add Connector:")
@@ -302,6 +348,8 @@ def run_setup(target: str, project_root: str | None) -> None:
                 _register_claude_desktop()
             elif t == "codex":
                 _register_codex(root)
+            elif t == "codex-desktop":
+                _register_codex_desktop(root)
             elif t == "chatgpt-desktop":
                 _register_chatgpt_desktop()
             elif t == "gemini-cli":
