@@ -401,13 +401,50 @@ class TestAdapterRegistrar:
         """Returns empty dict when no clients detected."""
         with patch("sidequests.cli.detect.detect_installed_clients",
                    return_value={"claude-code": False, "claude-desktop": False,
-                                 "codex": False, "chatgpt-desktop": False,
+                                 "codex": False, "codex-desktop": False,
+                                 "chatgpt-desktop": False,
                                  "gemini-cli": False}):
             from sidequests.cli.install import VenvManager, AdapterRegistrar
             vm = MagicMock()
             reg = AdapterRegistrar(vm)
             results = reg.register_all()
             assert results == {}
+
+    def test_register_all_includes_codex_desktop(self):
+        """register_all wires codex-desktop when detected."""
+        detected = {
+            "claude-code": False,
+            "claude-desktop": False,
+            "codex": False,
+            "codex-desktop": True,
+            "chatgpt-desktop": False,
+            "gemini-cli": False,
+        }
+        with patch("sidequests.cli.detect.detect_installed_clients", return_value=detected):
+            from sidequests.cli.install import VenvManager, AdapterRegistrar
+            vm = MagicMock()
+            reg = AdapterRegistrar(vm)
+            with patch.object(reg, "_register_codex_desktop", return_value=True) as mock_reg:
+                results = reg.register_all()
+                mock_reg.assert_called_once()
+                assert results["codex-desktop"] is True
+
+    def test_register_codex_desktop_macos_writes_config(self, tmp_path):
+        """Codex Desktop writes sidequests entry to a desktop config location on macOS."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+        desktop_dir = tmp_path / "Library" / "Application Support" / "Codex"
+        desktop_dir.mkdir(parents=True)
+
+        with patch("platform.system", return_value="Darwin"):
+            with patch("sidequests.cli.install.Path.home", return_value=tmp_path):
+                from sidequests.cli.install import VenvManager, AdapterRegistrar
+                vm = VenvManager(venv_dir=tmp_path)
+                reg = AdapterRegistrar(vm)
+                result = reg._register_codex_desktop()
+                assert result is True
+                content = (desktop_dir / "config.toml").read_text()
+                assert "[mcp_servers.sidequests]" in content
 
 class TestDaemonSetup:
 
