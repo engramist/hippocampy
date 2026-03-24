@@ -218,11 +218,11 @@ Files to create:
 ## P4 — Missing Tests
 
 ### B9 · `tests/test_adapters.py`
-Still a docstring stub. Needs full adapter integration tests covering:
-- Tool registration for all adapters
+✅ Done (2026-03-24): `tests/test_adapters.py` now includes comprehensive adapter integration coverage for:
+- Tool registration across all implemented adapters
 - `handle_mcp_request` routing for all tools
-- Offline queue behavior
-- Git context injection
+- Offline queue behavior and recovery expectations
+- Git context injection (`repo_root`, `git_branch`, `workspace_path`)
 
 ---
 
