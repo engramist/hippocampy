@@ -113,6 +113,30 @@ def _queue_offline(method: str, params: dict) -> None:
         f.write(json.dumps(entry) + "\n")
 
 
+async def _replay_offline_queue() -> None:
+    """Replay queued offline messages to the Brain Daemon.
+
+    Deletes the queue file before replaying so a mid-replay crash does not
+    produce duplicate entries on the next recovery.
+    """
+    if not OFFLINE_QUEUE.exists():
+        return
+    try:
+        raw = OFFLINE_QUEUE.read_text()
+        OFFLINE_QUEUE.unlink()  # delete before replay — idempotent on crash
+    except OSError:
+        return
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+            await _call_brain(entry["method"], entry["params"])
+        except Exception:
+            pass  # best-effort: failed entries are dropped, not re-queued
+
+
 def _inject_context(params: dict) -> dict:
     """Add available context signals to any tool params dict."""
     ctx = {**params}
@@ -180,13 +204,14 @@ async def handle_mcp_request(request: dict) -> dict:
 
         # --- notify_turn ---
         if tool_name == "notify_turn":
-            if not _daemon_online:
-                _queue_offline("notify_turn", tool_input)
-                return ok({"content": [{"type": "text",
-                                        "text": '{"status": "queued_offline"}'}]})
+            # Always attempt the call even when _daemon_online is False so the
+            # adapter can self-recover; queue only on failure.
             try:
                 result = await _call_brain("notify_turn", tool_input)
+                was_offline = not _daemon_online
                 _daemon_online = True
+                if was_offline:
+                    await _replay_offline_queue()
                 return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
             except RuntimeError as e:
                 if "DAEMON_OFFLINE" in str(e):
@@ -198,11 +223,13 @@ async def handle_mcp_request(request: dict) -> dict:
 
         # --- current_truth ---
         if tool_name == "current_truth":
-            if not _daemon_online:
-                return ok({"content": [{"type": "text", "text": OFFLINE_FRAGMENT}]})
+            # Always attempt even when offline; self-recovery via was_offline pattern.
             try:
                 result = await _call_brain("current_truth", tool_input)
+                was_offline = not _daemon_online
                 _daemon_online = True
+                if was_offline:
+                    await _replay_offline_queue()
                 return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
             except RuntimeError as e:
                 if "DAEMON_OFFLINE" in str(e):

@@ -335,17 +335,17 @@ async def test_daemon_online_flag_set_after_successful_call(patched, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_codex_short_circuits_when_offline(patched, monkeypatch, tmp_path):
-    """Codex adapter short-circuits notify_turn when offline (queues immediately, no attempt)."""
+async def test_codex_queues_when_offline_call_fails(patched, monkeypatch, tmp_path):
+    """Codex adapter always attempts _call_brain (self-recovery pattern) and queues on failure."""
     if patched._adapter_id != "codex":
-        pytest.skip("Short-circuit test only applies to codex adapter")
+        pytest.skip("Recovery test only applies to codex adapter")
 
     monkeypatch.setattr(patched, "_daemon_online", False)
     brain_called = {"n": 0}
 
     async def fake_brain(method, params):
         brain_called["n"] += 1
-        return {"status": "queued"}
+        raise RuntimeError("DAEMON_OFFLINE: socket not found")
 
     monkeypatch.setattr(patched, "_call_brain", fake_brain)
 
@@ -357,9 +357,9 @@ async def test_codex_short_circuits_when_offline(patched, monkeypatch, tmp_path)
         }
     })
 
-    # Brain was NOT called (short-circuit)
-    assert brain_called["n"] == 0
-    # Returns queued_offline gracefully
+    # Brain was attempted (no early short-circuit — allows self-recovery)
+    assert brain_called["n"] == 1
+    # Returns queued_offline gracefully after failure
     assert "queued_offline" in response["result"]["content"][0]["text"]
 
 

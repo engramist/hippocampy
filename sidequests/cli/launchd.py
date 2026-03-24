@@ -9,14 +9,48 @@ Plist: ~/Library/LaunchAgents/ai.sidequests.brain.plist
 """
 
 from __future__ import annotations
+import os
 import plistlib
+import shutil
 import subprocess
 import sys
+import sysconfig
 from pathlib import Path
 
 LABEL      = "ai.sidequests.brain"
 PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
 LOG_PATH   = Path.home() / ".sidequests" / "daemon.log"
+
+
+def resolve_system_python() -> str:
+    """
+    Resolve a concrete system Python 3 interpreter path.
+    Avoids pyenv shims which can fail under launchd.
+    Candidate order:
+    1) python3.12 (shutil.which)
+    2) python3 (shutil.which)
+    3) /usr/bin/python3 (if present)
+    4) sys.executable
+    All candidates are resolved via os.path.realpath.
+    If a candidate contains '/.pyenv/shims/', it is rejected.
+    """
+    candidates = [
+        shutil.which("python3.12"),
+        shutil.which("python3"),
+        "/usr/bin/python3" if os.path.exists("/usr/bin/python3") else None,
+        sys.executable
+    ]
+
+    for cmd in candidates:
+        if not cmd:
+            continue
+        real_path = os.path.realpath(cmd)
+        if "/.pyenv/shims/" in real_path:
+            continue
+        return real_path
+
+    # Ultimate fallback: return realpath of current interpreter
+    return os.path.realpath(sys.executable)
 
 
 def _daemon_script() -> str:
@@ -43,18 +77,14 @@ def write_plist() -> Path:
     to avoid launchd TCC permission errors reading pyvenv.cfg when the venv
     lives under a TCC-protected directory (Desktop, Documents, Downloads).
     """
-    import shutil
-    import sysconfig
-
     PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+
     daemon = _daemon_script()
 
-    # Resolve the real Python interpreter — avoid venv wrapper scripts which
-    # require reading pyvenv.cfg (blocked by launchd TCC on Desktop/Documents).
-    # Use system python3.12 / python3 with explicit PYTHONPATH instead.
-    system_python = shutil.which("python3.12") or shutil.which("python3") or sys.executable
+    # Resolve a real, non-shim Python interpreter.
+    system_python = resolve_system_python()
 
     # Build PYTHONPATH: venv site-packages first, then project root
     site_packages = sysconfig.get_path("purelib")  # venv site-packages

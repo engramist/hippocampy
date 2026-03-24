@@ -4,6 +4,63 @@
 
 ---
 
+## Codex + GPT Desktop Bring-Up (Execution Order)
+
+Validated 2026-03-24 against live code paths. This is the operational checklist to get Codex CLI and ChatGPT Desktop reliably running.
+
+### P0 — Critical Blockers (Do First)
+
+- [x] **Fix installer seed-path packaging bug** (blocks schema init in pip-installed environments)
+  - `sidequests/cli/install.py` uses `PROJECT_ROOT/InvertorsDocs/GistSeedExamples.md` during schema init
+  - Ensure seed examples are loadable in installed environments (wheel-safe resource loading)
+- [x] **Fix launchd Python interpreter resolution on macOS** (pyenv wrapper can fail under launchd)
+  - Harden interpreter resolution in `sidequests/cli/launchd.py`
+  - Ensure daemon starts with a real executable path (not shell-wrapper-dependent)
+- [x] **Force daemon reload during install/update** (prevents stale tool registry)
+  - During install, unload/reload service so newly added MCP tools are actually available
+  - Prevent "Unknown tool" failures caused by old daemon process state
+
+### P1 — End-to-End Bring-Up Validation
+
+- [x] **Run full clean-machine install validation for both targets**
+  - All 7 installer steps passed on first run 2026-03-24
+  - Two hardening fixes applied: Step 4 DB-lock graceful skip + Step 7 socket-poll retry
+- [x] **Codex live verification** — verified 2026-03-24
+  - `codex` CLI 0.116.0 installed at `/opt/homebrew/bin/codex`
+  - `~/.codex/config.toml` written with `[mcp_servers.sidequests]` entry pointing to adapter
+  - `tools/list` round-trip confirmed: adapter returns all 11 tools from Brain Daemon via Unix socket
+- [x] **ChatGPT Desktop live verification**
+  - SSE endpoint confirmed responding at `http://127.0.0.1:7799/sse`
+  - `sidequests status` shows all 4 checks green: socket, 11 tools, schema, SSE
+  - Manual step remaining: add connector in ChatGPT Desktop app UI
+
+### P2 — Reliability / Data Safety
+
+- [x] **Implement offline queue replay on daemon recovery**
+  - Adapters already queue failed writes to `~/.sidequests/offline_queue.jsonl`
+  - Add replay + clear-on-success behavior when daemon returns
+- [x] **Increase install smoke-test readiness window**
+  - Fixed 2026-03-24: replaced bare `time.sleep(3)` with `_wait_for_daemon(max_wait=20, interval=2)` polling loop
+  - Companion fix: Step 4 (schema init) now skips gracefully when DB is locked by running daemon
+
+### P3 — UX / Consumer Readiness (After Bring-Up)
+
+- [x] **B14 Proactive Insight Surfacing**
+  - Surface captured-insight feedback so memory activity is visible without explicit `current_truth` calls
+
+### Deferred (Not Required for Codex + GPT Desktop Bring-Up)
+
+- [x] **B2 `.mcpb` bundle** (Claude Desktop distribution)
+- [ ] **B4 PyPI publish** (post-patent milestone)
+  - Preflight complete 2026-03-24: fresh wheel + sdist build succeeded and `twine check` passed cleanly (`dist_preflight/sidequests_brain-0.1.0.tar.gz`, `dist_preflight/sidequests_brain-0.1.0-py3-none-any.whl`)
+  - Install smoke: wheel installs and `sidequests --help` runs in clean Python 3.12 venv
+  - Caveat: Python 3.14 clean environments fail compiling `kuzu==0.11.3` without `cmake` (use Python 3.12/3.13 for now)
+- [ ] **B5 Smithery listing** (depends on distribution path)
+  - Preflight note 2026-03-24: `@smithery/cli` v4.7.4 uses `smithery mcp publish` (no standalone `validate` command)
+- [x] **B6 Claude Desktop adapter full pass** (not a blocker for current targets)
+
+---
+
 ## Market Advantage
 
 ### Why SideQuests Wins Against Current Agent Memory
@@ -778,6 +835,24 @@ The `Concept → REIFIED_AS → Artifact` dual-layer design is intentional, but 
 
 **Files:** `mcp_engine/schema.py`, `mcp_engine/loop/orchestrator.py`, `brain_daemon.py`, `mcp_engine/tools.py`
 **Priority:** P3 — ✅ resolved
+
+---
+
+## P10 — Efficiency & Token Management
+
+### B44 · "Token Saver Mode" (Context Optimization)
+**Problem:** Users hit token rate limits (TPM/RPM) on frontier models (Opus, GPT-4o) due to massive context payloads sent by agents like OpenClaw. High-volume sessions with deep history and RAG injections can blow past quotas quickly.
+
+**The "Trap":** NLP-based stop-word stripping (Caveman Speak). Stripping connective tissue ("is", "that", "not") destroys the attention mechanisms LLMs use for reasoning. It saves ~5% tokens at the cost of ~20% reasoning accuracy.
+
+**The Solution (Real Token Saver Mode):**
+1. **Aggressive Smart Deduplication (B18):** Leverage the `LOADED` edge tracking in the Brain. In "Token Saver Mode," instruct `current_truth` to strictly **exclude** (not just demote) any fact already present in the last 10-20 messages.
+2. **Task-Based Model Routing (B17/B37):** Automatically route routine, low-reasoning background tasks (file searches, JSON formatting, heartbeats) to fast, free local models (e.g., Llama 3.1 via Ollama), preserving expensive frontier quotas for heavy cognitive lifting.
+3. **Asynchronous Context Compaction (B38):** When history exceeds a threshold (e.g., 50 messages), the Brain triggers a background local LLM to summarize the middle messages into a dense semantic summary, seamlessly swapping thousands of history tokens for a ~200-token anchor.
+
+**Current Project Status:**
+- `mcp_engine/working_memory.py`: Already tracks every node injected into context via `LOADED` edges.
+- `plans/B37-token-budget.md`: Defines initial fallback and routing strategies.
 
 ---
 
