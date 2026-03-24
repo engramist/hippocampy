@@ -441,6 +441,34 @@ class ConfigWriter:
 
         return config_path
 
+def resolve_seed_examples_path() -> str:
+    """
+    Resolve the absolute path to GistSeedExamples.md.
+    
+    Candidate order:
+    1) PROJECT_ROOT/InvertorsDocs/GistSeedExamples.md (dev checkout)
+    2) sidequests/data/GistSeedExamples.md (package data in wheel installs)
+    """
+    # 1. Dev checkout
+    dev_path = PROJECT_ROOT / "InvertorsDocs" / "GistSeedExamples.md"
+    if dev_path.exists():
+        return str(dev_path.resolve())
+
+    # 2. Package data fallback (using importlib.resources if available, or manual path)
+    # For simplicity and to avoid extra deps in the installer, we check the relative path
+    # in the site-packages or installed location.
+    # __file__ is sidequests/cli/install.py, so data is at ../data/GistSeedExamples.md
+    pkg_path = Path(__file__).resolve().parent.parent / "data" / "GistSeedExamples.md"
+    if pkg_path.exists():
+        return str(pkg_path.resolve())
+
+    raise RuntimeError(
+        "Could not find GistSeedExamples.md. \\n"
+        f"Checked: \\n  1. {dev_path}\\n  2. {pkg_path}\\n"
+        "If you are installing from source, ensure InvertorsDocs/ exists.\\n"
+        "If you are installing from wheel, ensure sidequests/data/ is included."
+    )
+
 class SchemaInitializer:
     """Initialize the Kuzu database schema."""
 
@@ -451,13 +479,19 @@ class SchemaInitializer:
         """Initialize Kuzu schema."""
         click.echo("  Initializing Kuzu schema...")
 
+        try:
+            seed_path = resolve_seed_examples_path()
+        except RuntimeError as e:
+            click.echo(f"  [!] {e}")
+            return False
+
         init_script = f"""
 import sys
 sys.path.insert(0, {str(PROJECT_ROOT)!r})
 from mcp_engine.graph.kuzu_client import KuzuClient
 from mcp_engine.schema import init_schema
 db = KuzuClient({str(DB_PATH)!r})
-seed_path = {str(PROJECT_ROOT / 'InvertorsDocs' / 'GistSeedExamples.md')!r}
+seed_path = {seed_path!r}
 init_schema(db, seed_path, 'sentence-transformers/all-MiniLM-L6-v2')
 print('SCHEMA_OK')
 """
@@ -472,6 +506,9 @@ print('SCHEMA_OK')
             return False
 
         if result.returncode != 0 or "SCHEMA_OK" not in result.stdout:
+            if "Could not set lock" in result.stderr or "set lock on file" in result.stderr:
+                click.echo("  [=] Schema already initialized (daemon is running — skipping re-init)")
+                return True
             click.echo(f"  [!] Schema init failed:")
             click.echo(f"      {result.stderr.strip()[-500:]}")
             return False
@@ -724,8 +761,15 @@ class DaemonSetup:
         click.echo(f"    Plist: {plist_path}")
 
         from sidequests.cli.launchd import is_loaded, unload_plist, load_plist
-        if is_loaded():
-            unload_plist()
+        
+        # 1. Best-effort stale process cleanup
+        click.echo("    Cleaning up stale daemon processes...")
+        subprocess.run(["pkill", "-f", "brain_daemon.py"], capture_output=True)
+        subprocess.run(["pkill", "-f", "sidequests.daemon"], capture_output=True)
+
+        # 2. Force reload sequence to ensure fresh tool registry
+        click.echo("    Forcing daemon reload to refresh tool registry...")
+        unload_plist() # Ignore failure if not loaded
 
         if load_plist():
             click.echo("  [ok] Brain Daemon started via launchd")
@@ -738,13 +782,13 @@ class DaemonSetup:
     def _write_plist(self) -> Path:
         """Write the launchd plist, overriding launchd.py's write_plist()."""
         import plistlib
-        from sidequests.cli.launchd import LABEL, PLIST_PATH, LOG_PATH
+        from sidequests.cli.launchd import LABEL, PLIST_PATH, LOG_PATH, resolve_system_python
 
         PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
         daemon_script = str(PROJECT_ROOT / "brain_daemon.py")
-        system_python = shutil.which("python3.12") or shutil.which("python3") or sys.executable
+        system_python = resolve_system_python()
 
         site_packages = str(self.venv.site_packages_dir())
         pythonpath = f"{site_packages}:{PROJECT_ROOT}"
@@ -773,6 +817,19 @@ class DaemonSetup:
             plistlib.dump(plist_data, f)
 
         return PLIST_PATH
+
+def _wait_for_daemon(max_wait: int = 20, interval: int = 2) -> bool:
+    """Poll the daemon socket until it appears or max_wait seconds elapse."""
+    import time as _time
+    elapsed = 0
+    while elapsed < max_wait:
+        if SOCKET_PATH.exists():
+            return True
+        _time.sleep(interval)
+        elapsed += interval
+        click.echo(f"    ({elapsed}s) still waiting...")
+    return False
+
 
 def run_install() -> None:
     """Main install orchestrator."""
@@ -851,13 +908,17 @@ def run_install() -> None:
     click.echo("Step 7/7: Smoke Test\n")
     if daemon_ok:
         click.echo("  Waiting for daemon to initialize...")
-        time.sleep(3)
-        try:
-            from sidequests.cli.smoke_test import check_status
-            check_status()
-        except Exception as e:
-            click.echo(f"  [!] Smoke test error: {e}")
+        ready = _wait_for_daemon(max_wait=20, interval=2)
+        if not ready:
+            click.echo("  [!] Daemon socket did not appear within 20 seconds")
             click.echo("      Try: sidequests status")
+        else:
+            try:
+                from sidequests.cli.smoke_test import check_status
+                check_status()
+            except Exception as e:
+                click.echo(f"  [!] Smoke test error: {e}")
+                click.echo("      Try: sidequests status")
     else:
         click.echo("  [=] Skipped (daemon not started)")
 

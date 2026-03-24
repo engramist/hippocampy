@@ -2,7 +2,7 @@
 # https://smithery.ai/docs/server-definition
 #
 # NOTE: Only publish after provisional patent is filed.
-# Run `npx @smithery/cli validate` to verify this file before submission.
+# Smithery CLI v4 flow: `npx @smithery/cli mcp publish --help`
 
 name: sidequests-brain
 description: >
