@@ -97,6 +97,32 @@ class TestOllamaInstaller:
                 inst = OllamaInstaller()
                 assert inst.install() is False
 
+    def test_install_linux_apt(self):
+        """Uses apt-get on Linux when available."""
+        def which_side_effect(name):
+            if name == "apt-get": return "/usr/bin/apt-get"
+            if name == "ollama": return "/usr/local/bin/ollama"
+            return None
+
+        with patch("platform.system", return_value="Linux"):
+            with patch("shutil.which", side_effect=which_side_effect):
+                with patch("subprocess.run") as mock_run:
+                    mock_run.return_value = MagicMock(returncode=0)
+                    from sidequests.cli.install import OllamaInstaller
+                    inst = OllamaInstaller()
+                    assert inst.install() is True
+                    # Should call update and install
+                    mock_run.assert_any_call(["sudo", "apt-get", "update"], check=True)
+                    mock_run.assert_any_call(["sudo", "apt-get", "install", "-y", "ollama"], check=True)
+
+    def test_install_linux_no_pkg_manager(self):
+        """Returns False on Linux when no supported package manager found."""
+        with patch("platform.system", return_value="Linux"):
+            with patch("shutil.which", return_value=None):
+                from sidequests.cli.install import OllamaInstaller
+                inst = OllamaInstaller()
+                assert inst.install() is False
+
     def test_pull_model_already_exists(self):
         """Skips pull when model already available."""
         mock_result = MagicMock(stdout="NAME\nllama3.1:8b\n", returncode=0)
@@ -667,3 +693,100 @@ class TestDaemonSetupReload:
             ds._write_plist()
             
         resolver_mock.assert_called_once()
+
+class TestInstallReport:
+
+    def test_print_report_all_pass(self):
+        """Returns True when all steps pass."""
+        from sidequests.cli.install import InstallStepResult, _print_install_report
+        results = [
+            InstallStepResult("Step 1", True, "ok"),
+            InstallStepResult("Step 2", True, "ok"),
+        ]
+        assert _print_install_report(results) is True
+
+    def test_print_report_with_failure(self):
+        """Returns False when any step fails."""
+        from sidequests.cli.install import InstallStepResult, _print_install_report
+        results = [
+            InstallStepResult("Step 1", True, "ok"),
+            InstallStepResult("Step 2", False, "failed"),
+        ]
+        assert _print_install_report(results) is False
+
+class TestConnectivity:
+
+    def test_verify_ollama_success(self):
+        """Returns True when Ollama endpoint responds."""
+        with patch("urllib.request.urlopen") as mock_url:
+            from sidequests.cli.install import verify_llm_connectivity
+            ok, detail = verify_llm_connectivity({"provider": "ollama"})
+            assert ok is True
+            assert "reachable" in detail
+
+    def test_verify_ollama_failure(self):
+        """Returns False when Ollama endpoint unreachable."""
+        with patch("urllib.request.urlopen", side_effect=Exception("Refused")):
+            from sidequests.cli.install import verify_llm_connectivity
+            ok, detail = verify_llm_connectivity({"provider": "ollama"})
+            assert ok is False
+            assert "unreachable" in detail
+
+    def test_verify_byok_success(self):
+        """Returns True when BYOK call succeeds."""
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = MagicMock()
+        with patch("sidequests.cli.install.OpenAI", return_value=mock_client):
+            from sidequests.cli.install import verify_llm_connectivity
+            ok, detail = verify_llm_connectivity({
+                "provider": "openai",
+                "api_key": "sk-test",
+                "model": "gpt-4o-mini"
+            })
+            assert ok is True
+            assert "connected" in detail
+
+    def test_verify_byok_failure(self):
+        """Returns False when BYOK call fails."""
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = Exception("Invalid key")
+        with patch("sidequests.cli.install.OpenAI", return_value=mock_client):
+            from sidequests.cli.install import verify_llm_connectivity
+            ok, detail = verify_llm_connectivity({
+                "provider": "openai",
+                "api_key": "sk-bad",
+                "model": "gpt-4o-mini"
+            })
+            assert ok is False
+            assert "failed" in detail
+
+class TestOrchestration:
+
+    @patch("sidequests.cli.install._print_install_report")
+    @patch("sidequests.cli.install._print_step_header")
+    @patch("click.prompt")
+    @patch("sidequests.cli.install.OllamaInstaller")
+    @patch("sidequests.cli.install.verify_llm_connectivity")
+    @patch("sidequests.cli.install.VenvManager")
+    def test_run_install_emits_report_on_failure(self, mock_venv, mock_verify, mock_ollama, mock_prompt, mock_header, mock_report):
+        """run_install should continue to report even if a step fails."""
+        mock_prompt.return_value = "1" # Ollama
+        mock_inst = mock_ollama.return_value
+        mock_inst.setup.return_value = False # FAIL OLLAMA SETUP
+        
+        mock_v = mock_venv.return_value
+        mock_v.create.return_value = False # FAIL VENV
+
+        mock_report.return_value = False # Force failure return from report
+        
+        from sidequests.cli.install import run_install
+        import click
+        with pytest.raises(click.ClickException):
+            run_install()
+            
+        # Verify report was called
+        mock_report.assert_called_once()
+        results = mock_report.call_args[0][0]
+        # Check that we have failures in results
+        assert any(not r.passed for r in results)
+
