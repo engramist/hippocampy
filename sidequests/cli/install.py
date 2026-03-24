@@ -9,6 +9,7 @@ Idempotent: safe to re-run. Skips completed steps.
 """
 
 from __future__ import annotations
+from dataclasses import dataclass
 import json
 import os
 import platform
@@ -26,6 +27,35 @@ try:
     from openai import OpenAI
 except ImportError:
     OpenAI = None
+
+@dataclass
+class InstallStepResult:
+    name: str
+    passed: bool
+    detail: str
+    fix_hint: str = ""
+
+def _print_step_header(step_num: int, total_steps: int, title: str) -> None:
+    click.echo(f"\nStep {step_num}/{total_steps}: {title}")
+    click.echo("-" * (len(title) + 12))
+
+def _print_install_report(results: list[InstallStepResult]) -> bool:
+    """Print final pass/fail report and return True only if all critical steps passed."""
+    click.echo("\n" + "=" * 50)
+    click.echo("  INSTALLATION REPORT")
+    click.echo("=" * 50)
+    
+    all_passed = True
+    for res in results:
+        status = "[ok]" if res.passed else "[!!]"
+        click.echo(f"  {status} {res.name:<25} {res.detail}")
+        if not res.passed:
+            all_passed = False
+            if res.fix_hint:
+                click.echo(f"       -> Fix: {res.fix_hint}")
+    
+    click.echo("=" * 50)
+    return all_passed
 
 # Canonical paths
 SIDEQUESTS_HOME  = Path.home() / ".sidequests"
@@ -78,6 +108,7 @@ class OllamaInstaller:
     def is_running() -> bool:
         """Return True if Ollama server is responding at localhost:11434."""
         try:
+            # Check version or tags endpoint
             urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3)
             return True
         except Exception:
@@ -101,19 +132,56 @@ class OllamaInstaller:
         return shutil.which("brew") is not None
 
     def install(self) -> bool:
-        """Install Ollama via Homebrew. Returns True on success."""
-        if not self.homebrew_available():
-            click.echo("  [!] Homebrew not found. Install Ollama manually:")
-            click.echo("      https://ollama.com/download")
-            return False
+        """Install Ollama via platform-appropriate package manager. Returns True on success."""
+        system = platform.system()
+        
+        if system == "Darwin":
+            if not self.homebrew_available():
+                click.echo("  [!] Homebrew not found. Install Ollama manually:")
+                click.echo("      https://ollama.com/download")
+                return False
 
-        click.echo("  Installing Ollama via Homebrew...")
-        result = subprocess.run(
-            ["brew", "install", "ollama"],
-            capture_output=True, text=True, timeout=300
-        )
-        if result.returncode != 0:
-            click.echo(f"  [!] brew install ollama failed: {result.stderr.strip()}")
+            click.echo("  Installing Ollama via Homebrew...")
+            result = subprocess.run(
+                ["brew", "install", "ollama"],
+                capture_output=True, text=True, timeout=300
+            )
+            if result.returncode != 0:
+                click.echo(f"  [!] brew install ollama failed: {result.stderr.strip()}")
+                return False
+
+        elif system == "Linux":
+            if shutil.which("apt-get"):
+                click.echo("  Installing Ollama via apt-get...")
+                # We try to use the official install script if possible for Linux
+                # but following the B13 request for package manager paths:
+                try:
+                    subprocess.run(["sudo", "apt-get", "update"], check=True)
+                    subprocess.run(["sudo", "apt-get", "install", "-y", "ollama"], check=True)
+                except subprocess.CalledProcessError as e:
+                    click.echo(f"  [!] apt-get install failed: {e}")
+                    return False
+            elif shutil.which("dnf"):
+                click.echo("  Installing Ollama via dnf...")
+                try:
+                    subprocess.run(["sudo", "dnf", "install", "-y", "ollama"], check=True)
+                except subprocess.CalledProcessError as e:
+                    click.echo(f"  [!] dnf install failed: {e}")
+                    return False
+            elif shutil.which("pacman"):
+                click.echo("  Installing Ollama via pacman...")
+                try:
+                    subprocess.run(["sudo", "pacman", "-S", "--noconfirm", "ollama"], check=True)
+                except subprocess.CalledProcessError as e:
+                    click.echo(f"  [!] pacman install failed: {e}")
+                    return False
+            else:
+                click.echo("  [!] No supported Linux package manager (apt, dnf, pacman) found.")
+                click.echo("      Install Ollama manually: curl -fsSL https://ollama.com/install.sh | sh")
+                return False
+        else:
+            click.echo(f"  [!] Automatic install not supported for {system}.")
+            click.echo("      Install Ollama manually: https://ollama.com/download")
             return False
 
         if not self.is_installed():
@@ -831,13 +899,69 @@ def _wait_for_daemon(max_wait: int = 20, interval: int = 2) -> bool:
     return False
 
 
+def verify_llm_connectivity(llm_config: dict) -> tuple[bool, str]:
+    """Return (ok, detail) by issuing a minimal request to chosen provider."""
+    provider = llm_config.get("provider", "ollama")
+    model = llm_config.get("model", "llama3.1:8b")
+    
+    if provider == "ollama":
+        base_url = llm_config.get("base_url", "http://localhost:11434/v1")
+        # Extract host:port from base_url to check if server is up
+        try:
+            # We already have is_running() but this is more explicit for the report
+            # Strip /v1 to get base Ollama API
+            check_url = base_url.replace("/v1", "")
+            if not check_url.endswith("/"):
+                check_url += "/"
+            urllib.request.urlopen(f"{check_url}api/tags", timeout=3)
+            return True, f"Ollama reachable at {base_url}"
+        except Exception as e:
+            return False, f"Ollama unreachable: {e}"
+    
+    else:
+        # BYOK providers
+        if OpenAI is None:
+            return False, "openai SDK not installed"
+            
+        try:
+            api_key = llm_config.get("api_key")
+            base_url = llm_config.get("base_url")
+            
+            # If api_key is not in llm_config, try environment
+            if not api_key:
+                env_var = BYOKValidator.PROVIDERS.get(provider, {}).get("env_var")
+                if env_var:
+                    api_key = os.environ.get(env_var)
+            
+            if not api_key:
+                return False, f"Missing API key for {provider}"
+
+            kwargs = {"api_key": api_key}
+            if base_url:
+                kwargs["base_url"] = base_url
+
+            client = OpenAI(**kwargs)
+            client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": "hi"}],
+                max_tokens=1,
+            )
+            return True, f"{provider.title()} ({model}) connected"
+        except Exception as e:
+            return False, f"{provider.title()} connection failed: {e}"
+
+
 def run_install() -> None:
     """Main install orchestrator."""
     click.echo("\n" + "=" * 50)
     click.echo("  SideQuests Brain — Installation")
     click.echo("=" * 50 + "\n")
 
-    click.echo("Step 1/7: LLM Provider\n")
+    results: list[InstallStepResult] = []
+    total_steps = 8
+
+    # Step 1: Provider Setup
+    _print_step_header(1, total_steps, "LLM Provider Setup")
     click.echo("  SideQuests needs a language model for advanced reasoning.")
     click.echo("  Options:")
     click.echo("    1) Ollama (free, local, private — recommended)")
@@ -850,88 +974,123 @@ def run_install() -> None:
     )
 
     llm_config: dict = {}
-
+    provider_ok = False
     if choice == "1":
         click.echo("\n  Setting up Ollama...\n")
         ollama = OllamaInstaller()
-        if not ollama.setup():
-            click.echo("\n  [!] Ollama setup failed. You can:")
-            click.echo("      1. Install Ollama manually: https://ollama.com/download")
-            click.echo("      2. Re-run: sidequests install")
-            click.echo("      3. Choose option 2 (BYOK) instead")
-            sys.exit(1)
-        llm_config = {
-            "provider": "ollama",
-            "model": "llama3.1:8b",
-            "base_url": "http://localhost:11434/v1",
-        }
+        provider_ok = ollama.setup()
+        if provider_ok:
+            llm_config = {
+                "provider": "ollama",
+                "model": "llama3.1:8b",
+                "base_url": "http://localhost:11434/v1",
+            }
+            results.append(InstallStepResult("LLM Provider", True, "Ollama local setup ok"))
+        else:
+            results.append(InstallStepResult("LLM Provider", False, "Ollama setup failed", "Check https://ollama.com"))
     else:
         click.echo("\n  Setting up cloud provider...\n")
         byok = BYOKValidator()
-        llm_config = byok.setup()
+        try:
+            llm_config = byok.setup()
+            provider_ok = True
+            results.append(InstallStepResult("LLM Provider", True, f"{llm_config['provider']} setup ok"))
+        except Exception as e:
+            results.append(InstallStepResult("LLM Provider", False, f"BYOK setup failed: {e}"))
 
-    click.echo()
+    # Step 2: Connectivity
+    _print_step_header(2, total_steps, "LLM Connectivity Check")
+    if provider_ok:
+        ok, detail = verify_llm_connectivity(llm_config)
+        results.append(InstallStepResult("LLM Connectivity", ok, detail, "Check network or API key" if not ok else ""))
+    else:
+        results.append(InstallStepResult("LLM Connectivity", False, "skipped due to earlier failure"))
 
-    click.echo("Step 2/7: Python Environment\n")
+    # Step 3: Python Environment
+    _print_step_header(3, total_steps, "Python Environment & Dependencies")
     venv = VenvManager()
-    if not venv.create():
-        click.echo("\n  [!] Cannot create Python environment. Aborting.")
-        sys.exit(1)
-    if not venv.install_deps():
-        click.echo("\n  [!] Dependency installation failed. Aborting.")
-        sys.exit(1)
-    venv.install_spacy_model()
-    venv.prewarm_embeddings()
-    click.echo()
+    venv_ok = venv.create()
+    if venv_ok:
+        deps_ok = venv.install_deps()
+        if deps_ok:
+            venv.install_spacy_model()
+            venv.prewarm_embeddings()
+            results.append(InstallStepResult("Python Environment", True, "Venv and dependencies ok"))
+        else:
+            results.append(InstallStepResult("Python Environment", False, "Dependency install failed", "Check network/pip"))
+            venv_ok = False
+    else:
+        results.append(InstallStepResult("Python Environment", False, "Venv creation failed"))
 
-    click.echo("Step 3/7: Configuration\n")
-    ConfigWriter.write(llm_config)
-    click.echo()
+    # Step 4: Configuration
+    _print_step_header(4, total_steps, "Configuration Writing")
+    if provider_ok:
+        try:
+            ConfigWriter.write(llm_config)
+            results.append(InstallStepResult("Configuration", True, f"Written to {CONFIG_PATH}"))
+        except Exception as e:
+            results.append(InstallStepResult("Configuration", False, f"Failed: {e}"))
+    else:
+        results.append(InstallStepResult("Configuration", False, "skipped due to earlier failure"))
 
-    click.echo("Step 4/7: Database Schema\n")
-    schema_init = SchemaInitializer(venv)
-    if not schema_init.init():
-        click.echo("\n  [!] Schema initialization failed.")
-        click.echo("      The daemon will retry on startup. Continuing...\n")
-    click.echo()
+    # Step 5: Schema Init
+    _print_step_header(5, total_steps, "Database Schema Initialization")
+    if venv_ok:
+        schema_init = SchemaInitializer(venv)
+        if schema_init.init():
+            results.append(InstallStepResult("Database Schema", True, "Kuzu schema initialized"))
+        else:
+            results.append(InstallStepResult("Database Schema", False, "Schema init failed", "Check ~/.sidequests/daemon.log"))
+    else:
+        results.append(InstallStepResult("Database Schema", False, "skipped due to earlier failure"))
 
-    click.echo("Step 5/7: Adapter Registration\n")
-    registrar = AdapterRegistrar(venv)
-    registrar.register_all()
-    click.echo()
+    # Step 6: Adapter Registration
+    _print_step_header(6, total_steps, "Adapter Registration")
+    if venv_ok:
+        registrar = AdapterRegistrar(venv)
+        reg_results = registrar.register_all()
+        results.append(InstallStepResult("Adapters", True, f"Registered {len(reg_results)} adapters"))
+    else:
+        results.append(InstallStepResult("Adapters", False, "skipped due to earlier failure"))
 
-    click.echo("Step 6/7: Brain Daemon\n")
-    daemon = DaemonSetup(venv)
-    daemon_ok = daemon.setup()
-    click.echo()
+    # Step 7: Daemon Setup
+    _print_step_header(7, total_steps, "Brain Daemon Setup")
+    daemon_ok = False
+    if venv_ok:
+        daemon = DaemonSetup(venv)
+        daemon_ok = daemon.setup()
+        results.append(InstallStepResult("Daemon Setup", daemon_ok, "Daemon started via launchd" if daemon_ok else "Setup failed"))
+    else:
+        results.append(InstallStepResult("Daemon Setup", False, "skipped due to earlier failure"))
 
-    click.echo("Step 7/7: Smoke Test\n")
+    # Step 8: Smoke Test
+    _print_step_header(8, total_steps, "Final Smoke Test")
+    smoke_ok = False
     if daemon_ok:
         click.echo("  Waiting for daemon to initialize...")
         ready = _wait_for_daemon(max_wait=20, interval=2)
-        if not ready:
-            click.echo("  [!] Daemon socket did not appear within 20 seconds")
-            click.echo("      Try: sidequests status")
-        else:
+        if ready:
             try:
                 from sidequests.cli.smoke_test import check_status
-                check_status()
+                smoke_ok = check_status()
+                if smoke_ok:
+                    results.append(InstallStepResult("Smoke Test", True, "All systems nominal"))
+                else:
+                    results.append(InstallStepResult("Smoke Test", False, "Health checks failed", "Run 'sidequests status'"))
             except Exception as e:
-                click.echo(f"  [!] Smoke test error: {e}")
-                click.echo("      Try: sidequests status")
+                results.append(InstallStepResult("Smoke Test", False, f"Smoke test failed: {e}", "Run 'sidequests status'"))
+        else:
+            results.append(InstallStepResult("Smoke Test", False, "Daemon socket timeout", "Check ~/.sidequests/daemon.log"))
     else:
-        click.echo("  [=] Skipped (daemon not started)")
+        results.append(InstallStepResult("Smoke Test", False, "skipped due to earlier failure"))
 
-    click.echo("\n" + "=" * 50)
-    click.echo("  Installation complete!")
-    click.echo("=" * 50)
-    click.echo(f"\n  Config:   {CONFIG_PATH}")
-    click.echo(f"  Database: {DB_PATH}")
-    click.echo(f"  Logs:     {LOG_PATH}")
-    click.echo(f"  Venv:     {VENV_DIR}")
-    click.echo(f"\n  Commands:")
-    click.echo(f"    sidequests status   — check daemon health")
-    click.echo(f"    sidequests stop     — stop daemon")
-    click.echo(f"    sidequests start    — start daemon (foreground)")
-    click.echo(f"    sidequests review   — review open loops")
-    click.echo()
+    # Final Report
+    all_critical_passed = _print_install_report(results)
+
+    if all_critical_passed:
+        click.echo(f"\n  Installation complete! Brain is running.")
+        click.echo(f"  Commands:")
+        click.echo(f"    sidequests status   — check daemon health")
+        click.echo(f"    sidequests review   — review open loops")
+    else:
+        raise click.ClickException("Installation completed with failures. See report above.")
