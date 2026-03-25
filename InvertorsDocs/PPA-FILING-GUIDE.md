@@ -58,6 +58,8 @@ You **must** have a verified USPTO.gov account before you can file electronicall
 
 USPTO requires you to know what's already out there. This doesn't block filing, but the examiner will do their own search when you convert to a nonprovisional — knowing the landscape helps you shape later claims.
 
+Completed search memo for this step: `InvertorsDocs/PriorArtSearch.md`
+
 - **Patent Public Search tool:** https://ppubs.uspto.gov/pubwebapp/static/pages/landing.html
 - **USPTO prior art search guide (PDF):** https://www.uspto.gov/sites/default/files/documents/Basics-of-Prior-Art-Searching.pdf
 - **Video tutorial (36 min):** https://www.uspto.gov/video/cbt/prelim-patent-search/index.html
