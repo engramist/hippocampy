@@ -60,6 +60,13 @@ USPTO requires you to know what's already out there. This doesn't block filing, 
 
 Completed search memo for this step: `InvertorsDocs/PriorArtSearch.md`
 
+How to use that memo correctly:
+
+- Do **not** file the memo itself with the provisional application.
+- Use it now as an internal drafting guide for the notebook, background section, and detailed description.
+- If you later file a nonprovisional, use the memo as a candidate source list for a later **IDS** rather than assuming every listed source belongs in a final disclosure filing.
+- Re-run the search before the nonprovisional filing; the art landscape will change over the next 12 months.
+
 - **Patent Public Search tool:** https://ppubs.uspto.gov/pubwebapp/static/pages/landing.html
 - **USPTO prior art search guide (PDF):** https://www.uspto.gov/sites/default/files/documents/Basics-of-Prior-Art-Searching.pdf
 - **Video tutorial (36 min):** https://www.uspto.gov/video/cbt/prelim-patent-search/index.html
@@ -222,6 +229,8 @@ Multi-signal routing fusion with progressive consolidation and prediction-error 
 - `InvertorsDocs/Side Quests - Inventor's Notebook (032406).md` — Primary written description for the PPA
 - `InvertorsDocs/SideQuests-Patent-Figures.excalidraw` — Figure source (export as static images before filing)
 - `InvertorsDocs/SideQuests-Patent-Figures.md` — Figure captions and descriptions
+- `InvertorsDocs/Summary-of-Invention.md` — Filing-safe summary draft for reuse in the provisional package
+- `InvertorsDocs/PriorArtSearch.md` — Internal prior-art memo; not filed with the provisional itself
 - `CLAUDE.md` — Full enabling disclosure (architecture, schema, algorithms — attach as appendix or incorporate into spec)
 - USPTO Cover Sheet PTO/SB/16: https://www.uspto.gov/sites/default/files/documents/sb0016.pdf
 - USPTO DOCX Spec Template: https://www.uspto.gov/sites/default/files/documents/DOCX_Template_2_0.docx
