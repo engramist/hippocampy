@@ -4,6 +4,7 @@ This document serves as the official record for the conception and development o
 
 ### **Journal of Updates**
 
+* **March 24, 2026 (Final PM):** Resolved the USPTO drawings requirement identified in peer vetting. Added a formal "Brief Description of the Drawings" subsection (Section 6.1) with patent-spec-style FIG. 1–FIG. 7 descriptions. Added a standalone patent figure packet (SideQuests-Patent-Figures.md) with one figure per section ready for PDF export. Expanded Fig. 1 to show the dual passive/active capture paths. Expanded Fig. 3 to show all six Cocktail Party senses (Decision, Constraint, Plan, Entity, Contradiction, Anomaly). Expanded Fig. 5 to include Session Handoff Intelligence. Added Long-Term Depression (LTD) to Fig. 6 reconsolidation path. Added Fig. 7 for Synaptic Pruning, Hebbian CO_OCCURS_WITH accumulation, and Long-Term Potentiation promotion. Fixed broken Mermaid syntax in Fig. 4. Standardized all captions to patent-spec "FIG. X illustrates..." language.  
 * **March 24, 2026 (Late PM):** Hardened the disclosure for provisional filing readiness by adding explicit claim-to-implementation mapping, alternative embodiments/equivalents, and best-mode implementation details. Added concrete reduction-to-practice evidence for installer hardening and multi-client registration, including Codex Desktop auto-detection/registration paths and validated install regression tests. Documented security invariants (stdio transport, local bind policy, canonical path enforcement) as non-optional system constraints to strengthen enablement and defensibility.  
 * **March 24, 2026 (PM):** Integrated formal academic benchmarking and autonomous research methodologies into the testing framework. Recognized that "recursive self-improvement" loops (e.g., Andrej Karpathy's auto-research) suffer from "Hypothesis Regression" due to context bloat. Formalized the testing methodology to include SWE-CI, LoCoBench, and AMA-Bench to mathematically prove that the Side Quests Graph-RAG architecture outperforms standard vector RAG in multi-session, interdependent tasks. Logged recent academic papers (*MemoryArena*, *AMA-Bench*) as Prior Art to establish the non-obviousness of the graph-based solution.  
 * **March 24, 2026:** Expanded the "Open-Source Engine Swap" and Phase 0 testing strategy to explicitly include **VS Code Copilot (Autonomous Mode Preview)**. Recognized that as major enterprise tools introduce autonomous agentic execution, they inherit the same "Memory Wall" flaws as OpenClaw. Formalized the cross-agent testing criteria: successfully demonstrating that OpenClaw and an autonomous VS Code Copilot instance can share and update the exact same Kùzu knowledge graph simultaneously via the MCP server. This empirically proves the "Universal Brain / Decoupled System" architectural claim.  
@@ -229,11 +230,87 @@ The invention is not limited to one model vendor, one graph engine, or one clien
 3. **Noise Floor Discipline:** Low-confidence chatter does not flood structural memory while remaining recoverable through evidence pathways.
 4. **Graph + Vector Cooperation:** Retrieval quality improves through combined semantic search and constrained traversal versus vector-only recall.
 
-### **6\. Diagrams and Flowcharts**
+### **6\. Diagrams and Flowcharts (Drawings Included for Filing Support)**
 
-* System Architecture Diagram  
-* User Flow Diagram (Branch, Explore, Merge, Deprecate, Export Decision Log)  
-* MCP Ingestion Pipeline Flowchart (Detailing the 9-Step Coarse-to-Fine Loop)
+The following drawings are included as part of the enabling disclosure and are intended to satisfy the requirement that drawings necessary to understand the subject matter be present in the filing package.
+
+**6.1 Brief Description of the Drawings**
+
+* **FIG. 1** is a system-level architecture view showing adapters, MCP transport, Brain Daemon, graph/vector persistence, and user-facing control panel.
+* **FIG. 2** is a flowchart of the 9-step Gated Consolidation Loop, including gated progression and output states.
+* **FIG. 3** is a confidence-gating decision flow showing selective attention thresholds for noise, tentative, and confirmed memory.
+* **FIG. 4** is a temporal-truth lineage diagram showing additive update handling and contradiction handling using DEPRECATED_BY and MergeEvent audit records.
+* **FIG. 5** is a session working-memory state diagram showing [LOADED] tracking, token burden estimation, and smart deduplication with refresher reinjection.
+* **FIG. 6** is a semantic quest-routing flow showing multi-signal confidence fusion, threshold-based routing decisions, and prediction-error reconsolidation.
+
+**Figure Inventory (Recommended Drawing Set):**
+
+1. **FIG. 1 - System Architecture (Decoupled Brain Model):** Dual capture paths (passive hook + MCP tool) -> Brain Daemon -> Graph/Vector store -> Memory Control Panel.
+2. **FIG. 2 - 9-Step Gated Consolidation Loop:** End-to-end write path from raw conversation to auditable graph update.
+3. **FIG. 3 - Cocktail Party Effect: Selective Attention and Confidence Gating:** Six cognitive senses firing on inbound content, confidence gating into noise/tentative/confirmed paths, with anomaly alert branch.
+4. **FIG. 4 - Temporal Truth and Reversible Merge Lineage:** Additive, contradiction (DEPRECATED_BY + MergeEvent), and uncertain (soft-lock) paths with deterministic rollback.
+5. **FIG. 5 - Working Memory Awareness, Smart Deduplication, and Session Handoff:** Session->[LOADED]->Artifact tracking, relevance demotion, refresher reinjection, and cross-session handoff.
+6. **FIG. 6 - Semantic Quest Routing (Hippocampus Mechanism):** Multi-signal fusion with numeric thresholds, LLM escalation, and prediction-error reconsolidation including LTD weakening.
+7. **FIG. 7 - Synaptic Pruning, Hebbian Learning, and Long-Term Potentiation:** Use-based strengthening, exponential decay, archive/resurrection, and CO_OCCURS_WITH promotion to named semantic edge.
+
+**Drawing Package Note:**
+
+For formal submission, export each figure as a separate page image/PDF with labels "FIG. 1" through "FIG. 6" and include corresponding captions. Existing source artwork in this repository (for example, the architecture sketch under docs) can be used as a base and normalized to patent-style line drawings.
+
+**Figure Descriptions (Text for Specification Alignment):**
+
+* **FIG. 1** illustrates the decoupled system topology showing the dual capture paths (passive UserPromptSubmit hook for user turns and notify_turn MCP call for assistant turns), the MCP tool surface, the Brain Daemon, persistent graph/vector storage, and the memory control panel bound locally at 127.0.0.1.
+* **FIG. 2** illustrates the ordered 9-step consolidation sequence (Steps 1, 1b, 2, 3, 3b, 4, 5, 6, 7) including gating checkpoints, noise/tentative/confirmed paths, and auditable lineage outputs.
+* **FIG. 3** illustrates the Cocktail Party Effect selective attention mechanism in which six cognitive senses (Decision, Constraint, Plan, Entity, Contradiction, Anomaly) evaluate inbound content before confidence scoring routes the result into noise, tentative, or confirmed structural memory, with an anomaly alert branch for GlobalConstraint violations.
+* **FIG. 4** illustrates temporal truth handling including an additive pathway-strength increment path, a contradiction path creating a new artifact with a DEPRECATED_BY edge and MergeEvent record enabling deterministic rollback, and an uncertain path producing a soft-locked tentative node.
+* **FIG. 5** illustrates working-memory state tracking via Session-to-Artifact [LOADED] edges, token burden estimation, smart deduplication with relevance demotion, selective refresher reinjection, and Session Handoff Intelligence that seeds a new session with the prior session's top loaded artifacts.
+* **FIG. 6** illustrates multi-signal routing fusion computing a unified confidence from semantic similarity, entity overlap, and deterministic workspace context, threshold-based quest attachment, LLM escalation for ambiguous cases, and prediction-error reconsolidation using Long-Term Depression (LTD) and a REROUTED_FROM audit edge.
+* **FIG. 7** illustrates Synaptic Pruning and Hebbian Long-Term Potentiation: use-based pathway strengthening, exponential time-decay, archive mechanics, embedding-similarity resurrection, and promotion of implicit CO_OCCURS_WITH edges to named semantic relationship edges.
+
+**Inline Reference Flowcharts (Drafts for Conversion to Formal Figures):**
+
+```mermaid
+flowchart LR
+  A[Client Adapter] --> B[MCP Tool Surface]
+  B --> C[Brain Daemon]
+  C --> D[(Graph + Vector Store)]
+  C --> E[Background Sweep]
+  C --> F[Memory Control Panel]
+```
+
+```mermaid
+flowchart TD
+  S0[Input Turn or Document Chunk] --> S1[1 NER/Zoning]
+  S1 --> S1B[1b Relation Fast Path]
+  S1B --> S2[2 Dual Process gist Classification]
+  S2 --> S3[3 schema.org Subgraph Routing]
+  S3 --> S3B[3b Semantic Relation Extraction]
+  S3B --> S4[4 Confidence Gate]
+  S4 -->|<60| N[Noise Log]
+  S4 -->|60-90| T[Tentative confidence_low]
+  S4 -->|>90| C1[Confirmed Artifact]
+  T --> S5[5 Dual Scope Retrieval]
+  C1 --> S5
+  S5 --> S6[6 Contradiction Arbitration]
+  S6 --> S7[7 Pathway Update + Lineage]
+```
+
+```mermaid
+flowchart TD
+  R0[New Session Thread] --> R1[Extract Initial Signals]
+  R1 --> R2[Compute Fused Routing Confidence]
+  R2 -->|High| R3[Attach to Existing MainQuest]
+  R2 -->|Ambiguous| R4[Escalate to LLM Disambiguation]
+  R2 -->|Low| R5[Create New MainQuest]
+  R3 --> R6[Monitor Prediction Error]
+  R4 --> R6
+  R5 --> R6
+  R6 -->|Detected| R7[Reroute + REROUTED_FROM Lineage]
+```
+
+**Drawing Cross-Reference Note:**
+
+For filing assembly, see the standalone figure packet in InvertorsDocs/SideQuests-Patent-Figures.md, which provides one figure block per page-equivalent section with FIG. 1 through FIG. 7, standardized captions, and an export checklist ready for PDF conversion.
 
 ### **7\. Prior Art**
 
