@@ -236,12 +236,13 @@ The following drawings are included as part of the enabling disclosure and are i
 
 **6.1 Brief Description of the Drawings**
 
-* **FIG. 1** is a system-level architecture view showing adapters, MCP transport, Brain Daemon, graph/vector persistence, and user-facing control panel.
-* **FIG. 2** is a flowchart of the 9-step Gated Consolidation Loop, including gated progression and output states.
-* **FIG. 3** is a confidence-gating decision flow showing selective attention thresholds for noise, tentative, and confirmed memory.
-* **FIG. 4** is a temporal-truth lineage diagram showing additive update handling and contradiction handling using DEPRECATED_BY and MergeEvent audit records.
-* **FIG. 5** is a session working-memory state diagram showing [LOADED] tracking, token burden estimation, and smart deduplication with refresher reinjection.
-* **FIG. 6** is a semantic quest-routing flow showing multi-signal confidence fusion, threshold-based routing decisions, and prediction-error reconsolidation.
+* **FIG. 1** is a system-level architecture view showing per-client adapters, two separate message-capture paths, a local Brain Daemon, graph/vector persistence, and a user-facing memory control panel.
+* **FIG. 2** is a flowchart of the 9-step Gated Consolidation Loop, including concept extraction, dual-process classification, sub-graph routing, relation extraction, confidence gating, retrieval, arbitration, and pathway update with auditable lineage.
+* **FIG. 3** is a selective-attention confidence-gating diagram showing Cocktail Party cognitive senses firing on inbound content and routing the result into noise, tentative, and confirmed memory paths.
+* **FIG. 4** is a temporal-truth lineage diagram showing additive pathway strengthening, contradiction handling under DEPRECATED_BY lineage, and deterministic rollback through MergeEvent audit records.
+* **FIG. 5** is a working-memory state diagram showing Session-to-Artifact [LOADED] tracking, token burden estimation, smart deduplication, refresher reinjection, and Session Handoff Intelligence.
+* **FIG. 6** is a semantic quest-routing flow showing multi-signal routing fusion, LLM escalation on ambiguity, and prediction-error-driven reconsolidation using Long-Term Depression (LTD).
+* **FIG. 7** is a synaptic pruning and Hebbian learning diagram showing use-based strengthening, time-decay pruning, archive/resurrection behavior, and promotion of implicit CO_OCCURS_WITH edges to named semantic relationships.
 
 **Figure Inventory (Recommended Drawing Set):**
 
@@ -255,7 +256,7 @@ The following drawings are included as part of the enabling disclosure and are i
 
 **Drawing Package Note:**
 
-For formal submission, export each figure as a separate page image/PDF with labels "FIG. 1" through "FIG. 6" and include corresponding captions. Existing source artwork in this repository (for example, the architecture sketch under docs) can be used as a base and normalized to patent-style line drawings.
+For formal submission, export each figure as a separate page image/PDF with labels "FIG. 1" through "FIG. 7" and include corresponding captions. The filing packet should follow the current Word figure set in InvertorsDocs/Side Quests Patent Figures.docx, with the markdown and Excalidraw sources treated as drafting artifacts used to generate the final static drawings.
 
 **Figure Descriptions (Text for Specification Alignment):**
 
@@ -310,7 +311,7 @@ flowchart TD
 
 **Drawing Cross-Reference Note:**
 
-For filing assembly, see the standalone figure packet in InvertorsDocs/SideQuests-Patent-Figures.md, which provides one figure block per page-equivalent section with FIG. 1 through FIG. 7, standardized captions, and an export checklist ready for PDF conversion.
+For filing assembly, see the standalone figure packet in InvertorsDocs/Side Quests Patent Figures.docx, which provides the current FIG. 1 through FIG. 7 packet for submission. Working-source versions remain in InvertorsDocs/SideQuests-Patent-Figures.md and InvertorsDocs/SideQuests-Patent-Figures.excalidraw for future revisions and export regeneration.
 
 ### **7\. Prior Art**
 
