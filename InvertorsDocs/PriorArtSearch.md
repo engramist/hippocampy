@@ -19,6 +19,26 @@ This search covered:
 
 This memo does **not** replace a full interactive search in USPTO Patent Public Search, Google Patents, Espacenet, or a professional patent search report. It is sufficient as a disciplined pre-filing search record and a drafting aid for the provisional disclosure.
 
+### How to use this memo in the filing process
+
+**For the provisional application now:**
+
+- Do **not** file this memo with the provisional application.
+- Use it as an internal drafting aid while finalizing the notebook, background section, and detailed description.
+- Use the differentiation themes below to avoid describing SideQuests so broadly that it collapses into generic agent-memory or temporal-graph prior art.
+
+**For the later nonprovisional application:**
+
+- Do **not** file this memo itself.
+- Instead, use it as a candidate source list for a later **Information Disclosure Statement (IDS)** if and when a nonprovisional application is filed.
+- Before that later filing, re-run the search because the public art landscape will change over the next 12 months.
+- Only references that are materially relevant to patentability should be considered for later IDS disclosure; the memo is intentionally broader than a final IDS list.
+
+**Background-section use:**
+
+- Recent benchmark papers such as MemoryArena and AMA-Bench may be used in the provisional background section to show that long-horizon agent memory is a recognized technical problem.
+- They should be used as problem-framing support, not as proof that SideQuests is legally non-obvious by themselves.
+
 ---
 
 ## Search Strategy Used
@@ -350,6 +370,14 @@ Instead, keep centering the provisional disclosure on:
 4. A **temporal truth / rollback lineage model**
 5. A **working-memory state model** for controlling reinjection and token bloat
 6. A **use-strengthening / inactivity-weakening model** with archive and resurrection behavior
+
+### Background drafting guidance
+
+When using competitor or research references in the notebook or later specification:
+
+- describe overlap narrowly and factually
+- avoid broad admissions that a competitor already teaches the full invention
+- use the references to frame the problem and the nearest baseline, then pivot immediately to the specific SideQuests mechanism-level differences
 
 ---
 
