@@ -74,17 +74,20 @@ How to use that memo correctly:
 
 ---
 
-### Step 4: Prepare Your PPA Documents (DOCX Format — Required)
+### Step 4: Prepare Your PPA Documents (DOCX for the Specification; PDF for Forms and Drawings Is Fine)
 
-**File everything in DOCX format.** As of January 17, 2024, USPTO charges a non-DOCX surcharge of up to **$400** for specifications, claims, and abstracts not submitted in DOCX. Avoid this by using the USPTO DOCX template.
+For this provisional filing, treat **DOCX as the preferred format for the written description/specification**, because that keeps you aligned with later nonprovisional practice and future reuse. Do **not** force everything into DOCX: your cover sheet can stay as PDF, and your drawings can be filed as separate static PDF pages. The non-DOCX surcharge language is aimed at nonprovisional specifications, claims, and abstracts, so do not convert `sb0016.pdf` just to satisfy Step 4.
+
+Use the prior-art memo during this packaging step only as an **internal drafting check**: confirm that the background and summary sections describe the technical problem accurately, avoid unnecessary admissions, and keep the differentiators focused on the concrete architecture actually disclosed in the specification.
 
 **Documents to prepare:**
 
 | Document | Required? | Notes |
 |---------|----------|-------|
-| **Written Description** (specification) | ✅ Yes | Your Inventor's Notebook + architecture spec. Must satisfy 35 U.S.C. §112(a) — complete enough to reproduce. |
-| **Drawings** | Optional but strongly recommended | A drawing necessary to understand the invention cannot be added after filing. Your `SideQuests-Patent-Figures.excalidraw` renders to static images — export each FIG. as PNG/PDF before filing. |
-| **Cover Sheet (Form PTO/SB/16)** | ✅ Yes | Download: https://www.uspto.gov/sites/default/files/documents/sb0016.pdf |
+| **Written Description** (specification) | ✅ Yes | Prepare this in DOCX. Use your Inventor's Notebook + architecture spec as source material. Must satisfy 35 U.S.C. §112(a) — complete enough to reproduce. |
+| **Drawings** | Optional but strongly recommended | File these as static figure pages. Your current repo already has FIG. 1-7 PNG exports and the Word figure packet; PDF figure pages are acceptable for the provisional packet. |
+| **Cover Sheet (Form PTO/SB/16)** | ✅ Yes | Keep this as PDF. Local copy downloaded: `InvertorsDocs/sb0016.pdf`. |
+| **Micro Entity Certification (Form PTO/SB/15A)** | Required if claiming micro entity | Keep this as PDF. Local copy downloaded: `InvertorsDocs/sb0015a.pdf`. |
 | **Formal patent claims** | ❌ Not required for PPA | PPAs are not examined — no claims required. Do include an informal claim section to preserve priority scope. |
 | **Oath/Declaration** | ❌ Not required for PPA | Required only for nonprovisional. |
 | **Prior art (IDS)** | ❌ Not permitted in PPA | Do not include — provisional applications are not examined. |
@@ -93,11 +96,13 @@ How to use that memo correctly:
 - Checkbox: "This is a PROVISIONAL APPLICATION FOR PATENT"
 - Name(s) of all inventors (just you: Don J. Shelton)
 - Inventor residence (city, state, country)
-- Title of the invention (suggested: *"Biomimetic Gated Consolidation System for Persistent AI Memory with Graph-Native Knowledge Representation"*)
+- Title of the invention (current staged filing title: *"System and Method for Persistent AI Assistant Memory Using a Gated Consolidation Loop and Graph-Native Knowledge Representation"*)
 - Correspondence address (your email/address for USPTO correspondence)
 - Any U.S. Government agency with a property interest (leave blank — none)
 
 **USPTO DOCX Specification Template:** https://view.officeapps.live.com/op/view.aspx?src=https%3A%2F%2Fwww.uspto.gov%2Fsites%2Fdefault%2Ffiles%2Fdocuments%2FDOCX_Template_2_0.docx
+
+**Working packet for this repo:** use `InvertorsDocs/PPA-FILING-PACKET-CHECKLIST.md` as the assembly checklist while you convert the notebook into the filing-ready specification and complete the local forms.
 
 ---
 
@@ -113,9 +118,9 @@ How to use that memo correctly:
 2. Click "File a new application" → select **Provisional Application**
 3. Upload documents in this order:
    - Specification (DOCX) — your written description
-   - Drawings (PDF or DOCX) — your FIG. 1–7 static images
-   - Cover sheet: either use the fillable PDF PTO/SB/16 or enter the cover sheet data directly in Patent Center's guided form
-4. Select **Micro Entity** status and submit the Micro Entity form (PTO/SB/15A)
+   - Drawings (PDF preferred) — your FIG. 1–7 static images/pages
+   - Cover sheet: either use the local fillable PDF `InvertorsDocs/sb0016.pdf` or enter the cover sheet data directly in Patent Center's guided form
+4. Select **Micro Entity** status and submit the Micro Entity form (PTO/SB/15A), using your local `InvertorsDocs/sb0015a.pdf` if you complete it offline
 5. Pay the **Provisional Application Filing Fee: $64** (Micro Entity)
    - Verify current fee before paying: https://www.uspto.gov/learning-and-resources/fees-and-payment/uspto-fee-schedule
    - Accepted payment: credit card, USPTO deposit account, EFT
@@ -230,7 +235,10 @@ Multi-signal routing fusion with progressive consolidation and prediction-error 
 - `InvertorsDocs/SideQuests-Patent-Figures.excalidraw` — Figure source (export as static images before filing)
 - `InvertorsDocs/SideQuests-Patent-Figures.md` — Figure captions and descriptions
 - `InvertorsDocs/Summary-of-Invention.md` — Filing-safe summary draft for reuse in the provisional package
+- `InvertorsDocs/PPA-FILING-PACKET-CHECKLIST.md` — Operational packet assembly checklist tied to the actual repo files
 - `InvertorsDocs/PriorArtSearch.md` — Internal prior-art memo; not filed with the provisional itself
 - `CLAUDE.md` — Full enabling disclosure (architecture, schema, algorithms — attach as appendix or incorporate into spec)
+- `InvertorsDocs/sb0016.pdf` — Local PTO/SB/16 cover sheet PDF downloaded for filing prep
+- `InvertorsDocs/sb0015a.pdf` — Local PTO/SB/15A micro-entity certification PDF downloaded for filing prep
 - USPTO Cover Sheet PTO/SB/16: https://www.uspto.gov/sites/default/files/documents/sb0016.pdf
 - USPTO DOCX Spec Template: https://www.uspto.gov/sites/default/files/documents/DOCX_Template_2_0.docx
