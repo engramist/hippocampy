@@ -730,12 +730,16 @@ Despite earlier fixes (ISSUE-019, ISSUE-026), junk still enters the graph:
 
 ---
 
-### B35 · Bug: `set_quest` Fails with Kuzu Schema Error
-`set_quest` tool returns: `Binder exception: Cannot find property git_repo_root for q.`
+### B35 · Bug: `set_quest` Fails with Kuzu Schema Error — ✅ FIXED (2026-03-27)
+`set_quest` tool was returning: `Binder exception: Cannot find property git_repo_root for q.`
 
-The hippocampus code references `git_repo_root` on the MainQuest table, but the property doesn't exist in the schema (or was renamed).
+**Root cause:** The migration guard `"property" in str(e).lower()` in `init_schema()` was too broad. Kuzu's "Cannot find property X" Binder exception (thrown at query time when a column is absent) also contains the word "property", causing ALTER TABLE failures on existing DBs to be silently swallowed — leaving `git_repo_root` and other B17 columns absent from the live `MainQuest` and `Session` tables.
 
-**Files:** `mcp_engine/hippocampus.py`, `mcp_engine/schema.py`
+**Fix:** Replaced exception-based detection with a pre-check using `CALL table_info(table)` to enumerate existing columns before attempting `ALTER TABLE`. If the column is already present → skip. If table_info itself raises → fall through to attempt ALTER (safe default, with duplicate-column guard still in place as backstop).
+
+**Commit:** `bf28a65a` — `fix: B35 migration uses table_info pre-check to prevent silent column-missing failure`
+**Tests:** 7 new tests in `TestMigrationColumnCheck` in `tests/test_schema.py`. Full suite: 658 passed, 6 skipped.
+**Files:** `mcp_engine/schema.py`, `tests/test_schema.py`
 
 ---
 
