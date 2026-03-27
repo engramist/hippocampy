@@ -584,7 +584,9 @@ Comprehensive install doc for OpenClaw standalone (not NemoClaw) with SideQuests
 
 ---
 
-### B41 · OpenClaw Integration: Ensure Brain Daemon Auto-Starts with Gateway Sessions
+### B41 · OpenClaw Integration: Ensure Brain Daemon Auto-Starts with Gateway Sessions — ✅ DONE (2026-03-27)
+**Commit:** `3afd5837`
+
 When OpenClaw gateway starts, the SideQuests memory plugin currently only pings the Brain Daemon and logs a warning if `http://127.0.0.1:7799` is unreachable. This is correct for health reporting, but it creates a poor first-run experience because memory tools silently fail until the daemon is started separately.
 
 **Preferred fix:** Treat the Brain Daemon as a managed background service, not something spawned by the plugin. On macOS this should use the existing `launchd` path (`RunAtLoad` + `KeepAlive`) so the daemon is already running before OpenClaw starts, survives gateway restarts, and auto-recovers from crashes.
@@ -598,7 +600,20 @@ When OpenClaw gateway starts, the SideQuests memory plugin currently only pings 
 - Plugin startup warning is updated to distinguish between "service not installed" and "daemon temporarily unreachable"
 - If plugin auto-launch fallback is added, it is explicitly opt-in and avoids spawning duplicate daemon instances
 
-**Files:** `sidequests/cli/install.py`, `sidequests/cli/setup.py`, `sidequests/cli/launchd.py`, `extensions/sidequests-brain/src/index.ts`, `docs/openclaw-install.md`
+**What was done:**
+- `sidequests install` already configures launchd (`RunAtLoad + KeepAlive`) via `sidequests/cli/launchd.py` — launchd path was already correct.
+- Added `isDaemonServiceInstalled()` to `extensions/sidequests-brain/src/index.ts` — checks plist presence (macOS) or systemd unit presence (Linux) at plugin startup.
+- Plugin `start()` now emits one of three states:
+  1. **Connected** — daemon reachable, silent success log
+  2. **Service not installed** — first-run diagnostic, points to `sidequests install`
+  3. **Service registered but unreachable** — transient failure, will auto-recover, points to `sidequests status`
+- Added opt-in `autoLaunch` config (disabled by default) — spawns daemon if service not installed and config is set.
+- Added 19-test suite `tests/test_b41_plugin_startup.py` covering all new paths.
+- Updated `docs/openclaw-install.md` troubleshooting section 2 with clear distinction.
+- Fixed orphaned `tests/test_mission_control_discord_adapter.py` (skipif guard, same pattern as other MC tests).
+- Full suite: **677 passed, 11 skipped, 0 failures**.
+
+**Files:** `extensions/sidequests-brain/src/index.ts`, `tests/test_b41_plugin_startup.py`, `docs/openclaw-install.md`, `tests/test_mission_control_discord_adapter.py`
 
 ---
 
