@@ -544,17 +544,20 @@ Add OpenClaw as a supported target in the installer. Should:
 
 ---
 
-### B26 · Document: OpenClaw Standalone Install Guide
-Comprehensive install doc for OpenClaw standalone (not NemoClaw) with SideQuests Brain integration. Covers:
-- OpenClaw install via npm
-- OrbStack/Docker setup for sandbox
-- Sandbox image build
-- Gateway config (security hardening)
-- Discord bot setup
-- Brain Daemon + plugin wiring
-- Troubleshooting
+### B26 · Document: OpenClaw Standalone Install Guide — ✅ DONE (2026-03-26)
+Comprehensive install doc for OpenClaw standalone (not NemoClaw) with SideQuests Brain integration.
 
-**Reference:** `~/Desktop/B-openclaw-standalone-install.md` (draft created 2026-03-21, needs updating with plugin steps)
+**What was added:**
+- New repo doc: `docs/openclaw-install.md`
+- Covers OpenClaw install via npm, Docker/OrbStack sandbox setup, Brain daemon startup, plugin install, gateway restart, verification, Discord notes, and troubleshooting
+- Updated from the original standalone draft to reflect the current SideQuests plugin wiring:
+  - plugin install path: `openclaw plugins install ./extensions/sidequests-brain`
+  - explicit plugin trust via `plugins.allow`
+  - critical tool surfacing fix via `tools.sandbox.tools.alsoAllow = ["group:plugins"]`
+  - current 7-tool memory surface (`memory_recall`, `memory_search`, `memory_get`, `memory_store`, `memory_search_analogies`, `memory_status`, `memory_open_loops`)
+  - Streamable HTTP daemon transport (`POST /mcp`)
+
+**Reference:** `~/Desktop/B-openclaw-standalone-install.md` (used as source draft, then updated to match live repo/plugin state)
 
 **Files:** `docs/openclaw-install.md`
 
