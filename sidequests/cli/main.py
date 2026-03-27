@@ -19,7 +19,7 @@ def cli() -> None:
     "--target",
     type=click.Choice(
         ["claude-code", "claude-desktop", "codex", "codex-desktop",
-         "chatgpt-desktop", "gemini-cli", "all"],
+         "chatgpt-desktop", "gemini-cli", "openclaw", "all"],
         case_sensitive=False,
     ),
     default="all",
