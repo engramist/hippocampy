@@ -516,15 +516,16 @@ OpenClaw warns on every startup that `plugins.allow` is empty and non-bundled pl
 
 ---
 
-### B24 · OpenClaw Extension: Missing `memory_search`, `memory_get` Core Tool Aliases
-The OpenClaw `coding` tools profile expects `memory_search` and `memory_get` (core memory tools from the default `memory-core` plugin). When sidequests-brain replaces `memory-core`, these are missing:
+### B24 · OpenClaw Extension: Missing `memory_search`, `memory_get` Core Tool Aliases — ✅ DONE (2026-03-26)
+The OpenClaw `coding` tools profile expects `memory_search` and `memory_get` (core memory tools from the default `memory-core` plugin). When sidequests-brain replaces `memory-core`, these were missing:
 ```
 tools.profile (coding) allowlist contains unknown entries (apply_patch, memory_search, memory_get)
 ```
 
-**Fix:** Either register `memory_search` and `memory_get` as aliases for `memory_recall` in the extension, or document that the `coding` profile warning is harmless.
+**Fix applied:** Registered `memory_search` and `memory_get` in the OpenClaw extension as direct aliases of `memory_recall` / `current_truth`, sharing the same parameter schema and execution path.
 
-**Files:** `extensions/sidequests-brain/src/index.ts`
+**Files:** `extensions/sidequests-brain/src/index.ts`, `tests/test_extension_aliases.py`
+**Validation:** `python3 -m pytest tests/test_extension_aliases.py tests/test_hippocampus.py -q`
 
 ---
 

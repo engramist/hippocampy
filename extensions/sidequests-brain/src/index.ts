@@ -135,40 +135,65 @@ export default {
     // 1. Register tools — core memory tools for explicit LLM use
     // -------------------------------------------------------------------
 
-    console.log("[SideQuests Brain] Registering 5 memory tools...");
+    console.log("[SideQuests Brain] Registering 7 memory tools...");
 
-    api.registerTool(
-      {
-        name: "memory_recall",
-        label: "Memory Recall (SideQuests)",
-        description:
-          "Search the Brain's knowledge graph for relevant decisions, constraints, and context. " +
-          "Call before answering questions about past choices or architecture.",
-        parameters: Type.Object({
-          query: Type.String({ description: "Natural language search query" }),
-          scope: Type.Optional(
-            Type.String({
-              description: "Search scope: branch (current quest), global, or both",
-              default: "both",
-            })
-          ),
-          limit: Type.Optional(
-            Type.Number({ description: "Max results to return", default: 10 })
-          ),
-        }),
-        async execute(_toolCallId: string, params: any) {
-          const result = await brain.callTool("current_truth", {
-            query: params.query,
-            session_id: sessionId,
-            scope: params.scope || "both",
-            limit: params.limit || 10,
-          });
-          return {
-            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-          };
+    const recallToolParams = Type.Object({
+      query: Type.String({ description: "Natural language search query" }),
+      scope: Type.Optional(
+        Type.String({
+          description: "Search scope: branch (current quest), global, or both",
+          default: "both",
+        })
+      ),
+      limit: Type.Optional(
+        Type.Number({ description: "Max results to return", default: 10 })
+      ),
+    });
+
+    const registerRecallTool = (
+      name: string,
+      label: string,
+      description: string,
+    ) => {
+      api.registerTool(
+        {
+          name,
+          label,
+          description,
+          parameters: recallToolParams,
+          async execute(_toolCallId: string, params: any) {
+            const result = await brain.callTool("current_truth", {
+              query: params.query,
+              session_id: sessionId,
+              scope: params.scope || "both",
+              limit: params.limit || 10,
+            });
+            return {
+              content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+            };
+          },
         },
-      },
-      { name: "memory_recall" }
+        { name }
+      );
+    };
+
+    registerRecallTool(
+      "memory_recall",
+      "Memory Recall (SideQuests)",
+      "Search the Brain's knowledge graph for relevant decisions, constraints, and context. " +
+        "Call before answering questions about past choices or architecture.",
+    );
+
+    registerRecallTool(
+      "memory_search",
+      "Memory Search (SideQuests)",
+      "Alias for memory_recall. Search the Brain's knowledge graph for relevant decisions, constraints, and context.",
+    );
+
+    registerRecallTool(
+      "memory_get",
+      "Memory Get (SideQuests)",
+      "Alias for memory_recall. Fetch relevant memory context from the Brain using a natural-language query.",
     );
 
     api.registerTool(
@@ -264,7 +289,7 @@ export default {
       { name: "memory_open_loops" }
     );
 
-    console.log("[SideQuests Brain] All 5 tools registered: memory_recall, memory_store, memory_search_analogies, memory_status, memory_open_loops");
+    console.log("[SideQuests Brain] All 7 tools registered: memory_recall, memory_search, memory_get, memory_store, memory_search_analogies, memory_status, memory_open_loops");
 
     // -------------------------------------------------------------------
     // 2. Passive ingestion — forward all LLM turns to the Brain
