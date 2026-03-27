@@ -246,6 +246,14 @@ New module: `mcp_engine/working_memory.py`. New tool: `context_status`. Schema c
 
 Architecture doc: `B17-B18-architecture.md`. Dependency: B17 (shared Session schema changes, `notify_turn` rewire).
 
+**Token efficiency angle (2026-03-27):** This is the real "Token Saver" — not NLP stop-word stripping (which destroys LLM reasoning), but *knowing what the LLM already knows*. The biggest context bloat comes from RAG injection re-sending the same decisions/constraints every turn. If the Brain tracks what's already loaded via `LOADED` edges, `current_truth` can return **only what's missing** instead of the full payload every time. This is where measurable token savings come from.
+
+**Modes of operation:**
+- **Default mode:** Demote already-loaded nodes (rank lower, still available if directly relevant)
+- **Aggressive mode ("Token Saver"):** Strictly exclude already-loaded nodes from `current_truth` results unless they score above a high similarity threshold (e.g., >0.95). For rate-limit-constrained sessions (OpenClaw power users hitting TPM caps), this can cut RAG injection size significantly.
+
+**Acceptance test (token savings):** Run a 50-turn OpenClaw session twice — once without working memory tracking, once with. Measure total `current_truth` response payload size across all turns. Target: 40%+ reduction in injected tokens by turn 30+ (when most relevant context has already been loaded).
+
 **Design constraint (from graph schema review, 2026-03-22):** Session is a supernode risk — it accumulates `SENT_IN` (every message), `LOADED` (every injected node), `WORKING_ON`, `USED`, `IN_WORKSPACE`, `REROUTED_FROM`. Implementation must include a session edge pruning strategy: archive stale `LOADED` edges aggressively, keep session-centric traversals narrow and task-specific, never use Session as a general-purpose hop for exploratory queries.
 
 IP claims: Context Window as Working Memory Model, Smart Deduplication via Load Tracking, Session Handoff Intelligence, Bloat Detection via Token Estimation.
@@ -355,16 +363,25 @@ Notes:
 
 ---
 
-### B19 · `sidequests uninstall` Command
-Reverse everything `sidequests install` does. Required before public release / beta testers.
+### B19 · `sidequests uninstall` Command — ✅ DONE (2026-03-27)
+**What was built:**
+- New CLI command: `sidequests uninstall [--yes] [--keep-data|--delete-data] [--remove-ollama-model] [--ollama-model MODEL]`
+- Confirmation prompt by default; `--yes` skips it for scripting.
+- Step 1: Stops Brain Daemon — unloads/removes launchd plist (macOS) or disables systemd service (Linux).
+- Step 2: Deregisters all AI client adapters:
+  - Claude Code: `claude mcp remove` + cleans `~/.claude.json` + removes `hook_user_turn.py` from `~/.claude/settings.json`
+  - Claude Desktop: removes entry from `claude_desktop_config.json`
+  - Codex / Codex Desktop: removes `[mcp_servers.sidequests]` block from TOML configs
+  - Gemini CLI: removes entry from `settings.json`
+  - OpenClaw: runs `openclaw plugins remove sidequests-brain`, reverses `plugins.allow` and sandbox tool patches, restarts gateway
+- Step 3: Optional data deletion — `--delete-data` removes `~/.sidequests/` entirely; default keeps data.
+- Step 4: Optional Ollama model removal — `--remove-ollama-model` removes the specified model.
+- Idempotent: safe to run when nothing is registered; every step gracefully skips if not present.
+- Final pass/fail report printed after all steps.
 
-**What it does:**
-- Remove `sidequests-brain` MCP entry from all detected client configs (Claude Desktop, Claude Code `.mcp.json`, etc.)
-- Unload and remove the launchd plist (`~/Library/LaunchAgents/ai.sidequests.brain.plist`)
-- Optionally delete the Kùzu database and `sidequests.toml` (prompt user, default: keep data)
-- Optionally remove Ollama model (`ollama rm qwen2.5:3b`) if no other tools use it
-
-**Priority:** Before public release, not before wife demo. Follow-up to B13.
+**Files:** `sidequests/cli/uninstall.py`, `sidequests/cli/main.py`, `tests/test_uninstall.py`
+**Validation:** `python3 -m pytest tests/test_uninstall.py tests/test_install.py tests/test_setup.py -q`
+→ 88 passed, 1 warning (spaCy/Pydantic on Python 3.14)
 
 ---
 
@@ -834,19 +851,62 @@ The `Concept → REIFIED_AS → Artifact` dual-layer design is intentional, but 
 
 ## P10 — Efficiency & Token Management
 
-### B44 · "Token Saver Mode" (Context Optimization)
-**Problem:** Users hit token rate limits (TPM/RPM) on frontier models (Opus, GPT-4o) due to massive context payloads sent by agents like OpenClaw. High-volume sessions with deep history and RAG injections can blow past quotas quickly.
+### B44 · Token Efficiency as a Side Effect (Not a Feature)
+**Problem:** Users hit token rate limits (TPM/RPM) on frontier models (Opus, GPT-4o) due to massive context payloads. The bloat comes from chat history + system prompt + RAG injection — not user prompts.
 
-**The "Trap":** NLP-based stop-word stripping (Caveman Speak). Stripping connective tissue ("is", "that", "not") destroys the attention mechanisms LLMs use for reasoning. It saves ~5% tokens at the cost of ~20% reasoning accuracy.
+**What NOT to do:** NLP stop-word stripping ("Caveman Speak"). Stripping connective tissue destroys attention mechanisms LLMs rely on for reasoning. Saves ~5% tokens, costs ~20% reasoning accuracy. Never build this.
 
-**The Solution (Real Token Saver Mode):**
-1. **Aggressive Smart Deduplication (B18):** Leverage the `LOADED` edge tracking in the Brain. In "Token Saver Mode," instruct `current_truth` to strictly **exclude** (not just demote) any fact already present in the last 10-20 messages.
-2. **Task-Based Model Routing (B17/B37):** Automatically route routine, low-reasoning background tasks (file searches, JSON formatting, heartbeats) to fast, free local models (e.g., Llama 3.1 via Ollama), preserving expensive frontier quotas for heavy cognitive lifting.
-3. **Asynchronous Context Compaction (B38):** When history exceeds a threshold (e.g., 50 messages), the Brain triggers a background local LLM to summarize the middle messages into a dense semantic summary, seamlessly swapping thousands of history tokens for a ~200-token anchor.
+**What NOT to own:** Context history compaction (summarizing old messages). That's the host client's job (OpenClaw, Claude Code, etc.). SideQuests is a memory system, not a context window proxy. Don't reach into another system's history.
 
-**Current Project Status:**
-- `mcp_engine/working_memory.py`: Already tracks every node injected into context via `LOADED` edges.
-- `plans/B37-token-budget.md`: Defines initial fallback and routing strategies.
+**What SideQuests DOES own — token savings that come for free from good memory:**
+1. **Smart Deduplication (B18):** `current_truth` returns only what's missing from the context window, not the full knowledge dump every turn. This is where the real savings are — RAG injection is the biggest controllable source of bloat.
+2. **Task-Based Model Routing (B16):** Route low-reasoning tasks to cheap/local models, preserve frontier quotas for hard problems.
+3. **Graceful Rate Limit Handoff (B37/B38):** When limits hit, flush context to Brain and resume on a different model without losing state.
+
+**Marketing note:** Don't brand "Token Saver Mode" as a standalone feature — it invites unfavorable benchmarking. Instead, token efficiency is a bullet point under B18 working memory. "SideQuests reduces redundant context injection by 40%+" is more defensible than "saves tokens."
+
+**Depends on:** B18 (working memory tracking), B16 (model routing), B37/B38 (rate limit handling)
+**Measurement:** See B45 (Token Efficiency Measurement & Visualization)
+
+---
+
+### B45 · Token Efficiency Measurement & Visualization
+**Problem:** We claim B18 (working memory) reduces redundant context injection, B16 (model routing) preserves frontier quotas, and B37/B38 (rate limit handoff) prevents data loss. But we have no way to prove it with numbers or show users the value.
+
+**What it does — three layers:**
+
+**Layer 1: Before/After Benchmark (Dev-facing, build first)**
+- Instrument `current_truth` to log: query, result count, total token estimate of response payload, how many results were excluded by dedup
+- Run a scripted 50-turn session against a known corpus twice:
+  - **Baseline:** `current_truth` with no `LOADED` tracking (returns everything relevant every time)
+  - **With B18:** `current_truth` with working memory dedup active
+- Output: CSV with per-turn token counts, cumulative totals, dedup hit rate
+- Target metric: 40%+ reduction in cumulative injected tokens by turn 30
+
+**Layer 2: Live Session Metrics (User-facing, `context_status` tool)**
+- Extend the existing `context_status` MCP tool to return:
+  - `tokens_injected_this_session` — total tokens sent via `current_truth` responses
+  - `tokens_saved_by_dedup` — tokens that would have been sent without working memory tracking
+  - `dedup_hit_rate` — % of candidate results excluded because already loaded
+  - `model_routing_savings` — count of tasks routed to local model instead of frontier (B16)
+- LLM can surface this naturally: "This session, the Brain saved ~4,200 tokens by not re-sending context you already have."
+
+**Layer 3: Mission Control Visualization (Dashboard, depends on M7)**
+- New panel in Memory Control Panel: "Token Efficiency"
+- **Per-session view:** Line chart showing tokens injected per turn (baseline projection vs actual with dedup)
+- **Cumulative view:** Running total of tokens saved across all sessions
+- **Model routing view:** Pie chart of tasks routed to frontier vs local models (B16)
+- **Rate limit events:** Timeline showing when rate limits were hit and how handoff preserved context (B37/B38)
+
+**Files to create/modify:**
+- `mcp_engine/tools.py` — instrument `current_truth` with token counting + dedup tracking
+- `mcp_engine/working_memory.py` — expose savings metrics
+- `tests/test_token_efficiency.py` — scripted benchmark harness (Layer 1)
+- `web/server.py` + `web/static/` — Token Efficiency panel (Layer 3)
+- `mission-control/` — integrate efficiency metrics into Mission Control dashboard
+
+**Depends on:** B18 (working memory tracking must exist to measure), B16 (model routing for routing metrics), B37/B38 (rate limit events for timeline)
+**Priority:** P5 — measurement. Build Layer 1 alongside B18 implementation. Layers 2-3 after B18 is proven.
 
 ---
 
