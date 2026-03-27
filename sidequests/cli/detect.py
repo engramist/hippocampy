@@ -2,7 +2,7 @@
 sidequests/cli/detect.py — Detect installed AI clients.
 
 Checks for Claude Code, Claude Desktop, Codex CLI, Codex Desktop,
-ChatGPT Desktop, and Gemini CLI
+ChatGPT Desktop, Gemini CLI, and OpenClaw
 using platform-appropriate detection methods (which/where for CLI tools,
 known app support directories for GUI apps).
 """
@@ -25,6 +25,7 @@ def detect_installed_clients() -> dict[str, bool]:
         "codex-desktop":    False,
         "chatgpt-desktop":  False,
         "gemini-cli":       False,
+        "openclaw":         False,
       }
 
     Detection methods:
@@ -38,6 +39,7 @@ def detect_installed_clients() -> dict[str, bool]:
       chatgpt-desktop: macOS: ~/Library/Application Support/com.openai.chat/ exists
                        Windows: %APPDATA%/ChatGPT/ exists
       gemini-cli:      `which gemini` succeeds
+      openclaw:        `which openclaw` succeeds
     """
     system = platform.system()
     home = Path.home()
@@ -49,12 +51,14 @@ def detect_installed_clients() -> dict[str, bool]:
         "codex-desktop":   False,
         "chatgpt-desktop": False,
         "gemini-cli":      False,
+        "openclaw":        False,
     }
 
     # CLI tools — check PATH
     clients["claude-code"] = shutil.which("claude") is not None
     clients["codex"]       = shutil.which("codex") is not None
     clients["gemini-cli"]  = shutil.which("gemini") is not None
+    clients["openclaw"]    = shutil.which("openclaw") is not None
 
     # GUI apps — check app support directories
     if system == "Darwin":
