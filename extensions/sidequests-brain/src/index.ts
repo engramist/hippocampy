@@ -9,6 +9,9 @@
  */
 
 import { Type } from "@sinclair/typebox";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 
 // ---------------------------------------------------------------------------
 // Brain Daemon MCP client
@@ -19,6 +22,41 @@ interface BrainConfig {
   autoCapture: boolean;
   autoRecall: boolean;
   sessionId?: string;
+  autoLaunch?: boolean;  // opt-in: attempt to start daemon if not running (default: false)
+}
+
+// ---------------------------------------------------------------------------
+// Service status helpers
+// ---------------------------------------------------------------------------
+
+/** Return true if the launchd plist for the Brain Daemon exists on disk. */
+function isLaunchdServiceInstalled(): boolean {
+  const plistPath = path.join(
+    os.homedir(),
+    "Library",
+    "LaunchAgents",
+    "ai.sidequests.brain.plist"
+  );
+  return fs.existsSync(plistPath);
+}
+
+/** Return true if a systemd user service unit file exists for the Brain Daemon. */
+function isSystemdServiceInstalled(): boolean {
+  const unitPath = path.join(
+    os.homedir(),
+    ".config",
+    "systemd",
+    "user",
+    "sidequests-brain.service"
+  );
+  return fs.existsSync(unitPath);
+}
+
+/** Return true if the Brain Daemon is registered as a persistent user service. */
+function isDaemonServiceInstalled(): boolean {
+  if (process.platform === "darwin") return isLaunchdServiceInstalled();
+  if (process.platform === "linux") return isSystemdServiceInstalled();
+  return false;
 }
 
 class BrainClient {
@@ -126,6 +164,11 @@ export default {
       autoCapture: api.pluginConfig?.autoCapture ?? true,
       autoRecall: api.pluginConfig?.autoRecall ?? true,
       sessionId: api.pluginConfig?.sessionId,
+      // autoLaunch is opt-in and disabled by default.
+      // Enable only if you want the plugin to attempt launching the daemon
+      // when it is unreachable. Warning: may produce duplicate daemon instances
+      // if the daemon is slow to start. Prefer the launchd/systemd service path.
+      autoLaunch: api.pluginConfig?.autoLaunch ?? false,
     };
 
     const brain = new BrainClient(cfg.brainUrl);
@@ -382,19 +425,82 @@ export default {
       id: "sidequests-brain",
       async start() {
         const alive = await brain.ping();
+
         if (alive) {
           console.log(
             `[SideQuests Brain] Connected to Brain Daemon at ${cfg.brainUrl} (Streamable HTTP)`
           );
-        } else {
+          return;
+        }
+
+        // Daemon not reachable — give a diagnostic-quality warning.
+        const serviceInstalled = isDaemonServiceInstalled();
+
+        if (!serviceInstalled) {
+          // Most actionable case: daemon was never configured as a service.
           console.warn(
-            `[SideQuests Brain] Brain Daemon not reachable at ${cfg.brainUrl}. ` +
-              `Memory tools will fail until the daemon is started.`
+            `[SideQuests Brain] Brain Daemon not running and no persistent service found. ` +
+              `Run \`sidequests install\` or \`sidequests setup\` to register the daemon as a ` +
+              `login-time background service (launchd on macOS, systemd on Linux). ` +
+              `Memory tools will be unavailable until the daemon is started.`
           );
+        } else {
+          // Service is installed — this is a transient failure (crash, slow start, etc.)
+          console.warn(
+            `[SideQuests Brain] Brain Daemon service is registered but not currently reachable ` +
+              `at ${cfg.brainUrl}. The service should restart automatically. ` +
+              `If it stays offline, run \`sidequests status\` to diagnose.`
+          );
+        }
+
+        // Opt-in auto-launch fallback — disabled by default to avoid duplicate daemon risk.
+        if (cfg.autoLaunch && !serviceInstalled) {
+          console.log(
+            `[SideQuests Brain] autoLaunch is enabled — attempting to start daemon...`
+          );
+          try {
+            const { spawn } = await import("child_process");
+            // Find sidequests-daemon in PATH or fall back to python -m sidequests
+            const { execSync } = await import("child_process");
+            let daemonCmd: string;
+            try {
+              daemonCmd = execSync("which sidequests-daemon", { encoding: "utf8" }).trim();
+            } catch {
+              daemonCmd = "";
+            }
+            if (daemonCmd) {
+              spawn(daemonCmd, [], {
+                detached: true,
+                stdio: "ignore",
+              }).unref();
+            } else {
+              spawn("python3", ["-m", "sidequests.daemon"], {
+                detached: true,
+                stdio: "ignore",
+              }).unref();
+            }
+            // Wait briefly then re-check
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+            const retryAlive = await brain.ping();
+            if (retryAlive) {
+              console.log(
+                `[SideQuests Brain] Auto-launch succeeded — daemon is now reachable.`
+              );
+            } else {
+              console.warn(
+                `[SideQuests Brain] Auto-launch attempted but daemon still not reachable. ` +
+                  `Check ~/.sidequests/daemon.log for errors.`
+              );
+            }
+          } catch (err: any) {
+            console.warn(
+              `[SideQuests Brain] Auto-launch failed: ${err?.message ?? err}`
+            );
+          }
         }
       },
       async stop() {
-        // Nothing to clean up — Brain Daemon manages its own lifecycle
+        // Nothing to clean up — Brain Daemon manages its own lifecycle via launchd/systemd.
       },
     });
   },

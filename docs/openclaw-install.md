@@ -374,16 +374,45 @@ Then restart the gateway.
 
 ### 2. Startup warns that Brain daemon is unreachable
 
-**Symptom:** plugin loads, but logs warn that the Brain daemon is not reachable at
+**Symptom:** plugin loads but logs warn that the Brain daemon is not reachable at
 `http://127.0.0.1:7799`.
 
-**Cause:** SideQuests Brain daemon is not running, crashed, or bound elsewhere.
+The plugin now distinguishes two cases:
 
-**Fixes:**
+**A. "No persistent service found"**
+```
+Brain Daemon not running and no persistent service found.
+Run `sidequests install` or `sidequests setup` to register the daemon...
+```
+This means `sidequests install` (or `sidequests setup`) was never run. The Brain Daemon
+is not configured to start at login. Fix:
+```bash
+sidequests install    # or: sidequests setup --target openclaw
+```
+This writes `~/Library/LaunchAgents/ai.sidequests.brain.plist` (macOS) or
+`~/.config/systemd/user/sidequests-brain.service` (Linux) and enables `RunAtLoad + KeepAlive`
+so the daemon starts at login and auto-restarts on crash.
 
-- start/restart the Brain daemon
-- verify with the `initialize` POST shown above
-- prefer managed service startup where available
+**B. "Service registered but not reachable"**
+```
+Brain Daemon service is registered but not currently reachable at http://127.0.0.1:7799.
+The service should restart automatically.
+```
+This means the plist/unit exists but the daemon is transiently down (crash, cold boot delay).
+It should recover automatically. If it stays offline:
+```bash
+sidequests status                           # check what's wrong
+launchctl start ai.sidequests.brain         # macOS: kick the service
+systemctl --user start sidequests-brain     # Linux: kick the service
+cat ~/.sidequests/daemon.log                # check daemon logs
+```
+
+**Opt-in auto-launch (advanced):** You can configure the plugin to attempt launching the daemon
+itself when it detects no service is installed. Add to your OpenClaw plugin config:
+```json
+{ "brainUrl": "http://127.0.0.1:7799", "autoLaunch": true }
+```
+This is disabled by default to avoid duplicate daemon instances. Prefer the managed service path.
 
 ---
 
@@ -427,8 +456,13 @@ this repo's current source state.
 - The plugin supports:
   - passive ingestion from `llm_input` and `llm_output`
   - pre-run recall injection via `before_agent_start`
-- The plugin does **not** manage the Brain daemon lifecycle by default; it only warns if the
-  daemon is down.
+- The plugin does **not** manage the Brain daemon lifecycle by default. It warns on startup
+  with a diagnostic message that distinguishes "service not installed" from "service temporarily
+  unreachable". The recommended setup (`sidequests install`) configures a persistent user service
+  (launchd on macOS, systemd on Linux) with `RunAtLoad + KeepAlive` so the daemon is available
+  before OpenClaw starts and auto-recovers from crashes.
+- Opt-in `autoLaunch` config is available for power users, but the managed service path is
+  strongly preferred.
 
 ---
 
@@ -436,8 +470,10 @@ this repo's current source state.
 
 After this guide is working manually:
 
-1. Implement `sidequests setup --target openclaw` (B25) so these steps become automated.
-2. Ensure the Brain daemon is installed as a persistent service for OpenClaw users (B41).
+1. ~~Implement `sidequests setup --target openclaw` (B25)~~ ✅ Done.
+2. ~~Ensure the Brain daemon is installed as a persistent service for OpenClaw users (B41)~~ ✅ Done.
+   - `sidequests install` now configures launchd (macOS) / systemd (Linux) with RunAtLoad + KeepAlive.
+   - Plugin startup warning now distinguishes "service not installed" vs "service temporarily unreachable".
 3. Keep this guide updated if OpenClaw CLI subcommands or plugin policy semantics change.
 
 ---
