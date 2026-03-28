@@ -144,6 +144,92 @@ function generateSessionId(): string {
 }
 
 // ---------------------------------------------------------------------------
+// OpenClaw Passive Ingestion Contract
+// ---------------------------------------------------------------------------
+
+/**
+ * OPENCLAW_EVENT_CONTRACT
+ * Validated against OpenClaw core event system.
+ *
+ * userTurnEvent: Fired when user input is received. Expected payload: { prompt: string }
+ * assistantTurnEvent: Fired when LLM output is generated. Expected payload: { assistantTexts: string[] }
+ * preAgentEvent: Fired before an agent session starts. Expected payload: { prompt: string }
+ *
+ * Fallback: If payload fields are missing or empty, the hook skips processing
+ * and logs a diagnostic warning.
+ */
+const OPENCLAW_EVENT_CONTRACT = {
+  userTurnEvent: "llm_input",
+  assistantTurnEvent: "llm_output",
+  preAgentEvent: "before_agent_start",
+  userPromptFields: ["prompt"],
+  assistantTextFields: ["assistantTexts"],
+} as const;
+
+/**
+ * Diagnostic helper: Summarize top-level keys and types of an event payload.
+ */
+function summarizeEventShape(event: any): string {
+  if (!event || typeof event !== "object") return String(event);
+  const keys = Object.keys(event);
+  const summary = keys
+    .map((k) => {
+      const val = event[k];
+      const type = Array.isArray(val) ? "array" : typeof val;
+      return `${k}:${type}`;
+    })
+    .join(", ");
+  return `{ ${summary} }`;
+}
+
+/**
+ * Normalize user prompt payload from llm_input or before_agent_start.
+ */
+function normalizePromptPayload(event: any): string | null {
+  const prompt = event?.prompt;
+  if (prompt === undefined || prompt === null) return null;
+
+  let normalized: string;
+  if (typeof prompt === "string") {
+    normalized = prompt;
+  } else {
+    try {
+      normalized = JSON.stringify(prompt);
+    } catch {
+      normalized = String(prompt);
+    }
+  }
+
+  return normalized.trim().length > 0 ? normalized : null;
+}
+
+/**
+ * Normalize assistant output payload from llm_output.
+ */
+function normalizeAssistantPayload(event: any): string | null {
+  const texts = event?.assistantTexts;
+  if (texts === undefined || texts === null) return null;
+
+  let normalized: string;
+  if (Array.isArray(texts)) {
+    normalized = texts
+      .map((t) => (typeof t === "string" ? t : JSON.stringify(t)))
+      .filter((t) => t.trim().length > 0)
+      .join("\n");
+  } else if (typeof texts === "string") {
+    normalized = texts;
+  } else {
+    try {
+      normalized = JSON.stringify(texts);
+    } catch {
+      normalized = String(texts);
+    }
+  }
+
+  return normalized.trim().length > 0 ? normalized : null;
+}
+
+// ---------------------------------------------------------------------------
 // Plugin entry point
 // ---------------------------------------------------------------------------
 
@@ -339,40 +425,57 @@ export default {
     // -------------------------------------------------------------------
 
     if (cfg.autoCapture) {
+      console.log(
+        `[SideQuests Brain] Registering passive capture: ${OPENCLAW_EVENT_CONTRACT.userTurnEvent} (user), ${OPENCLAW_EVENT_CONTRACT.assistantTurnEvent} (assistant)`
+      );
+
       // Capture user turns
-      api.on("llm_input", async (event: any) => {
+      api.on(OPENCLAW_EVENT_CONTRACT.userTurnEvent, async (event: any) => {
         try {
-          // event.prompt contains the user's message
-          if (event.prompt) {
+          const content = normalizePromptPayload(event);
+          if (content) {
+            console.log(
+              `[SideQuests Brain] Event ${OPENCLAW_EVENT_CONTRACT.userTurnEvent} fired (${summarizeEventShape(event)})`
+            );
             await brain.callTool("notify_turn", {
               role: "user",
-              content:
-                typeof event.prompt === "string"
-                  ? event.prompt
-                  : JSON.stringify(event.prompt),
+              content,
               session_id: sessionId,
             });
+          } else {
+            console.warn(
+              `[SideQuests Brain] Event ${OPENCLAW_EVENT_CONTRACT.userTurnEvent} produced no usable content (${summarizeEventShape(event)})`
+            );
           }
-        } catch {
-          // Non-critical — don't break the agent over ingestion failure
+        } catch (err: any) {
+          console.warn(
+            `[SideQuests Brain] Event ${OPENCLAW_EVENT_CONTRACT.userTurnEvent} failed: ${err?.message ?? err}`
+          );
         }
       });
 
       // Capture assistant turns
-      api.on("llm_output", async (event: any) => {
+      api.on(OPENCLAW_EVENT_CONTRACT.assistantTurnEvent, async (event: any) => {
         try {
-          // event.assistantTexts contains the LLM's response(s)
-          const texts = event.assistantTexts;
-          if (texts && texts.length > 0) {
-            const content = texts.join("\n");
+          const content = normalizeAssistantPayload(event);
+          if (content) {
+            console.log(
+              `[SideQuests Brain] Event ${OPENCLAW_EVENT_CONTRACT.assistantTurnEvent} fired (${summarizeEventShape(event)})`
+            );
             await brain.callTool("notify_turn", {
               role: "assistant",
               content,
               session_id: sessionId,
             });
+          } else {
+            console.warn(
+              `[SideQuests Brain] Event ${OPENCLAW_EVENT_CONTRACT.assistantTurnEvent} produced no usable content (${summarizeEventShape(event)})`
+            );
           }
-        } catch {
-          // Non-critical
+        } catch (err: any) {
+          console.warn(
+            `[SideQuests Brain] Event ${OPENCLAW_EVENT_CONTRACT.assistantTurnEvent} failed: ${err?.message ?? err}`
+          );
         }
       });
     }
@@ -382,14 +485,26 @@ export default {
     // -------------------------------------------------------------------
 
     if (cfg.autoRecall) {
-      api.on("before_agent_start", async (event: any) => {
-        try {
-          const query =
-            typeof event.prompt === "string"
-              ? event.prompt
-              : JSON.stringify(event.prompt);
+      console.log(
+        `[SideQuests Brain] Registering auto-recall: ${OPENCLAW_EVENT_CONTRACT.preAgentEvent}`
+      );
 
-          if (!query || query.length < 5) return {};
+      api.on(OPENCLAW_EVENT_CONTRACT.preAgentEvent, async (event: any) => {
+        try {
+          const query = normalizePromptPayload(event);
+
+          if (!query || query.length < 5) {
+            if (!query) {
+              console.warn(
+                `[SideQuests Brain] Event ${OPENCLAW_EVENT_CONTRACT.preAgentEvent} produced no usable content (${summarizeEventShape(event)})`
+              );
+            }
+            return {};
+          }
+
+          console.log(
+            `[SideQuests Brain] Event ${OPENCLAW_EVENT_CONTRACT.preAgentEvent} fired (${summarizeEventShape(event)})`
+          );
 
           const result: any = await brain.callTool("current_truth", {
             query,
@@ -410,8 +525,10 @@ export default {
               prependContext: `<sidequests-memory>\n${context}\n</sidequests-memory>`,
             };
           }
-        } catch {
-          // Non-critical — agent proceeds without memory injection
+        } catch (err: any) {
+          console.warn(
+            `[SideQuests Brain] Event ${OPENCLAW_EVENT_CONTRACT.preAgentEvent} failed: ${err?.message ?? err}`
+          );
         }
         return {};
       });
