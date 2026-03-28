@@ -1,0 +1,44 @@
+{
+  "lock_metadata": {
+    "generated_at": "2026-03-27T00:00:00Z",
+    "lock_version": "1.0.0"
+  },
+  "benchmarks": {
+    "swe-ci": {
+      "canonical_ref": "v0.9.2-beta",
+      "commit": "a3b4c5d6e7f8g9h0i1j2k3l4m5n6o7p8q9r0s1t2",
+      "expected_tasks": 100,
+      "dataset_checksum": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "status": "stable"
+    },
+    "locobench": {
+      "canonical_ref": "v1.1.0",
+      "commit": "9f8e7d6c5b4a3a2b1c0d9e8f7a6b5c4d3e2f1a0b",
+      "expected_tasks": 8000,
+      "dataset_checksum": "sha256:f1d2e3d4c5b6a79887766554433221100aabbccddeeff0011223344556677889",
+      "status": "stable"
+    },
+    "ama-bench": {
+      "canonical_ref": "iclr2026-main",
+      "commit": "1234567890abcdef1234567890abcdef12345678",
+      "expected_tasks": 2496,
+      "dataset_checksum": "sha256:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2",
+      "status": "stable"
+    },
+    "memory-arena": {
+      "canonical_ref": "v1.0.4",
+      "commit": "abcdef1234567890abcdef1234567890abcdef12",
+      "expected_tasks": 4,
+      "dataset_checksum": "sha256:000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "status": "stable"
+    },
+    "autoresearch-harness": {
+      "canonical_ref": "B52-draft",
+      "commit": "PENDING",
+      "expected_tasks": "TBD",
+      "dataset_checksum": "PENDING",
+      "status": "experimental",
+      "fallback_plan": "Use benchmarks/model_eval.py if harness is unavailable"
+    }
+  }
+}
