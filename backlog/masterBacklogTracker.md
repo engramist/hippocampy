@@ -39,7 +39,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B31 | Improvement: Recall Ranking Needs Recency Factor — ✅ DONE (2026-03-28) | P8 | complete | TBD | TBD | - | backlog/B31.md |
 | B32 | Bug: Zero Edges in Knowledge Graph — ✅ FIXED (2026-03-22) | P8 | complete | TBD | TBD | - | backlog/B32.md |
 | B33 | Bug: Duplicate Concept Nodes — ✅ FIXED (2026-03-22) | P8 | complete | TBD | TBD | - | backlog/B33.md |
-| B34 | Bug: Junk Entities Still Leaking | P8 | ready | TBD | TBD | - | backlog/B34.md |
+| B34 | Bug: Junk Entities Still Leaking — ✅ DONE (2026-03-28) | P8 | complete | TBD | TBD | - | backlog/B34.md |
 | B35 | Bug: `set_quest` Fails with Kuzu Schema Error — ✅ FIXED (2026-03-27) | P8 | complete | TBD | TBD | - | backlog/B35.md |
 | B36 | Audit All Adapters/Plugins for Streamable HTTP Transport | P8 | complete | TBD | TBD | - | backlog/B36.md |
 | B62 | Triage and Execute B-memory Improvements Report | P8 | complete | TBD | TBD | - | backlog/B62.md |
@@ -69,8 +69,8 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 ## Summary
 
 - Total cards: 61
-- Ready: 38
+- Ready: 37
 - Needs work: 0
-- Complete: 22
+- Complete: 23
 - In progress: 0
 - Blocked: 1
