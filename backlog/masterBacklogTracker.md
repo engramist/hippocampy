@@ -46,7 +46,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B63 | Consolidation Loop for Non-Git Sessions | P8 | ready | TBD | TBD | - | backlog/B63.md |
 | B64 | Bug: Message Count Shows 0 in Stats | P8 | ready | TBD | TBD | - | backlog/B64.md |
 | B65 | Register Missing Tools in OpenClaw Extension | P8 | ready | TBD | TBD | - | backlog/B65.md |
-| B42 | Document Concept→Artifact Retrieval Contract | P9 | ready | TBD | TBD | backlog/plans/B42-p0-bringup-hardening.md | backlog/B42.md |
+| B42 | Document Concept→Artifact Retrieval Contract — ✅ DONE (2026-03-28) | P9 | complete | TBD | TBD | backlog/plans/B42-p0-bringup-hardening.md | backlog/B42.md |
 | B43 | Extend `ESTABLISHED_IN` Provenance to Requirement and ActionItem — ✅ DONE (2026-03-22) | P9 | complete | TBD | TBD | - | backlog/B43.md |
 | B44 | Token Efficiency as a Side Effect (Not a Feature) | P10 | ready | TBD | TBD | - | backlog/B44.md |
 | B45 | Token Efficiency Measurement & Visualization | P10 | ready | TBD | TBD | - | backlog/B45.md |
@@ -69,8 +69,8 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 ## Summary
 
 - Total cards: 61
-- Ready: 37
+- Ready: 36
 - Needs work: 0
-- Complete: 23
+- Complete: 24
 - In progress: 0
 - Blocked: 1
