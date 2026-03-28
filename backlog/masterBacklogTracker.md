@@ -36,7 +36,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B61 | OpenClaw Extension: Tools Not Surfaced to Agent Without Manual Config | P7 | ready | TBD | TBD | - | backlog/B61.md |
 | B29 | TEST CASE: Cross-Session Context Awareness — ✅ DONE (2026-03-28) | P8 | complete | TBD | TBD | - | backlog/B29.md |
 | B30 | Agent System Prompt: "Check the Brain First" — ✅ DONE (2026-03-22) | P8 | complete | TBD | TBD | - | backlog/B30.md |
-| B31 | Improvement: Recall Ranking Needs Recency Factor | P8 | ready | TBD | TBD | - | backlog/B31.md |
+| B31 | Improvement: Recall Ranking Needs Recency Factor — ✅ DONE (2026-03-28) | P8 | complete | TBD | TBD | - | backlog/B31.md |
 | B32 | Bug: Zero Edges in Knowledge Graph — ✅ FIXED (2026-03-22) | P8 | complete | TBD | TBD | - | backlog/B32.md |
 | B33 | Bug: Duplicate Concept Nodes — ✅ FIXED (2026-03-22) | P8 | complete | TBD | TBD | - | backlog/B33.md |
 | B34 | Bug: Junk Entities Still Leaking | P8 | ready | TBD | TBD | - | backlog/B34.md |
@@ -69,8 +69,8 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 ## Summary
 
 - Total cards: 61
-- Ready: 39
+- Ready: 38
 - Needs work: 0
-- Complete: 21
+- Complete: 22
 - In progress: 0
 - Blocked: 1
