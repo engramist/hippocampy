@@ -23,11 +23,23 @@ def load_config(config_path: str | Path | None = None) -> dict:
     else:
         import tomli as tomllib
 
-    search_paths = []
+    # If an explicit path is given, use it strictly — no fallback.
     if config_path:
-        search_paths.append(Path(config_path))
-    search_paths.append(Path.cwd() / "sidequests.toml")
-    search_paths.append(Path.home() / ".sidequests" / "config.toml")
+        explicit = Path(config_path)
+        if not explicit.exists():
+            raise FileNotFoundError(
+                f"sidequests.toml not found at {explicit}. Run: sidequests setup"
+            )
+        with open(explicit, "rb") as f:
+            config = tomllib.load(f)
+        config["_config_path"] = str(explicit)
+        return config
+
+    # No explicit path — search default locations.
+    search_paths = [
+        Path.cwd() / "sidequests.toml",
+        Path.home() / ".sidequests" / "config.toml",
+    ]
 
     for path in search_paths:
         if path.exists():

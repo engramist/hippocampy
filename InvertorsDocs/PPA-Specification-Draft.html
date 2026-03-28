@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>System and Method for Persistent AI Assistant Memory Using a Gated Consolidation Loop and Graph-Native Knowledge Representation Provisional Specification Draft</title>
+  <style>
+    body {
+      font-family: "Times New Roman", serif;
+      font-size: 12pt;
+      line-height: 1.35;
+      margin: 1in;
+    }
+    h1, h2, h3 {
+      font-weight: bold;
+      margin-top: 18pt;
+      margin-bottom: 8pt;
+    }
+    h1 {
+      font-size: 16pt;
+      text-align: center;
+      text-transform: uppercase;
+    }
+    h2 {
+      font-size: 13pt;
+      text-transform: uppercase;
+    }
+    h3 {
+      font-size: 12pt;
+    }
+    p, li {
+      text-align: justify;
+      margin-top: 0;
+      margin-bottom: 8pt;
+    }
+    ul, ol {
+      margin-top: 0;
+      margin-bottom: 10pt;
+    }
+    .center {
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>System and Method for Persistent AI Assistant Memory Using a Gated Consolidation Loop and Graph-Native Knowledge Representation</h1>
+
+  <p class="center"><strong>Inventor:</strong> Don J. Shelton</p>
+
+  <h2>Field of the Invention</h2>
+  <p>The present invention relates to computer-implemented memory systems for artificial-intelligence assistants and, more particularly, to persistent long-horizon memory architectures that selectively consolidate, structure, revise, and retrieve project knowledge across multiple sessions, tools, and devices.</p>
+
+  <h2>Cross-Reference to Related Applications</h2>
+  <p>No related non-provisional, provisional, continuation, divisional, or foreign priority application is presently claimed in this draft.</p>
+
+  <h2>Background of the Invention</h2>
+  <p>Artificial-intelligence assistants are increasingly used for tasks that extend over many sessions and require continuity of decisions, constraints, plans, and technical context. Conventional large language model systems primarily rely on transient context windows, vector-only retrieval, or passive note accumulation. These approaches degrade as project state becomes more interdependent because they do not provide a reliable mechanism for selective admission of new information, contradiction handling, structural lineage, and temporal revision.</p>
+  <p>In practical use, these limitations create context bloat, repeated failed experimentation, weak contradiction handling, and poor continuity across sessions. Benchmark and evaluation work in the long-horizon reasoning space further reflects this broader technical problem, but such references are cited here only as evidence of the existence of the engineering problem and not as admissions that they disclose the specific architecture or ordered consolidation method described herein.</p>
+  <p>Accordingly, a need exists for a memory system that operates as an active computational process rather than as a passive storage cache, and that can preserve temporal truth, auditability, and adaptive retrieval quality over time.</p>
+
+  <h2>Summary of the Invention</h2>
+  <p>The disclosed invention provides a computer-implemented system for maintaining long-horizon memory and context for artificial-intelligence assistants operating across extended projects. Incoming user and assistant turns are captured through adapter infrastructure and processed through a graph-native memory architecture centered on a Gated Consolidation Loop. In representative embodiments, the loop performs concept extraction, relation extraction, dual-process classification, ontology-aware routing, confidence-gated admission, retrieval against existing graph state, contradiction arbitration, and pathway updating.</p>
+  <p>In preferred embodiments, memory is stored in a relational knowledge graph backed by vector search so that semantic retrieval and constrained structural traversal cooperate. Contradictory information is handled through temporal lineage rather than destructive overwrite, thereby preserving prior state under explicit deprecation history while allowing newer state to become active truth. Use-based strengthening and inactivity-based weakening cause memory pathways to evolve according to observed access patterns.</p>
+  <p>The invention further provides selective attention channels that determine whether inbound content should be ignored as noise, retained as tentative evidence, or promoted into confirmed structural memory. Additional embodiments include quest-based routing using a dual-process hippocampus router for maintaining continuity across primary and secondary lines of work, and working-memory awareness that maintains a shadow representation of each session's context window in the graph store so redundant reinjection can be suppressed while critical refreshers remain possible.</p>
+  <p>Further embodiments include cross-quest analogical reasoning that surfaces relevant patterns from completed quests during work on a different quest, proactive insight surfacing that returns consolidation loop activity summaries to the assistant, and a Shape-First Principle that governs the ordering of ontological classification before semantic processing throughout the pipeline.</p>
+  <p>These mechanisms together provide a concrete technical improvement in AI memory systems by combining selective admission, graph-native storage, temporal truth handling, dual-process quest routing, working-memory state tracking, cross-quest analogical reasoning, and proactive insight surfacing into a persistent, auditable, and adaptive long-horizon memory system.</p>
+
+  <h2>Definitions and Terminology</h2>
+  <p>As used herein, a "quest" refers to a long-horizon unit of work represented in persistent memory, which may include a main quest and one or more side quests. A "pathway" refers to a stored memory relationship whose relative strength may increase through access and decrease through inactivity. "Temporal truth" refers to preservation of prior state when later information revises, supersedes, or contradicts earlier information.</p>
+  <p>As further used herein, "working-memory awareness" refers to the system's ability to maintain a shadow representation of each active assistant session's context window in the graph store, tracking which artifacts have been injected, estimating token burden, and enabling smart deduplication and bloat detection. "Selective attention" refers to confidence-gated admission of candidate memory based on signals derived from incoming content, rather than indiscriminate storage of all observations.</p>
+  <p>As further used herein, the "Shape-First Principle" refers to classification of ontological type before performing semantic work that depends on that type. The "Hippocampus Router" refers to a dual-process quest-binding mechanism modeled on the biological hippocampus. "Long-Term Depression" refers to weakening of false associations upon detection of prediction error. "Cross-Quest Analogical Reasoning" refers to surfacing relevant patterns from completed quests during work on a different quest. "Proactive Insight Surfacing" refers to returning consolidation loop activity summaries to the assistant after passive ingestion.</p>
+
+  <h2>Brief Description of the Drawings</h2>
+  <p>FIG. 1 is a system-level architecture view showing per-client adapters, two separate message-capture paths, a local Brain Daemon, graph/vector persistence, and a user-facing memory control panel.</p>
+  <p>FIG. 2 is a flowchart of the 9-step Gated Consolidation Loop, including concept extraction, dual-process classification, sub-graph routing, relation extraction, confidence gating, retrieval, arbitration, and pathway update with auditable lineage.</p>
+  <p>FIG. 3 is a selective-attention confidence-gating diagram showing Cocktail Party cognitive senses firing on inbound content and routing the result into noise, tentative, and confirmed memory paths.</p>
+  <p>FIG. 4 is a temporal-truth lineage diagram showing additive pathway strengthening, contradiction handling under DEPRECATED_BY lineage, and deterministic rollback through MergeEvent audit records.</p>
+  <p>FIG. 5 is a working-memory state diagram showing Session-to-Artifact LOADED tracking, token burden estimation, smart deduplication, refresher reinjection, and Session Handoff Intelligence.</p>
+  <p>FIG. 6 is a semantic quest-routing flow showing multi-signal routing fusion, LLM escalation on ambiguity, and prediction-error-driven reconsolidation using Long-Term Depression.</p>
+  <p>FIG. 7 is a synaptic pruning and Hebbian learning diagram showing use-based strengthening, time-decay pruning, archive and resurrection behavior, and promotion of implicit CO_OCCURS_WITH edges to named semantic relationships.</p>
+
+  <h2>Detailed Description of the Invention</h2>
+
+  <h3>System Overview</h3>
+  <p>SideQuests Brain is a software system for structuring user-assistant interactions into a persistent and auditable relational memory graph. Rather than relying on a single context window or passive retrieval store, the system uses a biomimetic heuristic engine implemented as a Gated Consolidation Loop to transform conversation streams and documents into a dynamic graph of concepts, decisions, constraints, requirements, action items, and related artifacts.</p>
+  <p>Referring generally to FIG. 1, one embodiment includes client adapters, a local daemon process, persistent graph and vector storage, and a control interface through which memory state may be inspected and managed. The daemon may receive inbound content from multiple client types while remaining logically separate from the assistant's transient context window.</p>
+
+  <h3>Decoupled Architecture</h3>
+  <p>In one embodiment, the system includes client adapters, a local Brain Daemon, a graph and vector persistence layer, and a user-facing memory control panel. The adapters passively intercept user and assistant turns. The Brain Daemon applies memory admission and update logic. The persistence layer stores raw text together with vector embeddings and graph relationships so both human-readable audit and mathematical retrieval are supported.</p>
+  <p>The persistence layer may be implemented using a property graph with fixed-dimension embeddings. Each artifact may store text, embedding values, confidence values, pathway strength, and temporal metadata. A control interface may permit users to inspect, promote, demote, or otherwise manage stored memory state.</p>
+  <p>Because the daemon is decoupled from any one front-end assistant, the same persistent graph can be shared across multiple assistants, devices, or sessions without requiring manual synchronization of context between those assistants.</p>
+
+  <h3>Division of Labor Between Short-Term and Long-Term Memory</h3>
+  <p>The system preferably separates short-term working memory from long-term structural memory. The actual sliding conversation window remains with the external assistant client, but the Brain Daemon maintains a shadow representation of each session's working memory in the graph store by tracking which artifacts have been injected into the active context window, along with token burden estimates and load timestamps. Long-term structural memory is maintained by the Brain Daemon in the graph store and is injected only when needed.</p>
+  <p>In one implementation, a LOADED relationship is written from a Session node to an artifact node each time the artifact is provided to the assistant. The Session node further stores a running token burden estimate, a token limit derived from the language model's context window size, a count of currently loaded nodes, and a timestamp of the most recent injection event. This enables the system to detect context bloat, where the estimated token burden exceeds a configurable fraction of the available context window, and to signal the assistant accordingly.</p>
+  <p>To reduce redundant context injection, retrieval results for already-loaded artifacts may be demoted rather than excluded. In a preferred embodiment, the retrieval score of an already-loaded artifact is multiplied by a demotion factor so that the artifact still surfaces if semantically critical but ranks lower than novel results. This preserves the ability to refresh decayed context while suppressing prompt bloat.</p>
+  <p>As illustrated in FIG. 5, the system may further transfer previously loaded high-salience artifacts into a new session associated with the same quest, thereby preserving continuity across device switches or new conversation threads while continuing to suppress redundant context. Session handoff intelligence determines which artifacts from a prior session should be pre-loaded into a successor session based on pathway strength, recency, and quest relevance.</p>
+
+  <h3>Gated Consolidation Loop</h3>
+  <p>The primary memory-write flow is implemented as an ordered multi-step consolidation loop. Raw conversational turns or document extracts are processed together with current graph state to produce updated graph artifacts, a ranked current-truth view, and a reversible audit trail.</p>
+  <p>In a preferred embodiment corresponding to FIG. 2, the loop comprises the following ordered steps, where certain steps are split into fast and semantic sub-steps that execute at different points in the pipeline:</p>
+  <ol>
+    <li><strong>Step 1 — Concept extraction:</strong> Identifies entities, objects, actions, and related concepts from input text using natural language processing without requiring a language model call.</li>
+    <li><strong>Step 1b — Fast relation extraction:</strong> Identifies explicit syntactic relations using universal verb pattern matching against dependency parse output. This sub-step runs immediately after concept extraction and before ontological classification, extracting relations where syntax alone provides sufficient signal regardless of domain. Relations identified at this stage include requirement, enablement, replacement, contradiction, and containment.</li>
+    <li><strong>Step 2 — Dual-process classification:</strong> Maps each concept into a foundational upper ontology (such as gist, which provides domain-agnostic categories including restrictions, planned events, physical things, magnitudes, categories, agents, and events) using a hybrid approach modeled on dual-process cognitive theory. A fast path computes embedding similarity against pre-computed class centroids and accepts classifications above a high-confidence threshold. An intermediate-confidence range escalates to a language model for disambiguation. Classifications below a low threshold are treated as noise and receive only vector logging. Centroids are initialized from a corpus of seed examples and updated as disambiguation resolutions accumulate.</li>
+    <li><strong>Step 3 — Ontology-aware sub-graph routing:</strong> Uses the foundational classification to route each concept to a domain-specific property vocabulary, narrowing the semantic search space for subsequent steps. In a preferred embodiment, a foundational upper ontology such as gist (Semantic Arts) provides coarse classification, which routes through graph edges to a domain-level vocabulary such as schema.org that supplies the relevant property subset for each class. For example, a concept classified as a restriction may route to demand-related properties, while a concept classified as a planned event may route to action-related properties. The routing table is stored as graph edges rather than application code, making it queryable, auditable, and extensible without code changes.</li>
+    <li><strong>Step 3b — Semantic relation extraction:</strong> Runs after ontological routing so that each entity's foundational class and domain type are available as context. A language model extracts relations that require type awareness or situational context and that could not be resolved by the fast syntactic path in Step 1b. Relations identified at this stage include selection preference, implementation, extension, and alternative equivalence.</li>
+    <li><strong>Step 4 — Selective attention and confidence gating:</strong> Determines whether input is treated as noise, tentative evidence, or confirmed structural memory using multiple attention channels.</li>
+    <li><strong>Step 5 — Candidate retrieval:</strong> Compares new content against existing branch-level and global graph state using dual-scope vector and structural search.</li>
+    <li><strong>Step 6 — Contradiction arbitration:</strong> Determines whether candidate information is additive, contradictory, or uncertain. Only activates in a defined similarity gray zone or when artifact types match.</li>
+    <li><strong>Step 7 — Pathway update:</strong> Strengthens or revises existing memory state and may preserve prior state through explicit deprecation lineage. After completion, writes or increments implicit co-occurrence edges between concept pairs from the same message that cleared the noise floor.</li>
+  </ol>
+  <p>The ordering of fast relation extraction (Step 1b) before ontological classification (Steps 2–3) and semantic relation extraction (Step 3b) after ontological routing embodies a principle referred to herein as the Shape-First Principle: classify the ontological type of an entity before performing semantic work that depends on that type. This principle is applied at two levels within the pipeline — first when routing concepts through foundational and domain ontologies before pattern matching, and second when injecting type context into the language model prompt for semantic relation extraction.</p>
+  <p>Background pruning and rescoring operate as a separate sweep process that adjusts memory state over time according to use and inactivity, rather than as a synchronous step within the consolidation loop.</p>
+
+  <h3>Selective Attention</h3>
+  <p>The system may implement multiple attention channels, including decision signals, constraint signals, plan signals, entity signals, contradiction signals, and anomaly signals. These channels drive a confidence gate that determines whether inbound content should be ignored, stored tentatively, or promoted into structural memory. This preserves low-noise memory formation while retaining evidence that may later be rescored.</p>
+  <p>As shown in FIG. 3, these channels may operate concurrently, and one or more channels may contribute to a unified confidence score. Content below a threshold may be logged only as weak evidence; content within an intermediate range may be retained as tentative memory; and content above a higher threshold may be written as confirmed structural memory.</p>
+
+  <h3>Temporal Truth and Auditability</h3>
+  <p>When contradictory information is detected, the system need not overwrite prior state destructively. Instead, prior state may be preserved and linked to newer state through explicit temporal lineage such as a deprecation relationship. Merge or revision events may be represented as first-class audit records such that rollback is deterministic and the history of truth changes remains inspectable.</p>
+  <p>FIG. 4 illustrates an example in which additive evidence strengthens an existing artifact pathway, contradictory evidence creates a new artifact linked by deprecation lineage, and uncertain evidence is retained in a lower-confidence state pending later arbitration or user review.</p>
+
+  <h3>Quest Routing</h3>
+  <p>Long-horizon work may be organized into a primary quest and one or more secondary quests. New sessions or threads may be associated with existing quest structures using a multi-signal routing process referred to herein as the Hippocampus Router, modeled on the biological hippocampus's role in binding episodic experience to long-term memory structures.</p>
+  <p>In a preferred embodiment corresponding to FIG. 6, routing employs a dual-process approach. A fast path computes deterministic matches using workspace identifiers such as repository path and branch name, and semantic similarity against quest purpose embeddings. If the fast path produces a confidence above a high threshold, the session binds immediately. If the fast path produces intermediate confidence, a language model is invoked to disambiguate among candidate quests. If no adequate match is found, a new quest structure is created.</p>
+  <p>Routing bindings progress through consolidation states. An initial binding may be tentative, indicating that early messages have associated the session with a quest but the association has not yet been confirmed by accumulating evidence. As confirming signals accumulate — including entity overlap with the quest's existing graph, sustained semantic similarity, and explicit user confirmation — the binding may advance to a consolidated state and ultimately to a locked state that persists for the remainder of the session.</p>
+  <p>When incoming content diverges from the bound quest's expected semantic profile, the system may detect prediction error and trigger reconsolidation. In one implementation, three or more consecutive messages with low semantic similarity to the quest's purpose embedding trigger a rerouting evaluation. If the session is rerouted, the prior binding is preserved as a rerouting lineage record so that the transition remains auditable. The false association may be weakened through a mechanism referred to herein as Long-Term Depression, in which the quest's purpose embedding is adjusted to reduce the likelihood of the same false binding recurring in future sessions.</p>
+
+  <h3>Graph Structure and Retrieval</h3>
+  <p>Core graph nodes may include concepts, quests, decisions, constraints, requirements, action items, sessions, labels, documents, lessons, and ontology class nodes. Relationships may include quest membership, deprecation lineage, semantic relationships, co-occurrence relationships, working-memory load state, ontology routing edges, quest-to-lesson associations, and session rerouting lineage. Retrieval may combine vector similarity with constrained graph traversal so current truth reflects both semantic proximity and structural context.</p>
+  <p>In one implementation, implicit co-occurrence evidence may be accumulated separately from named semantic relationships so that an implicit evidence layer is preserved even after promotion to an explicit semantic edge. Such promotion may occur through rule-based extraction, language-model-assisted extraction, or user confirmation. Three promotion triggers operate in order of confidence: loop-extracted relations from explicit message content carry the highest confidence, language-model-promoted relations from co-occurrence count thresholds carry intermediate confidence, and user-promoted relations through a control interface carry maximum confidence as trusted input.</p>
+  <p>Ontology routing may be stored as graph edges connecting foundational class nodes to domain-specific type nodes, so that the routing table is queryable as graph structure rather than encoded in application logic. Each foundational class node may store a centroid embedding computed from a corpus of seed examples, and this centroid may be updated as new classifications are confirmed through the deliberate disambiguation path.</p>
+
+  <h3>Adaptive Strengthening and Pruning</h3>
+  <p>Memory pathways may be strengthened when accessed and weakened during background sweeps according to inactivity. When strength falls below a threshold, memory may be archived without destructive deletion. Archived memory may later be resurrected if new active graph state is sufficiently similar, thereby preserving long-term adaptivity without uncontrolled accumulation.</p>
+  <p>FIG. 7 illustrates one embodiment in which pathway strength increases according to use, decays according to inactivity, and interacts with archive and resurrection thresholds. The same figure also illustrates promotion of implicit co-occurrence evidence into explicit semantic relationships when sufficient support accumulates.</p>
+
+  <h3>Security and Deployment Constraints</h3>
+  <p>In preferred embodiments, the system uses a local-first deployment model with constrained interfaces, canonical path enforcement, and strict separation between conversational tool surfaces and privileged system operations. The Brain Daemon may function as an out-of-band monitor capable of identifying deviations from historically established constraints because it is not itself dependent on the assistant's current prompt context.</p>
+
+  <h3>Cross-Quest Analogical Reasoning</h3>
+  <p>When a quest is completed, the system may synthesize one or more lesson artifacts that capture distilled patterns, decisions, and constraints from that quest's graph. These lesson artifacts are associated with the completed quest and carry their own embeddings derived from the synthesized content.</p>
+  <p>In subsequent sessions associated with different quests, the system may perform cross-quest analogical search by comparing current context against lesson artifacts and high-confidence nodes from previously completed quests. Results from completed quests that exceed a relevance threshold are surfaced alongside branch-local results, thereby enabling the system to draw on prior project experience without requiring the user to recall or reference earlier work explicitly. Nodes from the currently active quest are excluded from analogical results to avoid redundancy with branch-local retrieval.</p>
+
+  <h3>Proactive Insight Surfacing</h3>
+  <p>In a preferred embodiment, the passive ingestion pathway returns a structured summary of consolidation loop activity to the assistant after each turn is processed. This summary may include counts of entities detected, relations extracted, concepts stored, artifacts reified, and contradictions identified. The assistant may use this summary to inform the user of significant memory events without requiring the user to query memory state explicitly. The summary is returned alongside the ingestion acknowledgment so that no additional round-trip is required.</p>
+
+  <h3>Exemplary Operational Scenario</h3>
+  <p>By way of example, a user may interact with an assistant over multiple days while making architecture decisions, setting non-negotiable constraints, and exploring side topics. The daemon may capture each turn, determine whether the turn contains meaningful project memory, admit only sufficiently strong candidate artifacts, and later retrieve those artifacts when a related question is asked. If the user later reverses a prior decision, the system may preserve the prior decision while marking it as superseded, thereby maintaining an auditable chain of project truth over time.</p>
+  <p>In a further example, a user completes a first project quest involving selection of a database technology and begins a second project quest involving a different subsystem. When the second quest encounters a similar technology-selection scenario, the system may surface lessons and decisions from the first quest as analogical context, enabling the user to benefit from prior reasoning without manually recalling or searching for it.</p>
+
+  <h3>Alternative Embodiments</h3>
+  <p>The invention is not limited to one model vendor, one graph engine, one embedding model, or one client application. Equivalent embodiments may substitute other property graph engines, fixed-dimension embedding models, transport wrappers, or fast-path classifiers so long as the selective consolidation, temporal lineage, and adaptive graph-memory behaviors disclosed herein are preserved.</p>
+</body>
+</html>

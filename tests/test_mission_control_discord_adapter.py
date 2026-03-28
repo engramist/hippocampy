@@ -1,12 +1,22 @@
 import json
 import sys
+import pytest
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+_MC_SERVER = Path(__file__).resolve().parent.parent / "mission-control" / "server.py"
+pytestmark = pytest.mark.skipif(
+    not _MC_SERVER.exists(),
+    reason="mission-control/server.py not present (extracted to clawshop repo)"
+)
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "mission-control"))
 
-import server
+try:
+    import server
+except ModuleNotFoundError:
+    server = None  # type: ignore
 
 
 def _write_kanban(tmp_path, tasks):

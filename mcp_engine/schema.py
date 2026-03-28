@@ -485,13 +485,31 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         ("Session",   "last_injection_at", "TIMESTAMP"),
         ("Session",   "last_loop_summary", "STRING"),
     ]
+    def _column_exists(table: str, col: str) -> bool:
+        """Check whether a column already exists via table_info, avoiding
+        ambiguous exception-based detection (B35 fix)."""
+        try:
+            r = db.execute(f"CALL table_info('{table}') RETURN *")
+            while r.has_next():
+                row = r.get_next()
+                # row[1] is the column name
+                if str(row[1]).lower() == col.lower():
+                    return True
+        except Exception:
+            pass
+        return False
+
     for table, col, col_type in _MIGRATIONS:
+        if _column_exists(table, col):
+            continue  # Already present — skip silently
         try:
             db.execute(f"ALTER TABLE {table} ADD {col} {col_type}")
             print(f"  Migration: added {table}.{col} ({col_type})")
         except Exception as e:
-            if "already exists" in str(e).lower() or "property" in str(e).lower():
-                pass  # Column already exists — safe to ignore
+            # Rare race: another process added the column between the check and
+            # the ALTER (safe to ignore).  Any other error is a real problem.
+            if "already" in str(e).lower() or "property" in str(e).lower():
+                pass
             else:
                 print(f"  Migration warning: {table}.{col}: {e}")
 
