@@ -1973,7 +1973,7 @@ _Ideas raised in conversation — not yet decided or scheduled._
 | B42 | Document Concept→Artifact Retrieval Contract | P9 | None |
 | B44 | Token Efficiency as a Side Effect (Not a Feature) | P10 | None |
 | B45 | Token Efficiency Measurement & Visualization | P10 | B18, B16 |
-| B46 | Benchmark Source Verification + Dataset Pinning | P11 | None |
+| B46 | Benchmark Source Verification + Dataset Pinning | P11 | completed |
 | B47 | Local Benchmark Runner Infrastructure (Unified Harness) | P11 | B46 |
 | B48 | SideQuests A/B Evaluation Contract (Protocol-Correct) | P11 | B47 |
 | B49 | SWE-CI Evaluation Card (Maintainability Under Evolution) | P11 | B46–B48 |

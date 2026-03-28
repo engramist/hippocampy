@@ -403,7 +403,8 @@ class TestAdapterRegistrar:
                    return_value={"claude-code": False, "claude-desktop": False,
                                  "codex": False, "codex-desktop": False,
                                  "chatgpt-desktop": False,
-                                 "gemini-cli": False}):
+                                 "gemini-cli": False,
+                                 "openclaw": False}):
             from sidequests.cli.install import VenvManager, AdapterRegistrar
             vm = MagicMock()
             reg = AdapterRegistrar(vm)
@@ -419,6 +420,7 @@ class TestAdapterRegistrar:
             "codex-desktop": True,
             "chatgpt-desktop": False,
             "gemini-cli": False,
+            "openclaw": False,
         }
         with patch("sidequests.cli.detect.detect_installed_clients", return_value=detected):
             from sidequests.cli.install import VenvManager, AdapterRegistrar
@@ -445,6 +447,26 @@ class TestAdapterRegistrar:
                 assert result is True
                 content = (desktop_dir / "config.toml").read_text()
                 assert "[mcp_servers.sidequests]" in content
+
+    def test_register_all_includes_openclaw(self):
+        """register_all wires openclaw when detected."""
+        detected = {
+            "claude-code": False,
+            "claude-desktop": False,
+            "codex": False,
+            "codex-desktop": False,
+            "chatgpt-desktop": False,
+            "gemini-cli": False,
+            "openclaw": True,
+        }
+        with patch("sidequests.cli.detect.detect_installed_clients", return_value=detected):
+            from sidequests.cli.install import VenvManager, AdapterRegistrar
+            vm = MagicMock()
+            reg = AdapterRegistrar(vm)
+            with patch.object(reg, "_register_openclaw", return_value=True) as mock_reg:
+                results = reg.register_all()
+                mock_reg.assert_called_once()
+                assert results["openclaw"] is True
 
 class TestDaemonSetup:
 
