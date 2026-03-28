@@ -1,103 +1,78 @@
-# Retrieval Contract — SideQuests Brain
+# Concept→Artifact Retrieval Contract
 
-> B42 — Documents the dual-layer Concept→Artifact retrieval design so future work
-> doesn't accidentally create competing or ambiguous truth layers.
+This document defines the normative behavior for retrieval across the SideQuest Brain’s dual-layer graph (Concept layer and Artifact layer). It ensures predictable results for MCP adapters, tests, and future ranking implementations.
 
----
+## 1. Purpose and Scope
+The SideQuest Brain maintains knowledge at two levels of abstraction:
+1.  **Concept Layer:** High-recall, low-precision nodes extracted via NER and Hebbian co-occurrence.
+2.  **Artifact Layer:** High-precision, high-confidence nodes (Decisions, Constraints, etc.) reified from concepts.
 
-## The Two-Layer Model
+The **Retrieval Contract** defines how these layers interact during a `current_truth` or `explore_graph` call.
 
-SideQuests Brain stores knowledge at two levels:
+## 2. Data Layers and Identity
 
-| Layer | Node Types | Purpose |
-|-------|-----------|---------|
-| **Concept layer** | `Concept` | Raw extracted entities from conversation (noun chunks, NER). Unconfirmed by default. |
-| **Artifact layer** | `Decision`, `Constraint`, `Requirement`, `ActionItem`, `GlobalConstraint`, `GlobalPreference` | Semantically typed, higher-confidence structured knowledge. |
+### 2.1 The Concept Layer (`Concept`)
+*   **Identity:** Every distinct entity mentioned in conversation becomes a `Concept` node.
+*   **Relationships:** Concepts are linked via semantic named edges (e.g., `REQUIRES`, `ENABLES`) or implicit `CO_OCCURS_WITH` edges.
+*   **Searchability:** Concepts carry their own embeddings and SKOS-inspired `Label` nodes (`prefLabel`, `altLabel`).
 
-A concept becomes an artifact via reification: `(Concept)-[:REIFIED_AS]->(Artifact)`.
+### 2.2 The Artifact Layer (`Decision`, `Constraint`, etc.)
+*   **Identity:** When a Concept (or a group of concepts in a message) is classified at >90% confidence as an architectural artifact, an Artifact node is created.
+*   **The Bridge (`REIFIED_AS`):** Artifact nodes are linked back to their source Concept(s) via `(Concept)-[REIFIED_AS]->(Artifact)`.
+*   **Provenance:** Artifacts are also linked to the `Message` or `DocumentExtract` that established them.
 
----
+## 3. `current_truth` Retrieval Rules
 
-## What `current_truth` Searches
+`current_truth` is the primary interface for LLMs to query the Brain. It performs a unified vector search across both layers.
 
-`current_truth` uses HNSW vector search across **artifact tables first**, with Concepts included:
+### 3.1 Return-Shape Rules
+*   **Mixed Results:** `current_truth` MUST return a flat list of results from all artifact tables PLUS the `Concept` table.
+*   **Node Inclusion:** A node is included if it matches the vector query and is NOT `archived`.
+*   **No Auto-Expansion:** `current_truth` returns the specific matching node. It does NOT automatically traverse `REIFIED_AS` to find the linked artifact if a Concept matches (traversal is the role of `explore_graph`).
 
-```python
-VECTOR_SEARCH_TABLES = [
-    ("Decision",           "decision_emb_idx"),
-    ("Constraint",         "constraint_emb_idx"),
-    ("Requirement",        "requirement_emb_idx"),
-    ("ActionItem",         "action_emb_idx"),
-    ("GlobalConstraint",   "gconstraint_emb_idx"),
-    ("GlobalPreference",   "gpref_emb_idx"),
-    ("Concept",            "concept_emb_idx"),
-]
-```
+### 3.2 Ranking Semantics
+Results are ranked using a multi-factor scoring formula:
+1.  **Semantic Similarity (50%):** Vector cosine similarity to the query.
+2.  **Strength Signal (30%):** `pathway_strength × confidence`.
+3.  **Recency (20%):** A decay function based on the `created_at` timestamp.
 
-Results from all tables are **merged and ranked** by a combined score:
-- **50% semantic similarity** (cosine distance to query embedding)
-- **30% strength signal** (`pathway_strength × confidence`, normalized to 0–1)
-- **20% recency** (`1 / (1 + days_old)`)
+**Rule:** Highly relevant new concepts can outrank old high-strength artifacts if the semantic match is significantly stronger.
 
-This formula intentionally prevents stale high-strength nodes from dominating over
-semantically relevant recent nodes (B31 fix).
+## 4. `explore_graph` Traversal Behavior
 
----
+`explore_graph` allows for directed movement through the graph structure.
 
-## When to Stay a Concept vs Promote to Artifact
+*   **Layer Hopping:** Callers SHOULD use `explore_graph` to move between layers.
+    *   Example: Find a `Concept` via `current_truth`, then `explore_graph` with `relationship_type="REIFIED_AS"` to find associated Decisions.
+*   **Directionality:**
+    *   `Concept → Artifact` is an **outgoing** `REIFIED_AS` edge.
+    *   `Artifact → Concept` is an **incoming** `REIFIED_AS` edge.
+*   **Constraint:** Traversal is limited to allowlisted relationship types (see `mcp_engine/tools.py`) and a maximum depth of 3.
 
-| Scenario | Treatment |
-|----------|-----------|
-| Extracted noun chunk, no clear semantic type | Stay as `Concept` (confidence_low=true) |
-| NER entity with clear categorical meaning (org, product) | Stay as `Concept` unless explicitly confirmed |
-| User/LLM explicitly states a decision | Promote → `Decision` via reification |
-| Hard constraint expressed in conversation | Promote → `Constraint` or `GlobalConstraint` |
-| Requirement ("needs to", "must have") | Promote → `Requirement` |
-| Action item ("will do", "TODO") | Promote → `ActionItem` |
+## 5. Concrete Query Examples
 
-The Gated Consolidation Loop (orchestrator) handles promotion automatically during ingestion.
-Manual promotion is available via the Memory Control Panel (M7 — future).
+### Example 1: Artifact-First Question
+**Query:** "What did we decide about the database?"
+1.  `current_truth` matches a `Decision` node: *"We chose Kùzu as our embedded graph DB."*
+2.  **Result Shape:** Artifact-only (Decision table).
+3.  **Interpretation:** High confidence. LLM presents this as the "resolved truth."
 
----
+### Example 2: Concept-Only Fallback
+**Query:** "Tell me about RyuGraph."
+1.  No reified Decision or Constraint exists yet.
+2.  `current_truth` matches a `Concept` node: *"RyuGraph"* (gist:Product).
+3.  **Result Shape:** Concept-only.
+4.  **Interpretation:** LLM sees the concept exists in the graph but lacks a formal artifact status. It can mention it as a "known concept" from past turns.
 
-## `explore_graph` Entry Points
+### Example 3: Mixed Result Interpretation
+**Query:** "Database performance constraints."
+1.  `current_truth` returns:
+    *   `Constraint`: *"Must support <50ms local reads."* (Rank 1, similarity 0.95)
+    *   `Concept`: *"HNSW Indexing"* (Rank 2, similarity 0.88)
+2.  **Result Shape:** Mixed (Constraint + Concept).
+3.  **Interpretation:** The LLM should prioritize the `Constraint` as a hard rule, while using the `Concept` to provide technical context about how that constraint is met.
 
-`explore_graph` operates at the **artifact layer** by default — callers start from a known
-artifact node ID. It can traverse through `REIFIED_AS` to reach the concept layer, but this
-is not the primary use case.
-
-Recommended traversal starting points:
-- Start from `Decision` or `Constraint` nodes (highest confidence, most connected)
-- Use `REIFIED_AS` edges to discover related concepts when exploring a topic semantically
-- Do **not** use `Session` as a general-purpose hop — Session is a supernode risk (B18 constraint)
-
----
-
-## Interpreting Mixed-Layer Results
-
-When `current_truth` returns both a `Concept` node and an `Artifact` node for the same idea:
-
-1. **Prefer the artifact** — it has been semantically typed and likely has higher confidence
-2. The concept's `pathway_strength` reflects how frequently the raw term has appeared in conversation
-3. A concept with `confidence_low=true` was auto-extracted but never confirmed — treat with appropriate skepticism
-4. If both appear with similar scores, the artifact is authoritative; the concept is corroborating signal
-
----
-
-## Panel URL Deep-Links (B15)
-
-`current_truth` responses include a `panel_url` field for the Mission Control UI:
-
-- **Default**: `http://127.0.0.1:7800/thinking` — shows decisions, constraints, concept cloud
-- **With quest_id**: `http://127.0.0.1:7800/board` — shows the Kanban board for the active quest
-- **Configurable**: Set `mission_control.base_url` in `sidequests.toml` for non-default ports/hosts
-
-LLM adapters are instructed to surface this URL as a markdown link when present.
-
----
-
-## Future Work
-
-- **B17 (Hippocampus)**: Routing is now fully implemented. `current_truth` can be filtered by quest scope.
-- **B18 (Working Memory)**: `LOADED` edges track which nodes are in each context window. Smart deduplication skips already-loaded nodes.
-- **M7 (Memory Control Panel)**: Full UI for browsing/editing the artifact layer. Deep-link routes for `panel_url` should be added here.
+## 6. Known Limits and Non-Goals
+*   **Non-Goal: Deduplication.** If a Concept and its reified Decision both match a query with high similarity, both may appear in the results. The LLM is responsible for synthesizing these into a coherent answer.
+*   **Limit: Deep Traversal.** `current_truth` does not perform graph-walking; it is a vector-first entry point. Use `explore_graph` for relational discovery.
+*   **Limit: Schema Evolution.** If a relationship type is not in the allowlist in `tools.py`, it cannot be traversed via `explore_graph` even if it exists in the Kùzu DB.
