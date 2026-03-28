@@ -322,11 +322,17 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
         except Exception:
             _logger.exception("current_truth vector search failed for table %s", table_name)
 
+    # B18: Context Window Awareness (Working Memory) imports
+    from mcp_engine.working_memory import (
+        get_loaded_node_ids, deduplicate_results, track_loaded,
+        update_token_estimate, estimate_tokens, check_context_health,
+        get_session_token_state, get_handoff_context
+    )
+
     all_results.sort(key=lambda r: r["_rank"], reverse=True)
 
     # B18: Smart deduplication — demote already-loaded nodes
     if session_id != "unknown":
-        from mcp_engine.working_memory import get_loaded_node_ids, deduplicate_results
         try:
             loaded_ids = get_loaded_node_ids(db, session_id)
             if loaded_ids:
@@ -345,12 +351,20 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
 
     final_results = all_results[:limit]
 
+    # B18: Add handoff candidates if this is a new session
+    # We do this BEFORE track_loaded so loaded_nodes is still 0 for fresh sessions
+    handoff_from_prior = None
+    if quest_id and session_id != "unknown":
+        try:
+            state = get_session_token_state(db, session_id)
+            if state["loaded_nodes"] == 0:
+                # Fresh session — include handoff context
+                handoff_from_prior = get_handoff_context(db, quest_id, session_id)
+        except Exception:
+            pass
+
     # B18: Track what was loaded into this session
     if session_id != "unknown" and final_results:
-        from mcp_engine.working_memory import (
-            track_loaded, update_token_estimate, estimate_tokens,
-            check_context_health, get_session_token_state
-        )
         try:
             await track_loaded(db, session_id, final_results, source="current_truth")
             # Update token estimate for injected content
@@ -370,6 +384,8 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
     response = {"results": final_results, "quest_context": quest_ctx}
     if bloat_warning:
         response["bloat_warning"] = bloat_warning
+    if handoff_from_prior:
+        response["handoff_from_prior_session"] = handoff_from_prior
 
     # B15: Deep-link panel_url — let the LLM surface a "View in Mission Control" link
     mc_base = (config.get("mission_control", {}) or {}).get("base_url", "http://127.0.0.1:7800")
@@ -379,19 +395,6 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
         # If we have a quest context, link directly to the board filtered by quest
         if quest_id:
             response["panel_url"] = f"{mc_base}/board"
-
-    # B18: Add handoff candidates if this is a new session
-    if quest_id and session_id != "unknown":
-        from mcp_engine.working_memory import get_handoff_context
-        try:
-            state = get_session_token_state(db, session_id)
-            if state["loaded_nodes"] == 0:
-                # Fresh session — include handoff context
-                handoff = get_handoff_context(db, quest_id, session_id)
-                if handoff:
-                    response["handoff_from_prior_session"] = handoff
-        except Exception:
-            pass
 
     return response
 
