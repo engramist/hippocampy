@@ -629,9 +629,6 @@ class AdapterRegistrar:
         if detected.get("chatgpt-desktop"):
             results["chatgpt-desktop"] = self._register_chatgpt_desktop()
 
-        if detected.get("openclaw"):
-            results["openclaw"] = self._register_openclaw()
-
         return results
 
     def _register_claude_code(self) -> bool:
@@ -839,13 +836,6 @@ class AdapterRegistrar:
         click.echo("      3. Add server URL: http://127.0.0.1:7799/sse")
         click.echo("      4. Save — all SideQuest tools will appear automatically")
         click.echo("")
-        return True
-
-    def _register_openclaw(self) -> bool:
-        """Install/configure the OpenClaw extension and restart the gateway."""
-        from sidequests.cli.setup import _register_openclaw
-        _register_openclaw()
-        click.echo("    [ok] OpenClaw — extension installed, config patched, gateway restarted")
         return True
 
     @staticmethod

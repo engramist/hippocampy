@@ -95,16 +95,3 @@ cat ~/.sidequests/daemon.log
 ```bash
 sidequests install
 ```
-
-## Updating an Existing Installation
-
-Run these commands from your local repo when you want the latest changes:
-
-```bash
-cd ~/path/to/sidequests-brain
-git pull
-source .venv/bin/activate
-pip install -e .
-sidequests install
-sidequests status
-```
