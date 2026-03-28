@@ -30,11 +30,11 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B24 | OpenClaw Extension: Missing `memory_search`, `memory_get` Core Tool Aliases — ✅ DONE (2026-03-26) | P7 | complete | TBD | TBD | - | backlog/B24.md |
 | B25 | OpenClaw Installer: `sidequests setup --target openclaw` — ✅ DONE (2026-03-26) | P7 | complete | TBD | TBD | - | backlog/B25.md |
 | B26 | Document: OpenClaw Standalone Install Guide — ✅ DONE (2026-03-26) | P7 | complete | TBD | TBD | - | backlog/B26.md |
-| B27 | Extension: Passive Ingestion Event API Validation | P7 | ready | TBD | TBD | - | backlog/B27.md |
+| B27 | Extension: Passive Ingestion Event API Validation — ✅ DONE (2026-03-28) | P7 | complete | TBD | TBD | - | backlog/B27.md |
 | B28 | CRITICAL: `api.registerTool()` Does Not Surface Tools to Agent Sessions — ✅ FIXED (2026-03-22) | P7 | complete | TBD | TBD | backlog/plans/B28-tool-binding-fix.md | backlog/B28.md |
 | B41 | OpenClaw Integration: Ensure Brain Daemon Auto-Starts with Gateway Sessions — ✅ DONE (2026-03-27) | P7 | complete | TBD | TBD | - | backlog/B41.md |
 | B61 | OpenClaw Extension: Tools Not Surfaced to Agent Without Manual Config | P7 | ready | TBD | TBD | - | backlog/B61.md |
-| B29 | TEST CASE: Cross-Session Context Awareness | P8 | blocked | TBD | TBD | - | backlog/B29.md |
+| B29 | TEST CASE: Cross-Session Context Awareness — ✅ DONE (2026-03-28) | P8 | complete | TBD | TBD | - | backlog/B29.md |
 | B30 | Agent System Prompt: "Check the Brain First" — ✅ DONE (2026-03-22) | P8 | complete | TBD | TBD | - | backlog/B30.md |
 | B31 | Improvement: Recall Ranking Needs Recency Factor | P8 | ready | TBD | TBD | - | backlog/B31.md |
 | B32 | Bug: Zero Edges in Knowledge Graph — ✅ FIXED (2026-03-22) | P8 | complete | TBD | TBD | - | backlog/B32.md |
@@ -69,8 +69,8 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 ## Summary
 
 - Total cards: 61
-- Ready: 40
+- Ready: 39
 - Needs work: 0
-- Complete: 19
+- Complete: 21
 - In progress: 0
-- Blocked: 2
+- Blocked: 1
