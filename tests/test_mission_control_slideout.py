@@ -5,17 +5,11 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
 from fastapi.testclient import TestClient
 
 
 ROOT = Path(__file__).resolve().parents[1]
 MISSION_CONTROL_SERVER = ROOT / "mission-control" / "server.py"
-
-# Mission Control server.py was extracted to the clawshop repo (commit ea1502ff).
-# These tests are skipped until/unless the server is re-integrated or the clawshop
-# repo is available as a submodule.
-_MC_AVAILABLE = MISSION_CONTROL_SERVER.exists()
 
 
 def load_mission_control_module():
@@ -27,7 +21,6 @@ def load_mission_control_module():
     return module
 
 
-@pytest.mark.skipif(not _MC_AVAILABLE, reason="mission-control/server.py extracted to clawshop repo (commit ea1502ff)")
 def test_card_detail_surfaces_summary_and_blocker_reason(tmp_path):
     mc = load_mission_control_module()
 
@@ -60,7 +53,6 @@ def test_card_detail_surfaces_summary_and_blocker_reason(tmp_path):
     assert "Waiting on dj decision." in response.text
 
 
-@pytest.mark.skipif(not _MC_AVAILABLE, reason="mission-control/server.py extracted to clawshop repo (commit ea1502ff)")
 def test_board_keeps_auto_refresh_in_js_guard_instead_of_meta_refresh():
     mc = load_mission_control_module()
     client = TestClient(mc.app)
