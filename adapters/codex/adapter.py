@@ -90,14 +90,14 @@ async def _call_brain(method: str, params: dict) -> dict:
         reader, writer = await asyncio.open_unix_connection(str(SOCKET_PATH))
         writer.write((json.dumps(request) + "\n").encode())
         await writer.drain()
-        line = await reader.readline()
+        line = await asyncio.wait_for(reader.readline(), timeout=_SOCKET_TIMEOUT)
         writer.close()
         await writer.wait_closed()
         response = json.loads(line)
         if "error" in response:
             raise RuntimeError(response["error"]["message"])
         return response.get("result", {})
-    except (FileNotFoundError, ConnectionRefusedError, OSError):
+    except (FileNotFoundError, ConnectionRefusedError, OSError, asyncio.TimeoutError):
         raise RuntimeError("DAEMON_OFFLINE")
 
 
