@@ -19,7 +19,7 @@ def cli() -> None:
     "--target",
     type=click.Choice(
         ["claude-code", "claude-desktop", "codex", "codex-desktop",
-         "chatgpt-desktop", "gemini-cli", "all"],
+         "chatgpt-desktop", "gemini-cli", "openclaw", "all"],
         case_sensitive=False,
     ),
     default="all",
@@ -43,6 +43,50 @@ def install() -> None:
     """One-command installer: LLM setup, dependencies, schema, adapters, daemon."""
     from sidequests.cli.install import run_install
     run_install()
+
+
+@cli.command()
+@click.option(
+    "--keep-data / --delete-data",
+    default=True,
+    show_default=True,
+    help="Keep or delete ~/.sidequests/ (database + config). Default: keep data.",
+)
+@click.option(
+    "--remove-ollama-model",
+    is_flag=True,
+    default=False,
+    help="Also remove the Ollama model used by SideQuests (e.g. qwen2.5:3b).",
+)
+@click.option(
+    "--ollama-model",
+    default="qwen2.5:3b",
+    show_default=True,
+    help="Ollama model to remove when --remove-ollama-model is set.",
+)
+@click.option(
+    "--yes", "-y",
+    is_flag=True,
+    default=False,
+    help="Skip confirmation prompt.",
+)
+def uninstall(keep_data: bool, remove_ollama_model: bool, ollama_model: str, yes: bool) -> None:
+    """Remove SideQuests Brain: stop daemon, deregister all adapters, clean up configs."""
+    if not yes:
+        action = "brain data (database + config)" if not keep_data else "adapter configs only (data kept)"
+        click.confirm(
+            f"This will stop the Brain Daemon and remove all SideQuests adapter registrations.\n"
+            f"  Data: {action}\n"
+            f"  Ollama model: {'will be removed' if remove_ollama_model else 'kept'}\n"
+            f"Proceed?",
+            abort=True,
+        )
+    from sidequests.cli.uninstall import run_uninstall
+    run_uninstall(
+        keep_data=keep_data,
+        remove_ollama_model=remove_ollama_model,
+        ollama_model=ollama_model,
+    )
 
 
 @cli.command()
