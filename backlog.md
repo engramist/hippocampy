@@ -297,7 +297,21 @@ Files to create:
 
 ## P5 — New Capabilities (Post-M8 Research)
 
-### B17 · Semantic Quest Routing ("The Hippocampus")
+### B17 · Semantic Quest Routing ("The Hippocampus") — ✅ DONE (prior)
+**What was built:**
+- `mcp_engine/hippocampus.py` — semantic routing module with two-phase System 1/2 routing
+- Git context as high-confidence signal; content embedding similarity for non-git sessions
+- Progressive consolidation: tentative → consolidated → locked
+- `set_quest` MCP tool for explicit quest routing
+- Schema additions: `MainQuest.purpose_embedding`, `MainQuest.routing_method`; `Session.routing_state`, `Session.routing_confidence`; `REROUTED_FROM` relationship
+- 29 tests in `tests/test_hippocampus.py` + working_memory: all pass
+
+**Validation:** 29 passed across hippocampus + working_memory tests
+**Files:** `mcp_engine/hippocampus.py`, `mcp_engine/schema.py`, `mcp_engine/tools.py`, `tests/test_hippocampus.py`
+
+---
+
+### B17_ORIGINAL · Semantic Quest Routing ("The Hippocampus") (archived description)
 **Problem:** Git-only MainQuest identification breaks for desktop/non-dev flows and weakens cross-session continuity when git context is missing.
 
 **What it does:** Replace git-only MainQuest identification with a semantic routing mechanism that works for desktop apps and non-dev users. Two-phase System 1/2 routing: git context as one high-confidence signal, content embedding similarity for the rest. Progressive consolidation (tentative → consolidated → locked) with prediction error reconsolidation.
@@ -318,7 +332,7 @@ IP claims: Semantic Quest Routing, Hippocampus Mechanism, Prediction Error Recon
 
 ---
 
-### B18 · Context Window Awareness ("Working Memory")
+### B18 · Context Window Awareness ("Working Memory") — ✅ DONE (prior)
 
 **Problem:** `current_truth` re-injects the full relevant knowledge payload every turn, including nodes already in the LLM's context window. This is the biggest controllable source of RAG bloat — the same decisions and constraints get re-sent on every query, wasting tokens and quota.
 
@@ -352,8 +366,21 @@ IP claims: Context Window as Working Memory Model, Smart Deduplication via Load 
 
 ---
 
-### B10 · `explore_graph` Tool (Directed Graph Traversal)
+### B10 · `explore_graph` Tool (Directed Graph Traversal) — ✅ DONE (prior)
+**What was built:**
+- `explore_graph(start_node_id, relationship_type?, direction?, depth?)` MCP tool in `mcp_engine/tools.py`
+- Depth capped at 3 hops; returns nodes reachable via named relationship types
+- Read-only; uses allowlisted relationship types (`_TRAVERSABLE_RELS` constant)
+- `REIFIED_AS` included, enabling Concept→Artifact traversal
+- `ESTABLISHED_IN` added (B43) enabling artifact→session provenance traversal
+- Tool schema registered in all adapters; 10 tests in `tests/test_explore_graph.py`
 
+**Validation:** 10 passed in `tests/test_explore_graph.py`
+**Files:** `mcp_engine/tools.py`, `tests/test_explore_graph.py`
+
+---
+
+### B10_ORIGINAL · `explore_graph` Tool (Directed Graph Traversal) (archived description)
 **Problem:** `current_truth` performs vector similarity search, but agents need structural navigation — "what are all Requirements under this SideQuest?" — which blind vector search cannot express reliably. There is no tool today for directed graph traversal from a known node.
 
 **What it does:** Add an `explore_graph` MCP tool for directed traversal from a known node via named relationship types. Inspired by RLM / MIT paper (arXiv:2512.24601). The traversal API is constrained — no arbitrary Cypher, depth capped at 3 hops, read-only.
@@ -388,8 +415,20 @@ Notes:
 
 ---
 
-### B11 · `Lesson` Artifact Node
+### B11 · `Lesson` Artifact Node — ✅ DONE (prior)
+**What was built:**
+- `Lesson` node schema in `mcp_engine/schema.py`: `lesson_id`, `text_raw`, `embedding FLOAT[384]`, `embedding_model`, `embedding_dim`, `obstacle_summary`, `source_quest_id`, `confidence`, `pathway_strength`, `archived`, `created_at`
+- `PRODUCED_LESSON` relationship (`MainQuest → Lesson`)
+- `lesson_emb_idx` HNSW index added to vector search tables
+- `complete_quest` tool triggers background `_synthesize_lesson()` coroutine (fire-and-forget)
+- `analogical_search` extended to include `lesson_emb_idx` in `CROSS_QUEST_TABLES`
+- Lesson stored as `confidence_low=true` initially (inferred, not confirmed)
 
+**Files:** `mcp_engine/schema.py`, `mcp_engine/tools.py`
+
+---
+
+### B11_ORIGINAL · `Lesson` Artifact Node (archived description)
 **Problem:** When a Quest completes, the hardest obstacle overcome and the key insight gained are lost — they exist only in conversation history. Future quests (possibly months later) have no way to surface "what did we learn last time we hit this kind of problem?"
 
 **What it does:** When `complete_quest` is called, synthesize a `Lesson` node capturing the hardest obstacle overcome. Extend `analogical_search` to include lesson embeddings so future quests surface similar lessons.
@@ -518,7 +557,20 @@ Notes:
 
 ## P6 — Consumer Readiness
 
-### B14 · Proactive Insight Surfacing
+### B14 · Proactive Insight Surfacing — ✅ DONE (prior)
+**What was built:**
+- `notify_turn` response includes `loop_summary` field after each Loop run that captures artifacts
+- Summary format: `"Captured: N decisions, M constraints"` (minimal, fire-and-forget)
+- `loop_summary` count resets after `current_truth` is called (explicit check pattern)
+- 7 tests in `tests/test_insight_surfacing.py` covering: capture event emission, zero-count behavior, reset after recall, and fire-and-forget latency guarantee
+- System prompt fragment includes `[SideQuests Brain: N artifacts captured]` counter
+
+**Validation:** 7 passed in `tests/test_insight_surfacing.py`
+**Files:** `mcp_engine/tools.py`, `mcp_engine/loop/step7_pathway.py`, `tests/test_insight_surfacing.py`
+
+---
+
+### B14_ORIGINAL · Proactive Insight Surfacing (archived description)
 The Brain currently ingests silently — no feedback loop tells the user what was captured. This is the
 biggest consumer-readiness gap. Normal users need to feel the system is alive and working for them.
 
@@ -991,7 +1043,22 @@ When OpenClaw gateway starts, the SideQuests memory plugin currently only pings 
 
 ---
 
-### B27 · Extension: Passive Ingestion Event API Validation
+### B27 · Extension: Passive Ingestion Event API Validation — ✅ DONE (2026-03-27)
+**What was built:**
+- Added `OPENCLAW_EVENT_CONTRACT` constant in `extensions/sidequests-brain/src/index.ts` with all 3 event names + payload fields
+- Added `normalizePromptPayload()`, `normalizeAssistantPayload()`, `summarizeEventShape()` helpers
+- All 3 `api.on()` hooks refactored to use contract constants instead of hardcoded strings
+- Replaced silent `catch{}` blocks with structured `console.warn()` diagnostic logging
+- Added compatibility table in `docs/openclaw-event-contract.md`
+- Added `tests/test_extension_ingestion_contract.py` with 17 assertions covering contract correctness, fallback behavior, and logging
+
+**Validation:** 678 passed, 28 skipped, 0 failures
+**Commit:** `d86c2584`
+**Files:** `extensions/sidequests-brain/src/index.ts`, `docs/openclaw-event-contract.md`, `tests/test_extension_ingestion_contract.py`
+
+---
+
+### B27_ORIGINAL · Extension: Passive Ingestion Event API Validation (archived description)
 **Problem:** Passive ingestion reliability is unproven because hook names/payloads were assumed, not validated against the live OpenClaw event API.
 
 **What it does:** Validate and lock the extension's ingestion hook contract.
@@ -1019,7 +1086,22 @@ The extension uses `api.on("llm_input")`, `api.on("llm_output")`, and `api.on("b
 
 The core value proposition of SideQuests Brain as a memory system for OpenClaw agents: multiple sessions of the same agent share a persistent knowledge graph, so they all know what the others have been doing.
 
-### B29 · TEST CASE: Cross-Session Context Awareness
+### B29 · TEST CASE: Cross-Session Context Awareness — ✅ DONE (2026-03-27)
+**What was built:**
+- Added `tests/test_cross_session_recall.py` with 4 hard-gate assertions:
+  1. Session B retrieves session A's Concept via `current_truth` (scope=both)
+  2. Archived nodes from session A are excluded from session B's results
+  3. `confidence_low` nodes are surfaced but flag is preserved
+  4. Source inspection: `before_agent_start` auto-recall uses `scope: "both"` (not branch) to ensure global recall for fresh sessions with no `WORKING_ON` edge
+- All 4 pass. Full suite: 678 passed, 28 skipped.
+
+**Validation:** `python3 -m pytest tests/test_cross_session_recall.py -q` → 4 passed
+**Commit:** `6dab506b`
+**Files:** `tests/test_cross_session_recall.py`, `B-29-cross-session-recall-test.md`
+
+---
+
+### B29_ORIGINAL · TEST CASE: Cross-Session Context Awareness (archived description)
 **Status:** FAILING (2026-03-21)  
 **Priority:** P0 — this is the entire reason the Brain exists
 
@@ -1069,7 +1151,21 @@ The core value proposition of SideQuests Brain as a memory system for OpenClaw a
 
 ---
 
-### B31 · Improvement: Recall Ranking Needs Recency Factor
+### B31 · Improvement: Recall Ranking Needs Recency Factor — ✅ DONE (2026-03-27)
+**What was built:**
+- Balanced ranking formula implemented in `mcp_engine/tools.py` `current_truth`:
+  - 50% similarity (semantic match to query)
+  - 30% strength signal (`pathway_strength × confidence`, normalized to 0-1 range)
+  - 20% recency (1 / (1 + days_old), graceful fallback to 0.5 on parse failure)
+- Unit tests in `tests/test_retrieval.py` pin scoring behavior and weight math
+- Controlled test confirms recent high-similarity node beats older high-strength node
+
+**Validation:** 8 passed in `tests/test_retrieval.py`
+**Files:** `mcp_engine/tools.py`, `tests/test_retrieval.py`
+
+---
+
+### B31_ORIGINAL · Recall Ranking Needs Recency Factor (archived description)
 **Problem:** Current ranking over-weights historical strength and can bury newly confirmed, highly relevant decisions.
 
 **What it does:** Add a recency term to `current_truth` ranking so recently reinforced knowledge competes fairly with older high-strength nodes.
@@ -1156,7 +1252,20 @@ Despite earlier fixes (ISSUE-019, ISSUE-026), junk still enters the graph:
 
 ---
 
-### B36 · Audit All Adapters/Plugins for Streamable HTTP Transport
+### B36 · Audit All Adapters/Plugins for Streamable HTTP Transport — ✅ DONE (2026-03-28)
+**What was built:**
+- Comprehensive transport audit doc: `docs/transport-audit.md`
+- Full inventory table: OpenClaw (Streamable HTTP ✅), Claude Code/Desktop/Codex/Gemini CLI (stdio/socket, N/A ✅), ChatGPT Desktop (SSE retained intentionally), Brain Daemon web (both), Brain Daemon IPC (raw JSON-RPC, documented divergence)
+- IPC dispatch divergence documented with risk assessment and future unification recommendation
+- ChatGPT Desktop SSE retention justified (Connector API doesn't support Streamable HTTP yet)
+- `.mcp.json` and Smithery listing (B5) migration path documented
+
+**Validation:** All 6 surfaces audited and documented. No regressions.
+**Files:** `docs/transport-audit.md`
+
+---
+
+### B36_ORIGINAL · Audit All Adapters/Plugins for Streamable HTTP Transport (archived description)
 **Priority:** Medium  
 **Status:** Not started
 
@@ -1245,7 +1354,21 @@ Root cause was the package name mismatch (`@sidequests/openclaw-brain` vs manife
 
 Source: `docs/graph-schema-review.md` — external graph architecture review.
 
-### B42 · Document Concept→Artifact Retrieval Contract
+### B42 · Document Concept→Artifact Retrieval Contract — ✅ DONE (prior)
+**What was built:**
+- `docs/retrieval-contract.md` — full normative spec covering:
+  - Concept Layer vs Artifact Layer identity and searchability
+  - `current_truth` return-shape rules (mixed, archived exclusion, no auto-expansion)
+  - Ranking semantics (similarity 50%, strength 30%, recency 20%)
+  - `explore_graph` traversal behavior and layer-hopping via `REIFIED_AS`
+  - 3 concrete query examples with result shape and LLM interpretation guidance
+  - Known limits (non-dedup, no deep traversal via `current_truth`, schema evolution)
+
+**Files:** `docs/retrieval-contract.md`
+
+---
+
+### B42_ORIGINAL · Document Concept→Artifact Retrieval Contract (archived description)
 **Problem:** Concept and artifact layers are both active, but retrieval semantics are under-specified outside core architecture notes.
 
 **What it does:** Publish a formal retrieval contract defining layer precedence, return-shape rules, and traversal behavior across `Concept`, `REIFIED_AS`, and artifact nodes.
@@ -1955,22 +2078,22 @@ _Ideas raised in conversation — not yet decided or scheduled._
 | B5 | Smithery Listing | P2 | B4 |
 | B6 | Claude Desktop Adapter (Full) | P3 | None |
 | B7 | ChatGPT Desktop Adapter (Stub → Full) | P3 | B3 |
-| B10 | `explore_graph` Tool (Directed Graph Traversal) | P5 | None |
-| B11 | `Lesson` Artifact Node | P5 | None |
+| ~~B10~~ | ~~`explore_graph` Tool~~ | ~~P5~~ | ✅ DONE |
+| ~~B11~~ | ~~`Lesson` Artifact Node~~ | ~~P5~~ | ✅ DONE |
 | B12 | Memory-Based Anomaly Detection (IP Formalization) | P5 | None |
-| B14 | Proactive Insight Surfacing | P6 | None |
+| ~~B14~~ | ~~Proactive Insight Surfacing~~ | ~~P6~~ | ✅ DONE |
 | B15 | Deep-Link Handoff (Chat → Memory Control Panel) | P6 | M7 |
-| B17 | Semantic Quest Routing ("The Hippocampus") | P5 | None |
-| B18 | Context Window Awareness ("Working Memory") | P5 | B17 |
+| ~~B17~~ | ~~Semantic Quest Routing ("The Hippocampus")~~ | ~~P5~~ | ✅ DONE |
+| ~~B18~~ | ~~Context Window Awareness ("Working Memory")~~ | ~~P5~~ | ✅ DONE |
 | B20 | OpenClaw Extension: Plugin ID Mismatch | P7 | None |
 | B21 | OpenClaw System Prompt + Tool Integration | P7 | B20 |
 | B22 | OpenClaw Extension: `plugins.allow` Warning | P7 | B13 |
-| B27 | Extension: Passive Ingestion Event API Validation | P7 | None |
-| B29 | TEST CASE: Cross-Session Context Awareness | P0 | B27, B28 |
-| B31 | Improvement: Recall Ranking Needs Recency Factor | P8 | None |
+| ~~B27~~ | ~~Extension: Passive Ingestion Event API Validation~~ | ~~P7~~ | ✅ DONE 2026-03-27 |
+| ~~B29~~ | ~~Cross-Session Context Awareness TEST CASE~~ | ~~P0~~ | ✅ DONE 2026-03-27 |
+| ~~B31~~ | ~~Recall Ranking Recency Factor~~ | ~~P8~~ | ✅ DONE |
 | B34 | Bug: Junk Entities Still Leaking | P8 | None |
-| B36 | Audit All Adapters/Plugins for Streamable HTTP Transport | P8 | None |
-| B42 | Document Concept→Artifact Retrieval Contract | P9 | None |
+| ~~B36~~ | ~~Streamable HTTP Transport Audit~~ | ~~P8~~ | ✅ DONE 2026-03-28 |
+| ~~B42~~ | ~~Document Concept→Artifact Retrieval Contract~~ | ~~P9~~ | ✅ DONE |
 | B44 | Token Efficiency as a Side Effect (Not a Feature) | P10 | None |
 | B45 | Token Efficiency Measurement & Visualization | P10 | B18, B16 |
 | B46 | Benchmark Source Verification + Dataset Pinning | P11 | completed |
@@ -1999,3 +2122,4 @@ _Ideas raised in conversation — not yet decided or scheduled._
 | 2026-03-27 (post-Wave-2) | 42 | 35 | 7 | Wave 2: B1-B7,B14,B15,B20,B22,B61 |
 | 2026-03-27 (post-Wave-3) | 42 | 38 | 4 | Wave 3: B48-B51,B54 |
 | 2026-03-27 (post-normalization) | 41 | 41 | 0 | All cards normalized; B9 reclassified as DONE |
+| 2026-03-28 (night audit) | 31 | 31 | 0 | B10, B11, B14, B17, B18, B27, B29, B31, B34, B36, B42 reclassified as DONE; B36 transport audit doc added |
