@@ -1,1 +1,1 @@
-# sidequests CLI package
+# sidequests.cli package

@@ -1,5 +1,5 @@
 {
-  "name": "@sidequests/sidequests-brain",
+  "name": "sidequests-brain",
   "version": "0.1.0",
   "description": "SideQuests Brain memory plugin for OpenClaw",
   "type": "module",

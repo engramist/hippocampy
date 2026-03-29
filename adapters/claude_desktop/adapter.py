@@ -1,24 +1,11 @@
 """
 adapters/claude_desktop/adapter.py — Claude Desktop MCP STDIO Adapter
 
-No hook system available (GUI app). Both user and assistant turns use notify_turn.
-Otherwise identical to the Codex adapter.
+Implements the MCP STDIO server that Claude Desktop talks to.
+Forwards tool calls to the Brain Daemon via Unix socket (JSON-RPC 2.0).
 
-Registration (added automatically by `sidequests setup`):
-  ~/Library/Application Support/Claude/claude_desktop_config.json:
-    {
-      "mcpServers": {
-        "sidequests-brain": {
-          "command": "python",
-          "args": ["/abs/path/to/adapters/claude_desktop/adapter.py"]
-        }
-      }
-    }
-
-Error/Degraded Mode:
-  Scenario A (daemon down): returns OFFLINE status on current_truth,
-    queues notify_turn to ~/.sidequests/offline_queue.jsonl for replay.
-  Scenario B (Ollama down): Brain handles internally (confidence_low storage).
+Run by Claude Desktop as: python -m sidequests.adapters.claude_desktop
+Registered in ~/Library/Application Support/Claude/claude_desktop_config.json by `sidequests setup`.
 """
 
 from __future__ import annotations
@@ -71,11 +58,11 @@ from mcp_engine.tool_schemas import TOOLS
 # Brain socket client
 # ---------------------------------------------------------------------------
 
-_SOCKET_TIMEOUT = 10.0
+_SOCKET_TIMEOUT = 10.0  # W4: read/write timeout in seconds
 
 # Token limits per known model family (conservative estimates)
 # Adapters can override via LLMProvider node in the graph
-_TOKEN_LIMIT = 200000  # default (Claude Desktop uses Sonnet 3.5 — 200k)
+_TOKEN_LIMIT = 200000  # default (Claude Desktop Sonnet 3.5)
 
 
 async def _call_brain(method: str, params: dict) -> dict:
@@ -90,6 +77,7 @@ async def _call_brain(method: str, params: dict) -> dict:
         reader, writer = await asyncio.open_unix_connection(str(SOCKET_PATH))
         writer.write((json.dumps(request) + "\n").encode())
         await writer.drain()
+        # W4 fix: apply timeout so a hung daemon doesn't block indefinitely.
         line = await asyncio.wait_for(reader.readline(), timeout=_SOCKET_TIMEOUT)
         writer.close()
         await writer.wait_closed()
@@ -133,10 +121,8 @@ def _inject_context(params: dict) -> dict:
 
 SYSTEM_PROMPT_FRAGMENT = (
     "[SideQuest | Brain: ACTIVE]\n"
-    "Project memory is active. Decisions and constraints are captured automatically.\n"
-    "Both user and assistant turns are forwarded via notify_turn.\n"
-    "Before answering about past choices → current_truth\n"
-    "Starting something that may resemble past work → analogical_search\n"
+    "Decisions and constraints are captured automatically in the background.\n"
+    "Before answering about past choices or architecture → current_truth\n"
     "Exploring a tangent? → branch_quest(name, purpose)\n"
     "After every response → notify_turn(role='assistant', content=<response>, session_id=<id>)\n"
     "When current_truth returns a panel_url field, include it as a markdown link: [View in Mission Control](url)"
@@ -148,20 +134,23 @@ _daemon_online = True
 
 
 async def _replay_offline_queue() -> None:
-    """Replay messages queued while the daemon was offline."""
+    """
+    W5 fix: replay messages queued while the daemon was offline.
+    Called after a successful brain call confirms the daemon is back online.
+    """
     if not OFFLINE_QUEUE.exists():
         return
     try:
         lines = OFFLINE_QUEUE.read_text(encoding="utf-8").splitlines()
         if not lines:
             return
-        OFFLINE_QUEUE.unlink()
+        OFFLINE_QUEUE.unlink()  # clear queue before replaying (idempotent)
         for line in lines:
             try:
                 entry = json.loads(line)
                 await _call_brain(entry["method"], entry["params"])
             except Exception:
-                pass  # best-effort replay
+                pass  # best-effort replay — don't re-queue failed replays
     except Exception:
         pass
 
@@ -182,8 +171,10 @@ async def handle_mcp_request(request: dict) -> dict:
 
     # MCP lifecycle
     if method == "initialize":
+        # Negotiate protocol version — echo back whatever the client requests
+        client_version = params.get("protocolVersion", "2024-11-05")
         return ok({
-            "protocolVersion": "2024-11-05",
+            "protocolVersion": client_version,
             "capabilities": {"tools": {}},
             "serverInfo": {"name": "sidequests-brain-desktop", "version": "0.1.0"},
         })
@@ -193,6 +184,17 @@ async def handle_mcp_request(request: dict) -> dict:
 
     if method == "tools/list":
         return ok({"tools": TOOLS})
+
+    # Some MCP clients probe resources/list during discovery — return empty
+    if method == "resources/list":
+        return ok({"resources": []})
+
+    if method == "prompts/list":
+        return ok({"prompts": [{"name": "sidequests-system", "description": "SideQuests Brain instructions"}]})
+
+    if method == "prompts/get":
+        return ok({"description": "SideQuests Brain instructions",
+                   "messages": [{"role": "user", "content": {"type": "text", "text": SYSTEM_PROMPT_FRAGMENT}}]})
 
     if method == "tools/call":
         tool_name  = params.get("name", "")
@@ -204,6 +206,7 @@ async def handle_mcp_request(request: dict) -> dict:
                 result = await _call_brain("notify_turn", tool_input)
                 was_offline = not _daemon_online
                 _daemon_online = True
+                # W3 + W5 fix: replay queued messages when daemon comes back online.
                 if was_offline:
                     await _replay_offline_queue()
                 return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
@@ -217,6 +220,8 @@ async def handle_mcp_request(request: dict) -> dict:
 
         # --- current_truth ---
         if tool_name == "current_truth":
+            # W3 fix: always attempt the call even when _daemon_online is False
+            # so the adapter can recover from offline state on its own.
             try:
                 result = await _call_brain("current_truth", tool_input)
                 was_offline = not _daemon_online
@@ -227,13 +232,64 @@ async def handle_mcp_request(request: dict) -> dict:
             except RuntimeError as e:
                 if "DAEMON_OFFLINE" in str(e):
                     _daemon_online = False
-                    return ok({"content": [{"type": "text", "text": OFFLINE_FRAGMENT}]})
+                    return ok({"content": [{"type": "text",
+                                            "text": OFFLINE_FRAGMENT}]})
                 return err(-32000, str(e))
 
-        # --- all other tools ---
-        if tool_name in ("branch_quest", "diff_since", "get_open_loops",
-                         "analogical_search", "ingest_document", "explore_graph",
-                         "complete_quest", "set_quest", "context_status"):
+        # --- branch_quest ---
+        if tool_name == "branch_quest":
+            try:
+                result = await _call_brain("branch_quest", tool_input)
+                _daemon_online = True
+                return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
+            except RuntimeError as e:
+                if "DAEMON_OFFLINE" in str(e):
+                    _daemon_online = False
+                    return ok({"content": [{"type": "text",
+                                            "text": '{"error": "daemon_offline"}'}]})
+                return err(-32000, str(e))
+
+        # --- diff_since ---
+        if tool_name == "diff_since":
+            try:
+                result = await _call_brain("diff_since", tool_input)
+                _daemon_online = True
+                return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
+            except RuntimeError as e:
+                if "DAEMON_OFFLINE" in str(e):
+                    _daemon_online = False
+                    return ok({"content": [{"type": "text",
+                                            "text": '{"error": "daemon_offline"}'}]})
+                return err(-32000, str(e))
+
+        # --- get_open_loops ---
+        if tool_name == "get_open_loops":
+            try:
+                result = await _call_brain("get_open_loops", tool_input)
+                _daemon_online = True
+                return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
+            except RuntimeError as e:
+                if "DAEMON_OFFLINE" in str(e):
+                    _daemon_online = False
+                    return ok({"content": [{"type": "text",
+                                            "text": '{"error": "daemon_offline"}'}]})
+                return err(-32000, str(e))
+
+        # --- analogical_search ---
+        if tool_name == "analogical_search":
+            try:
+                result = await _call_brain("analogical_search", tool_input)
+                _daemon_online = True
+                return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
+            except RuntimeError as e:
+                if "DAEMON_OFFLINE" in str(e):
+                    _daemon_online = False
+                    return ok({"content": [{"type": "text",
+                                            "text": '{"error": "daemon_offline"}'}]})
+                return err(-32000, str(e))
+
+        # --- ingest_document, explore_graph, complete_quest, set_quest, context_status (and future tools) ---
+        if tool_name in ("ingest_document", "explore_graph", "complete_quest", "set_quest", "context_status"):
             try:
                 result = await _call_brain(tool_name, tool_input)
                 _daemon_online = True

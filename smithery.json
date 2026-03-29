@@ -1,0 +1,37 @@
+{
+  "name": "sidequests-brain",
+  "version": "0.1.0",
+  "type": "stdio",
+  "description": "Local AI memory system with gated consolidation loop and graph-native Kùzu database",
+  "command": "python",
+  "args": ["-m", "sidequests.adapters.mcp_server"],
+  "tools": [
+    {
+      "name": "notify_turn",
+      "description": "Forward conversation turn to brain for passive ingestion and background processing"
+    },
+    {
+      "name": "current_truth",
+      "description": "Retrieve relevant memory before answering architecture/decision questions"
+    },
+    {
+      "name": "explore_graph",
+      "description": "Traverse the knowledge graph via directed traversal and pattern matching"
+    },
+    {
+      "name": "branch_quest",
+      "description": "Create a new SideQuest for tangent explorations"
+    },
+    {
+      "name": "complete_quest",
+      "description": "Mark the current quest as completed"
+    }
+  ],
+  "resources": [
+    {
+      "name": "Memory Index",
+      "description": "Real-time knowledge graph with Kùzu embedded vector store",
+      "type": "graph_database"
+    }
+  ]
+}

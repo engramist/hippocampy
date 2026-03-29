@@ -1,82 +1,67 @@
-"""
-sidequests/cli/detect.py — Detect installed AI clients.
-
-Checks for Claude Code, Claude Desktop, Codex CLI, Codex Desktop,
-ChatGPT Desktop, Gemini CLI, and OpenClaw
-using platform-appropriate detection methods (which/where for CLI tools,
-known app support directories for GUI apps).
-"""
-
-from __future__ import annotations
-import platform
 import shutil
-from pathlib import Path
+import os
+import platform
+from typing import Dict
 
+def detect_claude_code() -> bool:
+    """Check for 'claude' CLI in PATH."""
+    return shutil.which("claude") is not None
 
-def detect_installed_clients() -> dict[str, bool]:
-    """
-    Detect which AI clients are installed on this machine.
-
-    Returns a dict like:
-      {
-        "claude-code":      True,
-        "claude-desktop":   False,
-        "codex":            True,
-        "codex-desktop":    False,
-        "chatgpt-desktop":  False,
-        "gemini-cli":       False,
-        "openclaw":         False,
-      }
-
-    Detection methods:
-      claude-code:     `which claude` succeeds (CLI tool in PATH)
-      claude-desktop:  macOS: ~/Library/Application Support/Claude/ exists
-                       Windows: %APPDATA%/Claude/ exists
-      codex:           `which codex` succeeds (Codex CLI)
-      codex-desktop:   macOS: ~/Library/Application Support/Codex/ OR
-               ~/Library/Application Support/com.openai.codex/ exists
-               Windows: %APPDATA%/Codex/ exists
-      chatgpt-desktop: macOS: ~/Library/Application Support/com.openai.chat/ exists
-                       Windows: %APPDATA%/ChatGPT/ exists
-      gemini-cli:      `which gemini` succeeds
-      openclaw:        `which openclaw` succeeds
-    """
+def detect_claude_desktop() -> str:
+    """Check for Claude Desktop config location."""
     system = platform.system()
-    home = Path.home()
+    if system == "Darwin":
+        config_path = os.path.expanduser("~/Library/Application Support/Claude/claude_desktop_config.json")
+    elif system == "Windows":
+        config_path = os.path.expanduser("~/AppData/Roaming/Claude/claude_desktop_config.json")
+    else:
+        return ""
+        
+    if os.path.exists(config_path):
+        return config_path
+    return ""
 
-    clients: dict[str, bool] = {
-        "claude-code":     False,
-        "claude-desktop":  False,
-        "codex":           False,
-        "codex-desktop":   False,
-        "chatgpt-desktop": False,
-        "gemini-cli":      False,
-        "openclaw":        False,
+def detect_chatgpt_desktop() -> bool:
+    """Check for ChatGPT Desktop (placeholder for now)."""
+    # Currently just checking if on macOS/Windows as a proxy for availability
+    return platform.system() in ["Darwin", "Windows"]
+
+def detect_codex() -> bool:
+    """Check for Codex CLI in PATH."""
+    return shutil.which("codex") is not None
+
+def detect_codex_desktop() -> bool:
+    """Check for Codex Desktop."""
+    # Placeholder: usually shares config with codex CLI or has similar paths
+    return detect_codex()
+
+def detect_gemini_cli() -> bool:
+    """Check for 'gemini' CLI in PATH."""
+    return shutil.which("gemini") is not None
+
+def detect_openclaw() -> bool:
+    """Check for 'openclaw' CLI in PATH."""
+    return shutil.which("openclaw") is not None
+
+def detect_installed_clients() -> Dict[str, bool]:
+    """
+    Return a map of client-key to presence.
+    Required by installer and tests.
+    """
+    return {
+        "claude-code": detect_claude_code(),
+        "claude-desktop": bool(detect_claude_desktop()),
+        "codex": detect_codex(),
+        "codex-desktop": detect_codex_desktop(),
+        "chatgpt-desktop": detect_chatgpt_desktop(),
+        "gemini-cli": detect_gemini_cli(),
+        "openclaw": detect_openclaw(),
     }
 
-    # CLI tools — check PATH
-    clients["claude-code"] = shutil.which("claude") is not None
-    clients["codex"]       = shutil.which("codex") is not None
-    clients["gemini-cli"]  = shutil.which("gemini") is not None
-    clients["openclaw"]    = shutil.which("openclaw") is not None
-
-    # GUI apps — check app support directories
-    if system == "Darwin":
-        clients["claude-desktop"] = (
-            home / "Library" / "Application Support" / "Claude"
-        ).exists()
-        clients["codex-desktop"] = (
-            (home / "Library" / "Application Support" / "Codex").exists()
-            or (home / "Library" / "Application Support" / "com.openai.codex").exists()
-        )
-        clients["chatgpt-desktop"] = (
-            home / "Library" / "Application Support" / "com.openai.chat"
-        ).exists()
-    elif system == "Windows":
-        appdata = Path.home() / "AppData" / "Roaming"
-        clients["claude-desktop"]  = (appdata / "Claude").exists()
-        clients["codex-desktop"]   = (appdata / "Codex").exists()
-        clients["chatgpt-desktop"] = (appdata / "ChatGPT").exists()
-    # Linux: GUI detection deferred (no standard location yet)
-
-    return clients
+def detect_all() -> Dict[str, bool]:
+    """Compatibility wrapper for Typer setup command."""
+    results = detect_installed_clients()
+    # Also provide underscore versions for the Typer command if it still uses them
+    compat = {k.replace("-", "_"): v for k, v in results.items()}
+    results.update(compat)
+    return results
