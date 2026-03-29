@@ -104,7 +104,8 @@ async def explore_graph(params: Dict[str, Any], db: KuzuClient, config: Dict[str
     return {
         "paths": paths,
         "total_nodes_visited": total_visited,
-        "exploration_complete": True
+        "exploration_complete": True,
+        "exploration_truncated": total_visited >= MAX_NODES
     }
 
 def _get_node_data(db: KuzuClient, node_id: str, table: str) -> Dict[str, Any]:

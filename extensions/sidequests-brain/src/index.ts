@@ -23,6 +23,7 @@ interface BrainConfig {
   autoRecall: boolean;
   sessionId?: string;
   autoLaunch?: boolean;  // opt-in: attempt to start daemon if not running (default: false)
+  healthCheckIntervalMs?: number;  // B82: periodic daemon health ping interval (default: 30000)
 }
 
 // ---------------------------------------------------------------------------
@@ -255,10 +256,13 @@ export default {
       // when it is unreachable. Warning: may produce duplicate daemon instances
       // if the daemon is slow to start. Prefer the launchd/systemd service path.
       autoLaunch: api.pluginConfig?.autoLaunch ?? false,
+      healthCheckIntervalMs: Math.max(5000, Number(api.pluginConfig?.healthCheckIntervalMs ?? 30000)),
     };
 
     const brain = new BrainClient(cfg.brainUrl);
     let sessionId = cfg.sessionId || generateSessionId();
+    let isOnline = false;
+    let healthCheckInterval: any = null;
 
     // -------------------------------------------------------------------
     // 1. Register tools — core memory tools for explicit LLM use
@@ -1042,34 +1046,48 @@ export default {
     api.registerService?.({
       id: "sidequests-brain",
       async start() {
-        const alive = await brain.ping();
+        isOnline = await brain.ping();
+        const serviceInstalled = isDaemonServiceInstalled();
 
-        if (alive) {
+        if (isOnline) {
           console.log(
             `[SideQuests Brain] Connected to Brain Daemon at ${cfg.brainUrl} (Streamable HTTP)`
           );
-          return;
-        }
-
-        // Daemon not reachable — give a diagnostic-quality warning.
-        const serviceInstalled = isDaemonServiceInstalled();
-
-        if (!serviceInstalled) {
-          // Most actionable case: daemon was never configured as a service.
-          console.warn(
-            `[SideQuests Brain] Brain Daemon not running and no persistent service found. ` +
-              `Run \`sidequests install\` or \`sidequests setup\` to register the daemon as a ` +
-              `login-time background service (launchd on macOS, systemd on Linux). ` +
-              `Memory tools will be unavailable until the daemon is started.`
-          );
         } else {
-          // Service is installed — this is a transient failure (crash, slow start, etc.)
-          console.warn(
-            `[SideQuests Brain] Brain Daemon service is registered but not currently reachable ` +
-              `at ${cfg.brainUrl}. The service should restart automatically. ` +
-              `If it stays offline, run \`sidequests status\` to diagnose.`
-          );
+          // Daemon not reachable — give a diagnostic-quality warning.
+          if (!serviceInstalled) {
+            // Most actionable case: daemon was never configured as a service.
+            console.warn(
+              `[SideQuests Brain] Brain Daemon not running and no persistent service found. ` +
+                `Run \`sidequests install\` or \`sidequests setup\` to register the daemon as a ` +
+                `login-time background service (launchd on macOS, systemd on Linux). ` +
+                `Memory tools will be unavailable until the daemon is started.`
+            );
+          } else {
+            // Service is installed — this is a transient failure (crash, slow start, etc.)
+            console.warn(
+              `[SideQuests Brain] Brain Daemon service is registered but not currently reachable ` +
+                `at ${cfg.brainUrl}. The service should restart automatically. ` +
+                `If it stays offline, run \`sidequests status\` to diagnose.`
+            );
+          }
         }
+
+        // B82: Start periodic health check
+        healthCheckInterval = setInterval(async () => {
+          const currentlyAlive = await brain.ping();
+          if (currentlyAlive && !isOnline) {
+            console.log(
+              `[SideQuests Brain] Brain Daemon recovered — transitioning to online`
+            );
+            isOnline = true;
+          } else if (!currentlyAlive && isOnline) {
+            console.warn(
+              `[SideQuests Brain] Brain Daemon unreachable — transitioning to offline`
+            );
+            isOnline = false;
+          }
+        }, cfg.healthCheckIntervalMs);
 
         // Opt-in auto-launch fallback — disabled by default to avoid duplicate daemon risk.
         if (cfg.autoLaunch && !serviceInstalled) {
@@ -1104,6 +1122,7 @@ export default {
               console.log(
                 `[SideQuests Brain] Auto-launch succeeded — daemon is now reachable.`
               );
+              isOnline = true;
             } else {
               console.warn(
                 `[SideQuests Brain] Auto-launch attempted but daemon still not reachable. ` +
@@ -1118,7 +1137,10 @@ export default {
         }
       },
       async stop() {
-        // Nothing to clean up — Brain Daemon manages its own lifecycle via launchd/systemd.
+        if (healthCheckInterval) {
+          clearInterval(healthCheckInterval);
+          healthCheckInterval = null;
+        }
       },
     });
   },

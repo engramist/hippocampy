@@ -1090,23 +1090,23 @@ TypeScript extension registers ~31 tools (including aliases like `memory_recall`
 
 | # | Finding | Assigned To | Status | Date | Card | Notes |
 |---|---------|------------|--------|------|------|-------|
-| R2-A1 | 4 tools missing from adapters | — | OPEN | — | B70 | CRITICAL |
-| R2-A2 | No centralized adapter tool list | — | OPEN | — | B71 | |
-| R2-G1 | explore_graph missing edge types | — | OPEN | — | B72 | |
-| R2-G2 | N+1 outcome signal queries | — | OPEN | — | B73 | |
-| R2-G3 | O(n) cycle detection | — | OPEN | — | B77 | |
-| R2-G4 | No truncation warning | — | OPEN | — | B83 | |
-| R2-P1 | Valence not in sweep | — | OPEN | — | B74 | |
-| R2-P2 | Retrospective plan dedup threshold | — | OPEN | — | B78 | Monitor |
-| R2-P3 | Plan writes non-transactional | — | OPEN | — | B75 | |
-| R2-S1 | No embedding dim validation | — | OPEN | — | B76 | |
-| R2-S2 | content_embedding dead data | — | OPEN | — | B84 | |
-| R2-O1 | emb.embed() still sync | — | OPEN | — | B79 | |
-| R2-O2 | Step 1b filter too aggressive | — | OPEN | — | B80 | |
-| R2-AD1 | Gemini "LAST" prompt | — | OPEN | — | B85 | |
-| R2-AD2 | os.getcwd() workspace path | — | OPEN | — | B86 | |
-| R2-OC1 | 31 aliases vs 17 handlers | — | OPEN | — | B81 | |
-| R2-OC2 | No periodic health check | — | OPEN | — | B82 | |
+| R2-A1 | 4 tools missing from adapters | Codex/Gemini | DONE | 2026-03-29 | B70 | CRITICAL |
+| R2-A2 | No centralized adapter tool list | Codex/Gemini | DONE | 2026-03-29 | B71 | |
+| R2-G1 | explore_graph missing edge types | Codex/Gemini | DONE | 2026-03-29 | B72 | |
+| R2-G2 | N+1 outcome signal queries | Codex/Gemini | DONE | 2026-03-29 | B73 | |
+| R2-G3 | O(n) cycle detection | Codex/Gemini | DONE | 2026-03-29 | B77 | |
+| R2-G4 | No truncation warning | Codex/Gemini | DONE | 2026-03-29 | B83 | |
+| R2-P1 | Valence not in sweep | Codex/Gemini | DONE | 2026-03-29 | B74 | |
+| R2-P2 | Retrospective plan dedup threshold | Codex/Gemini | DONE | 2026-03-29 | B78 | Monitor |
+| R2-P3 | Plan writes non-transactional | Codex/Gemini | DONE | 2026-03-29 | B75 | |
+| R2-S1 | No embedding dim validation | Codex/Gemini | DONE | 2026-03-29 | B76 | |
+| R2-S2 | content_embedding dead data | Codex/Gemini | DONE | 2026-03-29 | B84 | |
+| R2-O1 | emb.embed() still sync | Codex/Gemini | DONE | 2026-03-29 | B79 | |
+| R2-O2 | Step 1b filter too aggressive | Codex/Gemini | DONE | 2026-03-29 | B80 | |
+| R2-AD1 | Gemini "LAST" prompt | Codex/Gemini | DONE | 2026-03-29 | B85 | |
+| R2-AD2 | os.getcwd() workspace path | Codex/Gemini | DONE | 2026-03-29 | B86 | |
+| R2-OC1 | 31 aliases vs 17 handlers | Codex/Gemini | DONE | 2026-03-29 | B81 | |
+| R2-OC2 | No periodic health check | Codex/Gemini | DONE | 2026-03-29 | B82 | |
 
 *Total new findings: 17 (1 CRITICAL, 7 HIGH, 6 MEDIUM, 3 LOW)*
 *Combined with Review #1: 49 resolved + 17 new = 66 total findings tracked*

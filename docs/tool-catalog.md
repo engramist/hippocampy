@@ -651,7 +651,7 @@ For integration testing node creation and validation:
 | Lesson | lesson_id | ✅ | ✅ |
 | Plan | plan_id | ✅ | ✅ |
 | PlanStep | step_id | ✅ | ❌ |
-| Session | session_id | ✅ (content_embedding) | ❌ |
+| Session | session_id | ❌ | ❌ |
 | MergeEvent | event_id | ❌ | ❌ |
 | GistClass | name | ✅ (centroid) | ❌ |
 | SchemaOrgType | name | ❌ | ❌ |
