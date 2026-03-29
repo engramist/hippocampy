@@ -32,6 +32,8 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from web.routes.metrics import register_token_metrics_routes
+
 _logger = logging.getLogger(__name__)
 
 # Registry of active SSE connections: connection_id → asyncio.Queue
@@ -78,7 +80,7 @@ def create_app(db, config: dict | None = None) -> FastAPI:
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     # ------------------------------------------------------------------
-    # Main UI
+    # Main UI & Deep-links
     # ------------------------------------------------------------------
 
     @app.get("/", response_class=HTMLResponse)
@@ -90,12 +92,89 @@ def create_app(db, config: dict | None = None) -> FastAPI:
             "<h1>SideQuest Memory Control Panel</h1><p>UI not found.</p>"
         )
 
+    @app.get("/memory/node/{node_id}", response_class=HTMLResponse)
+    async def node_detail_page(node_id: str, context: str | None = None):
+        """Deep-link entry point. Serves index.html; client-side JS handles the rest."""
+        html_path = STATIC_DIR / "index.html"
+        if html_path.exists():
+            return html_path.read_text(encoding="utf-8")
+        return HTMLResponse(
+            "<h1>SideQuest Memory Control Panel</h1><p>UI not found.</p>"
+        )
+
     # ------------------------------------------------------------------
-    # Stats
+    # Stats & Node Details
     # ------------------------------------------------------------------
 
+    @app.get("/api/node/{node_id}")
+    def get_node_detail(node_id: str):
+        """Fetch a single node's details and its immediate neighbors."""
+        # Find which table this node belongs to
+        node_data = None
+        node_table = None
+        pk_col = None
+
+        for table, pk in ARTIFACT_TABLES + [
+            ("Message",     "message_id"),
+            ("Document",    "document_id"),
+            ("MainQuest",   "quest_id"),
+            ("SideQuest",   "quest_id"),
+            ("Lesson",      "lesson_id"),
+        ]:
+            try:
+                r = db.execute(f"MATCH (n:{table}) WHERE n.{pk} = $id RETURN n", {"id": node_id})
+                if r.has_next():
+                    node_data = r.get_next()[0]
+                    node_table = table
+                    pk_col = pk
+                    break
+            except Exception:
+                continue
+
+        if not node_data:
+            raise HTTPException(status_code=404, detail="Node not found")
+
+        # Convert Kuzu node to dict, handling timestamp/UUID if needed
+        result = {
+            "id": node_id,
+            "type": node_table,
+            "properties": node_data,
+            "neighbors": []
+        }
+
+        # Fetch 1-hop neighbors
+        try:
+            r = db.execute(
+                f"MATCH (n:{node_table})-[r]-(m) WHERE n.{pk_col} = $id "
+                "RETURN m, label(m), label(r) LIMIT 20",
+                {"id": node_id}
+            )
+            while r.has_next():
+                row = r.get_next()
+                neighbor_node = row[0]
+                neighbor_label = row[1]
+                rel_label = row[2]
+                
+                # Get neighbor's ID (might be different PK columns)
+                nid = "unknown"
+                for _, pk in ARTIFACT_TABLES + [("Message", "message_id"), ("Document", "document_id"), ("MainQuest", "quest_id"), ("SideQuest", "quest_id"), ("Lesson", "lesson_id")]:
+                    if pk in neighbor_node:
+                        nid = neighbor_node[pk]
+                        break
+
+                result["neighbors"].append({
+                    "id": nid,
+                    "type": neighbor_label,
+                    "relation": rel_label,
+                    "text": neighbor_node.get("text_raw", neighbor_node.get("name", ""))[:100]
+                })
+        except Exception:
+            pass
+
+        return result
+
     @app.get("/api/stats")
-    def get_stats():  # W1: sync → FastAPI runs in threadpool, no event loop blocking
+    def get_stats():
         """Node counts per artifact table (archived=false only)."""
         counts = {}
         for table, pk in ARTIFACT_TABLES + [
@@ -116,6 +195,8 @@ def create_app(db, config: dict | None = None) -> FastAPI:
             except Exception:
                 counts[key] = 0
         return counts
+
+    register_token_metrics_routes(app, db)
 
     # ------------------------------------------------------------------
     # Graph visualization
@@ -700,8 +781,13 @@ def create_app(db, config: dict | None = None) -> FastAPI:
 
         # Node counts for stats panel
         try:
-            for table, key in [("Concept", "concepts"), ("Decision", "decisions"),
-                                ("Constraint", "constraints"), ("MainQuest", "quests")]:
+            for table, key in [
+                ("Concept", "concepts"),
+                ("Decision", "decisions"),
+                ("Constraint", "constraints"),
+                ("MainQuest", "quests"),
+                ("Message", "messages"),
+            ]:
                 r = db.execute(
                     f"MATCH (n:{table}) WHERE n.archived = false RETURN count(n)"
                 )
