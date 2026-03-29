@@ -17,6 +17,7 @@ from typing import Dict, Any, List
 import yaml
 
 from benchmarks.arc3.harness import ARC3Harness, ABVariant, load_tasks_from_manifest
+from benchmarks.harness import BenchmarkConfig
 from mcp_engine.config import load_config
 from mcp_engine.graph.kuzu_client import KuzuClient
 from mcp_engine.schema import init_schema
@@ -70,7 +71,16 @@ class SubmissionRunner:
         asyncio.create_task(self._loop_worker(centroids))
         
         # 6. Initialize Harness
-        self.harness = ARC3Harness(self.config, db=self.db)
+        # Convert dict config to BenchmarkConfig dataclass
+        benchmark_config = BenchmarkConfig(
+            name="ARC-AGI-3",
+            description="A/B evaluation: Baseline vs SideQuests-augmented agent",
+            timeout=3600,
+            memory_limit_gb=8.0,
+            cpu_limit_percent=80.0,
+            parameters=self.config.get("benchmark", {})
+        )
+        self.harness = ARC3Harness(benchmark_config, db=self.db)
         await self.harness.setup()
         
         # 7. Load Tasks
