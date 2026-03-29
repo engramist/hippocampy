@@ -587,7 +587,7 @@ async def test_dispatch_mcp_tools_list_direct():
     )
     tool_names = {t["name"] for t in resp["result"]["tools"]}
     assert "notify_turn" in tool_names
-    assert len(tool_names) == 14  # Core 12 + B11 upsert_lesson + recall_relevant_lessons
+    assert len(tool_names) == 17  # Prior 14 + B67 register_plan/report_outcome/recall_plans
 
 
 @pytest.mark.asyncio

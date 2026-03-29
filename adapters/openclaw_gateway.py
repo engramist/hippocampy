@@ -31,6 +31,9 @@ LAYER_2_ONBOARDING = (
     "Tools you control:\n"
     "- memory_recall(query): Retrieve relevant decisions/constraints before answering architecture questions\n"
     "- memory_search_analogies(query): Find similar problems from other projects/sessions\n"
+    "- register_plan(goal, steps): Declare your multi-step approach before execution\n"
+    "- recall_plans(goal_query): Review similar successful/failed strategies before planning\n"
+    "- report_outcome(plan_id, outcome, valence): Log outcomes from -1.0 (failure) to +1.0 (success)\n"
     "- memory_store(role, content): Save custom facts or forward turns to the Brain\n"
     "Check memory_status for how much is captured."
 )

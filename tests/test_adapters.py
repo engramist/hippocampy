@@ -8,9 +8,9 @@ Covers all 4 fully-implemented adapters:
   - adapters/gemini_cli/adapter.py
 
 Test categories:
-  1. MCP lifecycle (initialize, tools/list, notifications/initialized)
-  2. Tool registration (all 7 tools present with correct schemas)
-  3. Tool dispatch (all 7 tools forwarded to _call_brain)
+    1. MCP lifecycle (initialize, tools/list, notifications/initialized)
+    2. Tool registration (all expected tools present with correct schemas)
+    3. Tool dispatch (expected tools forwarded to _call_brain)
   4. Offline queue behavior (notify_turn queued, current_truth returns OFFLINE)
   5. Daemon recovery (offline → online transition)
   6. Git context injection (repo_root + git_branch in every call)
@@ -41,7 +41,16 @@ EXPECTED_TOOLS = {
     "get_open_loops", "analogical_search", "ingest_document", "explore_graph",
     "complete_quest", "set_quest", "context_status", "get_anomalies",
     "upsert_lesson", "recall_relevant_lessons",  # B11
+    "register_plan", "report_outcome", "recall_plans",  # B67
+    "get_openclaw_prompt",
 }
+
+def test_adapter_tool_names_match_handlers():
+    """Verify that tool_schemas.TOOLS matches mcp_engine.tools.TOOL_HANDLERS."""
+    from mcp_engine.tool_schemas import TOOLS
+    from mcp_engine.tools import TOOL_HANDLERS
+    schema_names = {t["name"] for t in TOOLS}
+    assert schema_names == set(TOOL_HANDLERS.keys())
 
 # Expected serverInfo name per adapter
 EXPECTED_SERVER_NAMES = {
@@ -130,8 +139,8 @@ async def test_unknown_method_returns_32601(adapter):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_tools_list_returns_all_seven(adapter):
-    """tools/list returns exactly the 7 expected tools."""
+async def test_tools_list_returns_all_expected(adapter):
+    """tools/list returns exactly the expected tools."""
     response = await adapter.handle_mcp_request({
         "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}
     })
@@ -172,7 +181,7 @@ async def test_current_truth_schema_has_required_fields(adapter):
 
 
 # ---------------------------------------------------------------------------
-# 3. Tool Dispatch — all 7 tools call _call_brain
+# 3. Tool Dispatch — expected tools call _call_brain
 # ---------------------------------------------------------------------------
 
 TOOL_CALLS = [
@@ -186,6 +195,9 @@ TOOL_CALLS = [
     ("explore_graph",    {"start_node_id": "abc-123"}),
     ("complete_quest",   {"quest_id": "quest-xyz"}),
     ("set_quest",        {"session_id": "s1", "quest_name": "New Project"}),
+    ("register_plan",    {"goal": "Ship fix", "steps": ["repro", "patch", "test"], "session_id": "s1"}),
+    ("report_outcome",   {"plan_id": "p1", "outcome": "tests passed", "valence": 0.9, "session_id": "s1"}),
+    ("recall_plans",     {"goal_query": "ship fix", "session_id": "s1"}),
 ]
 
 

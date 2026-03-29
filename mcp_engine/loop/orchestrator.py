@@ -17,6 +17,7 @@ Loop:
 """
 
 from __future__ import annotations
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -165,13 +166,13 @@ async def run_loop(message_id: str, text: str, db, llm_client,
     # _store_relation now calls _ensure_concept_exists for noun-chunk endpoints
     # (e.g. "fast graph traversal", "persistent storage") that aren't in the NER
     # entity list but ARE valid relation endpoints from the dep tree.
-    # Only filter: head entity must have survived Step 2 noise filter (we trust
-    # the NER subject; the object can be any noun chunk).
+    # Only filter: at least one endpoint (head or tail) must have survived 
+    # Step 2 noise filter (we trust the NER subject or object; the other
+    # can be any noun chunk). (B80)
     surviving_texts = {e["text"].lower() for e in typed_entities}
     surviving_step1b = [
         r for r in step1b_relations
-        if r["head"].lower() in surviving_texts  # head must be a known entity
-        # tail can be any noun chunk — _ensure_concept_exists handles missing ones
+        if (r["head"].lower() in surviving_texts or r["tail"].lower() in surviving_texts)
     ]
     summary["relations_found"] += len(surviving_step1b)
 
@@ -223,7 +224,9 @@ async def run_loop(message_id: str, text: str, db, llm_client,
             continue
 
         # O1 fix: reuse vector from Step 2 (already embedded there).
-        vector = entity.get("vector") or emb.embed(entity["text"], model_name=embedding_model)
+        vector = entity.get("vector")
+        if not vector:
+            vector = await asyncio.to_thread(emb.embed, entity["text"], model_name=embedding_model)
 
         # B12 — Anomaly Detection (before candidate retrieval)
         anomaly_result = await check_anomalies(entity["text"], vector, db, config)
@@ -627,7 +630,7 @@ async def _ensure_concept_exists(text: str, embedding_model: str, db, now: str) 
 
     # Create minimal concept node with embedding
     try:
-        vector = emb.embed(text, model_name=embedding_model)
+        vector = await asyncio.to_thread(emb.embed, text, model_name=embedding_model)
         await db.execute_write(
             """
             CREATE (c:Concept {

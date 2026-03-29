@@ -2,6 +2,8 @@
 
 This document serves as the official record for the conception and development of the invention known as "Side Quests." All entries are to be considered confidential and proprietary.
 
+> **Architecture Reference:** For current system design, schema, Loop steps, tools, and IP claims, see [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md).
+
 ### **Journal of Updates**
 
 * **March 28, 2026 (Night):** **B12 — Out-of-Band Behavioral Integrity Monitoring formally documented.** Named and added as a distinct IP claim, separate from the general Cocktail Party Effect (which governs memory formation). Named principle: **Out-of-Band Behavioral Integrity Monitoring**. Distinguished from the Cocktail Party Effect as follows: Cocktail Party governs *what to remember* (selective memory admission); Out-of-Band Behavioral Integrity Monitoring governs *whether an agent's behavior has been compromised* (constraint violation detection). Same daemon, same passive architecture, distinct security application domain. Changes made: (1) Added new Section 5.5.D with full named principle, scope, and implementation detail. (2) Added "Anomaly / Security Sense" to the Cocktail Party cognitive senses table in 5.3. (3) Expanded Claim #7 in Section 5.7 to explicitly separate this claim from the Cocktail Party Effect. (4) Journal entry logged. No code change required — Step 4 Contradiction sense + GlobalConstraint nodes already implement this mechanically. Flagged to patent attorney as distinct claim.

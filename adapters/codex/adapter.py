@@ -30,6 +30,9 @@ import sys
 import uuid
 from pathlib import Path
 from datetime import datetime, timezone
+from mcp_engine.tool_schemas import TOOLS
+
+_ALL_TOOL_NAMES = frozenset(t["name"] for t in TOOLS)
 
 SOCKET_PATH   = Path.home() / ".sidequests" / "brain.sock"
 OFFLINE_QUEUE = Path.home() / ".sidequests" / "offline_queue.jsonl"
@@ -160,6 +163,9 @@ SYSTEM_PROMPT_FRAGMENT = (
     "Project memory is active. Decisions and constraints are captured automatically.\n"
     "Before answering about past choices → current_truth\n"
     "Starting something that may resemble past work → analogical_search\n"
+    "When you form a multi-step strategy → register_plan(goal, steps, session_id)\n"
+    "Before planning similar work → recall_plans(goal_query, session_id)\n"
+    "After major steps or completion → report_outcome(plan_id, outcome, valence, session_id)\n"
     "Exploring a tangent? → branch_quest(name, purpose)\n"
     "After every response → notify_turn(role='assistant', content=<response>, session_id=<id>)\n"
     "When current_truth returns a panel_url field, include it as a markdown link: [View in Mission Control](url)"
@@ -239,10 +245,9 @@ async def handle_mcp_request(request: dict) -> dict:
 
         # --- all other tools: branch_quest, diff_since, get_open_loops,
         #                      analogical_search, ingest_document, explore_graph,
-        #                      complete_quest, set_quest, context_status ---
-        if tool_name in ("branch_quest", "diff_since", "get_open_loops",
-                         "analogical_search", "ingest_document", "explore_graph",
-                         "complete_quest", "set_quest", "context_status"):
+        #                      complete_quest, set_quest, context_status,
+        #                      register_plan, report_outcome, recall_plans ---
+        if tool_name in _ALL_TOOL_NAMES:
             try:
                 result = await _call_brain(tool_name, tool_input)
                 _daemon_online = True

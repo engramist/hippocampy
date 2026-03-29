@@ -93,6 +93,12 @@ A card is execution-ready only if:
 - Acceptance criteria are measurable.
 - Dependencies are explicit.
 - File targets are concrete.
+- The card explicitly checks whether any tool/work changes must also be propagated to adapter allow-lists.
+- If the card introduces or changes a tool, it must also include updates to docs/tool-catalog.md.
+
+How to verify:
+- Run `rg -n "TOOL_HANDLERS|TOOLS:" mcp_engine/tool_schemas.py mcp_engine/tools/__init__.py adapters` and confirm any new/changed tool is reflected in adapter allow-lists and docs/tool-catalog.md.
+- Run `pytest -q tests/test_adapters.py tests/test_analogical.py tests/test_web.py`.
 
 ## 5) Plan documents (what they are)
 

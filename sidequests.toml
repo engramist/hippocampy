@@ -1,5 +1,5 @@
 # SideQuest Brain Daemon — Configuration
-# See CLAUDE.md for full documentation on each setting.
+# See docs/ARCHITECTURE.md for full documentation on each setting.
 
 [llm]
 provider = "ollama"           # ollama | openai | anthropic | google
