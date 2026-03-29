@@ -1,0 +1,17 @@
+arc3:
+  metric: solve_rate_improvement
+  threshold: 0.05
+  operator: ">"
+longcontext:
+  metric: long_context_accuracy_improvement
+  threshold: 0.0
+  operator: ">="
+swe_ci:
+  metric: constraint_compliance_improvement
+  threshold: 0.0
+  operator: ">"
+ama:
+  metric: hypothesis_regression
+  threshold: 0.0
+  operator: "<"
+  is_relative_to_baseline: true

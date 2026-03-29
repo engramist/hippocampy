@@ -1,0 +1,11 @@
+{
+  "benchmark_name": "swe_ci",
+  "success": true,
+  "duration": 1800,
+  "metrics": {
+    "constraint_compliance_improvement": 0.12,
+    "p_value": 0.008
+  },
+  "error": null,
+  "timestamp": 1774716222.9185
+}

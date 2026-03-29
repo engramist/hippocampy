@@ -1,0 +1,22 @@
+# SideQuests Benchmark Unified Configuration
+
+global:
+  provider: "ollama"  # Default LLM provider
+  model: "llama3"    # Default LLM model
+  memory_limit_gb: 8.0
+  cpu_limit_percent: 80.0
+  timeout_policy: "fail_and_continue"
+  results_format: "json"
+
+benchmarks:
+  - name: "arc3"
+    description: "Abstraction and Reasoning Corpus (ARC-3) Benchmark"
+    timeout: 3600
+    parameters:
+      difficulty: "medium"
+
+  - name: "longcontext"
+    description: "Long-Context Memory Recall Benchmark (LoCoBench)"
+    timeout: 7200
+    parameters:
+      context_sizes: [8192, 32768, 131072]

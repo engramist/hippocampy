@@ -1,0 +1,11 @@
+{
+  "benchmark_name": "arc3",
+  "success": true,
+  "duration": 3600,
+  "metrics": {
+    "solve_rate_improvement": 0.08,
+    "p_value": 0.042
+  },
+  "error": null,
+  "timestamp": 1774716222.9183722
+}

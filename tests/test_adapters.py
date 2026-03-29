@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 # Adapter parametrization
 # ---------------------------------------------------------------------------
 
-ADAPTER_IDS = ["claude_code", "codex", "claude_desktop", "gemini_cli"]
+ADAPTER_IDS = ["claude_code", "codex", "claude_desktop", "gemini_cli", "chatgpt_desktop"]
 ADAPTER_MODULES = [
     f"adapters.{name.replace('-', '_')}.adapter" for name in ADAPTER_IDS
 ]
@@ -39,7 +39,8 @@ ADAPTER_MODULES = [
 EXPECTED_TOOLS = {
     "notify_turn", "current_truth", "branch_quest", "diff_since",
     "get_open_loops", "analogical_search", "ingest_document", "explore_graph",
-    "complete_quest", "set_quest", "context_status",
+    "complete_quest", "set_quest", "context_status", "get_anomalies",
+    "upsert_lesson", "recall_relevant_lessons",  # B11
 }
 
 # Expected serverInfo name per adapter
@@ -48,6 +49,7 @@ EXPECTED_SERVER_NAMES = {
     "codex":          "sidequests-brain-codex",
     "claude_desktop": "sidequests-brain-desktop",
     "gemini_cli":     "sidequests-brain-gemini",
+    "chatgpt_desktop": "sidequests-brain-chatgpt",
 }
 
 

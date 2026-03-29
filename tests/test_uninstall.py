@@ -21,7 +21,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from click.testing import CliRunner
+from typer.testing import CliRunner
 
 
 # ---------------------------------------------------------------------------
@@ -31,7 +31,7 @@ from click.testing import CliRunner
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sidequests.cli import uninstall as U
-from sidequests.cli.main import cli
+from sidequests.cli.main import app as cli
 
 
 # ---------------------------------------------------------------------------

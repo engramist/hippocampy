@@ -152,7 +152,7 @@ class TestContextHealth:
 
         class MockResult:
             def has_next(self): return True
-            def get_next(self): return [100000, 128000, 12]  # ~78% utilization
+            def get_next(self): return [100000, 128000, 12, 0, 0]  # ~78% utilization
 
         class MockDB:
             def execute(self, query, params=None): return MockResult()
@@ -167,7 +167,7 @@ class TestContextHealth:
 
         class MockResult:
             def has_next(self): return True
-            def get_next(self): return [30000, 128000, 5]  # ~23% utilization
+            def get_next(self): return [30000, 128000, 5, 0, 0]  # ~23% utilization
 
         class MockDB:
             def execute(self, query, params=None): return MockResult()
@@ -265,7 +265,7 @@ class TestContextStatusTool:
         class MockDB:
             def execute(self, query, params=None):
                 if "token_estimate" in query:
-                    return MockResult([[45000, 128000, 12]])
+                    return MockResult([[45000, 128000, 12, 0, 0]])
                 return MockResult()
 
         result = await context_status(
@@ -278,6 +278,8 @@ class TestContextStatusTool:
         assert "loaded_nodes" in result
         assert "bloat_warning" in result
         assert "handoff_available" in result
+        assert "tokens_saved_by_dedup" in result
+        assert "injection_count" in result
 
     @pytest.mark.asyncio
     async def test_context_status_requires_session_id(self):

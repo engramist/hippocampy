@@ -1,0 +1,22 @@
+[
+  {
+    "benchmark_name": "arc3",
+    "success": true,
+    "duration": 0.1,
+    "metrics": {
+      "accuracy": 0.95
+    },
+    "error": null,
+    "timestamp": 1774756291.161906
+  },
+  {
+    "benchmark_name": "longcontext",
+    "success": true,
+    "duration": 0.1,
+    "metrics": {
+      "accuracy": 0.95
+    },
+    "error": null,
+    "timestamp": 1774756291.161931
+  }
+]
