@@ -37,6 +37,8 @@ from mcp_engine.loop.step7_pathway   import (
     apply_additive, apply_contradiction, write_co_occurs_with,
     rescore_nearby_low_confidence,
 )
+from mcp_engine.loop.step7_5_lesson import extract_lessons  # B11
+from mcp_engine.loop.anomaly_detection import check_anomalies, store_anomaly_flag  # B12
 from mcp_engine.graph import embeddings as emb
 from mcp_engine.llm.provider import create_llm_client_for_step  # B16
 
@@ -72,6 +74,8 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         "contradictions":    0,
         "noise_count":       0,
         "reified":           0,
+        "lessons_found":     0,
+        "anomalies_detected": 0,  # B12
     }
 
     # ------------------------------------------------------------------
@@ -221,6 +225,9 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         # O1 fix: reuse vector from Step 2 (already embedded there).
         vector = entity.get("vector") or emb.embed(entity["text"], model_name=embedding_model)
 
+        # B12 — Anomaly Detection (before candidate retrieval)
+        anomaly_result = await check_anomalies(entity["text"], vector, db, config)
+
         # Step 5 — Candidate Retrieval
         # L8 fix: pass already-created concept_ids from this run as exclusions
         # so entities earlier in the same message don't match each other as
@@ -260,11 +267,20 @@ async def run_loop(message_id: str, text: str, db, llm_client,
             elif arb["classification"] == "contradiction":
                 # Create new concept node, then draw DEPRECATED_BY
                 concept_id = await _store_concept(
-                    entity, step4_result, vector, embedding_model, db, now
+                    entity, step4_result, vector, embedding_model, db, now,
+                    anomaly_result=anomaly_result
                 )
                 if concept_id:
                     summary["concepts_stored"] += 1
                     concept_ids.append(concept_id)
+                    # B12: Store anomaly edges if flagged
+                    if anomaly_result and anomaly_result.get("has_anomaly"):
+                        for anomaly in anomaly_result["anomalies"]:
+                            await store_anomaly_flag(
+                                db, concept_id, "Concept", anomaly["type"],
+                                anomaly["target_id"], anomaly["confidence"]
+                            )
+                            summary["anomalies_detected"] += 1
                     await apply_contradiction(
                         concept_id, top["concept_id"], message_id, db, now
                     )
@@ -290,21 +306,39 @@ async def run_loop(message_id: str, text: str, db, llm_client,
             else:
                 # "uncertain" — store both, both remain confidence_low
                 concept_id = await _store_concept(
-                    entity, step4_result, vector, embedding_model, db, now
+                    entity, step4_result, vector, embedding_model, db, now,
+                    anomaly_result=anomaly_result
                 )
                 if concept_id:
                     summary["concepts_stored"] += 1
                     concept_ids.append(concept_id)
+                    # B12: Store anomaly edges if flagged
+                    if anomaly_result and anomaly_result.get("has_anomaly"):
+                        for anomaly in anomaly_result["anomalies"]:
+                            await store_anomaly_flag(
+                                db, concept_id, "Concept", anomaly["type"],
+                                anomaly["target_id"], anomaly["confidence"]
+                            )
+                            summary["anomalies_detected"] += 1
                     # uncertain does not trigger REIFIED_AS (confidence_low stays true)
 
         else:
             # No match — store as new concept
             concept_id = await _store_concept(
-                entity, step4_result, vector, embedding_model, db, now
+                entity, step4_result, vector, embedding_model, db, now,
+                anomaly_result=anomaly_result
             )
             if concept_id:
                 summary["concepts_stored"] += 1
                 concept_ids.append(concept_id)
+                # B12: Store anomaly edges if flagged
+                if anomaly_result and anomaly_result.get("has_anomaly"):
+                    for anomaly in anomaly_result["anomalies"]:
+                        await store_anomaly_flag(
+                            db, concept_id, "Concept", anomaly["type"],
+                            anomaly["target_id"], anomaly["confidence"]
+                        )
+                        summary["anomalies_detected"] += 1
                 if not step4_result["confidence_low"]:
                     await _reify_concept(
                         concept_id, step4_result["artifact_type"],
@@ -326,6 +360,11 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         min_conf = 0.60  # noise floor minimum
         await write_co_occurs_with(concept_ids, min_conf, db, now, co_threshold)
 
+    # Step 7.5 — Lesson extraction (indicator-based)
+    summary["lessons_found"] = await extract_lessons(
+        message_id, text, db, llm_client, config, session_id=session_id
+    )
+
     # B32 fix: flush deferred relations AFTER all Concept nodes are created.
     # _store_relation will ensure both endpoints exist before creating the edge.
     for rel in deferred_relations:
@@ -339,7 +378,8 @@ async def run_loop(message_id: str, text: str, db, llm_client,
 # ---------------------------------------------------------------------------
 
 async def _store_concept(entity: dict, step4: dict, vector: list[float],
-                          embedding_model: str, db, now: str) -> str | None:
+                          embedding_model: str, db, now: str,
+                          anomaly_result: dict | None = None) -> str | None:
     """
     Create a Concept node for an entity that cleared the noise floor.
 
@@ -350,8 +390,18 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
     separate nodes across 3 sessions.
     If an exact match exists, return the existing concept_id and bump its
     last_accessed_at instead of creating a duplicate.
+
+    B12: anomaly_result from check_anomalies is passed to flag anomalous nodes.
     """
     confidence = step4["confidence"]
+    anomaly_type = None
+    flagged_for_review = False
+
+    if anomaly_result and anomaly_result.get("has_anomaly"):
+        flagged_for_review = True
+        if anomaly_result.get("anomalies"):
+            # Use the first anomaly type for the node-level field
+            anomaly_type = anomaly_result["anomalies"][0]["type"]
 
     # B33: exact-match dedup before CREATE
     try:
@@ -395,6 +445,8 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
                 confidence_low:   $confidence_low,
                 pathway_strength: $pathway_strength,
                 archived:         false,
+                anomaly_type:     $anomaly_type,
+                flagged_for_review: $flagged_for_review,
                 created_at:       timestamp($created_at),
                 last_accessed_at: timestamp($created_at)
             })
@@ -410,6 +462,8 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
                 "confidence":      confidence,
                 "confidence_low":  step4["confidence_low"],
                 "pathway_strength": max(confidence, 0.50),
+                "anomaly_type":    anomaly_type,
+                "flagged_for_review": flagged_for_review,
                 "created_at":      now,
             }
         )
