@@ -1,0 +1,11 @@
+{
+  "benchmark_name": "ama",
+  "success": true,
+  "duration": 900,
+  "metrics": {
+    "hypothesis_regression": -0.05,
+    "p_value": 0.033
+  },
+  "error": null,
+  "timestamp": 1774716222.9186
+}

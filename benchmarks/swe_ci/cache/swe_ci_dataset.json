@@ -1,0 +1,26 @@
+[
+  {
+    "task_id": "swe-001",
+    "description": "Implement the budget evaluator without loops.",
+    "constraints": ["no loops", "unit tests", "float precision"],
+    "difficulty": 0.42
+  },
+  {
+    "task_id": "swe-002",
+    "description": "Add configuration validation for contractor overrides.",
+    "constraints": ["unit tests", "idempotent updates"],
+    "difficulty": 0.46
+  },
+  {
+    "task_id": "swe-003",
+    "description": "Refactor the retry backoff to handle new throttling rules.",
+    "constraints": ["idempotent updates", "no busy wait"],
+    "difficulty": 0.38
+  },
+  {
+    "task_id": "swe-004",
+    "description": "Expose the diagnostics endpoint behind a feature flag.",
+    "constraints": ["no busy wait", "nullable headers"],
+    "difficulty": 0.48
+  }
+]
