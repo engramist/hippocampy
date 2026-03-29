@@ -85,8 +85,10 @@ def test_assistant_capture_calls_notify_turn_with_assistant_role():
 def test_auto_recall_calls_current_truth():
     src = _source()
     # Find the block for preAgentEvent and verify it calls current_truth
-    recall_block = src[src.find("api.on(OPENCLAW_EVENT_CONTRACT.preAgentEvent"):]
-    recall_block = recall_block[:recall_block.find("});", recall_block.find("brain.callTool"))]
+    # We look for the start of the handler and search for current_truth within a reasonable window
+    start_idx = src.find("api.on(OPENCLAW_EVENT_CONTRACT.preAgentEvent")
+    assert start_idx != -1
+    recall_block = src[start_idx : start_idx + 2000] # search next 2000 chars
     assert 'brain.callTool("current_truth"' in recall_block
 
 

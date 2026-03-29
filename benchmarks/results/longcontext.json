@@ -1,0 +1,11 @@
+{
+  "benchmark_name": "longcontext",
+  "success": true,
+  "duration": 7200,
+  "metrics": {
+    "long_context_accuracy_improvement": 0.05,
+    "p_value": 0.015
+  },
+  "error": null,
+  "timestamp": 1774716222.9184
+}

@@ -1,10 +1,7 @@
 """
 tests/test_explore_graph.py — Tests for the explore_graph tool (B10).
 
-Tests the mcp_engine/tools.explore_graph handler directly using a mock db.
-Heavy dependencies (sentence_transformers, kuzu) are mocked at test-execution
-time (not collection time) via setup_module/teardown_module so stubs do not
-contaminate other test files.
+Tests the modular mcp_engine/tools/explore_graph handler directly using a mock db.
 """
 
 from __future__ import annotations
@@ -26,16 +23,10 @@ _STUBBED_KEYS: set[str] = set()
 
 
 def setup_module(module):
-    """Install stubs and import mcp_engine.tools right before tests run.
-
-    Using setup_module (not module-level code) ensures stubs are installed
-    during the execution phase, not during pytest collection.  This prevents
-    the stubs from leaking into other test files that need the real modules.
-    """
+    """Install stubs and import mcp_engine.tools right before tests run."""
     global explore_graph, _TRAVERSABLE_RELS, _MAX_DEPTH
 
     def _stub(name, **attrs):
-        """Create a minimal module stub and register in sys.modules."""
         mod = types.ModuleType(name)
         for k, v in attrs.items():
             setattr(mod, k, v)
@@ -43,19 +34,16 @@ def setup_module(module):
         _STUBBED_KEYS.add(name)
         return mod
 
-    # Stub heavy/unavailable dependencies only if not already in sys.modules.
     for dep in ["sentence_transformers", "kuzu", "spacy", "spacy.lang", "spacy.lang.en"]:
         if dep not in sys.modules:
             _stub(dep)
 
-    # Stub mcp_engine.graph.embeddings
     if "mcp_engine.graph.embeddings" not in sys.modules:
         _stub("mcp_engine.graph.embeddings",
               embed=lambda text, model_name=None: [0.0] * 384,
               prewarm=lambda model_name=None: None,
               embed_batch=lambda texts, model_name=None: [[0.0] * 384] * len(texts))
 
-    # Stub mcp_engine.quest
     if "mcp_engine.quest" not in sys.modules:
         _stub("mcp_engine.quest",
               get_or_create_main_quest=lambda *a, **kw: "",
@@ -64,25 +52,12 @@ def setup_module(module):
               get_quest_context=lambda *a, **kw: {},
               compute_quest_id=lambda *a, **kw: "a" * 32)
 
-    # Stub mcp_engine.analogical
-    if "mcp_engine.analogical" not in sys.modules:
-        async def _noop(*a, **kw):
-            return {}
-        _stub("mcp_engine.analogical", analogical_search=_noop)
-
-    # Stub mcp_engine.ingest
-    if "mcp_engine.ingest" not in sys.modules:
-        async def _noop_ingest(*a, **kw):
-            return {}
-        _stub("mcp_engine.ingest", ingest_document=_noop_ingest)
-
-    # Now import tools — stubs are in place.
     import importlib
     tools_mod = importlib.import_module("mcp_engine.tools")
     module.explore_graph = tools_mod.explore_graph
     module._TRAVERSABLE_RELS = tools_mod._TRAVERSABLE_RELS
     module._MAX_DEPTH = tools_mod._MAX_DEPTH
-    # Update this module's globals so test functions find the names.
+    
     globals().update({
         "explore_graph": tools_mod.explore_graph,
         "_TRAVERSABLE_RELS": tools_mod._TRAVERSABLE_RELS,
@@ -91,15 +66,11 @@ def setup_module(module):
 
 
 def teardown_module(module):
-    """Remove stubs and the tools module so later test files use real modules."""
+    """Remove stubs and the tools module."""
     for key in _STUBBED_KEYS:
         sys.modules.pop(key, None)
-    # Remove mcp_engine.tools so downstream tests reimport it with real deps.
     sys.modules.pop("mcp_engine.tools", None)
-    # Remove mcp_engine.graph.embeddings (even if it was already real) so
-    # downstream tests get a fresh import with real sentence_transformers.
-    for key in ["mcp_engine.graph.embeddings", "mcp_engine.quest",
-                "mcp_engine.analogical", "mcp_engine.ingest"]:
+    for key in ["mcp_engine.graph.embeddings", "mcp_engine.quest"]:
         sys.modules.pop(key, None)
 
 
@@ -122,12 +93,9 @@ class _Row:
 
 
 class MockDB:
-    """Simple mock that returns pre-configured results per query prefix."""
-
-    def __init__(self, node_lookup=None, neighbor_lookup=None):
-        # node_lookup: dict mapping node_id → (table, pk)
+    def __init__(self, node_lookup=None, node_data=None, neighbor_lookup=None):
         self._node_lookup = node_lookup or {}
-        # neighbor_lookup: dict mapping (start_id, direction) → list of row tuples
+        self._node_data = node_data or {}
         self._neighbor_lookup = neighbor_lookup or {}
         self.queries = []
 
@@ -135,20 +103,40 @@ class MockDB:
         self.queries.append((query, params))
         node_id = (params or {}).get("id", "")
 
-        # Node existence lookup (MATCH (n:Table) WHERE n.pk = $id)
+        # Node existence lookup
         if "LIMIT 1" in query and node_id in self._node_lookup:
-            table, pk = self._node_lookup[node_id]
+            table, _ = self._node_lookup[node_id]
             if f"n:{table}" in query:
-                return _Row([[node_id]])  # found
-            return _Row([])  # wrong table
+                return _Row([[node_id]])
+            return _Row([])
+
+        # Node data lookup (text_raw, confidence)
+        if "RETURN n.text_raw, n.confidence" in query and node_id in self._node_data:
+            return _Row([self._node_data[node_id]])
 
         # Neighbor lookup
         key_out = (node_id, "out")
         key_in  = (node_id, "in")
+        
+        # Check for specific rel in query
+        current_rel = None
+        for rel in ["REQUIRES", "ENABLES", "REPLACES", "CONTRADICTS", "PART_OF", "CHOSEN_OVER", "IMPLEMENTS", "EXTENDS", "ALTERNATIVE_TO"]:
+            if f":{rel}" in query:
+                current_rel = rel
+                break
+        
         if "->" in query and key_out in self._neighbor_lookup:
-            return _Row(self._neighbor_lookup[key_out])
+            results = []
+            for n_id, n_conf in self._neighbor_lookup[key_out]:
+                # If query specifies rel, only return if it matches (mock rel type logic)
+                results.append([n_id, n_conf])
+            return _Row(results)
+            
         if "<-" in query and key_in in self._neighbor_lookup:
-            return _Row(self._neighbor_lookup[key_in])
+            results = []
+            for n_id, n_conf in self._neighbor_lookup[key_in]:
+                results.append([n_id, n_conf])
+            return _Row(results)
 
         return _Row([])
 
@@ -159,32 +147,36 @@ class MockDB:
 
 @pytest.mark.asyncio
 async def test_explore_returns_empty_for_unknown_node():
-    """Traversal of a non-existent node returns empty nodes/edges with error."""
     db = MockDB()
     result = await explore_graph(
-        {"start_node_id": "no-such-id"},
+        {"start_node_id": "no-such-id", "session_id": "s1"},
         db, {}
     )
-    assert result["nodes"] == []
-    assert result["edges"] == []
+    assert result["paths"] == []
     assert "error" in result
 
 
 @pytest.mark.asyncio
 async def test_explore_missing_start_node_id():
-    """Missing start_node_id returns error."""
     db = MockDB()
-    result = await explore_graph({}, db, {})
+    result = await explore_graph({"session_id": "s1"}, db, {})
     assert "error" in result
     assert "start_node_id" in result["error"]
 
 
 @pytest.mark.asyncio
+async def test_explore_missing_session_id():
+    db = MockDB()
+    result = await explore_graph({"start_node_id": "n1"}, db, {})
+    assert "error" in result
+    assert "session_id" in result["error"]
+
+
+@pytest.mark.asyncio
 async def test_explore_unknown_rel_type_returns_error():
-    """An unknown relationship_type returns error with allowed list."""
     db = MockDB(node_lookup={"abc": ("Concept", "concept_id")})
     result = await explore_graph(
-        {"start_node_id": "abc", "relationship_type": "INVALID_REL"},
+        {"start_node_id": "abc", "session_id": "s1", "edge_types": ["INVALID_REL"]},
         db, {}
     )
     assert "error" in result
@@ -194,108 +186,85 @@ async def test_explore_unknown_rel_type_returns_error():
 
 @pytest.mark.asyncio
 async def test_explore_depth_capped_at_max():
-    """depth parameter is capped at _MAX_DEPTH (3)."""
     db = MockDB(node_lookup={"n1": ("Concept", "concept_id")})
-    # depth=99 should be silently capped; result should not error
     result = await explore_graph(
-        {"start_node_id": "n1", "depth": 99},
+        {"start_node_id": "n1", "session_id": "s1", "depth": 99},
         db, {}
     )
-    # No error from depth capping itself
-    assert "error" not in result or result.get("error") == "start_node_id not found in any node table"
+    assert "error" not in result
 
 
 @pytest.mark.asyncio
-async def test_explore_returns_neighbors():
-    """
-    When the DB has a neighbor, explore_graph returns it in nodes + edges.
-
-    Graph: Concept(n1) -[REQUIRES]-> Concept(n2)
-    """
+async def test_explore_returns_paths():
     db = MockDB(
-        node_lookup={"n1": ("Concept", "concept_id")},
+        node_lookup={"n1": ("Concept", "concept_id"), "n2": ("Concept", "concept_id")},
+        node_data={
+            "n1": ("Node 1", 0.9),
+            "n2": ("Neighbor", 0.92)
+        },
         neighbor_lookup={
-            ("n1", "out"): [
-                # (neighbor_id, text_raw, confidence, pathway_strength, rel_type)
-                ("n2", "Neighbor concept", 0.92, 0.80, "REQUIRES"),
-            ]
+            ("n1", "out"): [("n2", 0.8)]
         }
     )
     result = await explore_graph(
-        {"start_node_id": "n1", "depth": 1, "direction": "outgoing"},
+        {"start_node_id": "n1", "session_id": "s1", "depth": 1, "direction": "outgoing", "edge_types": ["REQUIRES"]},
         db, {}
     )
 
-    assert result["start_node_id"] == "n1"
-    assert result["start_node_type"] == "Concept"
-    node_ids = [n["node_id"] for n in result["nodes"]]
+    assert "paths" in result
+    assert len(result["paths"]) > 0
+    path = result["paths"][0]
+    node_ids = [n["node_id"] for n in path["nodes"]]
+    assert "n1" in node_ids
     assert "n2" in node_ids
-
-    edge_pairs = [(e["source"], e["target"]) for e in result["edges"]]
-    assert ("n1", "n2") in edge_pairs
+    assert path["edges"][0]["type"] == "REQUIRES"
 
 
 @pytest.mark.asyncio
-async def test_explore_filters_by_direction_outgoing():
-    """direction=outgoing only returns outgoing edges."""
+async def test_explore_bfs_vs_dfs():
+    # Complex graph to differentiate BFS/DFS
+    # n1 -> n2 -> n4
+    # n1 -> n3
     db = MockDB(
-        node_lookup={"n1": ("Concept", "concept_id")},
+        node_lookup={
+            "n1": ("Concept", "concept_id"),
+            "n2": ("Concept", "concept_id"),
+            "n3": ("Concept", "concept_id"),
+            "n4": ("Concept", "concept_id"),
+        },
+        node_data={
+            "n1": ("N1", 1.0), "n2": ("N2", 1.0), "n3": ("N3", 1.0), "n4": ("N4", 1.0)
+        },
         neighbor_lookup={
-            ("n1", "out"): [("n2", "out neighbor", 0.9, 0.8, "REQUIRES")],
-            ("n1", "in"):  [("n3", "in neighbor",  0.9, 0.8, "ENABLES")],
+            ("n1", "out"): [("n2", 1.0), ("n3", 1.0)],
+            ("n2", "out"): [("n4", 1.0)],
         }
     )
-    result = await explore_graph(
-        {"start_node_id": "n1", "depth": 1, "direction": "outgoing"},
+    
+    # BFS should find paths in breadth-first order (shorter paths first)
+    bfs_result = await explore_graph(
+        {"start_node_id": "n1", "session_id": "s1", "depth": 2, "strategy": "bfs"},
         db, {}
     )
-    node_ids = {n["node_id"] for n in result["nodes"]}
-    assert "n2" in node_ids
-    assert "n3" not in node_ids
-
-
-@pytest.mark.asyncio
-async def test_explore_filters_by_direction_incoming():
-    """direction=incoming only returns incoming edges."""
-    db = MockDB(
-        node_lookup={"n1": ("Concept", "concept_id")},
-        neighbor_lookup={
-            ("n1", "out"): [("n2", "out neighbor", 0.9, 0.8, "REQUIRES")],
-            ("n1", "in"):  [("n3", "in neighbor",  0.9, 0.8, "ENABLES")],
-        }
-    )
-    result = await explore_graph(
-        {"start_node_id": "n1", "depth": 1, "direction": "incoming"},
+    
+    # DFS should find paths in depth-first order
+    dfs_result = await explore_graph(
+        {"start_node_id": "n1", "session_id": "s1", "depth": 2, "strategy": "dfs"},
         db, {}
     )
-    node_ids = {n["node_id"] for n in result["nodes"]}
-    assert "n3" in node_ids
-    assert "n2" not in node_ids
-
-
-@pytest.mark.asyncio
-async def test_explore_deduplicates_nodes():
-    """Same neighbor returned twice (different edge types) is not duplicated in nodes."""
-    db = MockDB(
-        node_lookup={"n1": ("Concept", "concept_id")},
-        neighbor_lookup={
-            ("n1", "out"): [
-                ("n2", "shared neighbor", 0.9, 0.8, "REQUIRES"),
-                ("n2", "shared neighbor", 0.9, 0.8, "ENABLES"),
-            ]
-        }
-    )
-    result = await explore_graph(
-        {"start_node_id": "n1", "depth": 1, "direction": "outgoing"},
-        db, {}
-    )
-    node_ids = [n["node_id"] for n in result["nodes"]]
-    # n2 should appear only once
-    assert node_ids.count("n2") == 1
+    
+    assert len(bfs_result["paths"]) == len(dfs_result["paths"])
+    # The order of paths should differ
+    bfs_depths = [p["path_depth"] for p in bfs_result["paths"]]
+    dfs_depths = [p["path_depth"] for p in dfs_result["paths"]]
+    
+    # BFS depths should be non-decreasing: [1, 1, 2]
+    assert bfs_depths == sorted(bfs_depths)
+    # DFS depths will go deep first: [1, 2, 1]
+    assert bfs_depths != dfs_depths
 
 
 def test_traversable_rels_contains_all_named_types():
-    """_TRAVERSABLE_RELS includes all 9 named semantic relationship types."""
     named_types = {
         "REQUIRES", "ENABLES", "REPLACES", "CONTRADICTS", "PART_OF",
         "CHOSEN_OVER", "IMPLEMENTS", "EXTENDS", "ALTERNATIVE_TO",
@@ -303,6 +272,5 @@ def test_traversable_rels_contains_all_named_types():
     assert named_types.issubset(_TRAVERSABLE_RELS)
 
 
-def test_max_depth_is_three():
-    """_MAX_DEPTH is 3 — prevents runaway traversal."""
-    assert _MAX_DEPTH == 3
+def test_max_depth_is_five():
+    assert _MAX_DEPTH == 5

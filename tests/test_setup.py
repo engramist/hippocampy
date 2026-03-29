@@ -63,6 +63,30 @@ def test_register_openclaw_installs_patches_and_restarts(tmp_path):
     assert ["/usr/local/bin/openclaw", "sandbox", "explain"] in calls
 
 
+def test_register_openclaw_patches_config_before_install(tmp_path):
+    from sidequests.cli import setup as setup_mod
+
+    config_path = tmp_path / "openclaw.json"
+    extension_dir = tmp_path / "extensions" / "sidequests-brain"
+    extension_dir.mkdir(parents=True)
+
+    def fake_run(cmd, capture_output=False, text=False):
+        if cmd[:3] == ["/usr/local/bin/openclaw", "plugins", "install"]:
+            saved = json.loads(config_path.read_text())
+            assert "sidequests-brain" in saved["plugins"]["allow"]
+        return MagicMock(
+            returncode=0,
+            stdout="group:plugins\nmemory_recall\nmemory_search\nmemory_get\nmemory_store\nmemory_search_analogies\nmemory_status\nmemory_open_loops\n",
+            stderr="",
+        )
+
+    with patch.object(setup_mod, "_OPENCLAW_CONFIG_PATH", config_path):
+        with patch.object(setup_mod, "_OPENCLAW_EXTENSION_DIR", extension_dir):
+            with patch("sidequests.cli.setup.shutil.which", return_value="/usr/local/bin/openclaw"):
+                with patch("sidequests.cli.setup.subprocess.run", side_effect=fake_run):
+                    setup_mod._register_openclaw()
+
+
 def test_detect_installed_clients_reports_openclaw():
     with patch("sidequests.cli.detect.shutil.which") as mock_which:
         mock_which.side_effect = lambda name: "/usr/local/bin/openclaw" if name == "openclaw" else None

@@ -28,7 +28,9 @@ def test_extension_registers_memory_get_alias():
 
 def test_extension_aliases_route_to_current_truth():
     src = _source()
-    assert 'const registerRecallTool = (' in src
-    assert 'brain.callTool("current_truth"' in src
-    assert 'registerRecallTool(\n      "memory_search"' in src
-    assert 'registerRecallTool(\n      "memory_get"' in src
+    assert 'const registerBrainTool = (' in src
+    assert 'brain.callTool(' in src
+    assert 'callName: "current_truth"' in src
+    # Verify memory_search and memory_get are defined and route to current_truth
+    assert 'name: "memory_search"' in src
+    assert 'name: "memory_get"' in src

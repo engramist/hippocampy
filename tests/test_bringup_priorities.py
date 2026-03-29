@@ -95,6 +95,7 @@ def _patch_run_install_happy_path(monkeypatch, call_log: list[str], *, daemon_ok
     import sidequests.cli.smoke_test as smoke_mod
 
     monkeypatch.setattr(smoke_mod, "check_status", fake_check_status)
+    monkeypatch.setattr(install_mod, "_wait_for_daemon", lambda **k: True)
 
 
 # ---------------------------------------------------------------------------
