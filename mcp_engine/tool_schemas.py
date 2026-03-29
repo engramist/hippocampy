@@ -124,24 +124,41 @@ TOOLS: list[dict] = [
     {
         "name": "explore_graph",
         "description": (
-            "Traverse the knowledge graph from a known node. Use when current_truth "
-            "returns a relevant node and you want to see what it connects to. "
-            "Returns neighboring nodes and edges up to 3 hops."
+            "Traverse knowledge graph from a seed node, following relationships up to N hops. "
+            "Enables following causal chains and multi-hop relationships."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "start_node_id":     {"type": "string",
-                                      "description": "ID of the node to start from (from current_truth results)."},
-                "relationship_type": {"type": "string",
-                                      "description": "Filter to a specific edge type (e.g. REQUIRES, ENABLES)."},
-                "direction":         {"type": "string",
-                                      "enum": ["outgoing", "incoming", "both"],
-                                      "default": "both"},
-                "depth":             {"type": "integer", "default": 1,
-                                      "description": "Traversal depth 1–3."},
+                "start_node_id": {
+                    "type": "string",
+                    "description": "Node ID to start traversal (from current_truth results)."
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "depth": {
+                    "type": "integer",
+                    "default": 3,
+                    "minimum": 1,
+                    "maximum": 5
+                },
+                "strategy": {
+                    "type": "string",
+                    "enum": ["dfs", "bfs"],
+                    "default": "dfs"
+                },
+                "edge_types": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                },
+                "direction": {
+                    "type": "string",
+                    "enum": ["outgoing", "incoming", "both"],
+                    "default": "both"
+                }
             },
-            "required": ["start_node_id"],
+            "required": ["start_node_id", "session_id"]
         },
     },
     {
@@ -191,6 +208,57 @@ TOOLS: list[dict] = [
                 "session_id": {"type": "string"},
             },
             "required": ["session_id"],
+        },
+    },
+    {
+        "name": "upsert_lesson",
+        "description": (
+            "Explicitly add or update a domain-specific lesson learned. "
+            "Lessons enable transfer learning across project boundaries."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text":        {"type": "string", "description": "The lesson content."},
+                "domain":      {"type": "string", "description": "e.g., 'rust', 'react', 'ux'."},
+                "lesson_type": {"type": "string", "enum": ["mistake", "edge-case", "optimization", "architecture-principle"]},
+                "session_id":  {"type": "string"},
+                "lesson_id":   {"type": "string", "description": "Optional: update existing lesson."},
+            },
+            "required": ["text", "domain", "lesson_type"],
+        },
+    },
+    {
+        "name": "recall_relevant_lessons",
+        "description": (
+            "Retrieve domain-specific lessons or best practices from the knowledge graph. "
+            "Use to avoid repeating past mistakes or to apply proven optimizations."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query":  {"type": "string", "description": "Semantic search query."},
+                "domain": {"type": "string", "description": "Filter by domain (e.g., 'rust')."},
+                "limit":  {"type": "integer", "default": 5},
+            },
+        },
+    },
+    {
+        "name": "get_anomalies",
+        "description": (
+            "Retrieve flagged anomalies (potential prompt injections or constraint violations). "
+            "Use to review and audit suspicious content detected by the Brain."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "scope": {"type": "string", "enum": ["branch", "global", "both"],
+                         "default": "branch",
+                         "description": "Scope of anomaly search."},
+                "limit": {"type": "integer", "default": 20,
+                         "description": "Maximum number of anomalies to return."},
+                "quest_id": {"type": "string", "description": "Optional: filter by quest."},
+            },
         },
     },
 ]
