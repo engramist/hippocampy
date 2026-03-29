@@ -88,6 +88,10 @@ All LLM calls use an OpenAI-SDK-compatible interface so Ollama and cloud provide
 - Kahneman System 1/2 hybrid classifier (Step 2)
 - Cocktail Party Effect selective attention gate (Step 4)
 - gist → schema.org routing table (stored as graph edges, not code)
+- **Context Window as Working Memory Model (IP Claim)** — modeling each LLM session as a tracked working memory buffer with load/unload semantics
+- **Smart Deduplication via Load Tracking (IP Claim)** — demoting (not excluding) already-loaded graph nodes in retrieval results
+- **Session Handoff Intelligence (IP Claim)** — proactive knowledge transfer between context windows using load history from prior sessions
+- **Bloat Detection via Token Estimation (IP Claim)** — monitoring context window utilization and surfacing efficiency warnings
 - Hebbian promotion to Long-Term Potentiation (CO_OCCURS_WITH → named edge)
 
 ## Architecture
@@ -356,9 +360,14 @@ When Step 4 classifies a Concept at >90% confidence as a specific artifact type,
 - `Message` / `DocumentExtract` (`byte_start`, `byte_end` or line ranges for provenance)
 
 **Session & Infrastructure Nodes** (no embedding required):
-- `Session` (`session_id`, `started_at`, `last_active_at`, `onboarded BOOLEAN`, `purpose STRING`)
-- `LLMProvider` (`provider_id`, `provider_name`, `model_name`, `is_local BOOLEAN`, `context_window INT`)
-- `Workspace` (`workspace_id`, `path`, `os`, `hostname`)
+- `Session` (`session_id`, `started_at`, `last_active_at`, `onboarded BOOLEAN`, `purpose STRING`, `routing_state STRING`, `routing_confidence FLOAT`, `routing_method STRING`, `token_estimate INT64`, `token_limit INT64`, `loaded_node_count INT32`, `last_injection_at TIMESTAMP`)
+
+**Relationship Nodes:**
+- `LOADED` (`injected_at TIMESTAMP`, `token_estimate INT32`, `source STRING`) — links `Session` to any artifact currently in its context window.
+- `REROUTED_FROM` (`rerouted_at TIMESTAMP`, `reason STRING`) — links `Session` to its prior `MainQuest` after a re-routing event.
+
+**LLMProvider Node:**
+- `LLMProvider` (`provider_id`, `provider_name`, `model_name`, `is_local BOOLEAN`, `context_window INT64`)
 
 **Ontology Nodes** (the gist → schema.org routing table lives in the graph, not in code):
 - `GistClass` (`name` — e.g., Restriction, PlannedEvent, PhysicalThing, Magnitude, Category, Agent, Event; `centroid FLOAT[384]` — mean embedding of all seed + System 2 resolved examples for this class, computed at M1 init and updated on each System 2 resolution)

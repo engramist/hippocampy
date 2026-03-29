@@ -5,48 +5,53 @@
 
 ---
 
-## Last Updated: 2026-03-19 (evening)
+## Last Updated: 2026-03-28 (night, final)
 
-### What's Working
-- **End-to-end cross-agent memory sharing VERIFIED (clean retest).** Fresh DB, Gemini stores "SQLAlchemy" decision + "JWT auth" constraint → Claude Code retrieves both correctly via `current_truth`. No hallucinations, no junk.
-- **Brain Daemon** runs, accepts connections from both Claude Code and Gemini CLI adapters.
-- **409 tests pass**, 18 skipped.
-- **10 pipeline bugs fixed** total (ISSUE-018 through ISSUE-026).
+### Current State
+- Backlog tracker is current: [backlog/masterBacklogTracker.md](backlog/masterBacklogTracker.md) shows 60 complete, 0 ready, 0 blocked.
+- B47-B60 and B61/B63/B64/B65 are complete and validated.
+- ARC benchmark foundation is in place through the submission/compliance layer.
+- OpenClaw passive-ingestion validation, Hippocampus routing, and working-memory work are landed.
+- Install/setup CLI surface was stabilized after drift in `detect.py`, `launchd.py`, `main.py`, and `smoke_test.py`.
+- ARC acceptance gate is currently green for pre-submit compliance and offline bundle integrity verification.
+- Requested card batch B1/B4/B5/B6/B7/B10/B11/B12/B15/B20/B21/B22/B45 is now marked complete with validation notes.
 
-### Bugs Fixed (2026-03-19) — Summary
-| Issue | Problem | Fix |
-|-------|---------|-----|
-| ISSUE-024 | Hallucination poisoning — Claude fabricated constraints, `notify_turn` stored them as truth, future sessions recalled them as confirmed facts | Assistant turns capped at 0.85 confidence (below HARD_LOCK 0.90) — can never create confirmed Decision/Constraint nodes. Role passed through queue → orchestrator → Step 4. |
-| ISSUE-025 | Decisions dropped as noise — "We decided to use SQLAlchemy" scored 0.2355 against PhysicalThing centroid, below NOISE_FLOOR 0.25 | Lowered NOISE_FLOOR from 0.25 to 0.18. Added 5 decision-oriented seed examples to PhysicalThing, 3 to Category in GistSeedExamples.md. |
-| ISSUE-026 | Junk concepts leaking — "MainQuest", "first", "all endpoints", "the only exception" stored as Concepts | Added ordinal regex, SideQuests system terms set, and determiner-initial noun chunk filter to `step1_ner.py`. |
+### Verified This Session
+- Targeted install/setup/retrieval regression set is green:
+  - `pytest tests/test_setup_cli.py tests/test_setup.py -q`
+  - `pytest tests/test_install.py tests/test_bringup_priorities.py -q`
+  - `pytest tests/test_uninstall.py tests/test_retrieval.py -q`
+  - Combined result: `111 passed`
+- `backlog/masterBacklogTracker.md` was updated to reflect completed cards through B60 plus B61/B63/B64/B65.
+- ARC acceptance checks run and passed:
+  - `python benchmarks/arc3/pre_submit_check.py`
+  - `python benchmarks/arc3/package_offline_assets.py --bundle-dir sidequests-offline-submission`
+  - `python benchmarks/arc3/verify_offline_bundle.py --bundle-dir sidequests-offline-submission`
+  - Caveat: `submission_results.json` not present yet, so output-format validation path was skipped by pre-submit.
+- Requested-card targeted validation set is green:
+  - `pytest -q tests/test_deeplink_integration.py tests/test_setup_cli.py tests/test_adapter_claude_desktop.py tests/test_adapter_chatgpt_desktop.py tests/test_explore_graph.py tests/test_lesson_artifact.py tests/test_anomaly_detection.py tests/test_openclaw_system_prompt.py tests/test_token_metrics.py tests/test_extension_aliases.py tests/test_setup.py tests/test_web.py`
+  - Result: `102 passed`
+- Distribution preflight checks are green:
+  - `python -m build --wheel --sdist`
+  - `twine check dist/*` (both passed)
 
-Also fixed in this session:
-- **Claude auto-memory poisoning** — deleted hallucinated memory files from `~/.claude/projects/-Users-djshelton-Desktop-sidequests-test/memory/` (Redis, bcrypt, SQLite forbidden, auth constraints that were fabricated by Claude in a prior session).
-- **Added `GEMINI-DELEGATION.md` workflow** to CLAUDE.md so future sessions use Gemini CLI for implementation.
+### Stabilization Notes
+- Restored installer-facing detection API in `sidequests/cli/detect.py`.
+- Restored launchd helper API in `sidequests/cli/launchd.py`.
+- Restored CLI command surface in `sidequests/cli/main.py` (`setup`, `install`, `uninstall`, `start`, `stop`, `status`, `review`, `tool list`).
+- Restored smoke-test compatibility helpers in `sidequests/cli/smoke_test.py`.
+- Repaired retrieval `panel_url` compatibility in `mcp_engine/tools/__init__.py`.
 
-### Previous Bugs (2026-03-18)
-| Issue | Problem | Fix |
-|-------|---------|-----|
-| ISSUE-018 | Gemini CLI infinite self-reflection loop after `notify_turn` | Rewrote `GEMINI.md` + adapter system prompt with "fire-and-forget / STOP" instructions |
-| ISSUE-019 | Junk concepts stored (box-drawing chars, UUIDs, formatting artifacts, pure numbers) | Added `_is_junk_entity()` filter in `step1_ner.py` |
-| ISSUE-020 | Confidence scoring too conservative — no Decision/Constraint nodes ever created | Changed formula to `0.67 + (hits × 0.15)`, increased gist agreement boost to +0.10 |
-| ISSUE-021 | MainQuest never created — Kuzu HNSW silent failure on MERGE...SET embedding | Replaced MERGE with check-then-CREATE/UPDATE in `quest.py` |
-| ISSUE-022 | Constraint signal patterns too narrow ("make sure", "ensure" not matched) | Added broader signal patterns to `step4_pattern.py` |
-| ISSUE-023 | Gemini never ingested user turns (told not to, to prevent loop) | Updated GEMINI.md to call `notify_turn` twice (user + assistant), both fire-and-forget |
+### Important Context
+- The focused installer/setup failure cluster is resolved, but the full repo-wide suite was not re-run after this stabilization pass.
+- `benchmarks/arc3/harness.py` was edited after the earlier ARC pass. Re-read it before making any further ARC changes.
+- There are many unrelated in-progress workspace changes from other cards and documentation updates. Do not revert unrelated edits.
 
-### Pending — Next Steps
+### Next Recommended Work
+1. Run a full repo-wide pytest sweep now that the requested ready queue is closed.
+2. Normalize/clean the very large working-tree diff (especially generated files and duplicate tracker files) before next major card wave.
+3. If release is desired, run credentialed publication steps (PyPI upload + Smithery publish) from the validated artifacts.
 
-**1. Remaining data quality issues (minor — don't block usage)**
-- **Duplicate concepts:** JWT appears as both confirmed Concept + Constraint. Step 5 retrieval dedup may need tuning.
-- **Markdown formatting leakage:** "Project Setup:**" stored as concept — markdown bold markers (`**`) passing through NER.
-- **Generic word "constraints"** stored as a Concept — the word itself, not a specific constraint.
-- **Assistant-originated open loops:** "Bearer", "Routes", "Setup Boilerplate" from Gemini's responses enter as `confidence_low` (correct behavior via ISSUE-024 cap) but clutter the open_loops list.
-
-**2. System-level issues**
-- **UserPromptSubmit hook error** in Claude Code test dir — hook config not set up, user turns only come via `notify_turn`.
-- **Background sweep not implemented:** Confidence re-scoring, time-decay, archival, and resurrection are designed but not coded yet. This would naturally clean up the `confidence_low` clutter from item 1.
-
-**3. Backlog priorities (from `backlog.md`)**
-- B13 installer (`sidequests install`) — implemented on other machine, pulled into repo
-- B14 proactive insight surfacing — biggest consumer-readiness gap
-- B15 deep-link handoff (chat → Memory Control Panel)
+### Immediate Next Step
+- Active next step: full-suite verification and cleanup pass
+- Focus files: `backlog/masterBacklogTracker.md`, `SESSION-STATUS.md`, `dist/*`
