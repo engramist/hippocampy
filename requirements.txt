@@ -24,6 +24,12 @@ tomli==2.2.1      # TOML parser for Python < 3.11; stdlib tomllib used on 3.11+
 # CLI
 click>=8.1
 
+# YAML parsing for configs
+PyYAML==6.0.2
+
+# Resource monitoring
+psutil==6.1.1
+
 # Testing
 pytest==8.3.4
 pytest-asyncio==0.24.0

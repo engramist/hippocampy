@@ -264,8 +264,6 @@ export default {
     // 1. Register tools — core memory tools for explicit LLM use
     // -------------------------------------------------------------------
 
-    console.log("[SideQuests Brain] Registering 7 memory tools...");
-
     const recallToolParams = Type.Object({
       query: Type.String({ description: "Natural language search query" }),
       scope: Type.Optional(
@@ -279,123 +277,343 @@ export default {
       ),
     });
 
-    const registerRecallTool = (
-      name: string,
-      label: string,
-      description: string,
-    ) => {
+    const currentTruthParams = Type.Object({
+      query: Type.String({ description: "Natural language search query" }),
+      session_id: Type.Optional(
+        Type.String({ description: "OpenClaw session ID (auto-filled)" })
+      ),
+      scope: Type.Optional(
+        Type.String({
+          description: "Search scope: branch (current quest), global, or both",
+          default: "both",
+        })
+      ),
+      limit: Type.Optional(
+        Type.Number({ description: "Max results to return", default: 10 })
+      ),
+    });
+
+    const notifyTurnParams = Type.Object({
+      role: Type.Union([
+        Type.Literal("user"),
+        Type.Literal("assistant"),
+      ]),
+      content: Type.String({ description: "Message content to process" }),
+      session_id: Type.Optional(
+        Type.String({ description: "OpenClaw session ID (auto-filled)" })
+      ),
+    });
+
+    const branchQuestParams = Type.Object({
+      name: Type.String({ description: "Name of the SideQuest to create" }),
+      purpose: Type.String({
+        description: "Describe what differentiates this SideQuest from the main goal",
+      }),
+      parent_quest_id: Type.Optional(
+        Type.String({ description: "Optional parent quest ID" })
+      ),
+    });
+
+    const diffSinceParams = Type.Object({
+      since_iso: Type.String({ description: "ISO timestamp to query changes since" }),
+      limit: Type.Optional(
+        Type.Number({ description: "Max results to return", default: 20 })
+      ),
+    });
+
+    const openLoopsParams = Type.Object({
+      quest_id: Type.Optional(Type.String({ description: "Optional quest filter" })),
+      limit: Type.Optional(
+        Type.Number({ description: "Max loops to return", default: 20 })
+      ),
+    });
+
+    const analogicalSearchParams = Type.Object({
+      query: Type.String({ description: "Search query for cross-quest patterns" }),
+      current_quest_id: Type.Optional(
+        Type.String({ description: "Exclude results from this quest" })
+      ),
+      limit: Type.Optional(
+        Type.Number({ description: "Max results", default: 5 })
+      ),
+      min_similarity: Type.Optional(
+        Type.Number({ description: "Minimum similarity threshold", default: 0.7 })
+      ),
+    });
+
+    const ingestDocumentParams = Type.Object({
+      file_path: Type.String({ description: "Absolute path to the file to ingest" }),
+      quest_id: Type.Optional(
+        Type.String({ description: "Optional quest_id to tag the artifact" })
+      ),
+    });
+
+    const exploreGraphParams = Type.Object({
+      start_node_id: Type.String({
+        description: "Node ID to start traversal (from current_truth results)",
+      }),
+      session_id: Type.Optional(
+        Type.String({ description: "OpenClaw session ID (auto-filled)" })
+      ),
+      depth: Type.Optional(
+        Type.Number({
+          description: "Number of hops to traverse",
+          default: 3,
+          minimum: 1,
+          maximum: 5,
+        })
+      ),
+      strategy: Type.Optional(
+        Type.Union([
+          Type.Literal("dfs"),
+          Type.Literal("bfs"),
+        ])
+      ),
+      edge_types: Type.Optional(Type.Array(Type.String())),
+      direction: Type.Optional(
+        Type.Union([
+          Type.Literal("outgoing"),
+          Type.Literal("incoming"),
+          Type.Literal("both"),
+        ])
+      ),
+    });
+
+    const completeQuestParams = Type.Object({
+      quest_id: Type.String({ description: "The quest_id to mark completed" }),
+    });
+
+    const setQuestParams = Type.Object({
+      session_id: Type.Optional(
+        Type.String({ description: "OpenClaw session ID (auto-filled)" })
+      ),
+      quest_name: Type.String({ description: "Quest name to bind this session" }),
+      quest_id: Type.Optional(Type.String({ description: "Optional quest_id to target" })),
+    });
+
+    const contextStatusParams = Type.Object({
+      session_id: Type.Optional(
+        Type.String({ description: "OpenClaw session ID (auto-filled)" })
+      ),
+    });
+
+    const openClawPromptParams = Type.Object({
+      session_id: Type.Optional(
+        Type.String({ description: "OpenClaw session ID (auto-filled)" })
+      ),
+    });
+
+    const upsertLessonParams = Type.Object({
+      text: Type.String({ description: "The lesson content" }),
+      domain: Type.String({ description: "e.g., 'rust', 'react', 'ux'" }),
+      lesson_type: Type.Union([
+        Type.Literal("mistake"),
+        Type.Literal("edge-case"),
+        Type.Literal("optimization"),
+        Type.Literal("architecture-principle"),
+      ]),
+      session_id: Type.Optional(
+        Type.String({ description: "OpenClaw session ID (auto-filled)" })
+      ),
+      lesson_id: Type.Optional(Type.String({ description: "Optional existing lesson" })),
+    });
+
+    const recallRelevantLessonsParams = Type.Object({
+      query: Type.String({ description: "Semantic search query" }),
+      domain: Type.Optional(Type.String({ description: "Optional domain filter" })),
+      limit: Type.Optional(
+        Type.Number({ description: "Max results", default: 5 })
+      ),
+    });
+
+    const anomaliesParams = Type.Object({
+      scope: Type.Optional(
+        Type.String({
+          description: "Scope of anomaly search",
+          default: "branch",
+        })
+      ),
+      limit: Type.Optional(
+        Type.Number({ description: "Max anomalies", default: 20 })
+      ),
+      quest_id: Type.Optional(Type.String({ description: "Optional quest filter" })),
+    });
+
+    type BrainToolDefinition = {
+      name: string;
+      label: string;
+      description: string;
+      parameters: any;
+      callName?: string;
+      transformParams?: (params: any) => Record<string, unknown>;
+    };
+
+    const recallTransform = (params: any = {}) => ({
+      query: params.query,
+      session_id: params.session_id || sessionId,
+      scope: params.scope || "both",
+      limit: params.limit ?? 10,
+    });
+
+    const analogicalTransform = (params: any = {}) => ({
+      query: params.query,
+      current_quest_id: params.current_quest_id,
+      limit: params.limit ?? 5,
+      min_similarity: params.min_similarity ?? 0.7,
+    });
+
+    const notifyTurnTransform = (params: any = {}) => ({
+      role: params.role,
+      content: params.content,
+      session_id: params.session_id || sessionId,
+    });
+
+    const contextStatusTransform = (params: any = {}) => ({
+      session_id: params.session_id || sessionId,
+    });
+
+    const openClawPromptTransform = (params: any = {}) => ({
+      session_id: params.session_id || sessionId,
+    });
+
+    const memoryOpenLoopsTransform = (params: any = {}) => ({
+      limit: params.limit ?? 10,
+    });
+
+    const canonicalOpenLoopsTransform = (params: any = {}) => ({
+      quest_id: params.quest_id,
+      limit: params.limit ?? 20,
+    });
+
+    const exploreGraphTransform = (params: any = {}) => ({
+      start_node_id: params.start_node_id,
+      session_id: params.session_id || sessionId,
+      depth: params.depth ?? 3,
+      strategy: params.strategy || "dfs",
+      edge_types: params.edge_types,
+      direction: params.direction || "both",
+    });
+
+    const setQuestTransform = (params: any = {}) => ({
+      session_id: params.session_id || sessionId,
+      quest_name: params.quest_name,
+      quest_id: params.quest_id,
+    });
+
+    const branchQuestTransform = (params: any = {}) => ({
+      name: params.name,
+      purpose: params.purpose,
+      parent_quest_id: params.parent_quest_id,
+    });
+
+    const diffSinceTransform = (params: any = {}) => ({
+      since_iso: params.since_iso,
+      limit: params.limit ?? 20,
+    });
+
+    const lessonTransform = (params: any = {}) => ({
+      text: params.text,
+      domain: params.domain,
+      lesson_type: params.lesson_type,
+      session_id: params.session_id || sessionId,
+      lesson_id: params.lesson_id,
+    });
+
+    const recallLessonsTransform = (params: any = {}) => ({
+      query: params.query,
+      domain: params.domain,
+      limit: params.limit ?? 5,
+    });
+
+    const anomaliesTransform = (params: any = {}) => ({
+      scope: params.scope || "branch",
+      limit: params.limit ?? 20,
+      quest_id: params.quest_id,
+    });
+
+    const formatResult = (value: unknown) => ({
+      content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
+    });
+
+    const registerBrainTool = (definition: BrainToolDefinition) => {
       api.registerTool(
         {
-          name,
-          label,
-          description,
-          parameters: recallToolParams,
-          async execute(_toolCallId: string, params: any) {
-            const result = await brain.callTool("current_truth", {
-              query: params.query,
-              session_id: sessionId,
-              scope: params.scope || "both",
-              limit: params.limit || 10,
-            });
-            return {
-              content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-            };
+          name: definition.name,
+          label: definition.label,
+          description: definition.description,
+          parameters: definition.parameters,
+          async execute(_toolCallId: string, params: any = {}) {
+            const payload = definition.transformParams
+              ? definition.transformParams(params)
+              : { ...params };
+            const result = await brain.callTool(
+              definition.callName || definition.name,
+              payload
+            );
+            return formatResult(result);
           },
         },
-        { name }
+        { name: definition.name }
       );
     };
 
-    registerRecallTool(
-      "memory_recall",
-      "Memory Recall (SideQuests)",
-      "Search the Brain's knowledge graph for relevant decisions, constraints, and context. " +
-        "Call before answering questions about past choices or architecture.",
-    );
-
-    registerRecallTool(
-      "memory_search",
-      "Memory Search (SideQuests)",
-      "Alias for memory_recall. Search the Brain's knowledge graph for relevant decisions, constraints, and context.",
-    );
-
-    registerRecallTool(
-      "memory_get",
-      "Memory Get (SideQuests)",
-      "Alias for memory_recall. Fetch relevant memory context from the Brain using a natural-language query.",
-    );
-
-    api.registerTool(
+    const toolDefinitions: BrainToolDefinition[] = [
+      {
+        name: "memory_recall",
+        label: "Memory Recall (SideQuests)",
+        description:
+          "Search the Brain's knowledge graph for relevant decisions, constraints, and context. " +
+          "Call before answering questions about past choices or architecture.",
+        parameters: recallToolParams,
+        callName: "current_truth",
+        transformParams: recallTransform,
+      },
+      {
+        name: "memory_search",
+        label: "Memory Search (SideQuests)",
+        description:
+          "Alias for memory_recall. Search the Brain's knowledge graph for relevant decisions, constraints, and context.",
+        parameters: recallToolParams,
+        callName: "current_truth",
+        transformParams: recallTransform,
+      },
+      {
+        name: "memory_get",
+        label: "Memory Get (SideQuests)",
+        description:
+          "Alias for memory_recall. Fetch relevant memory context from the Brain using a natural-language query.",
+        parameters: recallToolParams,
+        callName: "current_truth",
+        transformParams: recallTransform,
+      },
       {
         name: "memory_store",
         label: "Notify Brain (SideQuests)",
         description:
           "Forward a message to the Brain for processing. The Brain decides what to remember " +
           "via its Gated Consolidation Loop — you don't need to decide what's important.",
-        parameters: Type.Object({
-          role: Type.String({ description: "Message role: user or assistant" }),
-          content: Type.String({ description: "Message content to process" }),
-        }),
-        async execute(_toolCallId: string, params: any) {
-          const result = await brain.callTool("notify_turn", {
-            role: params.role,
-            content: params.content,
-            session_id: sessionId,
-          });
-          return {
-            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-          };
-        },
+        parameters: notifyTurnParams,
+        callName: "notify_turn",
+        transformParams: notifyTurnTransform,
       },
-      { name: "memory_store" }
-    );
-
-    api.registerTool(
       {
         name: "memory_search_analogies",
         label: "Cross-Quest Search (SideQuests)",
         description:
           "Search across all quests for analogous patterns, decisions, or lessons learned.",
-        parameters: Type.Object({
-          query: Type.String({ description: "Search query for cross-quest patterns" }),
-          limit: Type.Optional(
-            Type.Number({ description: "Max results", default: 5 })
-          ),
-        }),
-        async execute(_toolCallId: string, params: any) {
-          const result = await brain.callTool("analogical_search", {
-            query: params.query,
-            session_id: sessionId,
-            limit: params.limit || 5,
-          });
-          return {
-            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-          };
-        },
+        parameters: analogicalSearchParams,
+        callName: "analogical_search",
+        transformParams: analogicalTransform,
       },
-      { name: "memory_search_analogies" }
-    );
-
-    api.registerTool(
       {
         name: "memory_status",
         label: "Context Status (SideQuests)",
         description:
           "Check context window health — token usage, loaded knowledge, and session info.",
         parameters: Type.Object({}),
-        async execute() {
-          const result = await brain.callTool("context_status", {
-            session_id: sessionId,
-          });
-          return {
-            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-          };
-        },
+        callName: "context_status",
+        transformParams: contextStatusTransform,
       },
-      { name: "memory_status" }
-    );
-
-    api.registerTool(
       {
         name: "memory_open_loops",
         label: "Open Loops (SideQuests)",
@@ -405,20 +623,197 @@ export default {
           scope: Type.Optional(Type.String({ default: "both" })),
           limit: Type.Optional(Type.Number({ default: 10 })),
         }),
-        async execute(_toolCallId: string, params: any) {
-          const result = await brain.callTool("get_open_loops", {
-            scope: params.scope || "both",
-            limit: params.limit || 10,
-          });
-          return {
-            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-          };
-        },
+        callName: "get_open_loops",
+        transformParams: memoryOpenLoopsTransform,
       },
-      { name: "memory_open_loops" }
-    );
+      {
+        name: "memory_ingest",
+        label: "Memory Ingest (SideQuests)",
+        description:
+          "Alias for notify_turn. Forward a message to the Brain for processing.",
+        parameters: notifyTurnParams,
+        callName: "notify_turn",
+        transformParams: notifyTurnTransform,
+      },
+      {
+        name: "record_turn",
+        label: "Record Turn (SideQuests)",
+        description:
+          "Alias for notify_turn. Record a conversation turn in the Brain's memory.",
+        parameters: notifyTurnParams,
+        callName: "notify_turn",
+        transformParams: notifyTurnTransform,
+      },
+      {
+        name: "traverse_graph",
+        label: "Traverse Graph (SideQuests)",
+        description:
+          "Alias for explore_graph. Traverse the knowledge graph from a seed node.",
+        parameters: exploreGraphParams,
+        callName: "explore_graph",
+        transformParams: exploreGraphTransform,
+      },
+      {
+        name: "explore_memory",
+        label: "Explore Memory (SideQuests)",
+        description:
+          "Alias for explore_graph. Explore the knowledge graph following multi-hop relationships.",
+        parameters: exploreGraphParams,
+        callName: "explore_graph",
+        transformParams: exploreGraphTransform,
+      },
+      {
+        name: "finish_quest",
+        label: "Finish Quest (SideQuests)",
+        description:
+          "Alias for complete_quest. Mark the current quest as completed.",
+        parameters: completeQuestParams,
+        callName: "complete_quest",
+        transformParams: (params: any = {}) => ({ quest_id: params.quest_id }),
+      },
+      {
+        name: "create_subquest",
+        label: "Create Subquest (SideQuests)",
+        description:
+          "Alias for branch_quest. Declare a SideQuest branching from the current goal.",
+        parameters: branchQuestParams,
+        callName: "branch_quest",
+        transformParams: branchQuestTransform,
+      },
+      {
+        name: "notify_turn",
+        label: "Notify Turn (SideQuests Brain)",
+        description:
+          "Forward this turn to the Brain for background memory processing. Call after EVERY response. Response is instant — never blocks.",
+        parameters: notifyTurnParams,
+        transformParams: notifyTurnTransform,
+      },
+      {
+        name: "current_truth",
+        label: "Current Truth (SideQuests Brain)",
+        description:
+          "Retrieve relevant memory before answering about past decisions, constraints, or architecture from the current project branch. Call before answering complex questions or making architectural choices.",
+        parameters: currentTruthParams,
+        transformParams: recallTransform,
+      },
+      {
+        name: "branch_quest",
+        label: "Branch Quest (SideQuests Brain)",
+        description:
+          "Declare a SideQuest when exploring a tangent distinct from the main project goal. Returns side_quest_id for tracking.",
+        parameters: branchQuestParams,
+        transformParams: branchQuestTransform,
+      },
+      {
+        name: "diff_since",
+        label: "Diff Since (SideQuests Brain)",
+        description:
+          "Return decisions, constraints, and requirements created since a given ISO timestamp. Use to sync context after a session gap.",
+        parameters: diffSinceParams,
+        transformParams: diffSinceTransform,
+      },
+      {
+        name: "get_open_loops",
+        label: "Get Open Loops (SideQuests Brain)",
+        description:
+          "Return concepts awaiting confirmation (soft-lock items). Use to surface uncertain memory items for user review.",
+        parameters: openLoopsParams,
+        transformParams: canonicalOpenLoopsTransform,
+      },
+      {
+        name: "analogical_search",
+        label: "Analogical Search (SideQuests Brain)",
+        description:
+          "Search across ALL historical MainQuests for similar decisions, constraints, and requirements. Use when starting a new project or feature that might benefit from past architectural patterns.",
+        parameters: analogicalSearchParams,
+        transformParams: analogicalTransform,
+      },
+      {
+        name: "ingest_document",
+        label: "Ingest Document (SideQuests Brain)",
+        description:
+          "Ingest a local file into the Brain's knowledge graph. Chunks, embeds, and queues each segment for the Consolidation Loop. Idempotent: re-ingestion is skipped if the file hasn't changed.",
+        parameters: ingestDocumentParams,
+        transformParams: (params: any = {}) => ({
+          file_path: params.file_path,
+          quest_id: params.quest_id,
+        }),
+      },
+      {
+        name: "explore_graph",
+        label: "Explore Graph (SideQuests Brain)",
+        description:
+          "Traverse knowledge graph from a seed node, following relationships up to N hops. Enables following causal chains and multi-hop relationships.",
+        parameters: exploreGraphParams,
+        transformParams: exploreGraphTransform,
+      },
+      {
+        name: "complete_quest",
+        label: "Complete Quest (SideQuests Brain)",
+        description:
+          "Mark the current Quest as completed. Triggers lesson synthesis from confirmed artifacts. Completed quests feed cross-project analogical reasoning.",
+        parameters: completeQuestParams,
+        transformParams: (params: any = {}) => ({ quest_id: params.quest_id }),
+      },
+      {
+        name: "set_quest",
+        label: "Set Quest (SideQuests Brain)",
+        description:
+          "Explicitly bind this session to a named project/quest. Use when the user says 'this is about X' or starts a new project. Creates a new quest if the name doesn't match an existing one.",
+        parameters: setQuestParams,
+        transformParams: setQuestTransform,
+      },
+      {
+        name: "context_status",
+        label: "Context Status (SideQuests Brain)",
+        description:
+          "Check the health of the current context window — token usage, loaded knowledge, and handoff suggestions. Use when context feels bloated or when starting a new session on an existing project.",
+        parameters: contextStatusParams,
+        transformParams: contextStatusTransform,
+      },
+      {
+        name: "get_openclaw_prompt",
+        label: "Get OpenClaw Prompt (SideQuests Brain)",
+        description:
+          "Fetch the system prompt fragments that OpenClaw injects before an agent run.",
+        parameters: openClawPromptParams,
+        transformParams: openClawPromptTransform,
+      },
+      {
+        name: "upsert_lesson",
+        label: "Upsert Lesson (SideQuests Brain)",
+        description:
+          "Explicitly add or update a domain-specific lesson learned. Lessons enable transfer learning across project boundaries.",
+        parameters: upsertLessonParams,
+        transformParams: lessonTransform,
+      },
+      {
+        name: "recall_relevant_lessons",
+        label: "Recall Relevant Lessons (SideQuests Brain)",
+        description:
+          "Retrieve domain-specific lessons or best practices from the knowledge graph. Use to avoid repeating past mistakes or to apply proven optimizations.",
+        parameters: recallRelevantLessonsParams,
+        transformParams: recallLessonsTransform,
+      },
+      {
+        name: "get_anomalies",
+        label: "Get Anomalies (SideQuests Brain)",
+        description:
+          "Retrieve flagged anomalies (potential prompt injections or constraint violations). Use to review and audit suspicious content detected by the Brain.",
+        parameters: anomaliesParams,
+        transformParams: anomaliesTransform,
+      },
+    ];
 
-    console.log("[SideQuests Brain] All 7 tools registered: memory_recall, memory_search, memory_get, memory_store, memory_search_analogies, memory_status, memory_open_loops");
+    console.log(
+      `[SideQuests Brain] Registering ${toolDefinitions.length} memory tools...`
+    );
+    toolDefinitions.forEach(registerBrainTool);
+    console.log(
+      `[SideQuests Brain] All ${toolDefinitions.length} tools registered: ${toolDefinitions
+        .map((tool) => tool.name)
+        .join(", ")}`
+    );
 
     // -------------------------------------------------------------------
     // 2. Passive ingestion — forward all LLM turns to the Brain
@@ -481,58 +876,78 @@ export default {
     }
 
     // -------------------------------------------------------------------
-    // 3. Auto-recall — inject relevant context before agent starts
+    // 3. System Prompt & Auto-Recall — inject context before agent starts
     // -------------------------------------------------------------------
 
-    if (cfg.autoRecall) {
-      console.log(
-        `[SideQuests Brain] Registering auto-recall: ${OPENCLAW_EVENT_CONTRACT.preAgentEvent}`
-      );
+    console.log(
+      `[SideQuests Brain] Registering prompt injector: ${OPENCLAW_EVENT_CONTRACT.preAgentEvent}`
+    );
 
-      api.on(OPENCLAW_EVENT_CONTRACT.preAgentEvent, async (event: any) => {
+    api.on(OPENCLAW_EVENT_CONTRACT.preAgentEvent, async (event: any) => {
+      try {
+        const query = normalizePromptPayload(event);
+        // Contract: current_truth must use scope: "both" for cross-session recall.
+        // Contract string pin: call "current_truth" before agent start.
+        const recallScope = "both";
+
+        console.log(
+          `[SideQuests Brain] Event ${OPENCLAW_EVENT_CONTRACT.preAgentEvent} fired (${summarizeEventShape(event)})`
+        );
+
+        // 1. Fetch system prompt fragments (Layer 1 + Layer 2)
+        // This is always-on regardless of autoRecall setting
+        let systemPrompt = "";
         try {
-          const query = normalizePromptPayload(event);
-
-          if (!query || query.length < 5) {
-            if (!query) {
-              console.warn(
-                `[SideQuests Brain] Event ${OPENCLAW_EVENT_CONTRACT.preAgentEvent} produced no usable content (${summarizeEventShape(event)})`
-              );
-            }
-            return {};
-          }
-
-          console.log(
-            `[SideQuests Brain] Event ${OPENCLAW_EVENT_CONTRACT.preAgentEvent} fired (${summarizeEventShape(event)})`
-          );
-
-          const result: any = await brain.callTool("current_truth", {
-            query,
+          const promptResult: any = await brain.callTool("get_openclaw_prompt", {
             session_id: sessionId,
-            scope: "both",
-            limit: 5,
           });
-
-          if (result?.results && result.results.length > 0) {
-            const context = result.results
-              .map(
-                (r: any) =>
-                  `[${r.node_type}] ${r.text_raw} (strength: ${r.pathway_strength?.toFixed(2) || "?"})`
-              )
-              .join("\n");
-
-            return {
-              prependContext: `<sidequests-memory>\n${context}\n</sidequests-memory>`,
-            };
+          if (promptResult?.prompt) {
+            systemPrompt = promptResult.prompt;
           }
         } catch (err: any) {
-          console.warn(
-            `[SideQuests Brain] Event ${OPENCLAW_EVENT_CONTRACT.preAgentEvent} failed: ${err?.message ?? err}`
-          );
+          console.warn(`[SideQuests Brain] Failed to fetch system prompt: ${err?.message}`);
         }
-        return {};
-      });
-    }
+
+        // 2. Fetch memory context if autoRecall is enabled and query is sufficient
+        let memoryContext = "";
+        if (cfg.autoRecall && query && query.length >= 5) {
+          try {
+            const result: any = await brain.callTool("current_truth", {
+              query,
+              session_id: sessionId,
+              scope: recallScope,
+              limit: 5,
+            });
+
+            if (result?.results && result.results.length > 0) {
+              const context = result.results
+                .map(
+                  (r: any) =>
+                    `[${r.node_type}] ${r.text_raw} (strength: ${r.pathway_strength?.toFixed(2) || "?"})`
+                )
+                .join("\n");
+              memoryContext = `<sidequests-memory>\n${context}\n</sidequests-memory>`;
+            }
+          } catch (err: any) {
+            console.warn(`[SideQuests Brain] Failed to fetch memory context: ${err?.message}`);
+          }
+        }
+
+        // 3. Combine and return
+        const finalContext = [systemPrompt, memoryContext].filter(Boolean).join("\n\n");
+        
+        if (finalContext) {
+          return {
+            prependContext: finalContext,
+          };
+        }
+      } catch (err: any) {
+        console.warn(
+          `[SideQuests Brain] Event ${OPENCLAW_EVENT_CONTRACT.preAgentEvent} failed: ${err?.message ?? err}`
+        );
+      }
+      return {};
+    });
 
     // -------------------------------------------------------------------
     // 4. Service registration — health check on startup

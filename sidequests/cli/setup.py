@@ -45,13 +45,12 @@ def _register_claude_code(project_root: Path) -> None:
 
 def _register_claude_desktop() -> None:
     """Register the Claude Desktop adapter in its config file."""
-    adapter_path = (_ADAPTERS_DIR / "claude_desktop" / "adapter.py").resolve()
-
+    # B-6 Plan: Use python -m sidequests.adapters.claude_desktop
     entry = {
         "mcpServers": {
-            "sidequests-brain": {
+            "sidequests-brain-desktop": {
                 "command": sys.executable,
-                "args":    [str(adapter_path)],
+                "args":    ["-m", "sidequests.adapters.claude_desktop"],
             }
         }
     }
@@ -72,7 +71,7 @@ def _register_claude_desktop() -> None:
         return
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    _merge_mcp_config(config_path, "sidequests-brain", entry["mcpServers"]["sidequests-brain"])
+    _merge_mcp_config(config_path, "sidequests-brain-desktop", entry["mcpServers"]["sidequests-brain-desktop"])
     print(f"  [✓] Claude Desktop — config updated at {config_path}")
 
 
@@ -190,6 +189,9 @@ def _register_openclaw() -> None:
     if not _OPENCLAW_EXTENSION_DIR.exists():
         raise RuntimeError(f"OpenClaw extension directory not found: {_OPENCLAW_EXTENSION_DIR}")
 
+    _patch_openclaw_config(_OPENCLAW_CONFIG_PATH)
+    print(f"  [✓] OpenClaw — config updated at {_OPENCLAW_CONFIG_PATH}")
+
     install_cmd = [openclaw_bin, "plugins", "install", str(_OPENCLAW_EXTENSION_DIR)]
     install_result = subprocess.run(install_cmd, capture_output=True, text=True)
     if install_result.returncode != 0:
@@ -198,9 +200,6 @@ def _register_openclaw() -> None:
         detail = stderr or stdout or "plugin install failed"
         raise RuntimeError(f"openclaw plugins install failed: {detail}")
     print(f"  [✓] OpenClaw — extension installed from {_OPENCLAW_EXTENSION_DIR}")
-
-    _patch_openclaw_config(_OPENCLAW_CONFIG_PATH)
-    print(f"  [✓] OpenClaw — config updated at {_OPENCLAW_CONFIG_PATH}")
 
     restart_cmd = [openclaw_bin, "gateway", "restart"]
     restart_result = subprocess.run(restart_cmd, capture_output=True, text=True)

@@ -1,72 +1,60 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "sidequests-brain"
-version = "0.1.0"
-description = "Persistent AI memory with a Gated Consolidation Loop and graph-native Kùzu knowledge base"
-readme = { text = "SideQuests Brain: persistent AI memory with a graph-native Kùzu knowledge base and MCP adapters.", content-type = "text/markdown" }
-license = { text = "UNLICENSED" }
-requires-python = ">=3.11"
-authors = [
-    { name = "SideQuests" },
-]
-keywords = ["ai", "memory", "mcp", "knowledge-graph", "kuzu", "llm"]
+version = "0.1.0-rc1"
+description = "Local AI memory system with gated consolidation loop and graph-native Kùzu database"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "SideQuests", email = "sidequests@example.com" }]
+keywords = ["ai", "memory", "graph-database", "mcp"]
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "Programming Language :: Python :: 3.11",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "Private :: Do Not Upload",
 ]
 
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "kuzu==0.11.3",
-    "sentence-transformers>=3.3,<4",
-    "spacy>=3.8,<4",
-    "openai>=1.50,<2",
-    "fastapi>=0.115,<1",
-    "uvicorn>=0.32,<1",
-    "click>=8.1,<9",
-    "tomli>=2.0; python_version < '3.11'",
+    "sentence-transformers>=2.2.0",
+    "spacy>=3.7.0",
+    "typer>=0.9.0",
+    "httpx>=0.24.0",
+    "pydantic>=2.0.0",
+    "openai>=1.50.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+    "rich>=13.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
-    "httpx>=0.27",
     "build>=1.0",
+    "twine>=5.0",
+    "black",
+    "ruff",
 ]
+ollama = ["ollama-python>=0.1.0"]
 
 [project.scripts]
-sidequests        = "sidequests.cli.main:cli"
+sidequests = "sidequests.cli.main:app"
 sidequests-daemon = "sidequests.daemon:main"
 
 [project.urls]
 Homepage = "https://github.com/djs54/sidequests-brain"
 Issues = "https://github.com/djs54/sidequests-brain/issues"
 
-[tool.hatch.build.targets.wheel]
-packages = ["sidequests", "mcp_engine", "adapters", "web"]
-include = ["sidequests/data/GistSeedExamples.md"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sidequests*", "mcp_engine*", "adapters*", "web*"]
 
-[tool.hatch.build.targets.sdist]
-include = [
-    "sidequests/",
-    "mcp_engine/",
-    "adapters/",
-    "web/",
-    "brain_daemon.py",
-    "sidequests.toml",
-    "requirements.txt",
-    "InvertorsDocs/GistSeedExamples.md",
-    "sidequests/data/GistSeedExamples.md",
-    "README.md",
-]
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths    = ["tests"]
+[tool.setuptools.package-data]
+"sidequests.data" = ["*.md"]
+"*" = ["sidequests.toml"]

@@ -430,6 +430,10 @@ This is disabled by default to avoid duplicate daemon instances. Prefer the mana
 }
 ```
 
+`sidequests setup --target openclaw` now writes this explicit trust entry before running
+`openclaw plugins install`, so the normal setup flow does not trip over the empty-allowlist
+warning first.
+
 ---
 
 ### 4. Old tool count assumptions in logs/docs
