@@ -42,6 +42,30 @@ _ACTION_SIGNALS = [
     r"\btodo\b", r"\baction item\b", r"\bwe'll\b", r"\bscheduled\b",
 ]
 
+# B68 — Plan sense (fallback passive plan detector)
+_PLAN_SIGNALS = [
+    r"(?:^|\n)\s*(?:step\s+)?\d+[\.\):]",
+    r"(?:^|\n)\s*[-•]\s+(?:first|then|next|finally)\b",
+    r"\bmy (?:approach|plan|strategy)\b",
+    r"\bhere(?:'s| is) (?:the|my) plan\b",
+    r"\bi(?:'ll| will) (?:start by|begin with|first)\b",
+    r"\bthe steps (?:are|would be)\b",
+]
+
+# B69 — Outcome sense (success/failure language)
+_SUCCESS_SIGNALS = [
+    r"\bperfect\b", r"\bgreat job\b", r"\bexactly (?:right|what)\b",
+    r"\bship it\b", r"\bapproved\b", r"\blooks good\b", r"\bwell done\b",
+    r"\bnailed it\b", r"\ball tests pass\b", r"\bmerged?\b",
+]
+
+_FAILURE_SIGNALS = [
+    r"\bthat(?:'s| is) wrong\b", r"\brevert\b", r"\bundo\b",
+    r"\bthat broke\b", r"\bfailed\b", r"\brollback\b",
+    r"\bnot what i (?:asked|wanted|meant)\b", r"\bstart over\b",
+    r"\btry again\b", r"\bwrong approach\b",
+]
+
 # gist class → likely artifact type (prior probability)
 _GIST_ARTIFACT_PRIOR: dict[str, tuple[str, float]] = {
     "Restriction":   ("constraint",   0.80),
@@ -154,3 +178,69 @@ def _noise_result() -> dict:
         "confidence_low": True,
         "should_proceed": False,
     }
+
+
+def detect_ordered_plan_steps(text: str) -> list[str]:
+    """
+    Extract ordered step lines from numbered/bulleted plan text.
+    Returns normalized step strings in source order.
+    """
+    if not text:
+        return []
+
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    steps: list[str] = []
+
+    numbered = re.compile(r"^(?:step\s+)?\d+[\.\):]\s+(.+)$", re.IGNORECASE)
+    bullet = re.compile(r"^[\-•]\s+(.+)$")
+    ordered_words = re.compile(r"^(?:first|then|next|finally)\b[:\-]?\s*(.+)$", re.IGNORECASE)
+
+    for line in lines:
+        m_num = numbered.match(line)
+        if m_num:
+            steps.append(m_num.group(1).strip())
+            continue
+
+        m_ord = ordered_words.match(line)
+        if m_ord:
+            steps.append(m_ord.group(1).strip())
+            continue
+
+        m_bul = bullet.match(line)
+        if m_bul and ordered_words.match(m_bul.group(1).strip()):
+            steps.append(m_bul.group(1).strip())
+
+    # Dedup while preserving order, drop trivially short items
+    seen = set()
+    clean: list[str] = []
+    for step in steps:
+        key = step.lower()
+        if len(key) < 3 or key in seen:
+            continue
+        seen.add(key)
+        clean.append(step)
+    return clean
+
+
+def has_plan_signal(text: str) -> bool:
+    """Return True when plan framing/structure indicators are present."""
+    lower = (text or "").lower()
+    return any(re.search(p, lower) for p in _PLAN_SIGNALS)
+
+
+def infer_outcome_valence(text: str) -> float | None:
+    """
+    Infer a coarse valence from outcome language.
+    Returns +0.8 for success, -0.8 for failure, None for neutral/ambiguous.
+    """
+    lower = (text or "").lower()
+    success_hits = sum(1 for p in _SUCCESS_SIGNALS if re.search(p, lower))
+    failure_hits = sum(1 for p in _FAILURE_SIGNALS if re.search(p, lower))
+
+    if success_hits == 0 and failure_hits == 0:
+        return None
+    if success_hits > failure_hits:
+        return 0.8
+    if failure_hits > success_hits:
+        return -0.8
+    return None

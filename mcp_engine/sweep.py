@@ -21,7 +21,12 @@ at a time. Never holds the write lock for bulk operations.
 from __future__ import annotations
 
 import json
+import logging
+import uuid
 from datetime import datetime, timezone
+
+_logger = logging.getLogger(__name__)
+
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -29,6 +34,7 @@ if TYPE_CHECKING:
     from mcp_engine.llm.provider import LLMClient
 
 from mcp_engine.loop.step7_pathway import pathway_strength_decay
+from mcp_engine.graph import embeddings as emb
 
 # ---------------------------------------------------------------------------
 # Sweep table registry
@@ -36,6 +42,7 @@ from mcp_engine.loop.step7_pathway import pathway_strength_decay
 # ---------------------------------------------------------------------------
 
 SWEEP_TABLES = [
+    ("Concept",           "concept_id",             "concept",            "concept_emb_idx"),
     ("GlobalConstraint", "global_constraint_id", "global_constraint", "globalconstraint_emb_idx"),
     ("GlobalPreference",  "global_preference_id",  "global_preference",  "globalpreference_emb_idx"),
     ("Decision",          "decision_id",            "decision",           "decision_emb_idx"),
@@ -80,6 +87,7 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
     summary = {
         "decayed": 0, "archived": 0, "resurrected": 0,
         "promoted": 0, "errors": 0,
+        "retrospective_plans": 0,
         "sweep_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -88,6 +96,11 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
     summary["decayed"]  += d
     summary["archived"] += a
     summary["errors"]   += e
+
+    # Step 1.5: B74 valence-aware decay adjustment
+    v, e = await _apply_valence_decay(db)
+    summary["valence_adjusted"] = v
+    summary["errors"] += e
 
     # Step 2: Resurrect archived nodes with active graph similarity
     r, e = await _resurrect_archived(db, resurrection_thresh)
@@ -107,7 +120,164 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
     summary["centroids_updated"]  = c
     summary["errors"]            += e
 
+    # Step 5: B68 Layer C retrospective plan inference
+    rp, e = await _infer_retrospective_plans(db, config)
+    summary["retrospective_plans"] += rp
+    summary["errors"] += e
+
     return summary
+
+
+async def _infer_retrospective_plans(db, config: dict) -> tuple[int, int]:
+    """
+    Infer plan structure from sequential ActionItems when no explicit plan exists.
+    Weak fallback path used by background sweep.
+    """
+    inferred = errors = 0
+    now = datetime.now(timezone.utc).isoformat()
+    embedding_model = config.get("embeddings", {}).get(
+        "model", "sentence-transformers/all-MiniLM-L6-v2"
+    )
+
+    try:
+        result = db.execute(
+            "MATCH (a:ActionItem)-[:ESTABLISHED_IN]->(s:Session) "
+            "WHERE a.archived = false AND a.text_raw IS NOT NULL "
+            "RETURN s.session_id, a.action_item_id, a.text_raw, a.created_at "
+            "ORDER BY s.session_id, a.created_at ASC"
+        )
+    except Exception:
+        return 0, 1
+
+    by_session: dict[str, list[tuple[str, str]]] = {}
+    while result.has_next():
+        row = result.get_next()
+        sid = row[0] or ""
+        aid = row[1] or ""
+        txt = (row[2] or "").strip()
+        if not sid or not aid or not txt:
+            continue
+        by_session.setdefault(sid, []).append((aid, txt))
+
+    for session_id, items in by_session.items():
+        if len(items) < 3:
+            continue
+
+        # Use the first 5 sequential ActionItems as retrospective steps.
+        seq = items[:5]
+        steps = [txt for _, txt in seq]
+        goal = steps[0][:240]
+        goal_vec = emb.embed(goal, model_name=embedding_model)
+
+        # Dedup: skip if a very similar plan already exists.
+        skip = False
+        thresh = config.get("plan_dedup_threshold", 0.90)
+        try:
+            neighbors = db.vector_search("Plan", "plan_emb_idx", goal_vec, 8)
+            for n in neighbors:
+                score = float(n.get("score", 0.0) or 0.0)
+                if score > thresh:
+                    _logger.info("Plan dedup: similarity=%.3f, threshold=%.2f, action=reject", score, thresh)
+                    skip = True
+                    break
+        except Exception:
+            pass
+        if skip:
+            continue
+
+        try:
+            plan_id = str(uuid.uuid4())
+            await db.execute_write(
+                """
+                CREATE (p:Plan {
+                    plan_id: $plan_id,
+                    goal: $goal,
+                    strategy: NULL,
+                    source: 'retrospective',
+                    embedding: $embedding,
+                    embedding_model: $embedding_model,
+                    embedding_dim: $embedding_dim,
+                    step_count: $step_count,
+                    valence: NULL,
+                    valence_source: NULL,
+                    status: 'completed',
+                    confidence: 0.65,
+                    confidence_low: true,
+                    pathway_strength: 0.65,
+                    archived: false,
+                    created_at: timestamp($created_at),
+                    completed_at: timestamp($completed_at)
+                })
+                """,
+                {
+                    "plan_id": plan_id,
+                    "goal": goal,
+                    "embedding": goal_vec,
+                    "embedding_model": embedding_model,
+                    "embedding_dim": len(goal_vec),
+                    "step_count": len(steps),
+                    "created_at": now,
+                    "completed_at": now,
+                },
+            )
+
+            await db.execute_write(
+                "MATCH (p:Plan {plan_id: $pid}), (s:Session {session_id: $sid}) "
+                "MERGE (p)-[:PLANNED_IN]->(s)",
+                {"pid": plan_id, "sid": session_id},
+            )
+
+            step_ids: list[str] = []
+            for idx, (_, text_raw) in enumerate(seq, start=1):
+                step_id = str(uuid.uuid4())
+                step_ids.append(step_id)
+                step_vec = emb.embed(text_raw, model_name=embedding_model)
+                await db.execute_write(
+                    """
+                    CREATE (ps:PlanStep {
+                        step_id: $step_id,
+                        step_number: $step_number,
+                        description: $description,
+                        embedding: $embedding,
+                        embedding_model: $embedding_model,
+                        embedding_dim: $embedding_dim,
+                        expected_outcome: NULL,
+                        actual_outcome: NULL,
+                        valence: NULL,
+                        status: 'succeeded',
+                        created_at: timestamp($created_at),
+                        completed_at: timestamp($completed_at)
+                    })
+                    """,
+                    {
+                        "step_id": step_id,
+                        "step_number": idx,
+                        "description": text_raw,
+                        "embedding": step_vec,
+                        "embedding_model": embedding_model,
+                        "embedding_dim": len(step_vec),
+                        "created_at": now,
+                        "completed_at": now,
+                    },
+                )
+                await db.execute_write(
+                    "MATCH (ps:PlanStep {step_id: $sid}), (p:Plan {plan_id: $pid}) "
+                    "MERGE (ps)-[:STEP_OF]->(p)",
+                    {"sid": step_id, "pid": plan_id},
+                )
+
+            for a, b in zip(step_ids, step_ids[1:]):
+                await db.execute_write(
+                    "MATCH (x:PlanStep {step_id: $a}), (y:PlanStep {step_id: $b}) "
+                    "MERGE (x)-[:NEXT_STEP]->(y)",
+                    {"a": a, "b": b},
+                )
+
+            inferred += 1
+        except Exception:
+            errors += 1
+
+    return inferred, errors
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +350,56 @@ async def _decay_and_archive(
             errors += 1
 
     return decayed, archived, errors
+
+
+# ---------------------------------------------------------------------------
+# Step 1.5: B74 — Valence-aware decay
+# ---------------------------------------------------------------------------
+
+async def _apply_valence_decay(db) -> tuple[int, int]:
+    """
+    Adjust Concept pathway_strength based on accumulated OUTCOME_SIGNAL valence.
+    Positive valence -> slower decay; Negative valence -> faster decay.
+    """
+    adjusted = errors = 0
+    try:
+        # 1. Query all Concepts with signals
+        ro = db.execute(
+            "MATCH (ps:PlanStep)-[o:OUTCOME_SIGNAL]->(c:Concept) "
+            "WHERE c.archived = false "
+            "RETURN c.concept_id, avg(o.valence) AS avg_v"
+        )
+        
+        updates = []
+        while ro.has_next():
+            row = ro.get_next()
+            cid = row[0]
+            avg_v = row[1]
+            if cid and avg_v is not None:
+                # valence_factor in [0.7, 1.3] for valence in [-1, 1]
+                factor = 1.0 + (float(avg_v) * 0.3)
+                updates.append((cid, factor))
+                
+        # 2. Apply atomic updates
+        for cid, factor in updates:
+            try:
+                # Atomic multiply + clamp to [0, 1]
+                await db.execute_write(
+                    "MATCH (c:Concept {concept_id: $cid}) "
+                    "SET c.pathway_strength = CASE "
+                    "  WHEN c.pathway_strength * $factor > 1.0 THEN 1.0 "
+                    "  WHEN c.pathway_strength * $factor < 0.0 THEN 0.0 "
+                    "  ELSE c.pathway_strength * $factor END",
+                    {"cid": cid, "factor": factor}
+                )
+                adjusted += 1
+            except Exception:
+                errors += 1
+                
+    except Exception:
+        errors += 1
+        
+    return adjusted, errors
 
 
 # ---------------------------------------------------------------------------

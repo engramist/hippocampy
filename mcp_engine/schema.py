@@ -317,6 +317,44 @@ NODE_TABLES = {
         created_at       TIMESTAMP,
         PRIMARY KEY (lesson_id)
     """,
+
+    # B66 — Plan/PlanStep (active agent planning graph)
+    "Plan": """
+        plan_id          STRING,
+        goal             STRING,
+        strategy         STRING,
+        source           STRING,
+        embedding        FLOAT[384],
+        embedding_model  STRING,
+        embedding_dim    INT64,
+        step_count       INT64,
+        valence          DOUBLE,
+        valence_source   STRING,
+        status           STRING,
+        confidence       DOUBLE,
+        confidence_low   BOOLEAN,
+        pathway_strength DOUBLE,
+        archived         BOOLEAN,
+        created_at       TIMESTAMP,
+        completed_at     TIMESTAMP,
+        PRIMARY KEY (plan_id)
+    """,
+
+    "PlanStep": """
+        step_id           STRING,
+        step_number       INT64,
+        description       STRING,
+        embedding         FLOAT[384],
+        embedding_model   STRING,
+        embedding_dim     INT64,
+        expected_outcome  STRING,
+        actual_outcome    STRING,
+        valence           DOUBLE,
+        status            STRING,
+        created_at        TIMESTAMP,
+        completed_at      TIMESTAMP,
+        PRIMARY KEY (step_id)
+    """,
 }
 
 # ---------------------------------------------------------------------------
@@ -370,7 +408,26 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS RELATED_TO (FROM Lesson TO Lesson)",
     "CREATE REL TABLE IF NOT EXISTS CONTAINS_LESSON (FROM Message TO Lesson)",
     "CREATE REL TABLE IF NOT EXISTS REROUTED_FROM (FROM Session TO MainQuest, rerouted_at TIMESTAMP, reason STRING)",
+    # B66/B69 — active planning + outcome propagation
+    "CREATE REL TABLE IF NOT EXISTS PLANNED_IN (FROM Plan TO Session)",
+    "CREATE REL TABLE IF NOT EXISTS TARGETS (FROM Plan TO MainQuest, FROM Plan TO SideQuest)",
+    "CREATE REL TABLE IF NOT EXISTS STEP_OF (FROM PlanStep TO Plan)",
+    "CREATE REL TABLE IF NOT EXISTS NEXT_STEP (FROM PlanStep TO PlanStep)",
+    "CREATE REL TABLE IF NOT EXISTS ACTS_ON (FROM PlanStep TO Concept)",
+    "CREATE REL TABLE IF NOT EXISTS PRODUCED_PLAN_LESSON (FROM Plan TO Lesson)",
+    "CREATE REL TABLE IF NOT EXISTS OUTCOME_SIGNAL (FROM PlanStep TO Concept, valence DOUBLE, plan_id STRING, observed_at TIMESTAMP)",
 ]
+
+def get_relationship_types() -> list[str]:
+    """Parse REL_TABLES to extract all relationship table names."""
+    rels = []
+    for ddl in REL_TABLES:
+        # Match 'CREATE REL TABLE IF NOT EXISTS NAME' or 'CREATE REL TABLE NAME'
+        match = re.search(r"CREATE REL TABLE (?:IF NOT EXISTS )?(\w+)", ddl)
+        if match:
+            rels.append(match.group(1))
+    return rels
+
 
 # ---------------------------------------------------------------------------
 # Ontology seed data (gist → schema.org routing table — core IP)
@@ -479,13 +536,25 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
     off to asyncio. Do not call init_schema() after the event loop starts.
 
     Steps:
-      1. Create all node tables (IF NOT EXISTS)
-      2. Create all relationship tables (IF NOT EXISTS)
-      3. Seed GistClass + SchemaOrgType nodes + ROUTES_TO edges
-      4. Bootstrap GistClass centroids from seed examples
-      5. Create HNSW vector indexes
+      1. Validate embedding dimension
+      2. Create all node tables (IF NOT EXISTS)
+      3. Create all relationship tables (IF NOT EXISTS)
+      4. Seed GistClass + SchemaOrgType nodes + ROUTES_TO edges
+      5. Bootstrap GistClass centroids from seed examples
+      6. Create HNSW vector indexes
     """
     print("Initializing schema...")
+
+    # B76: Dimension validation
+    test_vec = emb.embed("dimension validation test", model_name=embedding_model)
+    expected_dim = 384  # matches FLOAT[384] in schema
+    if len(test_vec) != expected_dim:
+        raise ValueError(
+            f"Embedding model produces {len(test_vec)} dimensions "
+            f"but schema expects {expected_dim}. "
+            f"Check config embedding_model setting."
+        )
+    print(f"  Embedding validation: {expected_dim} dimensions verified.")
 
     # 1. Node tables
     for table_name, fields in NODE_TABLES.items():
@@ -543,6 +612,7 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         ("Message",         "archived", "BOOLEAN"),
         ("DocumentExtract", "archived", "BOOLEAN"),
         ("Label",           "archived", "BOOLEAN"),
+        ("Plan",            "source", "STRING"),
     ]
     def _column_exists(table: str, col: str) -> bool:
         """Check whether a column already exists via table_info, avoiding
@@ -660,6 +730,8 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         "GlobalConstraint", "GlobalPreference", "MainQuest", "SideQuest",
         "Message", "DocumentExtract", "Label",
         "Lesson",  # B11
+        "Plan",    # B66
+        "PlanStep",  # B66
     ]
     for table in embedding_tables:
         index_name = f"{table.lower()}_emb_idx"

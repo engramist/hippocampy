@@ -5,18 +5,13 @@ from typing import TYPE_CHECKING, List, Dict, Any, Set, Optional, Tuple
 if TYPE_CHECKING:
     from mcp_engine.graph.kuzu_client import KuzuClient
 
+from mcp_engine.schema import get_relationship_types
+
 _logger = logging.getLogger(__name__)
 
 # Traversal is constrained to allowlisted relationship types.
-_TRAVERSABLE_RELS = frozenset({
-    "REQUIRES", "ENABLES", "REPLACES", "CONTRADICTS", "PART_OF",
-    "CHOSEN_OVER", "IMPLEMENTS", "EXTENDS", "ALTERNATIVE_TO",
-    "CO_OCCURS_WITH", "REIFIED_AS", "DEPRECATED_BY",
-    "BELONGS_TO", "DERIVED_FROM", "ESTABLISHED",
-    "HAS_PREF_LABEL", "HAS_ALT_LABEL",
-    "PRODUCED_LESSON",
-    "ESTABLISHED_IN",
-})
+# Derived dynamically from schema.py REL_TABLES (B72).
+_TRAVERSABLE_RELS = frozenset(get_relationship_types())
 
 # Node tables to search when resolving start_node_id
 _NODE_TABLES = [
@@ -176,11 +171,12 @@ def _bfs_traversal(db: KuzuClient, start_id: str, start_table: str, max_depth: i
     visited_node_ids = {start_id}
     start_node_data = _get_node_data(db, start_id, start_table)
     
-    # queue of (current_node_id, current_node_table, current_path_nodes, current_path_edges, current_depth)
-    queue = [(start_id, start_table, [start_node_data], [], 0)]
+    # queue of (current_node_id, current_node_table, current_path_nodes, current_path_edges, current_depth, current_path_ids)
+    # B77: use a set for O(1) cycle detection within the path
+    queue = [(start_id, start_table, [start_node_data], [], 0, {start_id})]
     
     while queue and len(visited_node_ids) < max_nodes:
-        curr_id, curr_table, curr_nodes, curr_edges, curr_depth = queue.pop(0)
+        curr_id, curr_table, curr_nodes, curr_edges, curr_depth, curr_path_ids = queue.pop(0)
         
         # Every node reached (other than start) completes a path from start
         if curr_depth > 0:
@@ -195,21 +191,22 @@ def _bfs_traversal(db: KuzuClient, start_id: str, start_table: str, max_depth: i
         if curr_depth < max_depth:
             neighbors = _get_neighbors(db, curr_id, curr_table, edge_types, direction)
             for nbr in neighbors:
-                # To avoid cycles within a single path
-                if nbr["id"] in [n["node_id"] for n in curr_nodes]:
+                # B77: O(1) cycle detection
+                if nbr["id"] in curr_path_ids:
                     continue
                 
                 nbr_node_data = _get_node_data(db, nbr["id"], nbr["table"])
                 visited_node_ids.add(nbr["id"])
                 
                 new_nodes = curr_nodes + [nbr_node_data]
+                new_path_ids = curr_path_ids | {nbr["id"]}
                 if nbr["direction"] == "out":
                     new_edge = {"from": curr_id, "to": nbr["id"], "type": nbr["rel_type"], "confidence": nbr["rel_conf"]}
                 else:
                     new_edge = {"from": nbr["id"], "to": curr_id, "type": nbr["rel_type"], "confidence": nbr["rel_conf"]}
                 
                 new_edges = curr_edges + [new_edge]
-                queue.append((nbr["id"], nbr["table"], new_nodes, new_edges, curr_depth + 1))
+                queue.append((nbr["id"], nbr["table"], new_nodes, new_edges, curr_depth + 1, new_path_ids))
                 
                 if len(visited_node_ids) >= max_nodes:
                     break
@@ -221,6 +218,9 @@ def _dfs_traversal(db: KuzuClient, start_id: str, start_table: str, max_depth: i
     visited_node_ids = {start_id}
     start_node_data = _get_node_data(db, start_id, start_table)
     
+    # B77: use a set for O(1) cycle detection within the path
+    curr_path_ids = {start_id}
+
     def _dfs(curr_id: str, curr_table: str, curr_nodes: List[Dict[str, Any]], curr_edges: List[Dict[str, Any]], curr_depth: int):
         if len(visited_node_ids) >= max_nodes:
             return
@@ -237,7 +237,8 @@ def _dfs_traversal(db: KuzuClient, start_id: str, start_table: str, max_depth: i
         if curr_depth < max_depth:
             neighbors = _get_neighbors(db, curr_id, curr_table, edge_types, direction)
             for nbr in neighbors:
-                if nbr["id"] in [n["node_id"] for n in curr_nodes]:
+                # B77: O(1) cycle detection
+                if nbr["id"] in curr_path_ids:
                     continue
                 
                 nbr_node_data = _get_node_data(db, nbr["id"], nbr["table"])
@@ -250,7 +251,10 @@ def _dfs_traversal(db: KuzuClient, start_id: str, start_table: str, max_depth: i
                     new_edge = {"from": nbr["id"], "to": curr_id, "type": nbr["rel_type"], "confidence": nbr["rel_conf"]}
                 
                 new_edges = curr_edges + [new_edge]
+                
+                curr_path_ids.add(nbr["id"])
                 _dfs(nbr["id"], nbr["table"], new_nodes, new_edges, curr_depth + 1)
+                curr_path_ids.remove(nbr["id"]) # Backtrack
                 
                 if len(visited_node_ids) >= max_nodes:
                     break

@@ -8,6 +8,8 @@ All writes go through db.execute_write() to respect the asyncio write lock.
 from __future__ import annotations
 import asyncio
 import logging
+import math
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
@@ -24,6 +26,11 @@ from mcp_engine.quest import (
     get_or_create_main_quest, get_or_create_session,
     create_side_quest, get_quest_context,
 )
+from mcp_engine.loop.step4_pattern import (
+    detect_ordered_plan_steps,
+    has_plan_signal,
+    infer_outcome_valence,
+)
 
 # ---------------------------------------------------------------------------
 # M3 runtime state — initialized by brain_daemon.py at startup
@@ -36,6 +43,383 @@ def init_loop_queue(queue: asyncio.Queue) -> None:
     """Called once by BrainDaemon.start() after the event loop is running."""
     global _loop_queue
     _loop_queue = queue
+
+
+# ---------------------------------------------------------------------------
+# B66/B67/B68/B69 — Planning + Outcome helpers
+# ---------------------------------------------------------------------------
+
+def _clamp(val: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, val))
+
+
+def _normalize_steps(raw_steps: list[str]) -> list[str]:
+    steps: list[str] = []
+    seen = set()
+    for step in raw_steps:
+        text = (step or "").strip()
+        key = text.lower()
+        if not text or key in seen:
+            continue
+        seen.add(key)
+        steps.append(text)
+    return steps
+
+
+def _safe_result_dict(node) -> dict:
+    """Defensive cast for Kuzu node records that behave like dicts."""
+    try:
+        return dict(node)
+    except Exception:
+        return node if isinstance(node, dict) else {}
+
+
+def _session_active_plan_id(db, session_id: str) -> str:
+    try:
+        r = db.execute(
+            "MATCH (p:Plan)-[:PLANNED_IN]->(s:Session {session_id: $sid}) "
+            "WHERE p.status = 'active' "
+            "RETURN p.plan_id "
+            "ORDER BY p.created_at DESC LIMIT 1",
+            {"sid": session_id},
+        )
+        if r.has_next():
+            return r.get_next()[0] or ""
+    except Exception:
+        pass
+    return ""
+
+
+async def _create_plan_graph(
+    *,
+    db,
+    goal: str,
+    steps: list[str],
+    session_id: str,
+    embedding_model: str,
+    now_iso: str,
+    strategy: str = "",
+    source: str = "active",
+    confidence: float = 0.90,
+    confidence_low: bool = False,
+) -> tuple[str, list[str], str]:
+    """Create Plan + PlanStep chain and basic relationships."""
+    plan_id = str(uuid.uuid4())
+    step_ids = [str(uuid.uuid4()) for _ in steps]
+    goal_vec = emb.embed(goal, model_name=embedding_model)
+
+    # Resolve quest_id from session if not provided
+    quest_id = ""
+    if session_id and session_id != "unknown":
+        try:
+            rq = db.execute(
+                "MATCH (s:Session {session_id: $sid})-[:WORKING_ON]->(q) "
+                "RETURN q.quest_id LIMIT 1",
+                {"sid": session_id},
+            )
+            if rq.has_next():
+                quest_id = rq.get_next()[0] or ""
+        except Exception:
+            pass
+
+    # Pre-calculate step data and ACTS_ON links
+    step_params = []
+    for idx, (step_id, step_text) in enumerate(zip(step_ids, steps), start=1):
+        step_vec = emb.embed(step_text, model_name=embedding_model)
+        acts_on = []
+        try:
+            # B75: pre-calculate ACTS_ON via vector search
+            rows = db.vector_search("Concept", "concept_emb_idx", step_vec, 5)
+            for row in rows:
+                if row["score"] >= 0.75:
+                    node = _safe_result_dict(row.get("node", {}))
+                    cid = node.get("concept_id")
+                    if cid and not node.get("archived", False):
+                        acts_on.append(cid)
+        except Exception:
+            pass
+
+        step_params.append({
+            "step_id": step_id,
+            "step_number": idx,
+            "description": step_text,
+            "embedding": step_vec,
+            "acts_on": acts_on
+        })
+
+    try:
+        # B75: Single transactional write for Plan + Steps + basic RELs
+        # We use UNWIND for steps and a nested UNWIND for acts_on
+        await db.execute_write(
+            """
+            CREATE (p:Plan {
+                plan_id: $plan_id,
+                goal: $goal,
+                strategy: $strategy,
+                source: $source,
+                embedding: $embedding,
+                embedding_model: $embedding_model,
+                embedding_dim: $embedding_dim,
+                step_count: $step_count,
+                valence: NULL,
+                valence_source: NULL,
+                status: 'active',
+                confidence: $confidence,
+                confidence_low: $confidence_low,
+                pathway_strength: $pathway_strength,
+                archived: false,
+                created_at: timestamp($created_at),
+                completed_at: NULL
+            })
+            WITH p
+            OPTIONAL MATCH (s:Session {session_id: $session_id})
+            WHERE $session_id <> 'unknown'
+            FOREACH (_ IN CASE WHEN s IS NOT NULL THEN [1] ELSE [] END |
+                MERGE (p)-[:PLANNED_IN]->(s)
+            )
+            WITH p
+            OPTIONAL MATCH (q {quest_id: $quest_id})
+            WHERE $quest_id <> ''
+            FOREACH (_ IN CASE WHEN q IS NOT NULL THEN [1] ELSE [] END |
+                MERGE (p)-[:TARGETS]->(q)
+            )
+            WITH p
+            UNWIND $steps AS s
+            CREATE (ps:PlanStep {
+                step_id: s.step_id,
+                step_number: s.step_number,
+                description: s.description,
+                embedding: s.embedding,
+                embedding_model: $embedding_model,
+                embedding_dim: $embedding_dim,
+                expected_outcome: NULL,
+                actual_outcome: NULL,
+                valence: NULL,
+                status: 'pending',
+                created_at: timestamp($created_at),
+                completed_at: NULL
+            })
+            MERGE (ps)-[:STEP_OF]->(p)
+            WITH ps, s
+            UNWIND s.acts_on AS cid
+            MATCH (c:Concept {concept_id: cid})
+            MERGE (ps)-[:ACTS_ON]->(c)
+            """,
+            {
+                "plan_id": plan_id,
+                "goal": goal,
+                "strategy": strategy,
+                "source": source,
+                "embedding": goal_vec,
+                "embedding_model": embedding_model,
+                "embedding_dim": len(goal_vec),
+                "step_count": len(steps),
+                "confidence": confidence,
+                "confidence_low": confidence_low,
+                "pathway_strength": max(confidence, 0.5),
+                "created_at": now_iso,
+                "session_id": session_id,
+                "quest_id": quest_id,
+                "steps": step_params,
+            }
+        )
+
+        # B75 Call 2: chain steps with NEXT_STEP
+        if len(step_ids) > 1:
+            next_pairs = [{"a": a, "b": b} for a, b in zip(step_ids, step_ids[1:])]
+            await db.execute_write(
+                """
+                UNWIND $pairs AS pair
+                MATCH (x:PlanStep {step_id: pair.a}), (y:PlanStep {step_id: pair.b})
+                MERGE (x)-[:NEXT_STEP]->(y)
+                """,
+                {"pairs": next_pairs}
+            )
+
+    except Exception as e:
+        _logger.exception("B75: Transactional plan write failed, cleaning up %s", plan_id)
+        # Compensating delete to ensure atomicity
+        try:
+            await db.execute_write(
+                "MATCH (p:Plan {plan_id: $pid}) DETACH DELETE p",
+                {"pid": plan_id}
+            )
+            # Steps are linked via STEP_OF, but Plan is deleted.
+            # In Kùzu, DETACH DELETE only deletes the node and its edges.
+            # We should also delete the steps.
+            await db.execute_write(
+                "MATCH (ps:PlanStep)-[:STEP_OF]->(p:Plan {plan_id: $pid}) DETACH DELETE ps",
+                {"pid": plan_id}
+            )
+        except Exception:
+            pass
+        raise e
+
+    return plan_id, step_ids, quest_id
+
+
+
+def _plan_feedback_from_similarity(db, goal_vec: list[float], exclude_plan_id: str) -> tuple[list[dict], list[dict]]:
+    """Amygdala reflex: similar historical plans -> warnings/suggestions."""
+    warnings: list[dict] = []
+    suggestions: list[dict] = []
+
+    try:
+        candidates = db.vector_search("Plan", "plan_emb_idx", goal_vec, 12)
+    except Exception:
+        return warnings, suggestions
+
+    for item in candidates:
+        node = _safe_result_dict(item.get("node", {}))
+        pid = node.get("plan_id", "")
+        if not pid or pid == exclude_plan_id:
+            continue
+
+        similarity = float(item.get("score", 0.0) or 0.0)
+        if similarity <= 0.75:
+            continue
+
+        valence = node.get("valence")
+        if valence is None:
+            continue
+        valence = float(valence)
+
+        step_rows: list[dict] = []
+        try:
+            rs = db.execute(
+                "MATCH (ps:PlanStep)-[:STEP_OF]->(p:Plan {plan_id: $pid}) "
+                "RETURN ps.step_number, ps.description, ps.valence, ps.status "
+                "ORDER BY ps.step_number ASC",
+                {"pid": pid},
+            )
+            while rs.has_next():
+                row = rs.get_next()
+                step_rows.append(
+                    {
+                        "step_number": int(row[0]),
+                        "description": row[1] or "",
+                        "valence": row[2],
+                        "status": row[3] or "",
+                    }
+                )
+        except Exception:
+            pass
+
+        payload = {
+            "plan_id": pid,
+            "goal": node.get("goal", ""),
+            "valence": valence,
+            "similarity": round(similarity, 4),
+            "steps": step_rows,
+            "score": abs(valence * similarity),
+        }
+        if valence < -0.5:
+            warnings.append(payload)
+        elif valence > 0.5:
+            suggestions.append(payload)
+
+    warnings.sort(key=lambda x: x["score"], reverse=True)
+    suggestions.sort(key=lambda x: x["score"], reverse=True)
+    for row in warnings:
+        row.pop("score", None)
+    for row in suggestions:
+        row.pop("score", None)
+    return warnings[:5], suggestions[:5]
+
+
+async def _store_plan_outcome_lesson(db, *, plan_id: str, outcome: str, valence: float, session_id: str,
+                                     embedding_model: str, now_iso: str) -> str | None:
+    """Create a Lesson and connect it to the Plan when |valence| is strong."""
+    if abs(valence) <= 0.7:
+        return None
+
+    lesson_text = f"Plan outcome ({'success' if valence > 0 else 'failure'}): {outcome.strip()}"
+    lesson_id = str(uuid.uuid4())
+    vec = emb.embed(lesson_text, model_name=embedding_model)
+
+    await db.execute_write(
+        """
+        CREATE (l:Lesson {
+            lesson_id: $lesson_id,
+            text_raw: $text_raw,
+            embedding: $embedding,
+            embedding_model: $embedding_model,
+            embedding_dim: $embedding_dim,
+            domain: 'planning',
+            lesson_type: 'optimization',
+            confidence: 0.85,
+            confidence_low: false,
+            pathway_strength: 0.85,
+            archived: false,
+            created_at: timestamp($created_at)
+        })
+        """,
+        {
+            "lesson_id": lesson_id,
+            "text_raw": lesson_text,
+            "embedding": vec,
+            "embedding_model": embedding_model,
+            "embedding_dim": len(vec),
+            "created_at": now_iso,
+        },
+    )
+
+    await db.execute_write(
+        "MATCH (p:Plan {plan_id: $pid}), (l:Lesson {lesson_id: $lid}) "
+        "MERGE (p)-[:PRODUCED_PLAN_LESSON]->(l)",
+        {"pid": plan_id, "lid": lesson_id},
+    )
+
+    if session_id and session_id != "unknown":
+        await db.execute_write(
+            "MATCH (s:Session {session_id: $sid}), (l:Lesson {lesson_id: $lid}) "
+            "MERGE (s)-[:LEARNED]->(l)",
+            {"sid": session_id, "lid": lesson_id},
+        )
+
+    return lesson_id
+
+
+async def _maybe_create_passive_plan_from_turn(
+    *,
+    db,
+    content: str,
+    session_id: str,
+    embedding_model: str,
+    now_iso: str,
+) -> dict | None:
+    """B68 Layer B fallback: infer plan from structured text if not actively declared."""
+    if not has_plan_signal(content):
+        return None
+
+    steps = detect_ordered_plan_steps(content)
+    if len(steps) < 3:
+        return None
+
+    goal = content.split("\n", 1)[0].strip()[:240] or "Passively detected plan"
+    goal_vec = emb.embed(goal, model_name=embedding_model)
+
+    # Dedup against existing plans by similarity > 0.90
+    try:
+        existing = db.vector_search("Plan", "plan_emb_idx", goal_vec, 6)
+        for row in existing:
+            if float(row.get("score", 0.0) or 0.0) > 0.90:
+                return None
+    except Exception:
+        pass
+
+    plan_id, step_ids, quest_id = await _create_plan_graph(
+        db=db,
+        goal=goal,
+        steps=steps,
+        session_id=session_id,
+        embedding_model=embedding_model,
+        now_iso=now_iso,
+        source="passive",
+        confidence=0.70,
+        confidence_low=True,
+    )
+    return {"plan_id": plan_id, "step_ids": step_ids, "quest_id": quest_id}
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +582,50 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
         except Exception:
             pass  # Non-critical
 
+    passive_plan = None
+    # B68: passive structural plan detection from natural-language ordered steps.
+    try:
+        if session_id != "unknown":
+            passive_plan = await _maybe_create_passive_plan_from_turn(
+                db=db,
+                content=content,
+                session_id=session_id,
+                embedding_model=embedding_model,
+                now_iso=now,
+            )
+    except Exception:
+        _logger.exception("passive plan detection failed")
+
+    # B69: outcome sense (success/failure language) can auto-report outcome.
+    try:
+        inferred_valence = infer_outcome_valence(content)
+        if inferred_valence is not None and session_id != "unknown":
+            active_plan_id = _session_active_plan_id(db, session_id)
+            if active_plan_id:
+                await report_outcome(
+                    {
+                        "plan_id": active_plan_id,
+                        "outcome": content,
+                        "valence": inferred_valence,
+                        "session_id": session_id,
+                        "valence_source": "system",
+                    },
+                    db,
+                    config,
+                )
+            elif abs(inferred_valence) > 0.7:
+                await _store_plan_outcome_lesson(
+                    db,
+                    plan_id="",
+                    outcome=content,
+                    valence=inferred_valence,
+                    session_id=session_id,
+                    embedding_model=embedding_model,
+                    now_iso=now,
+                )
+    except Exception:
+        _logger.exception("outcome sense auto-report failed")
+
     response = {
         "status": "queued",
         "message_id": message_id,
@@ -205,6 +633,8 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
     }
     if insights:
         response["insights"] = insights
+    if passive_plan:
+        response["passive_plan"] = passive_plan
 
     return response
 
@@ -271,62 +701,104 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
         ("Lesson",           "lesson_emb_idx",            "lesson_id"),
     ]
 
-    all_results = []
+    all_raw_results = []
     per_table_limit = max(limit, 5)
 
     for table_name, index_name, pk in artifact_tables:
         try:
             rows = db.vector_search(table_name, index_name, query_vector, per_table_limit)
             for row in rows:
-                node = row["node"]
-                if node.get("archived", False):
-                    continue
-                node_id = (node.get("concept_id")
-                           or node.get("decision_id") or node.get("constraint_id")
-                           or node.get("requirement_id") or node.get("action_item_id")
-                           or node.get("global_constraint_id")
-                           or node.get("global_preference_id", "unknown"))
-                ps = node.get("pathway_strength", 0.0) or 0.0
-                conf = node.get("confidence", 0.0) or 0.0
-                similarity = row["score"]
-
-                # B31 fix: balanced ranking that weights similarity heavily.
-                # Old formula (ps * conf) caused stale high-strength nodes to
-                # dominate over semantically relevant new ones. New formula:
-                #   50% similarity (semantic match to query)
-                #   30% strength signal (pathway_strength * confidence)
-                #   20% recency (decays over days)
-                created_at = node.get("created_at")
-                recency = 1.0
-                if created_at:
-                    try:
-                        from datetime import datetime, timezone
-                        if hasattr(created_at, 'timestamp'):
-                            created_ts = created_at.timestamp()
-                        else:
-                            created_ts = datetime.fromisoformat(str(created_at).replace('Z', '+00:00')).timestamp()
-                        days_old = (datetime.now(timezone.utc).timestamp() - created_ts) / 86400
-                        recency = 1.0 / (1.0 + days_old)
-                    except Exception:
-                        recency = 0.5
-
-                strength = (ps * conf) if (ps > 0.0 and conf > 0.0) else 0.0
-                # Normalize strength to ~0-1 range (cap at 3.0 which is high)
-                strength_norm = min(strength / 3.0, 1.0)
-                rank = (similarity * 0.5) + (strength_norm * 0.3) + (recency * 0.2)
-
-                all_results.append({
-                    "node_id":          node_id,
-                    "node_type":        table_name,
-                    "text_raw":         node.get("text_raw", ""),
-                    "confidence":       conf,
-                    "confidence_low":   node.get("confidence_low", True),
-                    "pathway_strength": ps,
-                    "similarity":       similarity,
-                    "_rank":            rank,
-                })
+                all_raw_results.append((table_name, pk, row))
         except Exception:
             _logger.exception("current_truth vector search failed for table %s", table_name)
+
+    # Batch outcome signal lookup for Concept nodes
+    outcome_map = {}
+    concept_ids = [r[2]["node"]["concept_id"] for r in all_raw_results if r[0] == "Concept"]
+    if concept_ids:
+        try:
+            ro = db.execute(
+                """
+                UNWIND $ids AS cid
+                MATCH (ps:PlanStep)-[o:OUTCOME_SIGNAL]->(c:Concept {concept_id: cid})
+                RETURN cid, avg(o.valence), count(o)
+                """,
+                {"ids": concept_ids},
+            )
+            while ro.has_next():
+                cid, avg_v, count = ro.get_next()
+                outcome_map[cid] = (avg_v, count)
+        except Exception:
+            _logger.exception("current_truth batch outcome lookup failed")
+
+    all_results = []
+    for table_name, pk, row in all_raw_results:
+        try:
+            node = row["node"]
+            if node.get("archived", False):
+                continue
+            node_id = (node.get("concept_id")
+                        or node.get("decision_id") or node.get("constraint_id")
+                        or node.get("requirement_id") or node.get("action_item_id")
+                        or node.get("global_constraint_id")
+                        or node.get("global_preference_id", "unknown"))
+            ps = node.get("pathway_strength", 0.0) or 0.0
+            conf = node.get("confidence", 0.0) or 0.0
+            similarity = row["score"]
+
+            outcome_valence = None
+            outcome_warning = None
+            outcome_boost = 0.0
+            if table_name == "Concept" and node_id in outcome_map:
+                avg_valence, signal_count = outcome_map[node_id]
+                if signal_count and avg_valence is not None:
+                    outcome_valence = float(avg_valence)
+                    outcome_boost = _clamp(outcome_valence * 0.3, -0.3, 0.3)
+                    if outcome_valence < -0.1:
+                        outcome_warning = (
+                            f"This entity was involved in {int(signal_count)} failed or negative-outcome plan steps."
+                        )
+
+            # B31 fix: balanced ranking that weights similarity heavily.
+            # Old formula (ps * conf) caused stale high-strength nodes to
+            # dominate over semantically relevant new ones. New formula:
+            #   50% similarity (semantic match to query)
+            #   30% strength signal (pathway_strength * confidence)
+            #   20% recency (decays over days)
+            created_at = node.get("created_at")
+            recency = 1.0
+            if created_at:
+                try:
+                    from datetime import datetime, timezone
+                    if hasattr(created_at, 'timestamp'):
+                        created_ts = created_at.timestamp()
+                    else:
+                        created_ts = datetime.fromisoformat(str(created_at).replace('Z', '+00:00')).timestamp()
+                    days_old = (datetime.now(timezone.utc).timestamp() - created_ts) / 86400
+                    recency = 1.0 / (1.0 + days_old)
+                except Exception:
+                    recency = 0.5
+
+            strength = (ps * conf) if (ps > 0.0 and conf > 0.0) else 0.0
+            # Normalize strength to ~0-1 range (cap at 3.0 which is high)
+            strength_norm = min(strength / 3.0, 1.0)
+            rank = ((similarity * 0.5) + (strength_norm * 0.3) + (recency * 0.2)) * (1.0 + outcome_boost)
+
+            all_results.append({
+                "node_id":          node_id,
+                "node_type":        table_name,
+                "text_raw":         node.get("text_raw", ""),
+                "confidence":       conf,
+                "confidence_low":   node.get("confidence_low", True),
+                "pathway_strength": ps,
+                "similarity":       similarity,
+                "outcome_valence":  outcome_valence,
+                "outcome_warning":  outcome_warning,
+                "_rank":            rank,
+            })
+        except Exception:
+            _logger.exception("current_truth processing failed for node %s", node_id)
+
 
     # B18: Context Window Awareness (Working Memory) imports
     from mcp_engine.working_memory import (
@@ -1103,6 +1575,218 @@ async def context_status(params: dict, db: KuzuClient, config: dict) -> dict:
     }
 
 
+async def register_plan(params: dict, db: KuzuClient, config: dict) -> dict:
+    """B67: active declaration of a multi-step strategy."""
+    goal = (params.get("goal") or "").strip()
+    steps = _normalize_steps(params.get("steps") or [])
+    strategy = (params.get("strategy") or "").strip()
+    session_id = (params.get("session_id") or "unknown").strip() or "unknown"
+
+    if not goal:
+        return {"error": "goal is required"}
+    if not steps:
+        return {"error": "steps must include at least one non-empty item"}
+
+    embedding_model = config.get("embeddings", {}).get(
+        "model", "sentence-transformers/all-MiniLM-L6-v2"
+    )
+    now = datetime.now(timezone.utc).isoformat()
+
+    plan_id, step_ids, quest_id = await _create_plan_graph(
+        db=db,
+        goal=goal,
+        steps=steps,
+        session_id=session_id,
+        embedding_model=embedding_model,
+        now_iso=now,
+        strategy=strategy,
+        source="active",
+        confidence=0.90,
+        confidence_low=False,
+    )
+
+    goal_vec = emb.embed(goal, model_name=embedding_model)
+    warnings, suggestions = _plan_feedback_from_similarity(db, goal_vec, plan_id)
+
+    return {
+        "plan_id": plan_id,
+        "step_ids": step_ids,
+        "quest_id": quest_id,
+        "warnings": warnings,
+        "suggestions": suggestions,
+    }
+
+
+async def report_outcome(params: dict, db: KuzuClient, config: dict) -> dict:
+    """B67/B69: write step-level or plan-level outcome and valence propagation."""
+    plan_id = (params.get("plan_id") or "").strip()
+    outcome = (params.get("outcome") or "").strip()
+    session_id = (params.get("session_id") or "unknown").strip() or "unknown"
+    step_number = params.get("step_number")
+    valence_source = (params.get("valence_source") or "system").strip() or "system"
+
+    if not plan_id:
+        return {"error": "plan_id is required"}
+    if not outcome:
+        return {"error": "outcome is required"}
+
+    try:
+        valence = float(params.get("valence"))
+    except Exception:
+        return {"error": "valence must be a number between -1.0 and 1.0"}
+    valence = _clamp(valence, -1.0, 1.0)
+
+    now = datetime.now(timezone.utc).isoformat()
+    embedding_model = config.get("embeddings", {}).get(
+        "model", "sentence-transformers/all-MiniLM-L6-v2"
+    )
+
+    if step_number is not None:
+        try:
+            step_number = int(step_number)
+        except Exception:
+            return {"error": "step_number must be an integer when provided"}
+
+        await db.execute_write(
+            "MATCH (ps:PlanStep)-[:STEP_OF]->(p:Plan {plan_id: $pid}) "
+            "WHERE ps.step_number = $step_number "
+            "SET ps.actual_outcome = $outcome, "
+            "    ps.valence = $valence, "
+            "    ps.status = $status, "
+            "    ps.completed_at = timestamp($now)",
+            {
+                "pid": plan_id,
+                "step_number": step_number,
+                "outcome": outcome,
+                "valence": valence,
+                "status": "succeeded" if valence >= 0 else "failed",
+                "now": now,
+            },
+        )
+
+        if valence < 0:
+            await db.execute_write(
+                "MATCH (ps:PlanStep)-[:STEP_OF]->(p:Plan {plan_id: $pid}) "
+                "WHERE ps.step_number = $step_number "
+                "MATCH (ps)-[:ACTS_ON]->(c:Concept) "
+                "MERGE (ps)-[o:OUTCOME_SIGNAL]->(c) "
+                "SET o.valence = $valence, o.plan_id = $pid, o.observed_at = timestamp($now)",
+                {
+                    "pid": plan_id,
+                    "step_number": step_number,
+                    "valence": valence,
+                    "now": now,
+                },
+            )
+
+        return {"updated": True, "plan_status": "active"}
+
+    await db.execute_write(
+        "MATCH (p:Plan {plan_id: $pid}) "
+        "SET p.valence = $valence, "
+        "    p.valence_source = $valence_source, "
+        "    p.status = 'completed', "
+        "    p.completed_at = timestamp($now)",
+        {
+            "pid": plan_id,
+            "valence": valence,
+            "valence_source": valence_source,
+            "now": now,
+        },
+    )
+
+    lesson_id = await _store_plan_outcome_lesson(
+        db,
+        plan_id=plan_id,
+        outcome=outcome,
+        valence=valence,
+        session_id=session_id,
+        embedding_model=embedding_model,
+        now_iso=now,
+    )
+    return {
+        "updated": True,
+        "plan_status": "completed",
+        "lesson_id": lesson_id,
+    }
+
+
+async def recall_plans(params: dict, db: KuzuClient, config: dict) -> dict:
+    """B67: retrieve historical plan chains by goal similarity."""
+    goal_query = (params.get("goal_query") or "").strip()
+    if not goal_query:
+        return {"plans": []}
+
+    limit = int(params.get("limit", 5))
+    min_valence = float(params.get("min_valence", 0.0))
+    embedding_model = config.get("embeddings", {}).get(
+        "model", "sentence-transformers/all-MiniLM-L6-v2"
+    )
+    query_vec = emb.embed(goal_query, model_name=embedding_model)
+
+    try:
+        rows = db.vector_search("Plan", "plan_emb_idx", query_vec, max(limit * 4, 12))
+    except Exception:
+        return {"plans": []}
+
+    scored: list[dict] = []
+    for row in rows:
+        node = _safe_result_dict(row.get("node", {}))
+        pid = node.get("plan_id")
+        if not pid:
+            continue
+
+        valence = node.get("valence")
+        if valence is None:
+            continue
+        valence = float(valence)
+        if valence < min_valence:
+            continue
+
+        similarity = float(row.get("score", 0.0) or 0.0)
+        pathway_strength = float(node.get("pathway_strength", 1.0) or 1.0)
+        score = similarity * abs(valence) * max(pathway_strength, 0.1)
+
+        steps: list[dict] = []
+        try:
+            rs = db.execute(
+                "MATCH (ps:PlanStep)-[:STEP_OF]->(p:Plan {plan_id: $pid}) "
+                "RETURN ps.step_number, ps.description, ps.valence, ps.status "
+                "ORDER BY ps.step_number ASC",
+                {"pid": pid},
+            )
+            while rs.has_next():
+                sr = rs.get_next()
+                steps.append(
+                    {
+                        "step_number": int(sr[0]),
+                        "description": sr[1] or "",
+                        "valence": sr[2],
+                        "status": sr[3] or "pending",
+                    }
+                )
+        except Exception:
+            pass
+
+        scored.append(
+            {
+                "plan_id": pid,
+                "goal": node.get("goal", ""),
+                "valence": valence,
+                "similarity": round(similarity, 4),
+                "pathway_strength": pathway_strength,
+                "steps": steps,
+                "_score": score,
+            }
+        )
+
+    scored.sort(key=lambda p: p["_score"], reverse=True)
+    plans = scored[:max(limit, 1)]
+    for plan in plans:
+        plan.pop("_score", None)
+    return {"plans": plans}
+
+
 async def get_openclaw_prompt(params: dict, db: KuzuClient, config: dict) -> dict:
     """
     Get the system prompt fragments for OpenClaw.
@@ -1165,4 +1849,7 @@ TOOL_HANDLERS = {
     "upsert_lesson":    upsert_lesson,           # B11
     "recall_relevant_lessons": recall_relevant_lessons,  # B11
     "get_openclaw_prompt": get_openclaw_prompt,  # B21
+    "register_plan":   register_plan,            # B67
+    "report_outcome":  report_outcome,           # B67/B69
+    "recall_plans":    recall_plans,             # B67
 }

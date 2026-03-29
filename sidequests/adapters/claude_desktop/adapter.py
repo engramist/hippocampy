@@ -123,6 +123,9 @@ SYSTEM_PROMPT_FRAGMENT = (
     "[SideQuest | Brain: ACTIVE]\n"
     "Decisions and constraints are captured automatically in the background.\n"
     "Before answering about past choices or architecture → current_truth\n"
+    "When you form a multi-step strategy → register_plan(goal, steps, session_id)\n"
+    "Before planning similar work → recall_plans(goal_query, session_id)\n"
+    "After major steps or completion → report_outcome(plan_id, outcome, valence, session_id)\n"
     "Exploring a tangent? → branch_quest(name, purpose)\n"
     "After every response → notify_turn(role='assistant', content=<response>, session_id=<id>)\n"
     "When current_truth returns a panel_url field, include it as a markdown link: [View in Mission Control](url)"
@@ -288,8 +291,12 @@ async def handle_mcp_request(request: dict) -> dict:
                                             "text": '{"error": "daemon_offline"}'}]})
                 return err(-32000, str(e))
 
-        # --- ingest_document, explore_graph, complete_quest, set_quest, context_status (and future tools) ---
-        if tool_name in ("ingest_document", "explore_graph", "complete_quest", "set_quest", "context_status"):
+        # --- ingest_document, explore_graph, complete_quest, set_quest, context_status,
+        #     register_plan, report_outcome, recall_plans (and future tools) ---
+        if tool_name in (
+            "ingest_document", "explore_graph", "complete_quest", "set_quest", "context_status",
+            "register_plan", "report_outcome", "recall_plans",
+        ):
             try:
                 result = await _call_brain(tool_name, tool_input)
                 _daemon_online = True

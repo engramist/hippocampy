@@ -411,7 +411,8 @@ def test_codex_adapter_has_all_tools():
     expected = {"notify_turn", "current_truth", "branch_quest", "diff_since",
                 "get_open_loops", "analogical_search", "ingest_document",
                 "explore_graph", "complete_quest", "set_quest", "context_status",
-                "get_anomalies", "upsert_lesson", "recall_relevant_lessons"}
+                "get_anomalies", "upsert_lesson", "recall_relevant_lessons",
+                "register_plan", "report_outcome", "recall_plans"}
     assert names == expected
 
 

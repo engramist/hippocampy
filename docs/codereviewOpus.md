@@ -810,3 +810,303 @@ Tracking who fixed what and when. Opus 4.6 handles architectural fixes; Sonnet h
 **All 185 tests passing after fixes.** No regressions.
 
 **Remaining 36 findings assigned to Sonnet** — mechanical fixes that don't require cross-file architectural reasoning. Feed one finding at a time with the file path and fix description.
+
+---
+---
+
+# Review #2: Post-B1/B17/B18/B27/B57/B59/B63/B64/B66–B69 Audit
+
+**Date:** March 29, 2026
+**Reviewer:** Claude Opus 4.6 (Graph Expert Skill)
+**Scope:** Full codebase audit after 12+ backlog implementations since Review #1
+**Test suite:** 928 passed, 13 skipped (up from 198 at Review #1)
+
+## Context
+
+Since the March 12 review, the following major features were implemented:
+- **B1** — CLI setup
+- **B17** — Hippocampus (Semantic Quest Routing)
+- **B18** — Working Memory (Context Window Awareness)
+- **B27** — OpenClaw Passive Ingestion Validation
+- **B57** — ARC-AGI-3 A/B Harness
+- **B59** — ARC Offline Bundle
+- **B63** — Non-Git Consolidation Loop
+- **B64** — Message Count Bug Fix
+- **B66** — Plan/PlanStep Schema
+- **B67** — Active Plan Tools (register_plan, report_outcome, recall_plans)
+- **B68** — Passive Plan Detection
+- **B69** — Valence Propagation / Outcome Learning
+
+All 49 findings from Review #1 were resolved (47 DONE, 2 SKIP with justification). Test count grew from 198 → 928 (4.7x).
+
+---
+
+## Section 11: Cross-Adapter Tool Routing Gaps [NEW]
+
+### R2-A1. Four Tools Missing From ALL Adapter Pass-Through Lists [CRITICAL]
+
+**Files:** `adapters/claude_code/adapter.py`, `adapters/claude_desktop/adapter.py`, `adapters/codex/adapter.py`, `adapters/chatgpt_desktop/adapter.py`, `adapters/gemini_cli/adapter.py`
+
+All 5 adapters have an explicit allow-list for tool routing (the `if tool_name in (...)` block). Four tools defined in `tool_schemas.TOOLS` and handled in `TOOL_HANDLERS` are missing from ALL adapter allow-lists:
+
+| Missing Tool | Feature | Impact |
+|---|---|---|
+| `upsert_lesson` | B11 | Agents cannot save lessons |
+| `recall_relevant_lessons` | B11 | Agents cannot recall lessons |
+| `get_anomalies` | B12 | Agents cannot check security anomalies |
+| `get_openclaw_prompt` | B21 | OpenClaw prompt retrieval fails |
+
+Any call to these tools returns `{"error": {"code": -32601, "message": "Unknown tool: upsert_lesson"}}`.
+
+**Root cause:** B11/B12/B21 tools were added to `tool_schemas.py` and `TOOL_HANDLERS` but never propagated to adapter allow-lists. The B67 regression fix (this session) only added the three planning tools.
+
+**Fix:** Add all four to every adapter's pass-through block. Pattern: update the `if tool_name in (...)` tuple in each adapter.
+
+---
+
+### R2-A2. No Centralized Adapter Tool List — Drift Is Inevitable [HIGH]
+
+**Files:** All 5 adapters
+
+Each adapter has its own hardcoded tuple of tool names. There's no shared constant or auto-discovery from `tool_schemas.TOOLS`. Every new tool requires manually updating 5 files.
+
+**Fix:** Add to each adapter:
+```python
+from mcp_engine.tool_schemas import TOOLS
+_ALL_TOOL_NAMES = frozenset(t["name"] for t in TOOLS)
+```
+Then route by `if tool_name in _ALL_TOOL_NAMES` instead of a hardcoded tuple.
+
+---
+
+## Section 12: Graph Traversal & Query Quality [NEW]
+
+### R2-G1. `explore_graph` Missing 15+ Traversable Edge Types [HIGH]
+
+**File:** `mcp_engine/tools/explore_graph.py:11-19`
+
+`_TRAVERSABLE_RELS` has 19 edge types. ARCHITECTURE.md defines 30+. Missing edges prevent traversal into:
+- **Plan graphs:** `PLANNED_IN`, `TARGETS`, `STEP_OF`, `NEXT_STEP`, `ACTS_ON`, `OUTCOME_SIGNAL`
+- **Lesson graphs:** `LEARNED`, `APPLIES_TO`, `RELATED_TO`, `CONTAINS_LESSON`
+- **Working memory:** `LOADED`, `REROUTED_FROM`
+- **Anomaly detection:** `ANOMALY_DETECTED`
+- **Session provenance:** `USED`, `IN_WORKSPACE`, `WORKING_ON`, `SENT_IN`
+
+**Impact:** `explore_graph` cannot traverse plan chains, lesson networks, or session context — the graph appears artificially disconnected.
+
+**Fix:** Expand `_TRAVERSABLE_RELS` to include all relationship types from schema.py.
+
+---
+
+### R2-G2. N+1 Query Pattern in `current_truth` Outcome Boost [HIGH]
+
+**File:** `mcp_engine/tools/__init__.py` (outcome_signal lookup per concept)
+
+For each Concept returned by vector search, a separate `db.execute()` queries OUTCOME_SIGNAL edges. With 10 concepts across 8 tables, worst case = 80 sequential queries.
+
+**Fix:** Batch all concept_ids into a single `UNWIND $ids AS cid MATCH (:PlanStep)-[o:OUTCOME_SIGNAL]->(c:Concept {concept_id: cid}) RETURN cid, avg(o.valence), count(o)` query.
+
+---
+
+### R2-G3. Graph Cycle Detection Uses O(n) List Scan Instead of Set [MEDIUM]
+
+**File:** `mcp_engine/tools/explore_graph.py` (BFS/DFS inner loop)
+
+`if nbr["id"] in [n["node_id"] for n in curr_nodes]` rebuilds a list on every neighbor check. With 1000 nodes visited and high-degree nodes (100+ edges), this is O(100k) comparisons per expansion.
+
+**Fix:** Use a `visited_ids: set` for O(1) membership checks.
+
+---
+
+### R2-G4. No Truncation Warning From `explore_graph` [LOW]
+
+**File:** `mcp_engine/tools/explore_graph.py`
+
+MAX_NODES=1000 silently truncates. The LLM receives partial results with no indication that exploration was incomplete.
+
+**Fix:** Return `"exploration_truncated": true` when MAX_NODES is hit.
+
+---
+
+## Section 13: B68/B69 Integration Gaps [NEW]
+
+### R2-P1. B69 Valence Not Used in Retrieval Ranking [HIGH]
+
+**Files:** `mcp_engine/tools/__init__.py`, `mcp_engine/sweep.py`
+
+ARCHITECTURE.md specifies: "Rank results by `pathway_strength × confidence × (1 + outcome_boost)`" with `outcome_boost ±0.3 max`. The outcome boost IS implemented in `current_truth` (it queries OUTCOME_SIGNAL edges), but:
+
+1. **sweep.py never reads Plan.valence** — negative plan outcomes don't decay related concept pathway_strength during background sweep
+2. **No bridge** from `report_outcome` valence → concept `pathway_strength` updates in next sweep cycle
+
+The system records outcomes but doesn't learn from them during background processing — only during live retrieval.
+
+**Fix:** Add a sweep phase that reads OUTCOME_SIGNAL edges and adjusts pathway_strength of target Concepts.
+
+---
+
+### R2-P2. B68 Retrospective Plan Dedup Threshold May Be Too Low [MEDIUM]
+
+**File:** `mcp_engine/sweep.py` (retrospective plan inference)
+
+The 0.90 embedding similarity threshold for dedup could allow near-duplicate plans from similar but distinct conversations. The concern is false negatives (allowing duplicates) rather than false positives (blocking valid plans).
+
+**Recommendation:** Monitor in production. If plan count growth is excessive, raise to 0.95.
+
+---
+
+### R2-P3. Plan Graph Write Not Transactional [HIGH]
+
+**File:** `mcp_engine/tools/__init__.py` (_create_plan_graph)
+
+`_create_plan_graph` makes 5+ sequential `db.execute_write()` calls: Plan node → Session link → Quest link → PlanSteps → NEXT_STEP edges. If any middle write fails, the plan is partially created with orphan steps or missing quest links.
+
+**Fix:** Batch into a single multi-statement Cypher query or add compensating deletes on failure.
+
+---
+
+## Section 14: Schema & Data Integrity [NEW]
+
+### R2-S1. No Embedding Dimension Validation at Schema Init [HIGH]
+
+**File:** `mcp_engine/schema.py`
+
+Schema declares `FLOAT[384]` for all embedding columns. If the config's embedding model produces a different dimension (e.g., 768 from bge-base-en-v1.5), schema init succeeds but all embedding writes silently fail or produce truncated vectors.
+
+**Fix:** At schema init, run `len(emb.embed("test"))` and assert it equals 384 (or the declared dimension).
+
+---
+
+### R2-S2. Working Memory `content_embedding` Written But Never Read [LOW]
+
+**Files:** `mcp_engine/schema.py`, `mcp_engine/hippocampus.py`, `mcp_engine/tools/__init__.py`
+
+`Session.content_embedding` (FLOAT[384]) is written during hippocampus routing and in `notify_turn`, but no query ever reads it. Dead data accumulating in every Session node.
+
+**Fix:** Either implement session-scoped similarity search using it, or remove the column.
+
+---
+
+## Section 15: Orchestrator Integration Quality [NEW]
+
+### R2-O1. `emb.embed()` Still Synchronous in Async Orchestrator [MEDIUM]
+
+**File:** `mcp_engine/loop/orchestrator.py`
+
+Review #1 fix S1 wrapped LLM calls in `asyncio.to_thread()`, but `emb.embed()` calls (sentence-transformers) are still synchronous. Each entity embedding blocks the event loop for ~5-20ms. With 10 entities per message, that's 50-200ms of blocking.
+
+**Fix:** Wrap all `emb.embed()` calls in `asyncio.to_thread()`.
+
+---
+
+### R2-O2. Step 1b Relations Filter Too Aggressive After O4 Fix [MEDIUM]
+
+**File:** `mcp_engine/loop/orchestrator.py`
+
+The O4 fix (defer Step 1b storage until after Step 2 noise filtering) is correct, but the filter checks `r["head"].lower() in surviving_texts`. This drops relations where the head entity is a noun chunk that didn't pass through NER (e.g., compound nouns). Step 1b verb patterns can produce valid relations with noun-chunk heads, but the surviving_texts set only contains NER entities.
+
+**Fix:** Also include Step 1b head/tail texts in surviving_texts, or only filter by tail matching.
+
+---
+
+## Section 16: Adapter Consistency [NEW]
+
+### R2-AD1. Gemini CLI System Prompt Says "LAST action" for notify_turn [LOW]
+
+**File:** `adapters/gemini_cli/adapter.py`
+
+Prompt fragment says "LAST action of every turn → notify_turn" but adapters are async — there's no guarantee of ordering after fire-and-forget.
+
+**Fix:** Change to "Call notify_turn at the end of every turn" (non-binding).
+
+---
+
+### R2-AD2. All Adapters Use `os.getcwd()` for Workspace Path [LOW]
+
+**Files:** All 5 adapters
+
+`ctx.setdefault("workspace_path", os.getcwd())` — if the adapter runs from a subdirectory, workspace_path mispoints. MainQuest hash depends on the repo root path.
+
+**Fix:** Detect git root: `git rev-parse --show-toplevel` with fallback to cwd.
+
+---
+
+## Section 17: OpenClaw Extension [NEW]
+
+### R2-OC1. 31 Tool Aliases vs 17 Tool Handlers [MEDIUM]
+
+**File:** `extensions/sidequests-brain/src/index.ts`
+
+TypeScript extension registers ~31 tools (including aliases like `memory_recall` → `current_truth`). TOOL_HANDLERS only has 19 entries. Unmapped aliases will return errors from the Brain Daemon.
+
+**Fix:** Verify all aliases map to valid TOOL_HANDLERS keys. Remove or comment out unused aliases.
+
+---
+
+### R2-OC2. No Periodic Health Check [MEDIUM]
+
+**File:** `extensions/sidequests-brain/src/index.ts`
+
+`registerService.start()` checks daemon health once at plugin load, never again. If daemon crashes mid-session, OpenClaw stays in stale offline state.
+
+**Fix:** Add periodic ping (every 30s) to detect daemon recovery.
+
+---
+
+## Section 18: Review #2 Summary
+
+### By Severity
+
+| Level | Count | Key Issues |
+|-------|-------|------------|
+| **CRITICAL** | 1 | R2-A1: 4 tools missing from ALL adapters |
+| **HIGH** | 7 | R2-A2, R2-G1, R2-G2, R2-P1, R2-P3, R2-S1 adapter/graph/plan gaps |
+| **MEDIUM** | 7 | R2-G3, R2-P2, R2-O1, R2-O2, R2-OC1, R2-OC2, R2-AD1/2 |
+| **LOW** | 3 | R2-G4, R2-S2, R2-AD1, R2-AD2 |
+
+### Overall Assessment
+
+**The good:** Code quality is dramatically improved since Review #1 (all 49 findings resolved, test count 5x). B17 hippocampus and B18 working memory are well-integrated. B66-B69 plan/outcome system is architecturally sound. The graph schema is comprehensive and correctly typed.
+
+**The pattern concern:** New features are consistently implemented in `tool_schemas.py` + `tools/__init__.py` (core) but not propagated to all 5 adapter pass-through lists. This happened with B11 tools, B12 tools, B21 tools, and almost happened with B67 tools (caught by test regression). **This is the #1 systemic risk** — every new tool will hit this unless adapter routing is centralized.
+
+**Graph expert assessment:** The graph model is well-designed per Kùzu constraints. Relationships are correctly typed FROM Concept TO Concept. HNSW indexes exist for all embedding tables. The main graph-quality concern is `explore_graph`'s incomplete traversal set — agents can only see ~60% of the graph's edge types, making the knowledge graph appear fragmented. The N+1 query pattern in current_truth is a scalability concern but not a correctness issue.
+
+**No Frankenstein patchwork detected.** The codebase follows consistent patterns: parameterized Cypher, async/await throughout the tools layer, structured error logging. The B66-B69 additions follow the same code style as the rest of the codebase. The main integration gap is the adapter layer, which is a mechanical propagation issue — not an architectural one.
+
+### Recommended Fix Order (Review #2)
+
+1. **R2-A1** — Add 4 missing tools to ALL adapter pass-through lists
+2. **R2-A2** — Centralize adapter tool routing from tool_schemas.TOOLS
+3. **R2-G1** — Expand explore_graph traversable edge types
+4. **R2-G2** — Batch outcome signal lookups in current_truth
+5. **R2-P1** — Wire valence into sweep's decay logic
+6. **R2-P3** — Make plan graph writes transactional
+7. **R2-S1** — Add embedding dimension validation at schema init
+
+---
+
+## Fix Log (Review #2)
+
+| # | Finding | Assigned To | Status | Date | Card | Notes |
+|---|---------|------------|--------|------|------|-------|
+| R2-A1 | 4 tools missing from adapters | — | OPEN | — | B70 | CRITICAL |
+| R2-A2 | No centralized adapter tool list | — | OPEN | — | B71 | |
+| R2-G1 | explore_graph missing edge types | — | OPEN | — | B72 | |
+| R2-G2 | N+1 outcome signal queries | — | OPEN | — | B73 | |
+| R2-G3 | O(n) cycle detection | — | OPEN | — | B77 | |
+| R2-G4 | No truncation warning | — | OPEN | — | B83 | |
+| R2-P1 | Valence not in sweep | — | OPEN | — | B74 | |
+| R2-P2 | Retrospective plan dedup threshold | — | OPEN | — | B78 | Monitor |
+| R2-P3 | Plan writes non-transactional | — | OPEN | — | B75 | |
+| R2-S1 | No embedding dim validation | — | OPEN | — | B76 | |
+| R2-S2 | content_embedding dead data | — | OPEN | — | B84 | |
+| R2-O1 | emb.embed() still sync | — | OPEN | — | B79 | |
+| R2-O2 | Step 1b filter too aggressive | — | OPEN | — | B80 | |
+| R2-AD1 | Gemini "LAST" prompt | — | OPEN | — | B85 | |
+| R2-AD2 | os.getcwd() workspace path | — | OPEN | — | B86 | |
+| R2-OC1 | 31 aliases vs 17 handlers | — | OPEN | — | B81 | |
+| R2-OC2 | No periodic health check | — | OPEN | — | B82 | |
+
+*Total new findings: 17 (1 CRITICAL, 7 HIGH, 6 MEDIUM, 3 LOW)*
+*Combined with Review #1: 49 resolved + 17 new = 66 total findings tracked*
