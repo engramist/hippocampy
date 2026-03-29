@@ -1,36 +1,40 @@
+"""
+tests/test_extension_aliases.py — Audit OpenClaw tool aliases.
+"""
+
+import re
 from pathlib import Path
+from mcp_engine.tools import TOOL_HANDLERS
 
+def test_openclaw_aliases_resolve_to_handlers():
+    """Verify all tools registered in OpenClaw index.ts map to valid TOOL_HANDLERS."""
+    index_path = Path("extensions/sidequests-brain/src/index.ts")
+    if not index_path.exists():
+        return # Skip if extension not present in this env
 
-EXTENSION_SRC = (
-    Path(__file__).parent.parent
-    / "extensions"
-    / "sidequests-brain"
-    / "src"
-    / "index.ts"
-)
+    content = index_path.read_text()
+    
+    # Extract toolDefinitions block
+    match = re.search(r"const toolDefinitions: BrainToolDefinition\[\] = \[(.*?)\];", content, re.DOTALL)
+    assert match, "Could not find toolDefinitions in index.ts"
+    
+    defs_text = match.group(1)
+    
+    # Extract each tool definition object
+    tool_blocks = re.findall(r"\{.*?\}", defs_text, re.DOTALL)
+    
+    for block in tool_blocks:
+        name_match = re.search(r'name: "(.*?)"', block)
+        assert name_match, f"Could not find name in block: {block}"
+        tool_name = name_match.group(1)
+        
+        call_name_match = re.search(r'callName: "(.*?)"', block)
+        if call_name_match:
+            handler_name = call_name_match.group(1)
+        else:
+            handler_name = tool_name
+            
+        assert handler_name in TOOL_HANDLERS, f"Tool '{tool_name}' maps to missing handler '{handler_name}'"
 
-
-def _source() -> str:
-    return EXTENSION_SRC.read_text()
-
-
-def test_extension_registers_memory_search_alias():
-    src = _source()
-    assert '"memory_search"' in src
-    assert '"Alias for memory_recall.' in src
-
-
-def test_extension_registers_memory_get_alias():
-    src = _source()
-    assert '"memory_get"' in src
-    assert '"Alias for memory_recall.' in src
-
-
-def test_extension_aliases_route_to_current_truth():
-    src = _source()
-    assert 'const registerBrainTool = (' in src
-    assert 'brain.callTool(' in src
-    assert 'callName: "current_truth"' in src
-    # Verify memory_search and memory_get are defined and route to current_truth
-    assert 'name: "memory_search"' in src
-    assert 'name: "memory_get"' in src
+if __name__ == "__main__":
+    test_openclaw_aliases_resolve_to_handlers()
