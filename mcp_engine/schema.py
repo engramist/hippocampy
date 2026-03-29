@@ -29,6 +29,8 @@ NODE_TABLES = {
         confidence_low BOOLEAN,
         pathway_strength DOUBLE,
         archived      BOOLEAN,
+        anomaly_type  STRING,
+        flagged_for_review BOOLEAN,
         created_at    TIMESTAMP,
         last_accessed_at TIMESTAMP,
         PRIMARY KEY (concept_id)
@@ -44,6 +46,8 @@ NODE_TABLES = {
         confidence_low BOOLEAN,
         pathway_strength DOUBLE,
         archived      BOOLEAN,
+        anomaly_type  STRING,
+        flagged_for_review BOOLEAN,
         created_at    TIMESTAMP,
         PRIMARY KEY (decision_id)
     """,
@@ -58,6 +62,8 @@ NODE_TABLES = {
         confidence_low BOOLEAN,
         pathway_strength DOUBLE,
         archived      BOOLEAN,
+        anomaly_type  STRING,
+        flagged_for_review BOOLEAN,
         created_at    TIMESTAMP,
         PRIMARY KEY (constraint_id)
     """,
@@ -72,6 +78,8 @@ NODE_TABLES = {
         confidence_low BOOLEAN,
         pathway_strength DOUBLE,
         archived       BOOLEAN,
+        anomaly_type   STRING,
+        flagged_for_review BOOLEAN,
         created_at     TIMESTAMP,
         PRIMARY KEY (requirement_id)
     """,
@@ -86,6 +94,8 @@ NODE_TABLES = {
         confidence_low BOOLEAN,
         pathway_strength DOUBLE,
         archived       BOOLEAN,
+        anomaly_type   STRING,
+        flagged_for_review BOOLEAN,
         created_at     TIMESTAMP,
         PRIMARY KEY (action_item_id)
     """,
@@ -100,6 +110,8 @@ NODE_TABLES = {
         confidence_low       BOOLEAN,
         pathway_strength     DOUBLE,
         archived             BOOLEAN,
+        anomaly_type         STRING,
+        flagged_for_review   BOOLEAN,
         created_at           TIMESTAMP,
         PRIMARY KEY (global_constraint_id)
     """,
@@ -114,6 +126,8 @@ NODE_TABLES = {
         confidence_low       BOOLEAN,
         pathway_strength     DOUBLE,
         archived             BOOLEAN,
+        anomaly_type         STRING,
+        flagged_for_review   BOOLEAN,
         created_at           TIMESTAMP,
         PRIMARY KEY (global_preference_id)
     """,
@@ -180,6 +194,8 @@ NODE_TABLES = {
         confidence_low  BOOLEAN,
         pathway_strength DOUBLE,
         archived        BOOLEAN,
+        anomaly_type    STRING,
+        flagged_for_review BOOLEAN,
         created_at      TIMESTAMP,
         PRIMARY KEY (message_id)
     """,
@@ -198,25 +214,29 @@ NODE_TABLES = {
         confidence_low  BOOLEAN,
         pathway_strength DOUBLE,
         archived        BOOLEAN,
+        anomaly_type    STRING,
+        flagged_for_review BOOLEAN,
         created_at      TIMESTAMP,
         PRIMARY KEY (extract_id)
     """,
 
     "Session": """
-        session_id     STRING,
-        started_at     TIMESTAMP,
-        last_active_at TIMESTAMP,
-        onboarded      BOOLEAN,
-        purpose        STRING,
-        routing_state       STRING,
-        routing_confidence  DOUBLE,
-        routing_method      STRING,
-        content_embedding   FLOAT[384],
-        token_estimate      INT64,
-        token_limit         INT64,
-        loaded_node_count   INT32,
-        last_injection_at   TIMESTAMP,
-        last_loop_summary   STRING,
+        session_id           STRING,
+        started_at           TIMESTAMP,
+        last_active_at       TIMESTAMP,
+        onboarded            BOOLEAN,
+        purpose              STRING,
+        routing_state        STRING,
+        routing_confidence   DOUBLE,
+        routing_method       STRING,
+        content_embedding    FLOAT[384],
+        token_estimate       INT64,
+        token_limit          INT64,
+        loaded_node_count    INT32,
+        injection_count      INT64,
+        dedup_tokens_saved   INT64,
+        last_injection_at    TIMESTAMP,
+        last_loop_summary    STRING,
         PRIMARY KEY (session_id)
     """,
 
@@ -288,8 +308,8 @@ NODE_TABLES = {
         embedding        FLOAT[384],
         embedding_model  STRING,
         embedding_dim    INT64,
-        obstacle_summary STRING,
-        source_quest_id  STRING,
+        domain           STRING,
+        lesson_type      STRING,
         confidence       DOUBLE,
         confidence_low   BOOLEAN,
         pathway_strength DOUBLE,
@@ -326,7 +346,7 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS HAS_PREF_LABEL (FROM Concept TO Label, FROM Decision TO Label, FROM Constraint TO Label, FROM Requirement TO Label, FROM ActionItem TO Label)",
     "CREATE REL TABLE IF NOT EXISTS HAS_ALT_LABEL (FROM Concept TO Label, FROM Decision TO Label, FROM Constraint TO Label, FROM Requirement TO Label, FROM ActionItem TO Label)",
     "CREATE REL TABLE IF NOT EXISTS HAS_HIDDEN_LABEL (FROM Concept TO Label, FROM Decision TO Label, FROM Constraint TO Label, FROM Requirement TO Label, FROM ActionItem TO Label)",
-    "CREATE REL TABLE IF NOT EXISTS LOADED (FROM Session TO Concept, FROM Session TO Decision, FROM Session TO Constraint, FROM Session TO Requirement, FROM Session TO ActionItem, FROM Session TO GlobalConstraint, FROM Session TO GlobalPreference, injected_at TIMESTAMP, token_estimate INT32, source STRING)",
+    "CREATE REL TABLE IF NOT EXISTS LOADED (FROM Session TO Concept, FROM Session TO Decision, FROM Session TO Constraint, FROM Session TO Requirement, FROM Session TO ActionItem, FROM Session TO GlobalConstraint, FROM Session TO GlobalPreference, injected_at TIMESTAMP, token_estimate INT32, source STRING, load_hits INT32)",
     # Concept promotion
     "CREATE REL TABLE IF NOT EXISTS REIFIED_AS (FROM Concept TO Decision, FROM Concept TO Constraint, FROM Concept TO Requirement, FROM Concept TO ActionItem)",
     # Hebbian implicit layer
@@ -341,8 +361,14 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS IMPLEMENTS   (FROM Concept TO Concept, confidence DOUBLE, inferred_by STRING, inferred_at TIMESTAMP)",
     "CREATE REL TABLE IF NOT EXISTS EXTENDS      (FROM Concept TO Concept, confidence DOUBLE, inferred_by STRING, inferred_at TIMESTAMP)",
     "CREATE REL TABLE IF NOT EXISTS ALTERNATIVE_TO (FROM Concept TO Concept, confidence DOUBLE, inferred_by STRING, inferred_at TIMESTAMP)",
+    # B12 — Anomaly detection
+    "CREATE REL TABLE IF NOT EXISTS ANOMALY_DETECTED (FROM Concept TO GlobalConstraint, FROM Concept TO GlobalPreference, FROM Decision TO GlobalConstraint, FROM Constraint TO GlobalConstraint, FROM Requirement TO GlobalConstraint, FROM ActionItem TO GlobalConstraint, FROM Message TO GlobalConstraint, FROM DocumentExtract TO GlobalConstraint, type STRING, confidence DOUBLE, detected_at TIMESTAMP)",
     # B11 — Lesson
     "CREATE REL TABLE IF NOT EXISTS PRODUCED_LESSON (FROM MainQuest TO Lesson)",
+    "CREATE REL TABLE IF NOT EXISTS LEARNED (FROM Session TO Lesson)",
+    "CREATE REL TABLE IF NOT EXISTS APPLIES_TO (FROM Lesson TO Concept, FROM Lesson TO Decision, FROM Lesson TO Requirement)",
+    "CREATE REL TABLE IF NOT EXISTS RELATED_TO (FROM Lesson TO Lesson)",
+    "CREATE REL TABLE IF NOT EXISTS CONTAINS_LESSON (FROM Message TO Lesson)",
     "CREATE REL TABLE IF NOT EXISTS REROUTED_FROM (FROM Session TO MainQuest, rerouted_at TIMESTAMP, reason STRING)",
 ]
 
@@ -484,6 +510,39 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         # last_injection_at and last_loop_summary added in B18 working_memory
         ("Session",   "last_injection_at", "TIMESTAMP"),
         ("Session",   "last_loop_summary", "STRING"),
+        # B12 — anomaly detection columns
+        ("Concept",   "anomaly_type",      "STRING"),
+        ("Concept",   "flagged_for_review", "BOOLEAN"),
+        ("Decision",  "anomaly_type",      "STRING"),
+        ("Decision",  "flagged_for_review", "BOOLEAN"),
+        ("Constraint", "anomaly_type",     "STRING"),
+        ("Constraint", "flagged_for_review", "BOOLEAN"),
+        ("Requirement", "anomaly_type",    "STRING"),
+        ("Requirement", "flagged_for_review", "BOOLEAN"),
+        ("ActionItem", "anomaly_type",     "STRING"),
+        ("ActionItem", "flagged_for_review", "BOOLEAN"),
+        ("GlobalConstraint", "anomaly_type", "STRING"),
+        ("GlobalConstraint", "flagged_for_review", "BOOLEAN"),
+        ("GlobalPreference", "anomaly_type", "STRING"),
+        ("GlobalPreference", "flagged_for_review", "BOOLEAN"),
+        ("Message",   "anomaly_type",      "STRING"),
+        ("Message",   "flagged_for_review", "BOOLEAN"),
+        ("DocumentExtract", "anomaly_type", "STRING"),
+        ("DocumentExtract", "flagged_for_review", "BOOLEAN"),
+
+        # B64: Ensure 'archived' column exists for all relevant tables
+        ("Concept",         "archived", "BOOLEAN"),
+        ("Decision",        "archived", "BOOLEAN"),
+        ("Constraint",      "archived", "BOOLEAN"),
+        ("Requirement",     "archived", "BOOLEAN"),
+        ("ActionItem",      "archived", "BOOLEAN"),
+        ("GlobalConstraint", "archived", "BOOLEAN"),
+        ("GlobalPreference", "archived", "BOOLEAN"),
+        ("MainQuest",       "archived", "BOOLEAN"),
+        ("SideQuest",       "archived", "BOOLEAN"),
+        ("Message",         "archived", "BOOLEAN"),
+        ("DocumentExtract", "archived", "BOOLEAN"),
+        ("Label",           "archived", "BOOLEAN"),
     ]
     def _column_exists(table: str, col: str) -> bool:
         """Check whether a column already exists via table_info, avoiding
