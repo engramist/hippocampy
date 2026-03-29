@@ -135,8 +135,9 @@ def _inject_context(params: dict) -> dict:
         ctx["repo_root"] = _REPO_ROOT
     if _GIT_BRANCH:
         ctx["git_branch"] = _GIT_BRANCH
+    # workspace_path = git root if available, else CWD (B86)
     import os
-    ctx.setdefault("workspace_path", os.getcwd())
+    ctx.setdefault("workspace_path", _REPO_ROOT or os.getcwd())
     ctx.setdefault("token_limit", _TOKEN_LIMIT)
     return ctx
 

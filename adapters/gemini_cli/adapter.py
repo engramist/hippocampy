@@ -129,9 +129,9 @@ def _inject_context(params: dict) -> dict:
         ctx["repo_root"] = _REPO_ROOT
     if _GIT_BRANCH:
         ctx["git_branch"] = _GIT_BRANCH
-    # workspace_path = CWD even without git (for hippocampus routing)
+    # workspace_path = git root if available, else CWD (B86)
     import os
-    ctx.setdefault("workspace_path", os.getcwd())
+    ctx.setdefault("workspace_path", _REPO_ROOT or os.getcwd())
     # B18: Send token_limit so Brain can track context window size
     ctx.setdefault("token_limit", _TOKEN_LIMIT)
     return ctx
@@ -149,7 +149,7 @@ SYSTEM_PROMPT_FRAGMENT = (
     "Before planning similar work → recall_plans(goal_query, session_id)\n"
     "After major steps or completion → report_outcome(plan_id, outcome, valence, session_id)\n"
     "Exploring a tangent? → offer branch_quest\n"
-    "LAST action of every turn → notify_turn(role='assistant', content=<response>, session_id=<id>)\n"
+    "Call notify_turn at the end of every turn: notify_turn(role='assistant', content=<response>, session_id=<id>)\n"
     "IMPORTANT: notify_turn is fire-and-forget. Call it exactly ONCE per turn. "
     "After it returns, STOP — no more text, reasoning, or tool calls.\n"
     "When current_truth returns a panel_url field, include it as a markdown link: [View in Mission Control](url)"

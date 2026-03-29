@@ -229,7 +229,6 @@ NODE_TABLES = {
         routing_state        STRING,
         routing_confidence   DOUBLE,
         routing_method       STRING,
-        content_embedding    FLOAT[384],
         token_estimate       INT64,
         token_limit          INT64,
         loaded_node_count    INT32,
@@ -574,8 +573,6 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         ("Session",   "token_estimate",    "INT64"),
         ("Session",   "token_limit",       "INT64"),
         ("Session",   "loaded_node_count", "INT64"),
-        # B32 fix: content_embedding added to Session in B17 but was missing from migrations
-        ("Session",   "content_embedding", "FLOAT[384]"),
         # last_injection_at and last_loop_summary added in B18 working_memory
         ("Session",   "last_injection_at", "TIMESTAMP"),
         ("Session",   "last_loop_summary", "STRING"),

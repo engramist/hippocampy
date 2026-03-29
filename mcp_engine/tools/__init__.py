@@ -238,18 +238,17 @@ async def _create_plan_graph(
 
     except Exception as e:
         _logger.exception("B75: Transactional plan write failed, cleaning up %s", plan_id)
-        # Compensating delete to ensure atomicity
+        # Compensating delete to ensure atomicity.
+        # Delete steps by known ids first, then delete plan node.
         try:
+            if step_ids:
+                await db.execute_write(
+                    "UNWIND $ids AS sid MATCH (ps:PlanStep {step_id: sid}) DETACH DELETE ps",
+                    {"ids": step_ids},
+                )
             await db.execute_write(
                 "MATCH (p:Plan {plan_id: $pid}) DETACH DELETE p",
-                {"pid": plan_id}
-            )
-            # Steps are linked via STEP_OF, but Plan is deleted.
-            # In Kùzu, DETACH DELETE only deletes the node and its edges.
-            # We should also delete the steps.
-            await db.execute_write(
-                "MATCH (ps:PlanStep)-[:STEP_OF]->(p:Plan {plan_id: $pid}) DETACH DELETE ps",
-                {"pid": plan_id}
+                {"pid": plan_id},
             )
         except Exception:
             pass

@@ -65,29 +65,29 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B58 | Offline Model Strategy Card (Allowed Models + Resource Budget) — ✅ DONE (2026-03-28) | P12 | complete | TBD | TBD | backlog/plans/B-58-arc-model-strategy.md | backlog/B58.md |
 | B59 | Offline Packaging + Reproducible Execution Bundle — ✅ DONE (2026-03-28) | P12 | complete | TBD | TBD | backlog/plans/B-59-arc-offline-bundle.md | backlog/B59.md |
 | B60 | Submission Notebook/Runner Assembly + Final Compliance Gate — ✅ DONE (2026-03-28) | P12 | complete | TBD | TBD | backlog/plans/B-60-arc-submission.md | backlog/B60.md |
-| B70 | Add 4 Missing Tools to ALL Adapter Pass-Through Lists | CRITICAL | ready | TBD | TBD | backlog/plans/B-70-adapter-missing-tools.md | backlog/B70.md |
-| B71 | Centralize Adapter Tool Routing from tool_schemas.TOOLS | HIGH | ready | TBD | TBD | backlog/plans/B-71-centralized-adapter-routing.md | backlog/B71.md |
-| B72 | Expand explore_graph Traversable Edge Types | HIGH | ready | TBD | TBD | backlog/plans/B-72-explore-graph-edges.md | backlog/B72.md |
-| B73 | Batch Outcome Signal Lookups in current_truth | HIGH | ready | TBD | TBD | backlog/plans/B-73-batch-outcome-signals.md | backlog/B73.md |
-| B74 | Wire Valence Into Sweep Decay Logic | HIGH | ready | TBD | TBD | backlog/plans/B-74-valence-sweep-decay.md | backlog/B74.md |
-| B75 | Make Plan Graph Writes Transactional | HIGH | ready | TBD | TBD | backlog/plans/B-75-plan-writes-transactional.md | backlog/B75.md |
-| B76 | Add Embedding Dimension Validation at Schema Init | HIGH | ready | TBD | TBD | backlog/plans/B-76-embedding-dim-validation.md | backlog/B76.md |
-| B77 | Graph Cycle Detection: O(n) List Scan → Set Lookup | MEDIUM | ready | TBD | TBD | backlog/plans/B-77-explore-graph-set-lookup.md | backlog/B77.md |
-| B78 | Monitor Retrospective Plan Dedup Threshold | MEDIUM | ready | TBD | TBD | backlog/plans/B-78-plan-dedup-threshold.md | backlog/B78.md |
-| B79 | Wrap emb.embed() in asyncio.to_thread() in Orchestrator | MEDIUM | ready | TBD | TBD | backlog/plans/B-79-async-embeddings.md | backlog/B79.md |
-| B80 | Fix Step 1b Filter Aggressiveness After O4 Fix | MEDIUM | ready | TBD | TBD | backlog/plans/B-80-step1b-filter-fix.md | backlog/B80.md |
-| B81 | Verify OpenClaw 31 Tool Aliases vs 17 Tool Handlers | MEDIUM | ready | TBD | TBD | backlog/plans/B-81-openclaw-alias-audit.md | backlog/B81.md |
-| B82 | Add Periodic Health Check to OpenClaw Extension | MEDIUM | ready | TBD | TBD | backlog/plans/B-82-openclaw-health-check.md | backlog/B82.md |
-| B83 | Add Truncation Warning to explore_graph | LOW | ready | TBD | TBD | backlog/plans/B-83-explore-graph-truncation-warning.md | backlog/B83.md |
-| B84 | Remove or Use Session content_embedding Dead Data | LOW | ready | TBD | TBD | backlog/plans/B-84-content-embedding-dead-data.md | backlog/B84.md |
-| B85 | Fix Gemini CLI "LAST action" Prompt Wording | LOW | ready | TBD | TBD | backlog/plans/B-85-gemini-prompt-wording.md | backlog/B85.md |
-| B86 | Use Git Root Instead of os.getcwd() for Workspace Path | LOW | ready | TBD | TBD | backlog/plans/B-86-git-root-workspace-path.md | backlog/B86.md |
+| B70 | Add 4 Missing Tools to ALL Adapter Pass-Through Lists | CRITICAL | complete | TBD | TBD | backlog/plans/B-70-adapter-missing-tools.md | backlog/B70.md |
+| B71 | Centralize Adapter Tool Routing from tool_schemas.TOOLS | HIGH | complete | TBD | TBD | backlog/plans/B-71-centralized-adapter-routing.md | backlog/B71.md |
+| B72 | Expand explore_graph Traversable Edge Types | HIGH | complete | TBD | TBD | backlog/plans/B-72-explore-graph-edges.md | backlog/B72.md |
+| B73 | Batch Outcome Signal Lookups in current_truth | HIGH | complete | TBD | TBD | backlog/plans/B-73-batch-outcome-signals.md | backlog/B73.md |
+| B74 | Wire Valence Into Sweep Decay Logic | HIGH | complete | TBD | TBD | backlog/plans/B-74-valence-sweep-decay.md | backlog/B74.md |
+| B75 | Make Plan Graph Writes Transactional | HIGH | complete | TBD | TBD | backlog/plans/B-75-plan-writes-transactional.md | backlog/B75.md |
+| B76 | Add Embedding Dimension Validation at Schema Init | HIGH | complete | TBD | TBD | backlog/plans/B-76-embedding-dim-validation.md | backlog/B76.md |
+| B77 | Graph Cycle Detection: O(n) List Scan → Set Lookup | MEDIUM | complete | TBD | TBD | backlog/plans/B-77-explore-graph-set-lookup.md | backlog/B77.md |
+| B78 | Monitor Retrospective Plan Dedup Threshold | MEDIUM | complete | TBD | TBD | backlog/plans/B-78-plan-dedup-threshold.md | backlog/B78.md |
+| B79 | Wrap emb.embed() in asyncio.to_thread() in Orchestrator | MEDIUM | complete | TBD | TBD | backlog/plans/B-79-async-embeddings.md | backlog/B79.md |
+| B80 | Fix Step 1b Filter Aggressiveness After O4 Fix | MEDIUM | complete | TBD | TBD | backlog/plans/B-80-step1b-filter-fix.md | backlog/B80.md |
+| B81 | Verify OpenClaw 31 Tool Aliases vs 17 Tool Handlers | MEDIUM | complete | TBD | TBD | backlog/plans/B-81-openclaw-alias-audit.md | backlog/B81.md |
+| B82 | Add Periodic Health Check to OpenClaw Extension | MEDIUM | complete | TBD | TBD | backlog/plans/B-82-openclaw-health-check.md | backlog/B82.md |
+| B83 | Add Truncation Warning to explore_graph | LOW | complete | TBD | TBD | backlog/plans/B-83-explore-graph-truncation-warning.md | backlog/B83.md |
+| B84 | Remove or Use Session content_embedding Dead Data | LOW | complete | TBD | TBD | backlog/plans/B-84-content-embedding-dead-data.md | backlog/B84.md |
+| B85 | Fix Gemini CLI "LAST action" Prompt Wording | LOW | complete | TBD | TBD | backlog/plans/B-85-gemini-prompt-wording.md | backlog/B85.md |
+| B86 | Use Git Root Instead of os.getcwd() for Workspace Path | LOW | complete | TBD | TBD | backlog/plans/B-86-git-root-workspace-path.md | backlog/B86.md |
 
 ## Summary
 
 - Total cards: 78
-- Ready: 17
+- Ready: 0
 - Needs work: 0
-- Complete: 60
+- Complete: 77
 - In progress: 0
 - Blocked: 0
