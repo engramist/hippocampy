@@ -412,9 +412,9 @@ def test_codex_adapter_has_all_tools():
                 "get_open_loops", "analogical_search", "ingest_document",
                 "explore_graph", "complete_quest", "set_quest", "context_status",
                 "get_anomalies", "upsert_lesson", "recall_relevant_lessons",
-                "register_plan", "report_outcome", "recall_plans"}
+                "register_plan", "report_outcome", "recall_plans",
+                "get_openclaw_prompt"}
     assert names == expected
-
 
 def test_codex_adapter_analogical_search_schema():
     from adapters.codex.adapter import TOOLS

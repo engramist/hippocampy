@@ -101,8 +101,7 @@ async def route_session(
         # Cold start — no quests exist, create new one
         quest_id = await create_new_quest(db, content, content_embedding,
                                            embedding_model, git_repo_root)
-        await _bind_session(db, session_id, quest_id, 0.95, "semantic_s1", "tentative",
-                            content_embedding=content_embedding)
+        await _bind_session(db, session_id, quest_id, 0.95, "semantic_s1", "tentative")
         return RoutingResult(quest_id, 0.95, "semantic_s1", True, "tentative")
 
     # Step 3b: Compute similarities
@@ -115,16 +114,14 @@ async def route_session(
     if not candidates:
         quest_id = await create_new_quest(db, content, content_embedding,
                                            embedding_model, git_repo_root)
-        await _bind_session(db, session_id, quest_id, 0.95, "semantic_s1", "tentative",
-                            content_embedding=content_embedding)
+        await _bind_session(db, session_id, quest_id, 0.95, "semantic_s1", "tentative")
         return RoutingResult(quest_id, 0.95, "semantic_s1", True, "tentative")
 
     best_id, best_score = candidates[0]
 
     # Step 5: Threshold check
     if best_score >= S1_AUTO_BIND_THRESHOLD:
-        await _bind_session(db, session_id, best_id, best_score, "semantic_s1",
-                            "tentative", content_embedding=content_embedding)
+        await _bind_session(db, session_id, best_id, best_score, "semantic_s1", "tentative")
         return RoutingResult(best_id, best_score, "semantic_s1", False, "tentative")
 
     if best_score >= S1_ESCALATION_THRESHOLD:
@@ -135,26 +132,22 @@ async def route_session(
             )
             if s2_id:
                 state = "tentative"
-                await _bind_session(db, session_id, s2_id, s2_conf, "semantic_s2",
-                                    state, content_embedding=content_embedding)
+                await _bind_session(db, session_id, s2_id, s2_conf, "semantic_s2", state)
                 return RoutingResult(s2_id, s2_conf, "semantic_s2", False, state)
             # LLM said "new quest"
             quest_id = await create_new_quest(db, content, content_embedding,
                                                embedding_model, git_repo_root)
-            await _bind_session(db, session_id, quest_id, 0.90, "semantic_s2", "tentative",
-                                content_embedding=content_embedding)
+            await _bind_session(db, session_id, quest_id, 0.90, "semantic_s2", "tentative")
             return RoutingResult(quest_id, 0.90, "semantic_s2", True, "tentative")
         else:
             # No LLM available — bind tentatively to best match
-            await _bind_session(db, session_id, best_id, best_score, "semantic_s1",
-                                "tentative", content_embedding=content_embedding)
+            await _bind_session(db, session_id, best_id, best_score, "semantic_s1", "tentative")
             return RoutingResult(best_id, best_score, "semantic_s1", False, "tentative")
 
     # Below escalation threshold — create new quest
     quest_id = await create_new_quest(db, content, content_embedding,
                                        embedding_model, git_repo_root)
-    await _bind_session(db, session_id, quest_id, 0.95, "semantic_s1", "tentative",
-                        content_embedding=content_embedding)
+    await _bind_session(db, session_id, quest_id, 0.95, "semantic_s1", "tentative")
     return RoutingResult(quest_id, 0.95, "semantic_s1", True, "tentative")
 
 
@@ -433,7 +426,6 @@ async def _bind_session(
     confidence: float,
     method: str,
     state: str,
-    content_embedding: list[float] = None,
 ) -> None:
     """
     Create WORKING_ON edge + set Session routing fields.
@@ -454,10 +446,6 @@ async def _bind_session(
         "s.routing_confidence = $routing_confidence, "
         "s.routing_method = $routing_method"
     )
-
-    if content_embedding:
-        session_params["content_embedding"] = content_embedding
-        set_clause += ", s.content_embedding = $content_embedding"
 
     await db.execute_write(
         f"""

@@ -147,9 +147,9 @@ def _inject_context(params: dict) -> dict:
         ctx["repo_root"] = _REPO_ROOT
     if _GIT_BRANCH:
         ctx["git_branch"] = _GIT_BRANCH
-    # workspace_path = CWD even without git (for hippocampus routing)
+    # workspace_path = git root if available, else CWD (B86)
     import os
-    ctx.setdefault("workspace_path", os.getcwd())
+    ctx.setdefault("workspace_path", _REPO_ROOT or os.getcwd())
     # B18: Send token_limit so Brain can track context window size
     ctx.setdefault("token_limit", _TOKEN_LIMIT)
     return ctx
