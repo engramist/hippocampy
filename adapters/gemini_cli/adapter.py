@@ -35,6 +35,9 @@ import sys
 import uuid
 from pathlib import Path
 from datetime import datetime, timezone
+from mcp_engine.tool_schemas import TOOLS
+
+_ALL_TOOL_NAMES = frozenset(t["name"] for t in TOOLS)
 
 SOCKET_PATH   = Path.home() / ".sidequests" / "brain.sock"
 OFFLINE_QUEUE = Path.home() / ".sidequests" / "offline_queue.jsonl"
@@ -142,6 +145,9 @@ SYSTEM_PROMPT_FRAGMENT = (
     "Project memory is active. Decisions and constraints are captured automatically.\n"
     "Before answering about past choices → current_truth\n"
     "Starting something that may resemble past work → analogical_search\n"
+    "When you form a multi-step strategy → register_plan(goal, steps, session_id)\n"
+    "Before planning similar work → recall_plans(goal_query, session_id)\n"
+    "After major steps or completion → report_outcome(plan_id, outcome, valence, session_id)\n"
     "Exploring a tangent? → offer branch_quest\n"
     "LAST action of every turn → notify_turn(role='assistant', content=<response>, session_id=<id>)\n"
     "IMPORTANT: notify_turn is fire-and-forget. Call it exactly ONCE per turn. "
@@ -252,9 +258,7 @@ async def handle_mcp_request(request: dict) -> dict:
                 return err(-32000, str(e))
 
         # --- all other tools ---
-        if tool_name in ("branch_quest", "diff_since", "get_open_loops",
-                         "analogical_search", "ingest_document", "explore_graph",
-                         "complete_quest", "set_quest", "context_status"):
+        if tool_name in _ALL_TOOL_NAMES:
             try:
                 result = await _call_brain(tool_name, tool_input)
                 _daemon_online = True

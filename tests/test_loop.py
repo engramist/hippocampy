@@ -520,6 +520,40 @@ def test_step4_assistant_constraint_stays_tentative():
     assert result["confidence_low"] is True
 
 
+def test_step4_plan_signal_extracts_ordered_steps_numbered():
+    from mcp_engine.loop.step4_pattern import has_plan_signal, detect_ordered_plan_steps
+    text = """Here is the plan:
+1. Gather failing tests
+2. Fix schema migration
+3. Re-run the suite
+"""
+    assert has_plan_signal(text) is True
+    steps = detect_ordered_plan_steps(text)
+    assert len(steps) == 3
+    assert steps[0] == "Gather failing tests"
+
+
+def test_step4_plan_signal_extracts_ordered_steps_bullets():
+    from mcp_engine.loop.step4_pattern import detect_ordered_plan_steps
+    text = """My approach:
+- first run smoke tests
+- then patch tool schemas
+- finally run integration checks
+"""
+    steps = detect_ordered_plan_steps(text)
+    assert len(steps) == 3
+
+
+def test_step4_outcome_success_signal_valence():
+    from mcp_engine.loop.step4_pattern import infer_outcome_valence
+    assert infer_outcome_valence("Looks good, approved, all tests pass") == 0.8
+
+
+def test_step4_outcome_failure_signal_valence():
+    from mcp_engine.loop.step4_pattern import infer_outcome_valence
+    assert infer_outcome_valence("That broke production, revert and start over") == -0.8
+
+
 def test_step4_user_role_unchanged():
     """User turns are not affected by the assistant cap."""
     from mcp_engine.loop.step4_pattern import classify_artifact, HARD_LOCK

@@ -261,4 +261,71 @@ TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "name": "register_plan",
+        "description": (
+            "Declare a multi-step strategy. Stores Plan + PlanStep nodes, links steps by order, "
+            "and returns warnings/suggestions from similar past plans."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "goal":       {"type": "string", "description": "What this plan aims to achieve."},
+                "steps":      {"type": "array", "items": {"type": "string"}, "description": "Ordered list of steps."},
+                "session_id": {"type": "string"},
+                "strategy":   {"type": "string", "description": "Optional high-level approach description."},
+            },
+            "required": ["goal", "steps", "session_id"],
+        },
+    },
+    {
+        "name": "report_outcome",
+        "description": (
+            "Report a step-level or plan-level outcome with valence (-1.0 to +1.0). "
+            "Updates Plan/PlanStep status and can create lesson/outcome signals."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "plan_id":     {"type": "string"},
+                "step_number": {"type": "integer", "description": "Optional step number for step-level update."},
+                "outcome":     {"type": "string"},
+                "valence":     {"type": "number", "minimum": -1.0, "maximum": 1.0},
+                "session_id":  {"type": "string"},
+                "valence_source": {"type": "string", "description": "user_feedback | exit_code | test_result | system"},
+            },
+            "required": ["plan_id", "outcome", "valence", "session_id"],
+        },
+    },
+    {
+        "name": "get_openclaw_prompt",
+        "description": (
+            "Retrieve the OpenClaw plugin prompt for tool registration. "
+            "Returns the system prompt fragments injected before an agent run."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string"},
+            },
+            "required": ["session_id"],
+        },
+    },
+    {
+        "name": "recall_plans",
+        "description": (
+            "Retrieve similar historical plans and their step outcomes. "
+            "Ranked by similarity × |valence| × pathway_strength."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "goal_query":  {"type": "string"},
+                "session_id":  {"type": "string"},
+                "min_valence": {"type": "number", "default": 0.0},
+                "limit":       {"type": "integer", "default": 5},
+            },
+            "required": ["goal_query", "session_id"],
+        },
+    },
 ]

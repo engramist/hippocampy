@@ -63,8 +63,9 @@ pytest
 - **Persistence:** Never revert changes unless explicitly asked. The graph is the "source of truth" for the assistant's memory.
 
 ### Documentation
-- **CLAUDE.md:** Provides comprehensive documentation on the Gated Consolidation Loop, IP claims, and detailed architectural notes.
-- **InvertorsDocs/:** Contains the original "Inventor's Notebook" and seed examples for the ontology.
+- **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md):** Canonical architecture reference — Loop steps, graph schema, IP claims, MCP tool schemas, and all design details. **Read this for any architecture question.**
+- **CLAUDE.md:** Claude-specific workflow (delegation model).
+- **InvertorsDocs/:** Original Inventor's Notebook and seed examples for the ontology.
 
 ## Key Directories
 - `mcp_engine/`: Core logic, including the 9-step consolidation loop.

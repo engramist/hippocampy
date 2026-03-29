@@ -439,6 +439,45 @@ export default {
       quest_id: Type.Optional(Type.String({ description: "Optional quest filter" })),
     });
 
+    const registerPlanParams = Type.Object({
+      goal: Type.String({ description: "What this plan aims to achieve" }),
+      steps: Type.Array(Type.String({ description: "Ordered step description" })),
+      strategy: Type.Optional(
+        Type.String({ description: "Optional high-level strategy" })
+      ),
+      session_id: Type.Optional(
+        Type.String({ description: "OpenClaw session ID (auto-filled)" })
+      ),
+    });
+
+    const reportOutcomeParams = Type.Object({
+      plan_id: Type.String({ description: "Plan ID returned by register_plan" }),
+      step_number: Type.Optional(
+        Type.Number({ description: "Optional step number for step-level update" })
+      ),
+      outcome: Type.String({ description: "What happened" }),
+      valence: Type.Number({ description: "-1.0 failure to +1.0 success" }),
+      session_id: Type.Optional(
+        Type.String({ description: "OpenClaw session ID (auto-filled)" })
+      ),
+      valence_source: Type.Optional(
+        Type.String({ description: "user_feedback | exit_code | test_result | system" })
+      ),
+    });
+
+    const recallPlansParams = Type.Object({
+      goal_query: Type.String({ description: "Goal to search for similar plans" }),
+      min_valence: Type.Optional(
+        Type.Number({ description: "Minimum plan valence filter", default: 0 })
+      ),
+      limit: Type.Optional(
+        Type.Number({ description: "Max plans", default: 5 })
+      ),
+      session_id: Type.Optional(
+        Type.String({ description: "OpenClaw session ID (auto-filled)" })
+      ),
+    });
+
     type BrainToolDefinition = {
       name: string;
       label: string;
@@ -531,6 +570,29 @@ export default {
       quest_id: params.quest_id,
     });
 
+    const registerPlanTransform = (params: any = {}) => ({
+      goal: params.goal,
+      steps: params.steps || [],
+      strategy: params.strategy,
+      session_id: params.session_id || sessionId,
+    });
+
+    const reportOutcomeTransform = (params: any = {}) => ({
+      plan_id: params.plan_id,
+      step_number: params.step_number,
+      outcome: params.outcome,
+      valence: params.valence,
+      valence_source: params.valence_source,
+      session_id: params.session_id || sessionId,
+    });
+
+    const recallPlansTransform = (params: any = {}) => ({
+      goal_query: params.goal_query,
+      min_valence: params.min_valence ?? 0,
+      limit: params.limit ?? 5,
+      session_id: params.session_id || sessionId,
+    });
+
     const formatResult = (value: unknown) => ({
       content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
     });
@@ -565,7 +627,7 @@ export default {
           "Search the Brain's knowledge graph for relevant decisions, constraints, and context. " +
           "Call before answering questions about past choices or architecture.",
         parameters: recallToolParams,
-        callName: "current_truth",
+        callName: "current_truth", // Alias: maps to current_truth
         transformParams: recallTransform,
       },
       {
@@ -574,7 +636,7 @@ export default {
         description:
           "Alias for memory_recall. Search the Brain's knowledge graph for relevant decisions, constraints, and context.",
         parameters: recallToolParams,
-        callName: "current_truth",
+        callName: "current_truth", // Alias: maps to current_truth
         transformParams: recallTransform,
       },
       {
@@ -583,7 +645,7 @@ export default {
         description:
           "Alias for memory_recall. Fetch relevant memory context from the Brain using a natural-language query.",
         parameters: recallToolParams,
-        callName: "current_truth",
+        callName: "current_truth", // Alias: maps to current_truth
         transformParams: recallTransform,
       },
       {
@@ -593,7 +655,7 @@ export default {
           "Forward a message to the Brain for processing. The Brain decides what to remember " +
           "via its Gated Consolidation Loop — you don't need to decide what's important.",
         parameters: notifyTurnParams,
-        callName: "notify_turn",
+        callName: "notify_turn", // Alias: maps to notify_turn
         transformParams: notifyTurnTransform,
       },
       {
@@ -602,7 +664,7 @@ export default {
         description:
           "Search across all quests for analogous patterns, decisions, or lessons learned.",
         parameters: analogicalSearchParams,
-        callName: "analogical_search",
+        callName: "analogical_search", // Alias: maps to analogical_search
         transformParams: analogicalTransform,
       },
       {
@@ -611,7 +673,7 @@ export default {
         description:
           "Check context window health — token usage, loaded knowledge, and session info.",
         parameters: Type.Object({}),
-        callName: "context_status",
+        callName: "context_status", // Alias: maps to context_status
         transformParams: contextStatusTransform,
       },
       {
@@ -623,7 +685,7 @@ export default {
           scope: Type.Optional(Type.String({ default: "both" })),
           limit: Type.Optional(Type.Number({ default: 10 })),
         }),
-        callName: "get_open_loops",
+        callName: "get_open_loops", // Alias: maps to get_open_loops
         transformParams: memoryOpenLoopsTransform,
       },
       {
@@ -632,7 +694,7 @@ export default {
         description:
           "Alias for notify_turn. Forward a message to the Brain for processing.",
         parameters: notifyTurnParams,
-        callName: "notify_turn",
+        callName: "notify_turn", // Alias: maps to notify_turn
         transformParams: notifyTurnTransform,
       },
       {
@@ -641,7 +703,7 @@ export default {
         description:
           "Alias for notify_turn. Record a conversation turn in the Brain's memory.",
         parameters: notifyTurnParams,
-        callName: "notify_turn",
+        callName: "notify_turn", // Alias: maps to notify_turn
         transformParams: notifyTurnTransform,
       },
       {
@@ -650,7 +712,7 @@ export default {
         description:
           "Alias for explore_graph. Traverse the knowledge graph from a seed node.",
         parameters: exploreGraphParams,
-        callName: "explore_graph",
+        callName: "explore_graph", // Alias: maps to explore_graph
         transformParams: exploreGraphTransform,
       },
       {
@@ -659,7 +721,7 @@ export default {
         description:
           "Alias for explore_graph. Explore the knowledge graph following multi-hop relationships.",
         parameters: exploreGraphParams,
-        callName: "explore_graph",
+        callName: "explore_graph", // Alias: maps to explore_graph
         transformParams: exploreGraphTransform,
       },
       {
@@ -668,7 +730,7 @@ export default {
         description:
           "Alias for complete_quest. Mark the current quest as completed.",
         parameters: completeQuestParams,
-        callName: "complete_quest",
+        callName: "complete_quest", // Alias: maps to complete_quest
         transformParams: (params: any = {}) => ({ quest_id: params.quest_id }),
       },
       {
@@ -677,7 +739,7 @@ export default {
         description:
           "Alias for branch_quest. Declare a SideQuest branching from the current goal.",
         parameters: branchQuestParams,
-        callName: "branch_quest",
+        callName: "branch_quest", // Alias: maps to branch_quest
         transformParams: branchQuestTransform,
       },
       {
@@ -703,6 +765,30 @@ export default {
           "Declare a SideQuest when exploring a tangent distinct from the main project goal. Returns side_quest_id for tracking.",
         parameters: branchQuestParams,
         transformParams: branchQuestTransform,
+      },
+      {
+        name: "register_plan",
+        label: "Register Plan (SideQuests Brain)",
+        description:
+          "Declare a multi-step plan so SideQuests can track strategy quality and warn about similar failed plans.",
+        parameters: registerPlanParams,
+        transformParams: registerPlanTransform,
+      },
+      {
+        name: "report_outcome",
+        label: "Report Outcome (SideQuests Brain)",
+        description:
+          "Report step or plan outcomes with valence from -1.0 (failure) to +1.0 (success).",
+        parameters: reportOutcomeParams,
+        transformParams: reportOutcomeTransform,
+      },
+      {
+        name: "recall_plans",
+        label: "Recall Plans (SideQuests Brain)",
+        description:
+          "Recall similar historical plans ranked by similarity, valence, and pathway strength.",
+        parameters: recallPlansParams,
+        transformParams: recallPlansTransform,
       },
       {
         name: "diff_since",

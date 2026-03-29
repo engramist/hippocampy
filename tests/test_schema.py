@@ -177,7 +177,7 @@ def test_node_tables_contains_required_tables():
         "Concept", "Decision", "Constraint", "Requirement", "ActionItem",
         "MainQuest", "SideQuest", "Message", "DocumentExtract", "Document",
         "Session", "LLMProvider", "Workspace", "GistClass", "SchemaOrgType",
-        "Label", "MergeEvent",
+        "Label", "MergeEvent", "Plan", "PlanStep",
     }
     for table in required:
         assert table in NODE_TABLES, f"Missing node table: {table}"
@@ -199,6 +199,45 @@ def test_gist_class_table_has_centroid():
     """GistClass table has centroid field for System 1 classifier."""
     from mcp_engine.schema import NODE_TABLES
     assert "centroid" in NODE_TABLES["GistClass"]
+
+
+def test_plan_table_has_valence_and_status_fields():
+    """B66: Plan table includes valence/status tracking fields."""
+    from mcp_engine.schema import NODE_TABLES
+    ddl = NODE_TABLES["Plan"]
+    assert "valence" in ddl
+    assert "valence_source" in ddl
+    assert "status" in ddl
+    assert "source" in ddl
+
+
+def test_planstep_table_has_step_and_outcome_fields():
+    """B66: PlanStep table includes ordering and outcome fields."""
+    from mcp_engine.schema import NODE_TABLES
+    ddl = NODE_TABLES["PlanStep"]
+    assert "step_number" in ddl
+    assert "expected_outcome" in ddl
+    assert "actual_outcome" in ddl
+    assert "valence" in ddl
+
+
+def test_relationship_tables_include_plan_and_outcome_edges():
+    """B66/B69: relationship DDL includes plan-chain and outcome propagation edges."""
+    from mcp_engine.schema import REL_TABLES
+    joined = "\n".join(REL_TABLES)
+    assert "PLANNED_IN" in joined
+    assert "TARGETS" in joined
+    assert "STEP_OF" in joined
+    assert "NEXT_STEP" in joined
+    assert "ACTS_ON" in joined
+    assert "OUTCOME_SIGNAL" in joined
+
+
+def test_embedding_tables_include_plan_and_planstep():
+    """B66: schema initialization creates vector indexes for Plan and PlanStep."""
+    source = (__import__("pathlib").Path("mcp_engine/schema.py").read_text(encoding="utf-8"))
+    assert '"Plan"' in source
+    assert '"PlanStep"' in source
 
 
 # ---------------------------------------------------------------------------
