@@ -172,18 +172,6 @@ async def _create_plan_graph(
                 completed_at: NULL
             })
             WITH p
-            OPTIONAL MATCH (s:Session {session_id: $session_id})
-            WHERE $session_id <> 'unknown'
-            FOREACH (_ IN CASE WHEN s IS NOT NULL THEN [1] ELSE [] END |
-                MERGE (p)-[:PLANNED_IN]->(s)
-            )
-            WITH p
-            OPTIONAL MATCH (q {quest_id: $quest_id})
-            WHERE $quest_id <> ''
-            FOREACH (_ IN CASE WHEN q IS NOT NULL THEN [1] ELSE [] END |
-                MERGE (p)-[:TARGETS]->(q)
-            )
-            WITH p
             UNWIND $steps AS s
             CREATE (ps:PlanStep {
                 step_id: s.step_id,
@@ -218,11 +206,47 @@ async def _create_plan_graph(
                 "confidence_low": confidence_low,
                 "pathway_strength": max(confidence, 0.5),
                 "created_at": now_iso,
-                "session_id": session_id,
-                "quest_id": quest_id,
                 "steps": step_params,
             }
         )
+
+        # Kuzu parser compatibility: perform optional relationships as
+        # separate conditional writes instead of Cypher FOREACH blocks.
+        if session_id and session_id != "unknown":
+            await db.execute_write(
+                """
+                MATCH (p:Plan {plan_id: $plan_id})
+                MATCH (s:Session {session_id: $session_id})
+                MERGE (p)-[:PLANNED_IN]->(s)
+                """,
+                {"plan_id": plan_id, "session_id": session_id},
+            )
+
+        if quest_id:
+            # Try to link to either MainQuest or SideQuest
+            try:
+                await db.execute_write(
+                    """
+                    MATCH (p:Plan {plan_id: $plan_id})
+                    MATCH (q:MainQuest {quest_id: $quest_id})
+                    MERGE (p)-[:TARGETS]->(q)
+                    """,
+                    {"plan_id": plan_id, "quest_id": quest_id},
+                )
+            except Exception:
+                # Quest might be a SideQuest, try that
+                try:
+                    await db.execute_write(
+                        """
+                        MATCH (p:Plan {plan_id: $plan_id})
+                        MATCH (q:SideQuest {quest_id: $quest_id})
+                        MERGE (p)-[:TARGETS]->(q)
+                        """,
+                        {"plan_id": plan_id, "quest_id": quest_id},
+                    )
+                except Exception:
+                    # Neither quest type found, skip the relationship
+                    pass
 
         # B75 Call 2: chain steps with NEXT_STEP
         if len(step_ids) > 1:
@@ -1463,9 +1487,14 @@ async def get_anomalies(params: dict, db: KuzuClient, config: dict) -> dict:
     """
 
     try:
+        # Only bind quest_id if it's actually used in the query
+        params = {"limit": limit}
+        if scope == "branch" and quest_id:
+            params["quest_id"] = quest_id
+        
         result = db.execute(
             query,
-            {"quest_id": quest_id, "limit": limit}
+            params
         )
     except Exception as e:
         _logger.exception("get_anomalies query failed")

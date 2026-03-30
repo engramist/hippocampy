@@ -30,6 +30,11 @@ class ARC3Observation(TypedDict):
     grid: List[List[int]]
     colors: List[ARC3ColorSummary]
     shapes: List[ARC3ShapeSummary]
+    available_actions: List[str]
+    state: str
+    energy_estimate: float
+    frame_hash: str              # B88: SHA-256[:16] of grid
+    invariant_regions: List[Any] # B88: discovered static regions
 
 
 class ARC3Action(TypedDict):

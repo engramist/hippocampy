@@ -354,6 +354,22 @@ NODE_TABLES = {
         completed_at      TIMESTAMP,
         PRIMARY KEY (step_id)
     """,
+
+    # B88 — Hypothesis (ARC agent systematic exploration)
+    "Hypothesis": """
+        id               STRING,
+        description      STRING,
+        category         STRING,
+        confidence       FLOAT,
+        game_type        STRING,
+        task_id          STRING,
+        status           STRING,
+        evidence_count   INT32,
+        text_raw         STRING,
+        embedding        FLOAT[384],
+        created_at       TIMESTAMP,
+        PRIMARY KEY (id)
+    """,
 }
 
 # ---------------------------------------------------------------------------
@@ -415,6 +431,12 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS ACTS_ON (FROM PlanStep TO Concept)",
     "CREATE REL TABLE IF NOT EXISTS PRODUCED_PLAN_LESSON (FROM Plan TO Lesson)",
     "CREATE REL TABLE IF NOT EXISTS OUTCOME_SIGNAL (FROM PlanStep TO Concept, valence DOUBLE, plan_id STRING, observed_at TIMESTAMP)",
+    # B88 — Hypothesis engine
+    "CREATE REL TABLE IF NOT EXISTS HYPOTHESIZED_IN (FROM Hypothesis TO Session)",
+    "CREATE REL TABLE IF NOT EXISTS CONFIRMS (FROM Concept TO Hypothesis, weight FLOAT)",
+    "CREATE REL TABLE IF NOT EXISTS CONTRADICTS (FROM Concept TO Hypothesis, weight FLOAT)",
+    "CREATE REL TABLE IF NOT EXISTS GENERALIZES (FROM Hypothesis TO Hypothesis)",
+    "CREATE REL TABLE IF NOT EXISTS PRODUCED_HYPOTHESIS (FROM Plan TO Hypothesis)",
 ]
 
 def get_relationship_types() -> list[str]:
@@ -610,6 +632,13 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         ("DocumentExtract", "archived", "BOOLEAN"),
         ("Label",           "archived", "BOOLEAN"),
         ("Plan",            "source", "STRING"),
+        # Back-compat for older DBs created before expanded Lesson schema
+        ("Lesson",          "domain", "STRING"),
+        ("Lesson",          "lesson_type", "STRING"),
+        ("Lesson",          "confidence", "DOUBLE"),
+        ("Lesson",          "confidence_low", "BOOLEAN"),
+        ("Lesson",          "pathway_strength", "DOUBLE"),
+        ("Lesson",          "archived", "BOOLEAN"),
     ]
     def _column_exists(table: str, col: str) -> bool:
         """Check whether a column already exists via table_info, avoiding
@@ -729,6 +758,7 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         "Lesson",  # B11
         "Plan",    # B66
         "PlanStep",  # B66
+        "Hypothesis",  # B88
     ]
     for table in embedding_tables:
         index_name = f"{table.lower()}_emb_idx"

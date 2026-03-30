@@ -82,12 +82,13 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B84 | Remove or Use Session content_embedding Dead Data | LOW | complete | TBD | TBD | backlog/plans/B-84-content-embedding-dead-data.md | backlog/B84.md |
 | B85 | Fix Gemini CLI "LAST action" Prompt Wording | LOW | complete | TBD | TBD | backlog/plans/B-85-gemini-prompt-wording.md | backlog/B85.md |
 | B86 | Use Git Root Instead of os.getcwd() for Workspace Path | LOW | complete | TBD | TBD | backlog/plans/B-86-git-root-workspace-path.md | backlog/B86.md |
+| B87 | SideQuests-Powered ARC Agent Orchestrator — ✅ DONE (2026-03-29) | P1 | complete | TBD | TBD | - | backlog/B87.md |
 
 ## Summary
 
-- Total cards: 78
+- Total cards: 79
 - Ready: 0
 - Needs work: 0
-- Complete: 77
+- Complete: 78
 - In progress: 0
 - Blocked: 0
