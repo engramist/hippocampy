@@ -1,0 +1,18 @@
+[
+  {
+    "task_id": "arc_eval_001",
+    "predictions": [],
+    "confidence": [
+      1.0
+    ],
+    "metadata": {
+      "model": "llama3.1:8b",
+      "memory_enabled": true,
+      "runtime_seconds": 75.33,
+      "steps": 5,
+      "correct": true,
+      "tokens_input": 455,
+      "tokens_output": 363
+    }
+  }
+]

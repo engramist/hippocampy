@@ -1,20 +1,10 @@
-"""
-ARC-AGI-3 Submission Runner
-
-This script serves as the main entry point for the ARC-AGI-3 contest evaluation.
-It initializes the SideQuest Brain, runs the memory-augmented agent on the tasks,
-and exports results in the required format.
-"""
+#!/usr/bin/env python3
+"""Test submission runner for a single ARC puzzle."""
 
 import asyncio
 import json
 import logging
-import os
-import time
 from pathlib import Path
-from typing import Dict, Any, List
-
-import yaml
 
 from benchmarks.arc3.adapter import LocalBrainClient
 from agents.arc3.runner import DurableARCRunner
@@ -29,17 +19,16 @@ from mcp_engine.loop.step2_gist import load_centroids
 from mcp_engine.loop.step3_schema_org import load_routing_table
 
 # Configuration paths
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[0]
 CONFIG_PATH = REPO_ROOT / "sidequests.toml"
 MANIFEST_PATH = REPO_ROOT / "benchmarks/arc3/tasks_manifest.json"
-OUTPUT_PATH = REPO_ROOT / "submission_results.json"
-DB_PATH = Path.home() / ".sidequests" / "brain.db"
-SEED_PATH = REPO_ROOT / "InvertorsDocs" / "GistSeedExamples.md"
+DB_PATH = Path.home() / ".sidequests" / "brain_single_test.db"
+SEED_PATH = REPO_ROOT / "sidequests/data/GistSeedExamples.md"
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class SubmissionRunner:
+class SingleTaskRunner:
     def __init__(self):
         self.config = load_config()
         self.db = None
@@ -49,7 +38,15 @@ class SubmissionRunner:
         self.results = []
 
     async def initialize(self):
-        logger.info("Initializing Submission Runner...")
+        logger.info("Initializing Single Task Runner...")
+        
+        # Clean up old database
+        if DB_PATH.exists():
+            import shutil
+            if DB_PATH.is_dir():
+                shutil.rmtree(DB_PATH)
+            else:
+                DB_PATH.unlink()
         
         # 1. Initialize Database
         DB_PATH.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -73,10 +70,9 @@ class SubmissionRunner:
         asyncio.create_task(self._loop_worker(centroids))
         
         # 6. Initialize Harness
-        # Convert dict config to BenchmarkConfig dataclass
         benchmark_config = BenchmarkConfig(
             name="ARC-AGI-3",
-            description="A/B evaluation: Baseline vs SideQuests-augmented agent",
+            description="Single puzzle test",
             timeout=3600,
             memory_limit_gb=8.0,
             cpu_limit_percent=80.0,
@@ -85,10 +81,11 @@ class SubmissionRunner:
         self.harness = ARC3Harness(benchmark_config, db=self.db)
         await self.harness.setup()
         
-        # 7. Load Tasks
+        # 7. Load Tasks (just the first one)
         if MANIFEST_PATH.exists():
-            self.tasks = load_tasks_from_manifest(str(MANIFEST_PATH))
-            logger.info(f"Loaded {len(self.tasks)} tasks from manifest.")
+            all_tasks = load_tasks_from_manifest(str(MANIFEST_PATH))
+            self.tasks = all_tasks[:1]  # Only first task
+            logger.info(f"Loaded {len(self.tasks)} task(s) for testing.")
         else:
             logger.warning(f"Manifest not found at {MANIFEST_PATH}. Running with empty task set.")
 
@@ -100,8 +97,8 @@ class SubmissionRunner:
         llm_client = create_llm_client(self.config)
         
         while True:
-            message_id, text, role, session_id = await self.loop_queue.get()
             try:
+                message_id, text, role, session_id = await self.loop_queue.get()
                 await run_loop(
                     message_id=message_id,
                     text=text,
@@ -114,24 +111,45 @@ class SubmissionRunner:
                 )
             except Exception as e:
                 logger.error(f"Loop worker error: {e}")
-                continue
             finally:
                 self.loop_queue.task_done()
 
     def export_results(self):
-        logger.info(f"Exporting results to {OUTPUT_PATH}")
-        with open(OUTPUT_PATH, 'w') as f:
+        output_path = REPO_ROOT / "submission_results_single.json"
+        logger.info(f"Exporting results to {output_path}")
+        with open(output_path, 'w') as f:
             json.dump(self.results, f, indent=2)
 
+
 async def main():
-    runner = SubmissionRunner()
+    runner = SingleTaskRunner()
     await runner.initialize()
 
-    card_id = runner.config.get("benchmark", {}).get("card_id") or "local"
+    if not runner.tasks:
+        logger.error("No tasks to run!")
+        return
+
+    card_id = runner.config.get("benchmark", {}).get("card_id") or "local_test"
     brain_client = LocalBrainClient(runner.db, runner.config)
     durable = DurableARCRunner(runner.harness, brain_client, runner.config)
+    
+    logger.info(f"Running single puzzle: {runner.tasks[0].task_id}")
     runner.results = await durable.run(runner.tasks, card_id)
+    
+    # Print result
+    if runner.results:
+        result = runner.results[0]
+        logger.info(f"Task: {result.get('task_id')}")
+        logger.info(f"Correct: {result['metadata'].get('correct')}")
+        logger.info(f"Steps: {result['metadata'].get('steps')}")
+        error = result['metadata'].get('error')
+        if error:
+            logger.error(f"Error: {error}")
+        else:
+            logger.info("✅ No parameter binding error!")
+    
     runner.export_results()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

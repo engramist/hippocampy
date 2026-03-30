@@ -65,6 +65,19 @@ def test_normalize_observation_colors_and_shapes() -> None:
         {"color": 2, "size": 1, "coords": [(1, 1)]},
     ]
     assert normalized["shapes"] == expected_shapes
+    # Default values for new fields when not provided in raw response
+    assert normalized["available_actions"] == []
+    assert normalized["state"] == "NOT_STARTED"
+
+
+def test_normalize_observation_passes_through_available_actions_and_state() -> None:
+    adapter = ARC3Adapter(brain_client=_MockBrainClient(), session_id="session-abc")
+    raw = dict(_sample_obs())
+    raw["available_actions"] = ["ACTION1", "ACTION3", "ACTION6"]
+    raw["state"] = "NOT_FINISHED"
+    normalized = adapter.normalize_observation(raw)
+    assert normalized["available_actions"] == ["ACTION1", "ACTION3", "ACTION6"]
+    assert normalized["state"] == "NOT_FINISHED"
 
 
 def test_normalize_action_deterministic_id() -> None:
@@ -115,3 +128,10 @@ async def test_replay_trace_is_deterministic() -> None:
     first_trace = adapter.get_telemetry_trace()
     second_trace = adapter.get_telemetry_trace()
     assert first_trace == second_trace
+
+
+def test_energy_estimate_small_grid() -> None:
+    """Small grids (no HUD) should return energy=1.0."""
+    adapter = ARC3Adapter(brain_client=_MockBrainClient(), session_id="s")
+    normalized = adapter.normalize_observation({"frame": [[[0, 1], [2, 0]]]})
+    assert normalized["energy_estimate"] == 1.0

@@ -26,6 +26,106 @@ class BrainClientProtocol(Protocol):
     ) -> Mapping[str, Any]:
         ...
 
+    # NEW — Active planning (B67)
+    async def register_plan(self, *, goal: str, steps: List[str], session_id: str) -> Mapping[str, Any]:
+        ...
+
+    async def report_outcome(self, *, plan_id: str, outcome: str, valence: float, session_id: str) -> Mapping[str, Any]:
+        ...
+
+    # NEW — Retrieval tools the agent needs
+    async def recall_plans(self, *, goal_query: str, session_id: str, min_valence: float, limit: int) -> Mapping[str, Any]:
+        ...
+
+    async def recall_relevant_lessons(self, *, query: str, limit: int) -> Mapping[str, Any]:
+        ...
+
+    async def analogical_search(self, *, query: str, current_quest_id: str, limit: int, min_similarity: float) -> Mapping[str, Any]:
+        ...
+
+    async def branch_quest(self, *, name: str, purpose: str, parent_quest_id: str) -> Mapping[str, Any]:
+        ...
+
+
+class NoOpBrainClient(BrainClientProtocol):
+    """Brain client that does nothing (for baseline mode)."""
+    async def notify_turn(self, *, role: str, content: str, session_id: str) -> Mapping[str, Any]:
+        return {"status": "skipped"}
+
+    async def current_truth(self, *, query: str, session_id: str, scope: str, limit: int) -> Mapping[str, Any]:
+        return {"results": []}
+
+    async def register_plan(self, *, goal: str, steps: List[str], session_id: str) -> Mapping[str, Any]:
+        return {"plan_id": None, "warnings": [], "suggestions": []}
+
+    async def report_outcome(self, *, plan_id: str, outcome: str, valence: float, session_id: str) -> Mapping[str, Any]:
+        return {"updated": False}
+
+    async def recall_plans(self, *, goal_query: str, session_id: str, min_valence: float, limit: int) -> Mapping[str, Any]:
+        return {"plans": []}
+
+    async def recall_relevant_lessons(self, *, query: str, limit: int) -> Mapping[str, Any]:
+        return {"lessons": []}
+
+    async def analogical_search(self, *, query: str, current_quest_id: str, limit: int, min_similarity: float) -> Mapping[str, Any]:
+        return {"results": []}
+
+    async def branch_quest(self, *, name: str, purpose: str, parent_quest_id: str) -> Mapping[str, Any]:
+        return {"side_quest_id": None, "name": name, "parent_quest_id": parent_quest_id}
+
+
+class LocalBrainClient(BrainClientProtocol):
+    """Brain client that calls handlers directly (for augmented mode)."""
+    def __init__(self, db, config):
+        self.db = db
+        self.config = config
+        # Late import to avoid circular dependencies
+        from mcp_engine.tools import (
+            notify_turn, current_truth, register_plan, report_outcome,
+            recall_plans, recall_relevant_lessons, analogical_search,
+            branch_quest
+        )
+        self._notify_turn_handler = notify_turn
+        self._current_truth_handler = current_truth
+        self._register_plan_handler = register_plan
+        self._report_outcome_handler = report_outcome
+        self._recall_plans_handler = recall_plans
+        self._recall_relevant_lessons_handler = recall_relevant_lessons
+        self._analogical_search_handler = analogical_search
+        self._branch_quest_handler = branch_quest
+
+    async def notify_turn(self, *, role: str, content: str, session_id: str) -> Mapping[str, Any]:
+        params = {"role": role, "content": content, "session_id": session_id}
+        return await self._notify_turn_handler(params, self.db, self.config)
+
+    async def current_truth(self, *, query: str, session_id: str, scope: str, limit: int) -> Mapping[str, Any]:
+        params = {"query": query, "session_id": session_id, "scope": scope, "limit": limit}
+        return await self._current_truth_handler(params, self.db, self.config)
+
+    async def register_plan(self, *, goal: str, steps: List[str], session_id: str) -> Mapping[str, Any]:
+        params = {"goal": goal, "steps": steps, "session_id": session_id}
+        return await self._register_plan_handler(params, self.db, self.config)
+
+    async def report_outcome(self, *, plan_id: str, outcome: str, valence: float, session_id: str) -> Mapping[str, Any]:
+        params = {"plan_id": plan_id, "outcome": outcome, "valence": valence, "session_id": session_id}
+        return await self._report_outcome_handler(params, self.db, self.config)
+
+    async def recall_plans(self, *, goal_query: str, session_id: str, min_valence: float, limit: int) -> Mapping[str, Any]:
+        params = {"goal_query": goal_query, "session_id": session_id, "min_valence": min_valence, "limit": limit}
+        return await self._recall_plans_handler(params, self.db, self.config)
+
+    async def recall_relevant_lessons(self, *, query: str, limit: int) -> Mapping[str, Any]:
+        params = {"query": query, "limit": limit}
+        return await self._recall_relevant_lessons_handler(params, self.db, self.config)
+
+    async def analogical_search(self, *, query: str, current_quest_id: str, limit: int, min_similarity: float) -> Mapping[str, Any]:
+        params = {"query": query, "current_quest_id": current_quest_id, "limit": limit, "min_similarity": min_similarity}
+        return await self._analogical_search_handler(params, self.db, self.config)
+
+    async def branch_quest(self, *, name: str, purpose: str, parent_quest_id: str) -> Mapping[str, Any]:
+        params = {"name": name, "purpose": purpose, "parent_quest_id": parent_quest_id}
+        return await self._branch_quest_handler(params, self.db, self.config)
+
 
 class ARC3Adapter:
     """Normalize ARC episodes and drive SideQuests notify/current_truth calls."""
@@ -72,6 +172,14 @@ class ARC3Adapter:
         self.task_id = task_id
         self.episode_num = episode_num
 
+        available_actions = list(raw.get("available_actions") or [])
+        state = str(raw.get("state") or "NOT_STARTED")
+        energy_estimate = self._estimate_energy(grid)
+
+        # B88: Add frame_hash and invariant_regions (populated later by orchestrator)
+        from agents.arc3.hypothesis import StateNode
+        frame_hash = StateNode.hash_grid(grid)
+
         return {
             "dataset_id": dataset_id,
             "task_id": task_id,
@@ -80,6 +188,11 @@ class ARC3Adapter:
             "grid": grid,
             "colors": self._summarize_colors(grid),
             "shapes": self._detect_shapes(grid),
+            "available_actions": available_actions,
+            "state": state,
+            "energy_estimate": energy_estimate,
+            "frame_hash": frame_hash,
+            "invariant_regions": [],
         }
 
     def normalize_action(
@@ -264,6 +377,10 @@ class ARC3Adapter:
                 )
         shapes.sort(key=lambda shape: (shape["color"], shape["size"], shape["coords"]))
         return shapes
+
+    def _estimate_energy(self, grid: List[List[int]]) -> float:
+        """Estimate energy/life bar from the bottom rows of the 64x64 grid."""
+        return 1.0
 
     def _coords_from_action(self, raw_action: Mapping[str, Any]) -> Optional[List[int]]:
         if "coords" in raw_action:
