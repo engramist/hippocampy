@@ -51,6 +51,19 @@ class KuzuClient:
         async with _get_write_lock():
             return await asyncio.to_thread(self.execute, query, params)
 
+    async def execute_read(self, query: str, params: dict = None):
+        """
+        Execute a read query asynchronously and return materialized rows.
+
+        Backward-compatibility helper for call sites that expect an awaitable
+        read API returning iterable rows.
+        """
+        result = await asyncio.to_thread(self.execute, query, params)
+        rows = []
+        while result.has_next():
+            rows.append(result.get_next())
+        return rows
+
     def create_vector_index(self, table: str, property: str, index_name: str):
         """
         Create an HNSW vector index on a node table property.

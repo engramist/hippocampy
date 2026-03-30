@@ -13,38 +13,10 @@ import random
 from typing import Dict, Any, List, Optional, Tuple
 
 from benchmarks.ab_harness import ABHarness, ABVariant, ABTask, ABTaskResult, ABTaskManifest
-from benchmarks.arc3.adapter import ARC3Adapter, BrainClientProtocol
+from benchmarks.arc3.adapter import ARC3Adapter, BrainClientProtocol, NoOpBrainClient, LocalBrainClient
 from benchmarks.arc3.state_serializer import StateSerializerForARC
 from mcp_engine.llm.provider import create_llm_client
 from mcp_engine.config import load_config
-
-
-class NoOpBrainClient(BrainClientProtocol):
-    """Brain client that does nothing (for baseline mode)."""
-    async def notify_turn(self, *, role: str, content: str, session_id: str) -> Dict[str, Any]:
-        return {"status": "skipped"}
-
-    async def current_truth(self, *, query: str, session_id: str, scope: str, limit: int) -> Dict[str, Any]:
-        return {"results": []}
-
-
-class LocalBrainClient(BrainClientProtocol):
-    """Brain client that calls handlers directly (for augmented mode)."""
-    def __init__(self, db, config):
-        self.db = db
-        self.config = config
-        # Late import to avoid circular dependencies
-        from mcp_engine.tools import notify_turn, current_truth
-        self._notify_turn_handler = notify_turn
-        self._current_truth_handler = current_truth
-
-    async def notify_turn(self, *, role: str, content: str, session_id: str) -> Dict[str, Any]:
-        params = {"role": role, "content": content, "session_id": session_id}
-        return await self._notify_turn_handler(params, self.db, self.config)
-
-    async def current_truth(self, *, query: str, session_id: str, scope: str, limit: int) -> Dict[str, Any]:
-        params = {"query": query, "session_id": session_id, "scope": scope, "limit": limit}
-        return await self._current_truth_handler(params, self.db, self.config)
 
 
 class ARC3Harness(ABHarness):
@@ -59,6 +31,7 @@ class ARC3Harness(ABHarness):
         self.config_data = load_config()
         self.llm_client = None
         self.serializer = StateSerializerForARC()
+        self._reflex_context = None
 
     async def setup(self) -> None:
         """Initialize LLM client and other resources."""
@@ -68,10 +41,16 @@ class ARC3Harness(ABHarness):
         """Clean up resources."""
         pass
 
-    async def _execute_task(self, task: ABTask, variant: ABVariant) -> ABTaskResult:
+    async def _execute_task(
+        self,
+        task: ABTask,
+        variant: ABVariant,
+        reflex_context: Dict[str, Any] | None = None,
+    ) -> ABTaskResult:
         """
         Execute a single ARC task (game) for the given variant.
         """
+        self._reflex_context = reflex_context
         session_id = f"arc-{variant}-{uuid.uuid4().hex[:8]}"
         
         # Determine which brain client to use
@@ -166,10 +145,15 @@ class ARC3Harness(ABHarness):
             return self._get_mock_action(obs, variant, 0)
             
         # Create prompt with observation
-        prompt = f"ARC Observation: {json.dumps(obs)}\nChoose next action (ACTION1-ACTION7):"
+        prefix = ""
+        if variant == ABVariant.SIDEQUESTS and self._reflex_context:
+            prefix = f"REFLEX CONTEXT: {json.dumps(self._reflex_context)}\n\n"
+            
+        prompt = f"{prefix}ARC Observation: {json.dumps(obs)}\nChoose next action (ACTION1-ACTION7):"
         
         # In a real implementation, we'd use a more sophisticated prompt and parse JSON
-        response = await asyncio.to_thread(self.llm_client.chat, prompt)
+        messages = [{"role": "user", "content": prompt}]
+        response = await asyncio.to_thread(self.llm_client.chat, messages)
         
         # Simple parser for demonstration
         try:
