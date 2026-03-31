@@ -91,12 +91,18 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B93 | ARC Action Fact Promotion During Explore Phase | P1 | ready | TBD | TBD | backlog/plans/B-93-arc-action-fact-promotion.md | backlog/B93.md |
 | B94 | ARC Path Hypothesis Composition and Testing | P1 | ready | TBD | TBD | backlog/plans/B-94-arc-path-hypotheses.md | backlog/B94.md |
 | B95 | ARC Solve Engine: Goal-Directed Strategy from Game Archetype Classification | P1 | ready | TBD | TBD | backlog/plans/B-95-arc-solve-engine.md | backlog/B95.md |
+| B97 | Object Role Detection Without Reward Signal | P0 | ready | TBD | TBD | backlog/plans/B-97-object-role-no-reward.md | backlog/B97.md |
+| B98 | Calibrate ARC Wall Detection to Avoid Overclassification | P1 | ready | TBD | TBD | backlog/plans/B-98-arc-wall-detection-calibration.md | backlog/B98.md |
+| B99 | Strengthen ARC Goal Detection from Target Evidence | P1 | ready | TBD | TBD | backlog/plans/B-99-arc-goal-detection.md | backlog/B99.md |
+| B100 | Graduate ARC Plan Chunks from Explore to Directed Movement | P1 | ready | TBD | TBD | backlog/plans/B-100-arc-directed-chunking.md | backlog/B100.md |
+| B101 | Make ARC PlanChunker Graduation Reliable Across Puzzle Variants | P1 | ready | TBD | TBD | backlog/plans/B-101-arc-planchunker-reliable-graduation.md | backlog/B101.md |
+| B102 | Local Graph Visibility UI Using Kuzu Explorer as the Base | P2 | complete | TBD | TBD | backlog/plans/B-102-local-graph-visibility-ui.md | backlog/B102.md |
 
 ## Summary
 
-- Total cards: 84
-- Ready: 8
+- Total cards: 90
+- Ready: 13
 - Needs work: 0
-- Complete: 78
+- Complete: 79
 - In progress: 0
 - Blocked: 0

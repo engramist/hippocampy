@@ -430,6 +430,8 @@ def test_submission_row_includes_debug_fields():
 
     assert row["game_id"] == "live-game-123"
     assert row["task_id"] == "arc_eval_001"
+    assert row["correct"] is False
+    assert row["steps"] == 2
     assert "final_grid" not in row
     assert row["bootstrap_write_trace"][0]["kind"] == "notify_turn"
     assert row["predictions"] == [[[1, 2], [3, 4]]]

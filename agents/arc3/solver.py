@@ -77,6 +77,9 @@ class PlanChunk:
     steps_executed: int = 0
     success_condition: str = ""
     source: str = "bfs"                     # "bfs" | "directional" | "llm"
+    graduation_score: float = 0.0
+    graduation_reason: str = ""
+    graduation_components: Dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -105,12 +108,15 @@ class ArchetypeClassifier:
       5. Lock when composite confidence > LOCK_THRESHOLD.
     """
 
-    LOCK_THRESHOLD: float = 0.65
+    LOCK_THRESHOLD: float = 0.45
     MIN_OBSERVATIONS: int = 5              # don't classify before seeing 5 frames
+    CONSISTENCY_BONUS: float = 0.04       # per-step bonus when same archetype wins consecutively
 
     def __init__(self) -> None:
         self._observation_count: int = 0
         self._signal_history: List[Dict[str, Any]] = []
+        self._consecutive_best: GameArchetype = GameArchetype.UNKNOWN
+        self._consecutive_count: int = 0
 
     def _extract_signals(self, hypothesis_context: Dict[str, Any]) -> Dict[str, Any]:
         """Pull archetype-relevant signals from HypothesisManager output."""
@@ -175,8 +181,18 @@ class ArchetypeClassifier:
         best = max(scores, key=lambda a: scores[a])
         best_score = scores[best]
         if best_score < 0.3:
+            self._consecutive_best = GameArchetype.UNKNOWN
+            self._consecutive_count = 0
             return GameArchetype.UNKNOWN, best_score
-        return best, min(best_score, 0.95)
+
+        # Temporal consistency boost: repeated same winner builds conviction
+        if best == self._consecutive_best:
+            self._consecutive_count += 1
+        else:
+            self._consecutive_best = best
+            self._consecutive_count = 1
+        boosted = min(best_score + self.CONSISTENCY_BONUS * (self._consecutive_count - 1), 0.95)
+        return best, boosted
 
     def apply_analogy_votes(
         self,
@@ -220,15 +236,259 @@ class ArchetypeClassifier:
 
 # ── Object Role Mapper ────────────────────────────────────────────────
 
+def _compute_centroids(grid: List[List[int]]) -> Dict[int, Dict[str, float]]:
+    """Return per-color centroid and bounds from a grid."""
+    from collections import defaultdict
+
+    pixels: Dict[int, List[tuple[int, int]]] = defaultdict(list)
+    for r, row in enumerate(grid or []):
+        for c, value in enumerate(row or []):
+            pixels[value].append((r, c))
+
+    centroids: Dict[int, Dict[str, float]] = {}
+    for color_id, points in pixels.items():
+        if not points:
+            continue
+        rows = [point[0] for point in points]
+        cols = [point[1] for point in points]
+        centroids[color_id] = {
+            "row": sum(rows) / len(rows),
+            "col": sum(cols) / len(cols),
+            "count": float(len(points)),
+            "row_start": float(min(rows)),
+            "row_end": float(max(rows)),
+            "col_start": float(min(cols)),
+            "col_end": float(max(cols)),
+        }
+    return centroids
+
+
+def _trend_direction_from_fact(action_facts: List[Dict[str, Any]], action_id: Optional[str]) -> Optional[str]:
+    if not action_id:
+        return None
+    fact = next((item for item in action_facts if item.get("action") == action_id), None)
+    if not fact:
+        return None
+    trend = fact.get("trend") or {}
+    direction = str(trend.get("direction") or "").lower()
+    if direction:
+        return direction
+    description = str(fact.get("description") or "").lower()
+    if "leftward drift" in description or "drift left" in description or "moves left" in description:
+        return "left"
+    if "rightward drift" in description or "drift right" in description or "moves right" in description:
+        return "right"
+    if "upward drift" in description or "drift up" in description or "moves up" in description:
+        return "up"
+    if "downward drift" in description or "drift down" in description or "moves down" in description:
+        return "down"
+    return None
+
+
+def _direction_vector(direction: Optional[str]) -> Optional[tuple[float, float]]:
+    if direction == "left":
+        return (0.0, -1.0)
+    if direction == "right":
+        return (0.0, 1.0)
+    if direction == "up":
+        return (-1.0, 0.0)
+    if direction == "down":
+        return (1.0, 0.0)
+    return None
+
+
+def _value_in_range(value: float, minimum: float, maximum: float) -> bool:
+    return minimum <= value <= maximum
+
+
 class ObjectRoleMapper:
     """Assigns semantic roles to color groups from transitions + invariants.
 
-    Uses:
-      - InvariantDetector static_rows → WALL candidates
-      - Transitions where specific color region moves with action → PLAYER
-      - Reward spike on contact with specific color → GOAL / COLLECTIBLE
-      - Color region that tracks toward player → ENEMY
+    Uses evidence fusion:
+      - invariant/static row coverage and motion stability for WALL
+      - centroid motion that matches inferred operator effects for PLAYER
+      - small, stationary, non-background objects for GOAL
+      - optional reward/changed-center fallback when the frame lacks richer geometry
     """
+
+    PLAYER_MIN_MATCHES: int = 2
+    PLAYER_MIN_MATCH_RATE: float = 0.6
+    WALL_MIN_STATIONARY_STEPS: int = 2
+    WALL_MIN_OBSERVED_COUNT: int = 2
+    WALL_MIN_EXTENT_SPAN: float = 1.0
+    GOAL_MAX_COUNT_FRACTION: float = 0.02
+    GOAL_MIN_STATIONARY_STEPS: int = 1
+    GOAL_MIN_SCORE: float = 0.55
+    BACKGROUND_COLOR: int = 0
+    EPSILON: float = 0.35
+
+    def __init__(self) -> None:
+        self._prev_centroids: Dict[int, Dict[str, float]] = {}
+        self._movement_evidence: Dict[int, List[Dict[str, Any]]] = {}
+        self._local_activity_evidence: Dict[int, List[Dict[str, Any]]] = {}
+        self._stationary_steps: Dict[int, int] = {}
+        self._centroid_history: Dict[int, List[Dict[str, float]]] = {}
+
+    def _color_only_in_rows(
+        self,
+        grid: List[List[int]],
+        color_id: int,
+        allowed_rows: set[int],
+    ) -> bool:
+        if not grid or not allowed_rows:
+            return False
+        seen = False
+        for row_idx, row in enumerate(grid):
+            for value in row:
+                if value != color_id:
+                    continue
+                seen = True
+                if row_idx not in allowed_rows:
+                    return False
+        return seen
+
+    def _directional_match(
+        self,
+        delta_row: float,
+        delta_col: float,
+        direction: Optional[str],
+    ) -> bool:
+        vec = _direction_vector(direction)
+        if vec is None:
+            return False
+        dr, dc = vec
+        if dr != 0.0 and delta_row * dr <= self.EPSILON:
+            return False
+        if dc != 0.0 and delta_col * dc <= self.EPSILON:
+            return False
+        return abs(delta_row) > self.EPSILON or abs(delta_col) > self.EPSILON
+
+    def _near_changed_center(
+        self,
+        centroid: Dict[str, float],
+        changed_center: Dict[str, Any] | None,
+    ) -> bool:
+        if not centroid or not changed_center:
+            return False
+        row = float(changed_center.get("row", centroid.get("row", 0.0)))
+        col = float(changed_center.get("col", centroid.get("col", 0.0)))
+        return abs(centroid["row"] - row) <= 1.5 and abs(centroid["col"] - col) <= 1.5
+
+    def _changed_bbox_center(
+        self,
+        changed_region: Dict[str, Any],
+    ) -> Dict[str, float] | None:
+        row_range = changed_region.get("row_range")
+        col_range = changed_region.get("col_range")
+        if not row_range or not col_range:
+            return None
+        return {
+            "row": float(row_range[0] + row_range[1]) / 2.0,
+            "col": float(col_range[0] + col_range[1]) / 2.0,
+        }
+
+    def _in_changed_bbox(
+        self,
+        centroid: Dict[str, float],
+        changed_region: Dict[str, Any],
+        padding: float = 1.5,
+    ) -> bool:
+        row_range = changed_region.get("row_range")
+        col_range = changed_region.get("col_range")
+        if not row_range or not col_range:
+            return False
+        return (
+            _value_in_range(float(centroid["row"]), float(row_range[0]) - padding, float(row_range[1]) + padding)
+            and _value_in_range(float(centroid["col"]), float(col_range[0]) - padding, float(col_range[1]) + padding)
+        )
+
+    def _has_active_evidence(self, color_id: int) -> bool:
+        """Return True when a color has participated in a real transition signal."""
+        for evidence in self._movement_evidence.get(color_id, []):
+            if (
+                evidence.get("moved")
+                or evidence.get("in_changed_bbox")
+                or evidence.get("near_changed_center")
+                or evidence.get("matches_direction")
+            ):
+                return True
+        for evidence in self._local_activity_evidence.get(color_id, []):
+            if (
+                evidence.get("moved")
+                or evidence.get("in_changed_bbox")
+                or evidence.get("near_changed_center")
+                or evidence.get("matches_direction")
+            ):
+                return True
+        return False
+
+    def _has_wall_geometry(self, centroid: Dict[str, float]) -> bool:
+        row_span = float(centroid.get("row_end", centroid["row"])) - float(centroid.get("row_start", centroid["row"]))
+        col_span = float(centroid.get("col_end", centroid["col"])) - float(centroid.get("col_start", centroid["col"]))
+        return row_span >= self.WALL_MIN_EXTENT_SPAN or col_span >= self.WALL_MIN_EXTENT_SPAN
+
+    def _goal_candidate_score(
+        self,
+        color_id: int,
+        centroid: Dict[str, float],
+        stationary_steps: int,
+        changed_region: Dict[str, Any],
+        changed_center: Dict[str, Any],
+        player_pos: Dict[str, float] | None,
+        prev_player_pos: Dict[str, float] | None,
+        total_pixels: int,
+        history_len: int,
+        pixels_changed: float,
+    ) -> float:
+        count_fraction = float(centroid.get("count", 0.0)) / float(total_pixels)
+        in_changed_bbox = self._in_changed_bbox(centroid, changed_region)
+        near_changed_center = self._near_changed_center(centroid, changed_center)
+
+        score = 0.0
+        if count_fraction <= 0.02:
+            score += 0.30
+        elif count_fraction <= 0.05:
+            score += 0.22
+        elif count_fraction <= 0.08:
+            score += 0.12
+
+        if stationary_steps >= 2:
+            score += 0.25
+        elif stationary_steps >= 1:
+            score += 0.15
+
+        if in_changed_bbox:
+            score += 0.20
+        if near_changed_center:
+            score += 0.15
+        if pixels_changed > 0.0 and stationary_steps >= 1:
+            score += 0.10
+
+        if player_pos:
+            distance = abs(float(centroid["row"]) - float(player_pos.get("row", 0.0))) + abs(
+                float(centroid["col"]) - float(player_pos.get("col", 0.0))
+            )
+            if distance <= 3.0:
+                score += 0.12
+            elif distance <= 6.0:
+                score += 0.08
+            elif distance <= 10.0:
+                score += 0.04
+            if prev_player_pos:
+                prev_distance = abs(float(centroid["row"]) - float(prev_player_pos.get("row", 0.0))) + abs(
+                    float(centroid["col"]) - float(prev_player_pos.get("col", 0.0))
+                )
+                delta = prev_distance - distance
+                if delta >= 1.0:
+                    score += 0.15
+                elif delta >= 0.5:
+                    score += 0.08
+
+        if history_len >= 2:
+            score += 0.05
+        if history_len >= 3 and stationary_steps >= 2:
+            score += 0.05
+        return score
 
     def update(
         self,
@@ -239,33 +499,273 @@ class ObjectRoleMapper:
         """Return updated object role map from current frame evidence."""
         roles: Dict[int, ObjectRole] = {}
         colors = observation.get("colors") or []
-        static_rows = hypothesis_context.get("static_rows", [])
+        grid = observation.get("grid") or []
+        static_rows = set(hypothesis_context.get("static_rows") or [])
+        hud_rows = set(hypothesis_context.get("hud_rows") or [])
         last_effect = hypothesis_context.get("last_transition_effect") or {}
-        changed_regions = last_effect.get("regions_changed", [])
-        reward = float((hypothesis_context.get("last_transition_effect") or {}).get(
-            "meaningful_change_score", 0.0
-        ))
+        changed_region = last_effect.get("changed_region") or {}
+        changed_center = last_effect.get("changed_center") or self._changed_bbox_center(changed_region) or {}
+        reward = float(last_effect.get("meaningful_change_score", 0.0))
+        pixels_changed = float(last_effect.get("pixels_changed", 0.0))
+        action_taken = last_effect.get("action")
+        action_facts = hypothesis_context.get("action_facts") or []
+        inferred_direction = _trend_direction_from_fact(action_facts, action_taken)
+        direction_vector = _direction_vector(inferred_direction)
+
+        curr_centroids = _compute_centroids(grid) if grid else {}
+        total_pixels = sum(int(v.get("count", 0)) for v in curr_centroids.values()) or 1
 
         for color_info in colors:
-            # ARC3Observation delivers colors as a list of {"value": V, "count": C}
             color_id = color_info["value"] if isinstance(color_info, dict) else color_info
-            role = ObjectRole(color_id=color_id, evidence_steps=[step])
+            roles[color_id] = ObjectRole(color_id=color_id, evidence_steps=[step])
 
-            # Wall heuristic: if color only appears in static rows
-            # (simplified: if the entire changed bbox doesn't overlap the static rows)
-            if static_rows and not changed_regions:
+        # Fallback for sparse observations without a grid payload.
+        if not curr_centroids:
+            for color_id, role in roles.items():
+                if static_rows and not changed_region:
+                    role.role = RoleType.WALL
+                    role.confidence = 0.7
+                elif changed_center and reward > 0.3:
+                    role.role = RoleType.PLAYER
+                    role.confidence = 0.75
+                    role.estimated_position = changed_center
+            return roles
+
+        for color_id, centroid in curr_centroids.items():
+            prev = self._prev_centroids.get(color_id)
+            if prev is not None:
+                delta_row = centroid["row"] - prev["row"]
+                delta_col = centroid["col"] - prev["col"]
+                count_delta = int(centroid["count"] - prev.get("count", 0.0))
+                moved = abs(delta_row) > self.EPSILON or abs(delta_col) > self.EPSILON
+                if moved:
+                    self._stationary_steps[color_id] = 0
+                else:
+                    self._stationary_steps[color_id] = self._stationary_steps.get(color_id, 0) + 1
+                in_changed_bbox = self._in_changed_bbox(centroid, changed_region)
+                near_center = self._near_changed_center(centroid, changed_center)
+                evidence = {
+                    "step": step,
+                    "action": action_taken,
+                    "delta_row": round(delta_row, 2),
+                    "delta_col": round(delta_col, 2),
+                    "count_delta": count_delta,
+                    "moved": moved,
+                    "in_changed_region": near_center,
+                    "in_changed_bbox": in_changed_bbox,
+                    "direction": inferred_direction,
+                    "matches_direction": False,
+                }
+                if direction_vector is not None:
+                    evidence["matches_direction"] = self._directional_match(
+                        delta_row,
+                        delta_col,
+                        inferred_direction,
+                    )
+                self._movement_evidence.setdefault(color_id, []).append(evidence)
+                local_activity = {
+                    "step": step,
+                    "action": action_taken,
+                    "count_delta": count_delta,
+                    "in_changed_bbox": in_changed_bbox,
+                    "near_changed_center": near_center,
+                    "matches_direction": evidence["matches_direction"],
+                    "moved": moved,
+                }
+                self._local_activity_evidence.setdefault(color_id, []).append(local_activity)
+            else:
+                self._stationary_steps.setdefault(color_id, 0)
+            self._centroid_history.setdefault(color_id, []).append(centroid)
+
+        # WALL detection: require multiple independent signals on real grids.
+        for color_id, role in roles.items():
+            centroid = curr_centroids.get(color_id)
+            if centroid is None or color_id == self.BACKGROUND_COLOR:
+                continue
+            coverage_static = self._color_only_in_rows(grid, color_id, static_rows)
+            coverage_hud = self._color_only_in_rows(grid, color_id, hud_rows)
+            stationary_steps = self._stationary_steps.get(color_id, 0)
+            history = self._centroid_history.get(color_id, [])
+            count = int(centroid.get("count", 0.0))
+            active_evidence = self._has_active_evidence(color_id)
+            structural_signal = count >= self.WALL_MIN_OBSERVED_COUNT and self._has_wall_geometry(centroid)
+            coverage_signal = coverage_static or coverage_hud
+            persistence_signal = stationary_steps >= self.WALL_MIN_STATIONARY_STEPS
+            drift = 0.0
+            if len(history) >= 2:
+                drift = sum(
+                    abs(curr["row"] - prev["row"]) + abs(curr["col"] - prev["col"])
+                    for prev, curr in zip(history[:-1], history[1:])
+                )
+
+            # On a real grid, wall labels need coverage + persistence + shape evidence.
+            if grid:
+                if active_evidence:
+                    continue
+                if coverage_signal and persistence_signal and structural_signal and drift <= 0.5:
+                    role.role = RoleType.WALL
+                    role.confidence = 0.72 if coverage_static else 0.68
+                    continue
+                if coverage_signal and structural_signal and stationary_steps >= (self.WALL_MIN_STATIONARY_STEPS + 1) and drift <= 0.35:
+                    role.role = RoleType.WALL
+                    role.confidence = 0.7 if coverage_static else 0.66
+                    continue
+                continue
+
+            if coverage_static or (coverage_hud and stationary_steps >= 1):
                 role.role = RoleType.WALL
-                role.confidence = 0.7
+                role.confidence = 0.7 if coverage_static else 0.65
+                continue
+            if stationary_steps >= self.WALL_MIN_STATIONARY_STEPS and drift <= 0.5:
+                role.role = RoleType.WALL
+                role.confidence = 0.68
 
-            # Player heuristic: color whose bounding box centroid matches changed_center
-            changed_center = last_effect.get("changed_center")
-            if changed_center and reward > 0.3:
-                role.role = RoleType.PLAYER
-                role.confidence = 0.75
-                role.estimated_position = changed_center
+        # PLAYER detection: consistent motion evidence matching inferred operator trend.
+        best_player_id: Optional[int] = None
+        best_player_score = 0.0
+        for color_id, evidence in self._movement_evidence.items():
+            if color_id not in roles:
+                continue
+            if roles[color_id].role == RoleType.WALL or color_id == self.BACKGROUND_COLOR:
+                continue
+            moved_events = [item for item in evidence if item.get("moved")]
+            if not moved_events:
+                continue
+            match_rate = sum(1 for item in moved_events if item.get("matches_direction")) / len(moved_events)
+            motion_rate = len(moved_events) / len(evidence)
+            changed_region_rate = sum(1 for item in evidence if item.get("in_changed_region")) / len(evidence)
+            reward_bonus = 0.15 if reward > 0.3 else 0.0
+            score = (0.45 * match_rate) + (0.30 * motion_rate) + (0.15 * changed_region_rate) + reward_bonus
+            if len(moved_events) >= self.PLAYER_MIN_MATCHES and score >= self.PLAYER_MIN_MATCH_RATE:
+                if score > best_player_score:
+                    best_player_score = score
+                    best_player_id = color_id
 
-            roles[color_id] = role
+        # Local changed-region fallback: prefer a small active color when the transition
+        # only moves a tiny frontier and whole-color centroids stay too stable to score well.
+        for color_id, evidence in self._local_activity_evidence.items():
+            if color_id not in roles:
+                continue
+            if roles[color_id].role == RoleType.WALL or color_id == self.BACKGROUND_COLOR:
+                continue
+            centroid = curr_centroids.get(color_id)
+            if centroid is None:
+                continue
+            count_fraction = float(centroid.get("count", 0.0)) / float(total_pixels)
+            if count_fraction > 0.08:
+                continue
+            bbox_hits = sum(1 for item in evidence if item.get("in_changed_bbox"))
+            center_hits = sum(1 for item in evidence if item.get("near_changed_center"))
+            count_changes = sum(1 for item in evidence if item.get("count_delta", 0) != 0)
+            directional_hits = sum(1 for item in evidence if item.get("matches_direction"))
+            moved_hits = sum(1 for item in evidence if item.get("moved"))
+            if bbox_hits == 0 and center_hits == 0:
+                continue
+            activity_score = (
+                0.30 * min(bbox_hits / max(len(evidence), 1), 1.0)
+                + 0.25 * min(center_hits / max(len(evidence), 1), 1.0)
+                + 0.20 * min(count_changes / max(len(evidence), 1), 1.0)
+                + 0.15 * min(moved_hits / max(len(evidence), 1), 1.0)
+                + 0.10 * min(directional_hits / max(len(evidence), 1), 1.0)
+            )
+            if count_fraction <= 0.02:
+                activity_score += 0.10
+            if bbox_hits >= 2 and (moved_hits >= 2 or count_changes >= 1) and activity_score > best_player_score:
+                best_player_score = activity_score
+                best_player_id = color_id
 
+        if best_player_id is None and changed_center and reward > 0.3:
+            for color_id, centroid in curr_centroids.items():
+                if color_id not in roles or color_id == self.BACKGROUND_COLOR:
+                    continue
+                if roles[color_id].role == RoleType.WALL:
+                    continue
+                if self._near_changed_center(centroid, changed_center):
+                    best_player_id = color_id
+                    best_player_score = 0.75
+                    break
+
+        if best_player_id is None:
+            # Generic movement fallback: if a single color is the most mobile and not wall-like,
+            # treat it as the likely controlled object.
+            mobility_scores: List[tuple[float, int]] = []
+            for color_id, evidence in self._movement_evidence.items():
+                if color_id not in roles or roles[color_id].role == RoleType.WALL:
+                    continue
+                moved_events = sum(1 for item in evidence if item.get("moved"))
+                if moved_events >= 2:
+                    mobility_scores.append((moved_events / len(evidence), color_id))
+            if mobility_scores:
+                mobility_scores.sort(reverse=True)
+                top_score, top_color = mobility_scores[0]
+                if top_score >= 0.6:
+                    best_player_id = top_color
+                    best_player_score = top_score
+
+        if best_player_id is not None and best_player_id in roles:
+            role = roles[best_player_id]
+            role.role = RoleType.PLAYER
+            role.confidence = min(0.6 + best_player_score * 0.3, 0.95)
+            centroid = curr_centroids.get(best_player_id)
+            if centroid:
+                role.estimated_position = {"row": centroid["row"], "col": centroid["col"]}
+
+        player_role = next((r for r in roles.values() if r.role == RoleType.PLAYER), None)
+        player_pos = player_role.estimated_position if player_role else None
+        prev_player_pos: Dict[str, float] | None = None
+        if best_player_id is not None:
+            prev_player_centroid = self._prev_centroids.get(best_player_id)
+            if prev_player_centroid:
+                prev_player_pos = {
+                    "row": prev_player_centroid["row"],
+                    "col": prev_player_centroid["col"],
+                }
+
+        # GOAL detection: small, persistent, non-background, and shaped by transition evidence.
+        best_goal_id: Optional[int] = None
+        best_goal_score = 0.0
+        for color_id, role in roles.items():
+            if role.role != RoleType.UNKNOWN:
+                continue
+            centroid = curr_centroids.get(color_id)
+            if centroid is None or color_id == self.BACKGROUND_COLOR:
+                continue
+            stationary_steps = self._stationary_steps.get(color_id, 0)
+            in_hud = self._color_only_in_rows(grid, color_id, hud_rows)
+            in_static = self._color_only_in_rows(grid, color_id, static_rows)
+            if in_hud or in_static:
+                continue
+            score = self._goal_candidate_score(
+                color_id=color_id,
+                centroid=centroid,
+                stationary_steps=stationary_steps,
+                changed_region=changed_region,
+                changed_center=changed_center,
+                player_pos=player_pos,
+                prev_player_pos=prev_player_pos,
+                total_pixels=total_pixels,
+                history_len=len(self._centroid_history.get(color_id, [])),
+                pixels_changed=pixels_changed,
+            )
+            if score >= self.GOAL_MIN_SCORE and score > best_goal_score:
+                best_goal_score = score
+                best_goal_id = color_id
+
+        if best_goal_id is not None and best_goal_id in roles:
+            goal_role = roles[best_goal_id]
+            goal_role.role = RoleType.GOAL
+            goal_role.confidence = min(0.5 + best_goal_score * 0.4, 0.95)
+            centroid = curr_centroids.get(best_goal_id)
+            if centroid:
+                goal_role.estimated_position = {"row": centroid["row"], "col": centroid["col"]}
+
+        # Enrich evidence trails.
+        for color_id, role in roles.items():
+            if role.role == RoleType.UNKNOWN:
+                continue
+            role.evidence_steps = sorted(set(role.evidence_steps + [step]))
+
+        self._prev_centroids = curr_centroids
         return roles
 
 
@@ -278,7 +778,7 @@ class VictoryHypothesizer:
     Re-called only when DissonanceDetector fires.
     """
 
-    CALL_THRESHOLD: float = 0.65
+    CALL_THRESHOLD: float = 0.45
     PROMPT_TEMPLATE = """You are analyzing an unknown game. Based on the evidence below,
 hypothesize what the WINNING CONDITION is.
 
@@ -293,7 +793,7 @@ Past successful plans with similar goals:
 Known game lessons:
 {lessons}
 
-Reward pattern: {reward_summary}
+Observed progress signals: {reward_summary}
 
 Respond with EXACTLY this JSON format (no other text):
 {{
@@ -313,18 +813,25 @@ Respond with EXACTLY this JSON format (no other text):
         task_id: str,
         reward_history: List[float],
         dissonance_reason: str = "",
+        past_plans: Optional[List[Dict[str, Any]]] = None,
+        lessons: Optional[List[Dict[str, Any]]] = None,
     ) -> VictoryCondition:
-        """Run the full hypothesis pipeline: recall → LLM."""
+        """Synthesize the victory condition from retrieved evidence and an LLM call.
 
-        # 1. Recall similar past plans
-        goal_query = f"{archetype.value} game win condition solve puzzle"
-        recall = await brain_client.recall_plans(
-            goal_query=goal_query,
-            session_id=session_id,
-            min_valence=0.2,
-            limit=3,
-        )
-        past_plans = recall.get("plans", [])
+        The solve engine is responsible for fetching `past_plans` and `lessons`.
+        If they are omitted, we fall back to direct retrieval for compatibility.
+        """
+
+        # 1. Recall similar past plans if the caller did not already fetch them.
+        if past_plans is None:
+            goal_query = f"{archetype.value} game win condition solve puzzle"
+            recall = await brain_client.recall_plans(
+                goal_query=goal_query,
+                session_id=session_id,
+                min_valence=0.2,
+                limit=3,
+            )
+            past_plans = recall.get("plans", [])
 
         # Check if a past plan gives us a high-confidence victory condition directly
         for plan in past_plans:
@@ -336,12 +843,13 @@ Respond with EXACTLY this JSON format (no other text):
                     source="recall_plans",
                 )
 
-        # 2. Recall game-specific lessons
-        lessons_result = await brain_client.recall_relevant_lessons(
-            query=f"ARC game {archetype.value} win condition",
-            limit=3,
-        )
-        lessons = lessons_result.get("lessons", [])
+        # 2. Recall game-specific lessons if the caller did not already fetch them.
+        if lessons is None:
+            lessons_result = await brain_client.recall_relevant_lessons(
+                query=f"ARC game {archetype.value} win condition",
+                limit=3,
+            )
+            lessons = lessons_result.get("lessons", [])
 
         # 3. LLM call
         object_roles_text = "\n".join(
@@ -374,7 +882,7 @@ Respond with EXACTLY this JSON format (no other text):
         )
 
         try:
-            response = await llm_client.complete(prompt, max_tokens=200)
+            response = await llm_client.achat([{"role": "user", "content": prompt}])
             text = response.strip()
             # Strip markdown fences if present
             if text.startswith("```"):
@@ -460,8 +968,141 @@ class PlanChunker:
 
     Primary path: BFS on in-memory StateGraph (free, exact, O(V+E)).
     Fallback path: directional chunk toward estimated goal position.
-    Each chunk is registered via register_plan for Amygdala Reflex + cross-game learning.
+    SolveEngine owns plan registration; this class only returns the next chunk.
     """
+
+    DIRECTIONAL_PLAYER_CONFIDENCE: float = 0.65
+    DIRECTIONAL_GOAL_CONFIDENCE: float = 0.55
+    MIN_TESTED_ACTIONS_FOR_DIRECTIONAL: int = 3
+    GRADUATION_THRESHOLD: float = 0.72
+    MIN_EXPLORATION_COMPLETENESS: float = 0.60
+
+    def _graduation_assessment(
+        self,
+        player_role: Optional[ObjectRole],
+        goal_role: Optional[ObjectRole],
+        hypothesis_context: Optional[Dict[str, Any]],
+        available_actions: List[str],
+    ) -> Dict[str, Any]:
+        context = hypothesis_context or {}
+        action_coverage = context.get("action_coverage") or {}
+        available_total = max(len(available_actions), 1)
+        tested_count = int(action_coverage.get("tested_count", 0))
+        untested_count = int(action_coverage.get("untested_count", max(available_total - tested_count, 0)))
+        coverage_ratio = min(tested_count / available_total, 1.0)
+
+        player_conf = float(player_role.confidence if player_role else 0.0)
+        goal_conf = float(goal_role.confidence if goal_role else 0.0)
+        player_known = 1.0 if player_role and player_role.estimated_position else 0.0
+        goal_known = 1.0 if goal_role and goal_role.estimated_position else 0.0
+        positions_known = 1.0 if player_known and goal_known else 0.0
+
+        action_facts = context.get("action_facts") or []
+        path_hypotheses = context.get("path_hypotheses") or []
+
+        deterministic_facts = sum(1 for fact in action_facts if fact.get("fact_type") == "deterministic_effect")
+        valuable_facts = sum(
+            1
+            for fact in action_facts
+            if fact.get("fact_type") == "deterministic_effect" and fact.get("value_status") == "valuable"
+        )
+        path_signal = sum(
+            1
+            for hyp in path_hypotheses
+            if hyp.get("value_status") in {"valuable", "tentative"}
+        )
+        evidence_score = min(
+            0.20 * min(deterministic_facts, 3)
+            + 0.12 * min(valuable_facts, 3)
+            + 0.10 * min(path_signal, 3)
+            + (0.10 if action_coverage.get("initial_exploration_complete") else 0.0),
+            1.0,
+        )
+
+        contradiction_penalty = 0.0
+        if context.get("loop_detected"):
+            contradiction_penalty += 0.25
+        if action_coverage.get("top_two_low_value"):
+            contradiction_penalty += 0.10
+        if untested_count > 0 and not action_coverage.get("initial_exploration_complete"):
+            contradiction_penalty += 0.05
+
+        player_score = min(player_conf / max(self.DIRECTIONAL_PLAYER_CONFIDENCE, 1e-6), 1.0)
+        goal_score = min(goal_conf / max(self.DIRECTIONAL_GOAL_CONFIDENCE, 1e-6), 1.0)
+        coverage_score = min(coverage_ratio / max(self.MIN_EXPLORATION_COMPLETENESS, 1e-6), 1.0)
+
+        score = (
+            0.30 * player_score
+            + 0.25 * goal_score
+            + 0.15 * positions_known
+            + 0.15 * coverage_score
+            + 0.15 * evidence_score
+            - contradiction_penalty
+        )
+        score = max(0.0, min(score, 1.0))
+
+        ready = (
+            player_role is not None
+            and goal_role is not None
+            and player_conf >= self.DIRECTIONAL_PLAYER_CONFIDENCE
+            and goal_conf >= self.DIRECTIONAL_GOAL_CONFIDENCE
+            and positions_known > 0.0
+            and (action_coverage.get("initial_exploration_complete") or coverage_ratio >= self.MIN_EXPLORATION_COMPLETENESS)
+            and not action_coverage.get("top_two_low_value")
+            and not context.get("loop_detected")
+            and score >= self.GRADUATION_THRESHOLD
+        )
+
+        components = {
+            "player_score": round(player_score, 3),
+            "goal_score": round(goal_score, 3),
+            "positions_known": round(positions_known, 3),
+            "coverage_ratio": round(coverage_ratio, 3),
+            "coverage_score": round(coverage_score, 3),
+            "evidence_score": round(evidence_score, 3),
+            "contradiction_penalty": round(contradiction_penalty, 3),
+            "tested_count": float(tested_count),
+            "untested_count": float(untested_count),
+        }
+        if ready:
+            reason = (
+                f"graduate directional: score={score:.2f} >= {self.GRADUATION_THRESHOLD:.2f}; "
+                f"player={player_conf:.2f}, goal={goal_conf:.2f}, coverage={coverage_ratio:.2f}, "
+                f"evidence={evidence_score:.2f}, penalty={contradiction_penalty:.2f}"
+            )
+        else:
+            blockers: List[str] = []
+            if player_role is None:
+                blockers.append("missing player role")
+            elif player_conf < self.DIRECTIONAL_PLAYER_CONFIDENCE:
+                blockers.append(f"player confidence {player_conf:.2f} < {self.DIRECTIONAL_PLAYER_CONFIDENCE:.2f}")
+            if goal_role is None:
+                blockers.append("missing goal role")
+            elif goal_conf < self.DIRECTIONAL_GOAL_CONFIDENCE:
+                blockers.append(f"goal confidence {goal_conf:.2f} < {self.DIRECTIONAL_GOAL_CONFIDENCE:.2f}")
+            if not positions_known:
+                blockers.append("player/goal positions not both known")
+            if coverage_ratio < self.MIN_EXPLORATION_COMPLETENESS and not action_coverage.get("initial_exploration_complete"):
+                blockers.append(f"coverage {coverage_ratio:.2f} < {self.MIN_EXPLORATION_COMPLETENESS:.2f}")
+            if action_coverage.get("top_two_low_value"):
+                blockers.append("top actions are low_value")
+            if context.get("loop_detected"):
+                blockers.append("loop detected")
+            if not blockers:
+                blockers.append("score below threshold")
+            reason = (
+                f"stay explore: score={score:.2f} < {self.GRADUATION_THRESHOLD:.2f}; "
+                f"player={player_conf:.2f}, goal={goal_conf:.2f}, coverage={coverage_ratio:.2f}, "
+                f"evidence={evidence_score:.2f}, penalty={contradiction_penalty:.2f}; "
+                + "; ".join(blockers)
+            )
+
+        return {
+            "ready": ready,
+            "score": score,
+            "reason": reason,
+            "components": components,
+        }
 
     def generate_chunk(
         self,
@@ -471,8 +1112,9 @@ class PlanChunker:
         current_hash: str,
         available_actions: List[str],
         step: int,
+        hypothesis_context: Optional[Dict[str, Any]] = None,
     ) -> PlanChunk:
-        """Generate the next plan chunk. Does NOT call SideQuests — caller registers it."""
+        """Generate the next plan chunk. Pure logic only; no SideQuests calls."""
 
         # 1. Try BFS if we have a known goal state
         player_role = next(
@@ -494,15 +1136,25 @@ class PlanChunker:
                 path = state_graph.find_path(current_hash, target_hash)
                 if path:
                     actions = [t.action for t in path]
+                    graduation_reason = "bfs path found to known reward state"
                     return PlanChunk(
                         description=f"Navigate via known path to reward state ({len(actions)} steps)",
                         estimated_actions=actions,
                         success_condition="reach high-reward state",
                         source="bfs",
+                        graduation_score=1.0,
+                        graduation_reason=graduation_reason,
+                        graduation_components={"bfs_path_found": 1.0, "path_length": float(len(actions))},
                     )
 
         # 2. Directional fallback: infer movement direction toward goal
-        if player_role and goal_role:
+        graduation = self._graduation_assessment(
+            player_role,
+            goal_role,
+            hypothesis_context,
+            available_actions,
+        )
+        if graduation["ready"]:
             p_pos = player_role.estimated_position or {}
             g_pos = goal_role.estimated_position or {}
             directions = []
@@ -524,6 +1176,9 @@ class PlanChunker:
                     estimated_actions=directions[:8],
                     success_condition="reduce distance to goal object",
                     source="directional",
+                    graduation_score=float(graduation["score"]),
+                    graduation_reason=str(graduation["reason"]),
+                    graduation_components=dict(graduation["components"]),
                 )
 
         # 3. Exploration fallback: try unexplored actions
@@ -537,6 +1192,9 @@ class PlanChunker:
             estimated_actions=[action],
             success_condition="observe new state",
             source="explore",
+            graduation_score=float(graduation["score"]),
+            graduation_reason=str(graduation["reason"]),
+            graduation_components=dict(graduation["components"]),
         )
 
 
@@ -569,6 +1227,8 @@ class SolveEngine:
         self._object_roles: Dict[int, ObjectRole] = {}
         self._victory_condition: Optional[VictoryCondition] = None
         self._active_chunk: Optional[PlanChunk] = None
+        self._chunk_history: List[PlanChunk] = []
+        self._solve_plan_id: Optional[str] = None
         self._chunk_plan_id: Optional[str] = None
         self._reward_history: List[float] = []
 
@@ -637,6 +1297,29 @@ class SolveEngine:
         )
 
         if need_victory_hypothesis:
+            goal_query = f"{self._archetype.value} game win condition solve puzzle"
+            try:
+                recall = await self.brain.recall_plans(
+                    goal_query=goal_query,
+                    session_id=self.session_id,
+                    min_valence=0.2,
+                    limit=3,
+                )
+                past_plans = recall.get("plans", [])
+            except Exception as exc:
+                logger.warning("recall_plans failed: %s", exc)
+                past_plans = []
+
+            try:
+                lessons_result = await self.brain.recall_relevant_lessons(
+                    query=f"ARC game {self._archetype.value} win condition",
+                    limit=3,
+                )
+                lessons = lessons_result.get("lessons", [])
+            except Exception as exc:
+                logger.warning("recall_relevant_lessons failed: %s", exc)
+                lessons = []
+
             self._victory_condition = await self.victory_hypothesizer.hypothesize(
                 archetype=self._archetype,
                 object_roles=self._object_roles,
@@ -646,9 +1329,15 @@ class SolveEngine:
                 task_id=observation.get("task_id", ""),
                 reward_history=self._reward_history,
                 dissonance_reason=dissonance_reason if dissonance_detected else "",
+                past_plans=past_plans,
+                lessons=lessons,
             )
 
-        # 4. Dissonance handling: report negative outcome + reset chunk
+        # 4. Register one top-level solve plan once the victory hypothesis exists.
+        if self._victory_condition is not None and self._solve_plan_id is None:
+            await self._register_solve_plan(observation)
+
+        # 5. Dissonance handling: report negative outcome + reset chunk
         if dissonance_detected and self._chunk_plan_id:
             try:
                 await self.brain.report_outcome(
@@ -664,7 +1353,7 @@ class SolveEngine:
             self._chunk_plan_id = None
             self.dissonance_detector.reset_chunk()
 
-        # 5. Plan chunking: generate or continue active chunk
+        # 6. Plan chunking: generate or continue active chunk
         if self._active_chunk is None and self._victory_condition is not None:
             available_actions = observation.get("available_actions") or [
                 f"ACTION{i}" for i in range(1, 8)
@@ -676,30 +1365,15 @@ class SolveEngine:
                 current_hash=current_state_hash,
                 available_actions=available_actions,
                 step=step,
+                hypothesis_context=hypothesis_context,
             )
-            self.dissonance_detector.reset_chunk()
-
-            # Register chunk as a SideQuests Plan
             if self._active_chunk:
-                chunk_goal = f"Chunk: {self._active_chunk.description}"
-                chunk_steps = self._active_chunk.estimated_actions or ["explore"]
-                try:
-                    plan_payload = await self.brain.register_plan(
-                        goal=chunk_goal,
-                        steps=chunk_steps,
-                        session_id=self.session_id,
-                    )
-                    self._chunk_plan_id = plan_payload.get("plan_id")
-                    logger.info(
-                        "Chunk registered: %s (plan_id=%s, source=%s)",
-                        self._active_chunk.description,
-                        self._chunk_plan_id,
-                        self._active_chunk.source,
-                    )
-                except Exception as exc:
-                    logger.warning("register_plan failed for chunk: %s", exc)
+                self._chunk_history.append(self._active_chunk)
+            self.dissonance_detector.reset_chunk()
+            if self._chunk_plan_id is None and self._solve_plan_id is not None:
+                self._chunk_plan_id = self._solve_plan_id
 
-        # 6. Update chunk progress score from reward signal
+        # 7. Update chunk progress score from reward signal
         if self._active_chunk and reward > 0.3:
             self._active_chunk.progress_score = min(
                 self._active_chunk.progress_score + reward * 0.2, 1.0
@@ -725,14 +1399,45 @@ class SolveEngine:
         if self._victory_condition:
             vc = self._victory_condition
             parts.append(f"GOAL: {vc.condition_type.value} — {vc.description} (conf={vc.confidence:.2f})")
+        if self._solve_plan_id:
+            parts.append(f"PLAN: {self._solve_plan_id}")
         if self._active_chunk:
             ch = self._active_chunk
-            parts.append(f"CHUNK: {ch.description} [{ch.source}] progress={ch.progress_score:.2f}")
+            parts.append(
+                f"CHUNK: {ch.description} [{ch.source}] progress={ch.progress_score:.2f}"
+            )
+            if ch.graduation_reason:
+                parts.append(
+                    f"GRADUATION: {ch.graduation_reason} (score={ch.graduation_score:.2f})"
+                )
+        if self._chunk_history:
+            parts.append(f"CHUNKS: {len(self._chunk_history)}")
         return " | ".join(parts)
 
     def reset_for_retry(self) -> None:
         """Reset ephemeral state. Preserve archetype and victory condition."""
         self._active_chunk = None
+        self._chunk_history = []
+        self._solve_plan_id = None
         self._chunk_plan_id = None
         self.dissonance_detector.reset_chunk()
         self.dissonance_detector._zero_progress_streak = 0
+
+    async def _register_solve_plan(self, observation: Dict[str, Any]) -> None:
+        goal = f"Solve ARC task {observation.get('dataset_id', '')}:{observation.get('task_id', '')}"
+        steps = [
+            "Infer archetype from board dynamics",
+            "Map object roles from transition evidence",
+            "Hypothesize victory condition",
+            "Execute and revise chunked solve path",
+        ]
+        try:
+            plan_payload = await self.brain.register_plan(
+                goal=goal,
+                steps=steps,
+                session_id=self.session_id,
+            )
+            self._solve_plan_id = plan_payload.get("plan_id")
+            logger.info("Solve plan registered: %s", self._solve_plan_id)
+        except Exception as exc:
+            logger.warning("register_plan failed for solve plan: %s", exc)
