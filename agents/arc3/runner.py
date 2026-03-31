@@ -83,6 +83,7 @@ class DurableARCRunner:
                     debug_steps[-1] = dict(debug_steps[-1])
                     debug_steps[-1]["write_trace"] = list(debug_steps[-1].get("write_trace", [])) + list(final_write_trace)
                 result_payload = asdict(task_result)
+                result_payload["solve_phase_summary"] = {}  # will be filled by _submission_row_from_result
                 result_payload["game_id"] = getattr(task, "game_id", "unknown")
                 result_payload["debug_steps"] = debug_steps
                 result_payload["bootstrap_write_trace"] = getattr(task_result, "bootstrap_write_trace", [])
@@ -317,6 +318,7 @@ class DurableARCRunner:
                 {
                     "step": step.get("step"),
                     "state_before": step.get("state_before"),
+                    "solve_context": step.get("solve_context"),
                     "action_id": step.get("action_id"),
                     "rationale": step.get("rationale"),
                     "reward": step.get("reward"),
@@ -335,13 +337,46 @@ class DurableARCRunner:
                 }
             )
 
+        # Collect unique archetype/victory evolution across steps
+        archetypes_seen = []
+        victories_seen = []
+        final_solve_ctx = None
+        for s in debug_steps or []:
+            sc = s.get("solve_context")
+            if sc:
+                a = sc.get("archetype", "unknown")
+                if not archetypes_seen or archetypes_seen[-1] != a:
+                    archetypes_seen.append(a)
+                v = (sc.get("victory_condition") or {}).get("type", "unknown")
+                if not victories_seen or victories_seen[-1] != v:
+                    victories_seen.append(v)
+                final_solve_ctx = sc
+
+        solve_phase_summary = {
+            "archetype_evolution": archetypes_seen,
+            "victory_evolution": victories_seen,
+            "final_archetype": final_solve_ctx.get("archetype") if final_solve_ctx else "unknown",
+            "final_archetype_confidence": final_solve_ctx.get("archetype_confidence", 0.0) if final_solve_ctx else 0.0,
+            "final_victory_condition": (final_solve_ctx.get("victory_condition") or {}).get("type", "unknown") if final_solve_ctx else "unknown",
+            "final_victory_confidence": (final_solve_ctx.get("victory_condition") or {}).get("confidence", 0.0) if final_solve_ctx else 0.0,
+            "final_strategy_summary": final_solve_ctx.get("strategy_summary", "") if final_solve_ctx else "",
+            "dissonance_triggered": any(
+                (s.get("solve_context") or {}).get("dissonance") for s in (debug_steps or [])
+            ),
+            "object_roles": final_solve_ctx.get("object_roles", {}) if final_solve_ctx else {},
+        }
+        metadata["solve_phase_summary"] = solve_phase_summary
+
         is_correct = bool(result.get("correct")) if result else False
         return {
             "game_id": result.get("game_id") if result else "",
             "task_id": result.get("task_id") if result else "",
+            "correct": result.get("correct") if result else None,
+            "steps": result.get("steps") if result else None,
             "bootstrap_write_trace": result.get("bootstrap_write_trace", []) if result else [],
             "progress_log": progress_log,
             "prompt_trace": prompt_trace,
+            "solve_phase_summary": solve_phase_summary,
             "predictions": predictions,
             "confidence": [1.0 if is_correct else 0.0],
             "final_write_trace": result.get("final_write_trace", []) if result else [],
@@ -363,4 +398,6 @@ class DurableARCRunner:
         # B89: Add benchmark metrics to metadata
         if data.get("benchmark_metrics"):
             metadata["benchmark_metrics"] = data["benchmark_metrics"]
+        if data.get("solve_phase_summary"):
+            metadata["solve_phase_summary"] = data["solve_phase_summary"]
         return metadata

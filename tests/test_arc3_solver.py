@@ -74,21 +74,161 @@ def test_object_role_wall_on_static_frame():
     assert roles[3].role == RoleType.WALL
 
 
-def test_object_role_player_on_changed_center_with_reward():
+def test_object_role_wall_requires_persistence_on_grid():
     mapper = ObjectRoleMapper()
+    grid = [[0] * 4 for _ in range(4)]
+    grid[0][0] = 3
+    grid[0][1] = 3
+    grid[1][0] = 3
+    grid[1][1] = 3
+    obs = {"grid": grid, "colors": [{"value": 0, "count": 12}, {"value": 3, "count": 4}]}
     ctx = {
-        "static_rows": [],
+        "static_rows": [0, 1],
+        "hud_rows": [],
+        "action_facts": [],
+        "last_transition_effect": {"meaningful_change_score": 0.0, "changed_region": {}},
+    }
+
+    roles1 = mapper.update(ctx, obs, step=1)
+    assert roles1[3].role != RoleType.WALL
+
+    roles2 = mapper.update(ctx, obs, step=2)
+    assert roles2[3].role != RoleType.WALL
+
+    roles3 = mapper.update(ctx, obs, step=3)
+    assert roles3[3].role == RoleType.WALL
+
+
+def test_object_role_static_row_participant_with_changed_region_is_not_wall():
+    mapper = ObjectRoleMapper()
+    grid = [[0] * 4 for _ in range(4)]
+    grid[0][1] = 3
+    obs = {"grid": grid, "colors": [{"value": 0, "count": 15}, {"value": 3, "count": 1}]}
+
+    ctx0 = {
+        "static_rows": [0],
+        "hud_rows": [],
+        "action_facts": [],
+        "last_transition_effect": {},
+    }
+    mapper.update(ctx0, obs, step=1)
+
+    ctx1 = {
+        "static_rows": [0],
+        "hud_rows": [],
+        "action_facts": [{"action": "ACTION5", "trend": {"direction": "left"}}],
         "last_transition_effect": {
-            "meaningful_change_score": 0.7,
-            "regions_changed": ["center"],
-            "changed_center": {"row": 10.0, "col": 8.0},
+            "action": "ACTION5",
+            "meaningful_change_score": 0.2,
+            "changed_center": {"row": 0.0, "col": 1.0},
+            "changed_region": {"row_range": [0, 0], "col_range": [1, 1]},
         },
     }
-    obs = {"colors": [{"value": 5, "count": 1}]}
-    roles = mapper.update(ctx, obs, step=3)
-    assert 5 in roles
-    assert roles[5].role == RoleType.PLAYER
-    assert roles[5].estimated_position == {"row": 10.0, "col": 8.0}
+    roles = mapper.update(ctx1, obs, step=2)
+    assert roles[3].role != RoleType.WALL
+
+
+def test_object_role_player_from_small_changed_region_chain():
+    mapper = ObjectRoleMapper()
+
+    grid0 = [[0] * 8 for _ in range(8)]
+    grid0[5][6] = 3
+    obs0 = {"grid": grid0, "colors": [{"value": 0, "count": 63}, {"value": 3, "count": 1}]}
+    ctx0 = {"static_rows": [], "hud_rows": [], "action_facts": [], "last_transition_effect": {}}
+    mapper.update(ctx0, obs0, step=1)
+
+    grid1 = [[0] * 8 for _ in range(8)]
+    grid1[5][5] = 3
+    obs1 = {"grid": grid1, "colors": [{"value": 0, "count": 63}, {"value": 3, "count": 1}]}
+    ctx1 = {
+        "static_rows": [],
+        "hud_rows": [],
+        "action_facts": [{"action": "ACTION5", "trend": {"direction": "left"}}],
+        "last_transition_effect": {
+            "action": "ACTION5",
+            "meaningful_change_score": 0.2,
+            "changed_center": {"row": 5.0, "col": 5.5},
+            "changed_region": {"row_range": [5, 5], "col_range": [5, 6]},
+        },
+    }
+    mapper.update(ctx1, obs1, step=2)
+
+    grid2 = [[0] * 8 for _ in range(8)]
+    grid2[5][4] = 3
+    obs2 = {"grid": grid2, "colors": [{"value": 0, "count": 63}, {"value": 3, "count": 1}]}
+    ctx2 = {
+        "static_rows": [],
+        "hud_rows": [],
+        "action_facts": [{"action": "ACTION5", "trend": {"direction": "left"}}],
+        "last_transition_effect": {
+            "action": "ACTION5",
+            "meaningful_change_score": 0.2,
+            "changed_center": {"row": 5.0, "col": 4.5},
+            "changed_region": {"row_range": [5, 5], "col_range": [4, 5]},
+        },
+    }
+    roles = mapper.update(ctx2, obs2, step=3)
+    assert roles[3].role == RoleType.PLAYER
+    assert roles[3].confidence >= 0.6
+
+
+def test_object_role_goal_from_player_proximity_without_reward():
+    mapper = ObjectRoleMapper()
+
+    grid0 = [[0] * 8 for _ in range(8)]
+    grid0[5][1] = 2
+    grid0[5][6] = 7
+    obs0 = {
+        "grid": grid0,
+        "colors": [{"value": 0, "count": 62}, {"value": 2, "count": 1}, {"value": 7, "count": 1}],
+    }
+    ctx0 = {"static_rows": [], "hud_rows": [], "action_facts": [], "last_transition_effect": {}}
+    mapper.update(ctx0, obs0, step=1)
+
+    grid1 = [[0] * 8 for _ in range(8)]
+    grid1[5][2] = 2
+    grid1[5][6] = 7
+    obs1 = {
+        "grid": grid1,
+        "colors": [{"value": 0, "count": 62}, {"value": 2, "count": 1}, {"value": 7, "count": 1}],
+    }
+    ctx1 = {
+        "static_rows": [],
+        "hud_rows": [],
+        "action_facts": [{"action": "ACTION4", "trend": {"direction": "right"}}],
+        "last_transition_effect": {
+            "action": "ACTION4",
+            "meaningful_change_score": 0.2,
+            "pixels_changed": 2,
+            "changed_center": {"row": 5.0, "col": 1.5},
+            "changed_region": {"row_range": [5, 5], "col_range": [1, 2]},
+        },
+    }
+    mapper.update(ctx1, obs1, step=2)
+
+    grid2 = [[0] * 8 for _ in range(8)]
+    grid2[5][3] = 2
+    grid2[5][6] = 7
+    obs2 = {
+        "grid": grid2,
+        "colors": [{"value": 0, "count": 62}, {"value": 2, "count": 1}, {"value": 7, "count": 1}],
+    }
+    ctx2 = {
+        "static_rows": [],
+        "hud_rows": [],
+        "action_facts": [{"action": "ACTION4", "trend": {"direction": "right"}}],
+        "last_transition_effect": {
+            "action": "ACTION4",
+            "meaningful_change_score": 0.2,
+            "pixels_changed": 2,
+            "changed_center": {"row": 5.0, "col": 2.5},
+            "changed_region": {"row_range": [5, 5], "col_range": [2, 3]},
+        },
+    }
+    roles = mapper.update(ctx2, obs2, step=3)
+    assert roles[2].role == RoleType.PLAYER
+    assert roles[7].role == RoleType.GOAL
+    assert roles[7].confidence >= 0.55
 
 
 # ── VictoryHypothesizer ──────────────────────────────────────────────
@@ -100,7 +240,7 @@ async def test_victory_hypothesizer_calls_recall_plans():
     brain.recall_relevant_lessons.return_value = {"lessons": []}
 
     llm = AsyncMock()
-    llm.complete.return_value = '{"condition_type":"reach_goal","description":"reach exit","target_color_id":6,"confidence":0.7}'
+    llm.achat.return_value = '{"condition_type":"reach_goal","description":"reach exit","target_color_id":6,"confidence":0.7}'
 
     vh = VictoryHypothesizer()
     vc = await vh.hypothesize(
@@ -138,7 +278,7 @@ async def test_victory_hypothesizer_uses_high_valence_plan_directly():
         task_id="t1",
         reward_history=[],
     )
-    llm.complete.assert_not_called()   # high-valence plan skips LLM
+    llm.achat.assert_not_called()   # high-valence plan skips LLM
     assert vc.source == "recall_plans"
 
 
@@ -148,7 +288,7 @@ async def test_victory_hypothesizer_handles_llm_parse_error():
     brain.recall_plans.return_value = {"plans": []}
     brain.recall_relevant_lessons.return_value = {"lessons": []}
     llm = AsyncMock()
-    llm.complete.return_value = "INVALID JSON {{{"
+    llm.achat.return_value = "INVALID JSON {{{"
 
     vh = VictoryHypothesizer()
     vc = await vh.hypothesize(
@@ -232,6 +372,237 @@ def test_plan_chunker_falls_back_to_exploration_when_no_graph():
     assert len(chunk.estimated_actions) >= 1
 
 
+def test_plan_chunker_graduates_to_directional_once_evidence_is_strong():
+    from agents.arc3.hypothesis import StateGraph, StateNode
+    from agents.arc3.solver import PlanChunker, VictoryCondition, VictoryType
+
+    graph = StateGraph()
+    graph.add_state(StateNode("h1", 1, {}, 1.0, []))
+    vc = VictoryCondition(condition_type=VictoryType.REACH_GOAL, description="reach exit")
+    chunker = PlanChunker()
+    object_roles = {
+        1: ObjectRole(
+            color_id=1,
+            role=RoleType.PLAYER,
+            confidence=0.8,
+            estimated_position={"row": 4.0, "col": 2.0},
+        ),
+        9: ObjectRole(
+            color_id=9,
+            role=RoleType.GOAL,
+            confidence=0.75,
+            estimated_position={"row": 1.0, "col": 2.0},
+        ),
+    }
+    hypothesis_context = {
+        "action_coverage": {
+            "initial_exploration_complete": True,
+            "tested_count": 6,
+            "untested_count": 0,
+        },
+        "action_facts": [
+            {"fact_type": "deterministic_effect", "value_status": "valuable"},
+            {"fact_type": "deterministic_effect", "value_status": "valuable"},
+        ],
+        "path_hypotheses": [
+            {"value_status": "tentative"},
+            {"value_status": "valuable"},
+        ],
+    }
+
+    chunk = chunker.generate_chunk(
+        victory_condition=vc,
+        object_roles=object_roles,
+        state_graph=graph,
+        current_hash="h1",
+        available_actions=["ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5", "ACTION6"],
+        step=8,
+        hypothesis_context=hypothesis_context,
+    )
+
+    assert chunk.source == "directional"
+    assert chunk.estimated_actions[:3] == ["ACTION1", "ACTION1", "ACTION1"]
+    assert chunk.graduation_score >= chunker.GRADUATION_THRESHOLD
+    assert "graduate directional" in chunk.graduation_reason
+    assert chunk.graduation_components["coverage_ratio"] == 1.0
+
+
+def test_plan_chunker_keeps_exploration_when_evidence_is_weak():
+    from agents.arc3.hypothesis import StateGraph, StateNode
+    from agents.arc3.solver import PlanChunker, VictoryCondition, VictoryType
+
+    graph = StateGraph()
+    graph.add_state(StateNode("h1", 1, {}, 1.0, []))
+    vc = VictoryCondition(condition_type=VictoryType.REACH_GOAL, description="reach exit")
+    chunker = PlanChunker()
+    object_roles = {
+        1: ObjectRole(
+            color_id=1,
+            role=RoleType.PLAYER,
+            confidence=0.78,
+            estimated_position={"row": 4.0, "col": 2.0},
+        ),
+        9: ObjectRole(
+            color_id=9,
+            role=RoleType.GOAL,
+            confidence=0.72,
+            estimated_position={"row": 1.0, "col": 2.0},
+        ),
+    }
+    hypothesis_context = {
+        "action_coverage": {
+            "initial_exploration_complete": False,
+            "tested_count": 3,
+            "untested_count": 3,
+            "top_two_low_value": False,
+        },
+        "action_facts": [
+            {"fact_type": "deterministic_effect", "value_status": "low_value"},
+        ],
+        "path_hypotheses": [
+            {"value_status": "tentative"},
+        ],
+    }
+
+    chunk = chunker.generate_chunk(
+        victory_condition=vc,
+        object_roles=object_roles,
+        state_graph=graph,
+        current_hash="h1",
+        available_actions=["ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5", "ACTION6"],
+        step=2,
+        hypothesis_context=hypothesis_context,
+    )
+
+    assert chunk.source == "explore"
+    assert chunk.estimated_actions == ["ACTION1"]
+    assert "stay explore" in chunk.graduation_reason
+    assert "coverage" in chunk.graduation_reason
+
+
+def test_plan_chunker_stays_explore_when_contradiction_is_high():
+    from agents.arc3.hypothesis import StateGraph, StateNode
+    from agents.arc3.solver import PlanChunker, VictoryCondition, VictoryType
+
+    graph = StateGraph()
+    graph.add_state(StateNode("h1", 1, {}, 1.0, []))
+    vc = VictoryCondition(condition_type=VictoryType.REACH_GOAL, description="reach exit")
+    chunker = PlanChunker()
+    object_roles = {
+        1: ObjectRole(
+            color_id=1,
+            role=RoleType.PLAYER,
+            confidence=0.92,
+            estimated_position={"row": 4.0, "col": 2.0},
+        ),
+        9: ObjectRole(
+            color_id=9,
+            role=RoleType.GOAL,
+            confidence=0.88,
+            estimated_position={"row": 1.0, "col": 2.0},
+        ),
+    }
+    hypothesis_context = {
+        "action_coverage": {
+            "initial_exploration_complete": True,
+            "tested_count": 6,
+            "untested_count": 0,
+            "top_two_low_value": True,
+        },
+        "action_facts": [
+            {"fact_type": "deterministic_effect", "value_status": "valuable"},
+        ],
+        "path_hypotheses": [
+            {"value_status": "valuable"},
+        ],
+        "loop_detected": True,
+    }
+
+    chunk = chunker.generate_chunk(
+        victory_condition=vc,
+        object_roles=object_roles,
+        state_graph=graph,
+        current_hash="h1",
+        available_actions=["ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5", "ACTION6"],
+        step=7,
+        hypothesis_context=hypothesis_context,
+    )
+
+    assert chunk.source == "explore"
+    assert "loop detected" in chunk.graduation_reason
+    assert chunk.graduation_score < chunker.GRADUATION_THRESHOLD
+
+
+@pytest.mark.asyncio
+async def test_solve_engine_strategy_summary_surfaces_graduation_reason():
+    from agents.arc3.solver import SolveEngine, VictoryCondition, VictoryType, ObjectRole
+
+    brain = AsyncMock()
+    brain.recall_plans.return_value = {"plans": []}
+    brain.recall_relevant_lessons.return_value = {"lessons": []}
+    brain.analogical_search.return_value = {"results": []}
+    brain.register_plan.return_value = {"plan_id": "p-summary"}
+    brain.report_outcome.return_value = {"status": "ok"}
+
+    llm = AsyncMock()
+    llm.achat.return_value = '{"condition_type":"reach_goal","description":"reach exit","target_color_id":null,"confidence":0.5}'
+
+    engine = SolveEngine(brain, llm, "s1")
+    engine._victory_condition = VictoryCondition(
+        condition_type=VictoryType.REACH_GOAL, confidence=0.9, description="reach exit"
+    )
+    engine._archetype_confidence = 0.8
+    engine._object_roles = {
+        1: ObjectRole(
+            color_id=1,
+            role=RoleType.PLAYER,
+            confidence=0.9,
+            estimated_position={"row": 4.0, "col": 2.0},
+        ),
+        9: ObjectRole(
+            color_id=9,
+            role=RoleType.GOAL,
+            confidence=0.86,
+            estimated_position={"row": 1.0, "col": 2.0},
+        ),
+    }
+    engine.role_mapper.update = MagicMock(return_value={})
+
+    from agents.arc3.hypothesis import StateGraph
+
+    graph = StateGraph()
+    ctx = {
+        "last_transition_effect": {"meaningful_change_score": 0.8, "reward_signal": 0.0},
+        "action_facts": [
+            {"fact_type": "deterministic_effect", "value_status": "valuable"},
+        ],
+        "hud_rows": [],
+        "path_hypotheses": [
+            {"value_status": "valuable"},
+        ],
+        "action_coverage": {
+            "initial_exploration_complete": True,
+            "tested_count": 6,
+            "untested_count": 0,
+        },
+        "current_state_hash": "h1",
+    }
+    obs = {
+        "colors": [{"value": 1, "count": 1}, {"value": 9, "count": 1}],
+        "available_actions": ["ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5", "ACTION6"],
+        "task_id": "t1",
+        "dataset_id": "d1",
+        "grid": [[0, 0], [0, 1]],
+    }
+
+    result = await engine.solve(obs, ctx, step=8, state_graph=graph, current_state_hash="h1")
+
+    assert "GRADUATION:" in result.strategy_summary
+    assert "graduate directional" in result.strategy_summary
+    assert result.active_chunk is not None
+    assert result.active_chunk.graduation_reason
+
+
 # ── SolveEngine integration ──────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -261,6 +632,121 @@ async def test_solve_engine_reset_preserves_archetype():
 
 
 @pytest.mark.asyncio
+async def test_solve_engine_orchestrates_analogy_retrieval():
+    from agents.arc3.solver import SolveEngine, PlanChunk, VictoryCondition, VictoryType
+
+    brain = AsyncMock()
+    brain.register_plan.return_value = {"plan_id": "p-new"}
+    brain.recall_plans.return_value = {"plans": []}
+    brain.recall_relevant_lessons.return_value = {"lessons": []}
+    brain.analogical_search.return_value = {"results": [{"text_raw": "chase", "similarity": 0.8}]}
+    brain.report_outcome.return_value = {"status": "ok"}
+
+    llm = AsyncMock()
+    llm.achat.return_value = '{"condition_type":"reach_goal","description":"reach exit","target_color_id":null,"confidence":0.5}'
+
+    engine = SolveEngine(brain, llm, "s1")
+    engine.archetype_classifier.update = MagicMock(return_value=(GameArchetype.CHASE, 0.4))
+    engine._archetype = GameArchetype.CHASE
+    engine._archetype_confidence = 0.4
+    engine._archetype_locked = False
+    engine._victory_condition = VictoryCondition(
+        condition_type=VictoryType.REACH_GOAL, confidence=0.6, description="reach exit"
+    )
+    engine._active_chunk = PlanChunk(description="existing chunk", progress_score=0.0)
+    engine._chunk_plan_id = "p-existing"
+
+    from agents.arc3.hypothesis import StateGraph
+    graph = StateGraph()
+    ctx = {
+        "last_transition_effect": {"meaningful_change_score": 0.0, "reward_signal": 0.0},
+        "action_facts": [],
+        "hud_rows": [],
+        "path_hypotheses": [],
+        "current_state_hash": "h1",
+    }
+    obs = {"colors": [], "available_actions": ["ACTION1"], "task_id": "t1", "dataset_id": "d1"}
+
+    await engine.solve(obs, ctx, step=5, state_graph=graph, current_state_hash="h1")
+
+    brain.analogical_search.assert_called_once()
+    assert brain.analogical_search.call_args.kwargs["current_quest_id"] == "t1"
+
+
+@pytest.mark.asyncio
+async def test_solve_engine_passes_trend_evidence_to_role_mapping():
+    from agents.arc3.solver import SolveEngine, PlanChunk, VictoryCondition, VictoryType, ObjectRole
+
+    brain = AsyncMock()
+    brain.recall_plans.return_value = {"plans": []}
+    brain.recall_relevant_lessons.return_value = {"lessons": []}
+    brain.analogical_search.return_value = {"results": []}
+    brain.register_plan.return_value = {"plan_id": "p-role"}
+    brain.report_outcome.return_value = {"status": "ok"}
+
+    llm = AsyncMock()
+    llm.achat.return_value = '{"condition_type":"reach_goal","description":"reach exit","target_color_id":null,"confidence":0.5}'
+
+    engine = SolveEngine(brain, llm, "s1")
+    engine._victory_condition = VictoryCondition(
+        condition_type=VictoryType.REACH_GOAL, confidence=0.9, description="reach exit"
+    )
+    engine._active_chunk = PlanChunk(description="follow evidence", progress_score=0.0)
+    engine._chunk_plan_id = "p-role"
+
+    captured = {}
+
+    def fake_role_mapper(hypothesis_context, observation, step):
+        captured["action_facts"] = hypothesis_context.get("action_facts", [])
+        return {
+            7: ObjectRole(
+                color_id=7,
+                role=RoleType.PLAYER,
+                confidence=0.8,
+                evidence_steps=[step],
+                estimated_position={"row": 4.0, "col": 2.0},
+            )
+        }
+
+    engine.role_mapper.update = MagicMock(side_effect=fake_role_mapper)
+
+    from agents.arc3.hypothesis import StateGraph
+    graph = StateGraph()
+    ctx = {
+        "last_transition_effect": {"meaningful_change_score": 0.6, "reward_signal": 0.0},
+        "action_facts": [
+            {
+                "action": "ACTION1",
+                "trend": {
+                    "kind": "directional_drift",
+                    "axis": "col",
+                    "direction": "left",
+                    "avg_delta": 1.5,
+                    "samples": 2,
+                    "stable_region": False,
+                },
+            }
+        ],
+        "hud_rows": [],
+        "path_hypotheses": [],
+        "current_state_hash": "h1",
+    }
+    obs = {
+        "colors": [{"value": 7, "count": 1}],
+        "available_actions": ["ACTION1"],
+        "task_id": "t1",
+        "dataset_id": "d1",
+        "grid": [[0, 0], [0, 7]],
+    }
+
+    result = await engine.solve(obs, ctx, step=6, state_graph=graph, current_state_hash="h1")
+
+    assert captured["action_facts"][0]["trend"]["direction"] == "left"
+    assert result.object_roles[7].role == RoleType.PLAYER
+    assert result.object_roles[7].estimated_position == {"row": 4.0, "col": 2.0}
+
+
+@pytest.mark.asyncio
 async def test_solve_engine_dissonance_calls_report_outcome():
     from agents.arc3.solver import SolveEngine, PlanChunk, VictoryCondition, VictoryType
 
@@ -272,7 +758,7 @@ async def test_solve_engine_dissonance_calls_report_outcome():
     brain.analogical_search.return_value = {"results": []}
 
     llm = AsyncMock()
-    llm.complete.return_value = '{"condition_type":"reach_goal","description":"reach exit","target_color_id":null,"confidence":0.5}'
+    llm.achat.return_value = '{"condition_type":"reach_goal","description":"reach exit","target_color_id":null,"confidence":0.5}'
 
     engine = SolveEngine(brain, llm, "s1")
     engine._archetype = GameArchetype.CHASE
@@ -283,14 +769,15 @@ async def test_solve_engine_dissonance_calls_report_outcome():
     )
     engine._active_chunk = PlanChunk(description="stalled chunk", progress_score=0.0)
     engine._chunk_plan_id = "p-stall"
-    # Force stall
     engine.dissonance_detector._zero_progress_streak = 10
 
     from agents.arc3.hypothesis import StateGraph
     graph = StateGraph()
     ctx = {
         "last_transition_effect": {"meaningful_change_score": 0.0, "reward_signal": 0.0},
-        "action_facts": [], "hud_rows": [], "path_hypotheses": [],
+        "action_facts": [],
+        "hud_rows": [],
+        "path_hypotheses": [],
         "current_state_hash": "h1",
     }
     obs = {"colors": [], "available_actions": ["ACTION1"], "task_id": "t1", "dataset_id": "d1"}
