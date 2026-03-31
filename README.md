@@ -31,6 +31,13 @@ uvx sidequests-brain
 - **Gated Consolidation:** Biomimetic heuristic processing to filter noise from knowledge.
 - **MCP Compatible:** Works with any MCP-enabled AI client.
 
+## Optional Debugging
+
+If you want a local graph browser for inspecting SideQuests data directly, see
+[Local Graph Visibility UI](tools/graph_viewer/README.md). It uses the archived official
+Kuzu Explorer project, defaults to read-only mode, and stays out of the normal install/runtime
+path.
+
 ## Requirements
 
 - Python 3.12 or 3.13

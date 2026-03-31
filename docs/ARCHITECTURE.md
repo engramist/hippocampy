@@ -787,3 +787,9 @@ It consumes SideQuests exclusively through the existing MCP tool surface — no 
 The system operates fully autonomously — no human confirmation required for uncertain nodes. However, the audit tool exists for users who want visibility or want to manually correct the graph.
 
 `sidequests review` queries the graph for `confidence_low` nodes and displays them with context. User can promote, demote, or edit — but is never required to. M7 (Memory Control Panel) replaces this CLI with a richer web UI reading the same graph data.
+
+Optional developer tooling note:
+- local graph-browsing/debug workflows are allowed, but they must remain optional tooling outside the
+  main SideQuests runtime/install path
+- if we use Kuzu Explorer or similar tools to inspect the graph, treat them as read-only developer
+  visibility aids, not part of the core product surface
