@@ -118,6 +118,7 @@ def test_hypothesis_generated_from_transition():
     mgr.observe([[[1]]], None, 1, ["A1"], {})
     mgr.observe([[[2]]], "A1", 2, ["A1"], {})
     assert "action-A1" in mgr.hypotheses
+    assert "localized_change" in mgr.hypotheses["action-A1"].description
 
 def test_wall_hypothesis_on_zero_change():
     mgr = HypothesisManager(MagicMock(), "session1")
@@ -157,12 +158,20 @@ def test_auto_prune_at_threshold():
 def test_explore_policy_when_low_confirmation():
     mgr = HypothesisManager(MagicMock(), "session1")
     mgr.hypotheses["h1"] = Hypothesis("h1", "d", "cat", status="active")
-    assert mgr._decide_policy(1.0) == "explore"
+    assert mgr._decide_policy(1.0, {"untested_count": 0, "top_two_low_value": False}) == "explore"
 
 def test_exploit_policy_when_low_energy():
     mgr = HypothesisManager(MagicMock(), "session1")
     # EXPLORE_ENERGY_FLOOR = 0.3
-    assert mgr._decide_policy(0.2) == "exploit"
+    assert mgr._decide_policy(0.2, {"untested_count": 0, "top_two_low_value": False}) == "exploit"
+
+def test_policy_stays_explore_until_action_coverage_complete():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    assert mgr._decide_policy(0.2, {"untested_count": 3, "top_two_low_value": False}) == "explore"
+
+def test_policy_returns_to_explore_when_top_actions_decay():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    assert mgr._decide_policy(1.0, {"untested_count": 0, "top_two_low_value": True}) == "explore"
 
 @pytest.mark.asyncio
 async def test_distill_flushes_confirmed_to_brain():
@@ -202,10 +211,204 @@ def test_loop_detection_in_observe_output():
     res = mgr.observe([[[1]]], "A1", 3, ["A1"], {})
     assert res["loop_detected"] is True
 
+def test_observe_returns_action_effects_and_last_transition():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    mgr.observe([[[1, 1], [1, 1]]], None, 1, ["A1", "A2"], {})
+    res = mgr.observe(
+        [[[1, 2], [1, 1]]],
+        "A1",
+        2,
+        ["A1", "A2"],
+        {},
+        transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"},
+    )
+    action_effects = {item["action"]: item for item in res["observed_action_effects"]}
+    assert action_effects["A1"]["times_seen"] == 1
+    assert action_effects["A1"]["avg_meaningful_change"] > 0.0
+    assert action_effects["A1"]["last_meaningful_label"] == "low_value"
+    assert "rank_score" in action_effects["A1"]
+    assert "retest_budget" in action_effects["A1"]
+    assert action_effects["A1"]["recent_diff"].startswith("localized_change")
+    assert action_effects["A2"]["recent_diff"] == "UNTESTED"
+    assert res["last_transition_effect"]["action"] == "A1"
+    assert res["last_transition_effect"]["meaningful_change_label"] == "low_value"
+
+def test_consistent_low_value_action_does_not_become_confirmed():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    mgr.observe([[[1, 1, 1]]], None, 1, ["A1"], {})
+    mgr.observe([[[1, 1, 2]]], "A1", 2, ["A1"], {}, transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"})
+    mgr.observe([[[1, 2, 2]]], "A1", 3, ["A1"], {}, transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"})
+    mgr.observe([[[2, 2, 2]]], "A1", 4, ["A1"], {}, transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"})
+    hyp = mgr.hypotheses["action-A1"]
+    assert hyp.effect_consistency > 0.0
+    assert hyp.value_status in {"low_value", "ineffective", "tentative"}
+    assert hyp.status != "confirmed"
+
+def test_path_hypotheses_are_returned_after_multiple_steps():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    mgr.observe([[[1, 1, 1]]], None, 1, ["A1", "A2"], {})
+    mgr.observe([[[1, 1, 2]]], "A1", 2, ["A1", "A2"], {}, transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"})
+    res = mgr.observe([[[1, 2, 2]]], "A2", 3, ["A1", "A2"], {}, transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"})
+    assert res["path_hypotheses"]
+    assert res["path_hypotheses"][0]["actions"] == ["A1", "A2"]
+
+def test_path_hypothesis_detects_loop_to_start():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    mgr.observe([[[1]]], None, 1, ["A1", "A2"], {})
+    mgr.observe([[[2]]], "A1", 2, ["A1", "A2"], {}, transition_meta={"reward": 0.0})
+    res = mgr.observe([[[1]]], "A2", 3, ["A1", "A2"], {}, transition_meta={"reward": 0.0})
+    
+    path_hyp = res["path_hypotheses"][0]
+    assert "loop" in path_hyp["description"].lower()
+    assert path_hyp["value_status"] == "ineffective"
+
+def test_action_fact_promotion_returns_compact_fact():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    mgr.observe([[[1, 1], [1, 1]]], None, 1, ["A1"], {})
+    mgr.observe([[[1, 1], [1, 2]]], "A1", 2, ["A1"], {}, transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"})
+    mgr.observe([[[1, 2], [1, 2]]], "A1", 3, ["A1"], {}, transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"})
+    res = mgr.observe([[[2, 2], [1, 2]]], "A1", 4, ["A1"], {}, transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"})
+    assert res["action_facts"]
+    fact = res["action_facts"][0]
+    assert fact["action"] == "A1"
+    assert fact["fact_type"] in {"deterministic_effect", "low_value", "repeatable_effect"}
+    assert fact["evidence_count"] >= 1
+    assert fact["description"]
+    assert "trend" in fact
+
+def test_last_transition_effect_includes_board_snapshots():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    mgr.observe([[[1, 1], [1, 1]]], None, 1, ["A1"], {})
+    res = mgr.observe(
+        [[[1, 2], [1, 1]]],
+        "A1",
+        2,
+        ["A1"],
+        {},
+        transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"},
+    )
+    effect = res["last_transition_effect"]
+    assert effect["before_snapshot"]["rows"] == 2
+    assert effect["after_snapshot"]["rows"] == 2
+    assert "coarse_map" in effect["before_snapshot"]
+    assert effect["before_frame_hash"]
+    assert effect["after_frame_hash"]
+    assert effect["changed_region"]["before_crop"]
+    assert effect["changed_region"]["after_crop"]
+    assert effect["changed_region"]["row_range"] == [0, 1]
+
+def test_low_value_component_path_is_not_promoted_to_tentative():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    mgr.observe([[[1, 1], [1, 1]]], None, 1, ["A1", "A2"], {})
+    mgr.observe(
+        [[[1, 2], [1, 1]]],
+        "A1",
+        2,
+        ["A1", "A2"],
+        {},
+        transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"},
+    )
+    res = mgr.observe(
+        [[[1, 2], [2, 1]]],
+        "A2",
+        3,
+        ["A1", "A2"],
+        {},
+        transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"},
+    )
+    assert res["action_facts"][0]["value_status"] == "low_value"
+    assert res["path_hypotheses"][0]["value_status"] == "low_value"
+
+def test_detects_single_blocked_action_environment_bottleneck():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    mgr.observe([[[1, 1]]], None, 1, ["A6"], {})
+    mgr.observe([[[1, 1]]], "A6", 2, ["A6"], {}, transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"})
+    res = mgr.observe([[[1, 1]]], "A6", 3, ["A6"], {}, transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"})
+    bottleneck = res["environment_bottleneck"]
+    assert bottleneck["type"] == "single_blocked_action"
+    assert bottleneck["action"] == "A6"
+    assert "blocked/no-op" in bottleneck["message"]
+
+def test_blocked_action_fact_promotes_no_op():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    mgr.observe([[[1, 1]]], None, 1, ["A1"], {})
+    mgr.observe([[[1, 1]]], "A1", 2, ["A1"], {}, transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"})
+    mgr.observe([[[1, 1]]], "A1", 3, ["A1"], {}, transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"})
+    res = mgr.observe([[[1, 1]]], "A1", 4, ["A1"], {}, transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"})
+    fact = res["action_facts"][0]
+    assert fact["fact_type"] == "blocked"
+    assert "is blocked" in fact["description"]
+
+def test_meaningful_change_marks_large_novel_effect_as_tentative_progress():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    result = mgr._evaluate_meaningful_change(
+        diff={"pixels_changed": 52},
+        reward=0.0,
+        is_new_state=True,
+        looped=False,
+        final_state="NOT_FINISHED",
+    )
+    assert result["score"] >= 0.35
+    assert result["label"] == "tentative_progress"
+
+def test_meaningful_change_decays_after_repeated_zero_reward_attempts():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    result = mgr._evaluate_meaningful_change(
+        diff={"pixels_changed": 52},
+        reward=0.0,
+        is_new_state=True,
+        looped=False,
+        final_state="NOT_FINISHED",
+        prior_zero_reward_streak=3,
+    )
+    assert result["score"] < 0.35
+    assert result["label"] in {"low_value", "no_progress"}
+    assert "repeat_zero_reward_decay" in result["reasons"]
+    assert result["zero_reward_streak"] == 4
+
+def test_meaningful_change_penalizes_loop_and_no_change():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    result = mgr._evaluate_meaningful_change(
+        diff={"pixels_changed": 0},
+        reward=0.0,
+        is_new_state=False,
+        looped=True,
+        final_state="NOT_FINISHED",
+    )
+    assert result["score"] == 0.0
+    assert result["label"] == "no_progress"
+    assert "loop_penalty" in result["reasons"]
+    assert "no_visible_change" in result["reasons"]
+
+def test_count_zero_reward_streak_stops_on_reward():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    effects = [
+        Transition("h1", "h2", "ACTION1", 1, "d1", 5, [], reward_signal=0.0),
+        Transition("h2", "h3", "ACTION1", 2, "d2", 5, [], reward_signal=0.0),
+        Transition("h3", "h4", "ACTION1", 3, "d3", 5, [], reward_signal=0.5),
+        Transition("h4", "h5", "ACTION1", 4, "d4", 5, [], reward_signal=0.0),
+    ]
+    assert mgr._count_zero_reward_streak(effects) == 1
+
 def test_compute_diff_accuracy():
     mgr = HypothesisManager(MagicMock(), "session1")
     prev = [[1, 1], [1, 1]]
     curr = [[1, 2], [1, 1]]
     diff = mgr._compute_diff(prev, curr)
     assert diff["pixels_changed"] == 1
+    assert diff["effect_kind"] == "localized_change"
     assert "rows 0-0, cols 1-1" in diff["summary"]
+    assert diff["bbox"] == {"row_start": 0, "row_end": 0, "col_start": 1, "col_end": 1}
+    assert diff["center"] == {"row": 0.0, "col": 1.0}
+
+def test_action_fact_detects_leftward_drift_trend():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    mgr.observe([[[0, 0, 0, 7, 7, 7]]], None, 1, ["A6"], {})
+    mgr.observe([[[0, 0, 0, 7, 7, 4]]], "A6", 2, ["A6"], {}, transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"})
+    mgr.observe([[[0, 0, 0, 7, 4, 4]]], "A6", 3, ["A6"], {}, transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"})
+    res = mgr.observe([[[0, 0, 0, 4, 4, 4]]], "A6", 4, ["A6"], {}, transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"})
+    fact = next(fact for fact in res["action_facts"] if fact["action"] == "A6")
+    assert fact["trend"] is not None
+    assert fact["trend"]["kind"] == "directional_drift"
+    assert fact["trend"]["direction"] == "left"
+    assert "leftward drift" in fact["description"]
