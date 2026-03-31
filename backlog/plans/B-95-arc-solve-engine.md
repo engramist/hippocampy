@@ -8,7 +8,8 @@
 
 Add a `SolveEngine` between `hypothesize()` and `plan()` in the ARC orchestrator. The engine
 implements 5 human cognitive steps for solving unfamiliar games, using SideQuests tools as the
-cognitive substrate. No SideQuests schema changes — only new files in `agents/arc3/`.
+cognitive substrate. `SolveEngine` owns retrieval/orchestration; subcomponents stay mostly
+logic-only. No SideQuests schema changes — only new files in `agents/arc3/`.
 
 ---
 
@@ -22,17 +23,17 @@ Perceive → Hypothesize → Solve → Plan → Act → Evaluate
               agents/arc3/solver.py
               ┌──────────────────────────────────────┐
               │  ArchetypeClassifier                 │
-              │    analogical_search → centroid vote │
+              │    logic only; consumes analogy vote │
               │  ObjectRoleMapper                    │
               │    InvariantDetector + transitions   │
               │  VictoryHypothesizer                 │
-              │    recall_plans + recall_lessons     │
+              │    logic over retrieved templates    │
               │    → ONE LLM call (sticky)           │
               │  DissonanceDetector                  │
               │    progress monitor → report_outcome │
               │  PlanChunker                         │
               │    BFS on StateGraph (in-memory)     │
-              │    → register_plan per chunk         │
+              │    → chunk steps under one plan      │
               └──────────────────────────────────────┘
 ```
 
@@ -53,6 +54,14 @@ self._archetype_locked: bool = False
 `reset_for_retry()` clears: `_active_chunk`, `_chunk_plan_id`, `_dissonance_count`,
 `_on_strategy_steps`. Preserves: `_archetype`, `_archetype_confidence`, `_object_roles`,
 `_victory_condition`, `_archetype_locked`. (Cross-attempt knowledge is preserved.)
+
+### Orchestration Boundary
+
+`SolveEngine` is the only solve-phase component that should call SideQuests tools such as
+`analogical_search`, `recall_plans`, `recall_relevant_lessons`, `register_plan`, and
+`report_outcome`. `ArchetypeClassifier`, `ObjectRoleMapper`, `VictoryHypothesizer`,
+`DissonanceDetector`, and `PlanChunker` should operate mostly as pure logic over already-fetched
+data and current hypothesis state.
 
 ---
 
@@ -156,13 +165,13 @@ class SolveContext:
 # ── Archetype Classifier ──────────────────────────────────────────────
 
 class ArchetypeClassifier:
-    """Classifies game archetype from hypothesis context + analogical_search.
+    """Classifies game archetype from hypothesis context + analogy votes.
 
     Algorithm:
       1. Extract signals from hypothesis_context (moving object count, convergence,
-         reward pattern, HUD presence).
+         board transformation pattern, HUD presence).
       2. Score each archetype against signals.
-      3. Call analogical_search to find structurally similar past games.
+      3. Consume analogy votes already gathered by SolveEngine.
       4. Past game archetype labels vote (weight: 0.4 algorithmic, 0.6 analogy).
       5. Lock when composite confidence > LOCK_THRESHOLD.
     """
@@ -183,14 +192,10 @@ class ArchetypeClassifier:
         # Check for convergence: do any two distinct moving regions approach each other?
         transitions = hypothesis_context.get("last_transition_effect") or {}
         has_hud = bool(hypothesis_context.get("hud_rows"))
-        reward_trend = sum(
-            1 for f in action_facts if (f.get("value_status") or "") == "valuable"
-        )
         path_hypotheses = hypothesis_context.get("path_hypotheses", [])
         return {
             "directional_actions": len(directional_facts),
             "has_hud": has_hud,
-            "reward_trend": reward_trend,
             "path_hypotheses_count": len(path_hypotheses),
             "pixels_changed": transitions.get("pixels_changed", 0),
             "loop_detected": bool(hypothesis_context.get("loop_detected")),
@@ -201,18 +206,17 @@ class ArchetypeClassifier:
         scores: Dict[GameArchetype, float] = {a: 0.0 for a in GameArchetype}
         d = signals["directional_actions"]
         hud = signals["has_hud"]
-        reward = signals["reward_trend"]
 
-        # RACE: few directional actions, HUD (energy/score bar), monotonic reward
-        if hud and d >= 1 and reward >= 1:
+        # RACE: few directional actions, HUD (energy/score bar), coherent path pressure
+        if hud and d >= 1:
             scores[GameArchetype.RACE] += 0.5
-        # CHASE: multiple directional actions, varying reward, no strong single path
+        # CHASE: multiple directional actions, no strong single path
         if d >= 2 and signals["path_hypotheses_count"] == 0:
             scores[GameArchetype.CHASE] += 0.4
-        # DISPLACE: reward correlates with pixel removal (pixels_changed drops over time)
-        if reward >= 2 and signals["pixels_changed"] < 20:
+        # DISPLACE: board is being reduced / cleared over time
+        if signals["pixels_changed"] < 20:
             scores[GameArchetype.DISPLACE] += 0.35
-        # SPACE: many path hypotheses, variable reward
+        # SPACE: many path hypotheses, broad navigation
         if signals["path_hypotheses_count"] >= 2:
             scores[GameArchetype.SPACE] += 0.45
         return scores
@@ -224,7 +228,7 @@ class ArchetypeClassifier:
         """Update archetype estimate from latest hypothesis context.
 
         Returns (archetype, confidence). Does NOT call SideQuests — caller must
-        supply analogy_votes from analogical_search results.
+        supply analogy votes from SolveEngine retrieval.
         """
         self._observation_count += 1
         if self._observation_count < self.MIN_OBSERVATIONS:

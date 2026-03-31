@@ -207,6 +207,16 @@ async def main():
             logger.info(f"Task {idx+1}: {result.get('task_id')}")
             logger.info(f"  Correct: {result['metadata'].get('correct')}")
             logger.info(f"  Steps: {result['metadata'].get('steps')}")
+
+            solve_summary = result.get("solve_phase_summary") or result.get("metadata", {}).get("solve_phase_summary") or {}
+            if solve_summary:
+                logger.info(f"  [SOLVE] archetype: {solve_summary.get('final_archetype')} ({solve_summary.get('final_archetype_confidence', 0):.0%})")
+                logger.info(f"  [SOLVE] victory: {solve_summary.get('final_victory_condition')} ({solve_summary.get('final_victory_confidence', 0):.0%})")
+                logger.info(f"  [SOLVE] strategy: {solve_summary.get('final_strategy_summary', '')[:80]}")
+                logger.info(f"  [SOLVE] dissonance: {solve_summary.get('dissonance_triggered')}")
+                if solve_summary.get("archetype_evolution"):
+                    logger.info(f"  [SOLVE] archetype evolution: {' → '.join(solve_summary['archetype_evolution'])}")
+
             error = result['metadata'].get('error')
             if error:
                 logger.error(f"  Error: {error}")
