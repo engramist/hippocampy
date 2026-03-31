@@ -55,7 +55,11 @@ async def extract_lessons(message_id: str, text: str, db, llm_client,
 
     try:
         import json as _json
-        response_text = await asyncio.to_thread(llm_client.chat, prompt)
+        messages = [{"role": "user", "content": prompt}]
+        if hasattr(llm_client, "achat"):
+            response_text = await llm_client.achat(messages)
+        else:
+            response_text = await asyncio.to_thread(llm_client.chat, messages)
         
         # Basic JSON extraction
         match = re.search(r"\[.*\]", response_text, re.DOTALL)

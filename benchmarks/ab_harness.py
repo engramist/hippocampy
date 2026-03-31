@@ -51,6 +51,8 @@ class ABTaskResult:
     error_message: Optional[str] = None
     response_text: Optional[str] = None
     timestamp: float = field(default_factory=time.time)
+    final_state: Optional[str] = None  # WIN, GAME_OVER, NOT_FINISHED
+    final_observation: Optional[dict] = None  # Full observation with grid, state, etc.
 
     @property
     def total_tokens(self) -> int:

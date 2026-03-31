@@ -48,6 +48,8 @@ Codex CLI model IDs that were verified usable on this machine/session:
 Note:
 - "codex" and "codex-mini" aliases were rejected under this account.
 - Always smoke-test model IDs before relying on them for a batch.
+- **Codex `exec` subcommand runs in a read-only sandbox** — it cannot write files or run pytest.
+  Confirmed on 2026-03-30. Remove Codex from rotation for this project; use Gemini + Haiku only.
 
 ## 3) Agent operating rules (execution behavior)
 
