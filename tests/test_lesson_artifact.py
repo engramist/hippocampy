@@ -21,7 +21,7 @@ async def test_extract_lessons_trigger():
     db.execute_write = AsyncMock()
     
     llm = MagicMock()
-    llm.chat.return_value = '[{"text": "Always use unit vectors for cosine similarity", "domain": "math", "type": "optimization"}]'
+    llm.achat = AsyncMock(return_value='[{"text": "Always use unit vectors for cosine similarity", "domain": "math", "type": "optimization"}]')
     
     config = {"embeddings": {"model": "mock-model"}}
     text = "We learned that we should always use unit vectors for cosine similarity."
@@ -33,7 +33,10 @@ async def test_extract_lessons_trigger():
     count = await extract_lessons("msg-123", text, db, llm, config)
     
     assert count == 1
-    assert llm.chat.called
+    llm.achat.assert_awaited_once()
+    messages = llm.achat.await_args.args[0]
+    assert messages[0]["role"] == "user"
+    assert "Identify any domain-specific lessons or best practices" in messages[0]["content"]
     assert db.execute_write.called
 
 @pytest.mark.asyncio

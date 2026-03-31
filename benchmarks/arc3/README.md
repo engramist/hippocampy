@@ -6,6 +6,7 @@ This directory contains the final submission runner and compliance validation to
 
 - `submission.py`: Main entry point for contest evaluators. Runs the memory-augmented agent on all puzzles.
 - `pre_submit_check.py`: Automated compliance tool to verify offline status, model budgets, and output formats.
+- `PROMPT_STRATEGY.md`: ARC-specific prompt equation, limits, and compression rules.
 - `model_budget.yaml`: Resource constraints and model configuration.
 - `offline_manifest.json`: Manifest for the offline submission bundle.
 - `tasks_manifest.json`: Puzzle set to be solved.
@@ -40,3 +41,45 @@ SideQuests uses a "Gated Consolidation Loop" to maintain persistent memory acros
 3. **Consolidation**: A background process extracts "Concepts" and "Decisions" from the narrative.
 4. **Retrieval**: Before choosing an action, the agent queries the brain for similar historical patterns.
 5. **Action**: The agent makes an informed choice based on its current observation and recalled memory.
+
+## Prompt Budget & Retrieval Budget Benchmark (B89)
+
+The submission collects repeatable metrics to measure prompt strategy effectiveness:
+
+### Metrics Collected
+
+**Prompt Budget:**
+- `avg_tokens_per_step`: Mean token count across all decision prompts
+- `max_tokens_per_step` / `min_tokens_per_step`: Token extremes
+- `first_prompt_detail_level`: "rich" (includes memory/facts) or "compact" (minimal context)
+- `asked_for_decision_from_effects`: Whether prompt explicitly asks for decision based on observed effects
+- `invalid_action_count`: Actions outside available set before policy enforcement
+- `no_progress_step_count`: Steps with zero reward (exploration cost)
+
+**Retrieval Budget:**
+- `retrieval_count`: Number of memory queries (perceive phase)
+- `avg_retrieval_size_bytes`: Mean byte size of retrieved context
+- `total_retrieval_size_bytes`: Cumulative retrieval payload
+
+### Comparison Baseline
+
+Use **puzzle-1** as the fixed comparison target for all strategy tuning. When evaluating changes:
+1. Record baseline metrics on puzzle-1 under current strategy
+2. Apply prompt compression, first-input changes, or retrieval budget modifications
+3. Compare new puzzle-1 results against baseline on:
+   - Did `avg_tokens_per_step` decrease while `correct` stayed true?
+   - Did richer first-input improve retrieval usefulness (check memory usage in step_history)?
+   - Did retrieval budget tradeoffs affect action quality (fewer/more invalid_actions)?
+
+### Prompt Budget Targets
+
+- `avg_tokens_per_step`: Target 150–250 (varies by detail_level)
+- `first_prompt_detail_level`: rich for exploration, compact for exploitation
+- `asked_for_decision_from_effects`: true (grounds decisions in observations)
+- `invalid_action_count`: ≤ 2 per puzzle (policy enforcement catches most)
+- `no_progress_step_count`: < 40% of total steps
+
+### Retrieval Budget Targets
+
+- `avg_retrieval_size_bytes`: < 2000 bytes (compact, focused recalls)
+- `total_retrieval_size_bytes`: < 15000 bytes per puzzle (efficient memory use)

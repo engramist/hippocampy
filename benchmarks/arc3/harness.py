@@ -8,8 +8,11 @@ step count, and token efficiency.
 import asyncio
 import json
 import time
+import os
+import httpx
 import uuid
 import random
+import logging
 from typing import Dict, Any, List, Optional, Tuple
 
 from benchmarks.ab_harness import ABHarness, ABVariant, ABTask, ABTaskResult, ABTaskManifest
@@ -17,6 +20,8 @@ from benchmarks.arc3.adapter import ARC3Adapter, BrainClientProtocol, NoOpBrainC
 from benchmarks.arc3.state_serializer import StateSerializerForARC
 from mcp_engine.llm.provider import create_llm_client
 from mcp_engine.config import load_config
+
+logger = logging.getLogger(__name__)
 
 
 class ARC3Harness(ABHarness):
@@ -32,14 +37,38 @@ class ARC3Harness(ABHarness):
         self.llm_client = None
         self.serializer = StateSerializerForARC()
         self._reflex_context = None
+        self.api_key = self._load_arc_api_key()
+        self.api_base = "https://three.arcprize.org"
+        self._session = None  # httpx.AsyncClient
 
     async def setup(self) -> None:
         """Initialize LLM client and other resources."""
         self.llm_client = create_llm_client(self.config_data)
+        if not self.mock_api:
+            if not self.api_key:
+                raise RuntimeError(
+                    "Missing ARC API key. Set ARC_API_KEY (preferred) or arc_api_key in config. "
+                    "Legacy Kaggle key fallback was not found."
+                )
+            self._session = httpx.AsyncClient(base_url=self.api_base, headers={"X-API-Key": self.api_key}, timeout=30.0)
 
     async def teardown(self) -> None:
         """Clean up resources."""
-        pass
+        if self._session:
+            await self._session.aclose()
+
+    async def list_games(self) -> List[Dict[str, Any]]:
+        """Return the current live ARC game list from the API."""
+        if self.mock_api:
+            return []
+        if not self._session:
+            raise RuntimeError("API session not initialized. Did you call setup()?")
+        resp = await self._session.get("/api/games")
+        resp.raise_for_status()
+        data = resp.json()
+        if not isinstance(data, list):
+            raise RuntimeError(f"Unexpected /api/games response type: {type(data).__name__}")
+        return data
 
     async def _execute_task(
         self,
@@ -79,55 +108,60 @@ class ARC3Harness(ABHarness):
         game_id = getattr(task, "game_id", "unknown")
         
         try:
-            # Mock environment if in mock mode
             if self.mock_api:
                 frame_response = self._get_mock_initial_frame(game_id)
             else:
-                # Real API call would go here
-                # For now, if not in mock mode, we fallback to mock to make tests pass
-                # unless a real API implementation is added
-                frame_response = self._get_mock_initial_frame(game_id)
-            
+                # Real API: open scorecard, reset game, and play
+                if not self._session:
+                    raise RuntimeError("API session not initialized. Did you call setup()?")
+                # 1. Open scorecard
+                scorecard_resp = await self._session.post("/api/scorecard/open", json={})
+                scorecard_resp.raise_for_status()
+                card_id = scorecard_resp.json()["card_id"]
+                # 2. Reset game (start session)
+                reset_payload = {"game_id": game_id, "card_id": card_id}
+                reset_resp = await self._session.post("/api/cmd/RESET", json=reset_payload)
+                reset_resp.raise_for_status()
+                frame_response = reset_resp.json()
+                guid = frame_response["guid"]
             while steps < max_attempts:
-                # 1. Normalize current state (observation)
                 obs = adapter.normalize_observation(frame_response)
-                
-                # 2. Get action from LLM (or mock)
                 if self.mock_api:
                     raw_action = self._get_mock_action(obs, variant, steps)
                 else:
-                    # In real mode, LLM would choose the action
                     raw_action = await self._get_llm_action(obs, variant)
-                
-                # 3. Track tokens (estimated)
                 total_tokens_input += self.serializer._estimate_tokens(str(obs))
                 total_tokens_output += self.serializer._estimate_tokens(str(raw_action))
-                
-                # 4. Execute action (API call)
                 if self.mock_api:
                     frame_response, reward, done = self._execute_mock_action(game_id, raw_action, steps)
                 else:
-                    # Real API call
-                    frame_response, reward, done = self._execute_mock_action(game_id, raw_action, steps)
-                
-                # 5. Ingest step (Brain ingestion + recall)
-                # Pass raw frame_response so ingest_step can normalize internally
+                    # Real API: choose endpoint based on action_id
+                    action_id = raw_action.get("action_id", "ACTION1")
+                    action_payload = {"game_id": game_id, "guid": guid}
+                    if action_id == "ACTION6":
+                        action_payload["x"] = raw_action.get("x", 0)
+                        action_payload["y"] = raw_action.get("y", 0)
+                        if "rationale" in raw_action:
+                            action_payload["reasoning"] = raw_action["rationale"]
+                    else:
+                        if "rationale" in raw_action:
+                            action_payload["reasoning"] = raw_action["rationale"]
+                    action_resp = await self._session.post(f"/api/cmd/{action_id}", json=action_payload)
+                    action_resp.raise_for_status()
+                    frame_response = action_resp.json()
+                    reward = 1.0 if frame_response.get("state") == "WIN" else 0.0
+                    done = frame_response.get("state") in ("WIN", "GAME_OVER")
                 recall_query = "What did I learn from similar puzzles?" if variant == ABVariant.SIDEQUESTS else None
                 await adapter.ingest_step(frame_response, raw_action, reward=reward, recall_query=recall_query)
-                
                 steps += 1
-                
                 if done:
                     success = (reward >= 1.0)
                     break
-            
             if not success and steps >= max_attempts:
                 error_msg = "Max attempts reached"
-                
         except Exception as e:
             error_msg = str(e)
             success = False
-
         return ABTaskResult(
             task_id=task.task_id,
             variant=variant,
@@ -186,12 +220,53 @@ class ARC3Harness(ABHarness):
         action_id = action.get("action_id", "")
         
         if action_id == "ACTION6" and step >= 1:
-            return (self._get_mock_initial_frame(game_id), 1.0, True)
+            frame = self._get_mock_initial_frame(game_id)
+            frame["state"] = "WIN"  # Game won
+            return (frame, 1.0, True)
         
         if step >= 4:
-            return (self._get_mock_initial_frame(game_id), 1.0, True)
-            
-        return (self._get_mock_initial_frame(game_id), 0.0, False)
+            frame = self._get_mock_initial_frame(game_id)
+            frame["state"] = "WIN"  # Game won
+            return (frame, 1.0, True)
+        
+        # Still in progress
+        frame = self._get_mock_initial_frame(game_id)
+        frame["state"] = "NOT_FINISHED"
+        return (frame, 0.0, False)
+
+    def _load_arc_api_key(self) -> Optional[str]:
+        """Load ARC API key, preferring explicit ARC credentials over legacy Kaggle fallback."""
+        explicit_key = (
+            os.environ.get("ARC_API_KEY")
+            or self.config_data.get("arc_api_key")
+            or os.environ.get("KAGGLE_API_KEY")
+            or self.config_data.get("kaggle_api_key")
+        )
+        if explicit_key:
+            return explicit_key.strip()
+
+        # Legacy fallback: Kaggle credential file. This may not work for the ARC REST API,
+        # but we keep it for backward compatibility with older local setups.
+        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        kaggle_json_paths = [
+            os.path.join(root_dir, "benchmarks", ".kaggle", "kaggle.json"),
+            os.path.join(os.path.dirname(__file__), ".kaggle", "kaggle.json"),
+        ]
+        for kaggle_json_path in kaggle_json_paths:
+            try:
+                with open(kaggle_json_path, "r") as f:
+                    kaggle_data = json.load(f)
+                key = (kaggle_data.get("key") or "").strip()
+                if key:
+                    logger.warning(
+                        "Using legacy key from %s. If ARC returns 401, set ARC_API_KEY from three.arcprize.org instead.",
+                        kaggle_json_path,
+                    )
+                    return key
+            except Exception:
+                continue
+
+        return None
 
 
 def load_tasks_from_manifest(manifest_path: str) -> List[ABTask]:

@@ -16,6 +16,32 @@
 
 The core invention is the **Gated Consolidation Loop** — an active cognitive processing engine modeled on human biomimetic heuristics (Kahneman System 1/2, Representativeness, Availability) that transforms passive AI memory into a self-correcting, auditable knowledge graph structured around a Main Quest / Side Quest paradigm.
 
+## Context Strategy
+
+SideQuests should **shrink decision context, not expand it**.
+
+The operating philosophy is:
+- keep only the minimum stable working context in the prompt
+- use SideQuests retrieval to supply just-in-time decision support
+- prefer compact summaries over raw dumps
+- treat retrieval as a ranking/compression system, not a transcript loader
+
+The immediate win is **small, purposeful context with fast, targeted retrieval**.
+
+Longer-term backlog direction:
+- move toward an active retrieval symbiosis where the agent begins with minimal working context and requests additional state only when a concrete decision requires it
+- make passive SideQuests processes pattern-match likely-needed entities, neighborhoods, and paths ahead of demand so retrieval is effectively pre-warmed
+- model this like biomimetic selective activation: passive sensory intake drives likely-memory activation before the explicit request arrives
+- make the first sensory packet rich in stable ids, compact structural signatures, and observed-effect summaries so passive pattern matching has something useful to pre-activate against
+
+This is not "zero context" in the literal sense. Every agent still needs a small stable operating frame:
+- role and task
+- tool/action constraints
+- output contract
+- safety boundaries
+
+Everything else should earn its way into the prompt.
+
 ## Technology Stack
 
 - **Language:** Python
@@ -258,6 +284,11 @@ Also refines any Step 1b edge that has low confidence from ambiguous syntax. Res
 - > 90% → store with full confidence, proceed to Steps 5–7 (full attention fired)
 
 **Cocktail Party Effect (Named Biomimetic Principle — IP Claim):** The Brain is always listening passively (adapter forwards all user + assistant turns). The Loop's Step 4 confidence gate is the selective attention mechanism — like hearing your name cut through background noise at a party. Most conversation is background; specific patterns (decision language, constraint language, entity mentions, contradictions to existing knowledge) cause the Brain's "senses" to fire.
+
+The same principle should guide retrieval and prompting:
+- passive systems should continuously score which entities, paths, and neighborhoods are becoming more likely to matter
+- active prompting should request only the top-ranked decision support, not bulk-load everything currently available
+- retrieval speed should come from pre-activation and graph-native locality, not from stuffing larger context windows
 
 | Sense | Fires On |
 |-------|---------|
@@ -741,6 +772,15 @@ sidequests setup --target codex
 - **Bridge Test:** Constraint from chat shows raw text in UI; paraphrased query retrieves it via embedding
 - **Open Brain Test:** Ingesting a markdown doc creates `Document` + `DocumentExtract` nodes; constraint appears in `current_truth` with exact `location_uri` and line ranges
 - **Cross-Project Analogical Test:** New MainQuest surfaces relevant `Decision`/`Constraint` from a distinct MainQuest completed months prior
+
+## ARC-AGI-3 Benchmark Agent
+
+The ARC-AGI-3 agent is the first proof-of-concept for SideQuests augmenting a real benchmark.
+It consumes SideQuests exclusively through the existing MCP tool surface — no schema changes.
+
+**Full agent architecture:** [`agents/arc3/arcAgent_Architecture.md`](../agents/arc3/arcAgent_Architecture.md)
+
+---
 
 ## Memory Audit CLI (`sidequests review`)
 

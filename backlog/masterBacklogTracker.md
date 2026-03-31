@@ -83,11 +83,19 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B85 | Fix Gemini CLI "LAST action" Prompt Wording | LOW | complete | TBD | TBD | backlog/plans/B-85-gemini-prompt-wording.md | backlog/B85.md |
 | B86 | Use Git Root Instead of os.getcwd() for Workspace Path | LOW | complete | TBD | TBD | backlog/plans/B-86-git-root-workspace-path.md | backlog/B86.md |
 | B87 | SideQuests-Powered ARC Agent Orchestrator — ✅ DONE (2026-03-29) | P1 | complete | TBD | TBD | - | backlog/B87.md |
+| B88 | Hypothesis Engine: Game-Theory-Driven Puzzle Solving | P1 | ready | TBD | TBD | backlog/plans/B-88-hypothesis-engine.md | backlog/B88.md |
+| B89 | ARC Prompt Budget and Retrieval Budget Benchmark | P1 | ready | TBD | TBD | backlog/plans/B-89-arc-prompt-budget-benchmark.md | backlog/B89.md |
+| B90 | ARC Uncertainty-Gated Retrieval | P1 | ready | TBD | TBD | backlog/plans/B-90-arc-uncertainty-gated-retrieval.md | backlog/B90.md |
+| B91 | Passive Graph Pre-Activation for Likely-Needed Retrieval | P2 | ready | TBD | TBD | backlog/plans/B-91-passive-graph-preactivation.md | backlog/B91.md |
+| B92 | ARC Step-Level SideQuests Write Trace | P1 | ready | TBD | TBD | backlog/plans/B-92-arc-write-trace.md | backlog/B92.md |
+| B93 | ARC Action Fact Promotion During Explore Phase | P1 | ready | TBD | TBD | backlog/plans/B-93-arc-action-fact-promotion.md | backlog/B93.md |
+| B94 | ARC Path Hypothesis Composition and Testing | P1 | ready | TBD | TBD | backlog/plans/B-94-arc-path-hypotheses.md | backlog/B94.md |
+| B95 | ARC Solve Engine: Goal-Directed Strategy from Game Archetype Classification | P1 | ready | TBD | TBD | backlog/plans/B-95-arc-solve-engine.md | backlog/B95.md |
 
 ## Summary
 
-- Total cards: 79
-- Ready: 0
+- Total cards: 84
+- Ready: 8
 - Needs work: 0
 - Complete: 78
 - In progress: 0

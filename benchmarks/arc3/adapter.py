@@ -172,7 +172,7 @@ class ARC3Adapter:
         self.task_id = task_id
         self.episode_num = episode_num
 
-        available_actions = list(raw.get("available_actions") or [])
+        available_actions = self._normalize_available_actions(raw.get("available_actions") or [])
         state = str(raw.get("state") or "NOT_STARTED")
         energy_estimate = self._estimate_energy(grid)
 
@@ -324,6 +324,22 @@ class ARC3Adapter:
             return []
 
         return [self._to_row(row) for row in candidate]
+
+    def _normalize_available_actions(self, actions: Sequence[Any]) -> List[str]:
+        normalized: List[str] = []
+        for action in actions:
+            if isinstance(action, int):
+                normalized.append(f"ACTION{action}")
+                continue
+
+            text = str(action).strip()
+            if not text:
+                continue
+            if text.isdigit():
+                normalized.append(f"ACTION{text}")
+            else:
+                normalized.append(text.upper())
+        return normalized
 
     def _to_row(self, row: Sequence[Any]) -> List[int]:
         return [int(cell) for cell in row]
