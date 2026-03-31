@@ -21,6 +21,8 @@ sidequests_db/
 # Secrets / API keys
 .env
 *.env
+benchmarks/.arc/
+benchmarks/.kaggle/
 
 # macOS
 .DS_Store

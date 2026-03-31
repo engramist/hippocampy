@@ -247,6 +247,15 @@ class ARCOrchestrator:
             "dissonance_reason": solve_ctx.dissonance_reason,
             "strategy_summary": solve_ctx.strategy_summary,
         }
+        archetype = self._solve_context["archetype"]
+        conf = self._solve_context["archetype_confidence"]
+        victory = (self._solve_context.get("victory_condition") or {}).get("type", "unknown")
+        chunk = (self._solve_context.get("active_chunk") or {}).get("description", "none")
+        dissonance = self._solve_context.get("dissonance", False)
+        logger.info(
+            "[SOLVE] step=%d archetype=%s(%.2f) victory=%s chunk=%s dissonance=%s",
+            step, archetype, conf, victory, chunk[:40] if chunk else "none", dissonance,
+        )
         return self._solve_context
 
     async def plan(self, observation: ARC3Observation, memory_context: dict) -> dict:
@@ -329,6 +338,7 @@ class ARCOrchestrator:
             "step": len(self._step_history) + 1,
             "state_before": observation.get("state"),
             "board_before": self._snapshot_for_trace(observation),
+            "solve_context": dict(self._solve_context) if self._solve_context else None,
             "available_actions": list(available_actions),
             "prompt": prompt,
             "action_id": action.get("action_id"),
