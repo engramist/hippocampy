@@ -828,6 +828,56 @@ async def test_retrieval_triggered_on_loop_detection(mock_brain, sample_observat
 
 
 @pytest.mark.asyncio
+async def test_retrieval_triggered_on_no_progress(mock_brain, sample_observation):
+    """B90: perceive() should trigger retrieval when no-progress streak persists."""
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    orchestrator._no_progress_step_count = 3
+    orchestrator._consecutive_no_progress_steps = 3
+    orchestrator._last_retrieval_step = -1
+    orchestrator._hypothesis_context = {
+        "loop_detected": False,
+        "action_coverage": {},
+        "observed_action_effects": [],
+    }
+
+    ctx = await orchestrator.perceive(sample_observation, step=5)
+
+    assert orchestrator._retrieval_triggered is True
+    assert ctx["_triggered"] is True
+    mock_brain.current_truth.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_retrieval_triggered_on_invalid_action_count(mock_brain, sample_observation):
+    """B90: perceive() should trigger retrieval after an invalid action fallback."""
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    orchestrator._invalid_action_count = 1
+    orchestrator._hypothesis_context = {
+        "loop_detected": False,
+        "action_coverage": {},
+        "observed_action_effects": [],
+    }
+
+    ctx = await orchestrator.perceive(sample_observation, step=5)
+
+    assert orchestrator._retrieval_triggered is True
+    assert ctx["_triggered"] is True
+    mock_brain.current_truth.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_retrieval_triggered_on_top_two_low_value(mock_brain, sample_observation):
     """B90: perceive() should trigger retrieval when top actions decay to low_value."""
     orchestrator = ARCOrchestrator(
@@ -845,6 +895,33 @@ async def test_retrieval_triggered_on_top_two_low_value(mock_brain, sample_obser
             "top_two_low_value": True,
         },
         "observed_action_effects": [],
+    }
+
+    ctx = await orchestrator.perceive(sample_observation, step=5)
+
+    assert orchestrator._retrieval_triggered is True
+    assert ctx["_triggered"] is True
+    mock_brain.current_truth.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_retrieval_triggered_on_large_state_shift(mock_brain, sample_observation):
+    """B90: perceive() should trigger retrieval when the latest change is large enough to invalidate assumptions."""
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    orchestrator._hypothesis_context = {
+        "loop_detected": False,
+        "action_coverage": {},
+        "observed_action_effects": [],
+        "last_transition_effect": {
+            "meaningful_change_score": 0.8,
+            "pixels_changed": 40,
+        },
     }
 
     ctx = await orchestrator.perceive(sample_observation, step=5)

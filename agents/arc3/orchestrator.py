@@ -61,6 +61,7 @@ class ARCOrchestrator:
         self._retrieval_triggered = False
         self._last_retrieval_step = -1
         self._consecutive_no_progress_steps = 0
+        self._last_seen_invalid_action_count = 0
         self._memory_context: dict | None = None
 
     # ── Phase 1: Perceive ───────────────────────────────────────────────
@@ -410,15 +411,12 @@ class ARCOrchestrator:
             return True
 
         # Trigger 2: Repeated no-progress steps (3+ consecutive)
-        if self._no_progress_step_count >= 3 and step > self._last_retrieval_step:
-            self._consecutive_no_progress_steps += 1
-            if self._consecutive_no_progress_steps >= 3:
-                self._consecutive_no_progress_steps = 0
-                return True
+        if self._consecutive_no_progress_steps >= 3 and step > self._last_retrieval_step:
+            return True
 
         # Trigger 3: Invalid action correction (attempted invalid action)
-        if self._invalid_action_count > 0 and step > self._last_retrieval_step:
-            self._invalid_action_count = 0
+        if self._invalid_action_count > self._last_seen_invalid_action_count and step > self._last_retrieval_step:
+            self._last_seen_invalid_action_count = self._invalid_action_count
             return True
 
         hyp_ctx = self._hypothesis_context or {}
@@ -427,7 +425,11 @@ class ARCOrchestrator:
         if hyp_ctx.get("loop_detected"):
             return True
 
-        # Trigger 5: Evidence gap - no clear action candidates
+        # Trigger 5: Large state shift that can invalidate prior assumptions
+        if self._should_trigger_large_state_shift(hyp_ctx):
+            return True
+
+        # Trigger 6: Evidence gap - no clear action candidates
         observed_effects = hyp_ctx.get("observed_action_effects", [])
         action_coverage = hyp_ctx.get("action_coverage") or {}
         untested_count = action_coverage.get("untested_count", 0)
@@ -441,6 +443,19 @@ class ARCOrchestrator:
         if action_coverage.get("top_two_low_value"):
             return True
 
+        return False
+
+    def _should_trigger_large_state_shift(self, hyp_ctx: dict | None) -> bool:
+        """Cheap proxy for a sudden board change that invalidates prior assumptions."""
+        if not hyp_ctx:
+            return False
+        last_effect = hyp_ctx.get("last_transition_effect") or {}
+        score = float(last_effect.get("meaningful_change_score", 0.0))
+        pixels_changed = int(last_effect.get("pixels_changed", 0) or 0)
+        if pixels_changed >= 32:
+            return True
+        if score >= 0.65 and pixels_changed >= 12:
+            return True
         return False
 
     # ── Prompt Construction ──────────────────────────────────────────
@@ -480,6 +495,10 @@ class ARCOrchestrator:
         hyp_lines = self._format_path_hypothesis_section(self._hypothesis_context)
         if hyp_lines:
             sections.append("PATH HYPOTHESES:\n" + "\n".join(hyp_lines))
+
+        hypothesis_lines = self._format_hypothesis_section(self._hypothesis_context)
+        if hypothesis_lines:
+            sections.append("HYPOTHESIS:\n" + "\n".join(hypothesis_lines))
 
         solve_section = self._build_solve_section()
         if solve_section:
@@ -817,6 +836,26 @@ class ARCOrchestrator:
         lines.append(f"Policy: {hyp_ctx.get('explore_vs_exploit', 'explore').upper()}")
         return lines
 
+    def _format_hypothesis_section(self, hyp_ctx: dict | None) -> List[str]:
+        if not hyp_ctx:
+            return []
+        lines: List[str] = []
+        for key, label in (
+            ("confirmed_hypotheses", "CONFIRMED"),
+            ("active_hypotheses", "ACTIVE"),
+        ):
+            for hyp in hyp_ctx.get(key, [])[: self.MAX_PROMPT_HYPOTHESES]:
+                lines.append(
+                    f"{label}: {hyp.get('description', 'unknown')} "
+                    f"(conf {hyp.get('confidence', 0.0):.2f})"
+                )
+        for hyp in hyp_ctx.get("pruned_hypotheses", [])[: self.MAX_PROMPT_HYPOTHESES]:
+            lines.append(
+                f"PRUNED: {hyp.get('description', 'unknown')} "
+                f"(conf {hyp.get('confidence', 0.0):.2f})"
+            )
+        return lines
+
     def _format_effect_section(self, hyp_ctx: dict | None) -> List[str]:
         if not hyp_ctx:
             return []
@@ -1058,6 +1097,9 @@ class ARCOrchestrator:
         # B89: Track no-progress steps (reward = 0)
         if reward == 0.0:
             self._no_progress_step_count += 1
+            self._consecutive_no_progress_steps += 1
+        else:
+            self._consecutive_no_progress_steps = 0
 
     def reset_for_retry(self, attempt: int) -> None:
         """Reset internal state for a retry attempt while preserving history.

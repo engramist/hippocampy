@@ -122,6 +122,7 @@ These are the current implementation limits for the first prompt-slimming pass:
 - `active hypotheses <= 1`
 - `reflex warnings <= 1`
 - `reflex suggestions <= 1`
+- retrieval payload size should stay compact enough that the action prompt remains decision-first
 
 ## Anti-Goals
 
@@ -139,6 +140,34 @@ Memory exists to compress the next decision, not narrate the system state.
 If retrieved context does not alter the next action choice, it should stay out of the prompt.
 
 On the first move, memory should not steer action selection unless it clearly matches the current puzzle state.
+
+Retrieval triggers should be narrow and explicit:
+- puzzle bootstrap
+- repeated no-progress steps
+- invalid-action or fallback correction
+- loop suspicion
+- large state shift that can invalidate prior assumptions
+- evidence gaps where the current observation and short history are not enough to choose the next action
+
+## B89 Comparison Method
+
+Use puzzle 1 as the fixed comparison target and compare result rows with one compact first-input shape
+against one richer first-input shape.
+
+Recommended report fields:
+- `tokens_input`
+- `runtime_seconds`
+- `steps`
+- `invalid_action_count`
+- `no_progress_step_count`
+- `first_prompt_detail_level`
+- `asked_for_decision_from_effects`
+- `retrieval_count`
+- `total_retrieval_size_bytes`
+
+The comparison should answer two questions:
+- Did the richer first input improve retrieval usefulness without blowing the prompt budget?
+- Did the compressed prompt keep the agent grounded in observed effects instead of generic pattern talk?
 
 ## Backlog Direction
 

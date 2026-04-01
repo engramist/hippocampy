@@ -108,7 +108,7 @@ class ArchetypeClassifier:
       5. Lock when composite confidence > LOCK_THRESHOLD.
     """
 
-    LOCK_THRESHOLD: float = 0.45
+    LOCK_THRESHOLD: float = 0.65
     MIN_OBSERVATIONS: int = 5              # don't classify before seeing 5 frames
     CONSISTENCY_BONUS: float = 0.04       # per-step bonus when same archetype wins consecutively
 
@@ -778,7 +778,7 @@ class VictoryHypothesizer:
     Re-called only when DissonanceDetector fires.
     """
 
-    CALL_THRESHOLD: float = 0.45
+    CALL_THRESHOLD: float = 0.65
     PROMPT_TEMPLATE = """You are analyzing an unknown game. Based on the evidence below,
 hypothesize what the WINNING CONDITION is.
 
@@ -1231,6 +1231,7 @@ class SolveEngine:
         self._solve_plan_id: Optional[str] = None
         self._chunk_plan_id: Optional[str] = None
         self._reward_history: List[float] = []
+        self._role_resolution_notes: List[str] = []
 
     async def solve(
         self,
@@ -1277,11 +1278,9 @@ class SolveEngine:
 
         # 2. Object role mapping (runs every step, lightweight)
         new_roles = self.role_mapper.update(hypothesis_context, observation, step)
-        # Merge: only update roles where new confidence is higher
-        for color_id, new_role in new_roles.items():
-            existing = self._object_roles.get(color_id)
-            if existing is None or new_role.confidence > existing.confidence:
-                self._object_roles[color_id] = new_role
+        self._role_resolution_notes.extend(self._merge_persistent_roles(new_roles, step))
+        if len(self._role_resolution_notes) > 6:
+            self._role_resolution_notes = self._role_resolution_notes[-6:]
 
         # 3. Victory condition hypothesis (LLM call, sticky)
         dissonance_detected, dissonance_reason = self.dissonance_detector.update(
@@ -1399,6 +1398,13 @@ class SolveEngine:
         if self._victory_condition:
             vc = self._victory_condition
             parts.append(f"GOAL: {vc.condition_type.value} — {vc.description} (conf={vc.confidence:.2f})")
+        primary_player = next((color_id for color_id, role in self._object_roles.items() if role.role == RoleType.PLAYER), None)
+        primary_goal = next((color_id for color_id, role in self._object_roles.items() if role.role in (RoleType.GOAL, RoleType.EXIT)), None)
+        parts.append(
+            "PRIMARY ROLES: "
+            f"player={primary_player if primary_player is not None else 'none'}, "
+            f"goal={primary_goal if primary_goal is not None else 'none'}"
+        )
         if self._solve_plan_id:
             parts.append(f"PLAN: {self._solve_plan_id}")
         if self._active_chunk:
@@ -1410,6 +1416,8 @@ class SolveEngine:
                 parts.append(
                     f"GRADUATION: {ch.graduation_reason} (score={ch.graduation_score:.2f})"
                 )
+        if self._role_resolution_notes:
+            parts.append("ROLE RESOLUTION: " + " | ".join(self._role_resolution_notes[-3:]))
         if self._chunk_history:
             parts.append(f"CHUNKS: {len(self._chunk_history)}")
         return " | ".join(parts)
@@ -1422,6 +1430,89 @@ class SolveEngine:
         self._chunk_plan_id = None
         self.dissonance_detector.reset_chunk()
         self.dissonance_detector._zero_progress_streak = 0
+        self._role_resolution_notes = []
+
+    def _merge_persistent_roles(self, new_roles: Dict[int, ObjectRole], step: int) -> List[str]:
+        """Merge step-level roles into the persistent role map with conflict handling."""
+        notes: List[str] = []
+
+        for color_id, new_role in new_roles.items():
+            existing = self._object_roles.get(color_id)
+            if existing is None:
+                self._object_roles[color_id] = new_role
+                continue
+
+            if existing.role == new_role.role:
+                if new_role.confidence >= existing.confidence:
+                    new_role.evidence_steps = sorted(set((existing.evidence_steps or []) + (new_role.evidence_steps or []) + [step]))
+                    if existing.estimated_position and not new_role.estimated_position:
+                        new_role.estimated_position = existing.estimated_position
+                    self._object_roles[color_id] = new_role
+                else:
+                    existing.evidence_steps = sorted(set((existing.evidence_steps or []) + (new_role.evidence_steps or []) + [step]))
+                    if not existing.estimated_position and new_role.estimated_position:
+                        existing.estimated_position = new_role.estimated_position
+                continue
+
+            if existing.role == RoleType.PLAYER and new_role.role == RoleType.GOAL:
+                existing.evidence_steps = sorted(set((existing.evidence_steps or []) + (new_role.evidence_steps or []) + [step]))
+                notes.append(
+                    f"step {step}: kept player at color_{color_id}; rejected goal flip (conf={new_role.confidence:.2f})"
+                )
+                continue
+
+            if existing.role == RoleType.GOAL and new_role.role == RoleType.PLAYER:
+                new_role.evidence_steps = sorted(set((existing.evidence_steps or []) + (new_role.evidence_steps or []) + [step]))
+                self._object_roles[color_id] = new_role
+                notes.append(
+                    f"step {step}: promoted player at color_{color_id}; demoted conflicting goal"
+                )
+                continue
+
+            if new_role.confidence > existing.confidence:
+                self._object_roles[color_id] = new_role
+                notes.append(
+                    f"step {step}: replaced {existing.role.value} with {new_role.role.value} at color_{color_id}"
+                )
+            else:
+                existing.evidence_steps = sorted(set((existing.evidence_steps or []) + (new_role.evidence_steps or []) + [step]))
+                notes.append(
+                    f"step {step}: preserved {existing.role.value} at color_{color_id}; ignored {new_role.role.value}"
+                )
+
+        notes.extend(self._demote_extra_primaries(RoleType.PLAYER, step))
+        notes.extend(self._demote_extra_primaries(RoleType.GOAL, step))
+        return notes
+
+    def _demote_extra_primaries(self, role_type: RoleType, step: int) -> List[str]:
+        notes: List[str] = []
+        candidates = [
+            (color_id, role)
+            for color_id, role in self._object_roles.items()
+            if role.role == role_type
+        ]
+        if len(candidates) <= 1:
+            return notes
+
+        primary_color, primary_role = max(
+            candidates,
+            key=lambda item: (
+                float(item[1].confidence),
+                len(item[1].evidence_steps or []),
+                -int(item[0]),
+            ),
+        )
+        for color_id, role in candidates:
+            if color_id == primary_color:
+                continue
+            role.role = RoleType.DECORATION
+            role.evidence_steps = sorted(set((role.evidence_steps or []) + [step]))
+            notes.append(
+                f"step {step}: demoted stale {role_type.value} at color_{color_id}; primary remains color_{primary_color}"
+            )
+        if primary_role.role != role_type:
+            primary_role.role = role_type
+        return notes
 
     async def _register_solve_plan(self, observation: Dict[str, Any]) -> None:
         goal = f"Solve ARC task {observation.get('dataset_id', '')}:{observation.get('task_id', '')}"

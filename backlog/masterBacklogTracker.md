@@ -83,26 +83,31 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B85 | Fix Gemini CLI "LAST action" Prompt Wording | LOW | complete | TBD | TBD | backlog/plans/B-85-gemini-prompt-wording.md | backlog/B85.md |
 | B86 | Use Git Root Instead of os.getcwd() for Workspace Path | LOW | complete | TBD | TBD | backlog/plans/B-86-git-root-workspace-path.md | backlog/B86.md |
 | B87 | SideQuests-Powered ARC Agent Orchestrator — ✅ DONE (2026-03-29) | P1 | complete | TBD | TBD | - | backlog/B87.md |
-| B88 | Hypothesis Engine: Game-Theory-Driven Puzzle Solving | P1 | ready | TBD | TBD | backlog/plans/B-88-hypothesis-engine.md | backlog/B88.md |
-| B89 | ARC Prompt Budget and Retrieval Budget Benchmark | P1 | ready | TBD | TBD | backlog/plans/B-89-arc-prompt-budget-benchmark.md | backlog/B89.md |
-| B90 | ARC Uncertainty-Gated Retrieval | P1 | ready | TBD | TBD | backlog/plans/B-90-arc-uncertainty-gated-retrieval.md | backlog/B90.md |
+| B88 | Hypothesis Engine: Game-Theory-Driven Puzzle Solving | P1 | complete | TBD | TBD | backlog/plans/B-88-hypothesis-engine.md | backlog/B88.md |
+| B89 | ARC Prompt Budget and Retrieval Budget Benchmark | P1 | complete | TBD | TBD | backlog/plans/B-89-arc-prompt-budget-benchmark.md | backlog/B89.md |
+| B90 | ARC Uncertainty-Gated Retrieval — ✅ DONE (2026-03-31) | P1 | complete | TBD | TBD | backlog/plans/B-90-arc-uncertainty-gated-retrieval.md | backlog/B90.md |
 | B91 | Passive Graph Pre-Activation for Likely-Needed Retrieval | P2 | ready | TBD | TBD | backlog/plans/B-91-passive-graph-preactivation.md | backlog/B91.md |
 | B92 | ARC Step-Level SideQuests Write Trace | P1 | ready | TBD | TBD | backlog/plans/B-92-arc-write-trace.md | backlog/B92.md |
-| B93 | ARC Action Fact Promotion During Explore Phase | P1 | ready | TBD | TBD | backlog/plans/B-93-arc-action-fact-promotion.md | backlog/B93.md |
-| B94 | ARC Path Hypothesis Composition and Testing | P1 | ready | TBD | TBD | backlog/plans/B-94-arc-path-hypotheses.md | backlog/B94.md |
+| B93 | ARC Action Fact Promotion During Explore Phase — ✅ DONE (2026-03-31) | P1 | complete | TBD | TBD | backlog/plans/B-93-arc-action-fact-promotion.md | backlog/B93.md |
+| B94 | ARC Path Hypothesis Composition and Testing — ✅ DONE (2026-03-31) | P1 | complete | TBD | TBD | backlog/plans/B-94-arc-path-hypotheses.md | backlog/B94.md |
 | B95 | ARC Solve Engine: Goal-Directed Strategy from Game Archetype Classification | P1 | ready | TBD | TBD | backlog/plans/B-95-arc-solve-engine.md | backlog/B95.md |
-| B97 | Object Role Detection Without Reward Signal | P0 | ready | TBD | TBD | backlog/plans/B-97-object-role-no-reward.md | backlog/B97.md |
-| B98 | Calibrate ARC Wall Detection to Avoid Overclassification | P1 | ready | TBD | TBD | backlog/plans/B-98-arc-wall-detection-calibration.md | backlog/B98.md |
-| B99 | Strengthen ARC Goal Detection from Target Evidence | P1 | ready | TBD | TBD | backlog/plans/B-99-arc-goal-detection.md | backlog/B99.md |
-| B100 | Graduate ARC Plan Chunks from Explore to Directed Movement | P1 | ready | TBD | TBD | backlog/plans/B-100-arc-directed-chunking.md | backlog/B100.md |
-| B101 | Make ARC PlanChunker Graduation Reliable Across Puzzle Variants | P1 | ready | TBD | TBD | backlog/plans/B-101-arc-planchunker-reliable-graduation.md | backlog/B101.md |
+| B97 | Object Role Detection Without Reward Signal | P0 | complete | TBD | TBD | backlog/plans/B-97-object-role-no-reward.md | backlog/B97.md |
+| B98 | Calibrate ARC Wall Detection to Avoid Overclassification | P1 | complete | TBD | TBD | backlog/plans/B-98-arc-wall-detection-calibration.md | backlog/B98.md |
+| B99 | Strengthen ARC Goal Detection from Target Evidence | P1 | complete | TBD | TBD | backlog/plans/B-99-arc-goal-detection.md | backlog/B99.md |
+| B100 | Graduate ARC Plan Chunks from Explore to Directed Movement | P1 | complete | TBD | TBD | backlog/plans/B-100-arc-directed-chunking.md | backlog/B100.md |
+| B101 | Make ARC PlanChunker Graduation Reliable Across Puzzle Variants | P1 | complete | TBD | TBD | backlog/plans/B-101-arc-planchunker-reliable-graduation.md | backlog/B101.md |
 | B102 | Local Graph Visibility UI Using Kuzu Explorer as the Base | P2 | complete | TBD | TBD | backlog/plans/B-102-local-graph-visibility-ui.md | backlog/B102.md |
+| B103 | Resolve Conflicting Persistent ARC Roles in SolveEngine | P0 | complete | TBD | TBD | backlog/plans/B-103-arc-role-state-conflict-resolution.md | backlog/B103.md |
+| B104 | ARC Meta-Harness: Structured Experience Store for Harness Evolution | P0 | complete | 2026-03-31 | TBD | backlog/plans/B-104-arc-meta-harness-experience-store.md | backlog/B104.md |
+| B105 | ARC Meta-Harness Query Surface for Candidate Comparison | P1 | complete | 2026-03-31 | TBD | backlog/plans/B-105-arc-meta-harness-query-surface.md | backlog/B105.md |
+| B106 | ARC Meta-Harness Candidate Runner and Evaluation Loop | P1 | complete | 2026-03-31 | TBD | backlog/plans/B-106-arc-meta-harness-candidate-runner.md | backlog/B106.md |
+| B107 | ARC Meta-Harness Proposer Loop — ✅ DONE (2026-03-31) | P1 | complete | 2026-03-31 | TBD | backlog/plans/B-107-arc-meta-harness-proposer-loop.md | backlog/B107.md |
 
 ## Summary
 
-- Total cards: 90
-- Ready: 13
+- Total cards: 95
+- Ready: 6
 - Needs work: 0
-- Complete: 79
+- Complete: 92
 - In progress: 0
 - Blocked: 0

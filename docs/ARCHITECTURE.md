@@ -25,6 +25,7 @@ The operating philosophy is:
 - use SideQuests retrieval to supply just-in-time decision support
 - prefer compact summaries over raw dumps
 - treat retrieval as a ranking/compression system, not a transcript loader
+- gate retrieval behind concrete uncertainty triggers rather than always injecting memory
 
 The immediate win is **small, purposeful context with fast, targeted retrieval**.
 
@@ -777,6 +778,79 @@ sidequests setup --target codex
 
 The ARC-AGI-3 agent is the first proof-of-concept for SideQuests augmenting a real benchmark.
 It consumes SideQuests exclusively through the existing MCP tool surface — no schema changes.
+
+### ARC Harness / Meta-Harness Split
+
+For ARC, the architectural boundary should be explicit:
+
+- **ARC Harness** — the inner loop that plays one puzzle. This is the code that shapes
+  observations, promotes action facts, composes path hypotheses, infers object roles, chooses
+  chunks, and selects the next action within a single puzzle attempt.
+- **Meta-Harness** — the outer loop that proposes edits to the ARC harness, runs evaluations,
+  logs traces and scores, compares candidate harnesses, and evolves the harness over time.
+- **SideQuests** — the graph-native experience store and retrieval substrate for the outer loop.
+  SideQuests is not the ARC harness itself. It is the structured memory backend that makes
+  meta-harness search more queryable than raw flat-file navigation.
+
+There are two different memory problems here:
+
+- **Inner-loop memory**: what the ARC harness needs during one puzzle attempt
+- **Outer-loop memory**: what the meta-harness needs across many harness candidates and runs
+
+SideQuests can support both, but they should not be conflated.
+
+The intended direction is:
+
+1. keep the ARC harness focused on solving one puzzle well
+2. let the meta-harness optimize the ARC harness instead of hand-tuning retrieval/prompt logic
+3. use SideQuests to store and retrieve prior harness candidates, score summaries, traces,
+   failure chains, mutation lineage, and successful strategy fragments
+
+This is a strong graph fit because the outer loop is relationship-heavy:
+
+- harness candidate -> evaluation run
+- evaluation run -> puzzle trace
+- puzzle trace -> promoted action fact / path hypothesis / role inference
+- run -> score / runtime / token budget / failure mode
+- candidate -> parent candidate / mutation rationale / diff lineage
+
+That workload is lineage-heavy, comparison-driven, and traversal-centric, which is exactly where a
+labeled property graph is a better operational substrate than ad hoc directory traversal plus regex
+search.
+
+### Required Experience Entities (Outer-Loop)
+
+- `HarnessCandidate`: A specific version/configuration of the ARC harness being evaluated.
+- `HarnessEvalRun`: A collection of puzzle attempts using a specific `HarnessCandidate`.
+- `HarnessMutation`: An atomic change to a harness candidate (e.g., prompt tweak, policy shift).
+- `HarnessScoreSummary`: Aggregated performance metrics (correctness, tokens, runtime) for an eval run.
+- `HarnessFailureCluster`: Grouping of similar failure modes across multiple puzzles or candidates.
+- `PuzzleTraceRef`: A durable reference to the full execution trace of a puzzle solve attempt.
+
+### Meta-Harness Proposer Loop (B107)
+
+The **Meta-Harness Proposer Loop** is the automated outer-loop engine that evolves ARC harness
+candidates. It follows a disciplined **Proposal / Evaluate / Store / Retrieve** cycle:
+
+1.  **Retrieve**: The proposer queries the **Experience Store** (via `MetaHarnessQuerySurface`)
+    for top-performing candidates, common failure clusters, and recent regression signatures.
+2.  **Propose**: Based on retrieved context, the proposer generates a `HarnessMutation` (e.g.,
+    refining the "evidence gap" trigger or tightening the "action fact" promotion threshold).
+3.  **Evaluate**: The proposer hands the new `HarnessCandidate` to the **MetaHarnessRunner**
+    for evaluation against a fixed puzzle set.
+4.  **Store**: The runner persists the `HarnessEvalRun` and `HarnessScoreSummary` back into the
+    SideQuests graph, linking it to the mutation and parent candidate.
+5.  **Select**: The proposer compares the results against the baseline and decides whether to
+    promote the candidate to the new "best known" or try a different mutation branch.
+
+**Bounded Search Policy:**
+To prevent unconstrained refactoring, the proposer is restricted to:
+- **Prompt Logic**: adjustments to stable operating context or just-in-time retrieval triggers.
+- **Heuristic Thresholds**: tuning promotion levels for action facts or path hypotheses.
+- **Retrieval Policy**: modifying the `scope`, `limit`, or `min_similarity` for memory fetching.
+
+The proposer operates as a coding-agent executor (Gemini/Haiku style), using SideQuests as its
+long-term "experience backend" to avoid repeating failed experiments.
 
 **Full agent architecture:** [`agents/arc3/arcAgent_Architecture.md`](../agents/arc3/arcAgent_Architecture.md)
 

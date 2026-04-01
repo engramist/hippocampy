@@ -153,7 +153,7 @@ def test_auto_prune_at_threshold():
     hyp.update(False)
     hyp.update(False)
     hyp.update(False)
-    assert hyp.status == "refuted"
+    assert hyp.status == "pruned"
 
 def test_explore_policy_when_low_confirmation():
     mgr = HypothesisManager(MagicMock(), "session1")
@@ -162,8 +162,13 @@ def test_explore_policy_when_low_confirmation():
 
 def test_exploit_policy_when_low_energy():
     mgr = HypothesisManager(MagicMock(), "session1")
-    # EXPLORE_ENERGY_FLOOR = 0.3
+    # EXPLORE_ENERGY_FLOOR = 0.3, but low energy should only exploit with a high-confidence hypothesis
+    mgr.hypotheses["h1"] = Hypothesis("h1", "d", "cat", confidence=0.9, status="confirmed")
     assert mgr._decide_policy(0.2, {"untested_count": 0, "top_two_low_value": False}) == "exploit"
+
+def test_low_energy_without_high_confidence_hypothesis_stays_explore():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    assert mgr.energy_policy(0.2, {"untested_count": 0, "top_two_low_value": False}) == "explore"
 
 def test_policy_stays_explore_until_action_coverage_complete():
     mgr = HypothesisManager(MagicMock(), "session1")
@@ -186,6 +191,42 @@ async def test_distill_flushes_confirmed_to_brain():
     mgr.hypotheses["h1"] = Hypothesis("h1", "d", "cat", status="confirmed")
     count = await mgr.distill_to_brain()
     assert count == 1
+
+@pytest.mark.asyncio
+async def test_distill_flushes_pruned_to_brain():
+    brain = MagicMock()
+
+    async def mock_notify_turn(**kwargs):
+        return {"status": "ok"}
+
+    brain.notify_turn = mock_notify_turn
+
+    mgr = HypothesisManager(brain, "session1")
+    mgr.hypotheses["h1"] = Hypothesis("h1", "d", "cat", status="pruned")
+    count = await mgr.distill_to_brain()
+    assert count == 1
+
+def test_generate_hypotheses_alias_returns_observe_context():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    ctx = mgr.generate_hypotheses([[[1]]], None, 1, ["A1"], {"grid": [[[1]]], "colors": []})
+    assert "action_facts" in ctx
+    assert "path_hypotheses" in ctx
+
+def test_get_best_hypothesis_prefers_high_confidence():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    mgr.hypotheses["low"] = Hypothesis("low", "low", "rule", confidence=0.4, status="active", value_score=0.2)
+    mgr.hypotheses["high"] = Hypothesis("high", "high", "rule", confidence=0.9, status="confirmed", value_score=0.8)
+    best = mgr.get_best_hypothesis()
+    assert best["id"] == "high"
+    assert best["confidence"] == 0.9
+
+def test_get_exploration_action_prefers_unexplored_current_state_action():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    mgr.observe([[[1]]], None, 1, ["A1", "A2"], {"grid": [[[1]]], "colors": []})
+    mgr.observe([[[2]]], "A1", 2, ["A1", "A2"], {"grid": [[[2]]], "colors": []}, transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"})
+    current_hash = mgr._prev_state_hash
+    mgr.graph.add_transition(Transition(current_hash, "next", "A1", 3, "no_visible_change: no pixels changed", 0, []))
+    assert mgr.get_exploration_action(["A1", "A2"]) == "A2"
 
 def test_reset_graph_preserves_hypotheses():
     mgr = HypothesisManager(MagicMock(), "session1")
@@ -251,6 +292,20 @@ def test_path_hypotheses_are_returned_after_multiple_steps():
     res = mgr.observe([[[1, 2, 2]]], "A2", 3, ["A1", "A2"], {}, transition_meta={"reward": 0.0, "state_after": "NOT_FINISHED"})
     assert res["path_hypotheses"]
     assert res["path_hypotheses"][0]["actions"] == ["A1", "A2"]
+
+def test_path_hypotheses_3_step():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    mgr.observe([[[1]]], None, 1, ["A1", "A2", "A3"], {})
+    mgr.observe([[[2]]], "A1", 2, ["A1", "A2", "A3"], {}, transition_meta={"reward": 0.0, "state_after": "S2"})
+    mgr.observe([[[3]]], "A2", 3, ["A1", "A2", "A3"], {}, transition_meta={"reward": 0.0, "state_after": "S3"})
+    res = mgr.observe([[[4]]], "A3", 4, ["A1", "A2", "A3"], {}, transition_meta={"reward": 1.0, "state_after": "S4"})
+    
+    paths = res["path_hypotheses"]
+    # Should have a 3-step path [A1, A2, A3] and likely a 2-step [A2, A3]
+    three_step = next((p for p in paths if len(p["actions"]) == 3), None)
+    assert three_step is not None
+    assert three_step["actions"] == ["A1", "A2", "A3"]
+    assert three_step["value_status"] == "valuable"
 
 def test_path_hypothesis_detects_loop_to_start():
     mgr = HypothesisManager(MagicMock(), "session1")
