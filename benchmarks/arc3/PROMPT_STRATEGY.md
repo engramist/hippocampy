@@ -108,6 +108,69 @@ Prompting rule:
 - avoid repeating `low_value` or `no_progress` actions unless new evidence appears
 - do not keep exploiting `tentative_progress` forever when reward stays at `0.0`
 - if the top tested actions both decay into `low_value` or `no_progress`, broaden exploration rather than bouncing between them
+## Section Ownership Rules (B110)
+
+To reduce repetition and ensure clear context, each section has strict ownership:
+
+- `ACTION FACTS`: operator facts only (how an action behaves)
+- `PATH HYPOTHESES`: path/sequence facts only (complex action chains)
+- `OBSERVED EFFECTS`: latest transition evidence only (what just happened)
+- `SOLVE CONTEXT` and `PLAN`: goal/chunk level only (strategy and objectives)
+- `INSTRUCTION`: decision policy only; refer to above sections instead of re-dumping them
+
+## Prompt Composition Pass (B110)
+
+Before final assembly, a deduplication and compression pass is performed:
+- repeated facts across sections are merged or suppressed
+- prefer references (e.g., "refer to ACTION FACTS") over re-stating evidence
+- `OBSERVATION` is suppressed or significantly reduced when `OBSERVED EFFECTS` already contains enough board context to choose the next action
+
+## Mental Sandbox (B114)
+
+Before committing to an action, the agent enters a bounded internal reasoning loop (max 2 iterations).
+- Use `sandbox_thought` to peek at how an action aligns with known `ACTION FACTS` and the active `PLAN CHUNK`.
+- The sandbox does not spend environment steps or energy.
+- Final decisions are annotated with `(sandbox refined)` if self-correction occurred.
+
+## Hard Limits
+
+
+Before committing to an action, the agent enters a bounded internal reasoning loop (max 2 iterations).
+- Use `sandbox_thought` to peek at how an action aligns with known `ACTION FACTS` and the active `PLAN CHUNK`.
+- The sandbox does not spend environment steps or energy.
+- Final decisions are annotated with `(sandbox refined)` if self-correction occurred.
+
+## Hard Limits
+
+## Exploration Compaction (B116)
+
+To preserve long-run knowledge without context bloat, the engine generates an `EXPLORATION_SUMMARY` section:
+- `KNOWN ACTION EFFECTS`: compact, deterministic operator facts.
+- `KNOWN LOOPS`: sequences that were confirmed to return the state to a previous hash.
+- `CONFIRMED RULES`: validated high-confidence mechanical hypotheses.
+
+This section allows the agent to recall what it "already learned" even after raw `HISTORY` has been truncated.
+
+## Mental Sandbox (B114)
+
+Before committing to an action, the agent enters a bounded internal reasoning loop (max 2 iterations).
+- Use `sandbox_thought` to peek at how an action aligns with known `ACTION FACTS` and the active `PLAN CHUNK`.
+- The sandbox does not spend environment steps or energy.
+- Final decisions are annotated with `(sandbox refined)` if self-correction occurred.
+
+## Ledger-Driven Pruning (B118)
+
+To maintain high performance and low latency, the harness monitors the SideQuests call ledger:
+- Calls with high latency (>500ms) and low utility (zero results found) are automatically down-ranked.
+- Mid-run retrieval may be skipped if prior attempts at that phase were low-value.
+- Pruning decisions are preserved in the debug export for transparency.
+
+## Typed Decision Packets (B117)
+
+To ensure maintainable prompt assembly, the engine uses structured packets:
+- `PromptPacket`: a typed collection of `ContentBlocks`.
+- `ContentBlock`: a single logical section (e.g., `MEMORY`, `PLAN`, `OBSERVATION`) with optional custom headers.
+- The packet model allows for programmatic transformations (like observation suppression or deduplication) before final rendering.
 
 ## Hard Limits
 

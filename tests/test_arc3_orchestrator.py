@@ -984,7 +984,7 @@ def test_prompt_memory_section_included_when_triggered(sample_observation):
         available_actions=["ACTION1", "ACTION2"],
     )
 
-    assert "MEMORY:" in prompt
+    assert "=== MEMORY ===" in prompt
     assert "important lesson" in prompt
 
 
@@ -1030,7 +1030,7 @@ def test_prompt_smaller_on_no_trigger_path(sample_observation):
 
 
 def test_prompt_instruction_includes_effect_summary(sample_observation):
-    """B90: INSTRUCTION section should include observed effect summary."""
+    """B110: Effect summary is in OBSERVED EFFECTS, not duplicated in INSTRUCTION."""
     orchestrator = ARCOrchestrator(
         brain_client=MagicMock(),
         llm_client=None,
@@ -1043,6 +1043,9 @@ def test_prompt_instruction_includes_effect_summary(sample_observation):
             "action": "ACTION1",
             "meaningful_change_label": "strong_progress",
             "meaningful_change_score": 0.85,
+            "meaningful_change_reasons": [],
+            "zero_reward_streak": 0,
+            "summary": "Board changed"
         }
     }
 
@@ -1054,14 +1057,17 @@ def test_prompt_instruction_includes_effect_summary(sample_observation):
         available_actions=["ACTION1", "ACTION2"],
     )
 
-    assert "Last action ACTION1 caused strong_progress" in prompt
+    # B110: Effect summary should be in OBSERVED EFFECTS section, not INSTRUCTION
+    assert "strong_progress" in prompt
     assert "0.85" in prompt
     assert "What should you try next?" in prompt
     assert "Choose the next valid action based on observed effects" in prompt
+    # B110: INSTRUCTION no longer duplicates the effect summary
+    assert "=== OBSERVED EFFECTS ===" in prompt
 
 
 def test_prompt_instruction_handles_no_prior_effects(sample_observation):
-    """B90: INSTRUCTION should handle case when no prior effects exist."""
+    """B110: INSTRUCTION should work without prior effects context."""
     orchestrator = ARCOrchestrator(
         brain_client=MagicMock(),
         llm_client=None,
@@ -1080,6 +1086,8 @@ def test_prompt_instruction_handles_no_prior_effects(sample_observation):
         available_actions=["ACTION1", "ACTION2"],
     )
 
-    assert "No prior action effects recorded yet" in prompt
+    # B110: INSTRUCTION should always ask for decision, even without prior effects
     assert "What should you try next?" in prompt
     assert "Choose the next valid action based on observed effects" in prompt
+    # OBSERVATION section should be present when no OBSERVED EFFECTS
+    assert "=== OBSERVATION ===" in prompt
