@@ -489,3 +489,97 @@ def test_submission_row_includes_benchmark_metrics():
     assert "benchmark_metrics" in row["metadata"]
     assert row["metadata"]["benchmark_metrics"]["prompt_budget"]["avg_tokens_per_step"] == 120.0
     assert row["metadata"]["benchmark_metrics"]["retrieval_budget"]["retrieval_count"] == 1
+
+
+def test_prompt_budget_comparison_report_distinguishes_first_input_shapes():
+    from benchmarks.arc3.model_eval import build_arc_prompt_budget_comparison_report
+
+    baseline_row = {
+        "metadata": {
+            "tokens_input": 1200,
+            "runtime_seconds": 18.0,
+            "steps": 10,
+            "benchmark_metrics": {
+                "prompt_budget": {
+                    "first_prompt_detail_level": "compact",
+                    "asked_for_decision_from_effects": False,
+                    "invalid_action_count": 3,
+                    "no_progress_step_count": 6,
+                },
+                "retrieval_budget": {
+                    "retrieval_count": 2,
+                    "total_retrieval_size_bytes": 4200,
+                    "avg_retrieval_size_bytes": 2100,
+                },
+            },
+        },
+        "prompt_trace": [
+            {
+                "prompt": "SYSTEM: You are an ARC puzzle solver. Available actions: ACTION1, ACTION2.",
+            }
+        ],
+    }
+    candidate_row = {
+        "metadata": {
+            "tokens_input": 900,
+            "runtime_seconds": 14.5,
+            "steps": 10,
+            "benchmark_metrics": {
+                "prompt_budget": {
+                    "first_prompt_detail_level": "rich",
+                    "asked_for_decision_from_effects": True,
+                    "invalid_action_count": 1,
+                    "no_progress_step_count": 3,
+                },
+                "retrieval_budget": {
+                    "retrieval_count": 1,
+                    "total_retrieval_size_bytes": 1800,
+                    "avg_retrieval_size_bytes": 1800,
+                },
+            },
+        },
+        "prompt_trace": [
+            {
+                "prompt": "MEMORY:\nrich prompt\nACTION FACTS:\nreason from observed effects",
+            }
+        ],
+    }
+
+    report = build_arc_prompt_budget_comparison_report(baseline_row, candidate_row)
+
+    assert report["comparison_label"] == "compact_to_rich"
+    assert report["baseline"]["prompt_budget"]["first_prompt_detail_level"] == "compact"
+    assert report["candidate"]["prompt_budget"]["first_prompt_detail_level"] == "rich"
+    assert report["baseline"]["prompt_budget"]["asked_for_decision_from_effects"] is False
+    assert report["candidate"]["prompt_budget"]["asked_for_decision_from_effects"] is True
+    assert report["delta"]["tokens_input"] == -300
+    assert report["delta"]["retrieval_count"] == -1
+@pytest.mark.asyncio
+async def test_meta_harness_runner_evaluates_candidate(tmp_path):
+    from benchmarks.arc3.model_eval import MetaHarnessRunner, HarnessCandidate
+    CheckpointManager.CHECKPOINT_DIR = tmp_path
+    
+    tasks = _sample_tasks()
+    brain = NoOpBrainClient()
+    
+    # Mock runner factory
+    def runner_factory(config_patch):
+        harness = _make_stub_harness()
+        runner = DurableARCRunner(harness, brain, config={"llm": {"model": "test"}})
+        # Mock run to return results
+        runner.run = AsyncMock(return_value=[
+            {"task_id": "task-1", "correct": True, "tokens_input": 100, "steps": 5},
+            {"task_id": "task-2", "correct": False, "tokens_input": 200, "steps": 10, "final_state": "LOOP"},
+        ])
+        return runner
+
+    meta_runner = MetaHarnessRunner(runner_factory, brain)
+    candidate = HarnessCandidate(candidate_id="v2", mutation_description="test mutation")
+    
+    eval_run = await meta_runner.evaluate_candidate(candidate, tasks)
+    
+    assert eval_run.candidate_id == "v2"
+    assert eval_run.solve_rate == 50.0
+    assert eval_run.avg_tokens_per_step == (300 / 15)
+    assert "LOOP" in eval_run.failure_clusters
+    assert eval_run.failure_clusters["LOOP"] == ["task-2"]

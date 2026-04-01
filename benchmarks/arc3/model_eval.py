@@ -17,7 +17,8 @@ import time
 import psutil
 import logging
 import random
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
 
@@ -29,6 +30,13 @@ logger = logging.getLogger(__name__)
 
 # Deterministic seeding for reproducibility
 DEFAULT_SEED = 42
+PROMPT_DETAIL_RICH_MARKERS = (
+    "memory:",
+    "action facts:",
+    "path hypotheses:",
+    "observed effects:",
+    "solve context:",
+)
 
 
 @dataclass
@@ -83,6 +91,213 @@ class ModelProfile:
             "meets_memory_constraint": self.meets_memory_constraint,
             "stable": self.stable,
         }
+
+
+def infer_first_prompt_detail_level(prompt: str, explicit_level: Optional[str] = None) -> str:
+    """Infer whether the first prompt is compact or rich.
+
+    The benchmark prefers an explicit level from the run metadata, but falls back to a
+    lightweight prompt-shape heuristic so puzzle-1 comparisons stay reproducible even when a
+    result row only carries raw prompt text.
+    """
+    if explicit_level in {"compact", "rich"}:
+        return explicit_level
+
+    prompt_lower = prompt.lower()
+    if any(marker in prompt_lower for marker in PROMPT_DETAIL_RICH_MARKERS):
+        return "rich"
+    if len(prompt) > 1200:
+        return "rich"
+    return "compact"
+
+
+def extract_arc_prompt_budget_metrics(result_row: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract prompt/retrieval budget metrics from an ARC submission row."""
+    metadata = result_row.get("metadata") or {}
+    benchmark_metrics = metadata.get("benchmark_metrics") or result_row.get("benchmark_metrics") or {}
+    prompt_budget = dict(benchmark_metrics.get("prompt_budget") or {})
+    retrieval_budget = dict(benchmark_metrics.get("retrieval_budget") or {})
+
+    prompt_trace = result_row.get("prompt_trace") or []
+    first_prompt = ""
+    if prompt_trace:
+        first_prompt = str(prompt_trace[0].get("prompt") or "")
+
+    prompt_budget.setdefault("tokens_input", metadata.get("tokens_input", result_row.get("tokens_input", 0)))
+    prompt_budget.setdefault("runtime_seconds", metadata.get("runtime_seconds", result_row.get("runtime_seconds", 0)))
+    prompt_budget.setdefault("steps", metadata.get("steps", result_row.get("steps", 0)))
+    prompt_budget.setdefault("invalid_action_count", result_row.get("invalid_action_count", 0))
+    prompt_budget.setdefault("no_progress_step_count", result_row.get("no_progress_step_count", 0))
+    prompt_budget["first_prompt_detail_level"] = infer_first_prompt_detail_level(
+        first_prompt,
+        prompt_budget.get("first_prompt_detail_level"),
+    )
+    prompt_budget["asked_for_decision_from_effects"] = bool(
+        prompt_budget.get("asked_for_decision_from_effects")
+        or "observed effects" in first_prompt.lower()
+        or "decision" in first_prompt.lower()
+    )
+
+    retrieval_budget.setdefault("retrieval_count", 0)
+    retrieval_budget.setdefault("total_retrieval_size_bytes", 0)
+    retrieval_budget.setdefault("avg_retrieval_size_bytes", 0)
+
+    return {
+        "prompt_budget": prompt_budget,
+        "retrieval_budget": retrieval_budget,
+    }
+
+
+def build_arc_prompt_budget_comparison_report(
+    baseline_row: Dict[str, Any],
+    candidate_row: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build a compact comparison report between two ARC result rows."""
+    baseline = extract_arc_prompt_budget_metrics(baseline_row)
+    candidate = extract_arc_prompt_budget_metrics(candidate_row)
+
+    baseline_prompt = baseline["prompt_budget"]
+    candidate_prompt = candidate["prompt_budget"]
+    baseline_retrieval = baseline["retrieval_budget"]
+    candidate_retrieval = candidate["retrieval_budget"]
+
+    return {
+        "baseline": baseline,
+        "candidate": candidate,
+        "delta": {
+            "tokens_input": candidate_prompt["tokens_input"] - baseline_prompt["tokens_input"],
+            "runtime_seconds": round(candidate_prompt["runtime_seconds"] - baseline_prompt["runtime_seconds"], 2),
+            "steps": candidate_prompt["steps"] - baseline_prompt["steps"],
+            "invalid_action_count": candidate_prompt["invalid_action_count"] - baseline_prompt["invalid_action_count"],
+            "no_progress_step_count": candidate_prompt["no_progress_step_count"] - baseline_prompt["no_progress_step_count"],
+            "retrieval_count": candidate_retrieval["retrieval_count"] - baseline_retrieval["retrieval_count"],
+            "retrieval_size_bytes": candidate_retrieval["total_retrieval_size_bytes"] - baseline_retrieval["total_retrieval_size_bytes"],
+        },
+        "comparison_label": f"{baseline_prompt['first_prompt_detail_level']}_to_{candidate_prompt['first_prompt_detail_level']}",
+        "decision_grounding_shift": (
+            f"{baseline_prompt['asked_for_decision_from_effects']} -> {candidate_prompt['asked_for_decision_from_effects']}"
+        ),
+    }
+
+
+@dataclass
+class HarnessCandidate:
+    """A specific version/configuration of the ARC harness."""
+    candidate_id: str
+    parent_id: Optional[str] = None
+    mutation_description: str = ""
+    config_patch: Dict[str, Any] = None  # e.g., {"llm": {"model": "..."}}
+    created_at: float = field(default_factory=time.time)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "candidate_id": self.candidate_id,
+            "parent_id": self.parent_id,
+            "mutation_description": self.mutation_description,
+            "config_patch": self.config_patch or {},
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
+class HarnessEvalRun:
+    """Result of evaluating a HarnessCandidate."""
+    run_id: str
+    candidate_id: str
+    timestamp: float = field(default_factory=time.time)
+    solve_rate: float = 0.0
+    avg_tokens_per_step: float = 0.0
+    avg_latency_per_step: float = 0.0
+    total_runtime: float = 0.0
+    failure_clusters: Dict[str, List[str]] = field(default_factory=dict)
+    results: List[Dict[str, Any]] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "run_id": self.run_id,
+            "candidate_id": self.candidate_id,
+            "timestamp": self.timestamp,
+            "solve_rate": self.solve_rate,
+            "avg_tokens_per_step": self.avg_tokens_per_step,
+            "avg_latency_per_step": self.avg_latency_per_step,
+            "total_runtime": self.total_runtime,
+            "failure_clusters": self.failure_clusters,
+            "results_summary": [
+                {"task_id": r["task_id"], "correct": r["correct"], "final_state": r.get("final_state")}
+                for r in self.results
+            ],
+        }
+
+
+class MetaHarnessQuerySurface:
+    """Proposer-facing surface for querying ARC harness candidates and results.
+
+    Used by coding-agent proposers to navigate prior harness evolution attempts
+    without brute-force filesystem scraping.
+    """
+
+    @staticmethod
+    def list_top_candidates(
+        eval_summaries: List[Dict[str, Any]],
+        metric: str = "solve_rate",
+        limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        """List top harness candidates ranked by a specific metric.
+
+        Metrics: solve_rate, avg_tokens_per_step, avg_latency_per_step
+        """
+        reverse = True
+        if "latency" in metric or "tokens" in metric:
+            reverse = False  # Lower is better for resource metrics
+
+        ranked = sorted(
+            eval_summaries,
+            key=lambda x: x.get(metric, 0) if reverse else x.get(metric, float("inf")),
+            reverse=reverse
+        )
+        return ranked[:limit]
+
+    @staticmethod
+    def compare_candidates(
+        baseline_summary: Dict[str, Any],
+        candidate_summary: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Compare two harness candidate summaries."""
+        metrics = ["solve_rate", "avg_tokens_per_step", "avg_latency_per_step", "total_runtime"]
+        deltas = {}
+        for m in metrics:
+            if m in baseline_summary and m in candidate_summary:
+                deltas[m] = round(candidate_summary[m] - baseline_summary[m], 2)
+
+        return {
+            "baseline_id": baseline_summary.get("harness_candidate_id"),
+            "candidate_id": candidate_summary.get("harness_candidate_id"),
+            "deltas": deltas,
+            "improvement": deltas.get("solve_rate", 0) > 0 or deltas.get("avg_tokens_per_step", 0) < 0
+        }
+
+    @staticmethod
+    def list_failure_clusters(eval_run_results: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+        """Group failed tasks by their final state or failure signature."""
+        clusters = {}
+        for row in eval_run_results:
+            if not row.get("correct"):
+                # Use final_state or a coarse signature as cluster ID
+                cluster_id = row.get("final_state") or "UNKNOWN_FAILURE"
+                if cluster_id not in clusters:
+                    clusters[cluster_id] = []
+                clusters[cluster_id].append(row.get("task_id"))
+        return clusters
+
+    @staticmethod
+    def list_regressions(
+        baseline_results: List[Dict[str, Any]],
+        candidate_results: List[Dict[str, Any]]
+    ) -> List[str]:
+        """Identify tasks that solved in baseline but failed in candidate."""
+        baseline_solved = {row["task_id"] for row in baseline_results if row.get("correct")}
+        candidate_failed = {row["task_id"] for row in candidate_results if not row.get("correct")}
+        return sorted(list(baseline_solved.intersection(candidate_failed)))
 
 
 class ModelEvaluator:
@@ -311,6 +526,73 @@ class ModelEvaluator:
             json.dump(results, f, indent=2)
 
         logger.info(f"Exported results to {output_path}")
+
+
+class MetaHarnessRunner:
+    """Outer-loop runner that evaluates a HarnessCandidate against a set of tasks."""
+
+    def __init__(self, runner_factory: Any, brain_client: Any):
+        """
+        Args:
+            runner_factory: Factory that returns a DurableARCRunner instance.
+            brain_client: SideQuests brain client for memory.
+        """
+        self.runner_factory = runner_factory
+        self.brain_client = brain_client
+
+    async def evaluate_candidate(
+        self,
+        candidate: HarnessCandidate,
+        tasks: List[Any],
+        baseline_results: Optional[List[Dict[str, Any]]] = None
+    ) -> HarnessEvalRun:
+        """Evaluate a single candidate and optionally compare to baseline."""
+        run_id = f"run-{uuid.uuid4().hex[:8]}"
+        logger.info(f"Starting evaluation run {run_id} for candidate {candidate.candidate_id}")
+
+        # Instantiate runner with candidate config patch
+        runner = self.runner_factory(candidate.config_patch)
+        
+        start_time = time.time()
+        # Use card_id = run_id for checkpointing this specific eval run
+        results = await runner.run(tasks, card_id=run_id)
+        end_time = time.time()
+
+        # Aggregate results
+        total_puzzles = len(tasks)
+        solve_count = sum(1 for r in results if r.get("correct"))
+        solve_rate = (solve_count / total_puzzles * 100.0) if total_puzzles > 0 else 0.0
+        
+        total_tokens = 0
+        total_steps = 0
+        for r in results:
+            total_tokens += r.get("tokens_input", 0)
+            total_steps += r.get("steps", 0)
+        
+        avg_tokens = (total_tokens / total_steps) if total_steps > 0 else 0.0
+        avg_latency = ((end_time - start_time) / total_steps) if total_steps > 0 else 0.0
+
+        failure_clusters = MetaHarnessQuerySurface.list_failure_clusters(results)
+
+        eval_run = HarnessEvalRun(
+            run_id=run_id,
+            candidate_id=candidate.candidate_id,
+            timestamp=end_time,
+            solve_rate=solve_rate,
+            avg_tokens_per_step=avg_tokens,
+            avg_latency_per_step=avg_latency,
+            total_runtime=end_time - start_time,
+            failure_clusters=failure_clusters,
+            results=results,
+        )
+
+        if baseline_results:
+            regressions = MetaHarnessQuerySurface.list_regressions(baseline_results, results)
+            logger.info(f"Run {run_id} complete. Solve rate: {solve_rate:.1f}%. Regressions: {len(regressions)}")
+        else:
+            logger.info(f"Run {run_id} complete. Solve rate: {solve_rate:.1f}%")
+
+        return eval_run
 
 
 async def main():

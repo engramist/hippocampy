@@ -87,7 +87,7 @@ class Hypothesis:
             if self.confidence >= 0.8:
                 self.status = "confirmed"
             elif self.confidence <= 0.2:
-                self.status = "refuted"
+                self.status = "pruned"
 
 
 @dataclass
@@ -430,6 +430,7 @@ class HypothesisManager:
             "active_hypotheses": self._get_by_status("active"),
             "confirmed_hypotheses": self._get_by_status("confirmed"),
             "refuted_hypotheses": self._get_by_status("refuted"),
+            "pruned_hypotheses": self._get_by_status("pruned"),
             "action_facts": self._build_action_facts(),
             "path_hypotheses": self._build_path_hypotheses(),
             "unexplored_actions": unexplored,
@@ -444,6 +445,25 @@ class HypothesisManager:
             "state_count": len(self.graph.nodes),
             "transition_count": sum(len(v) for v in self.graph.edges.values()),
         }
+
+    def generate_hypotheses(
+        self,
+        grid: Any,
+        action_taken: Optional[str],
+        step: int,
+        available_actions: List[str],
+        observation: Dict[str, Any],
+        transition_meta: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Compatibility wrapper that performs the same hypothesis update as observe()."""
+        return self.observe(
+            grid=grid,
+            action_taken=action_taken,
+            step=step,
+            available_actions=available_actions,
+            observation=observation,
+            transition_meta=transition_meta,
+        )
 
     def _process_transition(self, t: Transition, diff: Dict) -> None:
         """Generate or update hypotheses from observed transition."""
@@ -745,15 +765,15 @@ class HypothesisManager:
         if any(effect.looped for effect in effects):
             return "loop"
 
-        # 3. Deterministic Visible Effect (B-93)
+        # 3. Low value (B-93: Consistent-but-low-value actions are not successful)
+        if value_status in {"low_value", "ineffective"}:
+            return "low_value"
+
+        # 4. Deterministic Visible Effect (B-93)
         if latest.reward_signal > 0.0 or latest.meaningful_change_label == "strong_progress":
             return "deterministic_effect"
         if consistency >= 0.85 and attempts >= self.MIN_EVIDENCE:
             return "deterministic_effect"
-
-        # 4. Low value
-        if value_status in {"low_value", "ineffective"}:
-            return "low_value"
 
         return "repeatable_effect"
 
@@ -775,7 +795,7 @@ class HypothesisManager:
         if fact_type == "loop":
             return f"{action} causes state loop: {summary}"
         if fact_type == "deterministic_effect":
-            return f"{action} reliable effect: {summary}{trend_clause}"
+            return f"{action} deterministic effect: {summary}{trend_clause}"
         if fact_type == "low_value":
             return f"{action} low-value effect: {summary}{trend_clause}"
 
@@ -1033,9 +1053,15 @@ class HypothesisManager:
         }
 
     def _decide_policy(self, energy: float, action_coverage: Dict[str, Any] | None = None) -> str:
+        return self.energy_policy(energy, action_coverage)
+
+    def energy_policy(self, energy: float, action_coverage: Dict[str, Any] | None = None) -> str:
         """Explore/exploit based on energy and hypothesis landscape."""
         active = [h for h in self.hypotheses.values() if h.status == "active"]
-        confirmed = [h for h in self.hypotheses.values() if h.status == "confirmed"]
+        confirmed = [
+            h for h in self.hypotheses.values()
+            if h.status == "confirmed" and h.confidence > 0.7
+        ]
         action_coverage = action_coverage or {}
 
         if action_coverage.get("untested_count", 0) > 0:
@@ -1043,12 +1069,50 @@ class HypothesisManager:
         if action_coverage.get("top_two_low_value"):
             return "explore"
         if energy < self.EXPLORE_ENERGY_FLOOR:
-            return "exploit"
+            return "exploit" if confirmed else "explore"
         if not confirmed and active:
             return "explore"
         if len(active) > len(confirmed):
             return "explore"
         return "exploit"
+
+    def get_best_hypothesis(self) -> Optional[Dict[str, Any]]:
+        """Return the highest-confidence actionable hypothesis, if any."""
+        candidates = [
+            h for h in self.hypotheses.values()
+            if h.status in {"active", "confirmed"}
+        ]
+        if not candidates:
+            return None
+        best = max(
+            candidates,
+            key=lambda h: (h.confidence, h.value_score, h.support_count, h.id),
+        )
+        return {
+            "id": best.id,
+            "description": best.description,
+            "category": best.category,
+            "confidence": round(best.confidence, 2),
+            "status": best.status,
+            "value_score": round(best.value_score, 2),
+            "value_status": best.value_status,
+        }
+
+    def get_exploration_action(self, available_actions: List[str]) -> str:
+        """Prefer an unexplored action from the current state, else fall back safely."""
+        if self._prev_state_hash:
+            unexplored = self.graph.get_unexplored_actions(self._prev_state_hash, available_actions)
+            if unexplored:
+                return unexplored[0]
+
+        untested = [action for action in available_actions if not self.graph.get_action_effects(action)]
+        if untested:
+            return untested[0]
+
+        ranked = self._build_action_effects(available_actions)
+        if ranked:
+            return ranked[0]["action"]
+        return available_actions[0] if available_actions else "ACTION1"
 
     def _detect_environment_bottleneck(
         self,
@@ -1331,7 +1395,7 @@ class HypothesisManager:
 
         # 2. Strategic Hypotheses
         for h in self.hypotheses.values():
-            if h.status in ("confirmed", "refuted"):
+            if h.status in ("confirmed", "refuted", "pruned"):
                 text = f"[{h.status.upper()}] {h.description} (confidence: {h.confidence:.2f}, evidence: {h.support_count}+/{h.contradiction_count}-)"
                 try:
                     await self.brain.notify_turn(

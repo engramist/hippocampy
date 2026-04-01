@@ -177,6 +177,15 @@ Token efficiency should **not** be marketed as a standalone "Token Saver Mode." 
 - Use factual claims: "SideQuests reduces redundant context injection by 40%–60% through smart deduplication."
 - Emphasize that efficiency exists to enable *longer, more complex reasoning chains*, not just to lower API bills.
 
+## ARC Benchmark Tie-In
+
+B89 applies the same token-efficiency idea to ARC prompt design:
+
+- measure `tokens_input`, `runtime_seconds`, `steps`, `invalid_action_count`, and `no_progress_step_count`
+- compare `compact` versus `rich` first-input shapes on puzzle 1
+- track retrieval payload size so memory calls stay compact and decision-oriented
+- treat `asked_for_decision_from_effects` as the prompt-quality proxy: the agent should be asked to decide from observed effects, not from generic pattern talk
+
 ## Relationship to Other Cards
 
 B44 serves as the architectural decision record for the following related implementations:

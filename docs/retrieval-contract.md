@@ -76,3 +76,15 @@ Results are ranked using a multi-factor scoring formula:
 *   **Non-Goal: Deduplication.** If a Concept and its reified Decision both match a query with high similarity, both may appear in the results. The LLM is responsible for synthesizing these into a coherent answer.
 *   **Limit: Deep Traversal.** `current_truth` does not perform graph-walking; it is a vector-first entry point. Use `explore_graph` for relational discovery.
 *   **Limit: Schema Evolution.** If a relationship type is not in the allowlist in `tools.py`, it cannot be traversed via `explore_graph` even if it exists in the Kùzu DB.
+
+## 7. Meta-Harness Experience Store Queries (B104)
+
+The **Meta-Harness** is an outer loop that evolves the **ARC Harness**. It uses a separate experience store in SideQuests to support the following retrieval questions:
+
+1.  **Harness Improvement**: Which `HarnessCandidate` versions improved scores without exceeding the token/runtime budget?
+2.  **Failure Modes**: Which `HarnessMutation` (e.g., "aggressive prompting") repeatedly caused the same `HarnessFailureCluster` across multiple puzzle sets?
+3.  **Cross-Puzzle Relevance**: Which prior `HarnessCandidate` performed best on puzzles with a similar failure signature to the current one?
+4.  **Trace Analysis**: Which `PuzzleTraceRef` promoted action facts or path hypotheses that later correlated with a successful solve?
+5.  **Policy Regressions**: Which regressions are linked to `HarnessMutation` in the retrieval policy versus the solve-policy?
+
+The Experience Store maintains relationships between harness versions, eval runs, and traces to make these lineage-heavy queries possible.

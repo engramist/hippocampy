@@ -674,6 +674,44 @@ async def test_solve_engine_orchestrates_analogy_retrieval():
 
 
 @pytest.mark.asyncio
+async def test_solve_engine_defers_victory_hypothesis_below_threshold():
+    from agents.arc3.solver import SolveEngine
+    from agents.arc3.hypothesis import StateGraph
+
+    brain = AsyncMock()
+    brain.recall_plans.return_value = {"plans": []}
+    brain.recall_relevant_lessons.return_value = {"lessons": []}
+    brain.analogical_search.return_value = {"results": []}
+    brain.register_plan.return_value = {"plan_id": "p-threshold"}
+    brain.report_outcome.return_value = {"status": "ok"}
+
+    llm = AsyncMock()
+    llm.achat.return_value = '{"condition_type":"reach_goal","description":"reach exit","target_color_id":null,"confidence":0.5}'
+
+    engine = SolveEngine(brain, llm, "s1")
+    engine.archetype_classifier.update = MagicMock(return_value=(GameArchetype.CHASE, 0.6))
+    engine._archetype = GameArchetype.CHASE
+    engine._archetype_confidence = 0.6
+    engine._archetype_locked = False
+
+    obs = {"colors": [], "available_actions": ["ACTION1"], "task_id": "t1", "dataset_id": "d1"}
+    ctx = {
+        "last_transition_effect": {"meaningful_change_score": 0.0, "reward_signal": 0.0},
+        "action_facts": [],
+        "hud_rows": [],
+        "path_hypotheses": [],
+        "current_state_hash": "h1",
+    }
+
+    result = await engine.solve(obs, ctx, step=5, state_graph=StateGraph(), current_state_hash="h1")
+
+    brain.recall_plans.assert_not_called()
+    brain.recall_relevant_lessons.assert_not_called()
+    llm.achat.assert_not_called()
+    assert result.victory_condition is None
+
+
+@pytest.mark.asyncio
 async def test_solve_engine_passes_trend_evidence_to_role_mapping():
     from agents.arc3.solver import SolveEngine, PlanChunk, VictoryCondition, VictoryType, ObjectRole
 
@@ -744,6 +782,192 @@ async def test_solve_engine_passes_trend_evidence_to_role_mapping():
     assert captured["action_facts"][0]["trend"]["direction"] == "left"
     assert result.object_roles[7].role == RoleType.PLAYER
     assert result.object_roles[7].estimated_position == {"row": 4.0, "col": 2.0}
+
+
+@pytest.mark.asyncio
+async def test_solve_engine_preserves_player_against_later_goal_flip():
+    from agents.arc3.solver import SolveEngine, PlanChunk, VictoryCondition, VictoryType
+    from agents.arc3.hypothesis import StateGraph
+
+    brain = AsyncMock()
+    brain.recall_plans.return_value = {"plans": []}
+    brain.recall_relevant_lessons.return_value = {"lessons": []}
+    brain.analogical_search.return_value = {"results": []}
+    brain.register_plan.return_value = {"plan_id": "p-player"}
+    brain.report_outcome.return_value = {"status": "ok"}
+
+    llm = AsyncMock()
+    llm.achat.return_value = '{"condition_type":"reach_goal","description":"reach exit","target_color_id":null,"confidence":0.5}'
+
+    engine = SolveEngine(brain, llm, "s1")
+    engine._victory_condition = VictoryCondition(
+        condition_type=VictoryType.REACH_GOAL, confidence=0.8, description="reach exit"
+    )
+    engine._solve_plan_id = "p-player"
+    engine._active_chunk = PlanChunk(description="follow evidence", source="explore")
+    engine._object_roles = {
+        15: ObjectRole(
+            color_id=15,
+            role=RoleType.PLAYER,
+            confidence=0.72,
+            evidence_steps=[2],
+            estimated_position={"row": 2.0, "col": 1.0},
+        )
+    }
+    engine.role_mapper.update = MagicMock(
+        return_value={
+            15: ObjectRole(
+                color_id=15,
+                role=RoleType.GOAL,
+                confidence=0.95,
+                evidence_steps=[9],
+                estimated_position={"row": 2.0, "col": 1.0},
+            )
+        }
+    )
+
+    obs = {
+        "colors": [{"value": 15, "count": 1}],
+        "available_actions": ["ACTION1", "ACTION2"],
+        "task_id": "t1",
+        "dataset_id": "d1",
+        "grid": [[0, 15], [0, 0]],
+    }
+    ctx = {
+        "last_transition_effect": {"meaningful_change_score": 0.2, "reward_signal": 0.0},
+        "action_facts": [],
+        "hud_rows": [],
+        "path_hypotheses": [],
+        "current_state_hash": "h1",
+    }
+
+    result = await engine.solve(obs, ctx, step=10, state_graph=StateGraph(), current_state_hash="h1")
+
+    assert result.object_roles[15].role == RoleType.PLAYER
+    assert "rejected goal flip" in result.strategy_summary
+    assert "PRIMARY ROLES: player=15" in result.strategy_summary
+
+
+@pytest.mark.asyncio
+async def test_solve_engine_replaces_stale_goal_with_stronger_new_goal():
+    from agents.arc3.solver import SolveEngine, PlanChunk, VictoryCondition, VictoryType
+    from agents.arc3.hypothesis import StateGraph
+
+    brain = AsyncMock()
+    brain.recall_plans.return_value = {"plans": []}
+    brain.recall_relevant_lessons.return_value = {"lessons": []}
+    brain.analogical_search.return_value = {"results": []}
+    brain.register_plan.return_value = {"plan_id": "p-goal"}
+    brain.report_outcome.return_value = {"status": "ok"}
+
+    llm = AsyncMock()
+    llm.achat.return_value = '{"condition_type":"reach_goal","description":"reach exit","target_color_id":null,"confidence":0.5}'
+
+    engine = SolveEngine(brain, llm, "s1")
+    engine._victory_condition = VictoryCondition(
+        condition_type=VictoryType.REACH_GOAL, confidence=0.8, description="reach exit"
+    )
+    engine._solve_plan_id = "p-goal"
+    engine._active_chunk = PlanChunk(description="follow evidence", source="explore")
+    engine._object_roles = {
+        15: ObjectRole(
+            color_id=15,
+            role=RoleType.PLAYER,
+            confidence=0.86,
+            evidence_steps=[2],
+            estimated_position={"row": 2.0, "col": 1.0},
+        ),
+        9: ObjectRole(
+            color_id=9,
+            role=RoleType.GOAL,
+            confidence=0.58,
+            evidence_steps=[2],
+            estimated_position={"row": 1.0, "col": 1.0},
+        ),
+    }
+    engine.role_mapper.update = MagicMock(
+        return_value={
+            12: ObjectRole(
+                color_id=12,
+                role=RoleType.GOAL,
+                confidence=0.93,
+                evidence_steps=[9],
+                estimated_position={"row": 0.0, "col": 1.0},
+            )
+        }
+    )
+
+    obs = {
+        "colors": [{"value": 15, "count": 1}, {"value": 9, "count": 1}, {"value": 12, "count": 1}],
+        "available_actions": ["ACTION1", "ACTION2"],
+        "task_id": "t1",
+        "dataset_id": "d1",
+        "grid": [[0, 15], [9, 12]],
+    }
+    ctx = {
+        "last_transition_effect": {"meaningful_change_score": 0.2, "reward_signal": 0.0},
+        "action_facts": [],
+        "hud_rows": [],
+        "path_hypotheses": [],
+        "current_state_hash": "h1",
+    }
+
+    result = await engine.solve(obs, ctx, step=11, state_graph=StateGraph(), current_state_hash="h1")
+
+    assert result.object_roles[12].role == RoleType.GOAL
+    assert result.object_roles[9].role == RoleType.DECORATION
+    assert "demoted stale goal" in result.strategy_summary
+    assert "PRIMARY ROLES: player=15, goal=12" in result.strategy_summary
+
+
+def test_merge_persistent_roles_enforces_single_primary_player_and_goal():
+    engine = SolveEngine(AsyncMock(), AsyncMock(), "s1")
+    engine._object_roles = {
+        2: ObjectRole(color_id=2, role=RoleType.GOAL, confidence=0.61, evidence_steps=[1]),
+        7: ObjectRole(color_id=7, role=RoleType.GOAL, confidence=0.88, evidence_steps=[2]),
+        11: ObjectRole(color_id=11, role=RoleType.PLAYER, confidence=0.84, evidence_steps=[1]),
+        12: ObjectRole(color_id=12, role=RoleType.PLAYER, confidence=0.79, evidence_steps=[2]),
+    }
+
+    notes = engine._merge_persistent_roles({}, step=3)
+
+    assert sum(1 for role in engine._object_roles.values() if role.role == RoleType.PLAYER) == 1
+    assert sum(1 for role in engine._object_roles.values() if role.role == RoleType.GOAL) == 1
+    assert engine._object_roles[7].role == RoleType.GOAL
+    assert engine._object_roles[2].role == RoleType.DECORATION
+    assert engine._object_roles[11].role == RoleType.PLAYER
+    assert engine._object_roles[12].role == RoleType.DECORATION
+    assert any("demoted stale goal" in note for note in notes)
+
+
+def test_strategy_summary_reports_role_resolution_notes_and_primary_ids():
+    from agents.arc3.solver import PlanChunk
+
+    engine = SolveEngine(AsyncMock(), AsyncMock(), "s1")
+    engine._archetype = GameArchetype.CHASE
+    engine._archetype_confidence = 0.7
+    engine._victory_condition = VictoryCondition(
+        condition_type=VictoryType.REACH_GOAL, confidence=0.9, description="reach exit"
+    )
+    engine._object_roles = {
+        15: ObjectRole(color_id=15, role=RoleType.PLAYER, confidence=0.82),
+        9: ObjectRole(color_id=9, role=RoleType.GOAL, confidence=0.91),
+        3: ObjectRole(color_id=3, role=RoleType.DECORATION, confidence=0.4),
+    }
+    engine._active_chunk = PlanChunk(
+        description="follow evidence",
+        source="directional",
+        progress_score=0.4,
+        graduation_reason="graduate directional: score=0.81 >= 0.72",
+        graduation_score=0.81,
+    )
+    engine._role_resolution_notes = ["step 10: kept player at color_15; rejected goal flip"]
+
+    summary = engine._build_strategy_summary()
+
+    assert "PRIMARY ROLES: player=15, goal=9" in summary
+    assert "ROLE RESOLUTION: step 10: kept player at color_15; rejected goal flip" in summary
+    assert "GRADUATION:" in summary
 
 
 @pytest.mark.asyncio
