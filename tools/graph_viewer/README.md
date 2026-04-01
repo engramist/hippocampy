@@ -24,6 +24,17 @@ It is useful for:
 It is not intended to be a required part of `sidequests setup`, daemon startup, or the main
 product UX.
 
+## Use in Meta-Harness Evolution (B105)
+
+While the **MetaHarnessQuerySurface** provides programmatic access to harness results, the Graph
+Viewer remains a powerful optional tool for visualizing:
+
+- **Mutation Lineage**: how harness versions relate to each other.
+- **Failure Chains**: why a specific candidate repeatedly failed a cluster of puzzles.
+- **Trace Context**: inspecting the promoted action facts from a specific eval run.
+
+Proposers should use the query surface first, then use the Viewer for deep-dive root-cause analysis.
+
 ## SideQuests Database Paths
 
 The repo uses plain Kùzu database files in `~/.sidequests/`.
