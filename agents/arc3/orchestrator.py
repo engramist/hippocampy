@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 from benchmarks.arc3.adapter import BrainClientProtocol
@@ -12,8 +13,74 @@ from benchmarks.arc3.schema import ARC3Action, ARC3Observation
 from benchmarks.arc3.state_serializer import StateSerializerForARC
 from agents.arc3.hypothesis import HypothesisManager
 from agents.arc3.solver import SolveEngine
+from agents.arc3.repl_sandbox import execute_repl
+from agents.arc3.prompts import (
+    SYSTEM_PROMPT,
+    INSTRUCTION_TEMPLATE,
+    SANDBOX_INSTRUCTION,
+    REPL_SANDBOX_INSTRUCTION,
+    SANDBOX_SYSTEM_MESSAGE,
+    QUERY_LLM_SYSTEM_MESSAGE,
+)
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ContentBlock:
+    """B117: A structured block of prompt content."""
+    type: str
+    content: str
+    header: Optional[str] = None
+
+
+@dataclass
+class PromptPacket:
+    """B117: A typed collection of content blocks for the LLM prompt."""
+    blocks: List[ContentBlock] = field(default_factory=list)
+
+    def get_block(self, block_type: str) -> Optional[ContentBlock]:
+        return next((b for b in self.blocks if b.type == block_type), None)
+
+    def render(self) -> str:
+        """Render the packet into a final prompt string."""
+        ordered_keys = [
+            "SYSTEM", "STATE", "MEMORY", "SOLVE_CONTEXT", "PLAN",
+            "ACTION_FACTS", "EXPLORATION_SUMMARY", "PATH_HYPOTHESES", "HYPOTHESIS",
+            "OBSERVED_EFFECTS", "REFLEX", "HISTORY", "OBSERVATION",
+            "INSTRUCTION"
+        ]
+        
+        # Mapping of block type to its standard header
+        headers = {
+            "MEMORY": "MEMORY",
+            "SOLVE_CONTEXT": "SOLVE CONTEXT",
+            "PLAN": "PLAN",
+            "ACTION_FACTS": "ACTION FACTS",
+            "EXPLORATION_SUMMARY": "EXPLORATION SUMMARY",
+            "PATH_HYPOTHESES": "PATH HYPOTHESES",
+            "HYPOTHESIS": "HYPOTHESIS",
+            "OBSERVED_EFFECTS": "OBSERVED EFFECTS",
+            "REFLEX": "REFLEX",
+            "HISTORY": "HISTORY",
+            "OBSERVATION": "OBSERVATION",
+        }
+
+        block_map = {b.type: b for b in self.blocks}
+        final_parts = []
+        for key in ordered_keys:
+            if key in block_map:
+                block = block_map[key]
+                if not block.content.strip():
+                    continue
+                
+                header = block.header or headers.get(key)
+                if header:
+                    final_parts.append(f"=== {header} ===\n{block.content}")
+                else:
+                    final_parts.append(block.content)
+
+        return "\n\n".join(final_parts)
 
 
 class ARCOrchestrator:
@@ -241,6 +308,7 @@ class ARCOrchestrator:
                     "estimated_actions": solve_ctx.active_chunk.estimated_actions,
                     "progress": solve_ctx.active_chunk.progress_score,
                     "source": solve_ctx.active_chunk.source,
+                    "plan_id": solve_ctx.active_chunk.plan_id,
                 }
                 if solve_ctx.active_chunk else None
             ),
@@ -298,6 +366,7 @@ class ARCOrchestrator:
             await self.brain.current_truth(
                 query="Am I looping?", session_id=self.session_id, scope="branch", limit=3
             )
+
         narrative = f"Step {step_num} observation: state={observation.get('state', 'UNKNOWN')} colors={observation['colors']} shapes={observation['shapes']}"
         notify_response = await self.brain.notify_turn(role="user", content=narrative, session_id=self.session_id)
         self._record_write_event(
@@ -328,8 +397,32 @@ class ARCOrchestrator:
         if "OBSERVED EFFECTS:" in prompt and "INSTRUCTION:" in prompt:
             self._asked_for_decision_from_effects = "effect" in prompt.lower()
 
-        action = await self._query_llm(prompt, available_actions)
+        # B114: Mental Sandbox reasoning loop
+        action = await self._mental_sandbox(prompt, available_actions, observation)
+
         action = self._enforce_action_policy(action, available_actions)
+
+        # B115: Final pre-execution decision guard
+        guard_result = self.solve_engine.critique_action(
+            action_id=action["action_id"],
+            available_actions=available_actions,
+            hypothesis_context=self._hypothesis_context or {},
+            step_history=self._step_history,
+        )
+        if guard_result["status"] in ("blocked", "warned") and guard_result.get("suggested_action"):
+            old_id = action["action_id"]
+            new_id = guard_result["suggested_action"]
+            action["action_id"] = new_id
+            action["rationale"] = (
+                f"{action.get('rationale', '')} (guard override: {old_id} -> {new_id} :: {guard_result['reason']})"
+            )
+        elif guard_result["status"] == "blocked":
+            # If blocked and no suggestion, we must still move. 
+            # Policy enforcement should have already ensured it's at least valid if possible.
+            action["rationale"] = f"{action.get('rationale', '')} (guard blocked: {guard_result['reason']})"
+        
+        action["guard_status"] = guard_result["status"]
+
         # B89: Track invalid actions
         action_id = action.get("action_id")
         if action_id not in available_actions:
@@ -344,11 +437,108 @@ class ARCOrchestrator:
             "prompt": prompt,
             "action_id": action.get("action_id"),
             "rationale": action.get("rationale"),
+            "thinking_trace": action.get("thinking_trace", []),
+            "guard_status": action.get("guard_status", "unknown"),
             "reward": None,
             "done": False,
             "prompt_tokens": prompt_tokens,
         })
         return action
+
+    async def _mental_sandbox(self, initial_prompt: str, available_actions: List[str], observation: ARC3Observation) -> ARC3Action:
+        """B114/B123: Bounded internal reasoning loop before final move."""
+        max_iterations = 2
+        iteration = 0
+        current_prompt = initial_prompt
+        thinking_trace = []
+        
+        # B122/B123: Use extracted sandbox instructions
+        current_prompt += SANDBOX_INSTRUCTION
+        current_prompt += REPL_SANDBOX_INSTRUCTION
+
+        while iteration < max_iterations:
+            iteration += 1
+            messages = [
+                {"role": "system", "content": SANDBOX_SYSTEM_MESSAGE},
+                {"role": "user", "content": current_prompt},
+            ]
+            try:
+                raw = await asyncio.to_thread(self.llm.chat, messages)
+                parsed = json.loads(raw)
+                
+                # Check for sandbox thought tool (B114)
+                if "sandbox_thought" in parsed:
+                    test_action = parsed["sandbox_thought"]
+                    result = self.solve_engine.peek_action_consequences(test_action, self._hypothesis_context or {})
+                    
+                    thought_entry = {
+                        "iteration": iteration,
+                        "thought": parsed.get("thought", ""),
+                        "tool": "sandbox_thought",
+                        "test_action": test_action,
+                        "result": result
+                    }
+                    thinking_trace.append(thought_entry)
+                    
+                    current_prompt += f"\n\nSandbox Result for {test_action}: {json.dumps(result)}\nWhat is your next thought or final decision?"
+                    continue
+
+                # Check for REPL test tool (B123)
+                if "repl_test" in parsed:
+                    code = parsed["repl_test"]
+                    # Add simple grid variable for convenience
+                    grid_code = f"g = {json.dumps(observation.get('grid', []))}\n" + code
+                    result = await asyncio.to_thread(execute_repl, grid_code)
+                    
+                    thought_entry = {
+                        "iteration": iteration,
+                        "thought": parsed.get("thought", ""),
+                        "tool": "repl_test",
+                        "code": code,
+                        "result": result
+                    }
+                    thinking_trace.append(thought_entry)
+                    
+                    current_prompt += f"\n\nREPL Result:\nstdout: {result['stdout']}\nstderr: {result['stderr']}\nWhat is your next thought or final decision?"
+                    continue
+                
+                # Final decision found
+                if "action_id" in parsed:
+                    action_id = parsed["action_id"]
+                    rationale = parsed.get("rationale", "")
+                    
+                    if action_id not in available_actions:
+                        fallback = available_actions[0]
+                        logger.warning(
+                            "LLM selected unavailable action %r in sandbox; falling back to %r.",
+                            action_id, fallback
+                        )
+                        return {
+                            "action_id": fallback,
+                            "rationale": f"Invalid LLM action {action_id!r} in sandbox; fallback to {fallback}. Original rationale: {rationale}",
+                            "thinking_trace": thinking_trace
+                        }
+
+                    if thinking_trace:
+                        rationale = f"{rationale} (sandbox refined)"
+                    return {
+                        "action_id": action_id,
+                        "rationale": rationale,
+                        "thinking_trace": thinking_trace
+                    }
+                
+                # Fallback if neither
+                iteration = max_iterations
+            except Exception as exc:
+                logger.warning("Mental sandbox parse failed: %s", exc)
+                break
+
+        # Fallback to standard query if sandbox fails or exhausts
+        final_action = await self._query_llm(initial_prompt, available_actions)
+        if thinking_trace:
+            final_action["thinking_trace"] = thinking_trace
+        return final_action
+
 
     # ── Phase 4: Evaluate ──────────────────────────────────────────────
 
@@ -460,6 +650,88 @@ class ARCOrchestrator:
 
     # ── Prompt Construction ──────────────────────────────────────────
 
+    def build_action_packet(
+        self,
+        observation: ARC3Observation,
+        memory_context: dict,
+        step_history: List[dict],
+        available_actions: List[str],
+    ) -> PromptPacket:
+        """Construct a structured PromptPacket for the current decision. B117"""
+        packet = PromptPacket()
+
+        packet.blocks.append(ContentBlock(
+            type="SYSTEM",
+            content=SYSTEM_PROMPT.format(available_actions=', '.join(available_actions))
+        ))
+
+        state = observation.get("state", "UNKNOWN")
+        energy = observation.get("energy_estimate", 1.0)
+        packet.blocks.append(ContentBlock(
+            type="STATE",
+            content=f"STATE: {state}  ENERGY: {energy:.0%}"
+        ))
+
+        if memory_context.get("_triggered"):
+            memory_lines = self._format_memory_section(memory_context, observation, is_first_decision=not step_history)
+            if memory_lines:
+                packet.blocks.append(ContentBlock(type="MEMORY", content="\n".join(memory_lines)))
+
+        fact_lines = self._format_action_fact_section(self._hypothesis_context)
+        if fact_lines:
+            packet.blocks.append(ContentBlock(type="ACTION_FACTS", content="\n".join(fact_lines)))
+
+        hyp_lines = self._format_path_hypothesis_section(self._hypothesis_context)
+        if hyp_lines:
+            packet.blocks.append(ContentBlock(type="PATH_HYPOTHESES", content="\n".join(hyp_lines)))
+
+        hypothesis_lines = self._format_hypothesis_section(self._hypothesis_context)
+        if hypothesis_lines:
+            packet.blocks.append(ContentBlock(type="HYPOTHESIS", content="\n".join(hypothesis_lines)))
+
+        solve_section = self._build_solve_section()
+        if solve_section:
+            # Solve section already has a header usually, but packet render adds one.
+            # Let's clean it up to avoid double headers.
+            content = solve_section.replace("=== SOLVE CONTEXT ===\n", "")
+            packet.blocks.append(ContentBlock(type="SOLVE_CONTEXT", content=content))
+
+        effect_lines = self._format_effect_section(self._hypothesis_context)
+        if effect_lines:
+            packet.blocks.append(ContentBlock(type="OBSERVED_EFFECTS", content="\n".join(effect_lines)))
+
+        # EXPLORATION_SUMMARY from B116
+        compaction_text = self._format_compaction_section()
+        if compaction_text:
+            packet.blocks.append(ContentBlock(type="EXPLORATION_SUMMARY", content=compaction_text))
+
+        reflex_lines = self._format_reflex_section()
+        if reflex_lines:
+            packet.blocks.append(ContentBlock(type="REFLEX", content="\n".join(reflex_lines)))
+
+        plan_lines = self._format_plan_section()
+        packet.blocks.append(ContentBlock(type="PLAN", content="\n".join(plan_lines)))
+
+        history_text = self._format_history_section(step_history)
+        packet.blocks.append(ContentBlock(type="HISTORY", content=history_text))
+
+        packet.blocks.append(ContentBlock(
+            type="OBSERVATION",
+            content=self._format_observation_section(observation)
+        ))
+
+        # B110: INSTRUCTION should not duplicate effect summary (already in OBSERVED EFFECTS)
+        instruction_text = self._format_instruction_section(self._hypothesis_context)
+        packet.blocks.append(ContentBlock(
+            type="INSTRUCTION",
+            content=instruction_text
+        ))
+
+        # Apply B110 suppression and other transformations
+        self._apply_packet_transformations(packet, observation)
+
+        return packet
+
     def build_action_prompt(
         self,
         observation: ARC3Observation,
@@ -467,86 +739,36 @@ class ARCOrchestrator:
         step_history: List[dict],
         available_actions: List[str],
     ) -> str:
-        """Structured prompt that wires SideQuests memory into the local LLM.
+        """Render the final prompt string from a packet. B117"""
+        packet = self.build_action_packet(observation, memory_context, step_history, available_actions)
+        return packet.render()
 
-        B90: Prompt is smaller on no-trigger path; decision is effect-oriented.
-        """
-        sections: List[str] = []
-        sections.append(
-            "SYSTEM: You are an ARC puzzle solver. "
-            "Treat action ids as opaque operators until this puzzle provides evidence about their effects. "
-            f"Available actions: {', '.join(available_actions)}."
-        )
+    def _apply_packet_transformations(self, packet: PromptPacket, observation: ARC3Observation) -> None:
+        """B110/B117: Apply programmatic transformations like observation suppression and deduplication."""
+        obs_block = packet.get_block("OBSERVATION")
+        effects_block = packet.get_block("OBSERVED_EFFECTS")
+        instruction_block = packet.get_block("INSTRUCTION")
 
-        state = observation.get("state", "UNKNOWN")
-        energy = observation.get("energy_estimate", 1.0)
-        sections.append(f"STATE: {state}  ENERGY: {energy:.0%}")
-
-        # B90: Include memory only if retrieval was triggered
-        if memory_context.get("_triggered"):
-            memory_lines = self._format_memory_section(memory_context, observation, is_first_decision=not step_history)
-            if memory_lines:
-                sections.append("MEMORY:\n" + "\n".join(memory_lines))
-
-        fact_lines = self._format_action_fact_section(self._hypothesis_context)
-        if fact_lines:
-            sections.append("ACTION FACTS:\n" + "\n".join(fact_lines))
-
-        hyp_lines = self._format_path_hypothesis_section(self._hypothesis_context)
-        if hyp_lines:
-            sections.append("PATH HYPOTHESES:\n" + "\n".join(hyp_lines))
-
-        hypothesis_lines = self._format_hypothesis_section(self._hypothesis_context)
-        if hypothesis_lines:
-            sections.append("HYPOTHESIS:\n" + "\n".join(hypothesis_lines))
-
-        solve_section = self._build_solve_section()
-        if solve_section:
-            sections.append(solve_section)
-
-        effect_lines = self._format_effect_section(self._hypothesis_context)
-        if effect_lines:
-            sections.append("OBSERVED EFFECTS:\n" + "\n".join(effect_lines))
-
-        reflex_lines = self._format_reflex_section()
-        if reflex_lines:
-            sections.append("REFLEX:\n" + "\n".join(reflex_lines))
-
-        plan_lines = self._format_plan_section()
-        sections.append("PLAN:\n" + "\n".join(plan_lines))
-
-        history_text = self._format_history_section(step_history)
-        sections.append("HISTORY:\n" + history_text)
-
-        sections.append("OBSERVATION:\n" + self._format_observation_section(observation))
-
-        # B90: Effect-oriented instruction that foregrounds what changed and next decision
-        last_effect = self._hypothesis_context.get("last_transition_effect") if self._hypothesis_context else None
-        if last_effect:
-            effect_summary = (
-                f"Last action {last_effect.get('action')} caused "
-                f"{last_effect.get('meaningful_change_label', 'unknown')} "
-                f"(score {last_effect.get('meaningful_change_score', 0.0):.2f}). "
+        # B110 logic: suppress OBSERVATION section if OBSERVED EFFECTS provides sufficient board context
+        if obs_block and effects_block:
+            effects_content = effects_block.content
+            # Check if OBSERVED EFFECTS has rich board transition information
+            has_board_context = (
+                "Before board" in effects_content or
+                "After board" in effects_content or
+                "Changed region" in effects_content
             )
-        else:
-            effect_summary = "No prior action effects recorded yet. "
 
-        instruction = (
-            f"INSTRUCTION: {effect_summary}"
-            "What should you try next? "
-            "Choose the next valid action based on observed effects. "
-            "Start in an exploration phase: until each available action has at least one observed effect, prefer untested actions. "
-            "Prefer actions with strong_progress or tentative_progress evidence. "
-            "Treat no_progress evidence as a reason to switch actions unless reward improved. "
-            "Use an UNTESTED action when repeated actions are low-value or looped. "
-            "If the top tested actions both decay into low_value or no_progress, broaden exploration instead of bouncing between them. "
-            "After 2 consecutive zero-reward tentative steps on the same action, require stronger evidence than before or switch. "
-            "Do not let a memory-only first move override the current observation unless the memory clearly matches this puzzle. "
-            "Do not invent human labels for actions beyond the observed effects. "
-            "Respond with JSON {\"action_id\":..., \"rationale\":...}, and make the rationale cite one observed effect label or say UNTESTED."
-        )
-        sections.append(instruction)
-        return "\n\n".join(sections)
+            if has_board_context:
+                # Suppress the OBSERVATION block entirely when OBSERVED EFFECTS provides board context
+                obs_block.content = ""
+            else:
+                # If effects lack board context, keep OBSERVATION but suppress coarse map detail
+                obs_lines = obs_block.content.split("\n")
+                filtered_obs = [l for l in obs_lines if "Coarse map" not in l and not l.startswith("0 ") and not l.startswith("1 ")]
+                if len(filtered_obs) < len(obs_lines):
+                    filtered_obs.append("(coarse map suppressed; see OBSERVED EFFECTS for board context)")
+                obs_block.content = "\n".join(filtered_obs)
 
     def set_write_trace_context(self, context: str) -> None:
         self._write_trace_context = context or "bootstrap"
@@ -671,18 +893,70 @@ class ARCOrchestrator:
             return {"action_id": available_actions[0], "rationale": "fallback"}
 
     def _enforce_action_policy(self, action: ARC3Action, available_actions: List[str]) -> ARC3Action:
-        """Apply hard exploration guards when the prompt alone is not enough."""
+        """Apply hard exploration guards and chunk enforcement (B109/B112)."""
         hyp_ctx = self._hypothesis_context or {}
         coverage = hyp_ctx.get("action_coverage") or {}
         unexplored = [
             candidate for candidate in coverage.get("untested_actions", [])
             if candidate in available_actions
         ]
+        
         action_id = action.get("action_id")
         rationale = action.get("rationale") or ""
 
+        # B109/B112: Prioritize guidance-grade chunk actions (bfs, directional)
+        active_chunk = (self._solve_context or {}).get("active_chunk")
+        if active_chunk and active_chunk.get("estimated_actions"):
+            source = active_chunk.get("source", "unknown")
+            suggested = active_chunk["estimated_actions"]
+            
+            # B112: Only hard-enforce guidance-grade sources (bfs, directional).
+            # 'explore' chunks are descriptive hints, not strict constraints.
+            if source in ("bfs", "directional"):
+                # Filter for valid actions in this state
+                valid_suggested = [a for a in suggested if a in available_actions]
+                
+                if valid_suggested:
+                    chunk_action = valid_suggested[0]
+                    if action_id != chunk_action:
+                        # Policy override: follow the chunk plan
+                        if self.solve_engine._active_chunk and self.solve_engine._active_chunk.estimated_actions:
+                            # Find index of first valid action and pop it
+                            for i, a in enumerate(self.solve_engine._active_chunk.estimated_actions):
+                                if a == chunk_action:
+                                    self.solve_engine._active_chunk.estimated_actions.pop(i)
+                                    break
+
+                        return {
+                            "action_id": chunk_action,
+                            "rationale": f"policy override: enforcing {source} chunk '{active_chunk['description']}'. Original rationale: {rationale}",
+                        }
+                    else:
+                        # LLM agreed with chunk - still consume it
+                        if self.solve_engine._active_chunk and self.solve_engine._active_chunk.estimated_actions:
+                            for i, a in enumerate(self.solve_engine._active_chunk.estimated_actions):
+                                if a == action_id:
+                                    self.solve_engine._active_chunk.estimated_actions.pop(i)
+                                    break
+                        return action
+            else:
+                # B112: If it's an 'explore' chunk, we don't hard-enforce it, 
+                # but we should still consume it if the LLM coincidentally picked it.
+                if action_id == suggested[0]:
+                    if self.solve_engine._active_chunk and self.solve_engine._active_chunk.estimated_actions:
+                        self.solve_engine._active_chunk.estimated_actions.pop(0)
+
+        # If no guidance chunk action, fall back to standard exploration policy
         if unexplored and action_id not in unexplored:
             forced = unexplored[0]
+            
+            # B112: If we are forcing an exploration action, check if it matches 
+            # an 'explore' chunk suggestion so we consume it.
+            if active_chunk and active_chunk.get("source") == "explore" and active_chunk.get("estimated_actions"):
+                if forced == active_chunk["estimated_actions"][0]:
+                    if self.solve_engine._active_chunk and self.solve_engine._active_chunk.estimated_actions:
+                        self.solve_engine._active_chunk.estimated_actions.pop(0)
+
             return {
                 "action_id": forced,
                 "rationale": f"policy override: exploration phase requires testing {forced} before exploiting {action_id}. Original rationale: {rationale}",
@@ -792,6 +1066,49 @@ class ARCOrchestrator:
             lines.append(f"⚠ DISSONANCE: {sc['dissonance_reason']}")
 
         return "\n".join(lines)
+
+    def _should_suppress_observation(self, effect_lines: List[str]) -> bool:
+        """B110: Suppress OBSERVATION section if OBSERVED EFFECTS already provides board context.
+
+        Returns True if we should skip the OBSERVATION section because OBSERVED EFFECTS
+        contains sufficient board-state information (before/after snapshots, changed regions).
+        """
+        if not effect_lines:
+            return False
+
+        # Check if effect_lines contains board transition information
+        effect_text = "\n".join(effect_lines)
+        has_board_transition = (
+            "Board transition:" in effect_text or
+            "Before board" in effect_text or
+            "Changed region" in effect_text or
+            "before_snapshot" in effect_text or
+            "after_snapshot" in effect_text
+        )
+
+        return has_board_transition
+
+    def _format_instruction_section(self, hyp_ctx: dict | None) -> str:
+        """B110: Instruction that refers to earlier sections instead of re-dumping effects.
+
+        Avoids repeating the effect summary already in OBSERVED EFFECTS, but keeps
+        the complete decision policy rules.
+        """
+        # B110: Skip effect summary since OBSERVED EFFECTS provides detailed context
+        instruction = (
+            "INSTRUCTION: What should you try next? "
+            "Choose the next valid action based on observed effects. "
+            "Start in an exploration phase: until each available action has at least one observed effect, prefer untested actions. "
+            "Prefer actions with strong_progress or tentative_progress evidence. "
+            "Treat no_progress evidence as a reason to switch actions unless reward improved. "
+            "Use an UNTESTED action when repeated actions are low-value or looped. "
+            "If the top tested actions both decay into low_value or no_progress, broaden exploration instead of bouncing between them. "
+            "After 2 consecutive zero-reward tentative steps on the same action, require stronger evidence than before or switch. "
+            "Do not let a memory-only first move override the current observation unless the memory clearly matches this puzzle. "
+            "Do not invent human labels for actions beyond the observed effects. "
+            "Respond with JSON {\"action_id\":..., \"rationale\":...}, and make the rationale cite one observed effect label or say UNTESTED."
+        )
+        return instruction
 
     def _format_action_fact_section(self, hyp_ctx: dict | None) -> List[str]:
         if not hyp_ctx:
@@ -947,6 +1264,11 @@ class ARCOrchestrator:
         for suggestion in self._reflex_context.get("suggestions", [])[:1]:
             lines.append(f"GOLDEN PATH: {suggestion}")
         return lines
+
+    def _format_compaction_section(self) -> str:
+        """B116: EXPLORATION_SUMMARY - compact knowledge from long exploration runs."""
+        # TODO: Implement B116 exploration compaction
+        return ""
 
     def _format_plan_section(self) -> List[str]:
         if not self._plan_steps:
