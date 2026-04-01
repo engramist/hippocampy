@@ -1091,3 +1091,152 @@ def test_prompt_instruction_handles_no_prior_effects(sample_observation):
     assert "Choose the next valid action based on observed effects" in prompt
     # OBSERVATION section should be present when no OBSERVED EFFECTS
     assert "=== OBSERVATION ===" in prompt
+
+
+# ── B117: Typed Decision Packets ──────────────────────────────────────
+
+def test_build_action_packet_creates_all_block_types(sample_observation):
+    """B117: build_action_packet() should create blocks for all decision surfaces."""
+    orchestrator = ARCOrchestrator(
+        brain_client=MagicMock(),
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    
+    memory_ctx = {
+        "lessons": [{"text": "test lesson"}],
+        "memories": [{"text": "test memory"}],
+        "analogies": [],
+        "_triggered": True,
+    }
+    
+    orchestrator._hypothesis_context = {
+        "action_facts": [{"action": "ACTION1", "description": "test fact"}],
+        "path_hypotheses": [{"description": "test path"}],
+        "last_transition_effect": {
+            "action": "ACTION1",
+            "meaningful_change_label": "progress",
+            "meaningful_change_score": 0.5,
+            "meaningful_change_reasons": [],
+            "zero_reward_streak": 0,
+            "summary": "Test"
+        }
+    }
+    
+    packet = orchestrator.build_action_packet(
+        sample_observation,
+        memory_ctx,
+        step_history=[],
+        available_actions=["ACTION1", "ACTION2"],
+    )
+    
+    # B117: Verify core block types are present
+    assert packet.get_block("SYSTEM") is not None
+    assert packet.get_block("STATE") is not None
+    assert packet.get_block("MEMORY") is not None
+    assert packet.get_block("ACTION_FACTS") is not None
+    assert packet.get_block("PATH_HYPOTHESES") is not None
+    assert packet.get_block("OBSERVED_EFFECTS") is not None
+    assert packet.get_block("PLAN") is not None
+    assert packet.get_block("HISTORY") is not None
+    assert packet.get_block("INSTRUCTION") is not None
+
+
+def test_packet_render_produces_ordered_output(sample_observation):
+    """B117: packet.render() should produce blocks in standard order with headers."""
+    orchestrator = ARCOrchestrator(
+        brain_client=MagicMock(),
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+
+    memory_ctx = {"lessons": [], "memories": [], "analogies": [], "_triggered": False}
+
+    packet = orchestrator.build_action_packet(
+        sample_observation,
+        memory_ctx,
+        step_history=[],
+        available_actions=["ACTION1"],
+    )
+
+    prompt = packet.render()
+
+    # B117: Verify blocks appear in correct order (STATE and SYSTEM don't have === headers)
+    system_idx = prompt.find("SYSTEM:")
+    state_idx = prompt.find("STATE:")
+    plan_idx = prompt.find("=== PLAN ===")
+    history_idx = prompt.find("=== HISTORY ===")
+    observation_idx = prompt.find("=== OBSERVATION ===")
+    instruction_idx = prompt.find("INSTRUCTION:")
+
+    assert system_idx >= 0, "SYSTEM block should be present"
+    assert state_idx > system_idx, "STATE should come after SYSTEM"
+    assert plan_idx > state_idx, "PLAN should come after STATE"
+    assert history_idx > plan_idx, "HISTORY should come after PLAN"
+    assert observation_idx > history_idx, "OBSERVATION should come after HISTORY"
+    assert instruction_idx > observation_idx, "INSTRUCTION should come after OBSERVATION"
+
+
+def test_packet_skip_empty_blocks(sample_observation):
+    """B117: packet.render() should skip blocks with empty content."""
+    orchestrator = ARCOrchestrator(
+        brain_client=MagicMock(),
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+
+    # No memory context with _triggered=False means no MEMORY block
+    memory_ctx = {"lessons": [], "memories": [], "analogies": [], "_triggered": False}
+
+    # No hypothesis context means no ACTION_FACTS block
+    orchestrator._hypothesis_context = None
+
+    packet = orchestrator.build_action_packet(
+        sample_observation,
+        memory_ctx,
+        step_history=[],
+        available_actions=["ACTION1"],
+    )
+
+    prompt = packet.render()
+
+    # Should not have MEMORY or ACTION_FACTS headers since they're empty
+    assert "=== MEMORY ===" not in prompt
+    assert "=== ACTION FACTS ===" not in prompt
+    # But should still have essential blocks (STATE doesn't have === header)
+    assert "STATE:" in prompt
+    assert "=== PLAN ===" in prompt
+
+
+def test_build_action_prompt_calls_packet_render(sample_observation):
+    """B117: build_action_prompt() should delegate to build_action_packet() and render."""
+    orchestrator = ARCOrchestrator(
+        brain_client=MagicMock(),
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+
+    memory_ctx = {"lessons": [], "memories": [], "analogies": [], "_triggered": False}
+
+    prompt = orchestrator.build_action_prompt(
+        sample_observation,
+        memory_ctx,
+        step_history=[],
+        available_actions=["ACTION1"],
+    )
+
+    # B117: Verify the result is a rendered prompt string from a packet
+    assert isinstance(prompt, str)
+    assert len(prompt) > 0
+    # Should contain blocks from the packet render (STATE is without === header)
+    assert "STATE:" in prompt
+    assert "=== PLAN ===" in prompt
+    assert "INSTRUCTION:" in prompt
