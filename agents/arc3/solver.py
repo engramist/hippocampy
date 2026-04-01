@@ -80,6 +80,16 @@ class PlanChunk:
     graduation_score: float = 0.0
     graduation_reason: str = ""
     graduation_components: Dict[str, float] = field(default_factory=dict)
+    plan_id: Optional[str] = None           # SideQuests plan_id for this chunk
+
+
+@dataclass
+class ChunkLedgerEntry:
+    """B124: Track chunk lifecycle for prompt visibility and exploration prevention."""
+    description: str
+    status: str  # "pending" | "active" | "completed" | "failed"
+    steps_used: int
+    outcome_summary: str
 
 
 @dataclass
@@ -92,6 +102,7 @@ class SolveContext:
     dissonance_detected: bool = False
     dissonance_reason: str = ""
     strategy_summary: str = ""
+    chunk_ledger: List["ChunkLedgerEntry"] = field(default_factory=list)
 
 
 # ── Archetype Classifier ──────────────────────────────────────────────
@@ -768,6 +779,48 @@ class ObjectRoleMapper:
         self._prev_centroids = curr_centroids
         return roles
 
+    def seed_bootstrap_roles(self, observation: Dict[str, Any]) -> Dict[int, ObjectRole]:
+        """B119: Initial entity discovery from step 0 frame.
+        PLAYER: smallest moving color (heuristic: smallest non-zero color).
+        GOAL: color furthest from player (heuristic: color closest to exit/bottom-right).
+        """
+        roles: Dict[int, ObjectRole] = {}
+        colors = observation.get("colors") or []
+        if not colors:
+            return roles
+
+        # Filter out background (0)
+        non_bg = [c for c in colors if (c.get("value") if isinstance(c, dict) else c) != 0]
+        if not non_bg:
+            return roles
+
+        # Sort by pixel count ascending
+        sorted_by_size = sorted(non_bg, key=lambda c: c.get("count") if isinstance(c, dict) else 0)
+        
+        # Player candidate: the smallest object (often the character)
+        player_color_item = sorted_by_size[0]
+        p_id = player_color_item.get("value") if isinstance(player_color_item, dict) else player_color_item
+        roles[p_id] = ObjectRole(
+            color_id=p_id,
+            role=RoleType.PLAYER,
+            confidence=0.45,  # Low confidence bootstrap
+            evidence_steps=[0]
+        )
+
+        # Goal candidate: if there are other colors, pick one as a candidate
+        if len(sorted_by_size) > 1:
+            goal_color_item = sorted_by_size[-1]
+            g_id = goal_color_item.get("value") if isinstance(goal_color_item, dict) else goal_color_item
+            if g_id != p_id:
+                roles[g_id] = ObjectRole(
+                    color_id=g_id,
+                    role=RoleType.GOAL,
+                    confidence=0.35,
+                    evidence_steps=[0]
+                )
+
+        return roles
+
 
 # ── Victory Hypothesizer ──────────────────────────────────────────────
 
@@ -932,7 +985,7 @@ class DissonanceDetector:
         active_chunk: Optional[PlanChunk],
         step: int,
     ) -> tuple[bool, str]:
-        """Return (dissonance_detected, reason). Pure algorithmic — no async."""
+        """Return (should_replan, reason). Pure algorithmic — no async."""
         if active_chunk is None:
             self._zero_progress_streak = 0
             self._chunk_steps = 0
@@ -946,12 +999,17 @@ class DissonanceDetector:
             self._zero_progress_streak += 1
         else:
             self._zero_progress_streak = 0
+            self._chunk_steps = 0  # B109: meaningful change resets chunk step counter
 
         if self._zero_progress_streak >= self.STALL_THRESHOLD:
             return True, f"no meaningful change for {self._zero_progress_streak} steps"
 
         if self._chunk_steps >= self.MAX_CHUNK_STEPS and active_chunk.progress_score < 0.2:
             return True, f"chunk exceeded {self.MAX_CHUNK_STEPS} steps with low progress"
+
+        # B109: If chunk is exhausted but didn't reach success, trigger replan
+        if not active_chunk.estimated_actions and active_chunk.progress_score < 0.5:
+            return True, "chunk actions exhausted without significant progress"
 
         return False, ""
 
@@ -1171,8 +1229,9 @@ class PlanChunker:
                     directions.extend(["ACTION3"] * min(abs(int(dc)), 5))
 
             if directions:
+                dist = abs(dr) + abs(dc)
                 return PlanChunk(
-                    description=f"Move {victory_condition.condition_type.value} toward goal",
+                    description=f"Move {victory_condition.condition_type.value} toward goal (dist={dist})",
                     estimated_actions=directions[:8],
                     success_condition="reduce distance to goal object",
                     source="directional",
@@ -1198,13 +1257,78 @@ class PlanChunker:
         )
 
 
+class DecisionGuard:
+    """B115: Pre-execution guard that blocks or revises bad ARC moves."""
+
+    def critique_action(
+        self,
+        action_id: str,
+        available_actions: List[str],
+        hypothesis_context: Dict[str, Any],
+        active_chunk: Optional[PlanChunk],
+        step_history: List[dict],
+    ) -> Dict[str, Any]:
+        """Inspect action against loop history, chunks, and facts.
+        Returns: {
+            "status": "approved" | "blocked" | "warned",
+            "reason": str,
+            "suggested_action": Optional[str]
+        }
+        """
+        if action_id not in available_actions:
+            return {
+                "status": "blocked",
+                "reason": f"Action {action_id} not available in current state.",
+                "suggested_action": available_actions[0] if available_actions else None,
+            }
+
+        # 1. Loop Check: Avoid repeating moves that produced NO_CHANGE repeatedly
+        if step_history:
+            recent_no_reward = [
+                s for s in step_history[-3:]
+                if s.get("action_id") == action_id and s.get("reward") == 0.0
+            ]
+            if len(recent_no_reward) >= 2:
+                return {
+                    "status": "warned",
+                    "reason": f"Action {action_id} failed to produce reward in {len(recent_no_reward)} recent attempts.",
+                    "suggested_action": None,
+                }
+
+        # 2. Chunk Alignment Check:
+        if (
+            active_chunk 
+            and active_chunk.source in ("bfs", "directional")
+            and active_chunk.estimated_actions
+        ):
+            chunk_action = active_chunk.estimated_actions[0]
+            if action_id != chunk_action and chunk_action in available_actions:
+                return {
+                    "status": "warned",
+                    "reason": f"Action {action_id} deviates from guidance-grade {active_chunk.source} chunk: {active_chunk.description}.",
+                    "suggested_action": chunk_action,
+                }
+
+        # 3. Locked Evidence Check:
+        facts = hypothesis_context.get("action_facts", [])
+        fact = next((f for f in facts if f.get("action") == action_id), None)
+        if fact and fact.get("value_status") == "harmful":
+            return {
+                "status": "blocked",
+                "reason": f"Action {action_id} is marked as harmful: {fact.get('description')}",
+                "suggested_action": None,
+            }
+
+        return {"status": "approved", "reason": "No guard violations detected.", "suggested_action": None}
+
+
 # ── Solve Engine ──────────────────────────────────────────────────────
 
 class SolveEngine:
     """Top-level controller. Called by orchestrator between hypothesize() and plan().
 
     Owns: ArchetypeClassifier, ObjectRoleMapper, VictoryHypothesizer,
-          DissonanceDetector, PlanChunker.
+          DissonanceDetector, PlanChunker, DecisionGuard.
     Consumes: hypothesis_context (from HypothesisManager.observe()),
               brain_client, llm_client.
     Produces: SolveContext.
@@ -1220,6 +1344,7 @@ class SolveEngine:
         self.victory_hypothesizer = VictoryHypothesizer()
         self.dissonance_detector = DissonanceDetector()
         self.plan_chunker = PlanChunker()
+        self.decision_guard = DecisionGuard()
 
         self._archetype: GameArchetype = GameArchetype.UNKNOWN
         self._archetype_confidence: float = 0.0
@@ -1228,10 +1353,60 @@ class SolveEngine:
         self._victory_condition: Optional[VictoryCondition] = None
         self._active_chunk: Optional[PlanChunk] = None
         self._chunk_history: List[PlanChunk] = []
+        self._chunk_ledger: List[ChunkLedgerEntry] = []
         self._solve_plan_id: Optional[str] = None
-        self._chunk_plan_id: Optional[str] = None
         self._reward_history: List[float] = []
         self._role_resolution_notes: List[str] = []
+
+    def _add_chunk_to_ledger_as_active(self, chunk: PlanChunk) -> None:
+        """B124: Mark a chunk as active in the ledger."""
+        entry = ChunkLedgerEntry(
+            description=chunk.description,
+            status="active",
+            steps_used=0,
+            outcome_summary=""
+        )
+        self._chunk_ledger.append(entry)
+        # Note: don't prune here; prune only when transitioning to final state (completed/failed)
+
+    def _mark_chunk_completed(self, chunk: PlanChunk) -> None:
+        """B124: Mark chunk as completed with progress summary."""
+        if self._chunk_ledger:
+            # Find the most recent entry for this chunk
+            for entry in reversed(self._chunk_ledger):
+                if entry.description == chunk.description and entry.status == "active":
+                    entry.status = "completed"
+                    entry.steps_used = chunk.steps_executed
+                    entry.outcome_summary = f"progress={chunk.progress_score:.2f}"
+                    break
+        self._prune_chunk_ledger()
+
+    def _mark_chunk_failed(self, chunk: PlanChunk, reason: str) -> None:
+        """B124: Mark chunk as failed with reason."""
+        if self._chunk_ledger:
+            # Find the most recent entry for this chunk
+            for entry in reversed(self._chunk_ledger):
+                if entry.description == chunk.description and entry.status == "active":
+                    entry.status = "failed"
+                    entry.steps_used = chunk.steps_executed
+                    entry.outcome_summary = reason
+                    break
+        self._prune_chunk_ledger()
+
+    def _prune_chunk_ledger(self) -> None:
+        """B124: Keep ledger to 8 entries, removing oldest completed entries first."""
+        if len(self._chunk_ledger) <= 8:
+            return
+        # Keep all non-completed entries and the newest completed entries
+        completed = [e for e in self._chunk_ledger if e.status == "completed"]
+        non_completed = [e for e in self._chunk_ledger if e.status != "completed"]
+
+        # Keep the newest completed entries up to 8 total
+        to_keep_completed = max(0, 8 - len(non_completed))
+        if to_keep_completed < len(completed):
+            completed = completed[-to_keep_completed:]
+
+        self._chunk_ledger = non_completed + completed
 
     async def solve(
         self,
@@ -1283,7 +1458,7 @@ class SolveEngine:
             self._role_resolution_notes = self._role_resolution_notes[-6:]
 
         # 3. Victory condition hypothesis (LLM call, sticky)
-        dissonance_detected, dissonance_reason = self.dissonance_detector.update(
+        should_replan, dissonance_reason = self.dissonance_detector.update(
             hypothesis_context, self._active_chunk, step
         )
 
@@ -1291,7 +1466,7 @@ class SolveEngine:
             self._victory_condition is None
             and self._archetype_confidence >= VictoryHypothesizer.CALL_THRESHOLD
         ) or (
-            dissonance_detected
+            should_replan
             and (self._victory_condition is None or self._victory_condition.confidence < 0.5)
         )
 
@@ -1327,7 +1502,7 @@ class SolveEngine:
                 session_id=self.session_id,
                 task_id=observation.get("task_id", ""),
                 reward_history=self._reward_history,
-                dissonance_reason=dissonance_reason if dissonance_detected else "",
+                dissonance_reason=dissonance_reason if should_replan else "",
                 past_plans=past_plans,
                 lessons=lessons,
             )
@@ -1337,10 +1512,10 @@ class SolveEngine:
             await self._register_solve_plan(observation)
 
         # 5. Dissonance handling: report negative outcome + reset chunk
-        if dissonance_detected and self._chunk_plan_id:
+        if should_replan and self._active_chunk and self._active_chunk.plan_id:
             try:
                 await self.brain.report_outcome(
-                    plan_id=self._chunk_plan_id,
+                    plan_id=self._active_chunk.plan_id,
                     outcome=f"Chunk stalled: {dissonance_reason}",
                     valence=-0.6,
                     session_id=self.session_id,
@@ -1348,15 +1523,64 @@ class SolveEngine:
                 )
             except Exception as exc:
                 logger.warning("report_outcome failed: %s", exc)
+            # B124: Mark chunk as failed due to dissonance
+            self._mark_chunk_failed(self._active_chunk, f"dissonance: {dissonance_reason}")
             self._active_chunk = None
-            self._chunk_plan_id = None
             self.dissonance_detector.reset_chunk()
 
         # 6. Plan chunking: generate or continue active chunk
+        available_actions = observation.get("available_actions") or [
+            f"ACTION{i}" for i in range(1, 8)
+        ]
+        if self._active_chunk and self._active_chunk.estimated_actions:
+            # B112: Align stale detection with orchestrator gate
+            # BFS is strict: if the next action is blocked, the path is invalid.
+            # Directional/Explore are looser: skip blocked actions if possible.
+            first_action = self._active_chunk.estimated_actions[0]
+            is_stale = False
+            if self._active_chunk.source == "bfs":
+                if first_action not in available_actions:
+                    is_stale = True
+            else:
+                if not any(a in available_actions for a in self._active_chunk.estimated_actions):
+                    is_stale = True
+
+            if is_stale:
+                logger.info(
+                    "Discarding stale %s chunk: next action %s not in %s",
+                    self._active_chunk.source,
+                    first_action,
+                    available_actions,
+                )
+                # B124: Mark chunk as failed due to staleness
+                self._mark_chunk_failed(self._active_chunk, "stale: next action unavailable")
+                self._active_chunk = None
+                self.dissonance_detector.reset_chunk()
+
+        # B113: Ensure directional chunks stay actionable by replenishing them
+        # if they run low on steps. This avoids "empty shell" summaries.
+        if self._active_chunk:
+            is_exhausted = not self._active_chunk.estimated_actions
+            is_running_low = (
+                self._active_chunk.source == "directional"
+                and len(self._active_chunk.estimated_actions) < 2
+            )
+            if is_exhausted or is_running_low:
+                logger.info(
+                    "Clearing %s chunk (%s) to allow replenishment",
+                    self._active_chunk.source,
+                    "exhausted" if is_exhausted else "running low",
+                )
+                # B124: Mark chunk as completed or failed based on progress
+                reason = "exhausted" if is_exhausted else "running low"
+                if self._active_chunk.progress_score > 0.3:
+                    self._mark_chunk_completed(self._active_chunk)
+                else:
+                    self._mark_chunk_failed(self._active_chunk, reason)
+                self._active_chunk = None
+                # Note: we don't reset_chunk() here because replenishment isn't dissonance.
+
         if self._active_chunk is None and self._victory_condition is not None:
-            available_actions = observation.get("available_actions") or [
-                f"ACTION{i}" for i in range(1, 8)
-            ]
             self._active_chunk = self.plan_chunker.generate_chunk(
                 victory_condition=self._victory_condition,
                 object_roles=self._object_roles,
@@ -1368,16 +1592,21 @@ class SolveEngine:
             )
             if self._active_chunk:
                 self._chunk_history.append(self._active_chunk)
+                # B124: Add chunk to ledger as active
+                self._add_chunk_to_ledger_as_active(self._active_chunk)
+                # B109: Register chunk as a Plan in SideQuests
+                await self._register_chunk_plan(self._active_chunk)
             self.dissonance_detector.reset_chunk()
-            if self._chunk_plan_id is None and self._solve_plan_id is not None:
-                self._chunk_plan_id = self._solve_plan_id
 
-        # 7. Update chunk progress score from reward signal
-        if self._active_chunk and reward > 0.3:
-            self._active_chunk.progress_score = min(
-                self._active_chunk.progress_score + reward * 0.2, 1.0
-            )
+        # 7. Update chunk progress score and consume action
+        if self._active_chunk:
+            if reward > 0.3:
+                self._active_chunk.progress_score = min(
+                    self._active_chunk.progress_score + reward * 0.2, 1.0
+                )
             self._active_chunk.steps_executed += 1
+            # B109: Action consumption happens in the orchestrator via _enforce_action_policy,
+            # but we track execution count here.
 
         # Build strategy summary for prompt
         strategy = self._build_strategy_summary()
@@ -1388,9 +1617,57 @@ class SolveEngine:
             object_roles=dict(self._object_roles),
             victory_condition=self._victory_condition,
             active_chunk=self._active_chunk,
-            dissonance_detected=dissonance_detected,
+            dissonance_detected=should_replan,
             dissonance_reason=dissonance_reason,
             strategy_summary=strategy,
+            chunk_ledger=list(self._chunk_ledger),
+        )
+
+    async def _register_chunk_plan(self, chunk: PlanChunk) -> None:
+        """B109: Register an active chunk as a plan in SideQuests."""
+        try:
+            plan_payload = await self.brain.register_plan(
+                goal=chunk.description,
+                steps=chunk.estimated_actions or ["Execute strategy toward goal"],
+                session_id=self.session_id,
+            )
+            chunk.plan_id = plan_payload.get("plan_id")
+            logger.info("Chunk plan registered: %s (%s)", chunk.plan_id, chunk.description)
+        except Exception as exc:
+            logger.warning("register_chunk_plan failed: %s", exc)
+
+    def peek_action_consequences(self, action_id: str, hypothesis_context: dict) -> dict:
+        """B114: Local sandbox check. How does this action align with known facts?"""
+        facts = hypothesis_context.get("action_facts", [])
+        fact = next((f for f in facts if f.get("action") == action_id), None)
+        
+        chunk = self._active_chunk
+        chunk_match = False
+        if chunk and chunk.estimated_actions and chunk.estimated_actions[0] == action_id:
+            chunk_match = True
+            
+        return {
+            "action_id": action_id,
+            "has_fact": fact is not None,
+            "fact_summary": fact.get("description", "no prior evidence") if fact else "none",
+            "matches_active_chunk": chunk_match,
+            "chunk_description": chunk.description if chunk else "none",
+        }
+
+    def critique_action(
+        self,
+        action_id: str,
+        available_actions: List[str],
+        hypothesis_context: dict,
+        step_history: List[dict],
+    ) -> dict:
+        """B115: Expose decision guard to orchestrator."""
+        return self.decision_guard.critique_action(
+            action_id=action_id,
+            available_actions=available_actions,
+            hypothesis_context=hypothesis_context,
+            active_chunk=self._active_chunk,
+            step_history=step_history,
         )
 
     def _build_strategy_summary(self) -> str:
@@ -1427,7 +1704,6 @@ class SolveEngine:
         self._active_chunk = None
         self._chunk_history = []
         self._solve_plan_id = None
-        self._chunk_plan_id = None
         self.dissonance_detector.reset_chunk()
         self.dissonance_detector._zero_progress_streak = 0
         self._role_resolution_notes = []

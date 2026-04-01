@@ -147,6 +147,27 @@ class ARCOrchestrator:
             response_dict=notify_response,
         )
 
+        # B119: Bootstrap initial entity map at step 0
+        if step == 0:
+            bootstrap_roles = self.solve_engine.role_mapper.seed_bootstrap_roles(observation)
+            discovered_count = 0
+            for color_id, role in bootstrap_roles.items():
+                if color_id not in self.solve_engine._object_roles:
+                    self.solve_engine._object_roles[color_id] = role
+                    discovered_count += 1
+            
+            if discovered_count > 0:
+                detail = {
+                    str(k): {"role": v.role.value, "confidence": v.confidence}
+                    for k, v in bootstrap_roles.items()
+                }
+                self._record_write_event(
+                    kind="bootstrap_discovery",
+                    summary=f"Discovered {discovered_count} preliminary entities from initial frame.",
+                    detail=detail,
+                    source_step=0,
+                )
+
         # B90: Check retrieval triggers to decide whether to fetch memory
         should_retrieve = self._should_trigger_retrieval(observation, step)
         self._retrieval_triggered = should_retrieve
@@ -315,6 +336,15 @@ class ARCOrchestrator:
             "dissonance": solve_ctx.dissonance_detected,
             "dissonance_reason": solve_ctx.dissonance_reason,
             "strategy_summary": solve_ctx.strategy_summary,
+            "chunk_ledger": [
+                {
+                    "description": entry.description,
+                    "status": entry.status,
+                    "steps_used": entry.steps_used,
+                    "outcome_summary": entry.outcome_summary,
+                }
+                for entry in (solve_ctx.chunk_ledger or [])
+            ],
         }
         archetype = self._solve_context["archetype"]
         conf = self._solve_context["archetype_confidence"]
@@ -378,26 +408,32 @@ class ARCOrchestrator:
         )
 
         available_actions = observation.get("available_actions") or [f"ACTION{i}" for i in range(1, 8)]
-        prompt = self.build_action_prompt(
+        
+        # B117: Use PromptPacket model
+        packet = self.build_action_packet(
             observation=observation,
             memory_context=memory_context,
             step_history=self._step_history,
             available_actions=available_actions,
         )
+        prompt = packet.render()
+        
         # B89: Estimate prompt tokens and track first-prompt detail level
         prompt_tokens = self.serializer._estimate_tokens(prompt)
         self._prompt_tokens_per_step.append(prompt_tokens)
         if not self._step_history:
             # This is the first prompt - determine detail level
-            has_memory = "MEMORY:" in prompt
-            has_facts = "ACTION FACTS:" in prompt
-            has_effects = "OBSERVED EFFECTS:" in prompt
+            # Check for specific block presence
+            has_memory = packet.get_block("MEMORY") is not None
+            has_facts = packet.get_block("ACTION_FACTS") is not None
+            has_effects = packet.get_block("OBSERVED_EFFECTS") is not None
             self._first_prompt_detail_level = "rich" if (has_memory or has_facts or has_effects) else "compact"
+        
         # Check if prompt asks for decision from observed effects
-        if "OBSERVED EFFECTS:" in prompt and "INSTRUCTION:" in prompt:
+        if packet.get_block("OBSERVED_EFFECTS") and packet.get_block("INSTRUCTION"):
             self._asked_for_decision_from_effects = "effect" in prompt.lower()
 
-        # B114: Mental Sandbox reasoning loop
+        # B114/B123: Mental Sandbox reasoning loop (includes REPL)
         action = await self._mental_sandbox(prompt, available_actions, observation)
 
         action = self._enforce_action_policy(action, available_actions)
@@ -1061,6 +1097,24 @@ class ARCOrchestrator:
             if chunk.get("estimated_actions"):
                 lines.append(f"  Suggested actions: {chunk['estimated_actions'][:6]}")
             lines.append(f"  Progress: {chunk['progress']:.2f}")
+
+        # B124: Render chunk ledger as compact table
+        ledger = sc.get("chunk_ledger") or []
+        if ledger:
+            lines.append("CHUNK LEDGER:")
+            for entry in ledger[-8:]:  # Show last 8 entries
+                status_sym = {
+                    "completed": "✓",
+                    "active": "→",
+                    "pending": " ",
+                    "failed": "✗",
+                }.get(entry.get("status", "?"), "?")
+                desc = entry.get("description", "")[:40]
+                outcome = entry.get("outcome_summary", "")
+                if outcome:
+                    lines.append(f"  [{status_sym}] {desc} ({outcome})")
+                else:
+                    lines.append(f"  [{status_sym}] {desc}")
 
         if sc.get("dissonance"):
             lines.append(f"⚠ DISSONANCE: {sc['dissonance_reason']}")
