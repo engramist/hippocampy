@@ -172,6 +172,40 @@ To ensure maintainable prompt assembly, the engine uses structured packets:
 - `ContentBlock`: a single logical section (e.g., `MEMORY`, `PLAN`, `OBSERVATION`) with optional custom headers.
 - The packet model allows for programmatic transformations (like observation suppression or deduplication) before final rendering.
 
+### Block Types and Ordering
+
+The standard block ordering and ownership:
+
+1. **SYSTEM** - System message (operational context, available actions)
+2. **STATE** - Current puzzle state and energy estimate
+3. **MEMORY** - Retrieved lessons, memories, analogies (optional, retrieval-triggered)
+4. **SOLVE_CONTEXT** - Archetype, object roles, victory condition, active chunk
+5. **PLAN** - High-level plan steps and approach
+6. **ACTION_FACTS** - Deterministic operator facts (how actions behave)
+7. **EXPLORATION_SUMMARY** - Compacted exploration state (B116, optional)
+8. **PATH_HYPOTHESES** - Path and sequence hypotheses, exploration coverage
+9. **HYPOTHESIS** - Confirmed and active hypotheses
+10. **OBSERVED_EFFECTS** - Latest transition evidence and action effects
+11. **REFLEX** - Warnings and golden-path suggestions (optional)
+12. **HISTORY** - Recent action history with rationales
+13. **OBSERVATION** - Current grid observation (suppressed by B110 if redundant)
+14. **INSTRUCTION** - Decision policy and action request
+
+### Programmatic Transformations
+
+Before rendering, the packet layer applies transformations:
+- **B110**: Suppresses OBSERVATION when OBSERVED_EFFECTS provides sufficient board context
+- **B114**: Mental sandbox logic can annotate INSTRUCTION with sandbox refinements
+- **B116**: Exploration compaction populates EXPLORATION_SUMMARY
+- Future: Multimodal content, guard annotations, decision chains
+
+### Packet Construction Flow
+
+1. `build_action_packet()` creates ContentBlock instances for each decision surface
+2. `_apply_packet_transformations()` applies B110/B114/B116 logic on structured blocks
+3. `packet.render()` produces final prompt string with ordered headers
+4. `build_action_prompt()` is the public interface that builds and renders the packet
+
 ## Hard Limits
 
 These are the current implementation limits for the first prompt-slimming pass:
