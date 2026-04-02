@@ -27,7 +27,8 @@ TOOLS: list[dict] = [
         "description": (
             "Retrieve relevant memory before answering about past decisions, "
             "constraints, or architecture from the current project branch. "
-            "Call before answering complex questions or making architectural choices."
+            "Call before answering complex questions or making architectural choices. "
+            "Optional include_rationale returns originating message context for each result."
         ),
         "inputSchema": {
             "type": "object",
@@ -37,6 +38,11 @@ TOOLS: list[dict] = [
                 "scope":      {"type": "string", "enum": ["branch", "global", "both"],
                                "default": "branch"},
                 "limit":      {"type": "integer", "default": 10},
+                "include_rationale": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Include 1-hop ESTABLISHED_IN message rationale for each result."
+                },
             },
             "required": ["query", "session_id"],
         },
@@ -125,7 +131,8 @@ TOOLS: list[dict] = [
         "name": "explore_graph",
         "description": (
             "Traverse knowledge graph from a seed node, following relationships up to N hops. "
-            "Enables following causal chains and multi-hop relationships."
+            "Enables following causal chains and multi-hop relationships. "
+            "Optional context_window adds temporal/causal neighbors around visited nodes."
         ),
         "inputSchema": {
             "type": "object",
@@ -156,6 +163,13 @@ TOOLS: list[dict] = [
                     "type": "string",
                     "enum": ["outgoing", "incoming", "both"],
                     "default": "both"
+                },
+                "context_window": {
+                    "type": "integer",
+                    "default": 0,
+                    "minimum": 0,
+                    "maximum": 3,
+                    "description": "Number of contextual neighbors to include around each node."
                 }
             },
             "required": ["start_node_id", "session_id"]

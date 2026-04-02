@@ -5,6 +5,7 @@ Implements the A/B evaluation for ARC puzzles, measuring memory impact on solve 
 step count, and token efficiency.
 """
 
+from __future__ import annotations
 import asyncio
 import json
 import time

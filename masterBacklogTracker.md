@@ -5,6 +5,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | Card | Title | Priority | State | Owner | Target Date | Matched Plan(s) | Card File |
 |---|---|---|---|---|---|---|---|
 | B13 | Guided Installer with LLM Provider Choice — ✅ DONE (2026-03-24) | P0 | complete | TBD | TBD | - | backlog/B13.md |
+| B130 | Enhanced submission_results logging and observability — ✅ DONE (2026-04-02) | P1 | complete | TBD | TBD | backlog/plans/B-130-enhanced-logging.md | backlog/B130.md |
 | B19 | `sidequests uninstall` Command — ✅ DONE (2026-03-27) | P0 | complete | TBD | TBD | - | backlog/B19.md |
 | B1 | `sidequests setup` CLI — ✅ DONE (2026-03-28) | P1 | complete | TBD | TBD | backlog/plans/B-1-setup-cli.md | backlog/B1.md |
 | B2 | `.mcpb` Bundle (One-Click Claude Desktop Install) — ✅ DONE (2026-03-28) | P1 | complete | TBD | TBD | backlog/plans/B-2-cowork-plugin.md | backlog/B2.md |
@@ -68,9 +69,9 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 
 ## Summary
 
-- Total cards: 61
+- Total cards: 62
 - Ready: 0
 - Needs work: 0
-- Complete: 60
+- Complete: 61
 - In progress: 0
 - Blocked: 0
