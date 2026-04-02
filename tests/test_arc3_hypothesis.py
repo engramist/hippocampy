@@ -467,3 +467,24 @@ def test_action_fact_detects_leftward_drift_trend():
     assert fact["trend"]["kind"] == "directional_drift"
     assert fact["trend"]["direction"] == "left"
     assert "leftward drift" in fact["description"]
+
+def test_compact_exploration():
+    mgr = HypothesisManager(MagicMock(), "session1")
+    # Setup some state
+    mgr.observe([[[1]]], None, 1, ["A1"], {})
+    mgr.observe([[[1]]], "A1", 2, ["A1"], {}, transition_meta={"reward": 0.0})
+    mgr.observe([[[1]]], "A1", 3, ["A1"], {}, transition_meta={"reward": 0.0})
+    
+    mgr.hypotheses["h1"] = Hypothesis("h1", "rule confirmed", "rule", status="confirmed")
+    mgr.hypotheses["h2"] = Hypothesis("h2", "rule refuted", "rule", status="refuted")
+    
+    compaction = mgr.compact_exploration(current_step=3)
+    
+    assert compaction.timestamp_step == 3
+    assert "A1" in compaction.action_summaries
+    assert "A1: no pixels changed" in compaction.action_summaries["A1"]
+    assert "rule confirmed" in compaction.confirmed_rules
+    assert "rule refuted" in compaction.refuted_rules
+    # Loop detection check
+    assert len(compaction.known_loops) >= 1
+    assert "A1" in compaction.known_loops[0]

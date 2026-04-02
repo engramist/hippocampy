@@ -43,6 +43,7 @@ EXPECTED_TOOLS = {
     "upsert_lesson", "recall_relevant_lessons",  # B11
     "register_plan", "report_outcome", "recall_plans",  # B67
     "get_openclaw_prompt",
+    "register_task_graph", "get_ready_tasks", "advance_task", "fail_task", "get_task_graph",  # B128
 }
 
 def test_adapter_tool_names_match_handlers():

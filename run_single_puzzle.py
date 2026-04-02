@@ -28,6 +28,8 @@ MANIFEST_PATH = REPO_ROOT / "benchmarks/arc3/tasks_manifest.json"
 DB_PATH = Path.home() / ".sidequests" / "brain_single_test.db"
 SEED_PATH = REPO_ROOT / "sidequests/data/GistSeedExamples.md"
 TASK_BATCH_SIZE = 5
+FINAL_OUTPUT_PATH = REPO_ROOT / "submission_results_single.json"
+LIVE_OUTPUT_PATH = REPO_ROOT / "submission_results_single.live.jsonl"
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -42,6 +44,8 @@ class SingleTaskRunner:
         self.tasks = []
         self.results = []
         self.real_api = real_api
+        self.live_output_path = LIVE_OUTPUT_PATH
+        self.final_output_path = FINAL_OUTPUT_PATH
 
     async def initialize(self):
         logger.info("Initializing Single Task Runner...")
@@ -121,8 +125,16 @@ class SingleTaskRunner:
         while True:
             got_item = False
             try:
-                message_id, text, role, session_id = await self.loop_queue.get()
+                item = await self.loop_queue.get()
                 got_item = True
+                
+                # B108: Added precomputed to queue tuple
+                if len(item) == 4:
+                    message_id, text, role, session_id = item
+                    precomputed = None
+                else:
+                    message_id, text, role, session_id, precomputed = item
+
                 await run_loop(
                     message_id=message_id,
                     text=text,
@@ -132,6 +144,7 @@ class SingleTaskRunner:
                     config=self.config,
                     centroids=centroids,
                     session_id=session_id,
+                    precomputed=precomputed,
                 )
             except Exception as e:
                 logger.error(f"Loop worker error: {e}")
@@ -139,8 +152,15 @@ class SingleTaskRunner:
                 if got_item:
                     self.loop_queue.task_done()
 
+    def reset_live_output(self):
+        self.live_output_path.write_text("")
+
+    def append_live_snapshot(self, snapshot: dict):
+        with open(self.live_output_path, "a") as f:
+            f.write(json.dumps(snapshot) + "\n")
+
     def export_results(self):
-        output_path = REPO_ROOT / "submission_results_single.json"
+        output_path = self.final_output_path
         logger.info(f"Exporting results to {output_path}")
         with open(output_path, 'w') as f:
             json.dump(self.results, f, indent=2)
@@ -197,7 +217,13 @@ async def main():
         else:
             card_id = runner.config.get("benchmark", {}).get("card_id") or "local_test"
         brain_client = LocalBrainClient(runner.db, runner.config)
-        durable = DurableARCRunner(runner.harness, brain_client, runner.config)
+        runner.reset_live_output()
+        durable = DurableARCRunner(
+            runner.harness,
+            brain_client,
+            runner.config,
+            progress_callback=runner.append_live_snapshot,
+        )
 
         logger.info(f"Running {len(runner.tasks)} puzzle(s), starting with: {runner.tasks[0].task_id}")
         runner.results = await durable.run(runner.tasks, card_id)

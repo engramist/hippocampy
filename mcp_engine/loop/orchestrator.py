@@ -47,7 +47,8 @@ from mcp_engine.llm.provider import create_llm_client_for_step  # B16
 async def run_loop(message_id: str, text: str, db, llm_client,
                    config: dict, centroids: dict,
                    role: str = "user",
-                   session_id: str = "unknown") -> dict:
+                   session_id: str = "unknown",
+                   precomputed: dict | None = None) -> dict:
     """
     Run the Gated Consolidation Loop on a single message.
     Returns a summary dict of what was created/stored.
@@ -58,6 +59,13 @@ async def run_loop(message_id: str, text: str, db, llm_client,
 
     session_id: passed through to _reify_concept so ESTABLISHED_IN edges
     (artifact → Session) are written for all artifact types (B43).
+
+    precomputed: optional dict to bypass expensive LLM steps for stable
+    knowledge. Expected schema:
+    {
+        "entities": [{"text": str, "gist_class": str, "schema_org_type": str, "label": str}],
+        "relations": [{"head": str, "relation_type": str, "tail": str, "confidence": float}]
+    }
     """
     embedding_model = config.get("embeddings", {}).get(
         "model", "sentence-transformers/all-MiniLM-L6-v2"
@@ -80,26 +88,6 @@ async def run_loop(message_id: str, text: str, db, llm_client,
     }
 
     # ------------------------------------------------------------------
-    # Precondition: ensure Message node exists (O5 fix)
-    # The contradiction audit trail (Message)-[TRIGGERED]->(MergeEvent)
-    # requires a Message node. If the caller didn't create one, the
-    # MATCH in apply_contradiction silently fails and the audit is lost.
-    # ------------------------------------------------------------------
-    try:
-        result = db.execute(
-            "MATCH (m:Message {message_id: $mid}) RETURN m.message_id",
-            {"mid": message_id}
-        )
-        if not result.has_next():
-            import logging
-            logging.getLogger(__name__).warning(
-                f"Message node {message_id} not found — "
-                f"contradiction audit trails will be incomplete"
-            )
-    except Exception:
-        pass
-
-    # ------------------------------------------------------------------
     # B16 — Resolve per-step LLM clients (task-based model routing)
     # Falls back to the default llm_client if no override is configured.
     # ------------------------------------------------------------------
@@ -108,97 +96,106 @@ async def run_loop(message_id: str, text: str, db, llm_client,
     llm_step6 = create_llm_client_for_step(config, "step6_arbitration") or llm_client
 
     # ------------------------------------------------------------------
-    # Step 1 — NER (spaCy)
-    # ------------------------------------------------------------------
-    doc, entities = extract_entities(text, model_name=spacy_model)
-    summary["entities_found"] = len(entities)
-
-    if not entities:
-        return summary  # nothing to process
-
-    # ------------------------------------------------------------------
-    # Step 1b — Verb Pattern Relation Extraction
-    # O4 fix: extract relations but defer storage until AFTER Step 2 noise
-    # filtering. Storing relations before noise filtering creates Concept
-    # references for entities that may be dropped as noise by Step 2.
-    # ------------------------------------------------------------------
-    step1b_relations = extract_relations(doc, entities)
-
-    # ------------------------------------------------------------------
-    # Steps 2, 3, 3b — Per-entity classification + routing
+    # Step 1, 1b, 2, 3, 3b — Entity and Relation extraction
+    # B108: Bypass if precomputed data is supplied
     # ------------------------------------------------------------------
     typed_entities = []
+    deferred_relations = []
 
-    for entity in entities:
-        gist_result = classify_concept(
-            entity["text"], embedding_model, centroids, llm_step2,  # B16: per-step client
-            context=text,
-        )
+    if precomputed:
+        # Use precomputed entities
+        for ent in precomputed.get("entities", []):
+            text_raw = ent["text"]
+            gist_class = ent["gist_class"]
+            # Re-embed locally to ensure compatibility with current model
+            vector = await asyncio.to_thread(emb.embed, text_raw, model_name=embedding_model)
+            typed_entities.append({
+                "text": text_raw,
+                "label": ent.get("label", "PRODUCT"),
+                "gist_class": gist_class,
+                "schema_org_type": ent.get("schema_org_type", ""),
+                "gist_confidence": 0.95,
+                "vector": vector,
+            })
+        summary["entities_found"] = len(typed_entities)
 
-        if gist_result["system"] == "noise":
-            summary["noise_count"] += 1
-            continue
+        # Use precomputed relations
+        for rel in precomputed.get("relations", []):
+            deferred_relations.append({
+                "head": rel["head"],
+                "relation_type": rel["relation_type"],
+                "tail": rel["tail"],
+                "confidence": rel.get("confidence", 0.95),
+                "inferred_by": "precomputed",
+            })
+        summary["relations_found"] = len(deferred_relations)
 
-        gist_class = gist_result["gist_class"]
-        schema_result = route_to_schema_org(gist_class, entity.get("label"))
-        schema_org_type = schema_result["schema_org_type"]
+    else:
+        # Standard Loop Flow
+        # Step 1 — NER (spaCy)
+        doc, entities = extract_entities(text, model_name=spacy_model)
+        summary["entities_found"] = len(entities)
 
-        # M4: save System 2 labeled example for centroid improvement.
-        # Deferred to DB write (not blocking the hot path result).
-        if gist_result["system"] == "2" and gist_class:
-            await _save_gist_example(
-                entity["text"], gist_result["vector"], gist_class, db, now
+        if not entities:
+            return summary  # nothing to process
+
+        # Step 1b — Verb Pattern Relation Extraction
+        step1b_relations = extract_relations(doc, entities)
+
+        # Steps 2, 3 — Per-entity classification + routing
+        for entity in entities:
+            gist_result = classify_concept(
+                entity["text"], embedding_model, centroids, llm_step2,
+                context=text,
             )
 
-        typed_entities.append({
-            **entity,
-            "gist_class":      gist_class,
-            "schema_org_type": schema_org_type,
-            "gist_confidence": gist_result["confidence"],
-            # O1 fix: carry the embedding from Step 2 to avoid re-embedding
-            # at Step 5. Step 2 always computes and returns the vector.
-            "vector":          gist_result.get("vector"),
-        })
+            if gist_result["system"] == "noise":
+                summary["noise_count"] += 1
+                continue
 
-    # O4 fix: now that noise has been filtered, collect Step 1b relations.
-    # B32 fix part 1: DEFER actual storage until AFTER Step 4-7 loop creates Concept nodes.
-    # B32 fix part 2: No longer filter by "both endpoints must be NER entities" —
-    # _store_relation now calls _ensure_concept_exists for noun-chunk endpoints
-    # (e.g. "fast graph traversal", "persistent storage") that aren't in the NER
-    # entity list but ARE valid relation endpoints from the dep tree.
-    # Only filter: at least one endpoint (head or tail) must have survived 
-    # Step 2 noise filter (we trust the NER subject or object; the other
-    # can be any noun chunk). (B80)
-    surviving_texts = {e["text"].lower() for e in typed_entities}
-    surviving_step1b = [
-        r for r in step1b_relations
-        if (r["head"].lower() in surviving_texts or r["tail"].lower() in surviving_texts)
-    ]
-    summary["relations_found"] += len(surviving_step1b)
+            gist_class = gist_result["gist_class"]
+            schema_result = route_to_schema_org(gist_class, entity.get("label"))
+            schema_org_type = schema_result["schema_org_type"]
 
-    # Step 3b — Ollama semantic relation extraction
-    # O6 fix: run for all entity pairs NOT already covered by a Step 1b edge,
-    # not just when Step 1b found zero relations entirely.
-    # B32 fix: collect for deferred storage, same reason as above.
-    step1b_covered_pairs = {
-        (r["head"].lower(), r["tail"].lower()) for r in surviving_step1b
-    }
-    deferred_relations: list[dict] = list(surviving_step1b)  # start with step1b
+            if gist_result["system"] == "2" and gist_class:
+                await _save_gist_example(
+                    entity["text"], gist_result["vector"], gist_class, db, now
+                )
 
-    if len(typed_entities) > 1:
-        uncovered_pairs_exist = any(
-            (e1["text"].lower(), e2["text"].lower()) not in step1b_covered_pairs
-            for i, e1 in enumerate(typed_entities)
-            for e2 in typed_entities[i+1:]
-        )
-        if uncovered_pairs_exist:
-            step3b_relations = extract_semantic_relations(typed_entities, text, llm_step3b)  # B16
-            # Only store relations for pairs not already handled by Step 1b
-            for rel in step3b_relations:
-                pair = (rel["head"].lower(), rel["tail"].lower())
-                if pair not in step1b_covered_pairs:
-                    summary["relations_found"] += 1
-                    deferred_relations.append(rel)
+            typed_entities.append({
+                **entity,
+                "gist_class":      gist_class,
+                "schema_org_type": schema_org_type,
+                "gist_confidence": gist_result["confidence"],
+                "vector":          gist_result.get("vector"),
+            })
+
+        # Step 1b filtering
+        surviving_texts = {e["text"].lower() for e in typed_entities}
+        surviving_step1b = [
+            r for r in step1b_relations
+            if (r["head"].lower() in surviving_texts or r["tail"].lower() in surviving_texts)
+        ]
+        deferred_relations = list(surviving_step1b)
+
+        # Step 3b — Semantic relation extraction
+        step1b_covered_pairs = {
+            (r["head"].lower(), r["tail"].lower()) for r in surviving_step1b
+        }
+        if len(typed_entities) > 1:
+            uncovered_pairs_exist = any(
+                (e1["text"].lower(), e2["text"].lower()) not in step1b_covered_pairs
+                for i, e1 in enumerate(typed_entities)
+                for e2 in typed_entities[i+1:]
+            )
+            if uncovered_pairs_exist:
+                step3b_relations = extract_semantic_relations(typed_entities, text, llm_step3b)
+                for rel in step3b_relations:
+                    pair = (rel["head"].lower(), rel["tail"].lower())
+                    if pair not in step1b_covered_pairs:
+                        deferred_relations.append(rel)
+        
+        summary["relations_found"] = len(deferred_relations)
 
     # ------------------------------------------------------------------
     # Steps 4–7 — Pattern matching → retrieval → arbitration → pathway

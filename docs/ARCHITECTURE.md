@@ -6,9 +6,11 @@
 
 ## Required Companion References
 
-- Tool catalog (keep in sync with tool schemas/handlers): [docs/tool-catalog.md](docs/tool-catalog.md)
-- Backlog card authoring and execution rules: [backlog/BacklogRules.md](backlog/BacklogRules.md)
-- Backlog planning/tracking status source: [backlog/masterBacklogTracker.md](backlog/masterBacklogTracker.md)
+- Ecosystem rules (layer boundaries and separation rules): [docs/ecosystem-rules.md](ecosystem-rules.md)
+- Tool catalog (keep in sync with tool schemas/handlers): [docs/tool-catalog.md](tool-catalog.md)
+- ARC harness ownership and orchestration constraints: [docs/arc-harness-rules.md](arc-harness-rules.md)
+- Backlog card authoring and execution rules: [backlog/BacklogRules.md](../backlog/BacklogRules.md)
+- Backlog planning/tracking status source: [backlog/masterBacklogTracker.md](../backlog/masterBacklogTracker.md)
 
 ## Project Mission
 
@@ -214,6 +216,23 @@ sidequests-brain/
 │       └── state_serializer.py  # State-to-text serialization
 └── tests/
 ```
+
+## Optimization: Knowledge Pre-seeding (B108)
+
+To reduce cold-start latency and avoid repeated LLM calls for stable protocol concepts (like the ARC-AGI-3 API contract), SideQuests supports **Knowledge Pre-seeding**.
+
+- **Precomputed Artifacts**: Stable knowledge fragments can be ingested with pre-labeled entities and relations.
+- **Loop Fast-Path**: When `precomputed` data is provided to `notify_turn`, the Gated Consolidation Loop bypasses Step 1 (NER), Step 2 (gist classification), and Step 3b (semantic relation extraction).
+- **Local Re-embedding**: Entities are re-embedded locally during pre-seeded ingestion to ensure compatibility with the current `embeddings.model` configured in `sidequests.toml`.
+
+This ensures that the ARC harness spends more time solving the puzzle and less time re-learning the same ARC protocol on every run.
+
+## Directional Chunk Enforcement (B109)
+
+To ensure goal-directed behavior, the Solve Engine and Orchestrator collaborate to enforce planned sequences:
+- **Chunk Registration**: Every generated `PlanChunk` is registered as a unique `Plan` in SideQuests.
+- **Strict Enforcement**: The Orchestrator’s `_enforce_action_policy` prioritizes the active chunk’s `estimated_actions` over raw LLM suggestions.
+- **Execution Tracking**: The Solve Engine tracks `steps_executed` per chunk, and `DissonanceDetector` triggers replanning if a chunk stalls (zero progress) for too long.
 
 ## Gated Consolidation Loop (9 Steps — Write Flow)
 

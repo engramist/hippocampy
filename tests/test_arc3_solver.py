@@ -315,14 +315,14 @@ def test_dissonance_fires_after_stall_threshold():
 def test_dissonance_resets_on_good_progress():
     dd = DissonanceDetector()
     from agents.arc3.solver import PlanChunk
-    chunk = PlanChunk(description="test")
+    chunk = PlanChunk(description="test", estimated_actions=["ACTION1", "ACTION2"])
     low_ctx = {"last_transition_effect": {"meaningful_change_score": 0.05}}
     good_ctx = {"last_transition_effect": {"meaningful_change_score": 0.8}}
     for _ in range(4):
         dd.update(low_ctx, chunk, step=0)
     dd.update(good_ctx, chunk, step=5)   # resets streak
-    dissonance, _ = dd.update(low_ctx, chunk, step=6)
-    assert not dissonance  # streak reset, only 1 zero-progress step
+    should_replan, _ = dd.update(low_ctx, chunk, step=6)
+    assert not should_replan  # streak reset, only 1 zero-progress step
 
 
 # ── PlanChunker ──────────────────────────────────────────────────────
@@ -620,15 +620,13 @@ async def test_solve_engine_reset_preserves_archetype():
     engine._archetype = GameArchetype.CHASE
     engine._archetype_confidence = 0.8
     engine._archetype_locked = True
-    engine._active_chunk = PlanChunk(description="old chunk")
-    engine._chunk_plan_id = "p-old"
+    engine._active_chunk = PlanChunk(description="old chunk", plan_id="p-old")
 
     engine.reset_for_retry()
 
     assert engine._archetype == GameArchetype.CHASE   # preserved
     assert engine._archetype_locked is True           # preserved
     assert engine._active_chunk is None               # cleared
-    assert engine._chunk_plan_id is None              # cleared
 
 
 @pytest.mark.asyncio
@@ -991,8 +989,8 @@ async def test_solve_engine_dissonance_calls_report_outcome():
     engine._victory_condition = VictoryCondition(
         condition_type=VictoryType.REACH_GOAL, confidence=0.6, description="reach exit"
     )
-    engine._active_chunk = PlanChunk(description="stalled chunk", progress_score=0.0)
-    engine._chunk_plan_id = "p-stall"
+    engine._active_chunk = PlanChunk(description="stalled chunk", progress_score=0.0, plan_id="p-stall", estimated_actions=["ACTION1"])
+    # Force stall
     engine.dissonance_detector._zero_progress_streak = 10
 
     from agents.arc3.hypothesis import StateGraph
@@ -1012,3 +1010,91 @@ async def test_solve_engine_dissonance_calls_report_outcome():
     call_kwargs = brain.report_outcome.call_args.kwargs
     assert call_kwargs["valence"] < 0
     assert call_kwargs["plan_id"] == "p-stall"
+
+
+@pytest.mark.asyncio
+async def test_solve_engine_replenishes_directional_chunk_when_low():
+    from agents.arc3.solver import SolveEngine, PlanChunk, VictoryCondition, VictoryType, ObjectRole, RoleType
+    from agents.arc3.hypothesis import StateGraph
+
+    brain = AsyncMock()
+    brain.recall_plans.return_value = {"plans": []}
+    brain.recall_relevant_lessons.return_value = {"lessons": []}
+    brain.analogical_search.return_value = {"results": []}
+    brain.register_plan.return_value = {"plan_id": "p-new"}
+
+    llm = AsyncMock()
+    engine = SolveEngine(brain, llm, "s1")
+    engine._victory_condition = VictoryCondition(
+        condition_type=VictoryType.REACH_GOAL, confidence=0.9, description="reach exit"
+    )
+    engine._archetype_confidence = 0.8
+    engine._object_roles = {
+        1: ObjectRole(color_id=1, role=RoleType.PLAYER, confidence=0.9, estimated_position={"row": 10.0, "col": 10.0}),
+        9: ObjectRole(color_id=9, role=RoleType.GOAL, confidence=0.9, estimated_position={"row": 15.0, "col": 15.0}),
+    }
+
+    # Active directional chunk with only 1 action left
+    engine._active_chunk = PlanChunk(
+        description="move toward goal",
+        estimated_actions=["ACTION1"], # Only 1 left
+        source="directional",
+        plan_id="p-old"
+    )
+
+    obs = {
+        "available_actions": ["ACTION1", "ACTION2", "ACTION3", "ACTION4"],
+        "task_id": "t1", "dataset_id": "d1", "grid": [[0]]
+    }
+    ctx = {
+        "last_transition_effect": {"meaningful_change_score": 0.5},
+        "action_facts": [
+            {"action": "ACTION1", "fact_type": "deterministic_effect", "value_status": "valuable", "trend": {"direction": "down"}},
+            {"action": "ACTION2", "fact_type": "deterministic_effect", "value_status": "valuable", "trend": {"direction": "right"}},
+        ],
+        "action_coverage": {"initial_exploration_complete": True, "tested_count": 4, "untested_count": 0}
+    }
+
+    # solve() should clear the old chunk because it's running low (len=1 < 2)
+    # and then generate a new one.
+    await engine.solve(obs, ctx, step=5, state_graph=StateGraph(), current_state_hash="h1")
+
+    assert engine._active_chunk is not None
+    assert engine._active_chunk.source == "directional"
+    # Should have more than 1 action now
+    assert len(engine._active_chunk.estimated_actions) > 1
+    assert "dist=" in engine._active_chunk.description
+
+
+@pytest.mark.asyncio
+async def test_solve_engine_clears_exhausted_chunk():
+    from agents.arc3.solver import SolveEngine, PlanChunk, VictoryCondition, VictoryType
+    from agents.arc3.hypothesis import StateGraph
+
+    brain = AsyncMock()
+    brain.recall_plans.return_value = {"plans": []}
+    brain.recall_relevant_lessons.return_value = {"lessons": []}
+    brain.analogical_search.return_value = {"results": []}
+    brain.register_plan.return_value = {"plan_id": "p-new"}
+
+    engine = SolveEngine(brain, MagicMock(), "s1")
+    engine._victory_condition = VictoryCondition(condition_type=VictoryType.REACH_GOAL, confidence=0.9, description="test")
+
+    # Exhausted BFS chunk
+    engine._active_chunk = PlanChunk(
+        description="path",
+        estimated_actions=[], # Exhausted
+        source="bfs",
+        plan_id="p-old"
+    )
+
+    obs = {"available_actions": ["ACTION1"], "task_id": "t1", "dataset_id": "d1", "grid": [[0]]}
+    ctx = {"last_transition_effect": {"meaningful_change_score": 0.5}}
+
+    # solve() should clear it and generate a new one (likely 'explore' because no roles/graph)
+    await engine.solve(obs, ctx, step=5, state_graph=StateGraph(), current_state_hash="h1")
+
+    assert engine._active_chunk is not None
+    assert engine._active_chunk.description != "path"
+    assert engine._active_chunk.source == "explore"
+    assert len(engine._active_chunk.estimated_actions) > 0

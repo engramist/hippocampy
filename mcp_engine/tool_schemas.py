@@ -328,4 +328,92 @@ TOOLS: list[dict] = [
             "required": ["goal_query", "session_id"],
         },
     },
+    {
+        "name": "register_task_graph",
+        "description": (
+            "Declare a first-class execution DAG (TaskGraph + TaskNodes). "
+            "Enables durable dependency-aware execution tracking. "
+            "Returns cycle_errors if any edges would form a cycle."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "label":      {"type": "string", "description": "Human-readable name for the graph."},
+                "session_id": {"type": "string"},
+                "owner":      {"type": "string", "description": "Agent or module owning this graph."},
+                "tasks": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "task_id":     {"type": "string"},
+                            "label":       {"type": "string"},
+                            "description": {"type": "string"},
+                            "depends_on":  {"type": "array", "items": {"type": "string"}}
+                        },
+                        "required": ["task_id", "label"]
+                    }
+                }
+            },
+            "required": ["label", "session_id", "owner", "tasks"]
+        },
+    },
+    {
+        "name": "get_ready_tasks",
+        "description": (
+            "Return the topological frontier: all pending tasks whose upstream dependencies "
+            "are all complete or skipped."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "graph_id": {"type": "string"}
+            },
+            "required": ["graph_id"]
+        },
+    },
+    {
+        "name": "advance_task",
+        "description": (
+            "Transition a task to active or complete. On complete, returns newly unblocked tasks."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "graph_id": {"type": "string"},
+                "task_id":  {"type": "string"},
+                "status":   {"type": "string", "enum": ["active", "complete", "skipped"]},
+                "result":   {"type": "string", "description": "Optional outcome summary."}
+            },
+            "required": ["graph_id", "task_id", "status"]
+        },
+    },
+    {
+        "name": "fail_task",
+        "description": (
+            "Mark a task as failed. Returns blocked dependents that can no longer become ready."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "graph_id": {"type": "string"},
+                "task_id":  {"type": "string"},
+                "reason":   {"type": "string"}
+            },
+            "required": ["graph_id", "task_id", "reason"]
+        },
+    },
+    {
+        "name": "get_task_graph",
+        "description": (
+            "Return full graph state (nodes + edges) for audit and coordination."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "graph_id": {"type": "string"}
+            },
+            "required": ["graph_id"]
+        },
+    },
 ]

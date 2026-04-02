@@ -29,7 +29,11 @@
 | 16 | `get_anomalies` | Monitoring | Agent | Yes | No |
 | 17 | `ingest_document` | Ingestion | Agent | Yes | Yes (Loop processing) |
 | 18 | `get_openclaw_prompt` | Infrastructure | OpenClaw plugin | Yes | No |
-| 19 | *(reserved)* | — | — | — | — |
+| 19 | `register_task_graph` | Execution DAG | Agent | Yes | No |
+| 20 | `get_ready_tasks` | Execution DAG | Agent | Yes | No |
+| 21 | `advance_task` | Execution DAG | Agent | Yes | No |
+| 22 | `fail_task` | Execution DAG | Agent | Yes | No |
+| 23 | `get_task_graph` | Execution DAG | Agent | Yes | No |
 
 ---
 
@@ -532,6 +536,114 @@ These processes run inside the Brain Daemon without explicit tool calls.
 
 ---
 
+### 19. `register_task_graph` — Declare Execution DAG
+
+**Purpose:** Declare a first-class execution DAG (TaskGraph + TaskNodes) for parallel execution and dependency tracking.
+
+**When to call:** When starting a complex, multi-task project where tasks have dependencies and can run in parallel.
+
+**Input:**
+```json
+{
+  "label": "ARC-AGI Solve Pipeline",
+  "session_id": "uuid",
+  "owner": "ARCOrchestrator",
+  "tasks": [
+    { "task_id": "t1", "label": "Identify shapes", "description": "Detect all objects in input grid" },
+    { "task_id": "t2", "label": "Map roles", "depends_on": ["t1"] },
+    { "task_id": "t3", "label": "Apply transform", "depends_on": ["t2"] }
+  ]
+}
+```
+
+**Output:** `{ "graph_id": "uuid", "ready_tasks": [...], "cycle_errors": [] }`
+
+**What happens internally:**
+1. TaskGraph and TaskNode nodes created
+2. TASK_OF and DEPENDS_ON edges established
+3. Cycle detection validates the DAG structure
+4. Initial "ready" frontier (tasks with no dependencies) is returned
+
+**Integration test cases:**
+- T1: Validates DAG structure (rejects cycles)
+- T2: Links all nodes correctly to the TaskGraph
+- T3: Returns the correct initial topological frontier
+
+---
+
+### 20. `get_ready_tasks` — Query Topological Frontier
+
+**Purpose:** Return all pending tasks whose upstream dependencies are all complete or skipped.
+
+**When to call:** When looking for the next available tasks to execute in parallel.
+
+**Input:**
+```json
+{
+  "graph_id": "uuid"
+}
+```
+
+**Output:** Array of ready TaskNodes.
+
+---
+
+### 21. `advance_task` — Update Task Status
+
+**Purpose:** Transition a task to `active`, `complete`, or `skipped`.
+
+**When to call:** When a task starts, finishes successfully, or is deemed unnecessary.
+
+**Input:**
+```json
+{
+  "graph_id": "uuid",
+  "task_id": "t1",
+  "status": "complete",
+  "result": "Found 3 shapes: red square, blue line..."
+}
+```
+
+**Output:** `{ "task_id": "t1", "new_status": "complete", "newly_unblocked": ["t2"] }`
+
+---
+
+### 22. `fail_task` — Report Task Failure
+
+**Purpose:** Mark a task as failed and identify blocked dependents.
+
+**When to call:** When a task fails and cannot be completed.
+
+**Input:**
+```json
+{
+  "graph_id": "uuid",
+  "task_id": "t1",
+  "reason": "Execution timed out"
+}
+```
+
+**Output:** `{ "task_id": "t1", "status": "failed", "blocked_dependents": ["t2", "t3"] }`
+
+---
+
+### 23. `get_task_graph` — Audit Graph State
+
+**Purpose:** Return full graph state (nodes + edges) for audit and coordination.
+
+**When to call:** When needing a complete overview of the project's execution state.
+
+**Input:**
+```json
+{
+  "graph_id": "uuid"
+}
+```
+
+**Output:** Complete TaskGraph structure with all nodes and their current statuses.
+
+---
+
 ## Adapter Compatibility Matrix
 
 | Tool | claude_code | claude_desktop | codex | chatgpt_desktop | gemini_cli | OpenClaw TS |
@@ -549,6 +661,11 @@ These processes run inside the Brain Daemon without explicit tool calls.
 | register_plan | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | report_outcome | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | recall_plans | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| register_task_graph | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| get_ready_tasks | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| advance_task | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| fail_task | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| get_task_graph | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | context_status | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | upsert_lesson | ✅ | ✅ | ✅ | ✅ | ✅ | ✅* |
 | recall_relevant_lessons | ✅ | ✅ | ✅ | ✅ | ✅ | ✅* |

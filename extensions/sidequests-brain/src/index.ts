@@ -597,6 +597,53 @@ export default {
       session_id: params.session_id || sessionId,
     });
 
+    const registerTaskGraphParams = Type.Object({
+      label: Type.String({ description: "Human-readable name for the graph" }),
+      session_id: Type.Optional(Type.String({ description: "OpenClaw session ID (auto-filled)" })),
+      owner: Type.Optional(Type.String({ description: "Agent or module owning this graph" })),
+      tasks: Type.Array(
+        Type.Object({
+          task_id: Type.String(),
+          label: Type.String(),
+          description: Type.Optional(Type.String()),
+          depends_on: Type.Optional(Type.Array(Type.String())),
+        }),
+        { description: "Array of task nodes to register" }
+      ),
+    });
+
+    const registerTaskGraphTransform = (params: any = {}) => ({
+      label: params.label,
+      session_id: params.session_id || sessionId,
+      owner: params.owner || "",
+      tasks: params.tasks || [],
+    });
+
+    const getReadyTasksParams = Type.Object({
+      graph_id: Type.String({ description: "Task graph ID" }),
+    });
+
+    const advanceTaskParams = Type.Object({
+      graph_id: Type.String({ description: "Task graph ID" }),
+      task_id: Type.String({ description: "Task node ID" }),
+      status: Type.Union([
+        Type.Literal("active"),
+        Type.Literal("complete"),
+        Type.Literal("skipped"),
+      ]),
+      result: Type.Optional(Type.String({ description: "Optional outcome summary" })),
+    });
+
+    const failTaskParams = Type.Object({
+      graph_id: Type.String({ description: "Task graph ID" }),
+      task_id: Type.String({ description: "Task node ID" }),
+      reason: Type.String({ description: "Why the task failed" }),
+    });
+
+    const getTaskGraphParams = Type.Object({
+      graph_id: Type.String({ description: "Task graph ID" }),
+    });
+
     const formatResult = (value: unknown) => ({
       content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
     });
@@ -892,6 +939,42 @@ export default {
           "Retrieve flagged anomalies (potential prompt injections or constraint violations). Use to review and audit suspicious content detected by the Brain.",
         parameters: anomaliesParams,
         transformParams: anomaliesTransform,
+      },
+      {
+        name: "register_task_graph",
+        label: "Register Task Graph (SideQuests Brain)",
+        description:
+          "Declare a durable execution DAG of tasks with dependency tracking. Returns cycle errors if any edges form a cycle.",
+        parameters: registerTaskGraphParams,
+        transformParams: registerTaskGraphTransform,
+      },
+      {
+        name: "get_ready_tasks",
+        label: "Get Ready Tasks (SideQuests Brain)",
+        description:
+          "Return the topological frontier: all pending tasks whose upstream dependencies are complete or skipped.",
+        parameters: getReadyTasksParams,
+      },
+      {
+        name: "advance_task",
+        label: "Advance Task (SideQuests Brain)",
+        description:
+          "Transition a task to active, complete, or skipped. On complete, returns newly unblocked tasks.",
+        parameters: advanceTaskParams,
+      },
+      {
+        name: "fail_task",
+        label: "Fail Task (SideQuests Brain)",
+        description:
+          "Mark a task as failed. Returns blocked dependent tasks that can no longer become ready.",
+        parameters: failTaskParams,
+      },
+      {
+        name: "get_task_graph",
+        label: "Get Task Graph (SideQuests Brain)",
+        description:
+          "Return full graph state (nodes + edges) for a task graph. Use for audit and coordination.",
+        parameters: getTaskGraphParams,
       },
     ];
 

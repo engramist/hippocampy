@@ -18,7 +18,7 @@ from .schema import (
 class BrainClientProtocol(Protocol):
     """Very small protocol covering the MCP tools we actually invoke."""
 
-    async def notify_turn(self, *, role: str, content: str, session_id: str) -> Mapping[str, Any]:
+    async def notify_turn(self, *, role: str, content: str, session_id: str, precomputed: Optional[Mapping[str, Any]] = None) -> Mapping[str, Any]:
         ...
 
     async def current_truth(
@@ -46,10 +46,26 @@ class BrainClientProtocol(Protocol):
     async def branch_quest(self, *, name: str, purpose: str, parent_quest_id: str) -> Mapping[str, Any]:
         ...
 
+    # NEW — Task Graph (B128)
+    async def register_task_graph(self, *, label: str, session_id: str, owner: str, tasks: List[Mapping[str, Any]]) -> Mapping[str, Any]:
+        ...
+
+    async def get_ready_tasks(self, *, graph_id: str) -> Mapping[str, Any]:
+        ...
+
+    async def advance_task(self, *, graph_id: str, task_id: str, status: str, result: Optional[str] = None) -> Mapping[str, Any]:
+        ...
+
+    async def fail_task(self, *, graph_id: str, task_id: str, reason: str) -> Mapping[str, Any]:
+        ...
+
+    async def get_task_graph(self, *, graph_id: str) -> Mapping[str, Any]:
+        ...
+
 
 class NoOpBrainClient(BrainClientProtocol):
     """Brain client that does nothing (for baseline mode)."""
-    async def notify_turn(self, *, role: str, content: str, session_id: str) -> Mapping[str, Any]:
+    async def notify_turn(self, *, role: str, content: str, session_id: str, precomputed: Optional[Mapping[str, Any]] = None) -> Mapping[str, Any]:
         return {"status": "skipped"}
 
     async def current_truth(self, *, query: str, session_id: str, scope: str, limit: int) -> Mapping[str, Any]:
@@ -73,6 +89,21 @@ class NoOpBrainClient(BrainClientProtocol):
     async def branch_quest(self, *, name: str, purpose: str, parent_quest_id: str) -> Mapping[str, Any]:
         return {"side_quest_id": None, "name": name, "parent_quest_id": parent_quest_id}
 
+    async def register_task_graph(self, *, label: str, session_id: str, owner: str, tasks: List[Mapping[str, Any]]) -> Mapping[str, Any]:
+        return {"graph_id": "noop", "task_ids": [], "ready_tasks": [], "cycle_errors": []}
+
+    async def get_ready_tasks(self, *, graph_id: str) -> Mapping[str, Any]:
+        return {"graph_id": graph_id, "ready": []}
+
+    async def advance_task(self, *, graph_id: str, task_id: str, status: str, result: Optional[str] = None) -> Mapping[str, Any]:
+        return {"task_id": task_id, "new_status": status, "newly_unblocked": []}
+
+    async def fail_task(self, *, graph_id: str, task_id: str, reason: str) -> Mapping[str, Any]:
+        return {"task_id": task_id, "status": "failed", "blocked_dependents": []}
+
+    async def get_task_graph(self, *, graph_id: str) -> Mapping[str, Any]:
+        return {"graph_id": graph_id, "label": "", "status": "active", "version": 0, "tasks": [], "edges": []}
+
 
 class LocalBrainClient(BrainClientProtocol):
     """Brain client that calls handlers directly (for augmented mode)."""
@@ -83,7 +114,8 @@ class LocalBrainClient(BrainClientProtocol):
         from mcp_engine.tools import (
             notify_turn, current_truth, register_plan, report_outcome,
             recall_plans, recall_relevant_lessons, analogical_search,
-            branch_quest
+            branch_quest, register_task_graph, get_ready_tasks,
+            advance_task, fail_task, get_task_graph
         )
         self._notify_turn_handler = notify_turn
         self._current_truth_handler = current_truth
@@ -93,9 +125,16 @@ class LocalBrainClient(BrainClientProtocol):
         self._recall_relevant_lessons_handler = recall_relevant_lessons
         self._analogical_search_handler = analogical_search
         self._branch_quest_handler = branch_quest
+        self._register_task_graph_handler = register_task_graph
+        self._get_ready_tasks_handler = get_ready_tasks
+        self._advance_task_handler = advance_task
+        self._fail_task_handler = fail_task
+        self._get_task_graph_handler = get_task_graph
 
-    async def notify_turn(self, *, role: str, content: str, session_id: str) -> Mapping[str, Any]:
+    async def notify_turn(self, *, role: str, content: str, session_id: str, precomputed: Optional[Mapping[str, Any]] = None) -> Mapping[str, Any]:
         params = {"role": role, "content": content, "session_id": session_id}
+        if precomputed:
+            params["precomputed"] = precomputed
         return await self._notify_turn_handler(params, self.db, self.config)
 
     async def current_truth(self, *, query: str, session_id: str, scope: str, limit: int) -> Mapping[str, Any]:
@@ -126,6 +165,166 @@ class LocalBrainClient(BrainClientProtocol):
         params = {"name": name, "purpose": purpose, "parent_quest_id": parent_quest_id}
         return await self._branch_quest_handler(params, self.db, self.config)
 
+    async def register_task_graph(self, *, label: str, session_id: str, owner: str, tasks: List[Mapping[str, Any]]) -> Mapping[str, Any]:
+        params = {"label": label, "session_id": session_id, "owner": owner, "tasks": tasks}
+        return await self._register_task_graph_handler(params, self.db, self.config)
+
+    async def get_ready_tasks(self, *, graph_id: str) -> Mapping[str, Any]:
+        params = {"graph_id": graph_id}
+        return await self._get_ready_tasks_handler(params, self.db, self.config)
+
+    async def advance_task(self, *, graph_id: str, task_id: str, status: str, result: Optional[str] = None) -> Mapping[str, Any]:
+        params = {"graph_id": graph_id, "task_id": task_id, "status": status, "result": result}
+        return await self._advance_task_handler(params, self.db, self.config)
+
+    async def fail_task(self, *, graph_id: str, task_id: str, reason: str) -> Mapping[str, Any]:
+        params = {"graph_id": graph_id, "task_id": task_id, "reason": reason}
+        return await self._fail_task_handler(params, self.db, self.config)
+
+    async def get_task_graph(self, *, graph_id: str) -> Mapping[str, Any]:
+        params = {"graph_id": graph_id}
+        return await self._get_task_graph_handler(params, self.db, self.config)
+
+
+class LedgerBrainClient(BrainClientProtocol):
+    """Wrapper that records all calls into a shared ledger."""
+    def __init__(self, inner: BrainClientProtocol, ledger: List[Mapping[str, Any]], step_provider: Callable[[], int | str]):
+        self.inner = inner
+        self.ledger = ledger
+        self.step_provider = step_provider
+        self.current_phase: str = "unknown"
+
+    def _record(self, phase: str, call_type: str, mode: str, input_summary: str, result_summary: str, latency_ms: float, decision_used: Optional[Any] = None):
+        entry = {
+            "step": self.step_provider(),
+            "phase": phase if phase != "unknown" else self.current_phase,
+            "call_type": call_type,
+            "mode": mode,
+            "input_summary": self._compact_text(input_summary, 120),
+            "result_summary": self._compact_text(result_summary, 120),
+            "latency_ms": round(latency_ms, 1),
+        }
+        if decision_used is not None:
+            entry["decision_used"] = decision_used
+        self.ledger.append(entry)
+
+    @staticmethod
+    def _compact_text(text: str, limit: int = 180) -> str:
+        text = " ".join(str(text).split())
+        if len(text) <= limit:
+            return text
+        return text[: limit - 1].rstrip() + "…"
+
+    async def notify_turn(self, *, role: str, content: str, session_id: str, precomputed: Optional[Mapping[str, Any]] = None) -> Mapping[str, Any]:
+        import time
+        start = time.time()
+        resp = await self.inner.notify_turn(role=role, content=content, session_id=session_id, precomputed=precomputed)
+        latency = (time.time() - start) * 1000
+        self._record("unknown", "notify_turn", "write", content, resp.get("status", "ok"), latency)
+        return resp
+
+    async def current_truth(self, *, query: str, session_id: str, scope: str, limit: int) -> Mapping[str, Any]:
+        import time
+        start = time.time()
+        resp = await self.inner.current_truth(query=query, session_id=session_id, scope=scope, limit=limit)
+        latency = (time.time() - start) * 1000
+        results = resp.get("results", [])
+        self._record("unknown", "current_truth", "read", query, f"found {len(results)} items", latency)
+        return resp
+
+    async def register_plan(self, *, goal: str, steps: List[str], session_id: str) -> Mapping[str, Any]:
+        import time
+        start = time.time()
+        resp = await self.inner.register_plan(goal=goal, steps=steps, session_id=session_id)
+        latency = (time.time() - start) * 1000
+        self._record("unknown", "register_plan", "write", f"goal={goal}, steps={len(steps)}", f"plan_id={resp.get('plan_id')}", latency)
+        return resp
+
+    async def report_outcome(self, *, plan_id: str, outcome: str, valence: float, session_id: str) -> Mapping[str, Any]:
+        import time
+        start = time.time()
+        resp = await self.inner.report_outcome(plan_id=plan_id, outcome=outcome, valence=valence, session_id=session_id)
+        latency = (time.time() - start) * 1000
+        self._record("unknown", "report_outcome", "write", f"plan_id={plan_id}, valence={valence:.2f}", resp.get("status", "ok"), latency)
+        return resp
+
+    async def recall_plans(self, *, goal_query: str, session_id: str, min_valence: float, limit: int) -> Mapping[str, Any]:
+        import time
+        start = time.time()
+        resp = await self.inner.recall_plans(goal_query=goal_query, session_id=session_id, min_valence=min_valence, limit=limit)
+        latency = (time.time() - start) * 1000
+        plans = resp.get("plans", [])
+        self._record("unknown", "recall_plans", "read", goal_query, f"found {len(plans)} plans", latency)
+        return resp
+
+    async def recall_relevant_lessons(self, *, query: str, limit: int) -> Mapping[str, Any]:
+        import time
+        start = time.time()
+        resp = await self.inner.recall_relevant_lessons(query=query, limit=limit)
+        latency = (time.time() - start) * 1000
+        lessons = resp.get("lessons", [])
+        self._record("unknown", "recall_lessons", "read", query, f"found {len(lessons)} lessons", latency)
+        return resp
+
+    async def analogical_search(self, *, query: str, current_quest_id: str, limit: int, min_similarity: float) -> Mapping[str, Any]:
+        import time
+        start = time.time()
+        resp = await self.inner.analogical_search(query=query, current_quest_id=current_quest_id, limit=limit, min_similarity=min_similarity)
+        latency = (time.time() - start) * 1000
+        results = resp.get("results", [])
+        self._record("unknown", "analogical_search", "read", query, f"found {len(results)} results", latency)
+        return resp
+
+    async def branch_quest(self, *, name: str, purpose: str, parent_quest_id: str) -> Mapping[str, Any]:
+        import time
+        start = time.time()
+        resp = await self.inner.branch_quest(name=name, purpose=purpose, parent_quest_id=parent_quest_id)
+        latency = (time.time() - start) * 1000
+        self._record("unknown", "branch_quest", "write", name, f"side_quest_id={resp.get('side_quest_id')}", latency)
+        return resp
+
+    async def register_task_graph(self, *, label: str, session_id: str, owner: str, tasks: List[Mapping[str, Any]]) -> Mapping[str, Any]:
+        import time
+        start = time.time()
+        resp = await self.inner.register_task_graph(label=label, session_id=session_id, owner=owner, tasks=tasks)
+        latency = (time.time() - start) * 1000
+        self._record("unknown", "register_task_graph", "write", f"label={label}, tasks={len(tasks)}", f"graph_id={resp.get('graph_id')}", latency)
+        return resp
+
+    async def get_ready_tasks(self, *, graph_id: str) -> Mapping[str, Any]:
+        import time
+        start = time.time()
+        resp = await self.inner.get_ready_tasks(graph_id=graph_id)
+        latency = (time.time() - start) * 1000
+        ready = resp.get("ready", [])
+        self._record("unknown", "get_ready_tasks", "read", f"graph_id={graph_id}", f"found {len(ready)} tasks", latency)
+        return resp
+
+    async def advance_task(self, *, graph_id: str, task_id: str, status: str, result: Optional[str] = None) -> Mapping[str, Any]:
+        import time
+        start = time.time()
+        resp = await self.inner.advance_task(graph_id=graph_id, task_id=task_id, status=status, result=result)
+        latency = (time.time() - start) * 1000
+        self._record("unknown", "advance_task", "write", f"task_id={task_id}, status={status}", f"unblocked={len(resp.get('newly_unblocked', []))}", latency)
+        return resp
+
+    async def fail_task(self, *, graph_id: str, task_id: str, reason: str) -> Mapping[str, Any]:
+        import time
+        start = time.time()
+        resp = await self.inner.fail_task(graph_id=graph_id, task_id=task_id, reason=reason)
+        latency = (time.time() - start) * 1000
+        self._record("unknown", "fail_task", "write", f"task_id={task_id}, reason={reason}", f"blocked={len(resp.get('blocked_dependents', []))}", latency)
+        return resp
+
+    async def get_task_graph(self, *, graph_id: str) -> Mapping[str, Any]:
+        import time
+        start = time.time()
+        resp = await self.inner.get_task_graph(graph_id=graph_id)
+        latency = (time.time() - start) * 1000
+        tasks = resp.get("tasks", [])
+        self._record("unknown", "get_task_graph", "read", f"graph_id={graph_id}", f"found {len(tasks)} tasks", latency)
+        return resp
+
 
 class ARC3Adapter:
     """Normalize ARC episodes and drive SideQuests notify/current_truth calls."""
@@ -155,6 +354,17 @@ class ARC3Adapter:
 
         self.episode_num = episode_num
         self.step_num = 0
+
+    def get_ledger(self) -> List[Mapping[str, Any]]:
+        """Compatibility accessor for B111 ledger ownership.
+
+        Some call paths may still ask the adapter for the aggregated ledger even
+        though the canonical owner now lives on the wrapped brain client.
+        """
+        ledger = getattr(self.brain_client, "ledger", None)
+        if ledger is None:
+            return []
+        return list(ledger)
 
     def normalize_observation(self, raw: Mapping[str, Any]) -> ARC3Observation:
         """Convert the raw FrameResponse into a stable normalized snapshot."""
@@ -282,11 +492,11 @@ class ARC3Adapter:
         self.step_num += 1
         return {"narrative": narrative, "memory": memory}
 
-    async def notify_turn(self, content: str, role: str = "assistant") -> Mapping[str, Any]:
+    async def notify_turn(self, content: str, role: str = "assistant", precomputed: Optional[Mapping[str, Any]] = None) -> Mapping[str, Any]:
         """Forward the turn narrative to SideQuests."""
 
         return await self.brain_client.notify_turn(
-            role=role, content=content, session_id=self.session_id
+            role=role, content=content, session_id=self.session_id, precomputed=precomputed
         )
 
     async def current_truth(

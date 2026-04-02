@@ -15,7 +15,7 @@ from mcp_engine.loop.step7_5_lesson import extract_lessons
 from mcp_engine.tools import upsert_lesson, recall_relevant_lessons
 
 @pytest.mark.asyncio
-async def test_extract_lessons_trigger():
+async def test_extract_lessons_trigger(monkeypatch):
     """extract_lessons triggers on indicators and calls LLM."""
     db = MagicMock()
     db.execute_write = AsyncMock()
@@ -28,7 +28,7 @@ async def test_extract_lessons_trigger():
     
     # Mock embedding
     from mcp_engine.graph import embeddings as emb
-    emb.embed = MagicMock(return_value=[0.1] * 384)
+    monkeypatch.setattr(emb, "embed", MagicMock(return_value=[0.1] * 384))
     
     count = await extract_lessons("msg-123", text, db, llm, config)
     
@@ -54,7 +54,7 @@ async def test_extract_lessons_no_trigger():
     assert not llm.chat.called
 
 @pytest.mark.asyncio
-async def test_upsert_lesson_tool():
+async def test_upsert_lesson_tool(monkeypatch):
     """upsert_lesson tool creates a lesson node."""
     db = MagicMock()
     db.execute_write = AsyncMock()
@@ -68,7 +68,7 @@ async def test_upsert_lesson_tool():
     
     # Mock embedding
     from mcp_engine.graph import embeddings as emb
-    emb.embed = MagicMock(return_value=[0.2] * 384)
+    monkeypatch.setattr(emb, "embed", MagicMock(return_value=[0.2] * 384))
     
     result = await upsert_lesson(params, db, config)
     

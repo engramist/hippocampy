@@ -41,6 +41,8 @@ async def explore_graph(params: Dict[str, Any], db: KuzuClient, config: Dict[str
     """
     Traverse knowledge graph from a seed node, following relationships up to N hops.
     Enables LLMs to follow causal chains and multi-hop relationships.
+
+    B125: Optional context_window parameter (0-3) returns temporal/causal neighbors around each node.
     """
     start_id = params.get("start_node_id", "").strip()
     session_id = params.get("session_id", "").strip()
@@ -48,6 +50,7 @@ async def explore_graph(params: Dict[str, Any], db: KuzuClient, config: Dict[str
     strategy = params.get("strategy", "dfs").lower()
     edge_types = params.get("edge_types", [])
     direction = params.get("direction", "both").lower()
+    context_window = min(max(int(params.get("context_window", 0)), 0), 3)  # B125
 
     if not start_id:
         return {"error": "start_node_id is required"}
@@ -95,17 +98,22 @@ async def explore_graph(params: Dict[str, Any], db: KuzuClient, config: Dict[str
     # 2. Traversal logic
     # Max nodes visited to prevent runaway traversal
     MAX_NODES = 1000
-    
+
     if strategy == "bfs":
         paths, total_visited = _bfs_traversal(db, start_id, start_table, depth, edge_types_to_use, direction, MAX_NODES)
     else:
         paths, total_visited = _dfs_traversal(db, start_id, start_table, depth, edge_types_to_use, direction, MAX_NODES)
 
+    # B125: Add context around nodes if context_window > 0
+    if context_window > 0:
+        paths = _add_temporal_context(db, paths, context_window)
+
     return {
         "paths": paths,
         "total_nodes_visited": total_visited,
         "exploration_complete": True,
-        "exploration_truncated": total_visited >= MAX_NODES
+        "exploration_truncated": total_visited >= MAX_NODES,
+        "context_window": context_window,  # B125: Track if context was included
     }
 
 def _get_node_data(db: KuzuClient, node_id: str, table: str) -> Dict[str, Any]:
@@ -166,6 +174,58 @@ def _get_neighbors(db: KuzuClient, node_id: str, node_table: str, edge_types: Li
                 except Exception:
                     continue
     return neighbors
+
+def _add_temporal_context(db: KuzuClient, paths: List[Dict[str, Any]], context_window: int) -> List[Dict[str, Any]]:
+    """B125: Add temporal/causal context neighbors around each node in paths.
+
+    For each node, fetch up to context_window neighbors connected by temporal edges
+    (NEXT_MESSAGE, CAUSED_BY, ESTABLISHED_IN) and format as context slices.
+    Context text is truncated to 200 chars per neighbor.
+    """
+    if context_window <= 0:
+        return paths
+
+    enhanced_paths = []
+    for path in paths:
+        enhanced_nodes = []
+        for node in path.get("nodes", []):
+            node_id = node.get("node_id")
+            node_table = node.get("node_type")
+
+            # Add context wrapper if we have node info
+            enhanced_node = dict(node)
+            if node_id and node_table:
+                # Try to fetch temporal neighbors (before and after)
+                try:
+                    # For simplicity in this first pass, we fetch neighbors but preserve
+                    # the original node structure. Full temporal context would require
+                    # more complex graph traversal.
+                    context_edges = ["NEXT_MESSAGE", "CAUSED_BY", "ESTABLISHED_IN"]
+                    neighbors = _get_neighbors(db, node_id, node_table, context_edges, "both")
+
+                    # Truncate and format neighbor text
+                    context_items = []
+                    for nbr in neighbors[:context_window]:
+                        nbr_data = _get_node_data(db, nbr.get("id"), nbr.get("table"))
+                        nbr_text = nbr_data.get("text", "")
+                        if nbr_text:
+                            # Truncate to 200 chars
+                            context_items.append(nbr_text[:200])
+
+                    if context_items:
+                        enhanced_node["context_neighbors"] = context_items
+                        enhanced_node["context_count"] = len(context_items)
+                except Exception:
+                    # Gracefully degrade: include node without context if lookup fails
+                    pass
+
+            enhanced_nodes.append(enhanced_node)
+
+        enhanced_path = dict(path)
+        enhanced_path["nodes"] = enhanced_nodes
+        enhanced_paths.append(enhanced_path)
+
+    return enhanced_paths
 
 def _bfs_traversal(db: KuzuClient, start_id: str, start_table: str, max_depth: int, edge_types: List[str], direction: str, max_nodes: int) -> Tuple[List[Dict[str, Any]], int]:
     paths = []

@@ -587,7 +587,7 @@ async def test_dispatch_mcp_tools_list_direct():
     )
     tool_names = {t["name"] for t in resp["result"]["tools"]}
     assert "notify_turn" in tool_names
-    assert len(tool_names) == 18  # Prior 14 + B67 (3) + B71 get_openclaw_prompt (1)
+    assert len(tool_names) == 23  # Prior 14 + B67 (3) + B71 get_openclaw_prompt (1) + B128 task-graph (5)
 
 @pytest.mark.asyncio
 async def test_dispatch_mcp_unknown_method_direct():
