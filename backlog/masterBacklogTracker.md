@@ -46,6 +46,10 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B63 | Consolidation Loop for Non-Git Sessions — ✅ DONE (2026-03-28) | P8 | complete | TBD | TBD | backlog/plans/B-63-consolidation-loop-nonGIT.md | backlog/B63.md |
 | B64 | Bug: Message Count Shows 0 in Stats — ✅ DONE (2026-03-28) | P8 | complete | TBD | TBD | backlog/plans/B-64-message-count-bug.md | backlog/B64.md |
 | B65 | Register Missing Tools in OpenClaw Extension — ✅ DONE (2026-03-28) | P8 | complete | TBD | TBD | backlog/plans/B-65-openclaw-missing-tool-aliases.md | backlog/B65.md |
+| B66 | Plan & PlanStep Schema (Graph-Native Agent Plans) — ✅ DONE (2026-04-01) | P8 | complete | TBD | TBD | - | backlog/B66.md |
+| B67 | Active Agent Tools (register_plan, report_outcome, recall_plans) | P8 | complete ✅ DONE (2026-04-01) | B66 | B68, B69 | - | backlog/B67.md |
+| B68 | Passive Plan Detection (Step 4 Plan Sense) | P8 | complete ✅ DONE (2026-04-01) | B66, B67 | — | - | backlog/B68.md |
+| B69 | Valence & Outcome Propagation (Pain/Pleasure Learning) | P8 | complete ✅ DONE (2026-04-01) | B66, B67 | — | - | backlog/B69.md |
 | B42 | Document Concept→Artifact Retrieval Contract — ✅ DONE (2026-03-28) | P9 | complete | TBD | TBD | backlog/plans/B42-p0-bringup-hardening.md | backlog/B42.md |
 | B43 | Extend `ESTABLISHED_IN` Provenance to Requirement and ActionItem — ✅ DONE (2026-03-22) | P9 | complete | TBD | TBD | - | backlog/B43.md |
 | B44 | Token Efficiency as a Side Effect — ✅ DONE (2026-03-28) | P10 | complete | TBD | TBD | backlog/plans/B-44-token-efficiency-side-effect.md | backlog/B44.md |
@@ -86,11 +90,11 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B88 | Hypothesis Engine: Game-Theory-Driven Puzzle Solving | P1 | complete | TBD | TBD | backlog/plans/B-88-hypothesis-engine.md | backlog/B88.md |
 | B89 | ARC Prompt Budget and Retrieval Budget Benchmark | P1 | complete | TBD | TBD | backlog/plans/B-89-arc-prompt-budget-benchmark.md | backlog/B89.md |
 | B90 | ARC Uncertainty-Gated Retrieval — ✅ DONE (2026-03-31) | P1 | complete | TBD | TBD | backlog/plans/B-90-arc-uncertainty-gated-retrieval.md | backlog/B90.md |
-| B91 | Passive Graph Pre-Activation for Likely-Needed Retrieval | P2 | ready | TBD | TBD | backlog/plans/B-91-passive-graph-preactivation.md | backlog/B91.md |
-| B92 | ARC Step-Level SideQuests Write Trace | P1 | ready | TBD | TBD | backlog/plans/B-92-arc-write-trace.md | backlog/B92.md |
+| B91 | Passive Graph Pre-Activation for Likely-Needed Retrieval | P2 | complete ✅ DONE (2026-04-01) | B90, B17, B18 | — | backlog/plans/B-91-passive-graph-preactivation.md | backlog/B91.md |
+| B92 | ARC Step-Level SideQuests Write Trace | P1 | complete ✅ DONE (2026-04-01) | B88, current ARC debug export | B111 | backlog/plans/B-92-arc-write-trace.md | backlog/B92.md |
 | B93 | ARC Action Fact Promotion During Explore Phase — ✅ DONE (2026-03-31) | P1 | complete | TBD | TBD | backlog/plans/B-93-arc-action-fact-promotion.md | backlog/B93.md |
 | B94 | ARC Path Hypothesis Composition and Testing — ✅ DONE (2026-03-31) | P1 | complete | TBD | TBD | backlog/plans/B-94-arc-path-hypotheses.md | backlog/B94.md |
-| B95 | ARC Solve Engine: Goal-Directed Strategy from Game Archetype Classification | P1 | ready | TBD | TBD | backlog/plans/B-95-arc-solve-engine.md | backlog/B95.md |
+| B95 | ARC Solve Engine: Goal-Directed Strategy from Game Archetype Classification — ✅ DONE (2026-04-01) | P1 | complete | TBD | TBD | backlog/plans/B-95-arc-solve-engine.md | backlog/B95.md |
 | B97 | Object Role Detection Without Reward Signal | P0 | complete | TBD | TBD | backlog/plans/B-97-object-role-no-reward.md | backlog/B97.md |
 | B98 | Calibrate ARC Wall Detection to Avoid Overclassification | P1 | complete | TBD | TBD | backlog/plans/B-98-arc-wall-detection-calibration.md | backlog/B98.md |
 | B99 | Strengthen ARC Goal Detection from Target Evidence | P1 | complete | TBD | TBD | backlog/plans/B-99-arc-goal-detection.md | backlog/B99.md |
@@ -102,12 +106,62 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B105 | ARC Meta-Harness Query Surface for Candidate Comparison | P1 | complete | 2026-03-31 | TBD | backlog/plans/B-105-arc-meta-harness-query-surface.md | backlog/B105.md |
 | B106 | ARC Meta-Harness Candidate Runner and Evaluation Loop | P1 | complete | 2026-03-31 | TBD | backlog/plans/B-106-arc-meta-harness-candidate-runner.md | backlog/B106.md |
 | B107 | ARC Meta-Harness Proposer Loop — ✅ DONE (2026-03-31) | P1 | complete | 2026-03-31 | TBD | backlog/plans/B-107-arc-meta-harness-proposer-loop.md | backlog/B107.md |
+| B108 | Reduce Repeated SideQuests Overhead on ARC Contract Ingestion — ✅ DONE (2026-04-01) | P0 | complete | TBD | TBD | backlog/plans/B-108-arc-contract-ingestion-caching.md | backlog/B108.md |
+| B109 | Make Directional Chunks Constrain ARC Action Choice | P0 | complete ✅ DONE (2026-04-01) | B95, B101, B103 | B112, B113, B114, B115 | backlog/plans/B-109-arc-directional-chunk-enforcement.md | backlog/B109.md |
+| B110 | ARC Prompt Dedup and Section Ownership | P1 | complete ✅ DONE (2026-04-01) | B88, B90, B93, B94 | B117 | backlog/plans/B-110-arc-prompt-dedup-and-section-ownership.md | backlog/B110.md |
+| B111 | ARC SideQuests Call Ledger in Debug Export | P0 | complete ✅ DONE (2026-04-01) | B92 | B118 | backlog/plans/B-111-arc-sidequests-call-ledger.md | backlog/B111.md |
+| B112 | Enforce Chunk Policy Only for Live, Valid Guidance Chunks | P0 | complete ✅ DONE (2026-04-01) | B109 | B113, B115 | backlog/plans/B-112-arc-valid-chunk-enforcement-gate.md | backlog/B112.md |
+| B113 | Make Directional Chunks Produce Actionable Steps Early and Persistently | P0 | complete ✅ DONE (2026-04-01) | B109, B112 | B114 | backlog/plans/B-113-arc-actionable-directional-chunks.md | backlog/B113.md |
+| B114 | ARC Mental Sandbox Loop Before Real Move Execution | P0 | complete ✅ DONE (2026-04-01) | B109, B113 | B115, B123, B126 | backlog/plans/B-114-arc-mental-sandbox-loop.md | backlog/B114.md |
+| B115 | ARC Decision Guard Before Real Move Execution | P0 | complete ✅ DONE (2026-04-01) | B109, B112, B114 | B126 | backlog/plans/B-115-arc-decision-guard.md | backlog/B115.md |
+| B116 | ARC Exploration Compaction Artifact | P1 | complete ✅ DONE (2026-04-01) | B88, B90, B93, B94 | B117 | backlog/plans/B-116-arc-exploration-compaction.md | backlog/B116.md |
+| B117 | ARC Typed Decision Packets Instead of Ad Hoc Prompt Sections | P1 | complete ✅ DONE (2026-04-01) | B110, B114, B116 | B119, B120 | backlog/plans/B-117-arc-typed-decision-packets.md | backlog/B117.md |
+| B118 | ARC Ledger-Driven Runtime Pruning | P1 | complete ✅ DONE (2026-04-01) | B111 | — | backlog/plans/B-118-arc-ledger-driven-runtime-pruning.md | backlog/B118.md |
+| B119 | Bootstrap Entity Discovery and SideQuests Persistence | P0 | complete ✅ DONE (2026-04-01) | B95, B117 | B120, B121 | backlog/plans/B-119-bootstrap-entity-discovery.md | backlog/B119.md |
+| B120 | Entity-Enriched Observation in Prompt Blocks | P0 | complete ✅ DONE (2026-04-01) | B119, B117 | B121 | backlog/plans/B-120-entity-enriched-observation.md | backlog/B120.md |
+| B121 | Orchestrator Entity Discovery Gate and Failure Handling | P1 | complete ✅ DONE (2026-04-01) | B119 | — | backlog/plans/B-121-orchestrator-entity-gate.md | backlog/B121.md |
+| B122 | Extract Hardcoded Prompts to Shared Prompt Module | P2 | complete ✅ DONE (2026-04-01) | — | — | backlog/plans/B-122-extract-shared-prompts.md | backlog/B122.md |
+| B123 | ARC Python REPL Sandbox Tool for Grid Logic Verification | P1 | complete ✅ DONE (2026-04-01) | B114 | TBD | backlog/plans/B-123-arc-repl-sandbox.md | backlog/B123.md |
+| B124 | Structured Task Ledger for ARC SolveContext | P1 | complete ✅ DONE (2026-04-01) | - | TBD | backlog/plans/B-124-structured-task-ledger.md | backlog/B124.md |
+| B125 | Context-Windowed Recall for explore_graph and Memory Retrieval | P2 | complete ✅ DONE (2026-04-01) | — | — | backlog/plans/B-125-context-windowed-recall.md | backlog/B125.md |
+| B126 | ARC Verification Sub-Agent for Decision Guard | P2 | complete ✅ DONE (2026-04-01) | B114, B115 | — | backlog/plans/B-126-verification-sub-agent.md | backlog/B126.md |
+| B127 | DAG Task Graph Schema (First-Class Execution DAG in SideQuests) — ✅ DONE (2026-04-01) | P1 | complete ✅ DONE (2026-04-01) | B66 | B128 | backlog/plans/B-127-dag-task-graph-schema.md | backlog/B127.md |
+
+| B128 | Task Graph MCP Tools (register_task_graph, get_ready_tasks, advance_task, fail_task, get_task_graph) — ✅ DONE (2026-04-01) | P1 | complete | B127 | — | backlog/plans/B-128-dag-task-graph-tools.md | backlog/B128.md |
+| B129 | Align Task Graph Test Imports with B128 API Surface | P1 | complete ✅ DONE (2026-04-02) | B127, B128 | — | backlog/plans/B-129-task-graph-api-test-alignment.md | backlog/B129.md |
 
 ## Summary
 
-- Total cards: 95
-- Ready: 6
+- Total cards: 124
+- Ready: 0
 - Needs work: 0
-- Complete: 92
+- Complete: 124
 - In progress: 0
 - Blocked: 0
+
+## Execution Priority (ready cards)
+
+### Tier 1 — Immediate (no unsatisfied dependencies)
+| Order | Card | Priority | Why |
+|-------|------|----------|-----|
+| 1 | - | - | (none) |
+
+### Tier 2 — After Tier 1 deps complete
+| Order | Card | Blocked by | Why |
+|-------|------|-----------|-----|
+| 11 | - | - | (none) |
+
+### Tier 3 — After Tier 2 deps complete
+| Order | Card | Blocked by | Why |
+|-------|------|-----------|-----|
+| 13 | - | - | (none) |
+
+### Tier 4 — After Tier 3 deps complete
+| Order | Card | Blocked by | Why |
+|-------|------|-----------|-----|
+| 20 | - | - | (none) |
+
+### Tier 5 — Final chain
+| Order | Card | Blocked by | Why |
+|-------|------|-----------|-----|
+| 21 | - | - | (none) |

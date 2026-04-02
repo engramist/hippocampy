@@ -63,13 +63,17 @@ def classify_concept(entity_text: str, embedding_model: str,
     "We decided to use PostgreSQL" clearly maps to a gist class).
     The entity's own embedding is always stored for retrieval.
     """
-    vector = emb.embed(entity_text, model_name=embedding_model)
+    # Resolve embeddings at call time so tests/runtime that swap or reload
+    # mcp_engine.graph.embeddings do not leave this module with a stale handle.
+    from mcp_engine.graph import embeddings as emb_runtime
+
+    vector = emb_runtime.embed(entity_text, model_name=embedding_model)
 
     # System 1: compare against all class centroids.
     # Use context-enriched embedding for classification when available,
     # but always return the entity's own embedding for storage/retrieval.
     if context and context.strip() != entity_text.strip():
-        classify_vector = emb.embed(context, model_name=embedding_model)
+        classify_vector = emb_runtime.embed(context, model_name=embedding_model)
     else:
         classify_vector = vector
 

@@ -14,7 +14,7 @@ class _MockBrainClient(BrainClientProtocol):
         self.notify_calls: list[Mapping[str, object]] = []
         self.truth_calls: list[Mapping[str, object]] = []
 
-    async def notify_turn(self, *, role: str, content: str, session_id: str) -> Mapping[str, object]:
+    async def notify_turn(self, *, role: str, content: str, session_id: str, precomputed=None) -> Mapping[str, object]:
         self.notify_calls.append({"role": role, "content": content, "session_id": session_id})
         return {"status": "queued"}
 

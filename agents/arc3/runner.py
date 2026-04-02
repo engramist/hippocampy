@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from dataclasses import asdict
-from typing import Any, List, Mapping
+from typing import Any, Callable, List, Mapping
 
 from benchmarks.ab_harness import ABTask, ABTaskResult, ABVariant
 from benchmarks.arc3.adapter import ARC3Adapter, BrainClientProtocol
@@ -22,16 +23,33 @@ logger = logging.getLogger(__name__)
 class DurableARCRunner:
     """Crash-safe scorecard driver with SideQuests orchestrator."""
 
-    def __init__(self, harness: ARC3Harness, brain_client: BrainClientProtocol, config: dict):
+    def __init__(
+        self,
+        harness: ARC3Harness,
+        brain_client: BrainClientProtocol,
+        config: dict,
+        progress_callback: Callable[[dict], None] | None = None,
+    ):
+        from benchmarks.arc3.adapter import LedgerBrainClient
         self.harness = harness
-        self.brain = brain_client
+        self._raw_brain = brain_client
         self.config = config
         self._knowledge_seeded = False
+        self._ledger: List[dict] = []
+        self._current_step = 0
+        self._progress_callback = progress_callback
+        
+        self.brain = LedgerBrainClient(
+            inner=brain_client,
+            ledger=self._ledger,
+            step_provider=lambda: self._current_step
+        )
 
     async def _ensure_api_knowledge(self, session_id: str) -> None:
         """Ingest ARC API contract into SideQuests once per run."""
         if self._knowledge_seeded:
             return
+        self.brain.current_phase = "bootstrap"
         await ingest_api_knowledge(self.brain, session_id)
         self._knowledge_seeded = True
 
@@ -57,6 +75,8 @@ class DurableARCRunner:
                     continue
 
             session_id = f"arc-{task.task_id}-{uuid.uuid4().hex[:8]}"
+            self.brain.current_phase = "bootstrap"
+            self._current_step = 0
             await self._ensure_api_knowledge(session_id)
 
             # Branch per puzzle so each gets its own SideQuest scope
@@ -91,6 +111,17 @@ class DurableARCRunner:
                 result_payload["runtime_seconds"] = round(duration, 2)
                 # B89: Add benchmark metrics to result payload
                 result_payload["benchmark_metrics"] = getattr(task_result, "benchmark_metrics", {})
+                
+                # B121: Add entity gate status
+                result_payload["entity_gate_status"] = getattr(orchestrator, "_entity_gate_result", {})
+
+                # B118: Run final pruning analysis for debug export
+                orchestrator.analyze_ledger_and_prune()
+                
+                # B111: Add aggregated ledger from the shared list
+                result_payload["sidequests_ledger"] = list(self._ledger)
+                self._ledger.clear()  # reset for next puzzle
+
                 mgr.mark_complete(checkpoint, task.task_id, orchestrator._plan_id, result_payload)
                 results.append(self._submission_row_from_result(result_payload))
             except Exception as exc:
@@ -138,6 +169,8 @@ class DurableARCRunner:
             frame_response, guid = await self._initial_frame(game_id)
             observation = adapter.normalize_observation(frame_response)
             orchestrator.set_write_trace_context("bootstrap")
+            self.brain.current_phase = "bootstrap"
+            self._current_step = 0
             memory_context = await orchestrator.perceive(observation, step=0)
             await orchestrator.plan(observation, memory_context)
             bootstrap_write_trace = orchestrator.consume_write_trace()
@@ -147,6 +180,8 @@ class DurableARCRunner:
                 prior_step = orchestrator._step_history[-1] if steps_this_attempt > 0 and orchestrator._step_history else None
                 # B88 — Update hypothesis engine
                 orchestrator.set_write_trace_context(f"step-{total_steps + 1}")
+                self.brain.current_phase = "hypothesize"
+                self._current_step = total_steps + 1
                 hyp_ctx = await orchestrator.hypothesize(
                     observation,
                     prior_step.get("action_id") if prior_step else None,
@@ -155,8 +190,10 @@ class DurableARCRunner:
                 )
 
                 # B95 — Solve engine
+                self.brain.current_phase = "solve"
                 await orchestrator.solve(observation, hyp_ctx, total_steps)
 
+                self.brain.current_phase = "act"
                 action = await orchestrator.act(observation, memory_context, total_steps + 1)
                 total_tokens_input += self.harness.serializer._estimate_tokens(json.dumps(observation))
                 total_tokens_output += self.harness.serializer._estimate_tokens(str(action))
@@ -165,6 +202,7 @@ class DurableARCRunner:
                     game_id, guid, action, total_steps
                 )
                 recall_query = "What did I learn from similar puzzles?"
+                self.brain.current_phase = "ingest"
                 await adapter.ingest_step(frame_response, action, reward=reward, recall_query=recall_query)
                 orchestrator.record_step_result(reward, done)
 
@@ -176,14 +214,26 @@ class DurableARCRunner:
                     orchestrator._step_history[-1]["write_trace"] = orchestrator.consume_write_trace()
                 total_steps += 1
                 steps_this_attempt += 1
+                self._emit_progress_snapshot(
+                    task=task,
+                    orchestrator=orchestrator,
+                    observation=observation,
+                    total_steps=total_steps,
+                    reward=reward,
+                    done=done,
+                    start_time=start_time,
+                )
 
                 if state == "WIN":
                     success = True
-                    await orchestrator.hypothesis_mgr.distill_to_brain()
+                    self.brain.current_phase = "finalization"
+                    await orchestrator.hypothesis_mgr.distill_to_brain(orchestrator.solve_engine._object_roles)
                     break
                 elif state == "GAME_OVER":
-                    await orchestrator.hypothesis_mgr.distill_to_brain()
+                    self.brain.current_phase = "finalization"
+                    await orchestrator.hypothesis_mgr.distill_to_brain(orchestrator.solve_engine._object_roles)
                     # Record pain so Amygdala Reflex can block this strategy next time
+                    self.brain.current_phase = "evaluate"
                     await orchestrator.evaluate(
                         False, steps_this_attempt, max_steps,
                         final_observation=observation,
@@ -206,6 +256,10 @@ class DurableARCRunner:
                     success = reward >= 1.0
                     break
 
+                # B118: Run periodic pruning analysis every 5 steps
+                if total_steps % 5 == 0:
+                    orchestrator.analyze_ledger_and_prune()
+
             if success:
                 break
             if state != "GAME_OVER":
@@ -222,6 +276,7 @@ class DurableARCRunner:
         # Final evaluation (only if we haven't just evaluated on GAME_OVER)
         if success or state != "GAME_OVER":
             orchestrator.set_write_trace_context("finalization")
+            self.brain.current_phase = "evaluate"
             await orchestrator.evaluate(success, total_steps, max_steps * max_retries, final_observation=observation)
         post_run_write_trace = orchestrator.consume_write_trace()
         if post_run_write_trace:
@@ -247,10 +302,60 @@ class DurableARCRunner:
         setattr(task_result, "bootstrap_write_trace", bootstrap_write_trace)
         setattr(task_result, "final_write_trace", final_write_trace)
         setattr(task_result, "benchmark_metrics", benchmark_metrics)
+        setattr(task_result, "sidequests_ledger", list(self._ledger))
         return (
             task_result,
             duration,
         )
+
+    def _emit_progress_snapshot(
+        self,
+        task: ABTask,
+        orchestrator: ARCOrchestrator,
+        observation: Mapping[str, Any],
+        total_steps: int,
+        reward: float,
+        done: bool,
+        start_time: float,
+    ) -> None:
+        """Emit a compact incremental snapshot for live-watch output."""
+        if self._progress_callback is None:
+            return
+
+        last_step = orchestrator._step_history[-1] if orchestrator._step_history else {}
+        solve_ctx = orchestrator._solve_context or {}
+        active_chunk = solve_ctx.get("active_chunk") or {}
+        snapshot = {
+            "snapshot_type": "step",
+            "game_id": getattr(task, "game_id", "unknown"),
+            "task_id": task.task_id,
+            "step": total_steps,
+            "runtime_seconds": round(time.time() - start_time, 2),
+            "state_after": observation.get("state", "NOT_FINISHED"),
+            "reward": reward,
+            "done": done,
+            "action_id": last_step.get("action_id"),
+            "rationale": last_step.get("rationale"),
+            "guard_status": last_step.get("guard_status"),
+            "thinking_trace": last_step.get("thinking_trace", []),
+            "frame_hash": observation.get("frame_hash"),
+            "available_actions": observation.get("available_actions", []),
+            "solve_phase_summary": {
+                "archetype": solve_ctx.get("archetype"),
+                "archetype_confidence": solve_ctx.get("archetype_confidence"),
+                "victory_condition": (solve_ctx.get("victory_condition") or {}).get("type"),
+                "victory_confidence": (solve_ctx.get("victory_condition") or {}).get("confidence"),
+                "strategy_summary": solve_ctx.get("strategy_summary"),
+                "active_chunk": {
+                    "description": active_chunk.get("description"),
+                    "source": active_chunk.get("source"),
+                    "estimated_actions": active_chunk.get("estimated_actions", []),
+                    "plan_id": active_chunk.get("plan_id"),
+                } if active_chunk else None,
+            },
+            "sidequests_ledger_count": len(self._ledger),
+        }
+        self._progress_callback(snapshot)
 
     async def _initial_frame(self, game_id: str) -> tuple[dict, str | None]:
         if self.harness.mock_api:
@@ -302,14 +407,6 @@ class DurableARCRunner:
     def _submission_row_from_result(self, result: dict | None) -> dict:
         metadata = self._build_metadata(result or {})
 
-        predictions = []
-        final_obs = result.get("final_observation") if result else None
-        if final_obs:
-            if isinstance(final_obs, dict) and "grid" in final_obs:
-                predictions = [final_obs["grid"]]
-            elif hasattr(final_obs, "get") and final_obs.get("grid"):
-                predictions = [final_obs["grid"]]
-
         debug_steps = result.get("debug_steps") if result else []
         progress_log = []
         prompt_trace = []
@@ -334,6 +431,7 @@ class DurableARCRunner:
                     "step": step.get("step"),
                     "available_actions": step.get("available_actions", []),
                     "prompt": step.get("prompt"),
+                    "block_trace": self._extract_prompt_block_trace(step.get("prompt")),
                 }
             )
 
@@ -368,20 +466,248 @@ class DurableARCRunner:
         metadata["solve_phase_summary"] = solve_phase_summary
 
         is_correct = bool(result.get("correct")) if result else False
+        sidequests_ledger = result.get("sidequests_ledger", []) if result else []
+        entity_gate_status = result.get("entity_gate_status", {}) if result else {}
+        orchestration_report = self._build_orchestration_report(sidequests_ledger, entity_gate_status)
         return {
             "game_id": result.get("game_id") if result else "",
             "task_id": result.get("task_id") if result else "",
             "correct": result.get("correct") if result else None,
             "steps": result.get("steps") if result else None,
             "bootstrap_write_trace": result.get("bootstrap_write_trace", []) if result else [],
+            "sidequests_ledger": sidequests_ledger,
+            "entity_gate_status": entity_gate_status,
             "progress_log": progress_log,
             "prompt_trace": prompt_trace,
+            "orchestration_report": orchestration_report,
             "solve_phase_summary": solve_phase_summary,
-            "predictions": predictions,
             "confidence": [1.0 if is_correct else 0.0],
             "final_write_trace": result.get("final_write_trace", []) if result else [],
             "metadata": metadata,
         }
+
+    def _build_orchestration_report(self, sidequests_ledger: List[dict], entity_gate_status: dict | None = None) -> dict:
+        """Return ownership + policy checks for ARC harness orchestration."""
+        phase_owner = {
+            "bootstrap": "ARC Harness",
+            "hypothesize": "ARC Harness",
+            "solve": "ARC Harness",
+            "act": "ARC Harness",
+            "ingest": "ARC Harness",
+            "evaluate": "ARC Harness",
+            "finalization": "ARC Harness",
+        }
+        tool_rules = {
+            "notify_turn": {
+                "owner": "SideQuests",
+                "allowed_modes": ["write"],
+                "allowed_phases": ["bootstrap", "act", "ingest", "evaluate", "finalization"],
+            },
+            "current_truth": {
+                "owner": "SideQuests",
+                "allowed_modes": ["read"],
+                "allowed_phases": ["bootstrap", "ingest", "act"],
+            },
+            "register_plan": {
+                "owner": "SideQuests",
+                "allowed_modes": ["write"],
+                "allowed_phases": ["bootstrap", "solve"],
+            },
+            "report_outcome": {
+                "owner": "SideQuests",
+                "allowed_modes": ["write"],
+                "allowed_phases": ["evaluate", "finalization"],
+            },
+            "recall_plans": {
+                "owner": "SideQuests",
+                "allowed_modes": ["read"],
+                "allowed_phases": ["bootstrap", "solve"],
+            },
+            "recall_lessons": {
+                "owner": "SideQuests",
+                "allowed_modes": ["read"],
+                "allowed_phases": ["bootstrap", "solve"],
+            },
+            "analogical_search": {
+                "owner": "SideQuests",
+                "allowed_modes": ["read"],
+                "allowed_phases": ["bootstrap", "solve"],
+            },
+            "branch_quest": {
+                "owner": "SideQuests",
+                "allowed_modes": ["write"],
+                "allowed_phases": ["bootstrap"],
+            },
+        }
+
+        violations: List[dict] = []
+        for idx, entry in enumerate(sidequests_ledger or []):
+            call_type = entry.get("call_type")
+            phase = entry.get("phase")
+            mode = entry.get("mode")
+            step = entry.get("step")
+
+            if phase not in phase_owner:
+                violations.append(
+                    {
+                        "index": idx,
+                        "step": step,
+                        "type": "unknown_phase",
+                        "phase": phase,
+                        "call_type": call_type,
+                    }
+                )
+
+            rule = tool_rules.get(call_type)
+            if rule is None:
+                violations.append(
+                    {
+                        "index": idx,
+                        "step": step,
+                        "type": "unknown_tool",
+                        "phase": phase,
+                        "call_type": call_type,
+                    }
+                )
+                continue
+
+            if mode not in rule["allowed_modes"]:
+                violations.append(
+                    {
+                        "index": idx,
+                        "step": step,
+                        "type": "mode_violation",
+                        "phase": phase,
+                        "call_type": call_type,
+                        "observed_mode": mode,
+                        "allowed_modes": list(rule["allowed_modes"]),
+                    }
+                )
+
+            if phase not in rule["allowed_phases"]:
+                violations.append(
+                    {
+                        "index": idx,
+                        "step": step,
+                        "type": "phase_violation",
+                        "phase": phase,
+                        "call_type": call_type,
+                        "allowed_phases": list(rule["allowed_phases"]),
+                    }
+                )
+
+        surfaces = {
+            "arc_harness": {
+                "owner": "ARC Harness",
+                "responsibility": "Orchestration and phase control",
+            },
+            "arc_agent": {
+                "owner": "ARC Agent",
+                "responsibility": "Reasoning, hypotheses, solve context, action proposals",
+            },
+            "sidequests": {
+                "owner": "SideQuests",
+                "responsibility": "Memory and planning tools",
+            },
+            "arc_api": {
+                "owner": "ARC Environment",
+                "responsibility": "State transitions and available_actions contract",
+            },
+        }
+
+        return {
+            "orchestration_owner": "ARC Harness",
+            "phase_owner": phase_owner,
+            "tool_rules": tool_rules,
+            "runtime_surfaces": surfaces,
+            "violations": violations,
+            "entity_gate_status": entity_gate_status or {},
+            "status": "ok" if not violations else "violation",
+        }
+
+    def _extract_prompt_block_trace(self, prompt: Any) -> List[dict]:
+        """Return ordered prompt blocks with canonical names and producer ownership."""
+        if not isinstance(prompt, str) or not prompt.strip():
+            return []
+
+        lines = prompt.splitlines()
+        section_order: List[str] = []
+
+        # Preserve the actual section order as rendered in the prompt.
+        if any(line.startswith("SYSTEM:") for line in lines):
+            section_order.append("SYSTEM")
+        if any(line.startswith("STATE:") for line in lines):
+            section_order.append("STATE")
+
+        header_re = re.compile(r"^===\s+([A-Z_ ]+)\s+===$")
+        for line in lines:
+            m = header_re.match(line.strip())
+            if m:
+                section = m.group(1).strip().replace(" ", "_")
+                section_order.append(section)
+
+        if any(line.startswith("INSTRUCTION:") for line in lines):
+            section_order.append("INSTRUCTION")
+
+        block_map = {
+            "OBSERVATION": {
+                "block": "ObservationBlock",
+                "owner": "ARC agent",
+                "tool": "ARC Harness + ARC Agent",
+            },
+            "ACTION_FACTS": {
+                "block": "ActionFactBlock",
+                "owner": "ARC agent",
+                "tool": "ARC Agent HypothesisManager",
+            },
+            "PATH_HYPOTHESES": {
+                "block": "PathHypothesisBlock",
+                "owner": "ARC agent",
+                "tool": "ARC Agent HypothesisManager",
+            },
+            "SOLVE_CONTEXT": {
+                "block": "SolveContextBlock",
+                "owner": "ARC agent",
+                "tool": "ARC Agent SolveEngine",
+            },
+            "INSTRUCTION": {
+                "block": "InstructionBlock",
+                "owner": "ARC agent",
+                "tool": "ARC Agent Prompt Builder",
+            },
+        }
+
+        trace: List[dict] = []
+        order = 1
+        for section in section_order:
+            mapped = block_map.get(section)
+            if not mapped:
+                continue
+            trace.append(
+                {
+                    "order": order,
+                    "section": section,
+                    "block": mapped["block"],
+                    "owner": mapped["owner"],
+                    "tool": mapped["tool"],
+                }
+            )
+            order += 1
+
+            # ChunkBlock is encoded inside SOLVE_CONTEXT as ACTIVE CHUNK lines.
+            if section == "SOLVE_CONTEXT" and "ACTIVE CHUNK:" in prompt:
+                trace.append(
+                    {
+                        "order": order,
+                        "section": "SOLVE_CONTEXT",
+                        "block": "ChunkBlock",
+                        "owner": "ARC agent",
+                        "tool": "ARC Agent SolveEngine",
+                    }
+                )
+                order += 1
+
+        return trace
 
     def _build_metadata(self, data: dict) -> dict:
         runtime = float(data.get("runtime_seconds") or 0.0)

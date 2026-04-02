@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from benchmarks.ab_harness import ABTask, ABTaskResult, ABVariant, BenchmarkConfig
 from benchmarks.arc3.submission import SubmissionRunner
@@ -112,7 +112,8 @@ async def test_reruns_stale_completed_checkpoint_result(tmp_path):
 
     assert runner._run_puzzle.call_count == 2
     assert [r["task_id"] for r in results] == ["task-1", "task-2"]
-    assert results[0]["predictions"] == [[[1]]]
+    assert results[0]["task_id"] == "task-1"
+    assert results[0]["confidence"] == [1.0]
 
 
 @pytest.mark.asyncio
@@ -341,6 +342,40 @@ async def test_run_calls_branch_quest_per_task(tmp_path):
     assert brain.branch_quest.call_count == len(tasks)
 
 
+@pytest.mark.asyncio
+async def test_progress_callback_receives_step_snapshots(tmp_path):
+    CheckpointManager.CHECKPOINT_DIR = tmp_path
+    harness = _make_stub_harness()
+    snapshots = []
+    runner = DurableARCRunner(
+        harness,
+        NoOpBrainClient(),
+        config={"llm": {"model": "test"}},
+        progress_callback=snapshots.append,
+    )
+    task = _sample_tasks()[0]
+
+    from agents.arc3.orchestrator import ARCOrchestrator
+    from benchmarks.arc3.state_serializer import StateSerializerForARC
+
+    orch = ARCOrchestrator(
+        brain_client=NoOpBrainClient(),
+        llm_client=None,
+        session_id="s",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+
+    result, _ = await runner._run_puzzle(orch, task)
+
+    assert result.steps >= 1
+    assert len(snapshots) >= 1
+    assert snapshots[0]["snapshot_type"] == "step"
+    assert snapshots[0]["task_id"] == task.task_id
+    assert snapshots[0]["step"] == 1
+    assert "solve_phase_summary" in snapshots[0]
+
+
 def test_submission_row_includes_debug_fields():
     harness = _make_stub_harness()
     runner = DurableARCRunner(harness, NoOpBrainClient(), config={"llm": {"model": "test"}})
@@ -434,7 +469,7 @@ def test_submission_row_includes_debug_fields():
     assert row["steps"] == 2
     assert "final_grid" not in row
     assert row["bootstrap_write_trace"][0]["kind"] == "notify_turn"
-    assert row["predictions"] == [[[1, 2], [3, 4]]]
+    assert "predictions" not in row
     assert row["progress_log"][0]["action_id"] == "ACTION1"
     assert row["progress_log"][0]["board_before"]["frame_hash"] == "before123"
     assert row["progress_log"][0]["board_after"]["frame_hash"] == "after123"
@@ -443,8 +478,127 @@ def test_submission_row_includes_debug_fields():
     assert row["progress_log"][0]["write_trace"][0]["detail"]["saved_action_facts"][0]["trend"]["direction"] == "left"
     assert row["progress_log"][0]["write_trace"][0]["detail"]["saved_path_hypotheses"][0]["actions"] == ["ACTION1", "ACTION2"]
     assert row["prompt_trace"][0]["prompt"] == "prompt 1"
+    assert row["prompt_trace"][0]["block_trace"] == []
     assert row["confidence"] == [0.0]
     assert row["final_write_trace"][0]["kind"] == "report_outcome"
+
+
+def test_submission_row_extracts_prompt_block_trace():
+    harness = _make_stub_harness()
+    runner = DurableARCRunner(harness, NoOpBrainClient(), config={"llm": {"model": "test"}})
+
+    prompt = (
+        "SYSTEM: test\n\n"
+        "STATE: NOT_FINISHED  ENERGY: 100%\n\n"
+        "=== SOLVE CONTEXT ===\n"
+        "ARCHETYPE: space (confidence=0.65)\n"
+        "ACTIVE CHUNK: Move reach_goal toward goal [directional]\n\n"
+        "=== ACTION FACTS ===\n"
+        "ACTION6: LOW_VALUE\n\n"
+        "=== PATH HYPOTHESES ===\n"
+        "UNTESTED: ACTION6\n\n"
+        "=== OBSERVATION ===\n"
+        "Grid: 64x64\n\n"
+        "INSTRUCTION: Choose next action"
+    )
+
+    row = runner._submission_row_from_result(
+        {
+            "task_id": "arc_eval_001",
+            "game_id": "game-1",
+            "steps": 1,
+            "correct": False,
+            "runtime_seconds": 1.0,
+            "final_state": "NOT_FINISHED",
+            "final_observation": {"grid": [[1]]},
+            "debug_steps": [
+                {
+                    "step": 1,
+                    "available_actions": ["ACTION6"],
+                    "prompt": prompt,
+                }
+            ],
+        }
+    )
+
+    block_trace = row["prompt_trace"][0]["block_trace"]
+    assert [b["block"] for b in block_trace] == [
+        "SolveContextBlock",
+        "ChunkBlock",
+        "ActionFactBlock",
+        "PathHypothesisBlock",
+        "ObservationBlock",
+        "InstructionBlock",
+    ]
+    assert block_trace[0]["tool"] == "ARC Agent SolveEngine"
+    assert block_trace[1]["block"] == "ChunkBlock"
+
+
+def test_submission_row_includes_orchestration_report_with_no_violations():
+    harness = _make_stub_harness()
+    runner = DurableARCRunner(harness, NoOpBrainClient(), config={"llm": {"model": "test"}})
+
+    row = runner._submission_row_from_result(
+        {
+            "task_id": "arc_eval_001",
+            "game_id": "game-1",
+            "steps": 1,
+            "correct": False,
+            "runtime_seconds": 1.0,
+            "final_state": "NOT_FINISHED",
+            "final_observation": {"grid": [[1]]},
+            "sidequests_ledger": [
+                {
+                    "step": 0,
+                    "phase": "bootstrap",
+                    "call_type": "branch_quest",
+                    "mode": "write",
+                },
+                {
+                    "step": 1,
+                    "phase": "act",
+                    "call_type": "notify_turn",
+                    "mode": "write",
+                },
+            ],
+        }
+    )
+
+    report = row["orchestration_report"]
+    assert report["orchestration_owner"] == "ARC Harness"
+    assert report["status"] == "ok"
+    assert report["violations"] == []
+    assert report["phase_owner"]["solve"] == "ARC Harness"
+
+
+def test_orchestration_report_flags_phase_violations():
+    harness = _make_stub_harness()
+    runner = DurableARCRunner(harness, NoOpBrainClient(), config={"llm": {"model": "test"}})
+
+    row = runner._submission_row_from_result(
+        {
+            "task_id": "arc_eval_001",
+            "game_id": "game-1",
+            "steps": 1,
+            "correct": False,
+            "runtime_seconds": 1.0,
+            "final_state": "NOT_FINISHED",
+            "final_observation": {"grid": [[1]]},
+            "sidequests_ledger": [
+                {
+                    "step": 3,
+                    "phase": "hypothesize",
+                    "call_type": "notify_turn",
+                    "mode": "write",
+                }
+            ],
+        }
+    )
+
+    report = row["orchestration_report"]
+    assert report["status"] == "violation"
+    assert len(report["violations"]) == 1
+    assert report["violations"][0]["type"] == "phase_violation"
 
 
 # ── B89: Benchmark Metrics ──────────────────────────────────────────────
@@ -583,3 +737,78 @@ async def test_meta_harness_runner_evaluates_candidate(tmp_path):
     assert eval_run.avg_tokens_per_step == (300 / 15)
     assert "LOOP" in eval_run.failure_clusters
     assert eval_run.failure_clusters["LOOP"] == ["task-2"]
+
+
+@pytest.mark.asyncio
+async def test_ingest_api_knowledge_uses_caching():
+    """B108: verify that API knowledge ingestion uses the precomputed cache."""
+    brain = AsyncMock()
+    # We don't need to mock return value because notify_turn is fire-and-forget in adapter,
+    # but here we are calling it directly on the mock.
+    brain.notify_turn.return_value = {"status": "ok"}
+    
+    from agents.arc3.api_knowledge import ingest_api_knowledge, API_KNOWLEDGE_CHUNKS
+    
+    count = await ingest_api_knowledge(brain, "session-123")
+    
+    assert count == len(API_KNOWLEDGE_CHUNKS)
+    assert brain.notify_turn.call_count == len(API_KNOWLEDGE_CHUNKS)
+    
+    # Check first call has precomputed data
+    args, kwargs = brain.notify_turn.call_args_list[0]
+    assert "precomputed" in kwargs
+    assert kwargs["precomputed"] is not None
+    assert "entities" in kwargs["precomputed"]
+
+
+@pytest.mark.asyncio
+async def test_entity_gate_in_bootstrap_write_trace():
+    """B121: Entity gate event appears in bootstrap_write_trace."""
+    harness = _make_stub_harness()
+    # Ensure it finishes immediately
+    harness._get_mock_initial_frame.return_value = {
+        "frame": [[1, 0, 2]], "available_actions": ["ACTION1"], "state": "WIN", "guid": "g1"
+    }
+    
+    runner = DurableARCRunner(harness, NoOpBrainClient(), config={"llm": {"model": "test"}})
+    task = ABTask(task_id="t-gate", category="c", prompt="p")
+    setattr(task, "game_id", "g1")
+    tasks = [task]
+    
+    with patch("agents.arc3.runner.CheckpointManager") as mock_mgr_cls:
+        mock_mgr = mock_mgr_cls.return_value
+        mock_checkpoint = MagicMock()
+        mock_checkpoint.tasks = {}
+        mock_mgr.load_or_create.return_value = mock_checkpoint
+        
+        results = await runner.run(tasks, "card-gate")
+        assert len(results) == 1
+        trace = results[0].get("bootstrap_write_trace", [])
+        gate_events = [e for e in trace if e["kind"] == "entity_gate"]
+        assert len(gate_events) == 1
+        assert gate_events[0]["status"] == "ok"
+
+@pytest.mark.asyncio
+async def test_entity_gate_in_orchestration_report():
+    """B121: orchestration_report includes entity_gate_status."""
+    harness = _make_stub_harness()
+    harness._get_mock_initial_frame.return_value = {
+        "frame": [[1, 0, 2]], "available_actions": ["ACTION1"], "state": "WIN", "guid": "g1"
+    }
+    
+    runner = DurableARCRunner(harness, NoOpBrainClient(), config={"llm": {"model": "test"}})
+    task = ABTask(task_id="t-report", category="c", prompt="p")
+    setattr(task, "game_id", "g1")
+    tasks = [task]
+    
+    with patch("agents.arc3.runner.CheckpointManager") as mock_mgr_cls:
+        mock_mgr = mock_mgr_cls.return_value
+        mock_checkpoint = MagicMock()
+        mock_checkpoint.tasks = {}
+        mock_mgr.load_or_create.return_value = mock_checkpoint
+        
+        results = await runner.run(tasks, "card-report")
+        assert len(results) == 1
+        report = results[0].get("orchestration_report", {})
+        assert "entity_gate_status" in report
+        assert report["entity_gate_status"]["status"] == "pass"

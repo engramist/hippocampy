@@ -76,14 +76,110 @@ API_KNOWLEDGE_CHUNKS: list[str] = [
         "If levels_completed increments, the current strategy is working. "
         "If state becomes GAME_OVER, the strategy failed — report negative "
         "valence and try a different approach next time."
-    ),    # ── Energy / life bar (B88 generic HUD discovery) ─────────────────
+    ),
+    # ── Energy / life bar (B88 generic HUD discovery) ─────────────────
     (
         "The game HUD (heads-up display) layout varies by game. "
         "Energy bars, score indicators, and inventory may appear in different "
         "grid regions. The agent must DISCOVER HUD elements by observing which "
         "rows/regions remain static across multiple actions, then hypothesize "
         "their meaning. Do not assume fixed HUD row positions."
-    ),]
+    ),
+]
+
+# B108: Precomputed knowledge cache to bypass Step 2/3b LLM calls.
+# This makes ingestion of stable protocol concepts near-instant.
+API_KNOWLEDGE_CACHE: dict[str, dict] = {
+    API_KNOWLEDGE_CHUNKS[0]: {
+        "entities": [
+            {"text": "ARC-AGI-3", "gist_class": "Category", "schema_org_type": "DefinedTerm", "label": "ORG"},
+            {"text": "ACTION1", "gist_class": "PlannedEvent", "schema_org_type": "Action", "label": "ORG"},
+            {"text": "ACTION2", "gist_class": "PlannedEvent", "schema_org_type": "Action", "label": "ORG"},
+            {"text": "ACTION3", "gist_class": "PlannedEvent", "schema_org_type": "Action", "label": "ORG"},
+            {"text": "ACTION4", "gist_class": "PlannedEvent", "schema_org_type": "Action", "label": "ORG"},
+            {"text": "ACTION5", "gist_class": "PlannedEvent", "schema_org_type": "Action", "label": "ORG"},
+            {"text": "ACTION6", "gist_class": "PlannedEvent", "schema_org_type": "Action", "label": "ORG"},
+            {"text": "ACTION7", "gist_class": "PlannedEvent", "schema_org_type": "Action", "label": "ORG"},
+            {"text": "0-63", "gist_class": "Magnitude", "schema_org_type": "QuantitativeValue", "label": "CARDINAL"},
+        ],
+        "relations": []
+    },
+    API_KNOWLEDGE_CHUNKS[1]: {
+        "entities": [
+            {"text": "available_actions", "gist_class": "Category", "schema_org_type": "DefinedTerm", "label": "NOUN_CHUNK"},
+            {"text": "FrameResponse", "gist_class": "PhysicalThing", "schema_org_type": "Product", "label": "ORG"},
+            {"text": "ACTION6", "gist_class": "PlannedEvent", "schema_org_type": "Action", "label": "ORG"},
+        ],
+        "relations": []
+    },
+    API_KNOWLEDGE_CHUNKS[2]: {
+        "entities": [
+            {"text": "FrameResponse", "gist_class": "PhysicalThing", "schema_org_type": "Product", "label": "ORG"},
+            {"text": "64x64", "gist_class": "Magnitude", "schema_org_type": "QuantitativeValue", "label": "CARDINAL"},
+            {"text": "0-15", "gist_class": "Magnitude", "schema_org_type": "QuantitativeValue", "label": "CARDINAL"},
+            {"text": "available_actions", "gist_class": "Category", "schema_org_type": "DefinedTerm", "label": "NOUN_CHUNK"},
+            {"text": "levels_completed", "gist_class": "Magnitude", "schema_org_type": "QuantitativeValue", "label": "NOUN_CHUNK"},
+            {"text": "state", "gist_class": "Category", "schema_org_type": "DefinedTerm", "label": "NOUN_CHUNK"},
+        ],
+        "relations": []
+    },
+    API_KNOWLEDGE_CHUNKS[3]: {
+        "entities": [
+            {"text": "State transitions", "gist_class": "Event", "schema_org_type": "Event", "label": "NOUN_CHUNK"},
+            {"text": "RESET", "gist_class": "PlannedEvent", "schema_org_type": "Action", "label": "ORG"},
+            {"text": "WIN", "gist_class": "Event", "schema_org_type": "Event", "label": "NOUN_CHUNK"},
+            {"text": "GAME_OVER", "gist_class": "Event", "schema_org_type": "Event", "label": "NOUN_CHUNK"},
+        ],
+        "relations": [
+            {"head": "RESET", "relation_type": "ENABLES", "tail": "State transitions", "confidence": 0.9}
+        ]
+    },
+    API_KNOWLEDGE_CHUNKS[4]: {
+        "entities": [
+            {"text": "API", "gist_class": "PhysicalThing", "schema_org_type": "Product", "label": "ORG"},
+            {"text": "causality", "gist_class": "Category", "schema_org_type": "DefinedTerm", "label": "NOUN_CHUNK"},
+            {"text": "grid", "gist_class": "PhysicalThing", "schema_org_type": "Product", "label": "NOUN_CHUNK"},
+            {"text": "delta", "gist_class": "Magnitude", "schema_org_type": "QuantitativeValue", "label": "NOUN_CHUNK"},
+        ],
+        "relations": []
+    },
+    API_KNOWLEDGE_CHUNKS[5]: {
+        "entities": [
+            {"text": "Episode lifecycle", "gist_class": "Event", "schema_org_type": "Event", "label": "NOUN_CHUNK"},
+            {"text": "RESET", "gist_class": "PlannedEvent", "schema_org_type": "Action", "label": "ORG"},
+            {"text": "guid", "gist_class": "Category", "schema_org_type": "DefinedTerm", "label": "NOUN_CHUNK"},
+            {"text": "WIN", "gist_class": "Event", "schema_org_type": "Event", "label": "NOUN_CHUNK"},
+            {"text": "GAME_OVER", "gist_class": "Event", "schema_org_type": "Event", "label": "NOUN_CHUNK"},
+        ],
+        "relations": []
+    },
+    API_KNOWLEDGE_CHUNKS[6]: {
+        "entities": [
+            {"text": "Grid", "gist_class": "PhysicalThing", "schema_org_type": "Product", "label": "NOUN_CHUNK"},
+            {"text": "64x64", "gist_class": "Magnitude", "schema_org_type": "QuantitativeValue", "label": "CARDINAL"},
+            {"text": "0-15", "gist_class": "Magnitude", "schema_org_type": "QuantitativeValue", "label": "CARDINAL"},
+            {"text": "ACTION6", "gist_class": "PlannedEvent", "schema_org_type": "Action", "label": "ORG"},
+        ],
+        "relations": []
+    },
+    API_KNOWLEDGE_CHUNKS[7]: {
+        "entities": [
+            {"text": "Strategy", "gist_class": "PlannedEvent", "schema_org_type": "Action", "label": "NOUN_CHUNK"},
+            {"text": "available_actions", "gist_class": "Category", "schema_org_type": "DefinedTerm", "label": "NOUN_CHUNK"},
+            {"text": "GAME_OVER", "gist_class": "Event", "schema_org_type": "Event", "label": "NOUN_CHUNK"},
+        ],
+        "relations": []
+    },
+    API_KNOWLEDGE_CHUNKS[8]: {
+        "entities": [
+            {"text": "HUD", "gist_class": "PhysicalThing", "schema_org_type": "Product", "label": "ORG"},
+            {"text": "Energy bars", "gist_class": "PhysicalThing", "schema_org_type": "Product", "label": "NOUN_CHUNK"},
+            {"text": "score indicators", "gist_class": "PhysicalThing", "schema_org_type": "Product", "label": "NOUN_CHUNK"},
+            {"text": "inventory", "gist_class": "PhysicalThing", "schema_org_type": "Product", "label": "NOUN_CHUNK"},
+        ],
+        "relations": []
+    }
+}
 
 
 async def ingest_api_knowledge(
@@ -92,12 +188,15 @@ async def ingest_api_knowledge(
 ) -> int:
     """Ingest all API knowledge chunks into SideQuests memory.
 
+    B108: Uses API_KNOWLEDGE_CACHE to bypass expensive consolidation steps.
     Returns the number of chunks ingested.
     """
     for chunk in API_KNOWLEDGE_CHUNKS:
+        precomputed = API_KNOWLEDGE_CACHE.get(chunk)
         await brain_client.notify_turn(
             role="system",
             content=f"[ARC-AGI-3 API Contract] {chunk}",
             session_id=session_id,
+            precomputed=precomputed,
         )
     return len(API_KNOWLEDGE_CHUNKS)

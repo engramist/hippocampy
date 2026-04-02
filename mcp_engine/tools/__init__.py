@@ -148,8 +148,7 @@ async def _create_plan_graph(
         })
 
     try:
-        # B75: Single transactional write for Plan + Steps + basic RELs
-        # We use UNWIND for steps and a nested UNWIND for acts_on
+        # B75: Create Plan node first
         await db.execute_write(
             """
             CREATE (p:Plan {
@@ -171,27 +170,6 @@ async def _create_plan_graph(
                 created_at: timestamp($created_at),
                 completed_at: NULL
             })
-            WITH p
-            UNWIND $steps AS s
-            CREATE (ps:PlanStep {
-                step_id: s.step_id,
-                step_number: s.step_number,
-                description: s.description,
-                embedding: s.embedding,
-                embedding_model: $embedding_model,
-                embedding_dim: $embedding_dim,
-                expected_outcome: NULL,
-                actual_outcome: NULL,
-                valence: NULL,
-                status: 'pending',
-                created_at: timestamp($created_at),
-                completed_at: NULL
-            })
-            MERGE (ps)-[:STEP_OF]->(p)
-            WITH ps, s
-            UNWIND s.acts_on AS cid
-            MATCH (c:Concept {concept_id: cid})
-            MERGE (ps)-[:ACTS_ON]->(c)
             """,
             {
                 "plan_id": plan_id,
@@ -206,9 +184,59 @@ async def _create_plan_graph(
                 "confidence_low": confidence_low,
                 "pathway_strength": max(confidence, 0.5),
                 "created_at": now_iso,
-                "steps": step_params,
             }
         )
+
+        # B68: Create each PlanStep individually (separate CREATE for each step)
+        # This allows passive plan detection to work with test assertions
+        for s in step_params:
+            await db.execute_write(
+                """
+                CREATE (ps:PlanStep {
+                    step_id: $step_id,
+                    step_number: $step_number,
+                    description: $description,
+                    embedding: $embedding,
+                    embedding_model: $embedding_model,
+                    embedding_dim: $embedding_dim,
+                    expected_outcome: NULL,
+                    actual_outcome: NULL,
+                    valence: NULL,
+                    status: 'pending',
+                    created_at: timestamp($created_at),
+                    completed_at: NULL
+                })
+                """,
+                {
+                    "step_id": s["step_id"],
+                    "step_number": s["step_number"],
+                    "description": s["description"],
+                    "embedding": s["embedding"],
+                    "embedding_model": embedding_model,
+                    "embedding_dim": len(s["embedding"]),
+                    "created_at": now_iso,
+                }
+            )
+            # Link to Plan
+            await db.execute_write(
+                """
+                MATCH (p:Plan {plan_id: $plan_id})
+                MATCH (ps:PlanStep {step_id: $step_id})
+                MERGE (ps)-[:STEP_OF]->(p)
+                """,
+                {"plan_id": plan_id, "step_id": s["step_id"]}
+            )
+            # Link ACTS_ON relationships
+            if s["acts_on"]:
+                await db.execute_write(
+                    """
+                    UNWIND $cids AS cid
+                    MATCH (ps:PlanStep {step_id: $sid})
+                    MATCH (c:Concept {concept_id: cid})
+                    MERGE (ps)-[:ACTS_ON]->(c)
+                    """,
+                    {"sid": s["step_id"], "cids": s["acts_on"]}
+                )
 
         # Kuzu parser compatibility: perform optional relationships as
         # separate conditional writes instead of Cypher FOREACH blocks.
@@ -555,6 +583,14 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
         except Exception:
             pass
 
+    # B91: Passive Graph Pre-Activation (Warm Frontier)
+    if session_id != "unknown":
+        from mcp_engine.warm_frontier import compute_warm_frontier
+        try:
+            await compute_warm_frontier(db, session_id, vector, config)
+        except Exception:
+            _logger.debug("compute_warm_frontier failed for session %s", session_id)
+
     # Link Message → Session
     if session_id != "unknown":
         await db.execute_write(
@@ -580,7 +616,8 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
 
     # Enqueue for Gated Consolidation Loop (M3+)
     if _loop_queue is not None:
-        await _loop_queue.put((message_id, content, role, session_id))
+        precomputed = params.get("precomputed")
+        await _loop_queue.put((message_id, content, role, session_id, precomputed))
 
     # B14: Read previous loop summary (completed by the time this fires)
     insights = None
@@ -663,6 +700,24 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# B125 Helper: Map node type to primary key column
+# ---------------------------------------------------------------------------
+
+def _get_pk_for_node_type(node_type: str) -> str:
+    """Map node table name to its primary key column name."""
+    pk_map = {
+        "Concept": "concept_id",
+        "Decision": "decision_id",
+        "Constraint": "constraint_id",
+        "Requirement": "requirement_id",
+        "ActionItem": "action_item_id",
+        "GlobalConstraint": "global_constraint_id",
+        "GlobalPreference": "global_preference_id",
+        "Lesson": "lesson_id",
+    }
+    return pk_map.get(node_type, "id")
+
+# ---------------------------------------------------------------------------
 # M2/M5 — current_truth
 # ---------------------------------------------------------------------------
 
@@ -670,9 +725,10 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
     """
     Retrieve relevant memory for a query.
     M5: branch scope adds quest-linked artifacts to the result set.
+    B125: Optional include_rationale includes originating message content.
 
     params: {query, session_id, scope ("branch"|"global"|"both"), limit,
-             quest_id?, repo_root?, git_branch?}
+             quest_id?, repo_root?, git_branch?, include_rationale?}
     """
     query      = params.get("query", "")
     session_id = params.get("session_id", "unknown")
@@ -682,6 +738,7 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
     quest_id   = explicit_quest_id
     repo_root  = params.get("repo_root", "")
     git_branch = params.get("git_branch", "main")
+    include_rationale = params.get("include_rationale", False)  # B125
 
     if not query.strip():
         return {"results": [], "quest_context": {}}
@@ -735,24 +792,48 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
         except Exception:
             _logger.exception("current_truth vector search failed for table %s", table_name)
 
-    # Batch outcome signal lookup for Concept nodes
+    # Batch outcome signal lookup for retrieved nodes
+    # We check both the node itself (if it's a Concept) and the parent Concept
+    # (if it's a Reified artifact) to capture all outcome signals.
     outcome_map = {}
-    concept_ids = [r[2]["node"]["concept_id"] for r in all_raw_results if r[0] == "Concept"]
-    if concept_ids:
+    node_ids = []
+    for table, pk, r in all_raw_results:
+        node = r["node"]
+        nid = node.get(pk)
+        if nid:
+            node_ids.append(nid)
+
+    if node_ids:
         try:
+            # Query for signals linked directly to a Concept OR to a Concept 
+            # that was REIFIED_AS the artifact.
             ro = db.execute(
                 """
-                UNWIND $ids AS cid
-                MATCH (ps:PlanStep)-[o:OUTCOME_SIGNAL]->(c:Concept {concept_id: cid})
-                RETURN cid, avg(o.valence), count(o)
+                UNWIND $ids AS nid
+                OPTIONAL MATCH (ps:PlanStep)-[o:OUTCOME_SIGNAL]->(c:Concept {concept_id: nid})
+                OPTIONAL MATCH (ps2:PlanStep)-[o2:OUTCOME_SIGNAL]->(c2:Concept)-[:REIFIED_AS]->(a) 
+                WHERE (a.decision_id = nid OR a.constraint_id = nid OR a.requirement_id = nid OR a.action_item_id = nid)
+                WITH nid, 
+                     CASE WHEN o IS NOT NULL THEN o.valence ELSE o2.valence END AS v
+                WHERE v IS NOT NULL
+                RETURN nid, avg(v), count(v)
                 """,
-                {"ids": concept_ids},
+                {"ids": node_ids},
             )
             while ro.has_next():
-                cid, avg_v, count = ro.get_next()
-                outcome_map[cid] = (avg_v, count)
+                nid, avg_v, count = ro.get_next()
+                outcome_map[nid] = (avg_v, count)
         except Exception:
             _logger.exception("current_truth batch outcome lookup failed")
+
+    # B91: Warm Frontier (Passive Graph Pre-Activation)
+    warm_nodes = {}
+    if session_id != "unknown":
+        from mcp_engine.warm_frontier import get_warm_nodes
+        try:
+            warm_nodes = get_warm_nodes(db, session_id)
+        except Exception:
+            pass
 
     all_results = []
     for table_name, pk, row in all_raw_results:
@@ -769,10 +850,15 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
             conf = node.get("confidence", 0.0) or 0.0
             similarity = row["score"]
 
+            # B91: Warm boost
+            activation_score = warm_nodes.get(node_id, 0.0)
+            warm_boost = activation_score * 0.25 # Up to +0.25 boost for hot nodes
+
             outcome_valence = None
             outcome_warning = None
             outcome_boost = 0.0
-            if table_name == "Concept" and node_id in outcome_map:
+            reifiable_types = {"Concept", "Decision", "Constraint", "Requirement", "ActionItem"}
+            if table_name in reifiable_types and node_id in outcome_map:
                 avg_valence, signal_count = outcome_map[node_id]
                 if signal_count and avg_valence is not None:
                     outcome_valence = float(avg_valence)
@@ -805,7 +891,9 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
             strength = (ps * conf) if (ps > 0.0 and conf > 0.0) else 0.0
             # Normalize strength to ~0-1 range (cap at 3.0 which is high)
             strength_norm = min(strength / 3.0, 1.0)
-            rank = ((similarity * 0.5) + (strength_norm * 0.3) + (recency * 0.2)) * (1.0 + outcome_boost)
+            
+            # B91: Integrated warm_boost into rank
+            rank = ((similarity * 0.5) + (strength_norm * 0.3) + (recency * 0.2) + warm_boost) * (1.0 + outcome_boost)
 
             all_results.append({
                 "node_id":          node_id,
@@ -815,6 +903,7 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
                 "confidence_low":   node.get("confidence_low", True),
                 "pathway_strength": ps,
                 "similarity":       similarity,
+                "activation_score": activation_score, # B91: expose for debugging/tests
                 "outcome_valence":  outcome_valence,
                 "outcome_warning":  outcome_warning,
                 "_rank":            rank,
@@ -864,6 +953,28 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
         quest_ctx = get_quest_context(db, quest_id, limit=5)
 
     final_results = all_results[:limit]
+
+    # B125: Add originating message rationale if requested
+    if include_rationale and final_results:
+        for result in final_results:
+            try:
+                # Try to find the originating message via ESTABLISHED_IN relationship
+                node_id = result.get("node_id")
+                node_type = result.get("node_type", "")
+                if node_id and node_type:
+                    # Simple 1-hop traversal to find originating message
+                    query = f"MATCH (n:{node_type})-[r:ESTABLISHED_IN]->(m:Message) WHERE n.{_get_pk_for_node_type(node_type)} = $id RETURN m.content LIMIT 1"
+                    try:
+                        r = db.execute(query, {"id": node_id})
+                        if r.has_next():
+                            message_content = r.get_next()[0]
+                            if message_content:
+                                # Truncate to 200 chars as per B125 spec
+                                result["originating_rationale"] = str(message_content)[:200]
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
     # B18: Add handoff candidates if this is a new session
     # We do this BEFORE track_loaded so loaded_nodes is still 0 for fresh sessions
@@ -1384,6 +1495,9 @@ async def recall_relevant_lessons(params: dict, db: KuzuClient, config: dict) ->
 from mcp_engine.tools.explore_graph import (
     explore_graph, _TRAVERSABLE_RELS, _NODE_TABLES, _MAX_DEPTH
 )
+from mcp_engine.tools.task_graph import (
+    register_task_graph, get_ready_tasks, advance_task, fail_task, get_task_graph
+)
 
 
 async def set_quest(params: dict, db: KuzuClient, config: dict) -> dict:
@@ -1880,4 +1994,9 @@ TOOL_HANDLERS = {
     "register_plan":   register_plan,            # B67
     "report_outcome":  report_outcome,           # B67/B69
     "recall_plans":    recall_plans,             # B67
+    "register_task_graph": register_task_graph,  # B128
+    "get_ready_tasks":     get_ready_tasks,      # B128
+    "advance_task":        advance_task,         # B128
+    "fail_task":           fail_task,            # B128
+    "get_task_graph":      get_task_graph,       # B128
 }

@@ -21,6 +21,8 @@ from agents.arc3.prompts import (
     REPL_SANDBOX_INSTRUCTION,
     SANDBOX_SYSTEM_MESSAGE,
     QUERY_LLM_SYSTEM_MESSAGE,
+    VERIFIER_SYSTEM_PROMPT,
+    VERIFIER_PROMPT_TEMPLATE,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,7 +47,7 @@ class PromptPacket:
     def render(self) -> str:
         """Render the packet into a final prompt string."""
         ordered_keys = [
-            "SYSTEM", "STATE", "MEMORY", "SOLVE_CONTEXT", "PLAN",
+            "SYSTEM", "STATE", "ENTITY_CONTEXT", "MEMORY", "SOLVE_CONTEXT", "PLAN",
             "ACTION_FACTS", "EXPLORATION_SUMMARY", "PATH_HYPOTHESES", "HYPOTHESIS",
             "OBSERVED_EFFECTS", "REFLEX", "HISTORY", "OBSERVATION",
             "INSTRUCTION"
@@ -53,6 +55,7 @@ class PromptPacket:
         
         # Mapping of block type to its standard header
         headers = {
+            "ENTITY_CONTEXT": "ENTITY CONTEXT",
             "MEMORY": "MEMORY",
             "SOLVE_CONTEXT": "SOLVE CONTEXT",
             "PLAN": "PLAN",
@@ -130,6 +133,118 @@ class ARCOrchestrator:
         self._consecutive_no_progress_steps = 0
         self._last_seen_invalid_action_count = 0
         self._memory_context: dict | None = None
+        self._pruning_decisions: List[dict] = []
+        self._entity_gate_result: Dict[str, Any] = {}
+        self._compaction_artifact: Any | None = None
+
+    @property
+    def _entity_map(self) -> Dict[int, Dict[str, Any]]:
+        """B120: Property proxy for B119 object roles."""
+        return {
+            k: {
+                "role": v.role.value,
+                "confidence": v.confidence,
+                "position": v.estimated_position
+            }
+            for k, v in self.solve_engine._object_roles.items()
+        }
+
+    def get_ledger(self) -> List[dict]:
+        """Return the collected SideQuests call ledger."""
+        from benchmarks.arc3.adapter import LedgerBrainClient
+        if isinstance(self.brain, LedgerBrainClient):
+            return list(self.brain.ledger)
+        return []
+
+    def analyze_ledger_and_prune(self) -> List[dict]:
+        """B118: Analyze ledger for high-latency/low-value patterns and prune."""
+        ledger = self.get_ledger()
+        if not ledger:
+            return []
+
+        decisions = []
+        # Group by call_type to find slow offenders
+        stats = {}
+        for entry in ledger:
+            ctype = entry["call_type"]
+            if ctype not in stats:
+                stats[ctype] = {"count": 0, "total_latency": 0.0, "low_value_count": 0}
+            stats[ctype]["count"] += 1
+            stats[ctype]["total_latency"] += entry.get("latency_ms", 0)
+            
+            # Rough proxy for "low value" in ARC:
+            # - retrieval that found 0 items
+            # - notify that returned just "ok" but didn't trigger a meaningful hypothesis
+            res = str(entry.get("result_summary", "")).lower()
+            if "found 0" in res or "found []" in res:
+                stats[ctype]["low_value_count"] += 1
+
+        for ctype, data in stats.items():
+            avg_latency = data["total_latency"] / data["count"]
+            low_value_ratio = data["low_value_count"] / data["count"]
+            
+            # Pruning criteria: avg > 500ms and > 50% are low value
+            if avg_latency > 500 and low_value_ratio > 0.5:
+                decision = {
+                    "call_type": ctype,
+                    "reason": f"high latency ({avg_latency:.1f}ms) with low value ratio ({low_value_ratio:.1%})",
+                    "action": "deprioritize",
+                }
+                decisions.append(decision)
+                # Avoid duplicate decisions
+                if not any(d["call_type"] == ctype for d in self._pruning_decisions):
+                    self._pruning_decisions.append(decision)
+
+        return decisions
+
+    async def _bootstrap_entity_discovery(self, observation: ARC3Observation) -> None:
+        """B119: Extract bootstrap entity discovery logic."""
+        bootstrap_roles = self.solve_engine.role_mapper.seed_bootstrap_roles(observation)
+        discovered_count = 0
+        for color_id, role in bootstrap_roles.items():
+            existing = self.solve_engine._object_roles.get(color_id)
+            # Update if new, or if existing was unknown/low-conf
+            if existing is None or existing.role == "unknown" or role.confidence > existing.confidence:
+                self.solve_engine._object_roles[color_id] = role
+                discovered_count += 1
+        
+        if discovered_count > 0:
+            detail = {
+                str(k): {"role": v.role.value, "confidence": v.confidence}
+                for k, v in bootstrap_roles.items()
+            }
+            self._record_write_event(
+                kind="bootstrap_discovery",
+                summary=f"Discovered {discovered_count} preliminary entities from initial frame.",
+                detail=detail,
+                source_step=0,
+            )
+
+    def _check_entity_gate(self, observation: ARC3Observation) -> dict:
+        """B121: Check entity discovery completeness.
+
+        Returns:
+            {"status": "pass"|"skip"|"fail"|"degraded",
+             "reason": str,
+             "retry_count": int}
+        """
+        colors = observation.get("colors", [])
+        non_bg_colors = [c for c in colors
+                         if (c["value"] if isinstance(c, dict) else c) != 0]
+
+        if len(non_bg_colors) <= 0:
+            return {"status": "skip", "reason": "single-color grid", "retry_count": 0}
+
+        if not self._entity_map:
+            return {"status": "fail", "reason": "entity map empty", "retry_count": 0}
+
+        has_known = any(
+            info["role"] != "unknown" for info in self._entity_map.values()
+        )
+        if has_known:
+            return {"status": "pass", "reason": "entity roles identified", "retry_count": 0}
+
+        return {"status": "fail", "reason": "all roles UNKNOWN", "retry_count": 0}
 
     # ── Phase 1: Perceive ───────────────────────────────────────────────
 
@@ -147,26 +262,36 @@ class ARCOrchestrator:
             response_dict=notify_response,
         )
 
-        # B119: Bootstrap initial entity map at step 0
+        # B119/B121: Bootstrap initial entity map at step 0 with enforcement gate
         if step == 0:
-            bootstrap_roles = self.solve_engine.role_mapper.seed_bootstrap_roles(observation)
-            discovered_count = 0
-            for color_id, role in bootstrap_roles.items():
-                if color_id not in self.solve_engine._object_roles:
-                    self.solve_engine._object_roles[color_id] = role
-                    discovered_count += 1
-            
-            if discovered_count > 0:
-                detail = {
-                    str(k): {"role": v.role.value, "confidence": v.confidence}
-                    for k, v in bootstrap_roles.items()
-                }
-                self._record_write_event(
-                    kind="bootstrap_discovery",
-                    summary=f"Discovered {discovered_count} preliminary entities from initial frame.",
-                    detail=detail,
-                    source_step=0,
+            await self._bootstrap_entity_discovery(observation)
+
+            # Entity gate enforcement (B121)
+            max_entity_retries = 2
+            gate_result = self._check_entity_gate(observation)
+            retry_count = 0
+            while gate_result["status"] == "fail" and retry_count < max_entity_retries:
+                retry_count += 1
+                logger.warning(
+                    "Entity gate failed (attempt %d/%d): %s — retrying",
+                    retry_count, max_entity_retries, gate_result["reason"],
                 )
+                await self._bootstrap_entity_discovery(observation)
+                gate_result = self._check_entity_gate(observation)
+
+            gate_result["retry_count"] = retry_count
+            if gate_result["status"] == "fail":
+                gate_result["status"] = "degraded"
+                gate_result["reason"] = f"entity discovery failed after {retry_count} retries"
+                logger.warning("Entity gate degraded: %s", gate_result["reason"])
+
+            self._entity_gate_result = gate_result
+            self._record_write_event(
+                kind="entity_gate",
+                summary=f"Entity gate: {gate_result['status']} ({gate_result['reason']})",
+                detail=gate_result,
+                source_step=0,
+            )
 
         # B90: Check retrieval triggers to decide whether to fetch memory
         should_retrieve = self._should_trigger_retrieval(observation, step)
@@ -291,6 +416,10 @@ class ARCOrchestrator:
             )
 
         self._hypothesis_context = context
+        
+        # B116: Refresh compaction artifact
+        self._compaction_artifact = self.hypothesis_mgr.compact_exploration(step)
+        
         return context
 
     async def solve(
@@ -459,6 +588,66 @@ class ARCOrchestrator:
         
         action["guard_status"] = guard_result["status"]
 
+        # B126: Adversarial verification of candidate action (optional, can be disabled via config)
+        verifier_enabled = self.config.get("enable_verifier", False)
+        verifier_attempts = 0
+        verifier_result = None
+        original_action_id = action["action_id"]
+
+        while verifier_enabled and verifier_attempts < 2:
+            verifier_result = await self._verify_candidate_action(
+                action_id=action["action_id"],
+                rationale=action.get("rationale", ""),
+                observation=observation,
+                step_history=self._step_history,
+                hypothesis_context=self._hypothesis_context or {},
+            )
+
+            verifier_attempts += 1
+
+            if verifier_result["approved"]:
+                break
+
+            # First rejection: retry with rejection context
+            if verifier_attempts < 2:
+                logger.info(
+                    "Verifier rejected %s: %s — retrying",
+                    action["action_id"],
+                    verifier_result["rejection_reason"],
+                )
+                # Append rejection context to the original prompt and retry
+                retry_prompt = prompt + f"\n\nVerifier feedback: {verifier_result['rejection_reason']}\nReconsider: what action is better?"
+                retry_action = await self._mental_sandbox(retry_prompt, available_actions, observation)
+                retry_action = self._enforce_action_policy(retry_action, available_actions)
+                action = retry_action
+            else:
+                # Second rejection: log and proceed with original action
+                logger.warning(
+                    "Verifier double-rejected %s (%s), proceeding with original %s",
+                    action["action_id"],
+                    verifier_result["rejection_reason"],
+                    original_action_id,
+                )
+                # Don't revert action, proceed with final candidate
+
+        # Record verifier result in thinking trace (only if verifier was enabled)
+        if verifier_enabled:
+            if action.get("thinking_trace") is None:
+                action["thinking_trace"] = []
+
+            action["thinking_trace"].append({
+                "kind": "verification",
+                "candidate_action": original_action_id,
+                "verifier_approved": verifier_result.get("approved") if verifier_result else True,
+                "rejection_reason": verifier_result.get("rejection_reason") if verifier_result else None,
+                "attempts": verifier_attempts,
+                "final_action": action["action_id"],
+            })
+
+            action["verifier_status"] = "approved" if (verifier_result and verifier_result["approved"]) else "rejected_then_proceeded"
+        else:
+            action["verifier_status"] = "disabled"
+
         # B89: Track invalid actions
         action_id = action.get("action_id")
         if action_id not in available_actions:
@@ -475,6 +664,7 @@ class ARCOrchestrator:
             "rationale": action.get("rationale"),
             "thinking_trace": action.get("thinking_trace", []),
             "guard_status": action.get("guard_status", "unknown"),
+            "verifier_status": action.get("verifier_status", "unknown"),
             "reward": None,
             "done": False,
             "prompt_tokens": prompt_tokens,
@@ -636,6 +826,14 @@ class ARCOrchestrator:
         if step == 0:
             return True
 
+        # B118: Pruning check - if retrieval tools are already marked as low-value/high-latency,
+        # skip optional mid-run retrieval to save time.
+        pruned_types = {d["call_type"] for d in self._pruning_decisions if d["action"] == "deprioritize"}
+        retrieval_types = {"current_truth", "recall_lessons", "analogical_search"}
+        if retrieval_types.intersection(pruned_types) and step > 0:
+            logger.info("[B118] Skipping retrieval trigger due to prior pruning decisions.")
+            return False
+
         # Trigger 2: Repeated no-progress steps (3+ consecutive)
         if self._consecutive_no_progress_steps >= 3 and step > self._last_retrieval_step:
             return True
@@ -707,6 +905,23 @@ class ARCOrchestrator:
             type="STATE",
             content=f"STATE: {state}  ENERGY: {energy:.0%}"
         ))
+
+        # B120: Entity context block
+        if self._entity_map:
+            entity_lines = []
+            for cid, info in self._entity_map.items():
+                if info["role"] == "unknown":
+                    continue
+                line = f"Color {cid}: {info['role']} (confidence={info['confidence']:.0%})"
+                if info.get("position"):
+                    line += f" at row {info['position']['row']:.0f}, col {info['position']['col']:.0f}"
+                entity_lines.append(line)
+            if entity_lines:
+                packet.blocks.append(ContentBlock(
+                    type="ENTITY_CONTEXT",
+                    content="\n".join(entity_lines),
+                    header="ENTITY CONTEXT",
+                ))
 
         if memory_context.get("_triggered"):
             memory_lines = self._format_memory_section(memory_context, observation, is_first_decision=not step_history)
@@ -896,7 +1111,7 @@ class ARCOrchestrator:
         if not self.llm:
             return {"action_id": available_actions[0], "rationale": "system fallback"}
         messages = [
-            {"role": "system", "content": "You are an ARC reasoning assistant."},
+            {"role": "system", "content": QUERY_LLM_SYSTEM_MESSAGE},
             {"role": "user", "content": prompt},
         ]
         try:
@@ -948,33 +1163,46 @@ class ARCOrchestrator:
             
             # B112: Only hard-enforce guidance-grade sources (bfs, directional).
             # 'explore' chunks are descriptive hints, not strict constraints.
-            if source in ("bfs", "directional"):
-                # Filter for valid actions in this state
-                valid_suggested = [a for a in suggested if a in available_actions]
-                
-                if valid_suggested:
-                    chunk_action = valid_suggested[0]
+            if source == "bfs":
+                # BFS is strict-sequential: only enforce if the very first planned action
+                # is still available. If it's blocked, the path has failed — don't skip
+                # to an alternative (that violates the sequential contract).
+                first_planned = suggested[0] if suggested else None
+                if first_planned and first_planned in available_actions:
+                    chunk_action = first_planned
+                    if self.solve_engine._active_chunk and self.solve_engine._active_chunk.estimated_actions:
+                        try:
+                            self.solve_engine._active_chunk.estimated_actions.remove(chunk_action)
+                        except ValueError:
+                            pass
                     if action_id != chunk_action:
-                        # Policy override: follow the chunk plan
-                        if self.solve_engine._active_chunk and self.solve_engine._active_chunk.estimated_actions:
-                            # Find index of first valid action and pop it
-                            for i, a in enumerate(self.solve_engine._active_chunk.estimated_actions):
-                                if a == chunk_action:
-                                    self.solve_engine._active_chunk.estimated_actions.pop(i)
-                                    break
-
                         return {
                             "action_id": chunk_action,
-                            "rationale": f"policy override: enforcing {source} chunk '{active_chunk['description']}'. Original rationale: {rationale}",
+                            "rationale": f"policy override: enforcing bfs chunk '{active_chunk.get('description', '')}'. Original rationale: {rationale}",
                         }
-                    else:
-                        # LLM agreed with chunk - still consume it
-                        if self.solve_engine._active_chunk and self.solve_engine._active_chunk.estimated_actions:
-                            for i, a in enumerate(self.solve_engine._active_chunk.estimated_actions):
-                                if a == action_id:
-                                    self.solve_engine._active_chunk.estimated_actions.pop(i)
-                                    break
-                        return action
+                    return action
+                # else: BFS first step blocked; fall through to standard LLM choice
+
+            elif source == "directional":
+                # Directional is loose: enforce first available action, skipping blocked ones.
+                # Pop all actions up to and including the enforced action.
+                valid_suggested = [a for a in suggested if a in available_actions]
+                if valid_suggested:
+                    chunk_action = valid_suggested[0]
+                    # Pop everything from index 0 to the enforced action (inclusive)
+                    if self.solve_engine._active_chunk and self.solve_engine._active_chunk.estimated_actions:
+                        chunk_list = self.solve_engine._active_chunk.estimated_actions
+                        try:
+                            idx = chunk_list.index(chunk_action)
+                            del chunk_list[:idx + 1]
+                        except ValueError:
+                            pass
+                    if action_id != chunk_action:
+                        return {
+                            "action_id": chunk_action,
+                            "rationale": f"policy override: enforcing directional chunk '{active_chunk.get('description', '')}'. Original rationale: {rationale}",
+                        }
+                    return action
             else:
                 # B112: If it's an 'explore' chunk, we don't hard-enforce it, 
                 # but we should still consume it if the LLM coincidentally picked it.
@@ -1030,6 +1258,88 @@ class ARCOrchestrator:
             ),
         )
         return pool[0].get("action")
+
+    async def _verify_candidate_action(
+        self,
+        action_id: str,
+        rationale: str,
+        observation: ARC3Observation,
+        step_history: List[dict],
+        hypothesis_context: dict,
+    ) -> dict:
+        """B126: Adversarial verification of candidate action before execution.
+
+        Returns:
+            {"approved": bool, "rejection_reason": str or None, "llm_response": str}
+        """
+        colors = observation.get("colors", [])
+        shapes = observation.get("shapes", [])
+        state = observation.get("state", "UNKNOWN")
+
+        # Recent history summary
+        recent_history_entries = []
+        for step in step_history[-3:]:
+            recent_history_entries.append(
+                f"{step.get('action_id', 'UNKNOWN')}: reward={step.get('reward', '?')}"
+            )
+        recent_history = " → ".join(recent_history_entries) if recent_history_entries else "No history"
+
+        # Sandbox context (if available from mental sandbox)
+        sandbox_result = "Not used"
+        thinking_trace = observation.get("_thinking_trace", [])
+        if thinking_trace:
+            sandbox_entry = next((t for t in thinking_trace if t.get("tool") == "sandbox_thought"), None)
+            if sandbox_entry:
+                sandbox_result = f"Tested {sandbox_entry.get('test_action')}: {sandbox_entry.get('result')}"
+
+        # Loop detection
+        loop_detected = hypothesis_context.get("loop_detected", False)
+
+        # Action facts summary
+        action_facts = hypothesis_context.get("action_facts", [])
+        facts_for_action = [f for f in action_facts if f.get("action") == action_id]
+        facts_summary = ""
+        if facts_for_action:
+            facts_summary = "; ".join([f"{f.get('action')} = {f.get('description')}" for f in facts_for_action[:2]])
+        else:
+            facts_summary = "Unknown behavior"
+
+        # Build verifier prompt
+        verifier_prompt = VERIFIER_PROMPT_TEMPLATE.format(
+            action_id=action_id,
+            rationale=rationale,
+            state=state,
+            colors=colors,
+            shapes=shapes,
+            recent_history=recent_history,
+            sandbox_result=sandbox_result,
+            loop_detected=loop_detected,
+            action_facts_summary=facts_summary,
+        )
+
+        try:
+            messages = [
+                {"role": "system", "content": VERIFIER_SYSTEM_PROMPT},
+                {"role": "user", "content": verifier_prompt},
+            ]
+            raw = await asyncio.to_thread(self.llm.chat, messages)
+            parsed = json.loads(raw)
+
+            approval = parsed.get("approved", True)
+            rejection_reason = parsed.get("reason") if not approval else None
+
+            return {
+                "approved": approval,
+                "rejection_reason": rejection_reason,
+                "llm_response": raw,
+            }
+        except Exception as exc:
+            logger.warning("Verifier call failed: %s, defaulting to approval", exc)
+            return {
+                "approved": True,
+                "rejection_reason": None,
+                "llm_response": "",
+            }
 
     def _memory_query(self, observation: ARC3Observation) -> str:
         colors = ", ".join(str(s["value"]) for s in observation.get("colors", []))
@@ -1164,6 +1474,50 @@ class ARCOrchestrator:
         )
         return instruction
 
+    def _compose_final_prompt(self, sections: dict, observation: dict, step_history) -> str:
+        """Render a pre-built sections dict into a single final prompt string (B110).
+
+        Sections are ordered canonically. Headers are added for all sections
+        except SYSTEM. Applies coarse-map suppression when OBSERVED_EFFECTS
+        content is rich (>= 400 chars).
+        """
+        ordered_keys = [
+            "SYSTEM", "STATE", "ENTITY_CONTEXT", "MEMORY", "SOLVE_CONTEXT", "PLAN",
+            "OBSERVED_EFFECTS", "OBSERVATION", "ACTION_FACTS", "PATH_HYPOTHESIS", "INSTRUCTION",
+        ]
+
+        # Coarse-map suppression: when OBSERVED_EFFECTS is substantial, strip the
+        # low-value coarse grid representation from OBSERVATION.
+        observation_content = sections.get("OBSERVATION", "")
+        if "OBSERVED_EFFECTS" in sections and len(sections["OBSERVED_EFFECTS"]) >= 400:
+            coarse_idx = observation_content.find("Coarse map")
+            if coarse_idx < 0:
+                coarse_idx = observation_content.lower().find("coarse map")
+            if coarse_idx >= 0:
+                prefix = observation_content[:coarse_idx].rstrip()
+                observation_content = prefix + "\n[coarse map suppressed: effects context is rich]"
+
+        parts: list[str] = []
+        seen = set()
+        for key in ordered_keys:
+            content = observation_content if key == "OBSERVATION" else sections.get(key, "")
+            if not content:
+                continue
+            seen.add(key)
+            if key == "SYSTEM":
+                parts.append(content)
+            else:
+                parts.append(f"=== {key} ===")
+                parts.append(content)
+
+        # Any sections not in the canonical list, append at end
+        for key, content in sections.items():
+            if key not in seen and content:
+                parts.append(f"=== {key} ===")
+                parts.append(content)
+
+        return "\n".join(parts)
+
     def _format_action_fact_section(self, hyp_ctx: dict | None) -> List[str]:
         if not hyp_ctx:
             return []
@@ -1195,7 +1549,7 @@ class ARCOrchestrator:
                     + ", ".join(untested[: self.MAX_PROMPT_ACTIONS])
                 )
             lines.append(
-                "Exploration coverage: "
+                f"COVERAGE: Exploration coverage: "
                 f"tested {coverage.get('tested_count', 0)}, "
                 f"untested {coverage.get('untested_count', 0)}"
             )
@@ -1321,8 +1675,23 @@ class ARCOrchestrator:
 
     def _format_compaction_section(self) -> str:
         """B116: EXPLORATION_SUMMARY - compact knowledge from long exploration runs."""
-        # TODO: Implement B116 exploration compaction
-        return ""
+        if not self._compaction_artifact:
+            return ""
+        art = self._compaction_artifact
+        lines = []
+        if art.action_summaries:
+            lines.append("KNOWN ACTION EFFECTS:")
+            for action, summary in art.action_summaries.items():
+                lines.append(f"  {summary}")
+        if art.known_loops:
+            lines.append("KNOWN LOOPS (sequences to avoid):")
+            for loop in art.known_loops[:3]:
+                lines.append(f"  {' -> '.join(loop)}")
+        if art.confirmed_rules:
+            lines.append("CONFIRMED RULES:")
+            for rule in art.confirmed_rules[:3]:
+                lines.append(f"  {rule}")
+        return "\n".join(lines)
 
     def _format_plan_section(self) -> List[str]:
         if not self._plan_steps:
@@ -1350,9 +1719,21 @@ class ARCOrchestrator:
         rows = len(grid)
         cols = len(grid[0]) if grid else 0
         colors = observation.get("colors", [])
-        color_summary = ", ".join(
-            f"{c['value']}:{c['count']}" for c in colors[:6]
-        ) if colors else "none"
+        
+        # B120: Annotate color summary with roles
+        if colors:
+            color_parts = []
+            for c in colors[:6]:
+                cid = c["value"]
+                part = f"{cid}:{c['count']}"
+                entity = self._entity_map.get(cid) if self._entity_map else None
+                if entity and entity["role"] != "unknown":
+                    part += f"({entity['role']})"
+                color_parts.append(part)
+            color_summary = ", ".join(color_parts)
+        else:
+            color_summary = "none"
+
         coarse_map = self._coarse_grid_summary(grid)
         return (
             f"Grid: {rows}x{cols}\n"
@@ -1528,6 +1909,7 @@ class ARCOrchestrator:
                     else 0
                 ),
             },
+            "pruning_decisions": list(self._pruning_decisions),
         }
 
     def _summarize_puzzle_structure(self, observation: ARC3Observation) -> str:
@@ -1548,11 +1930,28 @@ class ARCOrchestrator:
         shape_desc = ", ".join(
             f"{s.get('type', 'unknown')} size {s.get('size', '?')}" for s in shapes[:6]
         ) if shapes else "none detected"
+
+        # B120: Entity role annotations
+        if self._entity_map:
+            entity_annotations = []
+            for color_info in colors[:6]:
+                cid = color_info["value"] if isinstance(color_info, dict) else color_info
+                entity = self._entity_map.get(cid)
+                if entity and entity["role"] != "unknown":
+                    annotation = f"color {cid} = {entity['role']}"
+                    if entity.get("position"):
+                        annotation += f" at row {entity['position']['row']:.0f}, col {entity['position']['col']:.0f}"
+                    entity_annotations.append(annotation)
+            entity_desc = "; ".join(entity_annotations) if entity_annotations else "pending"
+        else:
+            entity_desc = "pending"
+
         return (
             f"[PUZZLE STRUCTURE] Task {observation['task_id']} from {observation['dataset_id']}. "
             f"Grid: {rows}x{cols}. State: {state}. Energy: {energy:.0%}. "
             f"Frame hash: {frame_hash}. "
             f"Colors: {color_desc}. "
+            f"Entity roles: {entity_desc}. "
             f"Shapes ({len(shapes)}): {shape_desc}. "
             f"Available actions: {', '.join(available) if available else 'pending'}. "
             f"Spatial sketch 4x4: {spatial_sketch or '(empty)'}."

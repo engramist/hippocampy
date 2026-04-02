@@ -413,7 +413,9 @@ def test_codex_adapter_has_all_tools():
                 "explore_graph", "complete_quest", "set_quest", "context_status",
                 "get_anomalies", "upsert_lesson", "recall_relevant_lessons",
                 "register_plan", "report_outcome", "recall_plans",
-                "get_openclaw_prompt"}
+                "get_openclaw_prompt",
+                "register_task_graph", "get_ready_tasks", "advance_task",
+                "fail_task", "get_task_graph"}
     assert names == expected
 
 def test_codex_adapter_analogical_search_schema():

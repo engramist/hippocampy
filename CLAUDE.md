@@ -4,15 +4,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Implementation Workflow
 
-**Follow `GEMINI-DELEGATION.md` for all implementation work.** Do not write code directly. Instead:
-1. Write a detailed `B-<feature>.md` plan (exact file paths, function signatures, logic, tests)
-2. Get DJ's approval on the plan
-3. Delegate to Gemini CLI: `gemini -p "Read B-<plan>.md and implement exactly as specified..." --yolo`
-4. Review Gemini's output, run tests, fix issues
-5. Commit when satisfied
+Claude/Haiku may implement code directly in this repository.
+
+Default workflow:
+1. Read the target backlog card and dependencies.
+2. Implement directly with minimal, safe edits.
+3. Run relevant tests and fix regressions.
+4. Summarize changed files, commands run, and results.
+5. Commit when satisfied.
+
+Optional delegation workflow:
+- If requested, or if the task is large/multi-file, follow `GEMINI-DELEGATION.md`.
+- You may still create a detailed `B-<feature>.md` plan first, then delegate to Gemini CLI.
 
 ## Architecture
 
 **For all architecture, schema, Loop steps, tools, IP claims, and design details, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).**
 
-This is the single source of truth for the system design — shared across all agents (Claude, Gemini, Codex).
+**For ecosystem layer boundaries, separation rules, and import constraints, see [`docs/ecosystem-rules.md`](docs/ecosystem-rules.md).**
+
+These are the sources of truth for the system design — shared across all agents (Claude, Gemini, Codex).

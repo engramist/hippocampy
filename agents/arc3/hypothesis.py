@@ -113,6 +113,20 @@ class ActionFact:
             core = self.description
         return f"{self.action}: {core}"
 
+    def to_dict(self) -> Dict[str, Any]:
+        """B117: Serialization for decision packets."""
+        return {
+            "id": self.id,
+            "action": self.action,
+            "fact_type": self.fact_type,
+            "description": self.description,
+            "consistency": self.consistency,
+            "value_status": self.value_status,
+            "evidence_count": self.evidence_count,
+            "trend": self.trend,
+            "support_steps": self.support_steps,
+        }
+
 
 @dataclass
 class PathHypothesis:
@@ -122,6 +136,26 @@ class PathHypothesis:
     confidence: float
     value_status: str
     support_steps: List[int] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """B117: Serialization for decision packets."""
+        return {
+            "actions": self.actions,
+            "description": self.description,
+            "confidence": self.confidence,
+            "value_status": self.value_status,
+            "support_steps": self.support_steps,
+        }
+
+
+@dataclass
+class ExplorationCompaction:
+    """B116: Compact summary of older exploration state to keep context lean."""
+    action_summaries: Dict[str, str] = field(default_factory=dict)  # action -> short summary
+    known_loops: List[List[str]] = field(default_factory=list)      # sequences that looped
+    confirmed_rules: List[str] = field(default_factory=list)
+    refuted_rules: List[str] = field(default_factory=list)
+    timestamp_step: int = 0
 
 
 # ── State Graph ──────────────────────────────────────────────────────
@@ -1373,12 +1407,56 @@ class HypothesisManager:
             coarse_rows.append(" ".join(row_cells))
         return "\n".join(coarse_rows)
 
-    async def distill_to_brain(self) -> int:
-        """Flush confirmed + refuted hypotheses and durable action facts to SideQuests as durable knowledge.
+    def compact_exploration(self, current_step: int) -> ExplorationCompaction:
+        """B116: Summarize current hypothesis state into a compact artifact."""
+        action_summaries = {}
+        for action, fact in self.action_facts.items():
+            action_summaries[action] = fact.compact_description
+
+        confirmed = []
+        refuted = []
+        for h in self.hypotheses.values():
+            if h.status == "confirmed":
+                confirmed.append(h.description)
+            elif h.status == "refuted":
+                refuted.append(h.description)
+
+        # Detect recent loops from path hypotheses
+        known_loops = []
+        for path in self._build_path_hypotheses(limit=10):
+            if "loop" in path.get("description", "").lower():
+                known_loops.append(path["actions"])
+
+        return ExplorationCompaction(
+            action_summaries=action_summaries,
+            known_loops=known_loops,
+            confirmed_rules=confirmed,
+            refuted_rules=refuted,
+            timestamp_step=current_step,
+        )
+
+    async def distill_to_brain(self, object_roles: Dict[int, Any] | None = None) -> int:
+        """Flush confirmed + refuted hypotheses, durable action facts, and bootstrap entities to SideQuests.
 
         Called on WIN or GAME_OVER boundaries. Returns count of entries flushed.
         """
         flushed = 0
+
+        # 0. Bootstrap Entities (B119)
+        if object_roles:
+            for color_id, role in object_roles.items():
+                if role.role != "unknown":
+                    text = f"[BOOTSTRAP ENTITY] color_{color_id} identified as {role.role.value} (confidence={role.confidence:.2f})"
+                    try:
+                        await self.brain.notify_turn(
+                            role="assistant",
+                            content=text,
+                            session_id=self.session_id,
+                        )
+                        flushed += 1
+                    except Exception as e:
+                        logger.error(f"Failed to distill bootstrap entity {color_id}: {e}")
+
         # 1. Action Facts (B-93)
         for fact in self.action_facts.values():
             if fact.evidence_count >= self.MIN_EVIDENCE or fact.fact_type in {"blocked", "loop"}:

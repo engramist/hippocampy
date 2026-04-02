@@ -230,13 +230,20 @@ class BrainDaemon:
 
     async def _loop_worker(self):
         """
-        Reads (message_id, text, role, session_id) tuples from the queue and
+        Reads (message_id, text, role, session_id, precomputed) tuples from the queue and
         runs the Gated Consolidation Loop on each. Runs as a background task.
         """
         print("Loop worker started.")
         while True:
-            # B14: Added session_id to queue tuple
-            message_id, text, role, session_id = await self._loop_queue.get()
+            # B108: Added precomputed to queue tuple
+            item = await self._loop_queue.get()
+            # Handle both 4-tuple (old) and 5-tuple (new) for compatibility
+            if len(item) == 4:
+                message_id, text, role, session_id = item
+                precomputed = None
+            else:
+                message_id, text, role, session_id, precomputed = item
+
             try:
                 print(f"[Loop] Processing ({role}): {text[:120]!r}")
                 summary = await run_loop(
@@ -248,6 +255,7 @@ class BrainDaemon:
                     config=self.config,
                     centroids=self._centroids,
                     session_id=session_id,
+                    precomputed=precomputed,
                 )
                 print(
                     f"[Loop] msg={message_id[:8]} "
