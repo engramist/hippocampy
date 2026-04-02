@@ -6,6 +6,8 @@
 
 **What's broken/missing**:
 - No submission timestamp → can't correlate runs with system events
+- No explicit **request start timestamp** for ARC calls
+- No human-friendly “1st response / 2nd response / 3rd response” timeline
 - Only summaries of ARC API responses → raw payloads unavailable
 - No sequence timeline (mm:ss) → hard to trace causation between steps
 - `orchestration_report.phase_owner` all "ARC Harness" → uninformative (though correct by design)
@@ -102,19 +104,21 @@
 ---
 
 ### Phase 3: Raw ARC API Trace Capture
-**Goal**: Optionally capture HTTP method, status, headers, and raw response payloads  
+**Goal**: Capture HTTP method, status, headers, raw response payloads, and a CloudWatch-style event stream  
 **Scope**: 1.5 sessions (2 hours)
 
 **Required output path per call**:
 - `submission_results[*].sidequests_ledger[*].arc_api_io.request`
 - `submission_results[*].sidequests_ledger[*].arc_api_io.response`
 - `submission_results[*].sidequests_ledger[*].arc_api_io.call_seq` (strictly increasing)
+- `submission_results[*].arc_event_timeline[*]`
 
 **Files to modify**:
 - `benchmarks/arc3/adapter.py`:
   - [ ] Intercept POST /api/cmd/{ACTION_ID} calls in `execute_action()` or `_post()`
   - [ ] Log `http_method`, `http_endpoint`, `http_status`, `request_size_bytes`, `response_size_bytes`, `response_headers`
   - [ ] Build `arc_api_io.request` + `arc_api_io.response` for each ARC call
+  - [ ] Capture `request_started_iso`, `response_received_iso`, and `duration_ms`
   - [ ] Increment and attach `arc_api_io.call_seq` for each ARC call
   - [ ] Optionally capture raw `raw_frame_response` (full FrameResponse JSON)
   - [ ] Add config flag `CAPTURE_RAW_ARC_TRACES=false` (env var toggle)
@@ -123,6 +127,7 @@
 - `agents/arc3/runner.py`:
   - [ ] Pass adapter trace context through action dispatch logic
   - [ ] Add required `arc_api_io` field to sidequests_ledger entry for each ARC call
+  - [ ] Build top-level `arc_event_timeline` with `event_seq`, `request_started`, and `response_received` entries
   - [ ] Add `arc_api_trace` field to sidequests_ledger entry for each action
 
 **Example output**:
@@ -161,6 +166,8 @@
 - `test_raw_traces_off_by_default()` — env var controls capture
 - `test_arc_api_io_per_call_present()` — every ARC call has request+response object
 - `test_arc_api_io_call_seq_monotonic()` — call sequence strictly increases
+- `test_arc_event_timeline_first_second_third_response()` — verify first/second/third server responses are visible in order
+- `test_request_started_timestamp_present()` — verify every ARC call logs a start timestamp before the response
 
 ---
 

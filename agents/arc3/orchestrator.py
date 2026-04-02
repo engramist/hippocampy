@@ -575,6 +575,7 @@ class ARCOrchestrator:
         action = await self._mental_sandbox(prompt, available_actions, observation)
 
         action = self._enforce_action_policy(action, available_actions)
+        action = self._ensure_action6_coordinates(action, observation)
 
         # B115: Final pre-execution decision guard
         guard_result = self.solve_engine.critique_action(
@@ -601,6 +602,7 @@ class ARCOrchestrator:
                 action["rationale"] = f"{action.get('rationale', '')} (guard blocked: {guard_result['reason']})"
                 executed_by = "guard_blocked_fallback"
         
+        action = self._ensure_action6_coordinates(action, observation)
         action["guard_status"] = guard_result["status"]
 
         # B126: Adversarial verification of candidate action (optional, can be disabled via config)
@@ -634,6 +636,7 @@ class ARCOrchestrator:
                 retry_prompt = prompt + f"\n\nVerifier feedback: {verifier_result['rejection_reason']}\nReconsider: what action is better?"
                 retry_action = await self._mental_sandbox(retry_prompt, available_actions, observation)
                 retry_action = self._enforce_action_policy(retry_action, available_actions)
+                retry_action = self._ensure_action6_coordinates(retry_action, observation)
                 action = retry_action
             else:
                 # Second rejection: log and proceed with original action
@@ -682,6 +685,8 @@ class ARCOrchestrator:
                 "guard_reason": guard_result["reason"] if guard_result["status"] != "approved" else None
             },
             "action_id": action.get("action_id"),
+            "x": action.get("x"),
+            "y": action.get("y"),
             "rationale": action.get("rationale"),
             "thinking_trace": action.get("thinking_trace", []),
             "guard_status": action.get("guard_status", "unknown"),
@@ -751,7 +756,7 @@ class ARCOrchestrator:
                 
                 # Final decision found
                 if "action_id" in parsed:
-                    action_id = parsed["action_id"]
+                    action_id = self._normalize_action_id(parsed.get("action_id"))
                     rationale = parsed.get("rationale", "")
                     
                     if action_id not in available_actions:
@@ -768,11 +773,18 @@ class ARCOrchestrator:
 
                     if thinking_trace:
                         rationale = f"{rationale} (sandbox refined)"
-                    return {
+                    action: ARC3Action = {
                         "action_id": action_id,
                         "rationale": rationale,
-                        "thinking_trace": thinking_trace
+                        "thinking_trace": thinking_trace,
                     }
+                    x = self._coerce_action6_coordinate(parsed.get("x"))
+                    y = self._coerce_action6_coordinate(parsed.get("y"))
+                    if x is not None:
+                        action["x"] = x
+                    if y is not None:
+                        action["y"] = y
+                    return action
                 
                 # Fallback if neither
                 iteration = max_iterations
@@ -1128,6 +1140,116 @@ class ARCOrchestrator:
 
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _normalize_action_id(action_id: Any) -> str | None:
+        if action_id is None:
+            return None
+        text = str(action_id).strip().upper()
+        if not text:
+            return None
+        if text.isdigit():
+            return f"ACTION{text}"
+        return text
+
+    @staticmethod
+    def _coerce_action6_coordinate(value: Any) -> int | None:
+        if value in (None, ""):
+            return None
+        try:
+            coordinate = int(value)
+        except (TypeError, ValueError):
+            return None
+        return max(0, min(63, coordinate))
+
+    def _candidate_action6_coordinates(self, observation: ARC3Observation) -> List[tuple[int, int]]:
+        grid = observation.get("grid") or []
+        if not grid or not isinstance(grid, list) or not isinstance(grid[0], list) or not grid[0]:
+            return [(0, 0)]
+
+        rows = len(grid)
+        cols = len(grid[0])
+        counts: dict[int, int] = {}
+        for row in grid:
+            for cell in row:
+                value = int(cell)
+                counts[value] = counts.get(value, 0) + 1
+        background = max(counts.items(), key=lambda item: item[1])[0] if counts else 0
+
+        non_background = [
+            (x, y)
+            for y, row in enumerate(grid)
+            for x, cell in enumerate(row)
+            if int(cell) != background
+        ]
+        center = (max(0, min(63, cols // 2)), max(0, min(63, rows // 2)))
+        corners = [
+            (0, 0),
+            (max(0, min(63, cols - 1)), 0),
+            (0, max(0, min(63, rows - 1))),
+            (max(0, min(63, cols - 1)), max(0, min(63, rows - 1))),
+        ]
+
+        ordered: List[tuple[int, int]] = []
+        seen: set[tuple[int, int]] = set()
+        for coord in non_background + [center] + corners:
+            normalized = (max(0, min(63, int(coord[0]))), max(0, min(63, int(coord[1]))))
+            if normalized not in seen:
+                seen.add(normalized)
+                ordered.append(normalized)
+        return ordered or [(0, 0)]
+
+    def _infer_action6_coordinates(self, observation: ARC3Observation) -> tuple[int, int]:
+        candidates = self._candidate_action6_coordinates(observation)
+        action6_attempts = [
+            step for step in self._step_history
+            if self._normalize_action_id(step.get("action_id")) == "ACTION6"
+        ]
+        used_coords = {
+            (x, y)
+            for step in action6_attempts
+            for x, y in [
+                (
+                    self._coerce_action6_coordinate(step.get("x")),
+                    self._coerce_action6_coordinate(step.get("y")),
+                )
+            ]
+            if x is not None and y is not None
+        }
+
+        start_index = len(action6_attempts) % len(candidates)
+        for offset in range(len(candidates)):
+            coord = candidates[(start_index + offset) % len(candidates)]
+            if coord not in used_coords:
+                return coord
+        return candidates[start_index]
+
+    def _ensure_action6_coordinates(self, action: ARC3Action, observation: ARC3Observation) -> ARC3Action:
+        normalized_id = self._normalize_action_id(action.get("action_id"))
+        if normalized_id != "ACTION6":
+            if normalized_id and normalized_id != action.get("action_id"):
+                updated = dict(action)
+                updated["action_id"] = normalized_id
+                return updated
+            return action
+
+        updated = dict(action)
+        updated["action_id"] = normalized_id
+        x = self._coerce_action6_coordinate(updated.get("x"))
+        y = self._coerce_action6_coordinate(updated.get("y"))
+        inferred = x is None or y is None
+        if inferred:
+            x, y = self._infer_action6_coordinates(observation)
+        updated["x"] = x
+        updated["y"] = y
+
+        rationale = str(updated.get("rationale") or "ACTION6 coordinate probe")
+        coord_note = f"x={x}, y={y}"
+        if coord_note not in rationale:
+            prefix = f"{rationale}; " if rationale else ""
+            reason = "targeting inferred coord" if inferred else "targeting coord"
+            updated["rationale"] = f"{prefix}{reason} ({coord_note})"
+        return updated
+
     async def _query_llm(self, prompt: str, available_actions: List[str]) -> ARC3Action:
         if not self.llm:
             return {"action_id": available_actions[0], "rationale": "system fallback"}
@@ -1141,7 +1263,7 @@ class ARCOrchestrator:
             if not isinstance(parsed, dict):
                 raise ValueError(f"Expected dict action payload, got {type(parsed).__name__}")
 
-            action_id = parsed.get("action_id")
+            action_id = self._normalize_action_id(parsed.get("action_id"))
             rationale = parsed.get("rationale") or "llm response missing rationale"
             if action_id not in available_actions:
                 fallback = available_actions[0]
@@ -1156,13 +1278,43 @@ class ARCOrchestrator:
                     "rationale": f"Invalid LLM action {action_id!r}; fallback to {fallback}. Original rationale: {rationale}",
                 }
 
-            return {
+            action: ARC3Action = {
                 "action_id": action_id,
                 "rationale": rationale,
             }
+            x = self._coerce_action6_coordinate(parsed.get("x"))
+            y = self._coerce_action6_coordinate(parsed.get("y"))
+            if x is not None:
+                action["x"] = x
+            if y is not None:
+                action["y"] = y
+            return action
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("LLM action parse failed: %s", exc)
             return {"action_id": available_actions[0], "rationale": "fallback"}
+
+    @staticmethod
+    def _should_skip_chunk_action(effect: dict | None) -> bool:
+        """Return True when the evidence says a chunk action has gone stale."""
+        if not effect:
+            return False
+
+        value_status = str(effect.get("value_status") or "").lower()
+        last_label = str(effect.get("last_meaningful_label") or "").lower()
+        zero_reward_streak = int(effect.get("zero_reward_streak") or 0)
+        no_progress_count = int(effect.get("no_progress_count") or 0)
+        avg_change = float(effect.get("avg_meaningful_change") or 0.0)
+        rank_score = float(effect.get("rank_score") or 0.0)
+
+        if effect.get("over_retest_budget"):
+            return True
+        if value_status in {"low_value", "ineffective"}:
+            return True
+        if last_label in {"low_value", "no_progress"} and zero_reward_streak >= 2:
+            return True
+        if zero_reward_streak >= 3 and (no_progress_count > 0 or avg_change < 0.45 or rank_score < 0.20):
+            return True
+        return False
 
     def _enforce_action_policy(self, action: ARC3Action, available_actions: List[str]) -> ARC3Action:
         """Apply hard exploration guards and chunk enforcement (B109/B112)."""
@@ -1172,6 +1324,11 @@ class ARCOrchestrator:
             candidate for candidate in coverage.get("untested_actions", [])
             if candidate in available_actions
         ]
+        observed_effects = {
+            effect.get("action"): effect
+            for effect in hyp_ctx.get("observed_action_effects", [])
+            if effect.get("action")
+        }
         
         action_id = action.get("action_id")
         rationale = action.get("rationale") or ""
@@ -1186,10 +1343,9 @@ class ARCOrchestrator:
             # 'explore' chunks are descriptive hints, not strict constraints.
             if source == "bfs":
                 # BFS is strict-sequential: only enforce if the very first planned action
-                # is still available. If it's blocked, the path has failed — don't skip
-                # to an alternative (that violates the sequential contract).
+                # is still available and hasn't already decayed into a stale low-value loop.
                 first_planned = suggested[0] if suggested else None
-                if first_planned and first_planned in available_actions:
+                if first_planned and first_planned in available_actions and not self._should_skip_chunk_action(observed_effects.get(first_planned)):
                     chunk_action = first_planned
                     if self.solve_engine._active_chunk and self.solve_engine._active_chunk.estimated_actions:
                         try:
@@ -1202,14 +1358,18 @@ class ARCOrchestrator:
                             "rationale": f"policy override: enforcing bfs chunk '{active_chunk.get('description', '')}'. Original rationale: {rationale}",
                         }
                     return action
-                # else: BFS first step blocked; fall through to standard LLM choice
+                # else: BFS first step blocked or stale; fall through to standard choice
 
             elif source == "directional":
-                # Directional is loose: enforce first available action, skipping blocked ones.
-                # Pop all actions up to and including the enforced action.
+                # Directional is loose: enforce the first available action that still has
+                # credible signal, skipping blocked or stale low-value suggestions.
                 valid_suggested = [a for a in suggested if a in available_actions]
-                if valid_suggested:
-                    chunk_action = valid_suggested[0]
+                viable_suggested = [
+                    candidate for candidate in valid_suggested
+                    if not self._should_skip_chunk_action(observed_effects.get(candidate))
+                ]
+                if viable_suggested:
+                    chunk_action = viable_suggested[0]
                     # Pop everything from index 0 to the enforced action (inclusive)
                     if self.solve_engine._active_chunk and self.solve_engine._active_chunk.estimated_actions:
                         chunk_list = self.solve_engine._active_chunk.estimated_actions
@@ -1224,6 +1384,14 @@ class ARCOrchestrator:
                             "rationale": f"policy override: enforcing directional chunk '{active_chunk.get('description', '')}'. Original rationale: {rationale}",
                         }
                     return action
+                elif valid_suggested and self.solve_engine._active_chunk and self.solve_engine._active_chunk.estimated_actions:
+                    # Drop stale leading actions so the chunk doesn't keep re-forcing a loop.
+                    chunk_list = self.solve_engine._active_chunk.estimated_actions
+                    while chunk_list and (
+                        chunk_list[0] not in available_actions
+                        or self._should_skip_chunk_action(observed_effects.get(chunk_list[0]))
+                    ):
+                        chunk_list.pop(0)
             else:
                 # B112: If it's an 'explore' chunk, we don't hard-enforce it, 
                 # but we should still consume it if the LLM coincidentally picked it.

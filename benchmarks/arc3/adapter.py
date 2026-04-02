@@ -196,6 +196,8 @@ class LedgerBrainClient(BrainClientProtocol):
         self.current_phase: str = "unknown"
         self.start_time = start_time or time.time()
         self._arc_call_seq = 0
+        self._event_seq = 0
+        self.arc_event_timeline: List[dict] = []
 
     def _record(self, phase: str, call_type: str, mode: str, input_summary: str, result_summary: str, latency_ms: float, decision_used: Optional[Any] = None, arc_api_io: Optional[dict] = None):
         import datetime
@@ -227,25 +229,98 @@ class LedgerBrainClient(BrainClientProtocol):
             }
         self.ledger.append(entry)
 
+    @staticmethod
+    def _humanize_arc_operation(method: str, endpoint: str, request_payload: Any = None) -> str:
+        endpoint = str(endpoint or "").strip()
+        action_id = request_payload.get("action_id") if isinstance(request_payload, dict) else None
+
+        if endpoint.startswith("/api/cmd/"):
+            return endpoint.rstrip("/").rsplit("/", 1)[-1].upper()
+        if action_id:
+            return str(action_id).upper()
+        if endpoint.startswith("/api/games/initial"):
+            return "INITIAL frame"
+        if endpoint.startswith("/api/games"):
+            return "GAME state"
+        if endpoint.startswith("/api/scorecard/open"):
+            return "SCORECARD open"
+        if endpoint:
+            return f"{method.upper()} {endpoint}"
+        return method.upper()
+
     def record_arc_api_call(self, phase: str, method: str, endpoint: str, request_payload: Any, response_payload: Any, latency_ms: float, http_status: Optional[int] = None, received: bool = True, error_details: Optional[dict] = None):
-        """B130: Record a raw ARC API call in the ledger."""
+        """B130: Record a raw ARC API call in the ledger and timeline."""
+        import datetime
+        now_ts = time.time()
+        start_ts = now_ts - (latency_ms / 1000.0)
+        operation_label = self._humanize_arc_operation(method, endpoint, request_payload)
+
         self._arc_call_seq += 1
+
+        # 1. Request Started Event
+        self._event_seq += 1
+        req_start_iso = datetime.datetime.fromtimestamp(start_ts, datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+        req_elapsed_ms = (start_ts - self.start_time) * 1000
+        req_elapsed_mmss = f"{int(req_elapsed_ms // 60000):02d}:{int((req_elapsed_ms % 60000) // 1000):02d}"
+
+        self.arc_event_timeline.append({
+            "event_seq": self._event_seq,
+            "call_seq": self._arc_call_seq,
+            "kind": "request_started",
+            "label": f"{operation_label} request started",
+            "request_started_iso": req_start_iso,
+            "elapsed_mmss": req_elapsed_mmss,
+            "method": method,
+            "endpoint": endpoint
+        })
+        
+        # 2. Response Received Event
+        self._event_seq += 1
+        resp_received_iso = datetime.datetime.fromtimestamp(now_ts, datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+        resp_elapsed_ms = (now_ts - self.start_time) * 1000
+        resp_elapsed_mmss = f"{int(resp_elapsed_ms // 60000):02d}:{int((resp_elapsed_ms % 60000) // 1000):02d}"
+        
+        summary = ""
+        actual_status = http_status or (200 if received else None)
+        if received:
+            summary = f"status {actual_status}"
+            if isinstance(response_payload, dict):
+                state = response_payload.get("state")
+                reward = response_payload.get("reward")
+                if state: summary += f"; state {state}"
+                if reward is not None: summary += f"; reward {reward}"
+        else:
+            summary = f"failed: {error_details.get('error_type') if error_details else 'unknown'}"
+
+        self.arc_event_timeline.append({
+            "event_seq": self._event_seq,
+            "call_seq": self._arc_call_seq,
+            "kind": "response_received",
+            "label": f"{operation_label} response #{self._arc_call_seq}",
+            "response_received_iso": resp_received_iso,
+            "elapsed_mmss": resp_elapsed_mmss,
+            "duration_ms": int(latency_ms),
+            "http_status": actual_status,
+            "response_summary": summary,
+            "payload": response_payload if received else (error_details if error_details else None)
+        })
+
         arc_api_io = {
             "call_seq": self._arc_call_seq,
             "request": {
                 "method": method,
                 "endpoint": endpoint,
-                "payload": request_payload, # truncated in _compact_text eventually if used in summaries
+                "payload": request_payload,
             },
             "response": {
                 "received": received,
-                "http_status": http_status,
+                "http_status": actual_status,
                 "payload": response_payload if received else None,
                 "error": error_details,
             }
         }
         input_summary = f"{method} {endpoint}"
-        result_summary = f"status={http_status}" if received else f"failed: {error_details.get('error_type') if error_details else 'unknown'}"
+        result_summary = f"status={actual_status}" if received else f"failed: {error_details.get('error_type') if error_details else 'unknown'}"
         self._record(
             phase=phase,
             call_type="arc_api_action",
