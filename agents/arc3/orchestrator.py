@@ -136,6 +136,15 @@ class ARCOrchestrator:
         self._pruning_decisions: List[dict] = []
         self._entity_gate_result: Dict[str, Any] = {}
         self._compaction_artifact: Any | None = None
+        self._guard_escalations: List[dict] = []
+
+    def record_guard_escalation(self, step: int, reason: str, status: str):
+        """B130: Record a guard escalation event."""
+        self._guard_escalations.append({
+            "step": step,
+            "reason": reason,
+            "guard_state": status
+        })
 
     @property
     def _entity_map(self) -> Dict[int, Dict[str, Any]]:
@@ -574,17 +583,23 @@ class ARCOrchestrator:
             hypothesis_context=self._hypothesis_context or {},
             step_history=self._step_history,
         )
-        if guard_result["status"] in ("blocked", "warned") and guard_result.get("suggested_action"):
-            old_id = action["action_id"]
-            new_id = guard_result["suggested_action"]
-            action["action_id"] = new_id
-            action["rationale"] = (
-                f"{action.get('rationale', '')} (guard override: {old_id} -> {new_id} :: {guard_result['reason']})"
-            )
-        elif guard_result["status"] == "blocked":
-            # If blocked and no suggestion, we must still move. 
-            # Policy enforcement should have already ensured it's at least valid if possible.
-            action["rationale"] = f"{action.get('rationale', '')} (guard blocked: {guard_result['reason']})"
+        
+        executed_by = "llm"
+        if guard_result["status"] in ("blocked", "warned"):
+            self.record_guard_escalation(step_num, guard_result["reason"], guard_result["status"])
+            if guard_result.get("suggested_action"):
+                old_id = action["action_id"]
+                new_id = guard_result["suggested_action"]
+                action["action_id"] = new_id
+                action["rationale"] = (
+                    f"{action.get('rationale', '')} (guard override: {old_id} -> {new_id} :: {guard_result['reason']})"
+                )
+                executed_by = "guard_override"
+            elif guard_result["status"] == "blocked":
+                # If blocked and no suggestion, we must still move. 
+                # Policy enforcement should have already ensured it's at least valid if possible.
+                action["rationale"] = f"{action.get('rationale', '')} (guard blocked: {guard_result['reason']})"
+                executed_by = "guard_blocked_fallback"
         
         action["guard_status"] = guard_result["status"]
 
@@ -660,6 +675,12 @@ class ARCOrchestrator:
             "solve_context": dict(self._solve_context) if self._solve_context else None,
             "available_actions": list(available_actions),
             "prompt": prompt,
+            "decision_flow": {
+                "proposed_by": "llm",
+                "executed_by": executed_by,
+                "guard_status": guard_result["status"],
+                "guard_reason": guard_result["reason"] if guard_result["status"] != "approved" else None
+            },
             "action_id": action.get("action_id"),
             "rationale": action.get("rationale"),
             "thinking_trace": action.get("thinking_trace", []),

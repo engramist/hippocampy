@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import time
 from collections import Counter, deque
 from typing import Any, Callable, List, Mapping, Optional, Protocol, Sequence
 
@@ -188,15 +189,24 @@ class LocalBrainClient(BrainClientProtocol):
 
 class LedgerBrainClient(BrainClientProtocol):
     """Wrapper that records all calls into a shared ledger."""
-    def __init__(self, inner: BrainClientProtocol, ledger: List[Mapping[str, Any]], step_provider: Callable[[], int | str]):
+    def __init__(self, inner: BrainClientProtocol, ledger: List[Mapping[str, Any]], step_provider: Callable[[], int | str], start_time: Optional[float] = None):
         self.inner = inner
         self.ledger = ledger
         self.step_provider = step_provider
         self.current_phase: str = "unknown"
+        self.start_time = start_time or time.time()
+        self._arc_call_seq = 0
 
-    def _record(self, phase: str, call_type: str, mode: str, input_summary: str, result_summary: str, latency_ms: float, decision_used: Optional[Any] = None):
+    def _record(self, phase: str, call_type: str, mode: str, input_summary: str, result_summary: str, latency_ms: float, decision_used: Optional[Any] = None, arc_api_io: Optional[dict] = None):
+        import datetime
+        now = time.time()
+        elapsed_ms = (now - self.start_time) * 1000
+        elapsed_mmss = f"{int(elapsed_ms // 60000):02d}:{int((elapsed_ms % 60000) // 1000):02d}"
+        
         entry = {
             "step": self.step_provider(),
+            "timestamp_iso": datetime.datetime.fromtimestamp(now, datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+            "elapsed_mmss": elapsed_mmss,
             "phase": phase if phase != "unknown" else self.current_phase,
             "call_type": call_type,
             "mode": mode,
@@ -206,7 +216,45 @@ class LedgerBrainClient(BrainClientProtocol):
         }
         if decision_used is not None:
             entry["decision_used"] = decision_used
+        if arc_api_io is not None:
+            entry["arc_api_io"] = arc_api_io
+            # B130: preserve arc_api_trace as optional compatibility mirror
+            entry["arc_api_trace"] = {
+                "http_method": arc_api_io.get("request", {}).get("method"),
+                "http_endpoint": arc_api_io.get("request", {}).get("endpoint"),
+                "http_status": arc_api_io.get("response", {}).get("http_status"),
+                "received": arc_api_io.get("response", {}).get("received", True),
+            }
         self.ledger.append(entry)
+
+    def record_arc_api_call(self, phase: str, method: str, endpoint: str, request_payload: Any, response_payload: Any, latency_ms: float, http_status: Optional[int] = None, received: bool = True, error_details: Optional[dict] = None):
+        """B130: Record a raw ARC API call in the ledger."""
+        self._arc_call_seq += 1
+        arc_api_io = {
+            "call_seq": self._arc_call_seq,
+            "request": {
+                "method": method,
+                "endpoint": endpoint,
+                "payload": request_payload, # truncated in _compact_text eventually if used in summaries
+            },
+            "response": {
+                "received": received,
+                "http_status": http_status,
+                "payload": response_payload if received else None,
+                "error": error_details,
+            }
+        }
+        input_summary = f"{method} {endpoint}"
+        result_summary = f"status={http_status}" if received else f"failed: {error_details.get('error_type') if error_details else 'unknown'}"
+        self._record(
+            phase=phase,
+            call_type="arc_api_action",
+            mode="write" if method == "POST" else "read",
+            input_summary=input_summary,
+            result_summary=result_summary,
+            latency_ms=latency_ms,
+            arc_api_io=arc_api_io
+        )
 
     @staticmethod
     def _compact_text(text: str, limit: int = 180) -> str:

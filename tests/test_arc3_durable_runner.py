@@ -568,7 +568,7 @@ def test_submission_row_includes_orchestration_report_with_no_violations():
     assert report["orchestration_owner"] == "ARC Harness"
     assert report["status"] == "ok"
     assert report["violations"] == []
-    assert report["phase_owner"]["solve"] == "ARC Harness"
+    assert report["phase_owner"]["solve"] == "orchestrator"
 
 
 def test_orchestration_report_flags_phase_violations():

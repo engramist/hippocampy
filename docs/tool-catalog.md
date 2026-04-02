@@ -7,7 +7,7 @@
 
 ---
 
-## Quick Reference: All 19 MCP Tools
+## Quick Reference: All 23 MCP Tools
 
 | # | Tool Name | Category | Called By | Blocking? | Requires LLM? |
 |---|-----------|----------|-----------|-----------|----------------|
@@ -105,7 +105,8 @@ These processes run inside the Brain Daemon without explicit tool calls.
   "query": "What database did we choose?",
   "session_id": "uuid",
   "scope": "branch" | "global" | "both",
-  "limit": 10
+  "limit": 10,
+  "include_rationale": false
 }
 ```
 
@@ -122,6 +123,7 @@ These processes run inside the Brain Daemon without explicit tool calls.
 - T6: confidence_low results are included but flagged
 - T7: Archived nodes are excluded
 - T8: Already-loaded nodes (LOADED edge) are demoted via dedup factor
+- T9: include_rationale=true includes 1-hop ESTABLISHED_IN message context
 
 ---
 
@@ -139,7 +141,8 @@ These processes run inside the Brain Daemon without explicit tool calls.
   "depth": 3,
   "strategy": "dfs" | "bfs",
   "edge_types": ["REQUIRES", "ENABLES"],
-  "direction": "outgoing" | "incoming" | "both"
+  "direction": "outgoing" | "incoming" | "both",
+  "context_window": 0
 }
 ```
 
@@ -151,6 +154,7 @@ These processes run inside the Brain Daemon without explicit tool calls.
 - T3: Unknown edge_types in `edge_types` array filtered with warning
 - T4: MAX_NODES=1000 limit respected
 - T5: No infinite loops on cyclic graphs
+- T6: context_window is clamped to 0..3 and returned in response metadata
 
 ---
 
