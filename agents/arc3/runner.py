@@ -129,6 +129,9 @@ class DurableARCRunner:
                 
                 # B111: Add aggregated ledger from the shared list
                 result_payload["sidequests_ledger"] = list(self._ledger)
+                # B130: Add timeline from brain
+                result_payload["arc_event_timeline"] = list(getattr(self.brain, "arc_event_timeline", []))
+                
                 self._ledger.clear()  # reset for next puzzle
 
                 mgr.mark_complete(checkpoint, task.task_id, orchestrator._plan_id, result_payload)
@@ -568,6 +571,175 @@ class DurableARCRunner:
             "analysis": analysis
         }
 
+    @staticmethod
+    def _summarize_frame_value(frame: Any) -> dict:
+        """Return a compact frame summary so exported JSON stays readable."""
+        matrix = frame
+        if (
+            isinstance(matrix, list)
+            and len(matrix) == 1
+            and isinstance(matrix[0], list)
+            and matrix[0]
+            and isinstance(matrix[0][0], list)
+        ):
+            matrix = matrix[0]
+
+        rows = len(matrix) if isinstance(matrix, list) else 0
+        cols = max((len(row) for row in matrix if isinstance(row, list)), default=0) if isinstance(matrix, list) else 0
+        preview_rows = []
+        if isinstance(matrix, list):
+            for row in matrix[:8]:
+                if isinstance(row, list):
+                    preview_rows.append(" ".join(str(cell) for cell in row[:8]))
+
+        return {
+            "elided": True,
+            "dimensions": [rows, cols],
+            "preview_rows": preview_rows,
+            "note": "Full frame omitted for readability",
+        }
+
+    def _compact_export_payload(self, value: Any) -> Any:
+        """Trim oversized payloads while preserving the useful metadata."""
+        if isinstance(value, dict):
+            compact: dict[str, Any] = {}
+            for key, item in value.items():
+                if key == "frame" and isinstance(item, list):
+                    compact["frame_summary"] = self._summarize_frame_value(item)
+                else:
+                    compact[key] = self._compact_export_payload(item)
+            return compact
+
+        if isinstance(value, list):
+            return [self._compact_export_payload(item) for item in value]
+
+        return value
+
+    def _sanitize_arc_event_timeline(self, timeline: List[dict]) -> List[dict]:
+        sanitized: List[dict] = []
+        for event in timeline or []:
+            item = dict(event)
+            if "payload" in item:
+                item["payload"] = self._compact_export_payload(item.get("payload"))
+            sanitized.append(item)
+        return sanitized
+
+    def _sanitize_sidequests_ledger(self, ledger: List[dict]) -> List[dict]:
+        sanitized: List[dict] = []
+        for entry in ledger or []:
+            item = dict(entry)
+            if "arc_api_io" in item:
+                item["arc_api_io"] = self._compact_export_payload(item.get("arc_api_io"))
+            if "arc_api_trace" in item:
+                item["arc_api_trace"] = self._compact_export_payload(item.get("arc_api_trace"))
+            sanitized.append(item)
+        return sanitized
+
+    def _build_arc_server_responses(self, arc_event_timeline: List[dict]) -> List[dict]:
+        """Return paired ARC server calls/responses in call order."""
+        paired: dict[int, dict] = {}
+        ordered_call_seqs: List[int] = []
+
+        for event in arc_event_timeline or []:
+            call_seq = event.get("call_seq")
+            if call_seq is None:
+                continue
+            if call_seq not in paired:
+                paired[call_seq] = {"call_seq": call_seq, "request": None, "response": None}
+                ordered_call_seqs.append(call_seq)
+
+            if event.get("kind") == "request_started":
+                paired[call_seq]["request"] = {
+                    "label": event.get("label"),
+                    "timestamp_iso": event.get("request_started_iso"),
+                    "elapsed_mmss": event.get("elapsed_mmss"),
+                    "method": event.get("method"),
+                    "endpoint": event.get("endpoint"),
+                }
+            elif event.get("kind") == "response_received":
+                paired[call_seq]["response"] = {
+                    "label": event.get("label"),
+                    "timestamp_iso": event.get("response_received_iso"),
+                    "elapsed_mmss": event.get("elapsed_mmss"),
+                    "duration_ms": event.get("duration_ms"),
+                    "http_status": event.get("http_status"),
+                    "response_summary": event.get("response_summary"),
+                    "payload": event.get("payload"),
+                }
+
+        return [paired[call_seq] for call_seq in ordered_call_seqs]
+
+    def _build_chronological_log(self, sidequests_ledger: List[dict], arc_event_timeline: List[dict], progress_log: List[dict]) -> List[dict]:
+        """Merge exported logs into one top-level chronological stream."""
+        combined: List[dict] = []
+
+        for event in arc_event_timeline or []:
+            combined.append(
+                {
+                    "timestamp_iso": event.get("request_started_iso") or event.get("response_received_iso"),
+                    "elapsed_mmss": event.get("elapsed_mmss"),
+                    "source": "arc_event_timeline",
+                    "event_seq": event.get("event_seq"),
+                    "call_seq": event.get("call_seq"),
+                    "kind": event.get("kind"),
+                    "label": event.get("label"),
+                    "method": event.get("method"),
+                    "endpoint": event.get("endpoint"),
+                    "http_status": event.get("http_status"),
+                    "duration_ms": event.get("duration_ms"),
+                    "response_summary": event.get("response_summary"),
+                }
+            )
+
+        for entry in sidequests_ledger or []:
+            arc_api_io = entry.get("arc_api_io") or {}
+            request = arc_api_io.get("request") or {}
+            response = arc_api_io.get("response") or {}
+            combined.append(
+                {
+                    "timestamp_iso": entry.get("timestamp_iso"),
+                    "elapsed_mmss": entry.get("elapsed_mmss"),
+                    "source": "sidequests_ledger",
+                    "step": entry.get("step"),
+                    "phase": entry.get("phase"),
+                    "kind": entry.get("call_type"),
+                    "mode": entry.get("mode"),
+                    "input_summary": entry.get("input_summary"),
+                    "result_summary": entry.get("result_summary"),
+                    "latency_ms": entry.get("latency_ms"),
+                    "call_seq": arc_api_io.get("call_seq"),
+                    "endpoint": request.get("endpoint"),
+                    "http_status": response.get("http_status"),
+                }
+            )
+
+        for step in progress_log or []:
+            combined.append(
+                {
+                    "timestamp_iso": step.get("timestamp_iso"),
+                    "elapsed_mmss": step.get("elapsed_mmss"),
+                    "source": "progress_log",
+                    "step": step.get("step"),
+                    "kind": "step_result",
+                    "action_id": step.get("action_id"),
+                    "state_after": step.get("state_after"),
+                    "reward": step.get("reward"),
+                    "done": step.get("done"),
+                    "frame_analysis": step.get("frame_analysis"),
+                }
+            )
+
+        source_order = {"arc_event_timeline": 0, "sidequests_ledger": 1, "progress_log": 2}
+        return sorted(
+            combined,
+            key=lambda item: (
+                item.get("timestamp_iso") or "",
+                source_order.get(item.get("source"), 99),
+                item.get("event_seq", -1),
+                item.get("step", -1),
+            ),
+        )
+
     def _submission_row_from_result(self, result: dict | None) -> dict:
         metadata = self._build_submission_metadata(result or {})
 
@@ -633,7 +805,10 @@ class DurableARCRunner:
         metadata["solve_phase_summary"] = solve_phase_summary
 
         is_correct = bool(result.get("correct")) if result else False
-        sidequests_ledger = result.get("sidequests_ledger", []) if result else []
+        sidequests_ledger = self._sanitize_sidequests_ledger(result.get("sidequests_ledger", []) if result else [])
+        arc_event_timeline = self._sanitize_arc_event_timeline(result.get("arc_event_timeline", []) if result else [])
+        arc_server_responses = self._build_arc_server_responses(arc_event_timeline)
+        chronological_log = self._build_chronological_log(sidequests_ledger, arc_event_timeline, progress_log)
         entity_gate_status = result.get("entity_gate_status", {}) if result else {}
         guard_escalations = result.get("guard_escalations", []) if result else []
         orchestration_report = self._build_orchestration_report(sidequests_ledger, entity_gate_status, guard_escalations)
@@ -642,17 +817,20 @@ class DurableARCRunner:
             "task_id": result.get("task_id") if result else "",
             "correct": result.get("correct") if result else None,
             "steps": result.get("steps") if result else None,
-            "bootstrap_write_trace": result.get("bootstrap_write_trace", []) if result else [],
-            "sidequests_ledger": sidequests_ledger,
-            "entity_gate_status": entity_gate_status,
+            "submission_metadata": metadata,  # B130 preferred metadata name
+            "chronological_log": chronological_log,
+            "arc_server_responses": arc_server_responses,
+            "arc_event_timeline": arc_event_timeline,
             "progress_log": progress_log,
-            "prompt_trace": prompt_trace,
             "orchestration_report": orchestration_report,
             "solve_phase_summary": solve_phase_summary,
+            "entity_gate_status": entity_gate_status,
             "confidence": [1.0 if is_correct else 0.0],
+            "bootstrap_write_trace": result.get("bootstrap_write_trace", []) if result else [],
             "final_write_trace": result.get("final_write_trace", []) if result else [],
-            "submission_metadata": metadata, # B130 renaming metadata to submission_metadata
-            "metadata": metadata, # preserve for compatibility
+            "prompt_trace": prompt_trace,
+            "sidequests_ledger": sidequests_ledger,
+            "metadata": metadata,  # preserve for compatibility
         }
     def _build_orchestration_report(self, sidequests_ledger: List[dict], entity_gate_status: dict | None = None, guard_escalations: List[dict] | None = None) -> dict:
         """Return ownership + policy checks for ARC harness orchestration."""

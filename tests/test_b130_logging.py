@@ -5,7 +5,7 @@ import datetime
 from unittest.mock import MagicMock, AsyncMock, patch
 from agents.arc3.runner import DurableARCRunner
 from benchmarks.ab_harness import ABTask, ABVariant
-from benchmarks.arc3.adapter import NoOpBrainClient
+from benchmarks.arc3.adapter import NoOpBrainClient, LedgerBrainClient
 
 @pytest.mark.asyncio
 async def test_b130_logging_requirements():
@@ -97,6 +97,92 @@ async def test_b130_logging_requirements():
     assert "submission_id" in meta
     assert meta["environment"]["arc_api_endpoint"] == "mock-harness"
 
+    # 5. B130 Timeline Verification
+    assert "arc_event_timeline" in res
+    timeline = res["arc_event_timeline"]
+    assert len(timeline) >= 4  # (RESET start/end) + (ACTION1 start/end)
+    
+    # Verify order and pairs
+    for i in range(0, len(timeline), 2):
+        req = timeline[i]
+        resp = timeline[i+1]
+        
+        assert req["kind"] == "request_started"
+        assert resp["kind"] == "response_received"
+        assert req["call_seq"] == resp["call_seq"]
+        assert req["event_seq"] < resp["event_seq"]
+        assert "request_started_iso" in req
+        assert "response_received_iso" in resp
+        
+    # Verify human-friendly labels for 1st, 2nd response
+    assert timeline[1]["label"] == "INITIAL frame response #1"
+    assert timeline[3]["label"] == "ACTION1 response #2"
+    
+    # Verify monotonic event_seq
+    event_seqs = [e["event_seq"] for e in timeline]
+    assert event_seqs == sorted(event_seqs)
+    assert len(set(event_seqs)) == len(event_seqs)
+
+    # Verify frame payloads are collapsed for readability
+    response_payload = timeline[1]["payload"]
+    assert "frame" not in response_payload
+    assert response_payload["frame_summary"]["elided"] is True
+    assert response_payload["frame_summary"]["dimensions"] == [1, 1]
+
+    # Verify a unified chronological log is exported near the top-level view
+    assert "chronological_log" in res
+    chronological = res["chronological_log"]
+    assert len(chronological) >= len(timeline)
+    chrono_ts = [entry["timestamp_iso"] for entry in chronological if entry.get("timestamp_iso")]
+    assert chrono_ts == sorted(chrono_ts)
+
+    # Verify a dedicated ARC-only paired request/response export exists
+    assert "arc_server_responses" in res
+    arc_pairs = res["arc_server_responses"]
+    assert len(arc_pairs) >= 2
+    assert arc_pairs[0]["request"]["label"] == "INITIAL frame request started"
+    assert arc_pairs[0]["response"]["label"] == "INITIAL frame response #1"
+    assert arc_pairs[1]["response"]["label"] == "ACTION1 response #2"
+
+def test_b130_timeline_labels_show_first_second_third_responses_in_order():
+    ledger = []
+    brain = LedgerBrainClient(NoOpBrainClient(), ledger, lambda: 0, start_time=time.time() - 5)
+
+    brain.record_arc_api_call(
+        phase="bootstrap",
+        method="GET",
+        endpoint="/api/games/initial",
+        request_payload={"game_id": "g1"},
+        response_payload={"state": "NOT_FINISHED"},
+        latency_ms=10,
+    )
+    brain.record_arc_api_call(
+        phase="act",
+        method="POST",
+        endpoint="/api/cmd/ACTION1",
+        request_payload={"action_id": "ACTION1"},
+        response_payload={"state": "NOT_FINISHED"},
+        latency_ms=12,
+    )
+    brain.record_arc_api_call(
+        phase="act",
+        method="POST",
+        endpoint="/api/cmd/ACTION3",
+        request_payload={"action_id": "ACTION3"},
+        response_payload={"state": "WIN"},
+        latency_ms=15,
+    )
+
+    timeline = brain.arc_event_timeline
+    response_labels = [event["label"] for event in timeline if event["kind"] == "response_received"]
+
+    assert response_labels == [
+        "INITIAL frame response #1",
+        "ACTION1 response #2",
+        "ACTION3 response #3",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_b130_failure_path_logging():
     harness = MagicMock()
@@ -129,3 +215,12 @@ async def test_b130_failure_path_logging():
     io = fail_call[0]["arc_api_io"]
     assert io["response"]["error"]["error_type"] == "RuntimeError"
     assert "API Timeout" in io["response"]["error"]["error_message"]
+
+    # B130 Timeline check in failure
+    timeline = runner.brain.arc_event_timeline
+    assert len(timeline) >= 2 # 1 pair for RESET (even if failed)
+    assert timeline[-2]["kind"] == "request_started"
+    assert timeline[-1]["kind"] == "response_received"
+    assert timeline[-1]["call_seq"] == timeline[-2]["call_seq"]
+    assert timeline[-1]["http_status"] is None
+    assert "failed: RuntimeError" in timeline[-1]["response_summary"]
