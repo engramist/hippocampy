@@ -236,6 +236,7 @@ NODE_TABLES = {
         dedup_tokens_saved   INT64,
         last_injection_at    TIMESTAMP,
         last_loop_summary    STRING,
+        last_warm_frontier_at TIMESTAMP,
         PRIMARY KEY (session_id)
     """,
 
@@ -370,6 +371,31 @@ NODE_TABLES = {
         created_at       TIMESTAMP,
         PRIMARY KEY (id)
     """,
+
+    # B127 — DAG Task Graph (dependency-aware execution tracking)
+    "TaskGraph": """
+        graph_id        STRING,
+        name            STRING,
+        description     STRING,
+        status          STRING,
+        created_at      TIMESTAMP,
+        completed_at    TIMESTAMP,
+        PRIMARY KEY (graph_id)
+    """,
+
+    "TaskNode": """
+        task_id         STRING,
+        name            STRING,
+        description     STRING,
+        status          STRING,
+        input_data      STRING,
+        output_data     STRING,
+        error_msg       STRING,
+        created_at      TIMESTAMP,
+        started_at      TIMESTAMP,
+        completed_at    TIMESTAMP,
+        PRIMARY KEY (task_id)
+    """,
 }
 
 # ---------------------------------------------------------------------------
@@ -400,6 +426,7 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS HAS_ALT_LABEL (FROM Concept TO Label, FROM Decision TO Label, FROM Constraint TO Label, FROM Requirement TO Label, FROM ActionItem TO Label)",
     "CREATE REL TABLE IF NOT EXISTS HAS_HIDDEN_LABEL (FROM Concept TO Label, FROM Decision TO Label, FROM Constraint TO Label, FROM Requirement TO Label, FROM ActionItem TO Label)",
     "CREATE REL TABLE IF NOT EXISTS LOADED (FROM Session TO Concept, FROM Session TO Decision, FROM Session TO Constraint, FROM Session TO Requirement, FROM Session TO ActionItem, FROM Session TO GlobalConstraint, FROM Session TO GlobalPreference, injected_at TIMESTAMP, token_estimate INT32, source STRING, load_hits INT32)",
+    "CREATE REL TABLE IF NOT EXISTS WARM_NODE (FROM Session TO Concept, FROM Session TO Decision, FROM Session TO Constraint, FROM Session TO Requirement, FROM Session TO ActionItem, FROM Session TO GlobalConstraint, FROM Session TO GlobalPreference, activation_score DOUBLE, activated_at TIMESTAMP)",
     # Concept promotion
     "CREATE REL TABLE IF NOT EXISTS REIFIED_AS (FROM Concept TO Decision, FROM Concept TO Constraint, FROM Concept TO Requirement, FROM Concept TO ActionItem)",
     # Hebbian implicit layer
@@ -437,6 +464,9 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS CONTRADICTS (FROM Concept TO Hypothesis, weight FLOAT)",
     "CREATE REL TABLE IF NOT EXISTS GENERALIZES (FROM Hypothesis TO Hypothesis)",
     "CREATE REL TABLE IF NOT EXISTS PRODUCED_HYPOTHESIS (FROM Plan TO Hypothesis)",
+    # B127 — DAG task graph
+    "CREATE REL TABLE IF NOT EXISTS TASK_OF (FROM TaskNode TO TaskGraph)",
+    "CREATE REL TABLE IF NOT EXISTS DEPENDS_ON (FROM TaskNode TO TaskNode)",
 ]
 
 def get_relationship_types() -> list[str]:
@@ -598,6 +628,7 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         # last_injection_at and last_loop_summary added in B18 working_memory
         ("Session",   "last_injection_at", "TIMESTAMP"),
         ("Session",   "last_loop_summary", "STRING"),
+        ("Session",   "last_warm_frontier_at", "TIMESTAMP"),
         # B12 — anomaly detection columns
         ("Concept",   "anomaly_type",      "STRING"),
         ("Concept",   "flagged_for_review", "BOOLEAN"),

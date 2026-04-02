@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from agents.arc3.prompts import VICTORY_HYPOTHESIS_TEMPLATE
+
 logger = logging.getLogger(__name__)
 
 
@@ -821,6 +823,48 @@ class ObjectRoleMapper:
 
         return roles
 
+    def seed_bootstrap_roles(self, observation: Dict[str, Any]) -> Dict[int, ObjectRole]:
+        """B119: Initial entity discovery from step 0 frame.
+        PLAYER: smallest moving color (heuristic: smallest non-zero color).
+        GOAL: color furthest from player (heuristic: color closest to exit/bottom-right).
+        """
+        roles: Dict[int, ObjectRole] = {}
+        colors = observation.get("colors") or []
+        if not colors:
+            return roles
+
+        # Filter out background (0)
+        non_bg = [c for c in colors if (c.get("value") if isinstance(c, dict) else c) != 0]
+        if not non_bg:
+            return roles
+
+        # Sort by pixel count ascending
+        sorted_by_size = sorted(non_bg, key=lambda c: c.get("count") if isinstance(c, dict) else 0)
+        
+        # Player candidate: the smallest object (often the character)
+        player_color_item = sorted_by_size[0]
+        p_id = player_color_item.get("value") if isinstance(player_color_item, dict) else player_color_item
+        roles[p_id] = ObjectRole(
+            color_id=p_id,
+            role=RoleType.PLAYER,
+            confidence=0.45,  # Low confidence bootstrap
+            evidence_steps=[0]
+        )
+
+        # Goal candidate: if there are other colors, pick one as a candidate
+        if len(sorted_by_size) > 1:
+            goal_color_item = sorted_by_size[-1]
+            g_id = goal_color_item.get("value") if isinstance(goal_color_item, dict) else goal_color_item
+            if g_id != p_id:
+                roles[g_id] = ObjectRole(
+                    color_id=g_id,
+                    role=RoleType.GOAL,
+                    confidence=0.35,
+                    evidence_steps=[0]
+                )
+
+        return roles
+
 
 # ── Victory Hypothesizer ──────────────────────────────────────────────
 
@@ -832,29 +876,7 @@ class VictoryHypothesizer:
     """
 
     CALL_THRESHOLD: float = 0.65
-    PROMPT_TEMPLATE = """You are analyzing an unknown game. Based on the evidence below,
-hypothesize what the WINNING CONDITION is.
-
-Game archetype: {archetype}
-
-Object roles detected:
-{object_roles}
-
-Past successful plans with similar goals:
-{past_plans}
-
-Known game lessons:
-{lessons}
-
-Observed progress signals: {reward_summary}
-
-Respond with EXACTLY this JSON format (no other text):
-{{
-  "condition_type": "<reach_goal|collect_all|survive|score_threshold|eliminate>",
-  "description": "<one sentence describing the win condition>",
-  "target_color_id": <integer color id or null>,
-  "confidence": <0.0-1.0>
-}}"""
+    PROMPT_TEMPLATE = VICTORY_HYPOTHESIS_TEMPLATE  # B122: Imported from prompts module
 
     async def hypothesize(
         self,

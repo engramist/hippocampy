@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from benchmarks.arc3.schema import ARC3Observation
 from benchmarks.arc3.state_serializer import StateSerializerForARC
@@ -44,9 +44,14 @@ def mock_brain() -> MagicMock:
 class MockLLM:
     def __init__(self):
         self.last_messages = None
+        self.all_messages = []
 
     def chat(self, messages):
         self.last_messages = messages
+        self.all_messages.append(messages)
+        # Check if this is a verification call
+        if any("ACTION VERIFICATION" in m["content"] for m in messages):
+            return json.dumps({"approved": True, "reason": "verified"})
         return json.dumps({"action_id": "ACTION1", "rationale": "mock"})
 
 
@@ -1240,3 +1245,252 @@ def test_build_action_prompt_calls_packet_render(sample_observation):
     assert "STATE:" in prompt
     assert "=== PLAN ===" in prompt
     assert "INSTRUCTION:" in prompt
+
+
+def test_exploration_compaction_in_prompt(sample_observation):
+    """B116: EXPLORATION_SUMMARY should appear in prompt when artifact present."""
+    orchestrator = ARCOrchestrator(
+        brain_client=MagicMock(),
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    from agents.arc3.hypothesis import ExplorationCompaction
+    orchestrator._compaction_artifact = ExplorationCompaction(
+        action_summaries={"ACTION1": "A1: deterministic"},
+        known_loops=[["ACTION1", "ACTION2"]],
+        confirmed_rules=["rule confirmed"]
+    )
+
+    prompt = orchestrator.build_action_prompt(
+        sample_observation,
+        {"lessons": [], "memories": [], "analogies": [], "_triggered": False},
+        step_history=[],
+        available_actions=["ACTION1", "ACTION2"],
+    )
+
+    assert "=== EXPLORATION SUMMARY ===" in prompt
+    assert "KNOWN ACTION EFFECTS:" in prompt
+    assert "A1: deterministic" in prompt
+    assert "KNOWN LOOPS" in prompt
+    assert "ACTION1 -> ACTION2" in prompt
+    assert "CONFIRMED RULES" in prompt
+    assert "rule confirmed" in prompt
+
+
+def test_observation_section_includes_entity_roles(sample_observation):
+    """B120: Color summary includes role annotations when entity_map populated."""
+    orchestrator = ARCOrchestrator(
+        brain_client=MagicMock(),
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    from agents.arc3.solver import ObjectRole, RoleType
+    # Manually populate object roles in solve engine
+    orchestrator.solve_engine._object_roles[5] = ObjectRole(
+        color_id=5, role=RoleType.PLAYER, confidence=0.9
+    )
+
+    # Grid with color 5
+    observation = dict(sample_observation)
+    observation["colors"] = [{"value": 5, "count": 10}]
+
+    obs_text = orchestrator._format_observation_section(observation)
+    assert "5:10(player)" in obs_text
+
+
+def test_observation_section_fallback_without_entity_map(sample_observation):
+    """B120: Color summary is plain when entity_map is empty."""
+    orchestrator = ARCOrchestrator(
+        brain_client=MagicMock(),
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    # Grid with color 5, but no roles
+    observation = dict(sample_observation)
+    observation["colors"] = [{"value": 5, "count": 10}]
+
+    obs_text = orchestrator._format_observation_section(observation)
+    assert "5:10" in obs_text
+    assert "(player)" not in obs_text
+
+
+def test_puzzle_structure_includes_entity_roles(sample_observation):
+    """B120: Structure summary includes entity role annotations."""
+    orchestrator = ARCOrchestrator(
+        brain_client=MagicMock(),
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    from agents.arc3.solver import ObjectRole, RoleType
+    orchestrator.solve_engine._object_roles[5] = ObjectRole(
+        color_id=5, role=RoleType.PLAYER, confidence=0.9,
+        estimated_position={"row": 3.0, "col": 7.0}
+    )
+
+    observation = dict(sample_observation)
+    observation["colors"] = [{"value": 5, "count": 10}]
+
+    summary = orchestrator._summarize_puzzle_structure(observation)
+    assert "Entity roles: color 5 = player at row 3, col 7" in summary
+
+
+def test_action_packet_includes_entity_context_block(sample_observation):
+    """B120: Prompt packet has ENTITY_CONTEXT block when entity_map populated."""
+    orchestrator = ARCOrchestrator(
+        brain_client=MagicMock(),
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    from agents.arc3.solver import ObjectRole, RoleType
+    orchestrator.solve_engine._object_roles[5] = ObjectRole(
+        color_id=5, role=RoleType.PLAYER, confidence=0.9
+    )
+
+    packet = orchestrator.build_action_packet(
+        sample_observation,
+        {"lessons": [], "memories": [], "analogies": [], "_triggered": False},
+        step_history=[],
+        available_actions=["ACTION1"],
+    )
+
+    block = packet.get_block("ENTITY_CONTEXT")
+    assert block is not None
+    assert "Color 5: player (confidence=90%)" in block.content
+
+    prompt = packet.render()
+    assert "=== ENTITY CONTEXT ===" in prompt
+    assert "Color 5: player" in prompt
+
+
+def test_action_packet_no_entity_context_when_empty(sample_observation):
+    """B120: Prompt packet omits ENTITY_CONTEXT when entity_map empty."""
+    orchestrator = ARCOrchestrator(
+        brain_client=MagicMock(),
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+
+    packet = orchestrator.build_action_packet(
+        sample_observation,
+        {"lessons": [], "memories": [], "analogies": [], "_triggered": False},
+        step_history=[],
+        available_actions=["ACTION1"],
+    )
+
+    assert packet.get_block("ENTITY_CONTEXT") is None
+    assert "=== ENTITY CONTEXT ===" not in packet.render()
+
+
+def test_entity_gate_pass_multi_color(sample_observation):
+    """B121: Gate passes when entity map has non-UNKNOWN roles."""
+    orchestrator = ARCOrchestrator(
+        brain_client=AsyncMock(),
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    from agents.arc3.solver import ObjectRole, RoleType
+    # Populate with known role
+    orchestrator.solve_engine._object_roles[1] = ObjectRole(color_id=1, role=RoleType.PLAYER, confidence=0.9)
+    
+    # multi-color grid (background 0 + color 1)
+    obs = dict(sample_observation)
+    obs["colors"] = [{"value": 0, "count": 10}, {"value": 1, "count": 5}]
+    
+    res = orchestrator._check_entity_gate(obs)
+    assert res["status"] == "pass"
+    assert "roles identified" in res["reason"]
+
+def test_entity_gate_skip_single_color(sample_observation):
+    """B121: Gate skips when grid has only background color."""
+    orchestrator = ARCOrchestrator(
+        brain_client=AsyncMock(),
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    obs = dict(sample_observation)
+    obs["colors"] = [{"value": 0, "count": 100}]
+    
+    res = orchestrator._check_entity_gate(obs)
+    assert res["status"] == "skip"
+    assert "single-color" in res["reason"]
+
+@pytest.mark.asyncio
+async def test_entity_gate_fail_then_retry(sample_observation):
+    """B121: Gate retries when all roles are UNKNOWN on multi-color grid."""
+    orchestrator = ARCOrchestrator(
+        brain_client=AsyncMock(),
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    orchestrator.brain.notify_turn.return_value = {"status": "ok"}
+    orchestrator.brain.current_truth.return_value = {"results": []}
+    orchestrator.brain.recall_relevant_lessons.return_value = {"lessons": []}
+    orchestrator.brain.analogical_search.return_value = {"results": []}
+    
+    # Mock seed_bootstrap_roles to return unknown first, then known
+    from agents.arc3.solver import ObjectRole, RoleType
+    unknown_role = ObjectRole(color_id=1, role=RoleType.UNKNOWN, confidence=0.0)
+    known_role = ObjectRole(color_id=1, role=RoleType.PLAYER, confidence=0.9)
+    
+    with patch.object(orchestrator.solve_engine.role_mapper, "seed_bootstrap_roles") as mock_seed:
+        mock_seed.side_effect = [{1: unknown_role}, {1: known_role}]
+        
+        obs = dict(sample_observation)
+        obs["colors"] = [{"value": 0, "count": 10}, {"value": 1, "count": 5}]
+        
+        await orchestrator.perceive(obs, step=0)
+        
+        # Should have called seed twice (initial + 1 retry)
+        assert mock_seed.call_count == 2
+        assert orchestrator._entity_gate_result["status"] == "pass"
+        assert orchestrator._entity_gate_result["retry_count"] == 1
+
+@pytest.mark.asyncio
+async def test_entity_gate_degrade_after_max_retries(sample_observation):
+    """B121: Gate degrades after max retries, does not crash."""
+    orchestrator = ARCOrchestrator(
+        brain_client=AsyncMock(),
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    orchestrator.brain.notify_turn.return_value = {"status": "ok"}
+    orchestrator.brain.current_truth.return_value = {"results": []}
+    orchestrator.brain.recall_relevant_lessons.return_value = {"lessons": []}
+    orchestrator.brain.analogical_search.return_value = {"results": []}
+    
+    from agents.arc3.solver import ObjectRole, RoleType
+    unknown_role = ObjectRole(color_id=1, role=RoleType.UNKNOWN, confidence=0.0)
+    
+    with patch.object(orchestrator.solve_engine.role_mapper, "seed_bootstrap_roles") as mock_seed:
+        # Always return unknown
+        mock_seed.return_value = {1: unknown_role}
+        
+        obs = dict(sample_observation)
+        obs["colors"] = [{"value": 0, "count": 10}, {"value": 1, "count": 5}]
+        
+        await orchestrator.perceive(obs, step=0)
+        
+        # Initial call + 2 retries = 3 calls
+        assert mock_seed.call_count == 3
+        assert orchestrator._entity_gate_result["status"] == "degraded"
+        assert orchestrator._entity_gate_result["retry_count"] == 2

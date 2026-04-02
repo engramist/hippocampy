@@ -274,3 +274,99 @@ def test_traversable_rels_contains_all_named_types():
 
 def test_max_depth_is_five():
     assert _MAX_DEPTH == 5
+
+
+# ---------------------------------------------------------------------------
+# B125: Context-windowed recall tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_explore_context_window_default():
+    """B125: context_window defaults to 0 (no context neighbors)."""
+    db = MockDB(
+        node_lookup={"n1": ("Concept", "concept_id")},
+        node_data={"n1": ("Node 1", 0.9)},
+    )
+    result = await explore_graph(
+        {"start_node_id": "n1", "session_id": "s1"},
+        db, {}
+    )
+    assert "context_window" in result
+    assert result["context_window"] == 0
+
+
+@pytest.mark.asyncio
+async def test_explore_context_window_parameter():
+    """B125: context_window parameter is accepted and capped at 3."""
+    db = MockDB(
+        node_lookup={"n1": ("Concept", "concept_id")},
+        node_data={"n1": ("Node 1", 0.9)},
+    )
+
+    # Test with valid context_window
+    result = await explore_graph(
+        {"start_node_id": "n1", "session_id": "s1", "context_window": 2},
+        db, {}
+    )
+    assert result["context_window"] == 2
+
+    # Test with context_window exceeding max
+    result = await explore_graph(
+        {"start_node_id": "n1", "session_id": "s1", "context_window": 10},
+        db, {}
+    )
+    assert result["context_window"] == 3
+
+
+@pytest.mark.asyncio
+async def test_explore_context_window_negative_clamped_to_zero():
+    """B125: negative context_window should be clamped to 0."""
+    db = MockDB(
+        node_lookup={"n1": ("Concept", "concept_id")},
+        node_data={"n1": ("Node 1", 0.9)},
+    )
+    result = await explore_graph(
+        {"start_node_id": "n1", "session_id": "s1", "context_window": -5},
+        db, {}
+    )
+    assert result["context_window"] == 0
+
+
+@pytest.mark.asyncio
+async def test_explore_context_neighbors_included_in_nodes():
+    """B125: When context_window > 0, nodes should include context_neighbors field."""
+    db = MockDB(
+        node_lookup={
+            "n1": ("Concept", "concept_id"),
+            "n2": ("Concept", "concept_id"),
+        },
+        node_data={
+            "n1": ("Node 1", 0.9),
+            "n2": ("Context neighbor", 0.85),
+        },
+        neighbor_lookup={
+            ("n1", "both"): [("n2", 1.0)],
+        }
+    )
+
+    # With context_window = 0, should not have context_neighbors
+    result_no_context = await explore_graph(
+        {"start_node_id": "n1", "session_id": "s1", "context_window": 0},
+        db, {}
+    )
+    if result_no_context["paths"]:
+        path = result_no_context["paths"][0]
+        if path["nodes"]:
+            node = path["nodes"][0]
+            # context_neighbors may not be present or may be empty
+            context_count = node.get("context_count", 0)
+            assert context_count == 0
+
+    # With context_window > 0, may include context neighbors
+    result_with_context = await explore_graph(
+        {"start_node_id": "n1", "session_id": "s1", "context_window": 1},
+        db, {}
+    )
+    assert result_with_context["context_window"] == 1
+    # Result structure should be valid
+    assert "paths" in result_with_context

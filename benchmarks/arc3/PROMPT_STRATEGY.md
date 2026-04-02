@@ -125,23 +125,6 @@ Before final assembly, a deduplication and compression pass is performed:
 - prefer references (e.g., "refer to ACTION FACTS") over re-stating evidence
 - `OBSERVATION` is suppressed or significantly reduced when `OBSERVED EFFECTS` already contains enough board context to choose the next action
 
-## Mental Sandbox (B114)
-
-Before committing to an action, the agent enters a bounded internal reasoning loop (max 2 iterations).
-- Use `sandbox_thought` to peek at how an action aligns with known `ACTION FACTS` and the active `PLAN CHUNK`.
-- The sandbox does not spend environment steps or energy.
-- Final decisions are annotated with `(sandbox refined)` if self-correction occurred.
-
-## Hard Limits
-
-
-Before committing to an action, the agent enters a bounded internal reasoning loop (max 2 iterations).
-- Use `sandbox_thought` to peek at how an action aligns with known `ACTION FACTS` and the active `PLAN CHUNK`.
-- The sandbox does not spend environment steps or energy.
-- Final decisions are annotated with `(sandbox refined)` if self-correction occurred.
-
-## Hard Limits
-
 ## Exploration Compaction (B116)
 
 To preserve long-run knowledge without context bloat, the engine generates an `EXPLORATION_SUMMARY` section:
@@ -161,9 +144,11 @@ Before committing to an action, the agent enters a bounded internal reasoning lo
 ## Ledger-Driven Pruning (B118)
 
 To maintain high performance and low latency, the harness monitors the SideQuests call ledger:
-- Calls with high latency (>500ms) and low utility (zero results found) are automatically down-ranked.
-- Mid-run retrieval may be skipped if prior attempts at that phase were low-value.
-- Pruning decisions are preserved in the debug export for transparency.
+- Call types are analyzed by grouping ledger entries and computing average latency and low-value ratio.
+- Pruning is triggered when: **average latency > 500ms** AND **low-value ratio > 50%** (i.e., > 50% of calls returned zero results).
+- Pruned call types (e.g., `current_truth`, `recall_lessons`, `analogical_search`) are down-ranked and may be skipped during mid-run retrieval triggers.
+- Low-value detection is pattern-based: result summaries containing "found 0" or "found []" (case-insensitive).
+- Pruning decisions are logged with their reasoning and preserved in the debug export (`pruning_decisions` field) for transparency and post-hoc analysis.
 
 ## Typed Decision Packets (B117)
 

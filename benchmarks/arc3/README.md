@@ -6,7 +6,7 @@ This directory contains the final submission runner and compliance validation to
 
 - `submission.py`: Main entry point for contest evaluators. Runs the memory-augmented agent on all puzzles.
 - `pre_submit_check.py`: Automated compliance tool to verify offline status, model budgets, and output formats.
-- `PROMPT_STRATEGY.md`: ARC-specific prompt equation, limits, and compression rules.
+- `PROMPT_STRATEGY.md`: ARC-SPECIFIC prompt equation, limits, and compression rules.
 - `model_budget.yaml`: Resource constraints and model configuration.
 - `offline_manifest.json`: Manifest for the offline submission bundle.
 - `tasks_manifest.json`: Puzzle set to be solved.
@@ -41,6 +41,13 @@ SideQuests uses a "Gated Consolidation Loop" to maintain persistent memory acros
 3. **Consolidation**: A background process extracts "Concepts" and "Decisions" from the narrative.
 4. **Retrieval**: Before choosing an action, the agent queries the brain for similar historical patterns.
 5. **Action**: The agent makes an informed choice based on its current observation and recalled memory.
+
+## API Contract Ingestion Caching (B108)
+
+To reduce redundant SideQuests overhead, the harness caches stable ARC protocol concepts.
+- **Precomputed Knowledge**: The `ARC-AGI-3 API Contract` is ingested using precomputed gist/schema classifications.
+- **Fast-Track Ingestion**: This bypasses expensive LLM calls during the consolidation loop, ensuring that the agent stop paying full ingestion cost for the same contract knowledge every time.
+- **Efficiency**: The optimization is bounded to stable protocol concepts to ensure puzzle-specific cognition is not suppressed.
 
 ## Meta-Harness & Experience Store (B104)
 

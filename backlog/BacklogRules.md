@@ -97,6 +97,7 @@ A card is execution-ready only if:
 - File targets are concrete.
 - The card explicitly checks whether any tool/work changes must also be propagated to adapter allow-lists.
 - If the card introduces or changes a tool, it must also include updates to docs/tool-catalog.md.
+- The card complies with `docs/arc-harness-rules.md` (layer ownership, phase rules, prompt placement) and `docs/ecosystem-rules.md` (import boundaries, layer separation). Any card that touches ARC agent code must state which ecosystem layer(s) it operates in and confirm no cross-layer violations.
 
 How to verify:
 - Run `rg -n "TOOL_HANDLERS|TOOLS:" mcp_engine/tool_schemas.py mcp_engine/tools/__init__.py adapters` and confirm any new/changed tool is reflected in adapter allow-lists and docs/tool-catalog.md.
