@@ -129,6 +129,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 
 | B128 | Task Graph MCP Tools (register_task_graph, get_ready_tasks, advance_task, fail_task, get_task_graph) — ✅ DONE (2026-04-01) | P1 | complete | B127 | — | backlog/plans/B-128-dag-task-graph-tools.md | backlog/B128.md |
 | B129 | Align Task Graph Test Imports with B128 API Surface | P1 | complete ✅ DONE (2026-04-02) | B127, B128 | — | backlog/plans/B-129-task-graph-api-test-alignment.md | backlog/B129.md |
+| B130 | Enhanced submission_results Logging and Observability | P1 | ready | TBD | TBD | backlog/plans/B-130-enhanced-logging.md | backlog/B130.md |
 
 ## Summary
 
