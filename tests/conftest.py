@@ -1,5 +1,6 @@
 import sys
 import types
+import importlib.machinery
 import pytest
 
 # Required for pytest-asyncio < 0.21 compatibility
@@ -29,6 +30,7 @@ except Exception:
     # Build a minimal stub that satisfies `import spacy` without side-effects.
     _stub = types.ModuleType("spacy")
     _stub.__version__ = "0.0.0+stub"
+    _stub.__spec__ = importlib.machinery.ModuleSpec("spacy", loader=None)
 
     def _load_unavailable(model_name="en_core_web_md"):
         raise RuntimeError(
@@ -45,4 +47,6 @@ except Exception:
         "spacy.vocab", "spacy.schemas", "spacy.errors",
         "spacy.util", "spacy.attrs", "spacy.matcher",
     ]:
-        sys.modules.setdefault(_sub, types.ModuleType(_sub))
+        _submod = types.ModuleType(_sub)
+        _submod.__spec__ = importlib.machinery.ModuleSpec(_sub, loader=None)
+        sys.modules.setdefault(_sub, _submod)

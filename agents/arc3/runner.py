@@ -11,7 +11,7 @@ from dataclasses import asdict
 from typing import Any, Callable, List, Mapping
 
 from benchmarks.ab_harness import ABTask, ABTaskResult, ABVariant
-from benchmarks.arc3.adapter import ARC3Adapter, BrainClientProtocol
+from benchmarks.arc3.adapter import ARC3Adapter, BrainClientProtocol, LedgerBrainClient
 from benchmarks.arc3.harness import ARC3Harness
 from agents.arc3.checkpoint import CheckpointManager
 from agents.arc3.orchestrator import ARCOrchestrator
@@ -30,7 +30,6 @@ class DurableARCRunner:
         config: dict,
         progress_callback: Callable[[dict], None] | None = None,
     ):
-        from benchmarks.arc3.adapter import LedgerBrainClient
         self.harness = harness
         self._raw_brain = brain_client
         self.config = config
@@ -77,6 +76,13 @@ class DurableARCRunner:
             session_id = f"arc-{task.task_id}-{uuid.uuid4().hex[:8]}"
             self.brain.current_phase = "bootstrap"
             self._current_step = 0
+            puzzle_start_time = time.time()
+            self.brain = LedgerBrainClient(
+                inner=self._raw_brain,
+                ledger=self._ledger,
+                step_provider=lambda: self._current_step,
+                start_time=puzzle_start_time
+            )
             await self._ensure_api_knowledge(session_id)
 
             # Branch per puzzle so each gets its own SideQuest scope
@@ -114,6 +120,9 @@ class DurableARCRunner:
                 
                 # B121: Add entity gate status
                 result_payload["entity_gate_status"] = getattr(orchestrator, "_entity_gate_result", {})
+                
+                # B130: Add guard escalations
+                result_payload["guard_escalations"] = getattr(orchestrator, "_guard_escalations", [])
 
                 # B118: Run final pruning analysis for debug export
                 orchestrator.analyze_ledger_and_prune()
@@ -155,6 +164,7 @@ class DurableARCRunner:
         )
         game_id = getattr(task, "game_id", "unknown")
 
+        import datetime
         start_time = time.time()
         total_steps = 0
         success = False
@@ -163,11 +173,13 @@ class DurableARCRunner:
         total_tokens_output = 0
         bootstrap_write_trace: list[dict] = []
         final_write_trace: list[dict] = []
+        last_grid = None
 
         for attempt in range(1, max_retries + 1):
             # (Re-)initialize the game environment
             frame_response, guid = await self._initial_frame(game_id)
             observation = adapter.normalize_observation(frame_response)
+            last_grid = observation.get("grid")
             orchestrator.set_write_trace_context("bootstrap")
             self.brain.current_phase = "bootstrap"
             self._current_step = 0
@@ -207,11 +219,23 @@ class DurableARCRunner:
                 orchestrator.record_step_result(reward, done)
 
                 observation = adapter.normalize_observation(frame_response)
+                curr_grid = observation.get("grid")
+                frame_analysis = self._analyze_frame_delta(last_grid, curr_grid)
+                last_grid = curr_grid
+                
                 state = observation.get("state", "NOT_FINISHED")
                 if orchestrator._step_history:
+                    now = time.time()
+                    elapsed_ms = (now - start_time) * 1000
+                    elapsed_mmss = f"{int(elapsed_ms // 60000):02d}:{int((elapsed_ms % 60000) // 1000):02d}"
+                    timestamp_iso = datetime.datetime.fromtimestamp(now, datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+                    
                     orchestrator._step_history[-1]["state_after"] = state
                     orchestrator._step_history[-1]["board_after"] = orchestrator._snapshot_for_trace(observation)
                     orchestrator._step_history[-1]["write_trace"] = orchestrator.consume_write_trace()
+                    orchestrator._step_history[-1]["frame_analysis"] = frame_analysis
+                    orchestrator._step_history[-1]["timestamp_iso"] = timestamp_iso
+                    orchestrator._step_history[-1]["elapsed_mmss"] = elapsed_mmss
                 total_steps += 1
                 steps_this_attempt += 1
                 self._emit_progress_snapshot(
@@ -358,31 +382,89 @@ class DurableARCRunner:
         self._progress_callback(snapshot)
 
     async def _initial_frame(self, game_id: str) -> tuple[dict, str | None]:
+        start_t = time.time()
         if self.harness.mock_api:
             frame = self.harness._get_mock_initial_frame(game_id)
+            latency = (time.time() - start_t) * 1000
+            self.brain.record_arc_api_call(
+                phase=self.brain.current_phase,
+                method="GET",
+                endpoint="/api/games/initial",
+                request_payload={"game_id": game_id},
+                response_payload=frame,
+                latency_ms=latency
+            )
             return frame, frame.get("guid")
 
         session = getattr(self.harness, "_session", None)
         if session is None:
             raise RuntimeError("ARC API session not initialized. Did you call harness.setup()?")
 
+        # scorecard/open call
+        sc_start = time.time()
         scorecard_resp = await session.post("/api/scorecard/open", json={})
+        sc_latency = (time.time() - sc_start) * 1000
         scorecard_resp.raise_for_status()
-        card_id = scorecard_resp.json()["card_id"]
-
-        reset_resp = await session.post(
-            "/api/cmd/RESET",
-            json={"game_id": game_id, "card_id": card_id},
+        sc_json = scorecard_resp.json()
+        card_id = sc_json["card_id"]
+        self.brain.record_arc_api_call(
+            phase=self.brain.current_phase,
+            method="POST",
+            endpoint="/api/scorecard/open",
+            request_payload={},
+            response_payload=sc_json,
+            latency_ms=sc_latency
         )
-        reset_resp.raise_for_status()
-        frame = reset_resp.json()
-        return frame, frame.get("guid")
+
+        # RESET call
+        reset_start = time.time()
+        reset_payload = {"game_id": game_id, "card_id": card_id}
+        try:
+            reset_resp = await session.post(
+                "/api/cmd/RESET",
+                json=reset_payload,
+            )
+            reset_latency = (time.time() - reset_start) * 1000
+            reset_resp.raise_for_status()
+            frame = reset_resp.json()
+            self.brain.record_arc_api_call(
+                phase=self.brain.current_phase,
+                method="POST",
+                endpoint="/api/cmd/RESET",
+                request_payload=reset_payload,
+                response_payload=frame,
+                latency_ms=reset_latency
+            )
+            return frame, frame.get("guid")
+        except Exception as exc:
+            latency = (time.time() - reset_start) * 1000
+            self.brain.record_arc_api_call(
+                phase=self.brain.current_phase,
+                method="POST",
+                endpoint="/api/cmd/RESET",
+                request_payload=reset_payload,
+                response_payload=None,
+                latency_ms=latency,
+                received=False,
+                error_details={"error_type": type(exc).__name__, "error_message": str(exc)}
+            )
+            raise
 
     async def _execute_action(
         self, game_id: str, guid: str | None, action: Mapping[str, Any], step: int
     ) -> tuple[dict, float, bool, str | None]:
+        start_t = time.time()
         if self.harness.mock_api:
             frame, reward, done = self.harness._execute_mock_action(game_id, action, step)
+            latency = (time.time() - start_t) * 1000
+            self.brain.record_arc_api_call(
+                phase=self.brain.current_phase,
+                method="POST",
+                endpoint=f"/api/cmd/{action.get('action_id', 'unknown')}",
+                request_payload=action,
+                response_payload=frame,
+                latency_ms=latency
+            )
             return frame, reward, done, frame.get("guid", guid)
 
         session = getattr(self.harness, "_session", None)
@@ -397,15 +479,97 @@ class DurableARCRunner:
         if "rationale" in action:
             action_payload["reasoning"] = action["rationale"]
 
-        action_resp = await session.post(f"/api/cmd/{action_id}", json=action_payload)
-        action_resp.raise_for_status()
-        frame = action_resp.json()
-        reward = 1.0 if frame.get("state") == "WIN" else 0.0
-        done = frame.get("state") in ("WIN", "GAME_OVER")
-        return frame, reward, done, frame.get("guid", guid)
+        # POST /api/cmd/{ACTION_ID}
+        call_start = time.time()
+        try:
+            action_resp = await session.post(f"/api/cmd/{action_id}", json=action_payload)
+            latency = (time.time() - call_start) * 1000
+            action_resp.raise_for_status()
+            frame = action_resp.json()
+            self.brain.record_arc_api_call(
+                phase=self.brain.current_phase,
+                method="POST",
+                endpoint=f"/api/cmd/{action_id}",
+                request_payload=action_payload,
+                response_payload=frame,
+                latency_ms=latency
+            )
+            reward = 1.0 if frame.get("state") == "WIN" else 0.0
+            done = frame.get("state") in ("WIN", "GAME_OVER")
+            return frame, reward, done, frame.get("guid", guid)
+        except Exception as exc:
+            latency = (time.time() - call_start) * 1000
+            error_details = {
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            }
+            # Record failure in ledger
+            self.brain.record_arc_api_call(
+                phase=self.brain.current_phase,
+                method="POST",
+                endpoint=f"/api/cmd/{action_id}",
+                request_payload=action_payload,
+                response_payload=None,
+                latency_ms=latency,
+                received=False,
+                error_details=error_details
+            )
+            raise
+
+    def _analyze_frame_delta(self, prev_frame: List[List[int]] | None, curr_frame: List[List[int]]) -> dict:
+        """B130: Capture pixel-level changes between consecutive frames."""
+        if prev_frame is None:
+            return {
+                "pixels_changed": 0,
+                "movement_detected": False,
+                "bounding_box_change": None,
+                "new_colors_introduced": [],
+                "colors_removed": [],
+                "analysis": "Initial frame"
+            }
+        
+        rows = len(curr_frame)
+        cols = len(curr_frame[0]) if rows > 0 else 0
+        if rows != len(prev_frame) or (rows > 0 and cols != len(prev_frame[0])):
+            return {
+                "pixels_changed": -1,
+                "movement_detected": True,
+                "bounding_box_change": "Resized",
+                "new_colors_introduced": [],
+                "colors_removed": [],
+                "analysis": f"Grid resized from {len(prev_frame)}x{len(prev_frame[0]) if len(prev_frame)>0 else 0} to {rows}x{cols}"
+            }
+
+        changed = 0
+        new_colors = set()
+        prev_colors = set()
+        curr_colors = set()
+        
+        for r in range(rows):
+            for c in range(cols):
+                prev_val = prev_frame[r][c]
+                curr_val = curr_frame[r][c]
+                prev_colors.add(prev_val)
+                curr_colors.add(curr_val)
+                if prev_val != curr_val:
+                    changed += 1
+        
+        new_colors_list = sorted(list(curr_colors - prev_colors))
+        removed_colors_list = sorted(list(prev_colors - curr_colors))
+        
+        analysis = f"Frame changed: {changed} pixels affected" if changed > 0 else "Frame unchanged"
+        
+        return {
+            "pixels_changed": changed,
+            "movement_detected": changed > 0,
+            "bounding_box_change": None,
+            "new_colors_introduced": new_colors_list,
+            "colors_removed": removed_colors_list,
+            "analysis": analysis
+        }
 
     def _submission_row_from_result(self, result: dict | None) -> dict:
-        metadata = self._build_metadata(result or {})
+        metadata = self._build_submission_metadata(result or {})
 
         debug_steps = result.get("debug_steps") if result else []
         progress_log = []
@@ -414,6 +578,8 @@ class DurableARCRunner:
             progress_log.append(
                 {
                     "step": step.get("step"),
+                    "timestamp_iso": step.get("timestamp_iso"),
+                    "elapsed_mmss": step.get("elapsed_mmss"),
                     "state_before": step.get("state_before"),
                     "solve_context": step.get("solve_context"),
                     "action_id": step.get("action_id"),
@@ -423,6 +589,7 @@ class DurableARCRunner:
                     "state_after": step.get("state_after"),
                     "board_before": step.get("board_before"),
                     "board_after": step.get("board_after"),
+                    "frame_analysis": step.get("frame_analysis"),
                     "write_trace": step.get("write_trace", []),
                 }
             )
@@ -468,7 +635,8 @@ class DurableARCRunner:
         is_correct = bool(result.get("correct")) if result else False
         sidequests_ledger = result.get("sidequests_ledger", []) if result else []
         entity_gate_status = result.get("entity_gate_status", {}) if result else {}
-        orchestration_report = self._build_orchestration_report(sidequests_ledger, entity_gate_status)
+        guard_escalations = result.get("guard_escalations", []) if result else []
+        orchestration_report = self._build_orchestration_report(sidequests_ledger, entity_gate_status, guard_escalations)
         return {
             "game_id": result.get("game_id") if result else "",
             "task_id": result.get("task_id") if result else "",
@@ -483,20 +651,22 @@ class DurableARCRunner:
             "solve_phase_summary": solve_phase_summary,
             "confidence": [1.0 if is_correct else 0.0],
             "final_write_trace": result.get("final_write_trace", []) if result else [],
-            "metadata": metadata,
+            "submission_metadata": metadata, # B130 renaming metadata to submission_metadata
+            "metadata": metadata, # preserve for compatibility
         }
-
-    def _build_orchestration_report(self, sidequests_ledger: List[dict], entity_gate_status: dict | None = None) -> dict:
+    def _build_orchestration_report(self, sidequests_ledger: List[dict], entity_gate_status: dict | None = None, guard_escalations: List[dict] | None = None) -> dict:
         """Return ownership + policy checks for ARC harness orchestration."""
-        phase_owner = {
-            "bootstrap": "ARC Harness",
-            "hypothesize": "ARC Harness",
-            "solve": "ARC Harness",
-            "act": "ARC Harness",
-            "ingest": "ARC Harness",
-            "evaluate": "ARC Harness",
-            "finalization": "ARC Harness",
+        decision_flow = {
+            "bootstrap": {"proposer": "harness", "executor": "harness"},
+            "perceive": {"proposer": "orchestrator", "executor": "SideQuests"},
+            "plan": {"proposer": "orchestrator", "executor": "SideQuests"},
+            "hypothesize": {"proposer": "orchestrator", "executor": "orchestrator"},
+            "solve": {"proposer": "orchestrator", "executor": "orchestrator"},
+            "act": {"proposer": "LLM", "executor": "orchestrator"},
+            "ingest": {"proposer": "orchestrator", "executor": "SideQuests"},
+            "evaluate": {"proposer": "harness", "executor": "harness"},
         }
+        
         tool_rules = {
             "notify_turn": {
                 "owner": "SideQuests",
@@ -538,6 +708,11 @@ class DurableARCRunner:
                 "allowed_modes": ["write"],
                 "allowed_phases": ["bootstrap"],
             },
+            "arc_api_action": {
+                "owner": "harness",
+                "allowed_modes": ["read", "write"],
+                "allowed_phases": ["bootstrap", "act"],
+            }
         }
 
         violations: List[dict] = []
@@ -547,7 +722,7 @@ class DurableARCRunner:
             mode = entry.get("mode")
             step = entry.get("step")
 
-            if phase not in phase_owner:
+            if phase not in decision_flow and phase != "finalization":
                 violations.append(
                     {
                         "index": idx,
@@ -596,6 +771,21 @@ class DurableARCRunner:
                     }
                 )
 
+        # B118: Surface pruning decisions
+        pruning_decisions = []
+        if sidequests_ledger:
+            # Stats for report
+            latencies = [e.get("latency_ms", 0) for e in sidequests_ledger if e.get("latency_ms")]
+            avg_latency = sum(latencies) / len(latencies) if latencies else 0
+            
+            # Simple check for any high-latency call types
+            slow_calls = [e for e in sidequests_ledger if e.get("latency_ms", 0) > 1000]
+            if slow_calls:
+                pruning_decisions.append({
+                    "observed_slow_calls": len(slow_calls),
+                    "avg_latency_ms": round(avg_latency, 1),
+                })
+
         surfaces = {
             "arc_harness": {
                 "owner": "ARC Harness",
@@ -617,11 +807,19 @@ class DurableARCRunner:
 
         return {
             "orchestration_owner": "ARC Harness",
-            "phase_owner": phase_owner,
+            "decision_flow": decision_flow,
+            "phase_owner": {k: v["proposer"] for k, v in decision_flow.items()}, # compatibility
             "tool_rules": tool_rules,
             "runtime_surfaces": surfaces,
-            "violations": violations,
+            "policy_violations": violations,
+            "violations": violations, # compatibility
             "entity_gate_status": entity_gate_status or {},
+            "guard_escalations": guard_escalations or [],
+            "sidequests_ledger_stats": {
+                "total_calls": len(sidequests_ledger),
+                "high_latency_calls": len([e for e in sidequests_ledger if e.get("latency_ms", 0) > 500]),
+            },
+            "pruning_decisions": pruning_decisions,
             "status": "ok" if not violations else "violation",
         }
 
@@ -709,19 +907,31 @@ class DurableARCRunner:
 
         return trace
 
-    def _build_metadata(self, data: dict) -> dict:
+    def _build_submission_metadata(self, data: dict) -> dict:
+        import datetime
         runtime = float(data.get("runtime_seconds") or 0.0)
+        
+        # B130 schema
         metadata = {
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+            "submission_id": f"sub_{uuid.uuid4().hex[:12]}",
+            "run_duration_seconds": round(runtime, 2),
+            "environment": {
+                "llm_model": self.config.get("llm", {}).get("model", "unknown"),
+                "llm_endpoint": self.config.get("llm", {}).get("endpoint", "unknown"),
+                "memory_backend": "kuzu_0.11.3",
+                "arc_api_endpoint": "three.arcprize.org" if not self.harness.mock_api else "mock-harness"
+            },
+            # B89 Compatibility
             "model": self.config.get("llm", {}).get("model", "unknown"),
             "memory_enabled": True,
-            "runtime_seconds": round(runtime, 2),
             "steps": data.get("steps"),
             "correct": data.get("correct"),
             "tokens_input": data.get("tokens_input"),
             "tokens_output": data.get("tokens_output"),
             "final_state": data.get("final_state"),
         }
-        # B89: Add benchmark metrics to metadata
+        
         if data.get("benchmark_metrics"):
             metadata["benchmark_metrics"] = data["benchmark_metrics"]
         if data.get("solve_phase_summary"):
