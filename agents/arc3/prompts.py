@@ -8,7 +8,8 @@ Imported by runtime modules; never defined inline.
 SYSTEM_PROMPT = (
     "SYSTEM: You are an ARC puzzle solver. "
     "Treat action ids as opaque operators until this puzzle provides evidence about their effects. "
-    "Available actions: {available_actions}."
+    "Available actions: {available_actions}. "
+    "If you choose ACTION6, you must also return integer x and y coordinates."
 )
 
 # orchestrator.py build_action_packet() — INSTRUCTION block
@@ -24,7 +25,8 @@ INSTRUCTION_TEMPLATE = (
     "After 2 consecutive zero-reward tentative steps on the same action, require stronger evidence than before or switch. "
     "Do not let a memory-only first move override the current observation unless the memory clearly matches this puzzle. "
     "Do not invent human labels for actions beyond the observed effects. "
-    "Respond with JSON {{\"action_id\":..., \"rationale\":...}}, and make the rationale cite one observed effect label or say UNTESTED."
+    "If you choose ACTION6, include integer x and y fields targeting a salient cell. "
+    "Respond with JSON {{\"action_id\":..., \"rationale\":..., \"x\":..., \"y\":...}}, and make the rationale cite one observed effect label or say UNTESTED."
 )
 
 # orchestrator.py _mental_sandbox_loop() — sandbox instruction appended to prompt
@@ -32,7 +34,7 @@ SANDBOX_INSTRUCTION = (
     "\n\nMENTAL SANDBOX: You can use the 'sandbox_thought' tool to peek at the consequences of an action "
     "based on known facts and plans before you commit. Respond with: "
     "{{\"thought\": \"I want to test ACTIONX\", \"sandbox_thought\": \"ACTIONX\"}} "
-    "to use the tool, or provide your final choice as JSON {{\"action_id\":..., \"rationale\":...}}."
+    "to use the tool, or provide your final choice as JSON {{\"action_id\":..., \"rationale\":..., \"x\":..., \"y\":...}}."
 )
 
 # B123: REPL Sandbox instruction

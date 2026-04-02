@@ -29,6 +29,7 @@ DB_PATH = Path.home() / ".sidequests" / "brain_single_test.db"
 SEED_PATH = REPO_ROOT / "sidequests/data/GistSeedExamples.md"
 TASK_BATCH_SIZE = 5
 FINAL_OUTPUT_PATH = REPO_ROOT / "submission_results_single.json"
+ARC_SERVER_OUTPUT_PATH = REPO_ROOT / "submission_results_arcServer.json"
 LIVE_OUTPUT_PATH = REPO_ROOT / "submission_results_single.live.jsonl"
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -46,6 +47,7 @@ class SingleTaskRunner:
         self.real_api = real_api
         self.live_output_path = LIVE_OUTPUT_PATH
         self.final_output_path = FINAL_OUTPUT_PATH
+        self.arc_server_output_path = ARC_SERVER_OUTPUT_PATH
 
     async def initialize(self):
         logger.info("Initializing Single Task Runner...")
@@ -164,6 +166,15 @@ class SingleTaskRunner:
         logger.info(f"Exporting results to {output_path}")
         with open(output_path, 'w') as f:
             json.dump(self.results, f, indent=2)
+
+        arc_server_results = [
+            response
+            for result in self.results
+            for response in result.get("arc_server_responses", [])
+        ]
+        logger.info(f"Exporting ARC-only responses to {self.arc_server_output_path}")
+        with open(self.arc_server_output_path, 'w') as f:
+            json.dump(arc_server_results, f, indent=2)
 
     async def shutdown(self):
         """Tear down background resources so the runner exits cleanly."""

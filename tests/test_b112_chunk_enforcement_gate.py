@@ -109,6 +109,53 @@ async def test_enforce_policy_loose_directional(orchestrator, solver):
     assert solver._active_chunk.estimated_actions == []
 
 @pytest.mark.asyncio
+async def test_enforce_policy_skips_stale_low_value_directional_actions(orchestrator, solver):
+    chunk = PlanChunk(
+        description="move toward goal",
+        estimated_actions=["ACTION1", "ACTION2"],
+        source="directional"
+    )
+    solver._active_chunk = chunk
+    orchestrator._solve_context = {
+        "active_chunk": {
+            "source": "directional",
+            "description": "move toward goal",
+            "estimated_actions": ["ACTION1", "ACTION2"],
+        }
+    }
+    orchestrator._hypothesis_context = {
+        "observed_action_effects": [
+            {
+                "action": "ACTION1",
+                "value_status": "low_value",
+                "over_retest_budget": True,
+                "zero_reward_streak": 3,
+                "no_progress_count": 2,
+                "rank_score": 0.05,
+                "avg_meaningful_change": 0.12,
+            },
+            {
+                "action": "ACTION2",
+                "value_status": "tentative",
+                "over_retest_budget": False,
+                "zero_reward_streak": 1,
+                "no_progress_count": 0,
+                "rank_score": 0.34,
+                "avg_meaningful_change": 0.40,
+            },
+        ]
+    }
+
+    available_actions = ["ACTION1", "ACTION2", "ACTION3"]
+    llm_action = {"action_id": "ACTION3", "rationale": "something else"}
+
+    final_action = orchestrator._enforce_action_policy(llm_action, available_actions)
+
+    assert final_action["action_id"] == "ACTION2"
+    assert "enforcing directional chunk" in final_action["rationale"]
+    assert solver._active_chunk.estimated_actions == []
+
+@pytest.mark.asyncio
 async def test_solve_engine_stale_bfs_detection(solver):
     # Setup a BFS chunk
     solver._active_chunk = PlanChunk(

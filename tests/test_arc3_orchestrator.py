@@ -586,6 +586,56 @@ async def test_act_rejects_unavailable_llm_action(mock_brain, sample_observation
 
 
 @pytest.mark.asyncio
+async def test_act_preserves_action6_coordinates_from_llm(mock_brain, sample_observation):
+    class Action6LLM:
+        def chat(self, messages):
+            return json.dumps({"action_id": "ACTION6", "rationale": "target hotspot", "x": 1, "y": 0})
+
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=Action6LLM(),
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+
+    observation = dict(sample_observation)
+    observation["available_actions"] = ["ACTION6"]
+    memory_ctx = {"lessons": [], "memories": [], "analogies": []}
+
+    action = await orchestrator.act(observation, memory_ctx, step_num=1)
+
+    assert action["action_id"] == "ACTION6"
+    assert action["x"] == 1
+    assert action["y"] == 0
+
+
+@pytest.mark.asyncio
+async def test_act_infers_action6_coordinates_when_llm_omits_them(mock_brain, sample_observation):
+    class Action6NoCoordsLLM:
+        def chat(self, messages):
+            return json.dumps({"action_id": "ACTION6", "rationale": "UNTESTED"})
+
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=Action6NoCoordsLLM(),
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+
+    observation = dict(sample_observation)
+    observation["available_actions"] = ["ACTION6"]
+    memory_ctx = {"lessons": [], "memories": [], "analogies": []}
+
+    action = await orchestrator.act(observation, memory_ctx, step_num=1)
+
+    assert action["action_id"] == "ACTION6"
+    assert (action["x"], action["y"]) in {(1, 0), (0, 1)}
+    assert "x=" in action["rationale"] and "y=" in action["rationale"]
+
+
+@pytest.mark.asyncio
 async def test_api_knowledge_ingestion(mock_brain):
     """ingest_api_knowledge should push all chunks into SideQuests."""
     from agents.arc3.api_knowledge import ingest_api_knowledge, API_KNOWLEDGE_CHUNKS
