@@ -6,6 +6,7 @@ import asyncio
 import datetime
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
@@ -120,13 +121,15 @@ class ARCOrchestrator:
         self._write_trace_context: str = "bootstrap"
         self.hypothesis_mgr = HypothesisManager(brain_client, session_id)
         self._hypothesis_context: dict | None = None
-        self.solve_engine = SolveEngine(brain_client, llm_client, session_id)
+        # B138: Pass trace callback to expose solve-internal brain I/O in agent_trace
+        self.solve_engine = SolveEngine(brain_client, llm_client, session_id, emit_trace_event=self._emit_trace_event)
         self._solve_context: dict | None = None
         # B131: Comprehensive execution trace for CloudWatch-style logging
         self._execution_trace: List[dict] = []
         self._trace_start_time = time.time()
         # B89: Prompt budget metrics
         self._invalid_action_count = 0
+        self._action_frame_hashes: Dict[str, str] = {}
         self._no_progress_step_count = 0
         self._prompt_tokens_per_step: List[int] = []
         self._retrieval_payloads: List[dict] = []
@@ -142,6 +145,7 @@ class ARCOrchestrator:
         self._entity_gate_result: Dict[str, Any] = {}
         self._compaction_artifact: Any | None = None
         self._guard_escalations: List[dict] = []
+        self._recent_frame_hashes: List[str] = []  # B135: Track last N frame hashes for loop detection
 
     def record_guard_escalation(self, step: int, reason: str, status: str):
         """B130: Record a guard escalation event."""
@@ -747,7 +751,18 @@ class ARCOrchestrator:
             },
         )
 
-        if step_num > 3:
+        # B135: Evidence-based loop check — only fire when context suggests a loop is likely
+        _no_progress = self._consecutive_no_progress_steps
+        _frame_dupe = len(self._recent_frame_hashes) != len(set(self._recent_frame_hashes))
+        _dissonance = bool((self._solve_context or {}).get("dissonance") or (self._hypothesis_context or {}).get("dissonance"))
+
+        _should_check_loop = (
+            _no_progress >= 2
+            or _frame_dupe
+            or _dissonance
+        )
+
+        if _should_check_loop:
             loop_check_start = time.time()
             await self.brain.current_truth(
                 query="Am I looping?", session_id=self.session_id, scope="branch", limit=3
@@ -759,6 +774,14 @@ class ARCOrchestrator:
                 {"step": step_num},
                 {},
                 loop_check_elapsed,
+            )
+        else:
+            self._emit_trace_event(
+                "loop_check_skipped",
+                {
+                    "step": step_num,
+                    "reason": f"no evidence of loop (no_progress={_no_progress}, frame_dupe={_frame_dupe}, dissonance={_dissonance})",
+                },
             )
 
         narrative = f"Step {step_num} observation: state={observation.get('state', 'UNKNOWN')} colors={observation['colors']} shapes={observation['shapes']}"
@@ -810,15 +833,24 @@ class ARCOrchestrator:
         sandbox_start = time.time()
         action = await self._mental_sandbox(prompt, available_actions, observation)
         sandbox_elapsed = (time.time() - sandbox_start) * 1000
+        
+        # B133: Record candidate chosen by LLM/Sandbox before policy/guards
+        candidate_action_id = action.get("action_id")
+        llm_source = action.get("decision_source", "unknown")
+
         self._emit_trace_event(
             "operation",
             "mental_sandbox",
             {"step": step_num},
-            {"action_id": action.get("action_id")},
+            {
+                "action_id": candidate_action_id,
+                "decision_source": llm_source
+            },
             sandbox_elapsed,
         )
 
-        action = self._enforce_action_policy(action, available_actions)
+        # B133: Pass frame_hash to policy enforcement
+        action = self._enforce_action_policy(action, available_actions, current_frame_hash=observation.get("frame_hash"))
         action = self._ensure_action6_coordinates(action, observation)
 
         # B115: Final pre-execution decision guard
@@ -839,24 +871,38 @@ class ARCOrchestrator:
         )
         
         executed_by = "llm"
+        final_source = action.get("decision_source", llm_source)
+
         if guard_result["status"] in ("blocked", "warned"):
             self.record_guard_escalation(step_num, guard_result["reason"], guard_result["status"])
             if guard_result.get("suggested_action"):
                 old_id = action["action_id"]
                 new_id = guard_result["suggested_action"]
+                
+                # B133: Explicit guard_override_reason event
+                self._emit_trace_event(
+                    "operation",
+                    "guard_override_reason",
+                    {"step": step_num, "original": old_id, "override": new_id},
+                    {"reason": guard_result["reason"], "guard_status": guard_result["status"]}
+                )
+
                 action["action_id"] = new_id
                 action["rationale"] = (
                     f"{action.get('rationale', '')} (guard override: {old_id} -> {new_id} :: {guard_result['reason']})"
                 )
                 executed_by = "guard_override"
+                final_source = "guard_override"
             elif guard_result["status"] == "blocked":
                 # If blocked and no suggestion, we must still move. 
                 # Policy enforcement should have already ensured it's at least valid if possible.
                 action["rationale"] = f"{action.get('rationale', '')} (guard blocked: {guard_result['reason']})"
                 executed_by = "guard_blocked_fallback"
+                final_source = "guard_blocked_fallback"
         
         action = self._ensure_action6_coordinates(action, observation)
         action["guard_status"] = guard_result["status"]
+        action["decision_source"] = final_source
 
         # B126: Adversarial verification of candidate action (optional, can be disabled via config)
         verifier_enabled = self.config.get("enable_verifier", False)
@@ -950,10 +996,15 @@ class ARCOrchestrator:
             "decision_flow": {
                 "proposed_by": "llm",
                 "executed_by": executed_by,
+                "candidate_action": candidate_action_id,
+                "executed_action": action.get("action_id"),
+                "decision_source": action.get("decision_source"),
                 "guard_status": guard_result["status"],
                 "guard_reason": guard_result["reason"] if guard_result["status"] != "approved" else None
             },
             "action_id": action.get("action_id"),
+            "candidate_action_id": candidate_action_id,
+            "decision_source": action.get("decision_source"),
             "x": action.get("x"),
             "y": action.get("y"),
             "rationale": action.get("rationale"),
@@ -969,13 +1020,29 @@ class ARCOrchestrator:
             "act",
             {"step": step_num},
             {
+                "candidate_action": candidate_action_id,
                 "action_id": action.get("action_id"),
+                "decision_source": action.get("decision_source"),
                 "guard_status": action.get("guard_status"),
                 "verifier_status": action.get("verifier_status"),
                 "prompt_tokens": prompt_tokens,
             },
         )
         return action
+
+    def _parse_llm_json(self, raw: str) -> dict:
+        """Harden JSON parsing with extraction recovery (B132)."""
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            # Attempt to extract JSON object using regex
+            match = re.search(r"(\{.*\})", raw, re.DOTALL)
+            if match:
+                try:
+                    return json.loads(match.group(1))
+                except json.JSONDecodeError:
+                    pass
+            raise
 
     async def _mental_sandbox(self, initial_prompt: str, available_actions: List[str], observation: ARC3Observation) -> ARC3Action:
         """B114/B123: Bounded internal reasoning loop before final move."""
@@ -1007,9 +1074,32 @@ class ARCOrchestrator:
             ]
             try:
                 raw = await asyncio.to_thread(self.llm.chat, messages)
-                parsed = json.loads(raw)
-                
+
+                parsed = None
+                parse_method = "direct"
+                try:
+                    parsed = json.loads(raw)
+                except json.JSONDecodeError:
+                    # Attempt recovery (B132)
+                    match = re.search(r"(\{.*\})", raw, re.DOTALL)
+                    if match:
+                        try:
+                            parsed = json.loads(match.group(1))
+                            parse_method = "extracted"
+                            self._emit_trace_event(
+                                "operation",
+                                "mental_sandbox_parse_recovery",
+                                {"iteration": iteration},
+                                {"method": "regex_extraction"},
+                            )
+                        except json.JSONDecodeError:
+                            pass
+
+                if parsed is None:
+                    raise json.JSONDecodeError("Failed to parse or extract valid JSON", raw, 0)
+
                 # Check for sandbox thought tool (B114)
+
                 if "sandbox_thought" in parsed:
                     test_action = parsed["sandbox_thought"]
                     result = self.solve_engine.peek_action_consequences(test_action, self._hypothesis_context or {})
@@ -1067,11 +1157,16 @@ class ARCOrchestrator:
                 if "action_id" in parsed:
                     action_id = self._normalize_action_id(parsed.get("action_id"))
                     rationale = parsed.get("rationale", "")
+                    
+                    source = "sandbox"
+                    if parse_method == "extracted":
+                        source = "sandbox_recovered"
+                    
                     self._emit_trace_event(
                         "operation",
                         "mental_sandbox_final_decision",
                         {"iteration": iteration},
-                        {"action_id": action_id},
+                        {"action_id": action_id, "source": source},
                     )
                     
                     if action_id not in available_actions:
@@ -1083,7 +1178,8 @@ class ARCOrchestrator:
                         return {
                             "action_id": fallback,
                             "rationale": f"Invalid LLM action {action_id!r} in sandbox; fallback to {fallback}. Original rationale: {rationale}",
-                            "thinking_trace": thinking_trace
+                            "thinking_trace": thinking_trace,
+                            "decision_source": f"{source}_invalid_fallback"
                         }
 
                     if thinking_trace:
@@ -1092,6 +1188,7 @@ class ARCOrchestrator:
                         "action_id": action_id,
                         "rationale": rationale,
                         "thinking_trace": thinking_trace,
+                        "decision_source": source,
                     }
                     x = self._coerce_action6_coordinate(parsed.get("x"))
                     y = self._coerce_action6_coordinate(parsed.get("y"))
@@ -1123,6 +1220,7 @@ class ARCOrchestrator:
         )
         if thinking_trace:
             final_action["thinking_trace"] = thinking_trace
+        final_action["decision_source"] = "mental_sandbox_fallback"
         return final_action
 
 
@@ -1684,8 +1782,8 @@ class ARCOrchestrator:
             return True
         return False
 
-    def _enforce_action_policy(self, action: ARC3Action, available_actions: List[str]) -> ARC3Action:
-        """Apply hard exploration guards and chunk enforcement (B109/B112)."""
+    def _enforce_action_policy(self, action: ARC3Action, available_actions: List[str], current_frame_hash: str | None = None) -> ARC3Action:
+        """Apply hard exploration guards and chunk enforcement (B109/B112/B133)."""
         hyp_ctx = self._hypothesis_context or {}
         coverage = hyp_ctx.get("action_coverage") or {}
         unexplored = [
@@ -1697,21 +1795,25 @@ class ARCOrchestrator:
             for effect in hyp_ctx.get("observed_action_effects", [])
             if effect.get("action")
         }
-        
+
         action_id = action.get("action_id")
         rationale = action.get("rationale") or ""
+        source = action.get("decision_source", "llm")
+
+        # B133: Gate override on decision quality.
+        # If LLM failed to produce a real decision (fallback), don't trust it enough to override with policy.
+        if source == "mental_sandbox_fallback":
+            self._emit_trace_event("operation", "guard_skipped_fallback", {"reason": "LLM produced fallback; policy not applied"}, {"action_id": action_id})
+            return action
 
         # B109/B112: Prioritize guidance-grade chunk actions (bfs, directional)
         active_chunk = (self._solve_context or {}).get("active_chunk")
         if active_chunk and active_chunk.get("estimated_actions"):
-            source = active_chunk.get("source", "unknown")
+            chunk_source = active_chunk.get("source", "unknown")
             suggested = active_chunk["estimated_actions"]
-            
+
             # B112: Only hard-enforce guidance-grade sources (bfs, directional).
-            # 'explore' chunks are descriptive hints, not strict constraints.
-            if source == "bfs":
-                # BFS is strict-sequential: only enforce if the very first planned action
-                # is still available and hasn't already decayed into a stale low-value loop.
+            if chunk_source == "bfs":
                 first_planned = suggested[0] if suggested else None
                 if first_planned and first_planned in available_actions and not self._should_skip_chunk_action(observed_effects.get(first_planned)):
                     chunk_action = first_planned
@@ -1721,16 +1823,15 @@ class ARCOrchestrator:
                         except ValueError:
                             pass
                     if action_id != chunk_action:
-                        return {
+                        action.update({
                             "action_id": chunk_action,
                             "rationale": f"policy override: enforcing bfs chunk '{active_chunk.get('description', '')}'. Original rationale: {rationale}",
-                        }
+                            "decision_source": "policy_override",
+                        })
+                        return action
                     return action
-                # else: BFS first step blocked or stale; fall through to standard choice
 
-            elif source == "directional":
-                # Directional is loose: enforce the first available action that still has
-                # credible signal, skipping blocked or stale low-value suggestions.
+            elif chunk_source == "directional":
                 valid_suggested = [a for a in suggested if a in available_actions]
                 viable_suggested = [
                     candidate for candidate in valid_suggested
@@ -1738,7 +1839,6 @@ class ARCOrchestrator:
                 ]
                 if viable_suggested:
                     chunk_action = viable_suggested[0]
-                    # Pop everything from index 0 to the enforced action (inclusive)
                     if self.solve_engine._active_chunk and self.solve_engine._active_chunk.estimated_actions:
                         chunk_list = self.solve_engine._active_chunk.estimated_actions
                         try:
@@ -1747,13 +1847,14 @@ class ARCOrchestrator:
                         except ValueError:
                             pass
                     if action_id != chunk_action:
-                        return {
+                        action.update({
                             "action_id": chunk_action,
                             "rationale": f"policy override: enforcing directional chunk '{active_chunk.get('description', '')}'. Original rationale: {rationale}",
-                        }
+                            "decision_source": "policy_override",
+                        })
+                        return action
                     return action
                 elif valid_suggested and self.solve_engine._active_chunk and self.solve_engine._active_chunk.estimated_actions:
-                    # Drop stale leading actions so the chunk doesn't keep re-forcing a loop.
                     chunk_list = self.solve_engine._active_chunk.estimated_actions
                     while chunk_list and (
                         chunk_list[0] not in available_actions
@@ -1761,27 +1862,47 @@ class ARCOrchestrator:
                     ):
                         chunk_list.pop(0)
             else:
-                # B112: If it's an 'explore' chunk, we don't hard-enforce it, 
-                # but we should still consume it if the LLM coincidentally picked it.
                 if action_id == suggested[0]:
                     if self.solve_engine._active_chunk and self.solve_engine._active_chunk.estimated_actions:
                         self.solve_engine._active_chunk.estimated_actions.pop(0)
 
-        # If no guidance chunk action, fall back to standard exploration policy
+        # B133: Enhanced repetition gate.
+        # Only override if same action AND same board state.
+        if current_frame_hash and action_id in self._action_frame_hashes:
+            if current_frame_hash == self._action_frame_hashes[action_id]:
+                # Genuine repetition on identical frame -> override justified.
+                if unexplored:
+                    forced = unexplored[0]
+                    self._emit_trace_event("operation", "guard_override_reason", 
+                        {"original": action_id, "override": forced},
+                        {"reason": "repeated action on identical frame state", "frame_hash": current_frame_hash[:12]}
+                    )
+                    action.update({
+                        "action_id": forced,
+                        "rationale": f"policy override: repeated {action_id} on same frame; forcing exploration of {forced}.",
+                        "decision_source": "policy_override",
+                    })
+                    return action
+            else:
+                # LLM picked a tested action but frame state CHANGED. 
+                # This is a valid 're-test' in a new context. Skip exploration override.
+                return action
+
+        # If no guidance chunk action and no state-change re-test, 
+        # fall back to standard exploration policy
         if unexplored and action_id not in unexplored:
             forced = unexplored[0]
-            
-            # B112: If we are forcing an exploration action, check if it matches 
-            # an 'explore' chunk suggestion so we consume it.
             if active_chunk and active_chunk.get("source") == "explore" and active_chunk.get("estimated_actions"):
                 if forced == active_chunk["estimated_actions"][0]:
                     if self.solve_engine._active_chunk and self.solve_engine._active_chunk.estimated_actions:
                         self.solve_engine._active_chunk.estimated_actions.pop(0)
 
-            return {
+            action.update({
                 "action_id": forced,
                 "rationale": f"policy override: exploration phase requires testing {forced} before exploiting {action_id}. Original rationale: {rationale}",
-            }
+                "decision_source": "policy_override",
+            })
+            return action
 
         ranked_effects = [
             effect for effect in hyp_ctx.get("observed_action_effects", [])
@@ -1791,13 +1912,14 @@ class ARCOrchestrator:
         if coverage.get("initial_exploration_complete") and ranked_effects:
             preferred = self._select_ranked_action(ranked_effects)
             if preferred and action_id != preferred:
-                return {
+                action.update({
                     "action_id": preferred,
                     "rationale": f"policy override: post-exploration ranking prefers {preferred} over {action_id}. Original rationale: {rationale}",
-                }
+                    "decision_source": "policy_override",
+                })
+                return action
 
         return action
-
     def _select_ranked_action(self, ranked_effects: List[dict]) -> str | None:
         allowed = [
             effect for effect in ranked_effects
@@ -2408,6 +2530,22 @@ class ARCOrchestrator:
         record = self._step_history[-1]
         record["reward"] = reward
         record["done"] = done
+
+        # B133: Track frame hash for this action to detect genuine repetition
+        action_id = record.get("action_id")
+        board_before = record.get("board_before")
+        if action_id and board_before:
+            frame_hash = board_before.get("frame_hash")
+            if frame_hash:
+                self._action_frame_hashes[action_id] = frame_hash
+
+        # B135: Track recent frame hashes for loop detection
+        frame_hash = record.get("frame_hash") or record.get("board_before", {}).get("frame_hash")
+        if frame_hash:
+            self._recent_frame_hashes.append(str(frame_hash))
+            # Keep only last 5 frames
+            self._recent_frame_hashes = self._recent_frame_hashes[-5:]
+
         # B89: Track no-progress steps (reward = 0)
         if reward == 0.0:
             self._no_progress_step_count += 1
