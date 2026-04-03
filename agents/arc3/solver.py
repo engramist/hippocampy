@@ -1379,6 +1379,8 @@ class SolveEngine:
         self._solve_plan_id: Optional[str] = None
         self._reward_history: List[float] = []
         self._role_resolution_notes: List[str] = []
+        self._last_registered_top_plan: Optional[Dict[str, Any]] = None
+        self._last_registered_chunk_plan: Optional[Dict[str, Any]] = None
 
     def _add_chunk_to_ledger_as_active(self, chunk: PlanChunk) -> None:
         """B124: Mark a chunk as active in the ledger."""
@@ -1645,8 +1647,64 @@ class SolveEngine:
             chunk_ledger=list(self._chunk_ledger),
         )
 
+    def _plan_changed(
+        self,
+        plan_type: str,  # "top" | "chunk"
+        goal: str,
+        steps: List[str],
+        force: bool = False,
+    ) -> bool:
+        """B137: Check if a plan has materially changed.
+
+        Returns True if the plan should be re-registered, False if it matches the last registered version.
+
+        Args:
+            plan_type: "top" for top-level solve plan, "chunk" for chunk plan
+            goal: Plan goal/description
+            steps: List of action steps
+            force: If True, always return True (e.g., on dissonance reset)
+        """
+        if force:
+            return True
+
+        last_plan = (
+            self._last_registered_top_plan if plan_type == "top"
+            else self._last_registered_chunk_plan
+        )
+
+        if last_plan is None:
+            return True
+
+        # Compare goal and steps
+        return (last_plan.get("goal") != goal or
+                last_plan.get("steps") != steps)
+
     async def _register_chunk_plan(self, chunk: PlanChunk) -> None:
-        """B109: Register an active chunk as a plan in SideQuests."""
+        """B109: Register an active chunk as a plan in SideQuests.
+
+        B137: Suppresses re-registration of identical chunk plans via idempotency check.
+        """
+        # B137: Check if plan has changed before registering
+        if not self._plan_changed(
+            plan_type="chunk",
+            goal=chunk.description,
+            steps=chunk.estimated_actions or ["Execute strategy toward goal"],
+        ):
+            logger.debug("Skipping chunk plan registration (identical to last): %s", chunk.description)
+            # Emit trace event for audit trail
+            try:
+                await self.brain.trace_event(
+                    event_type="plan_registration_skipped",
+                    metadata={
+                        "plan_type": "chunk",
+                        "reason": "identical_to_last_registered",
+                        "chunk_description": chunk.description,
+                    },
+                )
+            except Exception:
+                pass  # Don't fail the solve step if tracing fails
+            return
+
         try:
             plan_payload = await self.brain.register_plan(
                 goal=chunk.description,
@@ -1654,6 +1712,11 @@ class SolveEngine:
                 session_id=self.session_id,
             )
             chunk.plan_id = plan_payload.get("plan_id")
+            # B137: Cache the registered plan
+            self._last_registered_chunk_plan = {
+                "goal": chunk.description,
+                "steps": chunk.estimated_actions or ["Execute strategy toward goal"],
+            }
             logger.info("Chunk plan registered: %s (%s)", chunk.plan_id, chunk.description)
         except Exception as exc:
             logger.warning("register_chunk_plan failed: %s", exc)
@@ -1726,6 +1789,9 @@ class SolveEngine:
         self._active_chunk = None
         self._chunk_history = []
         self._solve_plan_id = None
+        # B137: Reset plan tracking to allow fresh registrations on retry
+        self._last_registered_top_plan = None
+        self._last_registered_chunk_plan = None
         self.dissonance_detector.reset_chunk()
         self.dissonance_detector._zero_progress_streak = 0
         self._role_resolution_notes = []
@@ -1813,6 +1879,7 @@ class SolveEngine:
         return notes
 
     async def _register_solve_plan(self, observation: Dict[str, Any]) -> None:
+        """Register top-level solve plan. B137: Suppresses re-registration of identical plans."""
         goal = f"Solve ARC task {observation.get('dataset_id', '')}:{observation.get('task_id', '')}"
         steps = [
             "Infer archetype from board dynamics",
@@ -1820,6 +1887,28 @@ class SolveEngine:
             "Hypothesize victory condition",
             "Execute and revise chunked solve path",
         ]
+
+        # B137: Check if plan has changed before registering
+        if not self._plan_changed(
+            plan_type="top",
+            goal=goal,
+            steps=steps,
+        ):
+            logger.debug("Skipping solve plan registration (identical to last)")
+            # Emit trace event for audit trail
+            try:
+                await self.brain.trace_event(
+                    event_type="plan_registration_skipped",
+                    metadata={
+                        "plan_type": "top",
+                        "reason": "identical_to_last_registered",
+                        "goal": goal,
+                    },
+                )
+            except Exception:
+                pass  # Don't fail the solve step if tracing fails
+            return
+
         try:
             plan_payload = await self.brain.register_plan(
                 goal=goal,
@@ -1827,6 +1916,11 @@ class SolveEngine:
                 session_id=self.session_id,
             )
             self._solve_plan_id = plan_payload.get("plan_id")
+            # B137: Cache the registered plan
+            self._last_registered_top_plan = {
+                "goal": goal,
+                "steps": steps,
+            }
             logger.info("Solve plan registered: %s", self._solve_plan_id)
         except Exception as exc:
             logger.warning("register_plan failed for solve plan: %s", exc)
