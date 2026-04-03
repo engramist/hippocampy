@@ -4,6 +4,7 @@
 
 import argparse
 import asyncio
+import datetime
 import json
 import logging
 import time
@@ -30,6 +31,8 @@ SEED_PATH = REPO_ROOT / "sidequests/data/GistSeedExamples.md"
 TASK_BATCH_SIZE = 5
 FINAL_OUTPUT_PATH = REPO_ROOT / "submission_results_single.json"
 ARC_SERVER_OUTPUT_PATH = REPO_ROOT / "submission_results_arcServer.json"
+AGENT_EXECUTION_TRACE_PATH = REPO_ROOT / "agent_execution_trace.json"
+MASTER_TIMELINE_PATH = REPO_ROOT / "master_timeline.json"
 LIVE_OUTPUT_PATH = REPO_ROOT / "submission_results_single.live.jsonl"
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -48,6 +51,8 @@ class SingleTaskRunner:
         self.live_output_path = LIVE_OUTPUT_PATH
         self.final_output_path = FINAL_OUTPUT_PATH
         self.arc_server_output_path = ARC_SERVER_OUTPUT_PATH
+        self.agent_execution_trace_path = AGENT_EXECUTION_TRACE_PATH
+        self.master_timeline_path = MASTER_TIMELINE_PATH
 
     async def initialize(self):
         logger.info("Initializing Single Task Runner...")
@@ -167,14 +172,146 @@ class SingleTaskRunner:
         with open(output_path, 'w') as f:
             json.dump(self.results, f, indent=2)
 
-        arc_server_results = [
-            response
-            for result in self.results
-            for response in result.get("arc_server_responses", [])
-        ]
+        # Chronological timeline of function calls + ARC API request/response events.
+        call_timeline = []
+        for result in self.results:
+            for entry in result.get("sidequests_ledger", []) or []:
+                if not isinstance(entry, dict):
+                    continue
+
+                call_type = entry.get("call_type")
+                timestamp = entry.get("timestamp_iso")
+                if not call_type or not timestamp:
+                    continue
+
+                # ARC API request/response are emitted from arc_server_responses below.
+                if call_type == "arc_api_action":
+                    continue
+
+                name = str(call_type)
+
+                call_timeline.append(
+                    {
+                        "name": name,
+                        "event": "call",
+                        "data": entry,
+                        "timestamp_iso": timestamp,
+                        "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+                        "what": entry.get("input_summary") or entry.get("result_summary") or name,
+                    }
+                )
+
+            for response in result.get("arc_server_responses", []) or []:
+                if not isinstance(response, dict):
+                    continue
+
+                request = response.get("request", {}) if isinstance(response.get("request"), dict) else {}
+                reply = response.get("response", {}) if isinstance(response.get("response"), dict) else {}
+
+                endpoint = request.get("endpoint")
+                if isinstance(endpoint, str) and endpoint:
+                    op_name = endpoint.rsplit("/", 1)[-1].upper().replace("/", "_")
+                else:
+                    op_name = str(request.get("label") or "ARC_CALL")
+
+                request_ts = request.get("timestamp_iso")
+                if isinstance(request_ts, str) and request_ts:
+                    method = request.get("method")
+                    if isinstance(method, str) and method:
+                        what_request = f"{method} {endpoint}" if isinstance(endpoint, str) else method
+                    else:
+                        what_request = request.get("label") or op_name
+                    call_timeline.append(
+                        {
+                            "name": op_name,
+                            "event": "request",
+                            "data": request,
+                            "timestamp_iso": request_ts,
+                            "event_detail": "ARC API request",
+                            "what": what_request,
+                        }
+                    )
+
+                response_ts = reply.get("timestamp_iso")
+                if isinstance(response_ts, str) and response_ts:
+                    response_summary = reply.get("response_summary")
+                    if not response_summary:
+                        http_status = reply.get("http_status")
+                        response_summary = f"http_status={http_status}" if http_status is not None else "response received"
+                    call_timeline.append(
+                        {
+                            "name": op_name,
+                            "event": "response",
+                            "data": reply,
+                            "timestamp_iso": response_ts,
+                            "event_detail": "ARC API response",
+                            "what": response_summary,
+                        }
+                    )
+
+        def _sort_key(item: dict) -> tuple:
+            ts = item.get("timestamp_iso")
+            if not isinstance(ts, str):
+                return (datetime.datetime.max, "")
+            try:
+                parsed = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except Exception:
+                parsed = datetime.datetime.max
+            return (parsed, str(item.get("name", "")))
+
+        call_timeline.sort(key=_sort_key)
+
         logger.info(f"Exporting ARC-only responses to {self.arc_server_output_path}")
         with open(self.arc_server_output_path, 'w') as f:
-            json.dump(arc_server_results, f, indent=2)
+            json.dump(call_timeline, f, indent=2)
+
+        # B131: Export agent execution trace (CloudWatch-style logs)
+        agent_execution_trace = []
+        for result in self.results:
+            trace_events = result.get("agent_execution_trace", []) or []
+            agent_execution_trace.extend(trace_events)
+        
+        # Sort by timestamp
+        agent_execution_trace.sort(key=lambda e: e.get("timestamp_iso", ""))
+        
+        logger.info(f"Exporting agent execution trace to {self.agent_execution_trace_path}")
+        with open(self.agent_execution_trace_path, 'w') as f:
+            json.dump(agent_execution_trace, f, indent=2)
+
+        # B131: Export master timeline — all events from both streams merged chronologically.
+        master_timeline = []
+        for event in call_timeline:
+            master_timeline.append({
+                "source": "arc_server",
+                "timestamp_iso": event.get("timestamp_iso"),
+                "name": event.get("name"),
+                "event": event.get("event"),
+                "what": event.get("what"),
+                "event_detail": event.get("event_detail"),
+                "data": event.get("data"),
+            })
+        for event in agent_execution_trace:
+            master_timeline.append({
+                "source": "agent_trace",
+                "timestamp_iso": event.get("timestamp_iso"),
+                "name": event.get("operation"),
+                "event": event.get("event_type"),
+                "what": (
+                    (event.get("result") or {}).get("action_id")
+                    or str((event.get("details") or {}).get("action_taken", ""))
+                    or event.get("operation", "")
+                ),
+                "event_detail": f"{event.get('event_type')} — {event.get('operation')}",
+                "details": event.get("details"),
+                "result": event.get("result"),
+                "elapsed_ms": event.get("elapsed_ms"),
+            })
+
+        master_timeline.sort(key=_sort_key)
+
+        logger.info(f"Exporting master timeline to {self.master_timeline_path}")
+        with open(self.master_timeline_path, 'w') as f:
+            json.dump(master_timeline, f, indent=2)
 
     async def shutdown(self):
         """Tear down background resources so the runner exits cleanly."""
