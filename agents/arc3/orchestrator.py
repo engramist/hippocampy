@@ -139,6 +139,7 @@ class ARCOrchestrator:
         self._retrieval_triggered = False
         self._last_retrieval_step = -1
         self._consecutive_no_progress_steps = 0
+        self._blocked_actions: set[str] = set()
         self._last_seen_invalid_action_count = 0
         self._memory_context: dict | None = None
         self._pruning_decisions: List[dict] = []
@@ -154,6 +155,12 @@ class ARCOrchestrator:
             "reason": reason,
             "guard_state": status
         })
+
+    def _mark_active_chunk_failed(self, reason: str):
+        """B141: Mark active chunk as failed and clear it."""
+        if self.solve_engine._active_chunk:
+            self.solve_engine._mark_chunk_failed(self.solve_engine._active_chunk, reason)
+            self.solve_engine._active_chunk = None
 
     def _emit_trace_event(self, event_type: str, operation: str, details: dict | None = None, result: dict | None = None, elapsed_ms: float | None = None):
         """B131: Emit a timestamped execution trace event (CloudWatch-style)."""
@@ -611,6 +618,31 @@ class ARCOrchestrator:
             current_state_hash=current_hash,
         )
         solve_elapsed = (time.time() - solve_start) * 1000
+
+        # B142: Re-evaluate chunk graduation based on actual performance
+        graduation_reevaluation = self.solve_engine.reevaluate_chunk_graduation(hypothesis_context)
+        if graduation_reevaluation and graduation_reevaluation.get("new_score") is not None:
+            # Check if graduation dropped below 0.5 (dissonance threshold)
+            if graduation_reevaluation["new_score"] < 0.5 and not solve_ctx.dissonance_detected:
+                solve_ctx.dissonance_detected = True
+                solve_ctx.dissonance_reason = (
+                    f"Graduation dropped to {graduation_reevaluation['new_score']:.2f} "
+                    f"(reason: {graduation_reevaluation.get('graduation_capped_reason', 'unknown')})"
+                )
+                # Emit trace event for the graduation-triggered dissonance
+                self._emit_trace_event(
+                    "dissonance_trigger",
+                    "graduation_drop",
+                    {
+                        "step": step,
+                        "original_score": graduation_reevaluation["original_score"],
+                        "new_score": graduation_reevaluation["new_score"],
+                        "reason": graduation_reevaluation.get("graduation_capped_reason"),
+                        "evidence_floor_applied": graduation_reevaluation.get("evidence_floor_applied"),
+                        "progress_decay_applied": graduation_reevaluation.get("progress_decay_applied"),
+                    },
+                )
+
         self._solve_context = {
             "archetype": solve_ctx.archetype.value,
             "archetype_confidence": solve_ctx.archetype_confidence,
@@ -633,6 +665,18 @@ class ARCOrchestrator:
                     "progress": solve_ctx.active_chunk.progress_score,
                     "source": solve_ctx.active_chunk.source,
                     "plan_id": solve_ctx.active_chunk.plan_id,
+                    "graduation_score": solve_ctx.active_chunk.graduation_score,
+                    "graduation_reason": solve_ctx.active_chunk.graduation_reason,
+                    "graduation_components": solve_ctx.active_chunk.graduation_components,
+                    # B142: Add trace fields for graduation re-evaluation
+                    **(
+                        {
+                            "graduation_capped_reason": graduation_reevaluation.get("graduation_capped_reason"),
+                            "evidence_floor_applied": graduation_reevaluation.get("evidence_floor_applied"),
+                            "progress_decay_applied": round(graduation_reevaluation.get("progress_decay_applied", 0.0), 3),
+                        }
+                        if graduation_reevaluation else {}
+                    ),
                 }
                 if solve_ctx.active_chunk else None
             ),
@@ -775,6 +819,36 @@ class ARCOrchestrator:
                 {},
                 loop_check_elapsed,
             )
+
+            # B141: Enforce No-Progress Bail-Out Escalation
+            if self._consecutive_no_progress_steps >= 3:
+                if self._solve_context:
+                    self._solve_context["dissonance"] = True
+                self._emit_trace_event(
+                    "operation", 
+                    "no_progress_escalation", 
+                    {"tier": 1, "action": "force_replan", "steps": self._consecutive_no_progress_steps}
+                )
+
+            if self._consecutive_no_progress_steps >= 5:
+                if self._step_history:
+                    last_action = self._step_history[-1].get("action_id")
+                    if last_action:
+                        self._blocked_actions.add(last_action)
+                        self._emit_trace_event(
+                            "operation", 
+                            "no_progress_escalation", 
+                            {"tier": 2, "action": "block_action", "blocked": last_action, "steps": self._consecutive_no_progress_steps}
+                        )
+
+            if self._consecutive_no_progress_steps >= 8:
+                self._mark_active_chunk_failed("no_progress_abandon")
+                self._emit_trace_event(
+                    "operation", 
+                    "no_progress_escalation", 
+                    {"tier": 3, "action": "abandon_chunk", "steps": self._consecutive_no_progress_steps}
+                )
+                self._consecutive_no_progress_steps = 0  # reset ladder
         else:
             self._emit_trace_event(
                 "loop_check_skipped",
@@ -1800,6 +1874,21 @@ class ARCOrchestrator:
         rationale = action.get("rationale") or ""
         source = action.get("decision_source", "llm")
 
+        # B141: Blocked action enforcement
+        if action_id in self._blocked_actions:
+            if unexplored:
+                forced = unexplored[0]
+                self._emit_trace_event("operation", "guard_override_reason", 
+                    {"original": action_id, "override": forced},
+                    {"reason": "action blocked due to persistent no-progress"}
+                )
+                action.update({
+                    "action_id": forced,
+                    "rationale": f"policy override: {action_id} is blocked due to persistent no-progress; forcing exploration of {forced}.",
+                    "decision_source": "policy_override",
+                })
+                return action
+
         # B133: Gate override on decision quality.
         # If LLM failed to produce a real decision (fallback), don't trust it enough to override with policy.
         if source == "mental_sandbox_fallback":
@@ -2563,6 +2652,8 @@ class ARCOrchestrator:
         self._plan_id = None
         self._reflex_context = None
         self._plan_steps = []
+        self._consecutive_no_progress_steps = 0
+        self._blocked_actions = set()
         # Append a sentinel so the LLM prompt shows the GAME_OVER boundary
         self._step_history.append({
             "step": len(self._step_history) + 1,
