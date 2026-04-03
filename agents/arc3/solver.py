@@ -1064,6 +1064,9 @@ class PlanChunker:
         goal_role: Optional[ObjectRole],
         hypothesis_context: Optional[Dict[str, Any]],
         available_actions: List[str],
+        chunk_progress: float = 0.0,
+        steps_using_chunk: int = 0,
+        consecutive_zero_reward_steps: int = 0,
     ) -> Dict[str, Any]:
         context = hypothesis_context or {}
         action_coverage = context.get("action_coverage") or {}
@@ -1120,18 +1123,62 @@ class PlanChunker:
             + 0.15 * evidence_score
             - contradiction_penalty
         )
-        score = max(0.0, min(score, 1.0))
 
-        ready = (
-            player_role is not None
-            and goal_role is not None
-            and player_conf >= self.DIRECTIONAL_PLAYER_CONFIDENCE
+        # B139: Geometry-aware priority.
+        # If we know exactly where the player and goal are, and we are stuck in a loop 
+        # or hitting low-value actions, we SHOULD graduate to directional play
+        # to break the cycle, even if initial exploration isn't 'complete'.
+        geometry_high_conf = (
+            player_role is not None 
+            and goal_role is not None 
+            and player_conf >= self.DIRECTIONAL_PLAYER_CONFIDENCE 
             and goal_conf >= self.DIRECTIONAL_GOAL_CONFIDENCE
             and positions_known > 0.0
-            and (action_coverage.get("initial_exploration_complete") or coverage_ratio >= self.MIN_EXPLORATION_COMPLETENESS)
-            and not action_coverage.get("top_two_low_value")
-            and not context.get("loop_detected")
-            and score >= self.GRADUATION_THRESHOLD
+        )
+        
+        stuck_signals = context.get("loop_detected") or action_coverage.get("top_two_low_value")
+        
+        # If we are stuck but know geometry, give a huge boost to graduation.
+        if geometry_high_conf and stuck_signals:
+            score += 0.40 # Forced promotion boost
+            
+        score = max(0.0, min(score, 1.0))
+
+        # B142: Evidence floor gate — if zero empirical evidence after enough steps, cap graduation
+        graduation_capped_reason: Optional[str] = None
+        evidence_floor_applied = False
+        progress_decay_applied = 0.0
+        pre_cap_score = score
+
+        if evidence_score < 0.3 and chunk_progress == 0.0 and steps_using_chunk >= 3:
+            # No empirical evidence that this plan works despite trying for 3+ steps
+            max_allowed = max(0.4, evidence_score * 2)
+            if score > max_allowed:
+                score = max_allowed
+                graduation_capped_reason = "evidence_floor"
+                evidence_floor_applied = True
+
+        # B142: Progress-decay penalty — graduation degrades with consecutive failures
+        if consecutive_zero_reward_steps > 0:
+            decay = 0.05 * consecutive_zero_reward_steps
+            score = max(0.2, score - decay)
+            progress_decay_applied = decay
+            if graduation_capped_reason is None:
+                graduation_capped_reason = "progress_decay"
+
+        ready = (
+            geometry_high_conf
+            and (
+                # Normal path: exploration is healthy and complete enough
+                (
+                    (action_coverage.get("initial_exploration_complete") or coverage_ratio >= self.MIN_EXPLORATION_COMPLETENESS)
+                    and not action_coverage.get("top_two_low_value")
+                    and not context.get("loop_detected")
+                    and score >= self.GRADUATION_THRESHOLD
+                )
+                # B139 Emergency path: we are stuck but we know where to go
+                or (stuck_signals and score >= self.GRADUATION_THRESHOLD)
+            )
         )
 
         components = {
@@ -1183,7 +1230,26 @@ class PlanChunker:
             "score": score,
             "reason": reason,
             "components": components,
+            # B142: Evidence floor and progress-decay trace fields
+            "graduation_capped_reason": graduation_capped_reason,
+            "evidence_floor_applied": evidence_floor_applied,
+            "progress_decay_applied": progress_decay_applied,
+            "pre_cap_score": pre_cap_score,
         }
+
+    def _map_actions_to_vectors(self, action_facts: List[Dict[str, Any]]) -> Dict[str, tuple[float, float]]:
+        """Map action IDs to their inferred (row, col) movement vectors."""
+        mapping = {}
+        for fact in action_facts:
+            action = fact.get("action")
+            if not action: continue
+            
+            # Use helpers from module level
+            direction = _trend_direction_from_fact(action_facts, action)
+            vector = _direction_vector(direction)
+            if vector:
+                mapping[action] = vector
+        return mapping
 
     def generate_chunk(
         self,
@@ -1196,6 +1262,8 @@ class PlanChunker:
         hypothesis_context: Optional[Dict[str, Any]] = None,
     ) -> PlanChunk:
         """Generate the next plan chunk. Pure logic only; no SideQuests calls."""
+        context = hypothesis_context or {}
+        action_facts = context.get("action_facts") or []
 
         # 1. Try BFS if we have a known goal state
         player_role = next(
@@ -1238,30 +1306,60 @@ class PlanChunker:
         if graduation["ready"]:
             p_pos = player_role.estimated_position or {}
             g_pos = goal_role.estimated_position or {}
-            directions = []
+            
             if p_pos and g_pos:
                 dr = g_pos.get("row", 0) - p_pos.get("row", 0)
                 dc = g_pos.get("col", 0) - p_pos.get("col", 0)
-                if dr > 0:
-                    directions.extend(["ACTION2"] * min(abs(int(dr)), 5))
-                elif dr < 0:
-                    directions.extend(["ACTION1"] * min(abs(int(dr)), 5))
-                if dc > 0:
-                    directions.extend(["ACTION4"] * min(abs(int(dc)), 5))
-                elif dc < 0:
-                    directions.extend(["ACTION3"] * min(abs(int(dc)), 5))
-
-            if directions:
+                goal_vec = (dr, dc)
                 dist = abs(dr) + abs(dc)
-                return PlanChunk(
-                    description=f"Move {victory_condition.condition_type.value} toward goal (dist={dist})",
-                    estimated_actions=directions[:8],
-                    success_condition="reduce distance to goal object",
-                    source="directional",
-                    graduation_score=float(graduation["score"]),
-                    graduation_reason=str(graduation["reason"]),
-                    graduation_components=dict(graduation["components"]),
-                )
+                
+                # B139: Smarter action selection using inferred geometry
+                action_map = self._map_actions_to_vectors(action_facts)
+                
+                scored_actions = []
+                for aid in available_actions:
+                    vec = action_map.get(aid)
+                    if not vec:
+                        # Standard mapping fallback for ACTION1-4 if facts are missing
+                        if aid == "ACTION1": vec = (-1.0, 0.0) # Up
+                        elif aid == "ACTION2": vec = (1.0, 0.0) # Down
+                        elif aid == "ACTION3": vec = (0.0, -1.0) # Left
+                        elif aid == "ACTION4": vec = (0.0, 1.0) # Right
+                    
+                    if vec:
+                        # Score by dot product (how much does this move us TOWARD the goal?)
+                        bias_score = (vec[0] * dr) + (vec[1] * dc)
+                        scored_actions.append((bias_score, aid))
+                
+                # Filter for actions that move us toward the goal (bias_score > 0)
+                good_actions = sorted([a for a in scored_actions if a[0] > 0], key=lambda x: x[0], reverse=True)
+                
+                if good_actions:
+                    # Take the best action and repeat it a few times, or mix top two
+                    best_aid = good_actions[0][1]
+                    directions = [best_aid] * 4
+                    if len(good_actions) > 1:
+                        # Interleave second best if it also has high score
+                        if good_actions[1][0] >= good_actions[0][0] * 0.5:
+                            directions = [good_actions[0][1], good_actions[1][1]] * 2
+                    
+                    return PlanChunk(
+                        description=f"Move {victory_condition.condition_type.value} toward goal (dist={dist:.1f})",
+                        estimated_actions=directions,
+                        success_condition="reduce distance to goal object",
+                        source="directional",
+                        graduation_score=float(graduation["score"]),
+                        graduation_reason=str(graduation["reason"]),
+                        graduation_components={
+                            **dict(graduation["components"]),
+                            "goal_dist": float(dist),
+                            "geometry_bias": float(good_actions[0][0])
+                        },
+                    )
+                else:
+                    # Even if ready, we might not have 'good' actions yet.
+                    # Fall through to explore to find more directional facts.
+                    pass
 
         # 3. Exploration fallback: try unexplored actions
         if hasattr(state_graph, "get_unexplored_actions"):
@@ -1307,6 +1405,7 @@ class DecisionGuard:
 
         # 1. Loop Check: Avoid repeating moves that produced NO_CHANGE repeatedly
         if step_history:
+            # Single-action repetition check
             recent_no_reward = [
                 s for s in step_history[-3:]
                 if s.get("action_id") == action_id and s.get("reward") == 0.0
@@ -1317,6 +1416,19 @@ class DecisionGuard:
                     "reason": f"Action {action_id} failed to produce reward in {len(recent_no_reward)} recent attempts.",
                     "suggested_action": None,
                 }
+            
+            # B139: Multi-action churn check (global stall)
+            # If the last 5 steps across DIFFERENT actions all yielded 0 reward, 
+            # we are likely stuck in a plateau.
+            global_no_reward = [s for s in step_history[-5:] if s.get("reward") == 0.0]
+            if len(global_no_reward) >= 5:
+                # If we are stuck globally, and this action was ALREADY tried recently with 0 reward, block it.
+                if any(s.get("action_id") == action_id and s.get("reward") == 0.0 for s in step_history[-10:]):
+                    return {
+                        "status": "blocked",
+                        "reason": f"Global plateau detected (5 steps zero reward); blocking already-failed {action_id}.",
+                        "suggested_action": None,
+                    }
 
         # 2. Chunk Alignment Check:
         if (
@@ -1409,6 +1521,89 @@ class SolveEngine:
         """
         if self._emit_trace is not None:
             self._emit_trace(event_type, operation, details or {}, result, elapsed_ms)
+
+    def reevaluate_chunk_graduation(
+        self,
+        hypothesis_context: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """B142: Re-evaluate the active chunk's graduation based on actual performance.
+
+        Called during each solve step to check if the chunk's graduation score
+        should be degraded based on lack of progress and low evidence.
+
+        Returns a dict with updated graduation info and trace fields for dissonance trigger.
+        """
+        if not self._active_chunk:
+            return {}
+
+        # Extract the evidence score from hypothesis_context
+        context = hypothesis_context or {}
+        action_facts = context.get("action_facts") or []
+        path_hypotheses = context.get("path_hypotheses") or []
+
+        deterministic_facts = sum(1 for fact in action_facts if fact.get("fact_type") == "deterministic_effect")
+        valuable_facts = sum(
+            1 for fact in action_facts
+            if fact.get("fact_type") == "deterministic_effect" and fact.get("value_status") == "valuable"
+        )
+        path_signal = sum(
+            1 for hyp in path_hypotheses
+            if hyp.get("value_status") in {"valuable", "tentative"}
+        )
+        evidence_score = min(
+            0.20 * min(deterministic_facts, 3)
+            + 0.12 * min(valuable_facts, 3)
+            + 0.10 * min(path_signal, 3)
+            + (0.10 if context.get("action_coverage", {}).get("initial_exploration_complete") else 0.0),
+            1.0,
+        )
+
+        # Get chunk metrics
+        chunk_progress = self._active_chunk.progress_score
+        steps_using_chunk = self._active_chunk.steps_executed
+        consecutive_zero_reward = self.dissonance_detector._zero_progress_streak
+
+        # Apply B142 logic
+        original_score = self._active_chunk.graduation_score
+        new_score = original_score
+
+        graduation_capped_reason: Optional[str] = None
+        evidence_floor_applied = False
+        progress_decay_applied = 0.0
+
+        # Evidence floor gate
+        if evidence_score < 0.3 and chunk_progress == 0.0 and steps_using_chunk >= 3:
+            max_allowed = max(0.4, evidence_score * 2)
+            if new_score > max_allowed:
+                new_score = max_allowed
+                graduation_capped_reason = "evidence_floor"
+                evidence_floor_applied = True
+
+        # Progress-decay penalty
+        if consecutive_zero_reward > 0:
+            decay = 0.05 * consecutive_zero_reward
+            new_score = max(0.2, new_score - decay)
+            progress_decay_applied = decay
+            if graduation_capped_reason is None:
+                graduation_capped_reason = "progress_decay"
+
+        new_score = max(0.0, min(new_score, 1.0))
+
+        # Update the chunk's graduation if it changed
+        if new_score != original_score:
+            self._active_chunk.graduation_score = new_score
+
+        return {
+            "original_score": original_score,
+            "new_score": new_score,
+            "graduation_capped_reason": graduation_capped_reason,
+            "evidence_floor_applied": evidence_floor_applied,
+            "progress_decay_applied": progress_decay_applied,
+            "evidence_score": evidence_score,
+            "chunk_progress": chunk_progress,
+            "steps_using_chunk": steps_using_chunk,
+            "consecutive_zero_reward": consecutive_zero_reward,
+        }
 
     def _add_chunk_to_ledger_as_active(self, chunk: PlanChunk) -> None:
         """B124: Mark a chunk as active in the ledger."""
