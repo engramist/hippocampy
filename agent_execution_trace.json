@@ -1,0 +1,3555 @@
+[
+  {
+    "timestamp_iso": "2026-04-03T03:53:18.468872Z",
+    "event_type": "phase_start",
+    "operation": "perceive",
+    "details": {
+      "step": 0,
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:18.580383Z",
+    "event_type": "operation",
+    "operation": "notify_turn[structure_ingest]",
+    "details": {
+      "step": 0
+    },
+    "result": {
+      "summary_length": 545
+    },
+    "elapsed_ms": 111.31501197814941
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:18.580447Z",
+    "event_type": "operation",
+    "operation": "bootstrap_entity_discovery",
+    "details": {
+      "step": 0
+    },
+    "result": {
+      "entity_count": 2
+    },
+    "elapsed_ms": 0.033855438232421875
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:18.580468Z",
+    "event_type": "operation",
+    "operation": "entity_gate",
+    "details": {
+      "step": 0
+    },
+    "result": {
+      "status": "pass",
+      "reason": "entity roles identified",
+      "retry_count": 0
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:18.580475Z",
+    "event_type": "operation",
+    "operation": "retrieval_trigger_check",
+    "details": {
+      "step": 0
+    },
+    "result": {
+      "triggered": true
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:18.627886Z",
+    "event_type": "operation",
+    "operation": "current_truth",
+    "details": {
+      "step": 0,
+      "query": "ARC task 4b260b38-8494-4399-b10f-7d0022d401fe has colors 0, 1, 2, 4, 7, 9, 14 and 12 shapes. Spatial signature: 1 1 1 1 / 1 1 1 1 / 1 1 1 1 / 1 1 1 1. State is NOT_FINISHED. Energy: 100%. Available actions: ACTION1, ACTION2, ACTION3, ACTION4, ACTION5."
+    },
+    "result": {
+      "results": 0
+    },
+    "elapsed_ms": 47.08218574523926
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:18.636294Z",
+    "event_type": "operation",
+    "operation": "recall_relevant_lessons",
+    "details": {
+      "step": 0,
+      "query": "ARC task 4b260b38-8494-4399-b10f-7d0022d401fe has colors 0, 1, 2, 4, 7, 9, 14 and 12 shapes. Spatial signature: 1 1 1 1 / 1 1 1 1 / 1 1 1 1 / 1 1 1 1. State is NOT_FINISHED. Energy: 100%. Available actions: ACTION1, ACTION2, ACTION3, ACTION4, ACTION5."
+    },
+    "result": {
+      "results": 0
+    },
+    "elapsed_ms": 8.402347564697266
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:18.646960Z",
+    "event_type": "operation",
+    "operation": "analogical_search",
+    "details": {
+      "step": 0,
+      "query": "ARC task 4b260b38-8494-4399-b10f-7d0022d401fe has colors 0, 1, 2, 4, 7, 9, 14 and 12 shapes. Spatial signature: 1 1 1 1 / 1 1 1 1 / 1 1 1 1 / 1 1 1 1. State is NOT_FINISHED. Energy: 100%. Available actions: ACTION1, ACTION2, ACTION3, ACTION4, ACTION5."
+    },
+    "result": {
+      "results": 0
+    },
+    "elapsed_ms": 10.663032531738281
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:18.646975Z",
+    "event_type": "phase_end",
+    "operation": "perceive",
+    "details": {
+      "step": 0
+    },
+    "result": {
+      "retrieval_triggered": true,
+      "memories": 0,
+      "lessons": 0,
+      "analogies": 0
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:18.646986Z",
+    "event_type": "phase_start",
+    "operation": "plan",
+    "details": {
+      "goal": "Solve ARC task wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:18.666892Z",
+    "event_type": "operation",
+    "operation": "recall_plans",
+    "details": {
+      "goal_query": "Solve ARC task wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe"
+    },
+    "result": {
+      "found": 0
+    },
+    "elapsed_ms": 19.90199089050293
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:18.666896Z",
+    "event_type": "operation",
+    "operation": "draft_plan_steps",
+    "details": {},
+    "result": {
+      "steps_count": 2
+    },
+    "elapsed_ms": 0.0016689300537109375
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:19.393753Z",
+    "event_type": "operation",
+    "operation": "notify_turn[plan_reasoning]",
+    "details": {
+      "content": "[PLAN REASONING] Goal: Solve ARC task wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe. Strategy: Fallback exploration strategy. Steps: 2"
+    },
+    "result": {},
+    "elapsed_ms": 726.8531322479248
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:19.750448Z",
+    "event_type": "operation",
+    "operation": "register_plan",
+    "details": {
+      "goal": "Solve ARC task wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe",
+      "steps": 2
+    },
+    "result": {
+      "plan_id": "d1b77b63-1493-4714-99ce-b19d290b1833"
+    },
+    "elapsed_ms": 356.6911220550537
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:19.750461Z",
+    "event_type": "phase_start",
+    "operation": "hypothesize",
+    "details": {
+      "step": 0,
+      "action_taken": null,
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:19.750651Z",
+    "event_type": "operation",
+    "operation": "hypothesis_mgr.observe",
+    "details": {
+      "step": 0,
+      "action_taken": null
+    },
+    "result": {
+      "loop_detected": false,
+      "facts": 0,
+      "paths": 0
+    },
+    "elapsed_ms": 0.18596649169921875
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:19.750660Z",
+    "event_type": "operation",
+    "operation": "compact_exploration",
+    "details": {
+      "step": 0
+    },
+    "result": {
+      "artifact_type": "ExplorationCompaction"
+    },
+    "elapsed_ms": 0.0050067901611328125
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:19.750662Z",
+    "event_type": "phase_end",
+    "operation": "hypothesize",
+    "details": {
+      "step": 0
+    },
+    "result": {
+      "loop_detected": false,
+      "energy_from_hud": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:19.750667Z",
+    "event_type": "phase_start",
+    "operation": "solve",
+    "details": {
+      "step": 0,
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:19.751475Z",
+    "event_type": "phase_end",
+    "operation": "solve",
+    "details": {
+      "step": 0
+    },
+    "result": {
+      "archetype": "unknown",
+      "archetype_confidence": 0.0,
+      "victory": "unknown",
+      "dissonance": false
+    },
+    "elapsed_ms": 0.7181167602539062
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:19.751480Z",
+    "event_type": "phase_start",
+    "operation": "act",
+    "details": {
+      "step": 1,
+      "state": "NOT_FINISHED",
+      "available_actions": 5
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:19.934165Z",
+    "event_type": "operation",
+    "operation": "notify_turn[step_observation]",
+    "details": {
+      "step": 1
+    },
+    "result": {
+      "summary_length": 40380
+    },
+    "elapsed_ms": 182.01971054077148
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:19.934662Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_start",
+    "details": {
+      "max_iterations": 2
+    },
+    "result": {
+      "available_actions": 5
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:19.934669Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_iteration",
+    "details": {
+      "iteration": 1
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:19.934854Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_parse_error",
+    "details": {
+      "iteration": 1
+    },
+    "result": {
+      "error": "'NoneType' object has no attribute 'chat'"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:19.934859Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_fallback_query_llm",
+    "details": {},
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:19.934861Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox",
+    "details": {
+      "step": 1
+    },
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": 0.20074844360351562
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:19.934877Z",
+    "event_type": "operation",
+    "operation": "critique_action",
+    "details": {
+      "step": 1,
+      "candidate_action": "ACTION1"
+    },
+    "result": {
+      "status": "approved",
+      "suggested_action": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:19.934881Z",
+    "event_type": "operation",
+    "operation": "verifier",
+    "details": {
+      "step": 1
+    },
+    "result": {
+      "enabled": false
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:19.935068Z",
+    "event_type": "phase_end",
+    "operation": "act",
+    "details": {
+      "step": 1
+    },
+    "result": {
+      "action_id": "ACTION1",
+      "guard_status": "approved",
+      "verifier_status": "disabled",
+      "prompt_tokens": 536
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:20.703716Z",
+    "event_type": "phase_start",
+    "operation": "hypothesize",
+    "details": {
+      "step": 1,
+      "action_taken": "ACTION1",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:20.704702Z",
+    "event_type": "operation",
+    "operation": "hypothesis_mgr.observe",
+    "details": {
+      "step": 1,
+      "action_taken": "ACTION1"
+    },
+    "result": {
+      "loop_detected": false,
+      "facts": 1,
+      "paths": 0
+    },
+    "elapsed_ms": 0.9789466857910156
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:20.704713Z",
+    "event_type": "operation",
+    "operation": "hypothesis_update",
+    "details": {
+      "step": 1
+    },
+    "result": {
+      "label": "low_value",
+      "score": 0.34,
+      "facts": 1,
+      "paths": 0
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:20.704722Z",
+    "event_type": "operation",
+    "operation": "compact_exploration",
+    "details": {
+      "step": 1
+    },
+    "result": {
+      "artifact_type": "ExplorationCompaction"
+    },
+    "elapsed_ms": 0.0059604644775390625
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:20.704724Z",
+    "event_type": "phase_end",
+    "operation": "hypothesize",
+    "details": {
+      "step": 1
+    },
+    "result": {
+      "loop_detected": false,
+      "energy_from_hud": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:20.704727Z",
+    "event_type": "phase_start",
+    "operation": "solve",
+    "details": {
+      "step": 1,
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:20.705324Z",
+    "event_type": "phase_end",
+    "operation": "solve",
+    "details": {
+      "step": 1
+    },
+    "result": {
+      "archetype": "unknown",
+      "archetype_confidence": 0.0,
+      "victory": "unknown",
+      "dissonance": false
+    },
+    "elapsed_ms": 0.5319118499755859
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:20.705328Z",
+    "event_type": "phase_start",
+    "operation": "act",
+    "details": {
+      "step": 2,
+      "state": "NOT_FINISHED",
+      "available_actions": 5
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:20.878665Z",
+    "event_type": "operation",
+    "operation": "notify_turn[step_observation]",
+    "details": {
+      "step": 2
+    },
+    "result": {
+      "summary_length": 40380
+    },
+    "elapsed_ms": 172.87659645080566
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:20.879125Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_start",
+    "details": {
+      "max_iterations": 2
+    },
+    "result": {
+      "available_actions": 5
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:20.879129Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_iteration",
+    "details": {
+      "iteration": 1
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:20.879202Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_parse_error",
+    "details": {
+      "iteration": 1
+    },
+    "result": {
+      "error": "'NoneType' object has no attribute 'chat'"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:20.879206Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_fallback_query_llm",
+    "details": {},
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:20.879209Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox",
+    "details": {
+      "step": 2
+    },
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": 0.08511543273925781
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:20.879221Z",
+    "event_type": "operation",
+    "operation": "critique_action",
+    "details": {
+      "step": 2,
+      "candidate_action": "ACTION2"
+    },
+    "result": {
+      "status": "approved",
+      "suggested_action": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:20.879224Z",
+    "event_type": "operation",
+    "operation": "verifier",
+    "details": {
+      "step": 2
+    },
+    "result": {
+      "enabled": false
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:20.879397Z",
+    "event_type": "phase_end",
+    "operation": "act",
+    "details": {
+      "step": 2
+    },
+    "result": {
+      "action_id": "ACTION2",
+      "guard_status": "approved",
+      "verifier_status": "disabled",
+      "prompt_tokens": 994
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:21.701348Z",
+    "event_type": "phase_start",
+    "operation": "hypothesize",
+    "details": {
+      "step": 2,
+      "action_taken": "ACTION2",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:21.702396Z",
+    "event_type": "operation",
+    "operation": "hypothesis_mgr.observe",
+    "details": {
+      "step": 2,
+      "action_taken": "ACTION2"
+    },
+    "result": {
+      "loop_detected": false,
+      "facts": 2,
+      "paths": 1
+    },
+    "elapsed_ms": 1.043081283569336
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:21.702414Z",
+    "event_type": "operation",
+    "operation": "hypothesis_update",
+    "details": {
+      "step": 2
+    },
+    "result": {
+      "label": "low_value",
+      "score": 0.34,
+      "facts": 2,
+      "paths": 1
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:21.702430Z",
+    "event_type": "operation",
+    "operation": "compact_exploration",
+    "details": {
+      "step": 2
+    },
+    "result": {
+      "artifact_type": "ExplorationCompaction"
+    },
+    "elapsed_ms": 0.012874603271484375
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:21.702432Z",
+    "event_type": "phase_end",
+    "operation": "hypothesize",
+    "details": {
+      "step": 2
+    },
+    "result": {
+      "loop_detected": false,
+      "energy_from_hud": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:21.702439Z",
+    "event_type": "phase_start",
+    "operation": "solve",
+    "details": {
+      "step": 2,
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:21.703229Z",
+    "event_type": "phase_end",
+    "operation": "solve",
+    "details": {
+      "step": 2
+    },
+    "result": {
+      "archetype": "unknown",
+      "archetype_confidence": 0.0,
+      "victory": "unknown",
+      "dissonance": false
+    },
+    "elapsed_ms": 0.7219314575195312
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:21.703233Z",
+    "event_type": "phase_start",
+    "operation": "act",
+    "details": {
+      "step": 3,
+      "state": "NOT_FINISHED",
+      "available_actions": 5
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:21.885672Z",
+    "event_type": "operation",
+    "operation": "notify_turn[step_observation]",
+    "details": {
+      "step": 3
+    },
+    "result": {
+      "summary_length": 40417
+    },
+    "elapsed_ms": 182.00206756591797
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:21.886743Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_start",
+    "details": {
+      "max_iterations": 2
+    },
+    "result": {
+      "available_actions": 5
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:21.886757Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_iteration",
+    "details": {
+      "iteration": 1
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:21.886940Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_parse_error",
+    "details": {
+      "iteration": 1
+    },
+    "result": {
+      "error": "'NoneType' object has no attribute 'chat'"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:21.886948Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_fallback_query_llm",
+    "details": {},
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:21.886953Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox",
+    "details": {
+      "step": 3
+    },
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": 0.2129077911376953
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:21.886972Z",
+    "event_type": "operation",
+    "operation": "critique_action",
+    "details": {
+      "step": 3,
+      "candidate_action": "ACTION3"
+    },
+    "result": {
+      "status": "approved",
+      "suggested_action": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:21.886977Z",
+    "event_type": "operation",
+    "operation": "verifier",
+    "details": {
+      "step": 3
+    },
+    "result": {
+      "enabled": false
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:21.887359Z",
+    "event_type": "phase_end",
+    "operation": "act",
+    "details": {
+      "step": 3
+    },
+    "result": {
+      "action_id": "ACTION3",
+      "guard_status": "approved",
+      "verifier_status": "disabled",
+      "prompt_tokens": 1210
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:22.646015Z",
+    "event_type": "phase_start",
+    "operation": "hypothesize",
+    "details": {
+      "step": 3,
+      "action_taken": "ACTION3",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:22.647061Z",
+    "event_type": "operation",
+    "operation": "hypothesis_mgr.observe",
+    "details": {
+      "step": 3,
+      "action_taken": "ACTION3"
+    },
+    "result": {
+      "loop_detected": false,
+      "facts": 3,
+      "paths": 2
+    },
+    "elapsed_ms": 1.039743423461914
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:22.647087Z",
+    "event_type": "operation",
+    "operation": "hypothesis_update",
+    "details": {
+      "step": 3
+    },
+    "result": {
+      "label": "low_value",
+      "score": 0.34,
+      "facts": 3,
+      "paths": 2
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:22.647105Z",
+    "event_type": "operation",
+    "operation": "compact_exploration",
+    "details": {
+      "step": 3
+    },
+    "result": {
+      "artifact_type": "ExplorationCompaction"
+    },
+    "elapsed_ms": 0.015974044799804688
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:22.647107Z",
+    "event_type": "phase_end",
+    "operation": "hypothesize",
+    "details": {
+      "step": 3
+    },
+    "result": {
+      "loop_detected": false,
+      "energy_from_hud": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:22.647112Z",
+    "event_type": "phase_start",
+    "operation": "solve",
+    "details": {
+      "step": 3,
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:22.647910Z",
+    "event_type": "phase_end",
+    "operation": "solve",
+    "details": {
+      "step": 3
+    },
+    "result": {
+      "archetype": "unknown",
+      "archetype_confidence": 0.0,
+      "victory": "unknown",
+      "dissonance": false
+    },
+    "elapsed_ms": 0.7328987121582031
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:22.647914Z",
+    "event_type": "phase_start",
+    "operation": "act",
+    "details": {
+      "step": 4,
+      "state": "NOT_FINISHED",
+      "available_actions": 5
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:22.795993Z",
+    "event_type": "operation",
+    "operation": "current_truth[loop_check]",
+    "details": {
+      "step": 4
+    },
+    "result": {},
+    "elapsed_ms": 148.07581901550293
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:22.946341Z",
+    "event_type": "operation",
+    "operation": "notify_turn[step_observation]",
+    "details": {
+      "step": 4
+    },
+    "result": {
+      "summary_length": 40417
+    },
+    "elapsed_ms": 149.7941017150879
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:22.946781Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_start",
+    "details": {
+      "max_iterations": 2
+    },
+    "result": {
+      "available_actions": 5
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:22.946785Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_iteration",
+    "details": {
+      "iteration": 1
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:22.946855Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_parse_error",
+    "details": {
+      "iteration": 1
+    },
+    "result": {
+      "error": "'NoneType' object has no attribute 'chat'"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:22.946859Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_fallback_query_llm",
+    "details": {},
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:22.946861Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox",
+    "details": {
+      "step": 4
+    },
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": 0.08106231689453125
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:22.946870Z",
+    "event_type": "operation",
+    "operation": "critique_action",
+    "details": {
+      "step": 4,
+      "candidate_action": "ACTION4"
+    },
+    "result": {
+      "status": "approved",
+      "suggested_action": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:22.946872Z",
+    "event_type": "operation",
+    "operation": "verifier",
+    "details": {
+      "step": 4
+    },
+    "result": {
+      "enabled": false
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:22.947047Z",
+    "event_type": "phase_end",
+    "operation": "act",
+    "details": {
+      "step": 4
+    },
+    "result": {
+      "action_id": "ACTION4",
+      "guard_status": "approved",
+      "verifier_status": "disabled",
+      "prompt_tokens": 1366
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:23.695572Z",
+    "event_type": "phase_start",
+    "operation": "hypothesize",
+    "details": {
+      "step": 4,
+      "action_taken": "ACTION4",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:23.696616Z",
+    "event_type": "operation",
+    "operation": "hypothesis_mgr.observe",
+    "details": {
+      "step": 4,
+      "action_taken": "ACTION4"
+    },
+    "result": {
+      "loop_detected": false,
+      "facts": 4,
+      "paths": 2
+    },
+    "elapsed_ms": 1.0390281677246094
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:23.696634Z",
+    "event_type": "operation",
+    "operation": "hypothesis_update",
+    "details": {
+      "step": 4
+    },
+    "result": {
+      "label": "low_value",
+      "score": 0.34,
+      "facts": 4,
+      "paths": 2
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:23.696651Z",
+    "event_type": "operation",
+    "operation": "compact_exploration",
+    "details": {
+      "step": 4
+    },
+    "result": {
+      "artifact_type": "ExplorationCompaction"
+    },
+    "elapsed_ms": 0.014066696166992188
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:23.696653Z",
+    "event_type": "phase_end",
+    "operation": "hypothesize",
+    "details": {
+      "step": 4
+    },
+    "result": {
+      "loop_detected": false,
+      "energy_from_hud": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:23.696660Z",
+    "event_type": "phase_start",
+    "operation": "solve",
+    "details": {
+      "step": 4,
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:23.697480Z",
+    "event_type": "phase_end",
+    "operation": "solve",
+    "details": {
+      "step": 4
+    },
+    "result": {
+      "archetype": "space",
+      "archetype_confidence": 0.45,
+      "victory": "unknown",
+      "dissonance": false
+    },
+    "elapsed_ms": 0.7500648498535156
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:23.697484Z",
+    "event_type": "phase_start",
+    "operation": "act",
+    "details": {
+      "step": 5,
+      "state": "NOT_FINISHED",
+      "available_actions": 5
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:23.812749Z",
+    "event_type": "operation",
+    "operation": "current_truth[loop_check]",
+    "details": {
+      "step": 5
+    },
+    "result": {},
+    "elapsed_ms": 115.26083946228027
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:23.966414Z",
+    "event_type": "operation",
+    "operation": "notify_turn[step_observation]",
+    "details": {
+      "step": 5
+    },
+    "result": {
+      "summary_length": 40417
+    },
+    "elapsed_ms": 153.1379222869873
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:23.966834Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_start",
+    "details": {
+      "max_iterations": 2
+    },
+    "result": {
+      "available_actions": 5
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:23.966838Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_iteration",
+    "details": {
+      "iteration": 1
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:23.966927Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_parse_error",
+    "details": {
+      "iteration": 1
+    },
+    "result": {
+      "error": "'NoneType' object has no attribute 'chat'"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:23.966930Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_fallback_query_llm",
+    "details": {},
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:23.966932Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox",
+    "details": {
+      "step": 5
+    },
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": 0.09799003601074219
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:23.966940Z",
+    "event_type": "operation",
+    "operation": "critique_action",
+    "details": {
+      "step": 5,
+      "candidate_action": "ACTION5"
+    },
+    "result": {
+      "status": "approved",
+      "suggested_action": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:23.966942Z",
+    "event_type": "operation",
+    "operation": "verifier",
+    "details": {
+      "step": 5
+    },
+    "result": {
+      "enabled": false
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:23.967101Z",
+    "event_type": "phase_end",
+    "operation": "act",
+    "details": {
+      "step": 5
+    },
+    "result": {
+      "action_id": "ACTION5",
+      "guard_status": "approved",
+      "verifier_status": "disabled",
+      "prompt_tokens": 1491
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:24.810439Z",
+    "event_type": "phase_start",
+    "operation": "hypothesize",
+    "details": {
+      "step": 5,
+      "action_taken": "ACTION5",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:24.811538Z",
+    "event_type": "operation",
+    "operation": "hypothesis_mgr.observe",
+    "details": {
+      "step": 5,
+      "action_taken": "ACTION5"
+    },
+    "result": {
+      "loop_detected": false,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": 1.0895729064941406
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:24.811560Z",
+    "event_type": "operation",
+    "operation": "hypothesis_update",
+    "details": {
+      "step": 5
+    },
+    "result": {
+      "label": "low_value",
+      "score": 0.31,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:24.811578Z",
+    "event_type": "operation",
+    "operation": "compact_exploration",
+    "details": {
+      "step": 5
+    },
+    "result": {
+      "artifact_type": "ExplorationCompaction"
+    },
+    "elapsed_ms": 0.015020370483398438
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:24.811580Z",
+    "event_type": "phase_end",
+    "operation": "hypothesize",
+    "details": {
+      "step": 5
+    },
+    "result": {
+      "loop_detected": false,
+      "energy_from_hud": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:24.811588Z",
+    "event_type": "phase_start",
+    "operation": "solve",
+    "details": {
+      "step": 5,
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:24.828863Z",
+    "event_type": "phase_end",
+    "operation": "solve",
+    "details": {
+      "step": 5
+    },
+    "result": {
+      "archetype": "space",
+      "archetype_confidence": 0.49,
+      "victory": "unknown",
+      "dissonance": false
+    },
+    "elapsed_ms": 17.15707778930664
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:24.828871Z",
+    "event_type": "phase_start",
+    "operation": "act",
+    "details": {
+      "step": 6,
+      "state": "NOT_FINISHED",
+      "available_actions": 5
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:25.001353Z",
+    "event_type": "operation",
+    "operation": "current_truth[loop_check]",
+    "details": {
+      "step": 6
+    },
+    "result": {},
+    "elapsed_ms": 172.47891426086426
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:25.163362Z",
+    "event_type": "operation",
+    "operation": "notify_turn[step_observation]",
+    "details": {
+      "step": 6
+    },
+    "result": {
+      "summary_length": 40417
+    },
+    "elapsed_ms": 161.46111488342285
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:25.163821Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_start",
+    "details": {
+      "max_iterations": 2
+    },
+    "result": {
+      "available_actions": 5
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:25.163825Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_iteration",
+    "details": {
+      "iteration": 1
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:25.163905Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_parse_error",
+    "details": {
+      "iteration": 1
+    },
+    "result": {
+      "error": "'NoneType' object has no attribute 'chat'"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:25.163909Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_fallback_query_llm",
+    "details": {},
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:25.163911Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox",
+    "details": {
+      "step": 6
+    },
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": 0.09179115295410156
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:25.163927Z",
+    "event_type": "operation",
+    "operation": "critique_action",
+    "details": {
+      "step": 6,
+      "candidate_action": "ACTION1"
+    },
+    "result": {
+      "status": "approved",
+      "suggested_action": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:25.163930Z",
+    "event_type": "operation",
+    "operation": "verifier",
+    "details": {
+      "step": 6
+    },
+    "result": {
+      "enabled": false
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:25.164099Z",
+    "event_type": "phase_end",
+    "operation": "act",
+    "details": {
+      "step": 6
+    },
+    "result": {
+      "action_id": "ACTION1",
+      "guard_status": "approved",
+      "verifier_status": "disabled",
+      "prompt_tokens": 1476
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:25.935786Z",
+    "event_type": "phase_start",
+    "operation": "hypothesize",
+    "details": {
+      "step": 6,
+      "action_taken": "ACTION1",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:25.936861Z",
+    "event_type": "operation",
+    "operation": "hypothesis_mgr.observe",
+    "details": {
+      "step": 6,
+      "action_taken": "ACTION1"
+    },
+    "result": {
+      "loop_detected": false,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": 1.0709762573242188
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:25.936880Z",
+    "event_type": "operation",
+    "operation": "hypothesis_update",
+    "details": {
+      "step": 6
+    },
+    "result": {
+      "label": "low_value",
+      "score": 0.34,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:25.936897Z",
+    "event_type": "operation",
+    "operation": "compact_exploration",
+    "details": {
+      "step": 6
+    },
+    "result": {
+      "artifact_type": "ExplorationCompaction"
+    },
+    "elapsed_ms": 0.0152587890625
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:25.936899Z",
+    "event_type": "phase_end",
+    "operation": "hypothesize",
+    "details": {
+      "step": 6
+    },
+    "result": {
+      "loop_detected": false,
+      "energy_from_hud": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:25.936906Z",
+    "event_type": "phase_start",
+    "operation": "solve",
+    "details": {
+      "step": 6,
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:25.937718Z",
+    "event_type": "phase_end",
+    "operation": "solve",
+    "details": {
+      "step": 6
+    },
+    "result": {
+      "archetype": "space",
+      "archetype_confidence": 0.53,
+      "victory": "unknown",
+      "dissonance": false
+    },
+    "elapsed_ms": 0.7500648498535156
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:25.937722Z",
+    "event_type": "phase_start",
+    "operation": "act",
+    "details": {
+      "step": 7,
+      "state": "NOT_FINISHED",
+      "available_actions": 5
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:26.045086Z",
+    "event_type": "operation",
+    "operation": "current_truth[loop_check]",
+    "details": {
+      "step": 7
+    },
+    "result": {},
+    "elapsed_ms": 107.36203193664551
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:26.204388Z",
+    "event_type": "operation",
+    "operation": "notify_turn[step_observation]",
+    "details": {
+      "step": 7
+    },
+    "result": {
+      "summary_length": 40417
+    },
+    "elapsed_ms": 158.76293182373047
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:26.204849Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_start",
+    "details": {
+      "max_iterations": 2
+    },
+    "result": {
+      "available_actions": 5
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:26.204854Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_iteration",
+    "details": {
+      "iteration": 1
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:26.204939Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_parse_error",
+    "details": {
+      "iteration": 1
+    },
+    "result": {
+      "error": "'NoneType' object has no attribute 'chat'"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:26.204943Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_fallback_query_llm",
+    "details": {},
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:26.204945Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox",
+    "details": {
+      "step": 7
+    },
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": 0.09775161743164062
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:26.204960Z",
+    "event_type": "operation",
+    "operation": "critique_action",
+    "details": {
+      "step": 7,
+      "candidate_action": "ACTION2"
+    },
+    "result": {
+      "status": "approved",
+      "suggested_action": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:26.204962Z",
+    "event_type": "operation",
+    "operation": "verifier",
+    "details": {
+      "step": 7
+    },
+    "result": {
+      "enabled": false
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:26.205136Z",
+    "event_type": "phase_end",
+    "operation": "act",
+    "details": {
+      "step": 7
+    },
+    "result": {
+      "action_id": "ACTION2",
+      "guard_status": "approved",
+      "verifier_status": "disabled",
+      "prompt_tokens": 1489
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:26.996190Z",
+    "event_type": "phase_start",
+    "operation": "hypothesize",
+    "details": {
+      "step": 7,
+      "action_taken": "ACTION2",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:26.997273Z",
+    "event_type": "operation",
+    "operation": "hypothesis_mgr.observe",
+    "details": {
+      "step": 7,
+      "action_taken": "ACTION2"
+    },
+    "result": {
+      "loop_detected": false,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": 1.0790824890136719
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:26.997291Z",
+    "event_type": "operation",
+    "operation": "hypothesis_update",
+    "details": {
+      "step": 7
+    },
+    "result": {
+      "label": "low_value",
+      "score": 0.34,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:26.997309Z",
+    "event_type": "operation",
+    "operation": "compact_exploration",
+    "details": {
+      "step": 7
+    },
+    "result": {
+      "artifact_type": "ExplorationCompaction"
+    },
+    "elapsed_ms": 0.015020370483398438
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:26.997311Z",
+    "event_type": "phase_end",
+    "operation": "hypothesize",
+    "details": {
+      "step": 7
+    },
+    "result": {
+      "loop_detected": false,
+      "energy_from_hud": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:26.997318Z",
+    "event_type": "phase_start",
+    "operation": "solve",
+    "details": {
+      "step": 7,
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:27.083766Z",
+    "event_type": "phase_end",
+    "operation": "solve",
+    "details": {
+      "step": 7
+    },
+    "result": {
+      "archetype": "space",
+      "archetype_confidence": 0.5700000000000001,
+      "victory": "unknown",
+      "dissonance": false
+    },
+    "elapsed_ms": 86.34114265441895
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:27.083775Z",
+    "event_type": "phase_start",
+    "operation": "act",
+    "details": {
+      "step": 8,
+      "state": "NOT_FINISHED",
+      "available_actions": 5
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:27.195725Z",
+    "event_type": "operation",
+    "operation": "current_truth[loop_check]",
+    "details": {
+      "step": 8
+    },
+    "result": {},
+    "elapsed_ms": 111.94705963134766
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:27.348414Z",
+    "event_type": "operation",
+    "operation": "notify_turn[step_observation]",
+    "details": {
+      "step": 8
+    },
+    "result": {
+      "summary_length": 40417
+    },
+    "elapsed_ms": 152.12583541870117
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:27.348876Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_start",
+    "details": {
+      "max_iterations": 2
+    },
+    "result": {
+      "available_actions": 5
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:27.348879Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_iteration",
+    "details": {
+      "iteration": 1
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:27.348965Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_parse_error",
+    "details": {
+      "iteration": 1
+    },
+    "result": {
+      "error": "'NoneType' object has no attribute 'chat'"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:27.348970Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_fallback_query_llm",
+    "details": {},
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:27.348972Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox",
+    "details": {
+      "step": 8
+    },
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": 0.09799003601074219
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:27.348986Z",
+    "event_type": "operation",
+    "operation": "critique_action",
+    "details": {
+      "step": 8,
+      "candidate_action": "ACTION3"
+    },
+    "result": {
+      "status": "approved",
+      "suggested_action": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:27.348988Z",
+    "event_type": "operation",
+    "operation": "verifier",
+    "details": {
+      "step": 8
+    },
+    "result": {
+      "enabled": false
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:27.349155Z",
+    "event_type": "phase_end",
+    "operation": "act",
+    "details": {
+      "step": 8
+    },
+    "result": {
+      "action_id": "ACTION3",
+      "guard_status": "approved",
+      "verifier_status": "disabled",
+      "prompt_tokens": 1495
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:28.097507Z",
+    "event_type": "phase_start",
+    "operation": "hypothesize",
+    "details": {
+      "step": 8,
+      "action_taken": "ACTION3",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:28.098602Z",
+    "event_type": "operation",
+    "operation": "hypothesis_mgr.observe",
+    "details": {
+      "step": 8,
+      "action_taken": "ACTION3"
+    },
+    "result": {
+      "loop_detected": false,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": 1.0900497436523438
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:28.098622Z",
+    "event_type": "operation",
+    "operation": "hypothesis_update",
+    "details": {
+      "step": 8
+    },
+    "result": {
+      "label": "low_value",
+      "score": 0.34,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:28.098639Z",
+    "event_type": "operation",
+    "operation": "compact_exploration",
+    "details": {
+      "step": 8
+    },
+    "result": {
+      "artifact_type": "ExplorationCompaction"
+    },
+    "elapsed_ms": 0.014066696166992188
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:28.098641Z",
+    "event_type": "phase_end",
+    "operation": "hypothesize",
+    "details": {
+      "step": 8
+    },
+    "result": {
+      "loop_detected": false,
+      "energy_from_hud": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:28.098648Z",
+    "event_type": "phase_start",
+    "operation": "solve",
+    "details": {
+      "step": 8,
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:28.099476Z",
+    "event_type": "phase_end",
+    "operation": "solve",
+    "details": {
+      "step": 8
+    },
+    "result": {
+      "archetype": "space",
+      "archetype_confidence": 0.61,
+      "victory": "unknown",
+      "dissonance": false
+    },
+    "elapsed_ms": 0.7650852203369141
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:28.099480Z",
+    "event_type": "phase_start",
+    "operation": "act",
+    "details": {
+      "step": 9,
+      "state": "NOT_FINISHED",
+      "available_actions": 5
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:28.230779Z",
+    "event_type": "operation",
+    "operation": "current_truth[loop_check]",
+    "details": {
+      "step": 9
+    },
+    "result": {},
+    "elapsed_ms": 131.29711151123047
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:28.400993Z",
+    "event_type": "operation",
+    "operation": "notify_turn[step_observation]",
+    "details": {
+      "step": 9
+    },
+    "result": {
+      "summary_length": 40417
+    },
+    "elapsed_ms": 169.72088813781738
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:28.401435Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_start",
+    "details": {
+      "max_iterations": 2
+    },
+    "result": {
+      "available_actions": 5
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:28.401439Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_iteration",
+    "details": {
+      "iteration": 1
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:28.401517Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_parse_error",
+    "details": {
+      "iteration": 1
+    },
+    "result": {
+      "error": "'NoneType' object has no attribute 'chat'"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:28.401520Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_fallback_query_llm",
+    "details": {},
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:28.401522Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox",
+    "details": {
+      "step": 9
+    },
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": 0.08893013000488281
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:28.401535Z",
+    "event_type": "operation",
+    "operation": "critique_action",
+    "details": {
+      "step": 9,
+      "candidate_action": "ACTION4"
+    },
+    "result": {
+      "status": "approved",
+      "suggested_action": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:28.401537Z",
+    "event_type": "operation",
+    "operation": "verifier",
+    "details": {
+      "step": 9
+    },
+    "result": {
+      "enabled": false
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:28.401697Z",
+    "event_type": "phase_end",
+    "operation": "act",
+    "details": {
+      "step": 9
+    },
+    "result": {
+      "action_id": "ACTION4",
+      "guard_status": "approved",
+      "verifier_status": "disabled",
+      "prompt_tokens": 1520
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:29.222823Z",
+    "event_type": "phase_start",
+    "operation": "hypothesize",
+    "details": {
+      "step": 9,
+      "action_taken": "ACTION4",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:29.223987Z",
+    "event_type": "operation",
+    "operation": "hypothesis_mgr.observe",
+    "details": {
+      "step": 9,
+      "action_taken": "ACTION4"
+    },
+    "result": {
+      "loop_detected": false,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": 1.155853271484375
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:29.224010Z",
+    "event_type": "operation",
+    "operation": "hypothesis_update",
+    "details": {
+      "step": 9
+    },
+    "result": {
+      "label": "low_value",
+      "score": 0.34,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:29.224030Z",
+    "event_type": "operation",
+    "operation": "compact_exploration",
+    "details": {
+      "step": 9
+    },
+    "result": {
+      "artifact_type": "ExplorationCompaction"
+    },
+    "elapsed_ms": 0.016689300537109375
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:29.224032Z",
+    "event_type": "phase_end",
+    "operation": "hypothesize",
+    "details": {
+      "step": 9
+    },
+    "result": {
+      "loop_detected": false,
+      "energy_from_hud": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:29.224039Z",
+    "event_type": "phase_start",
+    "operation": "solve",
+    "details": {
+      "step": 9,
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:29.532696Z",
+    "event_type": "phase_end",
+    "operation": "solve",
+    "details": {
+      "step": 9
+    },
+    "result": {
+      "archetype": "space",
+      "archetype_confidence": 0.65,
+      "victory": "unknown",
+      "dissonance": false
+    },
+    "elapsed_ms": 308.6230754852295
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:29.532702Z",
+    "event_type": "phase_start",
+    "operation": "act",
+    "details": {
+      "step": 10,
+      "state": "NOT_FINISHED",
+      "available_actions": 5
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:29.611522Z",
+    "event_type": "operation",
+    "operation": "current_truth[loop_check]",
+    "details": {
+      "step": 10
+    },
+    "result": {},
+    "elapsed_ms": 78.81808280944824
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:29.784978Z",
+    "event_type": "operation",
+    "operation": "notify_turn[step_observation]",
+    "details": {
+      "step": 10
+    },
+    "result": {
+      "summary_length": 40418
+    },
+    "elapsed_ms": 172.85585403442383
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:29.785474Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_start",
+    "details": {
+      "max_iterations": 2
+    },
+    "result": {
+      "available_actions": 5
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:29.785478Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_iteration",
+    "details": {
+      "iteration": 1
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:29.785565Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_parse_error",
+    "details": {
+      "iteration": 1
+    },
+    "result": {
+      "error": "'NoneType' object has no attribute 'chat'"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:29.785569Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_fallback_query_llm",
+    "details": {},
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:29.785571Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox",
+    "details": {
+      "step": 10
+    },
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": 0.09918212890625
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:29.785596Z",
+    "event_type": "operation",
+    "operation": "critique_action",
+    "details": {
+      "step": 10,
+      "candidate_action": "ACTION5"
+    },
+    "result": {
+      "status": "approved",
+      "suggested_action": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:29.785599Z",
+    "event_type": "operation",
+    "operation": "verifier",
+    "details": {
+      "step": 10
+    },
+    "result": {
+      "enabled": false
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:29.785772Z",
+    "event_type": "phase_end",
+    "operation": "act",
+    "details": {
+      "step": 10
+    },
+    "result": {
+      "action_id": "ACTION5",
+      "guard_status": "approved",
+      "verifier_status": "disabled",
+      "prompt_tokens": 1585
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:30.621094Z",
+    "event_type": "phase_start",
+    "operation": "hypothesize",
+    "details": {
+      "step": 10,
+      "action_taken": "ACTION5",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:30.622388Z",
+    "event_type": "operation",
+    "operation": "hypothesis_mgr.observe",
+    "details": {
+      "step": 10,
+      "action_taken": "ACTION5"
+    },
+    "result": {
+      "loop_detected": true,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": 1.2888908386230469
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:30.622408Z",
+    "event_type": "operation",
+    "operation": "hypothesis_update",
+    "details": {
+      "step": 10
+    },
+    "result": {
+      "label": "no_progress",
+      "score": 0.0,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:30.622428Z",
+    "event_type": "operation",
+    "operation": "compact_exploration",
+    "details": {
+      "step": 10
+    },
+    "result": {
+      "artifact_type": "ExplorationCompaction"
+    },
+    "elapsed_ms": 0.016927719116210938
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:30.622430Z",
+    "event_type": "phase_end",
+    "operation": "hypothesize",
+    "details": {
+      "step": 10
+    },
+    "result": {
+      "loop_detected": true,
+      "energy_from_hud": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:30.622438Z",
+    "event_type": "phase_start",
+    "operation": "solve",
+    "details": {
+      "step": 10,
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:30.758168Z",
+    "event_type": "phase_end",
+    "operation": "solve",
+    "details": {
+      "step": 10
+    },
+    "result": {
+      "archetype": "space",
+      "archetype_confidence": 0.65,
+      "victory": "unknown",
+      "dissonance": true
+    },
+    "elapsed_ms": 135.6961727142334
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:30.758174Z",
+    "event_type": "phase_start",
+    "operation": "act",
+    "details": {
+      "step": 11,
+      "state": "NOT_FINISHED",
+      "available_actions": 5
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:30.838122Z",
+    "event_type": "operation",
+    "operation": "current_truth[loop_check]",
+    "details": {
+      "step": 11
+    },
+    "result": {},
+    "elapsed_ms": 79.94484901428223
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:31.004376Z",
+    "event_type": "operation",
+    "operation": "notify_turn[step_observation]",
+    "details": {
+      "step": 11
+    },
+    "result": {
+      "summary_length": 40418
+    },
+    "elapsed_ms": 165.70401191711426
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:31.004819Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_start",
+    "details": {
+      "max_iterations": 2
+    },
+    "result": {
+      "available_actions": 5
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:31.004824Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_iteration",
+    "details": {
+      "iteration": 1
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:31.004899Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_parse_error",
+    "details": {
+      "iteration": 1
+    },
+    "result": {
+      "error": "'NoneType' object has no attribute 'chat'"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:31.004903Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_fallback_query_llm",
+    "details": {},
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:31.004906Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox",
+    "details": {
+      "step": 11
+    },
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": 0.08797645568847656
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:31.004920Z",
+    "event_type": "operation",
+    "operation": "critique_action",
+    "details": {
+      "step": 11,
+      "candidate_action": "ACTION1"
+    },
+    "result": {
+      "status": "approved",
+      "suggested_action": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:31.004923Z",
+    "event_type": "operation",
+    "operation": "verifier",
+    "details": {
+      "step": 11
+    },
+    "result": {
+      "enabled": false
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:31.005101Z",
+    "event_type": "phase_end",
+    "operation": "act",
+    "details": {
+      "step": 11
+    },
+    "result": {
+      "action_id": "ACTION1",
+      "guard_status": "approved",
+      "verifier_status": "disabled",
+      "prompt_tokens": 1424
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:31.755011Z",
+    "event_type": "phase_start",
+    "operation": "hypothesize",
+    "details": {
+      "step": 11,
+      "action_taken": "ACTION1",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:31.756112Z",
+    "event_type": "operation",
+    "operation": "hypothesis_mgr.observe",
+    "details": {
+      "step": 11,
+      "action_taken": "ACTION1"
+    },
+    "result": {
+      "loop_detected": false,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": 1.0962486267089844
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:31.756130Z",
+    "event_type": "operation",
+    "operation": "hypothesis_update",
+    "details": {
+      "step": 11
+    },
+    "result": {
+      "label": "low_value",
+      "score": 0.18,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:31.756146Z",
+    "event_type": "operation",
+    "operation": "compact_exploration",
+    "details": {
+      "step": 11
+    },
+    "result": {
+      "artifact_type": "ExplorationCompaction"
+    },
+    "elapsed_ms": 0.013828277587890625
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:31.756151Z",
+    "event_type": "phase_end",
+    "operation": "hypothesize",
+    "details": {
+      "step": 11
+    },
+    "result": {
+      "loop_detected": false,
+      "energy_from_hud": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:31.756157Z",
+    "event_type": "phase_start",
+    "operation": "solve",
+    "details": {
+      "step": 11,
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:31.864192Z",
+    "event_type": "phase_end",
+    "operation": "solve",
+    "details": {
+      "step": 11
+    },
+    "result": {
+      "archetype": "space",
+      "archetype_confidence": 0.65,
+      "victory": "unknown",
+      "dissonance": true
+    },
+    "elapsed_ms": 107.99813270568848
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:31.864198Z",
+    "event_type": "phase_start",
+    "operation": "act",
+    "details": {
+      "step": 12,
+      "state": "NOT_FINISHED",
+      "available_actions": 5
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:31.936821Z",
+    "event_type": "operation",
+    "operation": "current_truth[loop_check]",
+    "details": {
+      "step": 12
+    },
+    "result": {},
+    "elapsed_ms": 72.61896133422852
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:32.090283Z",
+    "event_type": "operation",
+    "operation": "notify_turn[step_observation]",
+    "details": {
+      "step": 12
+    },
+    "result": {
+      "summary_length": 40418
+    },
+    "elapsed_ms": 152.82702445983887
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:32.090696Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_start",
+    "details": {
+      "max_iterations": 2
+    },
+    "result": {
+      "available_actions": 5
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:32.090700Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_iteration",
+    "details": {
+      "iteration": 1
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:32.090768Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_parse_error",
+    "details": {
+      "iteration": 1
+    },
+    "result": {
+      "error": "'NoneType' object has no attribute 'chat'"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:32.090772Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_fallback_query_llm",
+    "details": {},
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:32.090774Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox",
+    "details": {
+      "step": 12
+    },
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": 0.0782012939453125
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:32.090792Z",
+    "event_type": "operation",
+    "operation": "critique_action",
+    "details": {
+      "step": 12,
+      "candidate_action": "ACTION2"
+    },
+    "result": {
+      "status": "approved",
+      "suggested_action": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:32.090794Z",
+    "event_type": "operation",
+    "operation": "verifier",
+    "details": {
+      "step": 12
+    },
+    "result": {
+      "enabled": false
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:32.090946Z",
+    "event_type": "phase_end",
+    "operation": "act",
+    "details": {
+      "step": 12
+    },
+    "result": {
+      "action_id": "ACTION2",
+      "guard_status": "approved",
+      "verifier_status": "disabled",
+      "prompt_tokens": 1638
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:32.848255Z",
+    "event_type": "phase_start",
+    "operation": "hypothesize",
+    "details": {
+      "step": 12,
+      "action_taken": "ACTION2",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:32.849462Z",
+    "event_type": "operation",
+    "operation": "hypothesis_mgr.observe",
+    "details": {
+      "step": 12,
+      "action_taken": "ACTION2"
+    },
+    "result": {
+      "loop_detected": false,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": 1.2009143829345703
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:32.849483Z",
+    "event_type": "operation",
+    "operation": "hypothesis_update",
+    "details": {
+      "step": 12
+    },
+    "result": {
+      "label": "low_value",
+      "score": 0.18,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:32.849501Z",
+    "event_type": "operation",
+    "operation": "compact_exploration",
+    "details": {
+      "step": 12
+    },
+    "result": {
+      "artifact_type": "ExplorationCompaction"
+    },
+    "elapsed_ms": 0.014781951904296875
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:32.849503Z",
+    "event_type": "phase_end",
+    "operation": "hypothesize",
+    "details": {
+      "step": 12
+    },
+    "result": {
+      "loop_detected": false,
+      "energy_from_hud": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:32.849511Z",
+    "event_type": "phase_start",
+    "operation": "solve",
+    "details": {
+      "step": 12,
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:32.969336Z",
+    "event_type": "phase_end",
+    "operation": "solve",
+    "details": {
+      "step": 12
+    },
+    "result": {
+      "archetype": "space",
+      "archetype_confidence": 0.65,
+      "victory": "unknown",
+      "dissonance": true
+    },
+    "elapsed_ms": 119.79198455810547
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:32.969342Z",
+    "event_type": "phase_start",
+    "operation": "act",
+    "details": {
+      "step": 13,
+      "state": "NOT_FINISHED",
+      "available_actions": 5
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:33.045439Z",
+    "event_type": "operation",
+    "operation": "current_truth[loop_check]",
+    "details": {
+      "step": 13
+    },
+    "result": {},
+    "elapsed_ms": 76.0951042175293
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:33.199598Z",
+    "event_type": "operation",
+    "operation": "notify_turn[step_observation]",
+    "details": {
+      "step": 13
+    },
+    "result": {
+      "summary_length": 40418
+    },
+    "elapsed_ms": 153.63717079162598
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:33.200065Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_start",
+    "details": {
+      "max_iterations": 2
+    },
+    "result": {
+      "available_actions": 5
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:33.200070Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_iteration",
+    "details": {
+      "iteration": 1
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:33.200150Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_parse_error",
+    "details": {
+      "iteration": 1
+    },
+    "result": {
+      "error": "'NoneType' object has no attribute 'chat'"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:33.200154Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_fallback_query_llm",
+    "details": {},
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:33.200157Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox",
+    "details": {
+      "step": 13
+    },
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": 0.09202957153320312
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:33.200177Z",
+    "event_type": "operation",
+    "operation": "critique_action",
+    "details": {
+      "step": 13,
+      "candidate_action": "ACTION3"
+    },
+    "result": {
+      "status": "approved",
+      "suggested_action": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:33.200179Z",
+    "event_type": "operation",
+    "operation": "verifier",
+    "details": {
+      "step": 13
+    },
+    "result": {
+      "enabled": false
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:33.200351Z",
+    "event_type": "phase_end",
+    "operation": "act",
+    "details": {
+      "step": 13
+    },
+    "result": {
+      "action_id": "ACTION3",
+      "guard_status": "approved",
+      "verifier_status": "disabled",
+      "prompt_tokens": 1663
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:33.946701Z",
+    "event_type": "phase_start",
+    "operation": "hypothesize",
+    "details": {
+      "step": 13,
+      "action_taken": "ACTION3",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:33.947872Z",
+    "event_type": "operation",
+    "operation": "hypothesis_mgr.observe",
+    "details": {
+      "step": 13,
+      "action_taken": "ACTION3"
+    },
+    "result": {
+      "loop_detected": false,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": 1.1661052703857422
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:33.947891Z",
+    "event_type": "operation",
+    "operation": "hypothesis_update",
+    "details": {
+      "step": 13
+    },
+    "result": {
+      "label": "low_value",
+      "score": 0.18,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:33.947909Z",
+    "event_type": "operation",
+    "operation": "compact_exploration",
+    "details": {
+      "step": 13
+    },
+    "result": {
+      "artifact_type": "ExplorationCompaction"
+    },
+    "elapsed_ms": 0.0152587890625
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:33.947911Z",
+    "event_type": "phase_end",
+    "operation": "hypothesize",
+    "details": {
+      "step": 13
+    },
+    "result": {
+      "loop_detected": false,
+      "energy_from_hud": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:33.947918Z",
+    "event_type": "phase_start",
+    "operation": "solve",
+    "details": {
+      "step": 13,
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:34.087532Z",
+    "event_type": "phase_end",
+    "operation": "solve",
+    "details": {
+      "step": 13
+    },
+    "result": {
+      "archetype": "space",
+      "archetype_confidence": 0.65,
+      "victory": "unknown",
+      "dissonance": true
+    },
+    "elapsed_ms": 139.57977294921875
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:34.087538Z",
+    "event_type": "phase_start",
+    "operation": "act",
+    "details": {
+      "step": 14,
+      "state": "NOT_FINISHED",
+      "available_actions": 5
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:34.162548Z",
+    "event_type": "operation",
+    "operation": "current_truth[loop_check]",
+    "details": {
+      "step": 14
+    },
+    "result": {},
+    "elapsed_ms": 75.00696182250977
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:34.317018Z",
+    "event_type": "operation",
+    "operation": "notify_turn[step_observation]",
+    "details": {
+      "step": 14
+    },
+    "result": {
+      "summary_length": 40418
+    },
+    "elapsed_ms": 153.89680862426758
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:34.318094Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_start",
+    "details": {
+      "max_iterations": 2
+    },
+    "result": {
+      "available_actions": 5
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:34.318106Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_iteration",
+    "details": {
+      "iteration": 1
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:34.318295Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_parse_error",
+    "details": {
+      "iteration": 1
+    },
+    "result": {
+      "error": "'NoneType' object has no attribute 'chat'"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:34.318303Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_fallback_query_llm",
+    "details": {},
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:34.318307Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox",
+    "details": {
+      "step": 14
+    },
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": 0.21600723266601562
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:34.318347Z",
+    "event_type": "operation",
+    "operation": "critique_action",
+    "details": {
+      "step": 14,
+      "candidate_action": "ACTION4"
+    },
+    "result": {
+      "status": "approved",
+      "suggested_action": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:34.318353Z",
+    "event_type": "operation",
+    "operation": "verifier",
+    "details": {
+      "step": 14
+    },
+    "result": {
+      "enabled": false
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:34.318732Z",
+    "event_type": "phase_end",
+    "operation": "act",
+    "details": {
+      "step": 14
+    },
+    "result": {
+      "action_id": "ACTION4",
+      "guard_status": "approved",
+      "verifier_status": "disabled",
+      "prompt_tokens": 1718
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:35.111125Z",
+    "event_type": "phase_start",
+    "operation": "hypothesize",
+    "details": {
+      "step": 14,
+      "action_taken": "ACTION4",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:35.112418Z",
+    "event_type": "operation",
+    "operation": "hypothesis_mgr.observe",
+    "details": {
+      "step": 14,
+      "action_taken": "ACTION4"
+    },
+    "result": {
+      "loop_detected": false,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": 1.280069351196289
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:35.112442Z",
+    "event_type": "operation",
+    "operation": "hypothesis_update",
+    "details": {
+      "step": 14
+    },
+    "result": {
+      "label": "low_value",
+      "score": 0.18,
+      "facts": 5,
+      "paths": 2
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:35.112466Z",
+    "event_type": "operation",
+    "operation": "compact_exploration",
+    "details": {
+      "step": 14
+    },
+    "result": {
+      "artifact_type": "ExplorationCompaction"
+    },
+    "elapsed_ms": 0.02002716064453125
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:35.112469Z",
+    "event_type": "phase_end",
+    "operation": "hypothesize",
+    "details": {
+      "step": 14
+    },
+    "result": {
+      "loop_detected": false,
+      "energy_from_hud": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:35.112477Z",
+    "event_type": "phase_start",
+    "operation": "solve",
+    "details": {
+      "step": 14,
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe",
+      "state": "NOT_FINISHED"
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:35.242494Z",
+    "event_type": "phase_end",
+    "operation": "solve",
+    "details": {
+      "step": 14
+    },
+    "result": {
+      "archetype": "space",
+      "archetype_confidence": 0.65,
+      "victory": "unknown",
+      "dissonance": true
+    },
+    "elapsed_ms": 129.98390197753906
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:35.242499Z",
+    "event_type": "phase_start",
+    "operation": "act",
+    "details": {
+      "step": 15,
+      "state": "NOT_FINISHED",
+      "available_actions": 5
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:35.317006Z",
+    "event_type": "operation",
+    "operation": "current_truth[loop_check]",
+    "details": {
+      "step": 15
+    },
+    "result": {},
+    "elapsed_ms": 74.50294494628906
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:35.488542Z",
+    "event_type": "operation",
+    "operation": "notify_turn[step_observation]",
+    "details": {
+      "step": 15
+    },
+    "result": {
+      "summary_length": 40418
+    },
+    "elapsed_ms": 171.00191116333008
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:35.489007Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_start",
+    "details": {
+      "max_iterations": 2
+    },
+    "result": {
+      "available_actions": 5
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:35.489011Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_iteration",
+    "details": {
+      "iteration": 1
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:35.489087Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_parse_error",
+    "details": {
+      "iteration": 1
+    },
+    "result": {
+      "error": "'NoneType' object has no attribute 'chat'"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:35.489090Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox_fallback_query_llm",
+    "details": {},
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:35.489092Z",
+    "event_type": "operation",
+    "operation": "mental_sandbox",
+    "details": {
+      "step": 15
+    },
+    "result": {
+      "action_id": "ACTION1"
+    },
+    "elapsed_ms": 0.08606910705566406
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:35.489109Z",
+    "event_type": "operation",
+    "operation": "critique_action",
+    "details": {
+      "step": 15,
+      "candidate_action": "ACTION1"
+    },
+    "result": {
+      "status": "approved",
+      "suggested_action": null
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:35.489111Z",
+    "event_type": "operation",
+    "operation": "verifier",
+    "details": {
+      "step": 15
+    },
+    "result": {
+      "enabled": false
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:35.489287Z",
+    "event_type": "phase_end",
+    "operation": "act",
+    "details": {
+      "step": 15
+    },
+    "result": {
+      "action_id": "ACTION1",
+      "guard_status": "approved",
+      "verifier_status": "disabled",
+      "prompt_tokens": 1740
+    },
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:36.234557Z",
+    "event_type": "phase_start",
+    "operation": "evaluate",
+    "details": {
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe",
+      "steps_taken": 15,
+      "max_steps": 45,
+      "correct": false
+    },
+    "result": null,
+    "elapsed_ms": null
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:36.268702Z",
+    "event_type": "operation",
+    "operation": "report_outcome",
+    "details": {
+      "plan_id": "d1b77b63-1493-4714-99ce-b19d290b1833"
+    },
+    "result": {
+      "outcome": "failed",
+      "valence": -0.7
+    },
+    "elapsed_ms": 34.137725830078125
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:36.435800Z",
+    "event_type": "operation",
+    "operation": "notify_turn[final_narrative]",
+    "details": {
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe"
+    },
+    "result": {
+      "summary_length": 98
+    },
+    "elapsed_ms": 167.0856475830078
+  },
+  {
+    "timestamp_iso": "2026-04-03T03:53:36.435814Z",
+    "event_type": "phase_end",
+    "operation": "evaluate",
+    "details": {
+      "task_id": "4b260b38-8494-4399-b10f-7d0022d401fe"
+    },
+    "result": {
+      "correct": false,
+      "steps_taken": 15,
+      "valence": -0.7
+    },
+    "elapsed_ms": null
+  }
+]

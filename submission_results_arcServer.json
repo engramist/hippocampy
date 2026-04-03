@@ -1,39 +1,76 @@
 [
   {
-    "call_seq": 1,
-    "request": {
+    "name": "branch_quest",
+    "event": "call",
+    "data": {
+      "step": 0,
+      "timestamp_iso": "2026-04-03T03:53:18.214534Z",
+      "elapsed_mmss": "00:00",
+      "phase": "unknown",
+      "call_type": "branch_quest",
+      "mode": "write",
+      "input_summary": "ARC puzzle arc_eval_001",
+      "result_summary": "side_quest_id=12ef8e26-cb5e-4c19-8b27-148595b7",
+      "latency_ms": 75.6
+    },
+    "timestamp_iso": "2026-04-03T03:53:18.214534Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "ARC puzzle arc_eval_001"
+  },
+  {
+    "name": "OPEN",
+    "event": "request",
+    "data": {
       "label": "SCORECARD open request started",
-      "timestamp_iso": "2026-04-02T22:37:26.946399Z",
-      "elapsed_mmss": "00:01",
+      "timestamp_iso": "2026-04-03T03:53:18.214686Z",
+      "elapsed_mmss": "00:00",
       "method": "POST",
       "endpoint": "/api/scorecard/open"
     },
-    "response": {
+    "timestamp_iso": "2026-04-03T03:53:18.214686Z",
+    "event_detail": "ARC API request",
+    "what": "POST /api/scorecard/open"
+  },
+  {
+    "name": "OPEN",
+    "event": "response",
+    "data": {
       "label": "SCORECARD open response #1",
-      "timestamp_iso": "2026-04-02T22:37:27.052285Z",
-      "elapsed_mmss": "00:01",
-      "duration_ms": 105,
+      "timestamp_iso": "2026-04-03T03:53:18.318641Z",
+      "elapsed_mmss": "00:00",
+      "duration_ms": 103,
       "http_status": 200,
       "response_summary": "status 200",
       "payload": {
-        "card_id": "30967c07-0a7b-4899-96e1-bb17ce6c7ec6"
+        "card_id": "14a6c153-d5e7-4500-9623-ffd657e633a0"
       }
-    }
+    },
+    "timestamp_iso": "2026-04-03T03:53:18.318641Z",
+    "event_detail": "ARC API response",
+    "what": "status 200"
   },
   {
-    "call_seq": 2,
-    "request": {
+    "name": "RESET",
+    "event": "request",
+    "data": {
       "label": "RESET request started",
-      "timestamp_iso": "2026-04-02T22:37:27.053023Z",
-      "elapsed_mmss": "00:01",
+      "timestamp_iso": "2026-04-03T03:53:18.319020Z",
+      "elapsed_mmss": "00:00",
       "method": "POST",
       "endpoint": "/api/cmd/RESET"
     },
-    "response": {
+    "timestamp_iso": "2026-04-03T03:53:18.319020Z",
+    "event_detail": "ARC API request",
+    "what": "POST /api/cmd/RESET"
+  },
+  {
+    "name": "RESET",
+    "event": "response",
+    "data": {
       "label": "RESET response #2",
-      "timestamp_iso": "2026-04-02T22:37:27.197676Z",
-      "elapsed_mmss": "00:01",
-      "duration_ms": 144,
+      "timestamp_iso": "2026-04-03T03:53:18.461945Z",
+      "elapsed_mmss": "00:00",
+      "duration_ms": 142,
       "http_status": 200,
       "response_summary": "status 200; state NOT_FINISHED",
       "payload": {
@@ -47,7 +84,7 @@
           2,
           3,
           4,
-          6
+          5
         ],
         "frame_summary": {
           "elided": true,
@@ -56,114 +93,2509 @@
             64
           ],
           "preview_rows": [
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5"
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1"
           ],
           "note": "Full frame omitted for readability"
         },
         "full_reset": false,
-        "game_id": "sc25-f9b21a2f",
-        "guid": "c5f2f884-4608-4b51-9c9f-18b25c03bf41",
+        "game_id": "wa30-ee6fef47",
+        "guid": "4b260b38-8494-4399-b10f-7d0022d401fe",
         "levels_completed": 0,
         "state": "NOT_FINISHED",
-        "win_levels": 6
+        "win_levels": 9
       }
-    }
+    },
+    "timestamp_iso": "2026-04-03T03:53:18.461945Z",
+    "event_detail": "ARC API response",
+    "what": "status 200; state NOT_FINISHED"
   },
   {
-    "call_seq": 3,
-    "request": {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 0,
+      "timestamp_iso": "2026-04-03T03:53:18.580331Z",
+      "elapsed_mmss": "00:00",
+      "phase": "bootstrap",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "[PUZZLE STRUCTURE] Task 4b260b38-8494-4399-b10f-7d0022d401fe from wa30-ee6fef47. Grid: 64x64. State: NOT_FINISHED. Ener\u2026",
+      "result_summary": "queued",
+      "latency_ms": 111.3
+    },
+    "timestamp_iso": "2026-04-03T03:53:18.580331Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "[PUZZLE STRUCTURE] Task 4b260b38-8494-4399-b10f-7d0022d401fe from wa30-ee6fef47. Grid: 64x64. State: NOT_FINISHED. Ener\u2026"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 0,
+      "timestamp_iso": "2026-04-03T03:53:18.627856Z",
+      "elapsed_mmss": "00:00",
+      "phase": "bootstrap",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "ARC task 4b260b38-8494-4399-b10f-7d0022d401fe has colors 0, 1, 2, 4, 7, 9, 14 and 12 shapes. Spatial signature: 1 1 1 1\u2026",
+      "result_summary": "found 0 items",
+      "latency_ms": 47.0
+    },
+    "timestamp_iso": "2026-04-03T03:53:18.627856Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "ARC task 4b260b38-8494-4399-b10f-7d0022d401fe has colors 0, 1, 2, 4, 7, 9, 14 and 12 shapes. Spatial signature: 1 1 1 1\u2026"
+  },
+  {
+    "name": "recall_lessons",
+    "event": "call",
+    "data": {
+      "step": 0,
+      "timestamp_iso": "2026-04-03T03:53:18.636270Z",
+      "elapsed_mmss": "00:00",
+      "phase": "bootstrap",
+      "call_type": "recall_lessons",
+      "mode": "read",
+      "input_summary": "ARC task 4b260b38-8494-4399-b10f-7d0022d401fe has colors 0, 1, 2, 4, 7, 9, 14 and 12 shapes. Spatial signature: 1 1 1 1\u2026",
+      "result_summary": "found 0 lessons",
+      "latency_ms": 8.4
+    },
+    "timestamp_iso": "2026-04-03T03:53:18.636270Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "ARC task 4b260b38-8494-4399-b10f-7d0022d401fe has colors 0, 1, 2, 4, 7, 9, 14 and 12 shapes. Spatial signature: 1 1 1 1\u2026"
+  },
+  {
+    "name": "analogical_search",
+    "event": "call",
+    "data": {
+      "step": 0,
+      "timestamp_iso": "2026-04-03T03:53:18.646944Z",
+      "elapsed_mmss": "00:00",
+      "phase": "bootstrap",
+      "call_type": "analogical_search",
+      "mode": "read",
+      "input_summary": "ARC task 4b260b38-8494-4399-b10f-7d0022d401fe has colors 0, 1, 2, 4, 7, 9, 14 and 12 shapes. Spatial signature: 1 1 1 1\u2026",
+      "result_summary": "found 0 results",
+      "latency_ms": 10.6
+    },
+    "timestamp_iso": "2026-04-03T03:53:18.646944Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "ARC task 4b260b38-8494-4399-b10f-7d0022d401fe has colors 0, 1, 2, 4, 7, 9, 14 and 12 shapes. Spatial signature: 1 1 1 1\u2026"
+  },
+  {
+    "name": "recall_plans",
+    "event": "call",
+    "data": {
+      "step": 0,
+      "timestamp_iso": "2026-04-03T03:53:18.666878Z",
+      "elapsed_mmss": "00:00",
+      "phase": "bootstrap",
+      "call_type": "recall_plans",
+      "mode": "read",
+      "input_summary": "Solve ARC task wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe",
+      "result_summary": "found 0 plans",
+      "latency_ms": 19.9
+    },
+    "timestamp_iso": "2026-04-03T03:53:18.666878Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Solve ARC task wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 0,
+      "timestamp_iso": "2026-04-03T03:53:19.393729Z",
+      "elapsed_mmss": "00:01",
+      "phase": "bootstrap",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "[PLAN REASONING] Goal: Solve ARC task wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe. Strategy: Fallback exploratio\u2026",
+      "result_summary": "queued",
+      "latency_ms": 726.8
+    },
+    "timestamp_iso": "2026-04-03T03:53:19.393729Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "[PLAN REASONING] Goal: Solve ARC task wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe. Strategy: Fallback exploratio\u2026"
+  },
+  {
+    "name": "register_plan",
+    "event": "call",
+    "data": {
+      "step": 0,
+      "timestamp_iso": "2026-04-03T03:53:19.750430Z",
+      "elapsed_mmss": "00:01",
+      "phase": "bootstrap",
+      "call_type": "register_plan",
+      "mode": "write",
+      "input_summary": "goal=Solve ARC task wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe, steps=2",
+      "result_summary": "plan_id=d1b77b63-1493-4714-99ce-b19d290b1833",
+      "latency_ms": 356.7
+    },
+    "timestamp_iso": "2026-04-03T03:53:19.750430Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "goal=Solve ARC task wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe, steps=2"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 1,
+      "timestamp_iso": "2026-04-03T03:53:19.933810Z",
+      "elapsed_mmss": "00:01",
+      "phase": "act",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "Step 1 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'cou\u2026",
+      "result_summary": "queued",
+      "latency_ms": 181.7
+    },
+    "timestamp_iso": "2026-04-03T03:53:19.933810Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Step 1 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'cou\u2026"
+  },
+  {
+    "name": "ACTION1",
+    "event": "request",
+    "data": {
       "label": "ACTION1 request started",
-      "timestamp_iso": "2026-04-02T22:37:32.622039Z",
+      "timestamp_iso": "2026-04-03T03:53:19.936161Z",
+      "elapsed_mmss": "00:01",
+      "method": "POST",
+      "endpoint": "/api/cmd/ACTION1"
+    },
+    "timestamp_iso": "2026-04-03T03:53:19.936161Z",
+    "event_detail": "ARC API request",
+    "what": "POST /api/cmd/ACTION1"
+  },
+  {
+    "name": "ACTION1",
+    "event": "response",
+    "data": {
+      "label": "ACTION1 response #3",
+      "timestamp_iso": "2026-04-03T03:53:20.426096Z",
+      "elapsed_mmss": "00:02",
+      "duration_ms": 489,
+      "http_status": 200,
+      "response_summary": "status 200; state NOT_FINISHED",
+      "payload": {
+        "action_input": {
+          "data": {
+            "game_id": "wa30-ee6fef47"
+          },
+          "id": 1,
+          "reasoning": "system fallback"
+        },
+        "available_actions": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "frame_summary": {
+          "elided": true,
+          "dimensions": [
+            64,
+            64
+          ],
+          "preview_rows": [
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1"
+          ],
+          "note": "Full frame omitted for readability"
+        },
+        "full_reset": false,
+        "game_id": "wa30-ee6fef47",
+        "guid": "4b260b38-8494-4399-b10f-7d0022d401fe",
+        "levels_completed": 0,
+        "state": "NOT_FINISHED",
+        "win_levels": 9
+      }
+    },
+    "timestamp_iso": "2026-04-03T03:53:20.426096Z",
+    "event_detail": "ARC API response",
+    "what": "status 200; state NOT_FINISHED"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 1,
+      "timestamp_iso": "2026-04-03T03:53:20.525449Z",
+      "elapsed_mmss": "00:02",
+      "phase": "ingest",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "What did I learn from similar puzzles?",
+      "result_summary": "found 5 items",
+      "latency_ms": 99.3
+    },
+    "timestamp_iso": "2026-04-03T03:53:20.525449Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "What did I learn from similar puzzles?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 1,
+      "timestamp_iso": "2026-04-03T03:53:20.695794Z",
+      "elapsed_mmss": "00:02",
+      "phase": "ingest",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 1: ACTION1 at the grid sets None \u00b7 system fallbac\u2026",
+      "result_summary": "queued",
+      "latency_ms": 167.6
+    },
+    "timestamp_iso": "2026-04-03T03:53:20.695794Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 1: ACTION1 at the grid sets None \u00b7 system fallbac\u2026"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 2,
+      "timestamp_iso": "2026-04-03T03:53:20.878443Z",
+      "elapsed_mmss": "00:02",
+      "phase": "act",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "Step 2 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'cou\u2026",
+      "result_summary": "queued",
+      "latency_ms": 172.7
+    },
+    "timestamp_iso": "2026-04-03T03:53:20.878443Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Step 2 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'cou\u2026"
+  },
+  {
+    "name": "ACTION2",
+    "event": "request",
+    "data": {
+      "label": "ACTION2 request started",
+      "timestamp_iso": "2026-04-03T03:53:20.880312Z",
+      "elapsed_mmss": "00:02",
+      "method": "POST",
+      "endpoint": "/api/cmd/ACTION2"
+    },
+    "timestamp_iso": "2026-04-03T03:53:20.880312Z",
+    "event_detail": "ARC API request",
+    "what": "POST /api/cmd/ACTION2"
+  },
+  {
+    "name": "ACTION2",
+    "event": "response",
+    "data": {
+      "label": "ACTION2 response #4",
+      "timestamp_iso": "2026-04-03T03:53:21.442549Z",
+      "elapsed_mmss": "00:03",
+      "duration_ms": 562,
+      "http_status": 200,
+      "response_summary": "status 200; state NOT_FINISHED",
+      "payload": {
+        "action_input": {
+          "data": {
+            "game_id": "wa30-ee6fef47"
+          },
+          "id": 2,
+          "reasoning": "policy override: exploration phase requires testing ACTION2 before exploiting ACTION1. Original rationale: system fallback"
+        },
+        "available_actions": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "frame_summary": {
+          "elided": true,
+          "dimensions": [
+            64,
+            64
+          ],
+          "preview_rows": [
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1"
+          ],
+          "note": "Full frame omitted for readability"
+        },
+        "full_reset": false,
+        "game_id": "wa30-ee6fef47",
+        "guid": "4b260b38-8494-4399-b10f-7d0022d401fe",
+        "levels_completed": 0,
+        "state": "NOT_FINISHED",
+        "win_levels": 9
+      }
+    },
+    "timestamp_iso": "2026-04-03T03:53:21.442549Z",
+    "event_detail": "ARC API response",
+    "what": "status 200; state NOT_FINISHED"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 2,
+      "timestamp_iso": "2026-04-03T03:53:21.535334Z",
+      "elapsed_mmss": "00:03",
+      "phase": "ingest",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "What did I learn from similar puzzles?",
+      "result_summary": "found 5 items",
+      "latency_ms": 92.8
+    },
+    "timestamp_iso": "2026-04-03T03:53:21.535334Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "What did I learn from similar puzzles?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 2,
+      "timestamp_iso": "2026-04-03T03:53:21.694627Z",
+      "elapsed_mmss": "00:03",
+      "phase": "ingest",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 2: ACTION2 at the grid sets None \u00b7 policy overrid\u2026",
+      "result_summary": "queued",
+      "latency_ms": 156.7
+    },
+    "timestamp_iso": "2026-04-03T03:53:21.694627Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 2: ACTION2 at the grid sets None \u00b7 policy overrid\u2026"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 3,
+      "timestamp_iso": "2026-04-03T03:53:21.885128Z",
+      "elapsed_mmss": "00:03",
+      "phase": "act",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "Step 3 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'cou\u2026",
+      "result_summary": "queued",
+      "latency_ms": 181.5
+    },
+    "timestamp_iso": "2026-04-03T03:53:21.885128Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Step 3 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'cou\u2026"
+  },
+  {
+    "name": "ACTION3",
+    "event": "request",
+    "data": {
+      "label": "ACTION3 request started",
+      "timestamp_iso": "2026-04-03T03:53:21.889233Z",
+      "elapsed_mmss": "00:03",
+      "method": "POST",
+      "endpoint": "/api/cmd/ACTION3"
+    },
+    "timestamp_iso": "2026-04-03T03:53:21.889233Z",
+    "event_detail": "ARC API request",
+    "what": "POST /api/cmd/ACTION3"
+  },
+  {
+    "name": "ACTION3",
+    "event": "response",
+    "data": {
+      "label": "ACTION3 response #5",
+      "timestamp_iso": "2026-04-03T03:53:22.389523Z",
+      "elapsed_mmss": "00:04",
+      "duration_ms": 500,
+      "http_status": 200,
+      "response_summary": "status 200; state NOT_FINISHED",
+      "payload": {
+        "action_input": {
+          "data": {
+            "game_id": "wa30-ee6fef47"
+          },
+          "id": 3,
+          "reasoning": "policy override: exploration phase requires testing ACTION3 before exploiting ACTION1. Original rationale: system fallback"
+        },
+        "available_actions": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "frame_summary": {
+          "elided": true,
+          "dimensions": [
+            64,
+            64
+          ],
+          "preview_rows": [
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1"
+          ],
+          "note": "Full frame omitted for readability"
+        },
+        "full_reset": false,
+        "game_id": "wa30-ee6fef47",
+        "guid": "4b260b38-8494-4399-b10f-7d0022d401fe",
+        "levels_completed": 0,
+        "state": "NOT_FINISHED",
+        "win_levels": 9
+      }
+    },
+    "timestamp_iso": "2026-04-03T03:53:22.389523Z",
+    "event_detail": "ARC API response",
+    "what": "status 200; state NOT_FINISHED"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 3,
+      "timestamp_iso": "2026-04-03T03:53:22.485472Z",
+      "elapsed_mmss": "00:04",
+      "phase": "ingest",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "What did I learn from similar puzzles?",
+      "result_summary": "found 5 items",
+      "latency_ms": 95.9
+    },
+    "timestamp_iso": "2026-04-03T03:53:22.485472Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "What did I learn from similar puzzles?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 3,
+      "timestamp_iso": "2026-04-03T03:53:22.637615Z",
+      "elapsed_mmss": "00:04",
+      "phase": "ingest",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 3: ACTION3 at the grid sets None \u00b7 policy overrid\u2026",
+      "result_summary": "queued",
+      "latency_ms": 149.4
+    },
+    "timestamp_iso": "2026-04-03T03:53:22.637615Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 3: ACTION3 at the grid sets None \u00b7 policy overrid\u2026"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 4,
+      "timestamp_iso": "2026-04-03T03:53:22.795968Z",
+      "elapsed_mmss": "00:04",
+      "phase": "act",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "Am I looping?",
+      "result_summary": "found 3 items",
+      "latency_ms": 148.0
+    },
+    "timestamp_iso": "2026-04-03T03:53:22.795968Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Am I looping?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 4,
+      "timestamp_iso": "2026-04-03T03:53:22.946113Z",
+      "elapsed_mmss": "00:04",
+      "phase": "act",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "Step 4 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'cou\u2026",
+      "result_summary": "queued",
+      "latency_ms": 149.6
+    },
+    "timestamp_iso": "2026-04-03T03:53:22.946113Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Step 4 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'cou\u2026"
+  },
+  {
+    "name": "ACTION4",
+    "event": "request",
+    "data": {
+      "label": "ACTION4 request started",
+      "timestamp_iso": "2026-04-03T03:53:22.947908Z",
+      "elapsed_mmss": "00:04",
+      "method": "POST",
+      "endpoint": "/api/cmd/ACTION4"
+    },
+    "timestamp_iso": "2026-04-03T03:53:22.947908Z",
+    "event_detail": "ARC API request",
+    "what": "POST /api/cmd/ACTION4"
+  },
+  {
+    "name": "ACTION4",
+    "event": "response",
+    "data": {
+      "label": "ACTION4 response #6",
+      "timestamp_iso": "2026-04-03T03:53:23.448581Z",
+      "elapsed_mmss": "00:05",
+      "duration_ms": 500,
+      "http_status": 200,
+      "response_summary": "status 200; state NOT_FINISHED",
+      "payload": {
+        "action_input": {
+          "data": {
+            "game_id": "wa30-ee6fef47"
+          },
+          "id": 4,
+          "reasoning": "policy override: exploration phase requires testing ACTION4 before exploiting ACTION1. Original rationale: system fallback"
+        },
+        "available_actions": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "frame_summary": {
+          "elided": true,
+          "dimensions": [
+            64,
+            64
+          ],
+          "preview_rows": [
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1"
+          ],
+          "note": "Full frame omitted for readability"
+        },
+        "full_reset": false,
+        "game_id": "wa30-ee6fef47",
+        "guid": "4b260b38-8494-4399-b10f-7d0022d401fe",
+        "levels_completed": 0,
+        "state": "NOT_FINISHED",
+        "win_levels": 9
+      }
+    },
+    "timestamp_iso": "2026-04-03T03:53:23.448581Z",
+    "event_detail": "ARC API response",
+    "what": "status 200; state NOT_FINISHED"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 4,
+      "timestamp_iso": "2026-04-03T03:53:23.539027Z",
+      "elapsed_mmss": "00:05",
+      "phase": "ingest",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "What did I learn from similar puzzles?",
+      "result_summary": "found 5 items",
+      "latency_ms": 90.4
+    },
+    "timestamp_iso": "2026-04-03T03:53:23.539027Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "What did I learn from similar puzzles?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 4,
+      "timestamp_iso": "2026-04-03T03:53:23.689096Z",
+      "elapsed_mmss": "00:05",
+      "phase": "ingest",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 4: ACTION4 at the grid sets None \u00b7 policy overrid\u2026",
+      "result_summary": "queued",
+      "latency_ms": 147.2
+    },
+    "timestamp_iso": "2026-04-03T03:53:23.689096Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 4: ACTION4 at the grid sets None \u00b7 policy overrid\u2026"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 5,
+      "timestamp_iso": "2026-04-03T03:53:23.812724Z",
+      "elapsed_mmss": "00:05",
+      "phase": "act",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "Am I looping?",
+      "result_summary": "found 3 items",
+      "latency_ms": 115.2
+    },
+    "timestamp_iso": "2026-04-03T03:53:23.812724Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Am I looping?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 5,
+      "timestamp_iso": "2026-04-03T03:53:23.966191Z",
+      "elapsed_mmss": "00:05",
+      "phase": "act",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "Step 5 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'cou\u2026",
+      "result_summary": "queued",
+      "latency_ms": 152.9
+    },
+    "timestamp_iso": "2026-04-03T03:53:23.966191Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Step 5 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'cou\u2026"
+  },
+  {
+    "name": "ACTION5",
+    "event": "request",
+    "data": {
+      "label": "ACTION5 request started",
+      "timestamp_iso": "2026-04-03T03:53:23.967986Z",
+      "elapsed_mmss": "00:05",
+      "method": "POST",
+      "endpoint": "/api/cmd/ACTION5"
+    },
+    "timestamp_iso": "2026-04-03T03:53:23.967986Z",
+    "event_detail": "ARC API request",
+    "what": "POST /api/cmd/ACTION5"
+  },
+  {
+    "name": "ACTION5",
+    "event": "response",
+    "data": {
+      "label": "ACTION5 response #7",
+      "timestamp_iso": "2026-04-03T03:53:24.557850Z",
+      "elapsed_mmss": "00:06",
+      "duration_ms": 589,
+      "http_status": 200,
+      "response_summary": "status 200; state NOT_FINISHED",
+      "payload": {
+        "action_input": {
+          "data": {
+            "game_id": "wa30-ee6fef47"
+          },
+          "id": 5,
+          "reasoning": "policy override: exploration phase requires testing ACTION5 before exploiting ACTION1. Original rationale: system fallback"
+        },
+        "available_actions": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "frame_summary": {
+          "elided": true,
+          "dimensions": [
+            64,
+            64
+          ],
+          "preview_rows": [
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1"
+          ],
+          "note": "Full frame omitted for readability"
+        },
+        "full_reset": false,
+        "game_id": "wa30-ee6fef47",
+        "guid": "4b260b38-8494-4399-b10f-7d0022d401fe",
+        "levels_completed": 0,
+        "state": "NOT_FINISHED",
+        "win_levels": 9
+      }
+    },
+    "timestamp_iso": "2026-04-03T03:53:24.557850Z",
+    "event_detail": "ARC API response",
+    "what": "status 200; state NOT_FINISHED"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 5,
+      "timestamp_iso": "2026-04-03T03:53:24.652648Z",
+      "elapsed_mmss": "00:06",
+      "phase": "ingest",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "What did I learn from similar puzzles?",
+      "result_summary": "found 5 items",
+      "latency_ms": 94.8
+    },
+    "timestamp_iso": "2026-04-03T03:53:24.652648Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "What did I learn from similar puzzles?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 5,
+      "timestamp_iso": "2026-04-03T03:53:24.802675Z",
+      "elapsed_mmss": "00:06",
+      "phase": "ingest",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 5: ACTION5 at the grid sets None \u00b7 policy overrid\u2026",
+      "result_summary": "queued",
+      "latency_ms": 147.4
+    },
+    "timestamp_iso": "2026-04-03T03:53:24.802675Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 5: ACTION5 at the grid sets None \u00b7 policy overrid\u2026"
+  },
+  {
+    "name": "analogical_search",
+    "event": "call",
+    "data": {
+      "step": 6,
+      "timestamp_iso": "2026-04-03T03:53:24.827802Z",
+      "elapsed_mmss": "00:06",
+      "phase": "solve",
+      "call_type": "analogical_search",
+      "mode": "read",
+      "input_summary": "ARC game space grid puzzle solve",
+      "result_summary": "found 0 results",
+      "latency_ms": 16.2
+    },
+    "timestamp_iso": "2026-04-03T03:53:24.827802Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "ARC game space grid puzzle solve"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 6,
+      "timestamp_iso": "2026-04-03T03:53:25.001323Z",
+      "elapsed_mmss": "00:06",
+      "phase": "act",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "Am I looping?",
+      "result_summary": "found 3 items",
+      "latency_ms": 172.4
+    },
+    "timestamp_iso": "2026-04-03T03:53:25.001323Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Am I looping?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 6,
+      "timestamp_iso": "2026-04-03T03:53:25.163125Z",
+      "elapsed_mmss": "00:07",
+      "phase": "act",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "Step 6 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'cou\u2026",
+      "result_summary": "queued",
+      "latency_ms": 161.2
+    },
+    "timestamp_iso": "2026-04-03T03:53:25.163125Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Step 6 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'cou\u2026"
+  },
+  {
+    "name": "ACTION1",
+    "event": "request",
+    "data": {
+      "label": "ACTION1 request started",
+      "timestamp_iso": "2026-04-03T03:53:25.164949Z",
       "elapsed_mmss": "00:07",
       "method": "POST",
       "endpoint": "/api/cmd/ACTION1"
     },
-    "response": {
-      "label": "ACTION1 response #3",
-      "timestamp_iso": "2026-04-02T22:37:32.919632Z",
+    "timestamp_iso": "2026-04-03T03:53:25.164949Z",
+    "event_detail": "ARC API request",
+    "what": "POST /api/cmd/ACTION1"
+  },
+  {
+    "name": "ACTION1",
+    "event": "response",
+    "data": {
+      "label": "ACTION1 response #8",
+      "timestamp_iso": "2026-04-03T03:53:25.681988Z",
       "elapsed_mmss": "00:07",
-      "duration_ms": 297,
+      "duration_ms": 517,
       "http_status": 200,
       "response_summary": "status 200; state NOT_FINISHED",
       "payload": {
         "action_input": {
           "data": {
-            "game_id": "sc25-f9b21a2f"
+            "game_id": "wa30-ee6fef47"
           },
           "id": 1,
-          "reasoning": "UNTESTED"
+          "reasoning": "system fallback"
         },
         "available_actions": [
           1,
           2,
           3,
           4,
-          6
+          5
         ],
         "frame_summary": {
           "elided": true,
           "dimensions": [
-            22,
+            64,
             64
           ],
           "preview_rows": [
-            "[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14]",
-            "[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14]",
-            "[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14]",
-            "[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14]",
-            "[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14]",
-            "[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14]",
-            "[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14]",
-            "[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14]"
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1"
           ],
           "note": "Full frame omitted for readability"
         },
         "full_reset": false,
-        "game_id": "sc25-f9b21a2f",
-        "guid": "c5f2f884-4608-4b51-9c9f-18b25c03bf41",
+        "game_id": "wa30-ee6fef47",
+        "guid": "4b260b38-8494-4399-b10f-7d0022d401fe",
         "levels_completed": 0,
         "state": "NOT_FINISHED",
-        "win_levels": 6
+        "win_levels": 9
       }
-    }
+    },
+    "timestamp_iso": "2026-04-03T03:53:25.681988Z",
+    "event_detail": "ARC API response",
+    "what": "status 200; state NOT_FINISHED"
   },
   {
-    "call_seq": 4,
-    "request": {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 6,
+      "timestamp_iso": "2026-04-03T03:53:25.779811Z",
+      "elapsed_mmss": "00:07",
+      "phase": "ingest",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "What did I learn from similar puzzles?",
+      "result_summary": "found 5 items",
+      "latency_ms": 97.8
+    },
+    "timestamp_iso": "2026-04-03T03:53:25.779811Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "What did I learn from similar puzzles?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 6,
+      "timestamp_iso": "2026-04-03T03:53:25.929188Z",
+      "elapsed_mmss": "00:07",
+      "phase": "ingest",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 6: ACTION1 at the grid sets None \u00b7 system fallbac\u2026",
+      "result_summary": "queued",
+      "latency_ms": 146.6
+    },
+    "timestamp_iso": "2026-04-03T03:53:25.929188Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 6: ACTION1 at the grid sets None \u00b7 system fallbac\u2026"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 7,
+      "timestamp_iso": "2026-04-03T03:53:26.045062Z",
+      "elapsed_mmss": "00:07",
+      "phase": "act",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "Am I looping?",
+      "result_summary": "found 3 items",
+      "latency_ms": 107.3
+    },
+    "timestamp_iso": "2026-04-03T03:53:26.045062Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Am I looping?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 7,
+      "timestamp_iso": "2026-04-03T03:53:26.204164Z",
+      "elapsed_mmss": "00:08",
+      "phase": "act",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "Step 7 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'cou\u2026",
+      "result_summary": "queued",
+      "latency_ms": 158.5
+    },
+    "timestamp_iso": "2026-04-03T03:53:26.204164Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Step 7 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'cou\u2026"
+  },
+  {
+    "name": "ACTION2",
+    "event": "request",
+    "data": {
       "label": "ACTION2 request started",
-      "timestamp_iso": "2026-04-02T22:37:42.912760Z",
+      "timestamp_iso": "2026-04-03T03:53:26.206067Z",
+      "elapsed_mmss": "00:08",
+      "method": "POST",
+      "endpoint": "/api/cmd/ACTION2"
+    },
+    "timestamp_iso": "2026-04-03T03:53:26.206067Z",
+    "event_detail": "ARC API request",
+    "what": "POST /api/cmd/ACTION2"
+  },
+  {
+    "name": "ACTION2",
+    "event": "response",
+    "data": {
+      "label": "ACTION2 response #9",
+      "timestamp_iso": "2026-04-03T03:53:26.723429Z",
+      "elapsed_mmss": "00:08",
+      "duration_ms": 517,
+      "http_status": 200,
+      "response_summary": "status 200; state NOT_FINISHED",
+      "payload": {
+        "action_input": {
+          "data": {
+            "game_id": "wa30-ee6fef47"
+          },
+          "id": 2,
+          "reasoning": "policy override: post-exploration ranking prefers ACTION2 over ACTION1. Original rationale: system fallback"
+        },
+        "available_actions": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "frame_summary": {
+          "elided": true,
+          "dimensions": [
+            64,
+            64
+          ],
+          "preview_rows": [
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1"
+          ],
+          "note": "Full frame omitted for readability"
+        },
+        "full_reset": false,
+        "game_id": "wa30-ee6fef47",
+        "guid": "4b260b38-8494-4399-b10f-7d0022d401fe",
+        "levels_completed": 0,
+        "state": "NOT_FINISHED",
+        "win_levels": 9
+      }
+    },
+    "timestamp_iso": "2026-04-03T03:53:26.723429Z",
+    "event_detail": "ARC API response",
+    "what": "status 200; state NOT_FINISHED"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 7,
+      "timestamp_iso": "2026-04-03T03:53:26.819287Z",
+      "elapsed_mmss": "00:08",
+      "phase": "ingest",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "What did I learn from similar puzzles?",
+      "result_summary": "found 5 items",
+      "latency_ms": 95.8
+    },
+    "timestamp_iso": "2026-04-03T03:53:26.819287Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "What did I learn from similar puzzles?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 7,
+      "timestamp_iso": "2026-04-03T03:53:26.989362Z",
+      "elapsed_mmss": "00:08",
+      "phase": "ingest",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 7: ACTION2 at the grid sets None \u00b7 policy overrid\u2026",
+      "result_summary": "queued",
+      "latency_ms": 166.8
+    },
+    "timestamp_iso": "2026-04-03T03:53:26.989362Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 7: ACTION2 at the grid sets None \u00b7 policy overrid\u2026"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 8,
+      "timestamp_iso": "2026-04-03T03:53:27.195701Z",
+      "elapsed_mmss": "00:09",
+      "phase": "act",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "Am I looping?",
+      "result_summary": "found 3 items",
+      "latency_ms": 111.9
+    },
+    "timestamp_iso": "2026-04-03T03:53:27.195701Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Am I looping?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 8,
+      "timestamp_iso": "2026-04-03T03:53:27.348173Z",
+      "elapsed_mmss": "00:09",
+      "phase": "act",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "Step 8 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'cou\u2026",
+      "result_summary": "queued",
+      "latency_ms": 151.9
+    },
+    "timestamp_iso": "2026-04-03T03:53:27.348173Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Step 8 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'cou\u2026"
+  },
+  {
+    "name": "ACTION3",
+    "event": "request",
+    "data": {
+      "label": "ACTION3 request started",
+      "timestamp_iso": "2026-04-03T03:53:27.350016Z",
+      "elapsed_mmss": "00:09",
+      "method": "POST",
+      "endpoint": "/api/cmd/ACTION3"
+    },
+    "timestamp_iso": "2026-04-03T03:53:27.350016Z",
+    "event_detail": "ARC API request",
+    "what": "POST /api/cmd/ACTION3"
+  },
+  {
+    "name": "ACTION3",
+    "event": "response",
+    "data": {
+      "label": "ACTION3 response #10",
+      "timestamp_iso": "2026-04-03T03:53:27.850386Z",
+      "elapsed_mmss": "00:09",
+      "duration_ms": 500,
+      "http_status": 200,
+      "response_summary": "status 200; state NOT_FINISHED",
+      "payload": {
+        "action_input": {
+          "data": {
+            "game_id": "wa30-ee6fef47"
+          },
+          "id": 3,
+          "reasoning": "policy override: post-exploration ranking prefers ACTION3 over ACTION1. Original rationale: system fallback"
+        },
+        "available_actions": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "frame_summary": {
+          "elided": true,
+          "dimensions": [
+            64,
+            64
+          ],
+          "preview_rows": [
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1"
+          ],
+          "note": "Full frame omitted for readability"
+        },
+        "full_reset": false,
+        "game_id": "wa30-ee6fef47",
+        "guid": "4b260b38-8494-4399-b10f-7d0022d401fe",
+        "levels_completed": 0,
+        "state": "NOT_FINISHED",
+        "win_levels": 9
+      }
+    },
+    "timestamp_iso": "2026-04-03T03:53:27.850386Z",
+    "event_detail": "ARC API response",
+    "what": "status 200; state NOT_FINISHED"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 8,
+      "timestamp_iso": "2026-04-03T03:53:27.941722Z",
+      "elapsed_mmss": "00:09",
+      "phase": "ingest",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "What did I learn from similar puzzles?",
+      "result_summary": "found 5 items",
+      "latency_ms": 91.3
+    },
+    "timestamp_iso": "2026-04-03T03:53:27.941722Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "What did I learn from similar puzzles?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 8,
+      "timestamp_iso": "2026-04-03T03:53:28.091047Z",
+      "elapsed_mmss": "00:09",
+      "phase": "ingest",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 8: ACTION3 at the grid sets None \u00b7 policy overrid\u2026",
+      "result_summary": "queued",
+      "latency_ms": 146.6
+    },
+    "timestamp_iso": "2026-04-03T03:53:28.091047Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 8: ACTION3 at the grid sets None \u00b7 policy overrid\u2026"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 9,
+      "timestamp_iso": "2026-04-03T03:53:28.230754Z",
+      "elapsed_mmss": "00:10",
+      "phase": "act",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "Am I looping?",
+      "result_summary": "found 3 items",
+      "latency_ms": 131.3
+    },
+    "timestamp_iso": "2026-04-03T03:53:28.230754Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Am I looping?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 9,
+      "timestamp_iso": "2026-04-03T03:53:28.400751Z",
+      "elapsed_mmss": "00:10",
+      "phase": "act",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "Step 9 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'cou\u2026",
+      "result_summary": "queued",
+      "latency_ms": 169.5
+    },
+    "timestamp_iso": "2026-04-03T03:53:28.400751Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Step 9 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'cou\u2026"
+  },
+  {
+    "name": "ACTION4",
+    "event": "request",
+    "data": {
+      "label": "ACTION4 request started",
+      "timestamp_iso": "2026-04-03T03:53:28.402563Z",
+      "elapsed_mmss": "00:10",
+      "method": "POST",
+      "endpoint": "/api/cmd/ACTION4"
+    },
+    "timestamp_iso": "2026-04-03T03:53:28.402563Z",
+    "event_detail": "ARC API request",
+    "what": "POST /api/cmd/ACTION4"
+  },
+  {
+    "name": "ACTION4",
+    "event": "response",
+    "data": {
+      "label": "ACTION4 response #11",
+      "timestamp_iso": "2026-04-03T03:53:28.963322Z",
+      "elapsed_mmss": "00:10",
+      "duration_ms": 560,
+      "http_status": 200,
+      "response_summary": "status 200; state NOT_FINISHED",
+      "payload": {
+        "action_input": {
+          "data": {
+            "game_id": "wa30-ee6fef47"
+          },
+          "id": 4,
+          "reasoning": "policy override: post-exploration ranking prefers ACTION4 over ACTION1. Original rationale: system fallback"
+        },
+        "available_actions": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "frame_summary": {
+          "elided": true,
+          "dimensions": [
+            64,
+            64
+          ],
+          "preview_rows": [
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1"
+          ],
+          "note": "Full frame omitted for readability"
+        },
+        "full_reset": false,
+        "game_id": "wa30-ee6fef47",
+        "guid": "4b260b38-8494-4399-b10f-7d0022d401fe",
+        "levels_completed": 0,
+        "state": "NOT_FINISHED",
+        "win_levels": 9
+      }
+    },
+    "timestamp_iso": "2026-04-03T03:53:28.963322Z",
+    "event_detail": "ARC API response",
+    "what": "status 200; state NOT_FINISHED"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 9,
+      "timestamp_iso": "2026-04-03T03:53:29.058590Z",
+      "elapsed_mmss": "00:10",
+      "phase": "ingest",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "What did I learn from similar puzzles?",
+      "result_summary": "found 5 items",
+      "latency_ms": 95.2
+    },
+    "timestamp_iso": "2026-04-03T03:53:29.058590Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "What did I learn from similar puzzles?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 9,
+      "timestamp_iso": "2026-04-03T03:53:29.214500Z",
+      "elapsed_mmss": "00:11",
+      "phase": "ingest",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 9: ACTION4 at the grid sets None \u00b7 policy overrid\u2026",
+      "result_summary": "queued",
+      "latency_ms": 153.3
+    },
+    "timestamp_iso": "2026-04-03T03:53:29.214500Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 9: ACTION4 at the grid sets None \u00b7 policy overrid\u2026"
+  },
+  {
+    "name": "recall_plans",
+    "event": "call",
+    "data": {
+      "step": 10,
+      "timestamp_iso": "2026-04-03T03:53:29.233332Z",
+      "elapsed_mmss": "00:11",
+      "phase": "solve",
+      "call_type": "recall_plans",
+      "mode": "read",
+      "input_summary": "space game win condition solve puzzle",
+      "result_summary": "found 0 plans",
+      "latency_ms": 8.4
+    },
+    "timestamp_iso": "2026-04-03T03:53:29.233332Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "space game win condition solve puzzle"
+  },
+  {
+    "name": "recall_lessons",
+    "event": "call",
+    "data": {
+      "step": 10,
+      "timestamp_iso": "2026-04-03T03:53:29.240392Z",
+      "elapsed_mmss": "00:11",
+      "phase": "solve",
+      "call_type": "recall_lessons",
+      "mode": "read",
+      "input_summary": "ARC game space win condition",
+      "result_summary": "found 0 lessons",
+      "latency_ms": 7.0
+    },
+    "timestamp_iso": "2026-04-03T03:53:29.240392Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "ARC game space win condition"
+  },
+  {
+    "name": "register_plan",
+    "event": "call",
+    "data": {
+      "step": 10,
+      "timestamp_iso": "2026-04-03T03:53:29.443770Z",
+      "elapsed_mmss": "00:11",
+      "phase": "solve",
+      "call_type": "register_plan",
+      "mode": "write",
+      "input_summary": "goal=Solve ARC task wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe, steps=4",
+      "result_summary": "plan_id=7e9e4826-fe62-434a-964d-ab4042b95c04",
+      "latency_ms": 203.3
+    },
+    "timestamp_iso": "2026-04-03T03:53:29.443770Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "goal=Solve ARC task wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe, steps=4"
+  },
+  {
+    "name": "register_plan",
+    "event": "call",
+    "data": {
+      "step": 10,
+      "timestamp_iso": "2026-04-03T03:53:29.532572Z",
+      "elapsed_mmss": "00:11",
+      "phase": "solve",
+      "call_type": "register_plan",
+      "mode": "write",
+      "input_summary": "goal=Move unknown toward goal (dist=16.5), steps=5",
+      "result_summary": "plan_id=df7bfdb5-6b35-4a78-a39a-99658fd37059",
+      "latency_ms": 88.6
+    },
+    "timestamp_iso": "2026-04-03T03:53:29.532572Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "goal=Move unknown toward goal (dist=16.5), steps=5"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 10,
+      "timestamp_iso": "2026-04-03T03:53:29.611496Z",
+      "elapsed_mmss": "00:11",
+      "phase": "act",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "Am I looping?",
+      "result_summary": "found 3 items",
+      "latency_ms": 78.8
+    },
+    "timestamp_iso": "2026-04-03T03:53:29.611496Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Am I looping?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 10,
+      "timestamp_iso": "2026-04-03T03:53:29.784724Z",
+      "elapsed_mmss": "00:11",
+      "phase": "act",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "Step 10 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'co\u2026",
+      "result_summary": "queued",
+      "latency_ms": 172.6
+    },
+    "timestamp_iso": "2026-04-03T03:53:29.784724Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Step 10 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'co\u2026"
+  },
+  {
+    "name": "ACTION5",
+    "event": "request",
+    "data": {
+      "label": "ACTION5 request started",
+      "timestamp_iso": "2026-04-03T03:53:29.786660Z",
+      "elapsed_mmss": "00:11",
+      "method": "POST",
+      "endpoint": "/api/cmd/ACTION5"
+    },
+    "timestamp_iso": "2026-04-03T03:53:29.786660Z",
+    "event_detail": "ARC API request",
+    "what": "POST /api/cmd/ACTION5"
+  },
+  {
+    "name": "ACTION5",
+    "event": "response",
+    "data": {
+      "label": "ACTION5 response #12",
+      "timestamp_iso": "2026-04-03T03:53:30.369038Z",
+      "elapsed_mmss": "00:12",
+      "duration_ms": 582,
+      "http_status": 200,
+      "response_summary": "status 200; state NOT_FINISHED",
+      "payload": {
+        "action_input": {
+          "data": {
+            "game_id": "wa30-ee6fef47"
+          },
+          "id": 5,
+          "reasoning": "policy override: post-exploration ranking prefers ACTION5 over ACTION1. Original rationale: system fallback"
+        },
+        "available_actions": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "frame_summary": {
+          "elided": true,
+          "dimensions": [
+            64,
+            64
+          ],
+          "preview_rows": [
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1"
+          ],
+          "note": "Full frame omitted for readability"
+        },
+        "full_reset": false,
+        "game_id": "wa30-ee6fef47",
+        "guid": "4b260b38-8494-4399-b10f-7d0022d401fe",
+        "levels_completed": 0,
+        "state": "NOT_FINISHED",
+        "win_levels": 9
+      }
+    },
+    "timestamp_iso": "2026-04-03T03:53:30.369038Z",
+    "event_detail": "ARC API response",
+    "what": "status 200; state NOT_FINISHED"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 10,
+      "timestamp_iso": "2026-04-03T03:53:30.465812Z",
+      "elapsed_mmss": "00:12",
+      "phase": "ingest",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "What did I learn from similar puzzles?",
+      "result_summary": "found 5 items",
+      "latency_ms": 96.7
+    },
+    "timestamp_iso": "2026-04-03T03:53:30.465812Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "What did I learn from similar puzzles?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 10,
+      "timestamp_iso": "2026-04-03T03:53:30.614425Z",
+      "elapsed_mmss": "00:12",
+      "phase": "ingest",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 10: ACTION5 at the grid sets None \u00b7 policy overri\u2026",
+      "result_summary": "queued",
+      "latency_ms": 146.0
+    },
+    "timestamp_iso": "2026-04-03T03:53:30.614425Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 10: ACTION5 at the grid sets None \u00b7 policy overri\u2026"
+  },
+  {
+    "name": "recall_plans",
+    "event": "call",
+    "data": {
+      "step": 11,
+      "timestamp_iso": "2026-04-03T03:53:30.632489Z",
+      "elapsed_mmss": "00:12",
+      "phase": "solve",
+      "call_type": "recall_plans",
+      "mode": "read",
+      "input_summary": "space game win condition solve puzzle",
+      "result_summary": "found 0 plans",
+      "latency_ms": 9.3
+    },
+    "timestamp_iso": "2026-04-03T03:53:30.632489Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "space game win condition solve puzzle"
+  },
+  {
+    "name": "recall_lessons",
+    "event": "call",
+    "data": {
+      "step": 11,
+      "timestamp_iso": "2026-04-03T03:53:30.641775Z",
+      "elapsed_mmss": "00:12",
+      "phase": "solve",
+      "call_type": "recall_lessons",
+      "mode": "read",
+      "input_summary": "ARC game space win condition",
+      "result_summary": "found 0 lessons",
+      "latency_ms": 9.3
+    },
+    "timestamp_iso": "2026-04-03T03:53:30.641775Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "ARC game space win condition"
+  },
+  {
+    "name": "register_plan",
+    "event": "call",
+    "data": {
+      "step": 11,
+      "timestamp_iso": "2026-04-03T03:53:30.758031Z",
+      "elapsed_mmss": "00:12",
+      "phase": "solve",
+      "call_type": "register_plan",
+      "mode": "write",
+      "input_summary": "goal=Explore: try unexplored action to gather more information, steps=1",
+      "result_summary": "plan_id=58c43f1f-6d06-48cf-ac1e-b84d2122a69a",
+      "latency_ms": 116.0
+    },
+    "timestamp_iso": "2026-04-03T03:53:30.758031Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "goal=Explore: try unexplored action to gather more information, steps=1"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 11,
+      "timestamp_iso": "2026-04-03T03:53:30.838097Z",
+      "elapsed_mmss": "00:12",
+      "phase": "act",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "Am I looping?",
+      "result_summary": "found 3 items",
+      "latency_ms": 79.9
+    },
+    "timestamp_iso": "2026-04-03T03:53:30.838097Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Am I looping?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 11,
+      "timestamp_iso": "2026-04-03T03:53:31.004160Z",
+      "elapsed_mmss": "00:12",
+      "phase": "act",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "Step 11 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'co\u2026",
+      "result_summary": "queued",
+      "latency_ms": 165.5
+    },
+    "timestamp_iso": "2026-04-03T03:53:31.004160Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Step 11 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'co\u2026"
+  },
+  {
+    "name": "ACTION1",
+    "event": "request",
+    "data": {
+      "label": "ACTION1 request started",
+      "timestamp_iso": "2026-04-03T03:53:31.005941Z",
+      "elapsed_mmss": "00:12",
+      "method": "POST",
+      "endpoint": "/api/cmd/ACTION1"
+    },
+    "timestamp_iso": "2026-04-03T03:53:31.005941Z",
+    "event_detail": "ARC API request",
+    "what": "POST /api/cmd/ACTION1"
+  },
+  {
+    "name": "ACTION1",
+    "event": "response",
+    "data": {
+      "label": "ACTION1 response #13",
+      "timestamp_iso": "2026-04-03T03:53:31.505565Z",
+      "elapsed_mmss": "00:13",
+      "duration_ms": 499,
+      "http_status": 200,
+      "response_summary": "status 200; state NOT_FINISHED",
+      "payload": {
+        "action_input": {
+          "data": {
+            "game_id": "wa30-ee6fef47"
+          },
+          "id": 1,
+          "reasoning": "system fallback"
+        },
+        "available_actions": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "frame_summary": {
+          "elided": true,
+          "dimensions": [
+            64,
+            64
+          ],
+          "preview_rows": [
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1"
+          ],
+          "note": "Full frame omitted for readability"
+        },
+        "full_reset": false,
+        "game_id": "wa30-ee6fef47",
+        "guid": "4b260b38-8494-4399-b10f-7d0022d401fe",
+        "levels_completed": 0,
+        "state": "NOT_FINISHED",
+        "win_levels": 9
+      }
+    },
+    "timestamp_iso": "2026-04-03T03:53:31.505565Z",
+    "event_detail": "ARC API response",
+    "what": "status 200; state NOT_FINISHED"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 11,
+      "timestamp_iso": "2026-04-03T03:53:31.599938Z",
+      "elapsed_mmss": "00:13",
+      "phase": "ingest",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "What did I learn from similar puzzles?",
+      "result_summary": "found 5 items",
+      "latency_ms": 94.3
+    },
+    "timestamp_iso": "2026-04-03T03:53:31.599938Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "What did I learn from similar puzzles?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 11,
+      "timestamp_iso": "2026-04-03T03:53:31.748211Z",
+      "elapsed_mmss": "00:13",
+      "phase": "ingest",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 11: ACTION1 at the grid sets None \u00b7 system fallba\u2026",
+      "result_summary": "queued",
+      "latency_ms": 145.7
+    },
+    "timestamp_iso": "2026-04-03T03:53:31.748211Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 11: ACTION1 at the grid sets None \u00b7 system fallba\u2026"
+  },
+  {
+    "name": "recall_plans",
+    "event": "call",
+    "data": {
+      "step": 12,
+      "timestamp_iso": "2026-04-03T03:53:31.765363Z",
+      "elapsed_mmss": "00:13",
+      "phase": "solve",
+      "call_type": "recall_plans",
+      "mode": "read",
+      "input_summary": "space game win condition solve puzzle",
+      "result_summary": "found 0 plans",
+      "latency_ms": 8.4
+    },
+    "timestamp_iso": "2026-04-03T03:53:31.765363Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "space game win condition solve puzzle"
+  },
+  {
+    "name": "recall_lessons",
+    "event": "call",
+    "data": {
+      "step": 12,
+      "timestamp_iso": "2026-04-03T03:53:31.773520Z",
+      "elapsed_mmss": "00:13",
+      "phase": "solve",
+      "call_type": "recall_lessons",
+      "mode": "read",
+      "input_summary": "ARC game space win condition",
+      "result_summary": "found 0 lessons",
+      "latency_ms": 8.1
+    },
+    "timestamp_iso": "2026-04-03T03:53:31.773520Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "ARC game space win condition"
+  },
+  {
+    "name": "register_plan",
+    "event": "call",
+    "data": {
+      "step": 12,
+      "timestamp_iso": "2026-04-03T03:53:31.864054Z",
+      "elapsed_mmss": "00:13",
+      "phase": "solve",
+      "call_type": "register_plan",
+      "mode": "write",
+      "input_summary": "goal=Move unknown toward goal (dist=16.5), steps=5",
+      "result_summary": "plan_id=3690d26e-c809-4002-b5e8-55d257a330fe",
+      "latency_ms": 90.4
+    },
+    "timestamp_iso": "2026-04-03T03:53:31.864054Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "goal=Move unknown toward goal (dist=16.5), steps=5"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 12,
+      "timestamp_iso": "2026-04-03T03:53:31.936795Z",
+      "elapsed_mmss": "00:13",
+      "phase": "act",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "Am I looping?",
+      "result_summary": "found 3 items",
+      "latency_ms": 72.6
+    },
+    "timestamp_iso": "2026-04-03T03:53:31.936795Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Am I looping?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 12,
+      "timestamp_iso": "2026-04-03T03:53:32.090079Z",
+      "elapsed_mmss": "00:13",
+      "phase": "act",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "Step 12 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'co\u2026",
+      "result_summary": "queued",
+      "latency_ms": 152.6
+    },
+    "timestamp_iso": "2026-04-03T03:53:32.090079Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Step 12 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'co\u2026"
+  },
+  {
+    "name": "ACTION2",
+    "event": "request",
+    "data": {
+      "label": "ACTION2 request started",
+      "timestamp_iso": "2026-04-03T03:53:32.091785Z",
+      "elapsed_mmss": "00:13",
+      "method": "POST",
+      "endpoint": "/api/cmd/ACTION2"
+    },
+    "timestamp_iso": "2026-04-03T03:53:32.091785Z",
+    "event_detail": "ARC API request",
+    "what": "POST /api/cmd/ACTION2"
+  },
+  {
+    "name": "ACTION2",
+    "event": "response",
+    "data": {
+      "label": "ACTION2 response #14",
+      "timestamp_iso": "2026-04-03T03:53:32.595429Z",
+      "elapsed_mmss": "00:14",
+      "duration_ms": 503,
+      "http_status": 200,
+      "response_summary": "status 200; state NOT_FINISHED",
+      "payload": {
+        "action_input": {
+          "data": {
+            "game_id": "wa30-ee6fef47"
+          },
+          "id": 2,
+          "reasoning": "policy override: post-exploration ranking prefers ACTION2 over ACTION1. Original rationale: system fallback"
+        },
+        "available_actions": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "frame_summary": {
+          "elided": true,
+          "dimensions": [
+            64,
+            64
+          ],
+          "preview_rows": [
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1"
+          ],
+          "note": "Full frame omitted for readability"
+        },
+        "full_reset": false,
+        "game_id": "wa30-ee6fef47",
+        "guid": "4b260b38-8494-4399-b10f-7d0022d401fe",
+        "levels_completed": 0,
+        "state": "NOT_FINISHED",
+        "win_levels": 9
+      }
+    },
+    "timestamp_iso": "2026-04-03T03:53:32.595429Z",
+    "event_detail": "ARC API response",
+    "what": "status 200; state NOT_FINISHED"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 12,
+      "timestamp_iso": "2026-04-03T03:53:32.691135Z",
+      "elapsed_mmss": "00:14",
+      "phase": "ingest",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "What did I learn from similar puzzles?",
+      "result_summary": "found 5 items",
+      "latency_ms": 95.7
+    },
+    "timestamp_iso": "2026-04-03T03:53:32.691135Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "What did I learn from similar puzzles?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 12,
+      "timestamp_iso": "2026-04-03T03:53:32.841627Z",
+      "elapsed_mmss": "00:14",
+      "phase": "ingest",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 12: ACTION2 at the grid sets None \u00b7 policy overri\u2026",
+      "result_summary": "queued",
+      "latency_ms": 147.8
+    },
+    "timestamp_iso": "2026-04-03T03:53:32.841627Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 12: ACTION2 at the grid sets None \u00b7 policy overri\u2026"
+  },
+  {
+    "name": "recall_plans",
+    "event": "call",
+    "data": {
+      "step": 13,
+      "timestamp_iso": "2026-04-03T03:53:32.859698Z",
+      "elapsed_mmss": "00:14",
+      "phase": "solve",
+      "call_type": "recall_plans",
+      "mode": "read",
+      "input_summary": "space game win condition solve puzzle",
+      "result_summary": "found 0 plans",
+      "latency_ms": 9.4
+    },
+    "timestamp_iso": "2026-04-03T03:53:32.859698Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "space game win condition solve puzzle"
+  },
+  {
+    "name": "recall_lessons",
+    "event": "call",
+    "data": {
+      "step": 13,
+      "timestamp_iso": "2026-04-03T03:53:32.868011Z",
+      "elapsed_mmss": "00:14",
+      "phase": "solve",
+      "call_type": "recall_lessons",
+      "mode": "read",
+      "input_summary": "ARC game space win condition",
+      "result_summary": "found 0 lessons",
+      "latency_ms": 8.3
+    },
+    "timestamp_iso": "2026-04-03T03:53:32.868011Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "ARC game space win condition"
+  },
+  {
+    "name": "register_plan",
+    "event": "call",
+    "data": {
+      "step": 13,
+      "timestamp_iso": "2026-04-03T03:53:32.969218Z",
+      "elapsed_mmss": "00:14",
+      "phase": "solve",
+      "call_type": "register_plan",
+      "mode": "write",
+      "input_summary": "goal=Move unknown toward goal (dist=16.5), steps=5",
+      "result_summary": "plan_id=ade8bba6-6ffa-44cf-85fa-c80f76f651f6",
+      "latency_ms": 101.0
+    },
+    "timestamp_iso": "2026-04-03T03:53:32.969218Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "goal=Move unknown toward goal (dist=16.5), steps=5"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 13,
+      "timestamp_iso": "2026-04-03T03:53:33.045415Z",
+      "elapsed_mmss": "00:14",
+      "phase": "act",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "Am I looping?",
+      "result_summary": "found 3 items",
+      "latency_ms": 76.1
+    },
+    "timestamp_iso": "2026-04-03T03:53:33.045415Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Am I looping?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 13,
+      "timestamp_iso": "2026-04-03T03:53:33.199377Z",
+      "elapsed_mmss": "00:15",
+      "phase": "act",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "Step 13 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'co\u2026",
+      "result_summary": "queued",
+      "latency_ms": 153.4
+    },
+    "timestamp_iso": "2026-04-03T03:53:33.199377Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Step 13 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'co\u2026"
+  },
+  {
+    "name": "ACTION3",
+    "event": "request",
+    "data": {
+      "label": "ACTION3 request started",
+      "timestamp_iso": "2026-04-03T03:53:33.201142Z",
+      "elapsed_mmss": "00:15",
+      "method": "POST",
+      "endpoint": "/api/cmd/ACTION3"
+    },
+    "timestamp_iso": "2026-04-03T03:53:33.201142Z",
+    "event_detail": "ARC API request",
+    "what": "POST /api/cmd/ACTION3"
+  },
+  {
+    "name": "ACTION3",
+    "event": "response",
+    "data": {
+      "label": "ACTION3 response #15",
+      "timestamp_iso": "2026-04-03T03:53:33.702331Z",
+      "elapsed_mmss": "00:15",
+      "duration_ms": 501,
+      "http_status": 200,
+      "response_summary": "status 200; state NOT_FINISHED",
+      "payload": {
+        "action_input": {
+          "data": {
+            "game_id": "wa30-ee6fef47"
+          },
+          "id": 3,
+          "reasoning": "policy override: post-exploration ranking prefers ACTION3 over ACTION1. Original rationale: system fallback"
+        },
+        "available_actions": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "frame_summary": {
+          "elided": true,
+          "dimensions": [
+            64,
+            64
+          ],
+          "preview_rows": [
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1"
+          ],
+          "note": "Full frame omitted for readability"
+        },
+        "full_reset": false,
+        "game_id": "wa30-ee6fef47",
+        "guid": "4b260b38-8494-4399-b10f-7d0022d401fe",
+        "levels_completed": 0,
+        "state": "NOT_FINISHED",
+        "win_levels": 9
+      }
+    },
+    "timestamp_iso": "2026-04-03T03:53:33.702331Z",
+    "event_detail": "ARC API response",
+    "what": "status 200; state NOT_FINISHED"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 13,
+      "timestamp_iso": "2026-04-03T03:53:33.795333Z",
+      "elapsed_mmss": "00:15",
+      "phase": "ingest",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "What did I learn from similar puzzles?",
+      "result_summary": "found 5 items",
+      "latency_ms": 93.0
+    },
+    "timestamp_iso": "2026-04-03T03:53:33.795333Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "What did I learn from similar puzzles?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 13,
+      "timestamp_iso": "2026-04-03T03:53:33.939888Z",
+      "elapsed_mmss": "00:15",
+      "phase": "ingest",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 13: ACTION3 at the grid sets None \u00b7 policy overri\u2026",
+      "result_summary": "queued",
+      "latency_ms": 141.9
+    },
+    "timestamp_iso": "2026-04-03T03:53:33.939888Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 13: ACTION3 at the grid sets None \u00b7 policy overri\u2026"
+  },
+  {
+    "name": "recall_plans",
+    "event": "call",
+    "data": {
+      "step": 14,
+      "timestamp_iso": "2026-04-03T03:53:33.957374Z",
+      "elapsed_mmss": "00:15",
+      "phase": "solve",
+      "call_type": "recall_plans",
+      "mode": "read",
+      "input_summary": "space game win condition solve puzzle",
+      "result_summary": "found 0 plans",
+      "latency_ms": 8.5
+    },
+    "timestamp_iso": "2026-04-03T03:53:33.957374Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "space game win condition solve puzzle"
+  },
+  {
+    "name": "recall_lessons",
+    "event": "call",
+    "data": {
+      "step": 14,
+      "timestamp_iso": "2026-04-03T03:53:33.965162Z",
+      "elapsed_mmss": "00:15",
+      "phase": "solve",
+      "call_type": "recall_lessons",
+      "mode": "read",
+      "input_summary": "ARC game space win condition",
+      "result_summary": "found 0 lessons",
+      "latency_ms": 7.8
+    },
+    "timestamp_iso": "2026-04-03T03:53:33.965162Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "ARC game space win condition"
+  },
+  {
+    "name": "register_plan",
+    "event": "call",
+    "data": {
+      "step": 14,
+      "timestamp_iso": "2026-04-03T03:53:34.087409Z",
+      "elapsed_mmss": "00:15",
+      "phase": "solve",
+      "call_type": "register_plan",
+      "mode": "write",
+      "input_summary": "goal=Move unknown toward goal (dist=16.5), steps=5",
+      "result_summary": "plan_id=d68b05e7-362c-49be-ba93-bd8afb44c8ea",
+      "latency_ms": 122.0
+    },
+    "timestamp_iso": "2026-04-03T03:53:34.087409Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "goal=Move unknown toward goal (dist=16.5), steps=5"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 14,
+      "timestamp_iso": "2026-04-03T03:53:34.162525Z",
+      "elapsed_mmss": "00:16",
+      "phase": "act",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "Am I looping?",
+      "result_summary": "found 3 items",
+      "latency_ms": 75.0
+    },
+    "timestamp_iso": "2026-04-03T03:53:34.162525Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Am I looping?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 14,
+      "timestamp_iso": "2026-04-03T03:53:34.316484Z",
+      "elapsed_mmss": "00:16",
+      "phase": "act",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "Step 14 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'co\u2026",
+      "result_summary": "queued",
+      "latency_ms": 153.4
+    },
+    "timestamp_iso": "2026-04-03T03:53:34.316484Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Step 14 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'co\u2026"
+  },
+  {
+    "name": "ACTION4",
+    "event": "request",
+    "data": {
+      "label": "ACTION4 request started",
+      "timestamp_iso": "2026-04-03T03:53:34.319925Z",
+      "elapsed_mmss": "00:16",
+      "method": "POST",
+      "endpoint": "/api/cmd/ACTION4"
+    },
+    "timestamp_iso": "2026-04-03T03:53:34.319925Z",
+    "event_detail": "ARC API request",
+    "what": "POST /api/cmd/ACTION4"
+  },
+  {
+    "name": "ACTION4",
+    "event": "response",
+    "data": {
+      "label": "ACTION4 response #16",
+      "timestamp_iso": "2026-04-03T03:53:34.858880Z",
+      "elapsed_mmss": "00:16",
+      "duration_ms": 538,
+      "http_status": 200,
+      "response_summary": "status 200; state NOT_FINISHED",
+      "payload": {
+        "action_input": {
+          "data": {
+            "game_id": "wa30-ee6fef47"
+          },
+          "id": 4,
+          "reasoning": "policy override: post-exploration ranking prefers ACTION4 over ACTION1. Original rationale: system fallback"
+        },
+        "available_actions": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "frame_summary": {
+          "elided": true,
+          "dimensions": [
+            64,
+            64
+          ],
+          "preview_rows": [
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1"
+          ],
+          "note": "Full frame omitted for readability"
+        },
+        "full_reset": false,
+        "game_id": "wa30-ee6fef47",
+        "guid": "4b260b38-8494-4399-b10f-7d0022d401fe",
+        "levels_completed": 0,
+        "state": "NOT_FINISHED",
+        "win_levels": 9
+      }
+    },
+    "timestamp_iso": "2026-04-03T03:53:34.858880Z",
+    "event_detail": "ARC API response",
+    "what": "status 200; state NOT_FINISHED"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 14,
+      "timestamp_iso": "2026-04-03T03:53:34.951875Z",
+      "elapsed_mmss": "00:16",
+      "phase": "ingest",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "What did I learn from similar puzzles?",
+      "result_summary": "found 5 items",
+      "latency_ms": 93.0
+    },
+    "timestamp_iso": "2026-04-03T03:53:34.951875Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "What did I learn from similar puzzles?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 14,
+      "timestamp_iso": "2026-04-03T03:53:35.103418Z",
+      "elapsed_mmss": "00:16",
+      "phase": "ingest",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 14: ACTION4 at the grid sets None \u00b7 policy overri\u2026",
+      "result_summary": "queued",
+      "latency_ms": 149.0
+    },
+    "timestamp_iso": "2026-04-03T03:53:35.103418Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 14: ACTION4 at the grid sets None \u00b7 policy overri\u2026"
+  },
+  {
+    "name": "recall_plans",
+    "event": "call",
+    "data": {
+      "step": 15,
+      "timestamp_iso": "2026-04-03T03:53:35.122638Z",
+      "elapsed_mmss": "00:16",
+      "phase": "solve",
+      "call_type": "recall_plans",
+      "mode": "read",
+      "input_summary": "space game win condition solve puzzle",
+      "result_summary": "found 0 plans",
+      "latency_ms": 9.2
+    },
+    "timestamp_iso": "2026-04-03T03:53:35.122638Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "space game win condition solve puzzle"
+  },
+  {
+    "name": "recall_lessons",
+    "event": "call",
+    "data": {
+      "step": 15,
+      "timestamp_iso": "2026-04-03T03:53:35.131118Z",
+      "elapsed_mmss": "00:16",
+      "phase": "solve",
+      "call_type": "recall_lessons",
+      "mode": "read",
+      "input_summary": "ARC game space win condition",
+      "result_summary": "found 0 lessons",
+      "latency_ms": 8.5
+    },
+    "timestamp_iso": "2026-04-03T03:53:35.131118Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "ARC game space win condition"
+  },
+  {
+    "name": "register_plan",
+    "event": "call",
+    "data": {
+      "step": 15,
+      "timestamp_iso": "2026-04-03T03:53:35.242368Z",
+      "elapsed_mmss": "00:17",
+      "phase": "solve",
+      "call_type": "register_plan",
+      "mode": "write",
+      "input_summary": "goal=Explore: try unexplored action to gather more information, steps=1",
+      "result_summary": "plan_id=0b2bc45f-f365-475f-b6be-b6916568b55d",
+      "latency_ms": 111.1
+    },
+    "timestamp_iso": "2026-04-03T03:53:35.242368Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "goal=Explore: try unexplored action to gather more information, steps=1"
+  },
+  {
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 15,
+      "timestamp_iso": "2026-04-03T03:53:35.316981Z",
+      "elapsed_mmss": "00:17",
+      "phase": "act",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "Am I looping?",
+      "result_summary": "found 3 items",
+      "latency_ms": 74.5
+    },
+    "timestamp_iso": "2026-04-03T03:53:35.316981Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Am I looping?"
+  },
+  {
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 15,
+      "timestamp_iso": "2026-04-03T03:53:35.488313Z",
+      "elapsed_mmss": "00:17",
+      "phase": "act",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "Step 15 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'co\u2026",
+      "result_summary": "queued",
+      "latency_ms": 170.8
+    },
+    "timestamp_iso": "2026-04-03T03:53:35.488313Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Step 15 observation: state=NOT_FINISHED colors=[{'value': 0, 'count': 4}, {'value': 1, 'count': 3920}, {'value': 2, 'co\u2026"
+  },
+  {
+    "name": "ACTION1",
+    "event": "request",
+    "data": {
+      "label": "ACTION1 request started",
+      "timestamp_iso": "2026-04-03T03:53:35.490127Z",
       "elapsed_mmss": "00:17",
       "method": "POST",
-      "endpoint": "/api/cmd/ACTION2"
+      "endpoint": "/api/cmd/ACTION1"
     },
-    "response": {
-      "label": "ACTION2 response #4",
-      "timestamp_iso": "2026-04-02T22:37:45.100349Z",
-      "elapsed_mmss": "00:19",
-      "duration_ms": 2187,
+    "timestamp_iso": "2026-04-03T03:53:35.490127Z",
+    "event_detail": "ARC API request",
+    "what": "POST /api/cmd/ACTION1"
+  },
+  {
+    "name": "ACTION1",
+    "event": "response",
+    "data": {
+      "label": "ACTION1 response #17",
+      "timestamp_iso": "2026-04-03T03:53:35.984889Z",
+      "elapsed_mmss": "00:17",
+      "duration_ms": 494,
       "http_status": 200,
       "response_summary": "status 200; state NOT_FINISHED",
       "payload": {
         "action_input": {
           "data": {
-            "game_id": "sc25-f9b21a2f"
+            "game_id": "wa30-ee6fef47"
           },
-          "id": 2,
-          "reasoning": "UNTESTED"
+          "id": 1,
+          "reasoning": "system fallback"
         },
         "available_actions": [
           1,
           2,
           3,
           4,
-          6
+          5
         ],
         "frame_summary": {
           "elided": true,
@@ -172,780 +2604,99 @@
             64
           ],
           "preview_rows": [
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5"
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1"
           ],
           "note": "Full frame omitted for readability"
         },
         "full_reset": false,
-        "game_id": "sc25-f9b21a2f",
-        "guid": "c5f2f884-4608-4b51-9c9f-18b25c03bf41",
+        "game_id": "wa30-ee6fef47",
+        "guid": "4b260b38-8494-4399-b10f-7d0022d401fe",
         "levels_completed": 0,
         "state": "NOT_FINISHED",
-        "win_levels": 6
+        "win_levels": 9
       }
-    }
+    },
+    "timestamp_iso": "2026-04-03T03:53:35.984889Z",
+    "event_detail": "ARC API response",
+    "what": "status 200; state NOT_FINISHED"
   },
   {
-    "call_seq": 5,
-    "request": {
-      "label": "ACTION3 request started",
-      "timestamp_iso": "2026-04-02T22:38:19.996899Z",
-      "elapsed_mmss": "00:54",
-      "method": "POST",
-      "endpoint": "/api/cmd/ACTION3"
+    "name": "current_truth",
+    "event": "call",
+    "data": {
+      "step": 15,
+      "timestamp_iso": "2026-04-03T03:53:36.078574Z",
+      "elapsed_mmss": "00:17",
+      "phase": "ingest",
+      "call_type": "current_truth",
+      "mode": "read",
+      "input_summary": "What did I learn from similar puzzles?",
+      "result_summary": "found 5 items",
+      "latency_ms": 93.7
     },
-    "response": {
-      "label": "ACTION3 response #5",
-      "timestamp_iso": "2026-04-02T22:38:20.168837Z",
-      "elapsed_mmss": "00:54",
-      "duration_ms": 171,
-      "http_status": 200,
-      "response_summary": "status 200; state NOT_FINISHED",
-      "payload": {
-        "action_input": {
-          "data": {
-            "game_id": "sc25-f9b21a2f"
-          },
-          "id": 3,
-          "reasoning": "UNTESTED"
-        },
-        "available_actions": [
-          1,
-          2,
-          3,
-          4,
-          6
-        ],
-        "frame_summary": {
-          "elided": true,
-          "dimensions": [
-            64,
-            64
-          ],
-          "preview_rows": [
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5"
-          ],
-          "note": "Full frame omitted for readability"
-        },
-        "full_reset": false,
-        "game_id": "sc25-f9b21a2f",
-        "guid": "c5f2f884-4608-4b51-9c9f-18b25c03bf41",
-        "levels_completed": 0,
-        "state": "NOT_FINISHED",
-        "win_levels": 6
-      }
-    }
+    "timestamp_iso": "2026-04-03T03:53:36.078574Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "What did I learn from similar puzzles?"
   },
   {
-    "call_seq": 6,
-    "request": {
-      "label": "ACTION6 request started",
-      "timestamp_iso": "2026-04-02T22:38:38.292260Z",
-      "elapsed_mmss": "01:13",
-      "method": "POST",
-      "endpoint": "/api/cmd/ACTION6"
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 15,
+      "timestamp_iso": "2026-04-03T03:53:36.227725Z",
+      "elapsed_mmss": "00:18",
+      "phase": "ingest",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 15: ACTION1 at the grid sets None \u00b7 system fallba\u2026",
+      "result_summary": "queued",
+      "latency_ms": 146.4
     },
-    "response": {
-      "label": "ACTION6 response #6",
-      "timestamp_iso": "2026-04-02T22:38:38.666210Z",
-      "elapsed_mmss": "01:13",
-      "duration_ms": 373,
-      "http_status": 200,
-      "response_summary": "status 200; state NOT_FINISHED",
-      "payload": {
-        "action_input": {
-          "data": {
-            "game_id": "sc25-f9b21a2f",
-            "x": 62,
-            "y": 0
-          },
-          "id": 6,
-          "reasoning": "UNTESTED; targeting inferred coord (x=62, y=0)"
-        },
-        "available_actions": [
-          1,
-          2,
-          3,
-          4,
-          6
-        ],
-        "frame_summary": {
-          "elided": true,
-          "dimensions": [
-            13,
-            64
-          ],
-          "preview_rows": [
-            "[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14]",
-            "[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14]",
-            "[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14]",
-            "[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14]",
-            "[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14]",
-            "[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14]",
-            "[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14]",
-            "[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14] [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 14, 14]"
-          ],
-          "note": "Full frame omitted for readability"
-        },
-        "full_reset": false,
-        "game_id": "sc25-f9b21a2f",
-        "guid": "c5f2f884-4608-4b51-9c9f-18b25c03bf41",
-        "levels_completed": 0,
-        "state": "NOT_FINISHED",
-        "win_levels": 6
-      }
-    }
+    "timestamp_iso": "2026-04-03T03:53:36.227725Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "[wa30-ee6fef47:4b260b38-8494-4399-b10f-7d0022d401fe] Episode 1 \u00b7 Step 15: ACTION1 at the grid sets None \u00b7 system fallba\u2026"
   },
   {
-    "call_seq": 7,
-    "request": {
-      "label": "ACTION4 request started",
-      "timestamp_iso": "2026-04-02T22:38:53.940904Z",
-      "elapsed_mmss": "01:28",
-      "method": "POST",
-      "endpoint": "/api/cmd/ACTION4"
+    "name": "report_outcome",
+    "event": "call",
+    "data": {
+      "step": 15,
+      "timestamp_iso": "2026-04-03T03:53:36.268687Z",
+      "elapsed_mmss": "00:18",
+      "phase": "evaluate",
+      "call_type": "report_outcome",
+      "mode": "write",
+      "input_summary": "plan_id=d1b77b63-1493-4714-99ce-b19d290b1833, valence=-0.70",
+      "result_summary": "ok",
+      "latency_ms": 34.1
     },
-    "response": {
-      "label": "ACTION4 response #7",
-      "timestamp_iso": "2026-04-02T22:38:54.079310Z",
-      "elapsed_mmss": "01:28",
-      "duration_ms": 138,
-      "http_status": 200,
-      "response_summary": "status 200; state NOT_FINISHED",
-      "payload": {
-        "action_input": {
-          "data": {
-            "game_id": "sc25-f9b21a2f"
-          },
-          "id": 4,
-          "reasoning": "UNTESTED"
-        },
-        "available_actions": [
-          1,
-          2,
-          3,
-          4,
-          6
-        ],
-        "frame_summary": {
-          "elided": true,
-          "dimensions": [
-            64,
-            64
-          ],
-          "preview_rows": [
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5"
-          ],
-          "note": "Full frame omitted for readability"
-        },
-        "full_reset": false,
-        "game_id": "sc25-f9b21a2f",
-        "guid": "c5f2f884-4608-4b51-9c9f-18b25c03bf41",
-        "levels_completed": 0,
-        "state": "NOT_FINISHED",
-        "win_levels": 6
-      }
-    }
+    "timestamp_iso": "2026-04-03T03:53:36.268687Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "plan_id=d1b77b63-1493-4714-99ce-b19d290b1833, valence=-0.70"
   },
   {
-    "call_seq": 8,
-    "request": {
-      "label": "ACTION3 request started",
-      "timestamp_iso": "2026-04-02T22:39:10.714397Z",
-      "elapsed_mmss": "01:45",
-      "method": "POST",
-      "endpoint": "/api/cmd/ACTION3"
+    "name": "notify_turn",
+    "event": "call",
+    "data": {
+      "step": 15,
+      "timestamp_iso": "2026-04-03T03:53:36.435757Z",
+      "elapsed_mmss": "00:18",
+      "phase": "evaluate",
+      "call_type": "notify_turn",
+      "mode": "write",
+      "input_summary": "Final observation for 4b260b38-8494-4399-b10f-7d0022d401fe: correct=False, steps=15, valence=-0.70",
+      "result_summary": "queued",
+      "latency_ms": 167.0
     },
-    "response": {
-      "label": "ACTION3 response #8",
-      "timestamp_iso": "2026-04-02T22:39:10.831730Z",
-      "elapsed_mmss": "01:45",
-      "duration_ms": 117,
-      "http_status": 200,
-      "response_summary": "status 200; state NOT_FINISHED",
-      "payload": {
-        "action_input": {
-          "data": {
-            "game_id": "sc25-f9b21a2f"
-          },
-          "id": 3,
-          "reasoning": "tentative_progress"
-        },
-        "available_actions": [
-          1,
-          2,
-          3,
-          4,
-          6
-        ],
-        "frame_summary": {
-          "elided": true,
-          "dimensions": [
-            64,
-            64
-          ],
-          "preview_rows": [
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5"
-          ],
-          "note": "Full frame omitted for readability"
-        },
-        "full_reset": false,
-        "game_id": "sc25-f9b21a2f",
-        "guid": "c5f2f884-4608-4b51-9c9f-18b25c03bf41",
-        "levels_completed": 0,
-        "state": "NOT_FINISHED",
-        "win_levels": 6
-      }
-    }
-  },
-  {
-    "call_seq": 9,
-    "request": {
-      "label": "ACTION4 request started",
-      "timestamp_iso": "2026-04-02T22:39:28.315520Z",
-      "elapsed_mmss": "02:03",
-      "method": "POST",
-      "endpoint": "/api/cmd/ACTION4"
-    },
-    "response": {
-      "label": "ACTION4 response #9",
-      "timestamp_iso": "2026-04-02T22:39:28.808768Z",
-      "elapsed_mmss": "02:03",
-      "duration_ms": 493,
-      "http_status": 200,
-      "response_summary": "status 200; state NOT_FINISHED",
-      "payload": {
-        "action_input": {
-          "data": {
-            "game_id": "sc25-f9b21a2f"
-          },
-          "id": 4,
-          "reasoning": "UNTESTED"
-        },
-        "available_actions": [
-          1,
-          2,
-          3,
-          4,
-          6
-        ],
-        "frame_summary": {
-          "elided": true,
-          "dimensions": [
-            64,
-            64
-          ],
-          "preview_rows": [
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5"
-          ],
-          "note": "Full frame omitted for readability"
-        },
-        "full_reset": false,
-        "game_id": "sc25-f9b21a2f",
-        "guid": "c5f2f884-4608-4b51-9c9f-18b25c03bf41",
-        "levels_completed": 0,
-        "state": "NOT_FINISHED",
-        "win_levels": 6
-      }
-    }
-  },
-  {
-    "call_seq": 10,
-    "request": {
-      "label": "ACTION2 request started",
-      "timestamp_iso": "2026-04-02T22:39:49.170673Z",
-      "elapsed_mmss": "02:23",
-      "method": "POST",
-      "endpoint": "/api/cmd/ACTION2"
-    },
-    "response": {
-      "label": "ACTION2 response #10",
-      "timestamp_iso": "2026-04-02T22:39:49.283446Z",
-      "elapsed_mmss": "02:24",
-      "duration_ms": 112,
-      "http_status": 200,
-      "response_summary": "status 200; state NOT_FINISHED",
-      "payload": {
-        "action_input": {
-          "data": {
-            "game_id": "sc25-f9b21a2f"
-          },
-          "id": 2,
-          "reasoning": "policy override: post-exploration ranking prefers ACTION2 over ACTION3. Original rationale: tentative_progress"
-        },
-        "available_actions": [
-          1,
-          2,
-          3,
-          4,
-          6
-        ],
-        "frame_summary": {
-          "elided": true,
-          "dimensions": [
-            64,
-            64
-          ],
-          "preview_rows": [
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5"
-          ],
-          "note": "Full frame omitted for readability"
-        },
-        "full_reset": false,
-        "game_id": "sc25-f9b21a2f",
-        "guid": "c5f2f884-4608-4b51-9c9f-18b25c03bf41",
-        "levels_completed": 0,
-        "state": "NOT_FINISHED",
-        "win_levels": 6
-      }
-    }
-  },
-  {
-    "call_seq": 11,
-    "request": {
-      "label": "ACTION3 request started",
-      "timestamp_iso": "2026-04-02T22:40:08.502192Z",
-      "elapsed_mmss": "02:43",
-      "method": "POST",
-      "endpoint": "/api/cmd/ACTION3"
-    },
-    "response": {
-      "label": "ACTION3 response #11",
-      "timestamp_iso": "2026-04-02T22:40:08.611246Z",
-      "elapsed_mmss": "02:43",
-      "duration_ms": 109,
-      "http_status": 200,
-      "response_summary": "status 200; state NOT_FINISHED",
-      "payload": {
-        "action_input": {
-          "data": {
-            "game_id": "sc25-f9b21a2f"
-          },
-          "id": 3,
-          "reasoning": "policy override: post-exploration ranking prefers ACTION3 over ACTION4. Original rationale: tentative_progress"
-        },
-        "available_actions": [
-          1,
-          2,
-          3,
-          4,
-          6
-        ],
-        "frame_summary": {
-          "elided": true,
-          "dimensions": [
-            64,
-            64
-          ],
-          "preview_rows": [
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5"
-          ],
-          "note": "Full frame omitted for readability"
-        },
-        "full_reset": false,
-        "game_id": "sc25-f9b21a2f",
-        "guid": "c5f2f884-4608-4b51-9c9f-18b25c03bf41",
-        "levels_completed": 0,
-        "state": "NOT_FINISHED",
-        "win_levels": 6
-      }
-    }
-  },
-  {
-    "call_seq": 12,
-    "request": {
-      "label": "ACTION4 request started",
-      "timestamp_iso": "2026-04-02T22:40:29.807094Z",
-      "elapsed_mmss": "03:04",
-      "method": "POST",
-      "endpoint": "/api/cmd/ACTION4"
-    },
-    "response": {
-      "label": "ACTION4 response #12",
-      "timestamp_iso": "2026-04-02T22:40:29.955612Z",
-      "elapsed_mmss": "03:04",
-      "duration_ms": 148,
-      "http_status": 200,
-      "response_summary": "status 200; state NOT_FINISHED",
-      "payload": {
-        "action_input": {
-          "data": {
-            "game_id": "sc25-f9b21a2f"
-          },
-          "id": 4,
-          "reasoning": "policy override: post-exploration ranking prefers ACTION4 over ACTION2. Original rationale: tentative_progress"
-        },
-        "available_actions": [
-          1,
-          2,
-          3,
-          4,
-          6
-        ],
-        "frame_summary": {
-          "elided": true,
-          "dimensions": [
-            64,
-            64
-          ],
-          "preview_rows": [
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5"
-          ],
-          "note": "Full frame omitted for readability"
-        },
-        "full_reset": false,
-        "game_id": "sc25-f9b21a2f",
-        "guid": "c5f2f884-4608-4b51-9c9f-18b25c03bf41",
-        "levels_completed": 0,
-        "state": "NOT_FINISHED",
-        "win_levels": 6
-      }
-    }
-  },
-  {
-    "call_seq": 13,
-    "request": {
-      "label": "ACTION2 request started",
-      "timestamp_iso": "2026-04-02T22:40:51.519618Z",
-      "elapsed_mmss": "03:26",
-      "method": "POST",
-      "endpoint": "/api/cmd/ACTION2"
-    },
-    "response": {
-      "label": "ACTION2 response #13",
-      "timestamp_iso": "2026-04-02T22:40:51.627216Z",
-      "elapsed_mmss": "03:26",
-      "duration_ms": 107,
-      "http_status": 200,
-      "response_summary": "status 200; state NOT_FINISHED",
-      "payload": {
-        "action_input": {
-          "data": {
-            "game_id": "sc25-f9b21a2f"
-          },
-          "id": 2,
-          "reasoning": "UNTESTED"
-        },
-        "available_actions": [
-          1,
-          2,
-          3,
-          4,
-          6
-        ],
-        "frame_summary": {
-          "elided": true,
-          "dimensions": [
-            64,
-            64
-          ],
-          "preview_rows": [
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5"
-          ],
-          "note": "Full frame omitted for readability"
-        },
-        "full_reset": false,
-        "game_id": "sc25-f9b21a2f",
-        "guid": "c5f2f884-4608-4b51-9c9f-18b25c03bf41",
-        "levels_completed": 0,
-        "state": "NOT_FINISHED",
-        "win_levels": 6
-      }
-    }
-  },
-  {
-    "call_seq": 14,
-    "request": {
-      "label": "ACTION3 request started",
-      "timestamp_iso": "2026-04-02T22:41:12.280639Z",
-      "elapsed_mmss": "03:47",
-      "method": "POST",
-      "endpoint": "/api/cmd/ACTION3"
-    },
-    "response": {
-      "label": "ACTION3 response #14",
-      "timestamp_iso": "2026-04-02T22:41:12.440007Z",
-      "elapsed_mmss": "03:47",
-      "duration_ms": 159,
-      "http_status": 200,
-      "response_summary": "status 200; state NOT_FINISHED",
-      "payload": {
-        "action_input": {
-          "data": {
-            "game_id": "sc25-f9b21a2f"
-          },
-          "id": 3,
-          "reasoning": "policy override: post-exploration ranking prefers ACTION3 over ACTION1. Original rationale: UNTESTED"
-        },
-        "available_actions": [
-          1,
-          2,
-          3,
-          4,
-          6
-        ],
-        "frame_summary": {
-          "elided": true,
-          "dimensions": [
-            64,
-            64
-          ],
-          "preview_rows": [
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5"
-          ],
-          "note": "Full frame omitted for readability"
-        },
-        "full_reset": false,
-        "game_id": "sc25-f9b21a2f",
-        "guid": "c5f2f884-4608-4b51-9c9f-18b25c03bf41",
-        "levels_completed": 0,
-        "state": "NOT_FINISHED",
-        "win_levels": 6
-      }
-    }
-  },
-  {
-    "call_seq": 15,
-    "request": {
-      "label": "ACTION4 request started",
-      "timestamp_iso": "2026-04-02T22:41:32.215001Z",
-      "elapsed_mmss": "04:06",
-      "method": "POST",
-      "endpoint": "/api/cmd/ACTION4"
-    },
-    "response": {
-      "label": "ACTION4 response #15",
-      "timestamp_iso": "2026-04-02T22:41:32.380147Z",
-      "elapsed_mmss": "04:07",
-      "duration_ms": 165,
-      "http_status": 200,
-      "response_summary": "status 200; state NOT_FINISHED",
-      "payload": {
-        "action_input": {
-          "data": {
-            "game_id": "sc25-f9b21a2f"
-          },
-          "id": 4,
-          "reasoning": "policy override: post-exploration ranking prefers ACTION4 over ACTION1. Original rationale: UNTESTED"
-        },
-        "available_actions": [
-          1,
-          2,
-          3,
-          4,
-          6
-        ],
-        "frame_summary": {
-          "elided": true,
-          "dimensions": [
-            64,
-            64
-          ],
-          "preview_rows": [
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5"
-          ],
-          "note": "Full frame omitted for readability"
-        },
-        "full_reset": false,
-        "game_id": "sc25-f9b21a2f",
-        "guid": "c5f2f884-4608-4b51-9c9f-18b25c03bf41",
-        "levels_completed": 0,
-        "state": "NOT_FINISHED",
-        "win_levels": 6
-      }
-    }
-  },
-  {
-    "call_seq": 16,
-    "request": {
-      "label": "ACTION2 request started",
-      "timestamp_iso": "2026-04-02T22:41:52.453933Z",
-      "elapsed_mmss": "04:27",
-      "method": "POST",
-      "endpoint": "/api/cmd/ACTION2"
-    },
-    "response": {
-      "label": "ACTION2 response #16",
-      "timestamp_iso": "2026-04-02T22:41:52.591688Z",
-      "elapsed_mmss": "04:27",
-      "duration_ms": 137,
-      "http_status": 200,
-      "response_summary": "status 200; state NOT_FINISHED",
-      "payload": {
-        "action_input": {
-          "data": {
-            "game_id": "sc25-f9b21a2f"
-          },
-          "id": 2,
-          "reasoning": "policy override: post-exploration ranking prefers ACTION2 over ACTION6. Original rationale: UNTESTED"
-        },
-        "available_actions": [
-          1,
-          2,
-          3,
-          4,
-          6
-        ],
-        "frame_summary": {
-          "elided": true,
-          "dimensions": [
-            64,
-            64
-          ],
-          "preview_rows": [
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5"
-          ],
-          "note": "Full frame omitted for readability"
-        },
-        "full_reset": false,
-        "game_id": "sc25-f9b21a2f",
-        "guid": "c5f2f884-4608-4b51-9c9f-18b25c03bf41",
-        "levels_completed": 0,
-        "state": "NOT_FINISHED",
-        "win_levels": 6
-      }
-    }
-  },
-  {
-    "call_seq": 17,
-    "request": {
-      "label": "ACTION3 request started",
-      "timestamp_iso": "2026-04-02T22:42:18.406907Z",
-      "elapsed_mmss": "04:53",
-      "method": "POST",
-      "endpoint": "/api/cmd/ACTION3"
-    },
-    "response": {
-      "label": "ACTION3 response #17",
-      "timestamp_iso": "2026-04-02T22:42:18.516949Z",
-      "elapsed_mmss": "04:53",
-      "duration_ms": 110,
-      "http_status": 200,
-      "response_summary": "status 200; state NOT_FINISHED",
-      "payload": {
-        "action_input": {
-          "data": {
-            "game_id": "sc25-f9b21a2f"
-          },
-          "id": 3,
-          "reasoning": "policy override: post-exploration ranking prefers ACTION3 over ACTION1. Original rationale: UNTESTED"
-        },
-        "available_actions": [
-          1,
-          2,
-          3,
-          4,
-          6
-        ],
-        "frame_summary": {
-          "elided": true,
-          "dimensions": [
-            64,
-            64
-          ],
-          "preview_rows": [
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5",
-            "5 5 5 5 5 5 5 5"
-          ],
-          "note": "Full frame omitted for readability"
-        },
-        "full_reset": false,
-        "game_id": "sc25-f9b21a2f",
-        "guid": "c5f2f884-4608-4b51-9c9f-18b25c03bf41",
-        "levels_completed": 0,
-        "state": "NOT_FINISHED",
-        "win_levels": 6
-      }
-    }
+    "timestamp_iso": "2026-04-03T03:53:36.435757Z",
+    "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+    "what": "Final observation for 4b260b38-8494-4399-b10f-7d0022d401fe: correct=False, steps=15, valence=-0.70"
   }
 ]

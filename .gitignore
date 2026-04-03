@@ -22,6 +22,7 @@ sidequests_db/
 .env
 *.env
 benchmarks/.arc/
+benchmarks/arc3/.arc/
 benchmarks/.kaggle/
 
 # macOS

@@ -15,7 +15,6 @@ from benchmarks.arc3.adapter import ARC3Adapter, BrainClientProtocol, LedgerBrai
 from benchmarks.arc3.harness import ARC3Harness
 from agents.arc3.checkpoint import CheckpointManager
 from agents.arc3.orchestrator import ARCOrchestrator
-from agents.arc3.api_knowledge import ingest_api_knowledge
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,6 @@ class DurableARCRunner:
         self.harness = harness
         self._raw_brain = brain_client
         self.config = config
-        self._knowledge_seeded = False
         self._ledger: List[dict] = []
         self._current_step = 0
         self._progress_callback = progress_callback
@@ -43,14 +41,6 @@ class DurableARCRunner:
             ledger=self._ledger,
             step_provider=lambda: self._current_step
         )
-
-    async def _ensure_api_knowledge(self, session_id: str) -> None:
-        """Ingest ARC API contract into SideQuests once per run."""
-        if self._knowledge_seeded:
-            return
-        self.brain.current_phase = "bootstrap"
-        await ingest_api_knowledge(self.brain, session_id)
-        self._knowledge_seeded = True
 
     async def run(self, tasks: List[ABTask], card_id: str) -> List[dict]:
         mgr = CheckpointManager(card_id)
@@ -83,7 +73,6 @@ class DurableARCRunner:
                 step_provider=lambda: self._current_step,
                 start_time=puzzle_start_time
             )
-            await self._ensure_api_knowledge(session_id)
 
             # Branch per puzzle so each gets its own SideQuest scope
             branch_result = await self.brain.branch_quest(
@@ -131,6 +120,10 @@ class DurableARCRunner:
                 result_payload["sidequests_ledger"] = list(self._ledger)
                 # B130: Add timeline from brain
                 result_payload["arc_event_timeline"] = list(getattr(self.brain, "arc_event_timeline", []))
+                
+                # B131: Collect execution trace from orchestrator
+                result_payload["agent_execution_trace"] = getattr(orchestrator, "_execution_trace", [])
+                logger.info(f"B131: Collected {len(result_payload.get('agent_execution_trace', []))} trace events for task {task.task_id}")
                 
                 self._ledger.clear()  # reset for next puzzle
 
@@ -830,6 +823,7 @@ class DurableARCRunner:
             "final_write_trace": result.get("final_write_trace", []) if result else [],
             "prompt_trace": prompt_trace,
             "sidequests_ledger": sidequests_ledger,
+            "agent_execution_trace": result.get("agent_execution_trace", []) if result else [],
             "metadata": metadata,  # preserve for compatibility
         }
     def _build_orchestration_report(self, sidequests_ledger: List[dict], entity_gate_status: dict | None = None, guard_escalations: List[dict] | None = None) -> dict:

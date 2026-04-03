@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
@@ -120,6 +122,9 @@ class ARCOrchestrator:
         self._hypothesis_context: dict | None = None
         self.solve_engine = SolveEngine(brain_client, llm_client, session_id)
         self._solve_context: dict | None = None
+        # B131: Comprehensive execution trace for CloudWatch-style logging
+        self._execution_trace: List[dict] = []
+        self._trace_start_time = time.time()
         # B89: Prompt budget metrics
         self._invalid_action_count = 0
         self._no_progress_step_count = 0
@@ -145,6 +150,20 @@ class ARCOrchestrator:
             "reason": reason,
             "guard_state": status
         })
+
+    def _emit_trace_event(self, event_type: str, operation: str, details: dict | None = None, result: dict | None = None, elapsed_ms: float | None = None):
+        """B131: Emit a timestamped execution trace event (CloudWatch-style)."""
+        import time
+        timestamp_iso = datetime.datetime.fromtimestamp(time.time(), datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+        event = {
+            "timestamp_iso": timestamp_iso,
+            "event_type": event_type,
+            "operation": operation,
+            "details": details or {},
+            "result": result,
+            "elapsed_ms": elapsed_ms,
+        }
+        self._execution_trace.append(event)
 
     @property
     def _entity_map(self) -> Dict[int, Dict[str, Any]]:
@@ -259,10 +278,29 @@ class ARCOrchestrator:
 
     async def perceive(self, observation: ARC3Observation, step: int = 0) -> dict:
         """Ingest puzzle structure into SideQuests then optionally consult memory based on triggers."""
+        self._emit_trace_event(
+            "phase_start",
+            "perceive",
+            {
+                "step": step,
+                "task_id": observation.get("task_id"),
+                "state": observation.get("state"),
+            },
+        )
+
         # Feed puzzle structure into SideQuests (raw → short-term → entities via consolidation)
         structure_summary = self._summarize_puzzle_structure(observation)
+        notify_start = time.time()
         notify_response = await self.brain.notify_turn(
             role="user", content=structure_summary, session_id=self.session_id
+        )
+        notify_elapsed = (time.time() - notify_start) * 1000
+        self._emit_trace_event(
+            "operation",
+            "notify_turn[structure_ingest]",
+            {"step": step},
+            {"summary_length": len(structure_summary)},
+            notify_elapsed,
         )
         self._record_write_event(
             kind="notify_turn",
@@ -273,7 +311,16 @@ class ARCOrchestrator:
 
         # B119/B121: Bootstrap initial entity map at step 0 with enforcement gate
         if step == 0:
+            bootstrap_start = time.time()
             await self._bootstrap_entity_discovery(observation)
+            bootstrap_elapsed = (time.time() - bootstrap_start) * 1000
+            self._emit_trace_event(
+                "operation",
+                "bootstrap_entity_discovery",
+                {"step": step},
+                {"entity_count": len(self._entity_map)},
+                bootstrap_elapsed,
+            )
 
             # Entity gate enforcement (B121)
             max_entity_retries = 2
@@ -295,6 +342,12 @@ class ARCOrchestrator:
                 logger.warning("Entity gate degraded: %s", gate_result["reason"])
 
             self._entity_gate_result = gate_result
+            self._emit_trace_event(
+                "operation",
+                "entity_gate",
+                {"step": step},
+                gate_result,
+            )
             self._record_write_event(
                 kind="entity_gate",
                 summary=f"Entity gate: {gate_result['status']} ({gate_result['reason']})",
@@ -305,18 +358,53 @@ class ARCOrchestrator:
         # B90: Check retrieval triggers to decide whether to fetch memory
         should_retrieve = self._should_trigger_retrieval(observation, step)
         self._retrieval_triggered = should_retrieve
+        self._emit_trace_event(
+            "operation",
+            "retrieval_trigger_check",
+            {"step": step},
+            {"triggered": should_retrieve},
+        )
 
         if should_retrieve:
             query = self._memory_query(observation)
+            truth_start = time.time()
             truth = await self.brain.current_truth(
                 query=query, session_id=self.session_id, scope="branch", limit=5
             )
+            truth_elapsed = (time.time() - truth_start) * 1000
+            self._emit_trace_event(
+                "operation",
+                "current_truth",
+                {"step": step, "query": query},
+                {"results": len(truth.get("results", []))},
+                truth_elapsed,
+            )
+
+            lessons_start = time.time()
             lessons = await self.brain.recall_relevant_lessons(query=query, limit=4)
+            lessons_elapsed = (time.time() - lessons_start) * 1000
+            self._emit_trace_event(
+                "operation",
+                "recall_relevant_lessons",
+                {"step": step, "query": query},
+                {"results": len(lessons.get("lessons", []))},
+                lessons_elapsed,
+            )
+
+            analog_start = time.time()
             analogies = await self.brain.analogical_search(
                 query=query,
                 current_quest_id=observation.get("dataset_id", ""),
                 limit=3,
                 min_similarity=0.35,
+            )
+            analog_elapsed = (time.time() - analog_start) * 1000
+            self._emit_trace_event(
+                "operation",
+                "analogical_search",
+                {"step": step, "query": query},
+                {"results": len(analogies.get("results", []))},
+                analog_elapsed,
             )
             # B89: Track retrieval payload sizes
             retrieval_payload = {
@@ -352,6 +440,17 @@ class ARCOrchestrator:
             }
 
         self._memory_context = memory_context
+        self._emit_trace_event(
+            "phase_end",
+            "perceive",
+            {"step": step},
+            {
+                "retrieval_triggered": bool(memory_context.get("_triggered")),
+                "memories": len(memory_context.get("memories", [])),
+                "lessons": len(memory_context.get("lessons", [])),
+                "analogies": len(memory_context.get("analogies", [])),
+            },
+        )
         return memory_context
 
     # ── Phase 2: Plan ───────────────────────────────────────────────────
@@ -368,7 +467,17 @@ class ARCOrchestrator:
         Called after every action, before the next plan/act decision.
         Returns hypothesis context for prompt construction.
         """
+        self._emit_trace_event(
+            "phase_start",
+            "hypothesize",
+            {
+                "step": step,
+                "action_taken": action_taken,
+                "state": observation.get("state"),
+            },
+        )
         available = observation.get("available_actions") or [f"ACTION{i}" for i in range(1, 8)]
+        observe_start = time.time()
         context = self.hypothesis_mgr.observe(
             grid=observation["grid"],
             action_taken=action_taken,
@@ -376,6 +485,18 @@ class ARCOrchestrator:
             available_actions=available,
             observation=observation,
             transition_meta=transition_meta,
+        )
+        observe_elapsed = (time.time() - observe_start) * 1000
+        self._emit_trace_event(
+            "operation",
+            "hypothesis_mgr.observe",
+            {"step": step, "action_taken": action_taken},
+            {
+                "loop_detected": bool(context.get("loop_detected")),
+                "facts": len(context.get("action_facts", []) or []),
+                "paths": len(context.get("path_hypotheses", []) or []),
+            },
+            observe_elapsed,
         )
 
         # Override energy estimate with hypothesis-driven value if available
@@ -423,11 +544,40 @@ class ARCOrchestrator:
                 detail=detail,
                 source_step=step,
             )
+            self._emit_trace_event(
+                "operation",
+                "hypothesis_update",
+                {"step": step},
+                {
+                    "label": transition_effect.get("meaningful_change_label"),
+                    "score": transition_effect.get("meaningful_change_score"),
+                    "facts": len(action_facts),
+                    "paths": len(path_hypotheses),
+                },
+            )
 
         self._hypothesis_context = context
         
         # B116: Refresh compaction artifact
+        compact_start = time.time()
         self._compaction_artifact = self.hypothesis_mgr.compact_exploration(step)
+        compact_elapsed = (time.time() - compact_start) * 1000
+        self._emit_trace_event(
+            "operation",
+            "compact_exploration",
+            {"step": step},
+            {"artifact_type": type(self._compaction_artifact).__name__},
+            compact_elapsed,
+        )
+        self._emit_trace_event(
+            "phase_end",
+            "hypothesize",
+            {"step": step},
+            {
+                "loop_detected": bool(context.get("loop_detected")),
+                "energy_from_hud": context.get("energy_from_hud"),
+            },
+        )
         
         return context
 
@@ -438,7 +588,17 @@ class ARCOrchestrator:
         step: int,
     ) -> dict:
         """Classify archetype, assign object roles, hypothesize victory condition, chunk plan."""
+        self._emit_trace_event(
+            "phase_start",
+            "solve",
+            {
+                "step": step,
+                "task_id": observation.get("task_id"),
+                "state": observation.get("state"),
+            },
+        )
         current_hash = hypothesis_context.get("current_state_hash", "")
+        solve_start = time.time()
         solve_ctx = await self.solve_engine.solve(
             observation=observation,
             hypothesis_context=hypothesis_context,
@@ -446,6 +606,7 @@ class ARCOrchestrator:
             state_graph=self.hypothesis_mgr.graph,
             current_state_hash=current_hash,
         )
+        solve_elapsed = (time.time() - solve_start) * 1000
         self._solve_context = {
             "archetype": solve_ctx.archetype.value,
             "archetype_confidence": solve_ctx.archetype_confidence,
@@ -493,20 +654,66 @@ class ARCOrchestrator:
             "[SOLVE] step=%d archetype=%s(%.2f) victory=%s chunk=%s dissonance=%s",
             step, archetype, conf, victory, chunk[:40] if chunk else "none", dissonance,
         )
+        self._emit_trace_event(
+            "phase_end",
+            "solve",
+            {"step": step},
+            {
+                "archetype": archetype,
+                "archetype_confidence": conf,
+                "victory": victory,
+                "dissonance": dissonance,
+            },
+            solve_elapsed,
+        )
         return self._solve_context
 
     async def plan(self, observation: ARC3Observation, memory_context: dict) -> dict:
         """Declare a plan and capture Amygdala Reflex context."""
+        import time
+        plan_start = time.time()
+        self._emit_trace_event("phase_start", "plan", {"goal": f"Solve ARC task {observation['dataset_id']}:{observation['task_id']}"})
+        
         goal = f"Solve ARC task {observation['dataset_id']}:{observation['task_id']}"
+        recall_start = time.time()
         recall = await self.brain.recall_plans(
             goal_query=goal, session_id=self.session_id, min_valence=0.0, limit=3
         )
+        recall_elapsed = (time.time() - recall_start) * 1000
+        self._emit_trace_event("operation", "recall_plans", {"goal_query": goal}, {"found": len(recall.get("plans", []))}, recall_elapsed)
+        
+        draft_start = time.time()
         self._plan_steps = self._draft_plan_steps(
             observation, memory_context, recall, self._hypothesis_context
         )
+        draft_elapsed = (time.time() - draft_start) * 1000
+        self._emit_trace_event("operation", "draft_plan_steps", {}, {"steps_count": len(self._plan_steps)}, draft_elapsed)
+        
+        # B131: Emit reasoning trace explaining plan strategy
+        sc = self._solve_context
+        reasoning_parts = []
+        if sc and sc.get("archetype"):
+            reasoning_parts.append(f"Archetype: {sc['archetype']} (conf={sc['archetype_confidence']:.2f})")
+        if sc and sc.get("victory_condition"):
+            vc = sc["victory_condition"]
+            reasoning_parts.append(f"Win condition: {vc['type']} (conf={vc['confidence']:.2f})")
+        if sc and sc.get("active_chunk"):
+            ch = sc["active_chunk"]
+            reasoning_parts.append(f"Active chunk: {ch['description']}")
+        
+        reasoning_summary = " | ".join(reasoning_parts) if reasoning_parts else "Fallback exploration strategy"
+        reasoning_narrative = f"[PLAN REASONING] Goal: {goal}. Strategy: {reasoning_summary}. Steps: {len(self._plan_steps)}"
+        reason_start = time.time()
+        await self.brain.notify_turn(role="assistant", content=reasoning_narrative, session_id=self.session_id)
+        reason_elapsed = (time.time() - reason_start) * 1000
+        self._emit_trace_event("operation", "notify_turn[plan_reasoning]", {"content": reasoning_narrative}, {}, reason_elapsed)
+        
+        register_start = time.time()
         plan_payload = await self.brain.register_plan(
             goal=goal, steps=self._plan_steps, session_id=self.session_id
         )
+        register_elapsed = (time.time() - register_start) * 1000
+        self._emit_trace_event("operation", "register_plan", {"goal": goal, "steps": len(self._plan_steps)}, {"plan_id": plan_payload.get("plan_id")}, register_elapsed)
         self._plan_id = plan_payload.get("plan_id")
         self._reflex_context = plan_payload
         self._record_write_event(
@@ -530,13 +737,41 @@ class ARCOrchestrator:
         step_num: int,
     ) -> ARC3Action:
         """Choose an action using integrated memory, reflex, and plan context."""
+        self._emit_trace_event(
+            "phase_start",
+            "act",
+            {
+                "step": step_num,
+                "state": observation.get("state"),
+                "available_actions": len(observation.get("available_actions") or []),
+            },
+        )
+
         if step_num > 3:
+            loop_check_start = time.time()
             await self.brain.current_truth(
                 query="Am I looping?", session_id=self.session_id, scope="branch", limit=3
             )
+            loop_check_elapsed = (time.time() - loop_check_start) * 1000
+            self._emit_trace_event(
+                "operation",
+                "current_truth[loop_check]",
+                {"step": step_num},
+                {},
+                loop_check_elapsed,
+            )
 
         narrative = f"Step {step_num} observation: state={observation.get('state', 'UNKNOWN')} colors={observation['colors']} shapes={observation['shapes']}"
+        step_notify_start = time.time()
         notify_response = await self.brain.notify_turn(role="user", content=narrative, session_id=self.session_id)
+        step_notify_elapsed = (time.time() - step_notify_start) * 1000
+        self._emit_trace_event(
+            "operation",
+            "notify_turn[step_observation]",
+            {"step": step_num},
+            {"summary_length": len(narrative)},
+            step_notify_elapsed,
+        )
         self._record_write_event(
             kind="notify_turn",
             summary=narrative,
@@ -572,7 +807,16 @@ class ARCOrchestrator:
             self._asked_for_decision_from_effects = "effect" in prompt.lower()
 
         # B114/B123: Mental Sandbox reasoning loop (includes REPL)
+        sandbox_start = time.time()
         action = await self._mental_sandbox(prompt, available_actions, observation)
+        sandbox_elapsed = (time.time() - sandbox_start) * 1000
+        self._emit_trace_event(
+            "operation",
+            "mental_sandbox",
+            {"step": step_num},
+            {"action_id": action.get("action_id")},
+            sandbox_elapsed,
+        )
 
         action = self._enforce_action_policy(action, available_actions)
         action = self._ensure_action6_coordinates(action, observation)
@@ -583,6 +827,15 @@ class ARCOrchestrator:
             available_actions=available_actions,
             hypothesis_context=self._hypothesis_context or {},
             step_history=self._step_history,
+        )
+        self._emit_trace_event(
+            "operation",
+            "critique_action",
+            {"step": step_num, "candidate_action": action.get("action_id")},
+            {
+                "status": guard_result.get("status"),
+                "suggested_action": guard_result.get("suggested_action"),
+            },
         )
         
         executed_by = "llm"
@@ -663,8 +916,24 @@ class ARCOrchestrator:
             })
 
             action["verifier_status"] = "approved" if (verifier_result and verifier_result["approved"]) else "rejected_then_proceeded"
+            self._emit_trace_event(
+                "operation",
+                "verifier",
+                {"step": step_num, "attempts": verifier_attempts},
+                {
+                    "enabled": True,
+                    "approved": bool(verifier_result and verifier_result.get("approved")),
+                    "final_action": action.get("action_id"),
+                },
+            )
         else:
             action["verifier_status"] = "disabled"
+            self._emit_trace_event(
+                "operation",
+                "verifier",
+                {"step": step_num},
+                {"enabled": False},
+            )
 
         # B89: Track invalid actions
         action_id = action.get("action_id")
@@ -695,6 +964,17 @@ class ARCOrchestrator:
             "done": False,
             "prompt_tokens": prompt_tokens,
         })
+        self._emit_trace_event(
+            "phase_end",
+            "act",
+            {"step": step_num},
+            {
+                "action_id": action.get("action_id"),
+                "guard_status": action.get("guard_status"),
+                "verifier_status": action.get("verifier_status"),
+                "prompt_tokens": prompt_tokens,
+            },
+        )
         return action
 
     async def _mental_sandbox(self, initial_prompt: str, available_actions: List[str], observation: ARC3Observation) -> ARC3Action:
@@ -703,6 +983,12 @@ class ARCOrchestrator:
         iteration = 0
         current_prompt = initial_prompt
         thinking_trace = []
+        self._emit_trace_event(
+            "operation",
+            "mental_sandbox_start",
+            {"max_iterations": max_iterations},
+            {"available_actions": len(available_actions)},
+        )
         
         # B122/B123: Use extracted sandbox instructions
         current_prompt += SANDBOX_INSTRUCTION
@@ -710,6 +996,11 @@ class ARCOrchestrator:
 
         while iteration < max_iterations:
             iteration += 1
+            self._emit_trace_event(
+                "operation",
+                "mental_sandbox_iteration",
+                {"iteration": iteration},
+            )
             messages = [
                 {"role": "system", "content": SANDBOX_SYSTEM_MESSAGE},
                 {"role": "user", "content": current_prompt},
@@ -722,6 +1013,15 @@ class ARCOrchestrator:
                 if "sandbox_thought" in parsed:
                     test_action = parsed["sandbox_thought"]
                     result = self.solve_engine.peek_action_consequences(test_action, self._hypothesis_context or {})
+                    self._emit_trace_event(
+                        "operation",
+                        "sandbox_thought",
+                        {"iteration": iteration, "test_action": test_action},
+                        {
+                            "estimated_score": result.get("estimated_score") if isinstance(result, dict) else None,
+                            "meaningful_change": result.get("meaningful_change") if isinstance(result, dict) else None,
+                        },
+                    )
                     
                     thought_entry = {
                         "iteration": iteration,
@@ -741,6 +1041,15 @@ class ARCOrchestrator:
                     # Add simple grid variable for convenience
                     grid_code = f"g = {json.dumps(observation.get('grid', []))}\n" + code
                     result = await asyncio.to_thread(execute_repl, grid_code)
+                    self._emit_trace_event(
+                        "operation",
+                        "repl_test",
+                        {"iteration": iteration},
+                        {
+                            "stderr": result.get("stderr", "")[:200],
+                            "stdout_len": len(result.get("stdout", "")),
+                        },
+                    )
                     
                     thought_entry = {
                         "iteration": iteration,
@@ -758,6 +1067,12 @@ class ARCOrchestrator:
                 if "action_id" in parsed:
                     action_id = self._normalize_action_id(parsed.get("action_id"))
                     rationale = parsed.get("rationale", "")
+                    self._emit_trace_event(
+                        "operation",
+                        "mental_sandbox_final_decision",
+                        {"iteration": iteration},
+                        {"action_id": action_id},
+                    )
                     
                     if action_id not in available_actions:
                         fallback = available_actions[0]
@@ -790,10 +1105,22 @@ class ARCOrchestrator:
                 iteration = max_iterations
             except Exception as exc:
                 logger.warning("Mental sandbox parse failed: %s", exc)
+                self._emit_trace_event(
+                    "operation",
+                    "mental_sandbox_parse_error",
+                    {"iteration": iteration},
+                    {"error": str(exc)},
+                )
                 break
 
         # Fallback to standard query if sandbox fails or exhausts
         final_action = await self._query_llm(initial_prompt, available_actions)
+        self._emit_trace_event(
+            "operation",
+            "mental_sandbox_fallback_query_llm",
+            {},
+            {"action_id": final_action.get("action_id")},
+        )
         if thinking_trace:
             final_action["thinking_trace"] = thinking_trace
         return final_action
@@ -809,6 +1136,16 @@ class ARCOrchestrator:
         final_observation: ARC3Observation,
     ) -> dict:
         """Report outcome and trigger valence propagation."""
+        self._emit_trace_event(
+            "phase_start",
+            "evaluate",
+            {
+                "task_id": final_observation.get("task_id"),
+                "steps_taken": steps_taken,
+                "max_steps": max_steps,
+                "correct": correct,
+            },
+        )
         valence = self.reward_to_valence(correct, steps_taken, max_steps)
         payload = {
             "plan_id": self._plan_id,
@@ -817,7 +1154,19 @@ class ARCOrchestrator:
             "session_id": self.session_id,
         }
         if self._plan_id:
+            report_start = time.time()
             outcome_response = await self.brain.report_outcome(**payload)
+            report_elapsed = (time.time() - report_start) * 1000
+            self._emit_trace_event(
+                "operation",
+                "report_outcome",
+                {"plan_id": self._plan_id},
+                {
+                    "outcome": payload["outcome"],
+                    "valence": round(valence, 2),
+                },
+                report_elapsed,
+            )
             self._record_write_event(
                 kind="report_outcome",
                 summary=(
@@ -834,12 +1183,31 @@ class ARCOrchestrator:
             f"Final observation for {final_observation['task_id']}: "
             f"correct={correct}, steps={steps_taken}, valence={valence:.2f}"
         )
+        final_notify_start = time.time()
         final_notify_response = await self.brain.notify_turn(role="assistant", content=narrative, session_id=self.session_id)
+        final_notify_elapsed = (time.time() - final_notify_start) * 1000
+        self._emit_trace_event(
+            "operation",
+            "notify_turn[final_narrative]",
+            {"task_id": final_observation.get("task_id")},
+            {"summary_length": len(narrative)},
+            final_notify_elapsed,
+        )
         self._record_write_event(
             kind="notify_turn",
             summary=narrative,
             detail={"role": "assistant", "scope": "final_narrative"},
             response_dict=final_notify_response,
+        )
+        self._emit_trace_event(
+            "phase_end",
+            "evaluate",
+            {"task_id": final_observation.get("task_id")},
+            {
+                "correct": correct,
+                "steps_taken": steps_taken,
+                "valence": round(valence, 2),
+            },
         )
         return {"valence": valence}
 
