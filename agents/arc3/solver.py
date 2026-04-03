@@ -11,9 +11,10 @@ Five cognitive components:
 from __future__ import annotations
 import logging
 import json
+import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from agents.arc3.prompts import VICTORY_HYPOTHESIS_TEMPLATE
 
@@ -1356,10 +1357,17 @@ class SolveEngine:
     Produces: SolveContext.
     """
 
-    def __init__(self, brain_client: Any, llm_client: Any, session_id: str) -> None:
+    def __init__(
+        self,
+        brain_client: Any,
+        llm_client: Any,
+        session_id: str,
+        emit_trace_event: Optional[Callable[[str, str, Dict[str, Any], None, float], None]] = None,
+    ) -> None:
         self.brain = brain_client
         self.llm = llm_client
         self.session_id = session_id
+        self._emit_trace = emit_trace_event  # B138: Optional trace callback
 
         self.archetype_classifier = ArchetypeClassifier()
         self.role_mapper = ObjectRoleMapper()
@@ -1381,6 +1389,26 @@ class SolveEngine:
         self._role_resolution_notes: List[str] = []
         self._last_registered_top_plan: Optional[Dict[str, Any]] = None
         self._last_registered_chunk_plan: Optional[Dict[str, Any]] = None
+
+    def _trace(
+        self,
+        event_type: str,
+        operation: str,
+        details: Dict[str, Any] | None = None,
+        result: Dict[str, Any] | None = None,
+        elapsed_ms: float | None = None,
+    ) -> None:
+        """B138: Emit a trace event if callback is registered.
+
+        Args:
+            event_type: Type of event (e.g., "solve_recall_plans_start")
+            operation: Operation name (e.g., "recall_plans")
+            details: Operation details/context
+            result: Result of the operation
+            elapsed_ms: Elapsed time in milliseconds
+        """
+        if self._emit_trace is not None:
+            self._emit_trace(event_type, operation, details or {}, result, elapsed_ms)
 
     def _add_chunk_to_ledger_as_active(self, chunk: PlanChunk) -> None:
         """B124: Mark a chunk as active in the ledger."""
@@ -1497,23 +1525,33 @@ class SolveEngine:
         if need_victory_hypothesis:
             goal_query = f"{self._archetype.value} game win condition solve puzzle"
             try:
+                # B138: Trace recall_plans call
+                self._trace("solve_recall_plans_start", "recall_plans", {"step": step, "query": goal_query})
+                _t0 = time.perf_counter()
                 recall = await self.brain.recall_plans(
                     goal_query=goal_query,
                     session_id=self.session_id,
                     min_valence=0.2,
                     limit=3,
                 )
+                _elapsed = (time.perf_counter() - _t0) * 1000
                 past_plans = recall.get("plans", [])
+                self._trace("solve_recall_plans_end", "recall_plans", {"step": step}, {"count": len(past_plans)}, _elapsed)
             except Exception as exc:
                 logger.warning("recall_plans failed: %s", exc)
                 past_plans = []
 
             try:
+                # B138: Trace recall_relevant_lessons call
+                self._trace("solve_recall_lessons_start", "recall_lessons", {"step": step, "query": f"ARC game {self._archetype.value} win condition"})
+                _t0 = time.perf_counter()
                 lessons_result = await self.brain.recall_relevant_lessons(
                     query=f"ARC game {self._archetype.value} win condition",
                     limit=3,
                 )
+                _elapsed = (time.perf_counter() - _t0) * 1000
                 lessons = lessons_result.get("lessons", [])
+                self._trace("solve_recall_lessons_end", "recall_lessons", {"step": step}, {"count": len(lessons)}, _elapsed)
             except Exception as exc:
                 logger.warning("recall_relevant_lessons failed: %s", exc)
                 lessons = []
@@ -1533,7 +1571,7 @@ class SolveEngine:
 
         # 4. Register one top-level solve plan once the victory hypothesis exists.
         if self._victory_condition is not None and self._solve_plan_id is None:
-            await self._register_solve_plan(observation)
+            await self._register_solve_plan(observation, step=step)
 
         # 5. Dissonance handling: report negative outcome + reset chunk
         if should_replan and self._active_chunk and self._active_chunk.plan_id:
@@ -1619,7 +1657,7 @@ class SolveEngine:
                 # B124: Add chunk to ledger as active
                 self._add_chunk_to_ledger_as_active(self._active_chunk)
                 # B109: Register chunk as a Plan in SideQuests
-                await self._register_chunk_plan(self._active_chunk)
+                await self._register_chunk_plan(self._active_chunk, step=step)
             self.dissonance_detector.reset_chunk()
 
         # 7. Update chunk progress score and consume action
@@ -1679,10 +1717,11 @@ class SolveEngine:
         return (last_plan.get("goal") != goal or
                 last_plan.get("steps") != steps)
 
-    async def _register_chunk_plan(self, chunk: PlanChunk) -> None:
+    async def _register_chunk_plan(self, chunk: PlanChunk, step: int = 0) -> None:
         """B109: Register an active chunk as a plan in SideQuests.
 
         B137: Suppresses re-registration of identical chunk plans via idempotency check.
+        B138: Emits trace events for solve-internal brain I/O.
         """
         # B137: Check if plan has changed before registering
         if not self._plan_changed(
@@ -1706,17 +1745,28 @@ class SolveEngine:
             return
 
         try:
+            # B138: Trace register_plan call
+            steps_list = chunk.estimated_actions or ["Execute strategy toward goal"]
+            self._trace("solve_register_plan", "register_plan", {
+                "step": step,
+                "plan_type": "chunk",
+                "goal": chunk.description,
+                "steps_count": len(steps_list),
+            })
+            _t0 = time.perf_counter()
             plan_payload = await self.brain.register_plan(
                 goal=chunk.description,
-                steps=chunk.estimated_actions or ["Execute strategy toward goal"],
+                steps=steps_list,
                 session_id=self.session_id,
             )
+            _elapsed = (time.perf_counter() - _t0) * 1000
             chunk.plan_id = plan_payload.get("plan_id")
             # B137: Cache the registered plan
             self._last_registered_chunk_plan = {
                 "goal": chunk.description,
-                "steps": chunk.estimated_actions or ["Execute strategy toward goal"],
+                "steps": steps_list,
             }
+            self._trace("solve_register_plan_done", "register_plan", {"step": step, "plan_type": "chunk"}, {"plan_id": chunk.plan_id}, _elapsed)
             logger.info("Chunk plan registered: %s (%s)", chunk.plan_id, chunk.description)
         except Exception as exc:
             logger.warning("register_chunk_plan failed: %s", exc)
@@ -1878,8 +1928,11 @@ class SolveEngine:
             primary_role.role = role_type
         return notes
 
-    async def _register_solve_plan(self, observation: Dict[str, Any]) -> None:
-        """Register top-level solve plan. B137: Suppresses re-registration of identical plans."""
+    async def _register_solve_plan(self, observation: Dict[str, Any], step: int = 0) -> None:
+        """Register top-level solve plan. B137: Suppresses re-registration of identical plans.
+
+        B138: Emits trace events for solve-internal brain I/O.
+        """
         goal = f"Solve ARC task {observation.get('dataset_id', '')}:{observation.get('task_id', '')}"
         steps = [
             "Infer archetype from board dynamics",
@@ -1910,17 +1963,27 @@ class SolveEngine:
             return
 
         try:
+            # B138: Trace register_plan call
+            self._trace("solve_register_plan", "register_plan", {
+                "step": step,
+                "plan_type": "top",
+                "goal": goal,
+                "steps_count": len(steps),
+            })
+            _t0 = time.perf_counter()
             plan_payload = await self.brain.register_plan(
                 goal=goal,
                 steps=steps,
                 session_id=self.session_id,
             )
+            _elapsed = (time.perf_counter() - _t0) * 1000
             self._solve_plan_id = plan_payload.get("plan_id")
             # B137: Cache the registered plan
             self._last_registered_top_plan = {
                 "goal": goal,
                 "steps": steps,
             }
+            self._trace("solve_register_plan_done", "register_plan", {"step": step, "plan_type": "top"}, {"plan_id": self._solve_plan_id}, _elapsed)
             logger.info("Solve plan registered: %s", self._solve_plan_id)
         except Exception as exc:
             logger.warning("register_plan failed for solve plan: %s", exc)
