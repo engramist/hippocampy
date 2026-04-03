@@ -6,6 +6,13 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 |---|---|---|---|---|---|---|---|
 | B13 | Guided Installer with LLM Provider Choice — ✅ DONE (2026-03-24) | P0 | complete | TBD | TBD | - | backlog/B13.md |
 | B130 | Enhanced submission_results logging and observability — ✅ DONE (2026-04-02) | P1 | complete | TBD | TBD | backlog/plans/B-130-enhanced-logging.md | backlog/B130.md |
+| B132 | Fix LLM Initialization — openai package not installed in .venv | P0 | ready | TBD | TBD | backlog/plans/B-132-fix-llm-initialization.md | backlog/B132.md |
+| B133 | Fix Guard Policy Round-Robin Cycling (blocked on B132) | P0 | blocked | TBD | TBD | backlog/plans/B-133-fix-guard-round-robin.md | backlog/B133.md |
+| B134 | Gate Unconditional current_truth Recall — Fires 15× With Zero Results | P1 | ready | TBD | TBD | backlog/plans/B-134-gate-unconditional-recall.md | backlog/B134.md |
+| B135 | Replace Hardcoded step_num > 3 Loop-Check Trigger With Evidence Gate | P1 | ready | TBD | TBD | backlog/plans/B-135-gate-loop-check-trigger.md | backlog/B135.md |
+| B136 | Trigger Re-Planning When Solve Engine Detects Dissonance | P1 | ready | TBD | TBD | backlog/plans/B-136-dissonance-replan.md | backlog/B136.md |
+| B137 | Fix Double register_plan Per Solve Step — Conflicting Active Plans | P2 | ready | TBD | TBD | backlog/plans/B-137-fix-double-register-plan.md | backlog/B137.md |
+| B138 | Expose SolveEngine Internal Brain Calls in Agent Trace | P2 | ready | TBD | TBD | backlog/plans/B-138-solve-engine-trace.md | backlog/B138.md |
 | B19 | `sidequests uninstall` Command — ✅ DONE (2026-03-27) | P0 | complete | TBD | TBD | - | backlog/B19.md |
 | B1 | `sidequests setup` CLI — ✅ DONE (2026-03-28) | P1 | complete | TBD | TBD | backlog/plans/B-1-setup-cli.md | backlog/B1.md |
 | B2 | `.mcpb` Bundle (One-Click Claude Desktop Install) — ✅ DONE (2026-03-28) | P1 | complete | TBD | TBD | backlog/plans/B-2-cowork-plugin.md | backlog/B2.md |
