@@ -19,6 +19,10 @@ from .schema import (
 class BrainClientProtocol(Protocol):
     """Very small protocol covering the MCP tools we actually invoke."""
 
+    @property
+    def db(self) -> Optional[Any]:
+        ...
+
     async def notify_turn(self, *, role: str, content: str, session_id: str, precomputed: Optional[Mapping[str, Any]] = None) -> Mapping[str, Any]:
         ...
 
@@ -31,7 +35,15 @@ class BrainClientProtocol(Protocol):
     async def register_plan(self, *, goal: str, steps: List[str], session_id: str) -> Mapping[str, Any]:
         ...
 
-    async def report_outcome(self, *, plan_id: str, outcome: str, valence: float, session_id: str) -> Mapping[str, Any]:
+    async def report_outcome(
+        self,
+        *,
+        plan_id: str,
+        outcome: str,
+        valence: float,
+        session_id: str,
+        valence_source: Optional[str] = None,
+    ) -> Mapping[str, Any]:
         ...
 
     # NEW — Retrieval tools the agent needs
@@ -66,6 +78,11 @@ class BrainClientProtocol(Protocol):
 
 class NoOpBrainClient(BrainClientProtocol):
     """Brain client that does nothing (for baseline mode)."""
+
+    @property
+    def db(self) -> Optional[Any]:
+        return None
+
     async def notify_turn(self, *, role: str, content: str, session_id: str, precomputed: Optional[Mapping[str, Any]] = None) -> Mapping[str, Any]:
         return {"status": "skipped"}
 
@@ -75,7 +92,15 @@ class NoOpBrainClient(BrainClientProtocol):
     async def register_plan(self, *, goal: str, steps: List[str], session_id: str) -> Mapping[str, Any]:
         return {"plan_id": None, "warnings": [], "suggestions": []}
 
-    async def report_outcome(self, *, plan_id: str, outcome: str, valence: float, session_id: str) -> Mapping[str, Any]:
+    async def report_outcome(
+        self,
+        *,
+        plan_id: str,
+        outcome: str,
+        valence: float,
+        session_id: str,
+        valence_source: Optional[str] = None,
+    ) -> Mapping[str, Any]:
         return {"updated": False}
 
     async def recall_plans(self, *, goal_query: str, session_id: str, min_valence: float, limit: int) -> Mapping[str, Any]:
@@ -108,8 +133,12 @@ class NoOpBrainClient(BrainClientProtocol):
 
 class LocalBrainClient(BrainClientProtocol):
     """Brain client that calls handlers directly (for augmented mode)."""
+    @property
+    def db(self):
+        return self._db
+
     def __init__(self, db, config):
-        self.db = db
+        self._db = db
         self.config = config
         # Late import to avoid circular dependencies
         from mcp_engine.tools import (
@@ -146,8 +175,18 @@ class LocalBrainClient(BrainClientProtocol):
         params = {"goal": goal, "steps": steps, "session_id": session_id}
         return await self._register_plan_handler(params, self.db, self.config)
 
-    async def report_outcome(self, *, plan_id: str, outcome: str, valence: float, session_id: str) -> Mapping[str, Any]:
+    async def report_outcome(
+        self,
+        *,
+        plan_id: str,
+        outcome: str,
+        valence: float,
+        session_id: str,
+        valence_source: Optional[str] = None,
+    ) -> Mapping[str, Any]:
         params = {"plan_id": plan_id, "outcome": outcome, "valence": valence, "session_id": session_id}
+        if valence_source:
+            params["valence_source"] = valence_source
         return await self._report_outcome_handler(params, self.db, self.config)
 
     async def recall_plans(self, *, goal_query: str, session_id: str, min_valence: float, limit: int) -> Mapping[str, Any]:
@@ -198,6 +237,10 @@ class LedgerBrainClient(BrainClientProtocol):
         self._arc_call_seq = 0
         self._event_seq = 0
         self.arc_event_timeline: List[dict] = []
+
+    @property
+    def db(self) -> Optional[Any]:
+        return self.inner.db
 
     def _record(self, phase: str, call_type: str, mode: str, input_summary: str, result_summary: str, latency_ms: float, decision_used: Optional[Any] = None, arc_api_io: Optional[dict] = None):
         import datetime
@@ -363,12 +406,31 @@ class LedgerBrainClient(BrainClientProtocol):
         self._record("unknown", "register_plan", "write", f"goal={goal}, steps={len(steps)}", f"plan_id={resp.get('plan_id')}", latency)
         return resp
 
-    async def report_outcome(self, *, plan_id: str, outcome: str, valence: float, session_id: str) -> Mapping[str, Any]:
+    async def report_outcome(
+        self,
+        *,
+        plan_id: str,
+        outcome: str,
+        valence: float,
+        session_id: str,
+        valence_source: Optional[str] = None,
+    ) -> Mapping[str, Any]:
         import time
         start = time.time()
-        resp = await self.inner.report_outcome(plan_id=plan_id, outcome=outcome, valence=valence, session_id=session_id)
+        kwargs = {
+            "plan_id": plan_id,
+            "outcome": outcome,
+            "valence": valence,
+            "session_id": session_id,
+        }
+        if valence_source:
+            kwargs["valence_source"] = valence_source
+        resp = await self.inner.report_outcome(**kwargs)
         latency = (time.time() - start) * 1000
-        self._record("unknown", "report_outcome", "write", f"plan_id={plan_id}, valence={valence:.2f}", resp.get("status", "ok"), latency)
+        input_summary = f"plan_id={plan_id}, valence={valence:.2f}"
+        if valence_source:
+            input_summary += f", source={valence_source}"
+        self._record("unknown", "report_outcome", "write", input_summary, resp.get("status", "ok"), latency)
         return resp
 
     async def recall_plans(self, *, goal_query: str, session_id: str, min_valence: float, limit: int) -> Mapping[str, Any]:
@@ -526,6 +588,9 @@ class ARC3Adapter:
             "energy_estimate": energy_estimate,
             "frame_hash": frame_hash,
             "invariant_regions": [],
+            "training_examples": raw.get("training_examples") or [], # B156
+            "levels_completed": raw.get("levels_completed"),         # B157
+            "win_levels": raw.get("win_levels"),                     # B157
         }
 
     def normalize_action(
