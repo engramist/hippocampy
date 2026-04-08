@@ -9,14 +9,15 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from benchmarks.arc3.adapter import BrainClientProtocol
 from benchmarks.arc3.schema import ARC3Action, ARC3Observation
 from benchmarks.arc3.state_serializer import StateSerializerForARC
 from agents.arc3.hypothesis import HypothesisManager
-from agents.arc3.solver import SolveEngine
-from agents.arc3.repl_sandbox import execute_repl
+from agents.arc3.solver import SolveEngine, GameRuleHypothesis, PatternMatchTracker, RoleType
+from agents.arc3.grid_analysis import grid_characteristic_summary
+from agents.arc3.repl_verification import LevelReplayVerifier, RuleRefinementLoop
 from agents.arc3.prompts import (
     SYSTEM_PROMPT,
     INSTRUCTION_TEMPLATE,
@@ -26,6 +27,11 @@ from agents.arc3.prompts import (
     QUERY_LLM_SYSTEM_MESSAGE,
     VERIFIER_SYSTEM_PROMPT,
     VERIFIER_PROMPT_TEMPLATE,
+    ARC_PATTERN_SYSTEM_PROMPT,
+    ARC_PATTERN_INSTRUCTION_TEMPLATE,
+    ARC_EXECUTION_SYSTEM_PROMPT,
+    ARC_EXECUTION_INSTRUCTION_TEMPLATE,
+    ARC_ACTION_INSTRUCTION_TEMPLATE,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,10 +56,13 @@ class PromptPacket:
     def render(self) -> str:
         """Render the packet into a final prompt string."""
         ordered_keys = [
-            "SYSTEM", "STATE", "ENTITY_CONTEXT", "MEMORY", "SOLVE_CONTEXT", "PLAN",
+            "SYSTEM", "TRAINING_EXAMPLES", "SOLVED_LEVELS", "PRIOR_INSIGHTS",
+            "GRID_ANALYSIS", "REPL_RESULTS", 
+            "STATE", "ENTITY_CONTEXT", "MEMORY", "SOLVE_CONTEXT", "NAVIGATION", "PLAN",
             "ACTION_FACTS", "EXPLORATION_SUMMARY", "PATH_HYPOTHESES", "HYPOTHESIS",
+            "PATTERN_HYPOTHESIS", "GRID", "TEST_INPUT",
             "OBSERVED_EFFECTS", "REFLEX", "HISTORY", "OBSERVATION",
-            "INSTRUCTION"
+            "INSTRUCTION", "ACTION_INVOCATION"
         ]
         
         # Mapping of block type to its standard header
@@ -61,11 +70,13 @@ class PromptPacket:
             "ENTITY_CONTEXT": "ENTITY CONTEXT",
             "MEMORY": "MEMORY",
             "SOLVE_CONTEXT": "SOLVE CONTEXT",
+            "NAVIGATION": "NAVIGATION GUIDANCE",
             "PLAN": "PLAN",
             "ACTION_FACTS": "ACTION FACTS",
             "EXPLORATION_SUMMARY": "EXPLORATION SUMMARY",
             "PATH_HYPOTHESES": "PATH HYPOTHESES",
             "HYPOTHESIS": "HYPOTHESIS",
+            "PATTERN_HYPOTHESIS": "PATTERN HYPOTHESIS",
             "OBSERVED_EFFECTS": "OBSERVED EFFECTS",
             "REFLEX": "REFLEX",
             "HISTORY": "HISTORY",
@@ -80,11 +91,15 @@ class PromptPacket:
                 if not block.content.strip():
                     continue
                 
-                header = block.header or headers.get(key)
-                if header:
-                    final_parts.append(f"=== {header} ===\n{block.content}")
+                # B117: Some blocks render with headers, others with colons
+                if key in {"SYSTEM", "STATE", "INSTRUCTION", "ACTION_INVOCATION"}:
+                    final_parts.append(f"{key}: {block.content}")
                 else:
-                    final_parts.append(block.content)
+                    header = block.header or headers.get(key)
+                    if header:
+                        final_parts.append(f"=== {header} ===\n{block.content}")
+                    else:
+                        final_parts.append(block.content)
 
         return "\n\n".join(final_parts)
 
@@ -99,6 +114,8 @@ class ARCOrchestrator:
     MAX_PROMPT_PLAN_STEPS = 2
     MAX_PROMPT_HYPOTHESES = 1
     MAX_PROMPT_ACTIONS = 4
+    ACTION_FATIGUE_THRESHOLD = 3  # B149
+    MAX_FORCED_EXPLORATION_STEPS = 3  # B154
 
     def __init__(
         self,
@@ -140,13 +157,687 @@ class ARCOrchestrator:
         self._last_retrieval_step = -1
         self._consecutive_no_progress_steps = 0
         self._blocked_actions: set[str] = set()
+        self._action_fatigue: dict[str, int] = {}  # B149: action_id -> consecutive zero-reward count
+        self._forced_exploration_count = 0  # B154
+        self._total_forced_exploration = 0  # B154
         self._last_seen_invalid_action_count = 0
+        self._force_replan = False # B177
         self._memory_context: dict | None = None
         self._pruning_decisions: List[dict] = []
         self._entity_gate_result: Dict[str, Any] = {}
         self._compaction_artifact: Any | None = None
         self._guard_escalations: List[dict] = []
         self._recent_frame_hashes: List[str] = []  # B135: Track last N frame hashes for loop detection
+        self._exploitation_switch_budget = 2  # B144: Once plateau hits, limit switching families
+        # B150: Grid analysis for training examples
+        self._transformation_signature: Optional[Any] = None
+        self._training_diffs: List[Any] = []
+        self._frame_deltas: List[Any] = []
+        self._solved_level_diffs: List[Any] = []
+        self._level_pattern: Optional[Any] = None
+        self._last_grid: Optional[List[List[int]]] = None
+        # B152: REPL-driven solving
+        self._verified_output_grid = None
+        self._phase2_mode = "fallback"  # "execution" | "fallback"
+        # B157: Multi-level tracking
+        self._solved_levels: List[dict] = []
+        self._level_start_grid: Optional[List[List[int]]] = None
+        self._level_action_buffer: List[str] = []
+        self._current_level: int = 0
+        self._rule_confidence: float = 0.0
+        self.observed_action_effects: dict[str, dict] = {}
+        self._available_actions: List[str] = []
+        # B156: Progressive knowledge (persists across levels)
+        # B173: Removed local _game_rule_hypothesis; using solve_engine._game_rule_hypotheses[0]
+        self._action_semantics: Dict[str, str] = {}
+        # B161: Spatial tracking and goal-directed navigation
+        self._player_position: tuple[float, float] | None = None
+        self._goal_position: tuple[float, float] | None = None
+        self._last_interact_effect: dict | None = None
+        # B162/B165: Bootstrap structural analysis for step-0 reasoning and recall keys
+        self._bootstrap_grid_summary: dict | None = None
+        # B164: Compact prompt mode for smaller local models
+        self._compact_mode: bool = self._is_compact_model()
+        # B167: Pattern match tracking and intermediate targets
+        self._pattern_tracker = PatternMatchTracker()
+        self._visited_intermediates: set[tuple[int, int]] = set()
+        # B169: KuzuDB role source of truth
+        self._entity_graph: Optional["EntityGraphBuilder"] = None
+        # B175: Autopilot wall detection and rerouting
+        self._blocked_axes: Dict[str, int] = {}  # {"row": step_blocked, "col": step_blocked}
+        self._last_autopilot_player_pos: Optional[tuple[float, float]] = None
+        # B178: Action semantics discovery
+        self._action_direction_map: Optional[Dict[str, tuple[float, float]]] = None
+
+    @property
+    def _game_rule_hypothesis(self) -> Any | None:
+        """B173: Single source of truth for current game rule."""
+        if hasattr(self, 'solve_engine') and self.solve_engine._game_rule_hypotheses:
+            return self.solve_engine._game_rule_hypotheses[0]
+        return None
+
+    async def _on_level_transition(self, completed_level: int, solved_levels: List[dict]):
+        """B157: Called when a level is won. Prepare for next level."""
+        self._current_level = completed_level + 1
+
+        # B167: Save puzzle model before clearing state
+        await self._save_puzzle_model("solved")
+        self._visited_intermediates.clear()
+        # B178: Reset action map for new level
+        self._action_direction_map = None
+
+        # B150: Analyze the solved level
+        if solved_levels:
+            self._analyze_level_transition(solved_levels[-1])
+            
+            # B156: Run the full knowledge pipeline (B151 + B152)
+            await self._run_knowledge_pipeline(solved_levels)
+
+        # Emit trace for level completion
+        self._emit_trace_event("operation", "level_complete", {
+            "level": completed_level,
+            "total_levels_solved": len(solved_levels),
+            "actions_used": solved_levels[-1]["steps"] if solved_levels else 0,
+        })
+
+        # Partial reset: keep learned knowledge, clear per-level state
+        self._consecutive_no_progress_steps = 0
+        self._forced_exploration_count = 0
+        if hasattr(self, '_action_fatigue'):
+            self._action_fatigue.clear()
+        self._recent_frame_hashes = []
+        self._last_grid = None # B150: Reset per-step grid tracking
+        # Clear Phase 1 results so we re-analyze for the next level if needed
+        # (Though usually the rule stays the same, the application might change)
+        self._verified_output_grid = None
+        # B156: _phase2_mode is now set by _run_knowledge_pipeline based on confidence
+
+    def _update_player_position(self, observation: dict):
+        """B161: Track player centroid after each step."""
+        grid = observation.get("grid")
+        if not grid:
+            return
+
+        # Use solver's identified player color
+        player_color = None
+        for color_id, role in self.solve_engine._object_roles.items():
+            if role.role == RoleType.PLAYER:
+                player_color = int(color_id)
+                break
+
+        if player_color is None:
+            return
+
+        # Compute centroid of player color
+        rows, cols, count = 0.0, 0.0, 0
+        for r, row in enumerate(grid):
+            for c, val in enumerate(row):
+                if val == player_color:
+                    rows += r
+                    cols += c
+                    count += 1
+
+        if count > 0:
+            self._player_position = (rows / count, cols / count)
+
+    def _update_goal_position(self):
+        """B161: Extract goal position from solve context."""
+        for color_id, role in self.solve_engine._object_roles.items():
+            if role.role in (RoleType.GOAL, RoleType.EXIT) and role.estimated_position:
+                pos = role.estimated_position
+                self._goal_position = (pos["row"], pos["col"])
+                return
+
+    def _pick_action_for_direction(self, dr: float, dc: float, available_actions: List[str]) -> Optional[str]:
+        """B178: Pick the action that best moves the player in the (dr, dc) direction."""
+        if self._action_direction_map:
+            best_action = None
+            best_dot = -float('inf')
+            for aid, (a_dr, a_dc) in self._action_direction_map.items():
+                if aid not in available_actions:
+                    continue
+                # Dot product: how aligned is this action with desired direction?
+                dot = dr * a_dr + dc * a_dc
+                if dot > best_dot:
+                    best_dot = dot
+                    best_action = aid
+            
+            # If we found an empirical match with positive alignment, use it
+            if best_action and best_dot > 0.1:
+                return best_action
+
+        # Fallback to convention if no empirical data or it didn't yield a good match
+        if abs(dr) >= abs(dc):
+            return "ACTION1" if dr < 0 else "ACTION2"
+        else:
+            return "ACTION3" if dc < 0 else "ACTION4"
+
+    def _nearest_unvisited_intermediate(self, player_info: dict, intermediates: List[dict]) -> Optional[dict]:
+        """B167: Find the closest intermediate object the player hasn't visited yet."""
+        unvisited = [
+            i for i in intermediates
+            if (round(i["estimated_position"]["row"]), round(i["estimated_position"]["col"]))
+               not in self._visited_intermediates
+        ]
+        
+        if not unvisited:
+            # All visited — return None to fall back or pick nearest anyway
+            # For now, if all visited, we just return the nearest one again
+            # as some puzzles might need multiple visits
+            unvisited = intermediates
+
+        if not unvisited:
+            return None
+
+        # Sort by Manhattan distance to player
+        def dist(i):
+            pos = i["estimated_position"]
+            return abs(pos["row"] - player_info["row"]) + abs(pos["col"] - player_info["col"])
+
+        return min(unvisited, key=dist)
+
+    def _try_autopilot(self, observation: dict, available_actions: List[str]) -> Optional[ARC3Action]:
+        """B166: Deterministic navigation when player/goal positions are known.
+        B167: Extended with phase-awareness and intermediate targets.
+        """
+        sc = self._solve_context or {}
+        roles = sc.get("object_roles") or {}
+        if not roles:
+            roles = self._entity_map
+
+        grid = observation.get("grid") or []
+        step = len(self._step_history)
+
+        # B167: Update pattern tracker
+        pattern_state = self._pattern_tracker.update(grid, step)
+        self._emit_trace_event("operation", "pattern_match_progress", {
+            "step": step,
+            "phase": pattern_state["phase"],
+            "similarity": pattern_state["similarity"],
+            "trend": pattern_state.get("similarity_trend", "unknown"),
+        })
+
+        player_info = None
+        goal_info = None
+        for color_id, role_data in roles.items():
+            if role_data.get("role") == "player" and role_data.get("confidence", 0) >= 0.7:
+                pos = role_data.get("estimated_position")
+                if pos and pos.get("row") is not None and pos.get("col") is not None:
+                    player_info = {"color": color_id, "row": pos["row"], "col": pos["col"], "conf": role_data["confidence"]}
+            elif role_data.get("role") == "goal" and role_data.get("confidence", 0) >= 0.7:
+                pos = role_data.get("estimated_position")
+                if pos and pos.get("row") is not None and pos.get("col") is not None:
+                    goal_info = {"color": color_id, "row": pos["row"], "col": pos["col"], "conf": role_data["confidence"]}
+
+        if not player_info:
+            return None
+
+        # Target selection based on phase
+        target = None
+        rationale_prefix = "autopilot"
+
+        if pattern_state["phase"] == "finish" and goal_info:
+            target = goal_info
+            rationale_prefix = "autopilot[finish]: goal matches reference"
+        elif pattern_state["phase"] == "intermediate":
+            # Find nearest intermediate object
+            intermediates = [
+                r for r in roles.values()
+                if r.get("role") == "intermediate" and r.get("estimated_position")
+            ]
+            if intermediates:
+                target = self._nearest_unvisited_intermediate(player_info, intermediates)
+                if target:
+                    pos = target["estimated_position"]
+                    target = {"row": pos["row"], "col": pos["col"]}
+                    rationale_prefix = f"autopilot[intermediate]: visiting interactive object at {round(pos['row'])},{round(pos['col'])}"
+            
+            # If no intermediate found or all visited, fall back to goal if known
+            if not target and goal_info:
+                target = goal_info
+                rationale_prefix = "autopilot[intermediate]: no intermediates, driving to goal"
+        
+        if not target:
+            # Fall back to original goal-only logic if phase-aware targeting failed
+            if goal_info:
+                target = goal_info
+            else:
+                return None
+
+        # B168: Disengage if autopilot is not making progress (zero pixel changes).
+        # B175: Primary check is centroid delta, but keep this as robust fallback.
+        recent_zero_px = sum(
+            1
+            for s in self._step_history[-2:]
+            if s.get("decision_source") == "autopilot" and (s.get("frame_delta", {}).get("n_cells_changed", -1) == 0)
+        )
+        if recent_zero_px >= 2:
+            self._emit_trace_event("operation", "autopilot_disengage", {"reason": "wall_collision", "consecutive_zero_px": recent_zero_px})
+            return None
+
+        # B175: Improved wall detection using player centroid delta.
+        # Check if player actually moved since last autopilot step.
+        if self._last_autopilot_player_pos is not None:
+            last_row, last_col = self._last_autopilot_player_pos
+            row_delta = abs(player_info["row"] - last_row)
+            col_delta = abs(player_info["col"] - last_col)
+
+            # Find the last autopilot step to see which axis we tried to move on
+            last_autopilot = next(
+                (s for s in reversed(self._step_history) if s.get("decision_source") == "autopilot"),
+                None
+            )
+            if last_autopilot:
+                last_aid = last_autopilot.get("action_id")
+                # ACTION1 (up), ACTION2 (down) -> row axis
+                # ACTION3 (left), ACTION4 (right) -> col axis
+                was_row_move = last_aid in ("ACTION1", "ACTION2")
+                target_axis_delta = row_delta if was_row_move else col_delta
+
+                if target_axis_delta < 0.5:
+                    # Player didn't move on the target axis — wall detected
+                    blocked_axis = "row" if was_row_move else "col"
+                    self._blocked_axes[blocked_axis] = step
+                    self._emit_trace_event("operation", "autopilot_wall_detected", {
+                        "axis": blocked_axis,
+                        "player_delta": {"row": row_delta, "col": col_delta},
+                        "step": step,
+                    })
+
+        dr = target["row"] - player_info["row"]
+        dc = target["col"] - player_info["col"]
+
+        # B175: Axis rotation when preferred axis is blocked
+        # Consider an axis blocked if it was marked blocked in the last 10 steps
+        row_blocked = "row" in self._blocked_axes and (step - self._blocked_axes["row"]) < 10
+        col_blocked = "col" in self._blocked_axes and (step - self._blocked_axes["col"]) < 10
+
+        # B168: Detect oscillation — if player has been bouncing between same
+        # positions in recent autopilot steps, try interact instead of moving
+        player_pos_key = (round(player_info["row"]), round(player_info["col"]))
+        recent_positions = [
+            (round(s.get("autopilot_player_row", -999)), round(s.get("autopilot_player_col", -999)))
+            for s in self._step_history[-4:]
+            if s.get("decision_source") == "autopilot"
+        ]
+        oscillating = recent_positions.count(player_pos_key) >= 2 and len(recent_positions) >= 3
+
+        # If already at target (within 1 cell) OR oscillating near target, try interact
+        near_target = abs(dr) <= 1.0 and abs(dc) <= 1.0
+        close_enough = abs(dr) <= 3.0 and abs(dc) <= 3.0
+        if near_target or (oscillating and close_enough):
+            if "ACTION5" in available_actions:
+                action_id = "ACTION5"
+                reason = "arrived" if near_target else "oscillation detected, trying interact"
+                rationale = f"{rationale_prefix}, {reason}"
+
+                # Mark as visited if it's an intermediate
+                if pattern_state["phase"] == "intermediate":
+                    self._visited_intermediates.add((round(target["row"]), round(target["col"])))
+            else:
+                return None
+        elif oscillating:
+            # B168: Oscillating but not close enough to interact — try the other axis
+            # to break out of the bounce pattern
+            if abs(dr) >= abs(dc):
+                # Was bouncing on row axis; try column axis instead
+                action_id = self._pick_action_for_direction(0, dc if dc != 0 else 1, available_actions)
+            else:
+                # Was bouncing on column axis; try row axis instead
+                action_id = self._pick_action_for_direction(dr if dr != 0 else 1, 0, available_actions)
+            rationale = f"{rationale_prefix}: oscillation detected, switching axis"
+        else:
+            # B175: Choose axis with larger delta, considering blocks
+            # B178: Use discovered action semantics
+            if abs(dr) >= abs(dc):
+                if row_blocked and abs(dc) >= 1.0 and not col_blocked:
+                    # Primary axis (row) blocked, rotate to column axis
+                    action_id = self._pick_action_for_direction(0, dc, available_actions)
+                    rationale = f"{rationale_prefix}: row blocked, rotating to col axis"
+                elif row_blocked:
+                    # Row axis blocked and (no column delta to try OR column also blocked)
+                    self._emit_trace_event("operation", "autopilot_disengage", {"reason": "row_axis_blocked_no_alt"})
+                    return None
+                else:
+                    action_id = self._pick_action_for_direction(dr, 0, available_actions)
+                    rationale = f"{rationale_prefix}: target is {abs(dr):.1f} rows {'above' if dr < 0 else 'below'}, using discovered mapping"
+            else:
+                if col_blocked and abs(dr) >= 1.0 and not row_blocked:
+                    # Primary axis (col) blocked, rotate to row axis
+                    action_id = self._pick_action_for_direction(dr, 0, available_actions)
+                    rationale = f"{rationale_prefix}: col blocked, rotating to row axis"
+                elif col_blocked:
+                    # Col axis blocked and (no row delta to try OR row also blocked)
+                    self._emit_trace_event("operation", "autopilot_disengage", {"reason": "col_axis_blocked_no_alt"})
+                    return None
+                else:
+                    action_id = self._pick_action_for_direction(0, dc, available_actions)
+                    rationale = f"{rationale_prefix}: target is {abs(dc):.1f} cols {'left' if dc < 0 else 'right'}, using discovered mapping"
+
+        if action_id not in available_actions:
+            return None
+
+        # B177: Make tier 2 blocks checked by autopilot
+        if action_id in self._blocked_actions:
+            # Try orthogonal axis
+            if action_id in ("ACTION1", "ACTION2"):
+                # Was row axis, try col axis if there is a delta
+                if abs(dc) >= 1.0:
+                    alt = "ACTION3" if dc < 0 else "ACTION4"
+                else:
+                    alt = None
+            else:
+                # Was col axis, try row axis if there is a delta
+                if abs(dr) >= 1.0:
+                    alt = "ACTION1" if dr < 0 else "ACTION2"
+                else:
+                    alt = None
+            
+            if alt and alt not in self._blocked_actions and alt in available_actions:
+                action_id = alt
+                rationale = f"{rationale_prefix}: primary blocked, using alternative"
+            else:
+                self._emit_trace_event("operation", "autopilot_disengage", {"reason": "action_blocked", "action": action_id})
+                return None
+
+        # B175: Save player position for next wall check
+        self._last_autopilot_player_pos = (player_info["row"], player_info["col"])
+
+        self._emit_trace_event("operation", "autopilot_engage", {
+            "player": {"row": player_info["row"], "col": player_info["col"]},
+            "target": {"row": target["row"], "col": target["col"]},
+            "phase": pattern_state["phase"],
+            "chosen_action": action_id,
+        })
+
+        return {
+            "action_id": action_id,
+            "rationale": rationale,
+            "decision_source": "autopilot",
+            "autopilot_player_row": player_info["row"],
+            "autopilot_player_col": player_info["col"],
+        }
+
+    def _build_puzzle_model(self) -> dict:
+        """B167: Build a structured puzzle model from what the agent learned this level."""
+        model = {
+            "type": "puzzle_model",
+            "game_id": getattr(self, "_game_id", "unknown"),
+            "level": self._current_level,
+            "grid_structure": {
+                "reference_location": None,
+                "goal_location": None,
+                "intermediate_count": 0,
+            },
+            "mechanic": {
+                "description": "",
+                "interact_required": True,
+            },
+            "learned_facts": [],
+            "pattern_similarity_at_start": 0.0,
+            "pattern_similarity_at_end": 0.0,
+            "outcome": "unknown",
+        }
+
+        if self._pattern_tracker:
+            if self._pattern_tracker.reference_region:
+                model["grid_structure"]["reference_location"] = self._pattern_tracker.reference_region.location_hint
+            if self._pattern_tracker.goal_region:
+                model["grid_structure"]["goal_location"] = self._pattern_tracker.goal_region.location_hint
+            if self._pattern_tracker.similarity_history:
+                model["pattern_similarity_at_start"] = self._pattern_tracker.similarity_history[0]
+                model["pattern_similarity_at_end"] = self._pattern_tracker.similarity_history[-1]
+
+        intermediates = [r for r in self.solve_engine._object_roles.values() if r.role == RoleType.INTERMEDIATE]
+        model["grid_structure"]["intermediate_count"] = len(intermediates)
+
+        visited = len(self._visited_intermediates)
+        if visited > 0 or len(intermediates) > 0:
+            model["mechanic"]["description"] = (
+                f"Navigate to {len(intermediates)} intermediate markers and interact (ACTION5). "
+                f"Each visit transforms the goal pattern. When goal matches reference, "
+                f"interact with goal to complete level."
+            )
+
+        # Add learned facts from step history
+        for step in self._step_history:
+            delta = step.get("frame_delta", {})
+            if step.get("action_id") == "ACTION5" and delta.get("n_cells_changed", 0) > 5:
+                model["learned_facts"].append({
+                    "fact": f"ACTION5 at step {step['step']} caused {delta['n_cells_changed']} pixel change",
+                    "interpretation": "interact triggered a state change",
+                })
+
+        return model
+
+    async def _save_puzzle_model(self, outcome: str):
+        """B167: Persist puzzle understanding to SideQuests for cross-level recall."""
+        model = self._build_puzzle_model()
+        model["outcome"] = outcome
+
+        description = (
+            f"Level {self._current_level} puzzle model: "
+            f"reference at {model['grid_structure']['reference_location']}, "
+            f"{model['grid_structure']['intermediate_count']} intermediates, "
+            f"mechanic: {model['mechanic']['description']}"
+        )
+
+        # Save as a structured lesson via report_outcome
+        try:
+            await self.brain.report_outcome(
+                plan_id=None,
+                session_id=self.session_id,
+                outcome_text=description,
+                valence=1.0 if outcome == "solved" else -0.3,
+                evidence=model,
+            )
+
+            # Also save as a notify_turn so it appears in the conversation history
+            await self.brain.notify_turn(
+                role="assistant",
+                content=f"[PUZZLE MODEL] {description}",
+                session_id=self.session_id,
+            )
+
+            self._emit_trace_event("operation", "puzzle_model_saved", {
+                "level": self._current_level,
+                "outcome": outcome,
+                "intermediate_count": model["grid_structure"]["intermediate_count"],
+                "similarity_start": model["pattern_similarity_at_start"],
+                "similarity_end": model["pattern_similarity_at_end"],
+            })
+        except Exception as exc:
+            logger.warning("B167: _save_puzzle_model failed: %s", exc)
+
+    async def _recall_puzzle_model(self) -> Optional[List[dict]]:
+        """B167: Recall saved puzzle understanding from earlier levels."""
+        if self._current_level <= 1:
+            return None
+
+        try:
+            results = await self.brain.current_truth(
+                query="puzzle model reference pattern intermediate markers",
+                session_id=self.session_id,
+                scope="branch",
+                limit=3,
+            )
+
+            if not results or not results.get("results"):
+                return None
+
+            memories = results["results"]
+            self._emit_trace_event("operation", "puzzle_model_recalled", {
+                "level": self._current_level,
+                "results_count": len(memories),
+            })
+
+            # Apply recalled knowledge:
+            # Skip discover phase — go straight to intermediate
+            if self._pattern_tracker:
+                self._pattern_tracker.phase = "intermediate"
+                # If we have a previous model, we could seed reference/goal locations here
+                # but for now letting the tracker find them in the new grid is safer.
+
+            return memories
+        except Exception as exc:
+            logger.warning("B167: _recall_puzzle_model failed: %s", exc)
+            return None
+
+    async def merge_graph_roles(self, graph_roles: Dict[int, ObjectRole]):
+        """B168: Accept graph-inferred roles from exploration agent.
+        Higher confidence wins when merging with existing heuristic roles.
+        B169: Single source of truth: KuzuDB."""
+        if not graph_roles:
+            return
+
+        merged_count = 0
+        for color_id, graph_role in graph_roles.items():
+            existing = self.solve_engine._object_roles.get(color_id)
+            if existing is None or graph_role.confidence > existing.confidence:
+                self.solve_engine._set_role(color_id, graph_role)
+                merged_count += 1
+
+        # B169: Flush immediately after exploration phase
+        await self.solve_engine._flush_role_writes()
+
+        if merged_count > 0:
+            self._emit_trace_event(
+                "b168_roles_merged",
+                "merge_graph_roles",
+                details={
+                    "merged_count": merged_count,
+                    "roles": {
+                        str(k): {"role": v.role.value, "confidence": v.confidence}
+                        for k, v in graph_roles.items()
+                    },
+                },
+            )
+
+    def _build_movement_summary(self) -> str:
+        """B161: Summarize which directions worked and which hit walls."""
+        action_names = {
+            "ACTION1": "up", 
+            "ACTION2": "down", 
+            "ACTION3": "left", 
+            "ACTION4": "right", 
+            "ACTION5": "interact"
+        }
+        lines = []
+        # Last 5 steps
+        for step in self._step_history[-5:]:
+            aid = step.get("action_id", "?")
+            fa = step.get("frame_delta", {})
+            px = fa.get("n_cells_changed", 0)
+            name = action_names.get(aid, aid)
+            if px == 0:
+                lines.append(f"{name}: blocked (wall/no-op)")
+            else:
+                lines.append(f"{name}: moved ({px} pixels changed)")
+        return "\n".join(lines)
+
+    def _analyze_level_transition(self, solved_level: dict):
+        """B150: Deterministic analysis of a completed level."""
+        from agents.arc3.grid_analysis import GridDiffEngine
+        diff_engine = GridDiffEngine()
+        
+        try:
+            level_diff = diff_engine.diff_grids(solved_level["start_grid"], solved_level["end_grid"])
+            self._solved_level_diffs.append(level_diff)
+
+            # Cross-level consensus across all solved levels
+            if len(self._solved_level_diffs) >= 1:
+                self._level_pattern = diff_engine.cross_level_consensus(self._solved_level_diffs)
+                
+                self._emit_trace_event("operation", "level_consensus", {
+                    "n_levels": len(self._solved_level_diffs),
+                    "summary": self._level_pattern.game_rule_summary,
+                    "confidence": round(self._level_pattern.confidence, 3),
+                })
+        except Exception as exc:
+            logger.warning("B150: _analyze_level_transition failed: %s", exc)
+
+    async def _run_knowledge_pipeline(self, solved_levels: List[dict]):
+        """B156: Full knowledge pipeline: Hypothesis (B151) -> Verification (B152) -> Mode Routing."""
+        if not self._level_pattern:
+            return
+
+        from agents.arc3.solver import GameRuleHypothesizer
+        from agents.arc3.repl_verification import LevelReplayVerifier, RuleRefinementLoop
+
+        # Step 1: Generate game rule hypotheses (B151)
+        hypothesizer = GameRuleHypothesizer()
+        hypotheses = await hypothesizer.hypothesize(
+            level_pattern=self._level_pattern,
+            solved_levels=solved_levels,
+            llm_client=self.llm,
+        )
+        
+        if not hypotheses:
+            self._emit_trace_event("operation", "pipeline_no_hypotheses", {})
+            self._phase2_mode = "fallback"
+            return
+
+        # Step 2: Verify via REPL (B152)
+        verifier = LevelReplayVerifier()
+        loop = RuleRefinementLoop(self.llm, verifier)
+
+        best_hypothesis = await loop.solve(
+            hypotheses=hypotheses,
+            solved_levels=solved_levels,
+        )
+        
+        if not best_hypothesis:
+            self._phase2_mode = "fallback"
+            return
+
+        self.solve_engine._set_game_rule_hypotheses([best_hypothesis])
+        # B173: Persist best hypothesis into orchestrator-level attributes (B156)
+        try:
+            self._rule_confidence = float(getattr(best_hypothesis, "confidence", 0.0) or 0.0)
+            self._action_semantics = dict(getattr(best_hypothesis, "action_semantics", {}) or {})
+        except Exception:
+            # Defensive: don't let hypothesis shape break the pipeline
+            self._rule_confidence = 0.0
+            self._action_semantics = {}
+        
+        # Step 3: Confidence-based mode routing (B156)
+        # Confidence > 0.8: execution (we are sure)
+        # Confidence 0.4-0.8: rule_application (we have a good guess)
+        # Confidence < 0.4: fallback (navigation)
+        
+        if best_hypothesis.confidence >= 0.8:
+            self._phase2_mode = "execution"
+        elif best_hypothesis.confidence >= 0.4:
+            self._phase2_mode = "rule_application"
+        else:
+            self._phase2_mode = "fallback"
+
+        self._emit_trace_event("operation", "pipeline_complete", {
+            "best_rule": best_hypothesis.rule_description,
+            "confidence": round(best_hypothesis.confidence, 3),
+            "selected_mode": self._phase2_mode
+        })
+
+    def _select_prompt_mode(self) -> str:
+        """B156: Select prompt mode based on level and learned knowledge."""
+        current_level = getattr(self, '_current_level', 0)
+        n_solved = len(getattr(self, '_solved_levels', []))
+        confidence = getattr(self, '_rule_confidence', 0.0)
+
+        # High confidence + multiple levels verified → execution
+        if confidence > 0.8 and n_solved >= 2:
+            return "execution"
+
+        # Some knowledge → show insights
+        if n_solved >= 1 and confidence > 0.4:
+            return "rule_application"
+
+        # Level 1, no knowledge → explore
+        if current_level <= 1 and n_solved == 0:
+            return "exploration"
+
+        # Default → existing navigation
+        return "navigation"
 
     def record_guard_escalation(self, step: int, reason: str, status: str):
         """B130: Record a guard escalation event."""
@@ -183,7 +874,8 @@ class ARCOrchestrator:
             k: {
                 "role": v.role.value,
                 "confidence": v.confidence,
-                "position": v.estimated_position
+                "position": v.estimated_position,
+                "estimated_position": v.estimated_position
             }
             for k, v in self.solve_engine._object_roles.items()
         }
@@ -237,16 +929,20 @@ class ARCOrchestrator:
         return decisions
 
     async def _bootstrap_entity_discovery(self, observation: ARC3Observation) -> None:
-        """B119: Extract bootstrap entity discovery logic."""
+        """B119: Extract bootstrap entity discovery logic.
+        B169: Authority is KuzuDB."""
         bootstrap_roles = self.solve_engine.role_mapper.seed_bootstrap_roles(observation)
         discovered_count = 0
         for color_id, role in bootstrap_roles.items():
             existing = self.solve_engine._object_roles.get(color_id)
             # Update if new, or if existing was unknown/low-conf
             if existing is None or existing.role == "unknown" or role.confidence > existing.confidence:
-                self.solve_engine._object_roles[color_id] = role
+                self.solve_engine._set_role(color_id, role)
                 discovered_count += 1
         
+        # B169: Ensure bootstrap roles are flushed to DB immediately
+        await self.solve_engine._flush_role_writes()
+
         if discovered_count > 0:
             detail = {
                 str(k): {"role": v.role.value, "confidence": v.confidence}
@@ -319,6 +1015,53 @@ class ARCOrchestrator:
             detail={"role": "user", "scope": "structure_ingest"},
             response_dict=notify_response,
         )
+
+        # B162: Front-load grid analysis before the first action.
+        if step == 0:
+            self._ensure_bootstrap_grid_analysis(observation, step=step)
+            
+            # B167: Recall puzzle model on level 2+
+            if self._current_level > 1:
+                await self._recall_puzzle_model()
+                # B170/B171: Also load durable hypotheses + action facts from KuzuDB
+                await self.hypothesis_mgr.load_hypotheses()
+                await self.hypothesis_mgr.load_action_facts()
+
+        # B150: Analyze training examples if available (Step 0 bootstrap)
+        if step == 0:
+            training_examples = observation.get("training_examples") or []
+            if training_examples:
+                try:
+                    from agents.arc3.grid_analysis import GridDiffEngine
+                    diff_engine = GridDiffEngine()
+                    diffs = []
+                    for example in training_examples:
+                        if "input" in example and "output" in example:
+                            diff = diff_engine.diff_grids(example["input"], example["output"])
+                            diffs.append(diff)
+                    
+                    if diffs:
+                        self._training_diffs = diffs
+                        self._transformation_signature = diff_engine.cross_example_consensus(diffs)
+                        
+                        self._emit_trace_event(
+                            "operation",
+                            "grid_diff_analysis",
+                            {"example_count": len(diffs)},
+                            {
+                                "pattern": self._transformation_signature.change_pattern,
+                                "confidence": round(self._transformation_signature.confidence, 3),
+                                "summary": self._transformation_signature.summary
+                            }
+                        )
+                        logger.info("[B150] Grid analysis complete: %s (conf=%.2f)", 
+                                    self._transformation_signature.change_pattern, 
+                                    self._transformation_signature.confidence)
+                except Exception as exc:
+                    logger.warning("B150: grid analysis failed: %s", exc)
+
+        # B150: Update last_grid for per-step analysis
+        self._last_grid = observation.get("grid")
 
         # B119/B121: Bootstrap initial entity map at step 0 with enforcement gate
         if step == 0:
@@ -432,6 +1175,18 @@ class ARCOrchestrator:
             self._retrieval_payloads.append(retrieval_payload)
             self._last_retrieval_step = step
 
+            # B155: Parse transformation lessons from retrieved memories
+            retrieved_memories = truth.get("results", []) + lessons.get("lessons", [])
+            memory_hypotheses = self._parse_transformation_lessons(retrieved_memories)
+            if memory_hypotheses:
+                self._memory_hypotheses = memory_hypotheses
+                self._emit_trace_event(
+                    "operation",
+                    "retrieved_transformation_lessons",
+                    {"count": len(memory_hypotheses)},
+                    {"top_rule": memory_hypotheses[0].rule_description}
+                )
+
             memory_context = {
                 "memories": truth.get("results", []),
                 "lessons": lessons.get("lessons", []),
@@ -489,7 +1244,7 @@ class ARCOrchestrator:
         )
         available = observation.get("available_actions") or [f"ACTION{i}" for i in range(1, 8)]
         observe_start = time.time()
-        context = self.hypothesis_mgr.observe(
+        context = await self.hypothesis_mgr.observe(
             grid=observation["grid"],
             action_taken=action_taken,
             step=step,
@@ -608,19 +1363,33 @@ class ARCOrchestrator:
                 "state": observation.get("state"),
             },
         )
+        if self._bootstrap_grid_summary and "bootstrap_grid_analysis" not in hypothesis_context:
+            hypothesis_context = dict(hypothesis_context)
+            hypothesis_context["bootstrap_grid_analysis"] = self._bootstrap_grid_summary
+
         current_hash = hypothesis_context.get("current_state_hash", "")
         solve_start = time.time()
+        
+        # B177: Accept orchestrator escalation
+        if hasattr(self, '_force_replan') and self._force_replan:
+            hypothesis_context = dict(hypothesis_context)
+            hypothesis_context["orchestrator_force_replan"] = True
+            self._force_replan = False
+
         solve_ctx = await self.solve_engine.solve(
             observation=observation,
             hypothesis_context=hypothesis_context,
             step=step,
             state_graph=self.hypothesis_mgr.graph,
             current_state_hash=current_hash,
+            level_pattern=self._level_pattern,  # B150
+            solved_levels=self._solved_levels,  # B157
         )
         solve_elapsed = (time.time() - solve_start) * 1000
 
-        # B142: Re-evaluate chunk graduation based on actual performance
-        graduation_reevaluation = self.solve_engine.reevaluate_chunk_graduation(hypothesis_context)
+        # B142: Use the live reevaluation computed inside SolveEngine so we do not
+        # apply progress decay twice after the solve step.
+        graduation_reevaluation = dict(getattr(self.solve_engine, "_last_graduation_reevaluation", {}) or {})
         if graduation_reevaluation and graduation_reevaluation.get("new_score") is not None:
             # Check if graduation dropped below 0.5 (dissonance threshold)
             if graduation_reevaluation["new_score"] < 0.5 and not solve_ctx.dissonance_detected:
@@ -643,11 +1412,25 @@ class ARCOrchestrator:
                     },
                 )
 
+        # B149: Reset fatigue on chunk switch
+        old_chunk = self._solve_context.get("active_chunk") if self._solve_context else None
+        old_desc = old_chunk.get("description") if old_chunk else None
+        new_desc = solve_ctx.active_chunk.description if solve_ctx.active_chunk else None
+        if new_desc != old_desc:
+            self._action_fatigue.clear()
+            # Log only on real transitions to avoid noise
+            if old_desc or new_desc:
+                logger.info("B149: Action fatigue reset due to chunk switch (%s -> %s)", old_desc, new_desc)
+
         self._solve_context = {
             "archetype": solve_ctx.archetype.value,
             "archetype_confidence": solve_ctx.archetype_confidence,
             "object_roles": {
-                str(k): {"role": v.role.value, "confidence": v.confidence}
+                str(k): {
+                    "role": v.role.value, 
+                    "confidence": v.confidence,
+                    "estimated_position": v.estimated_position
+                }
                 for k, v in solve_ctx.object_roles.items()
             },
             "victory_condition": (
@@ -692,15 +1475,23 @@ class ARCOrchestrator:
                 }
                 for entry in (solve_ctx.chunk_ledger or [])
             ],
+            "plateau_mode": solve_ctx.plateau_mode,
+            "plateau_reason": solve_ctx.plateau_reason,
+            "ranked_action_families": solve_ctx.ranked_action_families,
+            "action_family_scores": solve_ctx.action_family_scores,
         }
+        
+        # B161: Update goal position from latest solve context
+        self._update_goal_position()
+
         archetype = self._solve_context["archetype"]
         conf = self._solve_context["archetype_confidence"]
         victory = (self._solve_context.get("victory_condition") or {}).get("type", "unknown")
         chunk = (self._solve_context.get("active_chunk") or {}).get("description", "none")
         dissonance = self._solve_context.get("dissonance", False)
         logger.info(
-            "[SOLVE] step=%d archetype=%s(%.2f) victory=%s chunk=%s dissonance=%s",
-            step, archetype, conf, victory, chunk[:40] if chunk else "none", dissonance,
+            "[SOLVE] step=%d archetype=%s(%.2f) victory=%s chunk=%s dissonance=%s plateau=%s",
+            step, archetype, conf, victory, chunk[:40] if chunk else "none", dissonance, solve_ctx.plateau_mode
         )
         self._emit_trace_event(
             "phase_end",
@@ -711,9 +1502,12 @@ class ARCOrchestrator:
                 "archetype_confidence": conf,
                 "victory": victory,
                 "dissonance": dissonance,
+                "plateau_mode": solve_ctx.plateau_mode,
+                "ranked_action_families": solve_ctx.ranked_action_families[:3],
             },
             solve_elapsed,
         )
+
         return self._solve_context
 
     async def plan(self, observation: ARC3Observation, memory_context: dict) -> dict:
@@ -776,6 +1570,135 @@ class ARCOrchestrator:
         memory_context["similar_plans"] = recall.get("plans", [])
         return plan_payload
 
+    # ── Phase 1: Understand (B156) ───────────────────────────────────────
+
+    async def run_phase1(self, observation: ARC3Observation, training_examples: List[dict]):
+        """B156: Phase 1 (UNDERSTAND) — analyze solved levels, hypothesize, verify. B151/B152."""
+        # Skip if already set
+        if hasattr(self, '_phase2_mode') and self._phase2_mode == "execution":
+            return {"verified": True, "output_grid": self._verified_output_grid}
+
+        from agents.arc3.grid_analysis import GridDiffEngine
+        from agents.arc3.solver import GameRuleHypothesizer
+
+        phase1_start = time.time()
+
+        # Step 1: Analyze solved levels (B150)
+        # We treat training_examples as "solved levels" for analysis consistency
+        diff_engine = GridDiffEngine()
+        
+        # If we have real solved levels from B157, use them. 
+        # Otherwise use static training_examples.
+        level_data = []
+        if hasattr(self, '_solved_levels') and self._solved_levels:
+            level_data = self._solved_levels
+        else:
+            for ex in training_examples:
+                level_data.append({
+                    "start_grid": ex["input"],
+                    "end_grid": ex["output"],
+                    "actions": ["given_example"],
+                    "steps": 0
+                })
+
+        diffs = []
+        for level in level_data:
+            diff = diff_engine.diff_grids(level["start_grid"], level["end_grid"])
+            diffs.append(diff)
+        
+        self._level_pattern = diff_engine.cross_level_consensus(diffs)
+        self._solved_level_diffs = diffs
+
+        self._emit_trace_event("operation", "phase1_analysis", {
+            "n_levels": len(level_data),
+            "signature": self._level_pattern.game_rule_summary,
+            "confidence": self._level_pattern.confidence,
+        })
+
+        # Step 2: Generate game rule hypotheses (B151)
+        hypothesizer = GameRuleHypothesizer()
+        hypotheses = await hypothesizer.hypothesize(
+            level_pattern=self._level_pattern,
+            solved_levels=level_data,
+            llm_client=self.llm,
+        )
+        self.solve_engine._set_game_rule_hypotheses(hypotheses)
+
+        if not hypotheses:
+            self._emit_trace_event("operation", "phase1_no_hypotheses", {})
+            return None
+
+        self._emit_trace_event("operation", "phase1_hypotheses", {
+            "count": len(hypotheses),
+            "top_rule": hypotheses[0].rule_description,
+            "top_confidence": hypotheses[0].confidence,
+        })
+
+        # Step 3: Verify via REPL (B152)
+        verifier = LevelReplayVerifier()
+        loop = RuleRefinementLoop(self.llm, verifier)
+
+        best_hypothesis = await loop.solve(
+            hypotheses=hypotheses,
+            solved_levels=level_data,
+        )
+
+        if best_hypothesis and best_hypothesis.confidence >= 0.7:
+            # Verified!
+            self.solve_engine._set_game_rule_hypotheses([best_hypothesis])
+            self._emit_trace_event("operation", "phase1_verified", {
+                "rule": best_hypothesis.rule_description,
+                "confidence": best_hypothesis.confidence,
+            })
+            # Note: For ARC-AGI-3, Phase 1 doesn't produce a target grid for Phase 2 
+            # execution mode directly because the levels differ.
+            # But high confidence will bias the fallback strategy.
+            return {
+                "verified": True,
+                "hypothesis": best_hypothesis,
+            }
+        else:
+            self._emit_trace_event("operation", "phase1_verification_failed", {
+                "best_confidence": best_hypothesis.confidence if best_hypothesis else 0.0
+            })
+            return None
+
+
+    def _next_execution_action(self, observation: ARC3Observation, available_actions: List[str]) -> Optional[ARC3Action]:
+        """B156: Deterministic action for painting the known solution grid.
+
+        Computes diff between current and target, returns next ACTION6 call.
+        Returns None when all cells match (puzzle should be solved).
+        """
+        target = self._verified_output_grid
+        current = observation.get("grid") or []
+
+        if not target:
+            return None
+
+        # Find first cell that differs
+        for r in range(len(target)):
+            for c in range(len(target[0])):
+                target_val = target[r][c]
+                if r < len(current) and c < len(current[0]):
+                    current_val = current[r][c]
+                else:
+                    current_val = -1
+
+                if target_val != current_val:
+                    # Prefer ACTION6 (paint) if available
+                    if "ACTION6" in available_actions:
+                        return {
+                            "action_id": "ACTION6",
+                            "x": c,
+                            "y": r,
+                            "color": target_val,
+                            "rationale": f"Phase 2 execution: paint ({r},{c}) from {current_val} to {target_val}",
+                            "decision_source": "phase2_execution",
+                        }
+
+        return None  # All cells match — done
+
     # ── Phase 3: Act ───────────────────────────────────────────────────
 
     async def act(
@@ -792,8 +1715,51 @@ class ARCOrchestrator:
                 "step": step_num,
                 "state": observation.get("state"),
                 "available_actions": len(observation.get("available_actions") or []),
+                "mode": self._phase2_mode,
             },
         )
+
+        # B178: Load empirical action directions (once per level, cached)
+        if self._action_direction_map is None and self._entity_graph:
+            try:
+                # Use task_id from memory context or attr if set
+                tid = getattr(self, '_task_id', None)
+                if tid:
+                    self._action_direction_map = await self._entity_graph.get_action_directions(
+                        task_id=tid, level=self._current_level
+                    )
+                    if self._action_direction_map:
+                        self._emit_trace_event("operation", "action_semantics_loaded", {
+                            "count": len(self._action_direction_map),
+                            "mappings": self._action_direction_map
+                        })
+            except Exception as exc:
+                logger.warning("B178: Failed to load action semantics: %s", exc)
+                self._action_direction_map = {}
+
+        # B156: If in execution mode, use deterministic painter
+        if self._phase2_mode == "execution":
+            available_actions = observation.get("available_actions") or []
+            action = self._next_execution_action(observation, available_actions)
+            if action:
+                # Update trace and return
+                self._emit_trace_event(
+                    "operation",
+                    "execution_painter",
+                    {"step": step_num},
+                    {"action_id": action["action_id"], "target": [action["y"], action["x"]]},
+                )
+                return action
+            
+            # All cells match but puzzle not solved? Fall back to LLM
+            self._phase2_mode = "fallback"
+            logger.warning("B156: Execution mode exhausted but puzzle not solved — falling back")
+            self._emit_trace_event(
+                "operation",
+                "execution_fallback",
+                {"step": step_num},
+                {"reason": "Grid matches target but game not DONE"}
+            )
 
         # B135: Evidence-based loop check — only fire when context suggests a loop is likely
         _no_progress = self._consecutive_no_progress_steps
@@ -821,7 +1787,9 @@ class ARCOrchestrator:
             )
 
             # B141: Enforce No-Progress Bail-Out Escalation
+            # B177: Cumulative escalation ladder
             if self._consecutive_no_progress_steps >= 3:
+                self._force_replan = True # NEW: read by SolveEngine
                 if self._solve_context:
                     self._solve_context["dissonance"] = True
                 self._emit_trace_event(
@@ -833,7 +1801,7 @@ class ARCOrchestrator:
             if self._consecutive_no_progress_steps >= 5:
                 if self._step_history:
                     last_action = self._step_history[-1].get("action_id")
-                    if last_action:
+                    if last_action and last_action in self._available_actions:
                         self._blocked_actions.add(last_action)
                         self._emit_trace_event(
                             "operation", 
@@ -843,12 +1811,29 @@ class ARCOrchestrator:
 
             if self._consecutive_no_progress_steps >= 8:
                 self._mark_active_chunk_failed("no_progress_abandon")
+                # B177: Escalate strategy reset instead of resetting counter
+                if hasattr(self, '_blocked_axes'):
+                    self._blocked_axes.clear()
+                if hasattr(self.solve_engine, '_plateau_locked_family'):
+                    self.solve_engine._plateau_locked_family = None
+                
                 self._emit_trace_event(
                     "operation", 
                     "no_progress_escalation", 
-                    {"tier": 3, "action": "abandon_chunk", "steps": self._consecutive_no_progress_steps}
+                    {"tier": 3, "action": "strategy_reset", "steps": self._consecutive_no_progress_steps}
                 )
-                self._consecutive_no_progress_steps = 0  # reset ladder
+
+            if self._consecutive_no_progress_steps >= 20:
+                # B177: Tier 4 nuclear option - re-evaluate everything
+                self.solve_engine._archetype_confidence *= 0.5
+                self.solve_engine._victory_condition = None
+                self._blocked_actions.clear() # Fresh start for exploration
+                self._consecutive_no_progress_steps = 10 # Cap but keep tiers 1-3 active
+                
+                self._emit_trace_event(
+                    "operation", "no_progress_escalation",
+                    {"tier": 4, "action": "full_reset", "steps": 20}
+                )
         else:
             self._emit_trace_event(
                 "loop_check_skipped",
@@ -903,25 +1888,41 @@ class ARCOrchestrator:
         if packet.get_block("OBSERVED_EFFECTS") and packet.get_block("INSTRUCTION"):
             self._asked_for_decision_from_effects = "effect" in prompt.lower()
 
-        # B114/B123: Mental Sandbox reasoning loop (includes REPL)
-        sandbox_start = time.time()
-        action = await self._mental_sandbox(prompt, available_actions, observation)
-        sandbox_elapsed = (time.time() - sandbox_start) * 1000
-        
-        # B133: Record candidate chosen by LLM/Sandbox before policy/guards
-        candidate_action_id = action.get("action_id")
-        llm_source = action.get("decision_source", "unknown")
+        # B166: Deterministic autopilot — bypass LLM when player/goal positions are known
+        autopilot_action = self._try_autopilot(observation, available_actions)
+        if autopilot_action:
+            action = autopilot_action
+            sandbox_elapsed = 0.0
+            candidate_action_id = action.get("action_id")
+            llm_source = "autopilot"
 
-        self._emit_trace_event(
-            "operation",
-            "mental_sandbox",
-            {"step": step_num},
-            {
-                "action_id": candidate_action_id,
-                "decision_source": llm_source
-            },
-            sandbox_elapsed,
-        )
+            self._emit_trace_event(
+                "operation",
+                "mental_sandbox",
+                {"step": step_num},
+                {"action_id": candidate_action_id, "decision_source": "autopilot", "skipped": True},
+                0.0,
+            )
+        else:
+            # B114/B123: Mental Sandbox reasoning loop (includes REPL)
+            sandbox_start = time.time()
+            action = await self._mental_sandbox(prompt, available_actions, observation)
+            sandbox_elapsed = (time.time() - sandbox_start) * 1000
+            
+            # B133: Record candidate chosen by LLM/Sandbox before policy/guards
+            candidate_action_id = action.get("action_id")
+            llm_source = action.get("decision_source", "unknown")
+
+            self._emit_trace_event(
+                "operation",
+                "mental_sandbox",
+                {"step": step_num},
+                {
+                    "action_id": candidate_action_id,
+                    "decision_source": llm_source
+                },
+                sandbox_elapsed,
+            )
 
         # B133: Pass frame_hash to policy enforcement
         action = self._enforce_action_policy(action, available_actions, current_frame_hash=observation.get("frame_hash"))
@@ -1085,6 +2086,8 @@ class ARCOrchestrator:
             "thinking_trace": action.get("thinking_trace", []),
             "guard_status": action.get("guard_status", "unknown"),
             "verifier_status": action.get("verifier_status", "unknown"),
+            "autopilot_player_row": action.get("autopilot_player_row"),
+            "autopilot_player_col": action.get("autopilot_player_col"),
             "reward": None,
             "done": False,
             "prompt_tokens": prompt_tokens,
@@ -1147,30 +2150,59 @@ class ARCOrchestrator:
                 {"role": "user", "content": current_prompt},
             ]
             try:
-                raw = await asyncio.to_thread(self.llm.chat, messages)
-
-                parsed = None
-                parse_method = "direct"
                 try:
-                    parsed = json.loads(raw)
-                except json.JSONDecodeError:
-                    # Attempt recovery (B132)
-                    match = re.search(r"(\{.*\})", raw, re.DOTALL)
-                    if match:
-                        try:
-                            parsed = json.loads(match.group(1))
-                            parse_method = "extracted"
-                            self._emit_trace_event(
-                                "operation",
-                                "mental_sandbox_parse_recovery",
-                                {"iteration": iteration},
-                                {"method": "regex_extraction"},
-                            )
-                        except json.JSONDecodeError:
-                            pass
+                    raw = await asyncio.to_thread(
+                        self.llm.chat, messages,
+                        response_format={"type": "json_object"},
+                    )
+                except TypeError:
+                    # Provider doesn't support response_format (e.g. mock LLMs)
+                    raw = await asyncio.to_thread(self.llm.chat, messages)
+
+                # Robust multi-tier parsing: JSON → embedded JSON → plain text
+                result = self._parse_llm_response(raw, available_actions)
+                parse_method = result["parse_method"] if result else "failed"
+
+                if result and result.get("_parsed"):
+                    parsed = result["_parsed"]
+                elif result:
+                    # Plain text parse succeeded — we have an action but no structured data
+                    parsed = None
+                else:
+                    parsed = None
+
+                if result and parse_method != "json_direct":
+                    self._emit_trace_event(
+                        "operation",
+                        "mental_sandbox_parse_recovery",
+                        {"iteration": iteration},
+                        {"method": parse_method, "raw_preview": (raw or "")[:150]},
+                    )
+
+                # If plain text parse found an action but no structured JSON,
+                # return it directly (skip sandbox_thought/repl_test which need JSON)
+                if result and parsed is None:
+                    action_id = self._normalize_action_id(result["action_id"])
+                    if action_id and action_id in available_actions:
+                        self._emit_trace_event(
+                            "operation",
+                            "mental_sandbox_final_decision",
+                            {"iteration": iteration},
+                            {"action_id": action_id, "source": f"sandbox_{parse_method}"},
+                        )
+                        action: ARC3Action = {
+                            "action_id": action_id,
+                            "rationale": result.get("rationale", ""),
+                            "thinking_trace": thinking_trace,
+                            "decision_source": f"sandbox_{parse_method}",
+                        }
+                        return action
 
                 if parsed is None:
-                    raise json.JSONDecodeError("Failed to parse or extract valid JSON", raw, 0)
+                    raise json.JSONDecodeError(
+                        f"No action found in LLM response",
+                        (raw or "")[:200], 0,
+                    )
 
                 # Check for sandbox thought tool (B114)
 
@@ -1228,12 +2260,12 @@ class ARCOrchestrator:
                     continue
                 
                 # Final decision found
-                if "action_id" in parsed:
-                    action_id = self._normalize_action_id(parsed.get("action_id"))
-                    rationale = parsed.get("rationale", "")
+                if "action_id" in parsed or "action" in parsed:
+                    action_id = self._normalize_action_id(parsed.get("action_id") or parsed.get("action"))
+                    rationale = parsed.get("rationale") or parsed.get("why") or ""
                     
                     source = "sandbox"
-                    if parse_method == "extracted":
+                    if parse_method not in ("json_direct", "direct"):
                         source = "sandbox_recovered"
                     
                     self._emit_trace_event(
@@ -1381,6 +2413,80 @@ class ARCOrchestrator:
                 "valence": round(valence, 2),
             },
         )
+
+        # B155: Store full game strategy
+        if hasattr(self, '_solved_levels') and self._solved_levels:
+            hypothesis = (
+                self.solve_engine._game_rule_hypotheses[0]
+                if hasattr(self.solve_engine, '_game_rule_hypotheses') and self.solve_engine._game_rule_hypotheses
+                else None
+            )
+
+            # Build per-level action patterns
+            level_summaries = []
+            all_action_ids = set()
+            for level in self._solved_levels:
+                actions = level["actions"]
+                level_summaries.append(f"Level {level['level']}: {len(actions)} steps")
+                all_action_ids.update(actions)
+
+            lesson_content = (
+                f"ARC GAME STRATEGY\n"
+                f"Levels: {len(self._solved_levels)}, Outcome: {'SOLVED' if correct else 'FAILED'}\n"
+                f"Actions used: {sorted(list(all_action_ids))}\n"
+            )
+            
+            if hypothesis:
+                lesson_content += (
+                    f"Game rule: {hypothesis.rule_description}\n"
+                    f"Action semantics: {json.dumps(hypothesis.action_semantics)}\n"
+                    f"Confidence: {hypothesis.confidence:.2f}\n"
+                )
+            
+            lesson_content += "Level summaries:\n" + "\n".join(level_summaries)
+
+            try:
+                await self.brain.notify_turn(
+                    role="assistant",
+                    content=lesson_content,
+                    session_id=self.session_id,
+                )
+                self._emit_trace_event("operation", "store_game_strategy", {"status": "success"})
+            except Exception as exc:
+                logger.warning("B155: failed to store game strategy: %s", exc)
+
+        # B165: Persist structured run lessons and a puzzle-fingerprint analogy anchor.
+        try:
+            lessons_payload = self._extract_run_lessons(correct, final_observation)
+            store_lesson = getattr(self.brain, "store_lesson", None)
+            if callable(store_lesson):
+                await store_lesson(
+                    content=json.dumps(lessons_payload),
+                    tags=[
+                        "arc_run",
+                        str(lessons_payload.get("archetype", "unknown")),
+                        str(lessons_payload.get("outcome", "failed")),
+                    ],
+                    session_id=self.session_id,
+                )
+                self._emit_trace_event("operation", "store_run_lesson", {"status": "success"})
+
+            fingerprint = lessons_payload.get("puzzle_fingerprint", {})
+            analogy_text = (
+                f"[PUZZLE ANALOGY] ARC puzzle {fingerprint.get('grid_size', '0x0')} "
+                f"{fingerprint.get('n_colors', 0)} colors {fingerprint.get('n_regions', 0)} regions. "
+                f"Outcome: {lessons_payload.get('outcome')}. "
+                f"Strategy: {lessons_payload.get('strategy_attempted')}. "
+                f"Effective actions: {lessons_payload.get('effective_actions', [])}."
+            )
+            await self.brain.notify_turn(
+                role="assistant",
+                content=analogy_text,
+                session_id=self.session_id,
+            )
+        except Exception as exc:
+            logger.warning("B165: failed to persist run lessons: %s", exc)
+
         return {"valence": valence}
 
     # ── Retrieval Trigger Logic ──────────────────────────────────────
@@ -1455,6 +2561,78 @@ class ARCOrchestrator:
             return True
         return False
 
+    # B153: Map ARC colors to single characters for compact display
+    _COLOR_CHARS = ".#@*+~^%&$!?<>="
+
+    @staticmethod
+    def render_grid_compact(grid: List[List[int]], max_rows: int = 30) -> str:
+        """Render grid as single-character-per-cell visual (B153)."""
+        if not grid or not isinstance(grid, list):
+            return "Empty grid"
+        lines = []
+        display_grid = grid[:max_rows]
+        for row in display_grid:
+            if not isinstance(row, list):
+                continue
+            line = "".join(
+                ARCOrchestrator._COLOR_CHARS[min(max(0, int(cell)), len(ARCOrchestrator._COLOR_CHARS) - 1)]
+                for cell in row
+            )
+            lines.append(line)
+        if len(grid) > max_rows:
+            lines.append(f"... ({len(grid) - max_rows} more rows)")
+        return "\n".join(lines)
+
+    @staticmethod
+    def render_training_example(input_grid: List[List[int]], output_grid: List[List[int]]) -> str:
+        """Render input→output pair side by side (B153)."""
+        input_lines = ARCOrchestrator.render_grid_compact(input_grid).split("\n")
+        output_lines = ARCOrchestrator.render_grid_compact(output_grid).split("\n")
+        max_in_len = max(len(l) for l in input_lines) if input_lines else 0
+        pairs = []
+        for i in range(max(len(input_lines), len(output_lines))):
+            il = input_lines[i] if i < len(input_lines) else ""
+            ol = output_lines[i] if i < len(output_lines) else ""
+            pairs.append(f"{il:<{max_in_len}} -> {ol}")
+        return "\n".join(pairs)
+
+    def _is_compact_model(self) -> bool:
+        """B164: Detect whether the configured model likely benefits from compact prompts."""
+        llm_cfg = self.config.get("llm", {}) if isinstance(self.config.get("llm"), dict) else {}
+        model_name = str(
+            self.config.get("llm_model")
+            or self.config.get("model")
+            or llm_cfg.get("model")
+            or ""
+        ).lower()
+        compact_patterns = ("1b", "3b", "7b", "8b", "mini", "tiny", "small")
+        return any(pattern in model_name for pattern in compact_patterns)
+
+    def _ensure_bootstrap_grid_analysis(self, observation: ARC3Observation, step: int = 0) -> dict | None:
+        """B162: Compute and cache a structural summary before the first action."""
+        grid = observation.get("grid") or []
+        if not grid:
+            return self._bootstrap_grid_summary
+
+        if step != 0 and self._bootstrap_grid_summary is not None:
+            return self._bootstrap_grid_summary
+
+        summary = grid_characteristic_summary(grid)
+        self._bootstrap_grid_summary = summary
+        observation["bootstrap_grid_summary"] = summary
+
+        self._emit_trace_event(
+            "operation",
+            "bootstrap_grid_analysis",
+            {"step": step},
+            {
+                "n_regions": summary.get("n_regions", 0),
+                "colors": summary.get("colors", []),
+                "summary": str(summary.get("text_summary", ""))[:200],
+            },
+        )
+        return summary
+
     # ── Prompt Construction ──────────────────────────────────────────
 
     def build_action_packet(
@@ -1464,7 +2642,276 @@ class ARCOrchestrator:
         step_history: List[dict],
         available_actions: List[str],
     ) -> PromptPacket:
-        """Construct a structured PromptPacket for the current decision. B117"""
+        """Construct a structured PromptPacket for the current decision. B117/B153/B164"""
+        is_first_step = not step_history
+        if is_first_step:
+            self._ensure_bootstrap_grid_analysis(observation, step=0)
+
+        # B164: compact prompts for smaller models unless we already have a verified execution grid.
+        if self._compact_mode and self._phase2_mode != "execution":
+            packet = self._build_compact_packet(observation, memory_context, step_history, available_actions)
+            mode = "compact"
+
+        # Mode 1: EXECUTION — High-confidence verified rule
+        elif hasattr(self, '_phase2_mode') and self._phase2_mode == "execution" and self._verified_output_grid:
+            packet = self._build_execution_packet(observation, available_actions)
+            mode = "execution"
+
+        # Mode 2: RULE APPLICATION — Prior levels solved, hypothesis available
+        elif self._current_level > 1 and self._solved_levels and hasattr(self.solve_engine, '_game_rule_hypotheses') and self.solve_engine._game_rule_hypotheses:
+            packet = self._build_rule_application_packet(observation, memory_context, available_actions)
+            mode = "rule_application"
+
+        # Mode 3: EXPLORATION — Level 1, no prior knowledge
+        elif self._current_level == 1 and not self._solved_levels:
+            packet = self._build_exploration_packet(observation, available_actions)
+            mode = "exploration"
+
+        # Mode 4: NAVIGATION (Fallback) — Low confidence or complex state
+        else:
+            packet = self._build_navigation_packet(observation, memory_context, step_history, available_actions)
+            mode = "navigation"
+
+        if mode != "compact" and is_first_step and self._bootstrap_grid_summary and packet.get_block("GRID_ANALYSIS") is None:
+            packet.blocks.append(
+                ContentBlock(
+                    type="GRID_ANALYSIS",
+                    content=str(self._bootstrap_grid_summary.get("text_summary", "")),
+                    header="GRID ANALYSIS",
+                )
+            )
+
+        # B153/B164: Token budget tracking and tracing
+        prompt_text = packet.render()
+        token_estimate = self.serializer._estimate_tokens(prompt_text)
+        if self._compact_mode and mode in {"compact", "navigation"}:
+            budget = 1800
+        else:
+            budget = {"execution": 200, "rule_application": 500, "exploration": 400, "navigation": 1200}.get(mode, 1200)
+
+        if token_estimate > budget:
+            logger.warning("B153: %s prompt exceeds %d token target (%d tokens)", mode, budget, token_estimate)
+
+        self._emit_trace_event(
+            "operation",
+            "prompt_budget",
+            {"tokens": token_estimate, "mode": mode, "budget": budget},
+        )
+
+        return packet
+
+    def _build_exploration_packet(self, observation: ARC3Observation, available_actions: List[str]) -> PromptPacket:
+        """Mode 3: Exploration mode for Level 1. B153."""
+        packet = PromptPacket()
+        packet.blocks.append(ContentBlock(type="SYSTEM", content=SYSTEM_PROMPT))
+
+        from agents.arc3.prompts import ARC_EXPLORATION_TEMPLATE
+        packet.blocks.append(ContentBlock(
+            type="INSTRUCTION",
+            content=ARC_EXPLORATION_TEMPLATE
+        ))
+
+        grid = observation.get("grid") or []
+        packet.blocks.append(ContentBlock(
+            type="GRID",
+            content=self.render_grid_compact(grid),
+            header="CURRENT GRID"
+        ))
+
+        packet.blocks.append(ContentBlock(
+            type="ACTION_INVOCATION",
+            content=f"Available actions: {available_actions}\nReturn JSON: {{\"action_id\": \"...\", \"rationale\": \"...\"}}",
+            header="CHOOSE ACTION"
+        ))
+        return packet
+
+    def _build_rule_application_packet(self, observation: ARC3Observation, memory_context: dict, available_actions: List[str]) -> PromptPacket:
+        """Mode 2: Rule application mode for Level 2+. B153."""
+        packet = PromptPacket()
+        packet.blocks.append(ContentBlock(type="SYSTEM", content=SYSTEM_PROMPT))
+
+        hyp = self.solve_engine._game_rule_hypotheses[0]
+        from agents.arc3.prompts import ARC_LEVEL_INSIGHT_TEMPLATE
+        insight = ARC_LEVEL_INSIGHT_TEMPLATE.format(
+            current_level=self._current_level,
+            total_levels=observation.get("win_levels", 8),
+            action_semantics=json.dumps(hyp.action_semantics),
+            rule_hypothesis=hyp.rule_description,
+            confidence=hyp.confidence
+        )
+        packet.blocks.append(ContentBlock(type="PRIOR_INSIGHTS", content=insight, header="KNOWLEDGE FROM PRIOR LEVELS"))
+
+        grid = observation.get("grid") or []
+        packet.blocks.append(ContentBlock(
+            type="GRID",
+            content=self.render_grid_compact(grid),
+            header="CURRENT GRID"
+        ))
+
+        packet.blocks.append(ContentBlock(
+            type="ACTION_INVOCATION",
+            content=f"Available actions: {available_actions}\nReturn JSON: {{\"action_id\": \"...\", \"rationale\": \"...\"}}",
+            header="CHOOSE ACTION"
+        ))
+        return packet
+
+
+    def _build_compact_packet(
+        self,
+        observation: ARC3Observation,
+        memory_context: dict,
+        step_history: List[dict],
+        available_actions: List[str],
+    ) -> PromptPacket:
+        """B164: Compact prompt packet tuned for smaller local models."""
+        from agents.arc3.prompts import COMPACT_INSTRUCTION_TEMPLATE, COMPACT_SYSTEM_PROMPT
+
+        packet = PromptPacket()
+        packet.blocks.append(
+            ContentBlock(
+                type="SYSTEM",
+                content=COMPACT_SYSTEM_PROMPT.format(available_actions=", ".join(available_actions)),
+            )
+        )
+
+        observation_lines = [self._format_observation_section(observation)]
+        if self._bootstrap_grid_summary:
+            observation_lines.append(
+                f"GRID ANALYSIS: {self._bootstrap_grid_summary.get('text_summary', '')}"
+            )
+        packet.blocks.append(
+            ContentBlock(type="OBSERVATION", content="\n".join(observation_lines))
+        )
+
+        fact_lines = self._format_action_fact_section(self._hypothesis_context)
+        if fact_lines:
+            packet.blocks.append(
+                ContentBlock(type="ACTION_FACTS", content="\n".join(fact_lines[:4]))
+            )
+
+        history_text = self._format_history_section(step_history) if step_history else "No prior steps yet."
+        packet.blocks.append(ContentBlock(type="HISTORY", content=history_text))
+        packet.blocks.append(ContentBlock(type="INSTRUCTION", content=COMPACT_INSTRUCTION_TEMPLATE))
+        return packet
+
+    def _build_pattern_packet(self, observation: ARC3Observation, memory_context: dict, available_actions: List[str]) -> PromptPacket:
+        """Phase 1: Pattern discovery (UNDERSTAND phase) from solved levels. B153/B151."""
+        packet = PromptPacket()
+
+        packet.blocks.append(ContentBlock(
+            type="SYSTEM",
+            content=ARC_PATTERN_SYSTEM_PROMPT,
+        ))
+
+        # Solved levels (Training data)
+        solved_text = ""
+        for i, level in enumerate(self._solved_levels):
+            solved_text += f"\nSolved Level {i+1}:\n"
+            solved_text += self.render_training_example(level["start_grid"], level["end_grid"])
+        
+        if solved_text:
+            packet.blocks.append(ContentBlock(
+                type="SOLVED_LEVELS",
+                content=solved_text.strip(),
+                header="SOLVED LEVELS (TRAINING DATA)",
+            ))
+
+        # Level analysis summary (from B150)
+        if self._level_pattern:
+            sig = self._level_pattern
+            content = (
+                f"LEVEL PATTERN CONSENSUS:\n"
+                f"- Consistent color map: {json.dumps(sig.consistent_color_map)}\n"
+                f"- Spatial pattern: {sig.consistent_spatial_pattern or 'unknown'}\n"
+                f"- Game rule summary: {sig.game_rule_summary}\n"
+                f"- Confidence: {sig.confidence:.2f}\n"
+            )
+            packet.blocks.append(ContentBlock(
+                type="GRID_ANALYSIS",
+                content=content,
+                header="DETERMINISTIC LEVEL ANALYSIS",
+            ))
+
+        # Game rule hypotheses (from B151)
+        if hasattr(self.solve_engine, '_game_rule_hypotheses') and self.solve_engine._game_rule_hypotheses:
+            top = self.solve_engine._game_rule_hypotheses[0]
+            content = (
+                f"RULE: {top.rule_description}\n"
+                f"OBJECTIVE: {top.objective_description}\n"
+                f"STRATEGY: {top.level_strategy}\n"
+                f"CONFIDENCE: {top.confidence:.0%}\n"
+            )
+            packet.blocks.append(ContentBlock(
+                type="PATTERN_HYPOTHESIS",
+                content=content,
+                header="GAME RULE HYPOTHESIS"
+            ))
+
+        # Test input (current level)
+        test_grid = observation.get("grid")
+        if test_grid:
+            packet.blocks.append(ContentBlock(
+                type="TEST_INPUT",
+                content=self.render_grid_compact(test_grid),
+                header="CURRENT LEVEL GRID",
+            ))
+
+        # Instruction
+        packet.blocks.append(ContentBlock(
+            type="INSTRUCTION",
+            content=ARC_PATTERN_INSTRUCTION_TEMPLATE.format(
+                training_examples="See SOLVED LEVELS section above.",
+                grid_analysis=self._level_pattern.game_rule_summary if self._level_pattern else "none",
+                hypothesis_section="", 
+                repl_section="" 
+            ),
+        ))
+
+        return packet
+
+    def _build_execution_packet(self, observation: ARC3Observation, available_actions: List[str]) -> PromptPacket:
+        """Phase 2 execution mode: paint the known solution grid. B153."""
+        packet = PromptPacket()
+
+        packet.blocks.append(ContentBlock(
+            type="SYSTEM",
+            content=ARC_EXECUTION_SYSTEM_PROMPT,
+        ))
+
+        # Show target grid and current grid
+        target = self._verified_output_grid
+        current = observation.get("grid") or []
+
+        # Compute cells that still need painting (diff)
+        cells_to_paint = []
+        if target:
+            for r in range(len(target)):
+                for c in range(len(target[0])):
+                    target_val = target[r][c]
+                    current_val = current[r][c] if r < len(current) and c < len(current[0]) else -1
+                    if target_val != current_val:
+                        cells_to_paint.append(f"  ({r},{c}): {current_val} -> {target_val}")
+
+        packet.blocks.append(ContentBlock(
+            type="INSTRUCTION",
+            content=ARC_EXECUTION_INSTRUCTION_TEMPLATE.format(
+                target_grid=self.render_grid_compact(target) if target else "unknown",
+                current_grid=self.render_grid_compact(current),
+                cells_to_paint="\n".join(cells_to_paint[:20]) if cells_to_paint else "None",
+                available_actions=", ".join(available_actions),
+            ),
+        ))
+
+        return packet
+
+    def _build_navigation_packet(
+        self,
+        observation: ARC3Observation,
+        memory_context: dict,
+        step_history: List[dict],
+        available_actions: List[str],
+    ) -> PromptPacket:
+        """Original 15-block navigation prompt (EXISTING). B117."""
         packet = PromptPacket()
 
         packet.blocks.append(ContentBlock(
@@ -1520,7 +2967,26 @@ class ARCOrchestrator:
             content = solve_section.replace("=== SOLVE CONTEXT ===\n", "")
             packet.blocks.append(ContentBlock(type="SOLVE_CONTEXT", content=content))
 
+        # B161: Directional guidance
+        if self._player_position and self._goal_position:
+            pr, pc = self._player_position
+            gr, gc = self._goal_position
+            dr = "up" if gr < pr else "down" if gr > pr else "aligned"
+            dc = "left" if gc < pc else "right" if gc > pc else "aligned"
+            nav_text = (
+                f"Player is at approximately row {pr:.0f}, col {pc:.0f}. "
+                f"Goal appears near row {gr:.0f}, col {gc:.0f}. "
+                f"You need to move {dr} and {dc} to reach it."
+            )
+            packet.blocks.append(ContentBlock(type="NAVIGATION", content=nav_text, header="NAVIGATION GUIDANCE"))
+
         effect_lines = self._format_effect_section(self._hypothesis_context)
+        
+        # B161: ACTION5 effect logging
+        if self._last_interact_effect:
+            le = self._last_interact_effect
+            effect_lines.insert(0, f"ACTION5 (interact) caused a major change: {le['pixels_changed']} pixels, new colors: {le['new_colors']}")
+
         if effect_lines:
             packet.blocks.append(ContentBlock(type="OBSERVED_EFFECTS", content="\n".join(effect_lines)))
 
@@ -1537,6 +3003,12 @@ class ARCOrchestrator:
         packet.blocks.append(ContentBlock(type="PLAN", content="\n".join(plan_lines)))
 
         history_text = self._format_history_section(step_history)
+        
+        # B161: Movement history summary
+        movement_summary = self._build_movement_summary()
+        if movement_summary:
+            history_text = f"MOVEMENT SUMMARY:\n{movement_summary}\n\nSTEP HISTORY:\n{history_text}"
+
         packet.blocks.append(ContentBlock(type="HISTORY", content=history_text))
 
         packet.blocks.append(ContentBlock(
@@ -1681,6 +3153,127 @@ class ARCOrchestrator:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _parse_llm_response(raw: str, available_actions: List[str]) -> dict | None:
+        """Parse an LLM response into a structured result, tolerating any output format.
+
+        Attempts, in order:
+        1. Direct JSON parse
+        2. Extract JSON object from surrounding text (```json blocks, prose, etc.)
+        3. Plain text extraction — look for action references in natural language
+
+        Returns a dict that always includes `parse_method` when parsing succeeds.
+        If structured JSON was recovered, `_parsed` is included even when no final
+        `action_id` is present yet (for example `sandbox_thought` / `repl_test`).
+        Returns None only when nothing usable was found.
+        """
+        if not raw or not raw.strip():
+            return None
+
+        text = raw.strip()
+
+        # --- Tier 1: Direct JSON ---
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                result = {
+                    "parse_method": "json_direct",
+                    "_parsed": parsed,
+                }
+                action_id = parsed.get("action_id") or parsed.get("action")
+                if action_id is not None:
+                    result["action_id"] = str(action_id)
+                    result["rationale"] = parsed.get("rationale") or parsed.get("why") or ""
+                return result
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # --- Tier 2: Extract JSON from text (markdown blocks, prose wrapping) ---
+        # Try ```json ... ``` blocks first
+        code_block = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+        if code_block:
+            try:
+                parsed = json.loads(code_block.group(1))
+                if isinstance(parsed, dict):
+                    result = {
+                        "parse_method": "json_code_block",
+                        "_parsed": parsed,
+                    }
+                    action_id = parsed.get("action_id") or parsed.get("action")
+                    if action_id is not None:
+                        result["action_id"] = str(action_id)
+                        result["rationale"] = parsed.get("rationale") or parsed.get("why") or ""
+                    return result
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # Try any { ... } in the text
+        json_match = re.search(r"(\{[^{}]*\})", text, re.DOTALL)
+        if json_match:
+            try:
+                parsed = json.loads(json_match.group(1))
+                if isinstance(parsed, dict):
+                    result = {
+                        "parse_method": "json_extracted",
+                        "_parsed": parsed,
+                    }
+                    action_id = parsed.get("action_id") or parsed.get("action")
+                    if action_id is not None:
+                        result["action_id"] = str(action_id)
+                        result["rationale"] = parsed.get("rationale") or parsed.get("why") or ""
+                    return result
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # --- Tier 3: Plain text extraction ---
+        text_upper = text.upper()
+
+        # Look for explicit "ACTION<N>" mentions
+        action_mentions = re.findall(r"ACTION\s*(\d+)", text_upper)
+        if action_mentions:
+            # Take the last mentioned action (usually the conclusion after reasoning)
+            candidate = f"ACTION{action_mentions[-1]}"
+            if candidate in available_actions:
+                return {
+                    "action_id": candidate,
+                    "rationale": text[:200],
+                    "parse_method": "plain_text_action_mention",
+                }
+
+        # Look for directional words mapping to known actions
+        direction_map = {
+            "UP": "ACTION1", "MOVE UP": "ACTION1", "GO UP": "ACTION1", "NORTH": "ACTION1",
+            "DOWN": "ACTION2", "MOVE DOWN": "ACTION2", "GO DOWN": "ACTION2", "SOUTH": "ACTION2",
+            "LEFT": "ACTION3", "MOVE LEFT": "ACTION3", "GO LEFT": "ACTION3", "WEST": "ACTION3",
+            "RIGHT": "ACTION4", "MOVE RIGHT": "ACTION4", "GO RIGHT": "ACTION4", "EAST": "ACTION4",
+            "INTERACT": "ACTION5", "SELECT": "ACTION5", "USE": "ACTION5", "PRESS": "ACTION5",
+            "CLICK": "ACTION6", "PAINT": "ACTION6", "PLACE": "ACTION6", "COORDINATE": "ACTION6",
+            "UNDO": "ACTION7", "REVERSE": "ACTION7",
+        }
+        # Check longest phrases first
+        for phrase in sorted(direction_map, key=len, reverse=True):
+            if phrase in text_upper:
+                candidate = direction_map[phrase]
+                if candidate in available_actions:
+                    return {
+                        "action_id": candidate,
+                        "rationale": text[:200],
+                        "parse_method": "plain_text_direction",
+                    }
+
+        # Look for bare numbers that could be action IDs ("try 3", "I choose 1")
+        bare_numbers = re.findall(r"\b(\d)\b", text)
+        if bare_numbers:
+            candidate = f"ACTION{bare_numbers[-1]}"
+            if candidate in available_actions:
+                return {
+                    "action_id": candidate,
+                    "rationale": text[:200],
+                    "parse_method": "plain_text_bare_number",
+                }
+
+        return None
+
+    @staticmethod
     def _normalize_action_id(action_id: Any) -> str | None:
         if action_id is None:
             return None
@@ -1701,13 +3294,154 @@ class ARCOrchestrator:
             return None
         return max(0, min(63, coordinate))
 
-    def _candidate_action6_coordinates(self, observation: ARC3Observation) -> List[tuple[int, int]]:
+    @staticmethod
+    def _manhattan_dist(c1: tuple[int, int], c2: tuple[int, int]) -> int:
+        return abs(c1[0] - c2[0]) + abs(c1[1] - c2[1])
+
+    def _coords_along_vector(self, start: tuple[int, int], end: tuple[int, int], margin: int = 2) -> List[tuple[int, int]]:
+        """Generate coordinates on or near the line between start and end (B143)."""
+        coords = []
+        x0, y0 = start
+        x1, y1 = end
+        
+        dx = abs(x1 - x0)
+        dy = abs(y1 - y0)
+        sx = 1 if x0 < x1 else -1
+        sy = 1 if y0 < y1 else -1
+        err = dx - dy
+        
+        curr_x, curr_y = x0, y0
+        while True:
+            # For each point on the line, add a small 2x2 or 3x3 expansion based on margin
+            for dx_m in range(-margin, margin + 1):
+                for dy_m in range(-margin, margin + 1):
+                    mx, my = curr_x + dx_m, curr_y + dy_m
+                    if 0 <= mx <= 63 and 0 <= my <= 63:
+                        coords.append((mx, my))
+            
+            if curr_x == x1 and curr_y == y1:
+                break
+            e2 = 2 * err
+            if e2 > -dy:
+                err -= dy
+                curr_x += sx
+            if e2 < dx:
+                err += dx
+                curr_y += sy
+        
+        # Deduplicate and limit
+        seen = set()
+        unique = []
+        for c in coords:
+            if c not in seen:
+                seen.add(c)
+                unique.append(c)
+        return unique[:50]
+
+    def _apply_momentum_bias(self, candidates: List[tuple[str, tuple[int, int]]], recent_deltas: List[tuple[float, float]]) -> List[tuple[str, tuple[int, int]]]:
+        """Re-sort candidates based on alignment with recent movement direction (B143)."""
+        if len(recent_deltas) < 2:
+            return candidates
+            
+        avg_dx = sum(d[0] for d in recent_deltas) / len(recent_deltas)
+        avg_dy = sum(d[1] for d in recent_deltas) / len(recent_deltas)
+        
+        if abs(avg_dx) < 0.3 and abs(avg_dy) < 0.3:
+            return candidates
+            
+        # Re-sort within tiers: dot product with avg_delta
+        # We group by tier, sort within tier, then re-flatten
+        tiers: Dict[str, List[tuple[int, int]]] = {}
+        for tier, coord in candidates:
+            if tier not in tiers:
+                tiers[tier] = []
+            tiers[tier].append(coord)
+            
+        final = []
+        for tier_name in ["goal_vector", "distance_reduce", "fallback"]:
+            if tier_name in tiers:
+                tier_coords = tiers[tier_name]
+                # Sort by alignment with (avg_dx, avg_dy)
+                # But wait, coordinate is ABSOLUTE, momentum is RELATIVE.
+                # Momentum bias means if we are moving RIGHT, we prefer coords to the RIGHT of current.
+                # This requires current player pos. For now, let's skip re-sorting tiers 
+                # and just add a "momentum" tier at the very top if we find a strong direction.
+                pass
+        return candidates
+
+    def _is_cluster_exhausted(self, coord: tuple[int, int], recent_attempts: List[dict], min_count: int = 3) -> bool:
+        """B143: Detect if a 3x3 region has already been failed multiple times."""
+        if len(recent_attempts) < min_count:
+            return False
+            
+        nearby = []
+        for a in recent_attempts[-10:]: # Look back a bit further to catch clusters
+            ax = self._coerce_action6_coordinate(a.get("x"))
+            ay = self._coerce_action6_coordinate(a.get("y"))
+            reward = a.get("reward")
+            if ax is not None and ay is not None and reward == 0.0:
+                if abs(ax - coord[0]) <= 1 and abs(ay - coord[1]) <= 1:
+                    nearby.append(a)
+                    
+        return len(nearby) >= min_count
+
+    def _candidate_action6_coordinates(self, observation: ARC3Observation) -> List[tuple[str, tuple[int, int]]]:
+        """Build prioritized candidate list for ACTION6 (B143)."""
         grid = observation.get("grid") or []
         if not grid or not isinstance(grid, list) or not isinstance(grid[0], list) or not grid[0]:
-            return [(0, 0)]
+            return [("fallback", (0, 0))]
 
         rows = len(grid)
         cols = len(grid[0])
+        
+        # Check for space/reach_goal geometry
+        sc = self._solve_context or {}
+        is_space_goal = (
+            sc.get("archetype") == "space" 
+            and (sc.get("victory_condition") or {}).get("type") == "reach_goal"
+        )
+        
+        player_pos = None
+        goal_pos = None
+        if is_space_goal:
+            roles = sc.get("object_roles") or {}
+            best_player: tuple[float, tuple[int, int]] | None = None
+            best_goal: tuple[float, tuple[int, int]] | None = None
+            for rdata in roles.values():
+                pos = rdata.get("estimated_position")
+                if not pos:
+                    continue
+                conf = float(rdata.get("confidence", 0) or 0.0)
+                coord = (int(pos["col"]), int(pos["row"]))
+                if rdata.get("role") == "player":
+                    if best_player is None or conf > best_player[0]:
+                        best_player = (conf, coord)
+                if rdata.get("role") == "goal":
+                    if best_goal is None or conf > best_goal[0]:
+                        best_goal = (conf, coord)
+
+            if best_player and best_player[0] >= 0.7:
+                player_pos = best_player[1]
+            elif best_player and best_goal and min(best_player[0], best_goal[0]) >= 0.35:
+                # Bootstrap fallback: keep geometry alive even before motion evidence is strong.
+                player_pos = best_player[1]
+
+            if best_goal and best_goal[0] >= 0.7:
+                goal_pos = best_goal[1]
+            elif best_goal and (player_pos is not None or best_goal[0] >= 0.35):
+                goal_pos = best_goal[1]
+
+        candidates: List[tuple[str, tuple[int, int]]] = []
+        seen: set[tuple[int, int]] = set()
+
+        # Tier 1: Goal Vector
+        if player_pos and goal_pos:
+            for c in self._coords_along_vector(player_pos, goal_pos, margin=1):
+                if c not in seen:
+                    seen.add(c)
+                    candidates.append(("goal_vector", c))
+
+        # Tier 2: Distance Reduction (non-background pixels sorted by goal proximity)
         counts: dict[int, int] = {}
         for row in grid:
             for cell in row:
@@ -1721,6 +3455,20 @@ class ARCOrchestrator:
             for x, cell in enumerate(row)
             if int(cell) != background
         ]
+        
+        if goal_pos:
+            non_background_sorted = sorted(non_background, key=lambda c: self._manhattan_dist(c, goal_pos))
+            for c in non_background_sorted:
+                if c not in seen:
+                    seen.add(c)
+                    candidates.append(("distance_reduce", c))
+        else:
+            for c in non_background:
+                if c not in seen:
+                    seen.add(c)
+                    candidates.append(("non_background", c))
+
+        # Tier 3: Original fallback
         center = (max(0, min(63, cols // 2)), max(0, min(63, rows // 2)))
         corners = [
             (0, 0),
@@ -1728,18 +3476,17 @@ class ARCOrchestrator:
             (0, max(0, min(63, rows - 1))),
             (max(0, min(63, cols - 1)), max(0, min(63, rows - 1))),
         ]
+        for c in [center] + corners:
+            norm = (max(0, min(63, int(c[0]))), max(0, min(63, int(c[1]))))
+            if norm not in seen:
+                seen.add(norm)
+                candidates.append(("fallback", norm))
 
-        ordered: List[tuple[int, int]] = []
-        seen: set[tuple[int, int]] = set()
-        for coord in non_background + [center] + corners:
-            normalized = (max(0, min(63, int(coord[0]))), max(0, min(63, int(coord[1]))))
-            if normalized not in seen:
-                seen.add(normalized)
-                ordered.append(normalized)
-        return ordered or [(0, 0)]
+        return candidates or [("fallback", (0, 0))]
 
     def _infer_action6_coordinates(self, observation: ARC3Observation) -> tuple[int, int]:
-        candidates = self._candidate_action6_coordinates(observation)
+        """B143: Smarter coordinate selection with anti-clustering."""
+        candidates_with_meta = self._candidate_action6_coordinates(observation)
         action6_attempts = [
             step for step in self._step_history
             if self._normalize_action_id(step.get("action_id")) == "ACTION6"
@@ -1756,12 +3503,33 @@ class ARCOrchestrator:
             if x is not None and y is not None
         }
 
-        start_index = len(action6_attempts) % len(candidates)
-        for offset in range(len(candidates)):
-            coord = candidates[(start_index + offset) % len(candidates)]
+        # B143: Policy tracing and anti-clustering
+        policy = "default"
+        if any(tier == "goal_vector" for tier, _ in candidates_with_meta):
+            policy = "goal_directed"
+
+        for tier, coord in candidates_with_meta:
+            if coord in used_coords:
+                continue
+            
+            # Anti-clustering skip
+            if self._is_cluster_exhausted(coord, action6_attempts):
+                self._emit_trace_event("operation", "coordinate_policy_skip", 
+                                      {"coord": coord, "tier": tier}, 
+                                      {"reason": "cluster_exhausted"})
+                continue
+                
+            # Found a good one
+            self._emit_trace_event("operation", "coordinate_policy", 
+                                  {"policy": policy, "tier": tier, "coord": coord},
+                                  {"total_candidates": len(candidates_with_meta)})
+            return coord
+
+        # Emergency fallback: just use first unused or absolute first
+        for _, coord in candidates_with_meta:
             if coord not in used_coords:
                 return coord
-        return candidates[start_index]
+        return candidates_with_meta[0][1]
 
     def _ensure_action6_coordinates(self, action: ARC3Action, observation: ARC3Observation) -> ARC3Action:
         normalized_id = self._normalize_action_id(action.get("action_id"))
@@ -1798,13 +3566,30 @@ class ARCOrchestrator:
             {"role": "user", "content": prompt},
         ]
         try:
-            raw = await asyncio.to_thread(self.llm.chat, messages)
-            parsed = json.loads(raw)
-            if not isinstance(parsed, dict):
-                raise ValueError(f"Expected dict action payload, got {type(parsed).__name__}")
+            try:
+                raw = await asyncio.to_thread(
+                    self.llm.chat, messages,
+                    response_format={"type": "json_object"},
+                )
+            except TypeError:
+                # Provider doesn't support response_format (e.g. mock LLMs)
+                raw = await asyncio.to_thread(self.llm.chat, messages)
+            payload = getattr(raw, "content", raw)
 
-            action_id = self._normalize_action_id(parsed.get("action_id"))
-            rationale = parsed.get("rationale") or "llm response missing rationale"
+            # Robust multi-tier parsing: JSON → embedded JSON → plain text
+            result = self._parse_llm_response(payload, available_actions)
+
+            if result is None or not result.get("action_id"):
+                logger.warning("LLM response unparseable: %s", (payload or "")[:150])
+                return {"action_id": available_actions[0], "rationale": f"unparseable LLM response: {(payload or '')[:100]}"}
+
+            action_id = self._normalize_action_id(result["action_id"])
+            rationale = result.get("rationale") or "llm response"
+            parse_method = result.get("parse_method", "unknown")
+
+            if parse_method != "json_direct":
+                logger.info("LLM response parsed via %s: %s", parse_method, action_id)
+
             if action_id not in available_actions:
                 fallback = available_actions[0]
                 logger.warning(
@@ -1822,6 +3607,7 @@ class ARCOrchestrator:
                 "action_id": action_id,
                 "rationale": rationale,
             }
+            parsed = result.get("_parsed") or {}
             x = self._coerce_action6_coordinate(parsed.get("x"))
             y = self._coerce_action6_coordinate(parsed.get("y"))
             if x is not None:
@@ -1831,7 +3617,7 @@ class ARCOrchestrator:
             return action
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("LLM action parse failed: %s", exc)
-            return {"action_id": available_actions[0], "rationale": "fallback"}
+            return {"action_id": available_actions[0], "rationale": f"parse error: {exc}"}
 
     @staticmethod
     def _should_skip_chunk_action(effect: dict | None) -> bool:
@@ -1856,6 +3642,26 @@ class ARCOrchestrator:
             return True
         return False
 
+    def _max_exploration_for_level(self) -> int:
+        """B154: How many forced exploration steps this level gets."""
+        confidence = getattr(self, '_rule_confidence', 0.0)
+        level = getattr(self, '_current_level', 0)
+
+        # High-confidence rule: zero exploration
+        if confidence > 0.8:
+            return 0
+
+        # Level-progressive
+        if level <= 1:
+            return 5  # Tutorial level — full exploration
+        elif level <= 3:
+            return 2  # Early levels — verify carryover
+        else:
+            # Late levels: only if unknown actions remain
+            n_known = len(getattr(self, 'observed_action_effects', {}))
+            n_total = len(getattr(self, '_available_actions', []))
+            return 1 if n_known < n_total else 0
+
     def _enforce_action_policy(self, action: ARC3Action, available_actions: List[str], current_frame_hash: str | None = None) -> ARC3Action:
         """Apply hard exploration guards and chunk enforcement (B109/B112/B133)."""
         hyp_ctx = self._hypothesis_context or {}
@@ -1869,10 +3675,19 @@ class ARCOrchestrator:
             for effect in hyp_ctx.get("observed_action_effects", [])
             if effect.get("action")
         }
+        self.observed_action_effects = observed_effects
+        self._available_actions = available_actions
 
         action_id = action.get("action_id")
         rationale = action.get("rationale") or ""
         source = action.get("decision_source", "llm")
+        skip_chunk_enforcement = False  # Set True below for fallback decisions
+
+        # B166: Autopilot decisions have highest authority — skip exploration override
+        if source == "autopilot":
+            if current_frame_hash:
+                self._action_frame_hashes[action_id] = current_frame_hash
+            return action
 
         # B141: Blocked action enforcement
         if action_id in self._blocked_actions:
@@ -1889,15 +3704,17 @@ class ARCOrchestrator:
                 })
                 return action
 
-        # B133: Gate override on decision quality.
-        # If LLM failed to produce a real decision (fallback), don't trust it enough to override with policy.
-        if source == "mental_sandbox_fallback":
-            self._emit_trace_event("operation", "guard_skipped_fallback", {"reason": "LLM produced fallback; policy not applied"}, {"action_id": action_id})
-            return action
+        # B133 revised: When LLM failed (fallback), skip chunk enforcement but
+        # still apply exploration, ranking, and plateau policies so the agent
+        # doesn't blindly default to ACTION1 on every step.
+        skip_chunk_enforcement = source == "mental_sandbox_fallback"
+        if skip_chunk_enforcement:
+            self._emit_trace_event("operation", "guard_fallback_policy_applied", {"reason": "LLM produced fallback; applying exploration/ranking policies"}, {"action_id": action_id})
 
         # B109/B112: Prioritize guidance-grade chunk actions (bfs, directional)
+        # Skip chunk enforcement when LLM produced a fallback — let exploration/ranking take over
         active_chunk = (self._solve_context or {}).get("active_chunk")
-        if active_chunk and active_chunk.get("estimated_actions"):
+        if active_chunk and active_chunk.get("estimated_actions") and not skip_chunk_enforcement:
             chunk_source = active_chunk.get("source", "unknown")
             suggested = active_chunk["estimated_actions"]
 
@@ -1977,10 +3794,32 @@ class ARCOrchestrator:
                 # This is a valid 're-test' in a new context. Skip exploration override.
                 return action
 
-        # If no guidance chunk action and no state-change re-test, 
-        # fall back to standard exploration policy
-        if unexplored and action_id not in unexplored:
+        # B154: ARC Exploration Policy Relaxation
+        max_explore = self._max_exploration_for_level()
+        should_force_explore = (
+            unexplored
+            and action_id not in unexplored
+            and self._forced_exploration_count < max_explore
+        )
+
+        # On level 1, always explore if budget allows
+        # On later levels, only explore when stuck
+        if self._current_level > 1 and should_force_explore:
+            should_force_explore = self._consecutive_no_progress_steps >= 1
+
+        # Check if this action was already tested in a prior level
+        if action_id in self.observed_action_effects:
+            # Already know what this action does — don't force re-exploration
+            unexplored = [a for a in unexplored if a not in self.observed_action_effects]
+            if not unexplored:
+                should_force_explore = False
+
+        if should_force_explore:
             forced = unexplored[0]
+            self._forced_exploration_count += 1
+            self._total_forced_exploration += 1
+            
+            # Consume exploration chunk if it matches
             if active_chunk and active_chunk.get("source") == "explore" and active_chunk.get("estimated_actions"):
                 if forced == active_chunk["estimated_actions"][0]:
                     if self.solve_engine._active_chunk and self.solve_engine._active_chunk.estimated_actions:
@@ -1988,7 +3827,7 @@ class ARCOrchestrator:
 
             action.update({
                 "action_id": forced,
-                "rationale": f"policy override: exploration phase requires testing {forced} before exploiting {action_id}. Original rationale: {rationale}",
+                "rationale": f"exploration step {self._forced_exploration_count}/{max_explore} (level {self._current_level})",
                 "decision_source": "policy_override",
             })
             return action
@@ -2008,7 +3847,126 @@ class ARCOrchestrator:
                 })
                 return action
 
+        # B144/B145/B146: Plateau-aware exploitation policy
+        # If the solve engine detected a plateau, we restrict choice to top ranked families.
+        sc = self._solve_context or {}
+        if sc.get("plateau_mode"):
+            # B146: Use authoritative locked family from solve context
+            locked_family = sc.get("plateau_locked_family")
+            ranked = sc.get("ranked_action_families") or []
+            
+            # Default to the locked family if we have one
+            top_family = locked_family or (ranked[0] if ranked else None)
+            secondary = ranked[1] if (ranked and len(ranked) > 1 and ranked[1] != top_family) else None
+            
+            if top_family:
+                # B149: Plateau fatigue escape
+                top_fatigue = self._action_fatigue.get(top_family, 0)
+                if top_fatigue >= self.ACTION_FATIGUE_THRESHOLD and secondary and secondary in available_actions:
+                    secondary_fatigue = self._action_fatigue.get(secondary, 0)
+                    if secondary_fatigue < self.ACTION_FATIGUE_THRESHOLD:
+                        self._emit_trace_event(
+                            "operation",
+                            "plateau_fatigue_escape",
+                            {
+                                "locked_family": top_family,
+                                "locked_fatigue": top_fatigue,
+                                "escape_to": secondary,
+                                "secondary_fatigue": secondary_fatigue,
+                            },
+                        )
+                        action.update({
+                            "action_id": secondary,
+                            "rationale": (
+                                f"plateau fatigue escape: locked family {top_family} has "
+                                f"{top_fatigue} zero-reward uses; trying secondary {secondary}."
+                            ),
+                            "decision_source": "fatigue_override",
+                        })
+                        return action
+
+                # Check if we are trying to switch away from the authoritative locked family
+                # We allow switching to secondary ONLY if switch budget is available.
+                is_locked_choice = (action_id == top_family)
+                
+                if not is_locked_choice:
+                    is_secondary = (secondary and action_id == secondary)
+                    
+                    if is_secondary and self._exploitation_switch_budget > 0:
+                        self._exploitation_switch_budget -= 1
+                        self._emit_trace_event("operation", "plateau_switch_allowed", 
+                                              {"action_id": action_id, "budget_remaining": self._exploitation_switch_budget},
+                                              {"locked_family": top_family, "secondary": secondary})
+                    elif self._exploitation_switch_budget > 0:
+                        # Allow one-time drift if budget exists (e.g. LLM picking something weird but valid)
+                        self._exploitation_switch_budget -= 1
+                        self._emit_trace_event("operation", "plateau_switch_allowed_drift", 
+                                              {"action_id": action_id, "budget_remaining": self._exploitation_switch_budget},
+                                              {"locked_family": top_family})
+                    else:
+                        # Budget exhausted: force back to AUTHORITATIVE top family
+                        self._emit_trace_event("operation", "plateau_switch_blocked", 
+                                              {"action_id": action_id, "forced": top_family},
+                                              {"reason": "exploitation switch budget exhausted", "plateau_family_exhausted": True, "locked_family": top_family})
+                        
+                        action.update({
+                            "action_id": top_family,
+                            "rationale": f"plateau lock: exploiting authoritative family {top_family} (switch budget exhausted). Original: {rationale}",
+                            "decision_source": "plateau_override",
+                        })
+                        return action
+                else:
+                    # Consistent with authoritative lock
+                    self._emit_trace_event("operation", "plateau_lock_active", 
+                                          {"action_id": action_id}, 
+                                          {"locked_family": top_family, "budget_remaining": self._exploitation_switch_budget})
+
+        # B149: General action fatigue override (Exploitation rotation)
+        # This catches any fatigued action that wasn't already handled by plateau escape.
+        action_id = action.get("action_id")
+        fatigue_count = self._action_fatigue.get(action_id, 0)
+        if fatigue_count >= self.ACTION_FATIGUE_THRESHOLD:
+            alternatives = [
+                a for a in available_actions
+                if a != action_id and self._action_fatigue.get(a, 0) < self.ACTION_FATIGUE_THRESHOLD
+            ]
+            if alternatives:
+                best_alt = min(alternatives, key=lambda a: self._action_fatigue.get(a, 0))
+                self._emit_trace_event(
+                    "operation",
+                    "action_fatigue_override",
+                    {
+                        "fatigued_action": action_id,
+                        "fatigue_count": fatigue_count,
+                        "replacement": best_alt,
+                    },
+                )
+                action.update({
+                    "action_id": best_alt,
+                    "rationale": (
+                        f"fatigue override: {action_id} reached threshold {self.ACTION_FATIGUE_THRESHOLD}; "
+                        f"rotating to alternative {best_alt}."
+                    ),
+                    "decision_source": "fatigue_override",
+                })
+                return action
+
         return action
+
+    def _max_exploration_for_level(self) -> int:
+        """B154: Calculate forced exploration budget based on level and confidence."""
+        # If high confidence rule exists, zero forced exploration
+        if hasattr(self.solve_engine, '_game_rule_hypotheses') and self.solve_engine._game_rule_hypotheses:
+            if self.solve_engine._game_rule_hypotheses[0].confidence >= 0.8:
+                return 0
+
+        if self._current_level == 1:
+            return 5
+        elif self._current_level <= 3:
+            return 2
+        else:
+            return 1
+
     def _select_ranked_action(self, ranked_effects: List[dict]) -> str | None:
         allowed = [
             effect for effect in ranked_effects
@@ -2109,20 +4067,127 @@ class ARCOrchestrator:
                 "llm_response": "",
             }
 
+    def _extract_run_lessons(
+        self,
+        solved: bool,
+        final_observation: ARC3Observation | None = None,
+    ) -> dict:
+        """B165: Extract structured lessons from the just-finished run."""
+        action_effects: dict[str, dict[str, Any]] = {}
+        zero_effect_actions: list[str] = []
+        effective_actions: list[str] = []
+
+        for action_id, effect in (self.observed_action_effects or {}).items():
+            pixels_changed = float(
+                effect.get("avg_pixels_changed", effect.get("avg_meaningful_change", 0.0)) or 0.0
+            )
+            reward = float(effect.get("avg_reward", 0.0) or 0.0)
+            times_seen = int(effect.get("times_seen", 0) or 0)
+            label = str(effect.get("value_status", "unknown") or "unknown")
+            summary = {
+                "pixels_changed": pixels_changed,
+                "reward": reward,
+                "times_seen": times_seen,
+                "label": label,
+            }
+            action_effects[action_id] = summary
+            if pixels_changed <= 0:
+                zero_effect_actions.append(action_id)
+            else:
+                effective_actions.append(action_id)
+
+        grid = (final_observation or {}).get("grid") or []
+        fingerprint = grid_characteristic_summary(grid) if grid else {}
+
+        victory = (self._solve_context or {}).get("victory_condition") or (self._solve_context or {}).get("victory") or "unknown"
+        if isinstance(victory, dict):
+            victory = victory.get("type", "unknown")
+
+        return {
+            "puzzle_id": getattr(self, "_task_id", None) or (final_observation or {}).get("task_id"),
+            "game_id": getattr(self, "_game_id", None),
+            "outcome": "solved" if solved else "failed",
+            "steps_used": len(self._step_history),
+            "archetype": str((self._solve_context or {}).get("archetype", "unknown")),
+            "victory_condition": str(victory),
+            "action_effects": action_effects,
+            "zero_effect_actions": zero_effect_actions,
+            "effective_actions": effective_actions,
+            "strategy_attempted": str((self._solve_context or {}).get("strategy_summary", "")),
+            "puzzle_fingerprint": {
+                "grid_size": f"{fingerprint.get('rows', 0)}x{fingerprint.get('cols', 0)}" if fingerprint else "0x0",
+                "n_colors": fingerprint.get("n_colors", 0),
+                "n_regions": fingerprint.get("n_regions", 0),
+                "region_sizes": fingerprint.get("region_sizes", []),
+                "symmetry": fingerprint.get("symmetry", []),
+            },
+        }
+
     def _memory_query(self, observation: ARC3Observation) -> str:
-        colors = ", ".join(str(s["value"]) for s in observation.get("colors", []))
-        shapes = len(observation.get("shapes", []))
-        state = observation.get("state", "UNKNOWN")
-        available = observation.get("available_actions", [])
-        energy = observation.get("energy_estimate", 1.0)
-        spatial_signature = self._coarse_grid_summary(observation.get("grid", []), block_count=4)
-        spatial_signature = spatial_signature.replace("\n", " / ") if spatial_signature else "(empty)"
-        return (
-            f"ARC task {observation['task_id']} has colors {colors} and {shapes} shapes. "
-            f"Spatial signature: {spatial_signature}. "
-            f"State is {state}. Energy: {energy:.0%}. "
-            f"Available actions: {', '.join(available) if available else 'all'}."
-        )
+        """B155: Build memory query from grid structural characteristics."""
+        grid = observation.get("grid") or []
+        if not grid:
+            return "ARC puzzle transformation"
+
+        chars = grid_characteristic_summary(grid)
+        available = observation.get("available_actions") or []
+
+        query_parts = [
+            "ARC",
+            f"{chars['rows']}x{chars['cols']} grid",
+            f"{chars['n_colors']} colors",
+            f"{len(available)} actions",
+        ]
+        if chars.get("symmetry"):
+            for sym in chars["symmetry"]:
+                query_parts.append(f"{sym} symmetry")
+
+        return " ".join(query_parts)
+
+    def _parse_transformation_lessons(self, memories: List[Any]) -> List[GameRuleHypothesis]:
+        """B155: Extract game rule hypotheses from retrieved memories."""
+        hypotheses = []
+        for memory in memories:
+            if not isinstance(memory, dict):
+                continue
+            text = memory.get("text_raw", "") or memory.get("content", "")
+            if not text:
+                continue
+            
+            # Support both old and new tags
+            if "ARC TRANSFORMATION LESSON" not in text and "ARC GAME STRATEGY" not in text:
+                continue
+
+            # Parse rule from the lesson text
+            rule_match = re.search(r"Rule: (.+?)(?:\n|$)", text, re.IGNORECASE)
+            if not rule_match:
+                rule_match = re.search(r"Game rule: (.+?)(?:\n|$)", text, re.IGNORECASE)
+                
+            outcome_match = re.search(r"Outcome: (\w+)", text, re.IGNORECASE)
+            outcome_text = outcome_match.group(1).upper() if outcome_match else "UNKNOWN"
+            confidence_base = 0.7 if outcome_text == "SOLVED" else 0.3
+
+            # Parse action semantics JSON if present
+            action_semantics = {}
+            sem_match = re.search(r"Action semantics: (\{.*?\})(?:\n|$)", text)
+            if sem_match:
+                try:
+                    action_semantics = json.loads(sem_match.group(1))
+                except:
+                    pass
+
+            hypotheses.append(GameRuleHypothesis(
+                rule_description=rule_match.group(1),
+                action_semantics=action_semantics,
+                objective_description="Match target grid",
+                level_strategy="Follow the rule discovered in similar past games",
+                confidence=confidence_base * float(memory.get("similarity", 0.5)),
+                evidence=[f"Retrieved from memory (similarity={memory.get('similarity', '?')})"],
+                contradictions=[],
+                source="memory",
+            ))
+
+        return hypotheses
 
     def _draft_plan_steps(
         self,
@@ -2237,7 +4302,7 @@ class ARCOrchestrator:
             "If the top tested actions both decay into low_value or no_progress, broaden exploration instead of bouncing between them. "
             "After 2 consecutive zero-reward tentative steps on the same action, require stronger evidence than before or switch. "
             "Do not let a memory-only first move override the current observation unless the memory clearly matches this puzzle. "
-            "Do not invent human labels for actions beyond the observed effects. "
+            "Do not invent human labels for actions beyond the observed effects. Treat action ids as opaque operators. "
             "Respond with JSON {\"action_id\":..., \"rationale\":...}, and make the rationale cite one observed effect label or say UNTESTED."
         )
         return instruction
@@ -2613,7 +4678,7 @@ class ARCOrchestrator:
 
     # ------------------------------------------------------------------
 
-    def record_step_result(self, reward: float, done: bool) -> None:
+    def record_step_result(self, reward: float, done: bool, next_observation: Optional[ARC3Observation] = None) -> None:
         if not self._step_history:
             return
         record = self._step_history[-1]
@@ -2628,6 +4693,47 @@ class ARCOrchestrator:
             if frame_hash:
                 self._action_frame_hashes[action_id] = frame_hash
 
+        # B161: Update player position after step
+        old_pos = self._player_position
+        if next_observation:
+            self._update_player_position(next_observation)
+        
+        centroid_shift = 0.0
+        if old_pos and self._player_position:
+            centroid_shift = ((self._player_position[0] - old_pos[0])**2 + 
+                             (self._player_position[1] - old_pos[1])**2)**0.5
+
+        # B150: Per-step grid analysis (FrameDelta)
+        if next_observation and self._last_grid:
+            from agents.arc3.grid_analysis import GridDiffEngine
+            try:
+                curr_grid = next_observation.get("grid")
+                if curr_grid:
+                    diff_engine = GridDiffEngine()
+                    delta = diff_engine.diff_frames(self._last_grid, curr_grid, action_id or "unknown")
+                    self._frame_deltas.append(delta)
+                    
+                    # Store in step history for trace
+                    record["frame_delta"] = {
+                        "apparent_effect": delta.apparent_effect,
+                        "n_cells_changed": delta.n_cells_changed,
+                        "direction": delta.direction
+                    }
+                    
+                    # B161: ACTION5 effect analysis
+                    if action_id == "ACTION5" and delta.n_cells_changed > 30:
+                        self._last_interact_effect = {
+                            "pixels_changed": delta.n_cells_changed,
+                            "new_colors": delta.new_colors_introduced if hasattr(delta, "new_colors_introduced") else [],
+                            "removed_colors": delta.colors_removed if hasattr(delta, "colors_removed") else [],
+                            "step": len(self._step_history)
+                        }
+                    
+                    # Update last_grid for next step
+                    self._last_grid = curr_grid
+            except Exception as exc:
+                logger.warning("B150: per-step grid analysis failed: %s", exc)
+
         # B135: Track recent frame hashes for loop detection
         frame_hash = record.get("frame_hash") or record.get("board_before", {}).get("frame_hash")
         if frame_hash:
@@ -2639,8 +4745,20 @@ class ARCOrchestrator:
         if reward == 0.0:
             self._no_progress_step_count += 1
             self._consecutive_no_progress_steps += 1
+            # B149: Increment fatigue
+            if action_id:
+                self._action_fatigue[action_id] = self._action_fatigue.get(action_id, 0) + 1
         else:
             self._consecutive_no_progress_steps = 0
+            # B177: Clear blocks on progress
+            self._blocked_actions.clear()
+            # B149: Productive action — reset its fatigue
+            if action_id:
+                self._action_fatigue[action_id] = 0
+
+        # B175: Clear blocked axes on significant movement or reward
+        if reward > 0 or (centroid_shift > 3.0):
+            self._blocked_axes.clear()
 
     def reset_for_retry(self, attempt: int) -> None:
         """Reset internal state for a retry attempt while preserving history.
@@ -2654,6 +4772,12 @@ class ARCOrchestrator:
         self._plan_steps = []
         self._consecutive_no_progress_steps = 0
         self._blocked_actions = set()
+        self._exploitation_switch_budget = 2
+        self._forced_exploration_count = 0
+        self._verified_output_grid = None
+        self._phase2_mode = "fallback"
+        self._transformation_signature = None
+        self._training_diffs = None
         # Append a sentinel so the LLM prompt shows the GAME_OVER boundary
         self._step_history.append({
             "step": len(self._step_history) + 1,

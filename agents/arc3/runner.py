@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import re
@@ -35,6 +36,8 @@ class DurableARCRunner:
         self._ledger: List[dict] = []
         self._current_step = 0
         self._progress_callback = progress_callback
+        self._last_replan_step: int = -999
+        self._replan_backoff_steps: int = 3
         
         self.brain = LedgerBrainClient(
             inner=brain_client,
@@ -163,7 +166,9 @@ class DurableARCRunner:
         import datetime
         start_time = time.time()
         total_steps = 0
+        self._last_replan_step = -999
         success = False
+        done = False
         error_msg: str | None = None
         total_tokens_input = 0
         total_tokens_output = 0
@@ -172,10 +177,45 @@ class DurableARCRunner:
         last_grid = None
 
         for attempt in range(1, max_retries + 1):
-            # (Re-)initialize the game environment
             frame_response, guid = await self._initial_frame(game_id)
             observation = adapter.normalize_observation(frame_response)
             last_grid = observation.get("grid")
+
+            # B156: Phase 1 — UNDERSTAND (zero game steps)
+            phase1_start = time.time()
+            training_examples = observation.get("training_examples") or []
+
+            if training_examples:
+                phase1_result = await orchestrator.run_phase1(
+                    observation=observation,
+                    training_examples=training_examples,
+                )
+                phase1_duration = time.time() - phase1_start
+
+                if phase1_result and phase1_result.get("verified"):
+                    orchestrator._verified_output_grid = phase1_result["output_grid"]
+                    orchestrator._phase2_mode = "execution"
+                    logger.info(
+                        "B156: Phase 1 SUCCEEDED in %.1fs — entering execution mode "
+                        "(hypothesis: %s, rounds: %d)",
+                        phase1_duration,
+                        phase1_result.get("hypothesis", {}).rule_description if hasattr(phase1_result.get("hypothesis"), "rule_description") else "?",
+                        phase1_result.get("rounds", 0),
+                    )
+                else:
+                    orchestrator._phase2_mode = "fallback"
+                    logger.info(
+                        "B156: Phase 1 FAILED in %.1fs — entering fallback mode",
+                        phase1_duration,
+                    )
+            else:
+                orchestrator._phase2_mode = "fallback"
+                logger.info("B156: No training examples — entering fallback mode")
+
+            # B157: Initialize level tracking
+            orchestrator._level_start_grid = observation.get("grid")
+            orchestrator._level_action_buffer = []
+
             orchestrator.set_write_trace_context("bootstrap")
             self.brain.current_phase = "bootstrap"
             self._current_step = 0
@@ -183,7 +223,116 @@ class DurableARCRunner:
             await orchestrator.plan(observation, memory_context)
             bootstrap_write_trace = orchestrator.consume_write_trace()
 
+            # B168: Exploration phase (Build neural substrate before goal-seeking)
+            entity_graph = None
+            has_db = hasattr(self.brain, 'db') and self.brain.db is not None
+            orchestrator._emit_trace_event("operation", "b168_guard_check", {
+                "has_db_attr": hasattr(self.brain, 'db'),
+                "db_is_not_none": self.brain.db is not None if hasattr(self.brain, 'db') else False,
+                "brain_type": type(self.brain).__name__,
+            })
+            if has_db:
+                try:
+                    from agents.arc3.entity_graph import EntityGraphBuilder
+                    entity_graph = EntityGraphBuilder(
+                        self.brain.db, task.task_id
+                    )
+                    # B169: Authority is KuzuDB
+                    orchestrator._entity_graph = entity_graph
+                    orchestrator.solve_engine._entity_graph = entity_graph
+                    orchestrator.solve_engine._current_level = orchestrator._current_level
+                    orchestrator.solve_engine._task_id = task.task_id
+                    
+                    # B170: Persist hypotheses to KuzuDB
+                    orchestrator.hypothesis_mgr._entity_graph = entity_graph
+                    orchestrator.hypothesis_mgr._set_task_id(task.task_id)
+
+                    # Phase 1: Static analysis (no steps consumed)
+                    logger.info("B168: Starting Static Exploration for task %s", task.task_id)
+                    orchestrator._emit_trace_event("phase_start", "b168_static_analysis", {"task_id": task.task_id})
+                    bootstrap_result = await entity_graph.bootstrap(observation.get("grid"), level=0, observation=observation)
+                    orchestrator._emit_trace_event("operation", "b168_static_analysis", result={
+                        "n_entities": bootstrap_result.get("n_entities", 0),
+                        "entity_colors": list({e["color_id"] for e in entity_graph._entities.values()}),
+                        "background_entities": sum(1 for e in entity_graph._entities.values() if e["is_background"]),
+                    })
+
+                    # Phase 2a: Deterministic sweep (one step per available action)
+                    available = observation.get("available_actions", [])
+                    logger.info("B168: Starting Behavioral Sweep (%d actions) for task %s", len(available), task.task_id)
+                    orchestrator._emit_trace_event("phase_start", "b168_behavioral_sweep", {"n_actions": len(available)})
+                    explore_steps = 0
+
+                    for explore_action_id in available:
+                        if total_steps >= max_steps:
+                            break
+                        grid_before = observation.get("grid")
+
+                        # Record action intent
+                        self.brain.current_phase = "act"
+                        explore_action = {"action_id": explore_action_id, "rationale": "B168 deterministic behavioral exploration"}
+
+                        frame_response, reward, done, guid = await self._execute_action(
+                            game_id, guid, explore_action, total_steps
+                        )
+
+                        # Ingest and update graph
+                        self.brain.current_phase = "ingest"
+                        await adapter.ingest_step(frame_response, explore_action, reward=reward)
+                        observation = adapter.normalize_observation(frame_response)
+                        grid_after = observation.get("grid")
+
+                        inference_result = await entity_graph.record_action_effect(
+                            grid_before, grid_after, explore_action_id, total_steps, level=0
+                        )
+                        orchestrator.record_step_result(reward, done, next_observation=observation)
+
+                        orchestrator._emit_trace_event("operation", "b168_action_effect", {
+                            "action_id": explore_action_id,
+                            "step": total_steps,
+                            "reward": reward,
+                        }, result={
+                            "entities_updated": inference_result.entities_updated if inference_result else 0,
+                            "frontier_size": inference_result.frontier_size if inference_result else -1,
+                            "mobile_entities": [eid for eid, e in entity_graph._entities.items() if e.get("is_mobile")],
+                            "interactive_entities": [eid for eid, e in entity_graph._entities.items() if e.get("is_interactive")],
+                        })
+
+                        total_steps += 1
+                        explore_steps += 1
+                        if done:
+                            break
+
+                    # Handoff: merge graph-inferred roles into orchestrator
+                    if not done:
+                        graph_roles = await entity_graph.get_entity_roles()
+                        await orchestrator.merge_graph_roles(graph_roles)
+                        role_summary = {
+                            str(cid): {"role": r.role.value, "confidence": round(r.confidence, 3)}
+                            for cid, r in graph_roles.items()
+                        }
+                        orchestrator._emit_trace_event("operation", "b168_handoff", result={
+                            "n_roles": len(graph_roles),
+                            "roles": role_summary,
+                            "explore_steps_used": explore_steps,
+                            "total_steps_after_explore": total_steps,
+                        })
+                        logger.info("B168: Exploration complete. Inferred %d roles: %s", len(graph_roles), role_summary)
+
+                except Exception as exc:
+                    # B168 should never block the puzzle — log and continue without graph roles
+                    logger.error("B168: Exploration phase FAILED: %s", exc, exc_info=True)
+                    orchestrator._emit_trace_event("error", "b168_exploration_failed", {
+                        "error": str(exc),
+                        "error_type": type(exc).__name__,
+                    })
+                    entity_graph = None
+            else:
+                logger.info("B168: Skipped — brain.db not available (brain_type=%s)", type(self.brain).__name__)
+
             steps_this_attempt = 0
+            consecutive_no_progress_steps = 0
+            last_reward = 0.0
             while steps_this_attempt < max_steps:
                 prior_step = orchestrator._step_history[-1] if steps_this_attempt > 0 and orchestrator._step_history else None
                 # B88 — Update hypothesis engine
@@ -201,20 +350,75 @@ class DurableARCRunner:
                 self.brain.current_phase = "solve"
                 await orchestrator.solve(observation, hyp_ctx, total_steps)
 
+                # B136: Top-level Replan Trigger for Persistent Dissonance
+                _dissonance = bool((orchestrator._solve_context or {}).get("dissonance"))
+                _backoff_ok = (total_steps - self._last_replan_step) >= self._replan_backoff_steps
+
+                if _dissonance and _backoff_ok:
+                    self._last_replan_step = total_steps
+                    # Re-run plan phase with current observation and memory context
+                    # Use bootstrapped memory_context from Perceive phase
+                    await orchestrator.plan(observation, memory_context)
+                    
+                    if hasattr(orchestrator, "_emit_trace_event"):
+                        orchestrator._emit_trace_event(
+                            "operation", 
+                            "replan_triggered", 
+                            {"step": total_steps}, 
+                            {
+                                "reason": "dissonance detected by solve engine",
+                                "dissonance_detail": (orchestrator._solve_context or {}).get("dissonance_reason", "unknown")
+                            }
+                        )
+
                 self.brain.current_phase = "act"
                 action = await orchestrator.act(observation, memory_context, total_steps + 1)
+                
+                # B157: Record action for level transition tracking
+                orchestrator._level_action_buffer.append(action.get("action_id", "unknown"))
+
                 total_tokens_input += self.harness.serializer._estimate_tokens(json.dumps(observation))
                 total_tokens_output += self.harness.serializer._estimate_tokens(str(action))
+
+                # B168: Validate action is in available_actions before sending to API
+                available_actions = observation.get("available_actions", [])
+                chosen_action_id = action.get("action_id", "ACTION1")
+                if available_actions and chosen_action_id not in available_actions:
+                    logger.warning(
+                        "Action %s not in available_actions %s — falling back to ACTION1",
+                        chosen_action_id, available_actions,
+                    )
+                    action["action_id"] = available_actions[0] if available_actions else "ACTION1"
 
                 frame_response, reward, done, guid = await self._execute_action(
                     game_id, guid, action, total_steps
                 )
-                recall_query = "What did I learn from similar puzzles?"
+
+                # B134: Gate unconditional recall — only fire when context suggests it is useful
+                should_recall = (
+                    total_steps == 0  # First step
+                    or consecutive_no_progress_steps >= 2  # Stuck streak
+                    or bool((orchestrator._hypothesis_context or {}).get("loop_detected"))  # Loop detected
+                )
+
+                recall_query = None
+                if should_recall:
+                    recall_query = "What did I learn from similar puzzles?"
+
                 self.brain.current_phase = "ingest"
                 await adapter.ingest_step(frame_response, action, reward=reward, recall_query=recall_query)
-                orchestrator.record_step_result(reward, done)
-
+                
+                # B150: Pass observation for per-step grid analysis
                 observation = adapter.normalize_observation(frame_response)
+                orchestrator.record_step_result(reward, done, next_observation=observation)
+
+                # Track progress for recall gating
+                if reward > last_reward:
+                    consecutive_no_progress_steps = 0
+                    last_reward = reward
+                else:
+                    consecutive_no_progress_steps += 1
+
                 curr_grid = observation.get("grid")
                 frame_analysis = self._analyze_frame_delta(last_grid, curr_grid)
                 last_grid = curr_grid
@@ -245,10 +449,44 @@ class DurableARCRunner:
                 )
 
                 if state == "WIN":
-                    success = True
-                    self.brain.current_phase = "finalization"
-                    await orchestrator.hypothesis_mgr.distill_to_brain(orchestrator.solve_engine._object_roles)
-                    break
+                    # B157: Capture level transition data
+                    levels_completed = observation.get("levels_completed", 0) or 0
+                    win_levels = observation.get("win_levels", 1) or 1
+                    level_end_grid = observation.get("grid")
+                    level_actions = list(orchestrator._level_action_buffer)
+                    
+                    orchestrator._solved_levels.append({
+                        "level": levels_completed,
+                        "start_grid": orchestrator._level_start_grid,
+                        "end_grid": level_end_grid,
+                        "actions": level_actions,
+                        "steps": len(level_actions),
+                    })
+
+                    # Check if game is complete
+                    if levels_completed >= win_levels:
+                        success = True
+                        self.brain.current_phase = "finalization"
+                        await orchestrator.hypothesis_mgr.distill_to_brain(orchestrator.solve_engine._object_roles)
+                        break
+                    
+                    # More levels remain — continue playing
+                    logger.info(
+                        "B157: Level %d/%d complete (%d actions). Continuing to next level.",
+                        levels_completed, win_levels, len(level_actions),
+                    )
+
+                    # Prepare for next level
+                    transition_result = orchestrator._on_level_transition(
+                        completed_level=levels_completed,
+                        solved_levels=orchestrator._solved_levels,
+                    )
+                    if inspect.isawaitable(transition_result):
+                        await transition_result
+                    orchestrator._level_start_grid = observation.get("grid")
+                    orchestrator._level_action_buffer = []
+                    continue
+
                 elif state == "GAME_OVER":
                     self.brain.current_phase = "finalization"
                     await orchestrator.hypothesis_mgr.distill_to_brain(orchestrator.solve_engine._object_roles)
@@ -510,6 +748,11 @@ class DurableARCRunner:
                 received=False,
                 error_details=error_details
             )
+            # HTTP 400 (bad action) should not crash the run — treat as no-op step
+            is_client_error = "400" in str(exc) or "Client error" in str(exc)
+            if is_client_error:
+                logger.warning("API rejected action %s (400 Bad Request) — treating as no-op", action_id)
+                return {"state": "NOT_FINISHED", "guid": guid}, 0.0, False, guid
             raise
 
     def _analyze_frame_delta(self, prev_frame: List[List[int]] | None, curr_frame: List[List[int]]) -> dict:

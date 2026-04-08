@@ -301,6 +301,19 @@ NODE_TABLES = {
         PRIMARY KEY (merge_event_id)
     """,
 
+    # B158 — DisambiguationEvent (human-in-the-loop entity curation)
+    "DisambiguationEvent": """
+        event_id       STRING,
+        concept_id_a   STRING,
+        concept_id_b   STRING,
+        similarity     DOUBLE,
+        status         STRING,
+        resolved_at    TIMESTAMP,
+        resolved_by    STRING,
+        created_at     TIMESTAMP,
+        PRIMARY KEY (event_id)
+    """,
+
     # B11 — Lesson node (synthesized at quest completion, feeds analogical reasoning)
     "Lesson": """
         lesson_id        STRING,
@@ -396,6 +409,115 @@ NODE_TABLES = {
         completed_at    TIMESTAMP,
         PRIMARY KEY (task_id)
     """,
+
+    # B168 — ARC Exploration Graph nodes
+    "GridEntity": """
+        entity_id         STRING,
+        task_id           STRING,
+        level             INT32,
+        color_id          INT32,
+        region_index      INT32,
+        pixel_count       INT32,
+        centroid_row      DOUBLE,
+        centroid_col      DOUBLE,
+        bbox_min_row      INT32,
+        bbox_min_col      INT32,
+        bbox_max_row      INT32,
+        bbox_max_col      INT32,
+        location_hint     STRING,
+        aspect_ratio      DOUBLE,
+        compactness       DOUBLE,
+        is_background     BOOLEAN,
+        is_mobile         BOOLEAN,
+        is_interactive    BOOLEAN,
+        inferred_role     STRING,
+        role_confidence   DOUBLE,
+        last_updated_step INT32,
+        created_at        TIMESTAMP,
+        PRIMARY KEY (entity_id)
+    """,
+
+    "GridSnapshot": """
+        snapshot_id       STRING,
+        task_id           STRING,
+        level             INT32,
+        step              INT32,
+        grid_hash         STRING,
+        rows              INT32,
+        cols              INT32,
+        n_entities        INT32,
+        symmetry_axes     STRING[],
+        created_at        TIMESTAMP,
+        PRIMARY KEY (snapshot_id)
+    """,
+
+    "ActionEffect": """
+        effect_id         STRING,
+        task_id           STRING,
+        level             INT32,
+        action_id         STRING,
+        step              INT32,
+        n_cells_changed   INT32,
+        apparent_effect   STRING,
+        direction_row     DOUBLE,
+        direction_col     DOUBLE,
+        created_at        TIMESTAMP,
+        PRIMARY KEY (effect_id)
+    """,
+
+    "ChunkExecution": """
+        execution_id     STRING,
+        task_id          STRING,
+        level            INT32,
+        plan_id          STRING,
+        chunk_family     STRING,
+        description      STRING,
+        status           STRING,
+        steps_used       INT32,
+        graduation_score DOUBLE,
+        evidence_at_end  DOUBLE,
+        dissonance_triggered BOOLEAN,
+        outcome_summary  STRING,
+        created_at       TIMESTAMP,
+        PRIMARY KEY (execution_id)
+    """,
+
+    "VictoryCondition": """
+        condition_id     STRING,
+        task_id          STRING,
+        level            INT32,
+        condition_type   STRING,
+        description      STRING,
+        target_color_id  INT32,
+        confidence       DOUBLE,
+        source           STRING,
+        evidence_steps   STRING,
+        created_at       TIMESTAMP,
+        last_updated     TIMESTAMP,
+        PRIMARY KEY (condition_id)
+    """,
+
+    # B171 — Deterministic action facts persisted from repeated observations
+    "ActionFact": """
+        fact_id            STRING,
+        task_id            STRING,
+        level              INT32,
+        action_id          STRING,
+        fact_type          STRING,
+        description        STRING,
+        effect_description STRING,
+        consistency        DOUBLE,
+        confidence         DOUBLE,
+        value_status       STRING,
+        evidence_count     INT32,
+        observation_count  INT32,
+        delta_row          DOUBLE,
+        delta_col          DOUBLE,
+        n_cells_changed    INT32,
+        created_at         TIMESTAMP,
+        last_updated       TIMESTAMP,
+        PRIMARY KEY (fact_id)
+    """,
 }
 
 # ---------------------------------------------------------------------------
@@ -441,6 +563,7 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS IMPLEMENTS   (FROM Concept TO Concept, confidence DOUBLE, inferred_by STRING, inferred_at TIMESTAMP)",
     "CREATE REL TABLE IF NOT EXISTS EXTENDS      (FROM Concept TO Concept, confidence DOUBLE, inferred_by STRING, inferred_at TIMESTAMP)",
     "CREATE REL TABLE IF NOT EXISTS ALTERNATIVE_TO (FROM Concept TO Concept, confidence DOUBLE, inferred_by STRING, inferred_at TIMESTAMP)",
+    "CREATE REL TABLE IF NOT EXISTS DISTINCT_FROM (FROM Concept TO Concept, created_at TIMESTAMP, source STRING)",
     # B12 — Anomaly detection
     "CREATE REL TABLE IF NOT EXISTS ANOMALY_DETECTED (FROM Concept TO GlobalConstraint, FROM Concept TO GlobalPreference, FROM Decision TO GlobalConstraint, FROM Constraint TO GlobalConstraint, FROM Requirement TO GlobalConstraint, FROM ActionItem TO GlobalConstraint, FROM Message TO GlobalConstraint, FROM DocumentExtract TO GlobalConstraint, type STRING, confidence DOUBLE, detected_at TIMESTAMP)",
     # B11 — Lesson
@@ -453,6 +576,7 @@ REL_TABLES = [
     # B66/B69 — active planning + outcome propagation
     "CREATE REL TABLE IF NOT EXISTS PLANNED_IN (FROM Plan TO Session)",
     "CREATE REL TABLE IF NOT EXISTS TARGETS (FROM Plan TO MainQuest, FROM Plan TO SideQuest)",
+    "CREATE REL TABLE IF NOT EXISTS EXECUTED_AS (FROM Plan TO ChunkExecution, seq INT32)",
     "CREATE REL TABLE IF NOT EXISTS STEP_OF (FROM PlanStep TO Plan)",
     "CREATE REL TABLE IF NOT EXISTS NEXT_STEP (FROM PlanStep TO PlanStep)",
     "CREATE REL TABLE IF NOT EXISTS ACTS_ON (FROM PlanStep TO Concept)",
@@ -464,9 +588,28 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS CONTRADICTS (FROM Concept TO Hypothesis, weight FLOAT)",
     "CREATE REL TABLE IF NOT EXISTS GENERALIZES (FROM Hypothesis TO Hypothesis)",
     "CREATE REL TABLE IF NOT EXISTS PRODUCED_HYPOTHESIS (FROM Plan TO Hypothesis)",
+    "CREATE REL TABLE IF NOT EXISTS SUPPORTS_HYPOTHESIS (FROM ActionFact TO Hypothesis, weight FLOAT)",
     # B127 — DAG task graph
     "CREATE REL TABLE IF NOT EXISTS TASK_OF (FROM TaskNode TO TaskGraph)",
     "CREATE REL TABLE IF NOT EXISTS DEPENDS_ON (FROM TaskNode TO TaskNode)",
+    # B168 — ARC Exploration Graph relationships
+    "CREATE REL TABLE IF NOT EXISTS OBSERVED_IN (FROM GridEntity TO GridSnapshot, step INT32)",
+    "CREATE REL TABLE IF NOT EXISTS ADJACENT_TO (FROM GridEntity TO GridEntity, min_distance DOUBLE, direction STRING, step INT32)",
+    "CREATE REL TABLE IF NOT EXISTS STRUCTURALLY_SIMILAR (FROM GridEntity TO GridEntity, similarity DOUBLE, color_shifted BOOLEAN, step INT32)",
+    "CREATE REL TABLE IF NOT EXISTS SAME_COLOR_AS (FROM GridEntity TO GridEntity)",
+    "CREATE REL TABLE IF NOT EXISTS CONTAINS_ENTITY (FROM GridEntity TO GridEntity, step INT32)",
+    "CREATE REL TABLE IF NOT EXISTS MOVED_BY (FROM GridEntity TO ActionEffect, delta_row DOUBLE, delta_col DOUBLE)",
+    "CREATE REL TABLE IF NOT EXISTS RESPONDS_TO (FROM GridEntity TO ActionEffect, effect_type STRING)",
+    "CREATE REL TABLE IF NOT EXISTS DERIVED_FROM_FACT (FROM ActionFact TO ActionEffect, step INT32)",
+    "CREATE REL TABLE IF NOT EXISTS BLOCKS (FROM GridEntity TO GridEntity, action_id STRING, step INT32)",
+    "CREATE REL TABLE IF NOT EXISTS ENTITY_HYPOTHESIS (FROM GridEntity TO Hypothesis, weight FLOAT, step INT32)",
+    # B168 — Inference relationship types
+    "CREATE REL TABLE IF NOT EXISTS CO_MOVES_WITH (FROM GridEntity TO GridEntity, step INT32)",
+    "CREATE REL TABLE IF NOT EXISTS CORRELATES_WITH (FROM GridEntity TO GridEntity, step INT32, mechanism STRING)",
+    "CREATE REL TABLE IF NOT EXISTS CAUSES_CHANGE_IN (FROM GridEntity TO GridEntity, mechanism STRING, confidence DOUBLE, step INT32)",
+    # B172 — Victory Condition persistence
+    "CREATE REL TABLE IF NOT EXISTS INFERRED_FROM (FROM VictoryCondition TO Hypothesis, weight FLOAT)",
+    "CREATE REL TABLE IF NOT EXISTS REQUIRES_ENTITY (FROM VictoryCondition TO GridEntity, requirement STRING)",
 ]
 
 def get_relationship_types() -> list[str]:

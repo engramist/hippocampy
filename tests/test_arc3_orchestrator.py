@@ -56,7 +56,101 @@ class MockLLM:
 
 
 @pytest.mark.asyncio
-async def test_perceive_calls_all_memory_tools(mock_brain, sample_observation):
+async def test_enforce_action_policy_provenance_and_gate(mock_brain):
+    """B133: Verify provenance attribution and frame-hash aware repetition gate."""
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    
+    available = ["ACTION1", "ACTION2", "ACTION3"]
+    
+    # 1. Test standard LLM decision
+    action = {"action_id": "ACTION1", "decision_source": "sandbox"}
+    enforced = orchestrator._enforce_action_policy(action, available, current_frame_hash="h1")
+    assert enforced["action_id"] == "ACTION1"
+    assert enforced["decision_source"] == "sandbox"
+    
+    # Record result to store frame hash
+    orchestrator._step_history.append({"action_id": "ACTION1", "board_before": {"frame_hash": "h1"}})
+    orchestrator.record_step_result(0.0, False)
+    assert orchestrator._action_frame_hashes["ACTION1"] == "h1"
+    
+    # 2. Test repeated action on SAME frame -> should override to untested
+    # Hypothesis context with untested actions
+    orchestrator._hypothesis_context = {
+        "action_coverage": {"untested_actions": ["ACTION2", "ACTION3"]}
+    }
+    action = {"action_id": "ACTION1", "decision_source": "sandbox"}
+    enforced = orchestrator._enforce_action_policy(action, available, current_frame_hash="h1")
+    assert enforced["action_id"] == "ACTION2"
+    assert enforced["decision_source"] == "policy_override"
+    
+    # 3. Test repeated action on DIFFERENT frame -> should trust LLM
+    action = {"action_id": "ACTION1", "decision_source": "sandbox"}
+    enforced = orchestrator._enforce_action_policy(action, available, current_frame_hash="h2")
+    assert enforced["action_id"] == "ACTION1"
+    assert enforced["decision_source"] == "sandbox"
+    
+    # 4. Test fallback from LLM -> should still apply exploration/ranking policy
+    # (B133 revised: chunk enforcement is skipped but exploration/ranking still fires)
+    action = {"action_id": "ACTION1", "decision_source": "mental_sandbox_fallback"}
+    enforced = orchestrator._enforce_action_policy(action, available, current_frame_hash="h1")
+    # Exploration policy should redirect to an untested action
+    assert enforced["action_id"] == "ACTION2"
+    assert enforced["decision_source"] == "policy_override"
+
+
+@pytest.mark.asyncio
+async def test_mental_sandbox_parse_recovery(mock_brain, sample_observation):
+    """B132: Verify sandbox recovers from malformed-but-extractable JSON."""
+    class MalformedLLM:
+        def chat(self, messages):
+            # Return JSON wrapped in text
+            return "Thinking... here is the JSON: {\"action_id\": \"ACTION2\", \"rationale\": \"recovered\"} ... end of thought."
+
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=MalformedLLM(),
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    
+    # We mock _query_llm to ensure it IS NOT called
+    with patch.object(orchestrator, '_query_llm', AsyncMock()) as mock_fallback:
+        action = await orchestrator._mental_sandbox("prompt", ["ACTION1", "ACTION2"], sample_observation)
+        
+        assert action["action_id"] == "ACTION2"
+        assert action["decision_source"] == "sandbox_recovered"
+        assert not mock_fallback.called
+
+
+@pytest.mark.asyncio
+async def test_mental_sandbox_fallback_attribution(mock_brain, sample_observation):
+    """B132: Verify sandbox fallback is correctly attributed."""
+    class BrokenLLM:
+        def chat(self, messages):
+            return "Not JSON at all"
+
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=BrokenLLM(),
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    
+    # Mock _query_llm to return a valid action
+    with patch.object(orchestrator, '_query_llm', AsyncMock(return_value={"action_id": "ACTION5", "rationale": "fallback"})) as mock_fallback:
+        action = await orchestrator._mental_sandbox("prompt", ["ACTION1", "ACTION2", "ACTION5"], sample_observation)
+        
+        assert action["action_id"] == "ACTION5"
+        assert action["decision_source"] == "mental_sandbox_fallback"
+        assert mock_fallback.called
     orchestrator = ARCOrchestrator(
         brain_client=mock_brain,
         llm_client=None,
@@ -378,7 +472,7 @@ async def test_hypothesize_write_trace_includes_saved_facts_and_paths(sample_obs
         serializer=StateSerializerForARC(),
         config={},
     )
-    orchestrator.hypothesis_mgr.observe = MagicMock(
+    orchestrator.hypothesis_mgr.observe = AsyncMock(
         return_value={
             "last_transition_effect": {
                 "action": "ACTION1",
@@ -490,12 +584,14 @@ def test_policy_override_forces_unexplored_action(sample_observation):
             "top_two_low_value": False,
         }
     }
+    orchestrator._current_level = 1
+    orchestrator._consecutive_no_progress_steps = 2  # B154: Force explore when stuck
     action = orchestrator._enforce_action_policy(
         {"action_id": "ACTION1", "rationale": "tentative_progress"},
         ["ACTION1", "ACTION2", "ACTION3", "ACTION4"],
     )
     assert action["action_id"] == "ACTION3"
-    assert "exploration phase requires testing ACTION3" in action["rationale"]
+    assert "exploration step 1/5 (level 1)" in action["rationale"]
 
 
 def test_policy_override_broadens_exploration_after_decay(sample_observation):
@@ -515,12 +611,14 @@ def test_policy_override_broadens_exploration_after_decay(sample_observation):
             "top_two_low_value": True,
         }
     }
+    orchestrator._current_level = 1
+    orchestrator._consecutive_no_progress_steps = 2  # B154: Force explore when stuck
     action = orchestrator._enforce_action_policy(
         {"action_id": "ACTION2", "rationale": "last low_value"},
         ["ACTION1", "ACTION2", "ACTION3", "ACTION4"],
     )
     assert action["action_id"] == "ACTION4"
-    assert "ACTION4" in action["rationale"]
+    assert "exploration step 1/5 (level 1)" in action["rationale"]
 
 
 def test_select_ranked_action_prefers_best_under_budget():
@@ -583,6 +681,43 @@ async def test_act_rejects_unavailable_llm_action(mock_brain, sample_observation
 
     assert action["action_id"] == "ACTION1"
     assert "Invalid LLM action" in action["rationale"]
+
+
+def test_action6_coordinate_policy_uses_bootstrap_role_positions(mock_brain, sample_observation):
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    orchestrator._solve_context = {
+        "archetype": "space",
+        "victory_condition": {"type": "reach_goal"},
+        "object_roles": {
+            "5": {
+                "role": "player",
+                "confidence": 0.45,
+                "estimated_position": {"row": 10.0, "col": 10.0},
+            },
+            "1": {
+                "role": "goal",
+                "confidence": 0.76,
+                "estimated_position": {"row": 10.0, "col": 14.0},
+            },
+        },
+    }
+
+    observation = dict(sample_observation)
+    observation["available_actions"] = ["ACTION6"]
+    observation["grid"] = [[0 for _ in range(20)] for _ in range(20)]
+    observation["grid"][10][10] = 5
+    observation["grid"][10][14] = 1
+
+    candidates = orchestrator._candidate_action6_coordinates(observation)
+
+    assert candidates[0][0] == "goal_vector"
+    assert any(coord == (10, 10) for _, coord in candidates[:10])
 
 
 @pytest.mark.asyncio
@@ -1527,20 +1662,118 @@ async def test_entity_gate_degrade_after_max_retries(sample_observation):
     orchestrator.brain.current_truth.return_value = {"results": []}
     orchestrator.brain.recall_relevant_lessons.return_value = {"lessons": []}
     orchestrator.brain.analogical_search.return_value = {"results": []}
-    
+
     from agents.arc3.solver import ObjectRole, RoleType
     unknown_role = ObjectRole(color_id=1, role=RoleType.UNKNOWN, confidence=0.0)
-    
+
     with patch.object(orchestrator.solve_engine.role_mapper, "seed_bootstrap_roles") as mock_seed:
         # Always return unknown
         mock_seed.return_value = {1: unknown_role}
-        
+
         obs = dict(sample_observation)
         obs["colors"] = [{"value": 0, "count": 10}, {"value": 1, "count": 5}]
-        
+
         await orchestrator.perceive(obs, step=0)
-        
+
         # Initial call + 2 retries = 3 calls
         assert mock_seed.call_count == 3
         assert orchestrator._entity_gate_result["status"] == "degraded"
         assert orchestrator._entity_gate_result["retry_count"] == 2
+
+
+# ── _parse_llm_response tests ────────────────────────────────────────
+
+
+AVAILABLE = ["ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5"]
+
+
+class TestParseLlmResponse:
+    """Tests for the robust multi-tier LLM response parser."""
+
+    def test_tier1_direct_json(self):
+        raw = '{"action_id": "ACTION2", "rationale": "move down"}'
+        result = ARCOrchestrator._parse_llm_response(raw, AVAILABLE)
+        assert result is not None
+        assert result["action_id"] == "ACTION2"
+        assert result["parse_method"] == "json_direct"
+
+    def test_tier1_compact_json_format(self):
+        raw = '{"action": 3, "why": "try left"}'
+        result = ARCOrchestrator._parse_llm_response(raw, AVAILABLE)
+        assert result is not None
+        assert result["action_id"] == "3"
+        assert result["parse_method"] == "json_direct"
+
+    def test_tier2_json_in_markdown_block(self):
+        raw = 'Let me think...\n```json\n{"action_id": "ACTION4", "rationale": "go right"}\n```\nDone.'
+        result = ARCOrchestrator._parse_llm_response(raw, AVAILABLE)
+        assert result is not None
+        assert result["action_id"] == "ACTION4"
+        assert result["parse_method"] == "json_code_block"
+
+    def test_tier2_json_embedded_in_prose(self):
+        raw = 'I think the best move is {"action_id": "ACTION3", "rationale": "left"} because reasons.'
+        result = ARCOrchestrator._parse_llm_response(raw, AVAILABLE)
+        assert result is not None
+        assert result["action_id"] == "ACTION3"
+        assert result["parse_method"] == "json_extracted"
+
+    def test_tier3_plain_text_action_mention(self):
+        raw = "Based on my analysis, I should try ACTION4 to move right toward the goal."
+        result = ARCOrchestrator._parse_llm_response(raw, AVAILABLE)
+        assert result is not None
+        assert result["action_id"] == "ACTION4"
+        assert result["parse_method"] == "plain_text_action_mention"
+
+    def test_tier3_plain_text_direction(self):
+        raw = "The goal is below me, so I should move down."
+        result = ARCOrchestrator._parse_llm_response(raw, AVAILABLE)
+        assert result is not None
+        assert result["action_id"] == "ACTION2"
+        assert result["parse_method"] == "plain_text_direction"
+
+    def test_tier3_plain_text_go_left(self):
+        raw = "I need to go left to avoid the wall."
+        result = ARCOrchestrator._parse_llm_response(raw, AVAILABLE)
+        assert result is not None
+        assert result["action_id"] == "ACTION3"
+        assert result["parse_method"] == "plain_text_direction"
+
+    def test_tier3_bare_number(self):
+        raw = "I choose 2"
+        result = ARCOrchestrator._parse_llm_response(raw, AVAILABLE)
+        assert result is not None
+        assert result["action_id"] == "ACTION2"
+        assert result["parse_method"] == "plain_text_bare_number"
+
+    def test_empty_string_returns_none(self):
+        assert ARCOrchestrator._parse_llm_response("", AVAILABLE) is None
+        assert ARCOrchestrator._parse_llm_response("   ", AVAILABLE) is None
+        assert ARCOrchestrator._parse_llm_response(None, AVAILABLE) is None
+
+    def test_nonsense_returns_none(self):
+        raw = "I don't know what to do here. The sky is blue."
+        result = ARCOrchestrator._parse_llm_response(raw, AVAILABLE)
+        assert result is None
+
+    def test_respects_available_actions(self):
+        limited = ["ACTION1", "ACTION2"]
+        raw = "I should try ACTION5 to interact."
+        result = ARCOrchestrator._parse_llm_response(raw, limited)
+        # ACTION5 not available, so plain_text_action_mention won't match
+        # Should fall through to direction words
+        assert result is None or result["action_id"] in limited
+
+    def test_last_action_mention_wins(self):
+        """When multiple actions mentioned, take the last one (conclusion after reasoning)."""
+        raw = "ACTION1 didn't work. ACTION3 hit a wall. I'll try ACTION4."
+        result = ARCOrchestrator._parse_llm_response(raw, AVAILABLE)
+        assert result is not None
+        assert result["action_id"] == "ACTION4"
+
+    def test_interact_keyword(self):
+        raw = "I should interact with the object."
+        result = ARCOrchestrator._parse_llm_response(raw, AVAILABLE)
+        assert result is not None
+        assert result["action_id"] == "ACTION5"
+        assert result["parse_method"] == "plain_text_direction"
