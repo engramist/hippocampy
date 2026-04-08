@@ -217,7 +217,6 @@ sidequests-brain/
 │       ├── hypothesis.py        # HypothesisManager, StateGraph, ActionFacts
 │       ├── prompts.py           # Pattern, execution, navigation prompt templates (B153)
 │       ├── grid_analysis.py     # GridDiffEngine, TransformationSignature (B150) [NEW]
-│       ├── entity_graph.py     # EntityGraphBuilder — graph exploration agent (B168) [NEW]
 │       ├── repl_verification.py # REPLVerificationLoop, HypothesisRefinementLoop (B152) [NEW]
 │       └── repl_sandbox.py      # Python REPL sandbox (B123)
 ├── benchmarks/
@@ -505,11 +504,6 @@ When Step 4 classifies a Concept at >90% confidence as a specific artifact type,
 - `Lesson` (`lesson_id`, `text_raw`, `embedding`, `domain`, `lesson_type`, `confidence`, `confidence_low`, `pathway_strength`, `archived`, `created_at`)
 - `Plan`, `PlanStep` — see Active Agent System section above
 
-**ARC Exploration Graph Nodes** (B168, ephemeral per-puzzle, no embedding):
-- `GridEntity` (`entity_id`, `task_id`, `level`, `color_id`, `region_index`, `pixel_count`, `centroid_row/col`, `bbox_*`, `location_hint`, `aspect_ratio`, `compactness`, `is_background`, `is_mobile`, `is_interactive`, `inferred_role`, `role_confidence`, `last_updated_step`, `created_at`)
-- `GridSnapshot` (`snapshot_id`, `task_id`, `level`, `step`, `grid_hash`, `rows`, `cols`, `n_entities`, `symmetry_axes`, `created_at`)
-- `ActionEffect` (`effect_id`, `task_id`, `level`, `action_id`, `step`, `n_cells_changed`, `apparent_effect`, `direction_row/col`, `created_at`)
-
 **Session & Infrastructure Nodes** (no embedding required):
 - `Session` (`session_id`, `started_at`, `last_active_at`, `onboarded BOOLEAN`, `purpose STRING`, `routing_state STRING`, `routing_confidence FLOAT`, `routing_method STRING`, `token_estimate INT64`, `token_limit INT64`, `loaded_node_count INT32`, `last_injection_at TIMESTAMP`)
 
@@ -603,20 +597,6 @@ When Step 4 classifies a Concept at >90% confidence as a specific artifact type,
 (Plan)-[TARGETS]->(MainQuest | SideQuest)
 (PlanStep)-[STEP_OF]->(Plan)
 (PlanStep)-[NEXT_STEP]->(PlanStep)
-
-# ARC Exploration Graph (B168)
-(GridEntity)-[OBSERVED_IN {step}]->(GridSnapshot)
-(GridEntity)-[ADJACENT_TO {min_distance, direction, step}]->(GridEntity)
-(GridEntity)-[STRUCTURALLY_SIMILAR {similarity, color_shifted, step}]->(GridEntity)
-(GridEntity)-[SAME_COLOR_AS]->(GridEntity)
-(GridEntity)-[CONTAINS_ENTITY {step}]->(GridEntity)
-(GridEntity)-[MOVED_BY {delta_row, delta_col}]->(ActionEffect)
-(GridEntity)-[RESPONDS_TO {effect_type}]->(ActionEffect)
-(GridEntity)-[BLOCKS {action_id, step}]->(GridEntity)
-(GridEntity)-[CO_MOVES_WITH {step}]->(GridEntity)
-(GridEntity)-[CORRELATES_WITH {step, mechanism}]->(GridEntity)
-(GridEntity)-[CAUSES_CHANGE_IN {mechanism, confidence, step}]->(GridEntity)
-(GridEntity)-[ENTITY_HYPOTHESIS {weight, step}]->(Hypothesis)
 (PlanStep)-[ACTS_ON]->(Concept)
 (Plan)-[PRODUCED_LESSON]->(Lesson)
 (PlanStep)-[OUTCOME_SIGNAL {valence, plan_id, observed_at}]->(Concept)
@@ -828,13 +808,9 @@ sidequests setup --target codex
 ## ARC-AGI-3 Benchmark Agent
 
 The ARC-AGI-3 agent is the first proof-of-concept for SideQuests augmenting a real benchmark.
-It consumes SideQuests through the existing MCP tool surface. B168 adds ARC-specific graph schema (GridEntity, GridSnapshot, ActionEffect nodes + 12 relationship types) for the exploration knowledge substrate.
+It consumes SideQuests exclusively through the existing MCP tool surface — no schema changes.
 
-The agent uses a **level-aware learning pipeline** (B150–B157): B157 enables multi-level game progression. At each level transition, the agent analyzes solved levels (B150), generates game rule hypotheses (B151), and verifies them (B152). This accumulated knowledge configures the prompt (B153), exploration policy (B154), and orchestration mode (B156) for subsequent levels.
-
-Before goal-seeking begins, the **Graph Exploration Agent** (B168) builds a knowledge substrate in KuzuDB through two-phase exploration: static structural analysis (zero steps) followed by a deterministic action sweep (~4 steps). A dual inference engine (Tier 1-3 deterministic + Tier 4 LLM background) propagates behavioral and causal relationships through the graph. Graph-inferred entity roles feed into the existing ObjectRoleMapper with higher confidence than blind heuristic bootstrapping.
-
-See "ARC Inner-Loop: Level-Aware Learning Pipeline" and "ARC Graph-Based Exploration Agent" below for the full architecture.
+The agent uses a **level-aware learning pipeline** (B150–B157): B157 enables multi-level game progression. At each level transition, the agent analyzes solved levels (B150), generates game rule hypotheses (B151), and verifies them (B152). This accumulated knowledge configures the prompt (B153), exploration policy (B154), and orchestration mode (B156) for subsequent levels. See "ARC Inner-Loop: Level-Aware Learning Pipeline" below for the full architecture.
 
 ### ARC Harness / Meta-Harness Split
 
@@ -937,15 +913,7 @@ The agent uses a **level-aware learning pipeline**: play level → analyze → h
 │                                                                │
 │  B155: Retrieve cross-game memory (if similar game played)    │
 │                                                                │
-│  B168: GRAPH EXPLORATION PHASE (before goal-seeking)          │
-│  ├─ Phase 1: Static analysis (0 steps) → GridEntity nodes    │
-│  │   └─ Spatial + structural edges in KuzuDB                  │
-│  ├─ Phase 2a: Deterministic sweep (~4 steps)                  │
-│  │   └─ MOVED_BY, RESPONDS_TO, CORRELATES_WITH edges          │
-│  ├─ Dual inference: Tier 1-3 blocking + Tier 4 LLM background│
-│  └─ Handoff: graph roles → ObjectRoleMapper (high confidence) │
-│                                                                │
-│  Level 1: EXPLORE (graph-informed, not blind)                 │
+│  Level 1: EXPLORE (no prior knowledge)                        │
 │  ├─ B153: Exploration prompt ("discover what actions do")     │
 │  ├─ B154: Full exploration budget (up to 5 forced steps)      │
 │  ├─ ActionFact tracking: learning from scratch                │
@@ -1006,7 +974,7 @@ The navigation/exploration machinery is **retained** for level 1 and fallback:
 | `DissonanceDetector` | **Retained + tuned (B154)** | Detects stalls (thresholds 6→2 for tight per-level budgets) |
 | `PlanChunker` | **Retained** | Structures multi-step plans on any level |
 | `VictoryHypothesizer` | **Retained** | Level 1 fallback hypothesis generation |
-| `GameArchetype` / `ObjectRoleMapper` | **Retained + enhanced (B168)** | Now bootstrapped with graph-inferred roles from exploration instead of blind heuristics |
+| `GameArchetype` / `ObjectRoleMapper` | **Retained (candidate for future removal)** | Wrong mental model but not deleted until validated |
 
 #### Card Dependency Chain
 
@@ -1014,14 +982,12 @@ The navigation/exploration machinery is **retained** for level 1 and fallback:
 B157 (Multi-Level Progression) ──── CRITICAL BLOCKER
        │
        ├──► B150 (Grid Diff Engine) ─────┐
-       │         │                        ├──► B151 (Game Rule Hypothesizer) ──┐
-       │         │                        │                                    │
-       │         ├──► B168 (Graph         │    B153 (Level-Aware Prompts) ◄────┤
-       │         │    Exploration Agent)   │    B155 (Cross-Game Memory) ◄──────┤
-       │         │    + B119 + B166        │                                    │
-       │         │                        └──► B152 (Level-Replay Verify) ─────┤
-       ├──► B154 (Level-Progressive                                            │
-       │     Exploration)                                                      │
+       │                                  ├──► B151 (Game Rule Hypothesizer) ──┐
+       ├──► B154 (Level-Progressive       │                                    │
+       │     Exploration)                 │    B153 (Level-Aware Prompts) ◄────┤
+       │                                  │    B155 (Cross-Game Memory) ◄──────┤
+       │                                  │                                    │
+       │                                  └──► B152 (Level-Replay Verify) ─────┤
        │                                                                       │
        └──────────────────────── B156 (Level-Aware Orchestration) ◄────────────┘
 ```
@@ -1036,85 +1002,6 @@ B157 (Multi-Level Progression) ──── CRITICAL BLOCKER
 | `agents/arc3/solver.py` | B151: GameRuleHypothesizer, GameRuleHypothesis + existing SolveEngine |
 | `agents/arc3/orchestrator.py` | B156: Level-aware orchestration, knowledge pipeline, mode routing |
 | `agents/arc3/prompts.py` | B153: Exploration, rule-application, execution, navigation templates |
-| `agents/arc3/entity_graph.py` | B168: EntityGraphBuilder — graph-based exploration + dual inference engine |
-
-### ARC Graph-Based Exploration Agent (B168)
-
-The agent builds a **knowledge substrate** through deliberate exploration before attempting to solve the puzzle. Without this, heuristics like ObjectRoleMapper operate blind — guessing "smallest = player, largest = goal" with no grounding.
-
-**Analogy:** A baby cannot solve a puzzle without first building neural pathways through exploration and curiosity. B168 emulates this — an Explorer/Curiosity agent builds up nodes and relationships that downstream agents (ObjectRoleMapper, autopilot, strategy selection) draw from.
-
-#### Two-Phase Exploration
-
-**Phase 1 — Static Analysis** (pre-action, step 0, no steps consumed):
-- Extract all connected components from the initial grid → `GridEntity` nodes in KuzuDB
-- Compute pairwise spatial relationships → `ADJACENT_TO`, `CONTAINS_ENTITY` edges
-- Compute structural similarity between regions → `STRUCTURALLY_SIMILAR` edges (via `GridDiffEngine.compare_regions()`)
-- Flag background entities (color 0 or >50% coverage)
-- Create `GridSnapshot` node anchoring all entities at step 0
-
-**Phase 2a — Deterministic Sweep** (~4-8 steps depending on available actions):
-- Try each available action once and record what changes via `GridDiffEngine.diff_frames()`
-- For each action: create `ActionEffect` node, identify which entities moved/changed
-- Create behavioral edges: `MOVED_BY`, `RESPONDS_TO`, `CO_MOVES_WITH`, `CORRELATES_WITH`
-- After sweep: graph knows which entities are mobile, static, interactive
-
-**Handoff:** Graph-inferred roles (player, goal, wall, intermediate) fed to existing ObjectRoleMapper via `orchestrator.merge_graph_roles()` — higher confidence wins.
-
-#### Dual Inference Engine
-
-After each exploration step, `run_inference()` runs four tiers:
-
-| Tier | Type | What it does |
-|------|------|-------------|
-| Tier 1 | Blocking | **Similarity propagation** — if entity A moved, propagate `is_mobile` through `STRUCTURALLY_SIMILAR` and `SAME_COLOR_AS` edges with decayed confidence |
-| Tier 2 | Blocking | **Relational inference** — co-movement (`CO_MOVES_WITH`), co-occurrence of mover+reactor (`CORRELATES_WITH`), blocking detection (`BLOCKS`) |
-| Tier 3 | Blocking | **Role elimination** — once player confirmed (2+ moves), propagate wall/intermediate roles via structural similarity; constrain remaining unknowns |
-| Tier 4 | Background | **LLM causal reasoning** — examines `CORRELATES_WITH` edges with `mechanism='unknown'`, asks LLM to explain causation (e.g. "player moved → health bar shrank"), creates `CAUSES_CHANGE_IN` edges. Non-blocking via `asyncio.create_task()` |
-
-**Exploration frontier:** After each inference pass, `_get_exploration_frontier()` returns entities with `role_confidence < 0.5` and `inferred_role = 'unknown'`. If inference collapses the frontier to 0, exploration can end early.
-
-#### B168 Graph Schema
-
-**Node types:** `GridEntity`, `GridSnapshot`, `ActionEffect` (see `mcp_engine/schema.py`)
-
-**Relationship types (12 total):**
-
-```
-# Structural (Phase 1)
-(GridEntity)-[OBSERVED_IN {step}]->(GridSnapshot)
-(GridEntity)-[ADJACENT_TO {min_distance, step}]->(GridEntity)
-(GridEntity)-[STRUCTURALLY_SIMILAR {similarity, color_shifted, step}]->(GridEntity)
-(GridEntity)-[SAME_COLOR_AS]->(GridEntity)
-(GridEntity)-[CONTAINS_ENTITY {step}]->(GridEntity)
-
-# Behavioral (Phase 2a)
-(GridEntity)-[MOVED_BY {delta_row, delta_col}]->(ActionEffect)
-(GridEntity)-[RESPONDS_TO {effect_type}]->(ActionEffect)
-(GridEntity)-[BLOCKS {action_id, step}]->(GridEntity)
-
-# Inference (Tier 2-4)
-(GridEntity)-[CO_MOVES_WITH {step}]->(GridEntity)
-(GridEntity)-[CORRELATES_WITH {step, mechanism}]->(GridEntity)
-(GridEntity)-[CAUSES_CHANGE_IN {mechanism, confidence, step}]->(GridEntity)
-
-# Hypothesis linkage
-(GridEntity)-[ENTITY_HYPOTHESIS {weight, step}]->(Hypothesis)
-```
-
-#### Integration Points
-
-- **Runner** (`runner.py`): Creates `EntityGraphBuilder` between perceive/plan and the main action loop. Passes `llm_client` for Tier 4 inference.
-- **Orchestrator** (`orchestrator.py`): `merge_graph_roles()` accepts graph-inferred `ObjectRole` dict, merges with existing heuristic roles (higher confidence wins).
-- **Adapter** (`adapter.py`): `db` property exposed on all `BrainClient` implementations (`LocalBrainClient`, `NoOpBrainClient`, `LedgerBrainClient`).
-- **NoOp compatibility:** When `brain.db` is `None`, the entire exploration phase is skipped — zero impact on baseline benchmarks.
-
-#### Step Budget
-
-With 4 available actions typical:
-- Phase 1: 0 steps (static analysis only)
-- Phase 2a: 4 steps (one per action)
-- **Total: ~4 steps** out of 119+ budget (<4%)
 
 ---
 

@@ -430,4 +430,43 @@ TOOLS: list[dict] = [
             "required": ["graph_id"]
         },
     },
+    {
+        "name": "get_disambiguation_queue",
+        "description": (
+            "Get pending entity disambiguation pairs for human review. Returns gray-zone concept pairs that the system couldn't automatically resolve."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "default": 10}
+            }
+        },
+    },
+    {
+        "name": "resolve_disambiguation",
+        "description": (
+            "Resolve a disambiguation pair: merge (same entity), separate (distinct entities), or skip (review later)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "event_id": {"type": "string", "description": "DisambiguationEvent ID from get_disambiguation_queue"},
+                "resolution": {"type": "string", "enum": ["merge", "separate", "skip"], "description": "How to resolve: merge=same entity, separate=distinct, skip=review later"}
+            },
+            "required": ["event_id", "resolution"]
+        },
+    },
+    {
+        "name": "reload_domain_dictionary",
+        "description": (
+            "Reload the domain dictionary from .sidequests/domain_dictionary.yaml. "
+            "Adds new entities and altLabels without duplicating existing ones."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "workspace_root": {"type": "string", "description": "Workspace root path", "default": "."}
+            }
+        },
+    },
 ]

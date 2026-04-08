@@ -66,5 +66,5 @@ port = 7799   # Memory Control Panel — http://127.0.0.1:7799 (local only)
 base_url = "http://127.0.0.1:7800"   # Mission Control — deep-link panel_url base (B15)
 
 [benchmark]
-max_attempts_per_puzzle = 15   # steps per attempt before giving up
+max_attempts_per_puzzle = 20   # steps per attempt before giving up
 max_retries_per_puzzle = 2     # retry attempts on GAME_OVER before moving on

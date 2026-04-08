@@ -16,7 +16,7 @@ class MockBrainClient:
     async def register_plan(self, *, goal: str, steps, session_id: str):
         return {"plan_id": "plan-123"}
 
-    async def report_outcome(self, *, plan_id: str, outcome: str, valence: float, session_id: str):
+    async def report_outcome(self, *, plan_id: str, outcome: str, valence: float, session_id: str, valence_source: str | None = None):
         return {"status": "ok"}
 
     async def recall_plans(self, *, goal_query: str, session_id: str, min_valence: float, limit: int):

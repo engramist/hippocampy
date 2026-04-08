@@ -644,6 +644,27 @@ export default {
       graph_id: Type.String({ description: "Task graph ID" }),
     });
 
+    const getDisambiguationQueueParams = Type.Object({
+      limit: Type.Optional(
+        Type.Number({ description: "Maximum pending disambiguation events", default: 10 })
+      ),
+    });
+
+    const resolveDisambiguationParams = Type.Object({
+      event_id: Type.String({ description: "DisambiguationEvent ID to resolve" }),
+      resolution: Type.Union([
+        Type.Literal("merge"),
+        Type.Literal("separate"),
+        Type.Literal("skip"),
+      ]),
+    });
+
+    const reloadDomainDictionaryParams = Type.Object({
+      workspace_root: Type.Optional(
+        Type.String({ description: "Workspace root containing .sidequests/domain_dictionary.yaml" })
+      ),
+    });
+
     const formatResult = (value: unknown) => ({
       content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
     });
@@ -975,6 +996,37 @@ export default {
         description:
           "Return full graph state (nodes + edges) for a task graph. Use for audit and coordination.",
         parameters: getTaskGraphParams,
+      },
+      {
+        name: "get_disambiguation_queue",
+        label: "Get Disambiguation Queue (SideQuests Brain)",
+        description:
+          "Get pending gray-zone concept pairs for human review and curation.",
+        parameters: getDisambiguationQueueParams,
+        transformParams: (params: any = {}) => ({
+          limit: params.limit ?? 10,
+        }),
+      },
+      {
+        name: "resolve_disambiguation",
+        label: "Resolve Disambiguation (SideQuests Brain)",
+        description:
+          "Resolve a pending disambiguation event as merge, separate, or skip.",
+        parameters: resolveDisambiguationParams,
+        transformParams: (params: any = {}) => ({
+          event_id: params.event_id,
+          resolution: params.resolution,
+        }),
+      },
+      {
+        name: "reload_domain_dictionary",
+        label: "Reload Domain Dictionary (SideQuests Brain)",
+        description:
+          "Reload the workspace domain dictionary and refresh entity aliases without duplication.",
+        parameters: reloadDomainDictionaryParams,
+        transformParams: (params: any = {}) => ({
+          workspace_root: params.workspace_root || process.cwd(),
+        }),
       },
     ];
 

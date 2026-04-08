@@ -9,6 +9,7 @@ Three core components:
 from __future__ import annotations
 import hashlib
 import logging
+from datetime import datetime
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -336,8 +337,269 @@ class HypothesisManager:
         self.action_facts: Dict[str, ActionFact] = {}
         self._prev_state_hash: Optional[str] = None
         self._prev_grid_2d: Optional[List[List[int]]] = None
+        # B170/B171: KuzuDB persistence
+        self._entity_graph: Optional["EntityGraphBuilder"] = None
+        self._task_id: Optional[str] = None
+        self._current_level: int = 0
+        self._pending_fact_writes: List[ActionFact] = []
 
-    def observe(
+    def _set_task_id(self, task_id: str) -> None:
+        """B170: Set task ID for KuzuDB scoping."""
+        self._task_id = task_id
+
+    def _get_db(self) -> Optional[Any]:
+        """B170: Get KuzuDB client from entity_graph or brain."""
+        if self._entity_graph:
+            return self._entity_graph.db
+        return getattr(self.brain, "db", None)
+
+    async def load_hypotheses(self) -> int:
+        """B170: Load existing hypotheses from KuzuDB GridEntity/Hypothesis nodes."""
+        db = self._get_db()
+        if not db or not self._task_id:
+            return 0
+        
+        try:
+            # Match hypotheses associated with this task
+            rows = await db.execute_read(
+                """
+                MATCH (h:Hypothesis)
+                WHERE h.task_id = $tid
+                RETURN h.id, h.description, h.category, h.confidence, h.status, h.evidence_count
+                """,
+                {"tid": self._task_id}
+            )
+            
+            count = 0
+            for row in rows:
+                hid = row["h.id"]
+                if hid not in self.hypotheses:
+                    self.hypotheses[hid] = Hypothesis(
+                        id=hid,
+                        description=row["h.description"],
+                        category=row["h.category"],
+                        confidence=row["h.confidence"],
+                        status=row["h.status"],
+                        support_count=row["h.evidence_count"], # simplified mapping
+                    )
+                    count += 1
+            
+            if count > 0:
+                logger.info(f"B170: Loaded {count} hypotheses from KuzuDB for task {self._task_id}")
+            return count
+        except Exception as exc:
+            logger.warning(f"B170: load_hypotheses failed: {exc}")
+            return 0
+
+    async def load_action_facts(self) -> int:
+        """B171: Load existing deterministic action facts from KuzuDB."""
+        db = self._get_db()
+        if not db or not self._task_id:
+            return 0
+
+        try:
+            rows = await db.execute_read(
+                """
+                MATCH (f:ActionFact)
+                WHERE f.task_id = $tid
+                RETURN f.fact_id, f.action_id, f.fact_type, f.description,
+                       f.consistency, f.confidence, f.value_status,
+                       f.evidence_count, f.observation_count,
+                       f.delta_row, f.delta_col, f.n_cells_changed
+                """,
+                {"tid": self._task_id},
+            )
+
+            count = 0
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                action = row.get("f.action_id")
+                if not action:
+                    continue
+
+                evidence_count = int(
+                    row.get("f.evidence_count")
+                    or row.get("f.observation_count")
+                    or 0
+                )
+                fact_id = str(row.get("f.fact_id") or f"fact-{action}")
+                local_id = fact_id.removeprefix(f"{self._task_id}_") if self._task_id else fact_id
+
+                self.action_facts[str(action)] = ActionFact(
+                    id=local_id,
+                    action=str(action),
+                    fact_type=str(row.get("f.fact_type") or "repeatable_effect"),
+                    description=str(row.get("f.description") or ""),
+                    consistency=float(row.get("f.consistency") or row.get("f.confidence") or 0.0),
+                    value_status=str(row.get("f.value_status") or "unknown"),
+                    evidence_count=evidence_count,
+                )
+                count += 1
+
+            if count > 0:
+                logger.info(
+                    "B171: Loaded %d action facts from KuzuDB for task %s",
+                    count,
+                    self._task_id,
+                )
+            return count
+        except Exception as exc:
+            logger.warning(f"B171: load_action_facts failed: {exc}")
+            return 0
+
+    def _derive_action_fact_metrics(self, fact: ActionFact) -> Dict[str, Any]:
+        """B171: Derive graph-friendly motion metrics from a compact action fact."""
+        delta_row = 0.0
+        delta_col = 0.0
+        n_cells_changed = 0
+
+        effects = self.graph.get_action_effects(fact.action)
+        if effects:
+            n_cells_changed = int(effects[-1].pixels_changed)
+
+        trend = fact.trend or {}
+        if trend.get("kind") == "directional_drift":
+            avg_delta = float(trend.get("avg_delta") or 0.0)
+            direction = str(trend.get("direction") or "")
+            sign = -1.0 if direction in {"left", "up"} else 1.0
+            axis = trend.get("axis")
+            if axis == "row":
+                delta_row = sign * avg_delta
+            elif axis == "col":
+                delta_col = sign * avg_delta
+
+        return {
+            "delta_row": float(delta_row),
+            "delta_col": float(delta_col),
+            "n_cells_changed": int(n_cells_changed),
+        }
+
+    async def _persist_action_fact(self, fact: ActionFact) -> None:
+        """B171: Persist an ActionFact node and its graph edges when KuzuDB is available."""
+        db = self._get_db()
+        if not db or not self._task_id:
+            return
+
+        metrics = self._derive_action_fact_metrics(fact)
+        now = datetime.now().isoformat()
+        fact_id = str(fact.id)
+        if not fact_id.startswith(f"{self._task_id}_"):
+            fact_id = f"{self._task_id}_{fact_id}"
+
+        try:
+            await db.execute_write(
+                """
+                MERGE (f:ActionFact {fact_id: $fid})
+                ON CREATE SET f.task_id = $tid, f.level = $level,
+                              f.action_id = $action, f.fact_type = $ftype,
+                              f.description = $descr, f.effect_description = $effect_descr,
+                              f.consistency = $cons, f.confidence = $conf,
+                              f.value_status = $vs, f.evidence_count = $ec,
+                              f.observation_count = $obs_count,
+                              f.delta_row = $delta_row, f.delta_col = $delta_col,
+                              f.n_cells_changed = $n_cells_changed,
+                              f.created_at = timestamp($now), f.last_updated = timestamp($now)
+                ON MATCH SET f.level = $level, f.fact_type = $ftype,
+                             f.description = $descr, f.effect_description = $effect_descr,
+                             f.consistency = $cons, f.confidence = $conf,
+                             f.value_status = $vs, f.evidence_count = $ec,
+                             f.observation_count = $obs_count,
+                             f.delta_row = $delta_row, f.delta_col = $delta_col,
+                             f.n_cells_changed = $n_cells_changed,
+                             f.last_updated = timestamp($now)
+                """,
+                {
+                    "fid": fact_id,
+                    "tid": self._task_id,
+                    "level": int(self._current_level),
+                    "action": fact.action,
+                    "ftype": fact.fact_type,
+                    "descr": fact.description,
+                    "effect_descr": fact.description,
+                    "cons": float(fact.consistency),
+                    "conf": float(fact.consistency),
+                    "vs": fact.value_status,
+                    "ec": int(fact.evidence_count),
+                    "obs_count": int(fact.evidence_count),
+                    "delta_row": metrics["delta_row"],
+                    "delta_col": metrics["delta_col"],
+                    "n_cells_changed": metrics["n_cells_changed"],
+                    "now": now,
+                },
+            )
+
+            for support_step in fact.support_steps:
+                effect_id = f"{self._task_id}_{self._current_level}_{fact.action}_{support_step}"
+                await db.execute_write(
+                    """
+                    MATCH (f:ActionFact {fact_id: $fid}), (e:ActionEffect {effect_id: $eid})
+                    MERGE (f)-[:DERIVED_FROM_FACT {step: $step}]->(e)
+                    """,
+                    {"fid": fact_id, "eid": effect_id, "step": int(support_step)},
+                )
+
+            hypothesis_id = f"action-{fact.action}"
+            if hypothesis_id in self.hypotheses:
+                await db.execute_write(
+                    """
+                    MATCH (f:ActionFact {fact_id: $fid}), (h:Hypothesis {id: $hid})
+                    MERGE (f)-[:SUPPORTS_HYPOTHESIS {weight: $w}]->(h)
+                    """,
+                    {"fid": fact_id, "hid": hypothesis_id, "w": float(fact.consistency)},
+                )
+        except Exception as exc:
+            logger.warning(f"B171: persist_action_fact failed for {fact.action}: {exc}")
+
+    async def _flush_action_fact_writes(self) -> None:
+        """B171: Flush queued ActionFact writes while preserving in-memory fallback."""
+        if not self._pending_fact_writes:
+            return
+
+        pending = {fact.action: fact for fact in self._pending_fact_writes}
+        self._pending_fact_writes.clear()
+
+        for fact in pending.values():
+            await self._persist_action_fact(fact)
+
+    async def persist_hypothesis(self, h: Hypothesis) -> None:
+        """B170: Write a hypothesis to KuzuDB."""
+        db = self._get_db()
+        if not db or not self._task_id:
+            return
+
+        now = datetime.now().isoformat()
+        try:
+            await db.execute_write(
+                """
+                MERGE (h:Hypothesis {id: $id})
+                ON CREATE SET h.description = $descr, h.category = $cat,
+                              h.confidence = $conf, h.status = $status,
+                              h.evidence_count = $evidence, h.task_id = $tid,
+                              h.created_at = timestamp($now), h.text_raw = $descr
+                ON MATCH SET h.description = $descr, h.confidence = $conf,
+                             h.status = $status, h.evidence_count = $evidence
+                """,
+                {
+                    "id": h.id, "descr": h.description, "cat": h.category,
+                    "conf": float(h.confidence), "status": h.status,
+                    "evidence": int(h.support_count + h.contradiction_count),
+                    "tid": self._task_id, "now": now
+                }
+            )
+            
+            # B170: Relate to session
+            await db.execute_write(
+                """
+                MATCH (h:Hypothesis {id: $hid}), (s:Session {session_id: $sid})
+                MERGE (h)-[:HYPOTHESIZED_IN]->(s)
+                """,
+                {"hid": h.id, "sid": self.session_id}
+            )
+        except Exception as exc:
+            logger.warning(f"B170: persist_hypothesis failed for {h.id}: {exc}")
+
+    async def observe(
         self,
         grid: Any,
         action_taken: Optional[str],
@@ -351,6 +613,17 @@ class HypothesisManager:
         grid_hash = StateNode.hash_grid(grid)
         last_effect: Dict[str, Any] | None = None
         transition_meta = transition_meta or {}
+
+        observed_level = observation.get("level")
+        if observed_level is None:
+            observed_level = observation.get("episode_num")
+        if observed_level is None and observation.get("levels_completed") is not None:
+            observed_level = int(observation.get("levels_completed") or 0) + 1
+        if observed_level is not None:
+            try:
+                self._current_level = int(observed_level)
+            except (TypeError, ValueError):
+                pass
 
         # Resolve 2D grid for analysis
         if grid and isinstance(grid[0], list) and grid[0] and isinstance(grid[0][0], list):
@@ -419,6 +692,17 @@ class HypothesisManager:
 
             # 3. Generate / update hypotheses from this transition
             self._process_transition(transition, diff)
+
+            # B170: Persist changed hypotheses to KuzuDB
+            action_hyp_id = f"action-{transition.action}"
+            if action_hyp_id in self.hypotheses:
+                await self.persist_hypothesis(self.hypotheses[action_hyp_id])
+            
+            if transition.pixels_changed == 0:
+                wall_id = f"wall-{transition.from_hash}-{transition.action}"
+                if wall_id in self.hypotheses:
+                    await self.persist_hypothesis(self.hypotheses[wall_id])
+
             last_effect = {
                 "action": transition.action,
                 "summary": diff["summary"],
@@ -456,6 +740,8 @@ class HypothesisManager:
         self._prev_state_hash = grid_hash
         self._prev_grid_2d = grid_2d
 
+        await self._flush_action_fact_writes()
+
         return {
             "current_state_hash": grid_hash,
             "loop_detected": loop_hash is not None,
@@ -480,7 +766,7 @@ class HypothesisManager:
             "transition_count": sum(len(v) for v in self.graph.edges.values()),
         }
 
-    def generate_hypotheses(
+    async def generate_hypotheses(
         self,
         grid: Any,
         action_taken: Optional[str],
@@ -490,7 +776,7 @@ class HypothesisManager:
         transition_meta: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Compatibility wrapper that performs the same hypothesis update as observe()."""
-        return self.observe(
+        return await self.observe(
             grid=grid,
             action_taken=action_taken,
             step=step,
@@ -770,7 +1056,7 @@ class HypothesisManager:
             trend,
         )
 
-        self.action_facts[action] = ActionFact(
+        fact = ActionFact(
             id=f"fact-{action}",
             action=action,
             fact_type=fact_type,
@@ -781,6 +1067,9 @@ class HypothesisManager:
             trend=trend,
             support_steps=[effect.step for effect in effects],
         )
+        self.action_facts[action] = fact
+        self._pending_fact_writes = [pending for pending in self._pending_fact_writes if pending.action != action]
+        self._pending_fact_writes.append(fact)
 
     def _classify_action_fact(
         self,

@@ -55,13 +55,21 @@ class KuzuClient:
         """
         Execute a read query asynchronously and return materialized rows.
 
-        Backward-compatibility helper for call sites that expect an awaitable
-        read API returning iterable rows.
+        Kùzu's `get_next()` returns positional lists. Most call sites in this
+        repo expect rows addressable by their projected column names, so we
+        normalize each row into a dict when column metadata is available.
         """
         result = await asyncio.to_thread(self.execute, query, params)
         rows = []
+        column_names = result.get_column_names() if hasattr(result, "get_column_names") else None
         while result.has_next():
-            rows.append(result.get_next())
+            row = result.get_next()
+            if isinstance(row, dict):
+                rows.append(row)
+            elif column_names and isinstance(row, (list, tuple)) and len(column_names) == len(row):
+                rows.append({name: value for name, value in zip(column_names, row)})
+            else:
+                rows.append(row)
         return rows
 
     def create_vector_index(self, table: str, property: str, index_name: str):

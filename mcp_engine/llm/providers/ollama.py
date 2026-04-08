@@ -7,9 +7,13 @@ class OllamaClient:
     def __init__(self, config: dict):
         llm = config["llm"]
         self.model = llm["model"]
+        timeout_seconds = llm.get("timeout_seconds", 180)
+        max_retries = llm.get("max_retries", 3)
         self.client = OpenAI(
             base_url=llm.get("base_url", "http://localhost:11434/v1"),
             api_key="ollama",  # Ollama ignores this but OpenAI SDK requires it
+            timeout=float(timeout_seconds),
+            max_retries=int(max_retries),
         )
 
     def chat(self, messages: list[dict], **kwargs) -> str:

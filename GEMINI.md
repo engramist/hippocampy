@@ -61,6 +61,7 @@ pytest
 - **Local Only:** All services (FastAPI, IPC) bind to `127.0.0.1` or use Unix sockets.
 - **Canonical Paths:** All file operations must use `realpath()` to prevent path traversal.
 - **Persistence:** Never revert changes unless explicitly asked. The graph is the "source of truth" for the assistant's memory.
+- **No Shadow Stores:** KuzuDB is the single source of truth for ALL persistent agent state. Do NOT store roles, hypotheses, victory conditions, action facts, or other decision-influencing data in Python dicts/instance variables as the primary store. In-memory variables are permitted ONLY as read-through caches over KuzuDB. See `docs/ecosystem-rules.md` "No shadow stores rule".
 
 ### Documentation
 - **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md):** Canonical architecture reference — Loop steps, graph schema, IP claims, MCP tool schemas, and all design details. **Read this for any architecture question.**
