@@ -1006,7 +1006,8 @@ class VictoryHypothesizer:
     Re-called only when DissonanceDetector fires.
     """
 
-    CALL_THRESHOLD: float = 0.65
+    # B179: Lowered threshold from 0.65 to 0.45 to match spatial navigation range
+    CALL_THRESHOLD: float = 0.45
     PROMPT_TEMPLATE = VICTORY_HYPOTHESIS_TEMPLATE  # B122: Imported from prompts module
 
     async def hypothesize(
@@ -1777,6 +1778,8 @@ class SolveEngine:
         self._pending_chunk_writes: List[tuple[int, ChunkLedgerEntry, PlanChunk]] = []
         # B176: Plateau exploration state
         self._plateau_lock_duration: int = 0
+        # B179: Cooldown for expensive victory inference LLM calls
+        self._last_victory_attempt_step: int = -100
 
     def _trace(
         self,
@@ -2422,15 +2425,30 @@ class SolveEngine:
                 zero_reward_streak,
             )
 
-        need_victory_hypothesis = (
-            self._victory_condition is None
-            and self._archetype_confidence >= VictoryHypothesizer.CALL_THRESHOLD
-        ) or (
-            should_replan
-            and (self._victory_condition is None or self._victory_condition.confidence < 0.5)
-        )
+        # B179: Multi-path victory condition inference trigger
+        need_victory_hypothesis = False
+        trigger_reason = ""
+
+        if (step - self._last_victory_attempt_step) >= 10:
+            if self._victory_condition is None and self._archetype_confidence >= VictoryHypothesizer.CALL_THRESHOLD:
+                need_victory_hypothesis = True
+                trigger_reason = "archetype_threshold"
+            elif should_replan and (self._victory_condition is None or self._victory_condition.confidence < 0.5):
+                need_victory_hypothesis = True
+                trigger_reason = "replan"
+            elif self._victory_condition is None and step >= 15 and self._archetype != GameArchetype.UNKNOWN:
+                need_victory_hypothesis = True
+                trigger_reason = "step_fallback"
+            elif self._victory_condition is None and zero_reward_streak >= 5 and self._archetype != GameArchetype.UNKNOWN:
+                need_victory_hypothesis = True
+                trigger_reason = "zero_progress"
 
         if need_victory_hypothesis:
+            # logger.debug(f"[B179] TRIGGERED: {trigger_reason}")
+            self._last_victory_attempt_step = step
+            self._trace("victory_inference_trigger", "victory_hypothesis", 
+                        {"step": step, "trigger": trigger_reason, "archetype_conf": self._archetype_confidence})
+            
             goal_query = f"{self._archetype.value} game win condition solve puzzle"
             try:
                 # B138: Trace recall_plans call
