@@ -22,6 +22,7 @@ import os
 import signal
 import socket
 from pathlib import Path
+from datetime import datetime, timezone
 
 _logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ from mcp_engine.llm.provider import create_llm_client
 from mcp_engine.loop import step2_gist, step3_schema_org
 from mcp_engine.loop.orchestrator import run_loop
 from mcp_engine.sweep import run_sweep
+from mcp_engine.dictionary import find_dictionary, load_dictionary, ingest_dictionary
 
 SOCKET_PATH = Path.home() / ".sidequests" / "brain.sock"
 DB_PATH     = Path.home() / ".sidequests" / "brain.db"
@@ -71,6 +73,23 @@ class BrainDaemon:
         # Initialize Kùzu schema (idempotent)
         seed_path = self._resolve_seed_path()
         init_schema(self.db, str(seed_path), embedding_model)
+
+        # B160: Load domain dictionary if present in workspace (pre-seed concepts)
+        try:
+            workspace_root = self.config.get("workspace_root", ".")
+            dict_path = find_dictionary(workspace_root)
+            if dict_path:
+                entities = load_dictionary(dict_path)
+                if entities:
+                    now = datetime.now(timezone.utc).isoformat()
+                    result = await ingest_dictionary(entities, self.db, now)
+                    _logger.info(
+                        "B160: Domain dictionary ingested: %d created, %d skipped, %d altLabels",
+                        result.get("concepts_created", 0), result.get("concepts_skipped", 0),
+                        result.get("alt_labels_added", 0)
+                    )
+        except Exception:
+            _logger.exception("B160: Domain dictionary ingest failed")
 
         # Load gist centroids (needed by Step 2 System 1 classifier)
         self._centroids = step2_gist.load_centroids(self.db)

@@ -40,6 +40,29 @@ def test_seed_bootstrap_roles_heuristics():
     assert roles[2].role == RoleType.GOAL
     assert roles[1].confidence == 0.45
 
+
+def test_seed_bootstrap_roles_include_estimated_positions_from_grid():
+    from agents.arc3.solver import ObjectRoleMapper
+    mapper = ObjectRoleMapper()
+
+    observation = {
+        "grid": [
+            [0, 1, 1],
+            [0, 0, 2],
+            [0, 0, 2],
+        ],
+        "colors": [
+            {"value": 0, "count": 5},
+            {"value": 1, "count": 2},
+            {"value": 2, "count": 2},
+        ],
+    }
+
+    roles = mapper.seed_bootstrap_roles(observation)
+
+    assert roles[1].estimated_position == {"row": 0.0, "col": 1.5}
+    assert roles[2].estimated_position == {"row": 1.5, "col": 2.0}
+
 @pytest.mark.asyncio
 async def test_perceive_populates_bootstrap_roles(orchestrator):
     observation = {

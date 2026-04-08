@@ -6,7 +6,7 @@ from typing import Mapping, Sequence
 
 import pytest
 
-from benchmarks.arc3.adapter import ARC3Adapter, BrainClientProtocol
+from benchmarks.arc3.adapter import ARC3Adapter, BrainClientProtocol, LedgerBrainClient
 
 
 class _MockBrainClient(BrainClientProtocol):
@@ -128,6 +128,55 @@ async def test_replay_trace_is_deterministic() -> None:
     first_trace = adapter.get_telemetry_trace()
     second_trace = adapter.get_telemetry_trace()
     assert first_trace == second_trace
+
+
+@pytest.mark.asyncio
+async def test_ledger_report_outcome_accepts_valence_source() -> None:
+    class _OutcomeBrainClient(_MockBrainClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.outcome_calls: list[Mapping[str, object]] = []
+
+        async def report_outcome(
+            self,
+            *,
+            plan_id: str,
+            outcome: str,
+            valence: float,
+            session_id: str,
+            valence_source: str | None = None,
+        ) -> Mapping[str, object]:
+            payload = {
+                "plan_id": plan_id,
+                "outcome": outcome,
+                "valence": valence,
+                "session_id": session_id,
+                "valence_source": valence_source,
+            }
+            self.outcome_calls.append(payload)
+            return {"status": "ok", **payload}
+
+    inner = _OutcomeBrainClient()
+    client = LedgerBrainClient(inner=inner, ledger=[], step_provider=lambda: 3)
+
+    result = await client.report_outcome(
+        plan_id="plan-42",
+        outcome="stalled",
+        valence=-0.4,
+        session_id="session-ledger",
+        valence_source="dissonance_detector",
+    )
+
+    assert inner.outcome_calls == [
+        {
+            "plan_id": "plan-42",
+            "outcome": "stalled",
+            "valence": -0.4,
+            "session_id": "session-ledger",
+            "valence_source": "dissonance_detector",
+        }
+    ]
+    assert result["valence_source"] == "dissonance_detector"
 
 
 def test_energy_estimate_small_grid() -> None:

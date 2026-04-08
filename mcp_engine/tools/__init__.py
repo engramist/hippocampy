@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING, Optional
 
 _logger = logging.getLogger(__name__)
 
+# B160 dictionary helpers
+from mcp_engine.dictionary import find_dictionary, load_dictionary, ingest_dictionary, DICTIONARY_PATHS
 # KuzuClient imported only for type checking — kuzu is a C extension not needed
 # during unit tests (db is always a mock or real object passed in at runtime).
 if TYPE_CHECKING:
@@ -1176,6 +1178,244 @@ async def get_open_loops(params: dict, db: KuzuClient, config: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# B158 — Disambiguation queue tools
+# ---------------------------------------------------------------------------
+
+async def get_disambiguation_queue(params: dict, db: KuzuClient, config: dict) -> dict:
+    """
+    Retrieve pending DisambiguationEvent pairs for human curation.
+
+    params: {limit}
+    Returns {pairs: [{event_id, similarity, created_at, concept_a, concept_b, shared_neighbors}], total_pending}
+    """
+    limit = int(params.get("limit", 10))
+    pairs: list[dict] = []
+    try:
+        r = db.execute(
+            "MATCH (e:DisambiguationEvent) "
+            "WHERE e.status = 'pending' "
+            "RETURN e.event_id, e.concept_id_a, e.concept_id_b, e.similarity, e.created_at "
+            "ORDER BY e.created_at DESC LIMIT $lim",
+            {"lim": limit}
+        )
+        while r.has_next():
+            row = r.get_next()
+            eid, a_id, b_id, sim, created_at = row[0], row[1], row[2], row[3], row[4]
+
+            def _get_concept_with_context(cid: str):
+                try:
+                    rr = db.execute(
+                        "MATCH (c:Concept {concept_id: $cid}) "
+                        "OPTIONAL MATCH (c)-[:HAS_ALT_LABEL]->(l:Label) "
+                        "RETURN c.concept_id, c.text_raw, c.gist_class, c.confidence, "
+                        "       c.pathway_strength, c.confidence_low, collect(l.text) AS alt_labels",
+                        {"cid": cid}
+                    )
+                    if rr.has_next():
+                        rrow = rr.get_next()
+                        return {
+                            "concept_id": rrow[0],
+                            "text_raw": rrow[1],
+                            "gist_class": rrow[2],
+                            "confidence": rrow[3],
+                            "pathway_strength": rrow[4],
+                            "confidence_low": rrow[5],
+                            "alt_labels": rrow[6] or [],
+                        }
+                except Exception:
+                    pass
+                return None
+
+            def _shared_neighbors(cid_a: str, cid_b: str) -> list:
+                try:
+                    rr = db.execute(
+                        "MATCH (a:Concept {concept_id: $a})-[]->(n:Concept)<-[]-(b:Concept {concept_id: $b}) "
+                        "WHERE n.archived = false "
+                        "RETURN DISTINCT n.concept_id, n.text_raw LIMIT 10",
+                        {"a": a_id, "b": b_id}
+                    )
+                    out = []
+                    while rr.has_next():
+                        nr = rr.get_next()
+                        out.append({"concept_id": nr[0], "text_raw": nr[1]})
+                    return out
+                except Exception:
+                    return []
+
+            concept_a = _get_concept_with_context(a_id)
+            concept_b = _get_concept_with_context(b_id)
+
+            pairs.append({
+                "event_id": eid,
+                "similarity": sim,
+                "created_at": str(created_at),
+                "concept_a": concept_a,
+                "concept_b": concept_b,
+                "shared_neighbors": _shared_neighbors(a_id, b_id),
+            })
+    except Exception:
+        _logger.exception("get_disambiguation_queue failed")
+
+    return {"pairs": pairs, "total_pending": len(pairs)}
+
+
+async def resolve_disambiguation(params: dict, db: KuzuClient, config: dict) -> dict:
+    """
+    Resolve a DisambiguationEvent: merge | separate | skip.
+
+    params: {event_id, resolution}
+    """
+    event_id = params.get("event_id")
+    resolution = params.get("resolution")
+    if resolution not in ("merge", "separate", "skip"):
+        return {"error": f"Invalid resolution: {resolution}. Use merge, separate, or skip."}
+
+    try:
+        r = db.execute(
+            "MATCH (e:DisambiguationEvent {event_id: $eid}) "
+            "RETURN e.concept_id_a, e.concept_id_b, e.status",
+            {"eid": event_id}
+        )
+        if not r.has_next():
+            return {"error": f"Event {event_id} not found"}
+        ev = r.get_next()
+        cid_a, cid_b, status = ev[0], ev[1], ev[2]
+        if status != "pending":
+            return {"error": f"Event already resolved: {status}"}
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        if resolution == "merge":
+            # Determine canonical (older) vs duplicate (newer)
+            cr = db.execute(
+                "MATCH (a:Concept {concept_id: $a}), (b:Concept {concept_id: $b}) "
+                "RETURN a.concept_id, a.created_at, a.text_raw, b.concept_id, b.created_at, b.text_raw",
+                {"a": cid_a, "b": cid_b}
+            )
+            if not cr.has_next():
+                return {"error": "One or both concepts not found"}
+            crow = cr.get_next()
+            a_created, b_created = crow[1], crow[4]
+            # Compare safely as strings or timestamps — fallback to cid_a
+            try:
+                canonical_id = cid_a if a_created <= b_created else cid_b
+            except Exception:
+                canonical_id = cid_a
+            duplicate_id = cid_b if canonical_id == cid_a else cid_a
+            duplicate_text = crow[5] if canonical_id == cid_a else crow[2]
+
+            # Create altLabel from duplicate's text
+            label_id = str(uuid.uuid4())
+            await db.execute_write(
+                "CREATE (l:Label {"
+                "  label_id: $lid, text: $txt, label_type: 'alternative',"
+                "  confidence: 0.95, source: 'user', language: 'en', created_at: timestamp($now)"
+                "})",
+                {"lid": label_id, "txt": duplicate_text, "now": now}
+            )
+            # Embed the label
+            try:
+                emb_vec = emb.embed(duplicate_text)
+                await db.execute_write(
+                    "MATCH (l:Label {label_id: $lid}) SET l.embedding = $emb",
+                    {"lid": label_id, "emb": emb_vec}
+                )
+            except Exception:
+                _logger.exception("Label embed failed")
+
+            # Wire canonical -> altLabel
+            await db.execute_write(
+                "MATCH (c:Concept {concept_id: $cid}), (l:Label {label_id: $lid}) "
+                "CREATE (c)-[:HAS_ALT_LABEL {created_at: timestamp($now)}]->(l)",
+                {"cid": canonical_id, "lid": label_id, "now": now}
+            )
+
+            # Redirect common edges from duplicate to canonical
+            rel_types = ["REQUIRES", "ENABLES", "REPLACES", "CONTRADICTS",
+                         "PART_OF", "CHOSEN_OVER", "IMPLEMENTS", "EXTENDS",
+                         "ALTERNATIVE_TO", "CO_OCCURS_WITH"]
+            for rel in rel_types:
+                try:
+                    await db.execute_write(
+                        f"MATCH (dup:Concept {{concept_id: $dup}})-[r:{rel}]->(t:Concept) "
+                        f"WHERE t.concept_id <> $can "
+                        f"MATCH (can:Concept {{concept_id: $can}}) "
+                        f"MERGE (can)-[:{rel}]->(t)",
+                        {"dup": duplicate_id, "can": canonical_id}
+                    )
+                except Exception:
+                    _logger.exception("Edge redirect failed for %s", rel)
+
+            # Archive duplicate
+            await db.execute_write(
+                "MATCH (c:Concept {concept_id: $cid}) SET c.archived = true",
+                {"cid": duplicate_id}
+            )
+
+            # Boost canonical
+            await db.execute_write(
+                "MATCH (c:Concept {concept_id: $cid}) "
+                "SET c.pathway_strength = c.pathway_strength + 0.15, "
+                "    c.confidence_low = false, "
+                "    c.last_accessed_at = timestamp($now)",
+                {"cid": canonical_id, "now": now}
+            )
+
+            result_msg = f"Merged: '{duplicate_text}' → altLabel of canonical concept"
+
+        elif resolution == "separate":
+            await db.execute_write(
+                "MATCH (a:Concept {concept_id: $a}), (b:Concept {concept_id: $b}) "
+                "SET a.confidence_low = false, b.confidence_low = false "
+                "CREATE (a)-[:DISTINCT_FROM {created_at: timestamp($now), source: 'user'}]->(b)",
+                {"a": cid_a, "b": cid_b, "now": now}
+            )
+            result_msg = "Separated: both concepts confirmed as distinct entities"
+
+        else:  # skip
+            result_msg = "Skipped: pair re-queued for later review"
+
+        final_status = resolution if resolution != "skip" else "pending"
+        await db.execute_write(
+            "MATCH (e:DisambiguationEvent {event_id: $eid}) "
+            "SET e.status = $status, e.resolved_at = timestamp($now), e.resolved_by = 'user'",
+            {"eid": event_id, "status": final_status if final_status != "pending" else "pending", "now": now}
+        )
+
+        return {"result": result_msg, "resolution": resolution}
+    except Exception:
+        _logger.exception("resolve_disambiguation failed for %s", event_id)
+        return {"error": "internal error"}
+
+
+# ---------------------------------------------------------------------------
+# B160 — Domain dictionary reload tool
+# ---------------------------------------------------------------------------
+
+async def reload_domain_dictionary(params: dict, db: KuzuClient, config: dict) -> dict:
+    """
+    Reload the domain dictionary from disk and ingest new entities/altLabels.
+
+    params: {workspace_root?: string}
+    """
+    workspace_root = params.get("workspace_root", ".")
+    try:
+        dict_path = find_dictionary(workspace_root)
+        if not dict_path:
+            return {"error": "No domain_dictionary.yaml found", "searched": DICTIONARY_PATHS}
+
+        entities = load_dictionary(dict_path)
+        if not entities:
+            return {"error": "Dictionary is empty or invalid"}
+
+        now = datetime.now(timezone.utc).isoformat()
+        result = await ingest_dictionary(entities, db, now)
+        return {"status": "ok", "path": str(dict_path), **result}
+    except Exception:
+        _logger.exception("reload_domain_dictionary failed")
+        return {"error": "internal error"}
+
+# ---------------------------------------------------------------------------
 # M8 — analogical_search
 # ---------------------------------------------------------------------------
 
@@ -1999,4 +2239,7 @@ TOOL_HANDLERS = {
     "advance_task":        advance_task,         # B128
     "fail_task":           fail_task,            # B128
     "get_task_graph":      get_task_graph,       # B128
+    "get_disambiguation_queue": get_disambiguation_queue,  # B158
+    "resolve_disambiguation": resolve_disambiguation,      # B158
+    "reload_domain_dictionary": reload_domain_dictionary,  # B160
 }

@@ -16,14 +16,25 @@ def test_guard_blocks_unavailable_action(guard):
     assert "not available" in res["reason"]
     assert res["suggested_action"] == "ACTION1"
 
-def test_guard_warns_on_repeated_no_reward(guard):
+def test_guard_warns_on_repeated_zero_pixel_change(guard):
+    """Guard should warn when an action produced zero pixel change repeatedly."""
     history = [
-        {"action_id": "ACTION1", "reward": 0.0},
-        {"action_id": "ACTION1", "reward": 0.0}
+        {"action_id": "ACTION1", "frame_delta": {"n_cells_changed": 0}},
+        {"action_id": "ACTION1", "frame_delta": {"n_cells_changed": 0}},
     ]
     res = guard.critique_action("ACTION1", ["ACTION1", "ACTION2"], {}, None, history)
     assert res["status"] == "warned"
-    assert "failed to produce reward" in res["reason"]
+    assert "zero pixel change" in res["reason"]
+
+
+def test_guard_approves_action_with_pixel_changes(guard):
+    """Guard should NOT warn when an action produces pixel changes, even with reward=0."""
+    history = [
+        {"action_id": "ACTION1", "reward": 0.0, "frame_delta": {"n_cells_changed": 32}},
+        {"action_id": "ACTION1", "reward": 0.0, "frame_delta": {"n_cells_changed": 33}},
+    ]
+    res = guard.critique_action("ACTION1", ["ACTION1", "ACTION2"], {}, None, history)
+    assert res["status"] == "approved"
 
 def test_guard_warns_on_chunk_deviation(guard):
     chunk = PlanChunk(description="test", estimated_actions=["ACTION2"], source="bfs")

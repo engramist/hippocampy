@@ -24,3 +24,7 @@ Optional delegation workflow:
 **For ecosystem layer boundaries, separation rules, and import constraints, see [`docs/ecosystem-rules.md`](docs/ecosystem-rules.md).**
 
 These are the sources of truth for the system design — shared across all agents (Claude, Gemini, Codex).
+
+## Critical Rule: No Shadow Stores
+
+**KuzuDB is the single source of truth for all persistent agent state.** Do NOT store persistent data (roles, hypotheses, victory conditions, action facts, chunk history) in Python dicts or instance variables as the primary store. In-memory variables are permitted ONLY as read-through caches over KuzuDB. See `docs/ecosystem-rules.md` "No shadow stores rule" for full details.

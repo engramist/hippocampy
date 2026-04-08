@@ -388,6 +388,26 @@ This layer is the AI-ready memory foundation for the ecosystem.
 
 Agents should retrieve durable context here through `BrainClientProtocol` and MCP tool contracts, not by inventing parallel memory systems or bypassing shared contracts.
 
+### No shadow stores rule (CRITICAL)
+
+**KuzuDB is the single source of truth for all persistent agent state. Do NOT create in-memory dicts, lists, or instance variables as parallel data stores.**
+
+If a piece of data influences decisions across steps (roles, hypotheses, victory conditions, action facts, chunk history), it MUST be persisted to KuzuDB. In-memory variables may exist only as **read-through caches** that are populated from KuzuDB at the start of each step and flushed back after writes.
+
+Violations of this rule:
+- Storing `ObjectRole` in a Python dict while `GridEntity.inferred_role` exists in KuzuDB
+- Storing `Hypothesis` objects in a Python dict while a `Hypothesis` node type exists in the schema
+- Defining a node type in `schema.py` but never writing to it (ghost schema)
+- Creating a new dataclass to hold persistent state without a corresponding KuzuDB node type
+
+The correct pattern:
+1. Define the node type in `mcp_engine/schema.py`
+2. Write to KuzuDB via `KuzuClient` when state changes
+3. Read from KuzuDB (or a per-step cache populated from KuzuDB) when state is needed
+4. Never treat the cache as authoritative — KuzuDB is authoritative
+
+This rule exists because the whole point of a knowledge graph is to make inferences across data. Data trapped in Python dicts is invisible to graph queries, cross-puzzle learning, and any future agent that needs to reason about the same state.
+
 ---
 
 ## Trusted Systems

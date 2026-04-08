@@ -246,9 +246,26 @@ class ARC3Harness(ABHarness):
         if explicit_key:
             return explicit_key.strip()
 
+        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+        # Preferred fallback: repo-local ARC credential file used by live smoke runs.
+        arc_json_paths = [
+            os.path.join(root_dir, "benchmarks", ".arc", "arc.json"),
+            os.path.join(root_dir, "benchmarks", "arc3", ".arc", "arc.json"),
+        ]
+        for arc_json_path in arc_json_paths:
+            try:
+                with open(arc_json_path, "r") as f:
+                    arc_data = json.load(f)
+                key = str(arc_data.get("key") or "").strip()
+                if key:
+                    logger.info("Loaded ARC API key from %s", arc_json_path)
+                    return key
+            except Exception:
+                continue
+
         # Legacy fallback: Kaggle credential file. This may not work for the ARC REST API,
         # but we keep it for backward compatibility with older local setups.
-        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
         kaggle_json_paths = [
             os.path.join(root_dir, "benchmarks", ".kaggle", "kaggle.json"),
             os.path.join(os.path.dirname(__file__), ".kaggle", "kaggle.json"),

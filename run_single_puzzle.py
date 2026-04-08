@@ -7,6 +7,7 @@ import asyncio
 import datetime
 import json
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -34,13 +35,74 @@ ARC_SERVER_OUTPUT_PATH = REPO_ROOT / "submission_results_arcServer.json"
 AGENT_EXECUTION_TRACE_PATH = REPO_ROOT / "agent_execution_trace.json"
 MASTER_TIMELINE_PATH = REPO_ROOT / "master_timeline.json"
 LIVE_OUTPUT_PATH = REPO_ROOT / "submission_results_single.live.jsonl"
+ARC_KEY_PATHS = (
+    REPO_ROOT / "benchmarks/.arc/arc.json",
+    REPO_ROOT / "benchmarks/arc3/.arc/arc.json",
+)
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+
+def _apply_llm_overrides(config: dict, overrides: dict | None = None) -> dict:
+    """Return a config copy with one-shot LLM overrides applied."""
+    if not overrides:
+        return config
+
+    merged = dict(config)
+    llm_cfg = dict(config.get("llm", {}))
+    for key, value in overrides.items():
+        if value is not None:
+            llm_cfg[key] = value
+    merged["llm"] = llm_cfg
+    return merged
+
+
+def _remove_db_artifacts(db_path: Path) -> None:
+    """Delete the local smoke-test database and any SQLite/Kùzu sidecars."""
+    import shutil
+
+    candidates = [
+        db_path,
+        Path(f"{db_path}.wal"),
+        Path(f"{db_path}.shm"),
+        Path(f"{db_path}-wal"),
+        Path(f"{db_path}-shm"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            if candidate.is_dir():
+                shutil.rmtree(candidate)
+            else:
+                candidate.unlink()
+
+
+def _ensure_arc_api_key(arc_key_path: str | Path | None = None) -> str | None:
+    """Populate ARC_API_KEY from the repo credential file when the env var is absent."""
+    existing = (os.environ.get("ARC_API_KEY") or "").strip()
+    if existing:
+        return existing
+
+    candidate_paths = [Path(arc_key_path)] if arc_key_path else list(ARC_KEY_PATHS)
+    for path in candidate_paths:
+        if not path.exists():
+            continue
+        try:
+            key = str(json.loads(path.read_text()).get("key", "")).strip()
+        except Exception as exc:
+            logger.warning("Could not read ARC key from %s: %s", path, exc)
+            continue
+        if key:
+            os.environ["ARC_API_KEY"] = key
+            logger.info("Loaded ARC_API_KEY from %s", path)
+            return key
+    return None
+
+
 class SingleTaskRunner:
-    def __init__(self, real_api=False):
-        self.config = load_config()
+    def __init__(self, real_api=False, config_path: str | Path | None = None, llm_overrides: dict | None = None):
+        resolved_config_path = Path(config_path) if config_path else (CONFIG_PATH if CONFIG_PATH.exists() else None)
+        self.config = _apply_llm_overrides(load_config(resolved_config_path), llm_overrides)
         self.db = None
         self.harness = None
         self.loop_queue = asyncio.Queue()
@@ -57,13 +119,8 @@ class SingleTaskRunner:
     async def initialize(self):
         logger.info("Initializing Single Task Runner...")
 
-        # Clean up old database
-        if DB_PATH.exists():
-            import shutil
-            if DB_PATH.is_dir():
-                shutil.rmtree(DB_PATH)
-            else:
-                DB_PATH.unlink()
+        # Clean up old database and stale sidecars from prior smoke runs.
+        _remove_db_artifacts(DB_PATH)
 
         # 1. Initialize Database
         DB_PATH.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -335,17 +392,57 @@ class SingleTaskRunner:
 async def main():
     parser = argparse.ArgumentParser(description="Run ARC puzzles (optionally real API)")
     parser.add_argument("--real-api", action="store_true", help="Run against the real ARC-AGI-3 API")
+    parser.add_argument(
+        "--live-smoke",
+        action="store_true",
+        help=(
+            "Convenience mode for a one-puzzle live smoke: implies --real-api, auto-loads ARC_API_KEY "
+            "from the repo credential file when needed, and uses more forgiving local-Ollama timeout/retry defaults."
+        ),
+    )
     parser.add_argument("--num-puzzles", type=int, default=None, help="Number of puzzles to run (default: 1 for real, 5 for mock)")
     parser.add_argument("--card-id", type=str, default=None, help="Override ARC checkpoint card id")
+    parser.add_argument("--config", type=str, default=None, help="Explicit path to the sidequests.toml file to use for this run")
+    parser.add_argument("--model", type=str, default=None, help="Override llm.model for this run only")
+    parser.add_argument("--base-url", type=str, default=None, help="Override llm.base_url for this run only")
+    parser.add_argument("--timeout-seconds", type=float, default=None, help="Override llm.timeout_seconds for this run only")
+    parser.add_argument("--max-retries", type=int, default=None, help="Override llm.max_retries for this run only")
+    parser.add_argument(
+        "--arc-key-path",
+        type=str,
+        default=None,
+        help="Load ARC_API_KEY from this JSON file if the environment variable is not already set",
+    )
     args = parser.parse_args()
+
+    real_api = args.real_api or args.live_smoke
+
+    llm_overrides = {
+        key: value
+        for key, value in {
+            "model": args.model,
+            "base_url": args.base_url,
+            "timeout_seconds": args.timeout_seconds,
+            "max_retries": args.max_retries,
+        }.items()
+        if value is not None
+    }
+    if args.live_smoke:
+        llm_overrides.setdefault("timeout_seconds", 300.0)
+        llm_overrides.setdefault("max_retries", 5)
+
+    if real_api and not _ensure_arc_api_key(args.arc_key_path):
+        logger.warning(
+            "ARC_API_KEY was not found in the environment or repo credential files; the live run may fail to authenticate."
+        )
 
     # Determine number of puzzles
     if args.num_puzzles is not None:
         num_puzzles = args.num_puzzles
     else:
-        num_puzzles = 1 if args.real_api else TASK_BATCH_SIZE
+        num_puzzles = 1 if real_api else TASK_BATCH_SIZE
 
-    runner = SingleTaskRunner(real_api=args.real_api)
+    runner = SingleTaskRunner(real_api=real_api, config_path=args.config, llm_overrides=llm_overrides)
     try:
         await runner.initialize()
 
@@ -359,7 +456,7 @@ async def main():
 
         if args.card_id:
             card_id = args.card_id
-        elif args.real_api:
+        elif real_api:
             # Real API test runs should not silently reuse stale local checkpoints.
             card_id = f"real_test_{int(time.time())}"
         else:
@@ -373,7 +470,16 @@ async def main():
             progress_callback=runner.append_live_snapshot,
         )
 
-        logger.info(f"Running {len(runner.tasks)} puzzle(s), starting with: {runner.tasks[0].task_id}")
+        llm_cfg = runner.config.get("llm", {})
+        logger.info(
+            "Running %d puzzle(s), starting with: %s | provider=%s model=%s timeout=%s retries=%s",
+            len(runner.tasks),
+            runner.tasks[0].task_id,
+            llm_cfg.get("provider"),
+            llm_cfg.get("model"),
+            llm_cfg.get("timeout_seconds", "default"),
+            llm_cfg.get("max_retries", "default"),
+        )
         runner.results = await durable.run(runner.tasks, card_id)
 
         # Print result summary

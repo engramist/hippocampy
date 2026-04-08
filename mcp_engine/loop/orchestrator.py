@@ -321,6 +321,16 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                             )
                             summary["anomalies_detected"] += 1
                     # uncertain does not trigger REIFIED_AS (confidence_low stays true)
+                    # B158: create a DisambiguationEvent for human curation
+                    try:
+                        ref_id = None
+                        if arb.get("referenced_node_ids"):
+                            ref_id = arb["referenced_node_ids"][0]
+                        await _create_disambiguation_event(db, concept_id, ref_id,
+                                                           top["similarity"] if top else 0.0,
+                                                           now)
+                    except Exception:
+                        _logger.exception("Failed to create DisambiguationEvent")
 
         else:
             # No match — store as new concept
@@ -371,6 +381,48 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         await _store_relation(rel, db, now, embedding_model=embedding_model)
 
     return summary
+
+
+async def _create_disambiguation_event(
+    db,
+    concept_id_a: str,
+    concept_id_b: str,
+    similarity: float,
+    now: str,
+) -> None:
+    """Create a pending `DisambiguationEvent` linking two concepts for review."""
+    if not concept_id_a or not concept_id_b:
+        return
+
+    try:
+        event_id = str(uuid.uuid4())
+        await db.execute_write(
+            """
+            CREATE (e:DisambiguationEvent {
+                event_id: $eid,
+                concept_id_a: $a,
+                concept_id_b: $b,
+                similarity: $sim,
+                status: 'pending',
+                resolved_at: NULL,
+                resolved_by: NULL,
+                created_at: timestamp($created_at)
+            })
+            """,
+            {
+                "eid": event_id,
+                "a": concept_id_a,
+                "b": concept_id_b,
+                "sim": float(similarity),
+                "created_at": now,
+            },
+        )
+    except Exception:
+        _logger.exception(
+            "_create_disambiguation_event failed for %s %s",
+            concept_id_a,
+            concept_id_b,
+        )
 
 
 # ---------------------------------------------------------------------------
