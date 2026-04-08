@@ -816,9 +816,9 @@ async def test_solve_engine_defers_victory_hypothesis_below_threshold():
     llm.achat.return_value = '{"condition_type":"reach_goal","description":"reach exit","target_color_id":null,"confidence":0.5}'
 
     engine = SolveEngine(brain, llm, "s1")
-    engine.archetype_classifier.update = MagicMock(return_value=(GameArchetype.CHASE, 0.6))
+    engine.archetype_classifier.update = MagicMock(return_value=(GameArchetype.CHASE, 0.3))
     engine._archetype = GameArchetype.CHASE
-    engine._archetype_confidence = 0.6
+    engine._archetype_confidence = 0.3
     engine._archetype_locked = False
 
     obs = {"colors": [], "available_actions": ["ACTION1"], "task_id": "t1", "dataset_id": "d1"}
