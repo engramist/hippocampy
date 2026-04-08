@@ -1,0 +1,27 @@
+# Domain Dictionary for SideQuests Brain
+# Place this file at .sidequests/domain_dictionary.yaml in your workspace root.
+#
+# Each entity gets a high-confidence Concept node with prefLabel and altLabels.
+# The Brain Daemon loads this on startup and on `reload_domain_dictionary`.
+#
+# Fields:
+#   term (required): Canonical name for the entity
+#   alt_labels (optional): List of synonyms, abbreviations, acronyms
+#   gist_class (optional): One of: Restriction, PlannedEvent, PhysicalThing,
+#                           Magnitude, Category, Agent, Event
+#   schema_org_type (optional): schema.org type for routing
+
+version: 1
+entities:
+  - term: "PostgreSQL"
+    alt_labels: ["Postgres", "PG", "pg"]
+    gist_class: "PhysicalThing"
+    schema_org_type: "schema:Product"
+
+  - term: "Kubernetes"
+    alt_labels: ["k8s", "K8s", "kube"]
+    gist_class: "PhysicalThing"
+
+  - term: "React"
+    alt_labels: ["ReactJS", "React.js"]
+    gist_class: "PhysicalThing"

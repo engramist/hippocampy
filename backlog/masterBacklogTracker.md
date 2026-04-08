@@ -129,40 +129,109 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 
 | B128 | Task Graph MCP Tools (register_task_graph, get_ready_tasks, advance_task, fail_task, get_task_graph) — ✅ DONE (2026-04-01) | P1 | complete | B127 | — | backlog/plans/B-128-dag-task-graph-tools.md | backlog/B128.md |
 | B129 | Align Task Graph Test Imports with B128 API Surface | P1 | complete ✅ DONE (2026-04-02) | B127, B128 | — | backlog/plans/B-129-task-graph-api-test-alignment.md | backlog/B129.md |
-| B130 | Enhanced submission_results Logging and Observability | P1 | ready | TBD | TBD | backlog/plans/B-130-enhanced-logging.md | backlog/B130.md |
+| B130 | Enhanced submission_results Logging and Observability — ✅ DONE (2026-04-02) | P1 | complete | TBD | TBD | backlog/plans/B-130-enhanced-logging.md | backlog/B130.md |
+| B132 | Harden Mental Sandbox JSON Parsing and Fallback Attribution — ✅ DONE (2026-04-01) | P1 | complete | TBD | TBD | - | backlog/B132.md |
+| B133 | Add Decision-Source Tracing for Guard Overrides and Fallback Actions — ✅ DONE (2026-04-01) | P2 | complete | TBD | TBD | backlog/plans/B-133-fix-guard-round-robin.md | backlog/B133.md |
+| B136 | Add Top-Level Replan Trigger for Persistent Dissonance — ✅ DONE (2026-04-01) | P2 | complete | TBD | TBD | backlog/plans/B-136-dissonance-replan.md | backlog/B136.md |
+| B139 | Break Low-Value Explore Loops in `space` Puzzles After Goal Inference — ✅ DONE (2026-04-01) | P1 | complete | B132, B133, B134, B135, B136, B138 | TBD | backlog/plans/B-139-space-solver-quality.md | backlog/B139.md |
+| B141 | Enforce No-Progress Bail-Out Escalation in Orchestrator Loop — ✅ DONE (2026-04-01) | P0 | complete | None | TBD | backlog/plans/B-141-no-progress-bailout.md | backlog/B141.md |
+| B143 | Geometry-Aware Coordinate Policy for space/reach_goal Puzzles — ✅ DONE (2026-04-01) | P1 | complete | B141, B142 | TBD | backlog/plans/B-143-geometry-coordinate-policy.md | backlog/B143.md |
+| B144 | Plateau-Aware Exploitation Policy After Grounding Succeeds — ✅ DONE (2026-04-01) | P0 | complete | B141, B142, B143 | TBD | backlog/plans/B-144-plateau-aware-exploitation-policy.md | backlog/B144.md |
+| B145 | Hard-Bind Plateau Mode to the Top-Ranked Action Family — ✅ DONE (2026-04-01) | P0 | complete | B144 | TBD | backlog/plans/B-145-hard-bind-plateau-mode.md | backlog/B145.md |
+| B146 | Stabilize Plateau Lock and Keep Chunk/Action/Trace in Sync — ✅ DONE (2026-04-01) | P0 | complete | B145 | TBD | backlog/plans/B-146-stabilize-plateau-lock-sync.md | backlog/B146.md |
+| B147 | Make Plateau Activation Sticky Under Confidence Jitter — ✅ DONE (2026-04-01) | P0 | complete | B146 | TBD | backlog/plans/B-147-sticky-plateau-activation.md | backlog/B147.md |
+| B148 | Preserve Grounded Player/Goal and Victory Confidence Under Late-Run Drift — ✅ DONE (2026-04-01) | P0 | complete | B147 | — | backlog/plans/B-148-preserve-grounding-under-drift.md | backlog/B148.md |
+| B149 | Action Fatigue: Penalize Exhausted Zero-Reward Actions — ✅ DONE (2026-04-01) | P0 | complete | None | TBD | backlog/plans/B-149-action-fatigue.md | backlog/B149.md |
+| B150 | ARC Grid Diff Engine (Level Transition Analysis) — ✅ DONE (2026-04-01) | P0 | complete | B157 | TBD | backlog/plans/B-150-arc-grid-diff-engine.md | backlog/B150.md |
+| B151 | ARC Cross-Level Game Rule Hypothesizer — ✅ DONE (2026-04-01) | P0 | complete | B150, B157 | TBD | backlog/plans/B-151-arc-transformation-hypotheses.md | backlog/B151.md |
+| B152 | ARC Level-Replay Verification | P0 | ready | B150, B151, B157 | TBD | backlog/plans/B-152-arc-repl-verification-loop.md | backlog/B152.md |
+| B153 | ARC Level-Aware Prompt Restructure | P0 | ready | B150, B151, B157 | TBD | backlog/plans/B-153-arc-prompt-restructure.md | backlog/B153.md |
+| B154 | ARC Level-Progressive Exploration Policy — ✅ DONE (2026-04-01) | P1 | complete | B157 | TBD | backlog/plans/B-154-arc-exploration-relaxation.md | backlog/B154.md |
+| B155 | ARC Cross-Game Strategy Memory | P2 | ready | B150, B151, B157 | TBD | backlog/plans/B-155-arc-transformation-memory.md | backlog/B155.md |
+| B156 | ARC Level-Aware Orchestration Loop | P0 | blocked | B150, B151, B152, B157 | TBD | backlog/plans/B-156-arc-two-phase-router.md | backlog/B156.md |
+| B157 | ARC Multi-Level Game Progression — Continue After WIN — ✅ DONE (2026-04-01) | P0 | complete | None | TBD | backlog/plans/B-157-arc-multi-level-progression.md | backlog/B157.md |
+| B158 | Disambiguation Queue — Human-in-the-Loop Entity Curation | P3 | ready | None | TBD | backlog/plans/B-158-disambiguation-queue.md | backlog/B158.md |
+| B159 | Topological Entity Resolution — Graph-Neighborhood Overlap in Step 5 | P4 | ready | None | TBD | backlog/plans/B-159-topological-entity-resolution.md | backlog/B159.md |
+| B160 | Domain Dictionary Pre-Seed — Cold-Start Thesaurus for Power Users | P3 | ready | None | TBD | backlog/plans/B-160-domain-dictionary-preseed.md | backlog/B160.md |
+| B161 | Goal-Directed Navigation — Agent Moves But Wanders Aimlessly | P0 | ready | TBD | TBD | backlog/plans/B-161-goal-directed-navigation.md | backlog/B161.md |
+| B162 | Front-Load Grid Analysis Before First Action | P1 | ready | TBD | TBD | backlog/plans/B-162-frontload-grid-analysis.md | backlog/B162.md |
+| B163 | Reduce ArchetypeClassifier MIN_OBSERVATIONS from 5 to 2 | P1 | ready | TBD | TBD | backlog/plans/B-163-faster-archetype-classification.md | backlog/B163.md |
+| B164 | Improve LLM Prompt Quality for Small Models (qwen2.5:7b) | P1 | ready | TBD | TBD | backlog/plans/B-164-small-model-prompt-quality.md | backlog/B164.md |
+| B165 | Persist Lessons Across Runs — Post-Failure Knowledge Retention | P2 | ready | TBD | TBD | backlog/plans/B-165-cross-run-lessons.md | backlog/B165.md |
+| B166 | Deterministic Autopilot — Bypass LLM When Player/Goal Positions Known | P0 | complete | TBD | TBD | backlog/plans/B-166-deterministic-autopilot.md | backlog/B166.md |
+| B167 | Pattern-Aware Puzzle Strategy — Region Comparison and Intermediate Goals | P0 | ready | TBD | TBD | backlog/plans/B-167-pattern-aware-strategy.md | backlog/B167.md |
+| B168 | Graph-Based Exploration Agent — Build Neural Substrate Before Goal-Seeking | P0 | ready | B150, B119, B166 | TBD | backlog/plans/B-168-graph-exploration-agent.md | backlog/B168.md |
+| B169 | KuzuDB as Single Source of Truth for Object Roles | P0 | ready | B168 | TBD | backlog/plans/B-169-kuzu-role-source-of-truth.md | backlog/B169.md |
+| B170 | Persist Hypotheses to KuzuDB — Eliminate Ghost Schema | P0 | ready | None | TBD | backlog/plans/B-170-hypothesis-kuzu-persistence.md | backlog/B170.md |
+| B171 | Add ActionFact Node Type and Persist to KuzuDB | P1 | ready | B170 | TBD | backlog/plans/B-171-action-fact-kuzu.md | backlog/B171.md |
+| B172 | Persist VictoryCondition to KuzuDB | P1 | ready | B170 | TBD | backlog/plans/B-172-victory-condition-kuzu.md | backlog/B172.md |
+| B173 | Persist GameRuleHypothesis to KuzuDB via Hypothesis Nodes | P1 | ready | B170 | TBD | backlog/plans/B-173-game-rule-hypothesis-kuzu.md | backlog/B173.md |
+| B174 | Persist ChunkLedgerEntry to KuzuDB | P2 | ready | None | TBD | backlog/plans/B-174-chunk-ledger-kuzu.md | backlog/B174.md |
+| B175 | Autopilot Wall-Blind Navigation — Detect Stuck Player and Reroute | P1 | ready | B168 | TBD | backlog/plans/B-175-autopilot-wall-detection.md | backlog/B175.md |
+| B176 | Plateau Policy: Force Exploration of Untried Actions | P1 | ready | None | TBD | backlog/plans/B-176-plateau-explore-untried-actions.md | backlog/B176.md |
+| B177 | No-Progress Escalation: Fix Tier Ladder and Connect Dissonance | P1 | ready | None | TBD | backlog/plans/B-177-no-progress-dissonance-trigger.md | backlog/B177.md |
+| B178 | Action Semantics Discovery for Autopilot | P1 | ready | B168 | TBD | backlog/plans/B-178-action-semantics-discovery.md | backlog/B178.md |
+| B179 | Victory Condition Inference Threshold Fix | P2 | ready | None | TBD | backlog/plans/B-179-victory-condition-inference.md | backlog/B179.md |
 
 ## Summary
 
-- Total cards: 124
-- Ready: 0
+- Total cards: 164
+- Ready: 24 (B152, B153, B155, B158, B159, B160, B161, B162, B163, B164, B165, B167, B168, B169, B170, B171, B172, B173, B174, B175, B176, B177, B178, B179)
 - Needs work: 0
-- Complete: 124
+- Complete: 138
 - In progress: 0
-- Blocked: 0
+- Blocked: 1 (B156)
+
+
+
 
 ## Execution Priority (ready cards)
 
-### Tier 1 — Immediate (no unsatisfied dependencies)
+### Tier 0 — Critical: Puzzle understanding (must land first)
 | Order | Card | Priority | Why |
 |-------|------|----------|-----|
-| 1 | - | - | (none) |
+| 1 | B168 | P0 | **Graph exploration agent** — builds knowledge substrate (entity nodes + relationships) before goal-seeking. Without this, all downstream heuristics operate blind. Must land before other solver improvements. |
+| 2 | B169 | P0 | **KuzuDB role source of truth** — eliminates dual-store disconnect where B168's graph-inferred roles are silently lost. Depends on B168. |
+| 3 | B170 | P0 | **Hypothesis persistence** — ghost schema with zero writers. Hypotheses are core reasoning; must persist to KuzuDB for cross-puzzle learning. |
+| 4 | B167 | P0 | **Pattern-aware strategy** — region comparison, intermediate goals, phase-aware autopilot. Benefits from B168's entity graph. |
+| 5 | B161 | P0 | Prompt-based spatial guidance for when autopilot disengages (wall collision, uncertain positions) |
 
-### Tier 2 — After Tier 1 deps complete
+### Tier 0.5 — No Shadow Stores: KuzuDB persistence (land after B170)
+| Order | Card | Priority | Why |
+|-------|------|----------|-----|
+| 6 | B171 | P1 | **ActionFact persistence** — deterministic action knowledge missing from schema entirely. Depends on B170. |
+| 7 | B172 | P1 | **VictoryCondition persistence** — critical solve state with no graph representation. Depends on B170. |
+| 8 | B173 | P1 | **GameRuleHypothesis persistence** — dual in-memory store (solver + orchestrator). Maps to Hypothesis nodes. Depends on B170. |
+| 9 | B174 | P2 | **ChunkLedger persistence** — chunk execution history for post-solve analysis. Independent. |
+
+### Tier 0.75 — Solve Loop Root Causes (land after B168; can parallel with Tier 0.5)
+| Order | Card | Priority | Why |
+|-------|------|----------|-----|
+| 10 | B175 | P1 | **Autopilot wall detection** — player centroid tracking instead of n_cells_changed. Prevents 119-step deadlock on wrong axis. Depends on B168. |
+| 11 | B176 | P1 | **Plateau untried-action exploration** — exploration bonus for untried actions, lock threshold decay. Prevents plateau locking onto known-bad action forever. Independent. |
+| 12 | B177 | P1 | **No-progress escalation fix** — connect dissonance to SolveEngine, persistent blocked actions, cumulative escalation instead of 8-step reset. Independent. |
+| 13 | B178 | P1 | **Action semantics discovery** — use B168 ActionEffect data to learn actual action→direction mapping instead of hardcoded convention. Depends on B168. |
+| 14 | B179 | P2 | **Victory condition threshold** — lower CALL_THRESHOLD from 0.65 to 0.45, add step-based and zero-progress fallbacks. Independent. |
+
+### Tier 1 — ARC solver quality (land after B167/B161)
+| Order | Card | Priority | Why |
+|-------|------|----------|-----|
+| 10 | B162 | P1 | Front-load grid analysis so first action is informed |
+| 11 | B163 | P1 | Faster archetype classification (2 obs instead of 5) |
+| 5 | B164 | P1 | Better prompts for qwen2.5:7b (compact mode, higher budget) |
+| 6 | B152 | P0 | Level-replay verification |
+| 7 | B153 | P0 | Prompt refactor (reopened) |
+
+### Tier 2 — Knowledge retention and other
+| Order | Card | Priority | Why |
+|-------|------|----------|-----|
+| 8 | B165 | P2 | Cross-run lesson persistence so each run learns from the last |
+| 9 | B155 | P2 | Cross-game strategy memory |
+| 10 | B158 | P3 | Disambiguation queue |
+| 11 | B160 | P3 | Domain dictionary pre-seed |
+| 12 | B159 | P4 | Topological entity resolution |
+
+### Tier 3 — Blocked until verification lands
 | Order | Card | Blocked by | Why |
 |-------|------|-----------|-----|
-| 11 | - | - | (none) |
-
-### Tier 3 — After Tier 2 deps complete
-| Order | Card | Blocked by | Why |
-|-------|------|-----------|-----|
-| 13 | - | - | (none) |
-
-### Tier 4 — After Tier 3 deps complete
-| Order | Card | Blocked by | Why |
-|-------|------|-----------|-----|
-| 20 | - | - | (none) |
-
-### Tier 5 — Final chain
-| Order | Card | Blocked by | Why |
-|-------|------|-----------|-----|
-| 21 | - | - | (none) |
+| 12 | B156 | B152 | Level-aware orchestration should land after the replay-verification layer is complete |

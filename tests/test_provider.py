@@ -4,6 +4,8 @@ Tests for mcp_engine/llm/provider.py — T7 coverage.
 
 import sys
 import os
+from unittest.mock import patch
+
 import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -42,6 +44,58 @@ def test_create_llm_client_default_config():
     client = create_llm_client({})
     # Either returns LLMClient (openai importable) or None (not importable)
     assert client is None or hasattr(client, "chat")
+
+
+def test_create_llm_client_ollama_uses_slow_model_friendly_timeout():
+    """Local Ollama defaults should tolerate slower reasoning models."""
+    from mcp_engine.llm.provider import create_llm_client, LLMClient
+
+    config = {
+        "llm": {
+            "provider": "ollama",
+            "model": "gemma4:e4b",
+            "base_url": "http://localhost:11434/v1",
+        }
+    }
+
+    with patch("openai.OpenAI") as mock_openai:
+        mock_openai.return_value = object()
+        client = create_llm_client(config)
+
+    assert isinstance(client, LLMClient)
+    mock_openai.assert_called_once_with(
+        base_url="http://localhost:11434/v1",
+        api_key="ollama",
+        timeout=180.0,
+        max_retries=3,
+    )
+
+
+def test_create_llm_client_ollama_respects_timeout_override():
+    """Explicit timeout/retry config should flow into the OpenAI-compatible client."""
+    from mcp_engine.llm.provider import create_llm_client, LLMClient
+
+    config = {
+        "llm": {
+            "provider": "ollama",
+            "model": "gemma4:26b",
+            "base_url": "http://localhost:11434/v1",
+            "timeout_seconds": 600,
+            "max_retries": 5,
+        }
+    }
+
+    with patch("openai.OpenAI") as mock_openai:
+        mock_openai.return_value = object()
+        client = create_llm_client(config)
+
+    assert isinstance(client, LLMClient)
+    mock_openai.assert_called_once_with(
+        base_url="http://localhost:11434/v1",
+        api_key="ollama",
+        timeout=600.0,
+        max_retries=5,
+    )
 
 
 # ---------------------------------------------------------------------------

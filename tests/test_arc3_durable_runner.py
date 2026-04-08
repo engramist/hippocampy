@@ -205,7 +205,7 @@ async def test_state_win_stops_puzzle(tmp_path):
     harness = _make_stub_harness()
     # Return frame with WIN state, reward=0, done=False to ensure state drives the outcome
     harness._execute_mock_action = MagicMock(
-        return_value=({"frame": [[[0]]], "state": "WIN", "available_actions": []}, 0.0, False)
+        return_value=({"frame": [[[0]]], "state": "WIN", "available_actions": [], "levels_completed": 1, "win_levels": 1}, 0.0, False)
     )
     runner = DurableARCRunner(harness, NoOpBrainClient(), config={"llm": {"model": "test"}})
     tasks = _sample_tasks()
@@ -257,7 +257,7 @@ async def test_game_over_then_win_on_retry(tmp_path):
     harness._execute_mock_action = MagicMock(
         side_effect=[
             ({"frame": [[[0]]], "state": "GAME_OVER", "available_actions": []}, 0.0, False),
-            ({"frame": [[[0]]], "state": "WIN", "available_actions": []}, 1.0, True),
+            ({"frame": [[[0]]], "state": "WIN", "available_actions": [], "levels_completed": 1, "win_levels": 1}, 1.0, True),
         ]
     )
     runner = DurableARCRunner(harness, NoOpBrainClient(), config={"llm": {"model": "test"}, "max_retries_per_puzzle": 3})
@@ -297,7 +297,7 @@ async def test_real_api_path_uses_http_session(tmp_path):
             ),
             MagicMock(
                 json=MagicMock(
-                    return_value={"frame": [[[1]]], "state": "WIN", "guid": "guid-2"}
+                    return_value={"frame": [[[1]]], "state": "WIN", "guid": "guid-2", "levels_completed": 1, "win_levels": 1}
                 ),
                 raise_for_status=MagicMock(),
             ),

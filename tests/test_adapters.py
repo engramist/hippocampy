@@ -44,6 +44,10 @@ EXPECTED_TOOLS = {
     "register_plan", "report_outcome", "recall_plans",  # B67
     "get_openclaw_prompt",
     "register_task_graph", "get_ready_tasks", "advance_task", "fail_task", "get_task_graph",  # B128
+    # B158 human-in-the-loop curation
+    "get_disambiguation_queue", "resolve_disambiguation",
+    # B160 domain dictionary reload
+    "reload_domain_dictionary",
 }
 
 def test_adapter_tool_names_match_handlers():

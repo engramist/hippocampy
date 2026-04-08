@@ -35,6 +35,28 @@ B16 — Task-Based Model Routing:
 import os
 
 
+def _resolve_timeout_seconds(provider: str, llm_cfg: dict) -> float | None:
+    """Return the configured request timeout, with safer defaults for local Ollama."""
+    raw_timeout = llm_cfg.get("timeout_seconds")
+    if raw_timeout in (None, ""):
+        return 180.0 if provider == "ollama" else None
+    try:
+        return float(raw_timeout)
+    except (TypeError, ValueError):
+        return 180.0 if provider == "ollama" else None
+
+
+def _resolve_max_retries(provider: str, llm_cfg: dict) -> int | None:
+    """Return the configured retry count, with a slightly more forgiving Ollama default."""
+    raw_retries = llm_cfg.get("max_retries")
+    if raw_retries in (None, ""):
+        return 3 if provider == "ollama" else None
+    try:
+        return int(raw_retries)
+    except (TypeError, ValueError):
+        return 3 if provider == "ollama" else None
+
+
 class LLMClient:
     """
     Wrapper around an OpenAI-SDK-compatible chat endpoint.
@@ -73,14 +95,24 @@ def create_llm_client(config: dict):
     Factory. Returns an LLMClient instance or None if unavailable.
 
     Config keys read from config["llm"]:
-        provider  — "ollama" | "openai" | "anthropic" | "google"
-        model     — model identifier string
-        base_url  — required for ollama; optional override for others
-        api_key   — cloud providers: read from env var if not set
+        provider          — "ollama" | "openai" | "anthropic" | "google"
+        model             — model identifier string
+        base_url          — required for ollama; optional override for others
+        api_key           — cloud providers: read from env var if not set
+        timeout_seconds   — optional request timeout for slow models / long reasoning
+        max_retries       — optional retry count for transient provider errors
     """
     llm_cfg  = config.get("llm", {})
     provider = llm_cfg.get("provider", "ollama").lower()
     model    = llm_cfg.get("model", "llama3.1:8b")
+
+    client_options = {}
+    timeout_seconds = _resolve_timeout_seconds(provider, llm_cfg)
+    max_retries = _resolve_max_retries(provider, llm_cfg)
+    if timeout_seconds is not None:
+        client_options["timeout"] = timeout_seconds
+    if max_retries is not None:
+        client_options["max_retries"] = max_retries
 
     try:
         from openai import OpenAI
@@ -88,19 +120,19 @@ def create_llm_client(config: dict):
         if provider == "ollama":
             base_url = llm_cfg.get("base_url", "http://localhost:11434/v1")
             # Ollama does not require a real API key
-            client = OpenAI(base_url=base_url, api_key="ollama")
+            client = OpenAI(base_url=base_url, api_key="ollama", **client_options)
             return LLMClient(client, model)
 
         if provider == "openai":
             api_key = llm_cfg.get("api_key") or os.environ.get("OPENAI_API_KEY", "")
-            client = OpenAI(api_key=api_key)
+            client = OpenAI(api_key=api_key, **client_options)
             return LLMClient(client, model)
 
         if provider == "anthropic":
             # Anthropic has an OpenAI-compatible endpoint via the API gateway
             base_url = llm_cfg.get("base_url", "https://api.anthropic.com/v1")
             api_key  = llm_cfg.get("api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
-            client = OpenAI(base_url=base_url, api_key=api_key)
+            client = OpenAI(base_url=base_url, api_key=api_key, **client_options)
             return LLMClient(client, model)
 
         if provider == "google":
@@ -109,7 +141,7 @@ def create_llm_client(config: dict):
                 "https://generativelanguage.googleapis.com/v1beta/openai/"
             )
             api_key = llm_cfg.get("api_key") or os.environ.get("GOOGLE_API_KEY", "")
-            client = OpenAI(base_url=base_url, api_key=api_key)
+            client = OpenAI(base_url=base_url, api_key=api_key, **client_options)
             return LLMClient(client, model)
 
         print(f"[LLM] Unknown provider '{provider}'. Loop will run in degraded mode.")

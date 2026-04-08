@@ -98,6 +98,7 @@ A card is execution-ready only if:
 - The card explicitly checks whether any tool/work changes must also be propagated to adapter allow-lists.
 - If the card introduces or changes a tool, it must also include updates to docs/tool-catalog.md.
 - The card complies with `docs/arc-harness-rules.md` (layer ownership, phase rules, prompt placement) and `docs/ecosystem-rules.md` (import boundaries, layer separation). Any card that touches ARC agent code must state which ecosystem layer(s) it operates in and confirm no cross-layer violations.
+- **No shadow stores**: If the card introduces or modifies persistent agent state (roles, hypotheses, victory conditions, action facts, etc.), that state MUST be persisted to KuzuDB — not stored only in Python dicts or instance variables. See `docs/ecosystem-rules.md` "No shadow stores rule" for details. In-memory variables are permitted only as read-through caches over KuzuDB.
 
 How to verify:
 - Run `rg -n "TOOL_HANDLERS|TOOLS:" mcp_engine/tool_schemas.py mcp_engine/tools/__init__.py adapters` and confirm any new/changed tool is reflected in adapter allow-lists and docs/tool-catalog.md.

@@ -7,7 +7,7 @@
 
 ---
 
-## Quick Reference: All 23 MCP Tools
+## Quick Reference: All 26 MCP Tools
 
 | # | Tool Name | Category | Called By | Blocking? | Requires LLM? |
 |---|-----------|----------|-----------|-----------|----------------|
@@ -34,6 +34,9 @@
 | 21 | `advance_task` | Execution DAG | Agent | Yes | No |
 | 22 | `fail_task` | Execution DAG | Agent | Yes | No |
 | 23 | `get_task_graph` | Execution DAG | Agent | Yes | No |
+| 24 | `get_disambiguation_queue` | Curation | Human UI / Agent | Yes (human review) | No |
+| 25 | `resolve_disambiguation` | Curation | Human UI / Agent | Yes (human resolution) | No |
+| 26 | `reload_domain_dictionary` | Ingestion | Human UI / Agent | No (non-blocking) | No |
 
 ---
 
@@ -648,6 +651,103 @@ These processes run inside the Brain Daemon without explicit tool calls.
 
 ---
 
+### 24. `get_disambiguation_queue` — Disambiguation Queue
+
+**Purpose:** Retrieve pending DisambiguationEvent pairs created by the loop when
+the arbitration step returned `uncertain`. Intended for human-in-the-loop
+curation UIs.
+
+**When to call:** Periodic UI poll or when an operator begins a curation
+session; call before showing pair details to a human reviewer.
+
+**Input:**
+```json
+{ "limit": 10 }
+```
+
+**Output:**
+```json
+{
+  "pairs": [
+    {
+      "event_id": "uuid",
+      "similarity": 0.87,
+      "created_at": "2026-03-29T12:34:56Z",
+      "concept_a": { "concept_id": "cA", "text_raw": "...", "alt_labels": [...] },
+      "concept_b": { "concept_id": "cB", "text_raw": "...", "alt_labels": [...] },
+      "shared_neighbors": [{"concept_id":"n1","text_raw":"..."}]
+    }
+  ],
+  "total_pending": 1
+}
+```
+
+**Integration test cases:**
+- T1: No pending events returns empty `pairs` array
+- T2: `limit` parameter respected
+- T3: `concept_a`/`concept_b` include `alt_labels` array
+- T4: Archived concepts are not returned in context
+
+---
+
+### 25. `resolve_disambiguation` — Resolve Disambiguation
+
+**Purpose:** Apply a human resolution to a DisambiguationEvent: `merge`,
+`separate`, or `skip`.
+
+**When to call:** After a human inspects a pair and selects an action.
+
+**Input:**
+```json
+{ "event_id": "uuid", "resolution": "merge" | "separate" | "skip" }
+```
+
+**Output:** `{ "result": "...", "resolution": "merge|separate|skip" }` or an error.
+
+**Behavior notes:**
+- `merge`: picks a canonical concept (older by created_at), creates an
+  `Label` altLabel from the duplicate text, redirects common edges from the
+  duplicate to the canonical concept, archives the duplicate, and boosts the
+  canonical pathway_strength.
+- `separate`: creates a `DISTINCT_FROM` edge between the two concepts and
+  clears `confidence_low` on both so they no longer appear in open-loop lists.
+- `skip`: leaves the event `pending` for later review.
+
+**Integration test cases:**
+- T1: Invalid `resolution` returns an error message
+- T2: `merge` archives the duplicate and records an alt label
+- T3: `separate` creates `DISTINCT_FROM` and clears `confidence_low`
+- T4: `skip` leaves the event status unchanged
+
+### 26. `reload_domain_dictionary` — Reload Domain Dictionary
+
+**Purpose:** Load or refresh a workspace `domain_dictionary.yaml` into the knowledge graph,
+adding new canonical `Concept` nodes and `Label` altLabels idempotently.
+
+**When to call:** After adding or updating `.sidequests/domain_dictionary.yaml` in a workspace;
+can be called from a UI button or via an adapter command.
+
+**Input:**
+```json
+{ "workspace_root": "." }
+```
+
+**Output:**
+```json
+{ "status": "ok", "path": "/path/to/domain_dictionary.yaml", "concepts_created": 5, "concepts_skipped": 3, "alt_labels_added": 12, "total_entities": 8 }
+```
+
+**Behavior notes:**
+- Idempotent: re-running does not duplicate existing `Concept` or `Label` nodes.
+- Creates a `Concept` with `confidence=0.95` and a `Label` with `label_type` `preferred` for the canonical term.
+- Adds `Label` nodes with `label_type` `alternative` for alt labels and wires them with `HAS_ALT_LABEL`.
+
+**Integration test cases:**
+- T1: Missing file returns an error with `searched` array
+- T2: Valid file ingests expected counts and returns `status: ok`
+- T3: Re-running with the same file does not increase `concepts_created`
+
+
 ## Adapter Compatibility Matrix
 
 | Tool | claude_code | claude_desktop | codex | chatgpt_desktop | gemini_cli | OpenClaw TS |
@@ -675,6 +775,9 @@ These processes run inside the Brain Daemon without explicit tool calls.
 | recall_relevant_lessons | ✅ | ✅ | ✅ | ✅ | ✅ | ✅* |
 | get_anomalies | ✅ | ✅ | ✅ | ✅ | ✅ | ✅* |
 | get_openclaw_prompt | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| get_disambiguation_queue | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| resolve_disambiguation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| reload_domain_dictionary | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 **✅ = Supported in adapter pass-through list**
 **✅* = Registered in TypeScript but needs verification against TOOL_HANDLERS**
