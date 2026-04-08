@@ -24,8 +24,8 @@ def test_archetype_race_from_hud_and_reward():
     clf = ArchetypeClassifier()
     ctx = {
         "action_facts": [
-            {"fact_type": "deterministic_effect", "value_status": "valuable"},
-            {"fact_type": "deterministic_effect", "value_status": "valuable"},
+            {"action": "ACTION1", "fact_type": "deterministic_effect", "value_status": "valuable", "trend": {"direction": "up"}},
+            {"action": "ACTION2", "fact_type": "deterministic_effect", "value_status": "valuable", "trend": {"direction": "down"}},
         ],
         "hud_rows": [61, 62],
         "path_hypotheses": [],
@@ -401,8 +401,8 @@ def test_plan_chunker_graduates_to_directional_once_evidence_is_strong():
             "untested_count": 0,
         },
         "action_facts": [
-            {"fact_type": "deterministic_effect", "value_status": "valuable"},
-            {"fact_type": "deterministic_effect", "value_status": "valuable"},
+            {"action": "ACTION1", "fact_type": "deterministic_effect", "value_status": "valuable", "trend": {"direction": "up"}},
+            {"action": "ACTION2", "fact_type": "deterministic_effect", "value_status": "valuable", "trend": {"direction": "down"}},
         ],
         "path_hypotheses": [
             {"value_status": "tentative"},
@@ -457,7 +457,7 @@ def test_plan_chunker_keeps_exploration_when_evidence_is_weak():
             "top_two_low_value": False,
         },
         "action_facts": [
-            {"fact_type": "deterministic_effect", "value_status": "low_value"},
+            {"action": "ACTION1", "fact_type": "deterministic_effect", "value_status": "low_value", "trend": {"direction": "up"}},
         ],
         "path_hypotheses": [
             {"value_status": "tentative"},
@@ -510,7 +510,7 @@ def test_plan_chunker_stays_explore_when_contradiction_is_high():
             "top_two_low_value": True,
         },
         "action_facts": [
-            {"fact_type": "deterministic_effect", "value_status": "valuable"},
+            {"action": "ACTION1", "fact_type": "deterministic_effect", "value_status": "valuable", "trend": {"direction": "up"}},
         ],
         "path_hypotheses": [
             {"value_status": "valuable"},
@@ -528,9 +528,59 @@ def test_plan_chunker_stays_explore_when_contradiction_is_high():
         hypothesis_context=hypothesis_context,
     )
 
+    # B139: Even if loop is detected, we graduate if geometry is high confidence.
+    assert chunk.source == "directional"
+    assert "Move reach_goal toward goal" in chunk.description
+    assert chunk.graduation_score >= chunker.GRADUATION_THRESHOLD
+
+
+def test_plan_chunker_stays_explore_during_global_zero_progress_streak():
+    from agents.arc3.hypothesis import StateGraph, StateNode
+    from agents.arc3.solver import PlanChunker, VictoryCondition, VictoryType
+
+    graph = StateGraph()
+    graph.add_state(StateNode("h1", 1, {}, 1.0, []))
+    vc = VictoryCondition(condition_type=VictoryType.REACH_GOAL, description="reach exit")
+    chunker = PlanChunker()
+    object_roles = {
+        1: ObjectRole(
+            color_id=1,
+            role=RoleType.PLAYER,
+            confidence=0.90,
+            estimated_position={"row": 4.0, "col": 2.0},
+        ),
+        9: ObjectRole(
+            color_id=9,
+            role=RoleType.GOAL,
+            confidence=0.83,
+            estimated_position={"row": 1.0, "col": 2.0},
+        ),
+    }
+    hypothesis_context = {
+        "action_coverage": {
+            "initial_exploration_complete": True,
+            "tested_count": 4,
+            "untested_count": 0,
+        },
+        "action_facts": [],
+        "path_hypotheses": [],
+        "consecutive_zero_reward_steps": 10,
+        "steps_using_chunk": 10,
+    }
+
+    chunk = chunker.generate_chunk(
+        victory_condition=vc,
+        object_roles=object_roles,
+        state_graph=graph,
+        current_hash="h1",
+        available_actions=["ACTION1", "ACTION2", "ACTION3", "ACTION4"],
+        step=10,
+        hypothesis_context=hypothesis_context,
+    )
+
     assert chunk.source == "explore"
-    assert "loop detected" in chunk.graduation_reason
     assert chunk.graduation_score < chunker.GRADUATION_THRESHOLD
+    assert "stay explore" in chunk.graduation_reason
 
 
 @pytest.mark.asyncio
@@ -574,7 +624,7 @@ async def test_solve_engine_strategy_summary_surfaces_graduation_reason():
     ctx = {
         "last_transition_effect": {"meaningful_change_score": 0.8, "reward_signal": 0.0},
         "action_facts": [
-            {"fact_type": "deterministic_effect", "value_status": "valuable"},
+            {"action": "ACTION1", "fact_type": "deterministic_effect", "value_status": "valuable", "trend": {"direction": "up"}},
         ],
         "hud_rows": [],
         "path_hypotheses": [
@@ -601,6 +651,85 @@ async def test_solve_engine_strategy_summary_surfaces_graduation_reason():
     assert "graduate directional" in result.strategy_summary
     assert result.active_chunk is not None
     assert result.active_chunk.graduation_reason
+
+
+@pytest.mark.asyncio
+async def test_solve_engine_strategy_summary_reflects_b142_reevaluation():
+    from agents.arc3.solver import SolveEngine, VictoryCondition, VictoryType, ObjectRole, PlanChunk
+
+    brain = AsyncMock()
+    brain.recall_plans.return_value = {"plans": []}
+    brain.recall_relevant_lessons.return_value = {"lessons": []}
+    brain.analogical_search.return_value = {"results": []}
+    brain.register_plan.return_value = {"plan_id": "p-summary"}
+    brain.report_outcome.return_value = {"status": "ok"}
+
+    llm = AsyncMock()
+    engine = SolveEngine(brain, llm, "s1")
+    engine._archetype = GameArchetype.SPACE
+    engine._archetype_confidence = 0.8
+    engine._archetype_locked = True
+    engine._victory_condition = VictoryCondition(
+        condition_type=VictoryType.REACH_GOAL, confidence=0.9, description="reach exit"
+    )
+    engine._object_roles = {
+        1: ObjectRole(
+            color_id=1,
+            role=RoleType.PLAYER,
+            confidence=0.9,
+            estimated_position={"row": 4.0, "col": 2.0},
+        ),
+        9: ObjectRole(
+            color_id=9,
+            role=RoleType.GOAL,
+            confidence=0.86,
+            estimated_position={"row": 1.0, "col": 2.0},
+        ),
+    }
+    engine.role_mapper.update = MagicMock(return_value={})
+    engine._active_chunk = PlanChunk(
+        description="Test directional chunk",
+        estimated_actions=["ACTION1", "ACTION1", "ACTION1"],
+        success_condition="reduce distance to goal object",
+        source="directional",
+        graduation_score=0.87,
+        graduation_reason="graduate directional: score=0.87 >= 0.72",
+        graduation_components={"evidence_score": 0.1},
+    )
+    engine._active_chunk.progress_score = 0.0
+    engine._active_chunk.steps_executed = 5
+    engine.dissonance_detector._zero_progress_streak = 2
+
+    from agents.arc3.hypothesis import StateGraph
+
+    graph = StateGraph()
+    ctx = {
+        "last_transition_effect": {"meaningful_change_score": 0.0, "reward_signal": 0.0},
+        "action_facts": [],
+        "hud_rows": [],
+        "path_hypotheses": [],
+        "action_coverage": {
+            "initial_exploration_complete": False,
+            "tested_count": 2,
+            "untested_count": 2,
+        },
+        "current_state_hash": "h1",
+    }
+    obs = {
+        "colors": [{"value": 1, "count": 1}, {"value": 9, "count": 1}],
+        "available_actions": ["ACTION1", "ACTION2", "ACTION3", "ACTION4"],
+        "task_id": "t1",
+        "dataset_id": "d1",
+        "grid": [[0, 0], [0, 1]],
+    }
+
+    result = await engine.solve(obs, ctx, step=8, state_graph=graph, current_state_hash="h1")
+
+    assert result.dissonance_detected is True
+    assert result.active_chunk is not None
+    assert result.active_chunk.graduation_score < 0.5
+    assert "stay explore" in result.active_chunk.graduation_reason
+    assert f"score={result.active_chunk.graduation_score:.2f}" in result.strategy_summary
 
 
 # ── SolveEngine integration ──────────────────────────────────────────
@@ -916,6 +1045,35 @@ async def test_solve_engine_replaces_stale_goal_with_stronger_new_goal():
     assert result.object_roles[9].role == RoleType.DECORATION
     assert "demoted stale goal" in result.strategy_summary
     assert "PRIMARY ROLES: player=15, goal=12" in result.strategy_summary
+
+
+def test_merge_persistent_roles_preserves_bootstrap_player_against_unknown_refresh():
+    engine = SolveEngine(AsyncMock(), AsyncMock(), "s1")
+    engine._object_roles = {
+        5: ObjectRole(
+            color_id=5,
+            role=RoleType.PLAYER,
+            confidence=0.45,
+            evidence_steps=[0],
+            estimated_position={"row": 0.0, "col": 2.0},
+        )
+    }
+
+    notes = engine._merge_persistent_roles(
+        {
+            5: ObjectRole(
+                color_id=5,
+                role=RoleType.UNKNOWN,
+                confidence=0.5,
+                evidence_steps=[1],
+            )
+        },
+        step=1,
+    )
+
+    assert engine._object_roles[5].role == RoleType.PLAYER
+    assert engine._object_roles[5].estimated_position == {"row": 0.0, "col": 2.0}
+    assert any("ignored unknown" in note for note in notes)
 
 
 def test_merge_persistent_roles_enforces_single_primary_player_and_goal():

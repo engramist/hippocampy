@@ -7,50 +7,54 @@ from agents.arc3.hypothesis import HypothesisManager
 def mgr():
     return HypothesisManager(MagicMock(), "session1")
 
-def test_promotion_deterministic_effect(mgr):
+@pytest.mark.asyncio
+async def test_promotion_deterministic_effect(mgr):
     """AC: Repeated operator evidence can create a durable action fact - deterministic case."""
     # Test that repeated consistent effect promotes to deterministic_effect
     # MIN_EVIDENCE is 3
-    mgr.observe([[[1, 1]]], None, 1, ["A1"], {})
-    mgr.observe([[[1, 2, 2, 2, 2, 2, 2, 2, 2, 2]]], "A1", 2, ["A1"], {}, transition_meta={"reward": 1.0, "state_after": "STATE_2"})
-    mgr.observe([[[1, 3, 3, 3, 3, 3, 3, 3, 3, 3]]], "A1", 3, ["A1"], {}, transition_meta={"reward": 1.0, "state_after": "STATE_3"})
-    res = mgr.observe([[[1, 4, 4, 4, 4, 4, 4, 4, 4, 4]]], "A1", 4, ["A1"], {}, transition_meta={"reward": 1.0, "state_after": "STATE_4"})
+    await mgr.observe([[[1, 1]]], None, 1, ["A1"], {})
+    await mgr.observe([[[1, 2, 2, 2, 2, 2, 2, 2, 2, 2]]], "A1", 2, ["A1"], {}, transition_meta={"reward": 1.0, "state_after": "STATE_2"})
+    await mgr.observe([[[1, 3, 3, 3, 3, 3, 3, 3, 3, 3]]], "A1", 3, ["A1"], {}, transition_meta={"reward": 1.0, "state_after": "STATE_3"})
+    res = await mgr.observe([[[1, 4, 4, 4, 4, 4, 4, 4, 4, 4]]], "A1", 4, ["A1"], {}, transition_meta={"reward": 1.0, "state_after": "STATE_4"})
     
     fact = next(f for f in res["action_facts"] if f["action"] == "A1")
     assert fact["fact_type"] == "deterministic_effect"
     assert "deterministic effect" in fact["description"]
 
-def test_promotion_blocked_action(mgr):
+@pytest.mark.asyncio
+async def test_promotion_blocked_action(mgr):
     """AC: Repeated operator evidence can create a durable action fact - blocked case."""
-    mgr.observe([[[1, 1]]], None, 1, ["A1"], {})
-    mgr.observe([[[1, 1]]], "A1", 2, ["A1"], {}, transition_meta={"reward": 0.0})
-    mgr.observe([[[1, 1]]], "A1", 3, ["A1"], {}, transition_meta={"reward": 0.0})
-    res = mgr.observe([[[1, 1]]], "A1", 4, ["A1"], {}, transition_meta={"reward": 0.0})
+    await mgr.observe([[[1, 1]]], None, 1, ["A1"], {})
+    await mgr.observe([[[1, 1]]], "A1", 2, ["A1"], {}, transition_meta={"reward": 0.0})
+    await mgr.observe([[[1, 1]]], "A1", 3, ["A1"], {}, transition_meta={"reward": 0.0})
+    res = await mgr.observe([[[1, 1]]], "A1", 4, ["A1"], {}, transition_meta={"reward": 0.0})
     
     fact = next(f for f in res["action_facts"] if f["action"] == "A1")
     assert fact["fact_type"] == "blocked"
     assert "is blocked" in fact["description"]
 
-def test_promotion_loop_action(mgr):
+@pytest.mark.asyncio
+async def test_promotion_loop_action(mgr):
     """AC: Repeated operator evidence can create a durable action fact - loop case."""
-    mgr.observe([[[1]]], None, 1, ["A1"], {})
-    mgr.observe([[[2]]], "A1", 2, ["A1"], {}, transition_meta={"reward": 0.0})
-    res = mgr.observe([[[1]]], "A1", 3, ["A1"], {}, transition_meta={"reward": 0.0})
+    await mgr.observe([[[1]]], None, 1, ["A1"], {})
+    await mgr.observe([[[2]]], "A1", 2, ["A1"], {}, transition_meta={"reward": 0.0})
+    res = await mgr.observe([[[1]]], "A1", 3, ["A1"], {}, transition_meta={"reward": 0.0})
     
     fact = next(f for f in res["action_facts"] if f["action"] == "A1")
     assert fact["fact_type"] == "loop"
     assert "loop" in fact["description"]
 
-def test_consistent_low_value_not_successful(mgr):
+@pytest.mark.asyncio
+async def test_consistent_low_value_not_successful(mgr):
     """AC: Consistent-but-low-value actions are not marked as successful strategies."""
     # "low_value" label from _evaluate_meaningful_change usually means score < 0.35
     # Let's simulate localized change without reward or new state
-    mgr.observe([[[1, 1, 1, 1]]], None, 1, ["A1"], {})
+    await mgr.observe([[[1, 1, 1, 1]]], None, 1, ["A1"], {})
     # Revisit same state with small change
-    mgr.observe([[[1, 1, 1, 2]]], "A1", 2, ["A1"], {}, transition_meta={"reward": 0.0})
+    await mgr.observe([[[1, 1, 1, 2]]], "A1", 2, ["A1"], {}, transition_meta={"reward": 0.0})
     # Another small change, still low value
-    mgr.observe([[[1, 1, 2, 2]]], "A1", 3, ["A1"], {}, transition_meta={"reward": 0.0})
-    res = mgr.observe([[[1, 2, 2, 2]]], "A1", 4, ["A1"], {}, transition_meta={"reward": 0.0})
+    await mgr.observe([[[1, 1, 2, 2]]], "A1", 3, ["A1"], {}, transition_meta={"reward": 0.0})
+    res = await mgr.observe([[[1, 2, 2, 2]]], "A1", 4, ["A1"], {}, transition_meta={"reward": 0.0})
     
     fact = next(f for f in res["action_facts"] if f["action"] == "A1")
     assert fact["fact_type"] == "low_value"
@@ -58,11 +62,12 @@ def test_consistent_low_value_not_successful(mgr):
     assert "strong_progress" not in fact["description"]
     assert "valuable" not in fact["value_status"]
 
-def test_action_facts_separate_from_path_hypotheses(mgr):
+@pytest.mark.asyncio
+async def test_action_facts_separate_from_path_hypotheses(mgr):
     """AC: Action facts are stored and described separately from path hypotheses."""
-    mgr.observe([[[1, 1]]], None, 1, ["A1", "A2"], {})
-    mgr.observe([[[1, 2]]], "A1", 2, ["A1", "A2"], {}, transition_meta={"reward": 0.0})
-    res = mgr.observe([[[2, 2]]], "A2", 3, ["A1", "A2"], {}, transition_meta={"reward": 0.0})
+    await mgr.observe([[[1, 1]]], None, 1, ["A1", "A2"], {})
+    await mgr.observe([[[1, 2]]], "A1", 2, ["A1", "A2"], {}, transition_meta={"reward": 0.0})
+    res = await mgr.observe([[[2, 2]]], "A2", 3, ["A1", "A2"], {}, transition_meta={"reward": 0.0})
     
     assert "action_facts" in res
     assert "path_hypotheses" in res
@@ -72,13 +77,14 @@ def test_action_facts_separate_from_path_hypotheses(mgr):
     assert any(f["action"] == "A1" for f in res["action_facts"])
     assert any(f["action"] == "A2" for f in res["action_facts"])
 
-def test_no_op_fact_promotion(mgr):
+@pytest.mark.asyncio
+async def test_no_op_fact_promotion(mgr):
     """Threshold for no-op / blocked action."""
     # Specific test for no-op (zero pixels changed)
-    mgr.observe([[[7]]], None, 1, ["A1"], {})
-    mgr.observe([[[7]]], "A1", 2, ["A1"], {}, transition_meta={"reward": 0.0})
-    mgr.observe([[[7]]], "A1", 3, ["A1"], {}, transition_meta={"reward": 0.0})
-    res = mgr.observe([[[7]]], "A1", 4, ["A1"], {}, transition_meta={"reward": 0.0})
+    await mgr.observe([[[7]]], None, 1, ["A1"], {})
+    await mgr.observe([[[7]]], "A1", 2, ["A1"], {}, transition_meta={"reward": 0.0})
+    await mgr.observe([[[7]]], "A1", 3, ["A1"], {}, transition_meta={"reward": 0.0})
+    res = await mgr.observe([[[7]]], "A1", 4, ["A1"], {}, transition_meta={"reward": 0.0})
     
     fact = next(f for f in res["action_facts"] if f["action"] == "A1")
     assert fact["fact_type"] == "blocked"

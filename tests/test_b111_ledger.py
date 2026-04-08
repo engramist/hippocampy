@@ -31,6 +31,7 @@ async def test_runner_ledger_aggregation():
     harness.mock_api = True
     
     brain = MagicMock()
+    brain.db = MagicMock()
     brain.branch_quest = AsyncMock(return_value={"side_quest_id": "sq1"})
     brain.notify_turn = AsyncMock(return_value={"status": "ok"})
     brain.current_truth = AsyncMock(return_value={"results": []})
@@ -54,7 +55,14 @@ async def test_runner_ledger_aggregation():
     task.task_id = "t1"
     task.game_id = "g1"
     
-    with patch("agents.arc3.runner.CheckpointManager") as mock_mgr_cls:
+    with patch("agents.arc3.runner.CheckpointManager") as mock_mgr_cls, \
+         patch("agents.arc3.entity_graph.EntityGraphBuilder") as mock_eg_cls:
+        
+        mock_eg = mock_eg_cls.return_value
+        mock_eg.bootstrap = AsyncMock(return_value={"n_entities": 0})
+        mock_eg.record_action_effect = AsyncMock()
+        mock_eg.get_entity_roles = AsyncMock(return_value={})
+        
         mock_mgr = mock_mgr_cls.return_value
         mock_checkpoint = MagicMock()
         mock_checkpoint.tasks = {}

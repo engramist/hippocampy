@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
-from agents.arc3.prompts import VICTORY_HYPOTHESIS_TEMPLATE
+from agents.arc3.prompts import VICTORY_HYPOTHESIS_TEMPLATE, GAME_RULE_HYPOTHESIS_TEMPLATE
+from agents.arc3.grid_analysis import grid_characteristic_summary, GridDiffEngine, PatternRegion, RegionComparison
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ class RoleType(str, Enum):
     WALL        = "wall"
     COLLECTIBLE = "collectible"
     EXIT        = "exit"
+    INTERMEDIATE = "intermediate"  # B167: interaction targets
     DECORATION  = "decoration"
     UNKNOWN     = "unknown"
 
@@ -70,6 +72,18 @@ class VictoryCondition:
     confidence: float = 0.0
     evidence_steps: List[int] = field(default_factory=list)
     source: str = "unknown"                  # "recall_plans" | "llm" | "lesson"
+
+
+@dataclass
+class GameRuleHypothesis:
+    rule_description: str
+    action_semantics: Dict[str, str]
+    objective_description: str
+    level_strategy: str
+    confidence: float
+    evidence: List[str]          # which signals support this
+    contradictions: List[str]    # what doesn't fit
+    source: str                  # "level_analysis" | "llm" | "memory"
 
 
 @dataclass
@@ -106,6 +120,15 @@ class SolveContext:
     dissonance_reason: str = ""
     strategy_summary: str = ""
     chunk_ledger: List["ChunkLedgerEntry"] = field(default_factory=list)
+    # B151: Game rule hypotheses from solved levels
+    game_rule_hypotheses: List[GameRuleHypothesis] = field(default_factory=list)
+    # B144: Plateau-aware exploitation fields
+    plateau_mode: bool = False
+    plateau_reason: str = ""
+    plateau_activation_mode: str = "" # "direct", "sticky", or ""
+    plateau_locked_family: Optional[str] = None
+    ranked_action_families: List[str] = field(default_factory=list)
+    action_family_scores: Dict[str, float] = field(default_factory=dict)
 
 
 # ── Archetype Classifier ──────────────────────────────────────────────
@@ -122,8 +145,8 @@ class ArchetypeClassifier:
       5. Lock when composite confidence > LOCK_THRESHOLD.
     """
 
-    LOCK_THRESHOLD: float = 0.65
-    MIN_OBSERVATIONS: int = 5              # don't classify before seeing 5 frames
+    LOCK_THRESHOLD: float = 0.55
+    MIN_OBSERVATIONS: int = 2              # gain useful guidance by step 2, not step 5
     CONSISTENCY_BONUS: float = 0.04       # per-step bonus when same archetype wins consecutively
 
     def __init__(self) -> None:
@@ -131,6 +154,29 @@ class ArchetypeClassifier:
         self._signal_history: List[Dict[str, Any]] = []
         self._consecutive_best: GameArchetype = GameArchetype.UNKNOWN
         self._consecutive_count: int = 0
+
+    def fast_track_classify(self, grid_summary: Dict[str, Any]) -> tuple[GameArchetype, float]:
+        """Use bootstrap grid-analysis hints to avoid wasting the opening steps."""
+        if not grid_summary:
+            return GameArchetype.UNKNOWN, 0.0
+
+        n_regions = int(grid_summary.get("n_regions", 0) or 0)
+        region_sizes = [int(size) for size in grid_summary.get("region_sizes", [])]
+        colors = list(grid_summary.get("colors") or grid_summary.get("distinct_colors") or [])
+
+        if n_regions >= 3 and any(size < 20 for size in region_sizes):
+            return GameArchetype.SPACE, 0.4
+
+        if n_regions >= 5 and len(colors) >= 3:
+            return GameArchetype.SPACE, 0.3
+
+        if n_regions == 2 and region_sizes:
+            largest = max(region_sizes)
+            smallest = min(region_sizes)
+            if largest >= max(6, smallest * 3):
+                return GameArchetype.RACE, 0.35
+
+        return GameArchetype.UNKNOWN, 0.0
 
     def _extract_signals(self, hypothesis_context: Dict[str, Any]) -> Dict[str, Any]:
         """Pull archetype-relevant signals from HypothesisManager output."""
@@ -185,7 +231,23 @@ class ArchetypeClassifier:
         supply analogy_votes from analogical_search results.
         """
         self._observation_count += 1
+
+        bootstrap_summary = (hypothesis_context or {}).get("bootstrap_grid_analysis") or {}
+        fast_archetype, fast_confidence = self.fast_track_classify(bootstrap_summary)
+        if fast_archetype != GameArchetype.UNKNOWN:
+            if fast_archetype == self._consecutive_best:
+                self._consecutive_count += 1
+            else:
+                self._consecutive_best = fast_archetype
+                self._consecutive_count = 1
+
         if self._observation_count < self.MIN_OBSERVATIONS:
+            if fast_archetype != GameArchetype.UNKNOWN:
+                boosted_fast = min(
+                    fast_confidence + self.CONSISTENCY_BONUS * max(self._consecutive_count - 1, 0),
+                    0.6,
+                )
+                return fast_archetype, boosted_fast
             return GameArchetype.UNKNOWN, 0.0
 
         signals = self._extract_signals(hypothesis_context)
@@ -206,6 +268,8 @@ class ArchetypeClassifier:
             self._consecutive_best = best
             self._consecutive_count = 1
         boosted = min(best_score + self.CONSISTENCY_BONUS * (self._consecutive_count - 1), 0.95)
+        if fast_archetype != GameArchetype.UNKNOWN and fast_archetype == best:
+            boosted = max(boosted, fast_confidence)
         return best, boosted
 
     def apply_analogy_votes(
@@ -591,6 +655,25 @@ class ObjectRoleMapper:
                 self._stationary_steps.setdefault(color_id, 0)
             self._centroid_history.setdefault(color_id, []).append(centroid)
 
+        # B167: Intermediate detection
+        # Small stationary objects that aren't background/wall/goal/player
+        # and are potentially interactive.
+        for color_id, role in roles.items():
+            if role.role != RoleType.UNKNOWN:
+                continue
+            centroid = curr_centroids.get(color_id)
+            if centroid is None or color_id == self.BACKGROUND_COLOR:
+                continue
+            
+            count = int(centroid.get("count", 0.0))
+            if 2 <= count <= 20:
+                # Potential intermediate candidate
+                stationary_steps = self._stationary_steps.get(color_id, 0)
+                if stationary_steps >= 1:
+                    role.role = RoleType.INTERMEDIATE
+                    role.confidence = 0.45
+                    role.estimated_position = {"row": centroid["row"], "col": centroid["col"]}
+
         # WALL detection: require multiple independent signals on real grids.
         for color_id, role in roles.items():
             centroid = curr_centroids.get(color_id)
@@ -785,32 +868,39 @@ class ObjectRoleMapper:
     def seed_bootstrap_roles(self, observation: Dict[str, Any]) -> Dict[int, ObjectRole]:
         """B119: Initial entity discovery from step 0 frame.
         PLAYER: smallest moving color (heuristic: smallest non-zero color).
-        GOAL: color furthest from player (heuristic: color closest to exit/bottom-right).
+        GOAL: larger contrasting color candidate.
+        Include centroid positions when a grid is present so early geometry-based
+        policies can still operate before strong motion evidence arrives.
         """
         roles: Dict[int, ObjectRole] = {}
         colors = observation.get("colors") or []
         if not colors:
             return roles
 
-        # Filter out background (0)
         non_bg = [c for c in colors if (c.get("value") if isinstance(c, dict) else c) != 0]
         if not non_bg:
             return roles
 
-        # Sort by pixel count ascending
+        centroids = _compute_centroids(observation.get("grid") or []) if observation.get("grid") else {}
+
+        def _bootstrap_position(color_id: int) -> Optional[Dict[str, float]]:
+            centroid = centroids.get(color_id)
+            if not centroid:
+                return None
+            return {"row": float(centroid["row"]), "col": float(centroid["col"])}
+
         sorted_by_size = sorted(non_bg, key=lambda c: c.get("count") if isinstance(c, dict) else 0)
-        
-        # Player candidate: the smallest object (often the character)
+
         player_color_item = sorted_by_size[0]
         p_id = player_color_item.get("value") if isinstance(player_color_item, dict) else player_color_item
         roles[p_id] = ObjectRole(
             color_id=p_id,
             role=RoleType.PLAYER,
-            confidence=0.45,  # Low confidence bootstrap
-            evidence_steps=[0]
+            confidence=0.45,
+            evidence_steps=[0],
+            estimated_position=_bootstrap_position(p_id),
         )
 
-        # Goal candidate: if there are other colors, pick one as a candidate
         if len(sorted_by_size) > 1:
             goal_color_item = sorted_by_size[-1]
             g_id = goal_color_item.get("value") if isinstance(goal_color_item, dict) else goal_color_item
@@ -819,52 +909,92 @@ class ObjectRoleMapper:
                     color_id=g_id,
                     role=RoleType.GOAL,
                     confidence=0.35,
-                    evidence_steps=[0]
+                    evidence_steps=[0],
+                    estimated_position=_bootstrap_position(g_id),
                 )
 
         return roles
 
-    def seed_bootstrap_roles(self, observation: Dict[str, Any]) -> Dict[int, ObjectRole]:
-        """B119: Initial entity discovery from step 0 frame.
-        PLAYER: smallest moving color (heuristic: smallest non-zero color).
-        GOAL: color furthest from player (heuristic: color closest to exit/bottom-right).
-        """
-        roles: Dict[int, ObjectRole] = {}
-        colors = observation.get("colors") or []
-        if not colors:
-            return roles
 
-        # Filter out background (0)
-        non_bg = [c for c in colors if (c.get("value") if isinstance(c, dict) else c) != 0]
-        if not non_bg:
-            return roles
+# ── Pattern Match Tracker ─────────────────────────────────────────────
 
-        # Sort by pixel count ascending
-        sorted_by_size = sorted(non_bg, key=lambda c: c.get("count") if isinstance(c, dict) else 0)
-        
-        # Player candidate: the smallest object (often the character)
-        player_color_item = sorted_by_size[0]
-        p_id = player_color_item.get("value") if isinstance(player_color_item, dict) else player_color_item
-        roles[p_id] = ObjectRole(
-            color_id=p_id,
-            role=RoleType.PLAYER,
-            confidence=0.45,  # Low confidence bootstrap
-            evidence_steps=[0]
-        )
+class PatternMatchTracker:
+    """B167: Tracks whether the goal region is converging toward the reference pattern."""
 
-        # Goal candidate: if there are other colors, pick one as a candidate
-        if len(sorted_by_size) > 1:
-            goal_color_item = sorted_by_size[-1]
-            g_id = goal_color_item.get("value") if isinstance(goal_color_item, dict) else goal_color_item
-            if g_id != p_id:
-                roles[g_id] = ObjectRole(
-                    color_id=g_id,
-                    role=RoleType.GOAL,
-                    confidence=0.35,
-                    evidence_steps=[0]
+    def __init__(self):
+        self._engine = GridDiffEngine()
+        self.reference_region: Optional[PatternRegion] = None
+        self.goal_region: Optional[PatternRegion] = None
+        self.similarity_history: List[float] = []
+        self.phase: str = "discover"  # "discover" → "intermediate" → "finish"
+
+    def update(self, grid: List[List[int]], step: int) -> dict:
+        """Called each step. Returns phase and similarity info."""
+        if not grid:
+            return {"phase": self.phase, "similarity": 0.0}
+
+        # 1. If reference/goal not yet identified, try to find them
+        if self.reference_region is None or self.goal_region is None:
+            regions = self._engine.extract_pattern_regions(grid)
+            pair = self._engine.find_reference_goal_pair(regions, len(grid), len(grid[0]))
+            if pair:
+                self.reference_region, self.goal_region = pair
+                logger.info(
+                    "[B167] Found reference/goal pair: ref=%s, goal=%s",
+                    self.reference_region.location_hint,
+                    self.goal_region.location_hint,
                 )
 
-        return roles
+        # 2. If both known, compare current goal state to reference
+        if self.reference_region and self.goal_region:
+            # Re-extract goal region pattern from current grid (it may have changed)
+            bb = self.goal_region.bounding_box
+            current_goal_pattern = self._engine.crop_region(grid, bb)
+            
+            # Use current goal pattern to build a temporary PatternRegion for comparison
+            current_region = PatternRegion(
+                bounding_box=bb,
+                pattern=current_goal_pattern,
+                center=self.goal_region.center,
+                color_palette=self.goal_region.color_palette,
+                size=self.goal_region.size,
+                location_hint=self.goal_region.location_hint
+            )
+            
+            comparison = self._engine.compare_regions(current_region, self.reference_region)
+            self.similarity_history.append(comparison.similarity)
+
+            # Phase logic
+            if comparison.similarity >= 0.9:
+                self.phase = "finish"  # Goal matches reference — go touch it
+            elif len(self.similarity_history) > 1 and comparison.similarity > self.similarity_history[0]:
+                self.phase = "intermediate"  # Making progress
+            else:
+                if self.phase == "finish":
+                    self.phase = "intermediate"
+                elif self.phase == "discover":
+                    self.phase = "intermediate"
+
+            return {
+                "phase": self.phase,
+                "similarity": comparison.similarity,
+                "similarity_trend": self._trend(),
+                "reference_location": self.reference_region.location_hint,
+                "goal_location": self.goal_region.location_hint,
+                "exact_match": comparison.exact_match,
+                "description": comparison.description,
+            }
+
+        return {"phase": "discover", "similarity": 0.0}
+
+    def _trend(self) -> str:
+        if len(self.similarity_history) < 2:
+            return "stable"
+        if self.similarity_history[-1] > self.similarity_history[-2]:
+            return "improving"
+        elif self.similarity_history[-1] < self.similarity_history[-2]:
+            return "regressing"
+        return "stable"
 
 
 # ── Victory Hypothesizer ──────────────────────────────────────────────
@@ -983,6 +1113,121 @@ class VictoryHypothesizer:
             )
 
 
+# ── Game Rule Hypothesizer ──────────────────────────────────────────
+
+class GameRuleHypothesizer:
+    """Generates game rule hypotheses from solved level data."""
+
+    async def hypothesize(
+        self,
+        level_pattern: "LevelPattern",
+        solved_levels: List[Dict],
+        llm_client: Any,
+        memory_hypotheses: Optional[List[GameRuleHypothesis]] = None,
+    ) -> List[GameRuleHypothesis]:
+        """Generate ranked game rule hypotheses from solved levels.
+
+        1. Check if deterministic analysis alone gives high-confidence answer
+        2. If not, use LLM with structured evidence from solved levels
+        3. Merge with memory-retrieved hypotheses (B155)
+        """
+        hypotheses = []
+
+        # Fast path: if action effects are very consistent, skip LLM
+        if level_pattern.confidence > 0.9:
+            hypotheses.append(self._hypothesis_from_pattern(level_pattern))
+
+        # LLM path: interpret the evidence
+        if not hypotheses:
+            level_summaries = self._format_solved_levels(solved_levels)
+            action_effects = self._format_action_effects(level_pattern)
+            
+            from agents.arc3.prompts import GAME_RULE_HYPOTHESIS_TEMPLATE
+            prompt = GAME_RULE_HYPOTHESIS_TEMPLATE.format(
+                total_levels=solved_levels[-1].get("win_levels", "?") if solved_levels else "?",
+                n_solved=len(solved_levels),
+                level_summaries=level_summaries,
+                action_effects=action_effects,
+                cross_level_pattern=level_pattern.game_rule_summary,
+            )
+
+            try:
+                # B132: Mental sandbox uses chat() with response_format
+                resp = await llm_client.chat(
+                    messages=[
+                        {"role": "system", "content": "You are a logic engine for discovering game rules."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    response_format={"type": "json_object"}
+                )
+                
+                content = resp.content if hasattr(resp, 'content') else str(resp)
+                data = json.loads(content)
+                
+                # Allow for single object or list
+                hyp_list = data.get("hypotheses", [data]) if isinstance(data, dict) else data
+                if not isinstance(hyp_list, list):
+                    hyp_list = [data]
+                
+                for h in hyp_list:
+                    hypotheses.append(GameRuleHypothesis(
+                        rule_description=h.get("rule_description", ""),
+                        action_semantics=h.get("action_semantics", {}),
+                        objective_description=h.get("objective_description", ""),
+                        level_strategy=h.get("level_strategy", ""),
+                        confidence=float(h.get("confidence", 0.5)),
+                        evidence=[f"Solved {len(solved_levels)} levels"],
+                        contradictions=[],
+                        source="llm"
+                    ))
+            except Exception as exc:
+                logger.warning("B151: GameRuleHypothesizer LLM failed: %s", exc)
+
+        # Merge memory hypotheses (from B155)
+        if memory_hypotheses:
+            hypotheses.extend(memory_hypotheses)
+
+        hypotheses.sort(key=lambda h: h.confidence, reverse=True)
+        return hypotheses[:3]
+
+    def _hypothesis_from_pattern(self, pattern: "LevelPattern") -> GameRuleHypothesis:
+        """Convert a high-confidence LevelPattern to a hypothesis."""
+        return GameRuleHypothesis(
+            rule_description=pattern.game_rule_summary,
+            action_semantics=pattern.consistent_action_effects,
+            objective_description="Match the pattern suggested by level progression",
+            level_strategy="Apply known action effects to reach the goal state",
+            confidence=pattern.confidence,
+            evidence=[f"Cross-level analysis: {pattern.game_rule_summary}"],
+            contradictions=[],
+            source="level_analysis",
+        )
+
+    def _format_solved_levels(self, solved_levels: List[Dict]) -> str:
+        """Format solved level data for the LLM prompt."""
+        lines = []
+        for level in solved_levels:
+            n_actions = len(level.get("actions", []))
+            action_seq = " → ".join(level.get("actions", [])[:10])
+            if n_actions > 10:
+                action_seq += f" ... ({n_actions} total)"
+            lines.append(
+                f"Level {level.get('level', '?')}: "
+                f"{n_actions} actions to solve. "
+                f"Sequence: {action_seq}"
+            )
+        return "\n".join(lines)
+
+    def _format_action_effects(self, pattern: "LevelPattern") -> str:
+        """Format observed action effects."""
+        if not pattern.consistent_action_effects:
+            return "No consistent action effects observed yet."
+        lines = []
+        for action_id, effect in pattern.consistent_action_effects.items():
+            lines.append(f"  {action_id}: {effect}")
+        return "\n".join(lines)
+
+
 # ── Dissonance Detector ───────────────────────────────────────────────
 
 class DissonanceDetector:
@@ -994,9 +1239,9 @@ class DissonanceDetector:
       - Active chunk exceeded MAX_CHUNK_STEPS without progress_score increase
     """
 
-    STALL_THRESHOLD: int = 6
-    REWARD_STALL_THRESHOLD: int = 8
-    MAX_CHUNK_STEPS: int = 15
+    STALL_THRESHOLD: int = 2
+    REWARD_STALL_THRESHOLD: int = 3
+    MAX_CHUNK_STEPS: int = 4
 
     def __init__(self) -> None:
         self._zero_progress_streak: int = 0
@@ -1069,6 +1314,12 @@ class PlanChunker:
         consecutive_zero_reward_steps: int = 0,
     ) -> Dict[str, Any]:
         context = hypothesis_context or {}
+        chunk_progress = max(chunk_progress, float(context.get("chunk_progress", 0.0) or 0.0))
+        steps_using_chunk = max(steps_using_chunk, int(context.get("steps_using_chunk", 0) or 0))
+        consecutive_zero_reward_steps = max(
+            consecutive_zero_reward_steps,
+            int(context.get("consecutive_zero_reward_steps", 0) or 0),
+        )
         action_coverage = context.get("action_coverage") or {}
         available_total = max(len(available_actions), 1)
         tested_count = int(action_coverage.get("tested_count", 0))
@@ -1319,12 +1570,9 @@ class PlanChunker:
                 scored_actions = []
                 for aid in available_actions:
                     vec = action_map.get(aid)
+                    # B154: Only use empirically observed action vectors, never assume
                     if not vec:
-                        # Standard mapping fallback for ACTION1-4 if facts are missing
-                        if aid == "ACTION1": vec = (-1.0, 0.0) # Up
-                        elif aid == "ACTION2": vec = (1.0, 0.0) # Down
-                        elif aid == "ACTION3": vec = (0.0, -1.0) # Left
-                        elif aid == "ACTION4": vec = (0.0, 1.0) # Right
+                        continue
                     
                     if vec:
                         # Score by dot product (how much does this move us TOWARD the goal?)
@@ -1403,30 +1651,40 @@ class DecisionGuard:
                 "suggested_action": available_actions[0] if available_actions else None,
             }
 
-        # 1. Loop Check: Avoid repeating moves that produced NO_CHANGE repeatedly
+        # 1. Loop Check: Avoid repeating moves that produced ZERO VISUAL CHANGE.
+        # NOTE: reward==0 is NOT a useful signal — in ARC-AGI-3, reward is binary
+        # (0 until you win a level). Use frame_delta.n_cells_changed instead.
         if step_history:
-            # Single-action repetition check
-            recent_no_reward = [
+            # Single-action repetition check: same action with zero pixel change
+            recent_no_effect = [
                 s for s in step_history[-3:]
-                if s.get("action_id") == action_id and s.get("reward") == 0.0
+                if s.get("action_id") == action_id
+                and s.get("frame_delta", {}).get("n_cells_changed", -1) == 0
             ]
-            if len(recent_no_reward) >= 2:
+            if len(recent_no_effect) >= 2:
                 return {
                     "status": "warned",
-                    "reason": f"Action {action_id} failed to produce reward in {len(recent_no_reward)} recent attempts.",
+                    "reason": f"Action {action_id} produced zero pixel change in {len(recent_no_effect)} recent attempts.",
                     "suggested_action": None,
                 }
-            
+
             # B139: Multi-action churn check (global stall)
-            # If the last 5 steps across DIFFERENT actions all yielded 0 reward, 
-            # we are likely stuck in a plateau.
-            global_no_reward = [s for s in step_history[-5:] if s.get("reward") == 0.0]
-            if len(global_no_reward) >= 5:
-                # If we are stuck globally, and this action was ALREADY tried recently with 0 reward, block it.
-                if any(s.get("action_id") == action_id and s.get("reward") == 0.0 for s in step_history[-10:]):
+            # If the last 5 steps across DIFFERENT actions all produced zero pixel change,
+            # the agent is truly stuck (e.g. boxed in).
+            global_no_effect = [
+                s for s in step_history[-5:]
+                if s.get("frame_delta", {}).get("n_cells_changed", -1) == 0
+            ]
+            if len(global_no_effect) >= 5:
+                # Truly stuck — block actions already proven to have zero effect.
+                if any(
+                    s.get("action_id") == action_id
+                    and s.get("frame_delta", {}).get("n_cells_changed", -1) == 0
+                    for s in step_history[-10:]
+                ):
                     return {
                         "status": "blocked",
-                        "reason": f"Global plateau detected (5 steps zero reward); blocking already-failed {action_id}.",
+                        "reason": f"Global stall detected (5 steps zero pixel change); blocking zero-effect {action_id}.",
                         "suggested_action": None,
                     }
 
@@ -1484,6 +1742,7 @@ class SolveEngine:
         self.archetype_classifier = ArchetypeClassifier()
         self.role_mapper = ObjectRoleMapper()
         self.victory_hypothesizer = VictoryHypothesizer()
+        self.game_rule_hypothesizer = GameRuleHypothesizer()  # B151
         self.dissonance_detector = DissonanceDetector()
         self.plan_chunker = PlanChunker()
         self.decision_guard = DecisionGuard()
@@ -1501,6 +1760,23 @@ class SolveEngine:
         self._role_resolution_notes: List[str] = []
         self._last_registered_top_plan: Optional[Dict[str, Any]] = None
         self._last_registered_chunk_plan: Optional[Dict[str, Any]] = None
+        self._last_graduation_reevaluation: Dict[str, Any] = {}
+        self._plateau_locked_family: Optional[str] = None
+        self._plateau_active: bool = False
+        self._game_rule_hypotheses: List[GameRuleHypothesis] = [] # B151
+        # B169: KuzuDB role source of truth
+        self._entity_graph: Optional["EntityGraphBuilder"] = None
+        self._pending_role_writes: List[tuple[int, ObjectRole]] = []
+        self._current_level: int = 0
+        # B172: VictoryCondition persistence
+        self._pending_vc_write: Optional[VictoryCondition] = None
+        self._task_id: Optional[str] = None
+        # B173: GameRuleHypothesis persistence
+        self._pending_grh_writes: List[GameRuleHypothesis] = []
+        # B174: ChunkExecution persistence (seq, entry, chunk) queued on completion/failure
+        self._pending_chunk_writes: List[tuple[int, ChunkLedgerEntry, PlanChunk]] = []
+        # B176: Plateau exploration state
+        self._plateau_lock_duration: int = 0
 
     def _trace(
         self,
@@ -1522,9 +1798,332 @@ class SolveEngine:
         if self._emit_trace is not None:
             self._emit_trace(event_type, operation, details or {}, result, elapsed_ms)
 
+    def _recent_zero_reward_streak(self) -> int:
+        """Track global zero-reward momentum across chunk resets."""
+        streak = 0
+        for reward in reversed(self._reward_history):
+            if reward <= 0.0:
+                streak += 1
+            else:
+                break
+        return streak
+
+    # ── B169: KuzuDB Role Source ───────────────────────────────────────
+
+    def _set_role(self, color_id: int, role: ObjectRole):
+        """Write role to cache and queue for KuzuDB persistence."""
+        self._object_roles[color_id] = role
+        if self._entity_graph:
+            self._pending_role_writes.append((color_id, role))
+
+    async def _flush_role_writes(self):
+        """Persist queued roles to KuzuDB. Called at end of solve()."""
+        if not self._entity_graph or not self._pending_role_writes:
+            return
+        
+        # Take a snapshot to avoid concurrent mutation issues
+        to_write = list(self._pending_role_writes)
+        self._pending_role_writes.clear()
+        
+        for color_id, role in to_write:
+            try:
+                await self._entity_graph.persist_role(
+                    color_id=color_id,
+                    role=role.role.value,
+                    confidence=role.confidence,
+                    position=role.estimated_position,
+                    level=self._current_level
+                )
+            except Exception as exc:
+                logger.warning("B169: Failed to persist role for color %d: %s", color_id, exc)
+
+    async def _sync_roles_from_db(self):
+        """Load roles from KuzuDB into the _object_roles cache. Authority is the graph."""
+        if not self._entity_graph:
+            return
+        
+        try:
+            db_roles = await self._entity_graph.load_all_roles(level=self._current_level)
+            if db_roles:
+                # Merge DB roles into cache. Higher confidence wins if we have un-flushed writes.
+                # But usually DB IS the authority.
+                for cid, role in db_roles.items():
+                    existing = self._object_roles.get(cid)
+                    if existing is None or role.confidence >= existing.confidence:
+                        self._object_roles[cid] = role
+        except Exception as exc:
+            logger.warning("B169: _sync_roles_from_db failed: %s", exc)
+
+    # ── B172: VictoryCondition Persistence ────────────────────────────
+
+    def _set_victory_condition(self, vc: VictoryCondition):
+        """Set victory condition and schedule KuzuDB persistence."""
+        self._victory_condition = vc
+        self._pending_vc_write = vc
+
+    async def _flush_victory_condition(self):
+        """Persist queued victory condition to KuzuDB."""
+        if not self._entity_graph:
+            # logger.debug("B172: No entity graph for flush")
+            return
+        if not self._pending_vc_write:
+            # logger.debug("B172: No pending VC write")
+            return
+        
+        vc = self._pending_vc_write
+        self._pending_vc_write = None
+        
+        cid = f"{self._task_id}_L{self._current_level}_vc"
+        tid = self._task_id
+        level = self._current_level
+        
+        try:
+            import datetime
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            
+            await self._entity_graph.db.execute_write(
+                """
+                MERGE (v:VictoryCondition {condition_id: $cid})
+                ON CREATE SET v.task_id = $tid, v.level = $level,
+                              v.condition_type = $ctype, v.description = $descr,
+                              v.target_color_id = $tcid, v.confidence = $conf,
+                              v.source = $src, v.evidence_steps = $steps,
+                              v.created_at = timestamp($now)
+                ON MATCH SET v.condition_type = $ctype, v.description = $descr,
+                             v.confidence = $conf, v.source = $src,
+                             v.evidence_steps = $steps, v.last_updated = timestamp($now)
+                """,
+                {
+                    "cid": cid, "tid": tid, "level": level,
+                    "ctype": vc.condition_type.value, "descr": vc.description,
+                    "tcid": vc.target_color_id if vc.target_color_id is not None else -1,
+                    "conf": float(vc.confidence), "src": vc.source,
+                    "steps": ",".join(str(s) for s in vc.evidence_steps),
+                    "now": now,
+                }
+            )
+            
+            # Step 5: Wire REQUIRES_ENTITY edges if target_color_id exists
+            if vc.target_color_id is not None:
+                entity_id = f"{tid}_L{level}_c{vc.target_color_id}"
+                await self._entity_graph.db.execute_write(
+                    """
+                    MATCH (v:VictoryCondition {condition_id: $cid}), (e:GridEntity {entity_id: $eid})
+                    MERGE (v)-[:REQUIRES_ENTITY {requirement: $req}]->(e)
+                    """,
+                    {"cid": cid, "eid": entity_id, "req": "target"}
+                )
+                
+        except Exception as exc:
+            logger.warning("B172: Failed to persist victory condition: %s", exc)
+
+    async def _load_victory_condition(self):
+        """Load the most confident victory condition for this task/level from KuzuDB."""
+        if not self._entity_graph or not self._task_id:
+            return
+        
+        try:
+            rows = await self._entity_graph.db.execute_read(
+                """
+                MATCH (v:VictoryCondition)
+                WHERE v.task_id = $tid AND v.level = $level
+                RETURN v.condition_type, v.description, v.target_color_id,
+                       v.confidence, v.source, v.evidence_steps
+                ORDER BY v.confidence DESC LIMIT 1
+                """,
+                {"tid": self._task_id, "level": self._current_level}
+            )
+            
+            if rows:
+                row = rows[0]
+                tcid = int(row["v.target_color_id"])
+                steps_str = row["v.evidence_steps"]
+                steps = [int(s) for s in steps_str.split(",") if s] if steps_str else []
+                
+                self._victory_condition = VictoryCondition(
+                    condition_type=VictoryType(row["v.condition_type"]),
+                    description=row["v.description"],
+                    target_color_id=tcid if tcid != -1 else None,
+                    confidence=float(row["v.confidence"]),
+                    source=row["v.source"],
+                    evidence_steps=steps
+                )
+                logger.info("B172: Loaded victory condition from KuzuDB: %s", self._victory_condition.condition_type.value)
+        except Exception as exc:
+            logger.warning("B172: _load_victory_condition failed: %s", exc)
+
+    # ── B173: GameRuleHypothesis Persistence ──────────────────────────
+
+    def _set_game_rule_hypotheses(self, hypotheses: List[GameRuleHypothesis]):
+        """B173: Set game rule hypotheses and schedule KuzuDB persistence."""
+        self._game_rule_hypotheses = hypotheses
+        self._pending_grh_writes = list(hypotheses)
+
+    async def _flush_grh_writes(self):
+        """B173: Persist queued game rule hypotheses to KuzuDB as Hypothesis nodes."""
+        if not self._entity_graph or not self._pending_grh_writes or not self._task_id:
+            return
+        
+        to_write = list(self._pending_grh_writes)
+        self._pending_grh_writes.clear()
+        
+        db = self._entity_graph.db
+        tid = self._task_id
+        import hashlib
+        
+        for grh in to_write:
+            hid = f"grh_{tid}_{hashlib.md5(grh.rule_description.encode()).hexdigest()[:8]}"
+            now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+            
+            params = {
+                "id": hid,
+                "descr": grh.rule_description,
+                "cat": "game_rule",
+                "conf": float(grh.confidence),
+                "gtype": grh.source,
+                "tid": tid,
+                "status": "confirmed" if grh.confidence >= 0.8 else "active",
+                "ecount": int(len(grh.evidence)),
+                "now": now,
+                "raw": json.dumps({
+                    "action_semantics": grh.action_semantics,
+                    "objective": grh.objective_description,
+                    "level_strategy": grh.level_strategy,
+                    "evidence": grh.evidence,
+                    "contradictions": grh.contradictions,
+                }),
+            }
+            
+            try:
+                await db.execute_write(
+                    """
+                    MERGE (h:Hypothesis {id: $id})
+                    ON CREATE SET h.description = $descr, h.category = $cat,
+                                  h.confidence = $conf, h.game_type = $gtype,
+                                  h.task_id = $tid, h.status = $status,
+                                  h.evidence_count = $ecount, h.text_raw = $raw,
+                                  h.created_at = timestamp($now)
+                    ON MATCH SET h.description = $descr, h.confidence = $conf,
+                                 h.status = $status, h.evidence_count = $ecount,
+                                 h.text_raw = $raw
+                    """,
+                    params
+                )
+                
+                # B173: Wire GENERALIZES edges for same-description hypotheses
+                await db.execute_write(
+                    """
+                    MATCH (h1:Hypothesis {id: $id1}), (h2:Hypothesis)
+                    WHERE h2.category = 'game_rule' AND h2.task_id = $tid
+                      AND h2.id <> $id1 AND h2.description = $descr
+                    MERGE (h1)-[:GENERALIZES]->(h2)
+                    """,
+                    {"id1": hid, "tid": tid, "descr": grh.rule_description}
+                )
+            except Exception as exc:
+                logger.warning("B173: Failed to persist GameRuleHypothesis %s: %s", hid, exc)
+    
+    async def _flush_chunk_writes(self):
+        """B174: Persist queued ChunkExecution entries to KuzuDB and link to Plan."""
+        if not self._entity_graph or not self._pending_chunk_writes or not self._task_id:
+            return
+
+        db = self._entity_graph.db
+        tid = self._task_id
+
+        to_write = list(self._pending_chunk_writes)
+        self._pending_chunk_writes.clear()
+
+        for seq, entry, chunk in to_write:
+            try:
+                now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+                stable_seq = max(int(seq), 0)
+                exec_id = f"{tid}_L{self._current_level}_chunk_{stable_seq}"
+
+                await db.execute_write(
+                    """
+                    MERGE (c:ChunkExecution {execution_id: $eid})
+                    ON CREATE SET c.task_id = $tid, c.level = $level, c.plan_id = $pid,
+                                  c.chunk_family = $family, c.description = $descr,
+                                  c.status = $status, c.steps_used = $steps, c.graduation_score = $grad,
+                                  c.evidence_at_end = $evidence, c.dissonance_triggered = $diss,
+                                  c.outcome_summary = $outcome, c.created_at = timestamp($now)
+                    ON MATCH SET c.status = $status, c.steps_used = $steps,
+                                 c.graduation_score = $grad, c.evidence_at_end = $evidence,
+                                 c.dissonance_triggered = $diss, c.outcome_summary = $outcome,
+                                 c.last_updated = timestamp($now)
+                    """,
+                    {
+                        "eid": exec_id,
+                        "tid": tid,
+                        "level": self._current_level,
+                        "pid": chunk.plan_id or "",
+                        "family": chunk.source,
+                        "descr": entry.description,
+                        "status": entry.status,
+                        "steps": int(entry.steps_used),
+                        "grad": float(getattr(chunk, "graduation_score", 0.0)),
+                        "evidence": float(getattr(chunk, "graduation_components", {}).get("evidence_score", 0.0)),
+                        "diss": True if entry.status == "failed" else False,
+                        "outcome": entry.outcome_summary,
+                        "now": now,
+                    }
+                )
+
+                # Link to Plan if available
+                if chunk.plan_id:
+                    await db.execute_write(
+                        """
+                        MATCH (p:Plan {plan_id: $pid}), (c:ChunkExecution {execution_id: $eid})
+                        MERGE (p)-[:EXECUTED_AS {seq: $seq}]->(c)
+                        """,
+                        {"pid": chunk.plan_id, "eid": exec_id, "seq": stable_seq}
+                    )
+
+            except Exception as exc:
+                logger.warning("B174: Failed to persist ChunkExecution: %s", exc)
+
+    async def _sync_grh_from_db(self):
+        """B173: Load game rule hypotheses from KuzuDB."""
+        if not self._entity_graph or not self._task_id:
+            return
+        
+        try:
+            db = self._entity_graph.db
+            rows = await db.execute_read(
+                """
+                MATCH (h:Hypothesis)
+                WHERE h.task_id = $tid AND h.category = 'game_rule'
+                RETURN h.description, h.confidence, h.game_type, h.text_raw
+                ORDER BY h.confidence DESC
+                """,
+                {"tid": self._task_id}
+            )
+            
+            if rows:
+                new_grhs = []
+                for row in rows:
+                    raw_str = row["h.text_raw"]
+                    raw = json.loads(raw_str) if raw_str else {}
+                    new_grhs.append(GameRuleHypothesis(
+                        rule_description=row["h.description"],
+                        action_semantics=raw.get("action_semantics", {}),
+                        objective_description=raw.get("objective", ""),
+                        level_strategy=raw.get("level_strategy", ""),
+                        confidence=float(row["h.confidence"]),
+                        evidence=raw.get("evidence", []),
+                        contradictions=raw.get("contradictions", []),
+                        source=row["h.game_type"]
+                    ))
+                self._game_rule_hypotheses = new_grhs
+                logger.info("B173: Loaded %d game rule hypotheses from KuzuDB", len(new_grhs))
+        except Exception as exc:
+            logger.warning("B173: _sync_grh_from_db failed: %s", exc)
+
     def reevaluate_chunk_graduation(
         self,
         hypothesis_context: Optional[Dict[str, Any]],
+        available_actions: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """B142: Re-evaluate the active chunk's graduation based on actual performance.
 
@@ -1534,76 +2133,69 @@ class SolveEngine:
         Returns a dict with updated graduation info and trace fields for dissonance trigger.
         """
         if not self._active_chunk:
+            self._last_graduation_reevaluation = {}
             return {}
 
-        # Extract the evidence score from hypothesis_context
         context = hypothesis_context or {}
-        action_facts = context.get("action_facts") or []
-        path_hypotheses = context.get("path_hypotheses") or []
-
-        deterministic_facts = sum(1 for fact in action_facts if fact.get("fact_type") == "deterministic_effect")
-        valuable_facts = sum(
-            1 for fact in action_facts
-            if fact.get("fact_type") == "deterministic_effect" and fact.get("value_status") == "valuable"
-        )
-        path_signal = sum(
-            1 for hyp in path_hypotheses
-            if hyp.get("value_status") in {"valuable", "tentative"}
-        )
-        evidence_score = min(
-            0.20 * min(deterministic_facts, 3)
-            + 0.12 * min(valuable_facts, 3)
-            + 0.10 * min(path_signal, 3)
-            + (0.10 if context.get("action_coverage", {}).get("initial_exploration_complete") else 0.0),
-            1.0,
-        )
-
-        # Get chunk metrics
         chunk_progress = self._active_chunk.progress_score
-        steps_using_chunk = self._active_chunk.steps_executed
-        consecutive_zero_reward = self.dissonance_detector._zero_progress_streak
+        consecutive_zero_reward = max(
+            self._recent_zero_reward_streak(),
+            self.dissonance_detector._zero_progress_streak,
+            int(context.get("consecutive_zero_reward_steps", 0) or 0),
+            0,
+        )
+        steps_using_chunk = max(
+            self._active_chunk.steps_executed,
+            self.dissonance_detector._chunk_steps,
+            consecutive_zero_reward,
+            int(context.get("steps_using_chunk", 0) or 0),
+        )
 
-        # Apply B142 logic
+        player_role = next(
+            (r for r in self._object_roles.values() if r.role == RoleType.PLAYER), None
+        )
+        goal_role = next(
+            (r for r in self._object_roles.values() if r.role in (RoleType.GOAL, RoleType.EXIT)), None
+        )
+        effective_actions = available_actions or context.get("available_actions") or list(self._active_chunk.estimated_actions) or []
+
+        assessment = self.plan_chunker._graduation_assessment(
+            player_role=player_role,
+            goal_role=goal_role,
+            hypothesis_context=context,
+            available_actions=effective_actions,
+            chunk_progress=chunk_progress,
+            steps_using_chunk=steps_using_chunk,
+            consecutive_zero_reward_steps=consecutive_zero_reward,
+        )
+
         original_score = self._active_chunk.graduation_score
-        new_score = original_score
+        assessed_score = float(assessment.get("score", original_score))
+        new_score = max(0.0, min(original_score, assessed_score))
 
-        graduation_capped_reason: Optional[str] = None
-        evidence_floor_applied = False
-        progress_decay_applied = 0.0
+        self._active_chunk.graduation_score = new_score
+        self._active_chunk.graduation_reason = str(assessment.get("reason", self._active_chunk.graduation_reason))
+        self._active_chunk.graduation_components = {
+            **dict(self._active_chunk.graduation_components or {}),
+            **dict(assessment.get("components", {})),
+            "pre_cap_score": round(float(assessment.get("pre_cap_score", original_score)), 3),
+            "effective_steps_using_chunk": float(steps_using_chunk),
+            "consecutive_zero_reward": float(consecutive_zero_reward),
+        }
 
-        # Evidence floor gate
-        if evidence_score < 0.3 and chunk_progress == 0.0 and steps_using_chunk >= 3:
-            max_allowed = max(0.4, evidence_score * 2)
-            if new_score > max_allowed:
-                new_score = max_allowed
-                graduation_capped_reason = "evidence_floor"
-                evidence_floor_applied = True
-
-        # Progress-decay penalty
-        if consecutive_zero_reward > 0:
-            decay = 0.05 * consecutive_zero_reward
-            new_score = max(0.2, new_score - decay)
-            progress_decay_applied = decay
-            if graduation_capped_reason is None:
-                graduation_capped_reason = "progress_decay"
-
-        new_score = max(0.0, min(new_score, 1.0))
-
-        # Update the chunk's graduation if it changed
-        if new_score != original_score:
-            self._active_chunk.graduation_score = new_score
-
-        return {
+        result = {
             "original_score": original_score,
             "new_score": new_score,
-            "graduation_capped_reason": graduation_capped_reason,
-            "evidence_floor_applied": evidence_floor_applied,
-            "progress_decay_applied": progress_decay_applied,
-            "evidence_score": evidence_score,
+            "graduation_capped_reason": assessment.get("graduation_capped_reason"),
+            "evidence_floor_applied": bool(assessment.get("evidence_floor_applied", False)),
+            "progress_decay_applied": float(assessment.get("progress_decay_applied", 0.0)),
+            "evidence_score": float(self._active_chunk.graduation_components.get("evidence_score", 0.0)),
             "chunk_progress": chunk_progress,
             "steps_using_chunk": steps_using_chunk,
             "consecutive_zero_reward": consecutive_zero_reward,
         }
+        self._last_graduation_reevaluation = result
+        return result
 
     def _add_chunk_to_ledger_as_active(self, chunk: PlanChunk) -> None:
         """B124: Mark a chunk as active in the ledger."""
@@ -1616,8 +2208,24 @@ class SolveEngine:
         self._chunk_ledger.append(entry)
         # Note: don't prune here; prune only when transitioning to final state (completed/failed)
 
+    def _record_chunk_completion(self, entry: ChunkLedgerEntry, chunk: PlanChunk) -> None:
+        """B174: Queue a finalized chunk entry for durable persistence with a stable ledger seq."""
+        if not self._entity_graph:
+            return
+
+        try:
+            seq = next(
+                (idx for idx, existing in enumerate(self._chunk_ledger) if existing is entry),
+                len(self._chunk_ledger) - 1,
+            )
+            self._pending_chunk_writes.append((max(seq, 0), entry, chunk))
+        except Exception:
+            # Don't let persistence queuing break the solver
+            logger.exception("B174: Failed to enqueue chunk execution for persistence")
+
     def _mark_chunk_completed(self, chunk: PlanChunk) -> None:
         """B124: Mark chunk as completed with progress summary."""
+        found_entry = None
         if self._chunk_ledger:
             # Find the most recent entry for this chunk
             for entry in reversed(self._chunk_ledger):
@@ -1625,11 +2233,17 @@ class SolveEngine:
                     entry.status = "completed"
                     entry.steps_used = chunk.steps_executed
                     entry.outcome_summary = f"progress={chunk.progress_score:.2f}"
+                    found_entry = entry
                     break
+
+        if found_entry:
+            self._record_chunk_completion(found_entry, chunk)
+
         self._prune_chunk_ledger()
 
     def _mark_chunk_failed(self, chunk: PlanChunk, reason: str) -> None:
         """B124: Mark chunk as failed with reason."""
+        found_entry = None
         if self._chunk_ledger:
             # Find the most recent entry for this chunk
             for entry in reversed(self._chunk_ledger):
@@ -1637,7 +2251,12 @@ class SolveEngine:
                     entry.status = "failed"
                     entry.steps_used = chunk.steps_executed
                     entry.outcome_summary = reason
+                    found_entry = entry
                     break
+
+        if found_entry:
+            self._record_chunk_completion(found_entry, chunk)
+
         self._prune_chunk_ledger()
 
     def _prune_chunk_ledger(self) -> None:
@@ -1655,6 +2274,58 @@ class SolveEngine:
 
         self._chunk_ledger = non_completed + completed
 
+    def _score_action_families(self, context: Dict[str, Any], available_actions: List[str]) -> Dict[str, float]:
+        """Score each action family using available evidence signals (B144)."""
+        scores = {aid: 0.0 for aid in available_actions}
+        observed_effects = context.get("observed_action_effects", [])
+        
+        # Action family mapping (simplified: each ID is its own family for now)
+        for effect in observed_effects:
+            aid = effect.get("action")
+            if aid not in scores: continue
+            
+            # 1. Reward signal (weighted heavily)
+            avg_reward = float(effect.get("avg_reward", 0.0) or 0.0)
+            scores[aid] += avg_reward * 2.0
+            
+            # 2. Meaningful change (indicates interaction even if no reward)
+            avg_change = float(effect.get("avg_meaningful_change", 0.0) or 0.0)
+            scores[aid] += avg_change * 0.5
+            
+            # 3. Repeat failure penalty (B144 core requirement)
+            zero_streak = int(effect.get("zero_reward_streak", 0) or 0)
+            if zero_streak >= 2:
+                scores[aid] -= (zero_streak * 0.25)
+            # B176: Accelerated penalty for very long streaks
+            if zero_streak >= 10:
+                scores[aid] -= 1.0
+                
+            # 4. Rank score from hypothesis manager (composite heuristic)
+            rank_score = float(effect.get("rank_score", 0.0) or 0.0)
+            scores[aid] += rank_score * 0.3
+            
+            # 5. Dissonance / low value penalty
+            if effect.get("value_status") in {"low_value", "ineffective"}:
+                scores[aid] -= 0.5
+        
+        # B176: Exploration bonus for untried actions during sustained plateau
+        tried_actions = {e.get("action") for e in observed_effects}
+        global_zero_streak = self._recent_zero_reward_streak()
+        
+        if global_zero_streak >= 5:
+            for aid in available_actions:
+                if aid not in tried_actions:
+                    curiosity_bonus = 0.3 + min(global_zero_streak * 0.02, 0.2)
+                    scores[aid] += curiosity_bonus
+                    # Trace for debugging
+                    self._trace("explore_bonus_applied", "plateau_policy", {
+                        "action": aid,
+                        "bonus": round(curiosity_bonus, 2),
+                        "streak": global_zero_streak
+                    })
+                
+        return scores
+
     async def solve(
         self,
         observation: Dict[str, Any],
@@ -1662,8 +2333,18 @@ class SolveEngine:
         step: int,
         state_graph: Any,           # StateGraph instance from HypothesisManager
         current_state_hash: str,
+        level_pattern: Optional["LevelPattern"] = None, # B150
+        solved_levels: Optional[List[Dict]] = None,     # B157
     ) -> SolveContext:
         """Run one solve step. Returns SolveContext for orchestrator."""
+        # B169: Sync roles from KuzuDB
+        await self._sync_roles_from_db()
+        # B172: Load victory condition from KuzuDB
+        if not self._victory_condition:
+            await self._load_victory_condition()
+        # B173: Load game rule hypotheses from KuzuDB
+        if not self._game_rule_hypotheses:
+            await self._sync_grh_from_db()
 
         # Track reward history
         reward = float((hypothesis_context.get("last_transition_effect") or {}).get(
@@ -1692,11 +2373,27 @@ class SolveEngine:
                 except Exception as exc:
                     logger.warning("analogical_search failed: %s", exc)
 
+            # B148: Preserve grounded archetype confidence
+            if archetype == self._archetype and confidence < self._archetype_confidence:
+                # Sustain best recent confidence if not a pivot
+                confidence = max(confidence, self._archetype_confidence - 0.02)
+
             self._archetype = archetype
             self._archetype_confidence = confidence
             if confidence >= ArchetypeClassifier.LOCK_THRESHOLD:
                 self._archetype_locked = True
                 logger.info("Archetype locked: %s (confidence=%.2f)", archetype.value, confidence)
+
+        # B151: Game rule hypothesis from solved levels
+        if level_pattern and solved_levels and step == 0:
+            hypotheses = await self.game_rule_hypothesizer.hypothesize(
+                level_pattern=level_pattern,
+                solved_levels=solved_levels,
+                llm_client=self.llm,
+            )
+            self._set_game_rule_hypotheses(hypotheses)
+            if self._game_rule_hypotheses:
+                logger.info("[B151] Generated %d game rule hypotheses", len(self._game_rule_hypotheses))
 
         # 2. Object role mapping (runs every step, lightweight)
         new_roles = self.role_mapper.update(hypothesis_context, observation, step)
@@ -1708,6 +2405,22 @@ class SolveEngine:
         should_replan, dissonance_reason = self.dissonance_detector.update(
             hypothesis_context, self._active_chunk, step
         )
+        
+        # B177: Accept orchestrator escalation
+        if hypothesis_context.get("orchestrator_force_replan"):
+            should_replan = True
+            dissonance_reason = dissonance_reason or "orchestrator_no_progress_escalation"
+        zero_reward_streak = self._recent_zero_reward_streak()
+        chunk_context = dict(hypothesis_context or {})
+        if zero_reward_streak > 0:
+            chunk_context["consecutive_zero_reward_steps"] = max(
+                int(chunk_context.get("consecutive_zero_reward_steps", 0) or 0),
+                zero_reward_streak,
+            )
+            chunk_context["steps_using_chunk"] = max(
+                int(chunk_context.get("steps_using_chunk", 0) or 0),
+                zero_reward_streak,
+            )
 
         need_victory_hypothesis = (
             self._victory_condition is None
@@ -1751,7 +2464,7 @@ class SolveEngine:
                 logger.warning("recall_relevant_lessons failed: %s", exc)
                 lessons = []
 
-            self._victory_condition = await self.victory_hypothesizer.hypothesize(
+            new_vc = await self.victory_hypothesizer.hypothesize(
                 archetype=self._archetype,
                 object_roles=self._object_roles,
                 brain_client=self.brain,
@@ -1763,6 +2476,17 @@ class SolveEngine:
                 past_plans=past_plans,
                 lessons=lessons,
             )
+            
+            # B148: Preserve recent-best victory condition if refresh is weak
+            if self._victory_condition and new_vc.confidence < self._victory_condition.confidence:
+                # If same condition type, keep best confidence (monotonic grounding)
+                if new_vc.condition_type == self._victory_condition.condition_type:
+                    new_vc.confidence = max(new_vc.confidence, self._victory_condition.confidence)
+                # If old was grounded (>= 0.7) and new is weak (< 0.5), ignore weak refresh
+                elif self._victory_condition.confidence >= 0.7 and new_vc.confidence < 0.5:
+                    new_vc = self._victory_condition
+            
+            self._set_victory_condition(new_vc)
 
         # 4. Register one top-level solve plan once the victory hypothesis exists.
         if self._victory_condition is not None and self._solve_plan_id is None:
@@ -1845,7 +2569,7 @@ class SolveEngine:
                 current_hash=current_state_hash,
                 available_actions=available_actions,
                 step=step,
-                hypothesis_context=hypothesis_context,
+                hypothesis_context=chunk_context,
             )
             if self._active_chunk:
                 self._chunk_history.append(self._active_chunk)
@@ -1865,8 +2589,153 @@ class SolveEngine:
             # B109: Action consumption happens in the orchestrator via _enforce_action_policy,
             # but we track execution count here.
 
+        # B142: Re-evaluate the chunk after recording the latest execution so the
+        # strategy summary and dissonance state reflect the live score, not the pre-cap one.
+        graduation_reevaluation = self.reevaluate_chunk_graduation(
+            chunk_context,
+            available_actions=available_actions,
+        )
+        if graduation_reevaluation and graduation_reevaluation.get("new_score") is not None:
+            if graduation_reevaluation["new_score"] < 0.5 and not should_replan:
+                should_replan = True
+                dissonance_reason = (
+                    f"Graduation dropped to {graduation_reevaluation['new_score']:.2f} "
+                    f"(reason: {graduation_reevaluation.get('graduation_capped_reason', 'unknown')})"
+                )
+
+        # B144/B145/B146/B147: Plateau-aware exploitation policy logic
+        zero_reward_streak = self._recent_zero_reward_streak()
+        
+        # B147: Grounding hysteresis — enter at 0.70, sustain at 0.65
+        ENTER_THRESHOLD = 0.70
+        SUSTAIN_THRESHOLD = 0.65
+        threshold = SUSTAIN_THRESHOLD if self._plateau_active else ENTER_THRESHOLD
+        
+        player_conf = max((r.confidence for r in self._object_roles.values() if r.role == RoleType.PLAYER), default=0.0)
+        goal_conf = max((r.confidence for r in self._object_roles.values() if r.role in (RoleType.GOAL, RoleType.EXIT)), default=0.0)
+        
+        player_grounded = player_conf >= threshold
+        goal_grounded = goal_conf >= threshold
+        
+        # Trigger plateau mode if 5+ consecutive zero-reward steps and key entities are grounded.
+        plateau_eligible = (zero_reward_streak >= 5 and player_grounded and goal_grounded)
+        plateau_activation_mode = ""
+        
+        if plateau_eligible:
+            if not self._plateau_active:
+                plateau_activation_mode = "direct"
+                self._plateau_active = True
+            else:
+                # Sustained via hysteresis
+                plateau_activation_mode = "sticky" if player_conf < ENTER_THRESHOLD or goal_conf < ENTER_THRESHOLD else "direct"
+        else:
+            # Grounding collapsed or streak broken
+            if self._plateau_active:
+                logger.info("B147: Plateau mode deactivated (grounding collapsed or streak broken)")
+                self._plateau_active = False
+                self._plateau_locked_family = None # Reset lock on deactivation
+
+        plateau_mode = self._plateau_active
+        plateau_reason = ""
+        action_family_scores = {}
+        ranked_families = []
+        
+        if plateau_mode:
+            plateau_reason = f"sustained zero-reward streak ({zero_reward_streak} steps) with grounded entities"
+            if plateau_activation_mode == "sticky":
+                plateau_reason += f" (sticky sustain: p_conf={player_conf:.3f}, g_conf={goal_conf:.3f})"
+            
+            action_family_scores = self._score_action_families(hypothesis_context, available_actions)
+            ranked_families = sorted(action_family_scores.keys(), key=lambda k: action_family_scores[k], reverse=True)
+            
+            # B176: Track lock duration for threshold decay
+            if self._plateau_locked_family is not None:
+                self._plateau_lock_duration += 1
+            else:
+                self._plateau_lock_duration = 0
+
+            # B146: Persist authoritative locked family
+            best_candidate = ranked_families[0] if ranked_families else None
+            unlock_reason = ""
+            
+            if self._plateau_locked_family is None:
+                # Initial lock
+                self._plateau_locked_family = best_candidate
+                self._plateau_lock_duration = 0
+                self._trace("solve_plateau_lock_initial", "plateau_policy", 
+                            {"step": step, "family": self._plateau_locked_family}, 
+                            {"reason": "plateau entry"})
+            else:
+                # Check for explicit unlock conditions
+                # 1. Best candidate is significantly better than current lock
+                # B176: Decay threshold from 0.5 to 0.1 over time to allow curiosity win
+                lock_threshold = max(0.1, 0.5 - (self._plateau_lock_duration * 0.05))
+                
+                current_score = action_family_scores.get(self._plateau_locked_family, -1.0)
+                best_score = action_family_scores.get(best_candidate, -1.0) if best_candidate else -1.0
+                
+                if best_candidate and best_score > current_score + lock_threshold:
+                    unlock_reason = f"evidence shift (threshold={lock_threshold:.2f}): {best_candidate}({best_score:.2f}) outranks {self._plateau_locked_family}({current_score:.2f})"
+                
+                # 2. Current lock is no longer available
+                elif self._plateau_locked_family not in available_actions:
+                    unlock_reason = f"action removed: {self._plateau_locked_family} no longer available"
+                
+                # 3. Explicit exhaustion signal (from orchestrator/trace via context)
+                # (Future refinement: if reward history shows lock is definitely dead)
+
+                if unlock_reason:
+                    old_lock = self._plateau_locked_family
+                    self._plateau_locked_family = best_candidate
+                    self._plateau_lock_duration = 0 # Reset on switch
+                    self._trace("solve_plateau_lock_changed", "plateau_policy", 
+                                {"step": step, "from": old_lock, "to": self._plateau_locked_family}, 
+                                {"reason": unlock_reason})
+
+            # B145/B146: Replace or Update Plateau Exploitation chunk
+            # Use the AUTHORITATIVE locked family for the chunk
+            top_family = self._plateau_locked_family
+            if top_family:
+                if self._active_chunk and (self._active_chunk.source == "explore" or (self._active_chunk.source == "plateau_exploitation" and top_family not in self._active_chunk.description)):
+                    logger.info("B146: Syncing Plateau Exploitation chunk to locked family: %s", top_family)
+                    
+                    # Mark old chunk failed if it was mismatched
+                    self._mark_chunk_failed(self._active_chunk, "plateau_sync" if self._active_chunk.source == "plateau_exploitation" else "plateau_replacement")
+                    
+                    # Create/Sync exploitation chunk
+                    self._active_chunk = PlanChunk(
+                        description=f"Plateau Exploitation: commit to top-ranked {top_family}",
+                        estimated_actions=[top_family] * 3,
+                        success_condition="break zero-reward plateau",
+                        source="plateau_exploitation",
+                        graduation_score=1.0,
+                        graduation_reason="plateau_lock",
+                        graduation_components={"plateau_mode": 1.0, "locked_family": top_family}
+                    )
+                    self._chunk_history.append(self._active_chunk)
+                    self._add_chunk_to_ledger_as_active(self._active_chunk)
+                    await self._register_chunk_plan(self._active_chunk, step=step)
+
+            # Emit regular trace event
+            if step % 5 == 0 or zero_reward_streak == 5:
+                self._trace("solve_plateau_detection", "plateau_policy", 
+                            {"step": step, "streak": zero_reward_streak, "locked": self._plateau_locked_family}, 
+                            {"top_candidate": ranked_families[0] if ranked_families else "none", "score": action_family_scores.get(ranked_families[0]) if ranked_families else 0.0})
+
         # Build strategy summary for prompt
         strategy = self._build_strategy_summary()
+        if plateau_mode:
+            top_f = self._plateau_locked_family or "none"
+            strategy = f"{strategy} | PLATEAU: {plateau_reason} | LOCKED FAMILY: {top_f}"
+
+        # B169: Persist any role updates to KuzuDB
+        await self._flush_role_writes()
+        # B172: Persist victory condition to KuzuDB
+        await self._flush_victory_condition()
+        # B173: Persist game rule hypotheses to KuzuDB
+        await self._flush_grh_writes()
+        # B174: Persist any queued chunk execution writes to KuzuDB
+        await self._flush_chunk_writes()
 
         return SolveContext(
             archetype=self._archetype,
@@ -1878,6 +2747,13 @@ class SolveEngine:
             dissonance_reason=dissonance_reason,
             strategy_summary=strategy,
             chunk_ledger=list(self._chunk_ledger),
+            game_rule_hypotheses=list(self._game_rule_hypotheses),
+            plateau_mode=plateau_mode,
+            plateau_reason=plateau_reason,
+            plateau_activation_mode=plateau_activation_mode,
+            plateau_locked_family=self._plateau_locked_family,
+            ranked_action_families=ranked_families,
+            action_family_scores=action_family_scores,
         )
 
     def _plan_changed(
@@ -2037,9 +2913,12 @@ class SolveEngine:
         # B137: Reset plan tracking to allow fresh registrations on retry
         self._last_registered_top_plan = None
         self._last_registered_chunk_plan = None
+        self._last_graduation_reevaluation = {}
         self.dissonance_detector.reset_chunk()
         self.dissonance_detector._zero_progress_streak = 0
         self._role_resolution_notes = []
+        self._plateau_active = False
+        self._plateau_locked_family = None
 
     def _merge_persistent_roles(self, new_roles: Dict[int, ObjectRole], step: int) -> List[str]:
         """Merge step-level roles into the persistent role map with conflict handling."""
@@ -2048,19 +2927,43 @@ class SolveEngine:
         for color_id, new_role in new_roles.items():
             existing = self._object_roles.get(color_id)
             if existing is None:
-                self._object_roles[color_id] = new_role
+                self._set_role(color_id, new_role)
                 continue
 
             if existing.role == new_role.role:
+                # B148: Preserve grounded confidence for same-role refreshes
+                if existing.confidence >= 0.7 and new_role.confidence < existing.confidence:
+                    # Sustain high confidence if it's the same role assignment
+                    new_role.confidence = max(new_role.confidence, existing.confidence)
+
                 if new_role.confidence >= existing.confidence:
                     new_role.evidence_steps = sorted(set((existing.evidence_steps or []) + (new_role.evidence_steps or []) + [step]))
                     if existing.estimated_position and not new_role.estimated_position:
                         new_role.estimated_position = existing.estimated_position
-                    self._object_roles[color_id] = new_role
+                    self._set_role(color_id, new_role)
                 else:
                     existing.evidence_steps = sorted(set((existing.evidence_steps or []) + (new_role.evidence_steps or []) + [step]))
                     if not existing.estimated_position and new_role.estimated_position:
                         existing.estimated_position = new_role.estimated_position
+                continue
+
+            if existing.role != RoleType.UNKNOWN and new_role.role == RoleType.UNKNOWN:
+                existing.evidence_steps = sorted(set((existing.evidence_steps or []) + (new_role.evidence_steps or []) + [step]))
+                if not existing.estimated_position and new_role.estimated_position:
+                    existing.estimated_position = new_role.estimated_position
+                notes.append(
+                    f"step {step}: preserved {existing.role.value} at color_{color_id}; ignored unknown"
+                )
+                continue
+
+            if existing.role == RoleType.UNKNOWN and new_role.role != RoleType.UNKNOWN:
+                new_role.evidence_steps = sorted(set((existing.evidence_steps or []) + (new_role.evidence_steps or []) + [step]))
+                if existing.estimated_position and not new_role.estimated_position:
+                    new_role.estimated_position = existing.estimated_position
+                self._set_role(color_id, new_role)
+                notes.append(
+                    f"step {step}: replaced unknown with {new_role.role.value} at color_{color_id}"
+                )
                 continue
 
             if existing.role == RoleType.PLAYER and new_role.role == RoleType.GOAL:
@@ -2072,14 +2975,20 @@ class SolveEngine:
 
             if existing.role == RoleType.GOAL and new_role.role == RoleType.PLAYER:
                 new_role.evidence_steps = sorted(set((existing.evidence_steps or []) + (new_role.evidence_steps or []) + [step]))
-                self._object_roles[color_id] = new_role
+                self._set_role(color_id, new_role)
                 notes.append(
                     f"step {step}: promoted player at color_{color_id}; demoted conflicting goal"
                 )
                 continue
 
-            if new_role.confidence > existing.confidence:
-                self._object_roles[color_id] = new_role
+            # B148: Contradiction-aware demotion for grounded roles
+            # If current role is grounded (>= 0.7), only allow replacement if new role 
+            # is SIGNIFICANTLY more confident or provides strong contradictory evidence.
+            is_grounded = existing.confidence >= 0.7
+            significant_threshold = 0.15 if is_grounded else 0.0
+
+            if new_role.confidence > (existing.confidence + significant_threshold):
+                self._set_role(color_id, new_role)
                 notes.append(
                     f"step {step}: replaced {existing.role.value} with {new_role.role.value} at color_{color_id}"
                 )
@@ -2089,11 +2998,11 @@ class SolveEngine:
                     f"step {step}: preserved {existing.role.value} at color_{color_id}; ignored {new_role.role.value}"
                 )
 
-        notes.extend(self._demote_extra_primaries(RoleType.PLAYER, step))
-        notes.extend(self._demote_extra_primaries(RoleType.GOAL, step))
+        notes.extend(self._demote_extra_primaries(RoleType.PLAYER, step, new_roles))
+        notes.extend(self._demote_extra_primaries(RoleType.GOAL, step, new_roles))
         return notes
 
-    def _demote_extra_primaries(self, role_type: RoleType, step: int) -> List[str]:
+    def _demote_extra_primaries(self, role_type: RoleType, step: int, new_roles: Optional[Dict[int, "ObjectRole"]] = None) -> List[str]:
         notes: List[str] = []
         candidates = [
             (color_id, role)
@@ -2103,24 +3012,41 @@ class SolveEngine:
         if len(candidates) <= 1:
             return notes
 
+        # B148: Prefer historically best primary role (stability over opportunistic refresh)
         primary_color, primary_role = max(
             candidates,
             key=lambda item: (
-                float(item[1].confidence),
-                len(item[1].evidence_steps or []),
+                float(item[1].confidence) >= 0.7, # Priority 1: previously grounded
+                float(item[1].confidence),        # Priority 2: highest current confidence
+                len(item[1].evidence_steps or []), # Priority 3: most evidence
                 -int(item[0]),
             ),
         )
         for color_id, role in candidates:
             if color_id == primary_color:
                 continue
-            role.role = RoleType.DECORATION
+            # B168: If the ObjectRoleMapper identified this color as INTERMEDIATE
+            # this step, restore it instead of demoting to DECORATION.
+            mapper_role = new_roles.get(color_id) if new_roles else None
+            if mapper_role and mapper_role.role == RoleType.INTERMEDIATE:
+                role.role = RoleType.INTERMEDIATE
+                role.confidence = mapper_role.confidence
+                if mapper_role.estimated_position:
+                    role.estimated_position = mapper_role.estimated_position
+                self._set_role(color_id, role)
+                notes.append(
+                    f"step {step}: restored intermediate at color_{color_id} (was misclassified as {role_type.value})"
+                )
+            else:
+                role.role = RoleType.DECORATION
+                self._set_role(color_id, role)
+                notes.append(
+                    f"step {step}: demoted stale {role_type.value} at color_{color_id}; primary remains color_{primary_color}"
+                )
             role.evidence_steps = sorted(set((role.evidence_steps or []) + [step]))
-            notes.append(
-                f"step {step}: demoted stale {role_type.value} at color_{color_id}; primary remains color_{primary_color}"
-            )
         if primary_role.role != role_type:
             primary_role.role = role_type
+            self._set_role(primary_color, primary_role)
         return notes
 
     async def _register_solve_plan(self, observation: Dict[str, Any], step: int = 0) -> None:
