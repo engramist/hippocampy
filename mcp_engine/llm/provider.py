@@ -67,8 +67,9 @@ class LLMClient:
     def __init__(self, client, model: str):
         self._client = client
         self._model  = model
+        self.last_usage: dict | None = None
 
-    def chat(self, messages: list[dict]) -> str:
+    def chat(self, messages: list[dict], **kwargs) -> str:
         """
         Synchronous chat — blocks the calling thread.
         Use achat() from async code to avoid blocking the event loop.
@@ -77,8 +78,36 @@ class LLMClient:
             model=self._model,
             messages=messages,
             temperature=0.0,
+            **kwargs
         )
+        
+        # B180: Track token usage if available
+        if hasattr(response, 'usage') and response.usage:
+            self.last_usage = {
+                "prompt_tokens": getattr(response.usage, 'prompt_tokens', 0),
+                "completion_tokens": getattr(response.usage, 'completion_tokens', 0),
+                "total_tokens": getattr(response.usage, 'total_tokens', 0),
+            }
+            
         return response.choices[0].message.content or ""
+
+    def chat_with_usage(self, messages: list[dict]) -> tuple[str, dict]:
+        """
+        B180: Synchronous chat that also returns token usage.
+        Returns (content, usage_dict).
+        """
+        response = self._client.chat.completions.create(
+            model=self._model,
+            messages=messages,
+            temperature=0.0,
+        )
+        content = response.choices[0].message.content or ""
+        usage = {
+            "prompt_tokens": getattr(response.usage, 'prompt_tokens', 0) if response.usage else 0,
+            "completion_tokens": getattr(response.usage, 'completion_tokens', 0) if response.usage else 0,
+            "total_tokens": getattr(response.usage, 'total_tokens', 0) if response.usage else 0,
+        }
+        return content, usage
 
     async def achat(self, messages: list[dict]) -> str:
         """
@@ -88,6 +117,13 @@ class LLMClient:
         """
         import asyncio
         return await asyncio.to_thread(self.chat, messages)
+
+    async def achat_with_usage(self, messages: list[dict]) -> tuple[str, dict]:
+        """
+        B180: Async chat that also returns token usage.
+        """
+        import asyncio
+        return await asyncio.to_thread(self.chat_with_usage, messages)
 
 
 def create_llm_client(config: dict):

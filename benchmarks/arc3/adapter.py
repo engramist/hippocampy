@@ -228,10 +228,11 @@ class LocalBrainClient(BrainClientProtocol):
 
 class LedgerBrainClient(BrainClientProtocol):
     """Wrapper that records all calls into a shared ledger."""
-    def __init__(self, inner: BrainClientProtocol, ledger: List[Mapping[str, Any]], step_provider: Callable[[], int | str], start_time: Optional[float] = None):
+    def __init__(self, inner: BrainClientProtocol, ledger: List[Mapping[str, Any]], step_provider: Callable[[], int | str], start_time: Optional[float] = None, cost_tracker: Optional[Any] = None):
         self.inner = inner
         self.ledger = ledger
         self.step_provider = step_provider
+        self.cost_tracker = cost_tracker
         self.current_phase: str = "unknown"
         self.start_time = start_time or time.time()
         self._arc_call_seq = 0
@@ -259,6 +260,14 @@ class LedgerBrainClient(BrainClientProtocol):
             "result_summary": self._compact_text(result_summary, 120),
             "latency_ms": round(latency_ms, 1),
         }
+        
+        # B180: Capture current token usage/cost if available
+        if self.cost_tracker:
+            s = self.cost_tracker.summary()
+            entry["cumulative_tokens_in"] = s["tokens_in"]
+            entry["cumulative_tokens_out"] = s["tokens_out"]
+            entry["cumulative_cost_usd"] = round(s["cost_usd"], 5)
+
         if decision_used is not None:
             entry["decision_used"] = decision_used
         if arc_api_io is not None:

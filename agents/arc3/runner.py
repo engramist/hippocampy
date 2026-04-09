@@ -42,7 +42,8 @@ class DurableARCRunner:
         self.brain = LedgerBrainClient(
             inner=brain_client,
             ledger=self._ledger,
-            step_provider=lambda: self._current_step
+            step_provider=lambda: self._current_step,
+            cost_tracker=None
         )
 
     async def run(self, tasks: List[ABTask], card_id: str) -> List[dict]:
@@ -74,7 +75,8 @@ class DurableARCRunner:
                 inner=self._raw_brain,
                 ledger=self._ledger,
                 step_provider=lambda: self._current_step,
-                start_time=puzzle_start_time
+                start_time=puzzle_start_time,
+                cost_tracker=cost_tracker
             )
 
             # Branch per puzzle so each gets its own SideQuest scope
@@ -85,12 +87,26 @@ class DurableARCRunner:
             )
             quest_id = branch_result.get("side_quest_id") or card_id
 
+            # B180: Token cost tracking and budget enforcement
+            from agents.arc3.cost_tracker import CostTracker
+            cost_cfg = self.config.get("cost", {})
+            model_name = self.config.get("llm", {}).get("model", "unknown")
+            pricing = cost_cfg.get("pricing_per_million_tokens", {}).get(model_name, {"input": 0.0, "output": 0.0})
+            
+            cost_tracker = CostTracker(
+                model_name=model_name,
+                input_price_per_m=pricing.get("input", 0.0),
+                output_price_per_m=pricing.get("output", 0.0),
+                budget_usd=cost_cfg.get("budget_per_puzzle_usd", float('inf'))
+            )
+
             orchestrator = ARCOrchestrator(
                 brain_client=self.brain,
                 llm_client=self.harness.llm_client,
                 session_id=session_id,
                 serializer=self.harness.serializer,
                 config=self.config,
+                cost_tracker=cost_tracker,
             )
 
             try:
@@ -334,6 +350,17 @@ class DurableARCRunner:
             consecutive_no_progress_steps = 0
             last_reward = 0.0
             while steps_this_attempt < max_steps:
+                # B180: Token budget enforcement
+                if orchestrator.cost_tracker and orchestrator.cost_tracker.budget_exhausted:
+                    summary = orchestrator.cost_tracker.summary()
+                    logger.warning(
+                        "B180: Budget exhausted for task %s ($%.4f >= $%.2f). Abandoning.",
+                        task.task_id, summary["cost_usd"], summary["budget_usd"]
+                    )
+                    error_msg = f"Budget exhausted ($[{summary['cost_usd']:.4f}])"
+                    done = True
+                    break
+
                 prior_step = orchestrator._step_history[-1] if steps_this_attempt > 0 and orchestrator._step_history else None
                 # B88 — Update hypothesis engine
                 orchestrator.set_write_trace_context(f"step-{total_steps + 1}")
@@ -544,6 +571,17 @@ class DurableARCRunner:
 
         # B89: Collect benchmark metrics
         benchmark_metrics = orchestrator.get_benchmark_metrics()
+
+        # B180: Persist cost summary to KuzuDB
+        if orchestrator.cost_tracker and orchestrator._entity_graph:
+            try:
+                await orchestrator._entity_graph.persist_cost_summary(
+                    summary=orchestrator.cost_tracker.summary(),
+                    outcome="solved" if success else ("budget_exhausted" if "Budget exhausted" in (error_msg or "") else "failed"),
+                    steps=total_steps
+                )
+            except Exception as exc:
+                logger.warning("B180: Failed to persist cost summary: %s", exc)
 
         task_result = ABTaskResult(
             task_id=task.task_id,
