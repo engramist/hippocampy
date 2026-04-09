@@ -15,8 +15,10 @@ from benchmarks.arc3.adapter import BrainClientProtocol
 from benchmarks.arc3.schema import ARC3Action, ARC3Observation
 from benchmarks.arc3.state_serializer import StateSerializerForARC
 from agents.arc3.hypothesis import HypothesisManager
-from agents.arc3.solver import SolveEngine, GameRuleHypothesis, PatternMatchTracker, RoleType
+from agents.arc3.solver import SolveEngine, GameRuleHypothesis, PatternMatchTracker, ObjectRole
+from agents.arc3.cost_tracker import CostTracker
 from agents.arc3.grid_analysis import grid_characteristic_summary
+
 from agents.arc3.repl_verification import LevelReplayVerifier, RuleRefinementLoop
 from agents.arc3.prompts import (
     SYSTEM_PROMPT,
@@ -124,12 +126,14 @@ class ARCOrchestrator:
         session_id: str,
         serializer: StateSerializerForARC,
         config: dict,
+        cost_tracker: Optional[CostTracker] = None,
     ):
         self.brain = brain_client
         self.llm = llm_client
         self.session_id = session_id
         self.serializer = serializer
         self.config = config
+        self.cost_tracker = cost_tracker
         self._plan_id: str | None = None
         self._reflex_context: dict | None = None
         self._plan_steps: List[str] = []
@@ -139,7 +143,11 @@ class ARCOrchestrator:
         self.hypothesis_mgr = HypothesisManager(brain_client, session_id)
         self._hypothesis_context: dict | None = None
         # B138: Pass trace callback to expose solve-internal brain I/O in agent_trace
-        self.solve_engine = SolveEngine(brain_client, llm_client, session_id, emit_trace_event=self._emit_trace_event)
+        self.solve_engine = SolveEngine(
+            brain_client, llm_client, session_id,
+            emit_trace_event=self._emit_trace_event,
+            cost_tracker=self.cost_tracker
+        )
         self._solve_context: dict | None = None
         # B131: Comprehensive execution trace for CloudWatch-style logging
         self._execution_trace: List[dict] = []
@@ -1221,6 +1229,12 @@ class ARCOrchestrator:
 
     # ── Phase 2: Plan ───────────────────────────────────────────────────
 
+    def _record_llm_usage(self):
+        """B180: Record tokens from last LLM call into CostTracker."""
+        if self.cost_tracker and self.llm and hasattr(self.llm, 'last_usage') and self.llm.last_usage:
+            u = self.llm.last_usage
+            self.cost_tracker.record(u.get("prompt_tokens", 0), u.get("completion_tokens", 0))
+
     async def hypothesize(
         self,
         observation: ARC3Observation,
@@ -2158,6 +2172,10 @@ class ARCOrchestrator:
                 except TypeError:
                     # Provider doesn't support response_format (e.g. mock LLMs)
                     raw = await asyncio.to_thread(self.llm.chat, messages)
+                    self._record_llm_usage()
+                
+                # B180: Record usage for the try block too
+                self._record_llm_usage()
 
                 # Robust multi-tier parsing: JSON → embedded JSON → plain text
                 result = self._parse_llm_response(raw, available_actions)
@@ -3574,6 +3592,10 @@ class ARCOrchestrator:
             except TypeError:
                 # Provider doesn't support response_format (e.g. mock LLMs)
                 raw = await asyncio.to_thread(self.llm.chat, messages)
+                self._record_llm_usage()
+            
+            # B180: Record usage for successful try block
+            self._record_llm_usage()
             payload = getattr(raw, "content", raw)
 
             # Robust multi-tier parsing: JSON → embedded JSON → plain text
@@ -4049,6 +4071,7 @@ class ARCOrchestrator:
                 {"role": "user", "content": verifier_prompt},
             ]
             raw = await asyncio.to_thread(self.llm.chat, messages)
+            self._record_llm_usage()
             parsed = json.loads(raw)
 
             approval = parsed.get("approved", True)
@@ -4819,6 +4842,7 @@ class ARCOrchestrator:
                     else 0
                 ),
             },
+            "token_cost": self.cost_tracker.summary() if self.cost_tracker else {},
             "pruning_decisions": list(self._pruning_decisions),
         }
 

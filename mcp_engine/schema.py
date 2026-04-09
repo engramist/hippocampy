@@ -479,6 +479,7 @@ NODE_TABLES = {
         dissonance_triggered BOOLEAN,
         outcome_summary  STRING,
         created_at       TIMESTAMP,
+        last_updated     TIMESTAMP,
         PRIMARY KEY (execution_id)
     """,
 
@@ -517,6 +518,19 @@ NODE_TABLES = {
         created_at         TIMESTAMP,
         last_updated       TIMESTAMP,
         PRIMARY KEY (fact_id)
+    """,
+
+    "PuzzleCostSummary": """
+        summary_id    STRING,
+        task_id       STRING,
+        model         STRING,
+        tokens_in     INT64,
+        tokens_out    INT64,
+        cost_usd      DOUBLE,
+        outcome       STRING,
+        steps         INT32,
+        created_at    TIMESTAMP,
+        PRIMARY KEY (summary_id)
     """,
 }
 
