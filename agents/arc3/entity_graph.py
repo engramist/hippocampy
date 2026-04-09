@@ -838,6 +838,34 @@ class EntityGraphBuilder:
         results = await self.db.execute_read(query, {"task_id": task_id, "level": level})
         return {row["action_id"]: (float(row["avg_dr"] or 0.0), float(row["avg_dc"] or 0.0)) for row in results}
 
+    async def persist_cost_summary(self, summary: dict, outcome: str, steps: int):
+        """B180: Persist token cost summary to KuzuDB."""
+        summary_id = f"cost_{self.task_id}"
+        now = datetime.now().isoformat()
+        
+        query = """
+        MERGE (c:PuzzleCostSummary {summary_id: $id})
+        SET c.task_id = $tid,
+            c.model = $model,
+            c.tokens_in = $tin,
+            c.tokens_out = $tout,
+            c.cost_usd = $cost,
+            c.outcome = $outcome,
+            c.steps = $steps,
+            c.created_at = timestamp($now)
+        """
+        await self.db.execute_write(query, {
+            "id": summary_id,
+            "tid": self.task_id,
+            "model": summary["model"],
+            "tin": int(summary["tokens_in"]),
+            "tout": int(summary["tokens_out"]),
+            "cost": float(summary["cost_usd"]),
+            "outcome": outcome,
+            "steps": int(steps),
+            "now": now
+        })
+
     # ══════════════════════════════════════════════════════════════════
     # Structural Edge Builders
     # ══════════════════════════════════════════════════════════════════

@@ -172,11 +172,22 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B177 | No-Progress Escalation: Fix Tier Ladder and Connect Dissonance | P1 | ready | None | TBD | backlog/plans/B-177-no-progress-dissonance-trigger.md | backlog/B177.md |
 | B178 | Action Semantics Discovery for Autopilot | P1 | ready | B168 | TBD | backlog/plans/B-178-action-semantics-discovery.md | backlog/B178.md |
 | B179 | Victory Condition Inference Threshold Fix | P2 | ready | None | TBD | backlog/plans/B-179-victory-condition-inference.md | backlog/B179.md |
+| B180 | Token Cost Tracker and Budget Enforcer | P1 | ready | None | TBD | backlog/plans/B-180-cost-tracker-budget.md | backlog/B180.md |
+| B181 | Outcome Eval — LLM-as-Judge for Near-Miss Grading | P1 | ready | None | TBD | backlog/plans/B-181-outcome-judge.md | backlog/B181.md |
+| B182 | Enhanced ABHarness Metrics — Four Quality Dimensions | P1 | ready | B180,B181,B185 | TBD | backlog/plans/B-182-enhanced-metrics.md | backlog/B182.md |
+| B183 | Meta-Supervisor Agent | P1 | ready | B184 | TBD | backlog/plans/B-183-meta-supervisor.md | backlog/B183.md |
+| B184 | Circuit Breaker for LLM Calls | P1 | ready | None | TBD | backlog/plans/B-184-circuit-breaker.md | backlog/B184.md |
+| B185 | Failure Classification Taxonomy | P1 | ready | None | TBD | backlog/plans/B-185-failure-taxonomy.md | backlog/B185.md |
+| B186 | Trajectory Evaluator | P2 | ready | None | TBD | backlog/plans/B-186-trajectory-eval.md | backlog/B186.md |
+| B187 | Parallel Strategy Racing | P2 | ready | B180,B183 | TBD | backlog/plans/B-187-strategy-racing.md | backlog/B187.md |
+| B188 | Cross-Run Regression Detection | P2 | ready | B182 | TBD | backlog/plans/B-188-regression-monitor.md | backlog/B188.md |
+| B189 | Puzzle Scheduler | P2 | ready | B180,B184 | TBD | backlog/plans/B-189-puzzle-scheduler.md | backlog/B189.md |
+| B190 | Cross-Puzzle Learning via Task Graph | P3 | ready | B189 | TBD | backlog/plans/B-190-cross-puzzle-learning.md | backlog/B190.md |
 
 ## Summary
 
-- Total cards: 164
-- Ready: 24 (B152, B153, B155, B158, B159, B160, B161, B162, B163, B164, B165, B167, B168, B169, B170, B171, B172, B173, B174, B175, B176, B177, B178, B179)
+- Total cards: 175
+- Ready: 35 (B152, B153, B155, B158, B159, B160, B161, B162, B163, B164, B165, B167, B168, B169, B170, B171, B172, B173, B174, B175, B176, B177, B178, B179, B180, B181, B182, B183, B184, B185, B186, B187, B188, B189, B190)
 - Needs work: 0
 - Complete: 138
 - In progress: 0
@@ -231,7 +242,30 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | 11 | B160 | P3 | Domain dictionary pre-seed |
 | 12 | B159 | P4 | Topological entity resolution |
 
+### Tier 2.5 — Orchestration & Eval Infrastructure (FinOps + Outcome Eval)
+| Order | Card | Priority | Why |
+|-------|------|----------|-----|
+| 15 | B180 | P1 | **Token cost tracker** — accumulates token cost per puzzle, enforces budget, persists PuzzleCostSummary to KuzuDB. Foundation for all efficiency metrics. Independent. |
+| 16 | B181 | P1 | **LLM-as-judge** — rubric-scored near-miss grading (0-5 on 3 dimensions). Replaces binary correct/incorrect. Independent. |
+| 17 | B185 | P1 | **Failure taxonomy** — classify every failure into 8 categories (timeout, parse error, strategy exhausted, etc.). Independent. |
+| 18 | B184 | P1 | **Circuit breaker** — exponential backoff + circuit breaker for LLM calls. Prevents puzzle crashes from Ollama flakiness. Independent. |
+| 19 | B182 | P1 | **Enhanced ABHarness metrics** — four quality dimensions (effectiveness, efficiency, robustness, alignment). Depends on B180+B181+B185. |
+| 20 | B183 | P1 | **Meta-supervisor** — replaces step-count escalation with trajectory-aware supervision (CONTINUE/NUDGE/RESET/ABANDON). Depends on B184. |
+
+### Tier 2.75 — Trajectory Eval + Parallel Strategies (medium-term)
+| Order | Card | Priority | Why |
+|-------|------|----------|-----|
+| 21 | B186 | P2 | **Trajectory evaluator** — offline 5-dimension trajectory scoring (action diversity, hypothesis convergence, exploration efficiency). No LLM needed. Independent. |
+| 22 | B187 | P2 | **Strategy racing** — race 2-3 strategy variants per puzzle via asyncio.gather, first-to-solve wins. Depends on B180+B183. Highest complexity. |
+| 23 | B188 | P2 | **Regression monitor** — cross-run quality degradation detection, flags regressions vs rolling 3-run average. Depends on B182. |
+
+### Tier 2.9 — Scheduling + Cross-Puzzle Learning (long-term)
+| Order | Card | Priority | Why |
+|-------|------|----------|-----|
+| 24 | B189 | P2 | **Puzzle scheduler** — difficulty ordering, health checks, skip-solved, configurable concurrency. Depends on B180+B184. |
+| 25 | B190 | P3 | **Cross-puzzle learning** — wire existing task graph API to ARC runner, persist lessons from solved puzzles for similar downstream puzzles. Depends on B189. |
+
 ### Tier 3 — Blocked until verification lands
 | Order | Card | Blocked by | Why |
 |-------|------|-----------|-----|
-| 12 | B156 | B152 | Level-aware orchestration should land after the replay-verification layer is complete |
+| 26 | B156 | B152 | Level-aware orchestration should land after the replay-verification layer is complete |

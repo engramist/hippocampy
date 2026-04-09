@@ -1734,10 +1734,12 @@ class SolveEngine:
         llm_client: Any,
         session_id: str,
         emit_trace_event: Optional[Callable[[str, str, Dict[str, Any], None, float], None]] = None,
+        cost_tracker: Optional[Any] = None,
     ) -> None:
         self.brain = brain_client
         self.llm = llm_client
         self.session_id = session_id
+        self.cost_tracker = cost_tracker
         self._emit_trace = emit_trace_event  # B138: Optional trace callback
 
         self.archetype_classifier = ArchetypeClassifier()
@@ -1780,6 +1782,12 @@ class SolveEngine:
         self._plateau_lock_duration: int = 0
         # B179: Cooldown for expensive victory inference LLM calls
         self._last_victory_attempt_step: int = -100
+
+    def _record_llm_usage(self):
+        """B180: Record tokens from last LLM call into CostTracker."""
+        if self.cost_tracker and self.llm and hasattr(self.llm, 'last_usage') and self.llm.last_usage:
+            u = self.llm.last_usage
+            self.cost_tracker.record(u.get("prompt_tokens", 0), u.get("completion_tokens", 0))
 
     def _trace(
         self,
@@ -2394,6 +2402,7 @@ class SolveEngine:
                 solved_levels=solved_levels,
                 llm_client=self.llm,
             )
+            self._record_llm_usage()
             self._set_game_rule_hypotheses(hypotheses)
             if self._game_rule_hypotheses:
                 logger.info("[B151] Generated %d game rule hypotheses", len(self._game_rule_hypotheses))
@@ -2494,6 +2503,7 @@ class SolveEngine:
                 past_plans=past_plans,
                 lessons=lessons,
             )
+            self._record_llm_usage()
             
             # B148: Preserve recent-best victory condition if refresh is weak
             if self._victory_condition and new_vc.confidence < self._victory_condition.confidence:
