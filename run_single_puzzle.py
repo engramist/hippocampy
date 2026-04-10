@@ -126,7 +126,8 @@ class SingleTaskRunner:
         DB_PATH.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.db = KuzuClient(str(DB_PATH))
 
-        # 2. Pre-warm Embedder
+        # 2. Configure + pre-warm embedder
+        emb.configure(self.config)
         embedding_model = self.config.get("embeddings", {}).get(
             "model", "sentence-transformers/all-MiniLM-L6-v2"
         )

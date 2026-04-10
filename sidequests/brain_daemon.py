@@ -61,7 +61,10 @@ class BrainDaemon:
     async def start(self):
         print("SideQuest Brain Daemon starting...")
 
-        # Pre-warm embedder (loads ~90MB model into memory)
+        # Configure embedding provider dispatch (sentence-transformers | ollama | openai)
+        emb.configure(self.config)
+
+        # Pre-warm embedder
         embedding_model = self.config.get("embeddings", {}).get(
             "model", "sentence-transformers/all-MiniLM-L6-v2"
         )

@@ -1735,6 +1735,7 @@ class SolveEngine:
         session_id: str,
         emit_trace_event: Optional[Callable[[str, str, Dict[str, Any], None, float], None]] = None,
         cost_tracker: Optional[Any] = None,
+        loaded_procedures: Optional[List[Mapping[str, Any]]] = None,
     ) -> None:
         self.brain = brain_client
         self.llm = llm_client
@@ -1782,6 +1783,35 @@ class SolveEngine:
         self._plateau_lock_duration: int = 0
         # B179: Cooldown for expensive victory inference LLM calls
         self._last_victory_attempt_step: int = -100
+        # B197: Procedure-guided solving state
+        self._loaded_procedures: list[Mapping[str, Any]] = list(loaded_procedures or [])
+        self._applied_procedure_id: Optional[str] = None
+        self._procedure_failed: bool = False
+
+        # If procedures are provided, initialize an active chunk from the top-ranked one
+        try:
+            if self._loaded_procedures:
+                proc = self._loaded_procedures[0]
+                steps = []
+                if proc is not None:
+                    sj = proc.get("steps_json") or proc.get("steps") or "[]"
+                    if isinstance(sj, str):
+                        try:
+                            steps = json.loads(sj) if sj else []
+                        except Exception:
+                            steps = []
+                    elif isinstance(sj, list):
+                        steps = sj
+
+                est_actions = [str(s.get("action") or s.get("step") or "") for s in (steps or []) if s]
+                desc = proc.get("name") or proc.get("description") or f"procedure:{proc.get('procedure_id')}"
+                chunk = PlanChunk(description=f"Procedure: {desc}", estimated_actions=est_actions, source="procedure")
+                self._active_chunk = chunk
+                self._chunk_history.append(chunk)
+                self._applied_procedure_id = proc.get("procedure_id")
+                self._procedure_failed = False
+        except Exception:
+            logger.exception("Failed to initialize procedure chunk")
 
     def _record_llm_usage(self):
         """B180: Record tokens from last LLM call into CostTracker."""
@@ -2334,7 +2364,28 @@ class SolveEngine:
                         "bonus": round(curiosity_bonus, 2),
                         "streak": global_zero_streak
                     })
-                
+
+        # B198: Penalize actions mentioned in proactive warnings (only type == 'warning')
+        try:
+            warnings = context.get("proactive_warnings", []) if isinstance(context, dict) else []
+            if warnings:
+                warning_texts = " ".join(
+                    str(w.get("text", "") or "").lower() for w in warnings if (w.get("type") or "").lower() == "warning"
+                )
+                if warning_texts:
+                    for aid in list(scores.keys()):
+                        # simple substring match against action id (e.g., 'action4')
+                        if aid.lower() in warning_texts:
+                            penalty = 0.3
+                            old = scores.get(aid, 0.0)
+                            new_score = max(0.05, old - penalty)
+                            scores[aid] = new_score
+                            # Emit trace for penalty application
+                            self._trace("proactive_penalty", "proactive_warning_penalty", {"action": aid, "old_score": old, "new_score": new_score}, {"matched_text": warning_texts})
+        except Exception:
+            # Defensive: don't let proactive warning handling break scoring
+            logger.exception("B198: _score_action_families failed to apply proactive warnings")
+
         return scores
 
     async def solve(
@@ -2533,6 +2584,12 @@ class SolveEngine:
             except Exception as exc:
                 logger.warning("report_outcome failed: %s", exc)
             # B124: Mark chunk as failed due to dissonance
+            # If the active chunk originated from a Procedure, record that the procedure failed
+            try:
+                if getattr(self._active_chunk, "source", "") == "procedure":
+                    self._procedure_failed = True
+            except Exception:
+                pass
             self._mark_chunk_failed(self._active_chunk, f"dissonance: {dissonance_reason}")
             self._active_chunk = None
             self.dissonance_detector.reset_chunk()
@@ -2562,6 +2619,11 @@ class SolveEngine:
                     available_actions,
                 )
                 # B124: Mark chunk as failed due to staleness
+                try:
+                    if getattr(self._active_chunk, "source", "") == "procedure":
+                        self._procedure_failed = True
+                except Exception:
+                    pass
                 self._mark_chunk_failed(self._active_chunk, "stale: next action unavailable")
                 self._active_chunk = None
                 self.dissonance_detector.reset_chunk()

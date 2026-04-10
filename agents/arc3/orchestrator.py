@@ -161,13 +161,26 @@ class ARCOrchestrator:
         self._hypothesis_context: dict | None = None
         # B138: Pass trace callback to expose solve-internal brain I/O in agent_trace
         self.solve_engine = SolveEngine(
-            brain_client, self.llm, session_id,
+            brain_client,
+            self.llm,
+            session_id,
             emit_trace_event=self._emit_trace_event,
-            cost_tracker=self.cost_tracker
+            cost_tracker=self.cost_tracker,
+            loaded_procedures=(config.get("loaded_procedures") if isinstance(config, dict) else None),
         )
         self._solve_context: dict | None = None
         # B131: Comprehensive execution trace for CloudWatch-style logging
         self._execution_trace: List[dict] = []
+        # B199: Allow external guidance to scale exploration budget
+        try:
+            self._exploration_budget_multiplier = float((config.get("exploration_budget_multiplier") if isinstance(config, dict) else 1.0) or 1.0)
+        except Exception:
+            self._exploration_budget_multiplier = 1.0
+        if self._exploration_budget_multiplier != 1.0:
+            try:
+                self._emit_trace_event("operation", "gap_aware_budget", {"provided_multiplier": self._exploration_budget_multiplier}, {"status": "configured"})
+            except Exception:
+                pass
         self._trace_start_time = time.time()
         # B89: Prompt budget metrics
         self._invalid_action_count = 0
@@ -237,6 +250,8 @@ class ARCOrchestrator:
         self._supervisor = PuzzleSupervisor(llm_client=llm_client)
         self._supervisor_nudge: Optional[str] = None
         self._should_abandon: bool = False
+        # B198: proactive warnings pushed from SideQuests notify_turn
+        self._proactive_warnings: List[dict] = []
 
     @property
     def _game_rule_hypothesis(self) -> Any | None:
@@ -896,6 +911,39 @@ class ARCOrchestrator:
         }
         self._execution_trace.append(event)
 
+    def _handle_notify_turn_response(self, response: dict | None, step: int | None = None) -> None:
+        """Parse `proactive_context` from notify_turn responses (B198).
+
+        Stores into `self._proactive_warnings` and emits a trace event when present.
+        """
+        try:
+            if not response or not isinstance(response, dict):
+                return
+            proactive_ctx = response.get("proactive_context") or []
+            if not proactive_ctx:
+                return
+            # Save latest proactive warnings
+            self._proactive_warnings = list(proactive_ctx)
+
+            # Emit compact trace for downstream evaluation
+            warnings_compact = [
+                {
+                    "lesson_id": w.get("lesson_id"),
+                    "text": (w.get("text") or "")[:100],
+                    "type": w.get("type"),
+                    "domain": w.get("domain"),
+                }
+                for w in proactive_ctx
+            ]
+            self._emit_trace_event(
+                "operation",
+                "proactive_warning",
+                {"step": step},
+                {"warnings": warnings_compact},
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("B198: failed to parse proactive_context: %s", exc)
+
     @property
     def _entity_map(self) -> Dict[int, Dict[str, Any]]:
         """B120: Property proxy for B119 object roles."""
@@ -1044,6 +1092,11 @@ class ARCOrchestrator:
             detail={"role": "user", "scope": "structure_ingest"},
             response_dict=notify_response,
         )
+        # B198: parse any proactive warnings returned by the notify_turn call
+        try:
+            self._handle_notify_turn_response(notify_response, step=step)
+        except Exception:
+            pass
 
         # B162: Front-load grid analysis before the first action.
         if step == 0:
@@ -1410,6 +1463,18 @@ class ARCOrchestrator:
             hypothesis_context = dict(hypothesis_context)
             hypothesis_context["orchestrator_force_replan"] = True
             self._force_replan = False
+
+        # B198: inject proactive warnings into hypothesis_context passed to SolveEngine
+        hypothesis_context = dict(hypothesis_context or {})
+        hypothesis_context["proactive_warnings"] = [
+            {
+                "text": w.get("text", ""),
+                "type": w.get("type", ""),
+                "domain": w.get("domain", ""),
+                "relevance": float(w.get("relevance_score", 0.0) or 0.0),
+            }
+            for w in getattr(self, "_proactive_warnings", [])
+        ]
 
         solve_ctx = await self.solve_engine.solve(
             observation=observation,
@@ -1877,6 +1942,11 @@ class ARCOrchestrator:
             response_dict=notify_response,
             source_step=step_num,
         )
+        # B198: parse any proactive warnings returned by the notify_turn call
+        try:
+            self._handle_notify_turn_response(notify_response, step=step_num)
+        except Exception:
+            pass
 
         available_actions = observation.get("available_actions") or [f"ACTION{i}" for i in range(1, 8)]
         
@@ -2423,6 +2493,11 @@ class ARCOrchestrator:
             detail={"role": "assistant", "scope": "final_narrative"},
             response_dict=final_notify_response,
         )
+        # B198: parse any proactive warnings returned by the notify_turn call
+        try:
+            self._handle_notify_turn_response(final_notify_response, step=None)
+        except Exception:
+            pass
         self._emit_trace_event(
             "phase_end",
             "evaluate",
@@ -3717,7 +3792,74 @@ class ARCOrchestrator:
         action_id = action.get("action_id")
         rationale = action.get("rationale") or ""
         source = action.get("decision_source", "llm")
+        active_chunk = (self._solve_context or {}).get("active_chunk")
         skip_chunk_enforcement = False  # Set True below for fallback decisions
+
+        chosen_effect = observed_effects.get(action_id)
+        if action_id in available_actions and self._should_skip_chunk_action(chosen_effect):
+            replacement = None
+
+            if active_chunk and active_chunk.get("estimated_actions"):
+                for candidate in active_chunk["estimated_actions"]:
+                    if candidate == action_id or candidate not in available_actions:
+                        continue
+                    if not self._should_skip_chunk_action(observed_effects.get(candidate)):
+                        replacement = candidate
+                        break
+
+            if replacement is None:
+                for candidate in unexplored:
+                    if candidate != action_id:
+                        replacement = candidate
+                        break
+
+            ranked_effects = [
+                effect for effect in hyp_ctx.get("observed_action_effects", [])
+                if effect.get("action") in available_actions and effect.get("action") != action_id
+            ]
+            viable_ranked = [
+                effect for effect in ranked_effects
+                if not self._should_skip_chunk_action(effect)
+            ]
+            if replacement is None and viable_ranked:
+                viable_ranked = sorted(
+                    viable_ranked,
+                    key=lambda effect: (
+                        -float(effect.get("rank_score", 0.0)),
+                        effect.get("times_seen", 0),
+                        effect.get("action", ""),
+                    ),
+                )
+                replacement = viable_ranked[0].get("action")
+
+            if replacement is None:
+                alternatives = [candidate for candidate in available_actions if candidate != action_id]
+                if alternatives:
+                    replacement = min(
+                        alternatives,
+                        key=lambda candidate: (self._action_fatigue.get(candidate, 0), candidate),
+                    )
+
+            if replacement:
+                self._emit_trace_event(
+                    "operation",
+                    "guard_override_reason",
+                    {"original": action_id, "override": replacement},
+                    {
+                        "reason": "stale low-value/no-progress evidence",
+                        "value_status": (chosen_effect or {}).get("value_status"),
+                        "zero_reward_streak": (chosen_effect or {}).get("zero_reward_streak"),
+                    },
+                )
+                action.update({
+                    "action_id": replacement,
+                    "rationale": (
+                        f"policy override: stale low-value {action_id} is still decaying; "
+                        f"switching to {replacement}. Original rationale: {rationale}"
+                    ),
+                    "decision_source": "policy_override",
+                })
+                return action
 
         # B166: Autopilot decisions have highest authority — skip exploration override
         if source == "autopilot":
@@ -3749,7 +3891,6 @@ class ARCOrchestrator:
 
         # B109/B112: Prioritize guidance-grade chunk actions (bfs, directional)
         # Skip chunk enforcement when LLM produced a fallback — let exploration/ranking take over
-        active_chunk = (self._solve_context or {}).get("active_chunk")
         if active_chunk and active_chunk.get("estimated_actions") and not skip_chunk_enforcement:
             chunk_source = active_chunk.get("source", "unknown")
             suggested = active_chunk["estimated_actions"]
@@ -3831,7 +3972,14 @@ class ARCOrchestrator:
                 return action
 
         # B154: ARC Exploration Policy Relaxation
-        max_explore = self._max_exploration_for_level()
+        base_max = self._max_exploration_for_level()
+        mult = getattr(self, "_exploration_budget_multiplier", 1.0) or 1.0
+        max_explore = int(base_max * mult)
+        if max_explore != base_max:
+            try:
+                self._emit_trace_event("operation", "gap_aware_budget", {"base_max": base_max, "multiplier": mult}, {"adjusted_max": max_explore})
+            except Exception:
+                pass
         should_force_explore = (
             unexplored
             and action_id not in unexplored
@@ -4007,8 +4155,13 @@ class ARCOrchestrator:
         allowed = [
             effect for effect in ranked_effects
             if not effect.get("over_retest_budget")
+            and not self._should_skip_chunk_action(effect)
         ]
-        pool = allowed or ranked_effects
+        fallback = [
+            effect for effect in ranked_effects
+            if not effect.get("over_retest_budget")
+        ]
+        pool = allowed or fallback or ranked_effects
         if not pool:
             return None
         pool = sorted(

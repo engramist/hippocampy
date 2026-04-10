@@ -328,7 +328,49 @@ NODE_TABLES = {
         pathway_strength DOUBLE,
         archived         BOOLEAN,
         created_at       TIMESTAMP,
+        last_audited_at  TIMESTAMP,
+        stale_flagged    BOOLEAN,
+        stale_flagged_at TIMESTAMP,
+        orphan_flagged   BOOLEAN,
+        orphan_flagged_at TIMESTAMP,
         PRIMARY KEY (lesson_id)
+    """,
+
+    # B194 — Procedure (reusable, parameterized strategy templates)
+    "Procedure": """
+        procedure_id       STRING,
+        name               STRING,
+        domain             STRING,
+        archetype          STRING,
+        description        STRING,
+        steps_json         STRING,
+        embedding          FLOAT[384],
+        embedding_model    STRING,
+        embedding_dim      INT64,
+        success_count      INT32,
+        application_count  INT32,
+        success_rate       DOUBLE,
+        confidence         DOUBLE,
+        pathway_strength   DOUBLE,
+        archived           BOOLEAN,
+        created_at         TIMESTAMP,
+        last_applied_at    TIMESTAMP,
+        PRIMARY KEY (procedure_id)
+    """,
+
+    # B193 — KnowledgeGap (metacognitive identified gaps)
+    "KnowledgeGap": """
+        gap_id           STRING,
+        domain           STRING,
+        gap_type         STRING,
+        description      STRING,
+        severity         DOUBLE,
+        message_count    INT32,
+        lesson_count     INT32,
+        resolved         BOOLEAN,
+        created_at       TIMESTAMP,
+        resolved_at      TIMESTAMP,
+        PRIMARY KEY (gap_id)
     """,
 
     # B66 — Plan/PlanStep (active agent planning graph)
@@ -546,7 +588,7 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS DERIVED_FROM (FROM DocumentExtract TO Document)",
     "CREATE REL TABLE IF NOT EXISTS ESTABLISHED (FROM Message TO Decision, FROM Message TO Constraint, FROM DocumentExtract TO Decision, FROM DocumentExtract TO Constraint)",
     # Audit trail
-    "CREATE REL TABLE IF NOT EXISTS DEPRECATED_BY (FROM Concept TO Concept, FROM Decision TO Decision, FROM Constraint TO Constraint)",
+    "CREATE REL TABLE IF NOT EXISTS DEPRECATED_BY (FROM Concept TO Concept, FROM Decision TO Decision, FROM Constraint TO Constraint, FROM Lesson TO Lesson)",
     "CREATE REL TABLE IF NOT EXISTS TRIGGERED (FROM Message TO MergeEvent)",
     "CREATE REL TABLE IF NOT EXISTS UPDATES_PATHWAY (FROM MergeEvent TO Concept)",
     # Session provenance
@@ -554,7 +596,9 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS IN_WORKSPACE (FROM Session TO Workspace)",
     "CREATE REL TABLE IF NOT EXISTS WORKING_ON (FROM Session TO MainQuest, FROM Session TO SideQuest)",
     "CREATE REL TABLE IF NOT EXISTS SENT_IN (FROM Message TO Session)",
+    "CREATE REL TABLE IF NOT EXISTS FOLLOWED_BY (FROM Message TO Message, gap_seconds DOUBLE)",
     "CREATE REL TABLE IF NOT EXISTS ESTABLISHED_IN (FROM Decision TO Session, FROM Constraint TO Session, FROM Requirement TO Session, FROM ActionItem TO Session)",
+    "CREATE REL TABLE IF NOT EXISTS DECISION_CHAIN (FROM Decision TO Decision, session_id STRING, step_number INT32)",
     # Ontology routing (core IP — Shape-First Principle)
     "CREATE REL TABLE IF NOT EXISTS ROUTES_TO (FROM GistClass TO SchemaOrgType)",
     # SKOS labels
@@ -582,6 +626,10 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS ANOMALY_DETECTED (FROM Concept TO GlobalConstraint, FROM Concept TO GlobalPreference, FROM Decision TO GlobalConstraint, FROM Constraint TO GlobalConstraint, FROM Requirement TO GlobalConstraint, FROM ActionItem TO GlobalConstraint, FROM Message TO GlobalConstraint, FROM DocumentExtract TO GlobalConstraint, type STRING, confidence DOUBLE, detected_at TIMESTAMP)",
     # B11 — Lesson
     "CREATE REL TABLE IF NOT EXISTS PRODUCED_LESSON (FROM MainQuest TO Lesson)",
+    "CREATE REL TABLE IF NOT EXISTS DISTILLED_FROM (FROM Procedure TO Plan, synthesized_at TIMESTAMP)",
+    "CREATE REL TABLE IF NOT EXISTS APPLIES_TO_ARCHETYPE (FROM Procedure TO Concept)",
+    "CREATE REL TABLE IF NOT EXISTS APPLIED_PROCEDURE (FROM Plan TO Procedure, success BOOLEAN, applied_at TIMESTAMP)",
+    "CREATE REL TABLE IF NOT EXISTS IDENTIFIED_GAP_IN (FROM KnowledgeGap TO MainQuest, FROM KnowledgeGap TO Concept)",
     "CREATE REL TABLE IF NOT EXISTS LEARNED (FROM Session TO Lesson)",
     "CREATE REL TABLE IF NOT EXISTS APPLIES_TO (FROM Lesson TO Concept, FROM Lesson TO Decision, FROM Lesson TO Requirement)",
     "CREATE REL TABLE IF NOT EXISTS RELATED_TO (FROM Lesson TO Lesson)",
@@ -948,6 +996,7 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         "Plan",    # B66
         "PlanStep",  # B66
         "Hypothesis",  # B88
+        "Procedure",  # B194
     ]
     for table in embedding_tables:
         index_name = f"{table.lower()}_emb_idx"

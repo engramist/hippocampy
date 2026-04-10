@@ -482,6 +482,39 @@ export default {
       ),
     });
 
+    const reconstructTimelineParams = Type.Object({
+      topic: Type.String({ description: "Topic to reconstruct a message/decision timeline for" }),
+      session_id: Type.Optional(
+        Type.String({ description: "Optional session filter (auto-filled)" })
+      ),
+      max_hops: Type.Optional(
+        Type.Number({ description: "Maximum timeline hops to return", default: 20 })
+      ),
+      include_decisions: Type.Optional(
+        Type.Boolean({ description: "Include decision nodes in the reconstructed timeline", default: true })
+      ),
+    });
+
+    const knowledgeGapsParams = Type.Object({
+      limit: Type.Optional(
+        Type.Number({ description: "Maximum number of active gaps to return", default: 10 })
+      ),
+      unresolved_only: Type.Optional(
+        Type.Boolean({ description: "Return only unresolved gaps", default: true })
+      ),
+      min_severity: Type.Optional(
+        Type.Number({ description: "Minimum severity threshold", default: 0 })
+      ),
+    });
+
+    const recallProceduresParams = Type.Object({
+      archetype: Type.Optional(Type.String({ description: "Optional archetype filter" })),
+      query: Type.Optional(Type.String({ description: "Optional semantic search query" })),
+      limit: Type.Optional(
+        Type.Number({ description: "Maximum reusable procedures to return", default: 3 })
+      ),
+    });
+
     type BrainToolDefinition = {
       name: string;
       label: string;
@@ -595,6 +628,25 @@ export default {
       min_valence: params.min_valence ?? 0,
       limit: params.limit ?? 5,
       session_id: params.session_id || sessionId,
+    });
+
+    const reconstructTimelineTransform = (params: any = {}) => ({
+      topic: params.topic,
+      session_id: params.session_id || sessionId,
+      max_hops: params.max_hops ?? 20,
+      include_decisions: params.include_decisions ?? true,
+    });
+
+    const knowledgeGapsTransform = (params: any = {}) => ({
+      limit: params.limit ?? 10,
+      unresolved_only: params.unresolved_only ?? true,
+      min_severity: params.min_severity ?? 0,
+    });
+
+    const recallProceduresTransform = (params: any = {}) => ({
+      archetype: params.archetype,
+      query: params.query,
+      limit: params.limit ?? 3,
     });
 
     const registerTaskGraphParams = Type.Object({
@@ -861,6 +913,30 @@ export default {
           "Recall similar historical plans ranked by similarity, valence, and pathway strength.",
         parameters: recallPlansParams,
         transformParams: recallPlansTransform,
+      },
+      {
+        name: "reconstruct_timeline",
+        label: "Reconstruct Timeline (SideQuests Brain)",
+        description:
+          "Reconstruct the time-ordered sequence of messages and decisions for a topic.",
+        parameters: reconstructTimelineParams,
+        transformParams: reconstructTimelineTransform,
+      },
+      {
+        name: "get_knowledge_gaps",
+        label: "Get Knowledge Gaps (SideQuests Brain)",
+        description:
+          "Return active unresolved knowledge gaps identified by the Brain's background sweep.",
+        parameters: knowledgeGapsParams,
+        transformParams: knowledgeGapsTransform,
+      },
+      {
+        name: "recall_procedures",
+        label: "Recall Procedures (SideQuests Brain)",
+        description:
+          "Retrieve reusable procedure templates by archetype or semantic query.",
+        parameters: recallProceduresParams,
+        transformParams: recallProceduresTransform,
       },
       {
         name: "diff_since",

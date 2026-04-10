@@ -211,6 +211,31 @@ These processes run inside the Brain Daemon without explicit tool calls.
 
 ---
 
+### `recall_procedures` — Procedure Retrieval (B194)
+
+**Purpose:** Retrieve reusable, parameterized Procedure templates distilled from successful historical Plans. Filter by `archetype` or use a semantic `query` to find nearest procedures by embedding.
+
+**When to call:** Before planning or when seeking a reusable strategy template for a new puzzle or task.
+
+**Input:**
+```json
+{
+  "archetype": "spatial-nav",
+  "query": "navigate to player",
+  "limit": 3
+}
+```
+
+**Output:** Array of Procedure objects with `procedure_id`, `name`, `description`, `steps_json`, `success_count`, and `success_rate`.
+
+**Integration test cases:**
+- T1: `archetype` filter returns top procedures by success_rate
+- T2: `query` performs vector search over `Procedure` embeddings
+- T3: Procedures include provenance via `DISTILLED_FROM` edges
+- T4: Newly created procedures appear in subsequent recall results
+
+---
+
 ### 6. `analogical_search` — Cross-Quest Search
 
 **Purpose:** Search across ALL historical quests for similar patterns.
@@ -341,6 +366,31 @@ These processes run inside the Brain Daemon without explicit tool calls.
 - T1: Only returns confidence_low=true nodes
 - T2: Archived nodes excluded
 - T3: Ordered by pathway_strength descending
+
+---
+
+### `get_knowledge_gaps` — Knowledge Gap Detection (B193)
+
+**Purpose:** Return active KnowledgeGap nodes identified by the background sweep. Useful for agents to proactively check domains or archetypes where lessons are missing or low-quality.
+
+**Input:**
+```json
+{
+  "limit": 10,
+  "unresolved_only": true,
+  "min_severity": 0.0
+}
+```
+
+**Output:** Array of KnowledgeGap objects with `gap_id`, `domain`, `gap_type`, `description`, `severity`, `message_count`, and `lesson_count`.
+
+**Integration test cases:**
+- T1: unresolved_only=true returns only unresolved gaps
+- T2: gaps sorted by severity desc
+- T3: min_severity filters low-severity items
+- T4: gaps auto-resolve when lessons are created and confidence rises
+
+---
 
 ---
 

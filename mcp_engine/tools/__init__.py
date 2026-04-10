@@ -604,6 +604,38 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
             {"session_id": session_id, "message_id": message_id}
         )
 
+    # B192: Create FOLLOWED_BY edge from the previous message in the same session
+    if session_id != "unknown":
+        try:
+            prev_r = db.execute(
+                "MATCH (m:Message)-[:SENT_IN]->(s:Session {session_id: $sid}) "
+                "WHERE m.message_id <> $mid "
+                "RETURN m.message_id, m.created_at "
+                "ORDER BY m.created_at DESC LIMIT 1",
+                {"sid": session_id, "mid": message_id},
+            )
+            if prev_r.has_next():
+                prow = prev_r.get_next()
+                prev_id = prow[0]
+                prev_created = prow[1]
+                gap_seconds = 0.0
+                try:
+                    prev_dt = datetime.fromisoformat(str(prev_created))
+                    now_dt = datetime.fromisoformat(now)
+                    gap_seconds = (now_dt - prev_dt).total_seconds()
+                except Exception:
+                    gap_seconds = 0.0
+
+                await db.execute_write(
+                    "MATCH (p:Message {message_id: $prev}), (c:Message {message_id: $curr}) "
+                    "MERGE (p)-[r:FOLLOWED_BY]->(c) "
+                    "ON CREATE SET r.gap_seconds = $gap "
+                    "ON MATCH SET r.gap_seconds = $gap",
+                    {"prev": prev_id, "curr": message_id, "gap": gap_seconds},
+                )
+        except Exception:
+            _logger.exception("Failed to write FOLLOWED_BY for message %s", message_id)
+
     # Update routing strength for subsequent messages (not the first)
     if quest_id and not repo_root:
         from mcp_engine.hippocampus import update_routing_strength, get_active_quests_with_embeddings
@@ -688,6 +720,115 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
     except Exception:
         _logger.exception("outcome sense auto-report failed")
 
+    # -----------------------------------------------------------------------
+    # B195: Active Context Push (proactive_context)
+    # - Match high-confidence negative Lessons, Procedures, and KnowledgeGaps
+    # - Rate-limit pushes to one per `min_turns_between_pushes` (default 5)
+    # - Record pushed nodes with LOADED edges source="proactive_push"
+    proactive_context = None
+    try:
+        if session_id != "unknown":
+            from mcp_engine.working_memory import get_session_token_state, track_loaded
+
+            state = get_session_token_state(db, session_id) or {}
+            current_msg_count = int(state.get("message_count", 0) or 0)
+
+            # Read last push count from Session node
+            last_push_count = None
+            try:
+                lr = db.execute(
+                    "MATCH (s:Session {session_id: $sid}) RETURN s.last_proactive_push_msg_count",
+                    {"sid": session_id},
+                )
+                if lr.has_next():
+                    val = lr.get_next()[0]
+                    if val is not None:
+                        try:
+                            last_push_count = int(val)
+                        except Exception:
+                            last_push_count = None
+            except Exception:
+                last_push_count = None
+
+            window = int((config.get("proactive_push", {}) or {}).get("min_turns_between_pushes", 5))
+            allowed = False
+            if last_push_count is None:
+                allowed = True
+            else:
+                allowed = (current_msg_count - last_push_count) >= window
+
+            if allowed:
+                embedding_model = config.get("embeddings", {}).get(
+                    "model", "sentence-transformers/all-MiniLM-L6-v2"
+                )
+                try:
+                    qvec = emb.embed(content, model_name=embedding_model)
+                except Exception:
+                    qvec = None
+
+                candidates: list[dict] = []
+
+                # 1) High-confidence negative Lessons by semantic similarity
+                try:
+                    if qvec is not None:
+                        lessons = db.vector_search("Lesson", "lesson_emb_idx", qvec, 5)
+                        for it in lessons:
+                            node = _safe_result_dict(it.get("node", {}))
+                            conf = float(node.get("confidence") or 0.0)
+                            text = (node.get("text_raw") or "")
+                            if conf >= 0.8 and "failure" in text.lower():
+                                candidates.append({"node_id": node.get("lesson_id"), "node_type": "Lesson", "text_raw": text})
+                except Exception:
+                    _logger.debug("proactive: lesson search failed")
+
+                # 2) Relevant Procedures via semantic search
+                try:
+                    if qvec is not None:
+                        procs = db.vector_search("Procedure", "procedure_emb_idx", qvec, 3)
+                        for it in procs:
+                            node = _safe_result_dict(it.get("node", {}))
+                            candidates.append({"node_id": node.get("procedure_id"), "node_type": "Procedure", "text_raw": node.get("description", "")})
+                except Exception:
+                    _logger.debug("proactive: procedure search failed")
+
+                # 3) KnowledgeGaps by simple text-match on description/domain
+                try:
+                    snippet = (content or "")[:120]
+                    kgq = db.execute(
+                        "MATCH (g:KnowledgeGap) WHERE (g.resolved IS NULL OR g.resolved = false) "
+                        "AND (lower(g.description) CONTAINS lower($snippet) OR lower(g.domain) CONTAINS lower($snippet)) "
+                        "RETURN g.gap_id, g.description, g.severity ORDER BY g.severity DESC LIMIT $lim",
+                        {"snippet": snippet, "lim": 3},
+                    )
+                    while kgq.has_next():
+                        row = kgq.get_next()
+                        candidates.append({"node_id": row[0], "node_type": "KnowledgeGap", "text_raw": row[1] or ""})
+                except Exception:
+                    _logger.debug("proactive: knowledge gap lookup failed")
+
+                if candidates:
+                    try:
+                        # Record LOADED edges so the LLM is aware these nodes were injected
+                        await track_loaded(db, session_id, candidates, source="proactive_push")
+                        # Persist last push marker on Session
+                        try:
+                            await db.execute_write(
+                                "MATCH (s:Session {session_id: $sid}) SET s.last_proactive_push_msg_count = $count",
+                                {"sid": session_id, "count": current_msg_count},
+                            )
+                        except Exception:
+                            _logger.debug("proactive: failed to persist last_proactive_push_msg_count")
+                        proactive_context = {"pushed": True, "items": candidates}
+                    except Exception:
+                        _logger.exception("proactive: track_loaded failed")
+                else:
+                    proactive_context = {"pushed": False, "reason": "no_matches"}
+            else:
+                next_allowed = window - (current_msg_count - (last_push_count or 0))
+                proactive_context = {"pushed": False, "reason": "rate_limited", "next_allowed_in_turns": max(next_allowed, 0)}
+    except Exception:
+        _logger.exception("proactive push failed")
+
     response = {
         "status": "queued",
         "message_id": message_id,
@@ -697,6 +838,8 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
         response["insights"] = insights
     if passive_plan:
         response["passive_plan"] = passive_plan
+    # Always include proactive_context (B195) for caller to inspect
+    response["proactive_context"] = proactive_context if proactive_context is not None else {"pushed": False, "reason": "disabled"}
 
     return response
 
@@ -718,6 +861,125 @@ def _get_pk_for_node_type(node_type: str) -> str:
         "Lesson": "lesson_id",
     }
     return pk_map.get(node_type, "id")
+
+
+async def reconstruct_timeline(params: dict, db: KuzuClient, config: dict) -> dict:
+    """
+    Reconstruct the temporal sequence of Messages (and Decisions) for a given topic.
+
+    params: {topic, session_id?, max_hops?, include_decisions?}
+    Returns: {timeline: [{message: {message_id, text, created_at}, decisions: [{decision_id, text}]}], truncated: bool}
+    """
+    topic = (params.get("topic") or "").strip()
+    if not topic:
+        return {"timeline": []}
+
+    session_id = params.get("session_id", "").strip()
+    max_hops = int(params.get("max_hops", 20))
+    include_decisions = bool(params.get("include_decisions", True))
+
+    try:
+        starts = []
+        # 1) Messages whose text contains the topic
+        if session_id:
+            r = db.execute(
+                "MATCH (m:Message)-[:SENT_IN]->(s:Session {session_id: $sid}) "
+                "WHERE lower(m.text_raw) CONTAINS lower($topic) "
+                "RETURN m.message_id, m.text_raw, m.created_at "
+                "ORDER BY m.created_at ASC",
+                {"sid": session_id, "topic": topic}
+            )
+        else:
+            r = db.execute(
+                "MATCH (m:Message) WHERE lower(m.text_raw) CONTAINS lower($topic) "
+                "RETURN m.message_id, m.text_raw, m.created_at "
+                "ORDER BY m.created_at ASC",
+                {"topic": topic}
+            )
+        while r.has_next():
+            row = r.get_next()
+            starts.append({"message_id": row[0], "text": row[1], "created_at": row[2]})
+
+        # 2) Messages that established Decisions containing the topic
+        r2 = db.execute(
+            "MATCH (m:Message)-[:ESTABLISHED]->(d:Decision) "
+            "WHERE lower(d.text_raw) CONTAINS lower($topic) "
+            "RETURN m.message_id, m.text_raw, m.created_at "
+            "ORDER BY m.created_at ASC",
+            {"topic": topic}
+        )
+        while r2.has_next():
+            row = r2.get_next()
+            if not any(s["message_id"] == row[0] for s in starts):
+                starts.append({"message_id": row[0], "text": row[1], "created_at": row[2]})
+
+        if not starts:
+            return {"timeline": [], "found_starts": 0}
+
+        # Use the earliest matching start
+        start = starts[0]
+        timeline = []
+        curr_id = start["message_id"]
+
+        def _fetch_message(mid: str):
+            try:
+                rr = db.execute(
+                    "MATCH (m:Message {message_id: $mid}) RETURN m.message_id, m.text_raw, m.created_at",
+                    {"mid": mid}
+                )
+                if rr.has_next():
+                    rrow = rr.get_next()
+                    return {"message_id": rrow[0], "text": rrow[1], "created_at": str(rrow[2])}
+            except Exception:
+                pass
+            return None
+
+        def _fetch_decisions_for_message(mid: str):
+            out = []
+            try:
+                rd = db.execute(
+                    "MATCH (m:Message {message_id: $mid})-[:ESTABLISHED]->(d:Decision) "
+                    "RETURN d.decision_id, d.text_raw ORDER BY d.created_at ASC",
+                    {"mid": mid}
+                )
+                while rd.has_next():
+                    rdd = rd.get_next()
+                    out.append({"decision_id": rdd[0], "text": rdd[1]})
+            except Exception:
+                pass
+            return out
+
+        # Append start message
+        msg = _fetch_message(curr_id)
+        if msg:
+            timeline.append({"message": msg, "decisions": _fetch_decisions_for_message(curr_id) if include_decisions else []})
+
+        # Walk FOLLOWED_BY chain up to max_hops
+        for _ in range(max_hops):
+            try:
+                nr = db.execute(
+                    "MATCH (m:Message {message_id: $mid})-[:FOLLOWED_BY]->(n:Message) "
+                    "RETURN n.message_id, n.text_raw, n.created_at LIMIT 1",
+                    {"mid": curr_id}
+                )
+                if not nr.has_next():
+                    break
+                nrow = nr.get_next()
+                next_id = nrow[0]
+                msg = _fetch_message(next_id)
+                if not msg:
+                    break
+                timeline.append({"message": msg, "decisions": _fetch_decisions_for_message(next_id) if include_decisions else []})
+                curr_id = next_id
+            except Exception:
+                break
+
+        truncated = len(timeline) >= max_hops
+        return {"timeline": timeline, "truncated": truncated}
+
+    except Exception:
+        _logger.exception("reconstruct_timeline failed")
+        return {"timeline": [], "error": "internal"}
 
 # ---------------------------------------------------------------------------
 # M2/M5 — current_truth
@@ -1132,6 +1394,47 @@ async def diff_since(params: dict, db: KuzuClient, config: dict) -> dict:
             pass
 
     return result
+
+
+async def get_knowledge_gaps(params: dict, db: KuzuClient, config: dict) -> dict:
+    """B193: Return active KnowledgeGaps for proactive metacognition."""
+    limit = int(params.get("limit", 10))
+    unresolved_only = bool(params.get("unresolved_only", True))
+    min_severity = float(params.get("min_severity", 0.0))
+
+    gaps: list[dict] = []
+    try:
+        if unresolved_only:
+            r = db.execute(
+                "MATCH (g:KnowledgeGap) WHERE g.resolved = false AND g.severity >= $min "
+                "RETURN g.gap_id, g.domain, g.gap_type, g.description, g.severity, g.message_count, g.lesson_count, g.created_at "
+                "ORDER BY g.severity DESC LIMIT $lim",
+                {"min": min_severity, "lim": limit},
+            )
+        else:
+            r = db.execute(
+                "MATCH (g:KnowledgeGap) WHERE g.severity >= $min "
+                "RETURN g.gap_id, g.domain, g.gap_type, g.description, g.severity, g.message_count, g.lesson_count, g.created_at "
+                "ORDER BY g.severity DESC LIMIT $lim",
+                {"min": min_severity, "lim": limit},
+            )
+
+        while r.has_next():
+            row = r.get_next()
+            gaps.append({
+                "gap_id": row[0],
+                "domain": row[1],
+                "gap_type": row[2],
+                "description": row[3],
+                "severity": float(row[4] or 0.0),
+                "message_count": int(row[5] or 0),
+                "lesson_count": int(row[6] or 0),
+                "created_at": str(row[7]) if row[7] is not None else None,
+            })
+    except Exception:
+        _logger.exception("get_knowledge_gaps failed")
+
+    return {"gaps": gaps}
 
 
 # ---------------------------------------------------------------------------
@@ -2086,6 +2389,41 @@ async def report_outcome(params: dict, db: KuzuClient, config: dict) -> dict:
         embedding_model=embedding_model,
         now_iso=now,
     )
+
+    # B197: If a procedure was applied during this plan, update its application stats
+    procedure_id = (params.get("procedure_id") or None)
+    if procedure_id:
+        try:
+            success = None
+            if params.get("procedure_success") is not None:
+                success = bool(params.get("procedure_success"))
+            else:
+                success = valence >= 0
+
+            # Create APPLIED_PROCEDURE edge and update counters
+            await db.execute_write(
+                "MATCH (p:Plan {plan_id: $pid}), (pr:Procedure {procedure_id: $proc_id}) "
+                "MERGE (p)-[r:APPLIED_PROCEDURE]->(pr) "
+                "SET r.success = $success, r.applied_at = timestamp($now)",
+                {"pid": plan_id, "proc_id": procedure_id, "success": success, "now": now},
+            )
+
+            await db.execute_write(
+                "MATCH (pr:Procedure {procedure_id: $proc_id}) "
+                "SET pr.application_count = coalesce(pr.application_count, 0) + 1, "
+                "    pr.success_count = coalesce(pr.success_count, 0) + CASE WHEN $success THEN 1 ELSE 0 END, "
+                "    pr.last_applied_at = timestamp($now)",
+                {"proc_id": procedure_id, "success": success, "now": now},
+            )
+
+            await db.execute_write(
+                "MATCH (pr:Procedure {procedure_id: $proc_id}) "
+                "SET pr.success_rate = CASE WHEN coalesce(pr.application_count,0) > 0 "
+                "THEN toFloat(coalesce(pr.success_count,0)) / toFloat(pr.application_count) ELSE 0.0 END",
+                {"proc_id": procedure_id},
+            )
+        except Exception:
+            _logger.exception("Failed to update Procedure stats for %s", procedure_id)
     return {
         "updated": True,
         "plan_status": "completed",
@@ -2169,6 +2507,57 @@ async def recall_plans(params: dict, db: KuzuClient, config: dict) -> dict:
     return {"plans": plans}
 
 
+async def recall_procedures(params: dict, db: KuzuClient, config: dict) -> dict:
+    """B194: Retrieve applicable Procedure templates for an archetype or query."""
+    archetype = (params.get("archetype") or "").strip()
+    query = (params.get("query") or "").strip()
+    limit = int(params.get("limit", 3))
+
+    embedding_model = config.get("embeddings", {}).get(
+        "model", "sentence-transformers/all-MiniLM-L6-v2"
+    )
+
+    results: list[dict] = []
+    try:
+        if archetype:
+            r = db.execute(
+                "MATCH (p:Procedure) WHERE p.archived = false AND p.archetype = $arch "
+                "RETURN p.procedure_id, p.name, p.description, p.steps_json, p.success_count, p.success_rate "
+                "ORDER BY p.success_rate DESC, p.success_count DESC LIMIT $lim",
+                {"arch": archetype, "lim": limit},
+            )
+            while r.has_next():
+                row = r.get_next()
+                results.append({
+                    "procedure_id": row[0],
+                    "name": row[1],
+                    "description": row[2],
+                    "steps_json": row[3],
+                    "success_count": row[4],
+                    "success_rate": row[5],
+                })
+            return {"procedures": results}
+
+        if query:
+            qvec = emb.embed(query, model_name=embedding_model)
+            neighbors = db.vector_search("Procedure", "procedure_emb_idx", qvec, limit)
+            for item in neighbors:
+                node = _safe_result_dict(item.get("node", {}))
+                results.append({
+                    "procedure_id": node.get("procedure_id"),
+                    "name": node.get("name"),
+                    "description": node.get("description"),
+                    "steps_json": node.get("steps_json"),
+                    "similarity": float(item.get("score", 0.0) or 0.0),
+                })
+            return {"procedures": results}
+
+    except Exception:
+        _logger.exception("recall_procedures failed")
+
+    return {"procedures": []}
+
+
 async def get_openclaw_prompt(params: dict, db: KuzuClient, config: dict) -> dict:
     """
     Get the system prompt fragments for OpenClaw.
@@ -2221,6 +2610,7 @@ TOOL_HANDLERS = {
     "branch_quest":     branch_quest,
     "complete_quest":   complete_quest,
     "diff_since":       diff_since,
+    "reconstruct_timeline": reconstruct_timeline,  # B192
     "get_open_loops":   get_open_loops,
     "ingest_document":  ingest_document,
     "analogical_search": analogical_search,
@@ -2234,6 +2624,8 @@ TOOL_HANDLERS = {
     "register_plan":   register_plan,            # B67
     "report_outcome":  report_outcome,           # B67/B69
     "recall_plans":    recall_plans,             # B67
+    "recall_procedures": recall_procedures,     # B194
+    "get_knowledge_gaps": get_knowledge_gaps,   # B193
     "register_task_graph": register_task_graph,  # B128
     "get_ready_tasks":     get_ready_tasks,      # B128
     "advance_task":        advance_task,         # B128
