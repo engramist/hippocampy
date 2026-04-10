@@ -32,7 +32,8 @@ async def test_b130_logging_requirements():
     runner = DurableARCRunner(harness, NoOpBrainClient(), config={
         "llm": {"model": "gpt-4o"},
         "max_retries_per_puzzle": 1,
-        "max_steps_per_puzzle": 5
+        "max_steps_per_puzzle": 5,
+        "cost": {"budget_per_puzzle_usd": 10.0}
     })
     task = ABTask(task_id="b130-test", category="test", prompt="p")
     setattr(task, "game_id", "game-b130")
@@ -58,6 +59,7 @@ async def test_b130_logging_requirements():
         }]
         mock_orch.get_benchmark_metrics.return_value = {}
         mock_orch._plan_id = "p1"
+        mock_orch._should_abandon = False
         
         # B130: avoid JSON serialization error by mocking CheckpointManager
         with patch("agents.arc3.runner.CheckpointManager") as mock_mgr_cls:
@@ -200,7 +202,8 @@ async def test_b130_failure_path_logging():
     runner = DurableARCRunner(harness, NoOpBrainClient(), config={
         "llm": {"model": "gpt-4o"},
         "max_retries_per_puzzle": 1,
-        "max_steps_per_puzzle": 5
+        "max_steps_per_puzzle": 5,
+        "cost": {"budget_per_puzzle_usd": 10.0}
     })
     task = ABTask(task_id="b130-fail", category="test", prompt="p")
     setattr(task, "game_id", "game-fail")

@@ -38,10 +38,12 @@ class BrainClientProtocol(Protocol):
     async def report_outcome(
         self,
         *,
-        plan_id: str,
-        outcome: str,
+        plan_id: Optional[str] = None,
+        outcome: Optional[str] = None,
+        outcome_text: Optional[str] = None,
         valence: float,
         session_id: str,
+        evidence: Optional[Mapping[str, Any]] = None,
         valence_source: Optional[str] = None,
     ) -> Mapping[str, Any]:
         ...
@@ -78,6 +80,9 @@ class BrainClientProtocol(Protocol):
 
 class NoOpBrainClient(BrainClientProtocol):
     """Brain client that does nothing (for baseline mode)."""
+    def __init__(self):
+        # simple in-memory lesson store for testing cross-puzzle learning
+        self._lessons_store: List[Mapping[str, Any]] = []
 
     @property
     def db(self) -> Optional[Any]:
@@ -95,10 +100,12 @@ class NoOpBrainClient(BrainClientProtocol):
     async def report_outcome(
         self,
         *,
-        plan_id: str,
-        outcome: str,
+        plan_id: Optional[str] = None,
+        outcome: Optional[str] = None,
+        outcome_text: Optional[str] = None,
         valence: float,
         session_id: str,
+        evidence: Optional[Mapping[str, Any]] = None,
         valence_source: Optional[str] = None,
     ) -> Mapping[str, Any]:
         return {"updated": False}
@@ -107,7 +114,16 @@ class NoOpBrainClient(BrainClientProtocol):
         return {"plans": []}
 
     async def recall_relevant_lessons(self, *, query: str, limit: int) -> Mapping[str, Any]:
-        return {"lessons": []}
+        if not query:
+            return {"lessons": []}
+        # Simple substring match over stored lessons
+        matches = [l for l in self._lessons_store if query in (l.get("content", "") + " " + " ".join(l.get("tags", [])))]
+        return {"lessons": matches[:limit]}
+
+    async def store_lesson(self, *, content: str, tags: List[str], session_id: str) -> Mapping[str, Any]:
+        lesson = {"lesson_id": f"lesson_{len(self._lessons_store) + 1}", "content": content, "tags": tags, "session_id": session_id}
+        self._lessons_store.append(lesson)
+        return {"lesson_id": lesson["lesson_id"]}
 
     async def analogical_search(self, *, query: str, current_quest_id: str, limit: int, min_similarity: float) -> Mapping[str, Any]:
         return {"results": []}
@@ -145,7 +161,9 @@ class LocalBrainClient(BrainClientProtocol):
             notify_turn, current_truth, register_plan, report_outcome,
             recall_plans, recall_relevant_lessons, analogical_search,
             branch_quest, register_task_graph, get_ready_tasks,
-            advance_task, fail_task, get_task_graph
+            advance_task, fail_task, get_task_graph, # task graph tools
+            # optional lesson persistence handler (upsert_lesson is the tool name)
+            upsert_lesson as store_lesson
         )
         self._notify_turn_handler = notify_turn
         self._current_truth_handler = current_truth
@@ -160,6 +178,7 @@ class LocalBrainClient(BrainClientProtocol):
         self._advance_task_handler = advance_task
         self._fail_task_handler = fail_task
         self._get_task_graph_handler = get_task_graph
+        self._store_lesson_handler = store_lesson
 
     async def notify_turn(self, *, role: str, content: str, session_id: str, precomputed: Optional[Mapping[str, Any]] = None) -> Mapping[str, Any]:
         params = {"role": role, "content": content, "session_id": session_id}
@@ -178,15 +197,19 @@ class LocalBrainClient(BrainClientProtocol):
     async def report_outcome(
         self,
         *,
-        plan_id: str,
-        outcome: str,
+        plan_id: Optional[str] = None,
+        outcome: Optional[str] = None,
+        outcome_text: Optional[str] = None,
         valence: float,
         session_id: str,
+        evidence: Optional[Mapping[str, Any]] = None,
         valence_source: Optional[str] = None,
     ) -> Mapping[str, Any]:
-        params = {"plan_id": plan_id, "outcome": outcome, "valence": valence, "session_id": session_id}
-        if valence_source:
-            params["valence_source"] = valence_source
+        params = {"plan_id": plan_id, "valence": valence, "session_id": session_id}
+        if outcome: params["outcome"] = outcome
+        if outcome_text: params["outcome_text"] = outcome_text
+        if evidence: params["evidence"] = evidence
+        if valence_source: params["valence_source"] = valence_source
         return await self._report_outcome_handler(params, self.db, self.config)
 
     async def recall_plans(self, *, goal_query: str, session_id: str, min_valence: float, limit: int) -> Mapping[str, Any]:
@@ -208,6 +231,16 @@ class LocalBrainClient(BrainClientProtocol):
     async def register_task_graph(self, *, label: str, session_id: str, owner: str, tasks: List[Mapping[str, Any]]) -> Mapping[str, Any]:
         params = {"label": label, "session_id": session_id, "owner": owner, "tasks": tasks}
         return await self._register_task_graph_handler(params, self.db, self.config)
+
+    async def store_lesson(self, *, content: str, tags: List[str], session_id: str) -> Mapping[str, Any]:
+        # Map to the tool's expected parameters (upsert_lesson expects 'text')
+        params = {"text": content, "domain": (tags[0] if tags else "arc_game"), "lesson_type": "optimization", "session_id": session_id}
+        # if the tool handler exists, call it
+        handler = getattr(self, "_store_lesson_handler", None)
+        if callable(handler):
+            return await handler(params, self.db, self.config)
+        # fallback
+        return {"lesson_id": None}
 
     async def get_ready_tasks(self, *, graph_id: str) -> Mapping[str, Any]:
         params = {"graph_id": graph_id}
@@ -390,12 +423,18 @@ class LedgerBrainClient(BrainClientProtocol):
             return text
         return text[: limit - 1].rstrip() + "…"
 
+    @staticmethod
+    def _safe_get(payload: Any, key: str, default: Any = None) -> Any:
+        if isinstance(payload, Mapping):
+            return payload.get(key, default)
+        return default
+
     async def notify_turn(self, *, role: str, content: str, session_id: str, precomputed: Optional[Mapping[str, Any]] = None) -> Mapping[str, Any]:
         import time
         start = time.time()
         resp = await self.inner.notify_turn(role=role, content=content, session_id=session_id, precomputed=precomputed)
         latency = (time.time() - start) * 1000
-        self._record("unknown", "notify_turn", "write", content, resp.get("status", "ok"), latency)
+        self._record("unknown", "notify_turn", "write", content, self._safe_get(resp, "status", "ok"), latency)
         return resp
 
     async def current_truth(self, *, query: str, session_id: str, scope: str, limit: int) -> Mapping[str, Any]:
@@ -403,7 +442,7 @@ class LedgerBrainClient(BrainClientProtocol):
         start = time.time()
         resp = await self.inner.current_truth(query=query, session_id=session_id, scope=scope, limit=limit)
         latency = (time.time() - start) * 1000
-        results = resp.get("results", [])
+        results = self._safe_get(resp, "results", []) or []
         self._record("unknown", "current_truth", "read", query, f"found {len(results)} items", latency)
         return resp
 
@@ -412,34 +451,41 @@ class LedgerBrainClient(BrainClientProtocol):
         start = time.time()
         resp = await self.inner.register_plan(goal=goal, steps=steps, session_id=session_id)
         latency = (time.time() - start) * 1000
-        self._record("unknown", "register_plan", "write", f"goal={goal}, steps={len(steps)}", f"plan_id={resp.get('plan_id')}", latency)
+        self._record("unknown", "register_plan", "write", f"goal={goal}, steps={len(steps)}", f"plan_id={self._safe_get(resp, 'plan_id')}", latency)
         return resp
 
     async def report_outcome(
         self,
         *,
-        plan_id: str,
-        outcome: str,
+        plan_id: Optional[str] = None,
+        outcome: Optional[str] = None,
+        outcome_text: Optional[str] = None,
         valence: float,
         session_id: str,
+        evidence: Optional[Mapping[str, Any]] = None,
         valence_source: Optional[str] = None,
     ) -> Mapping[str, Any]:
         import time
         start = time.time()
+        
+        # B181: Map outcome_text to outcome if provided (for B167 compatibility)
+        actual_outcome = outcome or outcome_text or "unknown"
+        
         kwargs = {
             "plan_id": plan_id,
-            "outcome": outcome,
-            "valence": valence,
             "session_id": session_id,
+            "valence": valence,
+            "outcome": actual_outcome
         }
-        if valence_source:
-            kwargs["valence_source"] = valence_source
+        if valence_source: kwargs["valence_source"] = valence_source
+        if evidence: kwargs["evidence"] = evidence
+
         resp = await self.inner.report_outcome(**kwargs)
         latency = (time.time() - start) * 1000
         input_summary = f"plan_id={plan_id}, valence={valence:.2f}"
         if valence_source:
             input_summary += f", source={valence_source}"
-        self._record("unknown", "report_outcome", "write", input_summary, resp.get("status", "ok"), latency)
+        self._record("unknown", "report_outcome", "write", input_summary, self._safe_get(resp, "status", "ok"), latency)
         return resp
 
     async def recall_plans(self, *, goal_query: str, session_id: str, min_valence: float, limit: int) -> Mapping[str, Any]:
@@ -447,7 +493,7 @@ class LedgerBrainClient(BrainClientProtocol):
         start = time.time()
         resp = await self.inner.recall_plans(goal_query=goal_query, session_id=session_id, min_valence=min_valence, limit=limit)
         latency = (time.time() - start) * 1000
-        plans = resp.get("plans", [])
+        plans = self._safe_get(resp, "plans", []) or []
         self._record("unknown", "recall_plans", "read", goal_query, f"found {len(plans)} plans", latency)
         return resp
 
@@ -456,7 +502,7 @@ class LedgerBrainClient(BrainClientProtocol):
         start = time.time()
         resp = await self.inner.recall_relevant_lessons(query=query, limit=limit)
         latency = (time.time() - start) * 1000
-        lessons = resp.get("lessons", [])
+        lessons = self._safe_get(resp, "lessons", []) or []
         self._record("unknown", "recall_lessons", "read", query, f"found {len(lessons)} lessons", latency)
         return resp
 
@@ -465,7 +511,7 @@ class LedgerBrainClient(BrainClientProtocol):
         start = time.time()
         resp = await self.inner.analogical_search(query=query, current_quest_id=current_quest_id, limit=limit, min_similarity=min_similarity)
         latency = (time.time() - start) * 1000
-        results = resp.get("results", [])
+        results = self._safe_get(resp, "results", []) or []
         self._record("unknown", "analogical_search", "read", query, f"found {len(results)} results", latency)
         return resp
 
@@ -474,7 +520,7 @@ class LedgerBrainClient(BrainClientProtocol):
         start = time.time()
         resp = await self.inner.branch_quest(name=name, purpose=purpose, parent_quest_id=parent_quest_id)
         latency = (time.time() - start) * 1000
-        self._record("unknown", "branch_quest", "write", name, f"side_quest_id={resp.get('side_quest_id')}", latency)
+        self._record("unknown", "branch_quest", "write", name, f"side_quest_id={self._safe_get(resp, 'side_quest_id')}", latency)
         return resp
 
     async def register_task_graph(self, *, label: str, session_id: str, owner: str, tasks: List[Mapping[str, Any]]) -> Mapping[str, Any]:
@@ -482,7 +528,7 @@ class LedgerBrainClient(BrainClientProtocol):
         start = time.time()
         resp = await self.inner.register_task_graph(label=label, session_id=session_id, owner=owner, tasks=tasks)
         latency = (time.time() - start) * 1000
-        self._record("unknown", "register_task_graph", "write", f"label={label}, tasks={len(tasks)}", f"graph_id={resp.get('graph_id')}", latency)
+        self._record("unknown", "register_task_graph", "write", f"label={label}, tasks={len(tasks)}", f"graph_id={self._safe_get(resp, 'graph_id')}", latency)
         return resp
 
     async def get_ready_tasks(self, *, graph_id: str) -> Mapping[str, Any]:
@@ -490,7 +536,7 @@ class LedgerBrainClient(BrainClientProtocol):
         start = time.time()
         resp = await self.inner.get_ready_tasks(graph_id=graph_id)
         latency = (time.time() - start) * 1000
-        ready = resp.get("ready", [])
+        ready = self._safe_get(resp, "ready", []) or []
         self._record("unknown", "get_ready_tasks", "read", f"graph_id={graph_id}", f"found {len(ready)} tasks", latency)
         return resp
 
@@ -499,7 +545,28 @@ class LedgerBrainClient(BrainClientProtocol):
         start = time.time()
         resp = await self.inner.advance_task(graph_id=graph_id, task_id=task_id, status=status, result=result)
         latency = (time.time() - start) * 1000
-        self._record("unknown", "advance_task", "write", f"task_id={task_id}, status={status}", f"unblocked={len(resp.get('newly_unblocked', []))}", latency)
+        unblocked = len(resp.get('newly_unblocked', [])) if isinstance(resp, dict) else 0
+        self._record("unknown", "advance_task", "write", f"task_id={task_id}, status={status}", f"unblocked={unblocked}", latency)
+        return resp
+
+    async def store_lesson(self, *, content: str, tags: List[str], session_id: str) -> Mapping[str, Any]:
+        import time
+        start = time.time()
+        # Delegate to inner client's store_lesson when available
+        handler = getattr(self.inner, "store_lesson", None)
+        if callable(handler):
+            resp = await handler(content=content, tags=tags, session_id=session_id)
+        else:
+            # Best-effort: try upsert_lesson via inner if available
+            upsert = getattr(self.inner, "upsert_lesson", None)
+            if callable(upsert):
+                resp = await upsert(text=content, domain=(tags[0] if tags else "arc_game"), lesson_type="optimization", session_id=session_id)
+            else:
+                resp = {"lesson_id": None}
+
+        latency = (time.time() - start) * 1000
+        lesson_id = resp.get('lesson_id') if isinstance(resp, dict) else None
+        self._record("unknown", "store_lesson", "write", f"session_id={session_id}", f"lesson_id={lesson_id}", latency)
         return resp
 
     async def fail_task(self, *, graph_id: str, task_id: str, reason: str) -> Mapping[str, Any]:
@@ -515,7 +582,7 @@ class LedgerBrainClient(BrainClientProtocol):
         start = time.time()
         resp = await self.inner.get_task_graph(graph_id=graph_id)
         latency = (time.time() - start) * 1000
-        tasks = resp.get("tasks", [])
+        tasks = self._safe_get(resp, "tasks", []) or []
         self._record("unknown", "get_task_graph", "read", f"graph_id={graph_id}", f"found {len(tasks)} tasks", latency)
         return resp
 

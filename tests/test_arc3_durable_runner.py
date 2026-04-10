@@ -144,6 +144,7 @@ async def test_continues_after_task_failure(tmp_path):
     mgr.CHECKPOINT_DIR = tmp_path
     cp = mgr.load_or_create(tasks)
     assert cp.tasks["task-1"].status == "failed"
+    assert cp.tasks["task-1"].result["failure_class"] == "crash"
     assert cp.tasks["task-2"].status == "complete"
 
 
@@ -331,17 +332,20 @@ async def test_run_calls_branch_quest_per_task(tmp_path):
     CheckpointManager.CHECKPOINT_DIR = tmp_path
     tasks = _sample_tasks()
     harness = _make_stub_harness()
-    brain = NoOpBrainClient()
-    brain.branch_quest = AsyncMock(return_value={"side_quest_id": "sq-1"})
-    runner = DurableARCRunner(harness, brain, config={"llm": {"model": "test"}})
+
+    # DurableARCRunner wraps this brain in a LedgerBrainClient
+    inner_brain = MagicMock(spec=NoOpBrainClient)
+    inner_brain.branch_quest = AsyncMock(return_value={"side_quest_id": "sq-1"})
+    inner_brain.db = None
+
+    runner = DurableARCRunner(harness, inner_brain, config={"llm": {"model": "test"}})
     runner._run_puzzle = AsyncMock(return_value=(
         ABTaskResult(task_id="task-1", variant=ABVariant.SIDEQUESTS, correct=True, steps=1, tokens_input=1, tokens_output=1),
         0.1,
     ))
     await runner.run(tasks, "card-branch")
-    assert brain.branch_quest.call_count == len(tasks)
 
-
+    assert inner_brain.branch_quest.call_count == len(tasks)
 @pytest.mark.asyncio
 async def test_progress_callback_receives_step_snapshots(tmp_path):
     CheckpointManager.CHECKPOINT_DIR = tmp_path

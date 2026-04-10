@@ -13,16 +13,40 @@ class CostTracker:
     _tokens_out: int = 0
 
     def record(self, tokens_in: int, tokens_out: int):
-        self._tokens_in += tokens_in
-        self._tokens_out += tokens_out
+        try:
+            self._tokens_in += int(tokens_in)
+            self._tokens_out += int(tokens_out)
+        except (TypeError, ValueError):
+            pass
 
     @property
     def total_cost_usd(self) -> float:
-        return (self._tokens_in * self.input_price_per_m + self._tokens_out * self.output_price_per_m) / 1_000_000
+        try:
+            input_price = float(self.input_price_per_m)
+            output_price = float(self.output_price_per_m)
+            
+            tin = 0
+            try:
+                tin = int(self._tokens_in)
+            except (TypeError, ValueError):
+                pass
+                
+            tout = 0
+            try:
+                tout = int(self._tokens_out)
+            except (TypeError, ValueError):
+                pass
+                
+            return (tin * input_price + tout * output_price) / 1_000_000
+        except (TypeError, ValueError):
+            return 0.0
 
     @property
     def budget_exhausted(self) -> bool:
-        return self.total_cost_usd >= self.budget_usd
+        try:
+            return self.total_cost_usd >= float(self.budget_usd)
+        except (TypeError, ValueError):
+            return False
 
     def summary(self) -> dict:
         return {

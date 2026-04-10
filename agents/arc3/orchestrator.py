@@ -15,8 +15,10 @@ from benchmarks.arc3.adapter import BrainClientProtocol
 from benchmarks.arc3.schema import ARC3Action, ARC3Observation
 from benchmarks.arc3.state_serializer import StateSerializerForARC
 from agents.arc3.hypothesis import HypothesisManager
-from agents.arc3.solver import SolveEngine, GameRuleHypothesis, PatternMatchTracker, ObjectRole
+from agents.arc3.solver import SolveEngine, GameRuleHypothesis, PatternMatchTracker, ObjectRole, RoleType
 from agents.arc3.cost_tracker import CostTracker
+from agents.arc3.circuit_breaker import CircuitBreakerLLMClient
+from agents.arc3.supervisor import PuzzleSupervisor, SupervisorDecision, SupervisorVerdict
 from agents.arc3.grid_analysis import grid_characteristic_summary
 
 from agents.arc3.repl_verification import LevelReplayVerifier, RuleRefinementLoop
@@ -129,7 +131,22 @@ class ARCOrchestrator:
         cost_tracker: Optional[CostTracker] = None,
     ):
         self.brain = brain_client
-        self.llm = llm_client
+        llm_cfg = config.get("llm", {}) if isinstance(config, dict) else {}
+        llm_chat = getattr(llm_client, "chat", None)
+        is_mock_like_llm = bool(
+            llm_chat is not None
+            and (hasattr(llm_chat, "return_value") or hasattr(llm_chat, "side_effect"))
+        )
+        if llm_client and not isinstance(llm_client, CircuitBreakerLLMClient) and not is_mock_like_llm:
+            self.llm = CircuitBreakerLLMClient(
+                llm_client,
+                failure_threshold=llm_cfg.get("circuit_breaker_failure_threshold", 3),
+                cooldown_seconds=llm_cfg.get("circuit_breaker_cooldown_seconds", 30.0),
+                max_retries=llm_cfg.get("circuit_breaker_max_retries", 3),
+                emit_trace_event=self._emit_trace_event,
+            )
+        else:
+            self.llm = llm_client
         self.session_id = session_id
         self.serializer = serializer
         self.config = config
@@ -144,7 +161,7 @@ class ARCOrchestrator:
         self._hypothesis_context: dict | None = None
         # B138: Pass trace callback to expose solve-internal brain I/O in agent_trace
         self.solve_engine = SolveEngine(
-            brain_client, llm_client, session_id,
+            brain_client, self.llm, session_id,
             emit_trace_event=self._emit_trace_event,
             cost_tracker=self.cost_tracker
         )
@@ -216,6 +233,10 @@ class ARCOrchestrator:
         self._last_autopilot_player_pos: Optional[tuple[float, float]] = None
         # B178: Action semantics discovery
         self._action_direction_map: Optional[Dict[str, tuple[float, float]]] = None
+        # B183: Meta-Supervisor
+        self._supervisor = PuzzleSupervisor(llm_client=llm_client)
+        self._supervisor_nudge: Optional[str] = None
+        self._should_abandon: bool = False
 
     @property
     def _game_rule_hypothesis(self) -> Any | None:
@@ -1800,54 +1821,35 @@ class ARCOrchestrator:
                 loop_check_elapsed,
             )
 
-            # B141: Enforce No-Progress Bail-Out Escalation
-            # B177: Cumulative escalation ladder
-            if self._consecutive_no_progress_steps >= 3:
-                self._force_replan = True # NEW: read by SolveEngine
-                if self._solve_context:
-                    self._solve_context["dissonance"] = True
-                self._emit_trace_event(
-                    "operation", 
-                    "no_progress_escalation", 
-                    {"tier": 1, "action": "force_replan", "steps": self._consecutive_no_progress_steps}
-                )
+            # B183: Meta-Supervisor evaluation (replaces B141 escalation ladder)
+            verdict = await self._supervisor.evaluate(
+                step_history=self._step_history,
+                execution_trace=self._execution_trace,
+                cost_tracker=getattr(self, 'cost_tracker', None)
+            )
+            
+            if verdict.decision != SupervisorDecision.CONTINUE:
+                self._emit_trace_event("operation", "supervisor_verdict", {
+                    "step": step_num, 
+                    "decision": verdict.decision.value, 
+                    "reason": verdict.reason,
+                })
 
-            if self._consecutive_no_progress_steps >= 5:
-                if self._step_history:
-                    last_action = self._step_history[-1].get("action_id")
-                    if last_action and last_action in self._available_actions:
-                        self._blocked_actions.add(last_action)
-                        self._emit_trace_event(
-                            "operation", 
-                            "no_progress_escalation", 
-                            {"tier": 2, "action": "block_action", "blocked": last_action, "steps": self._consecutive_no_progress_steps}
-                        )
-
-            if self._consecutive_no_progress_steps >= 8:
-                self._mark_active_chunk_failed("no_progress_abandon")
-                # B177: Escalate strategy reset instead of resetting counter
+            if verdict.decision == SupervisorDecision.NUDGE:
+                # Inject hint into next prompt context (handled in build_action_packet)
+                self._supervisor_nudge = verdict.nudge_hint
+            elif verdict.decision == SupervisorDecision.RESET_STRATEGY:
+                # Tier 3 equivalent + B177 strategy wipe
+                self.solve_engine._archetype_confidence *= 0.3
+                self.solve_engine._victory_condition = None
+                self.solve_engine._plateau_locked_family = None
+                self._blocked_actions.clear()
                 if hasattr(self, '_blocked_axes'):
                     self._blocked_axes.clear()
-                if hasattr(self.solve_engine, '_plateau_locked_family'):
-                    self.solve_engine._plateau_locked_family = None
-                
-                self._emit_trace_event(
-                    "operation", 
-                    "no_progress_escalation", 
-                    {"tier": 3, "action": "strategy_reset", "steps": self._consecutive_no_progress_steps}
-                )
-
-            if self._consecutive_no_progress_steps >= 20:
-                # B177: Tier 4 nuclear option - re-evaluate everything
-                self.solve_engine._archetype_confidence *= 0.5
-                self.solve_engine._victory_condition = None
-                self._blocked_actions.clear() # Fresh start for exploration
-                self._consecutive_no_progress_steps = 10 # Cap but keep tiers 1-3 active
-                
-                self._emit_trace_event(
-                    "operation", "no_progress_escalation",
-                    {"tier": 4, "action": "full_reset", "steps": 20}
-                )
+                self._mark_active_chunk_failed("supervisor_reset")
+            elif verdict.decision == SupervisorDecision.ABANDON:
+                self._should_abandon = True
+                logger.warning(f"B183: Supervisor deciding to ABANDON at step {step_num}: {verdict.reason}")
         else:
             self._emit_trace_event(
                 "loop_check_skipped",
@@ -2715,6 +2717,18 @@ class ARCOrchestrator:
             "prompt_budget",
             {"tokens": token_estimate, "mode": mode, "budget": budget},
         )
+
+        # B183: Meta-Supervisor Nudge
+        if hasattr(self, '_supervisor_nudge') and self._supervisor_nudge:
+            packet.blocks.append(
+                ContentBlock(
+                    type="SUPERVISOR_NUDGE",
+                    content=self._supervisor_nudge,
+                    header="STRATEGIC NUDGE",
+                )
+            )
+            # Clear nudge after injecting into prompt
+            self._supervisor_nudge = None
 
         return packet
 

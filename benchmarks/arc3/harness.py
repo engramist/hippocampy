@@ -7,6 +7,7 @@ step count, and token efficiency.
 
 from __future__ import annotations
 import asyncio
+import inspect
 import json
 import time
 import os
@@ -58,6 +59,23 @@ class ARC3Harness(ABHarness):
         if self._session:
             await self._session.aclose()
 
+    @staticmethod
+    async def _maybe_await(value: Any) -> Any:
+        if inspect.isawaitable(value):
+            return await value
+        return value
+
+    async def _safe_raise_for_status(self, response: Any) -> None:
+        raise_for_status = getattr(response, "raise_for_status", None)
+        if callable(raise_for_status):
+            await self._maybe_await(raise_for_status())
+
+    async def _safe_json(self, response: Any) -> Any:
+        json_method = getattr(response, "json", None)
+        if not callable(json_method):
+            return {}
+        return await self._maybe_await(json_method())
+
     async def list_games(self) -> List[Dict[str, Any]]:
         """Return the current live ARC game list from the API."""
         if self.mock_api:
@@ -65,8 +83,8 @@ class ARC3Harness(ABHarness):
         if not self._session:
             raise RuntimeError("API session not initialized. Did you call setup()?")
         resp = await self._session.get("/api/games")
-        resp.raise_for_status()
-        data = resp.json()
+        await self._safe_raise_for_status(resp)
+        data = await self._safe_json(resp)
         if not isinstance(data, list):
             raise RuntimeError(f"Unexpected /api/games response type: {type(data).__name__}")
         return data
@@ -117,13 +135,13 @@ class ARC3Harness(ABHarness):
                     raise RuntimeError("API session not initialized. Did you call setup()?")
                 # 1. Open scorecard
                 scorecard_resp = await self._session.post("/api/scorecard/open", json={})
-                scorecard_resp.raise_for_status()
-                card_id = scorecard_resp.json()["card_id"]
+                await self._safe_raise_for_status(scorecard_resp)
+                card_id = (await self._safe_json(scorecard_resp))["card_id"]
                 # 2. Reset game (start session)
                 reset_payload = {"game_id": game_id, "card_id": card_id}
                 reset_resp = await self._session.post("/api/cmd/RESET", json=reset_payload)
-                reset_resp.raise_for_status()
-                frame_response = reset_resp.json()
+                await self._safe_raise_for_status(reset_resp)
+                frame_response = await self._safe_json(reset_resp)
                 guid = frame_response["guid"]
             while steps < max_attempts:
                 obs = adapter.normalize_observation(frame_response)
@@ -148,8 +166,8 @@ class ARC3Harness(ABHarness):
                         if "rationale" in raw_action:
                             action_payload["reasoning"] = raw_action["rationale"]
                     action_resp = await self._session.post(f"/api/cmd/{action_id}", json=action_payload)
-                    action_resp.raise_for_status()
-                    frame_response = action_resp.json()
+                    await self._safe_raise_for_status(action_resp)
+                    frame_response = await self._safe_json(action_resp)
                     reward = 1.0 if frame_response.get("state") == "WIN" else 0.0
                     done = frame_response.get("state") in ("WIN", "GAME_OVER")
                 recall_query = "What did I learn from similar puzzles?" if variant == ABVariant.SIDEQUESTS else None
