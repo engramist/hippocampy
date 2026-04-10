@@ -7,6 +7,7 @@ Implements the protocol defined in benchmarks/ab_contract.md
 import asyncio
 import json
 import hashlib
+import math
 import time
 import random
 import numpy as np
@@ -49,14 +50,24 @@ class ABTaskResult:
     tokens_input: int
     tokens_output: int
     error_message: Optional[str] = None
+    failure_class: Optional[str] = None
     response_text: Optional[str] = None
+    attempts: int = 1
+    cost_usd: Optional[float] = None
+    invalid_action_count: Optional[int] = None
+    dissonance_triggered: Optional[bool] = None
+    trajectory_score: Optional[dict] = None
     timestamp: float = field(default_factory=time.time)
     final_state: Optional[str] = None  # WIN, GAME_OVER, NOT_FINISHED
     final_observation: Optional[dict] = None  # Full observation with grid, state, etc.
+    judge_verdict: Optional[dict] = None  # B181: LLM-as-Judge near-miss grading
 
     @property
     def total_tokens(self) -> int:
-        return self.tokens_input + self.tokens_output
+        try:
+            return int(self.tokens_input) + int(self.tokens_output)
+        except (TypeError, ValueError):
+            return 0
 
 
 @dataclass
@@ -238,39 +249,294 @@ class ABHarness(BenchmarkHarness):
             response_text="placeholder response"
         )
 
+    @staticmethod
+    def _metric_from_result(
+        result: ABTaskResult,
+        attr_name: str,
+        benchmark_path: Tuple[str, ...] = (),
+    ) -> Any:
+        """Read an optional metric directly from the task result or benchmark_metrics."""
+        value = getattr(result, attr_name, None)
+        if value is not None:
+            return value
+
+        current = getattr(result, "benchmark_metrics", {}) or {}
+        for key in benchmark_path:
+            if not isinstance(current, dict):
+                return None
+            current = current.get(key)
+        return current
+
+    @staticmethod
+    def _is_numeric_metric(value: Any) -> bool:
+        """Return True when the value can participate in delta math."""
+        return isinstance(value, (int, float, np.number)) and not isinstance(value, bool)
+
+    @classmethod
+    def _format_delta(cls, baseline_val: float, sidequests_val: float) -> str:
+        """Format percent deltas consistently, including zero and infinity edges."""
+        if not math.isfinite(baseline_val) or not math.isfinite(sidequests_val):
+            if baseline_val == sidequests_val:
+                return "+0.0%"
+            if math.isfinite(baseline_val) and math.isinf(sidequests_val):
+                return "+inf%" if sidequests_val > 0 else "-inf%"
+            return "N/A"
+
+        if baseline_val != 0:
+            delta_pct = ((sidequests_val - baseline_val) / abs(baseline_val)) * 100
+        elif sidequests_val != 0:
+            delta_pct = float("inf") if sidequests_val > 0 else float("-inf")
+        else:
+            delta_pct = 0.0
+
+        if delta_pct == float("inf"):
+            return "+inf%"
+        if delta_pct == float("-inf"):
+            return "-inf%"
+        return f"{delta_pct:+.1f}%"
+
+    @classmethod
+    def _build_metric_comparison(cls, baseline_val: Any, sidequests_val: Any) -> Dict[str, Any]:
+        """Compare numeric or dict-valued metrics between baseline and SideQuests."""
+        if isinstance(baseline_val, dict) or isinstance(sidequests_val, dict):
+            baseline_dict = baseline_val if isinstance(baseline_val, dict) else {}
+            sidequests_dict = sidequests_val if isinstance(sidequests_val, dict) else {}
+            delta_raw: Dict[str, Any] = {}
+            delta_fmt: Dict[str, Any] = {}
+
+            for key in sorted(set(baseline_dict) | set(sidequests_dict)):
+                base_item = baseline_dict.get(key)
+                side_item = sidequests_dict.get(key)
+                if cls._is_numeric_metric(base_item) and cls._is_numeric_metric(side_item):
+                    delta_raw[key] = round(float(side_item) - float(base_item), 4)
+                    delta_fmt[key] = cls._format_delta(float(base_item), float(side_item))
+                else:
+                    delta_raw[key] = None
+                    delta_fmt[key] = "N/A"
+
+            return {
+                "baseline": baseline_val,
+                "sidequests": sidequests_val,
+                "delta": delta_fmt,
+                "delta_raw": delta_raw,
+            }
+
+        if not cls._is_numeric_metric(baseline_val) or not cls._is_numeric_metric(sidequests_val):
+            return {
+                "baseline": baseline_val,
+                "sidequests": sidequests_val,
+                "delta": "N/A",
+                "delta_raw": None,
+            }
+
+        baseline_num = float(baseline_val)
+        sidequests_num = float(sidequests_val)
+        delta_raw = (
+            round(sidequests_num - baseline_num, 4)
+            if math.isfinite(baseline_num) and math.isfinite(sidequests_num)
+            else None
+        )
+        return {
+            "baseline": baseline_val,
+            "sidequests": sidequests_val,
+            "delta": cls._format_delta(baseline_num, sidequests_num),
+            "delta_raw": delta_raw,
+        }
+
     def _compute_metrics(self, results: List[ABTaskResult]) -> Dict[str, Any]:
-        """Compute all metrics for a set of results."""
+        """Compute legacy metrics plus B182's four quality dimensions."""
         if not results:
             return {}
 
-        # Solve rate
-        correct_count = sum(1 for r in results if r.correct)
-        solve_rate = correct_count / len(results) if results else 0.0
-
-        # Steps to solve (only for correct results)
+        total = len(results)
         correct_results = [r for r in results if r.correct]
-        avg_steps = (sum(r.steps for r in correct_results) / len(correct_results)) if correct_results else 0.0
-
-        # Token efficiency (tokens per solved task)
+        failed_results = [r for r in results if not r.correct]
+        correct_count = len(correct_results)
+        total_steps = sum(max(int(getattr(r, "steps", 0) or 0), 0) for r in results)
         total_tokens = sum(r.total_tokens for r in results)
-        token_efficiency = total_tokens / correct_count if correct_count > 0 else float('inf')
 
-        # Repeated mistakes detection (simplified: count same error messages)
+        solve_rate = correct_count / total if total else 0.0
+        avg_steps = (sum(r.steps for r in correct_results) / correct_count) if correct_count else 0.0
+        token_efficiency = total_tokens / correct_count if correct_count > 0 else float("inf")
+
+        judge_scores: List[float] = []
+        hallucination_count = 0
+        archetype_scores: Dict[str, List[float]] = {}
+        for result in results:
+            verdict = result.judge_verdict
+            if not isinstance(verdict, dict):
+                continue
+            score = verdict.get("composite_score")
+            if score is None:
+                continue
+            score_value = float(score)
+            judge_scores.append(score_value)
+            archetype = str(verdict.get("archetype") or "unknown")
+            archetype_scores.setdefault(archetype, []).append(score_value)
+            reasoning_score = verdict.get("reasoning_score")
+            explanation = str(verdict.get("explanation") or "").lower()
+            if (reasoning_score is not None and float(reasoning_score) <= 1) or "hallucin" in explanation:
+                hallucination_count += 1
+
+        avg_judge_score = sum(judge_scores) / len(judge_scores) if judge_scores else 0.0
+        near_miss_rate: Any = "N/A"
+        if judge_scores:
+            near_misses = sum(
+                1
+                for result in failed_results
+                if isinstance(result.judge_verdict, dict)
+                and float(result.judge_verdict.get("composite_score", 0) or 0) >= 3.0
+            )
+            near_miss_rate = round(near_misses / total, 4) if total else 0.0
+
+        judge_score_by_archetype: Any = "N/A"
+        if archetype_scores:
+            judge_score_by_archetype = {
+                archetype: round(sum(scores) / len(scores), 2)
+                for archetype, scores in sorted(archetype_scores.items())
+            }
+
+        cost_values = [
+            float(value)
+            for result in results
+            if (value := self._metric_from_result(result, "cost_usd", ("token_cost", "cost_usd"))) is not None
+        ]
+        solved_cost_values = [
+            float(value)
+            for result in correct_results
+            if (value := self._metric_from_result(result, "cost_usd", ("token_cost", "cost_usd"))) is not None
+        ]
+        solved_tokens = [result.total_tokens for result in correct_results]
+
+        avg_steps_per_solve: Any = round(avg_steps, 2) if correct_count else "N/A"
+        avg_tokens_per_solve: Any = (
+            round(sum(solved_tokens) / len(solved_tokens), 2) if solved_tokens else "N/A"
+        )
+        avg_cost_per_solve: Any = (
+            round(sum(solved_cost_values) / len(solved_cost_values), 5)
+            if solved_cost_values
+            else "N/A"
+        )
+        tokens_per_step: Any = round(total_tokens / total_steps, 2) if total_steps else "N/A"
+        cost_per_step: Any = (
+            round(sum(cost_values) / total_steps, 4)
+            if cost_values and total_steps
+            else "N/A"
+        )
+
         error_counts: Dict[str, int] = {}
-        for r in results:
-            if r.error_message:
-                error_counts[r.error_message] = error_counts.get(r.error_message, 0) + 1
+        for result in results:
+            if result.error_message:
+                error_counts[result.error_message] = error_counts.get(result.error_message, 0) + 1
+        repeated_mistakes = sum(1 for count in error_counts.values() if count > 1) / total if total else 0.0
 
-        repeated_mistakes = sum(1 for count in error_counts.values() if count > 1) / len(results) if results else 0.0
+        retry_rate = round(
+            sum(1 for result in results if int(getattr(result, "attempts", 1) or 1) > 1) / total,
+            4,
+        ) if total else 0.0
+
+        failure_classes = [str(result.failure_class) for result in failed_results if result.failure_class]
+        has_failure_taxonomy = bool(failure_classes) or not failed_results
+        if has_failure_taxonomy:
+            crash_rate: Any = round(failure_classes.count("crash") / total, 4) if total else 0.0
+            timeout_rate: Any = round(failure_classes.count("llm_timeout") / total, 4) if total else 0.0
+            budget_exceeded_rate: Any = round(failure_classes.count("budget_exceeded") / total, 4) if total else 0.0
+            strategy_exhausted_rate: Any = round(failure_classes.count("strategy_exhausted") / total, 4) if total else 0.0
+            loop_stuck_rate: Any = round(failure_classes.count("stuck_in_loop") / total, 4) if total else 0.0
+        else:
+            crash_rate = "N/A"
+            timeout_rate = "N/A"
+            budget_exceeded_rate = "N/A"
+            strategy_exhausted_rate = "N/A"
+            loop_stuck_rate = "N/A"
+
+        invalid_action_values = [
+            int(value)
+            for result in results
+            if (value := self._metric_from_result(result, "invalid_action_count", ("prompt_budget", "invalid_action_count"))) is not None
+        ]
+        invalid_action_rate: Any = (
+            round(sum(invalid_action_values) / total_steps, 4)
+            if invalid_action_values and total_steps
+            else "N/A"
+        )
+
+        dissonance_values = [
+            bool(result.dissonance_triggered)
+            for result in results
+            if getattr(result, "dissonance_triggered", None) is not None
+        ]
+        dissonance_trigger_rate: Any = (
+            round(sum(1 for triggered in dissonance_values if triggered) / total, 4)
+            if dissonance_values and total
+            else "N/A"
+        )
+
+        hallucination_rate: Any = (
+            round(hallucination_count / len(judge_scores), 4)
+            if judge_scores
+            else "N/A"
+        )
+
+        effectiveness = {
+            "solve_rate": round(solve_rate, 4),
+            "judge_score_avg": round(avg_judge_score, 2) if judge_scores else "N/A",
+            "near_miss_rate": near_miss_rate,
+            "judge_score_by_archetype": judge_score_by_archetype,
+        }
+        efficiency = {
+            "avg_steps_per_solve": avg_steps_per_solve,
+            "avg_tokens_per_solve": avg_tokens_per_solve,
+            "avg_cost_per_solve": avg_cost_per_solve,
+            "tokens_per_step": tokens_per_step,
+            "cost_per_step": cost_per_step,
+        }
+        robustness = {
+            "crash_rate": crash_rate,
+            "timeout_rate": timeout_rate,
+            "budget_exceeded_rate": budget_exceeded_rate,
+            "strategy_exhausted_rate": strategy_exhausted_rate,
+            "loop_stuck_rate": loop_stuck_rate,
+            "retry_rate": retry_rate,
+        }
+        safety_alignment = {
+            "invalid_action_rate": invalid_action_rate,
+            "dissonance_trigger_rate": dissonance_trigger_rate,
+            "hallucination_rate": hallucination_rate,
+        }
 
         return {
             "solve_rate": round(solve_rate, 4),
             "steps_to_solve": round(avg_steps, 2),
-            "token_efficiency": round(token_efficiency, 2),
+            "token_efficiency": round(token_efficiency, 2) if math.isfinite(token_efficiency) else float("inf"),
+            "avg_judge_score": round(avg_judge_score, 2),
             "repeated_mistakes": round(repeated_mistakes, 4),
+            "judge_score_avg": effectiveness["judge_score_avg"],
+            "near_miss_rate": near_miss_rate,
+            "judge_score_by_archetype": judge_score_by_archetype,
+            "avg_steps_per_solve": avg_steps_per_solve,
+            "avg_tokens_per_solve": avg_tokens_per_solve,
+            "avg_cost_per_solve": avg_cost_per_solve,
+            "tokens_per_step": tokens_per_step,
+            "cost_per_step": cost_per_step,
+            "crash_rate": crash_rate,
+            "timeout_rate": timeout_rate,
+            "budget_exceeded_rate": budget_exceeded_rate,
+            "strategy_exhausted_rate": strategy_exhausted_rate,
+            "loop_stuck_rate": loop_stuck_rate,
+            "retry_rate": retry_rate,
+            "invalid_action_rate": invalid_action_rate,
+            "dissonance_trigger_rate": dissonance_trigger_rate,
+            "hallucination_rate": hallucination_rate,
             "total_tokens": total_tokens,
             "succeeded": correct_count,
             "failed": len(results) - correct_count,
+            "quality_dimensions": {
+                "effectiveness": effectiveness,
+                "efficiency": efficiency,
+                "robustness": robustness,
+                "safety_alignment": safety_alignment,
+            },
         }
 
     def generate_run_metadata(self, variant: ABVariant, wall_time: float) -> ABRunMetadata:
@@ -337,34 +603,15 @@ class ABHarness(BenchmarkHarness):
         baseline_metrics = self._compute_metrics(baseline)
         sidequests_metrics = self._compute_metrics(sidequests)
 
-        # Calculate deltas
-        metrics_dict = {}
-        for key in ["solve_rate", "steps_to_solve", "token_efficiency", "repeated_mistakes"]:
-            baseline_val = baseline_metrics.get(key, 0)
-            sidequests_val = sidequests_metrics.get(key, 0)
-
-            if baseline_val != 0:
-                delta_pct = ((sidequests_val - baseline_val) / abs(baseline_val)) * 100
-            elif sidequests_val != 0:
-                # If baseline is 0 but sidequests is not, show infinity or large value
-                delta_pct = float('inf') if sidequests_val > 0 else float('-inf')
-            else:
-                delta_pct = 0.0
-
-            # Format delta for output
-            if delta_pct == float('inf'):
-                delta_str = "+inf%"
-            elif delta_pct == float('-inf'):
-                delta_str = "-inf%"
-            else:
-                delta_str = f"{delta_pct:+.1f}%"
-
-            metrics_dict[key] = {
-                "baseline": baseline_val,
-                "sidequests": sidequests_val,
-                "delta": delta_str,
-                "delta_raw": round(sidequests_val - baseline_val, 4)
-            }
+        metrics_dict: Dict[str, Dict[str, Any]] = {}
+        metric_keys = sorted(set(baseline_metrics) | set(sidequests_metrics))
+        for key in metric_keys:
+            if key == "quality_dimensions":
+                continue
+            metrics_dict[key] = self._build_metric_comparison(
+                baseline_metrics.get(key, "N/A"),
+                sidequests_metrics.get(key, "N/A"),
+            )
 
         # Identify tasks where sidequests helped
         helped_tasks = []

@@ -325,7 +325,8 @@ class TestConfigWriter:
             config_path=config_path
         )
         content = config_path.read_text()
-        assert content.count('provider = "ollama"') == 1
+        # B181: Expect 2 now (one in [llm], one in [judge])
+        assert content.count('provider = "ollama"') == 2
 
 class TestSchemaInitializer:
 

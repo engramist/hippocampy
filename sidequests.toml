@@ -73,3 +73,8 @@ max_retries_per_puzzle = 2     # retry attempts on GAME_OVER before moving on
 budget_per_puzzle_usd = 0.50
 # Pricing per million tokens (input/output)
 pricing_per_million_tokens = { "llama3.1:8b" = { input = 0.0, output = 0.0 }, "qwen2.5:7b" = { input = 0.0, output = 0.0 }, "claude-3-5-sonnet-20241022" = { input = 3.0, output = 15.0 }, "gpt-4o-mini" = { input = 0.15, output = 0.60 } }
+
+[judge]
+provider = "ollama"
+model = "qwen2.5:7b"
+timeout_seconds = 60

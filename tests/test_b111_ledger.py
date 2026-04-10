@@ -32,6 +32,8 @@ async def test_runner_ledger_aggregation():
     
     brain = MagicMock()
     brain.db = MagicMock()
+    brain.db.execute_read = AsyncMock(return_value=[])
+    brain.db.execute_write = AsyncMock()
     brain.branch_quest = AsyncMock(return_value={"side_quest_id": "sq1"})
     brain.notify_turn = AsyncMock(return_value={"status": "ok"})
     brain.current_truth = AsyncMock(return_value={"results": []})
@@ -45,7 +47,11 @@ async def test_runner_ledger_aggregation():
     # but we need to patch its import in api_knowledge.py to avoid 
     # Side effects if any. Actually api_knowledge.py just has chunks and a function.
     
-    runner = DurableARCRunner(harness, brain, {"max_retries_per_puzzle": 1})
+    runner = DurableARCRunner(harness, brain, {
+        "llm": {"model": "test-model"},
+        "max_retries_per_puzzle": 1,
+        "cost": {"budget_per_puzzle_usd": 10.0}
+    })
     
     # Mocking these to return enough values
     runner._initial_frame = AsyncMock(return_value=({"frame": [[0]], "state": "WIN"}, "g1"))
@@ -56,9 +62,14 @@ async def test_runner_ledger_aggregation():
     task.game_id = "g1"
     
     with patch("agents.arc3.runner.CheckpointManager") as mock_mgr_cls, \
-         patch("agents.arc3.entity_graph.EntityGraphBuilder") as mock_eg_cls:
+         patch("agents.arc3.entity_graph.EntityGraphBuilder") as mock_eg_cls, \
+         patch("benchmarks.arc3.adapter.LedgerBrainClient.branch_quest", new_callable=AsyncMock) as mock_branch:
         
+        mock_branch.return_value = {"side_quest_id": "sq1"}
         mock_eg = mock_eg_cls.return_value
+        mock_eg.db = MagicMock()
+        mock_eg.db.execute_read = AsyncMock(return_value=[])
+        mock_eg.db.execute_write = AsyncMock()
         mock_eg.bootstrap = AsyncMock(return_value={"n_entities": 0})
         mock_eg.record_action_effect = AsyncMock()
         mock_eg.get_entity_roles = AsyncMock(return_value={})
