@@ -115,6 +115,12 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
         summary["promoted"] += p
         summary["errors"]   += e
 
+    # Step 3.5: Dream consolidation (synthesis) — only when LLM is available
+    if llm_client is not None:
+        d, e = await _dream_consolidation(db, config, llm_client)
+        summary["synthesized"] = d
+        summary["errors"] += e
+
     # Step 4: Recompute GistClass centroids from accumulated System 2 examples (M4)
     c, e = await _recompute_centroids(db)
     summary["centroids_updated"]  = c
@@ -669,3 +675,183 @@ async def _recompute_centroids(db) -> tuple[int, int]:
             errors += 1
 
     return updated, errors
+
+
+# ---------------------------------------------------------------------------
+# Step 3.5: Dream consolidation / synthesis
+# ---------------------------------------------------------------------------
+
+
+async def _dream_consolidation(db, config: dict, llm_client: Optional[object]) -> tuple[int, int]:
+    """
+    Cluster Lesson nodes by domain + embedding similarity and synthesize
+    meta-lessons using the LLM. Returns (synthesized_count, error_count).
+
+    Config (sidequests.toml):
+      [sweep.dreaming]
+      min_cluster_size = 3
+      similarity_threshold = 0.75
+      max_syntheses_per_sweep = 5
+      decay_boost_multiplier = 1.3
+    """
+    synthesized = errors = 0
+    now = datetime.now(timezone.utc).isoformat()
+
+    dreaming_cfg = config.get("sweep", {}).get("dreaming", {})
+    min_cluster = int(dreaming_cfg.get("min_cluster_size", 3))
+    sim_thresh = float(dreaming_cfg.get("similarity_threshold", 0.75))
+    max_per_sweep = int(dreaming_cfg.get("max_syntheses_per_sweep", 5))
+    decay_boost = float(dreaming_cfg.get("decay_boost_multiplier", 1.3))
+    embedding_model = config.get("embeddings", {}).get(
+        "model", "sentence-transformers/all-MiniLM-L6-v2"
+    )
+
+    # 1) Discover candidate domains
+    try:
+        res = db.execute(
+            "MATCH (l:Lesson) WHERE l.archived = false AND (l.lesson_type IS NULL OR l.lesson_type != 'synthesis') RETURN DISTINCT l.domain"
+        )
+    except Exception:
+        return 0, 1
+
+    domains = []
+    while res.has_next():
+        row = res.get_next()
+        dom = row[0] or ""
+        if dom:
+            domains.append(dom)
+
+    for domain in domains:
+        try:
+            result = db.execute(
+                "MATCH (l:Lesson) WHERE l.archived = false AND l.domain = $domain "
+                "AND (l.lesson_type IS NULL OR l.lesson_type != 'synthesis') "
+                "AND NOT EXISTS { MATCH (l)<-[:GENERALIZES_LESSON]-(:Lesson) } "
+                "RETURN l.lesson_id, l.embedding, l.text_raw, l.pathway_strength, l.confidence",
+                {"domain": domain},
+            )
+        except Exception:
+            errors += 1
+            continue
+
+        candidates = []
+        while result.has_next():
+            row = result.get_next()
+            lid = row[0]
+            embedding = row[1]
+            text = row[2] or ""
+            pathway = float(row[3] or 0.0)
+            conf = float(row[4] or 0.0)
+            if lid and embedding:
+                candidates.append({"id": lid, "emb": embedding, "text": text, "pathway": pathway, "confidence": conf})
+
+        if len(candidates) < min_cluster:
+            continue
+
+        # Normalize embeddings for cosine similarity
+        for c in candidates:
+            vec = c["emb"]
+            norm = sum(v * v for v in vec) ** 0.5
+            if norm > 0:
+                c["emb_norm"] = [v / norm for v in vec]
+            else:
+                c["emb_norm"] = vec
+
+        unassigned = set(range(len(candidates)))
+        clusters = []
+        # Greedy clustering: seed with an unassigned item, group neighbors above threshold
+        while unassigned and len(clusters) < max_per_sweep:
+            i = next(iter(unassigned))
+            seed = candidates[i]
+            cluster_idx = [i]
+            others = list(unassigned - {i})
+            for j in others:
+                a = seed["emb_norm"]
+                b = candidates[j]["emb_norm"]
+                denom = (sum(x * x for x in a) ** 0.5) * (sum(x * x for x in b) ** 0.5)
+                sim = 0.0
+                if denom > 0:
+                    sim = sum(x * y for x, y in zip(a, b)) / denom
+                if sim >= sim_thresh:
+                    cluster_idx.append(j)
+            for k in cluster_idx:
+                unassigned.discard(k)
+            if len(cluster_idx) >= min_cluster:
+                clusters.append([candidates[k] for k in cluster_idx])
+
+        for cluster in clusters:
+            if synthesized >= max_per_sweep:
+                break
+            try:
+                excerpts = "\n\n".join(f"- {c['text']}" for c in cluster)
+                prompt = (
+                    f"Synthesize a concise meta-lesson for domain '{domain}'.\n\n"
+                    f"Excerpts:\n{excerpts}\n\n"
+                    "Return a short, stand-alone lesson text (title + 1-2-sentence summary + 1 actionable recommendation)."
+                )
+                if hasattr(llm_client, 'achat'):
+                    raw = await llm_client.achat([{"role": "user", "content": prompt}])
+                else:
+                    raw = await llm_client.chat([{"role": "user", "content": prompt}])
+                synth_text = (raw or "").strip()
+                if not synth_text:
+                    continue
+
+                meta_emb = emb.embed(synth_text, model_name=embedding_model)
+                meta_id = str(uuid.uuid4())
+                max_path = max(c["pathway"] for c in cluster)
+                avg_conf = sum(c["confidence"] for c in cluster) / len(cluster)
+                meta_strength = min(1.0, max_path * 1.2)
+                meta_conf = min(0.99, avg_conf + 0.05)
+
+                # Create synthesized Lesson node
+                await db.execute_write(
+                    """
+                    CREATE (m:Lesson {
+                        lesson_id: $lid,
+                        text_raw: $text_raw,
+                        embedding: $embedding,
+                        embedding_model: $embedding_model,
+                        embedding_dim: $embedding_dim,
+                        domain: $domain,
+                        lesson_type: 'synthesis',
+                        confidence: $confidence,
+                        confidence_low: false,
+                        pathway_strength: $pathway_strength,
+                        archived: false,
+                        created_at: timestamp($now)
+                    })
+                    """,
+                    {
+                        "lid": meta_id,
+                        "text_raw": synth_text,
+                        "embedding": meta_emb,
+                        "embedding_model": embedding_model,
+                        "embedding_dim": len(meta_emb),
+                        "domain": domain,
+                        "confidence": meta_conf,
+                        "pathway_strength": meta_strength,
+                        "now": now,
+                    },
+                )
+
+                # Link meta-lesson -> constituents and accelerate constituent decay
+                for c in cluster:
+                    await db.execute_write(
+                        "MATCH (m:Lesson {lesson_id: $mid}), (c:Lesson {lesson_id: $cid}) "
+                        "MERGE (m)-[r:GENERALIZES_LESSON]->(c) "
+                        "ON CREATE SET r.synthesized_at = timestamp($now), r.cluster_size = $cluster_size "
+                        "ON MATCH SET r.cluster_size = $cluster_size",
+                        {"mid": meta_id, "cid": c["id"], "now": now, "cluster_size": len(cluster)},
+                    )
+                    await db.execute_write(
+                        "MATCH (c:Lesson {lesson_id: $cid}) "
+                        "SET c.synthesized_at = timestamp($now), c.synthesis_cluster_size = $cluster_size, c.pathway_strength = c.pathway_strength / $decay_boost",
+                        {"cid": c["id"], "now": now, "cluster_size": len(cluster), "decay_boost": decay_boost},
+                    )
+
+                synthesized += 1
+            except Exception:
+                errors += 1
+
+    return synthesized, errors

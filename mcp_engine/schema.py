@@ -585,6 +585,7 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS LEARNED (FROM Session TO Lesson)",
     "CREATE REL TABLE IF NOT EXISTS APPLIES_TO (FROM Lesson TO Concept, FROM Lesson TO Decision, FROM Lesson TO Requirement)",
     "CREATE REL TABLE IF NOT EXISTS RELATED_TO (FROM Lesson TO Lesson)",
+    "CREATE REL TABLE IF NOT EXISTS GENERALIZES_LESSON (FROM Lesson TO Lesson, synthesized_at TIMESTAMP, cluster_size INT32)",
     "CREATE REL TABLE IF NOT EXISTS CONTAINS_LESSON (FROM Message TO Lesson)",
     "CREATE REL TABLE IF NOT EXISTS REROUTED_FROM (FROM Session TO MainQuest, rerouted_at TIMESTAMP, reason STRING)",
     # B66/B69 — active planning + outcome propagation
