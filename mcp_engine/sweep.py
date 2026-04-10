@@ -23,7 +23,8 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+import asyncio
 
 _logger = logging.getLogger(__name__)
 
@@ -121,6 +122,14 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
         summary["synthesized"] = d
         summary["errors"] += e
 
+    # Step 3.75: Consistency audit (B196) — LLM-assisted pairwise lesson contradiction detection
+    try:
+        a, e = await _audit_consistency(db, config, llm_client)
+        summary["consistency_audits"] = a
+        summary["errors"] += e
+    except Exception:
+        summary["errors"] += 1
+
     # Step 4: Recompute GistClass centroids from accumulated System 2 examples (M4)
     c, e = await _recompute_centroids(db)
     summary["centroids_updated"]  = c
@@ -129,6 +138,11 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
     # Step 5: B68 Layer C retrospective plan inference
     rp, e = await _infer_retrospective_plans(db, config)
     summary["retrospective_plans"] += rp
+    summary["errors"] += e
+
+    # Step 6: Knowledge gap detection (B193)
+    g, e = await _detect_knowledge_gaps(db, config)
+    summary["gaps_detected"] = g
     summary["errors"] += e
 
     return summary
@@ -284,6 +298,171 @@ async def _infer_retrospective_plans(db, config: dict) -> tuple[int, int]:
             errors += 1
 
     return inferred, errors
+
+
+async def _detect_knowledge_gaps(db, config: dict) -> tuple[int, int]:
+    """
+    Detect knowledge gaps across domains and archetypes.
+
+    Heuristics implemented:
+      - Domain with < 2 Lessons but > 5 Messages mentioning it => missing_lessons
+      - Archetype (Plan.strategy) with solved_count > 0 but lesson_count == 0 => no_lessons_for_archetype
+      - Domain where avg Lesson confidence < 0.5 => low_quality
+
+    Creates or updates `KnowledgeGap` nodes and links them via IDENTIFIED_GAP_IN.
+    Returns (n_detected, n_errors).
+    """
+    detected = errors = 0
+    now = datetime.now(timezone.utc).isoformat()
+
+    # 1) Aggregate lesson counts and average confidence by domain
+    lesson_map: dict[str, int] = {}
+    avg_conf_map: dict[str, float] = {}
+    try:
+        r = db.execute(
+            "MATCH (l:Lesson) WHERE l.archived = false AND l.domain IS NOT NULL "
+            "RETURN l.domain, count(l) AS lesson_count, avg(l.confidence) AS avg_conf"
+        )
+        while r.has_next():
+            row = r.get_next()
+            dom = row[0] or ""
+            lesson_map[dom] = int(row[1] or 0)
+            avg_conf_map[dom] = float(row[2] or 0.0)
+    except Exception:
+        return 0, 1
+
+    # 2) Count messages that reference Concepts by gist_class
+    msg_map: dict[str, int] = {}
+    try:
+        rm = db.execute(
+            "MATCH (m:Message)-[:ESTABLISHED]->(c:Concept) "
+            "WHERE c.gist_class IS NOT NULL RETURN c.gist_class, count(m) AS msg_count"
+        )
+        while rm.has_next():
+            row = rm.get_next()
+            gist = row[0] or ""
+            msg_map[gist] = int(row[1] or 0)
+    except Exception:
+        # Non-fatal: continue with empty msg_map
+        msg_map = {}
+
+    # 3) Completed plan strategies (archetype proxy)
+    plan_map: dict[str, int] = {}
+    try:
+        rp = db.execute(
+            "MATCH (p:Plan) WHERE p.status = 'completed' AND p.strategy IS NOT NULL RETURN p.strategy, count(p) AS solved_count"
+        )
+        while rp.has_next():
+            row = rp.get_next()
+            strat = row[0] or ""
+            plan_map[strat] = int(row[1] or 0)
+    except Exception:
+        plan_map = {}
+
+    # Candidate domains to evaluate
+    candidates = set(list(lesson_map.keys()) + list(msg_map.keys()) + list(plan_map.keys()))
+
+    for dom in candidates:
+        lesson_count = lesson_map.get(dom, 0)
+        msg_count = msg_map.get(dom, 0)
+        plan_count = plan_map.get(dom, 0)
+        avg_conf = avg_conf_map.get(dom, 0.0)
+
+        gap_type = None
+        if lesson_count < 2 and msg_count > 5:
+            gap_type = "missing_lessons"
+        elif plan_count > 0 and lesson_count == 0:
+            gap_type = "no_lessons_for_archetype"
+        elif lesson_count > 0 and avg_conf < 0.5:
+            gap_type = "low_quality"
+
+        # If no gap detected, consider resolving existing unresolved gap
+        if not gap_type:
+            try:
+                rr = db.execute(
+                    "MATCH (g:KnowledgeGap {domain: $d, resolved: false}) RETURN g.gap_id LIMIT 1",
+                    {"d": dom},
+                )
+                if rr.has_next():
+                    gid = rr.get_next()[0]
+                    # Resolve if criteria now satisfied
+                    if lesson_count >= 2 or (lesson_count > 0 and avg_conf >= 0.5):
+                        try:
+                            await db.execute_write(
+                                "MATCH (g:KnowledgeGap {gap_id: $gid}) SET g.resolved = true, g.resolved_at = timestamp($now)",
+                                {"gid": gid, "now": now},
+                            )
+                            detected += 1
+                        except Exception:
+                            errors += 1
+                continue
+            except Exception:
+                errors += 1
+                continue
+
+        # Compute severity: message_count / max(1, lesson_count) scaled
+        try:
+            if lesson_count == 0:
+                severity = min(1.0, float(msg_count) / 10.0)
+            else:
+                severity = min(1.0, (float(msg_count) / float(max(1, lesson_count))) / 10.0)
+            # Boost severity for archetype-without-lessons
+            if gap_type == "no_lessons_for_archetype" and severity < 0.5:
+                severity = 0.6
+
+            desc = f"Detected knowledge gap ({gap_type}) for domain '{dom}': {msg_count} messages, {lesson_count} lessons"
+
+            # Create or update KnowledgeGap node
+            ex = db.execute(
+                "MATCH (g:KnowledgeGap {domain: $d, resolved: false}) RETURN g.gap_id LIMIT 1",
+                {"d": dom},
+            )
+            if ex.has_next():
+                gid = ex.get_next()[0]
+                await db.execute_write(
+                    "MATCH (g:KnowledgeGap {gap_id: $gid}) "
+                    "SET g.gap_type = $gap_type, g.description = $desc, g.severity = $severity, "
+                    "g.message_count = $msg_count, g.lesson_count = $lesson_count",
+                    {"gid": gid, "gap_type": gap_type, "desc": desc, "severity": severity, "msg_count": msg_count, "lesson_count": lesson_count},
+                )
+            else:
+                gid = str(uuid.uuid4())
+                await db.execute_write(
+                    "CREATE (g:KnowledgeGap {gap_id: $gid, domain: $domain, gap_type: $gap_type, description: $desc, severity: $severity, message_count: $msg_count, lesson_count: $lesson_count, resolved: false, created_at: timestamp($now)})",
+                    {"gid": gid, "domain": dom, "gap_type": gap_type, "desc": desc, "severity": severity, "msg_count": msg_count, "lesson_count": lesson_count, "now": now},
+                )
+
+            # Try to link to a Concept (gist_class) or a MainQuest
+            try:
+                cr = db.execute(
+                    "MATCH (c:Concept {gist_class: $domain}) RETURN c.concept_id LIMIT 1",
+                    {"domain": dom},
+                )
+                if cr.has_next():
+                    cid = cr.get_next()[0]
+                    await db.execute_write(
+                        "MATCH (g:KnowledgeGap {gap_id: $gid}), (c:Concept {concept_id: $cid}) MERGE (g)-[:IDENTIFIED_GAP_IN]->(c)",
+                        {"gid": gid, "cid": cid},
+                    )
+                else:
+                    qr = db.execute(
+                        "MATCH (q:MainQuest) WHERE lower(q.name) CONTAINS lower($domain) RETURN q.quest_id LIMIT 1",
+                        {"domain": dom},
+                    )
+                    if qr.has_next():
+                        qid = qr.get_next()[0]
+                        await db.execute_write(
+                            "MATCH (g:KnowledgeGap {gap_id: $gid}), (q:MainQuest {quest_id: $qid}) MERGE (g)-[:IDENTIFIED_GAP_IN]->(q)",
+                            {"gid": gid, "qid": qid},
+                        )
+            except Exception:
+                pass
+
+            detected += 1
+        except Exception:
+            errors += 1
+
+    return detected, errors
 
 
 # ---------------------------------------------------------------------------
@@ -854,4 +1033,452 @@ async def _dream_consolidation(db, config: dict, llm_client: Optional[object]) -
             except Exception:
                 errors += 1
 
+    # After lesson synthesis, attempt procedure synthesis (B194)
+    try:
+        p_count, p_err = await _synthesize_procedures(db, config, llm_client)
+        synthesized += p_count
+        errors += p_err
+    except Exception:
+        errors += 1
+
     return synthesized, errors
+
+
+async def _call_llm(llm_client: Optional[object], prompt: str) -> str:
+    """Call the LLM client in a sync/async safe way and return raw text."""
+    if llm_client is None:
+        return ""
+    try:
+        if hasattr(llm_client, "achat"):
+            res = llm_client.achat([{"role": "user", "content": prompt}])
+        else:
+            res = llm_client.chat([{"role": "user", "content": prompt}])
+        if asyncio.iscoroutine(res):
+            return await res
+        return res
+    except Exception:
+        return ""
+
+
+async def _synthesize_procedures(db, config: dict, llm_client: Optional[object]) -> tuple[int, int]:
+    """
+    Synthesize Procedure nodes from clusters of similar successful Plans.
+
+    Heuristic: group completed Plans by identical `strategy` string and synthesize
+    a Procedure when at least `min_cluster_size` plans share the same strategy.
+    This is a pragmatic first-pass implementation of B194 suitable for unit tests.
+    """
+    synthesized = errors = 0
+    now = datetime.now(timezone.utc).isoformat()
+
+    proc_cfg = config.get("sweep", {}).get("procedural", {})
+    min_cluster = int(proc_cfg.get("min_cluster_size", 3))
+    min_valence = float(proc_cfg.get("min_valence", 0.5))
+    max_per_sweep = int(proc_cfg.get("max_syntheses_per_sweep", 3))
+    embedding_model = config.get("embeddings", {}).get(
+        "model", "sentence-transformers/all-MiniLM-L6-v2"
+    )
+
+    try:
+        q = (
+            "MATCH (p:Plan) WHERE p.valence > $min_valence AND p.status = 'completed' "
+            "AND p.strategy IS NOT NULL RETURN DISTINCT p.strategy"
+        )
+        r = db.execute(q, {"min_valence": min_valence})
+    except Exception:
+        return 0, 1
+
+    strategies = []
+    while r.has_next():
+        row = r.get_next()
+        s = row[0] or ""
+        if s:
+            strategies.append(s)
+
+    for strategy in strategies:
+        if synthesized >= max_per_sweep:
+            break
+
+        try:
+            pr = db.execute(
+                "MATCH (p:Plan) WHERE p.strategy = $strategy AND p.valence > $min_valence "
+                "AND p.status = 'completed' RETURN p.plan_id, p.goal, p.embedding, p.pathway_strength, p.confidence LIMIT 20",
+                {"strategy": strategy, "min_valence": min_valence},
+            )
+        except Exception:
+            errors += 1
+            continue
+
+        plans = []
+        while pr.has_next():
+            row = pr.get_next()
+            pid = row[0]
+            goal = row[1] or ""
+            emb_vec = row[2]
+            pathway = float(row[3] or 0.0)
+            conf = float(row[4] or 0.0)
+            plans.append({"plan_id": pid, "goal": goal, "emb": emb_vec, "pathway": pathway, "confidence": conf})
+
+        if len(plans) < min_cluster:
+            continue
+
+        # Build prompt and call LLM
+        excerpts = "\n\n".join(f"- Goal: {p['goal']}" for p in plans)
+        prompt = (
+            f"Synthesize a reusable, parameterized Procedure template from these successful Plans "
+            f"(strategy='{strategy}').\n\nPlans:\n{excerpts}\n\n"
+            "Return a JSON object with keys: name (string), description (string), steps (array of {step, precondition, action, expected_outcome}). "
+            "Keep steps concise (3-8 steps)."
+        )
+
+        raw = await _call_llm(llm_client, prompt)
+        if not raw:
+            # no LLM output — skip
+            continue
+
+        try:
+            proc_obj = json.loads(raw)
+        except Exception:
+            # Fallback: create a minimal procedure from the strategy string
+            proc_obj = {
+                "name": strategy,
+                "description": f"Procedure synthesized from plans using strategy '{strategy}'",
+                "steps": [{"step": strategy, "precondition": "", "action": strategy, "expected_outcome": ""}],
+            }
+
+        # Prepare Procedure node params
+        proc_text = proc_obj.get("description") or proc_obj.get("name") or strategy
+        try:
+            proc_emb = emb.embed(proc_text, model_name=embedding_model)
+        except Exception:
+            proc_emb = [0.0] * 384
+
+        proc_id = str(uuid.uuid4())
+        steps_json = json.dumps(proc_obj.get("steps", []))
+        success_count = len(plans)
+        avg_conf = sum(p.get("confidence", 0.0) for p in plans) / len(plans)
+        max_path = max(p.get("pathway", 0.0) for p in plans)
+        pathway_strength = min(1.0, max_path * 1.1)
+
+        try:
+            await db.execute_write(
+                """
+                CREATE (pr:Procedure {
+                    procedure_id: $pid,
+                    name: $name,
+                    domain: $domain,
+                    archetype: $archetype,
+                    description: $description,
+                    steps_json: $steps_json,
+                    embedding: $embedding,
+                    embedding_model: $embedding_model,
+                    embedding_dim: $embedding_dim,
+                    success_count: $success_count,
+                    application_count: 0,
+                    success_rate: 0.0,
+                    confidence: $confidence,
+                    pathway_strength: $pathway_strength,
+                    archived: false,
+                    created_at: timestamp($now)
+                })
+                """,
+                {
+                    "pid": proc_id,
+                    "name": proc_obj.get("name", strategy),
+                    "domain": proc_obj.get("domain", "planning"),
+                    "archetype": strategy,
+                    "description": proc_obj.get("description", ""),
+                    "steps_json": steps_json,
+                    "embedding": proc_emb,
+                    "embedding_model": embedding_model,
+                    "embedding_dim": len(proc_emb),
+                    "success_count": success_count,
+                    "confidence": avg_conf,
+                    "pathway_strength": pathway_strength,
+                    "now": now,
+                },
+            )
+
+            # Link Procedure -> Plan (DISTILLED_FROM)
+            for p in plans:
+                try:
+                    await db.execute_write(
+                        "MATCH (pr:Procedure {procedure_id: $pid}), (pl:Plan {plan_id: $plan_id}) "
+                        "MERGE (pr)-[r:DISTILLED_FROM]->(pl) "
+                        "ON CREATE SET r.synthesized_at = timestamp($now)",
+                        {"pid": proc_id, "plan_id": p["plan_id"], "now": now},
+                    )
+                except Exception:
+                    pass
+
+            # Create or MERGE archetype Concept and link
+            try:
+                concept_id = f"procedure_archetype:{uuid.uuid5(uuid.NAMESPACE_URL, strategy)}"
+                await db.execute_write(
+                    "MERGE (c:Concept {concept_id: $cid}) "
+                    "ON CREATE SET c.text_raw = $text, c.pathway_strength = 0.6, c.archived = false, c.created_at = timestamp($now)",
+                    {"cid": concept_id, "text": strategy, "now": now},
+                )
+                await db.execute_write(
+                    "MATCH (pr:Procedure {procedure_id: $pid}), (c:Concept {concept_id: $cid}) MERGE (pr)-[:APPLIES_TO_ARCHETYPE]->(c)",
+                    {"pid": proc_id, "cid": concept_id},
+                )
+            except Exception:
+                pass
+
+            synthesized += 1
+        except Exception:
+            errors += 1
+
+    return synthesized, errors
+
+
+async def _audit_consistency(db, config: dict, llm_client: Optional[object]) -> tuple[int, int]:
+    """
+    B196: Internal Consistency Audit
+
+    - For each domain, select top-N Lessons by pathway_strength.
+    - Pairwise compare embeddings; if similarity > threshold, ask LLM whether
+      they contradict, supersede, or are both valid in different contexts.
+    - Create DisambiguationEvent for contradictions/nuanced cases or
+      DEPRECATED_BY + archive when one supersedes the other.
+    - Flag stale Lessons (older than 30 days with no outgoing linkage).
+    - Flag orphan Lessons (no inbound provenance edges).
+
+    Returns: (audits_performed, errors)
+    """
+    audited = 0
+    errors = 0
+    now = datetime.now(timezone.utc).isoformat()
+
+    cons_cfg = (config.get("sweep", {}) or {}).get("consistency", {})
+    top_k = int(cons_cfg.get("top_lessons", 20))
+    sim_thresh = float(cons_cfg.get("sim_threshold", 0.70))
+    max_llm = int(cons_cfg.get("max_llm_calls", 10))
+    min_path = float(cons_cfg.get("min_pathway_strength", 0.3))
+    stale_days = int(cons_cfg.get("stale_days", 30))
+
+    # 1) Get all domains with lessons
+    domains = []
+    try:
+        r = db.execute("MATCH (l:Lesson) WHERE l.archived = false RETURN DISTINCT l.domain")
+        while r.has_next():
+            d = r.get_next()[0]
+            if d:
+                domains.append(d)
+    except Exception:
+        return 0, 1
+
+    candidate_pairs: list[tuple[dict, dict, float]] = []
+
+    for domain in domains:
+        try:
+            q = (
+                "MATCH (l:Lesson) WHERE l.domain = $domain AND l.archived = false "
+                "AND l.pathway_strength > $min_path ORDER BY l.pathway_strength DESC LIMIT $limit "
+                "RETURN l.lesson_id, l.embedding, l.text_raw, l.confidence, l.pathway_strength, l.created_at, l.last_audited_at"
+            )
+            res = db.execute(q, {"domain": domain, "min_path": min_path, "limit": top_k})
+        except Exception:
+            errors += 1
+            continue
+
+        lessons = []
+        while res.has_next():
+            row = res.get_next()
+            lid = row[0]
+            emb_vec = row[1]
+            text = row[2] or ""
+            conf = float(row[3] or 0.0)
+            pathway = float(row[4] or 0.0)
+            last_aud = row[6] if len(row) > 6 else None
+            if lid and emb_vec:
+                lessons.append({"id": lid, "emb": emb_vec, "text": text, "conf": conf, "pathway": pathway, "last_audited_at": last_aud})
+
+        if len(lessons) < 2:
+            continue
+
+        # Normalize embeddings for cosine similarity
+        for l in lessons:
+            vec = l["emb"]
+            try:
+                norm = sum(float(v) * float(v) for v in vec) ** 0.5
+                if norm > 0:
+                    l["emb_norm"] = [float(v) / norm for v in vec]
+                else:
+                    l["emb_norm"] = [float(v) for v in vec]
+            except Exception:
+                l["emb_norm"] = [float(v) for v in vec]
+
+        # Pairwise compare
+        for i in range(len(lessons)):
+            for j in range(i + 1, len(lessons)):
+                a = lessons[i]
+                b = lessons[j]
+                # Skip if both recently audited
+                try:
+                    skip = False
+                    if a.get("last_audited_at") and b.get("last_audited_at"):
+                        # If both have any last_audited_at, skip (keeps audit budget bounded)
+                        skip = True
+                    if skip:
+                        continue
+                except Exception:
+                    pass
+
+                va = a.get("emb_norm")
+                vb = b.get("emb_norm")
+                denom = (sum(x * x for x in va) ** 0.5) * (sum(x * x for x in vb) ** 0.5)
+                sim = 0.0
+                if denom > 0:
+                    sim = sum(x * y for x, y in zip(va, vb)) / denom
+
+                if sim >= sim_thresh:
+                    candidate_pairs.append((a, b, sim))
+
+    # Sort by similarity desc
+    candidate_pairs.sort(key=lambda t: t[2], reverse=True)
+
+    llm_calls = 0
+    processed_lessons = set()
+
+    for a, b, sim in candidate_pairs:
+        if llm_calls >= max_llm or llm_client is None:
+            break
+        try:
+            prompt = (
+                f"You are auditing two extracted lessons for domain '{(a.get('text') or '')[:40]}'.\n"
+                "Decide whether the two lessons: 1) directly contradict each other, 2) one supersedes the other (specify which as 'a' or 'b'), 3) are both valid but for different contexts, or 4) are consistent.\n"
+                "Return a JSON object with keys: action ('contradict'|'supersedes'|'both_valid'|'no_issue'), winner (optional 'a'|'b'), explanation (string), confidence (0.0-1.0)."
+            )
+            raw = await _call_llm(llm_client, prompt)
+            if not raw:
+                llm_calls += 1
+                continue
+            try:
+                obj = json.loads(raw)
+            except Exception:
+                obj = {}
+
+            action = obj.get("action", "")
+            winner = obj.get("winner")
+
+            # Handle actions
+            if action == "contradict":
+                # Create DisambiguationEvent for human review
+                try:
+                    eid = str(uuid.uuid4())
+                    await db.execute_write(
+                        """
+                        CREATE (e:DisambiguationEvent {
+                            event_id: $eid,
+                            concept_id_a: $a,
+                            concept_id_b: $b,
+                            similarity: $sim,
+                            status: 'pending',
+                            resolved_at: NULL,
+                            resolved_by: NULL,
+                            created_at: timestamp($now)
+                        })
+                        """,
+                        {"eid": eid, "a": a["id"], "b": b["id"], "sim": float(sim), "now": now},
+                    )
+                    audited += 1
+                except Exception:
+                    errors += 1
+
+            elif action == "supersedes" and winner in ("a", "b"):
+                # Archive the loser and draw DEPRECATED_BY loser -> winner
+                try:
+                    loser = b["id"] if winner == "a" else a["id"]
+                    win = a["id"] if winner == "a" else b["id"]
+                    await db.execute_write(
+                        "MATCH (l:Lesson {lesson_id: $lid}) SET l.archived = true",
+                        {"lid": loser},
+                    )
+                    await db.execute_write(
+                        "MATCH (old:Lesson {lesson_id: $old}), (new:Lesson {lesson_id: $new}) MERGE (old)-[:DEPRECATED_BY]->(new)",
+                        {"old": loser, "new": win},
+                    )
+                    audited += 1
+                except Exception:
+                    errors += 1
+
+            elif action == "both_valid":
+                # Create DisambiguationEvent for human review (nuanced)
+                try:
+                    eid = str(uuid.uuid4())
+                    await db.execute_write(
+                        "CREATE (e:DisambiguationEvent {event_id: $eid, concept_id_a: $a, concept_id_b: $b, similarity: $sim, status: 'pending', resolved_at: NULL, resolved_by: NULL, created_at: timestamp($now)})",
+                        {"eid": eid, "a": a["id"], "b": b["id"], "sim": float(sim), "now": now},
+                    )
+                    audited += 1
+                except Exception:
+                    errors += 1
+
+            llm_calls += 1
+            processed_lessons.add(a["id"])
+            processed_lessons.add(b["id"])
+        except Exception:
+            errors += 1
+
+    # Update last_audited_at for processed lessons
+    try:
+        for lid in processed_lessons:
+            try:
+                await db.execute_write(
+                    "MATCH (l:Lesson {lesson_id: $lid}) SET l.last_audited_at = timestamp($now)",
+                    {"lid": lid, "now": now},
+                )
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Stale detection: older than stale_days with no outgoing APPLIES_TO|RELATED_TO|GENERALIZES_LESSON
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=stale_days)).isoformat()
+        sr = db.execute(
+            "MATCH (l:Lesson) WHERE l.archived = false AND l.lesson_type <> 'synthesis' AND l.created_at < timestamp($cutoff) "
+            "AND NOT EXISTS { MATCH (l)-[:APPLIES_TO|RELATED_TO|GENERALIZES_LESSON]->() } RETURN l.lesson_id, l.text_raw",
+            {"cutoff": cutoff},
+        )
+        stale_count = 0
+        while sr.has_next():
+            row = sr.get_next()
+            lid = row[0]
+            try:
+                await db.execute_write(
+                    "MATCH (l:Lesson {lesson_id: $lid}) SET l.stale_flagged = true, l.stale_flagged_at = timestamp($now)",
+                    {"lid": lid, "now": now},
+                )
+                stale_count += 1
+            except Exception:
+                errors += 1
+        audited += stale_count
+    except Exception:
+        errors += 1
+
+    # Orphan detection: no inbound CONTAINS_LESSON|PRODUCED_LESSON|PRODUCED_PLAN_LESSON|LEARNED
+    try:
+        orr = db.execute(
+            "MATCH (l:Lesson) WHERE l.archived = false AND NOT EXISTS { MATCH ()-[:CONTAINS_LESSON|PRODUCED_LESSON|PRODUCED_PLAN_LESSON|LEARNED]->(l) } RETURN l.lesson_id, l.text_raw",
+            {},
+        )
+        orphan_count = 0
+        while orr.has_next():
+            row = orr.get_next()
+            lid = row[0]
+            try:
+                await db.execute_write(
+                    "MATCH (l:Lesson {lesson_id: $lid}) SET l.orphan_flagged = true, l.orphan_flagged_at = timestamp($now)",
+                    {"lid": lid, "now": now},
+                )
+                orphan_count += 1
+            except Exception:
+                errors += 1
+        audited += orphan_count
+    except Exception:
+        errors += 1
+
+    return audited, errors

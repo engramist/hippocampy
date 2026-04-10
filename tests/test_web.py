@@ -587,7 +587,7 @@ async def test_dispatch_mcp_tools_list_direct():
     )
     tool_names = {t["name"] for t in resp["result"]["tools"]}
     assert "notify_turn" in tool_names
-    assert len(tool_names) == 26  # Prior 23 + B158 disambiguation tools (2) + B160 reload_domain_dictionary (1)
+    assert len(tool_names) == 29  # Canonical tool set including reconstruct_timeline, get_knowledge_gaps, and recall_procedures
 
 @pytest.mark.asyncio
 async def test_dispatch_mcp_unknown_method_direct():

@@ -358,3 +358,50 @@ async def rescore_nearby_low_confidence(concept_id: str, db) -> int:
             pass
 
     return rescored
+
+
+async def create_decision_chain(decision_id: str, session_id: str, db) -> None:
+    """
+    Link a newly-created Decision to the previous Decision in the same Session.
+    Writes a DECISION_CHAIN edge with session_id and step_number.
+
+    This function is idempotent and tolerant of missing session context.
+    """
+    if not session_id or session_id == "unknown":
+        return
+
+    try:
+        # Find the most recent previous Decision in this session (exclude current)
+        prev_r = db.execute(
+            "MATCH (d:Decision)-[:ESTABLISHED_IN]->(s:Session {session_id: $sid}) "
+            "WHERE d.decision_id <> $did "
+            "RETURN d.decision_id, d.created_at "
+            "ORDER BY d.created_at DESC LIMIT 1",
+            {"sid": session_id, "did": decision_id},
+        )
+        if not prev_r.has_next():
+            return
+
+        prev_row = prev_r.get_next()
+        prev_id = prev_row[0]
+
+        # Count prior decisions (exclude current) to compute a step_number
+        cnt_r = db.execute(
+            "MATCH (d:Decision)-[:ESTABLISHED_IN]->(s:Session {session_id: $sid}) "
+            "WHERE d.decision_id <> $did RETURN count(d)",
+            {"sid": session_id, "did": decision_id},
+        )
+        prior_count = int(cnt_r.get_next()[0]) if cnt_r.has_next() else 0
+        step_number = prior_count + 1
+
+        # Create/merge the DECISION_CHAIN edge
+        await db.execute_write(
+            "MATCH (p:Decision {decision_id: $prev}), (c:Decision {decision_id: $curr}) "
+            "MERGE (p)-[r:DECISION_CHAIN]->(c) "
+            "ON CREATE SET r.session_id = $sid, r.step_number = $step "
+            "ON MATCH SET r.step_number = $step",
+            {"prev": prev_id, "curr": decision_id, "sid": session_id, "step": step_number},
+        )
+    except Exception:
+        # Non-fatal — decision chaining is a convenience feature
+        return

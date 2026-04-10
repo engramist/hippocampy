@@ -79,6 +79,23 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "reconstruct_timeline",
+        "description": (
+            "Reconstruct the temporal sequence of messages and decisions for a topic. "
+            "Returns a time-ordered list of messages and any Decisions established at each step."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string"},
+                "session_id": {"type": "string", "description": "Optional: restrict to one session"},
+                "max_hops": {"type": "integer", "default": 20},
+                "include_decisions": {"type": "boolean", "default": True}
+            },
+            "required": ["topic"]
+        },
+    },
+    {
         "name": "get_open_loops",
         "description": (
             "Return concepts awaiting confirmation (soft-lock items). "
@@ -340,6 +357,36 @@ TOOLS: list[dict] = [
                 "limit":       {"type": "integer", "default": 5},
             },
             "required": ["goal_query", "session_id"],
+        },
+    },
+    {
+        "name": "get_knowledge_gaps",
+        "description": (
+            "Return active KnowledgeGap nodes identified by background sweep. "
+            "Useful for agents to proactively check missing or low-quality coverage."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "default": 10},
+                "unresolved_only": {"type": "boolean", "default": True},
+                "min_severity": {"type": "number", "default": 0.0},
+            },
+        },
+    },
+    {
+        "name": "recall_procedures",
+        "description": (
+            "Retrieve reusable Procedure templates by archetype or semantic query. "
+            "Returns procedures ranked by success_rate and success_count."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "archetype": {"type": "string", "description": "Optional archetype filter"},
+                "query": {"type": "string", "description": "Optional semantic query"},
+                "limit": {"type": "integer", "default": 3},
+            },
         },
     },
     {

@@ -25,8 +25,13 @@ base_url = "http://localhost:11434/v1"   # ollama OpenAI-compatible endpoint
 # model    = "gpt-4.1-mini"
 
 [embeddings]
+provider = "sentence-transformers"  # sentence-transformers | ollama | openai
 model = "sentence-transformers/all-MiniLM-L6-v2"   # 384-dim — matches FLOAT[384] schema
-# WARNING: changing this model requires full re-embedding of all nodes.
+# For ollama: model name is the bare tag, e.g. "all-minilm" (384-dim)
+# For openai: use "text-embedding-3-small" with dimensions=384
+# ollama_base_url defaults to the [llm] base_url minus /v1
+# api_key for openai reads from OPENAI_API_KEY env var if not set here
+# WARNING: changing to a model with different dimensions requires full re-embedding.
 # Run: sidequests reembed --confirm
 
 [nlp]

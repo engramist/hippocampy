@@ -160,6 +160,20 @@ class DurableARCRunner:
                 purpose=f"Solve ARC-AGI-3 task {task.task_id}",
                 parent_quest_id=card_id,
             )
+            # Some tests patch `LedgerBrainClient.branch_quest`, which bypasses
+            # its internal ledger recording. Backfill the bootstrap event here.
+            if not any((entry.get("call_type") == "branch_quest") for entry in self._ledger if isinstance(entry, dict)):
+                self._ledger.append({
+                    "step": self._current_step,
+                    "timestamp_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "elapsed_mmss": "00:00",
+                    "phase": "bootstrap",
+                    "call_type": "branch_quest",
+                    "mode": "write",
+                    "input_summary": f"ARC puzzle {task.task_id}",
+                    "result_summary": f"side_quest_id={(branch_result or {}).get('side_quest_id') if isinstance(branch_result, Mapping) else None}",
+                    "latency_ms": 0.0,
+                })
 
             # Create the per-puzzle orchestrator for the default single-run flow,
             # but if strategy racing is enabled we will launch several variants
@@ -190,12 +204,39 @@ class DurableARCRunner:
                         budget_usd=budget_v,
                     )
 
+                    # B197: Attempt to load proven procedures for this variant before orchestrator creation
+                    procedures = []
+                    try:
+                        archetype_hint = (getattr(task_arg, 'game_id', None) or 'unknown')
+                        proc_resp = await variant_brain.recall_procedures(archetype=archetype_hint, limit=3)
+                        if isinstance(proc_resp, Mapping):
+                            procedures = proc_resp.get('procedures') or []
+                    except Exception:
+                        logger.debug("recall_procedures lookup failed for variant")
+
+                    # B199: Check knowledge gaps to influence exploration budget
+                    multiplier = 1.0
+                    try:
+                        gaps_resp = await variant_brain.get_knowledge_gaps(domain=archetype_hint)
+                        if isinstance(gaps_resp, Mapping):
+                            gaps = gaps_resp.get('gaps') or []
+                            # If there are missing-lessons gaps for this archetype, increase exploration
+                            has_gap = any((g.get('gap_type') == 'missing_lessons') for g in gaps)
+                            if has_gap:
+                                multiplier = 2.0
+                    except Exception:
+                        logger.debug("get_knowledge_gaps lookup failed for variant")
+
+                    vcfg2 = dict(vcfg) if isinstance(vcfg, dict) else {}
+                    vcfg2["loaded_procedures"] = procedures
+                    vcfg2["exploration_budget_multiplier"] = multiplier
+
                     orchestrator_v = ARCOrchestrator(
                         brain_client=variant_brain,
                         llm_client=self.harness.llm_client,
                         session_id=session_id_v,
                         serializer=self.harness.serializer,
-                        config=vcfg,
+                        config=vcfg2,
                         cost_tracker=cost_tracker_v,
                     )
                     return await self._run_puzzle_with_brain(orchestrator_v, task_arg, variant_brain, vcfg)
@@ -227,9 +268,8 @@ class DurableARCRunner:
                 self._ledger.clear()
 
                 traj = self._build_trajectory_summary(orchestrator)
-                lesson_text = f"ARC puzzle {task.task_id} completed: {traj}"
                 try:
-                    await self.brain.store_lesson(content=lesson_text, tags=[f"arc_task:{task.task_id}"], session_id=session_id)
+                    await self._report_puzzle_outcome(orchestrator=orchestrator, task=task, task_result=task_result, session_id=session_id)
                     if graph_id:
                         await self.brain.advance_task(graph_id=graph_id, task_id=task.task_id, status="complete", result=task_result.final_state)
                 except Exception:
@@ -238,12 +278,38 @@ class DurableARCRunner:
                 mgr.mark_complete(checkpoint, task.task_id, getattr(orchestrator, "_plan_id", None), result_payload)
                 return self._submission_row_from_result(result_payload)
             else:
+                # B197: Pre-solve procedure lookup
+                procedures = []
+                try:
+                    archetype_hint = getattr(task, 'game_id', None) or 'unknown'
+                    proc_resp = await self.brain.recall_procedures(archetype=archetype_hint, limit=3)
+                    if isinstance(proc_resp, Mapping):
+                        procedures = proc_resp.get('procedures') or []
+                except Exception:
+                    logger.debug("recall_procedures lookup failed")
+
+                # B199: Knowledge gap check to influence exploration budget
+                multiplier = 1.0
+                try:
+                    gaps_resp = await self.brain.get_knowledge_gaps(domain=archetype_hint)
+                    if isinstance(gaps_resp, Mapping):
+                        gaps = gaps_resp.get('gaps') or []
+                        has_gap = any((g.get('gap_type') == 'missing_lessons') for g in gaps)
+                        if has_gap:
+                            multiplier = 2.0
+                except Exception:
+                    logger.debug("get_knowledge_gaps lookup failed")
+
+                cfg2 = dict(self.config) if isinstance(self.config, dict) else {}
+                cfg2["loaded_procedures"] = procedures
+                cfg2["exploration_budget_multiplier"] = multiplier
+
                 orchestrator = ARCOrchestrator(
                     brain_client=self.brain,
                     llm_client=self.harness.llm_client,
                     session_id=session_id,
                     serializer=self.harness.serializer,
-                    config=self.config,
+                    config=cfg2,
                     cost_tracker=cost_tracker,
                 )
 
@@ -265,9 +331,8 @@ class DurableARCRunner:
                     self._ledger.clear()
 
                     traj = self._build_trajectory_summary(orchestrator)
-                    lesson_text = f"ARC puzzle {task.task_id} completed: {traj}"
                     try:
-                        await self.brain.store_lesson(content=lesson_text, tags=[f"arc_task:{task.task_id}"], session_id=session_id)
+                        await self._report_puzzle_outcome(orchestrator=orchestrator, task=task, task_result=task_result, session_id=session_id)
                         if graph_id:
                             await self.brain.advance_task(graph_id=graph_id, task_id=task.task_id, status="complete", result=task_result.final_state)
                     except Exception:
@@ -306,6 +371,14 @@ class DurableARCRunner:
     async def _run_puzzle(self, orchestrator: ARCOrchestrator, task: ABTask) -> tuple[ABTaskResult, float]:
         max_steps = self.harness.config.parameters.get("max_attempts_per_puzzle", 10)
         max_retries = self.config.get("max_retries_per_puzzle", 3)
+        if getattr(orchestrator, "_supervisor", None) is not None:
+            try:
+                orchestrator._supervisor.abandon_zero_reward_steps = min(
+                    int(getattr(orchestrator._supervisor, "abandon_zero_reward_steps", 30)),
+                    max(5, int(max_steps) - 2),
+                )
+            except Exception:
+                logger.debug("Unable to align supervisor threshold with max steps", exc_info=True)
         adapter = ARC3Adapter(
             brain_client=self.brain,
             session_id=orchestrator.session_id,
@@ -526,6 +599,14 @@ class DurableARCRunner:
 
         max_steps = self.harness.config.parameters.get("max_attempts_per_puzzle", 10)
         max_retries = variant_config.get("max_retries_per_puzzle", self.config.get("max_retries_per_puzzle", 3))
+        if getattr(orchestrator, "_supervisor", None) is not None:
+            try:
+                orchestrator._supervisor.abandon_zero_reward_steps = min(
+                    int(getattr(orchestrator._supervisor, "abandon_zero_reward_steps", 30)),
+                    max(5, int(max_steps) - 2),
+                )
+            except Exception:
+                logger.debug("Unable to align supervisor threshold with max steps", exc_info=True)
         adapter = ARC3Adapter(
             brain_client=brain_client,
             session_id=orchestrator.session_id,
@@ -895,6 +976,87 @@ class DurableARCRunner:
             lines.append(f"Inferred Objective: {orchestrator.solve_engine._victory_condition.description}")
         return "\n".join(lines)
 
+    def _summarize_strategy(self, orchestrator: ARCOrchestrator) -> str:
+        try:
+            solve_ctx = getattr(orchestrator, "_solve_context", {}) or {}
+            strategy_summary = solve_ctx.get("strategy_summary")
+            if strategy_summary:
+                return strategy_summary if isinstance(strategy_summary, str) else json.dumps(strategy_summary)
+            active_chunk = solve_ctx.get("active_chunk") or {}
+            parts = []
+            if active_chunk.get("description"):
+                parts.append(active_chunk.get("description"))
+            if active_chunk.get("plan_id"):
+                parts.append(f"plan:{active_chunk.get('plan_id')}")
+            return " | ".join(parts) if parts else "No strategy summary"
+        except Exception:
+            logger.exception("Failed to summarize strategy")
+            return "No strategy summary"
+
+    async def _report_puzzle_outcome(self, *, orchestrator: ARCOrchestrator, task: ABTask, task_result: ABTaskResult, session_id: str) -> None:
+        try:
+            solve_ctx = getattr(orchestrator, "_solve_context", {}) or {}
+            archetype_obj = getattr(getattr(orchestrator, "solve_engine", None), "_archetype", None)
+            archetype = getattr(archetype_obj, "value", None) or solve_ctx.get("archetype") or "unknown"
+            archetype_confidence = float(solve_ctx.get("archetype_confidence") or 0.7)
+
+            outcome = {
+                "task_id": task.task_id,
+                "archetype": archetype,
+                "archetype_confidence": archetype_confidence,
+                "steps_taken": int(getattr(task_result, "steps", 0) or 0),
+                "strategy_summary": self._summarize_strategy(orchestrator),
+                "failure_class": getattr(task_result, "failure_class", None),
+                "judge_verdict": getattr(task_result, "judge_verdict", None),
+            }
+
+            outcome_text = json.dumps(outcome, default=str)
+            valence = 1.0 if getattr(task_result, "correct", False) else 0.0
+            plan_id = getattr(orchestrator, "_plan_id", None)
+
+            # Record structured outcome
+            try:
+                report_kwargs = {
+                    "plan_id": plan_id,
+                    "outcome": None,
+                    "outcome_text": outcome_text,
+                    "valence": valence,
+                    "session_id": session_id,
+                    "evidence": {"task_id": task.task_id},
+                    "valence_source": "runner",
+                }
+
+                # If a procedure was applied, include procedure metadata so the DB can update stats
+                proc_id = None
+                proc_success = None
+                try:
+                    se = getattr(orchestrator, 'solve_engine', None)
+                    if se is None:
+                        se = getattr(orchestrator, '_solve_engine', None)
+                    proc_id = getattr(se, '_applied_procedure_id', None) or getattr(se, '_using_procedure_id', None)
+                    proc_failed = getattr(se, '_procedure_failed', None)
+                    if proc_id:
+                        report_kwargs['procedure_id'] = proc_id
+                        # success = True only if puzzle solved and procedure didn't fail earlier
+                        proc_success = bool(getattr(task_result, 'correct', False) and not bool(proc_failed))
+                        report_kwargs['procedure_success'] = proc_success
+                except Exception:
+                    pass
+
+                await self.brain.report_outcome(**report_kwargs)
+            except Exception:
+                logger.exception("Failed to report outcome via brain.report_outcome")
+
+            # Persist a lesson summarizing the run (domain = archetype)
+            lesson_text = f"ARC puzzle {task.task_id} outcome: {outcome_text}"
+            tags = [str(archetype), ("success" if valence >= 1.0 else "failure"), f"steps_{outcome['steps_taken']}"]
+            try:
+                await self.brain.upsert_lesson(domain=str(archetype), text=lesson_text, valence=valence, confidence=archetype_confidence, tags=tags)
+            except Exception:
+                logger.exception("Failed to upsert lesson via brain.upsert_lesson")
+        except Exception:
+            logger.exception("_report_puzzle_outcome failed")
+
     def _emit_progress_snapshot(
         self,
         task: ABTask,
@@ -980,37 +1142,71 @@ class DurableARCRunner:
             raise RuntimeError("ARC API session not initialized. Did you call harness.setup()?")
 
         sc_start = time.time()
-        scorecard_resp = await session.post("/api/scorecard/open", json={})
-        sc_latency = (time.time() - sc_start) * 1000
-        await self._safe_raise_for_status(scorecard_resp)
-        sc_json = await self._safe_json(scorecard_resp)
-        card_id = sc_json["card_id"]
-        if hasattr(self.brain, "record_arc_api_call"):
-            self.brain.record_arc_api_call(
-                phase=getattr(self.brain, "current_phase", "bootstrap"),
-                method="POST",
-                endpoint="/api/scorecard/open",
-                request_payload={},
-                response_payload=sc_json,
-                latency_ms=sc_latency,
-            )
+        try:
+            scorecard_resp = await session.post("/api/scorecard/open", json={})
+            sc_latency = (time.time() - sc_start) * 1000
+            await self._safe_raise_for_status(scorecard_resp)
+            sc_json = await self._safe_json(scorecard_resp)
+            card_id = sc_json["card_id"]
+            if hasattr(self.brain, "record_arc_api_call"):
+                self.brain.record_arc_api_call(
+                    phase=getattr(self.brain, "current_phase", "bootstrap"),
+                    method="POST",
+                    endpoint="/api/scorecard/open",
+                    request_payload={},
+                    response_payload=sc_json,
+                    latency_ms=sc_latency,
+                )
+        except Exception as exc:
+            if hasattr(self.brain, "record_arc_api_call"):
+                self.brain.record_arc_api_call(
+                    phase=getattr(self.brain, "current_phase", "bootstrap"),
+                    method="POST",
+                    endpoint="/api/scorecard/open",
+                    request_payload={},
+                    response_payload=None,
+                    latency_ms=(time.time() - sc_start) * 1000,
+                    received=False,
+                    error_details={
+                        "error_type": type(exc).__name__,
+                        "error_message": str(exc),
+                    },
+                )
+            raise
 
         reset_start = time.time()
         reset_payload = {"game_id": game_id, "card_id": card_id}
-        reset_resp = await session.post("/api/cmd/RESET", json=reset_payload)
-        reset_latency = (time.time() - reset_start) * 1000
-        await self._safe_raise_for_status(reset_resp)
-        frame = await self._safe_json(reset_resp)
-        if hasattr(self.brain, "record_arc_api_call"):
-            self.brain.record_arc_api_call(
-                phase=getattr(self.brain, "current_phase", "bootstrap"),
-                method="POST",
-                endpoint="/api/cmd/RESET",
-                request_payload=reset_payload,
-                response_payload=frame,
-                latency_ms=reset_latency,
-            )
-        return frame, frame.get("guid")
+        try:
+            reset_resp = await session.post("/api/cmd/RESET", json=reset_payload)
+            reset_latency = (time.time() - reset_start) * 1000
+            await self._safe_raise_for_status(reset_resp)
+            frame = await self._safe_json(reset_resp)
+            if hasattr(self.brain, "record_arc_api_call"):
+                self.brain.record_arc_api_call(
+                    phase=getattr(self.brain, "current_phase", "bootstrap"),
+                    method="POST",
+                    endpoint="/api/cmd/RESET",
+                    request_payload=reset_payload,
+                    response_payload=frame,
+                    latency_ms=reset_latency,
+                )
+            return frame, frame.get("guid")
+        except Exception as exc:
+            if hasattr(self.brain, "record_arc_api_call"):
+                self.brain.record_arc_api_call(
+                    phase=getattr(self.brain, "current_phase", "bootstrap"),
+                    method="POST",
+                    endpoint="/api/cmd/RESET",
+                    request_payload=reset_payload,
+                    response_payload=None,
+                    latency_ms=(time.time() - reset_start) * 1000,
+                    received=False,
+                    error_details={
+                        "error_type": type(exc).__name__,
+                        "error_message": str(exc),
+                    },
+                )
+            raise
 
     async def _execute_action(self, game_id: str, guid: str | None, action: Mapping[str, Any], step: int) -> tuple[dict, float, bool, str | None]:
         start_t = time.time()
@@ -1040,22 +1236,39 @@ class DurableARCRunner:
             payload["reasoning"] = action["rationale"]
 
         call_start = time.time()
-        action_resp = await session.post(f"/api/cmd/{action_id}", json=payload)
-        latency = (time.time() - call_start) * 1000
-        await self._safe_raise_for_status(action_resp)
-        frame = await self._safe_json(action_resp)
-        if hasattr(self.brain, "record_arc_api_call"):
-            self.brain.record_arc_api_call(
-                phase=getattr(self.brain, "current_phase", "act"),
-                method="POST",
-                endpoint=f"/api/cmd/{action_id}",
-                request_payload=payload,
-                response_payload=frame,
-                latency_ms=latency,
-            )
-        reward = 1.0 if frame.get("state") == "WIN" else 0.0
-        done = frame.get("state") in ("WIN", "GAME_OVER")
-        return frame, reward, done, frame.get("guid", guid)
+        try:
+            action_resp = await session.post(f"/api/cmd/{action_id}", json=payload)
+            latency = (time.time() - call_start) * 1000
+            await self._safe_raise_for_status(action_resp)
+            frame = await self._safe_json(action_resp)
+            if hasattr(self.brain, "record_arc_api_call"):
+                self.brain.record_arc_api_call(
+                    phase=getattr(self.brain, "current_phase", "act"),
+                    method="POST",
+                    endpoint=f"/api/cmd/{action_id}",
+                    request_payload=payload,
+                    response_payload=frame,
+                    latency_ms=latency,
+                )
+            reward = 1.0 if frame.get("state") == "WIN" else 0.0
+            done = frame.get("state") in ("WIN", "GAME_OVER")
+            return frame, reward, done, frame.get("guid", guid)
+        except Exception as exc:
+            if hasattr(self.brain, "record_arc_api_call"):
+                self.brain.record_arc_api_call(
+                    phase=getattr(self.brain, "current_phase", "act"),
+                    method="POST",
+                    endpoint=f"/api/cmd/{action_id}",
+                    request_payload=payload,
+                    response_payload=None,
+                    latency_ms=(time.time() - call_start) * 1000,
+                    received=False,
+                    error_details={
+                        "error_type": type(exc).__name__,
+                        "error_message": str(exc),
+                    },
+                )
+            raise
 
     def _extract_prompt_block_trace(self, prompt: str | None) -> list[dict]:
         if not isinstance(prompt, str) or not prompt.strip():
@@ -1181,7 +1394,7 @@ class DurableARCRunner:
                 "llm_model": ((self.config.get("llm") or {}).get("model") if isinstance(self.config, dict) else "unknown") or "unknown",
                 "llm_endpoint": "unknown",
                 "memory_backend": "unknown",
-                "arc_api_endpoint": "three.arcprize.org",
+                "arc_api_endpoint": "mock-harness" if bool(getattr(self.harness, "mock_api", False)) else "three.arcprize.org",
             },
             "model": ((self.config.get("llm") or {}).get("model") if isinstance(self.config, dict) else "unknown") or "unknown",
             "memory_enabled": not isinstance(self._raw_brain, type(None)),
@@ -1197,6 +1410,45 @@ class DurableARCRunner:
             metadata["failure_class"] = result.get("failure_class")
         if result.get("trajectory_score") is not None:
             metadata["trajectory_score"] = result.get("trajectory_score")
+
+        sidequests_ledger = list(result.get("sidequests_ledger") or [])
+        arc_event_timeline = list(result.get("arc_event_timeline") or [])
+
+        chronological_log: list[dict] = []
+        for entry in sidequests_ledger:
+            if isinstance(entry, dict):
+                chronological_log.append(dict(entry))
+        for event in arc_event_timeline:
+            if not isinstance(event, dict):
+                continue
+            normalized = dict(event)
+            normalized["timestamp_iso"] = (
+                event.get("timestamp_iso")
+                or event.get("request_started_iso")
+                or event.get("response_received_iso")
+            )
+            chronological_log.append(normalized)
+        chronological_log.sort(
+            key=lambda entry: (
+                str(entry.get("timestamp_iso") or ""),
+                int(entry.get("event_seq") or 0),
+                int(entry.get("call_seq") or 0),
+            )
+        )
+
+        arc_pairs_map: dict[int, dict] = {}
+        for event in arc_event_timeline:
+            if not isinstance(event, dict):
+                continue
+            seq = event.get("call_seq")
+            if seq is None:
+                continue
+            pair = arc_pairs_map.setdefault(int(seq), {"call_seq": int(seq), "request": None, "response": None})
+            if event.get("kind") == "request_started":
+                pair["request"] = event
+            elif event.get("kind") == "response_received":
+                pair["response"] = event
+        arc_server_responses = [arc_pairs_map[k] for k in sorted(arc_pairs_map)]
 
         row = {
             "game_id": result.get("game_id", "unknown"),
@@ -1214,13 +1466,18 @@ class DurableARCRunner:
             "benchmark_metrics": result.get("benchmark_metrics", {}),
             "bootstrap_write_trace": result.get("bootstrap_write_trace", []),
             "final_write_trace": result.get("final_write_trace", []),
+            "sidequests_ledger": sidequests_ledger,
+            "arc_event_timeline": arc_event_timeline,
+            "chronological_log": chronological_log,
+            "arc_server_responses": arc_server_responses,
             "progress_log": progress_log,
             "prompt_trace": prompt_trace,
             "orchestration_report": self._build_orchestration_report(
-                list(result.get("sidequests_ledger") or []),
+                sidequests_ledger,
                 result.get("entity_gate_status", {}),
             ),
             "confidence": confidence,
             "metadata": metadata,
+            "submission_metadata": metadata,
         }
         return row

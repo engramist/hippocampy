@@ -183,11 +183,21 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B188 | Cross-Run Regression Detection | P2 | ready | B182 | TBD | backlog/plans/B-188-regression-monitor.md | backlog/B188.md |
 | B189 | Puzzle Scheduler | P2 | ready | B180,B184 | TBD | backlog/plans/B-189-puzzle-scheduler.md | backlog/B189.md |
 | B190 | Cross-Puzzle Learning via Task Graph | P3 | ready | B189 | TBD | backlog/plans/B-190-cross-puzzle-learning.md | backlog/B190.md |
+| B191 | Offline Consolidation / "Dreaming" — Lesson Synthesis | P1 | ready | None | TBD | backlog/plans/B-191-dreaming-consolidation.md | backlog/B191.md |
+| B192 | Episodic Memory: Temporal Chains (FOLLOWED_BY, DECISION_CHAIN) | P2 | ready | None | TBD | backlog/plans/B-192-episodic-memory.md | backlog/B192.md |
+| B193 | Metacognition: Knowledge Gap Detection | P2 | ready | B191 | TBD | backlog/plans/B-193-metacognition-gaps.md | backlog/B193.md |
+| B194 | Procedural Memory: Reusable Solve Recipes | P1 | ready | B191 | TBD | backlog/plans/B-194-procedural-memory.md | backlog/B194.md |
+| B195 | Active Context Push: Proactive Lesson Injection | P2 | ready | None | TBD | backlog/plans/B-195-active-context-push.md | backlog/B195.md |
+| B196 | Internal Consistency Audit (Graph Lint) | P3 | ready | None | TBD | backlog/plans/B-196-consistency-audit.md | backlog/B196.md |
+| B197 | ARC Agent: Load Procedures Before Solving | P1 | ready | B194,B180 | TBD | backlog/plans/B-197-arc-procedure-loading.md | backlog/B197.md |
+| B198 | ARC Agent: Proactive Warning Integration | P2 | ready | B195 | TBD | backlog/plans/B-198-arc-proactive-warnings.md | backlog/B198.md |
+| B199 | ARC Agent: Knowledge Gap-Aware Exploration Budget | P2 | ready | B193 | TBD | backlog/plans/B-199-arc-gap-aware-exploration.md | backlog/B199.md |
+| B200 | ARC Agent: Post-Solve Lesson Persistence | P1 | ready | B181,B185 | TBD | backlog/plans/B-200-arc-post-solve-learning.md | backlog/B200.md |
 
 ## Summary
 
-- Total cards: 175
-- Ready: 35 (B152, B153, B155, B158, B159, B160, B161, B162, B163, B164, B165, B167, B168, B169, B170, B171, B172, B173, B174, B175, B176, B177, B178, B179, B180, B181, B182, B183, B184, B185, B186, B187, B188, B189, B190)
+- Total cards: 185
+- Ready: 45 (B152, B153, B155, B158, B159, B160, B161, B162, B163, B164, B165, B167, B168, B169, B170, B171, B172, B173, B174, B175, B176, B177, B178, B179, B180, B181, B182, B183, B184, B185, B186, B187, B188, B189, B190, B191, B192, B193, B194, B195, B196, B197, B198, B199, B200)
 - Needs work: 0
 - Complete: 138
 - In progress: 0
@@ -265,7 +275,25 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | 24 | B189 | P2 | **Puzzle scheduler** — difficulty ordering, health checks, skip-solved, configurable concurrency. Depends on B180+B184. |
 | 25 | B190 | P3 | **Cross-puzzle learning** — wire existing task graph API to ARC runner, persist lessons from solved puzzles for similar downstream puzzles. Depends on B189. |
 
-### Tier 3 — Blocked until verification lands
+### Tier 3 — Karpathy Memory: Core Infrastructure (land after Tier 2.5 FinOps)
+| Order | Card | Priority | Why |
+|-------|------|----------|-----|
+| 26 | B191 | P1 | **Dreaming/consolidation** — clusters related Lessons by domain + embedding similarity, LLM-synthesizes meta-lessons. Foundation for B193, B194. Independent. |
+| 27 | B192 | P2 | **Episodic memory** — FOLLOWED_BY edges between consecutive Messages, DECISION_CHAIN between Decisions. Enables temporal chain traversal. Independent. |
+| 28 | B194 | P1 | **Procedural memory** — synthesize reusable Procedure nodes from 3+ successful Plans. recall_procedures tool. Depends on B191. |
+| 29 | B193 | P2 | **Knowledge gap detection** — sweep step finds domains with high messages but low lessons. get_knowledge_gaps tool. Depends on B191. |
+| 30 | B195 | P2 | **Active context push** — extend notify_turn to proactively surface high-signal Lessons. Rate-limited vector search. Independent. |
+| 31 | B196 | P3 | **Consistency audit** — sweep step detects contradicting Lessons, stale facts, orphan nodes. Graph lint. Independent. |
+
+### Tier 3.5 — Karpathy Memory: ARC Agent Integration (land after Tier 3)
+| Order | Card | Priority | Why |
+|-------|------|----------|-----|
+| 32 | B200 | P1 | **Post-solve learning** — close the learning loop. Every puzzle produces structured Lessons. Depends on B181+B185. |
+| 33 | B197 | P1 | **Load procedures** — ARC agent queries recall_procedures before solving, uses proven recipes as initial PlanChunks. Depends on B194+B180. |
+| 34 | B198 | P2 | **Proactive warnings** — orchestrator parses proactive_context from notify_turn, penalizes warned actions. Depends on B195. |
+| 35 | B199 | P2 | **Gap-aware exploration** — double exploration budget for archetypes with KnowledgeGaps. Depends on B193. |
+
+### Tier 4 — Blocked until verification lands
 | Order | Card | Blocked by | Why |
 |-------|------|-----------|-----|
-| 26 | B156 | B152 | Level-aware orchestration should land after the replay-verification layer is complete |
+| 36 | B156 | B152 | Level-aware orchestration should land after the replay-verification layer is complete |

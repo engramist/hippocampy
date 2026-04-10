@@ -105,6 +105,46 @@ async def test_enforce_action_policy_provenance_and_gate(mock_brain):
 
 
 @pytest.mark.asyncio
+async def test_enforce_action_policy_overrides_stale_low_value_repeat(mock_brain):
+    """Repeated low-value actions should be overridden even when the frame hash changes."""
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+
+    available = ["ACTION1", "ACTION2", "ACTION7"]
+    orchestrator._hypothesis_context = {
+        "action_coverage": {"untested_actions": ["ACTION2"]},
+        "observed_action_effects": [
+            {
+                "action": "ACTION7",
+                "value_status": "ineffective",
+                "last_meaningful_label": "low_value",
+                "zero_reward_streak": 4,
+                "no_progress_count": 2,
+                "avg_meaningful_change": 0.1,
+                "rank_score": 0.0,
+            }
+        ],
+    }
+    orchestrator._action_frame_hashes["ACTION7"] = "old-frame"
+
+    action = {
+        "action_id": "ACTION7",
+        "decision_source": "sandbox",
+        "rationale": "retry ACTION7",
+    }
+    enforced = orchestrator._enforce_action_policy(action, available, current_frame_hash="new-frame")
+
+    assert enforced["action_id"] == "ACTION2"
+    assert enforced["decision_source"] == "policy_override"
+    assert "stale low-value" in enforced["rationale"]
+
+
+@pytest.mark.asyncio
 async def test_mental_sandbox_parse_recovery(mock_brain, sample_observation):
     """B132: Verify sandbox recovers from malformed-but-extractable JSON."""
     class MalformedLLM:

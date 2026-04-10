@@ -409,10 +409,12 @@ def test_codex_adapter_has_all_tools():
     from adapters.codex.adapter import TOOLS
     names = {t["name"] for t in TOOLS}
     expected = {"notify_turn", "current_truth", "branch_quest", "diff_since",
+                "reconstruct_timeline",
                 "get_open_loops", "analogical_search", "ingest_document",
                 "explore_graph", "complete_quest", "set_quest", "context_status",
                 "get_anomalies", "upsert_lesson", "recall_relevant_lessons",
                 "register_plan", "report_outcome", "recall_plans",
+                "get_knowledge_gaps", "recall_procedures",
                 "get_openclaw_prompt",
                 "register_task_graph", "get_ready_tasks", "advance_task",
                 "fail_task", "get_task_graph",
