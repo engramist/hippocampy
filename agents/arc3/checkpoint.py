@@ -112,8 +112,14 @@ class CheckpointManager:
         tc.attempt = max(tc.attempt, 1)
         self.save(checkpoint)
 
-    def mark_failed(self, checkpoint: RunCheckpoint, task_id: str, error: str) -> None:
-        """Record a failure and increment attempt count."""
+    def mark_failed(
+        self,
+        checkpoint: RunCheckpoint,
+        task_id: str,
+        error: str,
+        failure_class: str | None = None,
+    ) -> None:
+        """Record a failure, including its taxonomy bucket when available."""
         tc = checkpoint.tasks.get(task_id)
         if tc is None:
             tc = TaskCheckpoint(task_id=task_id, status="pending", plan_id=None, result=None, attempt=0)
@@ -122,6 +128,8 @@ class CheckpointManager:
         tc.status = "failed"
         tc.attempt += 1
         tc.result = {"error": error}
+        if failure_class:
+            tc.result["failure_class"] = failure_class
         self.save(checkpoint)
 
     # ------------------------------------------------------------------
