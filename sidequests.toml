@@ -59,6 +59,17 @@ archive_threshold       = 0.10   # archive node when pathway_strength falls belo
 resurrection_threshold  = 0.85   # un-archive if similarity to active node exceeds this
 sweep_interval_seconds  = 300    # background sweep: pruning + confidence re-scoring + resurrection
 
+[sweep.dreaming]
+# Dreaming / consolidation step - cluster Lessons and synthesize meta-lessons
+# min_cluster_size: minimum number of Lessons required to synthesize
+# similarity_threshold: cosine similarity threshold for clustering (0..1)
+# max_syntheses_per_sweep: limit how many syntheses are created per sweep
+# decay_boost_multiplier: factor by which constituent Lesson strength is reduced
+min_cluster_size = 3
+similarity_threshold = 0.75
+max_syntheses_per_sweep = 5
+decay_boost_multiplier = 1.3
+
 [web]
 port = 7799   # Memory Control Panel — http://127.0.0.1:7799 (local only)
 
