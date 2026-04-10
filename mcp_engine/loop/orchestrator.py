@@ -36,7 +36,7 @@ from mcp_engine.loop.step5_retrieval import (
 from mcp_engine.loop.step6_arbitration import arbitrate
 from mcp_engine.loop.step7_pathway   import (
     apply_additive, apply_contradiction, write_co_occurs_with,
-    rescore_nearby_low_confidence,
+    rescore_nearby_low_confidence, create_decision_chain,
 )
 from mcp_engine.loop.step7_5_lesson import extract_lessons  # B11
 from mcp_engine.loop.anomaly_detection import check_anomalies, store_anomaly_flag  # B12
@@ -620,6 +620,12 @@ async def _reify_concept(concept_id: str, artifact_type: str, entity: dict,
                     "ESTABLISHED_IN edge failed for artifact_id=%s session_id=%s",
                     artifact_id, session_id,
                 )
+            # B192: link Decisions into a DECISION_CHAIN for timeline reconstruction
+            try:
+                if node_label == "Decision":
+                    await create_decision_chain(artifact_id, session_id, db)
+            except Exception:
+                _logger.exception("DECISION_CHAIN creation failed for %s", artifact_id)
     except Exception:
         _logger.exception("_reify_concept failed for concept_id=%s type=%s",
                           concept_id, artifact_type)

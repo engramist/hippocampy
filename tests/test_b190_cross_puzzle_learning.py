@@ -71,9 +71,9 @@ async def test_register_store_and_advance_calls(tmp_path):
     # Ensure the run completed and produced a result
     assert isinstance(results, list) and len(results) >= 1
 
-    # The Spy should have recorded register, store_lesson, and advance calls
+    # The Spy should have recorded register, a lesson persistence call, and advance calls
     assert any(c[0] == "register_task_graph" for c in spy.calls), "register_task_graph not called"
-    assert any(c[0] == "store_lesson" for c in spy.calls), "store_lesson not called"
+    assert any(c[0] in ("store_lesson", "upsert_lesson") for c in spy.calls), "store_lesson/upsert_lesson not called"
     assert any(c[0] == "advance_task" for c in spy.calls), "advance_task not called"
 
 
@@ -87,9 +87,9 @@ async def test_lessons_recalled_on_subsequent_run(tmp_path):
     task1 = _sample_task("task-A")
     await runner1.run([task1], "card-b190-2")
 
-    # First run should have stored a lesson
+    # First run should have persisted a lesson (store or upsert)
     assert len(spy._lessons_store) >= 1
-    assert any(c[0] == "store_lesson" for c in spy.calls)
+    assert any(c[0] in ("store_lesson", "upsert_lesson") for c in spy.calls)
 
     # Clear calls and run a second puzzle — orchestrator.perceive should call recall_relevant_lessons
     spy.calls.clear()

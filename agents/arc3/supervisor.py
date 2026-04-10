@@ -20,9 +20,10 @@ class SupervisorVerdict:
 class PuzzleSupervisor:
     """B183: Meta-Supervisor Agent for trajectory-aware puzzle monitoring."""
 
-    def __init__(self, llm_client=None, check_interval: int = 5):
+    def __init__(self, llm_client=None, check_interval: int = 5, abandon_zero_reward_steps: int = 30):
         self.llm = llm_client
         self.check_interval = check_interval
+        self.abandon_zero_reward_steps = max(int(check_interval), int(abandon_zero_reward_steps))
 
     async def evaluate(
         self,
@@ -73,7 +74,7 @@ class PuzzleSupervisor:
             else:
                 break
         
-        if zero_reward_streak >= 30:
+        if zero_reward_streak >= self.abandon_zero_reward_steps:
             return SupervisorVerdict(SupervisorDecision.ABANDON,
                 f"{zero_reward_streak} consecutive zero-reward steps")
 
@@ -124,7 +125,7 @@ class PuzzleSupervisor:
             else:
                 break
         
-        if 15 <= zero_reward_streak < 30:
+        if 15 <= zero_reward_streak < self.abandon_zero_reward_steps:
             # Check if any victory condition is present in last step
             last_step = history[-1]
             sc = last_step.get("solve_context", {})

@@ -48,6 +48,14 @@ class BrainClientProtocol(Protocol):
     ) -> Mapping[str, Any]:
         ...
 
+    # NEW — Lesson persistence (B200)
+    async def upsert_lesson(self, *, domain: str, text: str, valence: float, confidence: float = 0.7, tags: Optional[List[str]] = None) -> Mapping[str, Any]:
+        ...
+
+    # NEW — Procedure recall (B197)
+    async def recall_procedures(self, *, archetype: str, limit: int = 3) -> Mapping[str, Any]:
+        ...
+
     # NEW — Retrieval tools the agent needs
     async def recall_plans(self, *, goal_query: str, session_id: str, min_valence: float, limit: int) -> Mapping[str, Any]:
         ...
@@ -56,6 +64,10 @@ class BrainClientProtocol(Protocol):
         ...
 
     async def analogical_search(self, *, query: str, current_quest_id: str, limit: int, min_similarity: float) -> Mapping[str, Any]:
+        ...
+
+    # NEW — Knowledge gap inspection (B193/B199)
+    async def get_knowledge_gaps(self, *, domain: Optional[str] = None, limit: int = 10, unresolved_only: bool = True, min_severity: float = 0.0) -> Mapping[str, Any]:
         ...
 
     async def branch_quest(self, *, name: str, purpose: str, parent_quest_id: str) -> Mapping[str, Any]:
@@ -107,8 +119,17 @@ class NoOpBrainClient(BrainClientProtocol):
         session_id: str,
         evidence: Optional[Mapping[str, Any]] = None,
         valence_source: Optional[str] = None,
+        procedure_id: Optional[str] = None,
+        procedure_success: Optional[bool] = None,
     ) -> Mapping[str, Any]:
         return {"updated": False}
+
+    async def recall_procedures(self, *, archetype: str, limit: int = 3) -> Mapping[str, Any]:
+        return {"procedures": []}
+
+    async def upsert_lesson(self, *, domain: str, text: str, valence: float, confidence: float = 0.7, tags: Optional[List[str]] = None) -> Mapping[str, Any]:
+        # No-op: return a noop lesson id for testing
+        return {"lesson_id": "noop", "created": False}
 
     async def recall_plans(self, *, goal_query: str, session_id: str, min_valence: float, limit: int) -> Mapping[str, Any]:
         return {"plans": []}
@@ -120,10 +141,19 @@ class NoOpBrainClient(BrainClientProtocol):
         matches = [l for l in self._lessons_store if query in (l.get("content", "") + " " + " ".join(l.get("tags", [])))]
         return {"lessons": matches[:limit]}
 
+    async def get_knowledge_gaps(self, *, domain: Optional[str] = None, limit: int = 10, unresolved_only: bool = True, min_severity: float = 0.0) -> Mapping[str, Any]:
+        """No-op knowledge gaps: baseline returns empty gaps list."""
+        return {"gaps": []}
+
     async def store_lesson(self, *, content: str, tags: List[str], session_id: str) -> Mapping[str, Any]:
         lesson = {"lesson_id": f"lesson_{len(self._lessons_store) + 1}", "content": content, "tags": tags, "session_id": session_id}
         self._lessons_store.append(lesson)
         return {"lesson_id": lesson["lesson_id"]}
+
+    async def upsert_lesson(self, *, domain: str, text: str, valence: float, confidence: float = 0.7, tags: Optional[List[str]] = None) -> Mapping[str, Any]:
+        # Map upsert_lesson into store_lesson semantics for NoOp client
+        tags = tags or [domain]
+        return await self.store_lesson(content=text, tags=tags, session_id="noop")
 
     async def analogical_search(self, *, query: str, current_quest_id: str, limit: int, min_similarity: float) -> Mapping[str, Any]:
         return {"results": []}
@@ -159,16 +189,20 @@ class LocalBrainClient(BrainClientProtocol):
         # Late import to avoid circular dependencies
         from mcp_engine.tools import (
             notify_turn, current_truth, register_plan, report_outcome,
+            recall_procedures,
             recall_plans, recall_relevant_lessons, analogical_search,
             branch_quest, register_task_graph, get_ready_tasks,
             advance_task, fail_task, get_task_graph, # task graph tools
             # optional lesson persistence handler (upsert_lesson is the tool name)
-            upsert_lesson as store_lesson
+            upsert_lesson as store_lesson,
+            # knowledge-gap handler (B193)
+            get_knowledge_gaps,
         )
         self._notify_turn_handler = notify_turn
         self._current_truth_handler = current_truth
         self._register_plan_handler = register_plan
         self._report_outcome_handler = report_outcome
+        self._recall_procedures_handler = recall_procedures
         self._recall_plans_handler = recall_plans
         self._recall_relevant_lessons_handler = recall_relevant_lessons
         self._analogical_search_handler = analogical_search
@@ -179,6 +213,8 @@ class LocalBrainClient(BrainClientProtocol):
         self._fail_task_handler = fail_task
         self._get_task_graph_handler = get_task_graph
         self._store_lesson_handler = store_lesson
+        # Optional knowledge-gap handler (B193)
+        self._get_knowledge_gaps_handler = get_knowledge_gaps
 
     async def notify_turn(self, *, role: str, content: str, session_id: str, precomputed: Optional[Mapping[str, Any]] = None) -> Mapping[str, Any]:
         params = {"role": role, "content": content, "session_id": session_id}
@@ -204,13 +240,21 @@ class LocalBrainClient(BrainClientProtocol):
         session_id: str,
         evidence: Optional[Mapping[str, Any]] = None,
         valence_source: Optional[str] = None,
+        procedure_id: Optional[str] = None,
+        procedure_success: Optional[bool] = None,
     ) -> Mapping[str, Any]:
         params = {"plan_id": plan_id, "valence": valence, "session_id": session_id}
         if outcome: params["outcome"] = outcome
         if outcome_text: params["outcome_text"] = outcome_text
         if evidence: params["evidence"] = evidence
         if valence_source: params["valence_source"] = valence_source
+        if procedure_id is not None: params["procedure_id"] = procedure_id
+        if procedure_success is not None: params["procedure_success"] = procedure_success
         return await self._report_outcome_handler(params, self.db, self.config)
+
+    async def recall_procedures(self, *, archetype: str, limit: int = 3) -> Mapping[str, Any]:
+        params = {"archetype": archetype, "limit": limit}
+        return await self._recall_procedures_handler(params, self.db, self.config)
 
     async def recall_plans(self, *, goal_query: str, session_id: str, min_valence: float, limit: int) -> Mapping[str, Any]:
         params = {"goal_query": goal_query, "session_id": session_id, "min_valence": min_valence, "limit": limit}
@@ -219,6 +263,10 @@ class LocalBrainClient(BrainClientProtocol):
     async def recall_relevant_lessons(self, *, query: str, limit: int) -> Mapping[str, Any]:
         params = {"query": query, "limit": limit}
         return await self._recall_relevant_lessons_handler(params, self.db, self.config)
+
+    async def recall_procedures(self, *, archetype: str, limit: int = 3) -> Mapping[str, Any]:
+        params = {"archetype": archetype, "limit": limit}
+        return await self._recall_procedures_handler(params, self.db, self.config)
 
     async def analogical_search(self, *, query: str, current_quest_id: str, limit: int, min_similarity: float) -> Mapping[str, Any]:
         params = {"query": query, "current_quest_id": current_quest_id, "limit": limit, "min_similarity": min_similarity}
@@ -242,9 +290,29 @@ class LocalBrainClient(BrainClientProtocol):
         # fallback
         return {"lesson_id": None}
 
+    async def upsert_lesson(self, *, domain: str, text: str, valence: float, confidence: float = 0.7, tags: Optional[List[str]] = None) -> Mapping[str, Any]:
+        # Map to the same tool handler used by store_lesson
+        params = {"text": text, "domain": domain, "lesson_type": "optimization", "session_id": "unknown"}
+        handler = getattr(self, "_store_lesson_handler", None)
+        if callable(handler):
+            return await handler(params, self.db, self.config)
+        return {"lesson_id": None}
+
     async def get_ready_tasks(self, *, graph_id: str) -> Mapping[str, Any]:
         params = {"graph_id": graph_id}
         return await self._get_ready_tasks_handler(params, self.db, self.config)
+
+    async def get_knowledge_gaps(self, *, domain: Optional[str] = None, limit: int = 10, unresolved_only: bool = True, min_severity: float = 0.0) -> Mapping[str, Any]:
+        params = {"domain": domain, "limit": limit, "unresolved_only": unresolved_only, "min_severity": min_severity}
+        handler = getattr(self, "_get_knowledge_gaps_handler", None)
+        if callable(handler):
+            return await handler(params, self.db, self.config)
+        # Fallback: try to call configured tool handler if present
+        handler2 = getattr(self, "_recall_relevant_lessons_handler", None)
+        if callable(handler2):
+            # best-effort fallback returning no gaps
+            return {"gaps": []}
+        return {"gaps": []}
 
     async def advance_task(self, *, graph_id: str, task_id: str, status: str, result: Optional[str] = None) -> Mapping[str, Any]:
         params = {"graph_id": graph_id, "task_id": task_id, "status": status, "result": result}
@@ -333,6 +401,23 @@ class LedgerBrainClient(BrainClientProtocol):
             return f"{method.upper()} {endpoint}"
         return method.upper()
 
+    @staticmethod
+    def _summarize_arc_payload(payload: Any) -> Any:
+        """Return a compact, test-friendly ARC payload summary."""
+        if not isinstance(payload, dict):
+            return payload
+
+        summarized = dict(payload)
+        frame = summarized.pop("frame", None)
+        if isinstance(frame, list):
+            rows = len(frame)
+            cols = len(frame[0]) if rows and isinstance(frame[0], list) else 0
+            summarized["frame_summary"] = {
+                "elided": True,
+                "dimensions": [rows, cols],
+            }
+        return summarized
+
     def record_arc_api_call(self, phase: str, method: str, endpoint: str, request_payload: Any, response_payload: Any, latency_ms: float, http_status: Optional[int] = None, received: bool = True, error_details: Optional[dict] = None):
         """B130: Record a raw ARC API call in the ledger and timeline."""
         import datetime
@@ -367,6 +452,7 @@ class LedgerBrainClient(BrainClientProtocol):
         
         summary = ""
         actual_status = http_status or (200 if received else None)
+        timeline_payload = self._summarize_arc_payload(response_payload) if received else (error_details if error_details else None)
         if received:
             summary = f"status {actual_status}"
             if isinstance(response_payload, dict):
@@ -387,7 +473,7 @@ class LedgerBrainClient(BrainClientProtocol):
             "duration_ms": int(latency_ms),
             "http_status": actual_status,
             "response_summary": summary,
-            "payload": response_payload if received else (error_details if error_details else None)
+            "payload": timeline_payload
         })
 
         arc_api_io = {
@@ -464,6 +550,8 @@ class LedgerBrainClient(BrainClientProtocol):
         session_id: str,
         evidence: Optional[Mapping[str, Any]] = None,
         valence_source: Optional[str] = None,
+        procedure_id: Optional[str] = None,
+        procedure_success: Optional[bool] = None,
     ) -> Mapping[str, Any]:
         import time
         start = time.time()
@@ -475,10 +563,12 @@ class LedgerBrainClient(BrainClientProtocol):
             "plan_id": plan_id,
             "session_id": session_id,
             "valence": valence,
-            "outcome": actual_outcome
+            "outcome": actual_outcome,
         }
         if valence_source: kwargs["valence_source"] = valence_source
         if evidence: kwargs["evidence"] = evidence
+        if procedure_id is not None: kwargs["procedure_id"] = procedure_id
+        if procedure_success is not None: kwargs["procedure_success"] = procedure_success
 
         resp = await self.inner.report_outcome(**kwargs)
         latency = (time.time() - start) * 1000
@@ -504,6 +594,25 @@ class LedgerBrainClient(BrainClientProtocol):
         latency = (time.time() - start) * 1000
         lessons = self._safe_get(resp, "lessons", []) or []
         self._record("unknown", "recall_lessons", "read", query, f"found {len(lessons)} lessons", latency)
+        return resp
+
+    async def recall_procedures(self, *, archetype: str, limit: int = 3) -> Mapping[str, Any]:
+        import time
+        start = time.time()
+        resp = await self.inner.recall_procedures(archetype=archetype, limit=limit)
+        latency = (time.time() - start) * 1000
+        procs = self._safe_get(resp, "procedures", []) or []
+        self._record("unknown", "recall_procedures", "read", archetype, f"found {len(procs)} procedures", latency)
+        return resp
+
+    async def get_knowledge_gaps(self, *, domain: Optional[str] = None, limit: int = 10, unresolved_only: bool = True, min_severity: float = 0.0) -> Mapping[str, Any]:
+        import time
+        start = time.time()
+        # Delegate to inner client
+        resp = await self.inner.get_knowledge_gaps(domain=domain, limit=limit, unresolved_only=unresolved_only, min_severity=min_severity)
+        latency = (time.time() - start) * 1000
+        gaps = self._safe_get(resp, "gaps", []) or []
+        self._record("unknown", "get_knowledge_gaps", "read", str(domain or ""), f"found {len(gaps)} gaps", latency)
         return resp
 
     async def analogical_search(self, *, query: str, current_quest_id: str, limit: int, min_similarity: float) -> Mapping[str, Any]:
@@ -567,6 +676,32 @@ class LedgerBrainClient(BrainClientProtocol):
         latency = (time.time() - start) * 1000
         lesson_id = resp.get('lesson_id') if isinstance(resp, dict) else None
         self._record("unknown", "store_lesson", "write", f"session_id={session_id}", f"lesson_id={lesson_id}", latency)
+        return resp
+
+    async def upsert_lesson(self, *, domain: str, text: str, valence: float, confidence: float = 0.7, tags: Optional[List[str]] = None) -> Mapping[str, Any]:
+        import time
+        start = time.time()
+        # Prefer explicit upsert_lesson on inner client
+        handler = getattr(self.inner, "upsert_lesson", None)
+        if callable(handler):
+            try:
+                resp = await handler(domain=domain, text=text, valence=valence, confidence=confidence, tags=tags)
+            except Exception:
+                resp = {"lesson_id": None}
+        else:
+            # Fallback to store_lesson if available
+            handler2 = getattr(self.inner, "store_lesson", None)
+            if callable(handler2):
+                try:
+                    resp = await handler2(content=text, tags=tags or [domain], session_id="unknown")
+                except Exception:
+                    resp = {"lesson_id": None}
+            else:
+                resp = {"lesson_id": None}
+
+        latency = (time.time() - start) * 1000
+        lesson_id = resp.get('lesson_id') if isinstance(resp, dict) else None
+        self._record("unknown", "upsert_lesson", "write", f"domain={domain}", f"lesson_id={lesson_id}", latency)
         return resp
 
     async def fail_task(self, *, graph_id: str, task_id: str, reason: str) -> Mapping[str, Any]:

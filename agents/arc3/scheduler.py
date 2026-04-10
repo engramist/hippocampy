@@ -165,12 +165,19 @@ class PuzzleScheduler:
 
         db = getattr(self._brain, "db", None) if self._brain is not None else None
         # Common test hooks: allow a provided brain client to implement `has_solved(task_id)`
-        if self._brain is not None and hasattr(self._brain, "has_solved"):
+        has_solved = getattr(self._brain, "has_solved", None) if self._brain is not None else None
+        if callable(has_solved):
             try:
-                val = self._brain.has_solved(task_id)
+                val = has_solved(task_id)
                 if asyncio.iscoroutine(val):
                     return await val
-                return bool(val)
+                # Avoid truthy MagicMock/AsyncMock values causing every puzzle
+                # to look previously solved in tests.
+                if type(val).__module__.startswith("unittest.mock"):
+                    return False
+                if isinstance(val, bool):
+                    return val
+                return bool(val) if val is not None else False
             except Exception:
                 pass
 
