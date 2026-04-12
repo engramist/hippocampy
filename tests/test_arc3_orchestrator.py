@@ -2183,3 +2183,28 @@ async def test_graph_hypothesize_skips_unknown_archetype(sample_observation):
     assert "graph_evidence" in res
     assert res["graph_evidence"]["grounded_hypotheses"] == []
 
+
+@pytest.mark.asyncio
+async def test_graph_hypothesize_uses_structured_lesson_query(sample_observation):
+    """B212: graph_hypothesize should query lessons with lesson_type:action_effect."""
+    brain = AsyncMock()
+    brain.recall_relevant_lessons = AsyncMock(return_value={"lessons": []})
+    brain.current_truth = AsyncMock(return_value={"results": []})
+    brain.recall_procedures = AsyncMock(return_value={"procedures": []})
+
+    orchestrator = ARCOrchestrator(
+        brain_client=brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    # Ensure archetype present so orchestrator uses archetype-scoped query
+    orchestrator._solve_context = {"archetype": "space"}
+
+    await orchestrator.graph_hypothesize(sample_observation, step=1)
+
+    # Assert recall was awaited with structured query including lesson_type
+    brain.recall_relevant_lessons.assert_awaited()
+    brain.recall_relevant_lessons.assert_awaited_with(query="lesson_type:action_effect puzzle_archetype:space", limit=5)
+
