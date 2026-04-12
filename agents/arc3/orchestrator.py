@@ -129,6 +129,7 @@ class ARCOrchestrator:
         serializer: StateSerializerForARC,
         config: dict,
         cost_tracker: Optional[CostTracker] = None,
+        phase_controller: object | None = None,
     ):
         self.brain = brain_client
         llm_cfg = config.get("llm", {}) if isinstance(config, dict) else {}
@@ -252,6 +253,8 @@ class ARCOrchestrator:
         self._should_abandon: bool = False
         # B198: proactive warnings pushed from SideQuests notify_turn
         self._proactive_warnings: List[dict] = []
+        # Optional PhaseController (owned by DurableARCRunner; read-only here)
+        self._phase_controller = phase_controller
 
     @property
     def _game_rule_hypothesis(self) -> Any | None:
@@ -391,6 +394,7 @@ class ARCOrchestrator:
 
         grid = observation.get("grid") or []
         step = len(self._step_history)
+
 
         # B167: Update pattern tracker
         pattern_state = self._pattern_tracker.update(grid, step)
@@ -583,6 +587,17 @@ class ARCOrchestrator:
             else:
                 self._emit_trace_event("operation", "autopilot_disengage", {"reason": "action_blocked", "action": action_id})
                 return None
+
+        # B213: Prevent autopilot spatial lock under sustained no-progress.
+        try:
+            candidate_target = (round(target["row"]), round(target["col"]))
+            last_target = getattr(self, "_last_autopilot_target", None)
+            if self._consecutive_no_progress_steps >= 2 and last_target == candidate_target:
+                self._emit_trace_event("operation", "autopilot_confidence_drop", {"target": candidate_target}, {"reason": "no_progress_spatial_lock"})
+                return None
+            self._last_autopilot_target = candidate_target
+        except Exception:
+            pass
 
         # B175: Save player position for next wall check
         self._last_autopilot_player_pos = (player_info["row"], player_info["col"])
@@ -919,11 +934,23 @@ class ARCOrchestrator:
         try:
             if not response or not isinstance(response, dict):
                 return
-            proactive_ctx = response.get("proactive_context") or []
+            proactive_ctx = response.get("proactive_context")
             if not proactive_ctx:
                 return
+
+            if isinstance(proactive_ctx, dict):
+                items = proactive_ctx.get("items") or []
+            elif isinstance(proactive_ctx, list):
+                items = proactive_ctx
+            else:
+                return
+
+            normalized_items = [item for item in items if isinstance(item, dict)]
+            if not normalized_items:
+                return
+
             # Save latest proactive warnings
-            self._proactive_warnings = list(proactive_ctx)
+            self._proactive_warnings = normalized_items
 
             # Emit compact trace for downstream evaluation
             warnings_compact = [
@@ -933,7 +960,7 @@ class ARCOrchestrator:
                     "type": w.get("type"),
                     "domain": w.get("domain"),
                 }
-                for w in proactive_ctx
+                for w in normalized_items
             ]
             self._emit_trace_event(
                 "operation",
@@ -1301,6 +1328,313 @@ class ARCOrchestrator:
         )
         return memory_context
 
+    async def perceive_step_response(
+        self,
+        observation: ARC3Observation,
+        step: int,
+        reward: float,
+        done: bool,
+        action_id: Optional[str] = None,
+    ) -> dict:
+        """Lightweight per-step perception of the server response (B202).
+
+        Interprets the ARC server response without invoking LLMs or entity discovery.
+        Stores the result at `self._last_response_perception` and emits a short
+        SideQuests notify_turn with a `[STEP RESPONSE]` prefix for visibility.
+        """
+        try:
+            self._emit_trace_event("phase_start", "perceive_step_response", {"step": step, "action_id": action_id, "state": observation.get("state")})
+        except Exception:
+            pass
+
+        grid = observation.get("grid") or []
+        delta_count = 0
+        try:
+            if self._last_grid and grid:
+                # Count differing cells conservatively
+                for r in range(min(len(self._last_grid), len(grid))):
+                    prev_row = self._last_grid[r]
+                    cur_row = grid[r]
+                    for c in range(min(len(prev_row), len(cur_row))):
+                        if prev_row[c] != cur_row[c]:
+                            delta_count += 1
+        except Exception:
+            delta_count = 0
+
+        delta = {"n_cells_changed": delta_count}
+        available_actions = observation.get("available_actions") or []
+        active_colors = []
+        try:
+            s = set()
+            for row in grid:
+                for v in row:
+                    if isinstance(v, int) and v != 0:
+                        s.add(int(v))
+            active_colors = sorted(list(s))
+        except Exception:
+            active_colors = []
+
+        # Build a context-aware phase question and short summary for SideQuests ingestion.
+        solve_ctx = getattr(self, "_solve_context", {}) or {}
+        archetype = solve_ctx.get("archetype")
+        archetype_conf = solve_ctx.get("archetype_confidence")
+        victory = solve_ctx.get("victory_condition") or {}
+        victory_type = None
+        if isinstance(victory, dict):
+            victory_type = victory.get("type") or victory.get("description")
+        else:
+            victory_type = victory or None
+
+        active_chunk = (solve_ctx.get("active_chunk") or {})
+        chunk_desc = None
+        if isinstance(active_chunk, dict):
+            chunk_desc = active_chunk.get("description")
+        elif active_chunk:
+            chunk_desc = str(active_chunk)
+
+        # Interpret the delta against reward to produce an expectation match string.
+        expectation = "no effect"
+        try:
+            n_changed = int(delta.get("n_cells_changed", 0) or 0)
+            if reward and float(reward) > 0:
+                expectation = "positive outcome"
+            elif n_changed > 0:
+                expectation = "unexpected movement"
+            else:
+                expectation = "no effect"
+        except Exception:
+            expectation = "no effect"
+
+        archetype_label = (
+            f"{archetype} (conf={float(archetype_conf):.2f})" if archetype is not None and archetype_conf is not None else (archetype or "unknown")
+        )
+
+        victory_label = victory_type or "unknown"
+
+        # Construct a concise, context-rich question for ingestion.
+        latest_step_action = None
+        try:
+            if self._step_history:
+                latest_step_action = self._step_history[-1].get("action_id")
+        except Exception:
+            latest_step_action = None
+
+        # B210: Canonical action attribution guard.
+        # Prefer the just-recorded step action when it disagrees with a stale caller value.
+        if latest_step_action and action_id and latest_step_action != action_id:
+            try:
+                self._emit_trace_event(
+                    "operation",
+                    "perceive_action_attribution_mismatch",
+                    {"step": step, "provided_action": action_id},
+                    {"canonical_action": latest_step_action},
+                )
+            except Exception:
+                pass
+            action_id = latest_step_action
+        elif latest_step_action and not action_id:
+            action_id = latest_step_action
+
+        pq_parts = []
+        if action_id:
+            pq_parts.append(f"Did {action_id} advance toward the victory condition?")
+        pq_parts.append(f"Archetype={archetype_label}")
+        pq_parts.append(f"Victory={victory_label}")
+        if chunk_desc:
+            pq_parts.append(f"Chunk={chunk_desc}")
+        pq = " ".join(pq_parts)
+
+        perception = {
+            "step": step,
+            "state": observation.get("state"),
+            "reward": reward,
+            "done": done,
+            "delta": delta,
+            "available_actions": available_actions,
+            "active_colors": active_colors,
+            "action_id": action_id,
+            "phase_question": pq,
+        }
+
+        # Persist for later inspection
+        try:
+            self._last_response_perception = perception
+        except Exception:
+            pass
+
+        # Notify SideQuests for timeline visibility; include contextual solve information
+        try:
+            content_parts = [f"[STEP RESPONSE] step={step}"]
+            if action_id:
+                content_parts.append(f"action={action_id}")
+            content_parts.append(f"State={observation.get('state')}")
+            content_parts.append(f"Reward={reward}")
+            content_parts.append(f"Done={done}")
+            content_parts.append(f"Archetype={archetype_label}")
+            content_parts.append(f"Victory={victory_label}")
+            if chunk_desc:
+                content_parts.append(f"Strategy={chunk_desc}")
+            content_parts.append(f"Delta={delta.get('n_cells_changed')}")
+            if delta.get("direction"):
+                content_parts.append(f"direction={delta.get('direction')}")
+            content_parts.append(f"Expectation={expectation}")
+            content_parts.append(f"Available={available_actions}")
+            content = ", ".join(str(p) for p in content_parts)
+            await self.brain.notify_turn(role="assistant", content=content, session_id=self.session_id)
+        except Exception:
+            logger.debug("B205: notify_turn for step response failed", exc_info=True)
+
+        # B211: Write structured action_effect record for graph inference (B212)
+        try:
+            # Build a delta summary from available frame delta information
+            delta_summary = {
+                "n_cells_changed": int(delta.get("n_cells_changed", 0) or 0),
+                "apparent_effect": delta.get("apparent_effect"),
+                "direction": delta.get("direction"),
+                "new_colors": [],
+                "removed_colors": [],
+            }
+            if getattr(self, "_frame_deltas", None):
+                try:
+                    last_delta = self._frame_deltas[-1]
+                    if last_delta:
+                        delta_summary.update({
+                            "n_cells_changed": int(getattr(last_delta, "n_cells_changed", delta_summary["n_cells_changed"]) or 0),
+                            "apparent_effect": getattr(last_delta, "apparent_effect", delta_summary.get("apparent_effect")),
+                            "direction": getattr(last_delta, "direction", delta_summary.get("direction")),
+                            "new_colors": getattr(last_delta, "new_colors_introduced", getattr(last_delta, "new_colors", [])) or [],
+                            "removed_colors": getattr(last_delta, "colors_removed", getattr(last_delta, "removed_colors", [])) or [],
+                        })
+                except Exception:
+                    pass
+            await self._write_action_effect_record(
+                observation=observation,
+                action_id=action_id,
+                reward=reward,
+                step=step,
+                delta_summary=delta_summary,
+            )
+        except Exception:
+            logger.debug("B211: _write_action_effect_record failed", exc_info=True)
+
+        try:
+            self._emit_trace_event("phase_end", "perceive_step_response", {"step": step}, {"delta": delta})
+        except Exception:
+            pass
+
+        # Update last grid snapshot for next-step deltas
+        try:
+            self._last_grid = grid
+        except Exception:
+            pass
+
+        return perception
+
+
+    async def _write_action_effect_record(
+        self,
+        observation: ARC3Observation,
+        action_id: str | None,
+        reward: float,
+        step: int,
+        delta_summary: dict,
+    ) -> None:
+        """Write a typed ActionEffect lesson record to SideQuests (B211).
+
+        This produces a compact structured payload and calls the Brain client's
+        `upsert_lesson` tool so the record is stored and becomes queryable by
+        downstream graph hypotheses (B212).
+        """
+        try:
+            if step <= 0 or not action_id:
+                return
+
+            # Derive effect class from delta summary
+            try:
+                n_changed = int(delta_summary.get("n_cells_changed") or 0)
+            except Exception:
+                n_changed = 0
+            apparent_effect = str(delta_summary.get("apparent_effect") or "").lower()
+            direction = delta_summary.get("direction")
+
+            if n_changed == 0:
+                effect_class = "no_effect"
+            elif direction and n_changed <= 4:
+                effect_class = "directional_movement"
+            elif n_changed > 30:
+                effect_class = "large_transformation"
+            elif "no_effect" in apparent_effect or "no change" in apparent_effect:
+                effect_class = "no_effect"
+            else:
+                effect_class = "local_change"
+
+            # Pull entity type from solve context if available
+            solve_ctx = getattr(self, "_solve_context", {}) or {}
+            roles = solve_ctx.get("object_roles") or solve_ctx.get("roles") or {}
+            entity_type = "unknown"
+            spatial_role = "unknown"
+            try:
+                player_pos = getattr(self, "_player_position", None)
+                if player_pos and isinstance(roles, dict):
+                    for role_key, role_data in roles.items():
+                        if isinstance(role_data, dict):
+                            est_pos = role_data.get("estimated_position") or role_data.get("position")
+                            if est_pos and tuple(est_pos) == tuple(player_pos):
+                                entity_type = str(role_data.get("entity_type") or role_key or "unknown")
+                                spatial_role = str(role_data.get("role") or "unknown")
+                                break
+                if entity_type == "unknown" and isinstance(roles, dict):
+                    for role_key, role_data in roles.items():
+                        if isinstance(role_data, dict):
+                            role_str = str(role_data.get("role") or "").lower()
+                            if role_str in ("trigger", "intermediate", "collectible"):
+                                entity_type = str(role_data.get("entity_type") or role_key or "unknown")
+                                spatial_role = role_str
+                                break
+            except Exception:
+                pass
+
+            archetype = str(solve_ctx.get("archetype") or "unknown")
+
+            lesson_data = {
+                "lesson_type": "action_effect",
+                "action": action_id,
+                "effect_class": effect_class,
+                "n_cells_changed": n_changed,
+                "new_colors": delta_summary.get("new_colors") or delta_summary.get("new_colors_introduced") or [],
+                "removed_colors": delta_summary.get("removed_colors") or delta_summary.get("colors_removed") or [],
+                "direction": direction,
+                "reward_signal": float(reward) if reward is not None else 0.0,
+                "entity_type": entity_type,
+                "spatial_role": spatial_role,
+                "puzzle_archetype": archetype,
+                "task_id": str(observation.get("task_id") or ""),
+                "dataset_id": str(observation.get("dataset_id") or ""),
+                "step": step,
+            }
+
+            # Prepare textual content and tags for the lesson upsert call.
+            content = (
+                f"[ACTION_EFFECT] step={step} action={action_id} effect={effect_class} "
+                f"n_changed={n_changed} entity={entity_type} archetype={archetype}"
+            )
+            tags = ["action_effect", effect_class, entity_type, archetype]
+
+            try:
+                # Use BrainClientProtocol's upsert_lesson contract (domain, text, valence, ...)
+                valence = float(reward) if reward is not None else 0.0
+                await self.brain.upsert_lesson(domain="action_effect", text=json.dumps(lesson_data), valence=valence, confidence=0.9, tags=tags)
+                self._emit_trace_event(
+                    "operation",
+                    "action_effect_written",
+                    {"step": step, "action": action_id},
+                    {"effect_class": effect_class, "entity_type": entity_type},
+                )
+            except Exception as exc:
+                logger.warning("B211: failed to write ActionEffect record: %s", exc)
+        except Exception:
+            logger.debug("B211: _write_action_effect_record outer failure", exc_info=True)
+
     # ── Phase 2: Plan ───────────────────────────────────────────────────
 
     def _record_llm_usage(self):
@@ -1432,7 +1766,16 @@ class ARCOrchestrator:
                 "energy_from_hud": context.get("energy_from_hud"),
             },
         )
-        
+        # B212: structured graph evidence pass (runs after LLM hypothesize)
+        try:
+            if step > 0:
+                graph_evidence = await self.graph_hypothesize(observation=observation, step=step)
+                if graph_evidence:
+                    context["graph_evidence"] = graph_evidence
+                    self._hypothesis_context = context
+        except Exception:
+            logger.debug("B212: graph_hypothesize failed", exc_info=True)
+
         return context
 
     async def solve(
@@ -1474,6 +1817,7 @@ class ARCOrchestrator:
                 "relevance": float(w.get("relevance_score", 0.0) or 0.0),
             }
             for w in getattr(self, "_proactive_warnings", [])
+            if isinstance(w, dict)
         ]
 
         solve_ctx = await self.solve_engine.solve(
@@ -1575,6 +1919,13 @@ class ARCOrchestrator:
                 }
                 for entry in (solve_ctx.chunk_ledger or [])
             ],
+            # B209: canonical expected action used by execute-policy adherence checks.
+            "expected_action": (
+                (solve_ctx.active_chunk.estimated_actions[0] if (solve_ctx.active_chunk and solve_ctx.active_chunk.estimated_actions) else None)
+            ),
+            "expected_action_family": (
+                (solve_ctx.active_chunk.estimated_actions[0] if (solve_ctx.active_chunk and solve_ctx.active_chunk.estimated_actions) else None)
+            ),
             "plateau_mode": solve_ctx.plateau_mode,
             "plateau_reason": solve_ctx.plateau_reason,
             "ranked_action_families": solve_ctx.ranked_action_families,
@@ -2011,7 +2362,12 @@ class ARCOrchestrator:
             )
 
         # B133: Pass frame_hash to policy enforcement
-        action = self._enforce_action_policy(action, available_actions, current_frame_hash=observation.get("frame_hash"))
+        action = self._enforce_action_policy(
+            action,
+            available_actions,
+            current_frame_hash=observation.get("frame_hash"),
+            observation=observation,
+        )
         action = self._ensure_action6_coordinates(action, observation)
 
         # B115: Final pre-execution decision guard
@@ -2095,7 +2451,11 @@ class ARCOrchestrator:
                 # Append rejection context to the original prompt and retry
                 retry_prompt = prompt + f"\n\nVerifier feedback: {verifier_result['rejection_reason']}\nReconsider: what action is better?"
                 retry_action = await self._mental_sandbox(retry_prompt, available_actions, observation)
-                retry_action = self._enforce_action_policy(retry_action, available_actions)
+                retry_action = self._enforce_action_policy(
+                    retry_action,
+                    available_actions,
+                    observation=observation,
+                )
                 retry_action = self._ensure_action6_coordinates(retry_action, observation)
                 action = retry_action
             else:
@@ -2160,12 +2520,20 @@ class ARCOrchestrator:
                 "candidate_action": candidate_action_id,
                 "executed_action": action.get("action_id"),
                 "decision_source": action.get("decision_source"),
+                "expected_action": action.get("expected_action"),
+                "selected_action": action.get("selected_action"),
+                "override_reason": action.get("override_reason"),
+                "adherence_ok": action.get("adherence_ok"),
                 "guard_status": guard_result["status"],
                 "guard_reason": guard_result["reason"] if guard_result["status"] != "approved" else None
             },
             "action_id": action.get("action_id"),
             "candidate_action_id": candidate_action_id,
             "decision_source": action.get("decision_source"),
+            "expected_action": action.get("expected_action"),
+            "selected_action": action.get("selected_action"),
+            "override_reason": action.get("override_reason"),
+            "adherence_ok": action.get("adherence_ok"),
             "x": action.get("x"),
             "y": action.get("y"),
             "rationale": action.get("rationale"),
@@ -2728,6 +3096,159 @@ class ARCOrchestrator:
         )
         return summary
 
+    def _build_spatial_query(self, solve_context: dict, observation: dict) -> str:
+        """Build a compact structural query string describing the current board layout.
+
+        The query is intentionally simple (space-separated keywords) so MCP
+        retrieval handlers can match on archetype, role types, region counts,
+        and victory descriptors.
+        """
+        parts: list[str] = []
+        archetype = str(solve_context.get("archetype") or "unknown")
+        parts.append(archetype)
+
+        roles = solve_context.get("object_roles") or solve_context.get("roles") or {}
+        try:
+            role_types = sorted({
+                str(v.get("role") or "")
+                for v in (roles.values() if isinstance(roles, dict) else [])
+                if isinstance(v, dict) and v.get("role")
+            })
+            if role_types:
+                parts.extend(role_types)
+        except Exception:
+            pass
+
+        try:
+            n_regions = int(solve_context.get("n_regions") or 0)
+            if n_regions >= 2:
+                parts.append(f"{n_regions}_regions")
+        except Exception:
+            pass
+
+        vc = solve_context.get("victory_condition") or "unknown"
+        if isinstance(vc, dict):
+            vc_desc = vc.get("type") or vc.get("description") or "victory_condition_unknown"
+        else:
+            vc_desc = vc or "victory_condition_unknown"
+        parts.append(str(vc_desc))
+
+        return " ".join(str(p) for p in parts if p)
+
+    async def graph_hypothesize(self, observation: dict, step: int) -> dict:
+        """B212: Tiered graph evidence pass.
+
+        Queries the brain for relevant lessons, current truth, and procedures
+        scoped to the current puzzle archetype / spatial query and distills
+        simple action->entity->effect patterns into `grounded_hypotheses`.
+        """
+        # No-op at step 0
+        if step == 0:
+            return {"graph_evidence": {"grounded_hypotheses": []}}
+
+        # Determine archetype from solve context or observation
+        archetype = None
+        try:
+            if self._solve_context and isinstance(self._solve_context, dict):
+                archetype = self._solve_context.get("archetype")
+        except Exception:
+            archetype = None
+
+        if not archetype:
+            archetype = observation.get("puzzle_archetype") if isinstance(observation, dict) else None
+
+        # If archetype is not known, we'll still perform broad recalls
+        # (some brain handlers may ignore missing scope and return global matches).
+
+        try:
+            # Tier 1: recall structured lessons (action_effect / action semantics)
+            # Use a compact structured query so MCP handlers can match on lesson_type
+            # and archetype. This aligns with B212 acceptance criteria.
+            if archetype:
+                query = f"lesson_type:action_effect puzzle_archetype:{archetype}"
+                lessons_resp = await getattr(self.brain, "recall_relevant_lessons")(query=query, limit=5)
+            else:
+                query = "lesson_type:action_effect"
+                lessons_resp = await getattr(self.brain, "recall_relevant_lessons")(query=query, limit=5)
+            lessons = lessons_resp.get("lessons") if isinstance(lessons_resp, dict) else lessons_resp or []
+        except Exception:
+            lessons = []
+
+        try:
+            # Tier 2: current truth (spatial facts)
+            spatial_q = self._build_spatial_query(self._solve_context or {}, observation or {})
+            truth_resp = await getattr(self.brain, "current_truth")(query=spatial_q)
+            truths = truth_resp.get("results") if isinstance(truth_resp, dict) else truth_resp or []
+        except Exception:
+            truths = []
+
+        try:
+            # Tier 3: recall procedures for archetype (or global if archetype missing)
+            if archetype:
+                proc_resp = await getattr(self.brain, "recall_procedures")(archetype=archetype)
+            else:
+                proc_resp = await getattr(self.brain, "recall_procedures")()
+            procs = proc_resp.get("procedures") if isinstance(proc_resp, dict) else proc_resp or []
+        except Exception:
+            procs = []
+
+        # Distill patterns from lessons into simple grounded hypotheses
+        patterns: dict[tuple, int] = {}
+        for l in lessons or []:
+            text = None
+            if isinstance(l, dict):
+                text = l.get("text")
+            else:
+                text = l
+            if not text:
+                continue
+            try:
+                data = json.loads(text)
+            except Exception:
+                # Best-effort: skip non-json lesson text
+                continue
+
+            action = data.get("action") or data.get("action_id") or data.get("verb")
+            entity = data.get("entity_type") or data.get("entity") or data.get("target")
+            effect = data.get("effect") or data.get("meaning") or data.get("outcome")
+            if not action or not entity or not effect:
+                continue
+            key = (str(action), str(entity), str(effect))
+            patterns[key] = patterns.get(key, 0) + 1
+
+        grounded_hypotheses = [
+            {
+                "action": a,
+                "entity_type": e,
+                "expected_effect": ef,
+                "evidence_count": c,
+            }
+            for (a, e, ef), c in patterns.items()
+        ]
+
+        graph_evidence = {
+            "grounded_hypotheses": grounded_hypotheses,
+            "action_effect_patterns": lessons or [],
+            "spatial_victory_hints": truths or [],
+            "matching_procedures": procs or [],
+            "lessons_considered": len(lessons or []),
+            "truths_considered": len(truths or []),
+            "procedures_considered": len(procs or []),
+        }
+
+        # Trace for observability
+        try:
+            self._emit_trace_event(
+                "operation",
+                "graph_hypothesize_complete",
+                {"step": step},
+                {"lessons": len(lessons or []), "grounded": len(grounded_hypotheses)},
+            )
+        except Exception:
+            pass
+
+        return {"graph_evidence": graph_evidence}
+
     # ── Prompt Construction ──────────────────────────────────────────
 
     def build_action_packet(
@@ -2830,6 +3351,10 @@ class ARCOrchestrator:
             content=f"Available actions: {available_actions}\nReturn JSON: {{\"action_id\": \"...\", \"rationale\": \"...\"}}",
             header="CHOOSE ACTION"
         ))
+        # B212: Surface graph evidence in rule-application prompts as well
+        graph_lines = self._format_graph_evidence_section(self._hypothesis_context)
+        if graph_lines:
+            packet.blocks.append(ContentBlock(type="GRAPH_EVIDENCE", content="\n".join(graph_lines), header="GRAPH EVIDENCE"))
         return packet
 
     def _build_rule_application_packet(self, observation: ARC3Observation, memory_context: dict, available_actions: List[str]) -> PromptPacket:
@@ -2895,6 +3420,11 @@ class ARCOrchestrator:
             packet.blocks.append(
                 ContentBlock(type="ACTION_FACTS", content="\n".join(fact_lines[:4]))
             )
+
+        # B212: Inject structured graph evidence when available
+        graph_lines = self._format_graph_evidence_section(self._hypothesis_context)
+        if graph_lines:
+            packet.blocks.append(ContentBlock(type="GRAPH_EVIDENCE", content="\n".join(graph_lines), header="GRAPH EVIDENCE"))
 
         history_text = self._format_history_section(step_history) if step_history else "No prior steps yet."
         packet.blocks.append(ContentBlock(type="HISTORY", content=history_text))
@@ -3009,6 +3539,11 @@ class ARCOrchestrator:
             ),
         ))
 
+        # B212: Expose graph evidence in execution prompts if present
+        graph_lines = self._format_graph_evidence_section(self._hypothesis_context)
+        if graph_lines:
+            packet.blocks.append(ContentBlock(type="GRAPH_EVIDENCE", content="\n".join(graph_lines), header="GRAPH EVIDENCE"))
+
         return packet
 
     def _build_navigation_packet(
@@ -3067,6 +3602,11 @@ class ARCOrchestrator:
         if hypothesis_lines:
             packet.blocks.append(ContentBlock(type="HYPOTHESIS", content="\n".join(hypothesis_lines)))
 
+        # B212: GRAPH EVIDENCE block (if available) — surface before solve context
+        graph_lines = self._format_graph_evidence_section(self._hypothesis_context)
+        if graph_lines:
+            packet.blocks.append(ContentBlock(type="GRAPH_EVIDENCE", content="\n".join(graph_lines), header="GRAPH EVIDENCE"))
+
         solve_section = self._build_solve_section()
         if solve_section:
             # Solve section already has a header usually, but packet render adds one.
@@ -3122,6 +3662,7 @@ class ARCOrchestrator:
             type="OBSERVATION",
             content=self._format_observation_section(observation)
         ))
+
 
         # B110: INSTRUCTION should not duplicate effect summary (already in OBSERVED EFFECTS)
         instruction_text = self._format_instruction_section(self._hypothesis_context)
@@ -3598,6 +4139,18 @@ class ARCOrchestrator:
             step for step in self._step_history
             if self._normalize_action_id(step.get("action_id")) == "ACTION6"
         ]
+        # Puzzle-specific rotate-cross heuristic removed (B213): no direct coordinate inference here.
+        recent_failed_coords = [
+            (x, y)
+            for step in action6_attempts[-12:]
+            for x, y in [
+                (
+                    self._coerce_action6_coordinate(step.get("x")),
+                    self._coerce_action6_coordinate(step.get("y")),
+                )
+            ]
+            if x is not None and y is not None and float(step.get("reward") or 0.0) <= 0.0
+        ]
         used_coords = {
             (x, y)
             for step in action6_attempts
@@ -3609,6 +4162,40 @@ class ARCOrchestrator:
             ]
             if x is not None and y is not None
         }
+
+        # If ACTION6 is the only legal action and we are plateauing, prefer a
+        # larger jump over local row-by-row sweeps.
+        if self._consecutive_no_progress_steps >= 3 and len(recent_failed_coords) >= 3:
+            anchor = recent_failed_coords[-1]
+            best_candidate: tuple[str, tuple[int, int]] | None = None
+            best_score: tuple[int, int, int] | None = None
+            for tier, coord in candidates_with_meta:
+                if coord in used_coords:
+                    continue
+                if self._is_cluster_exhausted(coord, action6_attempts):
+                    continue
+                min_recent_dist = min(
+                    self._manhattan_dist(coord, prev) for prev in recent_failed_coords
+                )
+                dist_from_anchor = self._manhattan_dist(coord, anchor)
+                row_change = 1 if coord[1] != anchor[1] else 0
+                score = (row_change, min_recent_dist, dist_from_anchor)
+                if best_score is None or score > best_score:
+                    best_score = score
+                    best_candidate = (tier, coord)
+
+            if best_candidate is not None:
+                tier, coord = best_candidate
+                self._emit_trace_event(
+                    "operation",
+                    "coordinate_policy",
+                    {"policy": "stagnation_escape", "tier": tier, "coord": coord},
+                    {
+                        "no_progress_steps": self._consecutive_no_progress_steps,
+                        "recent_failures": len(recent_failed_coords),
+                    },
+                )
+                return coord
 
         # B143: Policy tracing and anti-clustering
         policy = "default"
@@ -3773,7 +4360,13 @@ class ARCOrchestrator:
             n_total = len(getattr(self, '_available_actions', []))
             return 1 if n_known < n_total else 0
 
-    def _enforce_action_policy(self, action: ARC3Action, available_actions: List[str], current_frame_hash: str | None = None) -> ARC3Action:
+    def _enforce_action_policy(
+        self,
+        action: ARC3Action,
+        available_actions: List[str],
+        current_frame_hash: str | None = None,
+        observation: ARC3Observation | None = None,
+    ) -> ARC3Action:
         """Apply hard exploration guards and chunk enforcement (B109/B112/B133)."""
         hyp_ctx = self._hypothesis_context or {}
         coverage = hyp_ctx.get("action_coverage") or {}
@@ -3795,8 +4388,95 @@ class ARCOrchestrator:
         active_chunk = (self._solve_context or {}).get("active_chunk")
         skip_chunk_enforcement = False  # Set True below for fallback decisions
 
+        # B209: Route->Execute adherence contract.
+        # If route provided an expected action, enforce it unless we have an explicit override class.
+        expected_action = (self._solve_context or {}).get("expected_action")
+        explicit_override_sources = {
+            "autopilot",
+            "policy_override",
+            "guard_override",
+            "guard_blocked_fallback",
+            "fatigue_override",
+            "plateau_override",
+            "phase2_execution",
+        }
+        relax_adherence = bool(
+            self._consecutive_no_progress_steps >= 2
+            or hyp_ctx.get("loop_detected")
+            or (coverage.get("top_two_low_value") is True)
+        )
+        if expected_action and expected_action in available_actions and action_id:
+            if action_id != expected_action and source not in explicit_override_sources and not relax_adherence:
+                self._emit_trace_event(
+                    "operation",
+                    "route_execute_adherence_enforced",
+                    {"selected_action": action_id, "expected_action": expected_action},
+                    {"reason": "missing_explicit_override_reason"},
+                )
+                action.update(
+                    {
+                        "action_id": expected_action,
+                        "rationale": (
+                            f"policy override: route expected {expected_action}; "
+                            f"realigning from {action_id}. Original rationale: {rationale}"
+                        ),
+                        "decision_source": "policy_override",
+                        "expected_action": expected_action,
+                        "selected_action": action_id,
+                        "override_reason": "missing_explicit_override_reason",
+                        "adherence_ok": False,
+                    }
+                )
+                return action
+            if action_id != expected_action and source not in explicit_override_sources and relax_adherence:
+                action["expected_action"] = expected_action
+                action["selected_action"] = action_id
+                action["override_reason"] = "stagnation_relaxation"
+                action["adherence_ok"] = False
+            if action_id != expected_action and source in explicit_override_sources:
+                action["expected_action"] = expected_action
+                action["selected_action"] = action_id
+                action["override_reason"] = action.get("override_reason") or source
+                action["adherence_ok"] = False
+            elif action_id == expected_action:
+                action["expected_action"] = expected_action
+                action["selected_action"] = action_id
+                action["adherence_ok"] = True
+
+        # Rotation-specific heuristic removed (B213): do not inject puzzle-specific overrides here.
+
+        # B166: Autopilot decisions have highest authority. Preserve geometry-
+        # driven navigation here so sparse-reward movement puzzles can repeat the
+        # same directional action across changing frames without being rotated away
+        # by generic stale/low-value guards.
+        if source == "autopilot":
+            if current_frame_hash:
+                self._action_frame_hashes[action_id] = current_frame_hash
+            return action
+
+        # Exploration-intent bypass (B213): never override when LLM explicitly intends to explore.
+        _exploration_keywords = (
+            "haven't tried", "not yet tried", "new action", "unexplored",
+            "never tried", "hasn't been tried", "want to see",
+        )
+        _is_exploration_intent = (
+            action_id in unexplored or any(kw in rationale.lower() for kw in _exploration_keywords)
+        )
+        if _is_exploration_intent:
+            try:
+                self._emit_trace_event(
+                    "operation",
+                    "guard_exploration_bypass",
+                    {"action": action_id, "source": source},
+                    {"reason": "LLM chose exploration; bypassing decay guard"},
+                )
+            except Exception:
+                pass
+            return action
+
         chosen_effect = observed_effects.get(action_id)
-        if action_id in available_actions and self._should_skip_chunk_action(chosen_effect):
+        allow_repeat_probe = self._normalize_action_id(action_id) == "ACTION6"
+        if action_id in available_actions and self._should_skip_chunk_action(chosen_effect) and not allow_repeat_probe:
             replacement = None
 
             if active_chunk and active_chunk.get("estimated_actions"):
@@ -3860,12 +4540,6 @@ class ARCOrchestrator:
                     "decision_source": "policy_override",
                 })
                 return action
-
-        # B166: Autopilot decisions have highest authority — skip exploration override
-        if source == "autopilot":
-            if current_frame_hash:
-                self._action_frame_hashes[action_id] = current_frame_hash
-            return action
 
         # B141: Blocked action enforcement
         if action_id in self._blocked_actions:
@@ -4332,7 +5006,10 @@ class ARCOrchestrator:
             for sym in chars["symmetry"]:
                 query_parts.append(f"{sym} symmetry")
 
+
         return " ".join(query_parts)
+
+    # _detect_split_map_rotate_cross removed as part of B213: puzzle-specific heuristic reverted
 
     def _parse_transformation_lessons(self, memories: List[Any]) -> List[GameRuleHypothesis]:
         """B155: Extract game rule hypotheses from retrieved memories."""
@@ -4551,6 +5228,27 @@ class ARCOrchestrator:
                 f"(consistency {fact.get('consistency', 0.0):.2f}, value {fact.get('value_status', 'unknown')}, "
                 f"evidence {fact.get('evidence_count', 0)}): {fact.get('description')}"
             )
+        return lines
+
+    def _format_graph_evidence_section(self, hyp_ctx: dict | None) -> List[str]:
+        """Format structured graph evidence into human-readable lines for prompts.
+
+        Only include grounded hypotheses with sufficient evidence (>=2) so the
+        LLM sees reproducible patterns rather than one-off noise.
+        """
+        if not hyp_ctx:
+            return []
+        ge = hyp_ctx.get("graph_evidence") or {}
+        grounded = ge.get("grounded_hypotheses") or []
+        lines: List[str] = []
+        for g in grounded:
+            action = g.get("action") or g.get("action_id")
+            entity = g.get("entity_type") or g.get("entity")
+            expected = g.get("expected_effect") or g.get("effect") or "unknown"
+            count = int(g.get("evidence_count") or g.get("count") or 0)
+            if count < 2:
+                continue
+            lines.append(f"{action} -> {entity} => {expected} (evidence={count})")
         return lines
 
     def _format_path_hypothesis_section(self, hyp_ctx: dict | None) -> List[str]:
