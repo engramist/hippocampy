@@ -106,7 +106,7 @@ async def test_enforce_action_policy_provenance_and_gate(mock_brain):
 
 @pytest.mark.asyncio
 async def test_enforce_action_policy_overrides_stale_low_value_repeat(mock_brain):
-    """Repeated low-value actions should be overridden even when the frame hash changes."""
+    """Repeated low-value sandbox actions should still be overridden on changing frames."""
     orchestrator = ARCOrchestrator(
         brain_client=mock_brain,
         llm_client=None,
@@ -142,6 +142,215 @@ async def test_enforce_action_policy_overrides_stale_low_value_repeat(mock_brain
     assert enforced["action_id"] == "ACTION2"
     assert enforced["decision_source"] == "policy_override"
     assert "stale low-value" in enforced["rationale"]
+
+
+@pytest.mark.asyncio
+async def test_enforce_action_policy_preserves_autopilot_direction(mock_brain):
+    """Autopilot should retain geometry-driven moves despite sparse-reward fatigue evidence."""
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+
+    available = ["ACTION1", "ACTION2", "ACTION3"]
+    orchestrator._hypothesis_context = {
+        "action_coverage": {"untested_actions": ["ACTION2"]},
+        "observed_action_effects": [
+            {
+                "action": "ACTION1",
+                "value_status": "ineffective",
+                "last_meaningful_label": "low_value",
+                "zero_reward_streak": 4,
+                "no_progress_count": 2,
+                "avg_meaningful_change": 0.1,
+                "rank_score": 0.0,
+            }
+        ],
+    }
+    orchestrator._action_frame_hashes["ACTION1"] = "old-frame"
+
+    action = {
+        "action_id": "ACTION1",
+        "decision_source": "autopilot",
+        "rationale": "autopilot: target is 10 rows above, using discovered mapping",
+    }
+    enforced = orchestrator._enforce_action_policy(action, available, current_frame_hash="new-frame")
+
+    assert enforced["action_id"] == "ACTION1"
+    assert enforced["decision_source"] == "autopilot"
+    assert "autopilot" in enforced["rationale"]
+
+
+@pytest.mark.asyncio
+async def test_enforce_action_policy_preserves_action6_coordinate_probe(mock_brain):
+    """ACTION6 should be allowed to retry with new coordinates despite one stale low-value probe."""
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+
+    available = ["ACTION6", "ACTION7"]
+    orchestrator._hypothesis_context = {
+        "action_coverage": {"untested_actions": []},
+        "observed_action_effects": [
+            {
+                "action": "ACTION6",
+                "value_status": "low_value",
+                "last_meaningful_label": "low_value",
+                "zero_reward_streak": 3,
+                "no_progress_count": 1,
+                "avg_meaningful_change": 0.0,
+                "rank_score": 0.0,
+            }
+        ],
+    }
+
+    action = {
+        "action_id": "ACTION6",
+        "decision_source": "sandbox",
+        "rationale": "probe a different coordinate",
+    }
+    enforced = orchestrator._enforce_action_policy(action, available, current_frame_hash="new-frame")
+
+    assert enforced["action_id"] == "ACTION6"
+    assert enforced["decision_source"] == "sandbox"
+
+
+@pytest.mark.asyncio
+async def test_enforce_action_policy_realigns_to_expected_route_action(mock_brain):
+    """B209: If route expects ACTION3, execute must not silently drift to ACTION2."""
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+
+    orchestrator._solve_context = {
+        "expected_action": "ACTION3",
+        "active_chunk": {
+            "description": "Plateau Exploitation: commit to top-ranked ACTION3",
+            "estimated_actions": ["ACTION3", "ACTION3", "ACTION3"],
+        },
+    }
+    action = {
+        "action_id": "ACTION2",
+        "decision_source": "sandbox",
+        "rationale": "oscillation detected",
+    }
+    enforced = orchestrator._enforce_action_policy(action, ["ACTION1", "ACTION2", "ACTION3"], current_frame_hash="h1")
+
+    assert enforced["action_id"] == "ACTION3"
+    assert enforced["decision_source"] == "policy_override"
+    assert enforced["expected_action"] == "ACTION3"
+    assert enforced["selected_action"] == "ACTION2"
+    assert enforced["adherence_ok"] is False
+
+
+@pytest.mark.asyncio
+async def test_enforce_action_policy_relaxes_expected_action_when_stagnating(mock_brain):
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+
+    orchestrator._consecutive_no_progress_steps = 3
+    orchestrator._solve_context = {
+        "expected_action": "ACTION3",
+        "active_chunk": {
+            "description": "Plateau Exploitation: commit to top-ranked ACTION3",
+            "estimated_actions": ["ACTION3", "ACTION3"],
+        },
+    }
+    action = {
+        "action_id": "ACTION2",
+        "decision_source": "sandbox",
+        "rationale": "trying alternate route under no progress",
+    }
+
+    enforced = orchestrator._enforce_action_policy(action, ["ACTION1", "ACTION2", "ACTION3"])
+
+    # Under stagnation, do not hard-force the expected action.
+    assert enforced["action_id"] == "ACTION2"
+    assert enforced["expected_action"] == "ACTION3"
+    assert enforced["override_reason"] == "stagnation_relaxation"
+    assert enforced["adherence_ok"] is False
+
+
+@pytest.mark.asyncio
+def test_enforce_action_policy_preserves_unexplored_exploration(mock_brain):
+    """Decay guard must not override when LLM is choosing an unexplored action."""
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    available = ["ACTION1", "ACTION2", "ACTION4"]
+    orchestrator._hypothesis_context = {
+        "action_coverage": {"untested_actions": ["ACTION4"]},
+        "observed_action_effects": [
+            {
+                "action": "ACTION4",
+                "value_status": "low_value",
+                "last_meaningful_label": "low_value",
+                "zero_reward_streak": 5,
+                "no_progress_count": 2,
+                "avg_meaningful_change": 0.0,
+                "rank_score": 0.1,
+            }
+        ],
+    }
+
+    action = {
+        "action_id": "ACTION4",
+        "decision_source": "sandbox",
+        "rationale": "ACTION4 is a new action that hasn't been tried yet in this context.",
+    }
+
+    enforced = orchestrator._enforce_action_policy(action, available, current_frame_hash="f1")
+    assert enforced["action_id"] == "ACTION4"
+    assert enforced.get("decision_source") != "policy_override"
+
+
+def test_detect_split_map_rotate_cross_does_not_exist():
+    import agents.arc3.orchestrator as orch_module
+    assert not hasattr(orch_module.ARCOrchestrator, "_detect_split_map_rotate_cross"), (
+        "_detect_split_map_rotate_cross is a puzzle-specific cheat code and must not exist"
+    )
+
+
+def test_autopilot_confidence_drops_on_no_progress_spatial_lock(mock_brain):
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    orchestrator._consecutive_no_progress_steps = 3
+    orchestrator._solve_context = {
+        "object_roles": {
+            "1": {"role": "player", "confidence": 0.9, "estimated_position": {"row": 2.0, "col": 2.0}},
+            "2": {"role": "goal", "confidence": 0.9, "estimated_position": {"row": 9.0, "col": 9.0}},
+        }
+    }
+    # Pre-seed last target to simulate repeated unsuccessful navigation
+    orchestrator._last_autopilot_target = (9, 9)
+    grid = [[0 for _ in range(12)] for _ in range(12)]
+    result = orchestrator._try_autopilot({"grid": grid}, ["ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5", "ACTION6"])
+    assert result is None
 
 
 @pytest.mark.asyncio
@@ -203,6 +412,53 @@ async def test_mental_sandbox_fallback_attribution(mock_brain, sample_observatio
     mock_brain.recall_relevant_lessons.assert_called_once()
     mock_brain.analogical_search.assert_called_once()
     assert "lessons" in ctx and "memories" in ctx
+
+
+@pytest.mark.asyncio
+async def test_perceive_step_response(mock_brain, sample_observation):
+    """perceive_step_response() should summarize the step, notify, and store the result."""
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    res = await orchestrator.perceive_step_response(sample_observation, step=1, reward=0.0, done=False, action_id="ACTION1")
+    mock_brain.notify_turn.assert_called()
+    assert isinstance(res, dict)
+    for key in ("step", "state", "reward", "done", "delta", "available_actions", "active_colors"):
+        assert key in res
+    # B205: perception should include an evolving phase question for step>0
+    assert "phase_question" in res
+    assert isinstance(res.get("phase_question"), str) and res.get("phase_question")
+    # Should mention the action id used for this step when available
+    assert "ACTION1" in res.get("phase_question")
+    assert getattr(orchestrator, "_last_response_perception", None) == res
+
+
+@pytest.mark.asyncio
+async def test_perceive_step_response_prefers_canonical_step_action(mock_brain, sample_observation):
+    """B210: When provided action id is stale, use latest recorded step action id."""
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+    orchestrator._step_history.append({"action_id": "ACTION6"})
+
+    res = await orchestrator.perceive_step_response(
+        sample_observation,
+        step=16,
+        reward=0.0,
+        done=False,
+        action_id="ACTION2",
+    )
+
+    assert "ACTION6" in res.get("phase_question", "")
+    assert res.get("action_id") == "ACTION6"
 
 
 @pytest.mark.asyncio
@@ -758,6 +1014,36 @@ def test_action6_coordinate_policy_uses_bootstrap_role_positions(mock_brain, sam
 
     assert candidates[0][0] == "goal_vector"
     assert any(coord == (10, 10) for _, coord in candidates[:10])
+
+
+def test_action6_coordinate_policy_escapes_row_sweep_on_stagnation(mock_brain, sample_observation):
+    orchestrator = ARCOrchestrator(
+        brain_client=mock_brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+
+    # Simulate repeated zero-reward ACTION6 probes along the same row.
+    orchestrator._consecutive_no_progress_steps = 6
+    orchestrator._step_history = [
+        {"action_id": "ACTION6", "x": 10, "y": 2, "reward": 0.0},
+        {"action_id": "ACTION6", "x": 11, "y": 2, "reward": 0.0},
+        {"action_id": "ACTION6", "x": 12, "y": 2, "reward": 0.0},
+    ]
+
+    observation = dict(sample_observation)
+    observation["available_actions"] = ["ACTION6"]
+    observation["grid"] = [[0 for _ in range(20)] for _ in range(20)]
+    # Non-background structure that would otherwise produce row-2 sweep candidates.
+    for x in range(10, 15):
+        observation["grid"][2][x] = 5
+
+    x, y = orchestrator._infer_action6_coordinates(observation)
+
+    # Under stagnation, the policy should jump out of the failed row cluster.
+    assert y != 2
 
 
 @pytest.mark.asyncio
@@ -1817,3 +2103,83 @@ class TestParseLlmResponse:
         assert result is not None
         assert result["action_id"] == "ACTION5"
         assert result["parse_method"] == "plain_text_direction"
+
+
+# ── B212: Graph Hypothesize ────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_graph_hypothesize_returns_grounded_evidence(sample_observation):
+    """B212: graph_hypothesize should return grounded_hypotheses when evidence exists."""
+    # Arrange
+    brain = AsyncMock()
+    # Tier 1: recall_relevant_lessons returns action_effect-like lessons
+    brain.recall_relevant_lessons.return_value = {
+        "lessons": [
+            {"text": json.dumps({"action": "move", "entity_type": "box", "effect": "moved"})},
+            {"text": json.dumps({"action": "push", "entity_type": "box", "effect": "moved"})},
+        ]
+    }
+    # Tier 2: current_truth returns spatial facts (empty is fine)
+    brain.current_truth.return_value = {"results": []}
+    # Tier 3: recall_procedures returns procedures (unused but present)
+    brain.recall_procedures.return_value = {"procedures": []}
+
+    orchestrator = ARCOrchestrator(
+        brain_client=brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+
+    # Act
+    res = await orchestrator.graph_hypothesize(sample_observation, step=1)
+
+    # Assert
+    assert isinstance(res, dict)
+    assert "graph_evidence" in res
+    ge = res["graph_evidence"]
+    assert "grounded_hypotheses" in ge
+    # Two lessons mentioning box->moved should be distilled into at least one grounded hypothesis
+    assert len(ge["grounded_hypotheses"]) >= 1
+
+
+@pytest.mark.asyncio
+async def test_graph_hypothesize_skips_at_step_zero(sample_observation):
+    """B212: graph_hypothesize should be a no-op at step 0."""
+    brain = AsyncMock()
+    orchestrator = ARCOrchestrator(
+        brain_client=brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+
+    res = await orchestrator.graph_hypothesize(sample_observation, step=0)
+    assert res == {"graph_evidence": {"grounded_hypotheses": []}}
+
+
+@pytest.mark.asyncio
+async def test_graph_hypothesize_skips_unknown_archetype(sample_observation):
+    """B212: graph_hypothesize should handle missing puzzle_archetype gracefully."""
+    brain = AsyncMock()
+    # recall_relevant_lessons returns empty when archetype unknown
+    brain.recall_relevant_lessons.return_value = {"lessons": []}
+    orchestrator = ARCOrchestrator(
+        brain_client=brain,
+        llm_client=None,
+        session_id="session",
+        serializer=StateSerializerForARC(),
+        config={},
+    )
+
+    # craft an observation with no archetype info
+    obs = dict(sample_observation)
+    obs.pop("puzzle_archetype", None)
+
+    res = await orchestrator.graph_hypothesize(obs, step=2)
+    assert "graph_evidence" in res
+    assert res["graph_evidence"]["grounded_hypotheses"] == []
+
