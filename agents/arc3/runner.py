@@ -12,12 +12,14 @@ import hashlib
 import subprocess
 import asyncio
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any, Callable, List, Mapping, Optional
 
-from benchmarks.ab_harness import ABTask, ABTaskResult, ABVariant
+from benchmarks.ab_harness import ABHarness, ABTask, ABTaskResult, ABVariant, BenchmarkConfig
 from benchmarks.arc3.adapter import ARC3Adapter, BrainClientProtocol, LedgerBrainClient
 from benchmarks.arc3.harness import ARC3Harness
 from benchmarks.arc3.outcome_judge import OutcomeJudge
+from benchmarks.arc3.regression_monitor import RegressionMonitor, RunRecord
 from benchmarks.arc3.trajectory_eval import TrajectoryEvaluator
 from mcp_engine.llm.provider import create_llm_client
 from agents.arc3.checkpoint import CheckpointManager
@@ -25,6 +27,7 @@ from agents.arc3.failure_taxonomy import classify_failure
 from agents.arc3.orchestrator import ARCOrchestrator
 from agents.arc3.scheduler import PuzzleScheduler
 from agents.arc3.strategy_racer import race as strategy_race
+from agents.arc3.phase import PhaseController, SolvePhase, IllegalPhaseTransition
 
 logger = logging.getLogger(__name__)
 
@@ -89,10 +92,9 @@ class DurableARCRunner:
             except Exception:
                 logger.exception("B190: Failed to register task graph for batch %s", card_id)
 
-            concurrency = 1
+            concurrency = int(self.config.get("concurrency", 1))
             skip_solved = True
             if isinstance(self.config, dict):
-                concurrency = int(self.config.get("concurrency", 1))
                 skip_solved = bool(self.config.get("skip_solved", True))
             
             scheduler = PuzzleScheduler(concurrency=concurrency, skip_solved=skip_solved, brain_client=self._raw_brain)
@@ -239,7 +241,7 @@ class DurableARCRunner:
                         config=vcfg2,
                         cost_tracker=cost_tracker_v,
                     )
-                    return await self._run_puzzle_with_brain(orchestrator_v, task_arg, variant_brain, vcfg)
+                    return await self._run_puzzle_with_brain(orchestrator_v, task_arg, variant_brain, vcfg, checkpoint, mgr)
 
                 winner = await strategy_race(self, task, variants=self.config.get("strategy_racing_variants", ["A", "B", "C"]), variant_runner=_variant_runner)
                 task_result = winner.get("task_result")
@@ -253,7 +255,7 @@ class DurableARCRunner:
                     logger.exception("Failed merging winner ledger")
 
                 result_payload = asdict(task_result)
-                result_payload["solve_phase_summary"] = {}
+                result_payload["solve_phase_summary"] = self._build_phase_summary(orchestrator)
                 result_payload["game_id"] = getattr(task, "game_id", "unknown")
                 result_payload["runtime_seconds"] = round(duration, 2)
                 result_payload["benchmark_metrics"] = getattr(task_result, "benchmark_metrics", {})
@@ -314,9 +316,9 @@ class DurableARCRunner:
                 )
 
                 try:
-                    task_result, duration = await self._run_puzzle(orchestrator, task)
+                    task_result, duration = await self._run_puzzle(orchestrator, task, checkpoint, mgr)
                     result_payload = asdict(task_result)
-                    result_payload["solve_phase_summary"] = {}
+                    result_payload["solve_phase_summary"] = self._build_phase_summary(orchestrator)
                     result_payload["game_id"] = getattr(task, "game_id", "unknown")
                     result_payload["runtime_seconds"] = round(duration, 2)
                     result_payload["benchmark_metrics"] = getattr(task_result, "benchmark_metrics", {})
@@ -361,16 +363,47 @@ class DurableARCRunner:
 
         batch_results = await scheduler.run_batch(ordered_tasks, _run_single_task)
         results = [r for r in batch_results if r is not None]
-        return results
+        return self._attach_batch_eval_summary(results)
 
     def _has_terminal_payload(self, result: dict | None) -> bool:
-        if not isinstance(result, dict): return False
-        grid = (result.get("final_observation") or {}).get("grid")
-        return isinstance(grid, list) and len(grid) > 0
+        if not isinstance(result, dict):
+            return False
 
-    async def _run_puzzle(self, orchestrator: ARCOrchestrator, task: ABTask) -> tuple[ABTaskResult, float]:
+        grid = (result.get("final_observation") or {}).get("grid")
+        has_grid = isinstance(grid, list) and len(grid) > 0
+        if not has_grid:
+            return False
+
+        if isinstance(self.config, dict) and self.config.get("require_submission_artifacts"):
+            has_artifacts = bool(
+                result.get("sidequests_ledger")
+                or result.get("debug_steps")
+                or result.get("arc_event_timeline")
+                or result.get("agent_execution_trace")
+            )
+            if not has_artifacts:
+                return False
+
+        return True
+
+    async def _run_puzzle(self, orchestrator: ARCOrchestrator, task: ABTask, checkpoint=None, mgr=None) -> tuple[ABTaskResult, float]:
+        # Backwards-compatible: callers may omit checkpoint and mgr (tests use the
+        # older two-arg form). If omitted, create an ephemeral CheckpointManager
+        # and checkpoint for this invocation so existing call sites keep working.
+        if mgr is None or checkpoint is None:
+            try:
+                local_card = f"local-{getattr(task, 'task_id', 'anon')}-{uuid.uuid4().hex[:8]}"
+                mgr = mgr or CheckpointManager(local_card)
+                checkpoint = checkpoint or mgr.load_or_create([task])
+            except Exception:
+                mgr = mgr or CheckpointManager(f"local-{uuid.uuid4().hex[:8]}")
+                checkpoint = checkpoint or mgr.load_or_create([task])
+
         max_steps = self.harness.config.parameters.get("max_attempts_per_puzzle", 10)
         max_retries = self.config.get("max_retries_per_puzzle", 3)
+        # Phase step budgets (force-advance if gate blocks too long)
+        MODEL_BUDGET = 4
+        HYPOTHESIS_BUDGET = 6
         if getattr(orchestrator, "_supervisor", None) is not None:
             try:
                 orchestrator._supervisor.abandon_zero_reward_steps = min(
@@ -414,14 +447,99 @@ class DurableARCRunner:
                 except Exception:
                     logger.exception("B156: Phase 1 failed")
 
-            self.brain.current_phase = "bootstrap"
-            self._current_step = 0
-            if hasattr(orchestrator, "set_write_trace_context"):
-                orchestrator.set_write_trace_context("bootstrap")
+            # Initialize or restore PhaseController for this attempt
+            tc = None
+            try:
+                tc = (checkpoint.tasks.get(task.task_id) if checkpoint and getattr(checkpoint, 'tasks', None) else None)
+            except Exception:
+                tc = None
+
+            phase_ctrl = None
+            try:
+                if tc and getattr(tc, "phase_state", None):
+                    phase_ctrl = PhaseController.from_checkpoint(tc.phase_state)
+                else:
+                    phase_ctrl = PhaseController()
+            except Exception:
+                logger.exception("Failed to restore PhaseController from checkpoint; creating fresh controller")
+                phase_ctrl = PhaseController()
+
+            # Register cheap gates from solve engine where possible
+            try:
+                engine = getattr(orchestrator, "solve_engine", None)
+                if engine:
+                    phase_ctrl.register_gate(SolvePhase.MODEL, SolvePhase.HYPOTHESIZE, engine.is_exploration_complete)
+                    phase_ctrl.register_gate(SolvePhase.HYPOTHESIZE, SolvePhase.ROUTE, engine.has_hypothesis)
+                    phase_ctrl.register_gate(SolvePhase.ROUTE, SolvePhase.EXECUTE, engine.has_active_chunk)
+            except Exception:
+                logger.exception("Failed registering phase gates")
+
+            # Expose phase controller to orchestrator for read-only use
+            try:
+                orchestrator._phase_controller = phase_ctrl
+            except Exception:
+                pass
+
+            # Backward-compat: set brain phase string to controller's name
+            try:
+                self.brain.current_phase = phase_ctrl.phase_name
+                if hasattr(orchestrator, "set_write_trace_context"):
+                    orchestrator.set_write_trace_context(phase_ctrl.phase_name)
+            except Exception:
+                logger.exception("Failed to set initial brain phase shim")
+
+            # Persist initial phase state
+            try:
+                if tc is not None:
+                    tc.phase_state = phase_ctrl.to_checkpoint()
+                    mgr.save(checkpoint)
+            except Exception:
+                logger.exception("Failed to persist initial phase state to checkpoint")
+
             memory_context = await orchestrator.perceive(observation, step=0)
+            # B212: inject graph_evidence from orchestrator hypothesis context into memory_context
+            try:
+                if isinstance(memory_context, dict) and getattr(orchestrator, "_hypothesis_context", None):
+                    ge = (orchestrator._hypothesis_context or {}).get("graph_evidence")
+                    if ge:
+                        memory_context = dict(memory_context)
+                        memory_context["graph_evidence"] = ge
+            except Exception:
+                logger.debug("Failed injecting graph_evidence into memory_context", exc_info=True)
+
             await orchestrator.plan(observation, memory_context)
             if hasattr(orchestrator, "consume_write_trace"):
                 bootstrap_write_trace = list(orchestrator.consume_write_trace())
+
+            # Advance PERCEIVE -> MODEL (bootstrap split)
+            try:
+                if phase_ctrl.phase == SolvePhase.PERCEIVE:
+                    previous_phase = phase_ctrl.phase_name
+                    try:
+                        if phase_ctrl.can_advance(SolvePhase.MODEL):
+                            phase_ctrl.advance(SolvePhase.MODEL)
+                        else:
+                            phase_ctrl.advance(SolvePhase.MODEL, force=True)
+                    except IllegalPhaseTransition:
+                        phase_ctrl.advance(SolvePhase.MODEL, force=True)
+                    # sync shim + save
+                    self.brain.current_phase = phase_ctrl.phase_name
+                    if hasattr(orchestrator, "set_write_trace_context"):
+                        orchestrator.set_write_trace_context(phase_ctrl.phase_name)
+                    if tc is not None:
+                        tc.phase_state = phase_ctrl.to_checkpoint()
+                        mgr.save(checkpoint)
+                    self._record_phase_transition(
+                        task=task,
+                        orchestrator=orchestrator,
+                        from_phase=previous_phase,
+                        to_phase=phase_ctrl.phase_name,
+                        step=total_steps,
+                        start_time=start_time,
+                        metadata={"reason": "bootstrap_split"},
+                    )
+            except Exception:
+                logger.exception("Failed advancing to MODEL phase")
 
             state = observation.get("state", "NOT_FINISHED")
             steps_this_attempt = 0
@@ -440,8 +558,39 @@ class DurableARCRunner:
                     done = True
                     break
 
-                self.brain.current_phase = "hypothesize"
+                # Advance to HYPOTHESIZE
+                previous_phase = phase_ctrl.phase_name
+                try:
+                    if phase_ctrl.phase != SolvePhase.HYPOTHESIZE:
+                        if phase_ctrl.can_advance(SolvePhase.HYPOTHESIZE):
+                            phase_ctrl.advance(SolvePhase.HYPOTHESIZE)
+                        elif total_steps >= MODEL_BUDGET:
+                            phase_ctrl.advance(SolvePhase.HYPOTHESIZE, force=True)
+                except IllegalPhaseTransition:
+                    logger.debug("HYPOTHESIZE gate blocked; continuing without advance")
+                except Exception:
+                    logger.exception("Error advancing to HYPOTHESIZE")
+
                 self._current_step = total_steps + 1
+                # sync shim + save
+                try:
+                    self.brain.current_phase = phase_ctrl.phase_name
+                    if hasattr(orchestrator, "set_write_trace_context"):
+                        orchestrator.set_write_trace_context(phase_ctrl.phase_name)
+                    if tc is not None:
+                        tc.phase_state = phase_ctrl.to_checkpoint()
+                        mgr.save(checkpoint)
+                    self._record_phase_transition(
+                        task=task,
+                        orchestrator=orchestrator,
+                        from_phase=previous_phase,
+                        to_phase=phase_ctrl.phase_name,
+                        step=total_steps,
+                        start_time=start_time,
+                    )
+                except Exception:
+                    logger.exception("Failed to sync brain phase during hypothesize")
+
                 prior_step = orchestrator._step_history[-1] if getattr(orchestrator, "_step_history", None) else None
                 hyp_ctx = await orchestrator.hypothesize(
                     observation,
@@ -450,10 +599,71 @@ class DurableARCRunner:
                     transition_meta=prior_step,
                 )
 
-                self.brain.current_phase = "solve"
+                # Advance to ROUTE (was: 'solve')
+                previous_phase = phase_ctrl.phase_name
+                try:
+                    if phase_ctrl.phase != SolvePhase.ROUTE:
+                        if phase_ctrl.can_advance(SolvePhase.ROUTE):
+                            phase_ctrl.advance(SolvePhase.ROUTE)
+                        elif total_steps >= HYPOTHESIS_BUDGET:
+                            phase_ctrl.advance(SolvePhase.ROUTE, force=True)
+                except IllegalPhaseTransition:
+                    logger.debug("ROUTE gate blocked; continuing without advance")
+                except Exception:
+                    logger.exception("Error advancing to ROUTE")
+
+                try:
+                    self.brain.current_phase = phase_ctrl.phase_name
+                    if hasattr(orchestrator, "set_write_trace_context"):
+                        orchestrator.set_write_trace_context(phase_ctrl.phase_name)
+                    if tc is not None:
+                        tc.phase_state = phase_ctrl.to_checkpoint()
+                        mgr.save(checkpoint)
+                    self._record_phase_transition(
+                        task=task,
+                        orchestrator=orchestrator,
+                        from_phase=previous_phase,
+                        to_phase=phase_ctrl.phase_name,
+                        step=total_steps,
+                        start_time=start_time,
+                    )
+                except Exception:
+                    logger.exception("Failed to sync brain phase during solve/route")
+
                 await orchestrator.solve(observation, hyp_ctx, total_steps)
 
-                self.brain.current_phase = "act"
+                # Advance to EXECUTE (was: 'act')
+                previous_phase = phase_ctrl.phase_name
+                try:
+                    if phase_ctrl.phase != SolvePhase.EXECUTE:
+                        if phase_ctrl.can_advance(SolvePhase.EXECUTE):
+                            phase_ctrl.advance(SolvePhase.EXECUTE)
+                        else:
+                            # No direct budget for EXECUTE; allow normal advance
+                            phase_ctrl.advance(SolvePhase.EXECUTE, force=True)
+                except IllegalPhaseTransition:
+                    logger.debug("EXECUTE gate blocked; forcing execute")
+                except Exception:
+                    logger.exception("Error advancing to EXECUTE")
+
+                try:
+                    self.brain.current_phase = phase_ctrl.phase_name
+                    if hasattr(orchestrator, "set_write_trace_context"):
+                        orchestrator.set_write_trace_context(phase_ctrl.phase_name)
+                    if tc is not None:
+                        tc.phase_state = phase_ctrl.to_checkpoint()
+                        mgr.save(checkpoint)
+                    self._record_phase_transition(
+                        task=task,
+                        orchestrator=orchestrator,
+                        from_phase=previous_phase,
+                        to_phase=phase_ctrl.phase_name,
+                        step=total_steps,
+                        start_time=start_time,
+                    )
+                except Exception:
+                    logger.exception("Failed to sync brain phase during act/execute")
+
                 action = await orchestrator.act(observation, memory_context, total_steps + 1)
 
                 total_tokens_in += self.harness.serializer._estimate_tokens(json.dumps(observation))
@@ -465,7 +675,37 @@ class DurableARCRunner:
                 if total_steps == 0 or consecutive_no_progress_steps >= 2:
                     recall_query = "What did I learn from similar puzzles?"
 
-                self.brain.current_phase = "ingest"
+                # Advance to EVALUATE (was: 'ingest')
+                previous_phase = phase_ctrl.phase_name
+                try:
+                    if phase_ctrl.phase != SolvePhase.EVALUATE:
+                        if phase_ctrl.can_advance(SolvePhase.EVALUATE):
+                            phase_ctrl.advance(SolvePhase.EVALUATE)
+                        else:
+                            phase_ctrl.advance(SolvePhase.EVALUATE, force=True)
+                except IllegalPhaseTransition:
+                    logger.debug("EVALUATE gate blocked; forcing evaluate")
+                except Exception:
+                    logger.exception("Error advancing to EVALUATE")
+
+                try:
+                    self.brain.current_phase = phase_ctrl.phase_name
+                    if hasattr(orchestrator, "set_write_trace_context"):
+                        orchestrator.set_write_trace_context(phase_ctrl.phase_name)
+                    if tc is not None:
+                        tc.phase_state = phase_ctrl.to_checkpoint()
+                        mgr.save(checkpoint)
+                    self._record_phase_transition(
+                        task=task,
+                        orchestrator=orchestrator,
+                        from_phase=previous_phase,
+                        to_phase=phase_ctrl.phase_name,
+                        step=total_steps,
+                        start_time=start_time,
+                    )
+                except Exception:
+                    logger.exception("Failed to sync brain phase during ingest/evaluate")
+
                 await adapter.ingest_step(frame_response, action, reward=reward, recall_query=recall_query)
                 observation = adapter.normalize_observation(frame_response)
                 orchestrator.record_step_result(reward, done, next_observation=observation)
@@ -504,6 +744,169 @@ class DurableARCRunner:
                 elif done:
                     success = reward >= 1.0 or state == "WIN"
                     break
+
+                # REPLAN check: escalate if loop/no-progress
+                # B202: ensure REPLAN is checked before per-step PERCEIVE
+                did_replan = False
+                # B202: ensure REPLAN is checked before per-step PERCEIVE
+                did_replan = False
+                if not success and not done:
+                    try:
+                        if self._should_replan(orchestrator, consecutive_no_progress_steps):
+                            replan_target = self._replan_target(orchestrator)
+                            self._last_replan_step = len(getattr(orchestrator, "_step_history", []) or [])
+                            try:
+                                orchestrator._emit_trace_event(
+                                    "orchestration_escalation",
+                                    "replan",
+                                    {
+                                        "step": total_steps,
+                                        "no_progress_steps": consecutive_no_progress_steps,
+                                        "loop_detected": bool((getattr(orchestrator, "_hypothesis_context", {}) or {}).get("loop_detected")),
+                                        "from_phase": phase_ctrl.phase_name,
+                                        "target_phase": replan_target.value,
+                                    },
+                                )
+                            except Exception:
+                                logger.debug("Unable to emit REPLAN trace event", exc_info=True)
+                            try:
+                                if hasattr(orchestrator, "_record_write_event"):
+                                    orchestrator._record_write_event(
+                                        kind="replan",
+                                        summary=f"replan triggered after {consecutive_no_progress_steps} no-progress step(s)",
+                                        detail={"target_phase": replan_target.value, "step": total_steps},
+                                        source_step=total_steps,
+                                    )
+                            except Exception:
+                                logger.debug("Unable to record REPLAN write event", exc_info=True)
+                            try:
+                                setattr(orchestrator, "_force_replan", True)
+                                if hasattr(orchestrator, "_mark_active_chunk_failed"):
+                                    orchestrator._mark_active_chunk_failed("phase_replan")
+                                if getattr(orchestrator, "_solve_context", None):
+                                    orchestrator._solve_context["active_chunk"] = None
+                            except Exception:
+                                logger.debug("Unable to clear stale chunk during REPLAN", exc_info=True)
+
+                            previous_phase = phase_ctrl.phase_name
+                            try:
+                                phase_ctrl.advance(SolvePhase.REPLAN, force=True)
+                                did_replan = True
+                            except Exception:
+                                logger.exception("Failed entering REPLAN")
+                            try:
+                                self.brain.current_phase = phase_ctrl.phase_name
+                                if hasattr(orchestrator, "set_write_trace_context"):
+                                    orchestrator.set_write_trace_context(phase_ctrl.phase_name)
+                                if tc is not None:
+                                    tc.phase_state = phase_ctrl.to_checkpoint()
+                                    mgr.save(checkpoint)
+                                self._record_phase_transition(
+                                    task=task,
+                                    orchestrator=orchestrator,
+                                    from_phase=previous_phase,
+                                    to_phase=phase_ctrl.phase_name,
+                                    step=total_steps,
+                                    start_time=start_time,
+                                    metadata={
+                                        "reason": "replan_enter",
+                                        "target_phase": replan_target.value,
+                                        "no_progress_steps": consecutive_no_progress_steps,
+                                    },
+                                )
+                            except Exception:
+                                logger.exception("Failed syncing REPLAN shim")
+
+                            try:
+                            if replan_target == SolvePhase.MODEL:
+                                memory_context = await orchestrator.perceive(observation, step=total_steps)
+                                try:
+                                    if isinstance(memory_context, dict) and getattr(orchestrator, "_hypothesis_context", None):
+                                        ge = (orchestrator._hypothesis_context or {}).get("graph_evidence")
+                                        if ge:
+                                            memory_context = dict(memory_context)
+                                            memory_context["graph_evidence"] = ge
+                                except Exception:
+                                    logger.debug("Failed injecting graph_evidence into memory_context", exc_info=True)
+                                await orchestrator.plan(observation, memory_context)
+                            except Exception:
+                                logger.exception("Failed to refresh MODEL phase during replan")
+
+                            previous_phase = phase_ctrl.phase_name
+                            try:
+                                if phase_ctrl.can_advance(replan_target):
+                                    phase_ctrl.advance(replan_target)
+                                else:
+                                    phase_ctrl.advance(replan_target, force=True)
+                            except Exception:
+                                logger.exception("Failed advancing from REPLAN to target")
+                            try:
+                                self.brain.current_phase = phase_ctrl.phase_name
+                                if hasattr(orchestrator, "set_write_trace_context"):
+                                    orchestrator.set_write_trace_context(phase_ctrl.phase_name)
+                                if tc is not None:
+                                    tc.phase_state = phase_ctrl.to_checkpoint()
+                                    mgr.save(checkpoint)
+                                self._record_phase_transition(
+                                    task=task,
+                                    orchestrator=orchestrator,
+                                    from_phase=previous_phase,
+                                    to_phase=phase_ctrl.phase_name,
+                                    step=total_steps,
+                                    start_time=start_time,
+                                    metadata={"reason": "replan_exit", "target_phase": replan_target.value},
+                                )
+                            except Exception:
+                                logger.exception("Failed persisting phase after replan")
+                    except Exception:
+                        logger.exception("_should_replan check failed")
+
+                # Per-step PERCEIVE advance (B202): run only when we did not replan
+                if not success and not done and not did_replan:
+                    previous_phase = phase_ctrl.phase_name
+                    try:
+                        if phase_ctrl.phase != SolvePhase.PERCEIVE:
+                            if phase_ctrl.can_advance(SolvePhase.PERCEIVE):
+                                phase_ctrl.advance(SolvePhase.PERCEIVE)
+                            else:
+                                phase_ctrl.advance(SolvePhase.PERCEIVE, force=True)
+                    except IllegalPhaseTransition:
+                        logger.debug("PERCEIVE gate blocked; forcing perceive")
+                    except Exception:
+                        logger.exception("Error advancing to PERCEIVE")
+
+                    try:
+                        self.brain.current_phase = phase_ctrl.phase_name
+                        if hasattr(orchestrator, "set_write_trace_context"):
+                            orchestrator.set_write_trace_context(phase_ctrl.phase_name)
+                        if tc is not None:
+                            tc.phase_state = phase_ctrl.to_checkpoint()
+                            mgr.save(checkpoint)
+                        self._record_phase_transition(
+                            task=task,
+                            orchestrator=orchestrator,
+                            from_phase=previous_phase,
+                            to_phase=phase_ctrl.phase_name,
+                            step=total_steps,
+                            start_time=start_time,
+                            metadata={"reason": "per_step_perceive"},
+                        )
+                    except Exception:
+                        logger.exception("Failed to sync brain phase during per-step perceive")
+
+                    try:
+                        # B210: use canonical just-recorded step action id to avoid stale attribution.
+                        action_id_local = None
+                        if getattr(orchestrator, "_step_history", None):
+                            action_id_local = (orchestrator._step_history[-1] or {}).get("action_id")
+                        if not action_id_local:
+                            if isinstance(action, dict):
+                                action_id_local = action.get("action_id")
+                            else:
+                                action_id_local = getattr(action, "action_id", None) or (action if isinstance(action, str) else None)
+                        await orchestrator.perceive_step_response(observation, step=total_steps, reward=reward, done=done, action_id=action_id_local)
+                    except Exception:
+                        logger.exception("perceive_step_response failed")
 
             if success:
                 break
@@ -564,6 +967,12 @@ class DurableARCRunner:
                 loop_detected=bool((getattr(orchestrator, "_hypothesis_context", {}) or {}).get("loop_detected")),
             ).value
 
+        cost_usd = None
+        invalid_action_count = None
+        if isinstance(benchmark_metrics, dict):
+            cost_usd = self._safe_float((benchmark_metrics.get("token_cost") or {}).get("cost_usd"))
+            invalid_action_count = (benchmark_metrics.get("prompt_budget") or {}).get("invalid_action_count")
+
         task_result = ABTaskResult(
             task_id=task.task_id,
             variant=ABVariant.SIDEQUESTS,
@@ -575,6 +984,8 @@ class DurableARCRunner:
             failure_class=failure_class,
             response_text=f"Solved: {success} in {total_steps} steps ({attempt} attempt(s))",
             attempts=attempt,
+            cost_usd=cost_usd,
+            invalid_action_count=invalid_action_count,
             dissonance_triggered=bool((getattr(orchestrator, "_solve_context", {}) or {}).get("dissonance")),
             trajectory_score=trajectory_score,
             final_state=state,
@@ -587,7 +998,7 @@ class DurableARCRunner:
         setattr(task_result, "sidequests_ledger", list(self._ledger))
         return task_result, duration
 
-    async def _run_puzzle_with_brain(self, orchestrator: ARCOrchestrator, task: ABTask, brain_client: BrainClientProtocol, variant_config: dict) -> tuple[ABTaskResult, float, ARCOrchestrator]:
+    async def _run_puzzle_with_brain(self, orchestrator: ARCOrchestrator, task: ABTask, brain_client: BrainClientProtocol, variant_config: dict, checkpoint, mgr) -> tuple[ABTaskResult, float, ARCOrchestrator]:
         """Run a single puzzle using the provided `brain_client` and `variant_config`.
 
         This variant of `_run_puzzle` avoids mutating the DurableARCRunner instance
@@ -770,12 +1181,93 @@ class DurableARCRunner:
                 except Exception:
                     logger.exception("B156: Phase 1 failed")
 
-            brain_client.current_phase = "bootstrap"
+            # Initialize or restore PhaseController for this attempt (variant runner)
+            tc = None
+            try:
+                tc = (checkpoint.tasks.get(task.task_id) if checkpoint and getattr(checkpoint, 'tasks', None) else None)
+            except Exception:
+                tc = None
+
+            phase_ctrl = None
+            try:
+                if tc and getattr(tc, "phase_state", None):
+                    phase_ctrl = PhaseController.from_checkpoint(tc.phase_state)
+                else:
+                    phase_ctrl = PhaseController()
+            except Exception:
+                logger.exception("Failed to restore PhaseController for variant from checkpoint; creating fresh controller")
+                phase_ctrl = PhaseController()
+
+            try:
+                engine = getattr(orchestrator, "solve_engine", None)
+                if engine:
+                    phase_ctrl.register_gate(SolvePhase.MODEL, SolvePhase.HYPOTHESIZE, engine.is_exploration_complete)
+                    phase_ctrl.register_gate(SolvePhase.HYPOTHESIZE, SolvePhase.ROUTE, engine.has_hypothesis)
+                    phase_ctrl.register_gate(SolvePhase.ROUTE, SolvePhase.EXECUTE, engine.has_active_chunk)
+            except Exception:
+                logger.exception("Failed registering phase gates for variant")
+
+            try:
+                orchestrator._phase_controller = phase_ctrl
+            except Exception:
+                pass
+
+            try:
+                brain_client.current_phase = phase_ctrl.phase_name
+                if hasattr(orchestrator, "set_write_trace_context"):
+                    orchestrator.set_write_trace_context(phase_ctrl.phase_name)
+            except Exception:
+                logger.exception("Failed to set variant initial brain phase shim")
+
+            try:
+                if tc is not None:
+                    tc.phase_state = phase_ctrl.to_checkpoint()
+                    mgr.save(checkpoint)
+            except Exception:
+                logger.exception("Failed to persist variant initial phase state")
+
             # Do not modify shared self._current_step here; keep local counters
             memory_context = await orchestrator.perceive(observation, step=0)
+            try:
+                if isinstance(memory_context, dict) and getattr(orchestrator, "_hypothesis_context", None):
+                    ge = (orchestrator._hypothesis_context or {}).get("graph_evidence")
+                    if ge:
+                        memory_context = dict(memory_context)
+                        memory_context["graph_evidence"] = ge
+            except Exception:
+                logger.debug("Failed injecting graph_evidence into memory_context", exc_info=True)
             await orchestrator.plan(observation, memory_context)
             if hasattr(orchestrator, "consume_write_trace"):
                 bootstrap_write_trace = list(orchestrator.consume_write_trace())
+
+            # Advance PERCEIVE -> MODEL (bootstrap split)
+            try:
+                if phase_ctrl.phase == SolvePhase.PERCEIVE:
+                    previous_phase = phase_ctrl.phase_name
+                    try:
+                        if phase_ctrl.can_advance(SolvePhase.MODEL):
+                            phase_ctrl.advance(SolvePhase.MODEL)
+                        else:
+                            phase_ctrl.advance(SolvePhase.MODEL, force=True)
+                    except IllegalPhaseTransition:
+                        phase_ctrl.advance(SolvePhase.MODEL, force=True)
+                    brain_client.current_phase = phase_ctrl.phase_name
+                    if hasattr(orchestrator, "set_write_trace_context"):
+                        orchestrator.set_write_trace_context(phase_ctrl.phase_name)
+                    if tc is not None:
+                        tc.phase_state = phase_ctrl.to_checkpoint()
+                        mgr.save(checkpoint)
+                    self._record_phase_transition(
+                        task=task,
+                        orchestrator=orchestrator,
+                        from_phase=previous_phase,
+                        to_phase=phase_ctrl.phase_name,
+                        step=total_steps,
+                        start_time=start_time,
+                        metadata={"reason": "bootstrap_split_variant"},
+                    )
+            except Exception:
+                logger.exception("Failed advancing variant to MODEL phase")
 
             state = observation.get("state", "NOT_FINISHED")
             steps_this_attempt = 0
@@ -794,7 +1286,37 @@ class DurableARCRunner:
                     done = True
                     break
 
-                brain_client.current_phase = "hypothesize"
+                # Advance to HYPOTHESIZE
+                previous_phase = phase_ctrl.phase_name
+                try:
+                    if phase_ctrl.phase != SolvePhase.HYPOTHESIZE:
+                        if phase_ctrl.can_advance(SolvePhase.HYPOTHESIZE):
+                            phase_ctrl.advance(SolvePhase.HYPOTHESIZE)
+                        else:
+                            phase_ctrl.advance(SolvePhase.HYPOTHESIZE, force=True)
+                except IllegalPhaseTransition:
+                    logger.debug("Variant HYPOTHESIZE gate blocked; continuing")
+                except Exception:
+                    logger.exception("Error advancing variant to HYPOTHESIZE")
+
+                try:
+                    brain_client.current_phase = phase_ctrl.phase_name
+                    if hasattr(orchestrator, "set_write_trace_context"):
+                        orchestrator.set_write_trace_context(phase_ctrl.phase_name)
+                    if tc is not None:
+                        tc.phase_state = phase_ctrl.to_checkpoint()
+                        mgr.save(checkpoint)
+                    self._record_phase_transition(
+                        task=task,
+                        orchestrator=orchestrator,
+                        from_phase=previous_phase,
+                        to_phase=phase_ctrl.phase_name,
+                        step=total_steps,
+                        start_time=start_time,
+                    )
+                except Exception:
+                    logger.exception("Failed syncing variant brain phase during hypothesize")
+
                 prior_step = orchestrator._step_history[-1] if getattr(orchestrator, "_step_history", None) else None
                 hyp_ctx = await orchestrator.hypothesize(
                     observation,
@@ -803,10 +1325,68 @@ class DurableARCRunner:
                     transition_meta=prior_step,
                 )
 
-                brain_client.current_phase = "solve"
+                previous_phase = phase_ctrl.phase_name
+                try:
+                    if phase_ctrl.phase != SolvePhase.ROUTE:
+                        if phase_ctrl.can_advance(SolvePhase.ROUTE):
+                            phase_ctrl.advance(SolvePhase.ROUTE)
+                        else:
+                            phase_ctrl.advance(SolvePhase.ROUTE, force=True)
+                except IllegalPhaseTransition:
+                    logger.debug("Variant ROUTE gate blocked; continuing")
+                except Exception:
+                    logger.exception("Error advancing variant to ROUTE")
+
+                try:
+                    brain_client.current_phase = phase_ctrl.phase_name
+                    if hasattr(orchestrator, "set_write_trace_context"):
+                        orchestrator.set_write_trace_context(phase_ctrl.phase_name)
+                    if tc is not None:
+                        tc.phase_state = phase_ctrl.to_checkpoint()
+                        mgr.save(checkpoint)
+                    self._record_phase_transition(
+                        task=task,
+                        orchestrator=orchestrator,
+                        from_phase=previous_phase,
+                        to_phase=phase_ctrl.phase_name,
+                        step=total_steps,
+                        start_time=start_time,
+                    )
+                except Exception:
+                    logger.exception("Failed syncing variant brain phase during solve/route")
+
                 await orchestrator.solve(observation, hyp_ctx, total_steps)
 
-                brain_client.current_phase = "act"
+                previous_phase = phase_ctrl.phase_name
+                try:
+                    if phase_ctrl.phase != SolvePhase.EXECUTE:
+                        if phase_ctrl.can_advance(SolvePhase.EXECUTE):
+                            phase_ctrl.advance(SolvePhase.EXECUTE)
+                        else:
+                            phase_ctrl.advance(SolvePhase.EXECUTE, force=True)
+                except IllegalPhaseTransition:
+                    logger.debug("Variant EXECUTE gate blocked; forcing execute")
+                except Exception:
+                    logger.exception("Error advancing variant to EXECUTE")
+
+                try:
+                    brain_client.current_phase = phase_ctrl.phase_name
+                    if hasattr(orchestrator, "set_write_trace_context"):
+                        orchestrator.set_write_trace_context(phase_ctrl.phase_name)
+                    if tc is not None:
+                        tc.phase_state = phase_ctrl.to_checkpoint()
+                        mgr.save(checkpoint)
+                    self._record_phase_transition(
+                        task=task,
+                        orchestrator=orchestrator,
+                        from_phase=previous_phase,
+                        to_phase=phase_ctrl.phase_name,
+                        step=total_steps,
+                        start_time=start_time,
+                    )
+                except Exception:
+                    logger.exception("Failed syncing variant brain phase during act")
+
                 action = await orchestrator.act(observation, memory_context, total_steps + 1)
 
                 total_tokens_in += self.harness.serializer._estimate_tokens(json.dumps(observation))
@@ -818,7 +1398,36 @@ class DurableARCRunner:
                 if total_steps == 0 or consecutive_no_progress_steps >= 2:
                     recall_query = "What did I learn from similar puzzles?"
 
-                brain_client.current_phase = "ingest"
+                previous_phase = phase_ctrl.phase_name
+                try:
+                    if phase_ctrl.phase != SolvePhase.EVALUATE:
+                        if phase_ctrl.can_advance(SolvePhase.EVALUATE):
+                            phase_ctrl.advance(SolvePhase.EVALUATE)
+                        else:
+                            phase_ctrl.advance(SolvePhase.EVALUATE, force=True)
+                except IllegalPhaseTransition:
+                    logger.debug("Variant EVALUATE gate blocked; forcing evaluate")
+                except Exception:
+                    logger.exception("Error advancing variant to EVALUATE")
+
+                try:
+                    brain_client.current_phase = phase_ctrl.phase_name
+                    if hasattr(orchestrator, "set_write_trace_context"):
+                        orchestrator.set_write_trace_context(phase_ctrl.phase_name)
+                    if tc is not None:
+                        tc.phase_state = phase_ctrl.to_checkpoint()
+                        mgr.save(checkpoint)
+                    self._record_phase_transition(
+                        task=task,
+                        orchestrator=orchestrator,
+                        from_phase=previous_phase,
+                        to_phase=phase_ctrl.phase_name,
+                        step=total_steps,
+                        start_time=start_time,
+                    )
+                except Exception:
+                    logger.exception("Failed syncing variant brain phase during ingest/evaluate")
+
                 await adapter.ingest_step(frame_response, action, reward=reward, recall_query=recall_query)
                 observation = adapter.normalize_observation(frame_response)
                 orchestrator.record_step_result(reward, done, next_observation=observation)
@@ -840,10 +1449,10 @@ class DurableARCRunner:
                 # Emit a localized progress snapshot if requested (do not mutate shared runner state)
                 if self._progress_callback:
                     last_step = orchestrator._step_history[-1] if getattr(orchestrator, "_step_history", None) else {}
-                    solve_ctx = getattr(orchestrator, "_solve_context", {}) or {}
-                    active_chunk = solve_ctx.get("active_chunk") or {}
+                    phase_summary = self._build_phase_summary(orchestrator)
                     snapshot = {
                         "snapshot_type": "step",
+                        "timestamp_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                         "game_id": getattr(task, "game_id", "unknown"),
                         "task_id": task.task_id,
                         "step": total_steps,
@@ -857,19 +1466,7 @@ class DurableARCRunner:
                         "thinking_trace": last_step.get("thinking_trace", []),
                         "frame_hash": observation.get("frame_hash"),
                         "available_actions": observation.get("available_actions", []),
-                        "solve_phase_summary": {
-                            "archetype": solve_ctx.get("archetype"),
-                            "archetype_confidence": solve_ctx.get("archetype_confidence"),
-                            "victory_condition": (solve_ctx.get("victory_condition") or {}).get("type") if isinstance(solve_ctx.get("victory_condition"), dict) else solve_ctx.get("victory_condition"),
-                            "victory_confidence": (solve_ctx.get("victory_condition") or {}).get("confidence") if isinstance(solve_ctx.get("victory_condition"), dict) else None,
-                            "strategy_summary": solve_ctx.get("strategy_summary"),
-                            "active_chunk": {
-                                "description": active_chunk.get("description"),
-                                "source": active_chunk.get("source"),
-                                "estimated_actions": active_chunk.get("estimated_actions", []),
-                                "plan_id": active_chunk.get("plan_id"),
-                            } if active_chunk else None,
-                        },
+                        "solve_phase_summary": phase_summary,
                         "sidequests_ledger_count": len(getattr(brain_client, "ledger", []) or []),
                     }
                     self._progress_callback(snapshot)
@@ -884,6 +1481,154 @@ class DurableARCRunner:
                 elif done:
                     success = reward >= 1.0 or state == "WIN"
                     break
+
+                if not success and not done:
+                    try:
+                        if self._should_replan(orchestrator, consecutive_no_progress_steps):
+                            replan_target = self._replan_target(orchestrator)
+                            self._last_replan_step = len(getattr(orchestrator, "_step_history", []) or [])
+                            try:
+                                orchestrator._emit_trace_event(
+                                    "orchestration_escalation",
+                                    "replan",
+                                    {
+                                        "step": total_steps,
+                                        "no_progress_steps": consecutive_no_progress_steps,
+                                        "loop_detected": bool((getattr(orchestrator, "_hypothesis_context", {}) or {}).get("loop_detected")),
+                                        "from_phase": phase_ctrl.phase_name,
+                                        "target_phase": replan_target.value,
+                                    },
+                                )
+                            except Exception:
+                                logger.debug("Unable to emit variant REPLAN trace event", exc_info=True)
+                            try:
+                                setattr(orchestrator, "_force_replan", True)
+                                if hasattr(orchestrator, "_mark_active_chunk_failed"):
+                                    orchestrator._mark_active_chunk_failed("phase_replan")
+                                if getattr(orchestrator, "_solve_context", None):
+                                    orchestrator._solve_context["active_chunk"] = None
+                            except Exception:
+                                logger.debug("Unable to clear stale chunk during variant REPLAN", exc_info=True)
+
+                            previous_phase = phase_ctrl.phase_name
+                            try:
+                                phase_ctrl.advance(SolvePhase.REPLAN, force=True)
+                                did_replan = True
+                            except Exception:
+                                logger.exception("Failed entering variant REPLAN")
+                            try:
+                                brain_client.current_phase = phase_ctrl.phase_name
+                                if hasattr(orchestrator, "set_write_trace_context"):
+                                    orchestrator.set_write_trace_context(phase_ctrl.phase_name)
+                                if tc is not None:
+                                    tc.phase_state = phase_ctrl.to_checkpoint()
+                                    mgr.save(checkpoint)
+                                self._record_phase_transition(
+                                    task=task,
+                                    orchestrator=orchestrator,
+                                    from_phase=previous_phase,
+                                    to_phase=phase_ctrl.phase_name,
+                                    step=total_steps,
+                                    start_time=start_time,
+                                    metadata={
+                                        "reason": "replan_enter",
+                                        "target_phase": replan_target.value,
+                                        "no_progress_steps": consecutive_no_progress_steps,
+                                    },
+                                )
+                            except Exception:
+                                logger.exception("Failed syncing variant REPLAN shim")
+
+                            try:
+                                if replan_target == SolvePhase.MODEL:
+                                    memory_context = await orchestrator.perceive(observation, step=total_steps)
+                                    try:
+                                        if isinstance(memory_context, dict) and getattr(orchestrator, "_hypothesis_context", None):
+                                            ge = (orchestrator._hypothesis_context or {}).get("graph_evidence")
+                                            if ge:
+                                                memory_context = dict(memory_context)
+                                                memory_context["graph_evidence"] = ge
+                                    except Exception:
+                                        logger.debug("Failed injecting graph_evidence into memory_context", exc_info=True)
+                                    await orchestrator.plan(observation, memory_context)
+                            except Exception:
+                                logger.exception("Failed to refresh MODEL phase during variant replan")
+
+                            previous_phase = phase_ctrl.phase_name
+                            try:
+                                if phase_ctrl.can_advance(replan_target):
+                                    phase_ctrl.advance(replan_target)
+                                else:
+                                    phase_ctrl.advance(replan_target, force=True)
+                            except Exception:
+                                logger.exception("Failed advancing variant from REPLAN to target")
+                            try:
+                                brain_client.current_phase = phase_ctrl.phase_name
+                                if hasattr(orchestrator, "set_write_trace_context"):
+                                    orchestrator.set_write_trace_context(phase_ctrl.phase_name)
+                                if tc is not None:
+                                    tc.phase_state = phase_ctrl.to_checkpoint()
+                                    mgr.save(checkpoint)
+                                self._record_phase_transition(
+                                    task=task,
+                                    orchestrator=orchestrator,
+                                    from_phase=previous_phase,
+                                    to_phase=phase_ctrl.phase_name,
+                                    step=total_steps,
+                                    start_time=start_time,
+                                    metadata={"reason": "replan_exit", "target_phase": replan_target.value},
+                                )
+                            except Exception:
+                                logger.exception("Failed persisting variant phase after replan")
+                    except Exception:
+                        logger.exception("Variant _should_replan check failed")
+
+                # Per-step PERCEIVE advance for variant runners (B202)
+                if not success and not done and not did_replan:
+                    previous_phase = phase_ctrl.phase_name
+                    try:
+                        if phase_ctrl.phase != SolvePhase.PERCEIVE:
+                            if phase_ctrl.can_advance(SolvePhase.PERCEIVE):
+                                phase_ctrl.advance(SolvePhase.PERCEIVE)
+                            else:
+                                phase_ctrl.advance(SolvePhase.PERCEIVE, force=True)
+                    except IllegalPhaseTransition:
+                        logger.debug("Variant PERCEIVE gate blocked; forcing perceive")
+                    except Exception:
+                        logger.exception("Error advancing variant to PERCEIVE")
+
+                    try:
+                        brain_client.current_phase = phase_ctrl.phase_name
+                        if hasattr(orchestrator, "set_write_trace_context"):
+                            orchestrator.set_write_trace_context(phase_ctrl.phase_name)
+                        if tc is not None:
+                            tc.phase_state = phase_ctrl.to_checkpoint()
+                            mgr.save(checkpoint)
+                        self._record_phase_transition(
+                            task=task,
+                            orchestrator=orchestrator,
+                            from_phase=previous_phase,
+                            to_phase=phase_ctrl.phase_name,
+                            step=total_steps,
+                            start_time=start_time,
+                            metadata={"reason": "per_step_perceive_variant"},
+                        )
+                    except Exception:
+                        logger.exception("Failed to sync variant brain phase during per-step perceive")
+
+                    try:
+                        # B210: use canonical just-recorded step action id to avoid stale attribution.
+                        action_id_local = None
+                        if getattr(orchestrator, "_step_history", None):
+                            action_id_local = (orchestrator._step_history[-1] or {}).get("action_id")
+                        if not action_id_local:
+                            if isinstance(action, dict):
+                                action_id_local = action.get("action_id")
+                            else:
+                                action_id_local = getattr(action, "action_id", None) or (action if isinstance(action, str) else None)
+                        await orchestrator.perceive_step_response(observation, step=total_steps, reward=reward, done=done, action_id=action_id_local)
+                    except Exception:
+                        logger.exception("Variant perceive_step_response failed")
 
             if success:
                 break
@@ -944,6 +1689,12 @@ class DurableARCRunner:
                 loop_detected=bool((getattr(orchestrator, "_hypothesis_context", {}) or {}).get("loop_detected")),
             ).value
 
+        cost_usd = None
+        invalid_action_count = None
+        if isinstance(benchmark_metrics, dict):
+            cost_usd = self._safe_float((benchmark_metrics.get("token_cost") or {}).get("cost_usd"))
+            invalid_action_count = (benchmark_metrics.get("prompt_budget") or {}).get("invalid_action_count")
+
         task_result = ABTaskResult(
             task_id=task.task_id,
             variant=ABVariant.SIDEQUESTS,
@@ -955,6 +1706,8 @@ class DurableARCRunner:
             failure_class=failure_class,
             response_text=f"Solved: {success} in {total_steps} steps ({attempt} attempt(s))",
             attempts=attempt,
+            cost_usd=cost_usd,
+            invalid_action_count=invalid_action_count,
             dissonance_triggered=bool((getattr(orchestrator, "_solve_context", {}) or {}).get("dissonance")),
             trajectory_score=trajectory_score,
             final_state=state,
@@ -975,6 +1728,214 @@ class DurableARCRunner:
         if getattr(orchestrator.solve_engine, "_victory_condition", None):
             lines.append(f"Inferred Objective: {orchestrator.solve_engine._victory_condition.description}")
         return "\n".join(lines)
+
+    @staticmethod
+    def _phase_question_for(phase_name: str | None) -> str | None:
+        mapping = {
+            SolvePhase.PERCEIVE.value: "What am I seeing in the puzzle right now?",
+            SolvePhase.MODEL.value: "What world model or structure explains this board?",
+            SolvePhase.HYPOTHESIZE.value: "What kind of puzzle is this and what is the likely win condition?",
+            SolvePhase.ROUTE.value: "What strategy or chunk should I follow next?",
+            SolvePhase.EXECUTE.value: "What exact action should I take now?",
+            SolvePhase.EVALUATE.value: "What changed, and did that action help?",
+            SolvePhase.REPLAN.value: "Why am I stuck, and which earlier phase should I return to?",
+        }
+        return mapping.get(str(phase_name or "").lower())
+
+    def _phase_answer_for(self, orchestrator: ARCOrchestrator, phase_name: str | None) -> str | None:
+        solve_ctx = getattr(orchestrator, "_solve_context", {}) or {}
+        hyp_ctx = getattr(orchestrator, "_hypothesis_context", {}) or {}
+        last_step = (getattr(orchestrator, "_step_history", []) or [{}])[-1] or {}
+        active_chunk = solve_ctx.get("active_chunk") or {}
+        phase = str(phase_name or "").lower()
+
+        if phase == SolvePhase.PERCEIVE.value:
+            perception = getattr(orchestrator, "_last_response_perception", None)
+            if perception and (isinstance(perception, dict) and int(perception.get("step", 0) or 0) > 0):
+                delta = perception.get("delta", {}) or {}
+                n_changed = int(delta.get("n_cells_changed", 0) or 0)
+                effect = delta.get("apparent_effect")
+                direction = delta.get("direction")
+                actions_list = perception.get("available_actions") or []
+                if isinstance(actions_list, list):
+                    actions = ", ".join(str(a) for a in actions_list)
+                else:
+                    actions = str(actions_list)
+                delta_str = f"{n_changed} cells changed"
+                if effect:
+                    delta_str += f", {effect}"
+                if direction:
+                    delta_str += f", direction={direction}"
+                base = (
+                    f"State={perception.get('state')}, reward={perception.get('reward')}, "
+                    f"done={perception.get('done')}. Grid: {delta_str}. "
+                    f"Actions: {actions or 'pending'}."
+                )
+                # Prefer the contextual question stored on the perception when available
+                pq = perception.get("phase_question") if isinstance(perception, dict) else None
+                if pq:
+                    return f"{pq} — {base}"
+                return base
+            return "Initial observation captured and memory retrieval seeded."
+        if phase == SolvePhase.MODEL.value:
+            return solve_ctx.get("strategy_summary") or "Building a structural model from the latest observation."
+        if phase == SolvePhase.HYPOTHESIZE.value:
+            archetype = solve_ctx.get("archetype") or "unknown"
+            victory = solve_ctx.get("victory_condition") or {}
+            victory_type = victory.get("type") if isinstance(victory, dict) else victory or "unknown"
+            return f"Archetype={archetype}; victory_condition={victory_type}."
+        if phase == SolvePhase.ROUTE.value:
+            return active_chunk.get("description") or solve_ctx.get("strategy_summary") or "Selecting the next strategy chunk."
+        if phase == SolvePhase.EXECUTE.value:
+            return last_step.get("rationale") or active_chunk.get("description") or "Executing the chosen action."
+        if phase == SolvePhase.EVALUATE.value:
+            state_after = last_step.get("state_after") or "unknown"
+            reward = last_step.get("reward")
+            return f"Observed state={state_after}, reward={reward}."
+        if phase == SolvePhase.REPLAN.value:
+            reason = solve_ctx.get("dissonance_reason") or hyp_ctx.get("dissonance_reason") or "No progress / loop detected."
+            return str(reason)
+        return solve_ctx.get("strategy_summary") or last_step.get("rationale")
+
+    def _record_phase_transition(
+        self,
+        *,
+        task: ABTask,
+        orchestrator: ARCOrchestrator,
+        from_phase: str | None,
+        to_phase: str | None,
+        step: int,
+        start_time: float,
+        metadata: dict | None = None,
+    ) -> None:
+        """Emit a dedicated phase transition record for live output and timeline export."""
+        if not from_phase or not to_phase or from_phase == to_phase:
+            return
+
+        phase_question = self._phase_question_for(to_phase)
+        phase_answer = self._phase_answer_for(orchestrator, to_phase)
+        details = {
+            "step": step,
+            "phase": to_phase,
+            "from_phase": from_phase,
+            "to_phase": to_phase,
+            "phase_question": phase_question,
+            "phase_answer": phase_answer,
+        }
+        if metadata:
+            details.update(metadata)
+
+        try:
+            if hasattr(orchestrator, "_emit_trace_event"):
+                orchestrator._emit_trace_event(
+                    "phase_transition",
+                    "phase_transition",
+                    details,
+                    {"current_phase": to_phase},
+                )
+        except Exception:
+            logger.debug("Unable to emit phase transition trace", exc_info=True)
+
+        if self._progress_callback is not None and getattr(self, "_emit_transition_snapshots", False):
+            snapshot = {
+                "snapshot_type": "phase_transition",
+                "timestamp_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "game_id": getattr(task, "game_id", "unknown"),
+                "task_id": task.task_id,
+                "step": step,
+                "runtime_seconds": round(time.time() - start_time, 2),
+                "from_phase": from_phase,
+                "to_phase": to_phase,
+                "current_phase": to_phase,
+                "phase_question": phase_question,
+                "phase_answer": phase_answer,
+                "solve_phase_summary": self._build_phase_summary(orchestrator),
+            }
+            if metadata:
+                snapshot["metadata"] = metadata
+            self._progress_callback(snapshot)
+
+    def _build_phase_summary(self, orchestrator: ARCOrchestrator) -> dict:
+        """Return a compact, user-visible summary of the durable phase state."""
+        solve_ctx = getattr(orchestrator, "_solve_context", {}) or {}
+        phase_ctrl = getattr(orchestrator, "_phase_controller", None)
+        phase_name = None
+        history = []
+        phase_step_count = 0
+        replan_count = 0
+
+        if phase_ctrl is not None:
+            phase_name = getattr(phase_ctrl, "phase_name", None)
+            history = list(getattr(phase_ctrl, "history", []) or [])
+            phase_step_count = int(getattr(phase_ctrl, "step_count", 0) or 0)
+            replan_count = sum(
+                1 for item in history
+                if isinstance(item, dict) and item.get("to") == SolvePhase.REPLAN.value
+            )
+
+        active_chunk = solve_ctx.get("active_chunk") or {}
+        victory = solve_ctx.get("victory_condition")
+        return {
+            "current_phase": phase_name,
+            "phase_question": self._phase_question_for(phase_name),
+            "phase_answer": self._phase_answer_for(orchestrator, phase_name),
+            "last_transition": history[-1] if history else None,
+            "phase_step_count": phase_step_count,
+            "replan_count": replan_count,
+            "phase_history_tail": history[-8:],
+            "archetype": solve_ctx.get("archetype"),
+            "archetype_confidence": solve_ctx.get("archetype_confidence"),
+            "victory_condition": victory.get("type") if isinstance(victory, dict) else victory,
+            "victory_confidence": victory.get("confidence") if isinstance(victory, dict) else None,
+            "strategy_summary": solve_ctx.get("strategy_summary"),
+            "active_chunk": {
+                "description": active_chunk.get("description"),
+                "source": active_chunk.get("source"),
+                "estimated_actions": active_chunk.get("estimated_actions", []),
+                "plan_id": active_chunk.get("plan_id"),
+            } if active_chunk else None,
+        }
+
+    def _should_replan(self, orchestrator: ARCOrchestrator, no_progress_steps: int) -> bool:
+        """Decide whether to enter REPLAN based on loop signals or no-progress counters."""
+        try:
+            current_step = len(getattr(orchestrator, "_step_history", []) or [])
+            backoff = int(getattr(self, "_replan_backoff_steps", 3) or 3)
+            if current_step - int(getattr(self, "_last_replan_step", -999) or -999) < backoff:
+                return False
+
+            hyp_ctx = getattr(orchestrator, "_hypothesis_context", {}) or {}
+            loop_detected = bool(hyp_ctx.get("loop_detected"))
+            if loop_detected:
+                return True
+            if int(no_progress_steps or 0) >= backoff:
+                return True
+            if int(getattr(orchestrator, "_consecutive_no_progress_steps", 0) or 0) >= backoff:
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _replan_target(self, orchestrator: ARCOrchestrator) -> SolvePhase:
+        """Choose a target phase to advance to after REPLAN.
+
+        Heuristics:
+        - If initial exploration is incomplete -> MODEL
+        - If archetype confidence is low -> HYPOTHESIZE
+        - Otherwise -> ROUTE
+        """
+        try:
+            hyp_ctx = getattr(orchestrator, "_hypothesis_context", {}) or {}
+            coverage = hyp_ctx.get("action_coverage") or {}
+            exploration_complete = bool(coverage.get("initial_exploration_complete"))
+            if not exploration_complete:
+                return SolvePhase.MODEL
+            arch_conf = float(getattr(getattr(orchestrator, "solve_engine", None), "_archetype_confidence", 0.0) or 0.0)
+            if arch_conf < 0.3:
+                return SolvePhase.HYPOTHESIZE
+        except Exception:
+            pass
+        return SolvePhase.ROUTE
 
     def _summarize_strategy(self, orchestrator: ARCOrchestrator) -> str:
         try:
@@ -1071,10 +2032,10 @@ class DurableARCRunner:
             return
 
         last_step = orchestrator._step_history[-1] if getattr(orchestrator, "_step_history", None) else {}
-        solve_ctx = getattr(orchestrator, "_solve_context", {}) or {}
-        active_chunk = solve_ctx.get("active_chunk") or {}
+        phase_summary = self._build_phase_summary(orchestrator)
         snapshot = {
             "snapshot_type": "step",
+            "timestamp_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "game_id": getattr(task, "game_id", "unknown"),
             "task_id": task.task_id,
             "step": total_steps,
@@ -1088,19 +2049,7 @@ class DurableARCRunner:
             "thinking_trace": last_step.get("thinking_trace", []),
             "frame_hash": observation.get("frame_hash"),
             "available_actions": observation.get("available_actions", []),
-            "solve_phase_summary": {
-                "archetype": solve_ctx.get("archetype"),
-                "archetype_confidence": solve_ctx.get("archetype_confidence"),
-                "victory_condition": (solve_ctx.get("victory_condition") or {}).get("type") if isinstance(solve_ctx.get("victory_condition"), dict) else solve_ctx.get("victory_condition"),
-                "victory_confidence": (solve_ctx.get("victory_condition") or {}).get("confidence") if isinstance(solve_ctx.get("victory_condition"), dict) else None,
-                "strategy_summary": solve_ctx.get("strategy_summary"),
-                "active_chunk": {
-                    "description": active_chunk.get("description"),
-                    "source": active_chunk.get("source"),
-                    "estimated_actions": active_chunk.get("estimated_actions", []),
-                    "plan_id": active_chunk.get("plan_id"),
-                } if active_chunk else None,
-            },
+            "solve_phase_summary": phase_summary,
             "sidequests_ledger_count": len(self._ledger),
         }
         self._progress_callback(snapshot)
@@ -1302,49 +2251,140 @@ class DurableARCRunner:
             )
         return trace
 
-    def _build_orchestration_report(self, ledger: list[dict], entity_gate_status: Mapping[str, Any] | None = None) -> dict:
+    def _build_orchestration_report(
+        self,
+        ledger: list[dict],
+        entity_gate_status: Mapping[str, Any] | None = None,
+        progress_log: list[dict] | None = None,
+    ) -> dict:
         phase_owner = {
             "bootstrap": "harness",
             "perceive": "orchestrator",
-            "plan": "orchestrator",
+            "model": "orchestrator",
             "hypothesize": "orchestrator",
-            "solve": "orchestrator",
-            "act": "LLM",
-            "ingest": "orchestrator",
+            "route": "orchestrator",
+            "execute": "LLM",
             "evaluate": "harness",
+            "replan": "harness",
         }
         decision_flow = {
             "bootstrap": {"proposer": "harness", "executor": "harness"},
             "perceive": {"proposer": "orchestrator", "executor": "SideQuests"},
-            "plan": {"proposer": "orchestrator", "executor": "SideQuests"},
+            "model": {"proposer": "orchestrator", "executor": "SideQuests"},
             "hypothesize": {"proposer": "orchestrator", "executor": "orchestrator"},
-            "solve": {"proposer": "orchestrator", "executor": "orchestrator"},
-            "act": {"proposer": "LLM", "executor": "orchestrator"},
-            "ingest": {"proposer": "orchestrator", "executor": "SideQuests"},
+            "route": {"proposer": "orchestrator", "executor": "orchestrator"},
+            "execute": {"proposer": "LLM", "executor": "orchestrator"},
             "evaluate": {"proposer": "harness", "executor": "harness"},
+            "replan": {"proposer": "harness", "executor": "harness"},
         }
+        # Backwards-compatibility: mirror pre-B201 legacy phase names to canonical entries
+        legacy_aliases = {
+            "solve": "route",
+            "act": "execute",
+            "ingest": "evaluate",
+            "plan": "model",
+        }
+        for old, canon in legacy_aliases.items():
+            if canon in phase_owner and old not in phase_owner:
+                phase_owner[old] = phase_owner[canon]
+            if canon in decision_flow and old not in decision_flow:
+                decision_flow[old] = decision_flow[canon]
         tool_rules = {
-            "branch_quest": {"owner": "SideQuests", "allowed_modes": ["write"], "allowed_phases": ["bootstrap"]},
-            "notify_turn": {"owner": "SideQuests", "allowed_modes": ["write"], "allowed_phases": ["bootstrap", "act", "ingest", "evaluate", "finalization"]},
-            "current_truth": {"owner": "SideQuests", "allowed_modes": ["read"], "allowed_phases": ["bootstrap", "act", "ingest", "solve"]},
-            "recall_lessons": {"owner": "SideQuests", "allowed_modes": ["read"], "allowed_phases": ["bootstrap", "solve", "ingest"]},
-            "register_plan": {"owner": "SideQuests", "allowed_modes": ["write"], "allowed_phases": ["bootstrap", "solve"]},
-            "report_outcome": {"owner": "SideQuests", "allowed_modes": ["write"], "allowed_phases": ["evaluate", "solve", "finalization"]},
+            "branch_quest": {
+                "owner": "SideQuests",
+                "allowed_modes": ["write"],
+                "allowed_phases": ["unknown", "bootstrap"],
+            },
+            "notify_turn": {
+                "owner": "SideQuests",
+                "allowed_modes": ["write"],
+                "allowed_phases": ["bootstrap", "perceive", "model", "execute", "evaluate", "replan", "finalization"],
+            },
+            "current_truth": {
+                "owner": "SideQuests",
+                "allowed_modes": ["read"],
+                "allowed_phases": ["bootstrap", "perceive", "model", "execute", "evaluate", "route", "replan"],
+            },
+            "recall_lessons": {
+                "owner": "SideQuests",
+                "allowed_modes": ["read"],
+                "allowed_phases": ["bootstrap", "perceive", "model", "route", "evaluate", "replan"],
+            },
+            "register_plan": {
+                "owner": "SideQuests",
+                "allowed_modes": ["write"],
+                "allowed_phases": ["bootstrap", "perceive", "model", "route", "replan"],
+            },
+            "report_outcome": {
+                "owner": "SideQuests",
+                "allowed_modes": ["write"],
+                "allowed_phases": ["evaluate", "route", "finalization"],
+            },
+            "upsert_lesson": {
+                "owner": "SideQuests",
+                "allowed_modes": ["write"],
+                "allowed_phases": ["perceive", "evaluate", "finalization"],
+            },
         }
 
         violations = []
+        adherence = {
+            "events": 0,
+            "mismatches": 0,
+            "samples": [],
+        }
+        adherence_seen: set[tuple[Any, Any, Any, Any]] = set()
+
+        def _record_adherence_event(step: Any, expected: Any, selected: Any, reason: Any, ok: Any) -> None:
+            key = (step, expected, selected, reason)
+            if key in adherence_seen:
+                return
+            adherence_seen.add(key)
+            adherence["events"] += 1
+            if ok is False:
+                adherence["mismatches"] += 1
+                if len(adherence["samples"]) < 5:
+                    adherence["samples"].append(
+                        {
+                            "step": step,
+                            "expected_action": expected,
+                            "selected_action": selected,
+                            "override_reason": reason,
+                        }
+                    )
+
         for entry in ledger or []:
             call_type = entry.get("call_type") or entry.get("kind")
             phase = entry.get("phase")
             mode = entry.get("mode")
             rule = tool_rules.get(call_type)
+
+            # B209: planner/executor adherence diagnostics emitted via optional
+            # action_adherence ledger rows.
+            if call_type == "action_adherence":
+                _record_adherence_event(
+                    entry.get("step"),
+                    entry.get("expected_action"),
+                    entry.get("selected_action"),
+                    entry.get("override_reason"),
+                    entry.get("adherence_ok"),
+                )
+
             if not rule:
                 continue
-            if phase not in rule["allowed_phases"]:
+            # Normalize legacy/pre-B201 phase names to canonical B201 names
+            legacy_map = {
+                "solve": "route",
+                "act": "execute",
+                "ingest": "evaluate",
+                "plan": "model",
+            }
+            phase_norm = phase if not isinstance(phase, str) else legacy_map.get(phase, phase)
+            if phase_norm not in rule["allowed_phases"]:
                 violations.append(
                     {
                         "type": "phase_violation",
-                        "phase": phase,
+                        "phase": phase_norm,
                         "call_type": call_type,
                         "allowed_phases": list(rule["allowed_phases"]),
                     }
@@ -1359,16 +2399,250 @@ class DurableARCRunner:
                     }
                 )
 
+        # B209 fallback: when ledger has no action_adherence rows, derive adherence
+        # diagnostics from per-step decision metadata captured in progress_log.
+        for step in progress_log or []:
+            if not isinstance(step, dict):
+                continue
+            expected = step.get("expected_action")
+            selected = step.get("selected_action")
+            ok = step.get("adherence_ok")
+            reason = step.get("override_reason")
+            if expected is None and selected is None and ok is None:
+                decision_flow = step.get("decision_flow") if isinstance(step.get("decision_flow"), dict) else {}
+                expected = decision_flow.get("expected_action")
+                selected = decision_flow.get("selected_action")
+                ok = decision_flow.get("adherence_ok")
+                reason = decision_flow.get("override_reason")
+            if expected is None and selected is None and ok is None:
+                continue
+            _record_adherence_event(step.get("step"), expected, selected, reason, ok)
+
         return {
             "orchestration_owner": "ARC Harness",
             "decision_flow": decision_flow,
             "phase_owner": phase_owner,
             "tool_rules": tool_rules,
+            "planner_executor_adherence": adherence,
             "runtime_surfaces": ["progress_log", "prompt_trace", "sidequests_ledger"],
             "entity_gate_status": dict(entity_gate_status) if isinstance(entity_gate_status, dict) else {},
             "violations": violations,
             "status": "ok" if not violations else "violation",
         }
+
+    @staticmethod
+    def _safe_float(value: Any) -> float | None:
+        if value in (None, "", "N/A"):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _build_eval_layers(self, result: dict, orchestration_status: str | None = None) -> dict:
+        benchmark_metrics = result.get("benchmark_metrics") if isinstance(result.get("benchmark_metrics"), dict) else {}
+        token_cost = benchmark_metrics.get("token_cost") if isinstance(benchmark_metrics.get("token_cost"), dict) else {}
+        prompt_budget = benchmark_metrics.get("prompt_budget") if isinstance(benchmark_metrics.get("prompt_budget"), dict) else {}
+
+        cost_usd = self._safe_float(result.get("cost_usd"))
+        if cost_usd is None:
+            cost_usd = self._safe_float(token_cost.get("cost_usd"))
+
+        invalid_action_count = result.get("invalid_action_count")
+        if invalid_action_count is None:
+            invalid_action_count = prompt_budget.get("invalid_action_count")
+
+        total_tokens = int(result.get("tokens_input") or 0) + int(result.get("tokens_output") or 0)
+        correct = bool(result.get("correct", False))
+        budget_usd = self._safe_float(token_cost.get("budget_usd"))
+        judge_verdict = result.get("judge_verdict")
+
+        finops = {
+            "tokens_input": int(result.get("tokens_input") or 0),
+            "tokens_output": int(result.get("tokens_output") or 0),
+            "total_tokens": total_tokens,
+            "cost_usd": cost_usd,
+            "cost_per_solve_usd": cost_usd if correct and cost_usd is not None else None,
+            "budget_usd": budget_usd,
+            "budget_exhausted": bool(token_cost.get("budget_exhausted") is True),
+            "model": token_cost.get("model") or (((self.config.get("llm") or {}).get("model") if isinstance(self.config, dict) else "unknown") or "unknown"),
+        }
+        component_eval = {
+            "status": "available",
+            "entity_gate_status": ((result.get("entity_gate_status") or {}).get("status") if isinstance(result.get("entity_gate_status"), dict) else None),
+            "invalid_action_count": invalid_action_count,
+            "dissonance_triggered": result.get("dissonance_triggered"),
+            "failure_class": result.get("failure_class"),
+            "orchestration_status": orchestration_status or "pending",
+        }
+        trajectory_eval = result.get("trajectory_score") or {
+            "status": "unavailable",
+            "reason": "trajectory score not computed",
+        }
+        outcome_eval = judge_verdict or {
+            "status": "unavailable",
+            "reason": "reference solution not available",
+        }
+        system_monitoring = result.get("system_monitoring")
+        if not isinstance(system_monitoring, dict):
+            system_monitoring = {"status": "pending_batch_eval", "alerts": []}
+
+        evals = {
+            "finops": finops,
+            "component_eval": component_eval,
+            "trajectory_eval": trajectory_eval,
+            "outcome_eval": outcome_eval,
+            "system_monitoring": system_monitoring,
+        }
+        if isinstance(result.get("quality_dimensions"), dict):
+            evals["quality_dimensions"] = result.get("quality_dimensions")
+        return evals
+
+    def _row_to_ab_task_result(self, row: dict) -> ABTaskResult:
+        metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+        benchmark_metrics = row.get("benchmark_metrics") if isinstance(row.get("benchmark_metrics"), dict) else {}
+        if not benchmark_metrics and isinstance(metadata.get("benchmark_metrics"), dict):
+            benchmark_metrics = metadata.get("benchmark_metrics") or {}
+
+        cost_usd = self._safe_float(row.get("cost_usd"))
+        if cost_usd is None:
+            cost_usd = self._safe_float((benchmark_metrics.get("token_cost") or {}).get("cost_usd"))
+
+        invalid_action_count = row.get("invalid_action_count")
+        if invalid_action_count is None:
+            invalid_action_count = (benchmark_metrics.get("prompt_budget") or {}).get("invalid_action_count")
+
+        judge_verdict = row.get("judge_verdict")
+        if judge_verdict is None and isinstance(metadata.get("judge_verdict"), dict):
+            judge_verdict = metadata.get("judge_verdict")
+
+        return ABTaskResult(
+            task_id=str(row.get("task_id", "unknown")),
+            variant=ABVariant.SIDEQUESTS,
+            correct=bool(row.get("correct", False)),
+            steps=int(row.get("steps", 0) or 0),
+            tokens_input=int(row.get("tokens_input", 0) or 0),
+            tokens_output=int(row.get("tokens_output", 0) or 0),
+            error_message=row.get("error_message"),
+            failure_class=row.get("failure_class"),
+            attempts=int(row.get("attempts", 1) or 1),
+            cost_usd=cost_usd,
+            invalid_action_count=invalid_action_count,
+            dissonance_triggered=row.get("dissonance_triggered"),
+            trajectory_score=row.get("trajectory_score"),
+            final_state=row.get("final_state"),
+            final_observation=row.get("final_observation"),
+            judge_verdict=judge_verdict,
+        )
+
+    def _attach_batch_eval_summary(self, rows: List[dict]) -> List[dict]:
+        if not rows:
+            return rows
+
+        metrics: dict[str, Any] = {}
+        try:
+            metric_harness = ABHarness(BenchmarkConfig(name="submission-evals", parameters={}))
+            metrics = metric_harness._compute_metrics([
+                self._row_to_ab_task_result(row)
+                for row in rows
+                if isinstance(row, dict)
+            ])
+        except Exception:
+            logger.exception("B182: failed to compute submission eval summary")
+
+        quality_dimensions = metrics.get("quality_dimensions", {}) if isinstance(metrics, dict) else {}
+        system_monitoring: dict[str, Any] = {"status": "unavailable", "alerts": []}
+
+        if isinstance(metrics, dict) and metrics:
+            try:
+                config_blob = json.dumps(self.config if isinstance(self.config, dict) else {}, sort_keys=True, default=str)
+                config_hash = hashlib.sha256(config_blob.encode("utf-8")).hexdigest()[:12]
+            except Exception:
+                config_hash = "unknown"
+
+            try:
+                repo_root = Path(__file__).resolve().parents[2]
+                git_commit = subprocess.check_output(
+                    ["git", "rev-parse", "--short", "HEAD"],
+                    cwd=str(repo_root),
+                    text=True,
+                ).strip()
+            except Exception:
+                git_commit = "unknown"
+
+            run_record = RunRecord(
+                run_id=f"submission_{uuid.uuid4().hex[:12]}",
+                timestamp=time.time(),
+                model=((self.config.get("llm") or {}).get("model") if isinstance(self.config, dict) else "unknown") or "unknown",
+                config_hash=config_hash,
+                git_commit=git_commit,
+                metrics=quality_dimensions,
+            )
+
+            try:
+                history_dir = "benchmarks/results"
+                if isinstance(self.config, dict):
+                    eval_cfg = self.config.get("eval") or {}
+                    if isinstance(eval_cfg, dict) and eval_cfg.get("history_dir"):
+                        history_dir = str(eval_cfg.get("history_dir"))
+
+                monitor = RegressionMonitor(history_dir=history_dir)
+                prior_history_count = len(monitor._load_history())
+                alerts = [asdict(alert) for alert in monitor.check(run_record)]
+                monitor.save_run(run_record)
+                system_monitoring = {
+                    "status": "alert" if alerts else ("insufficient_history" if prior_history_count < 3 else "ok"),
+                    "alerts": alerts,
+                    "run_record": asdict(run_record),
+                    "history_dir": history_dir,
+                    "history_run_count_before_save": prior_history_count,
+                }
+            except Exception:
+                logger.exception("B188: regression monitoring failed")
+                system_monitoring = {
+                    "status": "error",
+                    "alerts": [],
+                    "run_record": asdict(run_record),
+                }
+
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+
+            row["quality_dimensions"] = quality_dimensions
+            row["system_monitoring"] = system_monitoring
+
+            benchmark_metrics = row.get("benchmark_metrics")
+            if not isinstance(benchmark_metrics, dict):
+                benchmark_metrics = {}
+                row["benchmark_metrics"] = benchmark_metrics
+            if quality_dimensions:
+                benchmark_metrics["quality_dimensions"] = quality_dimensions
+
+            evals = row.get("evals")
+            if not isinstance(evals, dict):
+                evals = {}
+                row["evals"] = evals
+            if quality_dimensions:
+                evals["quality_dimensions"] = quality_dimensions
+            evals["system_monitoring"] = system_monitoring
+
+            for meta_key in ("metadata", "submission_metadata"):
+                metadata = row.get(meta_key)
+                if not isinstance(metadata, dict):
+                    continue
+                if quality_dimensions:
+                    metadata["quality_dimensions"] = quality_dimensions
+                metadata["system_monitoring"] = system_monitoring
+                meta_evals = metadata.get("evals")
+                if not isinstance(meta_evals, dict):
+                    meta_evals = {}
+                    metadata["evals"] = meta_evals
+                if quality_dimensions:
+                    meta_evals["quality_dimensions"] = quality_dimensions
+                meta_evals["system_monitoring"] = system_monitoring
+
+        return rows
 
     def _submission_row_from_result(self, result: dict) -> dict:
         if not isinstance(result, dict):
@@ -1385,6 +2659,7 @@ class DurableARCRunner:
             for step in progress_log
         ]
 
+        benchmark_metrics = result.get("benchmark_metrics") if isinstance(result.get("benchmark_metrics"), dict) else {}
         confidence = [1.0 if result.get("correct") else 0.0]
         metadata = {
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -1403,8 +2678,11 @@ class DurableARCRunner:
             "tokens_input": result.get("tokens_input", 0),
             "tokens_output": result.get("tokens_output", 0),
             "final_state": result.get("final_state"),
-            "benchmark_metrics": result.get("benchmark_metrics", {}),
+            "benchmark_metrics": benchmark_metrics,
             "solve_phase_summary": result.get("solve_phase_summary", {}),
+            "cost_usd": self._safe_float(result.get("cost_usd")) if result.get("cost_usd") is not None else self._safe_float((benchmark_metrics.get("token_cost") or {}).get("cost_usd")),
+            "invalid_action_count": result.get("invalid_action_count", (benchmark_metrics.get("prompt_budget") or {}).get("invalid_action_count")),
+            "judge_verdict": result.get("judge_verdict"),
         }
         if result.get("failure_class") is not None:
             metadata["failure_class"] = result.get("failure_class")
@@ -1437,18 +2715,66 @@ class DurableARCRunner:
         )
 
         arc_pairs_map: dict[int, dict] = {}
+        arc_raw_io_map: dict[int, dict] = {}
+        for entry in sidequests_ledger:
+            if not isinstance(entry, dict):
+                continue
+            arc_api_io = entry.get("arc_api_io") or {}
+            seq = arc_api_io.get("call_seq")
+            if seq is None:
+                continue
+            arc_raw_io_map[int(seq)] = arc_api_io
+
         for event in arc_event_timeline:
             if not isinstance(event, dict):
                 continue
             seq = event.get("call_seq")
             if seq is None:
                 continue
-            pair = arc_pairs_map.setdefault(int(seq), {"call_seq": int(seq), "request": None, "response": None})
+            pair = arc_pairs_map.setdefault(
+                int(seq),
+                {"call_seq": int(seq), "request": None, "response": None, "raw_request": None, "raw_response": None},
+            )
             if event.get("kind") == "request_started":
                 pair["request"] = event
             elif event.get("kind") == "response_received":
                 pair["response"] = event
+
+        for seq, pair in arc_pairs_map.items():
+            raw_io = arc_raw_io_map.get(seq) or {}
+            if raw_io:
+                pair["raw_request"] = raw_io.get("request")
+                pair["raw_response"] = raw_io.get("response")
+                continue
+
+            request_event = pair.get("request") or {}
+            response_event = pair.get("response") or {}
+            request_payload = request_event.get("raw_payload")
+            response_payload = response_event.get("raw_payload")
+            if request_payload is not None:
+                pair["raw_request"] = {
+                    "method": request_event.get("method"),
+                    "endpoint": request_event.get("endpoint"),
+                    "payload": request_payload,
+                }
+            if response_payload is not None:
+                pair["raw_response"] = {
+                    "received": True,
+                    "http_status": response_event.get("http_status"),
+                    "payload": response_payload,
+                    "error": None,
+                }
         arc_server_responses = [arc_pairs_map[k] for k in sorted(arc_pairs_map)]
+
+        orchestration_report = self._build_orchestration_report(
+            sidequests_ledger,
+            result.get("entity_gate_status", {}),
+            progress_log,
+        )
+        evals = self._build_eval_layers(result, orchestration_status=orchestration_report.get("status"))
+        metadata["evals"] = evals
+        if isinstance(result.get("quality_dimensions"), dict):
+            metadata["quality_dimensions"] = result.get("quality_dimensions")
 
         row = {
             "game_id": result.get("game_id", "unknown"),
@@ -1463,7 +2789,10 @@ class DurableARCRunner:
             "final_state": result.get("final_state"),
             "final_observation": result.get("final_observation"),
             "trajectory_score": result.get("trajectory_score"),
-            "benchmark_metrics": result.get("benchmark_metrics", {}),
+            "judge_verdict": result.get("judge_verdict"),
+            "cost_usd": metadata.get("cost_usd"),
+            "invalid_action_count": metadata.get("invalid_action_count"),
+            "benchmark_metrics": benchmark_metrics,
             "bootstrap_write_trace": result.get("bootstrap_write_trace", []),
             "final_write_trace": result.get("final_write_trace", []),
             "sidequests_ledger": sidequests_ledger,
@@ -1472,12 +2801,14 @@ class DurableARCRunner:
             "arc_server_responses": arc_server_responses,
             "progress_log": progress_log,
             "prompt_trace": prompt_trace,
-            "orchestration_report": self._build_orchestration_report(
-                sidequests_ledger,
-                result.get("entity_gate_status", {}),
-            ),
+            "orchestration_report": orchestration_report,
+            "evals": evals,
             "confidence": confidence,
             "metadata": metadata,
             "submission_metadata": metadata,
         }
+        if isinstance(result.get("quality_dimensions"), dict):
+            row["quality_dimensions"] = result.get("quality_dimensions")
+        if isinstance(result.get("system_monitoring"), dict):
+            row["system_monitoring"] = result.get("system_monitoring")
         return row
