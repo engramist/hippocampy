@@ -15,6 +15,8 @@ from .schema import (
     ARC3ShapeSummary,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class BrainClientProtocol(Protocol):
     """Very small protocol covering the MCP tools we actually invoke."""
@@ -288,6 +290,7 @@ class LocalBrainClient(BrainClientProtocol):
         if callable(handler):
             return await handler(params, self.db, self.config)
         # fallback
+        logger.error("store_lesson: _store_lesson_handler not set on %s", type(self).__name__)
         return {"lesson_id": None}
 
     async def upsert_lesson(self, *, domain: str, text: str, valence: float, confidence: float = 0.7, tags: Optional[List[str]] = None) -> Mapping[str, Any]:
@@ -687,6 +690,10 @@ class LedgerBrainClient(BrainClientProtocol):
             try:
                 resp = await handler(domain=domain, text=text, valence=valence, confidence=confidence, tags=tags)
             except Exception:
+                logger.exception(
+                    "upsert_lesson failed (LedgerBrainClient): domain=%s text_len=%d",
+                    domain, len(text),
+                )
                 resp = {"lesson_id": None}
         else:
             # Fallback to store_lesson if available
@@ -695,6 +702,9 @@ class LedgerBrainClient(BrainClientProtocol):
                 try:
                     resp = await handler2(content=text, tags=tags or [domain], session_id="unknown")
                 except Exception:
+                    logger.exception(
+                        "upsert_lesson store_lesson fallback failed: domain=%s", domain
+                    )
                     resp = {"lesson_id": None}
             else:
                 resp = {"lesson_id": None}

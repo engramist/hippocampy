@@ -818,17 +818,17 @@ class DurableARCRunner:
                                 logger.exception("Failed syncing REPLAN shim")
 
                             try:
-                            if replan_target == SolvePhase.MODEL:
-                                memory_context = await orchestrator.perceive(observation, step=total_steps)
-                                try:
-                                    if isinstance(memory_context, dict) and getattr(orchestrator, "_hypothesis_context", None):
-                                        ge = (orchestrator._hypothesis_context or {}).get("graph_evidence")
-                                        if ge:
-                                            memory_context = dict(memory_context)
-                                            memory_context["graph_evidence"] = ge
-                                except Exception:
-                                    logger.debug("Failed injecting graph_evidence into memory_context", exc_info=True)
-                                await orchestrator.plan(observation, memory_context)
+                                if replan_target == SolvePhase.MODEL:
+                                    memory_context = await orchestrator.perceive(observation, step=total_steps)
+                                    try:
+                                        if isinstance(memory_context, dict) and getattr(orchestrator, "_hypothesis_context", None):
+                                            ge = (orchestrator._hypothesis_context or {}).get("graph_evidence")
+                                            if ge:
+                                                memory_context = dict(memory_context)
+                                                memory_context["graph_evidence"] = ge
+                                    except Exception:
+                                        logger.debug("Failed injecting graph_evidence into memory_context", exc_info=True)
+                                    await orchestrator.plan(observation, memory_context)
                             except Exception:
                                 logger.exception("Failed to refresh MODEL phase during replan")
 
