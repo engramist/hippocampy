@@ -6,13 +6,13 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 |---|---|---|---|---|---|---|---|
 | B13 | Guided Installer with LLM Provider Choice — ✅ DONE (2026-03-24) | P0 | complete | TBD | TBD | - | backlog/B13.md |
 | B130 | Enhanced submission_results logging and observability — ✅ DONE (2026-04-02) | P1 | complete | TBD | TBD | backlog/plans/B-130-enhanced-logging.md | backlog/B130.md |
-| B132 | Fix LLM Initialization — openai package not installed in .venv | P0 | ready | TBD | TBD | backlog/plans/B-132-fix-llm-initialization.md | backlog/B132.md |
-| B133 | Fix Guard Policy Round-Robin Cycling (blocked on B132) | P0 | blocked | TBD | TBD | backlog/plans/B-133-fix-guard-round-robin.md | backlog/B133.md |
-| B134 | Gate Unconditional current_truth Recall — Fires 15× With Zero Results | P1 | ready | TBD | TBD | backlog/plans/B-134-gate-unconditional-recall.md | backlog/B134.md |
-| B135 | Replace Hardcoded step_num > 3 Loop-Check Trigger With Evidence Gate | P1 | ready | TBD | TBD | backlog/plans/B-135-gate-loop-check-trigger.md | backlog/B135.md |
-| B136 | Trigger Re-Planning When Solve Engine Detects Dissonance | P1 | ready | TBD | TBD | backlog/plans/B-136-dissonance-replan.md | backlog/B136.md |
-| B137 | Fix Double register_plan Per Solve Step — Conflicting Active Plans | P2 | ready | TBD | TBD | backlog/plans/B-137-fix-double-register-plan.md | backlog/B137.md |
-| B138 | Expose SolveEngine Internal Brain Calls in Agent Trace | P2 | ready | TBD | TBD | backlog/plans/B-138-solve-engine-trace.md | backlog/B138.md |
+| B132 | Harden Mental Sandbox JSON Parsing and Fallback Attribution — ✅ DONE (2026-04-01) | P0 | complete | TBD | TBD | backlog/plans/B-132-fix-llm-initialization.md | backlog/B132.md |
+| B133 | Add Decision-Source Tracing for Guard Overrides and Fallback Actions — ✅ DONE (2026-04-01) | P0 | complete | TBD | TBD | backlog/plans/B-133-fix-guard-round-robin.md | backlog/B133.md |
+| B134 | ~~Gate Unconditional current_truth Recall~~ — superseded by B139 | P1 | complete | TBD | TBD | backlog/plans/B-134-gate-unconditional-recall.md | backlog/B134.md |
+| B135 | ~~Replace Hardcoded step_num > 3 Loop-Check Trigger~~ — superseded by B139 | P1 | complete | TBD | TBD | backlog/plans/B-135-gate-loop-check-trigger.md | backlog/B135.md |
+| B136 | Add Top-Level Replan Trigger for Persistent Dissonance — ✅ DONE (2026-04-01) | P1 | complete | TBD | TBD | backlog/plans/B-136-dissonance-replan.md | backlog/B136.md |
+| B137 | Fix Double register_plan Per Solve Step — ✅ DONE (2026-04-01) | P2 | complete | TBD | TBD | backlog/plans/B-137-fix-double-register-plan.md | backlog/B137.md |
+| B138 | Expose SolveEngine Internal Brain Calls in Agent Trace — ✅ DONE (2026-04-01) | P2 | complete | TBD | TBD | backlog/plans/B-138-solve-engine-trace.md | backlog/B138.md |
 | B19 | `sidequests uninstall` Command — ✅ DONE (2026-03-27) | P0 | complete | TBD | TBD | - | backlog/B19.md |
 | B1 | `sidequests setup` CLI — ✅ DONE (2026-03-28) | P1 | complete | TBD | TBD | backlog/plans/B-1-setup-cli.md | backlog/B1.md |
 | B2 | `.mcpb` Bundle (One-Click Claude Desktop Install) — ✅ DONE (2026-03-28) | P1 | complete | TBD | TBD | backlog/plans/B-2-cowork-plugin.md | backlog/B2.md |
@@ -41,7 +41,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B27 | Extension: Passive Ingestion Event API Validation — ✅ DONE (2026-03-28) | P7 | complete | TBD | TBD | - | backlog/B27.md |
 | B28 | CRITICAL: `api.registerTool()` Does Not Surface Tools to Agent Sessions — ✅ FIXED (2026-03-22) | P7 | complete | TBD | TBD | backlog/plans/B28-tool-binding-fix.md | backlog/B28.md |
 | B41 | OpenClaw Integration: Ensure Brain Daemon Auto-Starts with Gateway Sessions — ✅ DONE (2026-03-27) | P7 | complete | TBD | TBD | - | backlog/B41.md |
-| B61 | OpenClaw Extension: Tools Not Surfaced to Agent Without Manual Config | P7 | ready | TBD | TBD | - | backlog/B61.md |
+| B61 | OpenClaw Extension: Tools Not Surfaced to Agent Without Manual Config — ✅ DONE (2026-03-28) | P7 | complete | TBD | TBD | - | backlog/B61.md |
 | B29 | TEST CASE: Cross-Session Context Awareness — ✅ DONE (2026-03-28) | P8 | complete | TBD | TBD | - | backlog/B29.md |
 | B30 | Agent System Prompt: "Check the Brain First" — ✅ DONE (2026-03-22) | P8 | complete | TBD | TBD | - | backlog/B30.md |
 | B31 | Improvement: Recall Ranking Needs Recency Factor — ✅ DONE (2026-03-28) | P8 | complete | TBD | TBD | - | backlog/B31.md |
@@ -51,34 +51,52 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B35 | Bug: `set_quest` Fails with Kuzu Schema Error — ✅ FIXED (2026-03-27) | P8 | complete | TBD | TBD | - | backlog/B35.md |
 | B36 | Audit All Adapters/Plugins for Streamable HTTP Transport | P8 | complete | TBD | TBD | - | backlog/B36.md |
 | B62 | Triage and Execute B-memory Improvements Report | P8 | complete | TBD | TBD | - | backlog/B62.md |
-| B63 | Consolidation Loop for Non-Git Sessions | P8 | ready | TBD | TBD | - | backlog/B63.md |
-| B64 | Bug: Message Count Shows 0 in Stats | P8 | ready | TBD | TBD | - | backlog/B64.md |
-| B65 | Register Missing Tools in OpenClaw Extension | P8 | ready | TBD | TBD | - | backlog/B65.md |
+| B63 | Consolidation Loop for Non-Git Sessions — ✅ DONE (2026-03-28) | P8 | complete | TBD | TBD | - | backlog/B63.md |
+| B64 | Bug: Message Count Shows 0 in Stats — ✅ DONE (2026-03-28) | P8 | complete | TBD | TBD | - | backlog/B64.md |
+| B65 | Register Missing Tools in OpenClaw Extension — ✅ DONE (2026-03-28) | P8 | complete | TBD | TBD | - | backlog/B65.md |
 | B42 | Document Concept→Artifact Retrieval Contract — ✅ DONE (2026-03-28) | P9 | complete | TBD | TBD | backlog/plans/B42-p0-bringup-hardening.md | backlog/B42.md |
 | B43 | Extend `ESTABLISHED_IN` Provenance to Requirement and ActionItem — ✅ DONE (2026-03-22) | P9 | complete | TBD | TBD | - | backlog/B43.md |
-| B44 | Token Efficiency as a Side Effect (Not a Feature) | P10 | ready | TBD | TBD | - | backlog/B44.md |
+| B44 | Token Efficiency as a Side Effect (Not a Feature) — ✅ DONE (2026-03-28) | P10 | complete | TBD | TBD | - | backlog/B44.md |
 | B45 | Token Efficiency Measurement & Visualization — ✅ DONE (2026-03-28) | P10 | complete | TBD | TBD | backlog/plans/B-45-token-visualization.md | backlog/B45.md |
 | B46 | Benchmark Source Verification + Dataset Pinning | P11 | completed | TBD | TBD | - | backlog/B46.md |
-| B47 | Local Benchmark Runner Infrastructure (Unified Harness) | P11 | ready | TBD | TBD | - | backlog/B47.md |
-| B48 | SideQuests A/B Evaluation Contract (Protocol-Correct) | P11 | ready | TBD | TBD | - | backlog/B48.md |
-| B49 | SWE-CI Evaluation Card (Maintainability Under Evolution) | P11 | ready | TBD | TBD | - | backlog/B49.md |
-| B50 | LoCoBench Evaluation Card (Long-Context Degradation) | P11 | ready | TBD | TBD | - | backlog/B50.md |
-| B51 | AMA-Bench + MemoryArena Card (Causality and Interdependent State) | P11 | ready | TBD | TBD | - | backlog/B51.md |
-| B52 | Autonomous Research Simulation Harness (Hypothesis Regression Rate) | P11 | ready | TBD | TBD | - | backlog/B52.md |
-| B53 | Benchmark Report Pack + Go/No-Go Thresholds | P11 | ready | TBD | TBD | - | backlog/B53.md |
+| B47 | Local Benchmark Runner Infrastructure (Unified Harness) — ✅ DONE (2026-03-28) | P11 | complete | TBD | TBD | - | backlog/B47.md |
+| B48 | SideQuests A/B Evaluation Contract (Protocol-Correct) — ✅ DONE (2026-03-28) | P11 | complete | TBD | TBD | - | backlog/B48.md |
+| B49 | SWE-CI Evaluation Card (Maintainability Under Evolution) — ✅ DONE (2026-03-28) | P11 | complete | TBD | TBD | - | backlog/B49.md |
+| B50 | LoCoBench Evaluation Card (Long-Context Degradation) — ✅ DONE (2026-03-28) | P11 | complete | TBD | TBD | - | backlog/B50.md |
+| B51 | AMA-Bench + MemoryArena Card (Causality and Interdependent State) — ✅ DONE (2026-03-28) | P11 | complete | TBD | TBD | - | backlog/B51.md |
+| B52 | Autonomous Research Simulation Harness (Hypothesis Regression Rate) — ✅ DONE (2026-03-28) | P11 | complete | TBD | TBD | - | backlog/B52.md |
+| B53 | Benchmark Report Pack + Go/No-Go Thresholds — ✅ DONE (2026-03-28) | P11 | complete | TBD | TBD | - | backlog/B53.md |
 | B54 | ARC-AGI-3 Rules + Interface Verification (Blocker) — ✅ DONE (2026-03-28) | P12 | complete | TBD | TBD | - | backlog/B54.md |
-| B55 | ARC Interactive Adapter (Protocol-Correct SideQuests Bridge) | P12 | ready | TBD | TBD | - | backlog/B55.md |
-| B56 | Spatial State-to-Text/State Serializer for Causal Memory | P12 | ready | TBD | TBD | - | backlog/B56.md |
-| B57 | ARC A/B Harness (Baseline vs SideQuests-Augmented) | P12 | ready | TBD | TBD | - | backlog/B57.md |
-| B58 | Offline Model Strategy Card (Allowed Models + Resource Budget) | P12 | ready | TBD | TBD | - | backlog/B58.md |
-| B59 | Offline Packaging + Reproducible Execution Bundle | P12 | ready | TBD | TBD | - | backlog/B59.md |
-| B60 | Submission Notebook/Runner Assembly + Final Compliance Gate | P12 | ready | TBD | TBD | - | backlog/B60.md |
+| B55 | ARC Interactive Adapter (Protocol-Correct SideQuests Bridge) — ✅ DONE (2026-03-28) | P12 | complete | TBD | TBD | - | backlog/B55.md |
+| B56 | Spatial State-to-Text/State Serializer for Causal Memory — ✅ DONE (2026-03-28) | P12 | complete | TBD | TBD | - | backlog/B56.md |
+| B57 | ARC A/B Harness (Baseline vs SideQuests-Augmented) — ✅ DONE (2026-03-28) | P12 | complete | TBD | TBD | - | backlog/B57.md |
+| B58 | Offline Model Strategy Card (Allowed Models + Resource Budget) — ✅ DONE (2026-03-28) | P12 | complete | TBD | TBD | - | backlog/B58.md |
+| B59 | Offline Packaging + Reproducible Execution Bundle — ✅ DONE (2026-03-28) | P12 | complete | TBD | TBD | - | backlog/B59.md |
+| B60 | Submission Notebook/Runner Assembly + Final Compliance Gate — ✅ DONE (2026-03-28) | P12 | complete | TBD | TBD | - | backlog/B60.md |
+| B201 | Durable Phase-State Machine: Named Solve Phases for ARC Orchestrator | P1 | ready | TBD | TBD | backlog/plans/B-201-durable-phase-state-machine.md | backlog/B201.md |
+| B202 | Per-Step PERCEIVE Phase: Inspect ARC Server Response After Every Action | P1 | ready | TBD | TBD | backlog/plans/B-202-per-step-perceive.md | backlog/B202.md |
+| B203 | Fix Stale tool_rules and phase_owner Mappings in Orchestration Report | P1 | ready | TBD | TBD | backlog/plans/B-203-fix-tool-rules.md | backlog/B203.md |
+| B204 | Timeline Visibility: Phase Answer Surfacing and Event Source Differentiation | P1 | ready | TBD | TBD | backlog/plans/B-204-timeline-visibility.md | backlog/B204.md |
+| B205 | Evolving Perceive Questions: Context-Aware SideQuests Ingestion Per Step | P2 | ready | TBD | TBD | backlog/plans/B-205-evolving-perceive-questions.md | backlog/B205.md |
+| B206 | Prevent Archetype Regression to UNKNOWN During Early Steps | P2 | ready | TBD | TBD | backlog/plans/B-206-archetype-regression-guard.md | backlog/B206.md |
+| B207 | Break Plateau Lock Repetition After Replan Exhaustion | P2 | ready | TBD | TBD | backlog/plans/B-207-plateau-lock-exhaustion.md | backlog/B207.md |
+| B208 | Split Victory Inference Cooldowns by Trigger Type | P3 | ready | TBD | TBD | backlog/plans/B-208-victory-replan-cooldown-split.md | backlog/B208.md |
+| B209 | Enforce Route→Execute Plan Adherence and Action Provenance | P1 | ready | TBD | TBD | backlog/plans/B-209-route-execute-plan-adherence.md | backlog/B209.md |
+| B210 | Correct Per-Step PERCEIVE Action Attribution | P2 | ready | TBD | TBD | backlog/plans/B-210-perceive-action-attribution.md | backlog/B210.md |
+| B211 | Structured ActionEffect Writes: Graph-Native Action Outcome Storage | P1 | ready | TBD | TBD | backlog/plans/B-211-structured-action-effect-writes.md | backlog/B211.md |
+| B212 | Graph Inference Step in HYPOTHESIZE: Structurally-Grounded Hypothesis Generation — ✅ DONE (2026-04-14) | P1 | complete | TBD | TBD | backlog/plans/B-212-graph-hypothesize.md | backlog/B212.md |
+| B213 | Revert Puzzle-Specific Heuristics and Fix Action Policy Override Inversion | P0 | ready | TBD | TBD | backlog/plans/B-213-revert-and-fix-action-policy.md | backlog/B213.md |
+| B214 | Fix upsert_lesson Silent Failure in LedgerBrainClient — ✅ DONE (2026-04-14) | P0 | complete | TBD | TBD | backlog/plans/B-214-fix-upsert-lesson-silent-failure.md | backlog/B214.md |
+| B218 | Reconstruct Codex Observability Framework — ✅ DONE (2026-04-15) | P0 | complete | TBD | TBD | backlog/plans/B-218-reconstruct-observability.md | backlog/B218.md |
+| B215 | Plateau Lock Must Not Latch on Unexplored Action Space | P0 | ready | TBD | TBD | backlog/plans/B-215-plateau-lock-minimum-exploration.md | backlog/B215.md |
+| B216 | Loop Detection Signal Must Propagate Into Route/Replan Decisions | P1 | ready | TBD | TBD | backlog/plans/B-216-loop-detection-route-propagation.md | backlog/B216.md |
+| B217 | Victory Condition Must Converge: Bootstrap from Archetype and Grid Structure | P1 | ready | TBD | TBD | backlog/plans/B-217-victory-condition-convergence.md | backlog/B217.md |
 
 ## Summary
 
-- Total cards: 62
-- Ready: 0
+- Total cards: 80
+- Ready: 4 (B213, B215, B216, B217)
 - Needs work: 0
-- Complete: 61
+- Complete: 76
 - In progress: 0
 - Blocked: 0
