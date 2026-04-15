@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import shutil
+import tempfile
+from pathlib import Path
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -816,3 +820,74 @@ async def test_entity_gate_in_orchestration_report():
         report = results[0].get("orchestration_report", {})
         assert "entity_gate_status" in report
         assert report["entity_gate_status"]["status"] == "pass"
+
+@pytest.mark.asyncio
+async def test_upsert_lesson_round_trip():
+    """B214: upsert_lesson must persist; recall_relevant_lessons must find it."""
+    from mcp_engine.config import load_config
+    from mcp_engine.schema import init_schema
+    from mcp_engine.graph.kuzu_client import KuzuClient
+    from mcp_engine.graph import embeddings as emb
+    from mcp_engine.tools import upsert_lesson, recall_relevant_lessons
+
+    SEED_PATH = str(
+        (Path(__file__).resolve().parents[1] / "sidequests/data/GistSeedExamples.md")
+    )
+
+    tmp = tempfile.mkdtemp()
+    db_path = os.path.join(tmp, "b214_test.db")
+    try:
+        config = load_config(None)
+        embedding_model = config.get("embeddings", {}).get(
+            "model", "sentence-transformers/all-MiniLM-L6-v2"
+        )
+        emb.configure(config)
+        emb.prewarm(embedding_model)
+        db = KuzuClient(db_path)
+        init_schema(db, SEED_PATH, embedding_model)
+
+        # --- Write ---
+        result = await upsert_lesson(
+            {
+                "text": "space archetype: ACTION6 moves player one cell left",
+                "domain": "space",
+                "lesson_type": "action_effect",
+                "session_id": "test-b214",
+            },
+            db,
+            config,
+        )
+        assert result.get("lesson_id") is not None, (
+            f"upsert_lesson returned lesson_id=None; result={result}"
+        )
+        assert result.get("status") == "upserted"
+
+        # --- Read back ---
+        recall = await recall_relevant_lessons(
+            {"query": "space archetype action effect", "domain": "space", "limit": 5},
+            db,
+            config,
+        )
+        lessons = recall.get("lessons", [])
+        assert len(lessons) >= 1, (
+            f"recall_relevant_lessons returned 0 lessons after upsert; recall={recall}"
+        )
+
+        # --- Second write (update path) ---
+        existing_id = result["lesson_id"]
+        result2 = await upsert_lesson(
+            {
+                "text": "space archetype: ACTION6 moves player one cell left (revised)",
+                "domain": "space",
+                "lesson_type": "action_effect",
+                "lesson_id": existing_id,
+                "session_id": "test-b214",
+            },
+            db,
+            config,
+        )
+        assert result2.get("lesson_id") == existing_id
+        assert result2.get("status") == "upserted"
+
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
