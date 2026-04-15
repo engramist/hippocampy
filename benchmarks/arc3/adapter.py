@@ -6,8 +6,10 @@ import copy
 import logging
 import time
 from collections import Counter, deque
+from contextlib import nullcontext
 from typing import Any, Callable, List, Mapping, Optional, Protocol, Sequence
 
+from mcp_engine.observability import Observability, canonical_span_name
 from .schema import (
     ARC3Action,
     ARC3ColorSummary,
@@ -332,16 +334,36 @@ class LocalBrainClient(BrainClientProtocol):
 
 class LedgerBrainClient(BrainClientProtocol):
     """Wrapper that records all calls into a shared ledger."""
-    def __init__(self, inner: BrainClientProtocol, ledger: List[Mapping[str, Any]], step_provider: Callable[[], int | str], start_time: Optional[float] = None, cost_tracker: Optional[Any] = None):
+    def __init__(
+        self,
+        inner: BrainClientProtocol,
+        ledger: List[Mapping[str, Any]],
+        step_provider: Callable[[], int | str],
+        start_time: Optional[float] = None,
+        cost_tracker: Optional[Any] = None,
+        observability: Optional[Observability] = None,
+    ):
         self.inner = inner
         self.ledger = ledger
         self.step_provider = step_provider
         self.cost_tracker = cost_tracker
+        self.observability = observability
         self.current_phase: str = "unknown"
         self.start_time = start_time or time.time()
         self._arc_call_seq = 0
         self._event_seq = 0
         self.arc_event_timeline: List[dict] = []
+
+    def _span_attributes(self, *, phase: str, mode: str, latency_ms: float, extra: Optional[Mapping[str, Any]] = None) -> dict[str, Any]:
+        attrs = {
+            "phase": phase if phase != "unknown" else self.current_phase,
+            "mode": mode,
+            "latency_ms": round(latency_ms, 3),
+            "step": self.step_provider(),
+        }
+        if extra:
+            attrs.update(extra)
+        return attrs
 
     @property
     def db(self) -> Optional[Any]:
