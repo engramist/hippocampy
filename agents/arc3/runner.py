@@ -18,6 +18,7 @@ from typing import Any, Callable, List, Mapping, Optional
 from benchmarks.ab_harness import ABHarness, ABTask, ABTaskResult, ABVariant, BenchmarkConfig
 from benchmarks.arc3.adapter import ARC3Adapter, BrainClientProtocol, LedgerBrainClient
 from benchmarks.arc3.harness import ARC3Harness
+from mcp_engine.observability import build_observability, canonical_span_name
 from benchmarks.arc3.outcome_judge import OutcomeJudge
 from benchmarks.arc3.regression_monitor import RegressionMonitor, RunRecord
 from benchmarks.arc3.trajectory_eval import TrajectoryEvaluator
@@ -50,12 +51,15 @@ class DurableARCRunner:
         self._progress_callback = progress_callback
         self._last_replan_step: int = -999
         self._replan_backoff_steps: int = 3
+        self._last_replan_signature: dict[str, Any] | None = None
+        self.observability = build_observability(config if isinstance(config, dict) else {})
         
         self.brain = LedgerBrainClient(
             inner=brain_client,
             ledger=self._ledger,
             step_provider=lambda: self._current_step,
-            cost_tracker=None
+            cost_tracker=None,
+            observability=self.observability,
         )
 
         # B181: Outcome Judge initialization
@@ -69,301 +73,327 @@ class DurableARCRunner:
         self.trajectory_evaluator = TrajectoryEvaluator()
 
     async def run(self, tasks: List[ABTask], card_id: str) -> List[dict]:
-        mgr = CheckpointManager(card_id)
-        checkpoint = mgr.load_or_create(tasks)
-        results: List[dict] = []
-
-        # B189: Puzzle Scheduler
-        graph_id = None
+        run_span = self.observability.span(
+            canonical_span_name("run"), 
+            {"card_id": card_id, "task_count": len(tasks)}
+        )
+        run_span.__enter__()
+        
         try:
-            # B190: Register task graph
+            mgr = CheckpointManager(card_id)
+            checkpoint = mgr.load_or_create(tasks)
+            results: List[dict] = []
+
+            # B189: Puzzle Scheduler
+            graph_id = None
             try:
-                tasks_meta = [
-                    {"task_id": t.task_id, "label": f"ARC puzzle {t.task_id}"}
-                    for t in tasks
-                ]
-                reg = await self._raw_brain.register_task_graph(
-                    label=f"ARC batch {card_id}",
-                    session_id=card_id,
-                    owner=(self.config.get("owner") if isinstance(self.config, dict) else "arc-runner"),
-                    tasks=tasks_meta,
-                )
-                graph_id = reg.get("graph_id") if isinstance(reg, Mapping) else None
+                # B190: Register task graph
+                try:
+                    tasks_meta = [
+                        {"task_id": t.task_id, "label": f"ARC puzzle {t.task_id}"}
+                        for t in tasks
+                    ]
+                    reg = await self._raw_brain.register_task_graph(
+                        label=f"ARC batch {card_id}",
+                        session_id=card_id,
+                        owner=(self.config.get("owner") if isinstance(self.config, dict) else "arc-runner"),
+                        tasks=tasks_meta,
+                    )
+                    graph_id = reg.get("graph_id") if isinstance(reg, Mapping) else None
+                except Exception:
+                    logger.exception("B190: Failed to register task graph for batch %s", card_id)
+
+                concurrency = int(self.config.get("concurrency", 1))
+                skip_solved = True
+                if isinstance(self.config, dict):
+                    skip_solved = bool(self.config.get("skip_solved", True))
+                
+                scheduler = PuzzleScheduler(concurrency=concurrency, skip_solved=skip_solved, brain_client=self._raw_brain)
+                ordered_tasks = await scheduler.prepare(tasks)
             except Exception:
-                logger.exception("B190: Failed to register task graph for batch %s", card_id)
+                logger.exception("B189: Failed to prepare puzzle scheduling, falling back to original order")
+                ordered_tasks = list(tasks)
 
-            concurrency = int(self.config.get("concurrency", 1))
-            skip_solved = True
-            if isinstance(self.config, dict):
-                skip_solved = bool(self.config.get("skip_solved", True))
-            
-            scheduler = PuzzleScheduler(concurrency=concurrency, skip_solved=skip_solved, brain_client=self._raw_brain)
-            ordered_tasks = await scheduler.prepare(tasks)
-        except Exception:
-            logger.exception("B189: Failed to prepare puzzle scheduling, falling back to original order")
-            ordered_tasks = list(tasks)
-
-        async def _run_single_task(task: ABTask) -> Optional[dict]:
-            tc = checkpoint.tasks.get(task.task_id)
-            if tc and tc.status == "complete":
-                if not self._has_terminal_payload(tc.result):
-                    logger.info("Checkpoint for %s is stale. Re-running.", task.task_id)
-                    tc.status = "pending"
-                    tc.result = None
-                    mgr.save(checkpoint)
-                else:
-                    return self._submission_row_from_result(tc.result or {})
-
-            session_id = f"arc-{task.task_id}-{uuid.uuid4().hex[:8]}"
-            self.brain.current_phase = "bootstrap"
-            self._current_step = 0
-            puzzle_start_time = time.time()
-
-            # B180: Token cost tracking and budget enforcement
-            from agents.arc3.cost_tracker import CostTracker
-            cost_cfg = {}
-            llm_cfg = {}
-            if type(self.config) is dict:
-                cost_cfg = self.config.get("cost", {})
-                llm_cfg = self.config.get("llm", {})
-            
-            model_name = llm_cfg.get("model", "unknown") if isinstance(llm_cfg, dict) else "unknown"
-            pricing = {}
-            if isinstance(cost_cfg, dict):
-                pricing = cost_cfg.get("pricing_per_million_tokens", {}).get(model_name, {"input": 0.0, "output": 0.0})
-            
-            budget = float('inf')
-            if isinstance(cost_cfg, dict):
-                val = cost_cfg.get("budget_per_puzzle_usd")
-                if val is not None:
-                    try:
-                        budget = float(val)
-                    except (TypeError, ValueError):
-                        budget = float('inf')
-
-            cost_tracker = CostTracker(
-                model_name=str(model_name),
-                input_price_per_m=float(pricing.get("input", 0.0) if isinstance(pricing, dict) else 0.0),
-                output_price_per_m=float(pricing.get("output", 0.0) if isinstance(pricing, dict) else 0.0),
-                budget_usd=budget
-            )
-
-            self.brain = LedgerBrainClient(
-                inner=self._raw_brain,
-                ledger=self._ledger,
-                step_provider=lambda: self._current_step,
-                start_time=puzzle_start_time,
-                cost_tracker=cost_tracker
-            )
-
-            # B190: Store per-puzzle sidequest
-            branch_result = await self.brain.branch_quest(
-                name=f"ARC puzzle {task.task_id}",
-                purpose=f"Solve ARC-AGI-3 task {task.task_id}",
-                parent_quest_id=card_id,
-            )
-            # Some tests patch `LedgerBrainClient.branch_quest`, which bypasses
-            # its internal ledger recording. Backfill the bootstrap event here.
-            if not any((entry.get("call_type") == "branch_quest") for entry in self._ledger if isinstance(entry, dict)):
-                self._ledger.append({
-                    "step": self._current_step,
-                    "timestamp_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                    "elapsed_mmss": "00:00",
-                    "phase": "bootstrap",
-                    "call_type": "branch_quest",
-                    "mode": "write",
-                    "input_summary": f"ARC puzzle {task.task_id}",
-                    "result_summary": f"side_quest_id={(branch_result or {}).get('side_quest_id') if isinstance(branch_result, Mapping) else None}",
-                    "latency_ms": 0.0,
-                })
-
-            # Create the per-puzzle orchestrator for the default single-run flow,
-            # but if strategy racing is enabled we will launch several variants
-            # via StrategyRacer instead of running a single orchestrator here.
-            if isinstance(self.config, dict) and self.config.get("strategy_racing", False):
-                async def _variant_runner(variant_brain, session_id_v, task_arg, vcfg):
-                    # Build per-variant cost tracker and orchestrator, then run it
-                    from agents.arc3.cost_tracker import CostTracker
-
-                    llm_cfg_v = vcfg.get("llm", {}) if isinstance(vcfg, dict) else {}
-                    model_name_v = llm_cfg_v.get("model", "unknown") if isinstance(llm_cfg_v, dict) else "unknown"
-                    pricing_v = {}
-                    if isinstance(vcfg.get("cost", {}), dict):
-                        pricing_v = vcfg.get("cost", {}).get("pricing_per_million_tokens", {}).get(model_name_v, {"input": 0.0, "output": 0.0})
-
-                    budget_v = float('inf')
-                    try:
-                        val = (vcfg.get("cost") or {}).get("budget_per_puzzle_usd")
-                        if val is not None:
-                            budget_v = float(val)
-                    except Exception:
-                        budget_v = float('inf')
-
-                    cost_tracker_v = CostTracker(
-                        model_name=str(model_name_v),
-                        input_price_per_m=float(pricing_v.get("input", 0.0) if isinstance(pricing_v, dict) else 0.0),
-                        output_price_per_m=float(pricing_v.get("output", 0.0) if isinstance(pricing_v, dict) else 0.0),
-                        budget_usd=budget_v,
-                    )
-
-                    # B197: Attempt to load proven procedures for this variant before orchestrator creation
-                    procedures = []
-                    try:
-                        archetype_hint = (getattr(task_arg, 'game_id', None) or 'unknown')
-                        proc_resp = await variant_brain.recall_procedures(archetype=archetype_hint, limit=3)
-                        if isinstance(proc_resp, Mapping):
-                            procedures = proc_resp.get('procedures') or []
-                    except Exception:
-                        logger.debug("recall_procedures lookup failed for variant")
-
-                    # B199: Check knowledge gaps to influence exploration budget
-                    multiplier = 1.0
-                    try:
-                        gaps_resp = await variant_brain.get_knowledge_gaps(domain=archetype_hint)
-                        if isinstance(gaps_resp, Mapping):
-                            gaps = gaps_resp.get('gaps') or []
-                            # If there are missing-lessons gaps for this archetype, increase exploration
-                            has_gap = any((g.get('gap_type') == 'missing_lessons') for g in gaps)
-                            if has_gap:
-                                multiplier = 2.0
-                    except Exception:
-                        logger.debug("get_knowledge_gaps lookup failed for variant")
-
-                    vcfg2 = dict(vcfg) if isinstance(vcfg, dict) else {}
-                    vcfg2["loaded_procedures"] = procedures
-                    vcfg2["exploration_budget_multiplier"] = multiplier
-
-                    orchestrator_v = ARCOrchestrator(
-                        brain_client=variant_brain,
-                        llm_client=self.harness.llm_client,
-                        session_id=session_id_v,
-                        serializer=self.harness.serializer,
-                        config=vcfg2,
-                        cost_tracker=cost_tracker_v,
-                    )
-                    return await self._run_puzzle_with_brain(orchestrator_v, task_arg, variant_brain, vcfg, checkpoint, mgr)
-
-                winner = await strategy_race(self, task, variants=self.config.get("strategy_racing_variants", ["A", "B", "C"]), variant_runner=_variant_runner)
-                task_result = winner.get("task_result")
-                duration = winner.get("duration")
-                orchestrator = winner.get("orchestrator")
-                # Merge winning ledger into the driver's ledger so subsequent code can use it
-                try:
-                    winner_ledger = winner.get("ledger") or []
-                    self._ledger.extend(list(winner_ledger))
-                except Exception:
-                    logger.exception("Failed merging winner ledger")
-
-                result_payload = asdict(task_result)
-                result_payload["solve_phase_summary"] = self._build_phase_summary(orchestrator)
-                result_payload["game_id"] = getattr(task, "game_id", "unknown")
-                result_payload["runtime_seconds"] = round(duration, 2)
-                result_payload["benchmark_metrics"] = getattr(task_result, "benchmark_metrics", {})
-                result_payload["entity_gate_status"] = getattr(orchestrator, "_entity_gate_result", {}) or {"status": "pass"}
-                result_payload["bootstrap_write_trace"] = getattr(task_result, "bootstrap_write_trace", [])
-                result_payload["final_write_trace"] = getattr(task_result, "final_write_trace", [])
-                result_payload["debug_steps"] = list(getattr(orchestrator, "_step_history", []))
-                result_payload["sidequests_ledger"] = list(self._ledger)
-                result_payload["arc_event_timeline"] = list(getattr(self.brain, "arc_event_timeline", []))
-                result_payload["agent_execution_trace"] = getattr(orchestrator, "_execution_trace", [])
-
-                self._ledger.clear()
-
-                traj = self._build_trajectory_summary(orchestrator)
-                try:
-                    await self._report_puzzle_outcome(orchestrator=orchestrator, task=task, task_result=task_result, session_id=session_id)
-                    if graph_id:
-                        await self.brain.advance_task(graph_id=graph_id, task_id=task.task_id, status="complete", result=task_result.final_state)
-                except Exception:
-                    logger.exception("B190: best-effort lesson/advance failed")
-
-                mgr.mark_complete(checkpoint, task.task_id, getattr(orchestrator, "_plan_id", None), result_payload)
-                return self._submission_row_from_result(result_payload)
-            else:
-                # B197: Pre-solve procedure lookup
-                procedures = []
-                try:
-                    archetype_hint = getattr(task, 'game_id', None) or 'unknown'
-                    proc_resp = await self.brain.recall_procedures(archetype=archetype_hint, limit=3)
-                    if isinstance(proc_resp, Mapping):
-                        procedures = proc_resp.get('procedures') or []
-                except Exception:
-                    logger.debug("recall_procedures lookup failed")
-
-                # B199: Knowledge gap check to influence exploration budget
-                multiplier = 1.0
-                try:
-                    gaps_resp = await self.brain.get_knowledge_gaps(domain=archetype_hint)
-                    if isinstance(gaps_resp, Mapping):
-                        gaps = gaps_resp.get('gaps') or []
-                        has_gap = any((g.get('gap_type') == 'missing_lessons') for g in gaps)
-                        if has_gap:
-                            multiplier = 2.0
-                except Exception:
-                    logger.debug("get_knowledge_gaps lookup failed")
-
-                cfg2 = dict(self.config) if isinstance(self.config, dict) else {}
-                cfg2["loaded_procedures"] = procedures
-                cfg2["exploration_budget_multiplier"] = multiplier
-
-                orchestrator = ARCOrchestrator(
-                    brain_client=self.brain,
-                    llm_client=self.harness.llm_client,
-                    session_id=session_id,
-                    serializer=self.harness.serializer,
-                    config=cfg2,
-                    cost_tracker=cost_tracker,
+            async def _run_single_task(task: ABTask) -> Optional[dict]:
+                task_span = self.observability.span(
+                    canonical_span_name("task"),
+                    {"task_id": task.task_id, "game_id": getattr(task, "game_id", "unknown")}
                 )
+                
+                with task_span:
+                    tc = checkpoint.tasks.get(task.task_id)
+                    if tc and tc.status == "complete":
+                        if not self._has_terminal_payload(tc.result):
+                            logger.info("Checkpoint for %s is stale. Re-running.", task.task_id)
+                            tc.status = "pending"
+                            tc.result = None
+                            mgr.save(checkpoint)
+                        else:
+                            return self._submission_row_from_result(tc.result or {})
 
-                try:
-                    task_result, duration = await self._run_puzzle(orchestrator, task, checkpoint, mgr)
-                    result_payload = asdict(task_result)
-                    result_payload["solve_phase_summary"] = self._build_phase_summary(orchestrator)
-                    result_payload["game_id"] = getattr(task, "game_id", "unknown")
-                    result_payload["runtime_seconds"] = round(duration, 2)
-                    result_payload["benchmark_metrics"] = getattr(task_result, "benchmark_metrics", {})
-                    result_payload["entity_gate_status"] = getattr(orchestrator, "_entity_gate_result", {}) or {"status": "pass"}
-                    result_payload["bootstrap_write_trace"] = getattr(task_result, "bootstrap_write_trace", [])
-                    result_payload["final_write_trace"] = getattr(task_result, "final_write_trace", [])
-                    result_payload["debug_steps"] = list(getattr(orchestrator, "_step_history", []))
-                    result_payload["sidequests_ledger"] = list(self._ledger)
-                    result_payload["arc_event_timeline"] = list(getattr(self.brain, "arc_event_timeline", []))
-                    result_payload["agent_execution_trace"] = getattr(orchestrator, "_execution_trace", [])
+                    session_id = f"arc-{task.task_id}-{uuid.uuid4().hex[:8]}"
+                    self.brain.current_phase = "bootstrap"
+                    self._current_step = 0
+                    puzzle_start_time = time.time()
+
+                    # B180: Token cost tracking and budget enforcement
+                    from agents.arc3.cost_tracker import CostTracker
+                    cost_cfg = {}
+                    llm_cfg = {}
+                    if type(self.config) is dict:
+                        cost_cfg = self.config.get("cost", {})
+                        llm_cfg = self.config.get("llm", {})
                     
-                    self._ledger.clear()
+                    model_name = llm_cfg.get("model", "unknown") if isinstance(llm_cfg, dict) else "unknown"
+                    pricing = {}
+                    if isinstance(cost_cfg, dict):
+                        pricing = cost_cfg.get("pricing_per_million_tokens", {}).get(model_name, {"input": 0.0, "output": 0.0})
+                    
+                    budget = float('inf')
+                    if isinstance(cost_cfg, dict):
+                        val = cost_cfg.get("budget_per_puzzle_usd")
+                        if val is not None:
+                            try:
+                                budget = float(val)
+                            except (TypeError, ValueError):
+                                budget = float('inf')
 
-                    traj = self._build_trajectory_summary(orchestrator)
-                    try:
-                        await self._report_puzzle_outcome(orchestrator=orchestrator, task=task, task_result=task_result, session_id=session_id)
-                        if graph_id:
-                            await self.brain.advance_task(graph_id=graph_id, task_id=task.task_id, status="complete", result=task_result.final_state)
-                    except Exception:
-                        logger.exception("B190: best-effort lesson/advance failed")
-
-                    mgr.mark_complete(checkpoint, task.task_id, orchestrator._plan_id, result_payload)
-                    return self._submission_row_from_result(result_payload)
-                except Exception as exc:
-                    failure_class = classify_failure(
-                        exc=exc,
-                        final_state=(
-                            (getattr(orchestrator, "_step_history", [])[-1] or {}).get("state_after")
-                            if getattr(orchestrator, "_step_history", None)
-                            else None
-                        ),
-                        error_message=str(exc),
-                        no_progress_steps=int(getattr(orchestrator, "_consecutive_no_progress_steps", 0) or 0),
-                        budget_exhausted=bool(
-                            getattr(getattr(orchestrator, "cost_tracker", None), "budget_exhausted", False) is True
-                        ),
-                        loop_detected=bool((getattr(orchestrator, "_hypothesis_context", {}) or {}).get("loop_detected")),
+                    cost_tracker = CostTracker(
+                        model_name=str(model_name),
+                        input_price_per_m=float(pricing.get("input", 0.0) if isinstance(pricing, dict) else 0.0),
+                        output_price_per_m=float(pricing.get("output", 0.0) if isinstance(pricing, dict) else 0.0),
+                        budget_usd=budget
                     )
-                    mgr.mark_failed(checkpoint, task.task_id, str(exc), failure_class.value)
-                    logger.error("Task %s failed [%s]: %s", task.task_id, failure_class.value, exc)
-                    return None
 
-        batch_results = await scheduler.run_batch(ordered_tasks, _run_single_task)
-        results = [r for r in batch_results if r is not None]
-        return self._attach_batch_eval_summary(results)
+                    self.brain = LedgerBrainClient(
+                        inner=self._raw_brain,
+                        ledger=self._ledger,
+                        step_provider=lambda: self._current_step,
+                        start_time=puzzle_start_time,
+                        cost_tracker=cost_tracker,
+                        observability=self.observability,
+                    )
+
+                    # B190: Store per-puzzle sidequest
+                    branch_result = await self.brain.branch_quest(
+                        name=f"ARC puzzle {task.task_id}",
+                        purpose=f"Solve ARC-AGI-3 task {task.task_id}",
+                        parent_quest_id=card_id,
+                    )
+                    # Some tests patch `LedgerBrainClient.branch_quest`, which bypasses
+                    # its internal ledger recording. Backfill the bootstrap event here.
+                    if not any((entry.get("call_type") == "branch_quest") for entry in self._ledger if isinstance(entry, dict)):
+                        self._ledger.append({
+                            "step": self._current_step,
+                            "timestamp_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                            "elapsed_mmss": "00:00",
+                            "phase": "bootstrap",
+                            "call_type": "branch_quest",
+                            "mode": "write",
+                            "input_summary": f"ARC puzzle {task.task_id}",
+                            "result_summary": f"side_quest_id={(branch_result or {}).get('side_quest_id') if isinstance(branch_result, Mapping) else None}",
+                            "latency_ms": 0.0,
+                        })
+
+                    # Create the per-puzzle orchestrator for the default single-run flow,
+                    # but if strategy racing is enabled we will launch several variants
+                    # via StrategyRacer instead of running a single orchestrator here.
+                    if isinstance(self.config, dict) and self.config.get("strategy_racing", False):
+                        async def _variant_runner(variant_brain, session_id_v, task_arg, vcfg):
+                            # Build per-variant cost tracker and orchestrator, then run it
+                            from agents.arc3.cost_tracker import CostTracker
+
+                            llm_cfg_v = vcfg.get("llm", {}) if isinstance(vcfg, dict) else {}
+                            model_name_v = llm_cfg_v.get("model", "unknown") if isinstance(llm_cfg_v, dict) else "unknown"
+                            pricing_v = {}
+                            if isinstance(vcfg.get("cost", {}), dict):
+                                pricing_v = vcfg.get("cost", {}).get("pricing_per_million_tokens", {}).get(model_name_v, {"input": 0.0, "output": 0.0})
+
+                            budget_v = float('inf')
+                            try:
+                                val = (vcfg.get("cost") or {}).get("budget_per_puzzle_usd")
+                                if val is not None:
+                                    budget_v = float(val)
+                            except Exception:
+                                budget_v = float('inf')
+
+                            cost_tracker_v = CostTracker(
+                                model_name=str(model_name_v),
+                                input_price_per_m=float(pricing_v.get("input", 0.0) if isinstance(pricing_v, dict) else 0.0),
+                                output_price_per_m=float(pricing_v.get("output", 0.0) if isinstance(pricing_v, dict) else 0.0),
+                                budget_usd=budget_v,
+                            )
+
+                            # B197: Attempt to load proven procedures for this variant before orchestrator creation
+                            procedures = []
+                            try:
+                                archetype_hint = (getattr(task_arg, 'game_id', None) or 'unknown')
+                                proc_resp = await variant_brain.recall_procedures(archetype=archetype_hint, limit=3)
+                                if isinstance(proc_resp, Mapping):
+                                    procedures = proc_resp.get('procedures') or []
+                            except Exception:
+                                logger.debug("recall_procedures lookup failed for variant")
+
+                            # B199: Check knowledge gaps to influence exploration budget
+                            multiplier = 1.0
+                            try:
+                                gaps_resp = await variant_brain.get_knowledge_gaps(domain=archetype_hint)
+                                if isinstance(gaps_resp, Mapping):
+                                    gaps = gaps_resp.get('gaps') or []
+                                    # If there are missing-lessons gaps for this archetype, increase exploration
+                                    has_gap = any((g.get('gap_type') == 'missing_lessons') for g in gaps)
+                                    if has_gap:
+                                        multiplier = 2.0
+                            except Exception:
+                                logger.debug("get_knowledge_gaps lookup failed for variant")
+
+                            vcfg2 = dict(vcfg) if isinstance(vcfg, dict) else {}
+                            vcfg2["loaded_procedures"] = procedures
+                            vcfg2["exploration_budget_multiplier"] = multiplier
+
+                            orchestrator_v = ARCOrchestrator(
+                                brain_client=variant_brain,
+                                llm_client=self.harness.llm_client,
+                                session_id=session_id_v,
+                                serializer=self.harness.serializer,
+                                config=vcfg2,
+                                cost_tracker=cost_tracker_v,
+                            )
+                            return await self._run_puzzle_with_brain(orchestrator_v, task_arg, variant_brain, vcfg, checkpoint, mgr)
+
+                        winner = await strategy_race(self, task, variants=self.config.get("strategy_racing_variants", ["A", "B", "C"]), variant_runner=_variant_runner)
+                        task_result = winner.get("task_result")
+                        duration = winner.get("duration")
+                        orchestrator = winner.get("orchestrator")
+                        # Merge winning ledger into the driver's ledger so subsequent code can use it
+                        try:
+                            winner_ledger = winner.get("ledger") or []
+                            self._ledger.extend(list(winner_ledger))
+                        except Exception:
+                            logger.exception("Failed merging winner ledger")
+
+                        result_payload = asdict(task_result)
+                        result_payload["solve_phase_summary"] = self._build_phase_summary(orchestrator)
+                        result_payload["game_id"] = getattr(task, "game_id", "unknown")
+                        result_payload["runtime_seconds"] = round(duration, 2)
+                        result_payload["benchmark_metrics"] = getattr(task_result, "benchmark_metrics", {})
+                        result_payload["entity_gate_status"] = getattr(orchestrator, "_entity_gate_result", {}) or {"status": "pass"}
+                        result_payload["bootstrap_write_trace"] = getattr(task_result, "bootstrap_write_trace", [])
+                        result_payload["final_write_trace"] = getattr(task_result, "final_write_trace", [])
+                        result_payload["debug_steps"] = list(getattr(orchestrator, "_step_history", []))
+                        result_payload["sidequests_ledger"] = list(self._ledger)
+                        result_payload["arc_event_timeline"] = list(getattr(self.brain, "arc_event_timeline", []))
+                        result_payload["agent_execution_trace"] = getattr(orchestrator, "_execution_trace", [])
+
+                        self._ledger.clear()
+
+                        traj = self._build_trajectory_summary(orchestrator)
+                        try:
+                            await self._report_puzzle_outcome(orchestrator=orchestrator, task=task, task_result=task_result, session_id=session_id)
+                            if graph_id:
+                                await self.brain.advance_task(graph_id=graph_id, task_id=task.task_id, status="complete", result=task_result.final_state)
+                        except Exception:
+                            logger.exception("B190: best-effort lesson/advance failed")
+
+                        mgr.mark_complete(checkpoint, task.task_id, getattr(orchestrator, "_plan_id", None), result_payload)
+                        
+                        if hasattr(task_span, "set_attribute"):
+                            task_span.set_attribute("correct", task_result.correct)
+                            task_span.set_attribute("steps", task_result.steps)
+                        
+                        return self._submission_row_from_result(result_payload)
+                    else:
+                        # B197: Pre-solve procedure lookup
+                        procedures = []
+                        try:
+                            archetype_hint = getattr(task, 'game_id', None) or 'unknown'
+                            proc_resp = await self.brain.recall_procedures(archetype=archetype_hint, limit=3)
+                            if isinstance(proc_resp, Mapping):
+                                procedures = proc_resp.get('procedures') or []
+                        except Exception:
+                            logger.debug("recall_procedures lookup failed")
+
+                        # B199: Knowledge gap check to influence exploration budget
+                        multiplier = 1.0
+                        try:
+                            gaps_resp = await self.brain.get_knowledge_gaps(domain=archetype_hint)
+                            if isinstance(gaps_resp, Mapping):
+                                gaps = gaps_resp.get('gaps') or []
+                                has_gap = any((g.get('gap_type') == 'missing_lessons') for g in gaps)
+                                if has_gap:
+                                    multiplier = 2.0
+                        except Exception:
+                            logger.debug("get_knowledge_gaps lookup failed")
+
+                        cfg2 = dict(self.config) if isinstance(self.config, dict) else {}
+                        cfg2["loaded_procedures"] = procedures
+                        cfg2["exploration_budget_multiplier"] = multiplier
+
+                        orchestrator = ARCOrchestrator(
+                            brain_client=self.brain,
+                            llm_client=self.harness.llm_client,
+                            session_id=session_id,
+                            serializer=self.harness.serializer,
+                            config=cfg2,
+                            cost_tracker=cost_tracker,
+                        )
+
+                        try:
+                            task_result, duration = await self._run_puzzle(orchestrator, task, checkpoint, mgr)
+                            result_payload = asdict(task_result)
+                            result_payload["solve_phase_summary"] = self._build_phase_summary(orchestrator)
+                            result_payload["game_id"] = getattr(task, "game_id", "unknown")
+                            result_payload["runtime_seconds"] = round(duration, 2)
+                            result_payload["benchmark_metrics"] = getattr(task_result, "benchmark_metrics", {})
+                            result_payload["entity_gate_status"] = getattr(orchestrator, "_entity_gate_result", {}) or {"status": "pass"}
+                            result_payload["bootstrap_write_trace"] = getattr(task_result, "bootstrap_write_trace", [])
+                            result_payload["final_write_trace"] = getattr(task_result, "final_write_trace", [])
+                            result_payload["debug_steps"] = list(getattr(orchestrator, "_step_history", []))
+                            result_payload["sidequests_ledger"] = list(self._ledger)
+                            result_payload["arc_event_timeline"] = list(getattr(self.brain, "arc_event_timeline", []))
+                            result_payload["agent_execution_trace"] = getattr(orchestrator, "_execution_trace", [])
+                            
+                            self._ledger.clear()
+
+                            traj = self._build_trajectory_summary(orchestrator)
+                            try:
+                                await self._report_puzzle_outcome(orchestrator=orchestrator, task=task, task_result=task_result, session_id=session_id)
+                                if graph_id:
+                                    await self.brain.advance_task(graph_id=graph_id, task_id=task.task_id, status="complete", result=task_result.final_state)
+                            except Exception:
+                                logger.exception("B190: best-effort lesson/advance failed")
+
+                            mgr.mark_complete(checkpoint, task.task_id, orchestrator._plan_id, result_payload)
+                            
+                            if hasattr(task_span, "set_attribute"):
+                                task_span.set_attribute("correct", task_result.correct)
+                                task_span.set_attribute("steps", task_result.steps)
+                                
+                            return self._submission_row_from_result(result_payload)
+                        except Exception as exc:
+                            failure_class = classify_failure(
+                                exc=exc,
+                                final_state=(
+                                    (getattr(orchestrator, "_step_history", [])[-1] or {}).get("state_after")
+                                    if getattr(orchestrator, "_step_history", None)
+                                    else None
+                                ),
+                                error_message=str(exc),
+                                no_progress_steps=int(getattr(orchestrator, "_consecutive_no_progress_steps", 0) or 0),
+                                budget_exhausted=bool(
+                                    getattr(getattr(orchestrator, "cost_tracker", None), "budget_exhausted", False) is True
+                                ),
+                                loop_detected=bool((getattr(orchestrator, "_hypothesis_context", {}) or {}).get("loop_detected")),
+                            )
+                            mgr.mark_failed(checkpoint, task.task_id, str(exc), failure_class.value)
+                            logger.error("Task %s failed [%s]: %s", task.task_id, failure_class.value, exc)
+                            return None
+
+            batch_results = await scheduler.run_batch(ordered_tasks, _run_single_task)
+            results = [r for r in batch_results if r is not None]
+            return self._attach_batch_eval_summary(results)
+        finally:
+            run_span.__exit__(None, None, None)
 
     def _has_terminal_payload(self, result: dict | None) -> bool:
         if not isinstance(result, dict):
@@ -1920,16 +1950,36 @@ class DurableARCRunner:
         """Choose a target phase to advance to after REPLAN.
 
         Heuristics:
+        - If signature matches last replan -> escalate to MODEL
         - If initial exploration is incomplete -> MODEL
         - If archetype confidence is low -> HYPOTHESIZE
         - Otherwise -> ROUTE
         """
         try:
+            solve_ctx = getattr(orchestrator, "_solve_context", {}) or {}
             hyp_ctx = getattr(orchestrator, "_hypothesis_context", {}) or {}
+            
+            # B218: signature escalation
+            signature = {
+                "active_chunk_source": (solve_ctx.get("active_chunk") or {}).get("source"),
+                "plateau_locked_family": solve_ctx.get("plateau_locked_family"),
+                "archetype": solve_ctx.get("archetype"),
+                "victory_condition_type": (solve_ctx.get("victory_condition") or {}).get("type") if isinstance(solve_ctx.get("victory_condition"), dict) else solve_ctx.get("victory_condition"),
+            }
+            
+            if self._last_replan_signature == signature:
+                # Repeated signature -> escalation
+                if hasattr(orchestrator, "_emit_trace_event"):
+                    orchestrator._emit_trace_event("replan_escalation", "escalate", {"signature": signature})
+                return SolvePhase.MODEL
+            
+            self._last_replan_signature = signature
+
             coverage = hyp_ctx.get("action_coverage") or {}
             exploration_complete = bool(coverage.get("initial_exploration_complete"))
             if not exploration_complete:
                 return SolvePhase.MODEL
+            
             arch_conf = float(getattr(getattr(orchestrator, "solve_engine", None), "_archetype_confidence", 0.0) or 0.0)
             if arch_conf < 0.3:
                 return SolvePhase.HYPOTHESIZE
