@@ -1942,37 +1942,58 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
     vector = emb.embed(text, model_name=embedding_model)
     now = datetime.now(timezone.utc).isoformat()
 
-    await db.execute_write(
-        """
-        MERGE (l:Lesson {lesson_id: $lid})
-        ON CREATE SET l.text_raw = $text,
-                      l.embedding = $emb,
-                      l.embedding_model = $model,
-                      l.embedding_dim = $dim,
-                      l.domain = $domain,
-                      l.lesson_type = $type,
-                      l.confidence = 0.90,
-                      l.confidence_low = false,
-                      l.pathway_strength = 1.0,
-                      l.archived = false,
-                      l.created_at = timestamp($now)
-        ON MATCH SET  l.text_raw = $text,
-                      l.embedding = $emb,
-                      l.domain = $domain,
-                      l.lesson_type = $type,
-                      l.pathway_strength = l.pathway_strength + 0.1
-        """,
-        {
-            "lid": lesson_id,
-            "text": text,
-            "emb": vector,
-            "model": embedding_model,
-            "dim": len(vector),
-            "domain": domain,
-            "type": lesson_type,
-            "now": now,
-        }
+    # KuzuDB 0.11.3: MERGE is incompatible with vector-indexed tables.
+    # Use SELECT→CREATE-or-UPDATE instead.
+    existing = await db.execute_read(
+        "MATCH (l:Lesson {lesson_id: $lid}) RETURN l.lesson_id",
+        {"lid": lesson_id},
     )
+    if not existing:
+        await db.execute_write(
+            """
+            CREATE (l:Lesson {
+                lesson_id:        $lid,
+                text_raw:         $text,
+                embedding:        $emb,
+                embedding_model:  $model,
+                embedding_dim:    $dim,
+                domain:           $domain,
+                lesson_type:      $type,
+                confidence:       0.90,
+                confidence_low:   false,
+                pathway_strength: 1.0,
+                archived:         false,
+                created_at:       timestamp($now)
+            })
+            """,
+            {
+                "lid":    lesson_id,
+                "text":   text,
+                "emb":    vector,
+                "model":  embedding_model,
+                "dim":    len(vector),
+                "domain": domain,
+                "type":   lesson_type,
+                "now":    now,
+            }
+        )
+    else:
+        # Update non-embedding fields only (embedding cannot be SET on indexed property)
+        await db.execute_write(
+            """
+            MATCH (l:Lesson {lesson_id: $lid})
+            SET l.text_raw         = $text,
+                l.domain           = $domain,
+                l.lesson_type      = $type,
+                l.pathway_strength = l.pathway_strength + 0.1
+            """,
+            {
+                "lid":    lesson_id,
+                "text":   text,
+                "domain": domain,
+                "type":   lesson_type,
+            }
+        )
 
     if session_id != "unknown":
         await db.execute_write(

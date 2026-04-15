@@ -58,6 +58,7 @@ async def test_upsert_lesson_tool(monkeypatch):
     """upsert_lesson tool creates a lesson node."""
     db = MagicMock()
     db.execute_write = AsyncMock()
+    db.execute_read = AsyncMock(return_value=[])
     
     config = {"embeddings": {"model": "mock-model"}}
     params = {
