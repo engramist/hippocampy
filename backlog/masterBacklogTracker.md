@@ -159,47 +159,58 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B164 | Improve LLM Prompt Quality for Small Models (qwen2.5:7b) | P1 | ready | TBD | TBD | backlog/plans/B-164-small-model-prompt-quality.md | backlog/B164.md |
 | B165 | Persist Lessons Across Runs — Post-Failure Knowledge Retention | P2 | ready | TBD | TBD | backlog/plans/B-165-cross-run-lessons.md | backlog/B165.md |
 | B166 | Deterministic Autopilot — Bypass LLM When Player/Goal Positions Known | P0 | complete | TBD | TBD | backlog/plans/B-166-deterministic-autopilot.md | backlog/B166.md |
-| B167 | Pattern-Aware Puzzle Strategy — Region Comparison and Intermediate Goals | P0 | ready | TBD | TBD | backlog/plans/B-167-pattern-aware-strategy.md | backlog/B167.md |
-| B168 | Graph-Based Exploration Agent — Build Neural Substrate Before Goal-Seeking | P0 | ready | B150, B119, B166 | TBD | backlog/plans/B-168-graph-exploration-agent.md | backlog/B168.md |
-| B169 | KuzuDB as Single Source of Truth for Object Roles | P0 | ready | B168 | TBD | backlog/plans/B-169-kuzu-role-source-of-truth.md | backlog/B169.md |
-| B170 | Persist Hypotheses to KuzuDB — Eliminate Ghost Schema | P0 | ready | None | TBD | backlog/plans/B-170-hypothesis-kuzu-persistence.md | backlog/B170.md |
-| B171 | Add ActionFact Node Type and Persist to KuzuDB | P1 | ready | B170 | TBD | backlog/plans/B-171-action-fact-kuzu.md | backlog/B171.md |
-| B172 | Persist VictoryCondition to KuzuDB | P1 | ready | B170 | TBD | backlog/plans/B-172-victory-condition-kuzu.md | backlog/B172.md |
-| B173 | Persist GameRuleHypothesis to KuzuDB via Hypothesis Nodes | P1 | ready | B170 | TBD | backlog/plans/B-173-game-rule-hypothesis-kuzu.md | backlog/B173.md |
-| B174 | Persist ChunkLedgerEntry to KuzuDB | P2 | ready | None | TBD | backlog/plans/B-174-chunk-ledger-kuzu.md | backlog/B174.md |
-| B175 | Autopilot Wall-Blind Navigation — Detect Stuck Player and Reroute | P1 | ready | B168 | TBD | backlog/plans/B-175-autopilot-wall-detection.md | backlog/B175.md |
-| B176 | Plateau Policy: Force Exploration of Untried Actions | P1 | ready | None | TBD | backlog/plans/B-176-plateau-explore-untried-actions.md | backlog/B176.md |
-| B177 | No-Progress Escalation: Fix Tier Ladder and Connect Dissonance | P1 | ready | None | TBD | backlog/plans/B-177-no-progress-dissonance-trigger.md | backlog/B177.md |
-| B178 | Action Semantics Discovery for Autopilot | P1 | ready | B168 | TBD | backlog/plans/B-178-action-semantics-discovery.md | backlog/B178.md |
-| B179 | Victory Condition Inference Threshold Fix | P2 | ready | None | TBD | backlog/plans/B-179-victory-condition-inference.md | backlog/B179.md |
-| B180 | Token Cost Tracker and Budget Enforcer | P1 | ready | None | TBD | backlog/plans/B-180-cost-tracker-budget.md | backlog/B180.md |
-| B181 | Outcome Eval — LLM-as-Judge for Near-Miss Grading | P1 | ready | None | TBD | backlog/plans/B-181-outcome-judge.md | backlog/B181.md |
-| B182 | Enhanced ABHarness Metrics — Four Quality Dimensions | P1 | ready | B180,B181,B185 | TBD | backlog/plans/B-182-enhanced-metrics.md | backlog/B182.md |
-| B183 | Meta-Supervisor Agent | P1 | ready | B184 | TBD | backlog/plans/B-183-meta-supervisor.md | backlog/B183.md |
-| B184 | Circuit Breaker for LLM Calls | P1 | ready | None | TBD | backlog/plans/B-184-circuit-breaker.md | backlog/B184.md |
-| B185 | Failure Classification Taxonomy | P1 | ready | None | TBD | backlog/plans/B-185-failure-taxonomy.md | backlog/B185.md |
-| B186 | Trajectory Evaluator | P2 | ready | None | TBD | backlog/plans/B-186-trajectory-eval.md | backlog/B186.md |
-| B187 | Parallel Strategy Racing | P2 | ready | B180,B183 | TBD | backlog/plans/B-187-strategy-racing.md | backlog/B187.md |
-| B188 | Cross-Run Regression Detection | P2 | ready | B182 | TBD | backlog/plans/B-188-regression-monitor.md | backlog/B188.md |
-| B189 | Puzzle Scheduler | P2 | ready | B180,B184 | TBD | backlog/plans/B-189-puzzle-scheduler.md | backlog/B189.md |
-| B190 | Cross-Puzzle Learning via Task Graph | P3 | ready | B189 | TBD | backlog/plans/B-190-cross-puzzle-learning.md | backlog/B190.md |
-| B191 | Offline Consolidation / "Dreaming" — Lesson Synthesis | P1 | ready | None | TBD | backlog/plans/B-191-dreaming-consolidation.md | backlog/B191.md |
-| B192 | Episodic Memory: Temporal Chains (FOLLOWED_BY, DECISION_CHAIN) | P2 | ready | None | TBD | backlog/plans/B-192-episodic-memory.md | backlog/B192.md |
-| B193 | Metacognition: Knowledge Gap Detection | P2 | ready | B191 | TBD | backlog/plans/B-193-metacognition-gaps.md | backlog/B193.md |
-| B194 | Procedural Memory: Reusable Solve Recipes | P1 | ready | B191 | TBD | backlog/plans/B-194-procedural-memory.md | backlog/B194.md |
-| B195 | Active Context Push: Proactive Lesson Injection | P2 | ready | None | TBD | backlog/plans/B-195-active-context-push.md | backlog/B195.md |
-| B196 | Internal Consistency Audit (Graph Lint) | P3 | ready | None | TBD | backlog/plans/B-196-consistency-audit.md | backlog/B196.md |
-| B197 | ARC Agent: Load Procedures Before Solving | P1 | ready | B194,B180 | TBD | backlog/plans/B-197-arc-procedure-loading.md | backlog/B197.md |
-| B198 | ARC Agent: Proactive Warning Integration | P2 | ready | B195 | TBD | backlog/plans/B-198-arc-proactive-warnings.md | backlog/B198.md |
-| B199 | ARC Agent: Knowledge Gap-Aware Exploration Budget | P2 | ready | B193 | TBD | backlog/plans/B-199-arc-gap-aware-exploration.md | backlog/B199.md |
-| B200 | ARC Agent: Post-Solve Lesson Persistence | P1 | ready | B181,B185 | TBD | backlog/plans/B-200-arc-post-solve-learning.md | backlog/B200.md |
+| B167 | Pattern-Aware Puzzle Strategy — Region Comparison and Intermediate Goals — ✅ DONE (2026-04-04) | P0 | complete | TBD | TBD | backlog/plans/B-167-pattern-aware-strategy.md | backlog/B167.md |
+| B168 | Graph-Based Exploration Agent — Build Neural Substrate Before Goal-Seeking — ✅ DONE (2026-04-04) | P0 | complete | B150, B119, B166 | TBD | backlog/plans/B-168-graph-exploration-agent.md | backlog/B168.md |
+| B169 | KuzuDB as Single Source of Truth for Object Roles — ✅ DONE (2026-04-04) | P0 | complete | B168 | TBD | backlog/plans/B-169-kuzu-role-source-of-truth.md | backlog/B169.md |
+| B170 | Persist Hypotheses to KuzuDB — Eliminate Ghost Schema — ✅ DONE (2026-04-04) | P0 | complete | None | TBD | backlog/plans/B-170-hypothesis-kuzu-persistence.md | backlog/B170.md |
+| B171 | Add ActionFact Node Type and Persist to KuzuDB — ✅ DONE (2026-04-04) | P1 | complete | B170 | TBD | backlog/plans/B-171-action-fact-kuzu.md | backlog/B171.md |
+| B172 | Persist VictoryCondition to KuzuDB — ✅ DONE (2026-04-04) | P1 | complete | B170 | TBD | backlog/plans/B-172-victory-condition-kuzu.md | backlog/B172.md |
+| B173 | Persist GameRuleHypothesis to KuzuDB via Hypothesis Nodes — ✅ DONE (2026-04-04) | P1 | complete | B170 | TBD | backlog/plans/B-173-game-rule-hypothesis-kuzu.md | backlog/B173.md |
+| B174 | Persist ChunkLedgerEntry to KuzuDB — ✅ DONE (2026-04-04) | P2 | complete | None | TBD | backlog/plans/B-174-chunk-ledger-kuzu.md | backlog/B174.md |
+| B175 | Autopilot Wall-Blind Navigation — Detect Stuck Player and Reroute — ✅ DONE (2026-04-04) | P1 | complete | B168 | TBD | backlog/plans/B-175-autopilot-wall-detection.md | backlog/B175.md |
+| B176 | Plateau Policy: Force Exploration of Untried Actions — ✅ DONE (2026-04-04) | P1 | complete | None | TBD | backlog/plans/B-176-plateau-explore-untried-actions.md | backlog/B176.md |
+| B177 | No-Progress Escalation: Fix Tier Ladder and Connect Dissonance — ✅ DONE (2026-04-04) | P1 | complete | None | TBD | backlog/plans/B-177-no-progress-dissonance-trigger.md | backlog/B177.md |
+| B178 | Action Semantics Discovery for Autopilot — ✅ DONE (2026-04-04) | P1 | complete | B168 | TBD | backlog/plans/B-178-action-semantics-discovery.md | backlog/B178.md |
+| B179 | Victory Condition Inference Threshold Fix — ✅ DONE (2026-04-04) | P2 | complete | None | TBD | backlog/plans/B-179-victory-condition-inference.md | backlog/B179.md |
+| B180 | Token Cost Tracker and Budget Enforcer — ✅ DONE (2026-04-07) | P1 | complete | None | TBD | backlog/plans/B-180-cost-tracker-budget.md | backlog/B180.md |
+| B181 | Outcome Eval — LLM-as-Judge for Near-Miss Grading — ✅ DONE (2026-04-08) | P1 | complete | None | TBD | backlog/plans/B-181-outcome-judge.md | backlog/B181.md |
+| B182 | Enhanced ABHarness Metrics — Four Quality Dimensions — ✅ DONE (2026-04-08) | P1 | complete | B180,B181,B185 | TBD | backlog/plans/B-182-enhanced-metrics.md | backlog/B182.md |
+| B183 | Meta-Supervisor Agent — ✅ DONE (2026-04-08) | P1 | complete | B184 | TBD | backlog/plans/B-183-meta-supervisor.md | backlog/B183.md |
+| B184 | Circuit Breaker for LLM Calls — ✅ DONE (2026-04-08) | P1 | complete | None | TBD | backlog/plans/B-184-circuit-breaker.md | backlog/B184.md |
+| B185 | Failure Classification Taxonomy — ✅ DONE (2026-04-08) | P1 | complete | None | TBD | backlog/plans/B-185-failure-taxonomy.md | backlog/B185.md |
+| B186 | Trajectory Evaluator — ✅ DONE (2026-04-08) | P2 | complete | None | TBD | backlog/plans/B-186-trajectory-eval.md | backlog/B186.md |
+| B187 | Parallel Strategy Racing — ✅ DONE (2026-04-08) | P2 | complete | B180,B183 | TBD | backlog/plans/B-187-strategy-racing.md | backlog/B187.md |
+| B188 | Cross-Run Regression Detection — ✅ DONE (2026-04-08) | P2 | complete | B182 | TBD | backlog/plans/B-188-regression-monitor.md | backlog/B188.md |
+| B189 | Puzzle Scheduler — ✅ DONE (2026-04-08) | P2 | complete | B180,B184 | TBD | backlog/plans/B-189-puzzle-scheduler.md | backlog/B189.md |
+| B190 | Cross-Puzzle Learning via Task Graph — ✅ DONE (2026-04-08) | P3 | complete | B189 | TBD | backlog/plans/B-190-cross-puzzle-learning.md | backlog/B190.md |
+| B191 | Offline Consolidation / "Dreaming" — Lesson Synthesis — ✅ DONE (2026-04-09) | P1 | complete | None | TBD | backlog/plans/B-191-dreaming-consolidation.md | backlog/B191.md |
+| B192 | Episodic Memory: Temporal Chains (FOLLOWED_BY, DECISION_CHAIN) — ✅ DONE (2026-04-09) | P2 | complete | None | TBD | backlog/plans/B-192-episodic-memory.md | backlog/B192.md |
+| B193 | Metacognition: Knowledge Gap Detection — ✅ DONE (2026-04-09) | P2 | complete | B191 | TBD | backlog/plans/B-193-metacognition-gaps.md | backlog/B193.md |
+| B194 | Procedural Memory: Reusable Solve Recipes — ✅ DONE (2026-04-09) | P1 | complete | B191 | TBD | backlog/plans/B-194-procedural-memory.md | backlog/B194.md |
+| B195 | Active Context Push: Proactive Lesson Injection — ✅ DONE (2026-04-09) | P2 | complete | None | TBD | backlog/plans/B-195-active-context-push.md | backlog/B195.md |
+| B196 | Internal Consistency Audit (Graph Lint) — ✅ DONE (2026-04-09) | P3 | complete | None | TBD | backlog/plans/B-196-consistency-audit.md | backlog/B196.md |
+| B197 | ARC Agent: Load Procedures Before Solving — ✅ DONE (2026-04-09) | P1 | complete | B194,B180 | TBD | backlog/plans/B-197-arc-procedure-loading.md | backlog/B197.md |
+| B198 | ARC Agent: Proactive Warning Integration — ✅ DONE (2026-04-09) | P2 | complete | B195 | TBD | backlog/plans/B-198-arc-proactive-warnings.md | backlog/B198.md |
+| B199 | ARC Agent: Knowledge Gap-Aware Exploration Budget — ✅ DONE (2026-04-09) | P2 | complete | B193 | TBD | backlog/plans/B-199-arc-gap-aware-exploration.md | backlog/B199.md |
+| B200 | ARC Agent: Post-Solve Lesson Persistence — ✅ DONE (2026-04-09) | P1 | complete | B181,B185 | TBD | backlog/plans/B-200-arc-post-solve-learning.md | backlog/B200.md |
+| B206 | Prevent Archetype Regression to UNKNOWN During Early Steps | P2 | ready | B205 | TBD | backlog/plans/B-206-archetype-regression-guard.md | backlog/B206.md |
+| B207 | Break Plateau Lock Repetition After Replan Exhaustion | P2 | ready | B176, B177 | TBD | backlog/plans/B-207-plateau-lock-exhaustion.md | backlog/B207.md |
+| B208 | Split Victory Inference Cooldowns by Trigger Type | P3 | ready | B179 | TBD | backlog/plans/B-208-victory-replan-cooldown-split.md | backlog/B208.md |
+| B209 | Enforce Route→Execute Plan Adherence and Action Provenance | P1 | ready | B203, B205 | TBD | backlog/plans/B-209-route-execute-plan-adherence.md | backlog/B209.md |
+| B210 | Correct Per-Step PERCEIVE Action Attribution | P2 | ready | B202, B205 | TBD | backlog/plans/B-210-perceive-action-attribution.md | backlog/B210.md |
+| B212 | Graph Inference Step in HYPOTHESIZE: Structurally-Grounded Hypothesis Generation — ✅ DONE (2026-04-14) | P1 | complete | TBD | TBD | backlog/plans/B-212-graph-hypothesize.md | backlog/B212.md |
+| B214 | Fix upsert_lesson Silent Failure in LedgerBrainClient — ✅ DONE (2026-04-14) | P0 | complete | — | TBD | backlog/plans/B-214-fix-upsert-lesson-silent-failure.md | backlog/B214.md |
+| B218 | Reconstruct Codex Observability Framework — ✅ DONE (2026-04-15) | P0 | complete | — | TBD | backlog/plans/B-218-reconstruct-observability.md | backlog/B218.md |
+| B215 | Plateau Lock Must Not Latch on Unexplored Action Space | P0 | ready | B207 | TBD | backlog/plans/B-215-plateau-lock-minimum-exploration.md | backlog/B215.md |
+| B216 | Loop Detection Signal Must Propagate Into Route/Replan Decisions | P1 | ready | B215 | TBD | backlog/plans/B-216-loop-detection-route-propagation.md | backlog/B216.md |
+| B217 | Victory Condition Must Converge: Bootstrap from Archetype and Grid Structure | P1 | ready | B214, B215, B216 | TBD | backlog/plans/B-217-victory-condition-convergence.md | backlog/B217.md |
 
 ## Summary
 
-- Total cards: 185
-- Ready: 45 (B152, B153, B155, B158, B159, B160, B161, B162, B163, B164, B165, B167, B168, B169, B170, B171, B172, B173, B174, B175, B176, B177, B178, B179, B180, B181, B182, B183, B184, B185, B186, B187, B188, B189, B190, B191, B192, B193, B194, B195, B196, B197, B198, B199, B200)
+- Total cards: 197
+- Ready: 19 (B152, B153, B155, B158, B159, B160, B161, B162, B163, B164, B165, B201, B202, B203, B204, B205, B206, B207, B208, B209, B210, B211, B213, B215, B216, B217)
 - Needs work: 0
-- Complete: 138
+- Complete: 177
 - In progress: 0
 - Blocked: 1 (B156)
 
