@@ -33,5 +33,22 @@ benchmarks/.kaggle/
 
 # Local queue (degraded mode — runtime artifact)
 *.queue.jsonl
+
+# Smoke test / run artifacts (generated per-run, not source)
+agent_execution_trace.json
+master_timeline.json
+master_timeline_filtered.md
+submission_results_single.json
+submission_results_arcServer.json
+submission_results_single.live.jsonl
+benchmarks/results.json
+benchmarks/results/
+
+# Observability session data
+observability/
+
+# Claude Code worktrees (local only)
+.claude/worktrees/
+
 extensions/sidequests-brain/node_modules/
 extensions/sidequests-brain/dist/
