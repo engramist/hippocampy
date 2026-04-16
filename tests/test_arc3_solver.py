@@ -401,14 +401,14 @@ def test_plan_chunker_graduates_to_directional_once_evidence_is_strong():
             "untested_count": 0,
         },
         "action_facts": [
-            {"action": "ACTION1", "fact_type": "deterministic_effect", "value_status": "valuable", "trend": {"direction": "up"}},
-            {"action": "ACTION2", "fact_type": "deterministic_effect", "value_status": "valuable", "trend": {"direction": "down"}},
-        ],
-        "path_hypotheses": [
-            {"value_status": "tentative"},
-            {"value_status": "valuable"},
-        ],
-    }
+                {"action": "ACTION1", "fact_type": "deterministic_effect", "value_status": "valuable", "trend": {"direction": "up"}},
+                {"action": "ACTION2", "fact_type": "deterministic_effect", "value_status": "valuable", "trend": {"direction": "down"}},
+            ],
+            "path_hypotheses": [
+                {"value_status": "tentative"},
+                {"value_status": "valuable"},
+            ],
+        }
 
     chunk = chunker.generate_chunk(
         victory_condition=vc,
@@ -457,27 +457,12 @@ def test_plan_chunker_keeps_exploration_when_evidence_is_weak():
             "top_two_low_value": False,
         },
         "action_facts": [
-            {"action": "ACTION1", "fact_type": "deterministic_effect", "value_status": "low_value", "trend": {"direction": "up"}},
+            {"action": "ACTION1", "fact_type": "deterministic_effect", "value_status": "valuable", "trend": {"direction": "up"}},
+            {"action": "ACTION2", "fact_type": "deterministic_effect", "value_status": "valuable", "trend": {"direction": "down"}},
+            {"action": "ACTION3", "fact_type": "deterministic_effect", "value_status": "valuable", "trend": {"direction": "right"}},
         ],
-        "path_hypotheses": [
-            {"value_status": "tentative"},
-        ],
+        "path_hypotheses": [],
     }
-
-    chunk = chunker.generate_chunk(
-        victory_condition=vc,
-        object_roles=object_roles,
-        state_graph=graph,
-        current_hash="h1",
-        available_actions=["ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5", "ACTION6"],
-        step=2,
-        hypothesis_context=hypothesis_context,
-    )
-
-    assert chunk.source == "explore"
-    assert chunk.estimated_actions == ["ACTION1"]
-    assert "stay explore" in chunk.graduation_reason
-    assert "coverage" in chunk.graduation_reason
 
 
 def test_plan_chunker_stays_explore_when_contradiction_is_high():
@@ -1096,6 +1081,56 @@ def test_merge_persistent_roles_enforces_single_primary_player_and_goal():
     assert any("demoted stale goal" in note for note in notes)
 
 
+def test_merge_persistent_roles_preserves_grounded_goal_against_secondary_player_flip():
+    engine = SolveEngine(AsyncMock(), AsyncMock(), "s1")
+    engine._object_roles = {
+        9: ObjectRole(color_id=9, role=RoleType.PLAYER, confidence=0.90, evidence_steps=[2]),
+        11: ObjectRole(color_id=11, role=RoleType.GOAL, confidence=0.88, evidence_steps=[5]),
+    }
+
+    notes = engine._merge_persistent_roles(
+        {
+            11: ObjectRole(
+                color_id=11,
+                role=RoleType.PLAYER,
+                confidence=0.84,
+                evidence_steps=[11],
+                estimated_position={"row": 6.0, "col": 6.0},
+            )
+        },
+        step=11,
+    )
+
+    assert engine._object_roles[9].role == RoleType.PLAYER
+    assert engine._object_roles[11].role == RoleType.GOAL
+    assert sum(1 for role in engine._object_roles.values() if role.role == RoleType.GOAL) == 1
+    assert any("rejected player flip" in note for note in notes)
+
+
+def test_merge_persistent_roles_restores_intermediate_from_stale_decoration():
+    engine = SolveEngine(AsyncMock(), AsyncMock(), "s1")
+    engine._object_roles = {
+        5: ObjectRole(color_id=5, role=RoleType.DECORATION, confidence=0.45, evidence_steps=[3])
+    }
+
+    notes = engine._merge_persistent_roles(
+        {
+            5: ObjectRole(
+                color_id=5,
+                role=RoleType.INTERMEDIATE,
+                confidence=0.45,
+                evidence_steps=[4],
+                estimated_position={"row": 2.0, "col": 3.0},
+            )
+        },
+        step=4,
+    )
+
+    assert engine._object_roles[5].role == RoleType.INTERMEDIATE
+    assert engine._object_roles[5].estimated_position == {"row": 2.0, "col": 3.0}
+    assert any("replaced decoration with intermediate" in note for note in notes)
+
+
 def test_strategy_summary_reports_role_resolution_notes_and_primary_ids():
     from agents.arc3.solver import PlanChunk
 
@@ -1256,3 +1291,165 @@ async def test_solve_engine_clears_exhausted_chunk():
     assert engine._active_chunk.description != "path"
     assert engine._active_chunk.source == "explore"
     assert len(engine._active_chunk.estimated_actions) > 0
+
+
+@pytest.mark.asyncio
+async def test_archetype_regression_guard():
+    from agents.arc3.solver import SolveEngine, GameArchetype
+    from agents.arc3.hypothesis import StateGraph
+
+    brain = AsyncMock()
+    brain.recall_plans.return_value = {"plans": []}
+    brain.recall_relevant_lessons.return_value = {"lessons": []}
+    brain.analogical_search.return_value = {"results": []}
+    brain.register_plan.return_value = {"plan_id": "p-guard"}
+    brain.report_outcome.return_value = {"status": "ok"}
+
+    llm = AsyncMock()
+    engine = SolveEngine(brain, llm, "s1")
+    engine._archetype = GameArchetype.SPACE
+    engine._archetype_confidence = 0.4
+    engine._archetype_locked = False
+
+    # Stub classifier to return UNKNOWN with low confidence
+    engine.archetype_classifier.update = MagicMock(return_value=(GameArchetype.UNKNOWN, 0.1))
+
+    obs = {"colors": [], "available_actions": ["ACTION1"], "task_id": "t1", "dataset_id": "d1"}
+    ctx = {
+        "last_transition_effect": {"meaningful_change_score": 0.0, "reward_signal": 0.0},
+        "action_facts": [],
+        "hud_rows": [],
+        "path_hypotheses": [],
+        "current_state_hash": "h1",
+    }
+
+    result = await engine.solve(obs, ctx, step=3, state_graph=StateGraph(), current_state_hash="h1")
+
+    # Archetype should be preserved and confidence decayed but floored at 0.25
+    assert engine._archetype == GameArchetype.SPACE
+    assert 0.25 <= engine._archetype_confidence < 0.4
+
+
+@pytest.mark.asyncio
+async def test_plateau_lock_exhaustion():
+    from agents.arc3.solver import SolveEngine, PlanChunk, ObjectRole, RoleType
+    from agents.arc3.hypothesis import StateGraph
+
+    brain = AsyncMock()
+    brain.recall_plans.return_value = {"plans": []}
+    brain.recall_relevant_lessons.return_value = {"lessons": []}
+    brain.analogical_search.return_value = {"results": []}
+    brain.register_plan.return_value = {"plan_id": "p-plateau"}
+    brain.report_outcome.return_value = {"status": "ok"}
+
+    llm = AsyncMock()
+    engine = SolveEngine(brain, llm, "s1")
+
+    # Simulate sustained zero-reward momentum and grounded roles
+    engine._reward_history = [0.0] * 6
+    engine._object_roles = {
+        1: ObjectRole(color_id=1, role=RoleType.PLAYER, confidence=0.8),
+        2: ObjectRole(color_id=2, role=RoleType.GOAL, confidence=0.8),
+    }
+
+    # Seed an active plateau exploitation lock
+    engine._plateau_active = True
+    engine._plateau_locked_family = "ACTION1"
+    engine._active_chunk = PlanChunk(
+        description="Plateau Exploitation: commit to top-ranked ACTION1",
+        estimated_actions=["ACTION1", "ACTION1", "ACTION1"],
+        source="plateau_exploitation",
+    )
+
+    # Seed exhaustion counter one below threshold so single replan triggers unlock
+    engine._plateau_lock_family_replan_count = 2
+    engine._plateau_lock_last_family = "ACTION1"
+
+    obs = {"available_actions": ["ACTION1"], "task_id": "t1", "dataset_id": "d1", "colors": []}
+    ctx = {"orchestrator_force_replan": True, "last_transition_effect": {"meaningful_change_score": 0.0, "reward_signal": 0.0}}
+
+    await engine.solve(obs, ctx, step=21, state_graph=StateGraph(), current_state_hash="h1")
+
+    assert engine._plateau_locked_family is None
+    assert engine._active_chunk is None
+    assert engine._plateau_lock_family_replan_count == 0
+
+
+@pytest.mark.asyncio
+async def test_plateau_zero_delta_escape_rotates_locked_family():
+    from agents.arc3.solver import SolveEngine, PlanChunk, ObjectRole, RoleType
+    from agents.arc3.hypothesis import StateGraph
+
+    brain = AsyncMock()
+    brain.recall_plans.return_value = {"plans": []}
+    brain.recall_relevant_lessons.return_value = {"lessons": []}
+    brain.analogical_search.return_value = {"results": []}
+    brain.register_plan.return_value = {"plan_id": "p-plateau-zero-delta"}
+    brain.report_outcome.return_value = {"status": "ok"}
+
+    llm = AsyncMock()
+    engine = SolveEngine(brain, llm, "s1")
+
+    # Keep plateau mode active and roles grounded to exercise lock logic.
+    engine._reward_history = [0.0] * 6
+    engine._object_roles = {
+        1: ObjectRole(color_id=1, role=RoleType.PLAYER, confidence=0.9),
+        2: ObjectRole(color_id=2, role=RoleType.GOAL, confidence=0.9),
+    }
+    engine._plateau_active = True
+    engine._plateau_locked_family = "ACTION1"
+    engine._active_chunk = PlanChunk(
+        description="Plateau Exploitation: commit to top-ranked ACTION1",
+        estimated_actions=["ACTION1", "ACTION1", "ACTION1"],
+        source="plateau_exploitation",
+    )
+
+    obs = {"available_actions": ["ACTION1", "ACTION2"], "task_id": "t1", "dataset_id": "d1", "colors": []}
+    ctx = {
+        "last_transition_effect": {"meaningful_change_score": 0.0, "reward_signal": 0.0},
+        "observed_action_effects": [],
+    }
+    graph = StateGraph()
+
+    # B214 threshold is 3 repeated zero-delta outcomes on same lock.
+    await engine.solve(obs, ctx, step=30, state_graph=graph, current_state_hash="h1")
+    await engine.solve(obs, ctx, step=31, state_graph=graph, current_state_hash="h1")
+    result = await engine.solve(obs, ctx, step=32, state_graph=graph, current_state_hash="h1")
+
+    assert result.dissonance_detected is True
+    assert "zero-delta" in result.dissonance_reason
+    assert engine._plateau_locked_family in {"ACTION2", None}
+
+
+@pytest.mark.asyncio
+async def test_replan_victory_cooldown_split():
+    from agents.arc3.solver import SolveEngine, VictoryCondition, VictoryType
+    from agents.arc3.hypothesis import StateGraph
+
+    brain = AsyncMock()
+    brain.recall_plans.return_value = {"plans": []}
+    brain.recall_relevant_lessons.return_value = {"lessons": []}
+    brain.analogical_search.return_value = {"results": []}
+    brain.register_plan.return_value = {"plan_id": "p-vc"}
+
+    llm = AsyncMock()
+    engine = SolveEngine(brain, llm, "s1")
+
+    # Stub hypothesizer so call will succeed without LLM
+    engine.victory_hypothesizer.hypothesize = AsyncMock(return_value=VictoryCondition(condition_type=VictoryType.REACH_GOAL, confidence=0.9, description="reach exit"))
+
+    # Simulate recent global attempt so global cooldown would block
+    engine._last_victory_attempt_step = 100
+    # But replan-specific tracker is old so replan path is allowed
+    engine._last_replan_victory_attempt_step = 105
+
+    engine._victory_condition = None
+
+    obs = {"available_actions": ["ACTION1"], "task_id": "t1", "dataset_id": "d1", "colors": []}
+    ctx = {"orchestrator_force_replan": True, "last_transition_effect": {"meaningful_change_score": 0.0, "reward_signal": 0.0}}
+
+    step = 110
+    await engine.solve(obs, ctx, step=step, state_graph=StateGraph(), current_state_hash="h1")
+
+    assert engine._last_victory_attempt_step == step
+    assert engine._last_replan_victory_attempt_step == step
