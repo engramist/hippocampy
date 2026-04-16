@@ -1516,6 +1516,18 @@ class PlanChunker:
         """Generate the next plan chunk. Pure logic only; no SideQuests calls."""
         context = hypothesis_context or {}
         action_facts = context.get("action_facts") or []
+        # B216: honor loop-detection blacklist passed in hypothesis_context
+        blacklist = set()
+        try:
+            bl = (hypothesis_context or {}).get("loop_detected_action_blacklist")
+            if bl:
+                # accept list or single string
+                if isinstance(bl, (list, set, tuple)):
+                    blacklist = set(str(x) for x in bl if x)
+                else:
+                    blacklist = {str(bl)}
+        except Exception:
+            blacklist = set()
 
         # 1. Try BFS if we have a known goal state
         player_role = next(
@@ -1537,6 +1549,9 @@ class PlanChunker:
                 path = state_graph.find_path(current_hash, target_hash)
                 if path:
                     actions = [t.action for t in path]
+                    # Skip BFS paths that require a blacklisted action family
+                    if blacklist and any((a in blacklist) for a in actions):
+                        continue
                     graduation_reason = "bfs path found to known reward state"
                     return PlanChunk(
                         description=f"Navigate via known path to reward state ({len(actions)} steps)",
@@ -1570,6 +1585,9 @@ class PlanChunker:
                 
                 scored_actions = []
                 for aid in available_actions:
+                    if aid in blacklist:
+                        # skip actions blacklisted due to loop-detection
+                        continue
                     vec = action_map.get(aid)
                     # B154: Only use empirically observed action vectors, never assume
                     if not vec:
@@ -1615,7 +1633,17 @@ class PlanChunker:
             unexplored = state_graph.get_unexplored_actions(current_hash, available_actions)
         else:
             unexplored = []
-        action = unexplored[0] if unexplored else (available_actions[0] if available_actions else "ACTION1")
+        # Prefer unexplored/non-blacklisted actions when available (B216)
+        action = None
+        for cand in (unexplored or []) + (available_actions or []):
+            if not cand:
+                continue
+            if cand in blacklist:
+                continue
+            action = cand
+            break
+        if action is None:
+            action = unexplored[0] if unexplored else (available_actions[0] if available_actions else "ACTION1")
         return PlanChunk(
             description="Explore: try unexplored action to gather more information",
             estimated_actions=[action],
@@ -1781,8 +1809,22 @@ class SolveEngine:
         self._pending_chunk_writes: List[tuple[int, ChunkLedgerEntry, PlanChunk]] = []
         # B176: Plateau exploration state
         self._plateau_lock_duration: int = 0
+        # B215: Minimum distinct action families required before entering plateau
+        self.PLATEAU_MIN_DISTINCT_ACTIONS: int = 3
+        # B216: Loop-detection blacklist (action families to avoid when routing)
+        self._loop_detected_action_blacklist: Optional[set[str]] = None
+        # B217: Ensure we only bootstrap victory once per task/level
+        self._bootstrapped_victory_done: bool = False
+        # B207: Plateau lock exhaustion tracking
+        self._plateau_lock_family_replan_count: int = 0
+        self._plateau_lock_last_family: Optional[str] = None
+        # B214: Hard escape when a locked family yields repeated zero-delta outcomes.
+        self._plateau_lock_zero_delta_streak: int = 0
+        self._plateau_lock_last_family_for_delta: Optional[str] = None
         # B179: Cooldown for expensive victory inference LLM calls
         self._last_victory_attempt_step: int = -100
+        # B208: Separate cooldown for replan-triggered victory attempts
+        self._last_replan_victory_attempt_step: int = -100
         # B197: Procedure-guided solving state
         self._loaded_procedures: list[Mapping[str, Any]] = list(loaded_procedures or [])
         self._applied_procedure_id: Optional[str] = None
@@ -1848,6 +1890,60 @@ class SolveEngine:
             else:
                 break
         return streak
+
+    # ── Gate Accessors for PhaseController (B201) ─────────────────────────
+    def is_exploration_complete(self) -> bool:
+        """Gate: has the agent sufficiently explored available actions?
+
+        Conservative: return True only when internal graduation/coverage signals
+        indicate a high coverage ratio. Defaults to False otherwise.
+        """
+        try:
+            last = getattr(self, "_last_graduation_reevaluation", {}) or {}
+            cov = float(last.get("coverage_ratio", 0.0) or 0.0)
+            if cov >= PlanChunker.MIN_EXPLORATION_COMPLETENESS:
+                return True
+        except Exception:
+            pass
+
+        try:
+            if self._active_chunk and getattr(self._active_chunk, "progress_score", 0.0) > 0.5:
+                return True
+        except Exception:
+            pass
+
+        return False
+
+    def has_minimum_model(self) -> bool:
+        """Gate: do we have at least a minimal model (player or goal identified).
+
+        Tolerant: returns True if either a player or a goal role is known, or
+        archetype confidence exceeds a low threshold.
+        """
+        try:
+            player = next((r for r in self._object_roles.values() if r.role == RoleType.PLAYER), None)
+            goal = next((r for r in self._object_roles.values() if r.role in (RoleType.GOAL, RoleType.EXIT)), None)
+            return bool(player or goal or float(self._archetype_confidence or 0.0) >= 0.25)
+        except Exception:
+            return False
+
+    def has_hypothesis(self) -> bool:
+        """Gate: is there a usable hypothesis (archetype or victory) with confidence.
+
+        Conservative threshold: 0.3 confidence.
+        """
+        try:
+            if float(self._archetype_confidence or 0.0) >= 0.3:
+                return True
+            if self._victory_condition and float(getattr(self._victory_condition, "confidence", 0.0) or 0.0) >= 0.3:
+                return True
+        except Exception:
+            pass
+        return False
+
+    def has_active_chunk(self) -> bool:
+        """Gate: do we currently have an active chunk selected to execute?"""
+        return getattr(self, "_active_chunk", None) is not None
 
     # ── B169: KuzuDB Role Source ───────────────────────────────────────
 
@@ -2435,6 +2531,34 @@ class SolveEngine:
                 except Exception as exc:
                     logger.warning("analogical_search failed: %s", exc)
 
+            # B206: Prevent transient regression to UNKNOWN when we already have
+            # a usable archetype. If the new classifier output is UNKNOWN but
+            # we previously had a non-UNKNOWN archetype with reasonable
+            # confidence, hold the prior archetype and apply a modest decay.
+            try:
+                prior_arch = getattr(self, "_archetype", GameArchetype.UNKNOWN)
+                prior_conf = float(getattr(self, "_archetype_confidence", 0.0) or 0.0)
+                if (
+                    archetype == GameArchetype.UNKNOWN
+                    and prior_arch != GameArchetype.UNKNOWN
+                    and prior_conf >= 0.25
+                ):
+                    # Keep prior archetype, decay confidence slightly but floor at 0.25
+                    archetype = prior_arch
+                    confidence = max(prior_conf - 0.05, 0.25)
+                    # Trace the guard application for diagnostics
+                    try:
+                        self._trace(
+                            "archetype_regression_guard",
+                            "hold_archetype",
+                            {"prior": prior_arch.value, "prior_conf": prior_conf, "applied_conf": confidence},
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                # Defensive: do not break solve on guard logic failure
+                logger.debug("B206: archetype regression guard evaluation failed", exc_info=True)
+
             # B148: Preserve grounded archetype confidence
             if archetype == self._archetype and confidence < self._archetype_confidence:
                 # Sustain best recent confidence if not a pivot
@@ -2485,27 +2609,135 @@ class SolveEngine:
                 zero_reward_streak,
             )
 
-        # B179: Multi-path victory condition inference trigger
+        # B216: Accept loop-detection blacklist injected by runner/orchestrator.
+        # Persist it into solver state so it survives across the solve() call.
+        try:
+            incoming_bl = (hypothesis_context or {}).get("loop_detected_action_blacklist")
+            if incoming_bl:
+                if isinstance(incoming_bl, (list, set, tuple)):
+                    self._loop_detected_action_blacklist = set(str(x) for x in incoming_bl if x)
+                else:
+                    self._loop_detected_action_blacklist = {str(incoming_bl)}
+                # Trace blacklist application
+                try:
+                    self._trace("loop_escape", "apply_blacklist", {"step": step}, {"blacklist": list(self._loop_detected_action_blacklist)})
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # B216: Clear blacklist when the last transition shows a successful state change
+        try:
+            last_eff = (hypothesis_context or {}).get("last_transition_effect") or {}
+            n_changed = int(last_eff.get("n_cells_changed", last_eff.get("pixels_changed", 0)) or 0)
+            if n_changed > 0 and self._loop_detected_action_blacklist:
+                try:
+                    self._trace("loop_escape", "clear_blacklist", {"step": step}, {"cleared": list(self._loop_detected_action_blacklist)})
+                except Exception:
+                    pass
+                self._loop_detected_action_blacklist = None
+        except Exception:
+            pass
+
+        # Ensure chunk_context passes the current blacklist to PlanChunker
+        if self._loop_detected_action_blacklist:
+            try:
+                chunk_context = dict(chunk_context)
+                chunk_context["loop_detected_action_blacklist"] = list(self._loop_detected_action_blacklist)
+            except Exception:
+                pass
+
+        # B217: Archetype-seeded victory bootstrap — create a weak candidate when
+        # archetype is stable but victory condition is still unknown after a few steps.
+        try:
+            has_unknown_vc = self._victory_condition is None or (getattr(self._victory_condition, 'condition_type', None) == VictoryType.UNKNOWN)
+            if has_unknown_vc and not self._bootstrapped_victory_done and float(self._archetype_confidence or 0.0) >= 0.5 and step > 3:
+                # Create a conservative REACH_GOAL bootstrap candidate from available roles
+                player_role = next((r for r in self._object_roles.values() if r.role == RoleType.PLAYER), None)
+                goal_role = next((r for r in self._object_roles.values() if r.role in (RoleType.GOAL, RoleType.EXIT)), None)
+                target_color = None
+                if goal_role:
+                    target_color = int(goal_role.color_id)
+                else:
+                    # pick best non-player, non-background candidate by confidence
+                    candidates = [r for r in self._object_roles.values() if r.color_id != getattr(player_role, 'color_id', None) and r.color_id != 0]
+                    if candidates:
+                        target_color = int(max(candidates, key=lambda rr: rr.confidence).color_id)
+
+                vc_desc = f"Bootstrap victory from archetype {self._archetype.value}"
+                if target_color is not None:
+                    vc_desc += f" (target_color={target_color})"
+
+                vc = VictoryCondition(
+                    condition_type=VictoryType.REACH_GOAL,
+                    description=vc_desc,
+                    target_color_id=target_color,
+                    confidence=0.35,
+                    source="bootstrap",
+                )
+                self._set_victory_condition(vc)
+                self._bootstrapped_victory_done = True
+                try:
+                    self._trace("victory_bootstrap", "bootstrap", {"step": step, "archetype": self._archetype.value}, {"candidate": vc.description})
+                except Exception:
+                    pass
+                # Persist a lightweight lesson so recall_lessons can find it
+                try:
+                    await self.brain.upsert_lesson(domain=str(self._archetype.value), text=vc.description, valence=0.2, confidence=float(vc.confidence), tags=["bootstrap","victory"])
+                except Exception:
+                    logger.debug("B217: upsert_lesson failed for victory bootstrap", exc_info=True)
+        except Exception:
+            logger.debug("B217: victory bootstrap guard failed", exc_info=True)
+
+        # B179/B208: Multi-path victory condition inference trigger
+        # Split cooldowns so replan-triggered attempts can be more aggressive.
         need_victory_hypothesis = False
         trigger_reason = ""
 
-        if (step - self._last_victory_attempt_step) >= 10:
-            if self._victory_condition is None and self._archetype_confidence >= VictoryHypothesizer.CALL_THRESHOLD:
-                need_victory_hypothesis = True
-                trigger_reason = "archetype_threshold"
-            elif should_replan and (self._victory_condition is None or self._victory_condition.confidence < 0.5):
-                need_victory_hypothesis = True
-                trigger_reason = "replan"
-            elif self._victory_condition is None and step >= 15 and self._archetype != GameArchetype.UNKNOWN:
-                need_victory_hypothesis = True
-                trigger_reason = "step_fallback"
-            elif self._victory_condition is None and zero_reward_streak >= 5 and self._archetype != GameArchetype.UNKNOWN:
-                need_victory_hypothesis = True
-                trigger_reason = "zero_progress"
+        GLOBAL_COOLDOWN = 10
+        REPLAN_COOLDOWN = 3
+
+        # Archetype-threshold path: conservative global cooldown
+        if (
+            self._victory_condition is None
+            and self._archetype_confidence >= VictoryHypothesizer.CALL_THRESHOLD
+            and (step - self._last_victory_attempt_step) >= GLOBAL_COOLDOWN
+        ):
+            need_victory_hypothesis = True
+            trigger_reason = "archetype_threshold"
+        # Replan-triggered path: shorter replan-specific cooldown
+        elif (
+            should_replan
+            and (self._victory_condition is None or self._victory_condition.confidence < 0.5)
+            and (step - self._last_replan_victory_attempt_step) >= REPLAN_COOLDOWN
+        ):
+            need_victory_hypothesis = True
+            trigger_reason = "replan"
+        # Step-fallback and zero_progress still use the global cooldown
+        elif (
+            self._victory_condition is None
+            and step >= 15
+            and self._archetype != GameArchetype.UNKNOWN
+            and (step - self._last_victory_attempt_step) >= GLOBAL_COOLDOWN
+        ):
+            need_victory_hypothesis = True
+            trigger_reason = "step_fallback"
+        elif (
+            self._victory_condition is None
+            and zero_reward_streak >= 5
+            and self._archetype != GameArchetype.UNKNOWN
+            and (step - self._last_victory_attempt_step) >= GLOBAL_COOLDOWN
+        ):
+            need_victory_hypothesis = True
+            trigger_reason = "zero_progress"
 
         if need_victory_hypothesis:
-            # logger.debug(f"[B179] TRIGGERED: {trigger_reason}")
+            # logger.debug(f"[B179/B208] TRIGGERED: {trigger_reason}")
+            # Always update the global last-attempt
             self._last_victory_attempt_step = step
+            # Update replan-specific tracker only for replan-triggered attempts
+            if trigger_reason == "replan":
+                self._last_replan_victory_attempt_step = step
             self._trace("victory_inference_trigger", "victory_hypothesis", 
                         {"step": step, "trigger": trigger_reason, "archetype_conf": self._archetype_confidence})
             
@@ -2710,6 +2942,29 @@ class SolveEngine:
         # Trigger plateau mode if 5+ consecutive zero-reward steps and key entities are grounded.
         plateau_eligible = (zero_reward_streak >= 5 and player_grounded and goal_grounded)
         plateau_activation_mode = ""
+
+        # B215: Require minimum distinct action families tried before entering plateau
+        try:
+            if plateau_eligible and not self._plateau_active:
+                MIN_DISTINCT = int(getattr(self, 'PLATEAU_MIN_DISTINCT_ACTIONS', 3) or 3)
+                action_coverage = (hypothesis_context or {}).get('action_coverage') or {}
+                tested_count = int(action_coverage.get('tested_count', 0) or 0)
+                observed = (hypothesis_context or {}).get('observed_action_effects') or []
+                observed_actions = {e.get('action') for e in observed if e and e.get('action')}
+                distinct_tried = tested_count if tested_count > 0 else len(observed_actions)
+                if distinct_tried < MIN_DISTINCT:
+                    try:
+                        self._trace(
+                            "plateau_deferred",
+                            "plateau_policy",
+                            {"step": step, "tested_count": tested_count, "distinct_tried": distinct_tried, "required": MIN_DISTINCT},
+                            {"reason": "min_exploration_not_met"},
+                        )
+                    except Exception:
+                        pass
+                    plateau_eligible = False
+        except Exception:
+            pass
         
         if plateau_eligible:
             if not self._plateau_active:
@@ -2781,6 +3036,101 @@ class SolveEngine:
                     self._trace("solve_plateau_lock_changed", "plateau_policy", 
                                 {"step": step, "from": old_lock, "to": self._plateau_locked_family}, 
                                 {"reason": unlock_reason})
+
+            # B214: Hard plateau escape based on repeated zero-delta outcomes.
+            # If the same locked family keeps producing no meaningful grid change,
+            # force a family rotation (or clear the lock) and trigger replan.
+            ZERO_DELTA_THRESHOLD = 0.01
+            ZERO_DELTA_ESCAPE_THRESHOLD = 3
+            meaningful_change = float((hypothesis_context.get("last_transition_effect") or {}).get(
+                "meaningful_change_score", 0.0
+            ))
+            locked_family = self._plateau_locked_family
+            if locked_family is None:
+                self._plateau_lock_zero_delta_streak = 0
+                self._plateau_lock_last_family_for_delta = None
+            else:
+                if locked_family != self._plateau_lock_last_family_for_delta:
+                    self._plateau_lock_zero_delta_streak = 0
+                if meaningful_change <= ZERO_DELTA_THRESHOLD:
+                    self._plateau_lock_zero_delta_streak += 1
+                else:
+                    self._plateau_lock_zero_delta_streak = 0
+                self._plateau_lock_last_family_for_delta = locked_family
+
+                if self._plateau_lock_zero_delta_streak >= ZERO_DELTA_ESCAPE_THRESHOLD:
+                    alternate_family = next(
+                        (
+                            family for family in ranked_families
+                            if family != locked_family and family in available_actions
+                        ),
+                        None,
+                    )
+                    self._trace(
+                        "solve_plateau_zero_delta_escape",
+                        "plateau_policy",
+                        {
+                            "step": step,
+                            "locked_family": locked_family,
+                            "streak": self._plateau_lock_zero_delta_streak,
+                            "meaningful_change": meaningful_change,
+                        },
+                        {
+                            "alternate_family": alternate_family,
+                            "reason": "repeated_zero_delta",
+                        },
+                    )
+
+                    if self._active_chunk and getattr(self._active_chunk, "source", "") == "plateau_exploitation":
+                        self._mark_chunk_failed(self._active_chunk, "plateau_zero_delta_escape")
+                    self._active_chunk = None
+
+                    self._plateau_locked_family = alternate_family
+                    self._plateau_lock_duration = 0
+                    self._plateau_lock_family_replan_count = 0
+                    self._plateau_lock_last_family = None
+                    self._plateau_lock_zero_delta_streak = 0
+                    self._plateau_lock_last_family_for_delta = self._plateau_locked_family
+
+                    should_replan = True
+                    dissonance_reason = (
+                        f"plateau lock '{locked_family}' produced repeated zero-delta outcomes; forcing strategy shift"
+                    )
+
+            # B207: Plateau lock exhaustion guard — force-unlock after repeated
+            # no-progress / replan cycles for the same locked family.
+            EXHAUSTION_THRESHOLD = 3
+            cur_family = self._plateau_locked_family
+            if cur_family is not None:
+                # If the family didn't change and we're being asked to replan,
+                # count consecutive replan cycles against the locked family.
+                if self._plateau_lock_last_family == cur_family and should_replan:
+                    self._plateau_lock_family_replan_count += 1
+                elif self._plateau_lock_last_family != cur_family:
+                    # Reset counter when the family changes
+                    self._plateau_lock_family_replan_count = 0
+                # Remember last seen family
+                self._plateau_lock_last_family = cur_family
+
+                if self._plateau_lock_family_replan_count >= EXHAUSTION_THRESHOLD:
+                    try:
+                        self._trace(
+                            "solve_plateau_lock_exhausted",
+                            "plateau_policy",
+                            {"step": step, "family": cur_family},
+                            {"reason": "plateau_exhausted"},
+                        )
+                    except Exception:
+                        pass
+                    # Mark current plateau exploitation chunk failed and clear lock
+                    if self._active_chunk and getattr(self._active_chunk, "source", "") == "plateau_exploitation":
+                        self._mark_chunk_failed(self._active_chunk, "plateau_exhausted")
+                    self._active_chunk = None
+                    self._plateau_locked_family = None
+                    self._plateau_lock_duration = 0
+                    # Reset exhaustion counters
+                    self._plateau_lock_family_replan_count = 0
+                    self._plateau_lock_last_family = None
 
             # B145/B146: Replace or Update Plateau Exploitation chunk
             # Use the AUTHORITATIVE locked family for the chunk
@@ -3010,6 +3360,19 @@ class SolveEngine:
         self._plateau_active = False
         self._plateau_locked_family = None
 
+    def _best_other_primary(self, role_type: RoleType, exclude_color: int) -> tuple[Optional[int], float]:
+        """Return the strongest existing primary of a role type, excluding one color."""
+        best_color: Optional[int] = None
+        best_conf = 0.0
+        for color_id, role in self._object_roles.items():
+            if color_id == exclude_color or role.role != role_type:
+                continue
+            conf = float(role.confidence or 0.0)
+            if conf > best_conf:
+                best_color = color_id
+                best_conf = conf
+        return best_color, best_conf
+
     def _merge_persistent_roles(self, new_roles: Dict[int, ObjectRole], step: int) -> List[str]:
         """Merge step-level roles into the persistent role map with conflict handling."""
         notes: List[str] = []
@@ -3056,6 +3419,27 @@ class SolveEngine:
                 )
                 continue
 
+            if existing.role == RoleType.DECORATION and new_role.role in {RoleType.INTERMEDIATE, RoleType.GOAL, RoleType.PLAYER}:
+                new_role.evidence_steps = sorted(set((existing.evidence_steps or []) + (new_role.evidence_steps or []) + [step]))
+                if existing.estimated_position and not new_role.estimated_position:
+                    new_role.estimated_position = existing.estimated_position
+                should_upgrade = (
+                    new_role.confidence >= existing.confidence
+                    or existing.confidence <= 0.5
+                    or (new_role.role == RoleType.INTERMEDIATE and new_role.estimated_position is not None)
+                )
+                if should_upgrade:
+                    self._set_role(color_id, new_role)
+                    notes.append(
+                        f"step {step}: replaced decoration with {new_role.role.value} at color_{color_id}"
+                    )
+                else:
+                    existing.evidence_steps = new_role.evidence_steps
+                    notes.append(
+                        f"step {step}: preserved decoration at color_{color_id}; ignored {new_role.role.value}"
+                    )
+                continue
+
             if existing.role == RoleType.PLAYER and new_role.role == RoleType.GOAL:
                 existing.evidence_steps = sorted(set((existing.evidence_steps or []) + (new_role.evidence_steps or []) + [step]))
                 notes.append(
@@ -3064,6 +3448,19 @@ class SolveEngine:
                 continue
 
             if existing.role == RoleType.GOAL and new_role.role == RoleType.PLAYER:
+                other_player_color, other_player_conf = self._best_other_primary(RoleType.PLAYER, exclude_color=color_id)
+                grounded_goal = existing.confidence >= 0.7
+                grounded_other_player = other_player_conf >= 0.7
+                if grounded_other_player or (grounded_goal and new_role.confidence < existing.confidence + 0.10):
+                    existing.evidence_steps = sorted(set((existing.evidence_steps or []) + (new_role.evidence_steps or []) + [step]))
+                    if not existing.estimated_position and new_role.estimated_position:
+                        existing.estimated_position = new_role.estimated_position
+                    anchor = f" while player_{other_player_color} already grounded" if grounded_other_player and other_player_color is not None else ""
+                    notes.append(
+                        f"step {step}: kept goal at color_{color_id}; rejected player flip{anchor} (conf={new_role.confidence:.2f})"
+                    )
+                    continue
+
                 new_role.evidence_steps = sorted(set((existing.evidence_steps or []) + (new_role.evidence_steps or []) + [step]))
                 self._set_role(color_id, new_role)
                 notes.append(
