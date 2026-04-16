@@ -21,6 +21,7 @@ class TaskCheckpoint:
     plan_id: str | None
     result: dict | None
     attempt: int
+    phase_state: dict | None = None  # optional PhaseController checkpoint
 
 
 @dataclass
@@ -56,6 +57,7 @@ class CheckpointManager:
                     plan_id=payload.get("plan_id"),
                     result=payload.get("result"),
                     attempt=int(payload.get("attempt", 0)),
+                    phase_state=payload.get("phase_state"),
                 )
                 for tid, payload in data.get("tasks", {}).items()
             }
@@ -72,6 +74,7 @@ class CheckpointManager:
                     plan_id=None,
                     result=None,
                     attempt=0,
+                    phase_state=None,
                 )
 
         checkpoint = RunCheckpoint(version=version, card_id=card_id, tasks=tasks_map)
@@ -90,6 +93,7 @@ class CheckpointManager:
                     "plan_id": cp.plan_id,
                     "result": cp.result,
                     "attempt": cp.attempt,
+                    "phase_state": cp.phase_state,
                 }
                 for tid, cp in checkpoint.tasks.items()
             },

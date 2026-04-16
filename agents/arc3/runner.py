@@ -18,7 +18,13 @@ from typing import Any, Callable, List, Mapping, Optional
 from benchmarks.ab_harness import ABHarness, ABTask, ABTaskResult, ABVariant, BenchmarkConfig
 from benchmarks.arc3.adapter import ARC3Adapter, BrainClientProtocol, LedgerBrainClient
 from benchmarks.arc3.harness import ARC3Harness
-from mcp_engine.observability import build_observability, canonical_span_name
+from mcp_engine.observability import (
+    REQUIRED_DECISION_FIELDS,
+    REQUIRED_OUTCOME_FIELDS,
+    build_observability,
+    canonical_span_name,
+    ensure_contract_fields,
+)
 from benchmarks.arc3.outcome_judge import OutcomeJudge
 from benchmarks.arc3.regression_monitor import RegressionMonitor, RunRecord
 from benchmarks.arc3.trajectory_eval import TrajectoryEvaluator
@@ -74,8 +80,8 @@ class DurableARCRunner:
 
     async def run(self, tasks: List[ABTask], card_id: str) -> List[dict]:
         run_span = self.observability.span(
-            canonical_span_name("run"), 
-            {"card_id": card_id, "task_count": len(tasks)}
+            canonical_span_name("arc.run"),
+            {"card_id": card_id, "task_count": len(tasks), "session_id": card_id}
         )
         run_span.__enter__()
         
@@ -116,8 +122,12 @@ class DurableARCRunner:
 
             async def _run_single_task(task: ABTask) -> Optional[dict]:
                 task_span = self.observability.span(
-                    canonical_span_name("task"),
-                    {"task_id": task.task_id, "game_id": getattr(task, "game_id", "unknown")}
+                    canonical_span_name("arc.task"),
+                    {
+                        "task_id": task.task_id,
+                        "game_id": getattr(task, "game_id", "unknown"),
+                        "card_id": card_id,
+                    },
                 )
                 
                 with task_span:
@@ -129,6 +139,19 @@ class DurableARCRunner:
                             tc.result = None
                             mgr.save(checkpoint)
                         else:
+                            if hasattr(task_span, "set_attributes") and isinstance(tc.result, dict):
+                                task_span.set_attributes(
+                                    {
+                                        "final_state": tc.result.get("final_state"),
+                                        "correct": bool(tc.result.get("correct", False)),
+                                        "step_count": int(tc.result.get("steps", 0) or 0),
+                                        "tokens_in": int(tc.result.get("tokens_input", 0) or 0),
+                                        "tokens_out": int(tc.result.get("tokens_output", 0) or 0),
+                                        "cost_usd": float(tc.result.get("cost_usd", 0.0) or 0.0),
+                                        "failure_class": tc.result.get("failure_class") or "none",
+                                        "from_checkpoint": True,
+                                    }
+                                )
                             return self._submission_row_from_result(tc.result or {})
 
                     session_id = f"arc-{task.task_id}-{uuid.uuid4().hex[:8]}"
@@ -297,9 +320,19 @@ class DurableARCRunner:
 
                         mgr.mark_complete(checkpoint, task.task_id, getattr(orchestrator, "_plan_id", None), result_payload)
                         
-                        if hasattr(task_span, "set_attribute"):
-                            task_span.set_attribute("correct", task_result.correct)
-                            task_span.set_attribute("steps", task_result.steps)
+                        if hasattr(task_span, "set_attributes"):
+                            task_span.set_attributes(
+                                {
+                                    "final_state": result_payload.get("final_state"),
+                                    "correct": bool(task_result.correct),
+                                    "step_count": int(task_result.steps or 0),
+                                    "tokens_in": int(task_result.tokens_input or 0),
+                                    "tokens_out": int(task_result.tokens_output or 0),
+                                    "cost_usd": float(task_result.cost_usd or 0.0),
+                                    "failure_class": result_payload.get("failure_class") or "none",
+                                    "strategy_race_winner": True,
+                                }
+                            )
                         
                         return self._submission_row_from_result(result_payload)
                     else:
@@ -365,9 +398,26 @@ class DurableARCRunner:
 
                             mgr.mark_complete(checkpoint, task.task_id, orchestrator._plan_id, result_payload)
                             
-                            if hasattr(task_span, "set_attribute"):
-                                task_span.set_attribute("correct", task_result.correct)
-                                task_span.set_attribute("steps", task_result.steps)
+                            if hasattr(task_span, "set_attributes"):
+                                phase_summary = result_payload.get("solve_phase_summary") or {}
+                                bm = result_payload.get("benchmark_metrics") or {}
+                                pb = bm.get("prompt_budget") or {}
+                                task_span.set_attributes(
+                                    {
+                                        "final_state": result_payload.get("final_state"),
+                                        "correct": bool(task_result.correct),
+                                        "step_count": int(task_result.steps or 0),
+                                        "tokens_in": int(task_result.tokens_input or 0),
+                                        "tokens_out": int(task_result.tokens_output or 0),
+                                        "cost_usd": float(task_result.cost_usd or 0.0),
+                                        "failure_class": result_payload.get("failure_class") or "none",
+                                        "supervisor_verdict": str((result_payload.get("judge_verdict") or {}).get("label") or "none"),
+                                        "budget_exhausted": bool((bm.get("token_cost") or {}).get("budget_exhausted", False)),
+                                        "replan_count": int(phase_summary.get("replan_count") or 0),
+                                        "invalid_action_count": int(pb.get("invalid_action_count") or 0),
+                                        "no_progress_streak": int(getattr(orchestrator, "_consecutive_no_progress_steps", 0) or 0),
+                                    }
+                                )
                                 
                             return self._submission_row_from_result(result_payload)
                         except Exception as exc:
@@ -387,6 +437,20 @@ class DurableARCRunner:
                             )
                             mgr.mark_failed(checkpoint, task.task_id, str(exc), failure_class.value)
                             logger.error("Task %s failed [%s]: %s", task.task_id, failure_class.value, exc)
+                            if hasattr(task_span, "record_exception"):
+                                task_span.record_exception(exc, {"failure_class": failure_class.value})
+                            if hasattr(task_span, "set_attributes"):
+                                task_span.set_attributes(
+                                    {
+                                        "correct": False,
+                                        "failure_class": failure_class.value,
+                                        "final_state": (
+                                            (getattr(orchestrator, "_step_history", [])[-1] or {}).get("state_after")
+                                            if getattr(orchestrator, "_step_history", None)
+                                            else "unknown"
+                                        ),
+                                    }
+                                )
                             return None
 
             batch_results = await scheduler.run_batch(ordered_tasks, _run_single_task)
@@ -461,6 +525,56 @@ class DurableARCRunner:
         consecutive_no_progress_steps = 0
         bootstrap_write_trace: list[dict] = []
         final_write_trace: list[dict] = []
+        
+        def _phase_attrs(phase_name: str, step: int, level: int = 0) -> dict[str, Any]:
+            return {
+                "task_id": task.task_id,
+                "game_id": game_id,
+                "phase": phase_name,
+                "step": int(step),
+                "level": int(level),
+                "agent.name": "durable_arc_runner",
+                "agent.role": "runner",
+                "emitter.module": "agents.arc3.runner",
+                "emitter.method": "_run_puzzle",
+                "trace.contract.version": "v1",
+            }
+        
+        def _observation_summary(obs: Mapping[str, Any]) -> dict[str, Any]:
+            grid = obs.get("grid")
+            rows = len(grid) if isinstance(grid, list) else 0
+            cols = len(grid[0]) if rows and isinstance(grid[0], list) else 0
+            return {
+                "state": obs.get("state"),
+                "reward": obs.get("reward"),
+                "done": obs.get("done"),
+                "frame_hash": obs.get("frame_hash"),
+                "grid_rows": rows,
+                "grid_cols": cols,
+                "available_actions": list(obs.get("available_actions") or [])[:24],
+            }
+        
+        def _memory_retrieval_summary(ctx: Mapping[str, Any] | None) -> dict[str, Any]:
+            if not isinstance(ctx, Mapping):
+                return {
+                    "retrieval_total": 0,
+                    "truth_count": 0,
+                    "lesson_count": 0,
+                    "analogy_count": 0,
+                    "memory_count": 0,
+                    "procedure_count": 0,
+                }
+            return {
+                "retrieval_total": sum(
+                    len(ctx.get(k) or [])
+                    for k in ("truths", "lessons", "analogies", "memories", "procedures")
+                ),
+                "truth_count": len(ctx.get("truths") or []),
+                "lesson_count": len(ctx.get("lessons") or []),
+                "analogy_count": len(ctx.get("analogies") or []),
+                "memory_count": len(ctx.get("memories") or []),
+                "procedure_count": len(ctx.get("procedures") or []),
+            }
 
         for attempt in range(1, max_retries + 1):
             frame_response, guid = await self._initial_frame(game_id)
@@ -526,7 +640,16 @@ class DurableARCRunner:
             except Exception:
                 logger.exception("Failed to persist initial phase state to checkpoint")
 
-            memory_context = await orchestrator.perceive(observation, step=0)
+            with self.observability.span(canonical_span_name("arc.phase.perceive"), _phase_attrs("perceive", total_steps)) as perceive_span:
+                memory_context = await orchestrator.perceive(observation, step=0)
+                if hasattr(perceive_span, "set_attributes"):
+                    perceive_span.set_attributes(
+                        {
+                            **_observation_summary(observation),
+                            **_memory_retrieval_summary(memory_context),
+                            "phase_answer": self._phase_answer_for(orchestrator, SolvePhase.PERCEIVE.value),
+                        }
+                    )
             # B212: inject graph_evidence from orchestrator hypothesis context into memory_context
             try:
                 if isinstance(memory_context, dict) and getattr(orchestrator, "_hypothesis_context", None):
@@ -537,7 +660,8 @@ class DurableARCRunner:
             except Exception:
                 logger.debug("Failed injecting graph_evidence into memory_context", exc_info=True)
 
-            await orchestrator.plan(observation, memory_context)
+            with self.observability.span(canonical_span_name("arc.phase.plan"), _phase_attrs("plan", total_steps)):
+                await orchestrator.plan(observation, memory_context)
             if hasattr(orchestrator, "consume_write_trace"):
                 bootstrap_write_trace = list(orchestrator.consume_write_trace())
 
@@ -622,12 +746,13 @@ class DurableARCRunner:
                     logger.exception("Failed to sync brain phase during hypothesize")
 
                 prior_step = orchestrator._step_history[-1] if getattr(orchestrator, "_step_history", None) else None
-                hyp_ctx = await orchestrator.hypothesize(
-                    observation,
-                    prior_step.get("action_id") if prior_step else None,
-                    total_steps,
-                    transition_meta=prior_step,
-                )
+                with self.observability.span(canonical_span_name("arc.phase.hypothesize"), _phase_attrs("hypothesize", total_steps)):
+                    hyp_ctx = await orchestrator.hypothesize(
+                        observation,
+                        prior_step.get("action_id") if prior_step else None,
+                        total_steps,
+                        transition_meta=prior_step,
+                    )
 
                 # Advance to ROUTE (was: 'solve')
                 previous_phase = phase_ctrl.phase_name
@@ -660,7 +785,8 @@ class DurableARCRunner:
                 except Exception:
                     logger.exception("Failed to sync brain phase during solve/route")
 
-                await orchestrator.solve(observation, hyp_ctx, total_steps)
+                with self.observability.span(canonical_span_name("arc.phase.solve"), _phase_attrs("solve", total_steps)):
+                    await orchestrator.solve(observation, hyp_ctx, total_steps)
 
                 # Advance to EXECUTE (was: 'act')
                 previous_phase = phase_ctrl.phase_name
@@ -694,7 +820,35 @@ class DurableARCRunner:
                 except Exception:
                     logger.exception("Failed to sync brain phase during act/execute")
 
-                action = await orchestrator.act(observation, memory_context, total_steps + 1)
+                with self.observability.span(canonical_span_name("arc.phase.act"), _phase_attrs("act", total_steps + 1)):
+                    action = await orchestrator.act(observation, memory_context, total_steps + 1)
+                    try:
+                        step_entry = (getattr(orchestrator, "_step_history", []) or [{}])[-1] or {}
+                        decision_attrs = ensure_contract_fields({
+                            "step": total_steps + 1,
+                            "session_id": session_id,
+                            "task_id": task.task_id,
+                            "phase": "act",
+                            "available_actions": step_entry.get("available_actions") or observation.get("available_actions"),
+                            "prompt": step_entry.get("prompt"),
+                            "input_observation": _observation_summary(observation),
+                            "action_id": step_entry.get("action_id") or (action.get("action_id") if isinstance(action, dict) else None),
+                            "candidate_action_id": step_entry.get("candidate_action_id"),
+                            "decision_source": step_entry.get("decision_source"),
+                            "guard_status": step_entry.get("guard_status"),
+                            "verifier_status": step_entry.get("verifier_status"),
+                            "rationale": step_entry.get("rationale"),
+                            "thinking_trace": step_entry.get("thinking_trace"),
+                            "agent.name": "durable_arc_runner",
+                            "agent.role": "runner",
+                            "emitter.module": "agents.arc3.runner",
+                            "emitter.method": "_run_puzzle.act",
+                            "trace.contract.version": "v1",
+                        }, REQUIRED_DECISION_FIELDS, strict=False, defaults={"action_id": "unknown"})
+                        with self.observability.span(canonical_span_name("agent.policy.decision"), decision_attrs):
+                            pass
+                    except Exception:
+                        logger.debug("Failed to emit agent.policy.decision span", exc_info=True)
 
                 total_tokens_in += self.harness.serializer._estimate_tokens(json.dumps(observation))
                 total_tokens_out += self.harness.serializer._estimate_tokens(str(action))
@@ -736,9 +890,31 @@ class DurableARCRunner:
                 except Exception:
                     logger.exception("Failed to sync brain phase during ingest/evaluate")
 
-                await adapter.ingest_step(frame_response, action, reward=reward, recall_query=recall_query)
-                observation = adapter.normalize_observation(frame_response)
-                orchestrator.record_step_result(reward, done, next_observation=observation)
+                with self.observability.span(canonical_span_name("arc.phase.evaluate"), _phase_attrs("evaluate", total_steps + 1)):
+                    await adapter.ingest_step(frame_response, action, reward=reward, recall_query=recall_query)
+                    observation = adapter.normalize_observation(frame_response)
+                    orchestrator.record_step_result(reward, done, next_observation=observation)
+                    try:
+                        outcome_attrs = ensure_contract_fields({
+                            "step": total_steps + 1,
+                            "session_id": session_id,
+                            "task_id": task.task_id,
+                            "phase": "evaluate",
+                            "action_id": (action.get("action_id") if isinstance(action, dict) else None),
+                            "reward": reward,
+                            "done": done,
+                            "state_after": observation.get("state"),
+                            "output_observation": _observation_summary(observation),
+                            "agent.name": "durable_arc_runner",
+                            "agent.role": "runner",
+                            "emitter.module": "agents.arc3.runner",
+                            "emitter.method": "_run_puzzle.evaluate",
+                            "trace.contract.version": "v1",
+                        }, REQUIRED_OUTCOME_FIELDS, strict=False, defaults={"state_after": "unknown"})
+                        with self.observability.span(canonical_span_name("agent.phase.outcome"), outcome_attrs):
+                            pass
+                    except Exception:
+                        logger.debug("Failed to emit agent.phase.outcome span", exc_info=True)
 
                 if reward > last_reward:
                     consecutive_no_progress_steps = 0
@@ -799,6 +975,25 @@ class DurableARCRunner:
                                 )
                             except Exception:
                                 logger.debug("Unable to emit REPLAN trace event", exc_info=True)
+                            # B216: If loop_detected fired, blacklist the offending action family
+                            try:
+                                hyp_ctx = getattr(orchestrator, "_hypothesis_context", {}) or {}
+                                if hyp_ctx.get("loop_detected"):
+                                    solve_ctx = getattr(orchestrator, "_solve_context", {}) or {}
+                                    locked_family = solve_ctx.get("plateau_locked_family")
+                                    if not locked_family:
+                                        last_step = (getattr(orchestrator, "_step_history", []) or [{}])[-1] or {}
+                                        locked_family = last_step.get("action_id")
+                                    if locked_family:
+                                        # Inject blacklist into orchestrator hypothesis context for next route decision
+                                        try:
+                                            orchestrator._hypothesis_context = dict(hyp_ctx)
+                                            orchestrator._hypothesis_context["loop_detected_action_blacklist"] = [locked_family]
+                                            orchestrator._emit_trace_event("operation", "loop_escape", {"step": total_steps}, {"blacklist": [locked_family], "reason": "loop_detected"})
+                                        except Exception:
+                                            logger.debug("Failed to inject loop blacklist into hypothesis_context", exc_info=True)
+                            except Exception:
+                                logger.debug("Loop blacklist injection failed", exc_info=True)
                             try:
                                 if hasattr(orchestrator, "_record_write_event"):
                                     orchestrator._record_write_event(
@@ -934,7 +1129,22 @@ class DurableARCRunner:
                                 action_id_local = action.get("action_id")
                             else:
                                 action_id_local = getattr(action, "action_id", None) or (action if isinstance(action, str) else None)
-                        await orchestrator.perceive_step_response(observation, step=total_steps, reward=reward, done=done, action_id=action_id_local)
+                        with self.observability.span(
+                            canonical_span_name("arc.phase.perceive"),
+                            _phase_attrs("perceive_step_response", total_steps),
+                        ) as perceive_step_span:
+                            await orchestrator.perceive_step_response(observation, step=total_steps, reward=reward, done=done, action_id=action_id_local)
+                            if hasattr(perceive_step_span, "set_attributes"):
+                                perceive_step_span.set_attributes(
+                                    {
+                                        "action_id": action_id_local,
+                                        "reward": reward,
+                                        "done": done,
+                                        "state": observation.get("state"),
+                                        "frame_hash": observation.get("frame_hash"),
+                                        "phase_answer": self._phase_answer_for(orchestrator, SolvePhase.PERCEIVE.value),
+                                    }
+                                )
                     except Exception:
                         logger.exception("perceive_step_response failed")
 
@@ -1858,8 +2068,8 @@ class DurableARCRunner:
         try:
             if hasattr(orchestrator, "_emit_trace_event"):
                 orchestrator._emit_trace_event(
-                    "phase_transition",
-                    "phase_transition",
+                    "agent_phase_transition",
+                    "agent.phase.transition",
                     details,
                     {"current_phase": to_phase},
                 )
