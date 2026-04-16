@@ -178,7 +178,12 @@ async def race(
         buffered = BufferedBrainClient(runner._raw_brain)
         ledger: List[dict] = []
         # Use LedgerBrainClient to preserve ledger semantics expected by orchestrator
-        variant_brain = LedgerBrainClient(inner=buffered, ledger=ledger, step_provider=lambda: 0)
+        variant_brain = LedgerBrainClient(
+            inner=buffered, 
+            ledger=ledger, 
+            step_provider=lambda: 0,
+            observability=getattr(runner, "observability", None)
+        )
 
         # variant_runner is expected to be a coroutine that creates the orchestrator
         # and executes the variant, returning (task_result, duration, orchestrator)

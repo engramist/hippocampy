@@ -252,53 +252,66 @@ class GridDiffEngine:
         )
 
     def find_reference_goal_pair(self, regions: List[PatternRegion], rows: int, cols: int) -> Optional[tuple[PatternRegion, PatternRegion]]:
-        """B167: Identify reference (static target) and goal (dynamic)."""
-        if len(regions) < 2: return None
-        
-        # Find candidates: regions of similar size
-        candidates = []
+        """B167: Identify reference (static target) and goal (dynamic).
+
+        Prefer pairs that are structurally similar, with the reference anchored in a
+        corner (especially bottom-left) and the goal nearer the center / upper playfield.
+        """
+        if len(regions) < 2:
+            return None
+
+        best_pair: Optional[tuple[PatternRegion, PatternRegion]] = None
+        best_score = float("-inf")
+
+        def reference_bias(region: PatternRegion) -> float:
+            if region.location_hint == "corner_bl":
+                return 12.0
+            if "corner" in region.location_hint:
+                return 9.0
+            if "edge" in region.location_hint:
+                return 5.0
+            return 1.5
+
+        def goal_bias(region: PatternRegion, reference: PatternRegion) -> float:
+            score = 0.0
+            if region.location_hint == "center":
+                score += 8.0
+            elif "edge_top" in region.location_hint or region.center[0] <= rows * 0.45:
+                score += 6.0
+            elif "corner" not in region.location_hint:
+                score += 4.0
+            if "corner" in region.location_hint:
+                score -= 3.0
+            if region.location_hint == reference.location_hint:
+                score -= 4.0
+            return score
+
         for i in range(len(regions)):
             for j in range(i + 1, len(regions)):
                 ra, rb = regions[i], regions[j]
                 size_ratio = max(ra.size, rb.size) / max(min(ra.size, rb.size), 1)
-                if size_ratio <= 1.5:
-                    candidates.append((ra, rb))
-                    
-        if not candidates: return None
-        
-        # Heuristic: reference pattern is usually in a corner or edge
-        # and goal is more central or in a different corner
-        best_pair = None
-        best_score = -1
-        
-        for ra, rb in candidates:
-            # Score ra as reference, rb as goal
-            score_ra = 0
-            if "corner" in ra.location_hint: score_ra += 10
-            elif "edge" in ra.location_hint: score_ra += 5
-            
-            score_rb = 0
-            if "corner" in rb.location_hint: score_rb += 10
-            elif "edge" in rb.location_hint: score_rb += 5
-            
-            # If one is in corner and other is not, it's a strong signal
-            if score_ra > score_rb:
-                pair_score = score_ra - score_rb
-                if pair_score > best_score:
-                    best_score = pair_score
-                    best_pair = (ra, rb)
-            elif score_rb > score_ra:
-                pair_score = score_rb - score_ra
-                if pair_score > best_score:
-                    best_score = pair_score
-                    best_pair = (rb, ra)
-            else:
-                # Both equal — pick corner one as reference
-                if score_ra > 0:
-                    if best_score < 0:
-                        best_score = 1
-                        best_pair = (ra, rb)
-        
+                if size_ratio > 1.75:
+                    continue
+
+                structural = self.compare_regions(ra, rb, allow_color_shift=True).similarity
+
+                for reference, goal in ((ra, rb), (rb, ra)):
+                    overlap = len(reference.color_palette & goal.color_palette)
+                    palette_bonus = 2.0 if overlap > 0 else (1.5 if structural >= 0.95 else 0.0)
+                    separation = abs(reference.center[0] - goal.center[0]) + abs(reference.center[1] - goal.center[1])
+                    separation_bonus = min(separation / max(rows + cols, 1), 1.0) * 4.0
+                    score = (
+                        structural * 20.0
+                        + reference_bias(reference)
+                        + goal_bias(goal, reference)
+                        + palette_bonus
+                        + separation_bonus
+                        - abs(1.0 - size_ratio) * 3.0
+                    )
+                    if score > best_score:
+                        best_score = score
+                        best_pair = (reference, goal)
+
         return best_pair
 
     def diff_grids(self, start_grid: List[List[int]], end_grid: List[List[int]]) -> GridDiff:

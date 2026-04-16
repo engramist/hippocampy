@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 
 from agents.arc3.failure_taxonomy import FailureTaxonomy, classify_failure
 from agents.arc3.runner import DurableARCRunner
+from agents.arc3.phase import SolvePhase
 from benchmarks.arc3.adapter import NoOpBrainClient
 
 
@@ -83,3 +84,55 @@ def test_submission_row_includes_failure_class():
 
     assert row["failure_class"] == FailureTaxonomy.MAX_STEPS_REACHED.value
     assert row["metadata"]["failure_class"] == FailureTaxonomy.MAX_STEPS_REACHED.value
+
+
+def test_replan_target_escalates_when_signature_repeats():
+    runner = _make_runner()
+    orchestrator = MagicMock()
+    orchestrator._hypothesis_context = {
+        "action_coverage": {"initial_exploration_complete": True},
+        "loop_detected": True,
+    }
+    orchestrator._solve_context = {
+        "active_chunk": {"source": "plateau_exploitation"},
+        "plateau_locked_family": "ACTION6",
+        "archetype": "space",
+        "archetype_confidence": 0.57,
+        "victory_condition": {"type": "unknown", "confidence": 0.1},
+    }
+    orchestrator.solve_engine = MagicMock()
+    orchestrator.solve_engine._archetype_confidence = 0.57
+    orchestrator._emit_trace_event = MagicMock()
+
+    first = runner._replan_target(orchestrator)
+    second = runner._replan_target(orchestrator)
+
+    assert first is SolvePhase.ROUTE
+    assert second is SolvePhase.MODEL
+    orchestrator._emit_trace_event.assert_called()
+
+
+def test_replan_target_allows_route_when_signature_changes():
+    runner = _make_runner()
+    orchestrator = MagicMock()
+    orchestrator._hypothesis_context = {
+        "action_coverage": {"initial_exploration_complete": True},
+        "loop_detected": True,
+    }
+    orchestrator._solve_context = {
+        "active_chunk": {"source": "plateau_exploitation"},
+        "plateau_locked_family": "ACTION6",
+        "archetype": "space",
+        "archetype_confidence": 0.57,
+        "victory_condition": {"type": "unknown", "confidence": 0.1},
+    }
+    orchestrator.solve_engine = MagicMock()
+    orchestrator.solve_engine._archetype_confidence = 0.57
+    orchestrator._emit_trace_event = MagicMock()
+
+    first = runner._replan_target(orchestrator)
+    orchestrator._solve_context["plateau_locked_family"] = "ACTION4"
+    second = runner._replan_target(orchestrator)
+
+    assert first is SolvePhase.ROUTE
+    assert second is SolvePhase.ROUTE
