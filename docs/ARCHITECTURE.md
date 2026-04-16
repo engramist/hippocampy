@@ -176,9 +176,12 @@ sidequests-brain/
 ├── sidequests.toml
 ├── brain_daemon.py
 ├── mcp_engine/
-│   ├── schema.py                # Kùzu schema init
+│   ├── schema.py                # Kùzu schema init (all node + relationship DDL)
+│   ├── tool_schemas.py          # Canonical MCP tool schema definitions (single source of truth)
 │   ├── hippocampus.py           # Semantic Quest Routing (B17)
 │   ├── working_memory.py        # Context Window Awareness (B18)
+│   ├── warm_frontier.py         # Passive graph pre-activation (B91) — bounded warm node frontier
+│   ├── dictionary.py            # Domain dictionary pre-seed from YAML (B160)
 │   ├── loop/
 │   │   ├── step1_ner.py         # spaCy NER / Zoning
 │   │   ├── step1b_relations.py  # Relation extraction: universal verb patterns (syntax-level, no LLM)
@@ -198,9 +201,11 @@ sidequests-brain/
 │   │   ├── kuzu_client.py       # Kùzu connection + Cypher execution
 │   │   └── embeddings.py        # sentence-transformers wrapper
 │   └── tools/
-│       ├── __init__.py          # MCP tools: notify_turn, current_truth, etc.
-│       └── explore_graph.py     # Directed multi-hop graph traversal
+│       ├── __init__.py          # MCP tool implementations: notify_turn, current_truth, etc.
+│       ├── explore_graph.py     # Directed multi-hop graph traversal
+│       └── task_graph.py        # DAG task graph helpers (B127/B128) — cycle detection, ready frontier
 ├── adapters/
+│   ├── openclaw_gateway.py      # OpenClaw prompt construction (Layer 1 + Layer 2 model)
 │   ├── claude_code/adapter.py        # Phase 0
 │   ├── claude_desktop/adapter.py     # M8
 │   ├── codex/adapter.py              # M8
@@ -213,18 +218,28 @@ sidequests-brain/
 │   └── arc3/                    # ARC-AGI-3 solving agent
 │       ├── orchestrator.py      # Perceive→hypothesize→solve→act pipeline + Phase routing (B156)
 │       ├── solver.py            # SolveEngine + TransformationHypothesizer (B151)
-│       ├── runner.py            # DurableARCRunner + Phase 1 entry point (B156)
+│       ├── runner.py            # DurableARCRunner + multi-level game loop (B156/B157)
 │       ├── hypothesis.py        # HypothesisManager, StateGraph, ActionFacts
 │       ├── prompts.py           # Pattern, execution, navigation prompt templates (B153)
-│       ├── grid_analysis.py     # GridDiffEngine, TransformationSignature (B150) [NEW]
-│       ├── entity_graph.py     # EntityGraphBuilder — graph exploration agent (B168) [NEW]
-│       ├── repl_verification.py # REPLVerificationLoop, HypothesisRefinementLoop (B152) [NEW]
-│       └── repl_sandbox.py      # Python REPL sandbox (B123)
+│       ├── grid_analysis.py     # GridDiffEngine, TransformationSignature (B150)
+│       ├── entity_graph.py      # EntityGraphBuilder — graph exploration agent (B168)
+│       ├── repl_verification.py # REPLVerificationLoop, HypothesisRefinementLoop (B152)
+│       ├── repl_sandbox.py      # Python REPL sandbox (B123)
+│       ├── supervisor.py        # PuzzleSupervisor — trajectory-aware meta-supervisor (B183)
+│       ├── circuit_breaker.py   # CircuitBreakerLLMClient — retry/backoff/fail-fast (B184)
+│       ├── failure_taxonomy.py  # FailureTaxonomy enum + classify_failure() (B185)
+│       ├── cost_tracker.py      # CostTracker — per-puzzle token/USD budget enforcement (B180)
+│       ├── scheduler.py         # PuzzleScheduler — difficulty ordering + health checks (B189)
+│       ├── strategy_racer.py    # StrategyRacer — race N strategy variants concurrently (B187)
+│       └── checkpoint.py        # CheckpointManager — atomic checkpoint for durable runs
 ├── benchmarks/
-│   └── arc3/                    # ARC-AGI-3 A/B harness
+│   └── arc3/                    # ARC-AGI-3 A/B harness + evaluation infrastructure
 │       ├── harness.py           # Baseline vs SideQuests-augmented runner
-│       ├── adapter.py           # Episode normalization bridge
-│       └── state_serializer.py  # State-to-text serialization
+│       ├── adapter.py           # Episode normalization bridge (NoOp, Ledger, Local clients)
+│       ├── state_serializer.py  # State-to-text serialization
+│       ├── outcome_judge.py     # OutcomeJudge — LLM-as-Judge rubric scoring (B181)
+│       ├── trajectory_eval.py   # TrajectoryEvaluator — offline trajectory quality scoring (B186)
+│       └── regression_monitor.py # RegressionMonitor — rolling cross-run regression detection (B188)
 └── tests/
 ```
 
@@ -245,6 +260,7 @@ This ensures that the ARC harness spends more time solving the puzzle and less t
 To ensure goal-directed behavior in Phase 2 fallback, the Solve Engine and Orchestrator collaborate to enforce planned sequences:
 - **Chunk Registration**: Every generated `PlanChunk` is registered as a unique `Plan` in SideQuests.
 - **Strict Enforcement**: The Orchestrator’s `_enforce_action_policy` prioritizes the active chunk’s `estimated_actions` over raw LLM suggestions.
+- **Exploration-Intent Bypass (B213)**: Before the decay guard fires, `_enforce_action_policy` checks whether the LLM is choosing to explore. If `action_id in unexplored` or the rationale contains explicit exploration language ("haven’t tried", "new action", "unexplored", etc.), the decay guard is skipped and the LLM’s choice is honored. Exploration intent from the LLM is higher-authority than fatigue state from prior steps.
 - **Execution Tracking**: The Solve Engine tracks `steps_executed` per chunk, and `DissonanceDetector` triggers replanning if a chunk stalls (zero progress) for too long. B154 reduces stall thresholds from 6→3 steps.
 
 ## Gated Consolidation Loop (9 Steps — Write Flow)
@@ -502,13 +518,33 @@ When Step 4 classifies a Concept at >90% confidence as a specific artifact type,
 - `GlobalConstraint`, `GlobalPreference` (workspace-level, cross-quest deduplication)
 - `Document` (`document_id`, `location_uri`, `content_hash`, `last_modified_at`, `mime_type`)
 - `Message` / `DocumentExtract` (`byte_start`, `byte_end` or line ranges for provenance)
-- `Lesson` (`lesson_id`, `text_raw`, `embedding`, `domain`, `lesson_type`, `confidence`, `confidence_low`, `pathway_strength`, `archived`, `created_at`)
+- `Lesson` (`lesson_id`, `text_raw`, `embedding`, `domain`, `lesson_type`, `confidence`, `confidence_low`, `pathway_strength`, `archived`, `created_at`, `last_audited_at`, `stale_flagged`, `orphan_flagged`)
 - `Plan`, `PlanStep` — see Active Agent System section above
 
 **ARC Exploration Graph Nodes** (B168, ephemeral per-puzzle, no embedding):
 - `GridEntity` (`entity_id`, `task_id`, `level`, `color_id`, `region_index`, `pixel_count`, `centroid_row/col`, `bbox_*`, `location_hint`, `aspect_ratio`, `compactness`, `is_background`, `is_mobile`, `is_interactive`, `inferred_role`, `role_confidence`, `last_updated_step`, `created_at`)
 - `GridSnapshot` (`snapshot_id`, `task_id`, `level`, `step`, `grid_hash`, `rows`, `cols`, `n_entities`, `symmetry_axes`, `created_at`)
 - `ActionEffect` (`effect_id`, `task_id`, `level`, `action_id`, `step`, `n_cells_changed`, `apparent_effect`, `direction_row/col`, `created_at`)
+
+**ARC Persistence Nodes** (per-puzzle state promoted from in-memory to graph-native):
+- `ActionFact` (B171) (`fact_id`, `task_id`, `level`, `action_id`, `fact_type`, `description`, `effect_description`, `consistency`, `confidence`, `value_status`, `evidence_count`, `observation_count`, `delta_row/col`, `n_cells_changed`, `created_at`, `last_updated`) — deterministic action facts extracted from repeated observations
+- `VictoryCondition` (B172) (`condition_id`, `task_id`, `level`, `condition_type`, `description`, `target_color_id`, `confidence`, `source`, `evidence_steps`, `created_at`, `last_updated`) — inferred win conditions
+- `ChunkExecution` (B174) (`execution_id`, `task_id`, `level`, `plan_id`, `chunk_family`, `description`, `status`, `steps_used`, `graduation_score`, `evidence_at_end`, `dissonance_triggered`, `outcome_summary`, `created_at`, `last_updated`) — chunk execution ledger
+- `PuzzleCostSummary` (B180) (`summary_id`, `task_id`, `model`, `tokens_in/out`, `cost_usd`, `outcome`, `steps`, `created_at`) — FinOps cost tracking per puzzle
+
+**Hypothesis & Exploration Nodes:**
+- `Hypothesis` (B88) (`hypothesis_id`, `task_id`, `level`, `hypothesis_type`, `description`, `confidence`, `status`, `evidence_count`, `counter_evidence_count`, `created_at`, `last_updated`) — systematic hypothesis tracking for ARC exploration
+
+**Metacognitive & Procedural Nodes:**
+- `Procedure` (B194) (`procedure_id`, `name`, `domain`, `archetype`, `description`, `steps_json`, `embedding FLOAT[384]`, `embedding_model`, `embedding_dim`, `success_count`, `application_count`, `success_rate`, `confidence`, `pathway_strength`, `archived`, `created_at`, `last_applied_at`) — reusable parameterized strategy templates distilled from successful Plans
+- `KnowledgeGap` (B193) (`gap_id`, `domain`, `gap_type`, `description`, `severity`, `message_count`, `lesson_count`, `resolved`, `created_at`, `resolved_at`) — metacognitive gap tracking for proactive learning
+
+**Entity Curation Nodes:**
+- `DisambiguationEvent` (B158) (`event_id`, `concept_id_a`, `concept_id_b`, `similarity`, `status`, `resolved_at`, `resolved_by`, `created_at`) — gray-zone entity pairs awaiting human or system resolution
+
+**Task Graph Nodes** (B127/B128 — first-class execution DAGs):
+- `TaskGraph` (`graph_id`, `name`, `description`, `label`, `status`, `version`, `created_at`) — durable dependency-aware execution graph
+- `TaskNode` (`task_id`, `name`, `description`, `status`, `input_data`, `output_data`, `error_msg`, `created_at`, `started_at`, `completed_at`) — individual task within a graph
 
 **Session & Infrastructure Nodes** (no embedding required):
 - `Session` (`session_id`, `started_at`, `last_active_at`, `onboarded BOOLEAN`, `purpose STRING`, `routing_state STRING`, `routing_confidence FLOAT`, `routing_method STRING`, `token_estimate INT64`, `token_limit INT64`, `loaded_node_count INT32`, `last_injection_at TIMESTAMP`)
@@ -554,7 +590,9 @@ When Step 4 classifies a Concept at >90% confidence as a specific artifact type,
 (Session)-[IN_WORKSPACE]->(Workspace)
 (Session)-[WORKING_ON]->(MainQuest | SideQuest)
 (Message)-[SENT_IN]->(Session)
+(Message)-[FOLLOWED_BY {gap_seconds}]->(Message)                # temporal message chain
 (Decision | Constraint)-[ESTABLISHED_IN]->(Session)
+(Decision)-[DECISION_CHAIN {session_id, step_number}]->(Decision) # ordered decision sequences
 
 # Ontology routing (graph-native routing table — core IP)
 (GistClass)-[ROUTES_TO]->(SchemaOrgType)
@@ -584,8 +622,12 @@ When Step 4 classifies a Concept at >90% confidence as a specific artifact type,
 (Concept)-[EXTENDS        {confidence FLOAT, inferred_by STRING, inferred_at TIMESTAMP}]->(Concept)
 (Concept)-[ALTERNATIVE_TO {confidence FLOAT, inferred_by STRING, inferred_at TIMESTAMP}]->(Concept)
 
-# Working memory
+# Entity disambiguation (B158)
+(Concept)-[DISTINCT_FROM {created_at, source}]->(Concept)       # entities confirmed as distinct
+
+# Working memory + warm frontier
 (Session)-[LOADED {injected_at, token_estimate, source, load_hits}]->(ArtifactNode)
+(Session)-[WARM_NODE {activation_score, activated_at}]->(ArtifactNode) # B91 pre-activation
 (Session)-[REROUTED_FROM {rerouted_at, reason}]->(MainQuest)
 
 # Anomaly detection (B12)
@@ -596,13 +638,36 @@ When Step 4 classifies a Concept at >90% confidence as a specific artifact type,
 (Session)-[LEARNED]->(Lesson)
 (Lesson)-[APPLIES_TO]->(Concept | Decision | Requirement)
 (Lesson)-[RELATED_TO]->(Lesson)
+(Lesson)-[GENERALIZES_LESSON {synthesized_at, cluster_size}]->(Lesson) # lesson clustering
 (Message)-[CONTAINS_LESSON]->(Lesson)
 
 # Active Agent System — Plans (B66–B69)
 (Plan)-[PLANNED_IN]->(Session)
 (Plan)-[TARGETS]->(MainQuest | SideQuest)
+(Plan)-[EXECUTED_AS {seq}]->(ChunkExecution)                    # chunk execution ledger (B174)
 (PlanStep)-[STEP_OF]->(Plan)
 (PlanStep)-[NEXT_STEP]->(PlanStep)
+(PlanStep)-[ACTS_ON]->(Concept)
+(Plan)-[PRODUCED_PLAN_LESSON]->(Lesson)
+(PlanStep)-[OUTCOME_SIGNAL {valence, plan_id, observed_at}]->(Concept)
+
+# Procedure & Knowledge Gap (B193/B194)
+(Procedure)-[DISTILLED_FROM {synthesized_at}]->(Plan)           # procedure synthesized from plan
+(Procedure)-[APPLIES_TO_ARCHETYPE]->(Concept)                   # domain/archetype linkage
+(Plan)-[APPLIED_PROCEDURE {success, applied_at}]->(Procedure)   # plan used this procedure
+(KnowledgeGap)-[IDENTIFIED_GAP_IN]->(MainQuest | Concept)       # gap detected in domain
+
+# Hypothesis engine (B88)
+(Hypothesis)-[HYPOTHESIZED_IN]->(Session)
+(Concept)-[CONFIRMS {weight}]->(Hypothesis)
+(Concept)-[CONTRADICTS {weight}]->(Hypothesis)
+(Hypothesis)-[GENERALIZES]->(Hypothesis)
+(Plan)-[PRODUCED_HYPOTHESIS]->(Hypothesis)
+(ActionFact)-[SUPPORTS_HYPOTHESIS {weight}]->(Hypothesis)
+
+# Task Graph (B127/B128)
+(TaskNode)-[TASK_OF]->(TaskGraph)
+(TaskNode)-[DEPENDS_ON]->(TaskNode)
 
 # ARC Exploration Graph (B168)
 (GridEntity)-[OBSERVED_IN {step}]->(GridSnapshot)
@@ -616,10 +681,12 @@ When Step 4 classifies a Concept at >90% confidence as a specific artifact type,
 (GridEntity)-[CO_MOVES_WITH {step}]->(GridEntity)
 (GridEntity)-[CORRELATES_WITH {step, mechanism}]->(GridEntity)
 (GridEntity)-[CAUSES_CHANGE_IN {mechanism, confidence, step}]->(GridEntity)
+(ActionFact)-[DERIVED_FROM_FACT {step}]->(ActionEffect)         # B171 fact provenance
 (GridEntity)-[ENTITY_HYPOTHESIS {weight, step}]->(Hypothesis)
-(PlanStep)-[ACTS_ON]->(Concept)
-(Plan)-[PRODUCED_LESSON]->(Lesson)
-(PlanStep)-[OUTCOME_SIGNAL {valence, plan_id, observed_at}]->(Concept)
+
+# Victory condition linkage (B172)
+(VictoryCondition)-[INFERRED_FROM {weight}]->(Hypothesis)
+(VictoryCondition)-[REQUIRES_ENTITY {requirement}]->(GridEntity)
 ```
 
 ## IPC Protocol (Adapter ↔ Brain Daemon)
@@ -656,29 +723,21 @@ Response: `{ "status": "queued" }` — always immediate, never blocks.
 
 ### Retrieval Tools
 
-**`current_truth`** — call before answering architecture or past-decision questions
-```json
-{
-  "name": "current_truth",
-  "inputSchema": {
-    "properties": {
-      "query":      { "type": "string" },
-      "session_id": { "type": "string" },
-      "scope":      { "type": "string", "enum": ["branch", "global", "both"], "default": "branch" },
-      "limit":      { "type": "integer", "default": 10 }
-    },
-    "required": ["query", "session_id"]
-  }
-}
-```
+**`current_truth`** — call before answering architecture or past-decision questions (includes optional `include_rationale` for 1-hop ESTABLISHED_IN message context)
 
-**`explore_graph`** — directed multi-hop traversal (B10)
+**`explore_graph`** — directed multi-hop traversal with configurable depth, strategy (DFS/BFS), edge types, direction, and context window (B10)
 
 **`recall_relevant_lessons`** — cross-quest analogical recall (B11)
 
 **`recall_plans`** — retrieve past strategies by goal similarity (B67)
 
 **`analogical_search`** — cross-quest search (M8)
+
+**`reconstruct_timeline`** — reconstruct temporal sequence of messages and decisions for a topic (B192)
+
+**`recall_procedures`** — retrieve reusable Procedure templates by archetype or semantic query, ranked by success rate (B194)
+
+**`get_knowledge_gaps`** — return active KnowledgeGap nodes for proactive metacognitive review (B193)
 
 ### Quest Management Tools
 
@@ -698,11 +757,33 @@ Response: `{ "status": "queued" }` — always immediate, never blocks.
 
 **`report_outcome`** — report step/plan results with valence
 
+### Task Graph Tools (B127/B128)
+
+**`register_task_graph`** — declare a first-class execution DAG (TaskGraph + TaskNodes) with dependency edges and cycle detection
+
+**`get_ready_tasks`** — return the topological frontier: all pending tasks whose upstream dependencies are complete
+
+**`advance_task`** — transition a task to active/complete/skipped; returns newly unblocked tasks
+
+**`fail_task`** — mark a task as failed; returns blocked dependents
+
+**`get_task_graph`** — return full graph state (nodes + edges) for audit
+
 ### Lesson Tools (B11)
 
 **`upsert_lesson`** — explicitly add or update a domain-specific lesson
 
 **`recall_relevant_lessons`** — cross-quest analogical recall
+
+### Entity Curation Tools (B158)
+
+**`get_disambiguation_queue`** — get pending gray-zone entity pairs for human review
+
+**`resolve_disambiguation`** — resolve a disambiguation pair: merge, separate, or skip
+
+### Domain Dictionary Tools (B160)
+
+**`reload_domain_dictionary`** — reload domain dictionary from `.sidequests/domain_dictionary.yaml`; adds new entities and altLabels without duplicating
 
 ### Monitoring Tools
 
@@ -758,6 +839,10 @@ to the user — don't present tentative memory as confirmed fact.
 ```
 
 Tracked via `Session.onboarded BOOLEAN` on the `Session` node. First session for a given LLM+Quest pair → full onboarding prompt injected, `onboarded` set to `true`. All subsequent sessions → Layer 1 fragment only.
+
+### OpenClaw Gateway (`adapters/openclaw_gateway.py`)
+
+The OpenClaw gateway constructs system prompts for OpenClaw plugin sessions using the same two-layer model. It auto-detects git context (repo root + branch) for MainQuest alignment and provides memory-aware tool aliases (`memory_recall`, `memory_store`, `memory_search_analogies`, `memory_status`) that map to the underlying MCP tools.
 
 ## Error / Degraded Mode
 
@@ -835,6 +920,121 @@ The agent uses a **level-aware learning pipeline** (B150–B157): B157 enables m
 Before goal-seeking begins, the **Graph Exploration Agent** (B168) builds a knowledge substrate in KuzuDB through two-phase exploration: static structural analysis (zero steps) followed by a deterministic action sweep (~4 steps). A dual inference engine (Tier 1-3 deterministic + Tier 4 LLM background) propagates behavioral and causal relationships through the graph. Graph-inferred entity roles feed into the existing ObjectRoleMapper with higher confidence than blind heuristic bootstrapping.
 
 See "ARC Inner-Loop: Level-Aware Learning Pipeline" and "ARC Graph-Based Exploration Agent" below for the full architecture.
+
+### ARC Solve Phase State Machine (B201)
+
+The ARC solver uses a **durable 7-phase state machine** owned by the Agent Orchestration & Control Plane (`PhaseController` in `agents/arc3/phase.py`). Phases are explicit, inspectable, and governed by gate conditions that must be satisfied before advancing.
+
+**Design rules:**
+- `PhaseController` is the single owner of phase transitions. The orchestrator and solve engine read the current phase but never advance it.
+- `brain.current_phase` remains a string for backward compatibility with ledger recording.
+- `finalization` is post-loop cleanup and is NOT a solve phase.
+- Gate conditions reuse existing signals — no new LLM calls.
+- Step budgets force-advance if a gate doesn't open within N steps.
+
+#### Phase Order and Execution Pattern
+
+**Once per attempt (setup):**
+```
+PERCEIVE → MODEL
+```
+
+**Per-step cycle (repeats until WIN, GAME_OVER, or budget exhausted):**
+```
+HYPOTHESIZE → ROUTE → EXECUTE → EVALUATE → PERCEIVE → HYPOTHESIZE (continue)
+                                          → REPLAN (stall detected)
+```
+
+**Replan branches back to:**
+```
+REPLAN → MODEL        (need more world understanding)
+REPLAN → HYPOTHESIZE  (hypothesis was wrong)
+REPLAN → ROUTE        (just pick new strategy)
+```
+
+#### Phase Definitions
+
+| # | Phase | Purpose | Code entry point |
+|---|---|---|---|
+| 1 | **PERCEIVE** | **Bootstrap:** intake initial observation, seed API knowledge cache. **Per-step (B202):** inspect ARC server response fields (state, reward, grid delta, available actions), write structured `ActionEffect` lesson record to SideQuests (B211). | `orchestrator.perceive()` [bootstrap], `orchestrator.perceive_step_response()` + `_write_action_effect_record()` [per-step] |
+| 2 | **MODEL** | Build world/map understanding — entity roles, topology, spatial patterns, grid analysis. Register initial plan with SideQuests. | `orchestrator.plan()` |
+| 3 | **HYPOTHESIZE** | Infer game archetype, victory condition, strategy candidates. Detect loops. Summarize action coverage. **Second pass (B212):** structured graph queries against prior `ActionEffect` lesson records to produce evidence-grounded `grounded_hypotheses` — runs when `step > 0` and archetype is known. | `orchestrator.hypothesize()` → `orchestrator.graph_hypothesize()` [step > 0, archetype known] |
+| 4 | **ROUTE** | Select strategy chunk (BFS, directional, explore). Graduate or replan based on solve context. | `orchestrator.solve()` |
+| 5 | **EXECUTE** | Submit chosen action to environment, receive frame response. | `orchestrator.act()` |
+| 6 | **EVALUATE** | Ingest step result, record reward, check WIN/GAME_OVER. Decide: continue or replan. | `adapter.ingest_step()`, `orchestrator.record_step_result()` |
+| 7 | **REPLAN** | Escalation phase when stalls detected. Analyzes signals to decide where to loop back. | `DurableARCRunner._replan_target()` |
+
+#### Transition Table
+
+```
+┌──────────────┐
+│   PERCEIVE   │
+└──────┬───────┘
+       │ observation received, API knowledge seeded
+       ▼
+┌──────────────┐
+│    MODEL     │
+└──────┬───────┘
+       │ initial_exploration_complete OR step ≥ MODEL_BUDGET
+       ▼
+┌──────────────┐◄────────────────────────────────────────┐
+│  HYPOTHESIZE │                                         │
+└──────┬───────┘                                         │
+       │ archetype_confidence ≥ 0.3 OR step ≥ HYP_BUDGET │
+       ▼                                                 │
+┌──────────────┐◄──────────────────────────┐             │
+│    ROUTE     │                           │             │
+└──────┬───────┘                           │             │
+       │ active chunk selected             │             │
+       ▼                                   │             │
+┌──────────────┐                           │             │
+│   EXECUTE    │                           │             │
+└──────┬───────┘                           │             │
+       │ action submitted, frame received  │             │
+       ▼                                   │             │
+┌──────────────┐                           │             │
+│   EVALUATE   │── no stall ──────────────►│ HYPOTHESIZE │
+└──────┬───────┘                           │             │
+       │ loop_detected OR                  │             │
+       │ no_progress ≥ 3                   │             │
+       ▼                                   │             │
+┌──────────────┐                           │             │
+│   REPLAN     │── new strategy ──────────►┘             │
+│              │── bad hypothesis ────────────────────────┘
+│              │── need world model ──► MODEL
+└──────────────┘
+```
+
+#### Gate Conditions
+
+| Transition | Gate | Force-advance fallback |
+|---|---|---|
+| PERCEIVE → MODEL | Initial observation received, API knowledge seeded | None (always satisfies on first call) |
+| MODEL → HYPOTHESIZE | `initial_exploration_complete == True` (all actions tested) | `step ≥ MODEL_BUDGET` (default: 4) |
+| HYPOTHESIZE → ROUTE | `archetype_confidence ≥ 0.3` | `step ≥ HYPOTHESIS_BUDGET` (default: 6) |
+| ROUTE → EXECUTE | Active chunk is not None | None (solve always produces a chunk or explore fallback) |
+| EXECUTE → EVALUATE | Action submitted, frame response received | None (always satisfies after action) |
+| EVALUATE → PERCEIVE | Not done AND no stall signals | (default path — no gate needed) |
+| EVALUATE → REPLAN | `loop_detected == True` OR `no_progress_steps ≥ 3` | — |
+| REPLAN → MODEL | `initial_exploration_complete == False` | — |
+| REPLAN → HYPOTHESIZE | `archetype_confidence < 0.3` | — |
+| REPLAN → ROUTE | (default — signals don't indicate model or hypothesis gap) | — |
+
+#### Signal Sources
+
+| Signal | Computed in | Type | Access path |
+|---|---|---|---|
+| `initial_exploration_complete` | `HypothesisManager._summarize_action_coverage()` | bool | `context["action_coverage"]["initial_exploration_complete"]` |
+| `archetype_confidence` | `SolveEngine._archetype_confidence` | float | `solve_ctx.get("archetype_confidence")` |
+| `loop_detected` | `HypothesisManager.hypothesize()` | bool | `orchestrator._hypothesis_context.get("loop_detected")` |
+| `no_progress_steps` | `DurableARCRunner._run_puzzle()` | int | Local counter `consecutive_no_progress_steps` |
+| `positions_known` | `SolveEngine._graduation_assessment()` | float | Internal to graduation (1.0 if player + goal known) |
+| `victory_confidence` | `SolveEngine._victory_condition.confidence` | float | `solve_ctx["victory_condition"]["confidence"]` |
+| `action_coverage` | `HypothesisManager._summarize_action_coverage()` | dict | `context["action_coverage"]` |
+
+#### Checkpoint Support
+
+`PhaseController` is checkpointable via `to_checkpoint()` / `from_checkpoint()`. On crash recovery, the controller restores its exact phase and history. Phase state is persisted as an optional `phase_state` field in `TaskCheckpoint`.
 
 ### ARC Harness / Meta-Harness Split
 
@@ -1031,12 +1231,22 @@ B157 (Multi-Level Progression) ──── CRITICAL BLOCKER
 | File | Role |
 |------|------|
 | `agents/arc3/runner.py` | B157: Multi-level game loop, level transition capture, per-level budgeting |
-| `agents/arc3/grid_analysis.py` | B150: GridDiffEngine, GridDiff, FrameDelta, LevelPattern (NEW) |
-| `agents/arc3/repl_verification.py` | B152: LevelReplayVerifier, RuleRefinementLoop (NEW) |
+| `agents/arc3/grid_analysis.py` | B150: GridDiffEngine, GridDiff, FrameDelta, LevelPattern |
+| `agents/arc3/repl_verification.py` | B152: LevelReplayVerifier, RuleRefinementLoop |
 | `agents/arc3/solver.py` | B151: GameRuleHypothesizer, GameRuleHypothesis + existing SolveEngine |
 | `agents/arc3/orchestrator.py` | B156: Level-aware orchestration, knowledge pipeline, mode routing |
 | `agents/arc3/prompts.py` | B153: Exploration, rule-application, execution, navigation templates |
 | `agents/arc3/entity_graph.py` | B168: EntityGraphBuilder — graph-based exploration + dual inference engine |
+| `agents/arc3/supervisor.py` | B183: PuzzleSupervisor — trajectory-aware meta-supervisor |
+| `agents/arc3/circuit_breaker.py` | B184: CircuitBreakerLLMClient — LLM call resilience |
+| `agents/arc3/failure_taxonomy.py` | B185: FailureTaxonomy enum + classify_failure() |
+| `agents/arc3/cost_tracker.py` | B180: CostTracker — per-puzzle token/USD budget enforcement |
+| `agents/arc3/scheduler.py` | B189: PuzzleScheduler — puzzle ordering + health checks |
+| `agents/arc3/strategy_racer.py` | B187: StrategyRacer — concurrent strategy variant racing |
+| `agents/arc3/checkpoint.py` | CheckpointManager — atomic checkpoint for durable runs |
+| `benchmarks/arc3/outcome_judge.py` | B181: OutcomeJudge — LLM-as-Judge rubric scoring |
+| `benchmarks/arc3/trajectory_eval.py` | B186: TrajectoryEvaluator — offline trajectory quality scoring |
+| `benchmarks/arc3/regression_monitor.py` | B188: RegressionMonitor — rolling regression detection |
 
 ### ARC Graph-Based Exploration Agent (B168)
 
@@ -1076,9 +1286,9 @@ After each exploration step, `run_inference()` runs four tiers:
 
 #### B168 Graph Schema
 
-**Node types:** `GridEntity`, `GridSnapshot`, `ActionEffect` (see `mcp_engine/schema.py`)
+**Node types:** `GridEntity`, `GridSnapshot`, `ActionEffect`, `ActionFact` (B171), `VictoryCondition` (B172) (see `mcp_engine/schema.py`)
 
-**Relationship types (12 total):**
+**Relationship types (15 total):**
 
 ```
 # Structural (Phase 1)
@@ -1098,6 +1308,14 @@ After each exploration step, `run_inference()` runs four tiers:
 (GridEntity)-[CORRELATES_WITH {step, mechanism}]->(GridEntity)
 (GridEntity)-[CAUSES_CHANGE_IN {mechanism, confidence, step}]->(GridEntity)
 
+# Fact provenance (B171)
+(ActionFact)-[DERIVED_FROM_FACT {step}]->(ActionEffect)
+(ActionFact)-[SUPPORTS_HYPOTHESIS {weight}]->(Hypothesis)
+
+# Victory condition (B172)
+(VictoryCondition)-[INFERRED_FROM {weight}]->(Hypothesis)
+(VictoryCondition)-[REQUIRES_ENTITY {requirement}]->(GridEntity)
+
 # Hypothesis linkage
 (GridEntity)-[ENTITY_HYPOTHESIS {weight, step}]->(Hypothesis)
 ```
@@ -1115,6 +1333,237 @@ With 4 available actions typical:
 - Phase 1: 0 steps (static analysis only)
 - Phase 2a: 4 steps (one per action)
 - **Total: ~4 steps** out of 119+ budget (<4%)
+
+---
+
+### Structured ActionEffect Writes and Graph Inference (B211–B213)
+
+#### Problem
+
+The existing `ingest_step` / `notify_turn` flow stores action outcomes as **narrative text strings** (e.g. `"Step 3: ACTION2 changed 1 pixel"`). SideQuests ingests these into `Concept` nodes via NER and consolidation, producing text retrievable by semantic similarity — but not by structural graph pattern. You cannot query: _"find ActionEffect records where entity_type=compact_object and action=INTERACT and effect_class=large_transformation"_ because those typed fields don't exist. The knowledge is there but stored in a form that requires knowing the right text query in advance — circular.
+
+#### B211: Structured ActionEffect Writes (write path)
+
+After every step in `perceive_step_response()`, `_write_action_effect_record()` writes a typed lesson record via `brain.upsert_lesson`:
+
+```python
+{
+    "lesson_type": "action_effect",
+    "action": "ACTION5",
+    "entity_type": "compact_object",    # from _solve_context["roles"]
+    "effect_class": "large_transformation",  # derived from FrameDelta
+    "n_cells_changed": 48,
+    "direction": None,
+    "new_colors": [...],
+    "removed_colors": [...],
+    "reward_signal": 0.0,
+    "spatial_role": "trigger",
+    "puzzle_archetype": "space",
+    "task_id": "...",
+    "step": 5,
+}
+```
+
+`effect_class` derivation from `FrameDelta`:
+- `n_cells_changed == 0` → `"no_effect"`
+- `direction` present AND `n_cells_changed <= 4` → `"directional_movement"`
+- `n_cells_changed > 30` → `"large_transformation"`
+- otherwise → `"local_change"`
+
+This write happens **in addition to** the existing `notify_turn` narrative. Not called at step 0 (no action yet).
+
+#### B212: Graph Inference in HYPOTHESIZE (read path)
+
+`graph_hypothesize()` runs inside the HYPOTHESIZE phase after `hypothesize()`, guarded by `step > 0` and archetype != `"unknown"`. It issues three tiers of structured queries:
+
+| Tier | Tool | Query form | Retrieves |
+|------|------|-----------|-----------|
+| 1 | `recall_relevant_lessons` | `lesson_type:action_effect effect_class:large_transformation puzzle_archetype:{arch}` | Past steps where action caused significant change in same archetype |
+| 2 | `current_truth` | Structural board description built by `_build_spatial_query()` | VictoryCondition/Hypothesis records from spatially similar past puzzles |
+| 3 | `recall_procedures` | `{archetype} trigger_object interaction` | Stored Procedure nodes for similar archetypes |
+
+Results are distilled rule-based (no LLM calls) by counting `(action, entity_type, effect_class)` triplets across retrieved lessons:
+
+```python
+_hypothesis_context["graph_evidence"] = {
+    "action_effect_patterns": [...],   # raw tier 1 lessons
+    "spatial_victory_hints": [...],    # tier 2 truth records
+    "matching_procedures": [...],      # tier 3 procedures
+    "grounded_hypotheses": [           # distilled evidence-backed candidates
+        {"action": "ACTION5", "entity_type": "compact_object",
+         "expected_effect": "large_transformation", "evidence_count": 3},
+        ...
+    ],
+}
+```
+
+`grounded_hypotheses` with `evidence_count >= 2` are injected into the act/solve prompts under a **"GRAPH EVIDENCE"** section. The "rotation trigger" pattern emerges from accumulated evidence — not from puzzle-specific hard-coded heuristics.
+
+#### B213: Revert Puzzle-Specific Heuristics (policy fix)
+
+`_detect_split_map_rotate_cross()` (introduced by an earlier session) detected plus-shaped objects and hard-forced ACTION5 — solving one puzzle by giving the agent the answer. It was wired into three places (`_enforce_action_policy`, `perceive_step_response`, `_try_autopilot`). **B213 removes it entirely.** Graph inference (B212) is the generalized replacement.
+
+B213 also adds the exploration-intent bypass described above in the Directional Chunk Enforcement section.
+
+#### Data flow summary
+
+```
+per-step PERCEIVE  ──► _write_action_effect_record()
+                          │
+                          ▼
+                   brain.upsert_lesson(lesson_type="action_effect", ...)
+                          │
+                          ▼ [next step or next puzzle]
+HYPOTHESIZE        ──► graph_hypothesize()
+                          │
+                          ├─ recall_relevant_lessons("lesson_type:action_effect ...")
+                          ├─ current_truth(spatial_query)
+                          └─ recall_procedures(archetype query)
+                          │
+                          ▼
+                   _hypothesis_context["graph_evidence"]["grounded_hypotheses"]
+                          │
+                          ▼
+                   act() / solve() prompt: "GRAPH EVIDENCE" section
+```
+
+---
+
+### ARC Agent Resilience & Evaluation Infrastructure (B180–B189)
+
+The ARC agent includes a layer of operational infrastructure for cost control, failure handling, trajectory monitoring, and evaluation quality. These modules sit alongside the core solving pipeline and operate as cross-cutting concerns.
+
+#### Meta-Supervisor (B183)
+
+`PuzzleSupervisor` provides trajectory-aware meta-monitoring, replacing simple step-count escalation with richer decision logic.
+
+**Decision types:** `CONTINUE` | `NUDGE` (suggest course correction) | `RESET_STRATEGY` | `ABANDON`
+
+**Two-tier evaluation:**
+1. **Rule-based checks (fast path, no LLM):** oscillation detection (same 2-3 states repeating), zero-reward stalls (no progress for N steps), budget exhaustion
+2. **LLM escalation (optional):** for ambiguous trajectories where rule-based checks are inconclusive
+
+Runs at configurable intervals (`check_interval`, default every 5 steps).
+
+#### Circuit Breaker (B184)
+
+`CircuitBreakerLLMClient` wraps the inner LLM client with retry/backoff/fail-fast behavior to prevent transient provider failures from crashing puzzles.
+
+**States:** `CLOSED` (normal) → `OPEN` (fail-fast, no calls) → `HALF_OPEN` (probe with one call)
+
+- `failure_threshold`: consecutive failures before opening (default 3)
+- `cooldown_seconds`: time in OPEN state before HALF_OPEN probe (default 30s)
+- `max_retries`: per-call retry limit with exponential backoff (default 3)
+- Emits trace events for observability
+
+#### Failure Taxonomy (B185)
+
+`FailureTaxonomy` is a stable enum for classifying puzzle failures into structured categories that downstream metrics can distinguish:
+
+| Category | Meaning |
+|----------|---------|
+| `LLM_TIMEOUT` | LLM call timed out |
+| `LLM_PARSE_ERROR` | LLM response couldn't be parsed |
+| `API_ERROR` | ARC API returned an error |
+| `BUDGET_EXCEEDED` | Token or USD budget exhausted |
+| `STRATEGY_EXHAUSTED` | All strategies tried and failed |
+| `STUCK_IN_LOOP` | Agent oscillating between same states |
+| `MAX_STEPS_REACHED` | Step limit hit without solving |
+| `CRASH` | Unhandled exception |
+
+`classify_failure()` is a defensive helper that maps exceptions, states, and signals → taxonomy bucket.
+
+#### Cost Tracker (B180)
+
+`CostTracker` accumulates per-puzzle token usage and computes dollar cost. Budget enforcement stops the puzzle before overspending.
+
+- `model_name`, `input_price_per_m`, `output_price_per_m`: pricing configuration
+- `budget_usd`: per-puzzle hard limit (default: unlimited)
+- `record(tokens_in, tokens_out)`: increment counters
+- `total_cost_usd`: computed property
+- `budget_exhausted`: boolean check
+
+#### Strategy Racer (B187)
+
+`StrategyRacer` runs 2-3 strategy variants concurrently via `asyncio`, keeping the winner.
+
+**Key design:** `BufferedBrainClient` wraps `BrainClientProtocol` to buffer write calls per-variant. Reads pass through to the real client; writes are buffered. The winning variant's writes are committed via `commit()`; losing variants' writes are discarded.
+
+This enables safe concurrent runs where only the winning strategy's side effects persist.
+
+#### Puzzle Scheduler (B189)
+
+`PuzzleScheduler` handles puzzle ordering by difficulty, health checks, and concurrency readiness. Used by the DurableARCRunner to control which puzzles are attempted and in what order.
+
+#### Checkpoint Manager
+
+`CheckpointManager` provides atomic checkpoint read/write for durable ARC runs, stored at `~/.sidequests/arc_checkpoints/`. Enables run resumption after crashes.
+
+### ARC Benchmark Evaluation (B181, B186, B188)
+
+#### Outcome Judge (B181)
+
+`OutcomeJudge` uses LLM-as-Judge to provide rubric-based grading for near-miss ARC puzzle attempts. This replaces binary pass/fail with a 3-dimension score:
+
+| Dimension | Score | What it measures |
+|-----------|-------|-----------------|
+| Structural correctness | 0-5 | Grid dimensions, color palette, cell matching |
+| Partial match | 0-5 | Fraction of cells matching expected solution |
+| Reasoning quality | 0-5 | Trajectory narrative — correct archetype, strategy, execution |
+
+Composite score is a weighted average. The judge prompt includes actual grid, expected grid, trajectory, and archetype.
+
+#### Trajectory Evaluator (B186)
+
+`TrajectoryEvaluator` performs offline algorithmic quality scoring across 5 dimensions:
+
+| Dimension | What it measures |
+|-----------|-----------------|
+| Action diversity | Variety of actions used vs. repetitive patterns |
+| Hypothesis convergence | Whether hypotheses narrow over time |
+| Exploration efficiency | Information gained per step spent |
+| Plan adherence | How well execution followed declared plans |
+| Escalation quality | Appropriate use of strategy escalation |
+
+Max score: 20 (4 points per dimension). Pure algorithmic — no LLM calls.
+
+#### Regression Monitor (B188)
+
+`RegressionMonitor` implements rolling 3-run comparison for cross-run regression detection. History stored as JSONL at `benchmarks/results/regression_history.jsonl`. Emits structured `RegressionAlert` objects with severity levels (warning/critical) when metrics degrade beyond thresholds.
+
+---
+
+### Domain Dictionary Pre-Seed (B160)
+
+To accelerate entity recognition for domain-specific vocabularies, SideQuests supports pre-seeding the knowledge graph from a YAML domain dictionary.
+
+**Dictionary location:** `.sidequests/domain_dictionary.yaml` (or `domain_dictionary.yaml` at project root)
+
+**Format:**
+```yaml
+version: 1
+entities:
+  - text: "Kùzu"
+    gist_class: "PhysicalThing"
+    alt_labels: ["kuzu", "KuzuDB"]
+  - text: "Gated Consolidation Loop"
+    gist_class: "PlannedEvent"
+    alt_labels: ["consolidation loop", "GCL"]
+```
+
+**Behavior:** Each entity is ingested as a `Concept` node with its gist class, embedding, and altLabels. Idempotent — re-ingestion with the same dictionary does not create duplicates. Triggered automatically on daemon startup or manually via `reload_domain_dictionary` tool.
+
+### Warm Frontier Pre-Activation (B91)
+
+`warm_frontier.py` maintains a bounded frontier of graph nodes that are likely to be needed soon, enabling zero-latency context matching for retrieval.
+
+**Algorithm:**
+1. **Direct Activation** — vector search for nodes similar to the current message
+2. **Spread Activation** — expand to 1-hop neighbors of Phase 1 nodes (decayed by `HOPS_DECAY = 0.5`)
+3. **Bounding** — keep top N nodes by activation score (`MAX_WARM_NODES = 20`)
+4. **Persistence** — write `WARM_NODE` relationships to the graph
+
+Warm nodes are preferred in retrieval, giving a biomimetic "priming" effect where recently relevant concepts are more readily available.
 
 ---
 

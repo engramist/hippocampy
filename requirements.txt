@@ -30,6 +30,13 @@ PyYAML==6.0.2
 # Resource monitoring
 psutil==6.1.1
 
+# Optional Phoenix/OpenTelemetry observability
+# Install these when enabling [observability] in sidequests.toml
+arize-phoenix-otel>=0.7.0
+opentelemetry-api>=1.28.0
+opentelemetry-sdk>=1.28.0
+opentelemetry-exporter-otlp-proto-http>=1.28.0
+
 # Testing
 pytest==8.3.4
 pytest-asyncio==0.24.0

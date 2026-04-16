@@ -5,9 +5,11 @@
 import argparse
 import asyncio
 import datetime
+import importlib.util
 import json
 import logging
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -19,6 +21,7 @@ from mcp_engine.config import load_config
 from mcp_engine.graph.kuzu_client import KuzuClient
 from mcp_engine.schema import init_schema
 from mcp_engine.graph import embeddings as emb
+from mcp_engine.observability import build_observability
 from mcp_engine.tools import init_loop_queue
 from mcp_engine.loop.step2_gist import load_centroids
 from mcp_engine.loop.step3_schema_org import load_routing_table
@@ -39,6 +42,24 @@ ARC_KEY_PATHS = (
     REPO_ROOT / "benchmarks/.arc/arc.json",
     REPO_ROOT / "benchmarks/arc3/.arc/arc.json",
 )
+
+# B204: classification sets for timeline visibility
+SIDEQUESTS_CALLS = {
+    "notify_turn",
+    "current_truth",
+    "recall_lessons",
+    "recall_plans",
+    "analogical_search",
+    "register_plan",
+    "report_outcome",
+    "recall_procedures",
+    "get_knowledge_gaps",
+    "branch_quest",
+    "upsert_lesson",
+    "explore_graph",
+    "reconstruct_timeline",
+}
+ARC_API_CALLS = {"arc_api_action", "RESET", "ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5", "ACTION6"}
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -99,10 +120,51 @@ def _ensure_arc_api_key(arc_key_path: str | Path | None = None) -> str | None:
     return None
 
 
+def _enforce_observability_preflight(config: dict) -> None:
+    """Fail fast when observability is enabled but runtime cannot emit traces."""
+    obs_cfg = config.get("observability", {}) if isinstance(config, dict) else {}
+    if not bool(obs_cfg.get("enabled", False)):
+        return
+
+    backend = str(obs_cfg.get("backend", "phoenix")).lower()
+    if backend != "phoenix":
+        raise RuntimeError(
+            f"Observability preflight failed: unsupported backend '{backend}'. "
+            "Use backend='phoenix' or disable [observability].enabled."
+        )
+
+    missing = []
+    if importlib.util.find_spec("opentelemetry") is None:
+        missing.append("opentelemetry")
+    if importlib.util.find_spec("phoenix") is None:
+        missing.append("phoenix")
+    if importlib.util.find_spec("phoenix.otel") is None:
+        missing.append("phoenix.otel")
+    if missing:
+        raise RuntimeError(
+            "Observability preflight failed: required tracing packages are missing in this interpreter.\n"
+            f"python_executable={sys.executable}\n"
+            f"missing={', '.join(missing)}\n"
+            "Fix: run the smoke test with /Users/djshelton/Desktop/GitProjects/sidequests-brain/.venv/bin/python "
+            "or install tracing deps into the current interpreter."
+        )
+
+    obs = build_observability(config)
+    if not obs.enabled:
+        endpoint = str(obs_cfg.get("endpoint", "http://127.0.0.1:6006/v1/traces"))
+        raise RuntimeError(
+            "Observability preflight failed: tracing could not be initialized.\n"
+            f"python_executable={sys.executable}\n"
+            f"endpoint={endpoint}\n"
+            "Fix: verify dependencies are installed in this interpreter and that Phoenix is reachable."
+        )
+
+
 class SingleTaskRunner:
     def __init__(self, real_api=False, config_path: str | Path | None = None, llm_overrides: dict | None = None):
         resolved_config_path = Path(config_path) if config_path else (CONFIG_PATH if CONFIG_PATH.exists() else None)
         self.config = _apply_llm_overrides(load_config(resolved_config_path), llm_overrides)
+        _enforce_observability_preflight(self.config)
         self.db = None
         self.harness = None
         self.loop_queue = asyncio.Queue()
@@ -221,8 +283,39 @@ class SingleTaskRunner:
         self.live_output_path.write_text("")
 
     def append_live_snapshot(self, snapshot: dict):
+        normalized = dict(snapshot or {})
+        normalized.setdefault(
+            "timestamp_iso",
+            datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+        )
         with open(self.live_output_path, "a") as f:
-            f.write(json.dumps(snapshot) + "\n")
+            f.write(json.dumps(normalized) + "\n")
+
+    @staticmethod
+    def _phase_question_for_export(phase: str | None) -> str | None:
+        mapping = {
+            "perceive": "What am I seeing in the puzzle right now?",
+            "model": "What world model or structure explains this board?",
+            "hypothesize": "What kind of puzzle is this and what is the likely win condition?",
+            "route": "What strategy or chunk should I follow next?",
+            "execute": "What exact action should I take now?",
+            "evaluate": "What changed, and did that action help?",
+            "replan": "Why am I stuck, and which earlier phase should I return to?",
+        }
+        return mapping.get(str(phase or "").lower())
+
+    @staticmethod
+    def _phase_answer_for_export(phase: str | None, payload: dict | None, fallback: str | None = None) -> str | None:
+        if not isinstance(payload, dict):
+            return fallback
+        phase_name = str(phase or "").lower()
+        if phase_name == "replan":
+            return payload.get("result_summary") or payload.get("input_summary") or fallback
+        if phase_name == "evaluate":
+            return payload.get("result_summary") or fallback or payload.get("input_summary")
+        if phase_name == "execute":
+            return payload.get("input_summary") or payload.get("result_summary") or fallback
+        return payload.get("result_summary") or payload.get("input_summary") or fallback
 
     def export_results(self):
         output_path = self.final_output_path
@@ -248,14 +341,29 @@ class SingleTaskRunner:
 
                 name = str(call_type)
 
+                # Classify call type for timeline visibility (B204)
+                if call_type in SIDEQUESTS_CALLS:
+                    event_detail_classified = "SideQuests memory/planning call"
+                elif call_type in ARC_API_CALLS:
+                    event_detail_classified = "ARC API interaction"
+                else:
+                    event_detail_classified = "internal orchestration"
+
                 call_timeline.append(
                     {
                         "name": name,
                         "event": "call",
                         "data": entry,
                         "timestamp_iso": timestamp,
-                        "event_detail": "internal harness or agent function call (memory/planning/orchestration tools)",
+                        "event_detail": event_detail_classified,
                         "what": entry.get("input_summary") or entry.get("result_summary") or name,
+                        "phase": entry.get("phase"),
+                        "phase_question": self._phase_question_for_export(entry.get("phase")),
+                        "phase_answer": self._phase_answer_for_export(
+                            entry.get("phase"),
+                            entry,
+                            entry.get("result_summary") or entry.get("input_summary") or name,
+                        ),
                     }
                 )
 
@@ -309,13 +417,21 @@ class SingleTaskRunner:
 
         def _sort_key(item: dict) -> tuple:
             ts = item.get("timestamp_iso")
-            if not isinstance(ts, str):
-                return (datetime.datetime.max, "")
-            try:
-                parsed = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
-            except Exception:
-                parsed = datetime.datetime.max
-            return (parsed, str(item.get("name", "")))
+            if isinstance(ts, str) and ts:
+                try:
+                    parsed = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    return (0, parsed.timestamp(), str(item.get("name", "")))
+                except Exception:
+                    pass
+
+            runtime = None
+            if isinstance(item.get("data"), dict):
+                runtime = item["data"].get("runtime_seconds")
+            if runtime is None:
+                runtime = item.get("runtime_seconds")
+            if isinstance(runtime, (int, float)):
+                return (1, float(runtime), str(item.get("name", "")))
+            return (2, float("inf"), str(item.get("name", "")))
 
         call_timeline.sort(key=_sort_key)
 
@@ -336,34 +452,116 @@ class SingleTaskRunner:
         with open(self.agent_execution_trace_path, 'w') as f:
             json.dump(agent_execution_trace, f, indent=2)
 
+        timeline_base_dt = None
+        for candidate in [*call_timeline, *agent_execution_trace]:
+            ts = candidate.get("timestamp_iso") if isinstance(candidate, dict) else None
+            if not isinstance(ts, str) or not ts:
+                continue
+            try:
+                parsed = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except Exception:
+                continue
+            if timeline_base_dt is None or parsed < timeline_base_dt:
+                timeline_base_dt = parsed
+        if timeline_base_dt is None:
+            timeline_base_dt = datetime.datetime.now(datetime.timezone.utc)
+
         # B131: Export master timeline — all events from both streams merged chronologically.
         master_timeline = []
         for event in call_timeline:
+            # Determine source based on event type and call_type (B204)
+            event_type = event.get("event")
+            call_type_for_source = (event.get("data") or {}).get("call_type") or event.get("name", "")
+            if event_type in ("request", "response"):
+                source = "arc_api"
+            elif call_type_for_source in SIDEQUESTS_CALLS:
+                source = "sidequests"
+            else:
+                source = "arc_server"
+
             master_timeline.append({
-                "source": "arc_server",
+                "source": source,
                 "timestamp_iso": event.get("timestamp_iso"),
                 "name": event.get("name"),
                 "event": event.get("event"),
                 "what": event.get("what"),
+                "phase": event.get("phase") or ((event.get("data") or {}).get("phase") if isinstance(event.get("data"), dict) else None),
+                "phase_question": event.get("phase_question"),
+                "phase_answer": event.get("phase_answer"),
                 "event_detail": event.get("event_detail"),
                 "data": event.get("data"),
             })
         for event in agent_execution_trace:
+            details = event.get("details") or {}
+            operation = str(event.get("operation") or "")
+            phase = details.get("phase")
+            if not phase:
+                op_map = {
+                    "perceive": "perceive",
+                    "plan": "model",
+                    "hypothesize": "hypothesize",
+                    "solve": "route",
+                    "act": "execute",
+                    "ingest": "evaluate",
+                    "replan": "replan",
+                }
+                phase = op_map.get(operation)
+            what = (
+                (event.get("result") or {}).get("action_id")
+                or str(details.get("action_taken", ""))
+                or event.get("operation", "")
+            )
             master_timeline.append({
                 "source": "agent_trace",
                 "timestamp_iso": event.get("timestamp_iso"),
                 "name": event.get("operation"),
                 "event": event.get("event_type"),
-                "what": (
-                    (event.get("result") or {}).get("action_id")
-                    or str((event.get("details") or {}).get("action_taken", ""))
-                    or event.get("operation", "")
-                ),
+                "what": what,
+                "phase": phase,
+                "phase_question": self._phase_question_for_export(phase),
+                "phase_answer": self._phase_answer_for_export(phase, details if isinstance(details, dict) else {}, what),
                 "event_detail": f"{event.get('event_type')} — {event.get('operation')}",
-                "details": event.get("details"),
+                "details": details,
                 "result": event.get("result"),
                 "elapsed_ms": event.get("elapsed_ms"),
             })
+
+        if self.live_output_path.exists():
+            for raw_line in self.live_output_path.read_text().splitlines():
+                raw_line = raw_line.strip()
+                if not raw_line:
+                    continue
+                try:
+                    snapshot = json.loads(raw_line)
+                except Exception:
+                    continue
+                if snapshot.get("snapshot_type") != "phase_transition":
+                    continue
+
+                from_phase = snapshot.get("from_phase")
+                to_phase = snapshot.get("to_phase")
+                snapshot_ts = snapshot.get("timestamp_iso")
+                if not snapshot_ts:
+                    runtime_seconds = snapshot.get("runtime_seconds")
+                    if isinstance(runtime_seconds, (int, float)):
+                        snapshot_ts = (
+                            timeline_base_dt + datetime.timedelta(seconds=float(runtime_seconds))
+                        ).isoformat().replace("+00:00", "Z")
+                    else:
+                        snapshot_ts = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+                master_timeline.append({
+                    "source": "live_snapshot",
+                    "timestamp_iso": snapshot_ts,
+                    "name": "phase_transition",
+                    "event": "phase_transition",
+                    "what": f"{from_phase} -> {to_phase}",
+                    "phase": snapshot.get("current_phase") or to_phase,
+                    "phase_question": snapshot.get("phase_question"),
+                    "phase_answer": snapshot.get("phase_answer"),
+                    "event_detail": "standalone phase transition snapshot",
+                    "data": snapshot,
+                    "runtime_seconds": snapshot.get("runtime_seconds"),
+                })
 
         master_timeline.sort(key=_sort_key)
 
@@ -455,13 +653,19 @@ async def main():
             logger.error("No tasks to run!")
             return
 
+        if isinstance(runner.config, dict):
+            runner.config["require_submission_artifacts"] = True
+
         if args.card_id:
             card_id = args.card_id
         elif real_api:
-            # Real API test runs should not silently reuse stale local checkpoints.
+            # Live smoke runs should always produce a fresh artifact set.
             card_id = f"real_test_{int(time.time())}"
         else:
-            card_id = runner.config.get("benchmark", {}).get("card_id") or "local_test"
+            # Local ad-hoc runs are typically used to refresh observability artifacts,
+            # so avoid silently reusing a cached checkpoint unless the caller passed
+            # an explicit `--card-id`.
+            card_id = f"local_test_{int(time.time())}"
         brain_client = LocalBrainClient(runner.db, runner.config)
         runner.reset_live_output()
         durable = DurableARCRunner(
@@ -470,6 +674,7 @@ async def main():
             runner.config,
             progress_callback=runner.append_live_snapshot,
         )
+        durable._emit_transition_snapshots = True
 
         llm_cfg = runner.config.get("llm", {})
         logger.info(
@@ -482,6 +687,24 @@ async def main():
             llm_cfg.get("max_retries", "default"),
         )
         runner.results = await durable.run(runner.tasks, card_id)
+
+        for result in runner.results:
+            runner.append_live_snapshot(
+                {
+                    "snapshot_type": "final_result",
+                    "task_id": result.get("task_id"),
+                    "game_id": result.get("game_id"),
+                    "correct": result.get("correct"),
+                    "steps": result.get("steps"),
+                    "runtime_seconds": result.get("runtime_seconds"),
+                    "failure_class": result.get("failure_class"),
+                    "final_state": result.get("final_state"),
+                    "solve_phase_summary": result.get("solve_phase_summary", {}),
+                    "evals": result.get("evals", {}),
+                    "quality_dimensions": result.get("quality_dimensions", {}),
+                    "system_monitoring": result.get("system_monitoring", {}),
+                }
+            )
 
         # Print result summary
         for idx, result in enumerate(runner.results):
