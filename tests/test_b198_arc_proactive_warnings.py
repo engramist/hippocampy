@@ -55,6 +55,29 @@ async def test_proactive_context_parsed_and_traced():
 
 
 @pytest.mark.asyncio
+async def test_proactive_context_dict_shape_is_normalized():
+    proactive = {
+        "pushed": True,
+        "items": [{
+            "lesson_id": "l1",
+            "text": "ACTION4 was ineffective in similar puzzles",
+            "type": "warning",
+            "domain": "movement",
+            "relevance_score": 0.9,
+        }],
+    }
+
+    spy = SpyBrain(proactive=proactive)
+    orchestrator = ARCOrchestrator(spy, llm_client=None, session_id="s1b", serializer=StateSerializerForARC(), config={})
+
+    obs = {"grid": [[0]], "colors": [{"value": 1, "count": 1}], "shapes": [], "state": "RUN", "task_id": "t1", "dataset_id": "d1"}
+    await orchestrator.perceive(obs, step=0)
+
+    assert orchestrator._proactive_warnings == proactive["items"]
+    assert any(e.get("operation") == "proactive_warning" for e in orchestrator._execution_trace)
+
+
+@pytest.mark.asyncio
 async def test_hypothesis_context_includes_proactive_warnings():
     proactive = [{
         "lesson_id": "l2",

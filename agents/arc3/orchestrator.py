@@ -11,7 +11,12 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from benchmarks.arc3.adapter import BrainClientProtocol
+from benchmarks.arc3.adapter import BrainClientProtocol, LedgerBrainClient
+from mcp_engine.observability import (
+    REQUIRED_DECISION_FIELDS,
+    build_observability,
+    ensure_contract_fields,
+)
 from benchmarks.arc3.schema import ARC3Action, ARC3Observation
 from benchmarks.arc3.state_serializer import StateSerializerForARC
 from agents.arc3.hypothesis import HypothesisManager
@@ -151,6 +156,7 @@ class ARCOrchestrator:
         self.session_id = session_id
         self.serializer = serializer
         self.config = config
+        self._observability = build_observability(config if isinstance(config, dict) else {})
         self.cost_tracker = cost_tracker
         self._plan_id: str | None = None
         self._reflex_context: dict | None = None
@@ -925,6 +931,87 @@ class ARCOrchestrator:
             "elapsed_ms": elapsed_ms,
         }
         self._execution_trace.append(event)
+        
+        # B218: Forward to observability
+        try:
+            if hasattr(self, "_observability") and self._observability:
+                details_dict = details if isinstance(details, dict) else {}
+                result_dict = result if isinstance(result, dict) else {}
+                step_val = details_dict.get("step")
+                if step_val is None and isinstance(result_dict, dict):
+                    step_val = result_dict.get("step")
+                phase_val = (
+                    details_dict.get("phase")
+                    or details_dict.get("to_phase")
+                    or getattr(self, "current_phase", None)
+                    or getattr(getattr(self, "brain", None), "current_phase", None)
+                    or "unknown"
+                )
+                base_attrs = {
+                    "session_id": self.session_id,
+                    "task_id": getattr(self, "_task_id", "unknown"),
+                    "event_type": event_type,
+                    "operation": operation,
+                    "phase": phase_val,
+                    "step": step_val if step_val is not None else -1,
+                    "agent.name": "arc_orchestrator",
+                    "agent.role": "orchestrator",
+                    "emitter.module": "agents.arc3.orchestrator",
+                    "emitter.method": "_emit_trace_event",
+                    "trace.contract.version": "v1",
+                }
+                if elapsed_ms is not None:
+                    base_attrs["latency_ms"] = float(elapsed_ms)
+                for k, v in details_dict.items():
+                    base_attrs[f"details.{k}"] = v
+                for k, v in result_dict.items():
+                    base_attrs[f"result.{k}"] = v
+
+                if operation.startswith(("brain.", "arc_api.", "agent.", "eval.", "monitor.")):
+                    span_name = operation
+                elif event_type in {"phase_start", "phase_end", "phase_transition", "agent_phase_transition"}:
+                    span_name = f"agent.phase.{operation}"
+                else:
+                    span_name = f"agent.operation.{operation}"
+                with self._observability.span(span_name, base_attrs):
+                    pass
+
+                # Promote decision payloads into a dedicated child span for easier tree navigation.
+                if operation == "act" and event_type == "phase_end":
+                    step_entry = (getattr(self, "_step_history", []) or [{}])[-1] or {}
+                    decision_attrs = ensure_contract_fields({
+                        "session_id": self.session_id,
+                        "task_id": getattr(self, "_task_id", "unknown"),
+                        "step": step_entry.get("step", step_val if step_val is not None else -1),
+                        "phase": "act",
+                        "prompt": step_entry.get("prompt"),
+                        "input_observation": step_entry.get("board_before"),
+                        "available_actions": step_entry.get("available_actions"),
+                        "action_id": step_entry.get("action_id"),
+                        "candidate_action_id": step_entry.get("candidate_action_id"),
+                        "decision_source": step_entry.get("decision_source"),
+                        "guard_status": step_entry.get("guard_status"),
+                        "verifier_status": step_entry.get("verifier_status"),
+                        "rationale": step_entry.get("rationale"),
+                        "thinking_trace": step_entry.get("thinking_trace"),
+                        "agent.name": "arc_orchestrator",
+                        "agent.role": "orchestrator",
+                        "emitter.module": "agents.arc3.orchestrator",
+                        "emitter.method": "_emit_trace_event.act.phase_end",
+                        "trace.contract.version": "v1",
+                    }, REQUIRED_DECISION_FIELDS, strict=False, defaults={"action_id": "unknown"})
+                    with self._observability.span("agent.policy.decision", decision_attrs):
+                        pass
+
+                self._observability.emit_structured_event(
+                    event_type=event_type,
+                    operation=operation,
+                    details=details,
+                    result=result,
+                    elapsed_ms=elapsed_ms,
+                )
+        except Exception:
+            logger.debug("Observability event emission failed", exc_info=True)
 
     def _handle_notify_turn_response(self, response: dict | None, step: int | None = None) -> None:
         """Parse `proactive_context` from notify_turn responses (B198).
@@ -986,7 +1073,6 @@ class ARCOrchestrator:
 
     def get_ledger(self) -> List[dict]:
         """Return the collected SideQuests call ledger."""
-        from benchmarks.arc3.adapter import LedgerBrainClient
         if isinstance(self.brain, LedgerBrainClient):
             return list(self.brain.ledger)
         return []
@@ -4463,6 +4549,13 @@ class ARCOrchestrator:
             action_id in unexplored or any(kw in rationale.lower() for kw in _exploration_keywords)
         )
         if _is_exploration_intent:
+            # NEW: Still consume if it matches the current chunk head (B112 fix)
+            if active_chunk and active_chunk.get("estimated_actions"):
+                suggested = active_chunk["estimated_actions"]
+                if action_id == suggested[0]:
+                    if self.solve_engine._active_chunk and self.solve_engine._active_chunk.estimated_actions:
+                        self.solve_engine._active_chunk.estimated_actions.pop(0)
+            
             try:
                 self._emit_trace_event(
                     "operation",
