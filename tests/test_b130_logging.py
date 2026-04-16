@@ -145,6 +145,9 @@ async def test_b130_logging_requirements():
     assert arc_pairs[0]["request"]["label"] == "INITIAL frame request started"
     assert arc_pairs[0]["response"]["label"] == "INITIAL frame response #1"
     assert arc_pairs[1]["response"]["label"] == "ACTION1 response #2"
+    assert arc_pairs[0]["raw_response"]["payload"]["available_actions"] == ["ACTION1"]
+    assert arc_pairs[0]["raw_response"]["payload"]["frame"] == [[0]]
+    assert arc_pairs[1]["raw_request"]["payload"]["action_id"] == "ACTION1"
 
 def test_b130_timeline_labels_show_first_second_third_responses_in_order():
     ledger = []

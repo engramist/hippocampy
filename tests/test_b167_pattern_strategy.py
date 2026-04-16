@@ -106,6 +106,38 @@ class TestReferenceGoalPairing:
         assert ref.location_hint == "corner_bl"
         assert goal.location_hint == "center"
 
+    def test_pairing_prefers_structurally_matching_bottom_left_reference(self):
+        engine = GridDiffEngine()
+        regions = [
+            PatternRegion(
+                bounding_box=(0, 7, 2, 9),
+                pattern=[[8, 8, 0], [0, 8, 8], [8, 0, 8]],
+                center=(1.0, 8.0),
+                color_palette={8},
+                size=6,
+                location_hint="corner_tr",
+            ),
+            PatternRegion(
+                bounding_box=(7, 0, 9, 2),
+                pattern=[[2, 2, 0], [0, 2, 2], [2, 0, 2]],
+                center=(8.0, 1.0),
+                color_palette={2},
+                size=6,
+                location_hint="corner_bl",
+            ),
+            PatternRegion(
+                bounding_box=(3, 4, 5, 6),
+                pattern=[[5, 5, 0], [0, 5, 5], [5, 0, 5]],
+                center=(4.0, 5.0),
+                color_palette={5},
+                size=6,
+                location_hint="center",
+            ),
+        ]
+        ref, goal = engine.find_reference_goal_pair(regions, 10, 10)
+        assert ref.location_hint == "corner_bl"
+        assert goal.location_hint == "center"
+
 class TestPatternMatchTracker:
     def test_tracker_lifecycle(self):
         tracker = PatternMatchTracker()
