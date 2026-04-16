@@ -146,6 +146,7 @@ async def register_task_graph(params: dict, db: KuzuClient, config: dict) -> dic
         """
         CREATE (g:TaskGraph {
             graph_id: $id,
+            name: $label,
             label: $label,
             version: 1,
             session_id: $sid,
@@ -167,6 +168,7 @@ async def register_task_graph(params: dict, db: KuzuClient, config: dict) -> dic
             CREATE (t:TaskNode {
                 task_id: $tid,
                 graph_id: $gid,
+                name: $label,
                 label: $label,
                 description: $desc,
                 status: 'pending',

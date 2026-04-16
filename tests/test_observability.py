@@ -1,5 +1,11 @@
 import pytest
-from mcp_engine.observability import build_observability, canonical_span_name, Observability
+from mcp_engine.observability import (
+    REQUIRED_DECISION_FIELDS,
+    build_observability,
+    canonical_span_name,
+    Observability,
+    ensure_contract_fields,
+)
 from benchmarks.arc3.adapter import LedgerBrainClient
 from unittest.mock import MagicMock
 
@@ -49,3 +55,15 @@ def test_ledger_brain_client_accepts_observability():
 
 def test_canonical_span_name():
     assert canonical_span_name("test") == "sidequests.test"
+
+
+def test_ensure_contract_fields_fills_defaults():
+    attrs = {"session_id": "s1", "task_id": "t1", "step": 1, "phase": "act"}
+    out = ensure_contract_fields(attrs, REQUIRED_DECISION_FIELDS, defaults={"action_id": "unknown"})
+    assert out["action_id"] == "unknown"
+    assert out["session_id"] == "s1"
+
+
+def test_ensure_contract_fields_strict_raises():
+    with pytest.raises(ValueError):
+        ensure_contract_fields({"session_id": "s1"}, REQUIRED_DECISION_FIELDS, strict=True)
