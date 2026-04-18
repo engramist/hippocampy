@@ -2,6 +2,8 @@
 
 Generated from Backlog_Archive032726.md on 2026-03-27.
 
+Note: ARC-only backlog cards and ARC-only planning docs were relocated to the sibling `ARC_AGI` repo under `ARC_AGI/backlog/migrated_from_sidequests/` as part of the repo split.
+
 | Card | Title | Priority | State | Owner | Target Date | Matched Plan(s) | Card File |
 |---|---|---|---|---|---|---|---|
 | B13 | Guided Installer with LLM Provider Choice — ✅ DONE (2026-03-24) | P0 | complete | TBD | TBD | - | backlog/B13.md |
@@ -201,6 +203,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B212 | Graph Inference Step in HYPOTHESIZE: Structurally-Grounded Hypothesis Generation — ✅ DONE (2026-04-14) | P1 | complete | TBD | TBD | backlog/plans/B-212-graph-hypothesize.md | backlog/B212.md |
 | B214 | Fix upsert_lesson Silent Failure in LedgerBrainClient — ✅ DONE (2026-04-14) | P0 | complete | — | TBD | backlog/plans/B-214-fix-upsert-lesson-silent-failure.md | backlog/B214.md |
 | B218 | Reconstruct Codex Observability Framework — ✅ DONE (2026-04-15) | P0 | complete | — | TBD | backlog/plans/B-218-reconstruct-observability.md | backlog/B218.md |
+| B219 | Fix `register_task_graph` Kuzu Parser Failure on `TaskNode` Creation — ✅ DONE (2026-04-17) | P0 | complete | B127, B128 | TBD | backlog/plans/B-219-fix-register-task-graph-kuzu-parser-failure.md | backlog/B219.md |
 | B215 | Plateau Lock Must Not Latch on Unexplored Action Space | P0 | ready | B207 | TBD | backlog/plans/B-215-plateau-lock-minimum-exploration.md | backlog/B215.md |
 | B216 | Loop Detection Signal Must Propagate Into Route/Replan Decisions | P1 | ready | B215 | TBD | backlog/plans/B-216-loop-detection-route-propagation.md | backlog/B216.md |
 | B217 | Victory Condition Must Converge: Bootstrap from Archetype and Grid Structure | P1 | ready | B214, B215, B216 | TBD | backlog/plans/B-217-victory-condition-convergence.md | backlog/B217.md |

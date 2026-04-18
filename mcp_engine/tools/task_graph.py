@@ -113,7 +113,7 @@ async def _get_ready_tasks_query(db: KuzuClient, graph_id: str) -> List[Dict[str
         WHERE t.status = 'pending'
         AND NOT EXISTS {
             MATCH (t)-[:DEPENDS_ON]->(dep:TaskNode)
-            WHERE dep.status NOT IN ['complete', 'skipped']
+            WHERE NOT (dep.status IN ['complete', 'skipped'])
         }
         RETURN t.task_id, t.name, t.description, t.status, t.owner
         """
@@ -170,7 +170,7 @@ async def register_task_graph(params: dict, db: KuzuClient, config: dict) -> dic
                 graph_id: $gid,
                 name: $label,
                 label: $label,
-                description: $desc,
+                description: $description,
                 status: 'pending',
                 owner: $owner,
                 created_at: timestamp($now)
@@ -183,7 +183,7 @@ async def register_task_graph(params: dict, db: KuzuClient, config: dict) -> dic
                 "tid": tid, 
                 "gid": graph_id, 
                 "label": t["label"], 
-                "desc": t.get("description", ""), 
+                "description": t.get("description", ""), 
                 "owner": owner,
                 "now": now
             }
