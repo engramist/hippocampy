@@ -10,35 +10,38 @@ from typing import Dict, Any, Optional
 
 SOCKET_PATH = Path.home() / ".sidequests" / "brain.sock"
 
-def _send(method: str, params: dict | None = None) -> dict:
+def _send(method: str, params: dict | None = None, timeout_seconds: float = 5.0) -> dict:
     """Send a JSON-RPC 2.0 request over the Unix domain socket."""
     if not SOCKET_PATH.exists():
         return {"error": {"code": -32000, "message": f"Daemon socket not found at {SOCKET_PATH}"}}
-        
+
     payload = {
         "jsonrpc": "2.0",
         "method": method,
         "params": params or {},
         "id": 1
     }
-    
+
     try:
         client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        client.settimeout(5.0)
+        client.settimeout(timeout_seconds)
         client.connect(str(SOCKET_PATH))
-        client.sendall(json.dumps(payload).encode("utf-8"))
-        
+        # Daemon reads newline-delimited JSON-RPC frames via reader.readline().
+        client.sendall((json.dumps(payload) + "\n").encode("utf-8"))
+
         response = b""
-        while True:
+        while b"\n" not in response:
             chunk = client.recv(4096)
             if not chunk:
                 break
             response += chunk
-            
+
         client.close()
         if not response:
             return {"error": {"code": -32000, "message": "Empty response from daemon"}}
-        return json.loads(response.decode("utf-8"))
+        # Daemon writes newline-delimited JSON-RPC frames.
+        line = response.split(b"\n", 1)[0]
+        return json.loads(line.decode("utf-8"))
     except Exception as e:
         return {"error": {"code": -32000, "message": str(e)}}
 
@@ -49,7 +52,7 @@ def check_ollama(base_url: str = "http://localhost:11434/v1") -> bool:
         native_url = base_url.replace("/v1", "/api/tags")
         if native_url == base_url:
              native_url = "http://localhost:11434/api/tags"
-             
+
         req = urllib.request.Request(native_url)
         with urllib.request.urlopen(req, timeout=2) as response:
             return response.getcode() == 200
@@ -67,13 +70,34 @@ def smoke_test() -> dict:
     response = _send("tools/list")
     if "error" in response:
         return {"ok": False, "detail": response["error"]["message"]}
-    
+
     tools = response.get("result", {}).get("tools", [])
     if len(tools) >= 5:
         return {"ok": True, "detail": f"Connected to Brain ({len(tools)} tools available)"}
     elif len(tools) > 0:
         return {"ok": True, "detail": f"Connected to Brain ({len(tools)} tools found, expected 5+)"}
     return {"ok": False, "detail": "No tools found in tool/list response"}
+
+def check_arc_tools() -> dict:
+    """Check if ARC world-model tools are available in the tools list."""
+    response = _send("tools/list")
+    if "error" in response:
+        return {"ok": False, "detail": response["error"]["message"]}
+
+    tools = response.get("result", {}).get("tools", [])
+    tool_names = {t["name"] for t in tools}
+
+    missing = []
+    if "publish_mechanic_summary" not in tool_names:
+        missing.append("publish_mechanic_summary")
+    if "recall_mechanic_priors" not in tool_names:
+        missing.append("recall_mechanic_priors")
+
+    if not missing:
+        return {"ok": True, "detail": "ARC world-model tools available"}
+    else:
+        return {"ok": False, "detail": f"Missing ARC tools: {', '.join(missing)}"}
+
 
 def check_sse_endpoint(port: int = 7799) -> bool:
     """Check if the SSE endpoint is responding at the given port."""
@@ -105,7 +129,7 @@ async def run_smoke_tests() -> dict:
         "LLM Provider Connectivity": False,
         "Kùzu Health": False
     }
-    
+
     # 1. Wait for Daemon (up to 10 seconds)
     max_retries = 5
     for i in range(max_retries):
@@ -118,14 +142,14 @@ async def run_smoke_tests() -> dict:
                 results["Kùzu Health"] = True # tools/list confirms Kùzu is at least partially initialized
             break
         time.sleep(2)
-        
+
     # 2. Check LLM (Ollama)
     # Try to find config to see what provider to check
     repo_root = Path(__file__).parent.parent.parent
     config_path = repo_root / "sidequests.toml"
     provider = "ollama"
     base_url = "http://localhost:11434/v1"
-    
+
     if config_path.exists():
         try:
             import tomllib
@@ -136,7 +160,7 @@ async def run_smoke_tests() -> dict:
                 base_url = llm_cfg.get("base_url", "http://localhost:11434/v1")
         except Exception:
             pass
-            
+
     if provider == "ollama":
         results["LLM Provider Connectivity"] = check_ollama(base_url)
     else:
@@ -153,5 +177,5 @@ async def run_smoke_tests() -> dict:
         else:
             # Check if it was in config
             results["LLM Provider Connectivity"] = False
-            
+
     return results

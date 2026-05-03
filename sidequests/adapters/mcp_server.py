@@ -13,10 +13,10 @@ import asyncio
 import json
 import subprocess
 import sys
-import uuid
 import os
 from pathlib import Path
 from datetime import datetime, timezone
+from sidequests.brain_transport import call_brain, socket_path
 
 SOCKET_PATH   = Path.home() / ".sidequests" / "brain.sock"
 OFFLINE_QUEUE = Path.home() / ".sidequests" / "offline_queue.jsonl"
@@ -63,27 +63,14 @@ _SOCKET_TIMEOUT = 10.0
 _TOKEN_LIMIT    = 200000  # Default conservative limit
 
 
+def _socket_path() -> Path:
+    """Return the daemon socket path, allowing sandbox-safe overrides."""
+    return socket_path()
+
+
 async def _call_brain(method: str, params: dict) -> dict:
     """Send a JSON-RPC call to the Brain Daemon socket. Returns the result dict."""
-    request = {
-        "jsonrpc": "2.0",
-        "id": str(uuid.uuid4()),
-        "method": method,
-        "params": params,
-    }
-    try:
-        reader, writer = await asyncio.open_unix_connection(str(SOCKET_PATH))
-        writer.write((json.dumps(request) + "\n").encode())
-        await writer.drain()
-        line = await asyncio.wait_for(reader.readline(), timeout=_SOCKET_TIMEOUT)
-        writer.close()
-        await writer.wait_closed()
-        response = json.loads(line)
-        if "error" in response:
-            raise RuntimeError(response["error"]["message"])
-        return response.get("result", {})
-    except (FileNotFoundError, ConnectionRefusedError, OSError, asyncio.TimeoutError):
-        raise RuntimeError("DAEMON_OFFLINE")
+    return await call_brain(method, params, timeout=_SOCKET_TIMEOUT)
 
 
 def _queue_offline(method: str, params: dict) -> None:

@@ -352,6 +352,21 @@ export default {
       ),
     });
 
+    const ingestArcArtifactsParams = Type.Object({
+      artifact_root: Type.Optional(
+        Type.String({ description: "Path to the ARC_AGI repository or artifact root" })
+      ),
+      include_live_jsonl: Type.Optional(
+        Type.Boolean({ description: "Include live JSONL trace artifacts", default: true })
+      ),
+      dry_run: Type.Optional(
+        Type.Boolean({ description: "Scan artifacts without writing to graph memory", default: false })
+      ),
+      max_events: Type.Optional(
+        Type.Number({ description: "Maximum ARC events to ingest", default: 5000 })
+      ),
+    });
+
     const exploreGraphParams = Type.Object({
       start_node_id: Type.String({
         description: "Node ID to start traversal (from current_truth results)",
@@ -428,6 +443,13 @@ export default {
       limit: Type.Optional(
         Type.Number({ description: "Max results", default: 5 })
       ),
+    });
+
+    const recallSceneGraphPriorsParams = Type.Object({
+      wl_hash: Type.String({ description: "Weisfeiler-Lehman hash for the current scene graph" }),
+      archetype: Type.Optional(Type.String({ description: "Optional archetype filter" })),
+      min_valence: Type.Optional(Type.Number({ description: "Minimum prior valence", default: 0.0 })),
+      limit: Type.Optional(Type.Number({ description: "Maximum priors to return", default: 50 })),
     });
 
     const anomaliesParams = Type.Object({
@@ -717,6 +739,17 @@ export default {
       ),
     });
 
+    const publishMechanicSummaryParams = Type.Object({
+      summary: Type.Object({}, { description: "ARC mechanic summary payload" }),
+      async_dispatch: Type.Optional(Type.Boolean({ default: true })),
+    });
+
+    const recallMechanicPriorsParams = Type.Object({
+      signature: Type.Optional(Type.Object({}, { description: "Query signature fields" })),
+      limit: Type.Optional(Type.Number({ default: 5 })),
+      min_confidence: Type.Optional(Type.Number({ default: 0.0 })),
+    });
+
     const formatResult = (value: unknown) => ({
       content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
     });
@@ -974,6 +1007,19 @@ export default {
         }),
       },
       {
+        name: "ingest_arc_artifacts",
+        label: "Ingest ARC Artifacts (SideQuests Brain)",
+        description:
+          "Import ARC_AGI run artifacts into SideQuests graph memory for retrieval and wiki projection.",
+        parameters: ingestArcArtifactsParams,
+        transformParams: (params: any = {}) => ({
+          artifact_root: params.artifact_root,
+          include_live_jsonl: params.include_live_jsonl ?? true,
+          dry_run: params.dry_run ?? false,
+          max_events: params.max_events ?? 5000,
+        }),
+      },
+      {
         name: "explore_graph",
         label: "Explore Graph (SideQuests Brain)",
         description:
@@ -1028,6 +1074,13 @@ export default {
           "Retrieve domain-specific lessons or best practices from the knowledge graph. Use to avoid repeating past mistakes or to apply proven optimizations.",
         parameters: recallRelevantLessonsParams,
         transformParams: recallLessonsTransform,
+      },
+      {
+        name: "recall_scene_graph_priors",
+        label: "Recall Scene Graph Priors (SideQuests Brain)",
+        description:
+          "Return evidence-weighted progress priors for a scene graph signature.",
+        parameters: recallSceneGraphPriorsParams,
       },
       {
         name: "get_anomalies",
@@ -1103,6 +1156,20 @@ export default {
         transformParams: (params: any = {}) => ({
           workspace_root: params.workspace_root || process.cwd(),
         }),
+      },
+      {
+        name: "publish_mechanic_summary",
+        label: "Publish Mechanic Summary (SideQuests Brain)",
+        description:
+          "Publish a learned ARC world-model mechanic summary to persistent graph memory.",
+        parameters: publishMechanicSummaryParams,
+      },
+      {
+        name: "recall_mechanic_priors",
+        label: "Recall Mechanic Priors (SideQuests Brain)",
+        description:
+          "Retrieve reusable ARC mechanic priors from graph memory based on action/effect signature similarity.",
+        parameters: recallMechanicPriorsParams,
       },
     ];
 

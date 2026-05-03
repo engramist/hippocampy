@@ -402,7 +402,7 @@ async def test_notify_turn_creates_main_quest_when_repo_provided():
          "ingestion": {"max_ingest_chars": 4000}}
     )
 
-    assert result["status"] == "queued"
+    assert result["status"] == "ingested"
     assert result["quest_id"] != ""  # quest_id returned
 
     combined = " ".join(writes)
@@ -437,7 +437,7 @@ async def test_notify_turn_resolves_quest_semantically_without_repo():
          "ingestion": {"max_ingest_chars": 4000}}
     )
 
-    assert result["status"] == "queued"
+    assert result["status"] == "ingested"
     assert result["quest_id"] != ""      # semantic routing produced a UUID
 
     combined = " ".join(writes)

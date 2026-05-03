@@ -77,6 +77,34 @@ async def test_upsert_lesson_tool(monkeypatch):
     assert result["status"] == "upserted"
     assert db.execute_write.called
 
+
+@pytest.mark.asyncio
+async def test_upsert_lesson_persists_scene_graph_metadata(monkeypatch):
+    db = MagicMock()
+    db.execute_write = AsyncMock()
+    db.execute_read = AsyncMock(return_value=[])
+
+    config = {"embeddings": {"model": "mock-model"}}
+    params = {
+        "text": "Pattern seen before",
+        "domain": "arc",
+        "lesson_type": "optimization",
+        "scene_wl_hash": "wl:123",
+        "archetype": "race",
+        "progress_score": 0.65,
+        "valence": 0.8,
+    }
+
+    from mcp_engine.graph import embeddings as emb
+    monkeypatch.setattr(emb, "embed", MagicMock(return_value=[0.2] * 384))
+
+    await upsert_lesson(params, db, config)
+
+    query, write_params = db.execute_write.await_args.args
+    assert "scene_wl_hash" in query
+    assert write_params["scene_wl_hash"] == "wl:123"
+    assert write_params["archetype"] == "race"
+
 @pytest.mark.asyncio
 async def test_recall_relevant_lessons_domain():
     """recall_relevant_lessons fetches by domain."""

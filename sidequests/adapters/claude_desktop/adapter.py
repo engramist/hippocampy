@@ -13,9 +13,9 @@ import asyncio
 import json
 import subprocess
 import sys
-import uuid
 from pathlib import Path
 from datetime import datetime, timezone
+from sidequests.brain_transport import call_brain
 
 SOCKET_PATH   = Path.home() / ".sidequests" / "brain.sock"
 OFFLINE_QUEUE = Path.home() / ".sidequests" / "offline_queue.jsonl"
@@ -54,6 +54,8 @@ _REPO_ROOT, _GIT_BRANCH = detect_git_context()
 
 from mcp_engine.tool_schemas import TOOLS
 
+_ALL_TOOL_NAMES = frozenset(t["name"] for t in TOOLS)
+
 # ---------------------------------------------------------------------------
 # Brain socket client
 # ---------------------------------------------------------------------------
@@ -67,26 +69,7 @@ _TOKEN_LIMIT = 200000  # default (Claude Desktop Sonnet 3.5)
 
 async def _call_brain(method: str, params: dict) -> dict:
     """Send a JSON-RPC call to the Brain Daemon socket. Returns the result dict."""
-    request = {
-        "jsonrpc": "2.0",
-        "id": str(uuid.uuid4()),
-        "method": method,
-        "params": params,
-    }
-    try:
-        reader, writer = await asyncio.open_unix_connection(str(SOCKET_PATH))
-        writer.write((json.dumps(request) + "\n").encode())
-        await writer.drain()
-        # W4 fix: apply timeout so a hung daemon doesn't block indefinitely.
-        line = await asyncio.wait_for(reader.readline(), timeout=_SOCKET_TIMEOUT)
-        writer.close()
-        await writer.wait_closed()
-        response = json.loads(line)
-        if "error" in response:
-            raise RuntimeError(response["error"]["message"])
-        return response.get("result", {})
-    except (FileNotFoundError, ConnectionRefusedError, OSError, asyncio.TimeoutError):
-        raise RuntimeError("DAEMON_OFFLINE")
+    return await call_brain(method, params, timeout=_SOCKET_TIMEOUT)
 
 
 def _queue_offline(method: str, params: dict) -> None:
@@ -293,10 +276,7 @@ async def handle_mcp_request(request: dict) -> dict:
 
         # --- ingest_document, explore_graph, complete_quest, set_quest, context_status,
         #     register_plan, report_outcome, recall_plans (and future tools) ---
-        if tool_name in (
-            "ingest_document", "explore_graph", "complete_quest", "set_quest", "context_status",
-            "register_plan", "report_outcome", "recall_plans",
-        ):
+        if tool_name in _ALL_TOOL_NAMES:
             try:
                 result = await _call_brain(tool_name, tool_input)
                 _daemon_online = True
