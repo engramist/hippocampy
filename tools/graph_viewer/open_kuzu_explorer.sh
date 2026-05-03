@@ -2,15 +2,13 @@
 set -euo pipefail
 
 DEFAULT_DB="${HOME}/.sidequests/brain.db"
-FALLBACK_DB="${HOME}/.sidequests/brain_single_test.db"
 
 usage() {
   cat <<'EOF'
 Usage:
   bash tools/graph_viewer/open_kuzu_explorer.sh [path/to/sidequests.db]
 
-Defaults to ~/.sidequests/brain.db when present. If that file is missing, it falls back to
-~/.sidequests/brain_single_test.db.
+Defaults to ~/.sidequests/brain.db.
 
 The script copies the selected database into a temporary snapshot directory and launches archived
 Kuzu Explorer in read-only mode at http://localhost:8000.
@@ -34,13 +32,9 @@ fi
 
 DB_PATH="${1:-$DEFAULT_DB}"
 if [[ ! -f "$DB_PATH" ]]; then
-  if [[ "$DB_PATH" == "$DEFAULT_DB" && -f "$FALLBACK_DB" ]]; then
-    DB_PATH="$FALLBACK_DB"
-  else
-    echo "Database file not found: $DB_PATH" >&2
-    echo "Pass the absolute path to a SideQuests .db file, or create ~/.sidequests/brain.db." >&2
-    exit 1
-  fi
+  echo "Database file not found: $DB_PATH" >&2
+  echo "Pass the absolute path to a SideQuests .db file, or create ~/.sidequests/brain.db." >&2
+  exit 1
 fi
 
 DB_FILE="$(basename "$DB_PATH")"

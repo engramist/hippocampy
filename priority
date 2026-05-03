@@ -1,0 +1,12 @@
+CORE FOCUS NOW
+
+1. SideQuests/Campy as local-first shared memory for multiple AI agents
+2. Better session handoff and cross-agent recall
+3. Token and cost savings through compact retrieval + working-memory dedup
+4. Retrieval quality, adapter reliability, and setup simplicity
+
+Paused as primary roadmap driver:
+- ARC-AGI feature work
+
+Reference:
+- docs/core-refocus-plan.md

@@ -5,53 +5,46 @@
 
 ---
 
-## Last Updated: 2026-03-28 (night, final)
+## Last Updated: 2026-04-28
 
 ### Current State
-- Backlog tracker is current: [backlog/masterBacklogTracker.md](backlog/masterBacklogTracker.md) shows 60 complete, 0 ready, 0 blocked.
-- B47-B60 and B61/B63/B64/B65 are complete and validated.
-- ARC benchmark foundation is in place through the submission/compliance layer.
-- OpenClaw passive-ingestion validation, Hippocampus routing, and working-memory work are landed.
-- Install/setup CLI surface was stabilized after drift in `detect.py`, `launchd.py`, `main.py`, and `smoke_test.py`.
-- ARC acceptance gate is currently green for pre-submit compliance and offline bundle integrity verification.
-- Requested card batch B1/B4/B5/B6/B7/B10/B11/B12/B15/B20/B21/B22/B45 is now marked complete with validation notes.
+- Backlog tracker is current: [backlog/masterBacklogTracker.md](backlog/masterBacklogTracker.md) shows 185 complete.
+- B220 (ARC Extraction Cleanup) is complete, stabilizing the repo after the ARC split.
+- B221-B224 (Wiki Projection System) is complete and validated:
+  - Graph-native architecture documented in `docs/wiki-projection-architecture.md`.
+  - Read-only Markdown exporter implemented in `mcp_engine/wiki_projection.py` and wired into background Dreaming/sweep.
+  - Persona isolation allows multiple lenses (Engineer, Researcher) over the same graph.
+  - Drift guard prevents accidental data loss from local edits via conflict copies.
+  - CLI surface extended: `sidequests wiki path|status|open` with `--persona` support.
 
 ### Verified This Session
-- Targeted install/setup/retrieval regression set is green:
-  - `pytest tests/test_setup_cli.py tests/test_setup.py -q`
-  - `pytest tests/test_install.py tests/test_bringup_priorities.py -q`
-  - `pytest tests/test_uninstall.py tests/test_retrieval.py -q`
-  - Combined result: `111 passed`
-- `backlog/masterBacklogTracker.md` was updated to reflect completed cards through B60 plus B61/B63/B64/B65.
-- ARC acceptance checks run and passed:
-  - `python benchmarks/arc3/pre_submit_check.py`
-  - `python benchmarks/arc3/package_offline_assets.py --bundle-dir sidequests-offline-submission`
-  - `python benchmarks/arc3/verify_offline_bundle.py --bundle-dir sidequests-offline-submission`
-  - Caveat: `submission_results.json` not present yet, so output-format validation path was skipped by pre-submit.
-- Requested-card targeted validation set is green:
-  - `pytest -q tests/test_deeplink_integration.py tests/test_setup_cli.py tests/test_adapter_claude_desktop.py tests/test_adapter_chatgpt_desktop.py tests/test_explore_graph.py tests/test_lesson_artifact.py tests/test_anomaly_detection.py tests/test_openclaw_system_prompt.py tests/test_token_metrics.py tests/test_extension_aliases.py tests/test_setup.py tests/test_web.py`
-  - Result: `102 passed`
-- Distribution preflight checks are green:
-  - `python -m build --wheel --sdist`
-  - `twine check dist/*` (both passed)
+- Wiki Projection test suite is green:
+  - `pytest -q tests/test_wiki_projection.py tests/test_wiki_projection_personas.py tests/test_wiki_projection_drift.py tests/test_cli_wiki.py`
+  - Result: `41 passed`
+- Core Dreaming/Sweep regression is green:
+  - `pytest -q tests/test_b191_dreaming.py tests/test_sweep.py`
+  - Result: `28 passed`
+- ARC Cleanup regression (selected):
+  - `pytest -q tests/test_adapters.py tests/test_b128_dag_tools.py tests/test_schema.py`
+  - Result: `200 passed (6 skipped)`
 
 ### Stabilization Notes
-- Restored installer-facing detection API in `sidequests/cli/detect.py`.
-- Restored launchd helper API in `sidequests/cli/launchd.py`.
-- Restored CLI command surface in `sidequests/cli/main.py` (`setup`, `install`, `uninstall`, `start`, `stop`, `status`, `review`, `tool list`).
-- Restored smoke-test compatibility helpers in `sidequests/cli/smoke_test.py`.
-- Repaired retrieval `panel_url` compatibility in `mcp_engine/tools/__init__.py`.
+- `mcp_engine/wiki_projection.py` uses atomic writes with temp files.
+- Drift detection uses a stable hash in front matter, ignoring the `generated_at` timestamp.
+- CLI `open` command uses `obsidian://` URIs on macOS with fallback to folder opening.
+- `sidequests.toml` updated with example persona configurations.
 
 ### Important Context
-- The focused installer/setup failure cluster is resolved, but the full repo-wide suite was not re-run after this stabilization pass.
-- `benchmarks/arc3/harness.py` was edited after the earlier ARC pass. Re-read it before making any further ARC changes.
-- There are many unrelated in-progress workspace changes from other cards and documentation updates. Do not revert unrelated edits.
+- KuzuDB version is pinned at `0.11.3`. Ensure `.venv` has it installed (`pip3` or `python -m pip` may be required if `pip` is missing).
+- The Wiki projection is **read-only**. Human edits should live in `wiki/manual-notes/` to be ingested into the graph later.
+- `.gitignore` updated to ignore generated wiki artifacts by default.
 
 ### Next Recommended Work
-1. Run a full repo-wide pytest sweep now that the requested ready queue is closed.
-2. Normalize/clean the very large working-tree diff (especially generated files and duplicate tracker files) before next major card wave.
-3. If release is desired, run credentialed publication steps (PyPI upload + Smithery publish) from the validated artifacts.
+1. **Refine Clustering**: Improve the "Topics" and "Sources" automatic clustering in the wiki index pages.
+2. **Wiki-as-RAG**: Test if agents can use the generated wiki pages as a high-quality RAG source to reduce raw graph traversal costs.
+3. **Manual Note Ingestion**: Implement the bridge to ingest `wiki/manual-notes/` back into the graph.
+4. **Obsidian Plugin-Free UX**: Audit the generated vault for a better "out of the box" experience in Obsidian (e.g., folder notes, pre-configured graph view filters).
 
 ### Immediate Next Step
-- Active next step: full-suite verification and cleanup pass
-- Focus files: `backlog/masterBacklogTracker.md`, `SESSION-STATUS.md`, `dist/*`
+- Active next step: Verify wiki projection utility in a real multi-agent workflow (e.g., have one agent solve a task and another browse the resulting wiki to confirm handoff quality).
+- Focus files: `mcp_engine/wiki_projection.py`, `docs/wiki-projection-architecture.md`, `sidequests.toml`.
