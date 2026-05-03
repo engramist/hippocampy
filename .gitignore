@@ -52,3 +52,12 @@ observability/
 
 extensions/sidequests-brain/node_modules/
 extensions/sidequests-brain/dist/
+
+# SideQuests Wiki Projection
+wiki/personas/
+wiki/conflicts/
+wiki/manual-notes/
+wiki/.obsidian/workspace*
+wiki/.obsidian/cache/
+wiki/Home.md
+wiki/.obsidian/

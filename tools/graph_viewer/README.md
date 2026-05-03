@@ -42,9 +42,6 @@ The repo uses plain Kùzu database files in `~/.sidequests/`.
 Known paths in this workspace:
 
 - `~/.sidequests/brain.db` - the main Brain Daemon database
-- `~/.sidequests/brain_single_test.db` - the single-puzzle / smoke-test database
-- `~/.sidequests/brain_test.db` - additional local test database
-- `~/.sidequests/brain_test_anomaly.db` - anomaly-test database
 
 Explorer mounts the parent directory as `/database` and uses `KUZU_FILE=<file name>`, so the
 commands below always point at the file name, not the absolute path inside the container.
@@ -66,8 +63,8 @@ docker run -p 8000:8000 \
   --rm kuzudb/explorer:latest
 ```
 
-If you want to inspect the single-puzzle smoke database instead, substitute
-`brain_single_test.db` in the snapshot directory and `KUZU_FILE`.
+Non-canonical smoke/probe databases under `~/.sidequests/` are out of spec. Temporary test
+databases should live in OS temp directories and must not be treated as durable memory.
 
 ## Optional Helper Script
 
@@ -80,12 +77,8 @@ bash tools/graph_viewer/open_kuzu_explorer.sh ~/.sidequests/brain.db
 The helper script copies the selected database into a temporary snapshot directory, launches
 Explorer in read-only mode, and deletes the snapshot when the container exits.
 
-You can point it at any local SideQuests Kùzu file:
-
-```bash
-bash tools/graph_viewer/open_kuzu_explorer.sh ~/.sidequests/brain_single_test.db
-bash tools/graph_viewer/open_kuzu_explorer.sh ~/.sidequests/brain_test.db
-```
+You can point it at an explicit Kùzu snapshot file when doing isolated debugging, but the
+canonical local memory store is `~/.sidequests/brain.db`.
 
 ## Official Launch Commands
 
@@ -108,7 +101,7 @@ Use the helper script against a real local SideQuests database file, then confir
 opens and renders graph data:
 
 ```bash
-bash tools/graph_viewer/open_kuzu_explorer.sh ~/.sidequests/brain_single_test.db
+bash tools/graph_viewer/open_kuzu_explorer.sh ~/.sidequests/brain.db
 ```
 
 Then verify:
