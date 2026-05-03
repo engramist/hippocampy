@@ -152,9 +152,9 @@ Note: ARC-only backlog cards and ARC-only planning docs were relocated to the si
 | B155 | ARC Cross-Game Strategy Memory | P2 | ready | B150, B151, B157 | TBD | backlog/plans/B-155-arc-transformation-memory.md | backlog/B155.md |
 | B156 | ARC Level-Aware Orchestration Loop | P0 | blocked | B150, B151, B152, B157 | TBD | backlog/plans/B-156-arc-two-phase-router.md | backlog/B156.md |
 | B157 | ARC Multi-Level Game Progression — Continue After WIN — ✅ DONE (2026-04-01) | P0 | complete | None | TBD | backlog/plans/B-157-arc-multi-level-progression.md | backlog/B157.md |
-| B158 | Disambiguation Queue — Human-in-the-Loop Entity Curation | P3 | ready | None | TBD | backlog/plans/B-158-disambiguation-queue.md | backlog/B158.md |
-| B159 | Topological Entity Resolution — Graph-Neighborhood Overlap in Step 5 | P4 | ready | None | TBD | backlog/plans/B-159-topological-entity-resolution.md | backlog/B159.md |
-| B160 | Domain Dictionary Pre-Seed — Cold-Start Thesaurus for Power Users | P3 | ready | None | TBD | backlog/plans/B-160-domain-dictionary-preseed.md | backlog/B160.md |
+| B158 | Disambiguation Queue — Human-in-the-Loop Entity Curation — ✅ DONE | P3 | complete | None | TBD | backlog/plans/B-158-disambiguation-queue.md | backlog/B158.md |
+| B159 | Topological Entity Resolution — Graph-Neighborhood Overlap in Step 5 — ✅ DONE | P4 | complete | None | TBD | backlog/plans/B-159-topological-entity-resolution.md | backlog/B159.md |
+| B160 | Domain Dictionary Pre-Seed — Cold-Start Thesaurus for Power Users — ✅ DONE | P3 | complete | None | TBD | backlog/plans/B-160-domain-dictionary-preseed.md | backlog/B160.md |
 | B161 | Goal-Directed Navigation — Agent Moves But Wanders Aimlessly | P0 | ready | TBD | TBD | backlog/plans/B-161-goal-directed-navigation.md | backlog/B161.md |
 | B162 | Front-Load Grid Analysis Before First Action | P1 | ready | TBD | TBD | backlog/plans/B-162-frontload-grid-analysis.md | backlog/B162.md |
 | B163 | Reduce ArchetypeClassifier MIN_OBSERVATIONS from 5 to 2 | P1 | ready | TBD | TBD | backlog/plans/B-163-faster-archetype-classification.md | backlog/B163.md |
@@ -207,13 +207,23 @@ Note: ARC-only backlog cards and ARC-only planning docs were relocated to the si
 | B215 | Plateau Lock Must Not Latch on Unexplored Action Space | P0 | ready | B207 | TBD | backlog/plans/B-215-plateau-lock-minimum-exploration.md | backlog/B215.md |
 | B216 | Loop Detection Signal Must Propagate Into Route/Replan Decisions | P1 | ready | B215 | TBD | backlog/plans/B-216-loop-detection-route-propagation.md | backlog/B216.md |
 | B217 | Victory Condition Must Converge: Bootstrap from Archetype and Grid Structure | P1 | ready | B214, B215, B216 | TBD | backlog/plans/B-217-victory-condition-convergence.md | backlog/B217.md |
+| B220 | Post ARC-AGI Extraction Repo Cleanup Audit — ✅ DONE (2026-04-28) | P1 | complete | None | TBD | backlog/plans/B-220-post-arc-extraction-cleanup.md | backlog/B220.md |
+| B221 | Graph-Native Wiki Projection Architecture — ✅ DONE (2026-04-28) | P0 | complete | None | TBD | backlog/plans/B-221-graph-native-wiki-architecture.md | backlog/B221.md |
+| B222 | Read-Only Markdown Wiki Exporter from Dreaming — ✅ DONE (2026-04-28) | P1 | complete | None | TBD | backlog/plans/B-222-read-only-markdown-wiki-exporter.md | backlog/B222.md |
+| B223 | Persona-Isolated Wiki Projections — ✅ DONE (2026-04-28) | P1 | complete | None | TBD | backlog/plans/B-223-persona-isolated-wiki-projections.md | backlog/B223.md |
+| B224 | Wiki Projection Drift Guard and Obsidian Hygiene — ✅ DONE (2026-04-28) | P2 | complete | None | TBD | backlog/plans/B-224-wiki-projection-drift-guard.md | backlog/B224.md |
+| B225 | ARC Artifact Ingestion Into Graph Memory — ✅ DONE (2026-04-29) | P0 | complete | None | TBD | backlog/plans/B-225-arc-artifact-ingestion-into-graph-memory.md | backlog/B225.md |
+| B226 | ARC Mechanic Memory Schema and Publish Tool — ✅ DONE (2026-05-03) | P0 | complete | TBD | TBD | backlog/plans/B-226-arc-mechanic-memory-schema-and-publish-tool.md | backlog/B226.md |
+| B227 | ARC Mechanic Prior Retrieval and Ranking Tool — ✅ DONE (2026-05-03) | P0 | complete | TBD | TBD | backlog/plans/B-227-arc-mechanic-prior-retrieval.md | backlog/B227.md |
+| B228 | Expose ARC World-Model Tools Through MCP Adapters — ✅ DONE (2026-05-03) | P0 | complete | TBD | TBD | backlog/plans/B-228-expose-arc-world-model-tools-through-mcp-adapters.md | backlog/B228.md |
+| B229 | Ingest ARC World-Model Evaluation Artifacts — ✅ DONE (2026-05-03) | P1 | complete | TBD | TBD | backlog/plans/B-229-ingest-arc-world-model-evaluation-artifacts.md | backlog/B229.md |
 
 ## Summary
 
-- Total cards: 197
-- Ready: 19 (B152, B153, B155, B158, B159, B160, B161, B162, B163, B164, B165, B201, B202, B203, B204, B205, B206, B207, B208, B209, B210, B211, B213, B215, B216, B217)
+- Total cards: 210
+- Ready: 16
 - Needs work: 0
-- Complete: 177
+- Complete: 193
 - In progress: 0
 - Blocked: 1 (B156)
 
