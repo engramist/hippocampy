@@ -91,12 +91,23 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B215 | Plateau Lock Must Not Latch on Unexplored Action Space | P0 | ready | TBD | TBD | backlog/plans/B-215-plateau-lock-minimum-exploration.md | backlog/B215.md |
 | B216 | Loop Detection Signal Must Propagate Into Route/Replan Decisions | P1 | ready | TBD | TBD | backlog/plans/B-216-loop-detection-route-propagation.md | backlog/B216.md |
 | B217 | Victory Condition Must Converge: Bootstrap from Archetype and Grid Structure | P1 | ready | TBD | TBD | backlog/plans/B-217-victory-condition-convergence.md | backlog/B217.md |
+| B219 | Fix `register_task_graph` Kuzu Parser Failure on `TaskNode` Creation — ✅ DONE (2026-04-17) | P0 | complete | B127, B128 | TBD | backlog/plans/B-219-fix-register-task-graph-kuzu-parser-failure.md | backlog/B219.md |
+| B220 | Post ARC-AGI Extraction Repo Cleanup Audit — ✅ DONE (2026-04-28) | P1 | complete | None | TBD | backlog/plans/B-220-post-arc-extraction-cleanup.md | backlog/B220.md |
+| B221 | Graph-Native Wiki Projection Architecture — ✅ DONE (2026-04-28) | P0 | complete | None | TBD | backlog/plans/B-221-graph-native-wiki-architecture.md | backlog/B221.md |
+| B222 | Read-Only Markdown Wiki Exporter from Dreaming — ✅ DONE (2026-04-28) | P1 | complete | None | TBD | backlog/plans/B-222-read-only-markdown-wiki-exporter.md | backlog/B222.md |
+| B223 | Persona-Isolated Wiki Projections — ✅ DONE (2026-04-28) | P1 | complete | None | TBD | backlog/plans/B-223-persona-isolated-wiki-projections.md | backlog/B223.md |
+| B224 | Wiki Projection Drift Guard and Obsidian Hygiene — ✅ DONE (2026-04-28) | P2 | complete | None | TBD | backlog/plans/B-224-wiki-projection-drift-guard.md | backlog/B224.md |
+| B225 | ARC Artifact Ingestion Into Graph Memory — ✅ DONE (2026-04-29) | P0 | complete | None | TBD | backlog/plans/B-225-arc-artifact-ingestion-into-graph-memory.md | backlog/B225.md |
+| B226 | ARC Mechanic Memory Schema and Publish Tool — ✅ DONE (2026-05-03) | P0 | complete | TBD | TBD | backlog/plans/B-226-arc-mechanic-memory-schema-and-publish-tool.md | backlog/B226.md |
+| B227 | ARC Mechanic Prior Retrieval and Ranking Tool — ✅ DONE (2026-05-03) | P0 | complete | TBD | TBD | backlog/plans/B-227-arc-mechanic-prior-retrieval.md | backlog/B227.md |
+| B228 | Expose ARC World-Model Tools Through MCP Adapters — ✅ DONE (2026-05-03) | P0 | complete | TBD | TBD | backlog/plans/B-228-expose-arc-world-model-tools-through-mcp-adapters.md | backlog/B228.md |
+| B229 | Ingest ARC World-Model Evaluation Artifacts — ✅ DONE (2026-05-03) | P1 | complete | TBD | TBD | backlog/plans/B-229-ingest-arc-world-model-evaluation-artifacts.md | backlog/B229.md |
 
 ## Summary
 
-- Total cards: 80
-- Ready: 4 (B213, B215, B216, B217)
+- Total cards: 98
+- Ready: 15 (B201-B211, B213, B215-B217)
 - Needs work: 0
-- Complete: 76
+- Complete: 83
 - In progress: 0
 - Blocked: 0
