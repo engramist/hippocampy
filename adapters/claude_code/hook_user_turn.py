@@ -13,13 +13,13 @@ Registered in ~/.claude/settings.json by `sidequests setup`:
     "command": "python /path/to/hook_user_turn.py"}]}]
 """
 
+import asyncio
 import json
-import socket
 import sys
 import uuid
 from pathlib import Path
+from sidequests.brain_transport import call_brain
 
-SOCKET_PATH   = Path.home() / ".sidequests" / "brain.sock"
 OFFLINE_QUEUE = Path.home() / ".sidequests" / "offline_queue.jsonl"
 
 
@@ -35,26 +35,17 @@ def main():
     if not content.strip():
         sys.exit(0)
 
-    request = json.dumps({
-        "jsonrpc": "2.0",
-        "id":      str(uuid.uuid4()),
-        "method":  "notify_turn",
-        "params":  {"role": "user", "content": content, "session_id": session_id},
-    }) + "\n"
+    params = {"role": "user", "content": content, "session_id": session_id}
 
     try:
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.connect(str(SOCKET_PATH))
-        sock.sendall(request.encode())
-        sock.recv(4096)  # read and discard response
-        sock.close()
-    except (FileNotFoundError, ConnectionRefusedError, OSError):
+        asyncio.run(call_brain("notify_turn", params))
+    except RuntimeError:
         # Daemon offline — queue for replay
         OFFLINE_QUEUE.parent.mkdir(parents=True, exist_ok=True)
         with open(OFFLINE_QUEUE, "a") as f:
             f.write(json.dumps({
                 "method": "notify_turn",
-                "params": {"role": "user", "content": content, "session_id": session_id}
+                "params": params,
             }) + "\n")
 
 

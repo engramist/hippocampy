@@ -165,19 +165,18 @@ async def register_task_graph(params: dict, db: KuzuClient, config: dict) -> dic
         task_ids.append(tid)
         await db.execute_write(
             """
-            CREATE (t:TaskNode {
-                task_id: $tid,
-                graph_id: $gid,
-                name: $label,
-                label: $label,
-                description: $description,
-                status: 'pending',
-                owner: $owner,
-                created_at: timestamp($now)
-            })
+            MERGE (t:TaskNode {task_id: $tid})
+            ON CREATE SET
+                t.graph_id = $gid,
+                t.name = $label,
+                t.label = $label,
+                t.description = $description,
+                t.status = 'pending',
+                t.owner = $owner,
+                t.created_at = timestamp($now)
             WITH t
             MATCH (g:TaskGraph {graph_id: $gid})
-            CREATE (t)-[:TASK_OF]->(g)
+            MERGE (t)-[:TASK_OF]->(g)
             """,
             {
                 "tid": tid, 
@@ -202,7 +201,7 @@ async def register_task_graph(params: dict, db: KuzuClient, config: dict) -> dic
             await db.execute_write(
                 """
                 MATCH (t:TaskNode {task_id: $tid}), (dep:TaskNode {task_id: $did})
-                CREATE (t)-[:DEPENDS_ON]->(dep)
+                MERGE (t)-[:DEPENDS_ON]->(dep)
                 """,
                 {"tid": tid, "did": dep_id}
             )

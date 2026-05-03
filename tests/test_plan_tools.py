@@ -82,6 +82,10 @@ async def test_register_plan_creates_chain():
     )
 
     assert out["plan_id"]
+    assert out["id"] == out["plan_id"]
+    assert out["write_ok"] is True
+    assert out["status"] == "registered"
+    assert out["result_summary"].startswith("plan_id=")
     assert len(out["step_ids"]) == 3
     assert out["warnings"] == []
     assert out["suggestions"] == []

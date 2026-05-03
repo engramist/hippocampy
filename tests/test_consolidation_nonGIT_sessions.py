@@ -69,7 +69,7 @@ async def test_notify_turn_non_git_session_ingests_message():
         },
     )
 
-    assert result["status"] == "queued"
+    assert result["status"] == "ingested"
     assert result["quest_id"], "Non-git sessions should return a quest_id"
 
     combined_queries = " ".join(w["query"] for w in db.writes)

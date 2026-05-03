@@ -284,7 +284,7 @@ class TestBackwardCompat:
              "ingestion": {"max_ingest_chars": 4000}}
         )
 
-        assert result["status"] == "queued"
+        assert result["status"] == "ingested"
         assert result["quest_id"] != ""
         combined = " ".join(writes)
         assert "MainQuest" in combined

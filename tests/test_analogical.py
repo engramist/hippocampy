@@ -415,11 +415,14 @@ def test_codex_adapter_has_all_tools():
                 "get_anomalies", "upsert_lesson", "recall_relevant_lessons",
                 "register_plan", "report_outcome", "recall_plans",
                 "get_knowledge_gaps", "recall_procedures",
+                "recall_scene_graph_priors",
                 "get_openclaw_prompt",
+                "ingest_arc_artifacts",
                 "register_task_graph", "get_ready_tasks", "advance_task",
                 "fail_task", "get_task_graph",
                 "get_disambiguation_queue", "resolve_disambiguation",
-                "reload_domain_dictionary"}
+                "reload_domain_dictionary",
+                "publish_mechanic_summary", "recall_mechanic_priors"}
     assert names == expected
 
 def test_codex_adapter_analogical_search_schema():

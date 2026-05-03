@@ -117,14 +117,18 @@ async def test_proactive_push_on_match(db):
     resp = await notify_turn(params, db, config)
 
     # Assert
-    assert resp.get("status") == "queued"
+    assert resp.get("status") == "ingested"
     pc = resp.get("proactive_context")
     assert pc is not None
     assert pc.get("pushed") is True
     items = pc.get("items")
-    assert any(i.get("node_type") == "Lesson" for i in items)
-    assert any(i.get("node_type") == "Procedure" for i in items)
-    assert any(i.get("node_type") == "KnowledgeGap" for i in items)
+    lesson = next(i for i in items if i.get("node_type") == "Lesson")
+    assert lesson["lesson_id"] == "l1"
+    assert lesson["text"] == "Plan outcome (failure): crashed"
+    assert lesson["type"] == "lesson"
+    assert lesson["domain"] == "generic"
+    assert any(i.get("node_type") == "Procedure" and i.get("text") == "Retry steps" for i in items)
+    assert any(i.get("node_type") == "KnowledgeGap" and i.get("text") == "Missing infra tests" for i in items)
 
     # verify we persisted last_proactive_push_msg_count
     write_calls = [str(c) for c in db.execute_write.call_args_list]
@@ -151,4 +155,3 @@ async def test_rate_limited_push(db):
     assert pc is not None
     assert pc.get("pushed") is False
     assert pc.get("reason") == "rate_limited"
-

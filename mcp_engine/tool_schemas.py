@@ -145,6 +145,22 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "ingest_arc_artifacts",
+        "description": (
+            "Import ARC_AGI run artifacts into SideQuests graph memory for retrieval and wiki projection."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "artifact_root": {"type": "string"},
+                "include_live_jsonl": {"type": "boolean", "default": True},
+                "dry_run": {"type": "boolean", "default": False},
+                "max_events": {"type": "integer", "default": 5000},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "explore_graph",
         "description": (
             "Traverse knowledge graph from a seed node, following relationships up to N hops. "
@@ -390,6 +406,23 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "recall_scene_graph_priors",
+        "description": (
+            "Return evidence-weighted progress priors for a scene graph signature. "
+            "Uses stored lesson metadata keyed by scene_wl_hash and optional archetype."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "wl_hash": {"type": "string", "description": "Weisfeiler-Lehman hash for current scene graph."},
+                "archetype": {"type": "string", "description": "Optional archetype filter such as 'race' or 'space'."},
+                "min_valence": {"type": "number", "default": 0.0},
+                "limit": {"type": "integer", "default": 50},
+            },
+            "required": ["wl_hash"],
+        },
+    },
+    {
         "name": "register_task_graph",
         "description": (
             "Declare a first-class execution DAG (TaskGraph + TaskNodes). "
@@ -515,5 +548,47 @@ TOOLS: list[dict] = [
                 "workspace_root": {"type": "string", "description": "Workspace root path", "default": "."}
             }
         },
+    },
+    {
+        "name": "publish_mechanic_summary",
+        "description": "Publish a learned ARC world-model mechanic summary to persistent graph memory.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "type": "object",
+                    "description": "ARC mechanic summary payload including signature, confidence, action/effect patterns, and failure modes."
+                },
+                "async_dispatch": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Accept and return immediately; processing happens in background."
+                }
+            },
+            "required": ["summary"]
+        }
+    },
+    {
+        "name": "recall_mechanic_priors",
+        "description": "Retrieve reusable ARC mechanic priors from graph memory based on action/effect signature similarity.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "signature": {
+                    "type": "object",
+                    "description": "Query signature fields (action_set, archetype, effect_class, terminal_trend, coordinate_relevance, failure_signal)."
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 5,
+                    "description": "Max number of ranked results to return."
+                },
+                "min_confidence": {
+                    "type": "number",
+                    "default": 0.0,
+                    "description": "Minimum confidence threshold for results."
+                }
+            }
+        }
     },
 ]

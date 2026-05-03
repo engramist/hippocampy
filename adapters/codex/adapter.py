@@ -27,10 +27,10 @@ import asyncio
 import json
 import subprocess
 import sys
-import uuid
 from pathlib import Path
 from datetime import datetime, timezone
 from mcp_engine.tool_schemas import TOOLS
+from sidequests.brain_transport import call_brain
 
 _ALL_TOOL_NAMES = frozenset(t["name"] for t in TOOLS)
 
@@ -83,25 +83,7 @@ _TOKEN_LIMIT = 128000  # default (Codex/GPT-4 class)
 
 async def _call_brain(method: str, params: dict) -> dict:
     """Send a JSON-RPC call to the Brain Daemon socket. Returns the result dict."""
-    request = {
-        "jsonrpc": "2.0",
-        "id": str(uuid.uuid4()),
-        "method": method,
-        "params": params,
-    }
-    try:
-        reader, writer = await asyncio.open_unix_connection(str(SOCKET_PATH))
-        writer.write((json.dumps(request) + "\n").encode())
-        await writer.drain()
-        line = await asyncio.wait_for(reader.readline(), timeout=_SOCKET_TIMEOUT)
-        writer.close()
-        await writer.wait_closed()
-        response = json.loads(line)
-        if "error" in response:
-            raise RuntimeError(response["error"]["message"])
-        return response.get("result", {})
-    except (FileNotFoundError, ConnectionRefusedError, OSError, asyncio.TimeoutError):
-        raise RuntimeError("DAEMON_OFFLINE")
+    return await call_brain(method, params, timeout=_SOCKET_TIMEOUT)
 
 
 def _queue_offline(method: str, params: dict) -> None:
