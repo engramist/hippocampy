@@ -1,6 +1,7 @@
 # SideQuests Brain — Backlog
 
 > M1–M8 are complete. This backlog tracks post-M8 work.
+> ARC-only backlog artifacts were relocated to the sibling `ARC_AGI` repo during the repo split. This file should now be treated as the SideQuests/Campy product backlog.
 
 ---
 
