@@ -43,12 +43,18 @@ EXPECTED_TOOLS = {
     "upsert_lesson", "recall_relevant_lessons",  # B11
     "register_plan", "report_outcome", "recall_plans",  # B67
     "get_knowledge_gaps", "recall_procedures",  # B193/B197
+    "recall_scene_graph_priors",
     "get_openclaw_prompt",
     "register_task_graph", "get_ready_tasks", "advance_task", "fail_task", "get_task_graph",  # B128
     # B158 human-in-the-loop curation
     "get_disambiguation_queue", "resolve_disambiguation",
     # B160 domain dictionary reload
     "reload_domain_dictionary",
+    # B225 ARC artifacts
+    "ingest_arc_artifacts",
+    # B226/B227 ARC mechanics
+    "publish_mechanic_summary",
+    "recall_mechanic_priors",
 }
 
 def test_adapter_tool_names_match_handlers():

@@ -28,11 +28,85 @@ from mcp_engine.quest import (
     get_or_create_main_quest, get_or_create_session,
     create_side_quest, get_quest_context,
 )
-from mcp_engine.loop.step4_pattern import (
-    detect_ordered_plan_steps,
-    has_plan_signal,
-    infer_outcome_valence,
-)
+try:
+    from mcp_engine.loop.step4_pattern import (
+        detect_ordered_plan_steps,
+        has_plan_signal,
+        infer_outcome_valence,
+    )
+except ModuleNotFoundError as exc:
+    if exc.name != "mcp_engine.loop.step4_pattern":
+        raise
+    # Some benchmark consumers provide a minimal mcp_engine.loop shim while
+    # importing this module from sidequests-brain. Keep the tool surface
+    # importable with local equivalents of the passive plan/outcome helpers.
+    _PLAN_SIGNALS = [
+        r"(?:^|\n)\s*(?:step\s+)?\d+[\.\):]",
+        r"\bmy (?:approach|plan|strategy)\b",
+        r"\bhere(?:'s| is) (?:the|my) plan\b",
+        r"\bi(?:'ll| will) (?:start by|begin with|first)\b",
+        r"\bthe steps (?:are|would be)\b",
+    ]
+    _SUCCESS_SIGNALS = [
+        r"\bperfect\b", r"\bgreat job\b", r"\bexactly (?:right|what)\b",
+        r"\bship it\b", r"\bapproved\b", r"\blooks good\b", r"\bwell done\b",
+        r"\bnailed it\b", r"\ball tests pass\b", r"\bmerged?\b",
+    ]
+    _FAILURE_SIGNALS = [
+        r"\bthat(?:'s| is) wrong\b", r"\brevert\b", r"\bundo\b",
+        r"\bthat broke\b", r"\bfailed\b", r"\brollback\b",
+        r"\bnot what i (?:asked|wanted|meant)\b", r"\bstart over\b",
+        r"\btry again\b", r"\bwrong approach\b",
+    ]
+
+    def detect_ordered_plan_steps(text: str) -> list[str]:
+        if not text:
+            return []
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        steps: list[str] = []
+        numbered = re.compile(r"^(?:step\s+)?\d+[\.\):]\s+(.+)$", re.IGNORECASE)
+        bullet = re.compile(r"^[-]\s+(.+)$")
+        ordered_words = re.compile(r"^(?:first|then|next|finally)\b[:\-]?\s*(.+)$", re.IGNORECASE)
+        for line in lines:
+            m_num = numbered.match(line)
+            if m_num:
+                steps.append(m_num.group(1).strip())
+                continue
+            m_ord = ordered_words.match(line)
+            if m_ord:
+                steps.append(m_ord.group(1).strip())
+                continue
+            m_bul = bullet.match(line)
+            if m_bul and ordered_words.match(m_bul.group(1).strip()):
+                steps.append(m_bul.group(1).strip())
+        seen = set()
+        clean: list[str] = []
+        for step in steps:
+            key = step.lower()
+            if len(key) < 3 or key in seen:
+                continue
+            seen.add(key)
+            clean.append(step)
+        return clean
+
+    def has_plan_signal(text: str) -> bool:
+        lower = (text or "").lower()
+        return any(re.search(p, lower) for p in _PLAN_SIGNALS)
+
+    def infer_outcome_valence(text: str) -> float | None:
+        lower = (text or "").lower()
+        success_hits = sum(1 for p in _SUCCESS_SIGNALS if re.search(p, lower))
+        failure_hits = sum(1 for p in _FAILURE_SIGNALS if re.search(p, lower))
+        if success_hits == 0 and failure_hits == 0:
+            return None
+        if success_hits > failure_hits:
+            return 0.8
+        if failure_hits > success_hits:
+            return -0.8
+        return None
+# ARC artifact ingestion tool
+from mcp_engine.tools.arc_artifacts import ingest_arc_artifacts
+from mcp_engine.tools.arc_mechanics import publish_mechanic_summary, recall_mechanic_priors
 
 # ---------------------------------------------------------------------------
 # M3 runtime state — initialized by brain_daemon.py at startup
@@ -777,7 +851,15 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
                             conf = float(node.get("confidence") or 0.0)
                             text = (node.get("text_raw") or "")
                             if conf >= 0.8 and "failure" in text.lower():
-                                candidates.append({"node_id": node.get("lesson_id"), "node_type": "Lesson", "text_raw": text})
+                                candidates.append({
+                                    "node_id": node.get("lesson_id"),
+                                    "node_type": "Lesson",
+                                    "text_raw": text,
+                                    "lesson_id": node.get("lesson_id"),
+                                    "text": text,
+                                    "type": node.get("lesson_type") or "lesson",
+                                    "domain": node.get("domain") or "generic",
+                                })
                 except Exception:
                     _logger.debug("proactive: lesson search failed")
 
@@ -787,7 +869,16 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
                         procs = db.vector_search("Procedure", "procedure_emb_idx", qvec, 3)
                         for it in procs:
                             node = _safe_result_dict(it.get("node", {}))
-                            candidates.append({"node_id": node.get("procedure_id"), "node_type": "Procedure", "text_raw": node.get("description", "")})
+                            text = node.get("description", "") or ""
+                            candidates.append({
+                                "node_id": node.get("procedure_id"),
+                                "node_type": "Procedure",
+                                "text_raw": text,
+                                "procedure_id": node.get("procedure_id"),
+                                "text": text,
+                                "type": "procedure",
+                                "domain": node.get("archetype") or node.get("domain") or "generic",
+                            })
                 except Exception:
                     _logger.debug("proactive: procedure search failed")
 
@@ -802,7 +893,16 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
                     )
                     while kgq.has_next():
                         row = kgq.get_next()
-                        candidates.append({"node_id": row[0], "node_type": "KnowledgeGap", "text_raw": row[1] or ""})
+                        text = row[1] or ""
+                        candidates.append({
+                            "node_id": row[0],
+                            "node_type": "KnowledgeGap",
+                            "text_raw": text,
+                            "gap_id": row[0],
+                            "text": text,
+                            "type": "knowledge_gap",
+                            "domain": "generic",
+                        })
                 except Exception:
                     _logger.debug("proactive: knowledge gap lookup failed")
 
@@ -830,7 +930,7 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
         _logger.exception("proactive push failed")
 
     response = {
-        "status": "queued",
+        "status": "ingested",
         "message_id": message_id,
         "quest_id": quest_id,
     }
@@ -1925,13 +2025,26 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
     """
     Explicitly add or update a Lesson node.
     
-    params: {text, domain, lesson_type, session_id?, lesson_id?}
+    params: {text, domain, lesson_type, session_id?, lesson_id?, scene_wl_hash?, scene_graph_vector?, archetype?, progress_score?, valence?}
     """
     text        = params.get("text", "").strip()
     domain      = params.get("domain", "generic").strip()
     lesson_type = params.get("lesson_type", "optimization").strip()
     session_id  = params.get("session_id", "unknown")
     lesson_id   = params.get("lesson_id") or str(uuid.uuid4())
+    scene_wl_hash = (params.get("scene_wl_hash") or "").strip() or None
+    scene_graph_vector = params.get("scene_graph_vector")
+    if scene_graph_vector is not None and not isinstance(scene_graph_vector, str):
+        scene_graph_vector = str(scene_graph_vector)
+    archetype = (params.get("archetype") or "").strip() or None
+    try:
+        progress_score = None if params.get("progress_score") is None else float(params.get("progress_score"))
+    except Exception:
+        progress_score = None
+    try:
+        valence = None if params.get("valence") is None else float(params.get("valence"))
+    except Exception:
+        valence = None
 
     if not text:
         return {"error": "text is required"}
@@ -1959,6 +2072,11 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
                 embedding_dim:    $dim,
                 domain:           $domain,
                 lesson_type:      $type,
+                scene_wl_hash:    $scene_wl_hash,
+                scene_graph_vector: $scene_graph_vector,
+                archetype:        $archetype,
+                progress_score:   $progress_score,
+                valence:          $valence,
                 confidence:       0.90,
                 confidence_low:   false,
                 pathway_strength: 1.0,
@@ -1974,6 +2092,11 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
                 "dim":    len(vector),
                 "domain": domain,
                 "type":   lesson_type,
+                "scene_wl_hash": scene_wl_hash,
+                "scene_graph_vector": scene_graph_vector,
+                "archetype": archetype,
+                "progress_score": progress_score,
+                "valence": valence,
                 "now":    now,
             }
         )
@@ -1985,6 +2108,11 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
             SET l.text_raw         = $text,
                 l.domain           = $domain,
                 l.lesson_type      = $type,
+                l.scene_wl_hash    = $scene_wl_hash,
+                l.scene_graph_vector = $scene_graph_vector,
+                l.archetype        = $archetype,
+                l.progress_score   = $progress_score,
+                l.valence          = $valence,
                 l.pathway_strength = l.pathway_strength + 0.1
             """,
             {
@@ -1992,6 +2120,11 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
                 "text":   text,
                 "domain": domain,
                 "type":   lesson_type,
+                "scene_wl_hash": scene_wl_hash,
+                "scene_graph_vector": scene_graph_vector,
+                "archetype": archetype,
+                "progress_score": progress_score,
+                "valence": valence,
             }
         )
 
@@ -2031,6 +2164,9 @@ async def recall_relevant_lessons(params: dict, db: KuzuClient, config: dict) ->
                 "text": node["text_raw"],
                 "domain": node.get("domain", "generic"),
                 "type": node.get("lesson_type", "optimization"),
+                "scene_wl_hash": node.get("scene_wl_hash"),
+                "progress_score": node.get("progress_score"),
+                "valence": node.get("valence"),
                 "similarity": row["score"]
             })
     elif domain:
@@ -2049,6 +2185,84 @@ async def recall_relevant_lessons(params: dict, db: KuzuClient, config: dict) ->
             })
 
     return {"lessons": lessons}
+
+
+async def recall_scene_graph_priors(params: dict, db: KuzuClient, config: dict) -> dict:
+    """
+    Return evidence-weighted priors for a scene graph signature.
+
+    params: {wl_hash, archetype?, min_valence?, limit?}
+    """
+    wl_hash = (params.get("wl_hash") or "").strip()
+    archetype = (params.get("archetype") or "").strip()
+    if not wl_hash:
+        return {"expected_progress": 0.0, "median_progress": 0.0, "evidence_count": 0, "priors": []}
+
+    try:
+        min_valence = float(params.get("min_valence", 0.0))
+    except Exception:
+        min_valence = 0.0
+    try:
+        limit = max(1, int(params.get("limit", 50)))
+    except Exception:
+        limit = 50
+
+    rows: list[dict] = []
+    try:
+        result = db.execute(
+            "MATCH (l:Lesson) "
+            "WHERE l.archived = false AND l.scene_wl_hash = $wl_hash "
+            "AND l.progress_score IS NOT NULL "
+            "AND (l.valence IS NULL OR l.valence >= $min_valence) "
+            "AND ($archetype = '' OR l.archetype = $archetype) "
+            "RETURN l.lesson_id, l.progress_score, l.valence, l.archetype, l.text_raw "
+            "ORDER BY l.created_at DESC LIMIT $limit",
+            {
+                "wl_hash": wl_hash,
+                "min_valence": min_valence,
+                "archetype": archetype,
+                "limit": limit,
+            },
+        )
+        while result.has_next():
+            row = result.get_next()
+            try:
+                progress = float(row[1])
+            except Exception:
+                continue
+            progress = max(0.0, min(1.0, progress))
+            val = row[2]
+            try:
+                val = float(val) if val is not None else None
+            except Exception:
+                val = None
+            rows.append(
+                {
+                    "lesson_id": row[0],
+                    "progress_score": progress,
+                    "valence": val,
+                    "archetype": row[3] or "",
+                    "text": row[4] or "",
+                }
+            )
+    except Exception:
+        _logger.exception("recall_scene_graph_priors failed")
+        return {"expected_progress": 0.0, "median_progress": 0.0, "evidence_count": 0, "priors": []}
+
+    if not rows:
+        return {"expected_progress": 0.0, "median_progress": 0.0, "evidence_count": 0, "priors": []}
+
+    progresses = sorted(r["progress_score"] for r in rows)
+    expected = sum(progresses) / len(progresses)
+    mid = len(progresses) // 2
+    median = progresses[mid] if len(progresses) % 2 == 1 else (progresses[mid - 1] + progresses[mid]) / 2.0
+
+    return {
+        "expected_progress": round(expected, 4),
+        "median_progress": round(median, 4),
+        "evidence_count": len(rows),
+        "priors": rows,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -2289,9 +2503,13 @@ async def register_plan(params: dict, db: KuzuClient, config: dict) -> dict:
     session_id = (params.get("session_id") or "unknown").strip() or "unknown"
 
     if not goal:
-        return {"error": "goal is required"}
+        return {"error": "goal is required", "write_ok": False, "error_code": "missing_goal"}
     if not steps:
-        return {"error": "steps must include at least one non-empty item"}
+        return {
+            "error": "steps must include at least one non-empty item",
+            "write_ok": False,
+            "error_code": "missing_steps",
+        }
 
     embedding_model = config.get("embeddings", {}).get(
         "model", "sentence-transformers/all-MiniLM-L6-v2"
@@ -2315,9 +2533,13 @@ async def register_plan(params: dict, db: KuzuClient, config: dict) -> dict:
     warnings, suggestions = _plan_feedback_from_similarity(db, goal_vec, plan_id)
 
     return {
+        "status": "registered",
+        "write_ok": True,
+        "id": plan_id,
         "plan_id": plan_id,
         "step_ids": step_ids,
         "quest_id": quest_id,
+        "result_summary": f"plan_id={plan_id} steps={len(step_ids)}",
         "warnings": warnings,
         "suggestions": suggestions,
     }
@@ -2641,6 +2863,7 @@ TOOL_HANDLERS = {
     "get_anomalies":    get_anomalies,           # B12
     "upsert_lesson":    upsert_lesson,           # B11
     "recall_relevant_lessons": recall_relevant_lessons,  # B11
+    "recall_scene_graph_priors": recall_scene_graph_priors,  # A050 sibling
     "get_openclaw_prompt": get_openclaw_prompt,  # B21
     "register_plan":   register_plan,            # B67
     "report_outcome":  report_outcome,           # B67/B69
@@ -2655,4 +2878,7 @@ TOOL_HANDLERS = {
     "get_disambiguation_queue": get_disambiguation_queue,  # B158
     "resolve_disambiguation": resolve_disambiguation,      # B158
     "reload_domain_dictionary": reload_domain_dictionary,  # B160
+    "ingest_arc_artifacts": ingest_arc_artifacts,  # B225
+    "publish_mechanic_summary": publish_mechanic_summary,  # B226
+    "recall_mechanic_priors": recall_mechanic_priors,      # B227
 }

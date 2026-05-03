@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 
 from mcp_engine.loop.step7_pathway import pathway_strength_decay
 from mcp_engine.graph import embeddings as emb
+from mcp_engine.wiki_projection import export_wiki_projection
 
 # ---------------------------------------------------------------------------
 # Sweep table registry
@@ -144,6 +145,13 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
     g, e = await _detect_knowledge_gaps(db, config)
     summary["gaps_detected"] = g
     summary["errors"] += e
+
+    # Step 7: Wiki Projection (B222)
+    try:
+        wiki_summary = await export_wiki_projection(db, config)
+        summary["wiki_projection"] = wiki_summary
+    except Exception:
+        summary["errors"] += 1
 
     return summary
 

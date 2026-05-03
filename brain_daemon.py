@@ -46,6 +46,17 @@ DB_PATH     = Path.home() / ".sidequests" / "brain.db"
 SEED_PATH   = Path(__file__).parent / "InvertorsDocs" / "GistSeedExamples.md"
 
 
+def _socket_path() -> Path:
+    """Return the daemon socket path, allowing sandbox-safe overrides."""
+    configured = (
+        os.environ.get("SIDEQUESTS_BRAIN_SOCKET")
+        or os.environ.get("SIDEQUESTS_SOCKET_PATH")
+    )
+    if configured:
+        return Path(configured).expanduser()
+    return SOCKET_PATH
+
+
 class BrainDaemon:
 
     def __init__(self, config: dict):
@@ -173,19 +184,20 @@ class BrainDaemon:
     # ------------------------------------------------------------------
 
     async def _run_ipc_server(self):
-        SOCKET_PATH.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        socket_path = _socket_path()
+        socket_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 
         # Clean up stale socket from previous crash
-        if SOCKET_PATH.exists():
-            SOCKET_PATH.unlink()
+        if socket_path.exists():
+            socket_path.unlink()
 
         # 4 MB limit — notify_turn payloads can be large (full assistant responses)
         server = await asyncio.start_unix_server(
-            self._handle_connection, path=str(SOCKET_PATH),
+            self._handle_connection, path=str(socket_path),
             limit=4 * 1024 * 1024,
         )
         self.running = True
-        print(f"Brain Daemon listening on {SOCKET_PATH}")
+        print(f"Brain Daemon listening on {socket_path}")
 
         async with server:
             await server.serve_forever()
@@ -360,8 +372,9 @@ class BrainDaemon:
     def shutdown(self):
         self.running = False
         self.db.close()
-        if SOCKET_PATH.exists():
-            SOCKET_PATH.unlink()
+        socket_path = _socket_path()
+        if socket_path.exists():
+            socket_path.unlink()
         print("Brain Daemon stopped.")
         # D1 fix: stop the event loop so the process exits cleanly.
         try:

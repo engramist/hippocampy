@@ -78,12 +78,12 @@ async def test_notify_turn_creates_followed_by(monkeypatch):
     # First message — no FOLLOWED_BY expected
     params1 = {"role": "user", "content": "first message", "session_id": "s1", "repo_root": "/r", "git_branch": "main"}
     res1 = await notify_turn(params1, db, config)
-    assert res1["status"] == "queued"
+    assert res1["status"] == "ingested"
 
     # Second message — should create FOLLOWED_BY edge linking to first
     params2 = {"role": "user", "content": "second message", "session_id": "s1", "repo_root": "/r", "git_branch": "main"}
     res2 = await notify_turn(params2, db, config)
-    assert res2["status"] == "queued"
+    assert res2["status"] == "ingested"
 
     # Inspect writes to ensure FOLLOWED_BY created
     found = any("FOLLOWED_BY" in w["query"] or "FOLLOWED_BY" in str(w.get("params", {})) for w in db.writes)

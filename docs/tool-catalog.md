@@ -37,6 +37,8 @@
 | 24 | `get_disambiguation_queue` | Curation | Human UI / Agent | Yes (human review) | No |
 | 25 | `resolve_disambiguation` | Curation | Human UI / Agent | Yes (human resolution) | No |
 | 26 | `reload_domain_dictionary` | Ingestion | Human UI / Agent | No (non-blocking) | No |
+| 27 | `publish_mechanic_summary` | ARC World-Model | ARC Agent | No (fire-and-forget) | No |
+| 28 | `recall_mechanic_priors` | ARC World-Model | ARC Agent | Yes | No |
 
 ---
 
@@ -796,6 +798,55 @@ can be called from a UI button or via an adapter command.
 - T1: Missing file returns an error with `searched` array
 - T2: Valid file ingests expected counts and returns `status: ok`
 - T3: Re-running with the same file does not increase `concepts_created`
+
+
+### 27. `publish_mechanic_summary` — ARC Mechanic Memory (B226)
+
+**Purpose:** Publish a learned ARC world-model mechanic summary to persistent graph memory.
+
+**When to call:** After an ARC episode or key learning boundary where a reusable mechanic has been identified.
+
+**Input:**
+```json
+{
+  "summary": {
+    "name": "Gravity Drop",
+    "action_set_signature": "ACTION6",
+    "confidence": 0.9,
+    "hypotheses": [{"signature": "h1", "action_count": 1}],
+    "effects": [{"signature": "e1", "effect_class": "motion"}],
+    "failure_modes": [{"name": "blocked"}]
+  },
+  "async_dispatch": true
+}
+```
+
+**Output:** `{ "ok": true, "mechanic_id": "mech-...", "status": "upserted" }`
+
+**What happens internally:**
+1. `ArcMechanic` node created/updated (MERGE by signature).
+2. Action and effect patterns reified as `ArcActionPattern` and `ArcEffectPattern`.
+3. Linked via `ARC_MECHANIC_HAS_ACTION_PATTERN` and `ARC_MECHANIC_CAUSES_EFFECT_PATTERN`.
+4. Failure modes and recovery policies linked via `ARC_MECHANIC_FAILS_AS` and `ARC_FAILURE_RECOVERED_BY`.
+
+### 28. `recall_mechanic_priors` — ARC Prior Retrieval (B227)
+
+**Purpose:** Retrieve reusable ARC mechanic priors based on action/effect signature similarity.
+
+**When to call:** Before beginning an ARC solve or when encountering a familiar action/effect pattern.
+
+**Input:**
+```json
+{
+  "signature": {
+    "action_set": "ACTION6"
+  },
+  "limit": 5,
+  "min_confidence": 0.5
+}
+```
+
+**Output:** Array of ranked `ArcMechanic` objects with 1-hop expanded patterns and failure modes.
 
 
 ## Adapter Compatibility Matrix

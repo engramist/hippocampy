@@ -480,6 +480,7 @@ def test_lesson_table_has_required_fields():
     assert "lesson_id" in fields
     assert "domain" in fields
     assert "lesson_type" in fields
+    assert "scene_wl_hash" in fields
     assert "confidence" in fields
 
 

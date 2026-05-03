@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -878,6 +879,18 @@ def create_app(db, config: dict | None = None) -> FastAPI:
         Also supports legacy SSE transport via connection_id query param
         for backwards compatibility with ChatGPT Desktop adapter.
         """
+        expected_token = os.environ.get("SIDEQUESTS_BRAIN_TOKEN")
+        if expected_token:
+            auth = request.headers.get("authorization", "")
+            header_token = request.headers.get("x-sidequests-token", "")
+            bearer = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
+            if expected_token not in {header_token, bearer}:
+                return JSONResponse(
+                    {"jsonrpc": "2.0", "id": None,
+                     "error": {"code": -32001, "message": "Unauthorized"}},
+                    status_code=401,
+                )
+
         # Legacy SSE transport — if connection_id is present, use old flow
         connection_id = request.query_params.get("connection_id")
         if connection_id:

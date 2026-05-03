@@ -567,6 +567,31 @@ def test_mcp_post_invalid_json_returns_400():
     assert r.status_code == 400
 
 
+def test_mcp_post_requires_token_when_configured(monkeypatch):
+    monkeypatch.setenv("SIDEQUESTS_BRAIN_TOKEN", "secret-token")
+    client = make_client()
+
+    r = client.post("/mcp", json={
+        "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
+    })
+
+    assert r.status_code == 401
+
+
+def test_mcp_post_accepts_configured_token(monkeypatch):
+    monkeypatch.setenv("SIDEQUESTS_BRAIN_TOKEN", "secret-token")
+    client = make_client()
+
+    r = client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+        headers={"Authorization": "Bearer secret-token"},
+    )
+
+    assert r.status_code == 200
+    assert r.json()["result"]["protocolVersion"] == "2025-03-26"
+
+
 @pytest.mark.asyncio
 async def test_dispatch_mcp_initialize_direct():
     """Test _dispatch_mcp directly without SSE transport."""
@@ -587,7 +612,7 @@ async def test_dispatch_mcp_tools_list_direct():
     )
     tool_names = {t["name"] for t in resp["result"]["tools"]}
     assert "notify_turn" in tool_names
-    assert len(tool_names) == 29  # Canonical tool set including reconstruct_timeline, get_knowledge_gaps, and recall_procedures
+    assert len(tool_names) == 33  # Canonical tool set including ARC ingestion/mechanic and scene-graph prior tools
 
 @pytest.mark.asyncio
 async def test_dispatch_mcp_unknown_method_direct():

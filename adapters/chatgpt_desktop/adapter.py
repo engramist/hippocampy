@@ -20,17 +20,14 @@ import asyncio
 import json
 import subprocess
 import sys
-import uuid
 from pathlib import Path
 from datetime import datetime, timezone
-import httpx
 from mcp_engine.tool_schemas import TOOLS
+from sidequests.brain_transport import call_brain
 
 _ALL_TOOL_NAMES = frozenset(t["name"] for t in TOOLS)
 
 
-# B3/B7 endpoint for Brain Daemon
-BRAIN_URL     = "http://127.0.0.1:7799/mcp"
 OFFLINE_QUEUE = Path.home() / ".sidequests" / "offline_queue.jsonl"
 
 # ---------------------------------------------------------------------------
@@ -76,24 +73,7 @@ _TOKEN_LIMIT  = 128000  # GPT-4o class
 
 async def _call_brain(method: str, params: dict) -> dict:
     """Send a JSON-RPC call to the Brain Daemon via HTTP. Returns the result dict."""
-    request = {
-        "jsonrpc": "2.0",
-        "id": str(uuid.uuid4()),
-        "method": method,
-        "params": params,
-    }
-    try:
-        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-            response = await client.post(BRAIN_URL, json=request)
-            if response.status_code != 200:
-                raise RuntimeError(f"HTTP_{response.status_code}")
-            
-            resp_json = response.json()
-            if "error" in resp_json:
-                raise RuntimeError(resp_json["error"]["message"])
-            return resp_json.get("result", {})
-    except (httpx.RequestError, httpx.HTTPStatusError):
-        raise RuntimeError("DAEMON_OFFLINE")
+    return await call_brain(method, params, timeout=_HTTP_TIMEOUT)
 
 
 def _queue_offline(method: str, params: dict) -> None:

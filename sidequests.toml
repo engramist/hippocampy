@@ -103,3 +103,43 @@ pricing_per_million_tokens = { "llama3.1:8b" = { input = 0.0, output = 0.0 }, "q
 provider = "ollama"
 model = "qwen2.5:7b"
 timeout_seconds = 60
+
+[wiki_projection]
+enabled = true
+vault_dir = "wiki"
+output_dir = "wiki/personas/default"
+max_pages_per_sweep = 50
+max_chars_per_page = 8000
+max_related_pages = 12
+max_backlinks = 25
+obsidian_vault_name = "wiki"
+
+[[wiki_projection.personas]]
+name = "engineer"
+output_dir = "wiki/personas/engineer"
+include_domains = ["architecture", "implementation", "testing"]
+include_node_types = ["Decision", "Constraint", "Procedure", "Lesson"]
+max_pages_per_sweep = 50
+max_chars_per_page = 8000
+max_related_pages = 12
+home_title = "Engineering Memory"
+
+[[wiki_projection.personas]]
+name = "researcher"
+output_dir = "wiki/personas/researcher"
+include_domains = ["research", "evaluation", "benchmarks"]
+include_node_types = ["Lesson", "KnowledgeGap", "Procedure"]
+max_pages_per_sweep = 40
+max_chars_per_page = 7000
+max_related_pages = 10
+home_title = "Research Memory"
+
+[[wiki_projection.personas]]
+name = "arc_agi"
+output_dir = "wiki/personas/arc_agi"
+include_domains = ["arc", "arc_agi", "benchmark", "benchmarks", "evaluation", "puzzle", "agent-learning"]
+include_node_types = ["ArcRun", "ArcTaskResult", "ArcArtifact", "ArcEvent", "ArcMechanic", "ArcWorldModelStep", "ArcWorldModelSummary", "Lesson", "KnowledgeGap", "Procedure", "Decision", "Constraint"]
+max_pages_per_sweep = 80
+max_chars_per_page = 8000
+max_related_pages = 12
+home_title = "ARC-AGI Memory"

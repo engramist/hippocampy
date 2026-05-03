@@ -12,17 +12,32 @@ from pathlib import Path
 
 from sidequests.cli.detect import detect_all, detect_claude_desktop
 from sidequests.cli.register import (
-    register_claude_code, 
-    register_claude_desktop, 
-    register_chatgpt_desktop, 
+    register_claude_code,
+    register_claude_desktop,
+    register_chatgpt_desktop,
     register_codex,
     register_gemini_cli
 )
 from sidequests.cli.launchd import setup_daemon
 from sidequests.cli.smoke_test import run_smoke_tests, check_status
+from sidequests.cli.wiki import app as wiki_app
+from sidequests.cli.arc import app as arc_app
+from mcp_engine.config import load_config
 
 app = typer.Typer(help="SideQuests AI Memory System CLI")
+# Backward-compatible entrypoint for installed console scripts that import `cli`.
+cli = app
 console = Console()
+
+@app.callback()
+def main_callback(ctx: typer.Context):
+    """
+    Initialize CLI context and load configuration.
+    """
+    try:
+        ctx.obj = {"config": load_config()}
+    except Exception:
+        ctx.obj = {"config": {}}
 
 # Set up logging
 FORMAT = "%(message)s"
@@ -38,12 +53,12 @@ def setup(
     Automated setup to detect and register SideQuests with AI clients.
     """
     console.print("[bold blue]SideQuests Setup[/bold blue] 🧠")
-    
+
     # Check OS
     system = platform.system()
     if system not in ["Darwin"]:
         console.print(f"[yellow]Note: Full automated setup is currently optimized for macOS. {system} registration may require manual steps.[/yellow]")
-    
+
     # Get absolute paths
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
     claude_code_adapter = os.path.join(repo_root, "adapters/claude_code/adapter.py")
@@ -51,12 +66,12 @@ def setup(
     codex_adapter = os.path.join(repo_root, "adapters/codex/adapter.py")
     gemini_adapter = os.path.join(repo_root, "adapters/gemini_cli/adapter.py")
     brain_daemon_path = os.path.join(repo_root, "brain_daemon.py")
-    
+
     # Client detection
     clients = detect_all()
-    
+
     results = {}
-    
+
     if target:
         # Register specific target
         if target == "claude-code":
@@ -78,16 +93,16 @@ def setup(
         if clients.get("claude_code"):
             console.print("[green]Detected Claude Code. Registering...[/green]")
             results["Claude Code"] = register_claude_code(claude_code_adapter)
-        
+
         if clients.get("claude_desktop"):
             console.print("[green]Detected Claude Desktop. Registering...[/green]")
             config_path = detect_claude_desktop()
             results["Claude Desktop"] = register_claude_desktop(claude_desktop_adapter, config_path)
-            
+
         if clients.get("chatgpt_desktop"):
             console.print("[green]Detected ChatGPT Desktop. Instructions provided.[/green]")
             results["ChatGPT Desktop"] = register_chatgpt_desktop()
-        
+
         if clients.get("codex"):
             console.print("[green]Detected Codex. Registering...[/green]")
             results["Codex"] = register_codex(codex_adapter)
@@ -100,31 +115,31 @@ def setup(
     if system == "Darwin":
         console.print("[blue]Setting up Brain Daemon auto-start...[/blue]")
         results["Daemon (launchd)"] = setup_daemon(brain_daemon_path)
-    
+
     # Smoke tests
     console.print("\n[bold]Running Smoke Tests...[/bold]")
     # We use a short sleep to give launchd time to start the process
     if system == "Darwin":
         import time
         time.sleep(1)
-        
+
     smoke_results = asyncio.run(run_smoke_tests())
-    
+
     # Summary Table
     table = Table(title="Setup Summary")
     table.add_column("Component", style="cyan")
     table.add_column("Status", style="magenta")
-    
+
     for component, success in results.items():
         status = "[green]Pass[/green]" if success else "[red]Fail[/red]"
         table.add_row(component, status)
-        
+
     for component, success in smoke_results.items():
         status = "[green]Pass[/green]" if success else "[red]Fail[/red]"
         table.add_row(component, status)
-        
+
     console.print(table)
-    
+
     # Overall success depends on all explicit results and all smoke tests
     if all(results.values()) and all(smoke_results.values()):
         console.print("\n[bold green]Setup complete! SideQuests is ready to use.[/bold green] 🚀")
@@ -153,7 +168,7 @@ def uninstall(
         confirm = typer.confirm("Are you sure you want to uninstall SideQuests?")
         if not confirm:
             raise typer.Abort()
-            
+
     from sidequests.cli.uninstall import run_uninstall
     run_uninstall(keep_data=keep_data, remove_ollama_model=remove_ollama_model, ollama_model=ollama_model)
 
@@ -205,6 +220,40 @@ def status():
         raise typer.Exit(code=1)
 
 @app.command()
+def smoke(
+    arc_world_model_tools: bool = typer.Option(False, "--arc-world-model-tools", help="Check for ARC world-model tools")
+):
+    """
+    Run diagnostic smoke tests.
+    """
+    console.print("[bold blue]SideQuests Smoke Test[/bold blue] 🧠")
+
+    results = asyncio.run(run_smoke_tests())
+
+    if arc_world_model_tools:
+        from sidequests.cli.smoke_test import check_arc_tools
+        arc_res = check_arc_tools()
+        results["ARC World-Model Tools"] = arc_res["ok"]
+        if not arc_res["ok"]:
+            console.print(f"[yellow]Note: {arc_res['detail']}[/yellow]")
+
+    table = Table(title="Smoke Test Results")
+    table.add_column("Check", style="cyan")
+    table.add_column("Status", style="magenta")
+
+    for check, success in results.items():
+        status = "[green]Pass[/green]" if success else "[red]Fail[/red]"
+        table.add_row(check, status)
+
+    console.print(table)
+
+    if all(results.values()):
+        console.print("\n[bold green]All checks passed![/bold green] 🚀")
+    else:
+        console.print("\n[bold red]Some checks failed. Check daemon logs for details.[/bold red]")
+        raise typer.Exit(code=1)
+
+@app.command()
 def review():
     """
     Review open loops and pending tasks in the Brain.
@@ -214,24 +263,27 @@ def review():
     if "error" in res:
         console.print(f"[red]Error: {res['error']['message']}[/red]")
         raise typer.Exit(code=1)
-    
+
     loops = res.get("result", {}).get("open_loops", [])
     if not loops:
         console.print("No open loops found.")
         return
-        
+
     table = Table(title="Open Loops")
     table.add_column("Type", style="cyan")
     table.add_column("Detail", style="magenta")
-    
+
     for loop in loops:
         text = loop.get("text_raw", "")
         table.add_row("Loop", text[:100] + "..." if len(text) > 100 else text)
-        
+
     console.print(table)
 
 tool_app = typer.Typer(help="Manage MCP tools")
 app.add_typer(tool_app, name="tool")
+
+app.add_typer(wiki_app, name="wiki")
+app.add_typer(arc_app, name="arc")
 
 @tool_app.command("list")
 def tool_list():
@@ -241,15 +293,15 @@ def tool_list():
     if "error" in res:
         console.print(f"[red]Error: {res['error']['message']}[/red]")
         raise typer.Exit(code=1)
-        
+
     tools = res.get("result", {}).get("tools", [])
     table = Table(title="Available Tools")
     table.add_column("Name", style="cyan")
     table.add_column("Description", style="magenta")
-    
+
     for tool in tools:
         table.add_row(tool["name"], tool.get("description", ""))
-        
+
     console.print(table)
 
 if __name__ == "__main__":

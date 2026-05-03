@@ -152,7 +152,7 @@ async def test_notify_turn_survives_summary_read_error():
         BrokenSummaryDB(), {}
     )
 
-    assert result["status"] == "queued"
+    assert result["status"] == "ingested"
     # Should not crash — insights just absent
 
 

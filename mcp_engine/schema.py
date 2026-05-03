@@ -323,6 +323,11 @@ NODE_TABLES = {
         embedding_dim    INT64,
         domain           STRING,
         lesson_type      STRING,
+        scene_wl_hash    STRING,
+        scene_graph_vector STRING,
+        archetype        STRING,
+        progress_score   DOUBLE,
+        valence          DOUBLE,
         confidence       DOUBLE,
         confidence_low   BOOLEAN,
         pathway_strength DOUBLE,
@@ -582,6 +587,171 @@ NODE_TABLES = {
         created_at    TIMESTAMP,
         PRIMARY KEY (summary_id)
     """,
+
+    # B225 — ARC Artifact Ingestion
+    "ArcRun": """
+        run_id          STRING,
+        artifact_hash   STRING,
+        source_root     STRING,
+        source_files    STRING,
+        started_at      STRING,
+        completed_at    STRING,
+        status          STRING,
+        variant         STRING,
+        task_count      INT64,
+        solved_count    INT64,
+        failed_count    INT64,
+        step_count      INT64,
+        domain          STRING,
+        summary         STRING,
+        created_at      TIMESTAMP,
+        updated_at      TIMESTAMP,
+        PRIMARY KEY (run_id)
+    """,
+
+    "ArcTaskResult": """
+        task_result_id  STRING,
+        run_id          STRING,
+        task_id         STRING,
+        puzzle_id       STRING,
+        status          STRING,
+        correct         BOOL,
+        steps           INT64,
+        tokens_input    INT64,
+        tokens_output   INT64,
+        failure_class   STRING,
+        trajectory_score DOUBLE,
+        domain          STRING,
+        summary         STRING,
+        created_at      TIMESTAMP,
+        updated_at      TIMESTAMP,
+        PRIMARY KEY (task_result_id)
+    """,
+
+    "ArcArtifact": """
+        artifact_id     STRING,
+        artifact_kind   STRING,
+        path            STRING,
+        content_hash    STRING,
+        record_count    INT64,
+        captured_at     STRING,
+        ingested_at     TIMESTAMP,
+        domain          STRING,
+        summary         STRING,
+        PRIMARY KEY (artifact_id)
+    """,
+
+    "ArcEvent": """
+        event_id        STRING,
+        run_id          STRING,
+        task_id         STRING,
+        event_type      STRING,
+        timestamp       STRING,
+        step_index      INT64,
+        actor           STRING,
+        tool_name       STRING,
+        action_name     STRING,
+        outcome         STRING,
+        domain          STRING,
+        summary         STRING,
+        PRIMARY KEY (event_id)
+    """,
+
+    # B226 — ARC Mechanic Memory
+    "ArcMechanic": """
+        mechanic_id STRING,
+        name STRING,
+        signature STRING,
+        confidence DOUBLE,
+        terminal_relevance DOUBLE,
+        coordinate_relevance DOUBLE,
+        source_task_ids STRING,
+        evidence_count INT64,
+        contradiction_count INT64,
+        domain STRING,
+        summary STRING,
+        created_at STRING,
+        updated_at STRING,
+        PRIMARY KEY (mechanic_id)
+    """,
+
+    "ArcActionPattern": """
+        pattern_id STRING,
+        signature STRING,
+        action_set STRING,
+        action_count INT64,
+        summary STRING,
+        PRIMARY KEY (pattern_id)
+    """,
+
+    "ArcEffectPattern": """
+        pattern_id STRING,
+        signature STRING,
+        effect_class STRING,
+        terminal_trend STRING,
+        object_progress DOUBLE,
+        summary STRING,
+        PRIMARY KEY (pattern_id)
+    """,
+
+    "ArcPrecondition": """
+        precondition_id STRING,
+        kind STRING,
+        signature STRING,
+        summary STRING,
+        PRIMARY KEY (precondition_id)
+    """,
+
+    "ArcFailureMode": """
+        failure_mode_id STRING,
+        name STRING,
+        signature STRING,
+        summary STRING,
+        PRIMARY KEY (failure_mode_id)
+    """,
+
+    "ArcRecoveryPolicy": """
+        recovery_policy_id STRING,
+        name STRING,
+        summary STRING,
+        confidence DOUBLE,
+        PRIMARY KEY (recovery_policy_id)
+    """,
+
+    # B229 — ARC World-Model Evaluation
+    "ArcWorldModelStep": """
+        world_model_step_id STRING,
+        run_id STRING,
+        task_id STRING,
+        step_index INT64,
+        node_count INT64,
+        edge_count INT64,
+        compiled_claim_count INT64,
+        action_effect_class STRING,
+        reasoning_mode STRING,
+        planner_candidate_count INT64,
+        single_action_stall_detected BOOL,
+        summary STRING,
+        created_at STRING,
+        PRIMARY KEY (world_model_step_id)
+    """,
+
+    "ArcWorldModelSummary": """
+        world_model_summary_id STRING,
+        run_id STRING,
+        task_id STRING,
+        graph_bounded BOOL,
+        compiler_active BOOL,
+        falsification_active BOOL,
+        reasoning_gated BOOL,
+        planner_grounded BOOL,
+        memory_transfer_active BOOL,
+        single_action_stall_detected BOOL,
+        full_reasoning_cycles_avoided INT64,
+        summary STRING,
+        created_at STRING,
+        PRIMARY KEY (world_model_summary_id)
+    """,
 }
 
 # ---------------------------------------------------------------------------
@@ -681,6 +851,22 @@ REL_TABLES = [
     # B172 — Victory Condition persistence
     "CREATE REL TABLE IF NOT EXISTS INFERRED_FROM (FROM VictoryCondition TO Hypothesis, weight FLOAT)",
     "CREATE REL TABLE IF NOT EXISTS REQUIRES_ENTITY (FROM VictoryCondition TO GridEntity, requirement STRING)",
+    # B225 — ARC Artifact Ingestion relationships
+    "CREATE REL TABLE IF NOT EXISTS ARC_RUN_HAS_TASK (FROM ArcRun TO ArcTaskResult)",
+    "CREATE REL TABLE IF NOT EXISTS ARC_RUN_HAS_ARTIFACT (FROM ArcRun TO ArcArtifact)",
+    "CREATE REL TABLE IF NOT EXISTS ARC_TASK_HAS_EVENT (FROM ArcTaskResult TO ArcEvent)",
+    "CREATE REL TABLE IF NOT EXISTS ARC_EVENT_FROM_ARTIFACT (FROM ArcEvent TO ArcArtifact)",
+    # B226 — ARC Mechanic Memory relationships
+    "CREATE REL TABLE IF NOT EXISTS ARC_MECHANIC_HAS_ACTION_PATTERN(FROM ArcMechanic TO ArcActionPattern, confidence DOUBLE, evidence_count INT64)",
+    "CREATE REL TABLE IF NOT EXISTS ARC_MECHANIC_CAUSES_EFFECT_PATTERN(FROM ArcMechanic TO ArcEffectPattern, confidence DOUBLE, evidence_count INT64)",
+    "CREATE REL TABLE IF NOT EXISTS ARC_MECHANIC_REQUIRES(FROM ArcMechanic TO ArcPrecondition, confidence DOUBLE)",
+    "CREATE REL TABLE IF NOT EXISTS ARC_MECHANIC_FAILS_AS(FROM ArcMechanic TO ArcFailureMode, evidence_count INT64)",
+    "CREATE REL TABLE IF NOT EXISTS ARC_FAILURE_RECOVERED_BY(FROM ArcFailureMode TO ArcRecoveryPolicy, confidence DOUBLE)",
+    # B229 — ARC World-Model Evaluation relationships
+    "CREATE REL TABLE IF NOT EXISTS ARC_RUN_HAS_WORLD_MODEL_STEP(FROM ArcRun TO ArcWorldModelStep)",
+    "CREATE REL TABLE IF NOT EXISTS ARC_RUN_HAS_WORLD_MODEL_SUMMARY(FROM ArcRun TO ArcWorldModelSummary)",
+    "CREATE REL TABLE IF NOT EXISTS ARC_WORLD_MODEL_FROM_ARTIFACT(FROM ArcWorldModelStep TO ArcArtifact)",
+    "CREATE REL TABLE IF NOT EXISTS ARC_WORLD_MODEL_SUMMARY_FROM_ARTIFACT(FROM ArcWorldModelSummary TO ArcArtifact)",
 ]
 
 def get_relationship_types() -> list[str]:
@@ -889,6 +1075,11 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         # Back-compat for older DBs created before expanded Lesson schema
         ("Lesson",          "domain", "STRING"),
         ("Lesson",          "lesson_type", "STRING"),
+        ("Lesson",          "scene_wl_hash", "STRING"),
+        ("Lesson",          "scene_graph_vector", "STRING"),
+        ("Lesson",          "archetype", "STRING"),
+        ("Lesson",          "progress_score", "DOUBLE"),
+        ("Lesson",          "valence", "DOUBLE"),
         ("Lesson",          "confidence", "DOUBLE"),
         ("Lesson",          "confidence_low", "BOOLEAN"),
         ("Lesson",          "pathway_strength", "DOUBLE"),
