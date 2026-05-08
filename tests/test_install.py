@@ -634,9 +634,17 @@ class TestFailureModes:
 
 class TestLaunchdResolver:
 
+    def test_launchd_resolver_prefers_repo_venv(self):
+        """Should prefer the repository venv so launchd sees installed deps."""
+        import sidequests.cli.launchd as launchd
+
+        resolved = launchd.resolve_system_python()
+        assert resolved.endswith(".venv/bin/python")
+
     def test_launchd_resolver_skips_pyenv_shim(self, monkeypatch):
         """Should skip interpreters that resolve to pyenv shims."""
         import sidequests.cli.launchd as launchd
+        monkeypatch.setattr(launchd.Path, "exists", lambda self: False)
         
         # 1. which("python3.12") returns a shim
         # 2. which("python3") returns a real path
@@ -660,6 +668,7 @@ class TestLaunchdResolver:
     def test_launchd_resolver_falls_back_to_sys_executable(self, monkeypatch):
         """Should fall back to sys.executable if no other candidates work."""
         import sidequests.cli.launchd as launchd
+        monkeypatch.setattr(launchd.Path, "exists", lambda self: False)
         monkeypatch.setattr(launchd.shutil, "which", lambda cmd: None)
         monkeypatch.setattr(os.path, "exists", lambda p: False)
         
@@ -849,4 +858,3 @@ class TestOrchestration:
         results = mock_report.call_args[0][0]
         # Check that we have failures in results
         assert any(not r.passed for r in results)
-
