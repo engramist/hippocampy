@@ -10,8 +10,19 @@ LOG_PATH = Path.home() / ".sidequests" / "daemon.log"
 
 def resolve_system_python() -> str:
     """
-    Find a stable python3 interpreter, skipping pyenv shims.
+    Find the Python interpreter launchd should use.
+
+    Prefer the repository virtualenv so the daemon sees the same dependencies
+    as the CLI/tests. Falling back to a bare system/Homebrew Python can miss
+    runtime deps such as uvicorn.
     """
+    repo_root = Path(__file__).parent.parent.parent
+    venv_python = repo_root / ".venv" / "bin" / "python"
+    if venv_python.exists():
+        # Do not resolve the symlink: launchd must execute through the venv
+        # path so Python initializes with the venv's site-packages.
+        return str(venv_python)
+
     candidates = ["python3.12", "python3", "/usr/bin/python3"]
     for cmd in candidates:
         full_path = shutil.which(cmd)
@@ -77,7 +88,12 @@ def generate_plist(brain_daemon_path: str, plist_path: str) -> bool:
     <key>StandardErrorPath</key>
     <string>{LOG_PATH}</string>
     <key>WorkingDirectory</key>
-    <string>{Path.home()}</string>
+    <string>{Path(brain_daemon_path).parent}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{Path(python_exe).parent}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
 </dict>
 </plist>
 """
