@@ -7,13 +7,12 @@ name = "sidequests-brain"
 version = "0.1.0-rc1"
 description = "Local AI memory system with gated consolidation loop and graph-native Kùzu database"
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 authors = [{ name = "SideQuests", email = "sidequests@example.com" }]
 keywords = ["ai", "memory", "graph-database", "mcp"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
@@ -62,5 +61,5 @@ where = ["."]
 include = ["sidequests*", "mcp_engine*", "adapters*", "web*"]
 
 [tool.setuptools.package-data]
-"sidequests.data" = ["*.md"]
+"sidequests.data" = ["*.md", "sidequests-memory/*.md", "config/*.toml"]
 "*" = ["sidequests.toml"]

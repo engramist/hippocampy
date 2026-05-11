@@ -161,6 +161,7 @@ def test_launchd_write_plist_resolves_real_python_interpreter(tmp_path, monkeypa
 
     # Simulate pyenv shim resolution.
     monkeypatch.setattr(launchd.shutil, "which", lambda cmd: "/usr/local/bin/python3.12")
+    monkeypatch.setattr(launchd.Path, "exists", lambda self: False)
 
     # Expected target interpreter after fix.
     import os

@@ -227,6 +227,19 @@ def status():
         raise typer.Exit(code=1)
 
 @app.command()
+def doctor(
+    repair: bool = typer.Option(False, "--repair", help="Attempt safe repairs"),
+    lines: Optional[int] = typer.Option(None, "--lines", help="Show last N activity lines"),
+):
+    """
+    Diagnose SideQuests daemon, config, runtime paths, and MCP registrations.
+    """
+    from sidequests.cli.doctor import run_doctor
+
+    if not run_doctor(repair=repair, lines=lines):
+        raise typer.Exit(code=1)
+
+@app.command()
 def activity(
     ctx: typer.Context,
     lines: int = typer.Option(40, "--lines", "-n", help="Number of recent activity lines to show first"),

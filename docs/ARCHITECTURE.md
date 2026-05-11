@@ -13,6 +13,10 @@
 - Backlog card authoring and execution rules: [backlog/BacklogRules.md](../backlog/BacklogRules.md)
 - Backlog planning/tracking status source: [backlog/masterBacklogTracker.md](../backlog/masterBacklogTracker.md)
 
+## Patent Notice
+
+**Patent Pending:** This system includes patent-pending memory architecture. U.S. Provisional Application #64/017,066 was filed March 25, 2026 (Confirmation #7549, Patent Center #75018063). Non-provisional filing deadline: March 25, 2027. No patent has been granted. See [docs/nonprovisional-strategy.md](nonprovisional-strategy.md) for strategy, filing facts, and public disclosure boundaries.
+
 ## Project Mission
 
 **Side Quests — Phase 0: Standalone Brain Daemon** — Build a standalone local AI memory system backed by a Gated Consolidation Loop and a Graph-Native Kùzu database. The system exposes MCP STDIO adapters for Claude Code and Codex. OpenClaw integration is deferred to a later phase.
@@ -144,7 +148,14 @@ All LLM calls use an OpenAI-SDK-compatible interface so Ollama and cloud provide
 
 ## IP Protection
 
-**Keep this repository private until a provisional patent is filed.** These documents establish prior art dated March 2026, but public disclosure (GitHub, blog, conference talk, demo) before filing forfeits patent rights in most jurisdictions. Core IP claims requiring protection before any publication:
+**Provisional patent filed.** The canonical inventor's notebook records the filing on March 25, 2026:
+Application # **64/017,066**, Confirmation # **7549**, Patent Center # **75018063**.
+Priority date is March 25, 2026; the non-provisional deadline to preserve priority is
+March 25, 2027.
+
+Public release is no longer blocked by the pre-filing disclosure constraint, but any public
+distribution should still be reviewed for implementation readiness, private data, proprietary
+tuning details, and non-provisional strategy. Core IP claims covered by the filed disclosure:
 - Gated Consolidation Loop (9-step biomimetic pipeline)
 - Shape-First Principle (ontological grounding before semantic work, applied at every pipeline level)
 - Kahneman System 1/2 hybrid classifier (Step 2)
@@ -218,6 +229,18 @@ Operator visibility:
   startup chatter. Agents should point users to `sidequests activity --follow`
   when they ask "is SideQuests writing/recalling right now?" and reserve
   `~/.sidequests/daemon.log` for troubleshooting failures.
+
+Agent memory-use policy:
+
+  `skills/sidequests-memory/SKILL.md` is the canonical policy for supported
+  agents. It teaches when to recall, when not to recall, which retrieval tool
+  to use, and how to preserve the anti-bloat context strategy. Codex can install
+  this as a local skill; Claude, Gemini, ChatGPT Desktop, VS Code, and other MCP
+  clients receive the same policy through agent docs and adapter prompt
+  fragments.
+
+  `memory_decision` is the runtime helper for uncertain cases. It recommends
+  whether to recall and which tool to call, but does not retrieve memory in v1.
 ```
 
 **MainQuest ID** is generated deterministically as a hash of `repo_root_path + git_branch` so all local assistants auto-align to the same project context.
@@ -765,6 +788,8 @@ LLM → [stdio, JSON-RPC 2.0] → Adapter → [Unix socket, JSON-RPC 2.0] → Br
 Response: `{ "status": "queued" }` — always immediate, never blocks.
 
 ### Retrieval Tools
+
+**`memory_decision`** — call when unsure whether a prompt warrants recall. Returns a compact recommendation (`should_recall`, `recommended_tool`, `query`, `reason`, `confidence`, `context_budget`, `anti_bloat_guidance`) without retrieving memory. This is the runtime companion to `skills/sidequests-memory/SKILL.md`.
 
 **`current_truth`** — call before answering architecture or past-decision questions. Searches consolidated artifacts and bounded episodic `Message` evidence, then ranks by graph strength (`pathway_strength × confidence`, plus bounded outcome valence). Includes optional `include_rationale` for 1-hop provenance context.
 

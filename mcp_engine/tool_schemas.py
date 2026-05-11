@@ -591,4 +591,39 @@ TOOLS: list[dict] = [
             }
         }
     },
+    {
+        "name": "memory_decision",
+        "description": (
+            "Recommend whether and how to recall SideQuests memory for the current user prompt. "
+            "Returns deterministic routing decision: should_recall (bool), recommended_tool (str), "
+            "query (str), reason, confidence, context_budget, and anti_bloat_guidance. "
+            "Does not retrieve memory in v1; only recommends the next action."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "user_prompt": {
+                    "type": "string",
+                    "description": "The user's current message or question."
+                },
+                "task_phase": {
+                    "type": "string",
+                    "description": "Optional phase hint (e.g., 'planning', 'debugging', 'refactoring')."
+                },
+                "available_context_summary": {
+                    "type": "string",
+                    "description": "Optional summary of what's already in context."
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID for potential future stateful hints."
+                },
+                "client_name": {
+                    "type": "string",
+                    "description": "Optional client identifier (e.g., 'codex', 'claude-desktop')."
+                },
+            },
+            "required": ["user_prompt"],
+        },
+    },
 ]

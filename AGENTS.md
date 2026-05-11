@@ -9,6 +9,12 @@ Read `docs/ecosystem-rules.md` before changing package boundaries or persistence
 
 KuzuDB is the single source of truth for persistent memory state. Do not introduce shadow stores for durable agent state; in-memory structures are allowed only as caches over graph-backed state.
 
+## Memory Usage Policy
+
+Use `skills/sidequests-memory/SKILL.md` as the canonical policy for when to recall SideQuests memory. The short version: do not recall on every turn; recall only when a decision needs durable memory, and keep returned context compact.
+
+If you are unsure whether recall is warranted, call `memory_decision` first. It recommends the next recall tool without retrieving memory itself.
+
 ## Activity Indicator
 
 Use the SideQuests activity feed to verify live memory behavior:

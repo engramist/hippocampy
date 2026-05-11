@@ -16,6 +16,7 @@ from sidequests.cli.register import (
     _python_for_adapter,
     _strip_codex_adapter_path_tables,
     _upsert_codex_mcp_block,
+    install_codex_memory_skill,
 )
 
 # Absolute path to the adapters directory (resolved at import time)
@@ -96,6 +97,7 @@ def _register_codex(project_root: Path) -> None:
         updated, _python_for_adapter(str(adapter_path)), str(adapter_path)
     )
     config_path.write_text(updated)
+    install_codex_memory_skill(project_root)
     print(f"  [✓] Codex — config updated at {config_path}")
 
 
@@ -136,6 +138,7 @@ def _register_codex_desktop(project_root: Path) -> None:
         updated, _python_for_adapter(str(adapter_path)), str(adapter_path)
     )
     config_path.write_text(updated)
+    install_codex_memory_skill(project_root)
     print(f"  [✓] Codex Desktop — config updated at {config_path}")
 
 
