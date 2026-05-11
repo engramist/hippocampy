@@ -28,3 +28,16 @@ These are the sources of truth for the system design — shared across all agent
 ## Critical Rule: No Shadow Stores
 
 **KuzuDB is the single source of truth for all persistent agent state.** Do NOT store persistent data (roles, hypotheses, victory conditions, action facts, chunk history) in Python dicts or instance variables as the primary store. In-memory variables are permitted ONLY as read-through caches over KuzuDB. See `docs/ecosystem-rules.md` "No shadow stores rule" for full details.
+
+## SideQuests Activity Indicator
+
+SideQuests exposes a compact operator activity feed at `~/.sidequests/activity.log`.
+Use this instead of the noisy daemon log when checking whether the brain is currently writing to memory, recalling, running durable capture, or changing daemon state.
+
+Recommended command:
+
+```bash
+.venv/bin/sidequests activity --follow
+```
+
+The feed is intentionally redacted: it records operational metadata such as source client, role, session, character counts, recall queries, and status without dumping full prompt or assistant response bodies. Use `~/.sidequests/daemon.log` only for troubleshooting failures and stack traces.
