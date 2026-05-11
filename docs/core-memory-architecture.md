@@ -304,6 +304,12 @@ The normal read flow is:
 
 The read path should answer, "What does the next agent step need to know right now?"
 
+Bounded episodic recall can return raw `Message` / `DocumentExtract` evidence
+for provenance-style questions, but those raw nodes should not become
+working-memory handoff cargo. They count against token/bloat estimates when
+returned, while `LOADED` tracking remains reserved for consolidated artifact
+memory.
+
 ## Write Path
 
 The normal write flow is:

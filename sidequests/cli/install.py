@@ -23,6 +23,11 @@ from pathlib import Path
 from typing import Optional
 
 import click
+from sidequests.cli.register import (
+    _strip_codex_adapter_path_tables,
+    _upsert_codex_mcp_block,
+    register_vscode,
+)
 try:
     from openai import OpenAI
 except ImportError:
@@ -80,6 +85,30 @@ spacy_model = "en_core_web_md"
 
 [ingestion]
 max_ingest_chars = 4000
+
+[capture]
+enabled = true
+
+[capture.codex]
+enabled = true
+scan_interval_seconds = 10
+max_events_per_scan = 50
+initial_backfill_events = 20
+max_initial_backfill_files = 1
+
+[capture.claude_code]
+enabled = true
+scan_interval_seconds = 10
+max_events_per_scan = 50
+initial_backfill_events = 20
+max_initial_backfill_files = 1
+
+[capture.vscode]
+enabled = true
+scan_interval_seconds = 15
+max_events_per_scan = 50
+initial_backfill_events = 20
+max_initial_backfill_files = 5
 
 [quest]
 auto_complete_days = 30
@@ -626,6 +655,9 @@ class AdapterRegistrar:
         if detected.get("gemini-cli"):
             results["gemini-cli"] = self._register_gemini_cli()
 
+        if detected.get("vscode"):
+            results["vscode"] = self._register_vscode()
+
         if detected.get("chatgpt-desktop"):
             results["chatgpt-desktop"] = self._register_chatgpt_desktop()
 
@@ -792,15 +824,9 @@ class AdapterRegistrar:
         """Ensure a sidequests MCP entry exists in a Codex TOML config file."""
         config_path.parent.mkdir(parents=True, exist_ok=True)
         existing = config_path.read_text() if config_path.exists() else ""
-        entry_block = (
-            f'\n[mcp_servers.sidequests]\n'
-            f'command = "{self.venv.python}"\n'
-            f'args = ["{adapter_path}"]\n'
-        )
-
-        if "mcp_servers.sidequests" not in existing:
-            with open(config_path, "a") as f:
-                f.write(entry_block)
+        updated = _strip_codex_adapter_path_tables(existing, str(adapter_path))
+        updated = _upsert_codex_mcp_block(updated, str(self.venv.python), str(adapter_path))
+        config_path.write_text(updated)
 
         return True
 
@@ -840,6 +866,14 @@ class AdapterRegistrar:
         click.echo("      4. Save — all SideQuest tools will appear automatically")
         click.echo("")
         return True
+
+    def _register_vscode(self) -> bool:
+        """Register VS Code/Copilot MCP config; capture fallback is daemon-side."""
+        adapter_path = (self._adapters_dir / "codex" / "adapter.py").resolve()
+        ok = register_vscode(str(adapter_path))
+        if ok:
+            click.echo("    [ok] VS Code — MCP server registered")
+        return ok
 
     def _register_openclaw(self) -> bool:
         """Install/configure the OpenClaw extension and restart the gateway."""

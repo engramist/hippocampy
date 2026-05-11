@@ -13,6 +13,17 @@ from pathlib import Path
 ADAPTER_DIR  = Path(__file__).parent
 ADAPTER_FILE = ADAPTER_DIR / "adapter.py"
 HOOK_FILE    = ADAPTER_DIR / "hook_user_turn.py"
+REPO_ROOT    = ADAPTER_DIR.parent.parent
+
+
+def _python_executable() -> str:
+    for candidate in (
+        REPO_ROOT / ".venv" / "bin" / "python",
+        REPO_ROOT / ".venv" / "bin" / "python3.12",
+    ):
+        if candidate.exists():
+            return str(candidate)
+    return sys.executable
 
 
 def register(project_root: Path = None) -> None:
@@ -30,7 +41,7 @@ def _write_mcp_json(project_root: Path) -> None:
     mcp_config = {
         "mcpServers": {
             "sidequests-brain": {
-                "command": sys.executable,
+                "command": _python_executable(),
                 "args": [str(ADAPTER_FILE)],
             }
         }
@@ -55,7 +66,7 @@ def _write_hook_config() -> None:
         "hooks": [
             {
                 "type": "command",
-                "command": f"{sys.executable} {HOOK_FILE}",
+                "command": f"{_python_executable()} {HOOK_FILE}",
             }
         ],
     }
@@ -63,14 +74,15 @@ def _write_hook_config() -> None:
     hooks = settings.setdefault("hooks", {})
     user_prompt_hooks = hooks.setdefault("UserPromptSubmit", [])
 
-    # Avoid duplicate registration
-    already_registered = any(
-        str(HOOK_FILE) in str(h)
+    # Repair stale entries as well as avoiding duplicates. Test runs or moved
+    # installs can leave hooks pointing at a temp/interpreter path while still
+    # containing the same hook script.
+    user_prompt_hooks[:] = [
+        entry
         for entry in user_prompt_hooks
-        for h in entry.get("hooks", [])
-    )
-    if not already_registered:
-        user_prompt_hooks.append(hook_entry)
+        if not any(str(HOOK_FILE) in str(h) for h in entry.get("hooks", []))
+    ]
+    user_prompt_hooks.append(hook_entry)
 
     with open(settings_path, "w") as f:
         json.dump(settings, f, indent=2)

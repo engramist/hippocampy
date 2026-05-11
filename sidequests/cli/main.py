@@ -16,7 +16,8 @@ from sidequests.cli.register import (
     register_claude_desktop,
     register_chatgpt_desktop,
     register_codex,
-    register_gemini_cli
+    register_gemini_cli,
+    register_vscode,
 )
 from sidequests.cli.launchd import setup_daemon
 from sidequests.cli.smoke_test import run_smoke_tests, check_status
@@ -85,6 +86,8 @@ def setup(
             results["Codex"] = register_codex(codex_adapter)
         elif target == "gemini-cli":
             results["Gemini CLI"] = register_gemini_cli(gemini_adapter)
+        elif target == "vscode":
+            results["VS Code"] = register_vscode(codex_adapter)
         else:
             console.print(f"[red]Error: Unknown target '{target}'[/red]")
             raise typer.Exit(code=1)
@@ -110,6 +113,10 @@ def setup(
         if clients.get("gemini_cli"):
             console.print("[green]Detected Gemini CLI. Registering...[/green]")
             results["Gemini CLI"] = register_gemini_cli(gemini_adapter)
+
+        if clients.get("vscode"):
+            console.print("[green]Detected VS Code. Registering MCP server...[/green]")
+            results["VS Code"] = register_vscode(codex_adapter)
 
     # Daemon setup (macOS only)
     if system == "Darwin":
