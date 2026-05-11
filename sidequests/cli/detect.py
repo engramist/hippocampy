@@ -39,6 +39,17 @@ def detect_gemini_cli() -> bool:
     """Check for 'gemini' CLI in PATH."""
     return shutil.which("gemini") is not None
 
+def detect_vscode() -> bool:
+    """Check for VS Code CLI or a standard user config directory."""
+    if shutil.which("code") is not None:
+        return True
+    system = platform.system()
+    if system == "Darwin":
+        return os.path.isdir(os.path.expanduser("~/Library/Application Support/Code/User"))
+    if system == "Windows":
+        return os.path.isdir(os.path.expanduser("~/AppData/Roaming/Code/User"))
+    return os.path.isdir(os.path.expanduser("~/.config/Code/User"))
+
 def detect_openclaw() -> bool:
     """Check for 'openclaw' CLI in PATH."""
     return shutil.which("openclaw") is not None
@@ -55,6 +66,7 @@ def detect_installed_clients() -> Dict[str, bool]:
         "codex-desktop": detect_codex_desktop(),
         "chatgpt-desktop": detect_chatgpt_desktop(),
         "gemini-cli": detect_gemini_cli(),
+        "vscode": detect_vscode(),
         "openclaw": detect_openclaw(),
     }
 

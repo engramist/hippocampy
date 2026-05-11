@@ -959,6 +959,8 @@ def _get_pk_for_node_type(node_type: str) -> str:
         "GlobalConstraint": "global_constraint_id",
         "GlobalPreference": "global_preference_id",
         "Lesson": "lesson_id",
+        "Message": "message_id",
+        "DocumentExtract": "extract_id",
     }
     return pk_map.get(node_type, "id")
 
@@ -1143,6 +1145,11 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
         ("GlobalConstraint", "globalconstraint_emb_idx",  "global_constraint_id"),
         ("GlobalPreference", "globalpreference_emb_idx",  "global_preference_id"),
         ("Lesson",           "lesson_emb_idx",            "lesson_id"),
+        # Raw episodic memory must be searchable too. Consolidated artifacts
+        # are ideal for "current truth", but freshly captured turns may not
+        # have produced a Decision/Lesson yet.
+        ("Message",          "message_emb_idx",           "message_id"),
+        ("DocumentExtract",  "documentextract_emb_idx",   "extract_id"),
     ]
 
     all_raw_results = []
@@ -1155,6 +1162,45 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
                 all_raw_results.append((table_name, pk, row))
         except Exception:
             _logger.exception("current_truth vector search failed for table %s", table_name)
+
+    # Episodic exact-match fallback. Vector search alone is not enough for
+    # "what did we just say about X?" because raw Message nodes are deliberately
+    # low-confidence/low-strength until consolidation. Exact text hits should
+    # still surface as recall evidence.
+    lexical_message_ids: set[str] = set()
+    try:
+        lexical_limit = max(limit, 5)
+        rr = db.execute(
+            "MATCH (m:Message) "
+            "WHERE lower(m.text_raw) CONTAINS lower($query) "
+            "RETURN m.message_id, m.text_raw, m.role, m.confidence, "
+            "m.confidence_low, m.pathway_strength, m.created_at "
+            f"ORDER BY m.created_at DESC LIMIT {lexical_limit}",
+            {"query": query},
+        )
+        while rr.has_next():
+            mid, text, role, conf, conf_low, ps, created_at = rr.get_next()
+            lexical_message_ids.add(mid)
+            all_raw_results.append((
+                "Message",
+                "message_id",
+                {
+                    "node": {
+                        "message_id": mid,
+                        "text_raw": text,
+                        "role": role,
+                        "confidence": conf or 0.0,
+                        "confidence_low": True if conf_low is None else bool(conf_low),
+                        "pathway_strength": ps or 0.0,
+                        "created_at": created_at,
+                        "archived": False,
+                    },
+                    "score": 1.0,
+                    "lexical_exact": True,
+                },
+            ))
+    except Exception:
+        _logger.debug("current_truth lexical message fallback failed", exc_info=True)
 
     # Batch outcome signal lookup for retrieved nodes
     # We check both the node itself (if it's a Concept) and the parent Concept
@@ -1209,10 +1255,15 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
                         or node.get("decision_id") or node.get("constraint_id")
                         or node.get("requirement_id") or node.get("action_item_id")
                         or node.get("global_constraint_id")
-                        or node.get("global_preference_id", "unknown"))
+                        or node.get("global_preference_id")
+                        or node.get("lesson_id")
+                        or node.get("message_id")
+                        or node.get("extract_id")
+                        or "unknown")
             ps = node.get("pathway_strength", 0.0) or 0.0
             conf = node.get("confidence", 0.0) or 0.0
             similarity = row["score"]
+            lexical_exact = bool(row.get("lexical_exact"))
 
             # B91: Warm boost
             activation_score = warm_nodes.get(node_id, 0.0)
@@ -1232,32 +1283,10 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
                             f"This entity was involved in {int(signal_count)} failed or negative-outcome plan steps."
                         )
 
-            # B31 fix: balanced ranking that weights similarity heavily.
-            # Old formula (ps * conf) caused stale high-strength nodes to
-            # dominate over semantically relevant new ones. New formula:
-            #   50% similarity (semantic match to query)
-            #   30% strength signal (pathway_strength * confidence)
-            #   20% recency (decays over days)
-            created_at = node.get("created_at")
-            recency = 1.0
-            if created_at:
-                try:
-                    from datetime import datetime, timezone
-                    if hasattr(created_at, 'timestamp'):
-                        created_ts = created_at.timestamp()
-                    else:
-                        created_ts = datetime.fromisoformat(str(created_at).replace('Z', '+00:00')).timestamp()
-                    days_old = (datetime.now(timezone.utc).timestamp() - created_ts) / 86400
-                    recency = 1.0 / (1.0 + days_old)
-                except Exception:
-                    recency = 0.5
-
+            # Architecture invariant: vector search finds candidate nodes, but
+            # graph memory ranks them by pathway strength and confidence.
             strength = (ps * conf) if (ps > 0.0 and conf > 0.0) else 0.0
-            # Normalize strength to ~0-1 range (cap at 3.0 which is high)
-            strength_norm = min(strength / 3.0, 1.0)
-            
-            # B91: Integrated warm_boost into rank
-            rank = ((similarity * 0.5) + (strength_norm * 0.3) + (recency * 0.2) + warm_boost) * (1.0 + outcome_boost)
+            rank = strength * (1.0 + outcome_boost)
 
             all_results.append({
                 "node_id":          node_id,
@@ -1270,6 +1299,7 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
                 "activation_score": activation_score, # B91: expose for debugging/tests
                 "outcome_valence":  outcome_valence,
                 "outcome_warning":  outcome_warning,
+                "lexical_exact":     lexical_exact,
                 "_rank":            rank,
             })
         except Exception:
@@ -1356,7 +1386,9 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
     if session_id != "unknown" and final_results:
         try:
             await track_loaded(db, session_id, final_results, source="current_truth")
-            # Update token estimate for injected content
+            # Update token estimate for all returned content. track_loaded()
+            # intentionally skips raw Message / DocumentExtract nodes, but if
+            # they were returned, their text still consumed context window.
             injected_tokens = sum(estimate_tokens(r.get("text_raw", "")) for r in final_results)
             await update_token_estimate(db, session_id, injected_tokens)
         except Exception:

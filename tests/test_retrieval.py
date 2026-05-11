@@ -67,12 +67,7 @@ async def test_current_truth_excludes_archived():
 
 @pytest.mark.asyncio
 async def test_current_truth_rank_formula():
-    """B31 fix: balanced ranking — similarity (50%) + strength (30%) + recency (20%).
-    
-    With balanced ranking, a highly similar weak node should beat a less-similar
-    strong node. This prevents stale high-strength nodes from dominating results
-    when the user's query closely matches a newer, weaker node.
-    """
+    """Architecture invariant: rank by pathway_strength × confidence."""
     from mcp_engine.tools import current_truth
 
     strong_node = _make_node("strong-1", "strong concept",
@@ -93,12 +88,8 @@ async def test_current_truth_rank_formula():
         db, config
     )
 
-    # B31: With balanced ranking formula:
-    # weak_node:   sim=0.99*0.5 + strength_norm(0.01/3)*0.3 + recency*0.2 ≈ 0.50 + 0.001 + 0.2 = 0.70
-    # strong_node: sim=0.70*0.5 + strength_norm(0.855/3)*0.3 + recency*0.2 ≈ 0.35 + 0.086 + 0.2 = 0.64
-    # High-similarity weak node should rank first (the user's query is about THIS concept)
     ids = [r["node_id"] for r in result["results"]]
-    assert ids[0] == "weak-1"
+    assert ids[0] == "strong-1"
 
 
 @pytest.mark.asyncio
@@ -120,6 +111,60 @@ async def test_current_truth_includes_concepts():
 
     types = [r["node_type"] for r in result["results"]]
     assert "Concept" in types
+
+
+@pytest.mark.asyncio
+async def test_current_truth_includes_raw_messages():
+    """Fresh captured turns should be recallable before consolidation."""
+    from mcp_engine.tools import current_truth
+
+    message_node = {
+        "message_id": "m-1",
+        "text_raw": "Durable capture for Claude Code and VS Code is wired into the installer.",
+        "pathway_strength": 0.2,
+        "confidence": 0.5,
+        "confidence_low": True,
+        "archived": False,
+    }
+    db = MockVectorSearchDB({
+        "message_emb_idx": [{"node": message_node, "score": 0.96}],
+    })
+
+    config = {"embeddings": {"model": "sentence-transformers/all-MiniLM-L6-v2"}}
+    result = await current_truth(
+        {"query": "Claude Code VS Code installer capture", "session_id": "s1"},
+        db, config,
+    )
+
+    assert result["results"][0]["node_id"] == "m-1"
+    assert result["results"][0]["node_type"] == "Message"
+
+
+@pytest.mark.asyncio
+async def test_current_truth_uses_lesson_primary_key():
+    """Lesson results should expose their stable lesson_id, not 'unknown'."""
+    from mcp_engine.tools import current_truth
+
+    lesson_node = {
+        "lesson_id": "lesson-1",
+        "text_raw": "Always repair stale Claude hook paths during setup.",
+        "pathway_strength": 0.8,
+        "confidence": 0.9,
+        "confidence_low": False,
+        "archived": False,
+    }
+    db = MockVectorSearchDB({
+        "lesson_emb_idx": [{"node": lesson_node, "score": 0.90}],
+    })
+
+    config = {"embeddings": {"model": "sentence-transformers/all-MiniLM-L6-v2"}}
+    result = await current_truth(
+        {"query": "repair Claude hook paths", "session_id": "s1"},
+        db, config,
+    )
+
+    assert result["results"][0]["node_id"] == "lesson-1"
+    assert result["results"][0]["node_type"] == "Lesson"
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,11 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from sidequests.cli.register import (
+    _python_for_adapter,
+    _strip_codex_adapter_path_tables,
+    _upsert_codex_mcp_block,
+)
 
 # Absolute path to the adapters directory (resolved at import time)
 _ADAPTERS_DIR = Path(__file__).parent.parent.parent / "adapters"
@@ -86,18 +91,12 @@ def _register_codex(project_root: Path) -> None:
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
     existing = config_path.read_text() if config_path.exists() else ""
-    entry_block = (
-        f'\n[mcp_servers.sidequests]\n'
-        f'command = "{sys.executable}"\n'
-        f'args = ["{adapter_path}"]\n'
+    updated = _strip_codex_adapter_path_tables(existing, str(adapter_path))
+    updated = _upsert_codex_mcp_block(
+        updated, _python_for_adapter(str(adapter_path)), str(adapter_path)
     )
-
-    if "mcp_servers.sidequests" not in existing:
-        with open(config_path, "a") as f:
-            f.write(entry_block)
-        print(f"  [✓] Codex — config updated at {config_path}")
-    else:
-        print(f"  [=] Codex — already registered in {config_path}")
+    config_path.write_text(updated)
+    print(f"  [✓] Codex — config updated at {config_path}")
 
 
 def _register_codex_desktop(project_root: Path) -> None:
@@ -132,18 +131,12 @@ def _register_codex_desktop(project_root: Path) -> None:
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
     existing = config_path.read_text() if config_path.exists() else ""
-    entry_block = (
-        f'\n[mcp_servers.sidequests]\n'
-        f'command = "{sys.executable}"\n'
-        f'args = ["{adapter_path}"]\n'
+    updated = _strip_codex_adapter_path_tables(existing, str(adapter_path))
+    updated = _upsert_codex_mcp_block(
+        updated, _python_for_adapter(str(adapter_path)), str(adapter_path)
     )
-
-    if "mcp_servers.sidequests" not in existing:
-        with open(config_path, "a") as f:
-            f.write(entry_block)
-        print(f"  [✓] Codex Desktop — config updated at {config_path}")
-    else:
-        print(f"  [=] Codex Desktop — already registered in {config_path}")
+    config_path.write_text(updated)
+    print(f"  [✓] Codex Desktop — config updated at {config_path}")
 
 
 def _register_chatgpt_desktop() -> None:
