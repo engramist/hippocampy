@@ -8,11 +8,17 @@ This document explains the mechanisms and quantifies the token savings vs. a bas
 
 ## Core Mechanism: Load Tracking
 
-Every time a graph node is injected into the LLM's context window, the system creates a `LOADED` edge in the graph:
+Every time a consolidated artifact node is injected into the LLM's context window, the system creates a `LOADED` edge in the graph:
 
 ```
 (Session)-[LOADED {injected_at, token_estimate, source}]->(Node)
 ```
+
+Raw `Message` and `DocumentExtract` results are an intentional exception. They
+may be returned as bounded episodic/provenance evidence, and their text still
+counts toward the session token estimate, but they are not `LOADED`-tracked and
+do not become handoff candidates. Durable handoff should happen after the Loop
+consolidates raw text into stable artifact nodes.
 
 The `LOADED` relationship tracks:
 - **When** the node was loaded (`injected_at` timestamp)
@@ -115,7 +121,7 @@ When a session approaches its context limit (75% utilization), the LLM is warned
 
 **Function:** `track_loaded(db, session_id, results, source)`
 - Called after every `current_truth()` injection
-- Creates/updates LOADED edges
+- Creates/updates LOADED edges for supported consolidated artifact nodes
 - Updates session metadata: `loaded_node_count`, `last_injection_at`
 
 **Deduplication in Retrieval:**

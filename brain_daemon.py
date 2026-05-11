@@ -38,6 +38,12 @@ from mcp_engine.loop import step2_gist, step3_schema_org
 from mcp_engine.loop.orchestrator import run_loop
 from mcp_engine.sweep import run_sweep
 from mcp_engine.dictionary import find_dictionary, load_dictionary, ingest_dictionary
+from mcp_engine.capture import (
+    CaptureEvent,
+    ClaudeCodeSessionConnector,
+    CodexSessionConnector,
+    VSCodeChatSessionConnector,
+)
 
 SOCKET_PATH = Path.home() / ".sidequests" / "brain.sock"
 DB_PATH     = Path.home() / ".sidequests" / "brain.db"
@@ -161,6 +167,27 @@ class BrainDaemon:
         web_task.add_done_callback(
             lambda t: _restart_on_failure(t, self._start_web_server, web_port)
         )
+
+        # Start durable passive capture connectors. These complement MCP by
+        # tailing local transcript files for clients that don't reliably call
+        # notify_turn after each model response.
+        capture_cfg = self.config.get("capture", {}) or {}
+        if capture_cfg.get("enabled", True):
+            for source_name, connector_cls in (
+                ("codex", CodexSessionConnector),
+                ("claude_code", ClaudeCodeSessionConnector),
+                ("vscode", VSCodeChatSessionConnector),
+            ):
+                if (capture_cfg.get(source_name, {}) or {}).get("enabled", True):
+                    task = asyncio.create_task(
+                        self._background_capture(source_name, connector_cls),
+                        name=f"{source_name}_capture",
+                    )
+                    task.add_done_callback(
+                        lambda t, s=source_name, c=connector_cls: _restart_on_failure(
+                            t, self._background_capture, s, c
+                        )
+                    )
 
         # Start IPC server
         await self._run_ipc_server()
@@ -364,6 +391,46 @@ class BrainDaemon:
                 )
             except Exception as e:
                 print(f"[Sweep] Error during sweep: {e}")
+
+    # ------------------------------------------------------------------
+    # Durable passive capture
+    # ------------------------------------------------------------------
+
+    async def _background_capture(self, source_name: str, connector_cls):
+        capture_cfg = self.config.get("capture", {}) or {}
+        source_cfg = capture_cfg.get(source_name, {}) or {}
+        interval = float(source_cfg.get("scan_interval_seconds", 10))
+        connector = connector_cls(
+            sessions_root=source_cfg.get("sessions_root") or None,
+            max_events_per_scan=int(source_cfg.get("max_events_per_scan", 50)),
+            initial_backfill_events=int(source_cfg.get("initial_backfill_events", 20)),
+            max_initial_backfill_files=int(source_cfg.get("max_initial_backfill_files", 1)),
+        )
+
+        async def ingest(event: CaptureEvent):
+            params = event.notify_params()
+            params["precomputed"] = {
+                "capture_event_id": event.event_id,
+                "source_app": event.source_app,
+                "source_path": event.source_path,
+                "source_offset": event.source_offset,
+            }
+            handler = TOOL_HANDLERS["notify_turn"]
+            await handler(params, self.db, self.config)
+
+        while True:
+            try:
+                summary = await connector.scan_once(ingest=ingest)
+                if summary["journaled"] or summary["ingested"]:
+                    print(
+                        f"[Capture:{source_name}] "
+                        f"scanned={summary['scanned']} "
+                        f"journaled={summary['journaled']} "
+                        f"ingested={summary['ingested']}"
+                    )
+            except Exception as e:
+                print(f"[Capture:{source_name}] Error during scan: {e}")
+            await asyncio.sleep(interval)
 
     # ------------------------------------------------------------------
     # Shutdown

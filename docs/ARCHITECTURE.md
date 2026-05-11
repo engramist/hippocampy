@@ -81,6 +81,30 @@ model = "sentence-transformers/all-MiniLM-L6-v2"   # produces 384-dim vectors �
 max_ingest_chars = 4000   # passive ingestion only (conversational turns). Truncates at last sentence boundary.
 # Long document ingestion uses the Open Brain pipeline (M6) which does proper semantic chunking.
 
+[capture]
+enabled = true
+
+[capture.codex]
+enabled = true
+scan_interval_seconds = 10
+max_events_per_scan = 50
+initial_backfill_events = 20
+max_initial_backfill_files = 1
+
+[capture.claude_code]
+enabled = true
+scan_interval_seconds = 10
+max_events_per_scan = 50
+initial_backfill_events = 20
+max_initial_backfill_files = 1
+
+[capture.vscode]
+enabled = true
+scan_interval_seconds = 15
+max_events_per_scan = 50
+initial_backfill_events = 20
+max_initial_backfill_files = 5
+
 [quest]
 auto_complete_days = 30   # suggest Quest completion after N days of inactivity (0 = disabled)
 
@@ -162,6 +186,21 @@ Passive ingestion per adapter type:
 
   Never forwarded: tool call results, adapter-injected system messages.
   All ingestion is fire-and-forget — zero added latency to the LLM session.
+
+Durable capture assurance:
+
+  Codex, Claude Code, and VS Code/Copilot persist local transcript JSONL files.
+  The Brain Daemon may tail those files as a replayable fallback when MCP calls
+  are unavailable, misconfigured, or temporarily offline.
+
+  The durable capture layer is not a second source of truth. It writes an
+  append-only local journal, deduplicates by source event id, and replays
+  extracted user/assistant message text through `notify_turn` so KuzuDB remains
+  the canonical memory store.
+
+  Capture connectors must ignore tool results, hidden reasoning, and
+  adapter-injected/system messages. They exist for durability across client
+  installs, not to expand prompt context or bypass the Gated Consolidation Loop.
 ```
 
 **MainQuest ID** is generated deterministically as a hash of `repo_root_path + git_branch` so all local assistants auto-align to the same project context.
@@ -188,6 +227,7 @@ sidequests-brain/
 │   ├── hippocampus.py           # Semantic Quest Routing (B17)
 │   ├── working_memory.py        # Context Window Awareness (B18)
 │   ├── warm_frontier.py         # Passive graph pre-activation (B91) — bounded warm node frontier
+│   ├── capture.py               # Durable transcript capture fallbacks for supported local clients
 │   ├── dictionary.py            # Domain dictionary pre-seed from YAML (B160)
 │   ├── loop/
 │   │   ├── step1_ner.py         # spaCy NER / Zoning
@@ -428,6 +468,22 @@ Re-scoring factors:
 
 `outcome_boost` (B69): ±0.3 max from valence history on related Plans. Zero for entities without Plan involvement.
 
+Raw `Message` nodes are part of the graph and may be retrieved as bounded
+episodic evidence, especially for "what did we just say?" queries before the
+Dreaming/sweep phase has consolidated the turn into Decisions, Constraints,
+Lessons, or Procedures. Message recall must remain bounded and provenance-like:
+it may add candidate `Message` nodes via vector or exact-text lookup, but those
+candidates still rank by the same `pathway_strength × confidence ×
+(1 + outcome_boost)` rule. Exact text lookup is candidate generation, not a
+ranking override.
+
+Raw `Message` and `DocumentExtract` results are not tracked with `LOADED` edges
+for now. Their returned text still counts toward session token estimates and
+bloat warnings, but they do not become handoff candidates or persistent
+working-memory cargo. Consolidation should promote durable knowledge into
+Decision, Constraint, Requirement, ActionItem, GlobalConstraint, or
+GlobalPreference nodes before it participates in working-memory handoff.
+
 ## Active Agent System — Plan/Evaluate Loop (B66–B69)
 
 Modern agentic workflows involve agents formulating multi-step plans before execution. The passive system (`notify_turn`) captures *what happened*; the active system captures *what was intended, what was tried, and whether it worked*.
@@ -523,7 +579,7 @@ When Step 4 classifies a Concept at >90% confidence as a specific artifact type,
 - `Session` (`session_id`, `started_at`, `last_active_at`, `onboarded BOOLEAN`, `purpose STRING`, `routing_state STRING`, `routing_confidence FLOAT`, `routing_method STRING`, `token_estimate INT64`, `token_limit INT64`, `loaded_node_count INT32`, `last_injection_at TIMESTAMP`)
 
 **Relationship Nodes:**
-- `LOADED` (`injected_at TIMESTAMP`, `token_estimate INT32`, `source STRING`, `load_hits INT32`) — links `Session` to any artifact currently in its context window.
+- `LOADED` (`injected_at TIMESTAMP`, `token_estimate INT32`, `source STRING`, `load_hits INT32`) — links `Session` to consolidated artifact nodes currently in its context window. Raw `Message` / `DocumentExtract` episodic recall is token-counted but not `LOADED`-tracked.
 - `REROUTED_FROM` (`rerouted_at TIMESTAMP`, `reason STRING`) — links `Session` to its prior `MainQuest` after a re-routing event.
 
 **LLMProvider Node:**
@@ -599,7 +655,7 @@ When Step 4 classifies a Concept at >90% confidence as a specific artifact type,
 (Concept)-[DISTINCT_FROM {created_at, source}]->(Concept)       # entities confirmed as distinct
 
 # Working memory + warm frontier
-(Session)-[LOADED {injected_at, token_estimate, source, load_hits}]->(ArtifactNode)
+(Session)-[LOADED {injected_at, token_estimate, source, load_hits}]->(ConsolidatedArtifactNode)
 (Session)-[WARM_NODE {activation_score, activated_at}]->(ArtifactNode) # B91 pre-activation
 (Session)-[REROUTED_FROM {rerouted_at, reason}]->(MainQuest)
 
@@ -693,7 +749,7 @@ Response: `{ "status": "queued" }` — always immediate, never blocks.
 
 ### Retrieval Tools
 
-**`current_truth`** — call before answering architecture or past-decision questions (includes optional `include_rationale` for 1-hop ESTABLISHED_IN message context)
+**`current_truth`** — call before answering architecture or past-decision questions. Searches consolidated artifacts and bounded episodic `Message` evidence, then ranks by graph strength (`pathway_strength × confidence`, plus bounded outcome valence). Includes optional `include_rationale` for 1-hop provenance context.
 
 **`explore_graph`** — directed multi-hop traversal with configurable depth, strategy (DFS/BFS), edge types, direction, and context window (B10)
 

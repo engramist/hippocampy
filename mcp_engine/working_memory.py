@@ -36,6 +36,9 @@ if TYPE_CHECKING:
 _logger = logging.getLogger(__name__)
 
 # Node type → primary key column mapping (shared across the module).
+# Only consolidated artifact nodes participate in LOADED working-memory handoff.
+# Raw Message / DocumentExtract recall is token-counted by current_truth but is
+# intentionally not LOADED-tracked so transcripts do not become context cargo.
 NODE_PK_MAP = {
     "Concept":          "concept_id",
     "Decision":         "decision_id",

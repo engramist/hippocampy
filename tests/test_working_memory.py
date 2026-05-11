@@ -84,6 +84,25 @@ class TestLoadTracking:
         count = await track_loaded(MockDB(), "sess-1", results)
         assert count == 0
 
+    @pytest.mark.asyncio
+    async def test_track_loaded_skips_raw_message_nodes(self):
+        """Raw episodic recall is token-counted elsewhere, not LOADED-tracked."""
+        from mcp_engine.working_memory import track_loaded
+
+        class MockDB:
+            def execute(self, *args, **kwargs):
+                raise AssertionError("raw nodes should not query LOADED")
+            async def execute_write(self, *args, **kwargs):
+                raise AssertionError("raw nodes should not create LOADED")
+
+        results = [
+            {"node_id": "m1", "node_type": "Message", "text_raw": "raw transcript text"},
+            {"node_id": "e1", "node_type": "DocumentExtract", "text_raw": "raw extract text"},
+        ]
+
+        count = await track_loaded(MockDB(), "sess-1", results)
+        assert count == 0
+
 # ---------------------------------------------------------------------------
 # Deduplication tests
 # ---------------------------------------------------------------------------

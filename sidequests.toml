@@ -42,6 +42,30 @@ spacy_model = "en_core_web_md"   # requires trained dependency parser for Step 1
 max_ingest_chars = 4000   # passive ingestion (conversational turns only)
 # truncates at last sentence boundary — long docs use Open Brain pipeline (M6)
 
+[capture]
+enabled = true
+
+[capture.codex]
+enabled = true
+scan_interval_seconds = 10
+max_events_per_scan = 50
+initial_backfill_events = 20
+max_initial_backfill_files = 1
+
+[capture.claude_code]
+enabled = true
+scan_interval_seconds = 10
+max_events_per_scan = 50
+initial_backfill_events = 20
+max_initial_backfill_files = 1
+
+[capture.vscode]
+enabled = true
+scan_interval_seconds = 15
+max_events_per_scan = 50
+initial_backfill_events = 20
+max_initial_backfill_files = 5
+
 [quest]
 auto_complete_days = 30   # suggest Quest completion after N days with no new messages (0 = disabled)
 

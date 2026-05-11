@@ -935,7 +935,7 @@ For `explore_graph` edge_types parameter and integration testing:
 | `WORKING_ON` | Session → Quest | Hippocampus | Session binding |
 | `USED` | Session → LLMProvider | Session init | Provider tracking |
 | `IN_WORKSPACE` | Session → Workspace | Session init | Workspace binding |
-| `LOADED` | Session → Artifact | current_truth | Working memory |
+| `LOADED` | Session → consolidated artifact | current_truth | Working memory; raw `Message` / `DocumentExtract` recalls are token-counted but not `LOADED`-tracked |
 | `REROUTED_FROM` | Session → MainQuest | Hippocampus | Re-routing audit |
 | `ANOMALY_DETECTED` | Artifact → GlobalConstraint | B12 detection | Security flag |
 | `PRODUCED_LESSON` | MainQuest → Lesson | complete_quest | Lesson provenance |

@@ -280,6 +280,11 @@ class TestConfigWriter:
         content = config_path.read_text()
         assert 'provider = "ollama"' in content
         assert 'model = "llama3.1:8b"' in content
+        assert "[capture]" in content
+        assert "[capture.codex]" in content
+        assert "[capture.claude_code]" in content
+        assert "[capture.vscode]" in content
+        assert "max_initial_backfill_files = 1" in content
 
     def test_write_byok_config(self, tmp_path):
         """Writes correct config for cloud provider."""
@@ -368,14 +373,15 @@ class TestAdapterRegistrar:
 
         with patch("subprocess.run", side_effect=mock_run):
             with patch("shutil.which", return_value="/usr/local/bin/claude"):
-                from sidequests.cli.install import VenvManager, AdapterRegistrar
-                vm = VenvManager(venv_dir=tmp_path)
-                reg = AdapterRegistrar(vm)
-                result = reg._register_claude_code()
-                assert result is True
-                # Verify --scope user was passed
-                add_call = [c for c in calls if c and "add" in str(c)]
-                assert any("--scope" in str(c) and "user" in str(c) for c in add_call)
+                with patch("sidequests.cli.install.Path.home", return_value=tmp_path / "home"):
+                    from sidequests.cli.install import VenvManager, AdapterRegistrar
+                    vm = VenvManager(venv_dir=tmp_path)
+                    reg = AdapterRegistrar(vm)
+                    result = reg._register_claude_code()
+                    assert result is True
+                    # Verify --scope user was passed
+                    add_call = [c for c in calls if c and "add" in str(c)]
+                    assert any("--scope" in str(c) and "user" in str(c) for c in add_call)
 
     def test_claude_desktop_writes_config(self, tmp_path):
         """Claude Desktop writes to the correct config file."""
@@ -405,6 +411,7 @@ class TestAdapterRegistrar:
                                  "codex": False, "codex-desktop": False,
                                  "chatgpt-desktop": False,
                                  "gemini-cli": False,
+                                 "vscode": False,
                                  "openclaw": False}):
             from sidequests.cli.install import VenvManager, AdapterRegistrar
             vm = MagicMock()
@@ -421,6 +428,7 @@ class TestAdapterRegistrar:
             "codex-desktop": True,
             "chatgpt-desktop": False,
             "gemini-cli": False,
+            "vscode": False,
             "openclaw": False,
         }
         with patch("sidequests.cli.detect.detect_installed_clients", return_value=detected):
@@ -431,6 +439,26 @@ class TestAdapterRegistrar:
                 results = reg.register_all()
                 mock_reg.assert_called_once()
                 assert results["codex-desktop"] is True
+
+    def test_register_all_includes_vscode(self):
+        """register_all wires VS Code when detected."""
+        detected = {
+            "claude-code": False,
+            "claude-desktop": False,
+            "codex": False,
+            "codex-desktop": False,
+            "chatgpt-desktop": False,
+            "gemini-cli": False,
+            "vscode": True,
+            "openclaw": False,
+        }
+        with patch("sidequests.cli.detect.detect_installed_clients", return_value=detected):
+            from sidequests.cli.install import AdapterRegistrar
+            reg = AdapterRegistrar(MagicMock())
+            with patch.object(reg, "_register_vscode", return_value=True) as mock_reg:
+                results = reg.register_all()
+                mock_reg.assert_called_once()
+                assert results["vscode"] is True
 
     def test_register_codex_desktop_macos_writes_config(self, tmp_path):
         """Codex Desktop writes sidequests entry to a desktop config location on macOS."""
