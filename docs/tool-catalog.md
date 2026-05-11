@@ -7,7 +7,7 @@
 
 ---
 
-## Quick Reference: All 26 MCP Tools
+## Quick Reference: All 34 MCP Tools
 
 | # | Tool Name | Category | Called By | Blocking? | Requires LLM? |
 |---|-----------|----------|-----------|-----------|----------------|
@@ -39,6 +39,12 @@
 | 26 | `reload_domain_dictionary` | Ingestion | Human UI / Agent | No (non-blocking) | No |
 | 27 | `publish_mechanic_summary` | ARC World-Model | ARC Agent | No (fire-and-forget) | No |
 | 28 | `recall_mechanic_priors` | ARC World-Model | ARC Agent | Yes | No |
+| 29 | `recall_scene_graph_priors` | ARC World-Model | ARC Agent | Yes | No |
+| 30 | `reconstruct_timeline` | Retrieval | Agent | Yes | No |
+| 31 | `recall_procedures` | Retrieval | Agent | Yes | No |
+| 32 | `get_knowledge_gaps` | Monitoring | Agent | Yes | No |
+| 33 | `ingest_arc_artifacts` | Ingestion | Agent / CLI | Yes | No |
+| 34 | `memory_decision` | Recall Policy | Agent | Yes | No |
 
 ---
 
@@ -118,6 +124,37 @@ These processes run inside the Brain Daemon without explicit tool calls.
 **Output:** Array of ranked results with `node_id`, `text_raw`, `type`, `confidence`, `pathway_strength`, `similarity`, `rank`.
 
 **Ranking formula:** `(similarity × 0.5) + (strength_norm × 0.3) + (recency × 0.2) × (1 + outcome_boost)`
+
+### `memory_decision` — Recall Policy Helper (B235)
+
+**Purpose:** Recommend whether and how to recall SideQuests memory for the current user prompt.
+
+**When to call:** When the agent is unsure whether memory is needed. This tool is cheap and deterministic; it does not retrieve memory in v1.
+
+**Input:**
+```json
+{
+  "user_prompt": "What did we decide about the installer?",
+  "task_phase": "answering",
+  "session_id": "uuid",
+  "client_name": "codex"
+}
+```
+
+**Output:**
+```json
+{
+  "should_recall": true,
+  "recommended_tool": "current_truth",
+  "query": "What did we decide about the installer",
+  "reason": "User asks about prior decisions, architecture, constraints, or preferences.",
+  "confidence": 0.86,
+  "context_budget": "compact",
+  "anti_bloat_guidance": "Use top 3 results; summarize, do not paste raw memory."
+}
+```
+
+**Policy source:** `skills/sidequests-memory/SKILL.md`.
 
 **Integration test cases:**
 - T1: Empty query returns error

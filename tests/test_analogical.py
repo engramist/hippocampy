@@ -422,7 +422,8 @@ def test_codex_adapter_has_all_tools():
                 "fail_task", "get_task_graph",
                 "get_disambiguation_queue", "resolve_disambiguation",
                 "reload_domain_dictionary",
-                "publish_mechanic_summary", "recall_mechanic_priors"}
+                "publish_mechanic_summary", "recall_mechanic_priors",
+                "memory_decision"}
     assert names == expected
 
 def test_codex_adapter_analogical_search_schema():

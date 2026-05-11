@@ -5,8 +5,9 @@
 Yes, for now you should clone the full repository on the test machine.
 
 Why:
-- PyPI publishing is still deferred.
+- Public one-line distribution still needs release hardening.
 - The installer currently runs from source and expects repository files to be present.
+- The provisional patent filing is complete, so publication is no longer blocked by the pre-filing disclosure constraint.
 
 ## Prerequisites
 
@@ -108,3 +109,7 @@ pip install -e .
 sidequests install
 sidequests status
 ```
+
+## Public Release Status
+
+The provisional patent application is filed. The remaining blocker for a true public one-line installer is packaging and installer hardening, not IP filing status. Before making the public path canonical, verify that package-installed mode works without source-tree assumptions and that `sidequests install`, `sidequests doctor`, daemon startup, adapter registration, and `sidequests activity --follow` all pass from a clean machine.

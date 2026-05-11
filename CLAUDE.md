@@ -29,6 +29,12 @@ These are the sources of truth for the system design — shared across all agent
 
 **KuzuDB is the single source of truth for all persistent agent state.** Do NOT store persistent data (roles, hypotheses, victory conditions, action facts, chunk history) in Python dicts or instance variables as the primary store. In-memory variables are permitted ONLY as read-through caches over KuzuDB. See `docs/ecosystem-rules.md` "No shadow stores rule" for full details.
 
+## SideQuests Memory Usage Policy
+
+Use `skills/sidequests-memory/SKILL.md` as the canonical memory-use policy. Do not recall on every turn. Use recall only when the answer or plan depends on durable prior decisions, timeline, lessons, procedures, or similar past work.
+
+If uncertain, call `memory_decision` first; it recommends the appropriate recall tool without retrieving memory itself.
+
 ## SideQuests Activity Indicator
 
 SideQuests exposes a compact operator activity feed at `~/.sidequests/activity.log`.

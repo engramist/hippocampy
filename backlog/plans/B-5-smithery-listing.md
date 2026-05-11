@@ -82,5 +82,5 @@ npx @smithery/cli publish smithery.json --token <SMITHERY_TOKEN>
 
 ## Notes
 
-- Patent filing status check: only publish after provisional patent is filed
+- Provisional patent filed March 25, 2026 (Application #64/017,066); publication is no longer blocked by pre-filing disclosure constraints.
 - Ensure no hardcoded paths or environment dependencies in MCP server entry point

@@ -66,6 +66,7 @@ pytest
 ### Documentation
 - **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md):** Canonical architecture reference — Loop steps, graph schema, IP claims, MCP tool schemas, and all design details. **Read this for any architecture question.**
 - **[`docs/ecosystem-rules.md`](docs/ecosystem-rules.md):** Ecosystem layer boundaries, separation rules, and import constraints. **Read this before adding new code or changing boundaries.**
+- **[`skills/sidequests-memory/SKILL.md`](skills/sidequests-memory/SKILL.md):** Canonical memory-use policy. Do not recall on every turn; if unsure, call `memory_decision` before choosing a recall tool.
 - **CLAUDE.md:** Claude-specific workflow (delegation model).
 - **InvertorsDocs/:** Original Inventor's Notebook and seed examples for the ontology.
 

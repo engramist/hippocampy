@@ -87,6 +87,6 @@ build-backend = "setuptools.build_meta"
 
 ## Security Notes
 
-- Only publish after provisional patent is filed (per IP protection policy in CLAUDE.md)
+- Provisional patent filed March 25, 2026 (Application #64/017,066); publication is no longer blocked by pre-filing disclosure constraints.
 - Verify no sensitive credentials are in git history
 - Check for no hardcoded API keys or paths in code
