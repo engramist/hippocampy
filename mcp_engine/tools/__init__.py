@@ -2876,6 +2876,66 @@ async def get_openclaw_prompt(params: dict, db: KuzuClient, config: dict) -> dic
 
 
 # ---------------------------------------------------------------------------
+# B235: Memory Decision Helper
+# ---------------------------------------------------------------------------
+
+async def memory_decision(params: dict, db: KuzuClient, config: dict) -> dict:
+    """
+    Recommend whether and how to recall SideQuests memory.
+
+    Uses transparent lexical/phase-based routing to recommend the appropriate
+    recall tool or suggest no recall for the current user prompt.
+
+    params: {
+        user_prompt (required): str,
+        task_phase (optional): str (e.g., 'planning', 'debugging'),
+        available_context_summary (optional): str,
+        session_id (optional): str,
+        client_name (optional): str (e.g., 'codex', 'claude-desktop')
+    }
+
+    Returns:
+    {
+        should_recall: bool,
+        recommended_tool: str,
+        query: str,
+        reason: str,
+        confidence: float (0.0-1.0),
+        context_budget: str ("compact", "moderate", "exhaustive"),
+        anti_bloat_guidance: str,
+    }
+    """
+    from mcp_engine.memory_decision import decide_memory_action
+
+    user_prompt = params.get("user_prompt", "").strip()
+    if not user_prompt:
+        return {
+            "should_recall": False,
+            "recommended_tool": "none",
+            "query": "",
+            "reason": "Empty user prompt; no recall needed.",
+            "confidence": 1.0,
+            "context_budget": "compact",
+            "anti_bloat_guidance": "No action needed.",
+        }
+
+    task_phase = params.get("task_phase", "unknown")
+    available_context_summary = params.get("available_context_summary")
+    session_id = params.get("session_id")
+    client_name = params.get("client_name")
+
+    recommendation = decide_memory_action(
+        user_prompt=user_prompt,
+        task_phase=task_phase,
+        available_context_summary=available_context_summary,
+        session_id=session_id,
+        client_name=client_name,
+    )
+
+    return recommendation
+
+
+# ---------------------------------------------------------------------------
 # Dispatch table
 # ---------------------------------------------------------------------------
 
@@ -2913,4 +2973,5 @@ TOOL_HANDLERS = {
     "ingest_arc_artifacts": ingest_arc_artifacts,  # B225
     "publish_mechanic_summary": publish_mechanic_summary,  # B226
     "recall_mechanic_priors": recall_mechanic_priors,      # B227
+    "memory_decision": memory_decision,          # B235
 }

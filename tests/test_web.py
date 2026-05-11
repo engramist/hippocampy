@@ -612,7 +612,7 @@ async def test_dispatch_mcp_tools_list_direct():
     )
     tool_names = {t["name"] for t in resp["result"]["tools"]}
     assert "notify_turn" in tool_names
-    assert len(tool_names) == 33  # Canonical tool set including ARC ingestion/mechanic and scene-graph prior tools
+    assert len(tool_names) == 34  # Canonical tool set including memory_decision
 
 @pytest.mark.asyncio
 async def test_dispatch_mcp_unknown_method_direct():

@@ -647,7 +647,7 @@ uvx sidequests-brain setup
 - [ ] `uvx sidequests-brain setup` works from a clean venv
 
 ### Notes
-- **Do NOT publish to PyPI until provisional patent is filed** (IP protection constraint from CLAUDE.md)
+- Provisional patent filed March 25, 2026 (Application #64/017,066); publication is no longer blocked by pre-filing disclosure constraints.
 - The `UNLICENSED` license placeholder should be updated before publishing
 - `spacy` model download (`en_core_web_md`) is a post-install step — add to `sidequests setup` or document clearly
 - Consider a `[project.scripts]` entry for `sidequests-daemon` that runs the Brain Daemon directly

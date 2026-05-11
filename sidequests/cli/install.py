@@ -26,6 +26,7 @@ import click
 from sidequests.cli.register import (
     _strip_codex_adapter_path_tables,
     _upsert_codex_mcp_block,
+    install_codex_memory_skill,
     register_vscode,
 )
 try:
@@ -784,6 +785,7 @@ class AdapterRegistrar:
         adapter_path = (self._adapters_dir / "codex" / "adapter.py").resolve()
         config_path = Path.home() / ".codex" / "config.toml"
         self._ensure_codex_entry(config_path, adapter_path)
+        install_codex_memory_skill(PROJECT_ROOT)
         click.echo(f"    [ok] Codex — registered at {config_path}")
         return True
 
@@ -817,6 +819,7 @@ class AdapterRegistrar:
             config_path = config_candidates[-1]
 
         self._ensure_codex_entry(config_path, adapter_path)
+        install_codex_memory_skill(PROJECT_ROOT)
         click.echo(f"    [ok] Codex Desktop — registered at {config_path}")
         return True
 

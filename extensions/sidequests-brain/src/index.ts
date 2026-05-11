@@ -750,6 +750,22 @@ export default {
       min_confidence: Type.Optional(Type.Number({ default: 0.0 })),
     });
 
+    const memoryDecisionParams = Type.Object({
+      user_prompt: Type.String({ description: "The user's current prompt or question" }),
+      task_phase: Type.Optional(Type.String({ description: "Optional task phase hint" })),
+      available_context_summary: Type.Optional(Type.String({ description: "Optional summary of current context" })),
+      session_id: Type.Optional(Type.String({ description: "OpenClaw session ID (auto-filled)" })),
+      client_name: Type.Optional(Type.String({ description: "Client name hint" })),
+    });
+
+    const memoryDecisionTransform = (params: any = {}) => ({
+      user_prompt: params.user_prompt,
+      task_phase: params.task_phase,
+      available_context_summary: params.available_context_summary,
+      session_id: params.session_id || sessionId,
+      client_name: params.client_name || "openclaw",
+    });
+
     const formatResult = (value: unknown) => ({
       content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
     });
@@ -1170,6 +1186,14 @@ export default {
         description:
           "Retrieve reusable ARC mechanic priors from graph memory based on action/effect signature similarity.",
         parameters: recallMechanicPriorsParams,
+      },
+      {
+        name: "memory_decision",
+        label: "Memory Decision (SideQuests Brain)",
+        description:
+          "Recommend whether the current prompt should recall SideQuests memory and which recall tool to use. Does not retrieve memory.",
+        parameters: memoryDecisionParams,
+        transformParams: memoryDecisionTransform,
       },
     ];
 

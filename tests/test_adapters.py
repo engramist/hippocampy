@@ -55,6 +55,8 @@ EXPECTED_TOOLS = {
     # B226/B227 ARC mechanics
     "publish_mechanic_summary",
     "recall_mechanic_priors",
+    # B235 memory recall routing helper
+    "memory_decision",
 }
 
 def test_adapter_tool_names_match_handlers():

@@ -13,6 +13,12 @@ Note: ARC-only backlog cards and ARC-only planning docs were relocated to the si
 | B3 | ChatGPT Desktop SSE Endpoint — ✅ DONE (2026-03-28) | P1 | complete | TBD | TBD | backlog/plans/B-3-chatgpt-sse.md | backlog/B3.md |
 | B4 | Publish to PyPI — ✅ DONE (2026-03-28) | P2 | complete | TBD | TBD | backlog/plans/B-4-pypi-publish.md | backlog/B4.md |
 | B5 | Smithery Listing — ✅ DONE (2026-03-28) | P2 | complete | TBD | TBD | backlog/plans/B-5-smithery-listing.md | backlog/B5.md |
+| B230 | Packaging Hardening for Installed Mode - DONE (2026-05-11) | P0 | complete | TBD | TBD | backlog/plans/B-230-packaging-hardening-installed-mode.md | backlog/B230.md |
+| B231 | Installer Hardening and One-Line Bootstrap - DONE (2026-05-11) | P0 | complete | TBD | TBD | backlog/plans/B-231-installer-hardening-one-line-bootstrap.md | backlog/B231.md |
+| B232 | Public Release Private Data Audit - DONE (2026-05-11) | P0 | complete | TBD | TBD | backlog/plans/B-232-public-release-private-data-audit.md | backlog/B232.md |
+| B233 | Non-Provisional Strategy and Public Disclosure Guardrails - DONE (2026-05-11) | P0 | complete | TBD | TBD | backlog/plans/B-233-non-provisional-strategy-and-public-disclosure-guardrails.md | backlog/B233.md |
+| B234 | Universal SideQuests Memory Usage Skill - DONE (2026-05-11) | P0 | complete | TBD | TBD | backlog/plans/B-234-universal-sidequests-memory-usage-skill.md | backlog/B234.md |
+| B235 | MCP Memory Decision Helper Tool - DONE (2026-05-11) | P0 | complete | TBD | TBD | backlog/plans/B-235-mcp-memory-decision-helper-tool.md | backlog/B235.md |
 | B6 | Claude Desktop Adapter (Full) — ✅ DONE (2026-03-28) | P3 | complete | TBD | TBD | backlog/plans/B-6-claude-desktop-adapter.md | backlog/B6.md |
 | B7 | ChatGPT Desktop Adapter (Stub → Full) — ✅ DONE (2026-03-28) | P3 | complete | TBD | TBD | backlog/plans/B-7-chatgpt-desktop-adapter.md | backlog/B7.md |
 | B8 | Gemini CLI Adapter — DONE | P3 | complete | TBD | TBD | - | backlog/B8.md |
@@ -220,15 +226,35 @@ Note: ARC-only backlog cards and ARC-only planning docs were relocated to the si
 
 ## Summary
 
-- Total cards: 210
-- Ready: 16
+- Total cards: 216
+- Ready: 10
 - Needs work: 0
-- Complete: 193
+- Complete: 199
 - In progress: 0
 - Blocked: 1 (B156)
 
+## Public Release Readiness (P0 Initiative)
 
+**Status:** Cards B230-B235 completed on 2026-05-11; release readiness and memory-use policy foundation are implemented.
 
+| Card | Title | Purpose | Target | Dependency Chain |
+|------|-------|---------|--------|-------------------|
+| B233 | Non-Provisional Strategy & Public Disclosure Guardrails | Establish patent-pending language, filing facts, and public/private boundary decisions | Strategy foundation | None (foundational) |
+| B232 | Public Release Private Data Audit | Scan repo and distribution artifacts for secrets, local paths, and unintended content | Release gate | B233 (for boundary decisions) |
+| B230 | Packaging Hardening for Installed Mode | Fix path assumptions; make wheel/sdist installations work from clean venv | Technical foundation | B232 (audit before hardening) |
+| B231 | Installer Hardening and One-Line Bootstrap | Add `scripts/install.sh` and `sidequests doctor` command; make setup idempotent | Operational readiness | B230 (packaging must work first) |
+
+**Execution Order:**
+1. **B233** DONE: Created `docs/nonprovisional-strategy.md` and `docs/public-disclosure-boundary.md`.
+2. **B232** DONE: Created `scripts/audit_public_release.sh`, `docs/public-release-audit.md`, and distribution-content tests.
+3. **B230** DONE: Hardened packaging with `sidequests/paths.py`, package-data templates, and installed-mode tests.
+4. **B231** DONE: Added `scripts/install.sh`, `sidequests doctor`, and safe repair diagnostics.
+5. **B234** DONE: Added the canonical SideQuests memory-use skill and client documentation.
+6. **B235** DONE: Added the `memory_decision` MCP recall-policy helper.
+
+**Public Release Gate:** Wheel/sdist build, twine check, public audit, doctor, and full test suite pass locally. Counsel review and public publishing remain separate go/no-go decisions.
+
+---
 
 ## Execution Priority (ready cards)
 

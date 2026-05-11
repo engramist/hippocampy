@@ -187,7 +187,7 @@ This writes to `~/.claude.json` instead of the project's `.mcp.json`.
 |---|-------|----------|--------|
 | 1 | launchd venv TCC block — daemon doesn't auto-start at login | Medium | Workaround: `sidequests start &` manually |
 | 2 | `sidequests setup` registers MCP locally not globally | Low | Fixed manually; setup.py needs update |
-| 3 | No `README.md` — PyPI publish blocked (also blocked on patent) | Low | Deferred |
+| 3 | PyPI/public install path needs packaging hardening; patent filing is complete | Low | Deferred |
 
 ---
 
@@ -319,7 +319,7 @@ created_at: timestamp($created_at)
 |---|-------|----------|--------|
 | 1 | launchd venv TCC block — daemon doesn't auto-start at login | Medium | Workaround: `sidequests start &` manually |
 | 2 | `sidequests setup` registers MCP locally not globally | Low | Fixed manually; setup.py needs update |
-| 3 | No `README.md` — PyPI publish blocked (also blocked on patent) | Low | Deferred |
+| 3 | PyPI/public install path needs packaging hardening; patent filing is complete | Low | Deferred |
 | 4 | Gemini CLI requires `gemini trust` per project folder | Low | User must run manually |
 | 5 | Installation process requires too many manual steps | High | Backlog B13 tracks full fix |
 
