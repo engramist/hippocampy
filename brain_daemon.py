@@ -38,6 +38,7 @@ from mcp_engine.loop import step2_gist, step3_schema_org
 from mcp_engine.loop.orchestrator import run_loop
 from mcp_engine.sweep import run_sweep
 from mcp_engine.dictionary import find_dictionary, load_dictionary, ingest_dictionary
+from mcp_engine.activity_log import compact_details, emit_activity
 from mcp_engine.capture import (
     CaptureEvent,
     ClaudeCodeSessionConnector,
@@ -128,6 +129,7 @@ class BrainDaemon:
 
         # Wire loop queue into tools module
         init_loop_queue(self._loop_queue)
+        emit_activity("daemon", config=self.config, lane="status", status="started")
 
         # D2 fix: attach done callbacks so task crashes are logged and the task
         # is restarted rather than silently dying.
@@ -278,8 +280,25 @@ class BrainDaemon:
 
         try:
             result = await handler(params, self.db, self.config)
+            emit_activity(
+                "tool",
+                config=self.config,
+                method=method,
+                status="ok",
+                details=compact_details(method, params),
+            )
             return {"jsonrpc": "2.0", "id": req_id, "result": result}
         except Exception as e:
+            emit_activity(
+                "tool",
+                config=self.config,
+                method=method,
+                status="error",
+                details={
+                    **compact_details(method, params),
+                    "error": str(e)[:160],
+                },
+            )
             return {
                 "jsonrpc": "2.0", "id": req_id,
                 "error": {"code": -32000, "message": str(e)}
@@ -422,6 +441,18 @@ class BrainDaemon:
             try:
                 summary = await connector.scan_once(ingest=ingest)
                 if summary["journaled"] or summary["ingested"]:
+                    emit_activity(
+                        "capture",
+                        config=self.config,
+                        lane="write",
+                        status="ok",
+                        details={
+                            "source": source_name,
+                            "scanned": summary["scanned"],
+                            "journaled": summary["journaled"],
+                            "ingested": summary["ingested"],
+                        },
+                    )
                     print(
                         f"[Capture:{source_name}] "
                         f"scanned={summary['scanned']} "
@@ -429,6 +460,13 @@ class BrainDaemon:
                         f"ingested={summary['ingested']}"
                     )
             except Exception as e:
+                emit_activity(
+                    "capture",
+                    config=self.config,
+                    lane="write",
+                    status="error",
+                    details={"source": source_name, "error": str(e)[:160]},
+                )
                 print(f"[Capture:{source_name}] Error during scan: {e}")
             await asyncio.sleep(interval)
 
@@ -442,6 +480,7 @@ class BrainDaemon:
         socket_path = _socket_path()
         if socket_path.exists():
             socket_path.unlink()
+        emit_activity("daemon", config=self.config, lane="status", status="stopped")
         print("Brain Daemon stopped.")
         # D1 fix: stop the event loop so the process exits cleanly.
         try:
