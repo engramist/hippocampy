@@ -69,6 +69,15 @@ pytest
 - **CLAUDE.md:** Claude-specific workflow (delegation model).
 - **InvertorsDocs/:** Original Inventor's Notebook and seed examples for the ontology.
 
+### Activity Indicator
+Use the SideQuests activity feed as the first-line indicator for live memory behavior:
+
+```bash
+.venv/bin/sidequests activity --follow
+```
+
+This tails `~/.sidequests/activity.log`, a compact operator feed for memory writes, recall calls, durable capture scans, and daemon lifecycle state. It redacts full prompt and response bodies while preserving useful metadata like source client, role, session, character counts, recall query previews, and success/error status. Use `~/.sidequests/daemon.log` only for debugging failures or stack traces.
+
 ## Key Directories
 - `mcp_engine/`: Core logic, including the 9-step consolidation loop.
 - `adapters/`: Adapters for Claude, Codex, Gemini CLI, etc.

@@ -105,6 +105,9 @@ max_events_per_scan = 50
 initial_backfill_events = 20
 max_initial_backfill_files = 5
 
+[activity]
+log_path = "~/.sidequests/activity.log"  # compact operator feed for writes, recall, capture, and daemon state
+
 [quest]
 auto_complete_days = 30   # suggest Quest completion after N days of inactivity (0 = disabled)
 
@@ -201,6 +204,20 @@ Durable capture assurance:
   Capture connectors must ignore tool results, hidden reasoning, and
   adapter-injected/system messages. They exist for durability across client
   installs, not to expand prompt context or bypass the Gated Consolidation Loop.
+
+Operator visibility:
+
+  The Brain Daemon writes a compact activity feed to `~/.sidequests/activity.log`.
+  This feed records memory writes, recall calls, durable capture scans, and
+  daemon lifecycle state without dumping full prompt or response bodies.
+  `sidequests activity --follow` is the durable local indicator until client UIs
+  expose native status-bar/chrome extension points for SideQuests.
+
+  This activity feed is the primary operator-facing health signal. The daemon
+  log remains the debugging/error log and may contain stack traces or low-level
+  startup chatter. Agents should point users to `sidequests activity --follow`
+  when they ask "is SideQuests writing/recalling right now?" and reserve
+  `~/.sidequests/daemon.log` for troubleshooting failures.
 ```
 
 **MainQuest ID** is generated deterministically as a hash of `repo_root_path + git_branch` so all local assistants auto-align to the same project context.

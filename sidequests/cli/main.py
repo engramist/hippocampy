@@ -227,6 +227,42 @@ def status():
         raise typer.Exit(code=1)
 
 @app.command()
+def activity(
+    ctx: typer.Context,
+    lines: int = typer.Option(40, "--lines", "-n", help="Number of recent activity lines to show first"),
+    follow: bool = typer.Option(False, "--follow", "-f", help="Keep streaming new activity"),
+    json_output: bool = typer.Option(False, "--json", help="Print raw JSONL records"),
+):
+    """
+    Watch SideQuests memory activity without tailing the noisy daemon log.
+    """
+    from mcp_engine.activity_log import (
+        activity_log_path,
+        follow_records,
+        format_activity,
+        read_recent,
+    )
+
+    config = (ctx.obj or {}).get("config", {})
+    path = activity_log_path(config)
+    if not path.exists():
+        console.print(f"[yellow]No activity log yet at {path}.[/yellow]")
+        console.print("Start the daemon, then run this again with --follow.")
+        if not follow:
+            return
+
+    for record in read_recent(path, lines):
+        console.print_json(data=record) if json_output else console.print(format_activity(record))
+
+    if follow:
+        console.print(f"[dim]Following {path} - press Ctrl-C to stop.[/dim]")
+        try:
+            for record in follow_records(path):
+                console.print_json(data=record) if json_output else console.print(format_activity(record))
+        except KeyboardInterrupt:
+            return
+
+@app.command()
 def smoke(
     arc_world_model_tools: bool = typer.Option(False, "--arc-world-model-tools", help="Check for ARC world-model tools")
 ):
