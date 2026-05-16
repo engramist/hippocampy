@@ -1,7 +1,7 @@
 from typer.testing import CliRunner
 
-from sidequests.cli.main import app
-from sidequests.cli.doctor import DoctorChecker
+from campy.cli.main import app
+from campy.cli.doctor import DoctorChecker
 
 
 def test_doctor_command_is_registered():

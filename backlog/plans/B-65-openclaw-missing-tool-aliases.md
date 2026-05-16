@@ -10,7 +10,7 @@ Complete tool alias registration in OpenClaw extension for any missing or newly 
 - Audit all MCP tools in `mcp_engine/tools.py`
 - Ensure each is registered with primary name + aliases in OpenClaw manifest
 - Common aliases: `memory_search` (for `current_truth`), `memory_get` (alternate), etc.
-- Update `extensions/sidequests-brain/src/index.ts` tool registry
+- Update `extensions/hippocampy/src/index.ts` tool registry
 
 ### Tool Aliases
 
@@ -24,7 +24,7 @@ Complete tool alias registration in OpenClaw extension for any missing or newly 
 
 ## Files to Create/Modify
 
-- `extensions/sidequests-brain/src/index.ts` — add tool alias mappings
+- `extensions/hippocampy/src/index.ts` — add tool alias mappings
 - `tests/test_openclaw_tool_aliases.py` — verify all aliases resolve correctly
 
 ## Acceptance Criteria

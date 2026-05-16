@@ -5,15 +5,15 @@ import asyncio
 from pathlib import Path
 from unittest.mock import patch, MagicMock, AsyncMock
 from typer.testing import CliRunner
-from sidequests.cli.main import app
-from sidequests.cli.detect import detect_claude_code, detect_claude_desktop
-from sidequests.cli.register import (
+from campy.cli.main import app
+from campy.cli.detect import detect_claude_code, detect_claude_desktop
+from campy.cli.register import (
     register_claude_code, 
     register_claude_desktop, 
     register_codex,
     register_vscode,
 )
-from sidequests.cli.launchd import generate_plist
+from campy.cli.launchd import generate_plist
 
 runner = CliRunner()
 
@@ -42,27 +42,27 @@ def test_register_claude_code():
 def test_register_claude_desktop(tmp_path):
     config_file = tmp_path / "claude_desktop_config.json"
     config_file.write_text(json.dumps({"mcpServers": {}}))
-    
+
     adapter_path = "/path/to/adapter.py"
     assert register_claude_desktop(adapter_path, str(config_file)) is True
-    
+
     with open(config_file, "r") as f:
         config = json.load(f)
-        assert "sidequests-brain" in config["mcpServers"]
-        assert config["mcpServers"]["sidequests-brain"]["args"] == [adapter_path]
+        assert "campy" in config["mcpServers"]
+        assert config["mcpServers"]["campy"]["args"] == ["-m", "campy.adapters.claude_desktop"]
 
 def test_register_codex(tmp_path):
     config_dir = tmp_path / ".codex"
     config_dir.mkdir()
     config_file = config_dir / "config.toml"
     config_file.write_text("[mcp_servers]\n")
-    
+
     adapter_path = "/path/to/adapter.py"
     with patch("os.path.expanduser", return_value=str(config_file)):
         assert register_codex(adapter_path) is True
         content = config_file.read_text()
-        assert "[mcp_servers.sidequests]" in content
-        assert adapter_path in content
+        assert "[mcp_servers.campy]" in content
+        assert '"-m", "campy.adapters.mcp_server"' in content
 
 def test_register_codex_replaces_stale_and_stray_entries(tmp_path):
     config_dir = tmp_path / ".codex"
@@ -73,7 +73,7 @@ def test_register_codex_replaces_stale_and_stray_entries(tmp_path):
     Path(adapter_path).write_text("# adapter")
     config_file.write_text(
         f'["{adapter_path}"]\n\n'
-        '[mcp_servers.sidequests]\n'
+        '[mcp_servers.campy]\n'
         'command = "/wrong/python"\n'
         'args = ["/wrong/adapter.py"]\n'
     )
@@ -83,8 +83,8 @@ def test_register_codex_replaces_stale_and_stray_entries(tmp_path):
 
     content = config_file.read_text()
     assert f'["{adapter_path}"]' not in content.splitlines()
-    assert content.count("[mcp_servers.sidequests]") == 1
-    assert adapter_path in content
+    assert content.count("[mcp_servers.campy]") == 1
+    assert '"-m", "campy.adapters.mcp_server"' in content
     assert "/wrong/python" not in content
 
 def test_register_vscode(tmp_path):
@@ -95,8 +95,8 @@ def test_register_vscode(tmp_path):
 
     assert register_vscode(adapter_path, str(config_file)) is True
     config = json.loads(config_file.read_text())
-    assert config["servers"]["sidequests"]["type"] == "stdio"
-    assert config["servers"]["sidequests"]["args"] == ["-m", "sidequests.adapters.mcp_server"]
+    assert config["servers"]["campy"]["type"] == "stdio"
+    assert config["servers"]["campy"]["args"] == ["-m", "campy.adapters.mcp_server"]
 
 def test_claude_code_hook_registration_repairs_stale_python(tmp_path):
     from adapters.claude_code import setup as claude_setup
@@ -133,17 +133,17 @@ def test_claude_code_hook_registration_repairs_stale_python(tmp_path):
     assert "/tmp/pytest-python" not in commands[0]
 
 def test_generate_plist(tmp_path):
-    plist_path = tmp_path / "ai.sidequests.brain.plist"
+    plist_path = tmp_path / "ai.hippocampy.brain.plist"
     daemon_path = "/path/to/brain_daemon.py"
     
     assert generate_plist(daemon_path, str(plist_path)) is True
     assert plist_path.exists()
     content = plist_path.read_text()
-    assert "ai.sidequests.brain" in content
+    assert "ai.hippocampy.brain" in content
     assert daemon_path in content
 
 def test_setup_command_auto():
-    with patch("sidequests.cli.main.detect_all") as mock_detect:
+    with patch("campy.cli.main.detect_all") as mock_detect:
         mock_detect.return_value = {
             "claude_code": True,
             "claude_desktop": True,
@@ -152,13 +152,13 @@ def test_setup_command_auto():
             "gemini_cli": False,
             "vscode": True,
         }
-        with patch("sidequests.cli.main.register_claude_code", return_value=True):
-            with patch("sidequests.cli.main.register_claude_desktop", return_value=True):
-                with patch("sidequests.cli.main.register_chatgpt_desktop", return_value=True):
-                    with patch("sidequests.cli.main.register_codex", return_value=True):
-                        with patch("sidequests.cli.main.register_vscode", return_value=True):
-                            with patch("sidequests.cli.main.setup_daemon", return_value=True):
-                                with patch("sidequests.cli.main.run_smoke_tests", new_callable=AsyncMock) as mock_smoke:
+        with patch("campy.cli.main.register_claude_code", return_value=True):
+            with patch("campy.cli.main.register_claude_desktop", return_value=True):
+                with patch("campy.cli.main.register_chatgpt_desktop", return_value=True):
+                    with patch("campy.cli.main.register_codex", return_value=True):
+                        with patch("campy.cli.main.register_vscode", return_value=True):
+                            with patch("campy.cli.main.setup_daemon", return_value=True):
+                                with patch("campy.cli.main.run_smoke_tests", new_callable=AsyncMock) as mock_smoke:
                                     mock_smoke.return_value = {
                                         "Daemon Communication": True,
                                         "MCP Tool Visibility": True,
@@ -168,7 +168,7 @@ def test_setup_command_auto():
                                     with patch("platform.system", return_value="Darwin"):
                                         result = runner.invoke(app, ["setup"])
                                         assert result.exit_code == 0
-                                        assert "SideQuests Setup" in result.stdout
+                                        assert "HippoCampy Setup" in result.stdout
                                         assert "Detected Claude Code" in result.stdout
                                         assert "Detected Claude Desktop" in result.stdout
                                         assert "Detected ChatGPT Desktop" in result.stdout
@@ -177,18 +177,18 @@ def test_setup_command_auto():
                                         assert "Setup complete!" in result.stdout
 
 def test_setup_command_target():
-    with patch("sidequests.cli.main.register_claude_code", return_value=True) as mock_reg:
-        with patch("sidequests.cli.main.run_smoke_tests", new_callable=AsyncMock) as mock_smoke:
+    with patch("campy.cli.main.register_claude_code", return_value=True) as mock_reg:
+        with patch("campy.cli.main.run_smoke_tests", new_callable=AsyncMock) as mock_smoke:
             mock_smoke.return_value = {"Test": True}
             result = runner.invoke(app, ["setup", "--target", "claude-code"])
             assert result.exit_code == 0
-            assert "SideQuests Setup" in result.stdout
+            assert "HippoCampy Setup" in result.stdout
             mock_reg.assert_called_once()
 
 def test_setup_command_target_vscode():
-    with patch("sidequests.cli.main.register_vscode", return_value=True) as mock_reg:
-        with patch("sidequests.cli.main.setup_daemon", return_value=True):
-            with patch("sidequests.cli.main.run_smoke_tests", new_callable=AsyncMock) as mock_smoke:
+    with patch("campy.cli.main.register_vscode", return_value=True) as mock_reg:
+        with patch("campy.cli.main.setup_daemon", return_value=True):
+            with patch("campy.cli.main.run_smoke_tests", new_callable=AsyncMock) as mock_smoke:
                 mock_smoke.return_value = {"Test": True}
                 result = runner.invoke(app, ["setup", "--target", "vscode"])
                 assert result.exit_code == 0
@@ -196,16 +196,16 @@ def test_setup_command_target_vscode():
 
 @pytest.mark.asyncio
 async def test_run_smoke_tests_success():
-    from sidequests.cli.smoke_test import run_smoke_tests
+    from campy.cli.smoke_test import run_smoke_tests
     
-    with patch("sidequests.cli.smoke_test._send") as mock_send:
+    with patch("campy.cli.smoke_test._send") as mock_send:
         mock_send.return_value = {
             "result": {
                 "tools": [{"name": f"tool_{i}"} for i in range(10)]
             }
         }
-        with patch("sidequests.cli.smoke_test.check_ollama", return_value=True):
-            with patch("sidequests.cli.smoke_test.Path.exists", return_value=True): # sidequests.toml
+        with patch("campy.cli.smoke_test.check_ollama", return_value=True):
+            with patch("campy.cli.smoke_test.Path.exists", return_value=True): # campy.toml
                 # Mock tomllib to avoid needing real toml
                 with patch("tomllib.load", return_value={"llm": {"provider": "ollama"}}):
                     with patch("builtins.open", MagicMock()):
@@ -217,11 +217,11 @@ async def test_run_smoke_tests_success():
 
 @pytest.mark.asyncio
 async def test_run_smoke_tests_failure():
-    from sidequests.cli.smoke_test import run_smoke_tests
+    from campy.cli.smoke_test import run_smoke_tests
     
-    with patch("sidequests.cli.smoke_test._send") as mock_send:
+    with patch("campy.cli.smoke_test._send") as mock_send:
         mock_send.return_value = {"error": {"message": "Not running"}}
-        with patch("sidequests.cli.smoke_test.time.sleep"): # Skip sleep in tests
+        with patch("campy.cli.smoke_test.time.sleep"): # Skip sleep in tests
             results = await run_smoke_tests()
             assert results["Daemon Communication"] is False
             assert results["MCP Tool Visibility"] is False

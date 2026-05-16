@@ -13,7 +13,7 @@ import re
 EXTENSION_SRC = (
     Path(__file__).parent.parent
     / "extensions"
-    / "sidequests-brain"
+    / "hippocampy"
     / "src"
     / "index.ts"
 )
@@ -31,13 +31,13 @@ def test_is_launchd_service_installed_checks_plist_path():
     src = _source()
     assert "isLaunchdServiceInstalled" in src
     # Must reference the correct plist label
-    assert "ai.sidequests.brain.plist" in src
+    assert "ai.hippocampy.brain.plist" in src
 
 
 def test_is_systemd_service_installed_checks_unit_path():
     src = _source()
     assert "isSystemdServiceInstalled" in src
-    assert "sidequests-brain.service" in src
+    assert "hippocampy.service" in src
 
 
 def test_is_daemon_service_installed_dispatches_by_platform():
@@ -81,16 +81,16 @@ def test_autolaunch_interface_field_defined():
 
 def test_start_distinguishes_service_not_installed():
     src = _source()
-    # Should emit a message pointing to sidequests install when service is not found
+    # Should emit a message pointing to campy install when service is not found
     assert "no persistent service found" in src
-    assert "sidequests install" in src
+    assert "campy install" in src
 
 
 def test_start_distinguishes_transient_down():
     src = _source()
     # Should emit a different message when service IS installed but not reachable
     assert "service is registered but not currently reachable" in src
-    assert "sidequests status" in src
+    assert "campy status" in src
 
 
 def test_start_connects_silently_when_alive():
@@ -123,15 +123,15 @@ def test_autolaunching_only_when_service_not_installed():
     assert "cfg.autoLaunch && !serviceInstalled" in src
 
 
-def test_autolaunching_attempts_sidequests_daemon_first():
+def test_autolaunching_attempts_campy_daemon_first():
     src = _source()
-    assert "sidequests-daemon" in src
+    assert "campy-daemon" in src
 
 
 def test_autolaunching_falls_back_to_python3():
     src = _source()
     assert "python3" in src
-    assert '"-m", "sidequests.daemon"' in src
+    assert '"-m", "campy.daemon"' in src
 
 
 def test_autolaunching_uses_detached_spawn():

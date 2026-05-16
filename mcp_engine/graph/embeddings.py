@@ -1,7 +1,7 @@
 """
 mcp_engine/graph/embeddings.py — Multi-Provider Embedding Dispatch Layer
 
-Supports three providers (configured in sidequests.toml [embeddings]):
+Supports three providers (configured in campy.toml [embeddings]):
     sentence-transformers  → local Python, fastest (default)
     ollama                 → local Ollama server via HTTP
     openai                 → OpenAI cloud API

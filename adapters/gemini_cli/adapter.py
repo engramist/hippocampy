@@ -4,7 +4,7 @@ adapters/gemini_cli/adapter.py — Gemini CLI MCP STDIO Adapter
 No hook system confirmed for Gemini CLI. Both user and assistant turns use notify_turn.
 Otherwise identical to the Codex/Claude Desktop adapters.
 
-Registration (added automatically by `sidequests setup`):
+Registration (added automatically by `campy setup`):
   Gemini CLI reads MCP servers from settings.json. Two common locations:
     ~/.gemini/settings.json
     ~/.config/gemini/settings.json
@@ -12,7 +12,7 @@ Registration (added automatically by `sidequests setup`):
   Entry format:
     {
       "mcpServers": {
-        "sidequests-brain": {
+        "campy": {
           "command": "python",
           "args": ["/abs/path/to/adapters/gemini_cli/adapter.py"]
         }
@@ -23,7 +23,7 @@ Registration (added automatically by `sidequests setup`):
 
 Error/Degraded Mode:
   Scenario A (daemon down): returns OFFLINE status on current_truth,
-    queues notify_turn to ~/.sidequests/offline_queue.jsonl for replay.
+    queues notify_turn to ~/.campy/offline_queue.jsonl for replay.
   Scenario B (Ollama down): Brain handles internally (confidence_low storage).
 """
 
@@ -35,12 +35,13 @@ import sys
 from pathlib import Path
 from datetime import datetime, timezone
 from mcp_engine.tool_schemas import TOOLS
-from sidequests.brain_transport import call_brain
+from campy.brain_transport import call_brain
+from campy.paths import get_daemon_socket_path, runtime_dir
 
 _ALL_TOOL_NAMES = frozenset(t["name"] for t in TOOLS)
 
-SOCKET_PATH   = Path.home() / ".sidequests" / "brain.sock"
-OFFLINE_QUEUE = Path.home() / ".sidequests" / "offline_queue.jsonl"
+SOCKET_PATH   = get_daemon_socket_path()
+OFFLINE_QUEUE = runtime_dir() / "offline_queue.jsonl"
 
 # ---------------------------------------------------------------------------
 # Git context detection (runs once at adapter startup)
@@ -183,7 +184,7 @@ async def handle_mcp_request(request: dict) -> dict:
         return ok({
             "protocolVersion": client_version,
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "sidequests-brain-gemini", "version": "0.1.0"},
+            "serverInfo": {"name": "campy-gemini", "version": "0.1.0"},
         })
 
     if method == "notifications/initialized":
@@ -197,10 +198,10 @@ async def handle_mcp_request(request: dict) -> dict:
         return ok({"resources": []})
 
     if method == "prompts/list":
-        return ok({"prompts": [{"name": "sidequests-system", "description": "SideQuests Brain instructions"}]})
+        return ok({"prompts": [{"name": "sidequests-system", "description": "HippoCampy instructions"}]})
 
     if method == "prompts/get":
-        return ok({"description": "SideQuests Brain instructions",
+        return ok({"description": "HippoCampy instructions",
                    "messages": [{"role": "user", "content": {"type": "text", "text": SYSTEM_PROMPT_FRAGMENT}}]})
 
     if method == "tools/call":

@@ -25,17 +25,17 @@ The core invention is the **Gated Consolidation Loop** — an active cognitive p
 
 ## Repository Scope After ARC_AGI Extraction
 
-`sidequests-brain` is the local graph-native memory engine. ARC solver/runtime code, benchmark orchestration, and submission/compliance flows live in the sibling `ARC_AGI` repository.
+`hippocampy` is the local graph-native memory engine. ARC solver/runtime code, benchmark orchestration, and submission/compliance flows live in the sibling `ARC_AGI` repository.
 
 This repository may still contain ARC-facing memory schemas, ingestion tools, wiki projections, and regression tests when they exercise the generic memory engine. Raw ARC run artifacts are evidence inputs only: they must be ingested into KuzuDB before retrieval or wiki projection treats them as memory.
 
 ## Context Strategy
 
-SideQuests should **shrink decision context, not expand it**.
+Campy should **shrink decision context, not expand it**.
 
 The operating philosophy is:
 - keep only the minimum stable working context in the prompt
-- use SideQuests retrieval to supply just-in-time decision support
+- use Campy retrieval to supply just-in-time decision support
 - prefer compact summaries over raw dumps
 - treat retrieval as a ranking/compression system, not a transcript loader
 - gate retrieval behind concrete uncertainty triggers rather than always injecting memory
@@ -44,7 +44,7 @@ The immediate win is **small, purposeful context with fast, targeted retrieval**
 
 Longer-term backlog direction:
 - move toward an active retrieval symbiosis where the agent begins with minimal working context and requests additional state only when a concrete decision requires it
-- make passive SideQuests processes pattern-match likely-needed entities, neighborhoods, and paths ahead of demand so retrieval is effectively pre-warmed
+- make passive Campy processes pattern-match likely-needed entities, neighborhoods, and paths ahead of demand so retrieval is effectively pre-warmed
 - model this like biomimetic selective activation: passive sensory intake drives likely-memory activation before the explicit request arrives
 - make the first sensory packet rich in stable ids, compact structural signatures, and observed-effect summaries so passive pattern matching has something useful to pre-activate against
 
@@ -63,11 +63,11 @@ Everything else should earn its way into the prompt.
 - **NER / Zoning:** `spaCy` (local, zero LLM cost for concept extraction)
 - **Embeddings:** `sentence-transformers` (local, lightweight)
 - **Ontologies:** gist (Semantic Arts) for upper-level classification → schema.org sub-graphs for domain-specific attributes
-- **LLM:** Configurable via `sidequests.toml` — Ollama (default/local) or cloud providers (OpenAI, Anthropic, Google) as opt-in
+- **LLM:** Configurable via `campy.toml` — Ollama (default/local) or cloud providers (OpenAI, Anthropic, Google) as opt-in
 - **Memory Control Panel:** FastAPI web app bound strictly to `127.0.0.1` (no external access)
 - **MCP Transport:** stdio only — no listening TCP/HTTP ports; Unix domain sockets for IPC between adapters and the Brain Daemon
 
-## LLM Provider Configuration (`sidequests.toml`)
+## LLM Provider Configuration (`campy.toml`)
 
 ```toml
 [llm]
@@ -110,7 +110,7 @@ initial_backfill_events = 20
 max_initial_backfill_files = 5
 
 [activity]
-log_path = "~/.sidequests/activity.log"  # compact operator feed for writes, recall, capture, and daemon state
+log_path = "~/.campy/activity.log"  # compact operator feed for writes, recall, capture, and daemon state
 
 [quest]
 auto_complete_days = 30   # suggest Quest completion after N days of inactivity (0 = disabled)
@@ -218,21 +218,21 @@ Durable capture assurance:
 
 Operator visibility:
 
-  The Brain Daemon writes a compact activity feed to `~/.sidequests/activity.log`.
+  The Brain Daemon writes a compact activity feed to `~/.campy/activity.log`.
   This feed records memory writes, recall calls, durable capture scans, and
   daemon lifecycle state without dumping full prompt or response bodies.
-  `sidequests activity --follow` is the durable local indicator until client UIs
-  expose native status-bar/chrome extension points for SideQuests.
+  `campy activity --follow` is the durable local indicator until client UIs
+  expose native status-bar/chrome extension points for Campy.
 
   This activity feed is the primary operator-facing health signal. The daemon
   log remains the debugging/error log and may contain stack traces or low-level
-  startup chatter. Agents should point users to `sidequests activity --follow`
-  when they ask "is SideQuests writing/recalling right now?" and reserve
-  `~/.sidequests/daemon.log` for troubleshooting failures.
+  startup chatter. Agents should point users to `campy activity --follow`
+  when they ask "is Campy writing/recalling right now?" and reserve
+  `~/.campy/daemon.log` for troubleshooting failures.
 
 Agent memory-use policy:
 
-  `skills/sidequests-memory/SKILL.md` is the canonical policy for supported
+  `skills/campy-memory/SKILL.md` is the canonical policy for supported
   agents. It teaches when to recall, when not to recall, which retrieval tool
   to use, and how to preserve the anti-bloat context strategy. Codex can install
   this as a local skill; Claude, Gemini, ChatGPT Desktop, VS Code, and other MCP
@@ -258,8 +258,8 @@ Agent memory-use policy:
 ### Module Structure
 
 ```
-sidequests-brain/
-├── sidequests.toml
+hippocampy/
+├── campy.toml
 ├── brain_daemon.py
 ├── mcp_engine/
 │   ├── schema.py                # Kùzu schema init (all node + relationship DDL)
@@ -312,15 +312,15 @@ sidequests-brain/
 └── ../ARC_AGI/                  # sibling repo: ARC solver/runtime/benchmark code
 ```
 
-ARC solver modules and benchmark harnesses were extracted from this repository. SideQuests keeps only the memory-facing integration surface: graph schema, MCP tools, ingestion/projection code, and regression tests that validate the memory engine as an ARC consumer backend.
+ARC solver modules and benchmark harnesses were extracted from this repository. Campy keeps only the memory-facing integration surface: graph schema, MCP tools, ingestion/projection code, and regression tests that validate the memory engine as an ARC consumer backend.
 
 ## Optimization: Knowledge Pre-seeding (B108)
 
-To reduce cold-start latency and avoid repeated LLM calls for stable protocol or project concepts, SideQuests supports **Knowledge Pre-seeding**.
+To reduce cold-start latency and avoid repeated LLM calls for stable protocol or project concepts, Campy supports **Knowledge Pre-seeding**.
 
 - **Precomputed Artifacts**: Stable knowledge fragments can be ingested with pre-labeled entities and relations.
 - **Loop Fast-Path**: When `precomputed` data is provided to `notify_turn`, the Gated Consolidation Loop bypasses Step 1 (NER), Step 2 (gist classification), and Step 3b (semantic relation extraction).
-- **Local Re-embedding**: Entities are re-embedded locally during pre-seeded ingestion to ensure compatibility with the current `embeddings.model` configured in `sidequests.toml`.
+- **Local Re-embedding**: Entities are re-embedded locally during pre-seeded ingestion to ensure compatibility with the current `embeddings.model` configured in `campy.toml`.
 
 This ensures consumers spend more time on the current task and less time re-learning stable API, project, or domain facts on every run.
 
@@ -434,7 +434,7 @@ Modeled on neuroscience synaptic pruning ("use it or lose it") and the **Ebbingh
 | Strengthening | On access (Step 7) | `strength += 1 * log(1 + 1/days_since_last_access)` |
 | Decay | Background sweep | `strength *= decay_rate ^ days_since_last_access` |
 
-`decay_rate` is configurable per node type in `sidequests.toml` (power user setting — sensible defaults provided). GlobalConstraints decay over years; raw Messages decay in weeks.
+`decay_rate` is configurable per node type in `campy.toml` (power user setting — sensible defaults provided). GlobalConstraints decay over years; raw Messages decay in weeks.
 
 **Archive mechanic (never delete):**
 - Node falls below `archive_threshold` (default 0.10) → `archived: true` flag set
@@ -530,7 +530,7 @@ Modern agentic workflows involve agents formulating multi-step plans before exec
 
 ### The Cognitive Loop
 
-| Phase | Human Analog | SideQuests Implementation |
+| Phase | Human Analog | Campy Implementation |
 |-------|-------------|--------------------------|
 | **Perceive** | Senses take in environment | `current_truth` + `explore_graph` |
 | **Model** | Build mental model | Agent traverses graph, understands entity relationships |
@@ -789,7 +789,7 @@ Response: `{ "status": "queued" }` — always immediate, never blocks.
 
 ### Retrieval Tools
 
-**`memory_decision`** — call when unsure whether a prompt warrants recall. Returns a compact recommendation (`should_recall`, `recommended_tool`, `query`, `reason`, `confidence`, `context_budget`, `anti_bloat_guidance`) without retrieving memory. This is the runtime companion to `skills/sidequests-memory/SKILL.md`.
+**`memory_decision`** — call when unsure whether a prompt warrants recall. Returns a compact recommendation (`should_recall`, `recommended_tool`, `query`, `reason`, `confidence`, `context_budget`, `anti_bloat_guidance`) without retrieving memory. This is the runtime companion to `skills/campy-memory/SKILL.md`.
 
 **`current_truth`** — call before answering architecture or past-decision questions. Searches consolidated artifacts and bounded episodic `Message` evidence, then ranks by graph strength (`pathway_strength × confidence`, plus bounded outcome valence). Includes optional `include_rationale` for 1-hop provenance context.
 
@@ -856,7 +856,7 @@ Response: `{ "status": "queued" }` — always immediate, never blocks.
 
 ### ARC Memory Integration Tools
 
-These tools exist so external ARC consumers can use SideQuests as graph-native memory without reintroducing ARC runtime code into this repo:
+These tools exist so external ARC consumers can use Campy as graph-native memory without reintroducing ARC runtime code into this repo:
 
 - **`ingest_arc_artifacts`** — import ARC_AGI run artifacts into KuzuDB as durable graph records
 - **`publish_mechanic_summary`** — persist learned ARC mechanics and action/effect patterns
@@ -961,17 +961,17 @@ ARC_AGI artifacts do not become wiki pages directly. They first flow through `in
 ## Installation Story
 
 ```bash
-pip install sidequests-brain        # or: pip install -e . from repo
-sidequests setup                    # Claude Code (auto-detected)
-sidequests setup --target claude-desktop
-sidequests setup --target chatgpt-desktop
-sidequests setup --target gemini-cli
-sidequests setup --target codex
+pip install hippocampy        # or: pip install -e . from repo
+campy setup                    # Claude Code (auto-detected)
+campy setup --target claude-desktop
+campy setup --target chatgpt-desktop
+campy setup --target gemini-cli
+campy setup --target codex
 ```
 
-`sidequests setup` per target:
+`campy setup` per target:
 1. Detects Ollama or prompts for cloud provider + API key
-2. Writes `sidequests.toml` (project root) or `~/.sidequests/config.toml` (global)
+2. Writes `campy.toml` (project root) or `~/.campy/config.toml` (global)
 3. Registers MCP adapter in the standard config file for each target
 4. Starts Brain Daemon + runs smoke test (Ollama ping + Kùzu schema init + `tools/list` round-trip)
 
@@ -992,9 +992,9 @@ sidequests setup --target codex
 
 | Milestone | Description |
 |-----------|-------------|
-| M1 | Kùzu schema + `sidequests.toml` config + IPC daemon skeleton + LLM provider abstraction. Phase 0 = English only. **Centroid bootstrap:** embed all 105 `GistSeedExamples.md` sentences, mean-pool per class, store as `GistClass.centroid FLOAT[384]`. spaCy model: `en_core_web_md` (auto-downloaded by installer). |
-| M2 | Passive ingestion: Claude Code `UserPromptSubmit` hook captures user turns; `notify_turn` MCP tool captures assistant turns. `current_truth` tool (basic vector retrieval). Claude Code adapter fully wired. Hook config written by `sidequests setup`. |
-| M3 | Loop Steps 1–4 + Step 3b. Step 1b: verb pattern relation extraction (universal, no LLM). Steps 2–3: gist + schema.org routing. Step 3b: Ollama relation extraction with type context (CHOSEN_OVER, IMPLEMENTS, EXTENDS, ALTERNATIVE_TO). Step 4: pattern matching + confidence gating + Cocktail Party selective attention. Named relationship types: 9 types + `[hebbian] co_occurrence_threshold = 10` in `sidequests.toml`. |
+| M1 | Kùzu schema + `campy.toml` config + IPC daemon skeleton + LLM provider abstraction. Phase 0 = English only. **Centroid bootstrap:** embed all 105 `GistSeedExamples.md` sentences, mean-pool per class, store as `GistClass.centroid FLOAT[384]`. spaCy model: `en_core_web_md` (auto-downloaded by installer). |
+| M2 | Passive ingestion: Claude Code `UserPromptSubmit` hook captures user turns; `notify_turn` MCP tool captures assistant turns. `current_truth` tool (basic vector retrieval). Claude Code adapter fully wired. Hook config written by `campy setup`. |
+| M3 | Loop Steps 1–4 + Step 3b. Step 1b: verb pattern relation extraction (universal, no LLM). Steps 2–3: gist + schema.org routing. Step 3b: Ollama relation extraction with type context (CHOSEN_OVER, IMPLEMENTS, EXTENDS, ALTERNATIVE_TO). Step 4: pattern matching + confidence gating + Cocktail Party selective attention. Named relationship types: 9 types + `[hebbian] co_occurrence_threshold = 10` in `campy.toml`. |
 | M4 | Loop Steps 5–7 (dual-scope retrieval, contradiction arbitration, pathway update + MergeEvent) |
 | M5 | Quest lifecycle (git-anchor MainQuest, manual SideQuest branching, RAG read flow) |
 | M6 | Open Brain document ingestion (Document + DocumentExtract pipeline, semantic chunking) |
@@ -1019,7 +1019,7 @@ sidequests setup --target codex
 - ARC-specific prompt policy and phase orchestration
 - ARC experiment artifacts that are not graph memory records
 
-`sidequests-brain` owns:
+`hippocampy` owns:
 
 - the shared graph-native memory backend
 - durable schema for generic memory and ARC-facing evidence records
@@ -1037,6 +1037,7 @@ The system operates fully autonomously — no human confirmation required for un
 
 Optional developer tooling note:
 - local graph-browsing/debug workflows are allowed, but they must remain optional tooling outside the
-  main SideQuests runtime/install path
+  main Campy runtime/install path
 - if we use Kuzu Explorer or similar tools to inspect the graph, treat them as read-only developer
   visibility aids, not part of the core product surface
+ace

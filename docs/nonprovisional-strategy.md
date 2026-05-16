@@ -1,4 +1,4 @@
-# Non-Provisional Strategy for SideQuests (Patent Pending)
+# Non-Provisional Strategy for Campy (Patent Pending)
 
 **Status:** Patent Pending - Engineering Planning Doc (Not Legal Advice)
 
@@ -131,7 +131,7 @@
 **Before Public Distribution:**
 
 - [ ] **Packaging (B230):** Wheel/sdist ready, clean venv install tested
-- [ ] **Installer (B231):** `scripts/install.sh` and `sidequests doctor` functional
+- [ ] **Installer (B231):** `scripts/install.sh` and `campy doctor` functional
 - [ ] **Private Data Audit (B232):** `docs/public-release-audit.md` completed, distribution verified
 - [ ] **Disclosure Boundary (B233):** This document + `docs/public-disclosure-boundary.md` reviewed by counsel
 - [ ] **License Selection:** Choose OSS license (e.g., MIT, Apache 2.0, AGPL 3.0)

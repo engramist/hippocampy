@@ -21,7 +21,7 @@ Upgrade the Brain Daemon's web server from the deprecated MCP 2024-11-05 SSE tra
 | File | Why |
 |------|-----|
 | `web/server.py` lines 620-750 | Current SSE + MCP endpoint implementation |
-| `extensions/sidequests-brain/src/index.ts` | BrainClient that needs updating |
+| `extensions/hippocampy/src/index.ts` | BrainClient that needs updating |
 | `mcp_engine/tools.py` line 1-20 (TOOL_HANDLERS) | Dispatch table reference |
 
 ## Files to Modify
@@ -29,7 +29,7 @@ Upgrade the Brain Daemon's web server from the deprecated MCP 2024-11-05 SSE tra
 | File | Change |
 |------|--------|
 | `web/server.py` | Rewrite `mcp_post()` to return JSON directly; keep `mcp_sse()` for legacy |
-| `extensions/sidequests-brain/src/index.ts` | Simplify `BrainClient.callTool()` and `ping()` |
+| `extensions/hippocampy/src/index.ts` | Simplify `BrainClient.callTool()` and `ping()` |
 
 ## Implementation
 
@@ -112,7 +112,7 @@ The Streamable HTTP spec requires servers to validate the `Origin` header. Add t
 
 No special headers needed beyond what FastAPI provides. The existing CORS middleware (if any) should handle Origin validation. Check if the existing code has CORS configuration and leave it as-is.
 
-### Step 4: Update `extensions/sidequests-brain/src/index.ts` — Simplify BrainClient
+### Step 4: Update `extensions/hippocampy/src/index.ts` — Simplify BrainClient
 
 Replace the entire `BrainClient` class with this simpler version:
 
@@ -298,6 +298,6 @@ cd /Users/djshelton/Desktop/GitProjects/sidequests-brain
 | File | Lines Changed | What |
 |------|--------------|------|
 | `web/server.py` | ~30 | New `mcp_post` with Streamable HTTP, old logic moved to `_mcp_post_legacy_sse` |
-| `extensions/sidequests-brain/src/index.ts` | ~60 | Replace `BrainClient` class with simpler direct-POST version |
+| `extensions/hippocampy/src/index.ts` | ~60 | Replace `BrainClient` class with simpler direct-POST version |
 
 Total: ~90 lines changed across 2 files. No new files. No new dependencies.

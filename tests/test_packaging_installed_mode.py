@@ -1,14 +1,14 @@
 """Tests for packaging in installed (wheel/sdist) mode.
 
-This module verifies that SideQuests works correctly when installed via:
-- pip install dist/sidequests_brain-*.whl
-- pip install dist/sidequests_brain-*.tar.gz
+This module verifies that HippoCampy works correctly when installed via:
+- pip install dist/hippocampy-*.whl
+- pip install dist/hippocampy-*.tar.gz
 
 Tests verify:
 - CLI commands work from installed package
 - Path resolution works without repo-root assumptions
 - Package data is available
-- Runtime state goes to ~/.sidequests
+- Runtime state goes to ~/.campy
 
 Related card: B230 - Packaging Hardening for Installed Mode
 """
@@ -41,7 +41,7 @@ def wheel_path():
     Skips test if wheel not found.
     """
     dist_dir = Path(__file__).parent.parent / "dist"
-    wheels = list(dist_dir.glob("sidequests_brain-*.whl"))
+    wheels = list(dist_dir.glob("hippocampy-*.whl"))
 
     if not wheels:
         pytest.skip(
@@ -68,24 +68,40 @@ class TestInstalledModeBasics:
 
         assert result.returncode == 0, f"pip install failed: {result.stderr}"
 
-    def test_sidequests_help_works(self, temp_venv, wheel_path):
-        """Verify 'sidequests --help' works from installed wheel."""
+    def test_campy_help_works(self, temp_venv, wheel_path):
+        """Verify 'campy --help' works from installed wheel."""
         python_exe = temp_venv / "bin" / "python"
         pip_exe = temp_venv / "bin" / "pip"
 
         # Install wheel
         subprocess.run([str(pip_exe), "install", str(wheel_path)], check=True)
 
-        # Run sidequests --help
+        # Run module help plus primary and legacy console scripts.
         result = subprocess.run(
-            [str(python_exe), "-m", "sidequests.cli.main", "--help"],
+            [str(python_exe), "-m", "campy.cli.main", "--help"],
             capture_output=True,
             text=True,
             timeout=10,
         )
 
-        assert result.returncode == 0, f"sidequests --help failed: {result.stderr}"
-        assert "sidequests" in result.stdout.lower() or "usage" in result.stdout.lower()
+        assert result.returncode == 0, f"campy module help failed: {result.stderr}"
+        assert "hippocampy" in result.stdout.lower() or "usage" in result.stdout.lower()
+
+        result = subprocess.run(
+            [str(temp_venv / "bin" / "campy"), "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert result.returncode == 0, f"campy --help failed: {result.stderr}"
+
+        result = subprocess.run(
+            [str(temp_venv / "bin" / "sidequests"), "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert result.returncode == 0, f"sidequests legacy alias failed: {result.stderr}"
 
     def test_cli_subcommands_available(self, temp_venv, wheel_path):
         """Verify key CLI subcommands are available."""
@@ -97,7 +113,7 @@ class TestInstalledModeBasics:
 
         # Check install command
         result = subprocess.run(
-            [str(python_exe), "-m", "sidequests.cli.main", "install", "--help"],
+            [str(python_exe), "-m", "campy.cli.main", "install", "--help"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -106,7 +122,7 @@ class TestInstalledModeBasics:
 
         # Check status command
         result = subprocess.run(
-            [str(python_exe), "-m", "sidequests.cli.main", "status", "--help"],
+            [str(python_exe), "-m", "campy.cli.main", "status", "--help"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -115,7 +131,7 @@ class TestInstalledModeBasics:
 
         # Check activity command
         result = subprocess.run(
-            [str(python_exe), "-m", "sidequests.cli.main", "activity", "--help"],
+            [str(python_exe), "-m", "campy.cli.main", "activity", "--help"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -127,47 +143,53 @@ class TestInstalledModePathResolution:
     """Test that paths work correctly in installed mode."""
 
     def test_import_paths_module(self, temp_venv, wheel_path):
-        """Verify sidequests.paths module imports successfully."""
+        """Verify campy.paths module imports successfully."""
         python_exe = temp_venv / "bin" / "python"
         pip_exe = temp_venv / "bin" / "pip"
 
         # Install wheel
         subprocess.run([str(pip_exe), "install", str(wheel_path)], check=True)
 
-        # Try importing paths module
-        result = subprocess.run(
-            [
-                str(python_exe),
-                "-c",
-                "from sidequests.paths import runtime_dir; print(runtime_dir())",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        # Try importing paths module in an isolated home so a developer's
+        # legacy ~/.sidequests store does not change fresh-install behavior.
+        with tempfile.TemporaryDirectory() as home:
+            result = subprocess.run(
+                [
+                    str(python_exe),
+                    "-c",
+                    "from campy.paths import runtime_dir; print(runtime_dir())",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                env={"HOME": home},
+            )
 
         assert result.returncode == 0, f"Failed to import paths: {result.stderr}"
-        assert ".sidequests" in result.stdout
+        assert ".campy" in result.stdout
 
     def test_runtime_dir_uses_home(self, temp_venv, wheel_path):
-        """Verify runtime_dir() returns ~/.sidequests path."""
+        """Verify runtime_dir() returns ~/.campy path."""
         python_exe = temp_venv / "bin" / "python"
         pip_exe = temp_venv / "bin" / "pip"
 
         # Install wheel
         subprocess.run([str(pip_exe), "install", str(wheel_path)], check=True)
 
-        # Check runtime_dir
-        result = subprocess.run(
-            [
-                str(python_exe),
-                "-c",
-                "from sidequests.paths import runtime_dir; import os; rd = runtime_dir(); print(str(rd)); assert str(os.path.expanduser('~/.sidequests')) in str(rd)",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        # Check runtime_dir in an isolated home for deterministic installed-mode
+        # behavior on machines that already have a legacy ~/.sidequests store.
+        with tempfile.TemporaryDirectory() as home:
+            result = subprocess.run(
+                [
+                    str(python_exe),
+                    "-c",
+                    "from campy.paths import runtime_dir; import os; rd = runtime_dir(); print(str(rd)); assert str(os.path.expanduser('~/.campy')) in str(rd)",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                env={"HOME": home},
+            )
 
         assert result.returncode == 0, f"runtime_dir check failed: {result.stderr}"
 
@@ -203,6 +225,7 @@ class TestInstalledModePackageData:
 
             # Should not contain runtime artifacts
             assert ".sidequests" not in names_str
+            assert ".campy" not in names_str
             assert "brain.db" not in names_str
             assert "brain.sock" not in names_str
 
@@ -221,8 +244,8 @@ class TestInstalledModeImports:
         # Test core imports
         imports_to_test = [
             "sidequests",
-            "sidequests.paths",
-            "sidequests.cli.main",
+            "campy.paths",
+            "campy.cli.main",
             "mcp_engine",
         ]
 

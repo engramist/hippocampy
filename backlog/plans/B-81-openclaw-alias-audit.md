@@ -18,7 +18,7 @@ Audit all tool registrations in the OpenClaw extension, verify they map to valid
 
 ## Concrete File Changes
 
-### 1. `extensions/sidequests-brain/src/index.ts`
+### 1. `extensions/hippocampy/src/index.ts`
 - Audit each tool registration
 - Remove or comment out registrations that don't map to a valid TOOL_HANDLERS key
 - Add `// Alias: maps to <handler_name>` comments for alias tools
@@ -39,7 +39,7 @@ Audit all tool registrations in the OpenClaw extension, verify they map to valid
 ## Validation Commands
 
 ```bash
-cd extensions/sidequests-brain && npm run build
+cd extensions/hippocampy && npm run build
 pytest tests/test_extension_aliases.py -q
 ```
 

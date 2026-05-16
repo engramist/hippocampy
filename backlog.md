@@ -148,7 +148,7 @@ Files to create:
 - `mcpb/manifest.json` — bundle manifest (name, description, version, entry point, permissions)
 - `mcpb/install.sh` — lifecycle hook: installs launchd plist + loads daemon
 - `mcpb/uninstall.sh` — teardown hook
-- `Makefile` target: `make mcpb` → runs `mcpb pack` to produce `sidequests-brain.mcpb`
+- `Makefile` target: `make mcpb` → runs `mcpb pack` to produce `hippocampy.mcpb`
 
 Dependencies:
 - `mcpb` CLI: `npm install -g @anthropic-ai/mcpb`
@@ -160,7 +160,7 @@ Notes:
 - Target audience: non-technical Claude Desktop users
 
 **Acceptance Criteria (Evaluation):**
-- Double-clicking `sidequests-brain.mcpb` in Finder and confirming in Claude Desktop installs and registers the adapter with no terminal interaction.
+- Double-clicking `hippocampy.mcpb` in Finder and confirming in Claude Desktop installs and registers the adapter with no terminal interaction.
 - Brain Daemon starts and passes `sidequests status` health check after install.
 - `make mcpb` produces a valid, installable bundle from a clean repo checkout.
 - Uninstall removes all components cleanly (no orphaned plist or adapter entry).
@@ -877,7 +877,7 @@ Phase 3: Onboarding skip logic
 
 **Effort Estimate:** 40–60 hours (depends on OpenClaw plugin API maturity; if API is well-documented and stable, closer to 40h; if undocumented, 60h+)
 
-**Files:** `extensions/sidequests-brain/package.json`, `extensions/sidequests-brain/openclaw.plugin.json`
+**Files:** `extensions/hippocampy/package.json`, `extensions/hippocampy/openclaw.plugin.json`
 
 **Outcome:** OpenClaw becomes a fully memory-augmented agent — conversations are passively ingested, past decisions are surfaced before answering, and the Brain is the active knowledge layer rather than a registered-but-unused plugin.
 
@@ -901,7 +901,7 @@ Phase 3: Onboarding skip logic
 }
 ```
 
-**Files:** `sidequests/cli/setup.py` (or equivalent installer), `extensions/sidequests-brain/README.md` (document the manual step until installer handles it)
+**Files:** `sidequests/cli/setup.py` (or equivalent installer), `extensions/hippocampy/README.md` (document the manual step until installer handles it)
 
 **Acceptance Criteria (Evaluation):**
 - After `sidequests setup --target openclaw`, `openclaw sandbox explain` lists all SideQuests memory tools as allowed.
@@ -952,7 +952,7 @@ tools.profile (coding) allowlist contains unknown entries (apply_patch, memory_s
 
 **Fix applied:** Registered `memory_search` and `memory_get` in the OpenClaw extension as direct aliases of `memory_recall` / `current_truth`, sharing the same parameter schema and execution path.
 
-**Files:** `extensions/sidequests-brain/src/index.ts`, `tests/test_extension_aliases.py`
+**Files:** `extensions/hippocampy/src/index.ts`, `tests/test_extension_aliases.py`
 **Validation:** `python3 -m pytest tests/test_extension_aliases.py tests/test_hippocampus.py -q`
 
 ---
@@ -962,7 +962,7 @@ tools.profile (coding) allowlist contains unknown entries (apply_patch, memory_s
 - Added `openclaw` as a detected/installable target in `sidequests setup` and installer auto-detection.
 - `sidequests setup --target openclaw` now:
   1. Detects the `openclaw` CLI in PATH
-  2. Installs the local SideQuests extension via `openclaw plugins install <repo>/extensions/sidequests-brain`
+  2. Installs the local SideQuests extension via `openclaw plugins install <repo>/extensions/hippocampy`
   3. Patches `~/.openclaw/openclaw.json` to set `plugins.allow = ["sidequests-brain"]`
   4. Patches sandbox policy to include `tools.sandbox.tools.alsoAllow = ["group:plugins"]`
   5. Adds the explicit SideQuests memory tools to `tools.sandbox.tools.allow`
@@ -983,7 +983,7 @@ Comprehensive install doc for OpenClaw standalone (not NemoClaw) with SideQuests
 - New repo doc: `docs/openclaw-install.md`
 - Covers OpenClaw install via npm, Docker/OrbStack sandbox setup, Brain daemon startup, plugin install, gateway restart, verification, Discord notes, and troubleshooting
 - Updated from the original standalone draft to reflect the current SideQuests plugin wiring:
-  - plugin install path: `openclaw plugins install ./extensions/sidequests-brain`
+  - plugin install path: `openclaw plugins install ./extensions/hippocampy`
   - explicit plugin trust via `plugins.allow`
   - critical tool surfacing fix via `tools.sandbox.tools.alsoAllow = ["group:plugins"]`
   - current 7-tool memory surface (`memory_recall`, `memory_search`, `memory_get`, `memory_store`, `memory_search_analogies`, `memory_status`, `memory_open_loops`)
@@ -1002,7 +1002,7 @@ When OpenClaw gateway starts, the SideQuests memory plugin currently only pings 
 
 **Preferred fix:** Treat the Brain Daemon as a managed background service, not something spawned by the plugin. On macOS this should use the existing `launchd` path (`RunAtLoad` + `KeepAlive`) so the daemon is already running before OpenClaw starts, survives gateway restarts, and auto-recovers from crashes.
 
-**Optional fallback:** Add an opt-in plugin behavior in `extensions/sidequests-brain/src/index.ts` `start()` that attempts to launch the daemon when `brain.ping()` fails. This should be disabled by default and only used as a convenience fallback, since plugin-managed process launch is more fragile (paths, env, permissions, duplicate daemon risk).
+**Optional fallback:** Add an opt-in plugin behavior in `extensions/hippocampy/src/index.ts` `start()` that attempts to launch the daemon when `brain.ping()` fails. This should be disabled by default and only used as a convenience fallback, since plugin-managed process launch is more fragile (paths, env, permissions, duplicate daemon risk).
 
 **Acceptance criteria:**
 - `sidequests install` or `sidequests setup --target openclaw` configures the Brain Daemon as a persistent user service where supported
@@ -1013,7 +1013,7 @@ When OpenClaw gateway starts, the SideQuests memory plugin currently only pings 
 
 **What was done:**
 - `sidequests install` already configures launchd (`RunAtLoad + KeepAlive`) via `sidequests/cli/launchd.py` — launchd path was already correct.
-- Added `isDaemonServiceInstalled()` to `extensions/sidequests-brain/src/index.ts` — checks plist presence (macOS) or systemd unit presence (Linux) at plugin startup.
+- Added `isDaemonServiceInstalled()` to `extensions/hippocampy/src/index.ts` — checks plist presence (macOS) or systemd unit presence (Linux) at plugin startup.
 - Plugin `start()` now emits one of three states:
   1. **Connected** — daemon reachable, silent success log
   2. **Service not installed** — first-run diagnostic, points to `sidequests install`
@@ -1024,7 +1024,7 @@ When OpenClaw gateway starts, the SideQuests memory plugin currently only pings 
 - Fixed orphaned `tests/test_mission_control_discord_adapter.py` (skipif guard, same pattern as other MC tests).
 - Full suite: **677 passed, 11 skipped, 0 failures**.
 
-**Files:** `extensions/sidequests-brain/src/index.ts`, `tests/test_b41_plugin_startup.py`, `docs/openclaw-install.md`, `tests/test_mission_control_discord_adapter.py`
+**Files:** `extensions/hippocampy/src/index.ts`, `tests/test_b41_plugin_startup.py`, `docs/openclaw-install.md`, `tests/test_mission_control_discord_adapter.py`
 
 ---
 
@@ -1038,7 +1038,7 @@ When OpenClaw gateway starts, the SideQuests memory plugin currently only pings 
 
 **Verified (2026-03-22 smoke test):** All 5 tools (`memory_recall`, `memory_store`, `memory_search_analogies`, `memory_status`, `memory_open_loops`) return valid results from agent sessions. Passive ingestion continues working.
 
-**Files:** `extensions/sidequests-brain/package.json`, `extensions/sidequests-brain/src/index.ts`
+**Files:** `extensions/hippocampy/package.json`, `extensions/hippocampy/src/index.ts`
 **Priority:** P0 — ✅ resolved
 **Depends on:** None
 
@@ -1046,7 +1046,7 @@ When OpenClaw gateway starts, the SideQuests memory plugin currently only pings 
 
 ### B27 · Extension: Passive Ingestion Event API Validation — ✅ DONE (2026-03-27)
 **What was built:**
-- Added `OPENCLAW_EVENT_CONTRACT` constant in `extensions/sidequests-brain/src/index.ts` with all 3 event names + payload fields
+- Added `OPENCLAW_EVENT_CONTRACT` constant in `extensions/hippocampy/src/index.ts` with all 3 event names + payload fields
 - Added `normalizePromptPayload()`, `normalizeAssistantPayload()`, `summarizeEventShape()` helpers
 - All 3 `api.on()` hooks refactored to use contract constants instead of hardcoded strings
 - Replaced silent `catch{}` blocks with structured `console.warn()` diagnostic logging
@@ -1055,7 +1055,7 @@ When OpenClaw gateway starts, the SideQuests memory plugin currently only pings 
 
 **Validation:** 678 passed, 28 skipped, 0 failures
 **Commit:** `d86c2584`
-**Files:** `extensions/sidequests-brain/src/index.ts`, `docs/openclaw-event-contract.md`, `tests/test_extension_ingestion_contract.py`
+**Files:** `extensions/hippocampy/src/index.ts`, `docs/openclaw-event-contract.md`, `tests/test_extension_ingestion_contract.py`
 
 ---
 
@@ -1079,7 +1079,7 @@ The extension uses `api.on("llm_input")`, `api.on("llm_output")`, and `api.on("b
 
 **Outcome:** Ingestion becomes contract-tested instead of assumption-based, unblocking B29 with high confidence.
 
-**Files:** `extensions/sidequests-brain/src/index.ts`
+**Files:** `extensions/hippocampy/src/index.ts`
 
 ---
 
@@ -1135,7 +1135,7 @@ The core value proposition of SideQuests Brain as a memory system for OpenClaw a
 
 **Outcome:** Cross-session recall becomes a hard gate, not a best-effort behavior.
 
-**Files:** `extensions/sidequests-brain/src/index.ts` (hooks), `mcp_engine/tools.py` (current_truth), agent system prompt / SOUL.md
+**Files:** `extensions/hippocampy/src/index.ts` (hooks), `mcp_engine/tools.py` (current_truth), agent system prompt / SOUL.md
 
 ---
 

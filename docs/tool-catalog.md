@@ -1,8 +1,8 @@
-# SideQuests Brain — Tool Catalog
+# HippoCampy — Tool Catalog
 
 > **Version:** March 29, 2026 | **Source of truth:** `mcp_engine/tool_schemas.py` + `mcp_engine/tools/__init__.py`
 > 
-> This catalog documents every tool available in SideQuests Brain, both active (callable by agents)
+> This catalog documents every tool available in HippoCampy, both active (callable by agents)
 > and passive (internal processing). Use this for: integration testing, agent training, adapter validation.
 
 ---
@@ -127,7 +127,7 @@ These processes run inside the Brain Daemon without explicit tool calls.
 
 ### `memory_decision` — Recall Policy Helper (B235)
 
-**Purpose:** Recommend whether and how to recall SideQuests memory for the current user prompt.
+**Purpose:** Recommend whether and how to recall Campy memory for the current user prompt.
 
 **When to call:** When the agent is unsure whether memory is needed. This tool is cheap and deterministic; it does not retrieve memory in v1.
 
@@ -154,7 +154,7 @@ These processes run inside the Brain Daemon without explicit tool calls.
 }
 ```
 
-**Policy source:** `skills/sidequests-memory/SKILL.md`.
+**Policy source:** `skills/campy-memory/SKILL.md`.
 
 **Integration test cases:**
 - T1: Empty query returns error
@@ -353,7 +353,7 @@ These processes run inside the Brain Daemon without explicit tool calls.
 ```json
 {
   "session_id": "uuid",
-  "quest_name": "SideQuests Brain",
+  "quest_name": "HippoCampy",
   "quest_id": "uuid"
 }
 ```

@@ -34,6 +34,7 @@ class TestWheelDistribution:
         """Verify wheel excludes runtime state and generated artifacts."""
         blocked_tokens = [
             ".sidequests",
+            ".campy",
             "brain.db",
             "brain.sock",
             "submission_results",
@@ -97,6 +98,7 @@ class TestSdistDistribution:
         """Verify sdist excludes runtime state and generated artifacts."""
         blocked_tokens = [
             ".sidequests",
+            ".campy",
             "brain.db",
             "brain.sock",
             "submission_results",
@@ -129,13 +131,16 @@ class TestSdistDistribution:
                     ), f"Required pattern '{pattern}' not found in sdist {sdist.name}"
 
     def test_sdist_excludes_runtime_state(self, dist_dir):
-        """Verify sdist excludes .sidequests runtime directory."""
+        """Verify sdist excludes runtime directories."""
         for sdist in dist_dir.glob("*.tar.gz"):
             with tarfile.open(sdist) as t:
                 names = t.getnames()
                 assert not any(
                     ".sidequests" in n for n in names
                 ), f".sidequests found in sdist {sdist.name}"
+                assert not any(
+                    ".campy" in n for n in names
+                ), f".campy found in sdist {sdist.name}"
 
 
 class TestDistributionResourceInclusion:
@@ -143,7 +148,7 @@ class TestDistributionResourceInclusion:
 
     def test_wheel_includes_config_template(self, dist_dir):
         """Verify wheel includes default config template if needed."""
-        # This test checks if sidequests.toml or config template is included
+        # This test checks if campy.toml or config template is included
         for whl in dist_dir.glob("*.whl"):
             with zipfile.ZipFile(whl) as z:
                 names = z.namelist()

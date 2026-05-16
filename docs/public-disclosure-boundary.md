@@ -1,4 +1,4 @@
-# Public Disclosure Boundary for SideQuests Release
+# Public Disclosure Boundary for Campy Release
 
 **Status:** Patent Pending (March 25, 2026) — Non-Provisional Deadline: March 25, 2027
 
@@ -88,7 +88,7 @@ This document classifies all artifact types and establishes explicit disclosure 
 | `sidequests/data/config/sidequests.toml` (default config template) | **public** | Installed-mode configuration template | Ship in wheel |
 | `.gitignore` | **public** | Repository practices | Publish |
 | `MANIFEST.in` (if needed) | **public** | Distribution rules | Publish |
-| Generated `~/.sidequests/` runtime state | **private** | User data; never in distribution | Exclude from all distributions |
+| Generated `~/.campy/` runtime state | **private** | User data; never in distribution | Exclude from all distributions |
 
 ### 8. Build & Packaging Artifacts
 
@@ -146,7 +146,7 @@ This document classifies all artifact types and establishes explicit disclosure 
 - Inventor/patent documents
 - Generated artifacts (logs, databases)
 - Personal paths, credentials
-- User runtime state (`~/.sidequests/`)
+- User runtime state (`~/.campy/`)
 - Pre-filing notes or sensitive strategy docs
 
 ### Public Repository (GitHub)
@@ -172,7 +172,7 @@ This document classifies all artifact types and establishes explicit disclosure 
 All public-facing materials must include:
 
 ```
-SideQuests includes patent-pending memory architecture.
+Campy includes patent-pending memory architecture.
 A U.S. provisional application was filed March 25, 2026 (Appl. #64/017,066).
 No patent has been granted.
 See docs/nonprovisional-strategy.md for filing facts and deadline.
@@ -185,7 +185,7 @@ See docs/nonprovisional-strategy.md for filing facts and deadline.
 **The following types of data must be removed before public release:**
 
 1. ✅ `/Users/djshelton` paths → remove or replace with `$USER` or `~`
-2. ✅ `/Desktop/GitProjects/sidequests-brain` → remove or replace with `$(git rev-parse --show-toplevel)`
+2. ✅ `/Desktop/GitProjects/hippocampy` → remove or replace with `$(git rev-parse --show-toplevel)`
 3. ✅ `brain.db` (Kuzu database) → exclude from distribution
 4. ✅ `brain.sock` (daemon socket) → exclude from distribution
 5. ✅ `submission_results_*.json` (ARC run outputs) → exclude from wheel; keep in repo for historical reference

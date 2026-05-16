@@ -1,7 +1,7 @@
-# SideQuest Brain Daemon — Project Context
+# HippoCampy Daemon — Project Context
 
 ## Project Overview
-**SideQuest Brain Daemon** is a standalone local AI memory system designed to provide persistent, cross-assistant context for software engineering tasks. It uses a **Gated Consolidation Loop**—a 9-step cognitive processing engine modeled on biomimetic heuristics—to transform passive AI memory into a self-correcting, auditable knowledge graph.
+**HippoCampy Daemon** is a standalone local AI memory system designed to provide persistent, cross-assistant context for software engineering tasks. It uses a **Gated Consolidation Loop**—a 9-step cognitive processing engine modeled on biomimetic heuristics—to transform passive AI memory into a self-correcting, auditable knowledge graph.
 
 The system is built around a **Main Quest / Side Quest** paradigm, anchoring knowledge to specific project contexts (git repositories and branches) and allowing for manual branching into tangents.
 
@@ -28,7 +28,7 @@ The daemon must be running for adapters and the web interface to function.
 ```bash
 python brain_daemon.py
 ```
-This starts the IPC server at `~/.sidequests/brain.sock` and the Kùzu database at `~/.sidequests/brain.db`.
+This starts the IPC server at `~/.campy/brain.sock` and the Kùzu database at `~/.campy/brain.db`.
 
 ### 3. Running the Memory Control Panel (Web UI)
 The web interface allows for graph visualization and memory management.
@@ -66,18 +66,18 @@ pytest
 ### Documentation
 - **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md):** Canonical architecture reference — Loop steps, graph schema, IP claims, MCP tool schemas, and all design details. **Read this for any architecture question.**
 - **[`docs/ecosystem-rules.md`](docs/ecosystem-rules.md):** Ecosystem layer boundaries, separation rules, and import constraints. **Read this before adding new code or changing boundaries.**
-- **[`skills/sidequests-memory/SKILL.md`](skills/sidequests-memory/SKILL.md):** Canonical memory-use policy. Do not recall on every turn; if unsure, call `memory_decision` before choosing a recall tool.
+- **[`skills/campy-memory/SKILL.md`](skills/campy-memory/SKILL.md):** Canonical memory-use policy. Do not recall on every turn; if unsure, call `memory_decision` before choosing a recall tool.
 - **CLAUDE.md:** Claude-specific workflow (delegation model).
 - **InvertorsDocs/:** Original Inventor's Notebook and seed examples for the ontology.
 
 ### Activity Indicator
-Use the SideQuests activity feed as the first-line indicator for live memory behavior:
+Use the Campy activity feed as the first-line indicator for live memory behavior:
 
 ```bash
-.venv/bin/sidequests activity --follow
+.venv/bin/campy activity --follow
 ```
 
-This tails `~/.sidequests/activity.log`, a compact operator feed for memory writes, recall calls, durable capture scans, and daemon lifecycle state. It redacts full prompt and response bodies while preserving useful metadata like source client, role, session, character counts, recall query previews, and success/error status. Use `~/.sidequests/daemon.log` only for debugging failures or stack traces.
+This tails `~/.campy/activity.log`, a compact operator feed for memory writes, recall calls, durable capture scans, and daemon lifecycle state. It redacts full prompt and response bodies while preserving useful metadata like source client, role, session, character counts, recall query previews, and success/error status. Use `~/.campy/daemon.log` only for debugging failures or stack traces.
 
 ## Key Directories
 - `mcp_engine/`: Core logic, including the 9-step consolidation loop.

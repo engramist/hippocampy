@@ -1,7 +1,7 @@
 """
 tests/test_adapter_claude_desktop.py — Dedicated tests for Claude Desktop adapter.
 
-Ensures it can be run as `python -m sidequests.adapters.claude_desktop`
+Ensures it can be run as `python -m campy.adapters.claude_desktop`
 and returns the correct serverInfo name.
 """
 
@@ -16,7 +16,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import sidequests.adapters.claude_desktop.adapter as adapter
+import campy.adapters.claude_desktop.adapter as adapter
 
 @pytest.fixture
 def patched(tmp_path, monkeypatch):
@@ -31,7 +31,7 @@ async def test_initialize_server_name(patched):
     response = await adapter.handle_mcp_request({
         "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
     })
-    assert response["result"]["serverInfo"]["name"] == "sidequests-brain-desktop"
+    assert response["result"]["serverInfo"]["name"] == "campy-desktop"
 
 @pytest.mark.asyncio
 async def test_tools_list(patched):

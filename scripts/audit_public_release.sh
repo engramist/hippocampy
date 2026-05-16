@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# SideQuests Public Release Audit Script
+# Campy Public Release Audit Script
 # Scans repository and distribution artifacts for private data, secrets, and unintended content
 # Usage: bash scripts/audit_public_release.sh [--release]
 
@@ -9,7 +9,7 @@ RELEASE_MODE="${1:-}"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-echo "=== SideQuests Public Release Audit ==="
+echo "=== Campy Public Release Audit ==="
 echo "Repository: $REPO_ROOT"
 echo "Release Mode: $RELEASE_MODE"
 echo ""
@@ -76,6 +76,7 @@ echo "Step 3: Checking for generated artifacts..."
 echo ""
 
 GENERATED_ARTIFACTS=(
+    ".campy"
     ".sidequests"
     "brain.db"
     "brain.sock"
@@ -100,7 +101,7 @@ if [ -d "$REPO_ROOT/dist" ]; then
         if [ -f "$whl" ]; then
             echo "Checking wheel: $(basename "$whl")"
             # Check if sensitive paths are in wheel
-            if python3 -c "import zipfile; z=zipfile.ZipFile('$whl'); names='\\n'.join(z.namelist()); print('FOUND' if any(s in names for s in ['.sidequests', 'brain.db', 'submission_results', 'agent_execution_trace', 'master_timeline']) else 'ok')" 2>/dev/null | grep -q "FOUND"; then
+            if python3 -c "import zipfile; z=zipfile.ZipFile('$whl'); names='\\n'.join(z.namelist()); print('FOUND' if any(s in names for s in ['.campy', '.sidequests', 'brain.db', 'submission_results', 'agent_execution_trace', 'master_timeline']) else 'ok')" 2>/dev/null | grep -q "FOUND"; then
                 echo "WARNING: Potentially sensitive content in wheel"
                 FINDINGS_BLOCKED=$((FINDINGS_BLOCKED + 1))
             else
@@ -112,7 +113,7 @@ if [ -d "$REPO_ROOT/dist" ]; then
     for sdist in "$REPO_ROOT"/dist/*.tar.gz; do
         if [ -f "$sdist" ]; then
             echo "Checking sdist: $(basename "$sdist")"
-            if python3 -c "import tarfile; t=tarfile.open('$sdist'); names='\\n'.join(t.getnames()); print('FOUND' if any(s in names for s in ['.sidequests', 'brain.db', 'submission_results', 'agent_execution_trace', 'master_timeline']) else 'ok')" 2>/dev/null | grep -q "FOUND"; then
+            if python3 -c "import tarfile; t=tarfile.open('$sdist'); names='\\n'.join(t.getnames()); print('FOUND' if any(s in names for s in ['.campy', '.sidequests', 'brain.db', 'submission_results', 'agent_execution_trace', 'master_timeline']) else 'ok')" 2>/dev/null | grep -q "FOUND"; then
                 echo "WARNING: Potentially sensitive content in sdist"
                 FINDINGS_BLOCKED=$((FINDINGS_BLOCKED + 1))
             else

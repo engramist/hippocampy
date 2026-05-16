@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# SideQuests Private Bootstrap Installer
-# Sets up SideQuests from a source checkout on macOS
+# Campy Private Bootstrap Installer
+# Sets up Campy from a source checkout on macOS
 # Usage: bash scripts/install.sh
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-echo "=== SideQuests Private Source Bootstrap Installer ==="
+echo "=== Campy Private Source Bootstrap Installer ==="
 echo "Repository: $REPO_ROOT"
 echo ""
 
@@ -87,14 +87,14 @@ echo "  ok pip upgraded"
 
 # Step 6: Install package in editable mode
 echo ""
-echo "Step 6: Installing sidequests-brain in editable mode..."
+echo "Step 6: Installing hippocampy in editable mode..."
 cd "$REPO_ROOT"
 $VENV_PIP install -e . > /dev/null 2>&1
 echo "  ok Package installed"
 
 # Step 7: Run setup
 echo ""
-echo "Step 7: Running sidequests setup..."
+echo "Step 7: Running campy setup..."
 if $VENV_PYTHON -m sidequests.cli.main setup 2>&1 | head -20; then
     echo "  ok Setup completed"
 else
@@ -103,7 +103,7 @@ fi
 
 # Step 8: Run doctor
 echo ""
-echo "Step 8: Running sidequests doctor..."
+echo "Step 8: Running campy doctor..."
 $VENV_PYTHON -m sidequests.cli.main doctor --lines 10 || true
 
 # Step 9: Print next steps
@@ -115,13 +115,13 @@ echo "  1. Activate the venv:"
 echo "     source .venv/bin/activate"
 echo ""
 echo "  2. Check status:"
-echo "     sidequests status"
+echo "     campy status"
 echo ""
 echo "  3. View live activity:"
-echo "     sidequests activity --follow"
+echo "     campy activity --follow"
 echo ""
 echo "  4. Verify integration:"
-echo "     sidequests doctor"
+echo "     campy doctor"
 echo ""
 echo "To reinstall/repair, run:"
 echo "  bash scripts/install.sh"

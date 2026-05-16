@@ -1,14 +1,14 @@
-# SideQuests Brain Plugin
+# HippoCampy Plugin
 
 AI memory that learns from every conversation. Automatically captures decisions, constraints, and plans — then recalls them when you need them.
 
 ## Prerequisites
 
-The SideQuests Brain Daemon must be running. Install it first:
+The HippoCampy Daemon must be running. Install it first:
 
 ```bash
-pip install sidequests-brain
-sidequests install
+pip install hippocampy
+campy install
 ```
 
 This sets up the memory engine, starts the background daemon, and configures the SSE endpoint at `http://127.0.0.1:7799/sse`.
@@ -22,7 +22,7 @@ This sets up the memory engine, starts the background daemon, and configures the
 
 ### Option B: Claude CLI
 ```bash
-claude plugins add /path/to/sidequests-brain/plugin
+claude plugins add /path/to/hippocampy/plugin
 ```
 
 ## What You Get
@@ -48,5 +48,5 @@ claude plugins add /path/to/sidequests-brain/plugin
 
 ## Verify
 
-After installing, ask Claude: "What tools do you have from SideQuests?"
-Claude should list the tools above. If not, ensure the Brain Daemon is running: `sidequests status`
+After installing, ask Claude: "What tools do you have from Campy?"
+Claude should list the tools above. If not, ensure the Brain Daemon is running: `campy status`

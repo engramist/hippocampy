@@ -1,7 +1,7 @@
 """
 adapters/claude_code/setup.py — Claude Code Registration
 
-Called by `sidequests setup` to register the adapter with Claude Code:
+Called by `campy setup` to register the adapter with Claude Code:
   1. Writes .mcp.json in the project root (registers MCP server)
   2. Adds UserPromptSubmit hook to ~/.claude/settings.json
 """
@@ -40,7 +40,7 @@ def _write_mcp_json(project_root: Path) -> None:
     """Write .mcp.json to register the MCP STDIO server with Claude Code."""
     mcp_config = {
         "mcpServers": {
-            "sidequests-brain": {
+            "campy": {
                 "command": _python_executable(),
                 "args": [str(ADAPTER_FILE)],
             }
