@@ -221,9 +221,9 @@ class Observability:
 def canonical_span_name(operation: str) -> str:
     if "." in operation:
         return operation
-    if operation.startswith("sidequests."):
+    if operation.startswith("campy."):
         return operation
-    return f"sidequests.{operation}"
+    return f"campy.{operation}"
 
 
 def ensure_contract_fields(

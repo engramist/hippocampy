@@ -11,7 +11,7 @@ Interface:
     # B16: Per-step routing
     client = create_llm_client_for_step(config, step_name)
 
-Supported providers (configured in sidequests.toml [llm] section):
+Supported providers (configured in campy.toml [llm] section):
     ollama      → local Ollama server (OpenAI-compatible API)
     openai      → OpenAI cloud API
     anthropic   → Anthropic cloud API (via openai-compatible shim)
@@ -22,10 +22,10 @@ callers must handle None gracefully (graceful degradation to System 1 only).
 
 B16 — Task-Based Model Routing:
     Per-step LLM overrides use a merged config strategy.
-    Presence of [llm.step_name] in sidequests.toml overrides provider/model/base_url/api_key
+    Presence of [llm.step_name] in campy.toml overrides provider/model/base_url/api_key
     for that step while inheriting any keys not explicitly set in the override block.
 
-    Step name keys (matching sidequests.toml override block names):
+    Step name keys (matching campy.toml override block names):
         step2_gist          — System 1/2 classification (tractable for small models)
         step3b_relations    — Relation extraction with type context (tractable for small models)
         step6_arbitration   — Contradiction arbitration (benefits most from frontier models)

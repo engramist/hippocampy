@@ -1,6 +1,6 @@
-# SideQuests Brain — Automatic Memory
+# HippoCampy — Automatic Memory
 
-SideQuests Brain is always listening to your conversations and automatically capturing important information:
+HippoCampy is always listening to your conversations and automatically capturing important information:
 
 - **Decisions** — choices you've made ("we chose PostgreSQL over MySQL")
 - **Constraints** — rules and requirements ("API responses must be under 200ms")

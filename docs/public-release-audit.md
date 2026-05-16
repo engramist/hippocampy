@@ -39,7 +39,7 @@ This manifest tracks:
 
 | Artifact | Status | Location | Decision | Action | Owner |
 |----------|--------|----------|----------|--------|-------|
-| `brain.db` | CLEARED | Generated at runtime under `~/.sidequests/` | EXCLUDE from distributions | Update `.gitignore` if needed | DShelton |
+| `brain.db` | CLEARED | Generated at runtime under `~/.campy/` | EXCLUDE from distributions | Update `.gitignore` if needed | DShelton |
 | `brain.sock` | CLEARED | Runtime socket | EXCLUDE from distributions | Verify not committed | DShelton |
 | `submission_results_*.json` | CLEARED FROM DIST | Repo root historical artifacts | EXCLUDE from wheel/sdist; archive old runs separately | Verified by audit script | DShelton |
 | `agent_execution_trace.json` | CLEARED FROM DIST | Repo root historical artifact | EXCLUDE from wheel/sdist; archive separately | Verified by audit script | DShelton |

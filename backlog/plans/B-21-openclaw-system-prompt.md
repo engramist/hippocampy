@@ -18,13 +18,13 @@ Implement system prompt injection and tool integration for OpenClaw sessions. En
 - Tool hints guide agent to use current_truth for memory-first responses
 
 ### Integration
-- `extensions/sidequests-brain/src/index.ts` — system prompt construction
+- `extensions/hippocampy/src/index.ts` — system prompt construction
 - `adapters/openclaw_gateway.py` — prompt building logic
 - Verify: agent uses tools naturally without manual prompting
 
 ## Files to Create/Modify
 
-- `extensions/sidequests-brain/src/index.ts` — enhance system prompt
+- `extensions/hippocampy/src/index.ts` — enhance system prompt
 - `adapters/openclaw_gateway.py` — LLM workflow integration
 - `tests/test_openclaw_system_prompt.py` — verify prompt injection
 

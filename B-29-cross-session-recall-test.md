@@ -155,7 +155,7 @@ branch scope would return 0 results. This ensures the recall actually fires glob
 ```python
 def test_auto_recall_scope_is_both():
     from pathlib import Path
-    src = Path("extensions/sidequests-brain/src/index.ts").read_text()
+    src = Path("extensions/hippocampy/src/index.ts").read_text()
     
     # Find the before_agent_start handler block
     before_agent_idx = src.index('OPENCLAW_EVENT_CONTRACT.preAgentEvent')

@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 def test_load_config_explicit_path(tmp_path):
     """Explicit path is used when provided."""
     from mcp_engine.config import load_config
-    cfg_file = tmp_path / "sidequests.toml"
+    cfg_file = tmp_path / "campy.toml"
     cfg_file.write_text('[llm]\nprovider = "ollama"\nmodel = "llama3.1:8b"\n')
     config = load_config(str(cfg_file))
     assert config["llm"]["provider"] == "ollama"
@@ -25,7 +25,7 @@ def test_load_config_explicit_path(tmp_path):
 def test_load_config_sets_config_path_key(tmp_path):
     """_config_path key is always set to the resolved file path."""
     from mcp_engine.config import load_config
-    cfg_file = tmp_path / "sidequests.toml"
+    cfg_file = tmp_path / "campy.toml"
     cfg_file.write_text('[embeddings]\nmodel = "all-MiniLM-L6-v2"\n')
     config = load_config(str(cfg_file))
     assert "_config_path" in config
@@ -35,7 +35,7 @@ def test_load_config_sets_config_path_key(tmp_path):
 def test_load_config_parses_nested_sections(tmp_path):
     """Multi-section TOML is fully parsed."""
     from mcp_engine.config import load_config
-    cfg_file = tmp_path / "sidequests.toml"
+    cfg_file = tmp_path / "campy.toml"
     cfg_file.write_text(
         '[llm]\nprovider = "openai"\nmodel = "gpt-4o"\n\n'
         '[embeddings]\nmodel = "sentence-transformers/all-MiniLM-L6-v2"\n\n'
@@ -53,24 +53,46 @@ def test_load_config_raises_when_not_found(tmp_path, monkeypatch):
     from mcp_engine.config import load_config
     # Point cwd to empty dir; provide a nonexistent explicit path
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(FileNotFoundError, match="sidequests.toml not found"):
+    with pytest.raises(FileNotFoundError, match="config not found"):
         load_config(str(tmp_path / "nonexistent.toml"))
 
 
 def test_load_config_cwd_fallback(tmp_path, monkeypatch):
-    """Falls back to sidequests.toml in cwd when no explicit path given."""
+    """Falls back to campy.toml in cwd when no explicit path given."""
     from mcp_engine.config import load_config
-    cfg_file = tmp_path / "sidequests.toml"
+    cfg_file = tmp_path / "campy.toml"
     cfg_file.write_text('[llm]\nprovider = "ollama"\n')
     monkeypatch.chdir(tmp_path)
     config = load_config()   # no explicit path — should find cwd version
     assert config["llm"]["provider"] == "ollama"
 
 
-def test_load_config_explicit_path_takes_priority(tmp_path, monkeypatch):
-    """Explicit path wins over cwd sidequests.toml."""
+def test_load_config_campy_wins_over_sidequests(tmp_path, monkeypatch):
+    """campy.toml takes priority over sidequests.toml in cwd."""
     from mcp_engine.config import load_config
-    cwd_cfg = tmp_path / "sidequests.toml"
+    campy_cfg = tmp_path / "campy.toml"
+    campy_cfg.write_text('[llm]\nprovider = "campy_win"\n')
+    sidequests_cfg = tmp_path / "sidequests.toml"
+    sidequests_cfg.write_text('[llm]\nprovider = "sidequests_lose"\n')
+    monkeypatch.chdir(tmp_path)
+    config = load_config()
+    assert config["llm"]["provider"] == "campy_win"
+    assert config["_config_path"] == str(campy_cfg)
+
+def test_load_config_sidequests_fallback(tmp_path, monkeypatch):
+    """sidequests.toml is used if campy.toml is missing."""
+    from mcp_engine.config import load_config
+    sidequests_cfg = tmp_path / "sidequests.toml"
+    sidequests_cfg.write_text('[llm]\nprovider = "sidequests_fallback"\n')
+    monkeypatch.chdir(tmp_path)
+    config = load_config()
+    assert config["llm"]["provider"] == "sidequests_fallback"
+    assert config["_config_path"] == str(sidequests_cfg)
+
+def test_load_config_explicit_path_takes_priority(tmp_path, monkeypatch):
+    """Explicit path wins over cwd campy.toml."""
+    from mcp_engine.config import load_config
+    cwd_cfg = tmp_path / "campy.toml"
     cwd_cfg.write_text('[llm]\nprovider = "ollama"\n')
 
     subdir = tmp_path / "sub"

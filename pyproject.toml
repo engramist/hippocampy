@@ -3,12 +3,12 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sidequests-brain"
+name = "hippocampy"
 version = "0.1.0-rc1"
 description = "Local AI memory system with gated consolidation loop and graph-native Kùzu database"
 readme = "README.md"
 license = "Apache-2.0"
-authors = [{ name = "SideQuests", email = "sidequests@example.com" }]
+authors = [{ name = "HippoCampy", email = "hello@hippocampy.dev" }]
 keywords = ["ai", "memory", "graph-database", "mcp"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -49,6 +49,8 @@ observability = [
 ]
 
 [project.scripts]
+campy = "campy.cli.main:app"
+campy-daemon = "campy.daemon:main"
 sidequests = "sidequests.cli.main:app"
 sidequests-daemon = "sidequests.daemon:main"
 
@@ -58,8 +60,8 @@ Issues = "https://github.com/djs54/sidequests-brain/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["sidequests*", "mcp_engine*", "adapters*", "web*"]
+include = ["sidequests*", "campy*", "mcp_engine*", "adapters*", "web*"]
 
 [tool.setuptools.package-data]
-"sidequests.data" = ["*.md", "sidequests-memory/*.md", "config/*.toml"]
-"*" = ["sidequests.toml"]
+"campy.data" = ["*.md", "campy-memory/*.md", "campy-memory/*.py", "sidequests-memory/*.md", "sidequests-memory/*.py", "config/*.toml", "config/*.py"]
+"*" = ["campy.toml", "sidequests.toml"]

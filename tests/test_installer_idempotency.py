@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from sidequests.cli.register import (
+from campy.cli.register import (
     _strip_codex_adapter_path_tables,
     _upsert_codex_mcp_block,
     register_vscode,
@@ -13,7 +13,7 @@ def test_codex_mcp_upsert_is_idempotent():
     once = _upsert_codex_mcp_block(content, "/venv/bin/python", "/repo/adapters/codex/adapter.py")
     twice = _upsert_codex_mcp_block(once, "/venv/bin/python", "/repo/adapters/codex/adapter.py")
 
-    assert twice.count("[mcp_servers.sidequests]") == 1
+    assert twice.count("[mcp_servers.campy]") == 1
     assert twice == once
 
 
@@ -41,5 +41,5 @@ def test_vscode_registration_is_idempotent(tmp_path):
     second = json.loads(config_path.read_text())
 
     assert second == first
-    assert list(second["servers"]).count("sidequests") == 1
+    assert list(second["servers"]).count("campy") == 1
 

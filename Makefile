@@ -1,4 +1,4 @@
-# SideQuests Brain Daemon — Makefile
+# HippoCampy Daemon — Makefile
 
 .PHONY: help install test mcpb clean
 
@@ -18,8 +18,8 @@ test-adapters: ## Run adapter tests only
 	python3 -m pytest tests/test_adapters.py -v
 
 mcpb: ## Build .mcpb bundle for Claude Desktop
-	@echo "Building sidequests-brain.mcpb..."
-	@cd $(CURDIR) && zip -r sidequests-brain.mcpb \
+	@echo "Building hippocampy.mcpb..."
+	@cd $(CURDIR) && zip -r hippocampy.mcpb \
 		mcpb/manifest.json \
 		mcpb/install.sh \
 		mcpb/uninstall.sh \
@@ -33,10 +33,10 @@ mcpb: ## Build .mcpb bundle for Claude Desktop
 		InvertorsDocs/GistSeedExamples.md \
 		-x '*.pyc' -x '*/__pycache__/*' -x '.git/*' -x 'tests/*' -x '*.db' \
 		-x '*.mcpb'
-	@echo "Built: sidequests-brain.mcpb"
-	@ls -lh sidequests-brain.mcpb
+	@echo "Built: hippocampy.mcpb"
+	@ls -lh hippocampy.mcpb
 
 clean: ## Remove build artifacts
-	rm -rf sidequests-brain.mcpb dist/ build/ *.egg-info
+	rm -rf hippocampy.mcpb dist/ build/ *.egg-info
 	find . -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
 	find . -name '*.pyc' -delete 2>/dev/null || true

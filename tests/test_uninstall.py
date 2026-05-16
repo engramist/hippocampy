@@ -30,8 +30,8 @@ from typer.testing import CliRunner
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sidequests.cli import uninstall as U
-from sidequests.cli.main import app as cli
+from campy.cli import uninstall as U
+from campy.cli.main import app as cli
 
 
 # ---------------------------------------------------------------------------
@@ -43,14 +43,14 @@ class TestRemoveMcpJsonEntry:
         cfg = tmp_path / "cfg.json"
         cfg.write_text(json.dumps({
             "mcpServers": {
-                "sidequests-brain": {"command": "python"},
+                "hippocampy": {"command": "python"},
                 "other-tool": {"command": "node"},
             }
         }))
         changed = U._remove_mcp_json_entry(cfg)
         assert changed
         data = json.loads(cfg.read_text())
-        assert "sidequests-brain" not in data["mcpServers"]
+        assert "hippocampy" not in data["mcpServers"]
         assert "other-tool" in data["mcpServers"]  # other entries preserved
 
     def test_noop_when_entry_absent(self, tmp_path):
@@ -78,13 +78,13 @@ class TestRemoveCodexTomlEntry:
     def test_removes_block(self, tmp_path):
         cfg = tmp_path / "config.toml"
         cfg.write_text(
-            "[other]\nkey = \"val\"\n\n[mcp_servers.sidequests]\n"
+            "[other]\nkey = \"val\"\n\n[mcp_servers.campy]\n"
             "command = \"python3\"\nargs = [\"/path/adapter.py\"]\n"
         )
         changed = U._remove_codex_toml_entry(cfg)
         assert changed
         text = cfg.read_text()
-        assert "mcp_servers.sidequests" not in text
+        assert "mcp_servers.campy" not in text
         assert "[other]" in text  # other sections preserved
 
     def test_noop_when_block_absent(self, tmp_path):
@@ -139,7 +139,7 @@ class TestDeregisterOpenclaw:
     def test_reverses_config_patches(self, tmp_path, monkeypatch):
         config_path = tmp_path / "openclaw.json"
         config_path.write_text(json.dumps({
-            "plugins": {"allow": ["sidequests-brain", "other-plugin"]},
+            "plugins": {"allow": ["hippocampy", "other-plugin"]},
             "tools": {
                 "sandbox": {
                     "tools": {
@@ -162,8 +162,8 @@ class TestDeregisterOpenclaw:
         assert result.done
 
         data = json.loads(config_path.read_text())
-        # sidequests-brain removed from plugins.allow
-        assert "sidequests-brain" not in data["plugins"]["allow"]
+        # hippocampy removed from plugins.allow
+        assert "hippocampy" not in data["plugins"]["allow"]
         # other plugin preserved
         assert "other-plugin" in data["plugins"]["allow"]
         # memory tools removed from sandbox allow
@@ -293,7 +293,7 @@ class TestUninstallCli:
         def fake_run_uninstall(**kwargs):
             called_with.update(kwargs)
 
-        monkeypatch.setattr("sidequests.cli.uninstall.run_uninstall", fake_run_uninstall)
+        monkeypatch.setattr("campy.cli.uninstall.run_uninstall", fake_run_uninstall)
 
         runner = self._make_runner()
         result = runner.invoke(cli, ["uninstall", "--yes"])
@@ -307,7 +307,7 @@ class TestUninstallCli:
         def fake_run_uninstall(**kwargs):
             called_with.update(kwargs)
 
-        monkeypatch.setattr("sidequests.cli.uninstall.run_uninstall", fake_run_uninstall)
+        monkeypatch.setattr("campy.cli.uninstall.run_uninstall", fake_run_uninstall)
 
         runner = self._make_runner()
         result = runner.invoke(cli, ["uninstall", "--yes", "--delete-data"])
@@ -320,7 +320,7 @@ class TestUninstallCli:
         def fake_run_uninstall(**kwargs):
             called_with.update(kwargs)
 
-        monkeypatch.setattr("sidequests.cli.uninstall.run_uninstall", fake_run_uninstall)
+        monkeypatch.setattr("campy.cli.uninstall.run_uninstall", fake_run_uninstall)
 
         runner = self._make_runner()
         result = runner.invoke(cli, [

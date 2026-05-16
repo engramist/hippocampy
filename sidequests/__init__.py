@@ -1,2 +1,5 @@
-"""SideQuests Brain Daemon — Persistent AI memory."""
-__version__ = "0.1.0"
+"""SideQuests Compatibility Shim.
+
+This package forwards to the new `campy` implementation.
+"""
+from campy import *

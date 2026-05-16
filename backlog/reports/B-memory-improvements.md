@@ -17,7 +17,7 @@ The Brain Daemon is functional — ingestion, recall, analogies, and open loops 
 ### 1. 🔴 Brain Daemon Uses Deprecated SSE Transport — Upgrade to Streamable HTTP
 
 **Severity:** CRITICAL — extension can't read tool results, entire protocol is outdated  
-**Files:** `web/server.py`, `extensions/sidequests-brain/src/index.ts`
+**Files:** `web/server.py`, `extensions/hippocampy/src/index.ts`
 
 The Brain Daemon uses the **deprecated MCP 2024-11-05 SSE transport**:
 1. Client GETs `/sse` → receives `connection_id`
@@ -46,7 +46,7 @@ async def mcp_post(request: Request):
     return JSONResponse(result)  # Direct response, no SSE
 ```
 
-**Fix — `extensions/sidequests-brain/src/index.ts` (BrainClient):**
+**Fix — `extensions/hippocampy/src/index.ts` (BrainClient):**
 ```typescript
 async callTool(toolName: string, args: Record<string, unknown>): Promise<unknown> {
     const resp = await fetch(`${this.baseUrl}/mcp`, {

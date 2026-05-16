@@ -5,12 +5,12 @@ Implements the MCP STDIO server for ChatGPT Desktop.
 Forwards tool calls to the Brain Daemon via HTTP/SSE endpoint (B7).
 
 Registration:
-  sidequests setup --target chatgpt-desktop
+  campy setup --target chatgpt-desktop
   (registers as a STDIO server in ~/.chatgpt/config.json if supported,
    or provides the SSE URL for the ChatGPT 'Connector' model)
 
 Acceptance Criteria (B7):
-  1. python -m sidequests.adapters.chatgpt_desktop --stdio connects to SSE
+  1. python -m campy.adapters.chatgpt_desktop --stdio connects to SSE
   2. All 5+ MCP tools surfaced
   3. notify_turn, current_truth work end-to-end
 """
@@ -23,12 +23,13 @@ import sys
 from pathlib import Path
 from datetime import datetime, timezone
 from mcp_engine.tool_schemas import TOOLS
-from sidequests.brain_transport import call_brain
+from campy.brain_transport import call_brain
+from campy.paths import get_daemon_socket_path, runtime_dir
 
 _ALL_TOOL_NAMES = frozenset(t["name"] for t in TOOLS)
 
 
-OFFLINE_QUEUE = Path.home() / ".sidequests" / "offline_queue.jsonl"
+OFFLINE_QUEUE = runtime_dir() / "offline_queue.jsonl"
 
 # ---------------------------------------------------------------------------
 # Git context detection
@@ -164,7 +165,7 @@ async def handle_mcp_request(request: dict) -> dict:
         return ok({
             "protocolVersion": client_version,
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "sidequests-brain-chatgpt", "version": "0.1.0"},
+            "serverInfo": {"name": "campy-chatgpt", "version": "0.1.0"},
         })
 
     if method == "notifications/initialized":
@@ -177,10 +178,10 @@ async def handle_mcp_request(request: dict) -> dict:
         return ok({"resources": []})
 
     if method == "prompts/list":
-        return ok({"prompts": [{"name": "sidequests-system", "description": "SideQuests Brain instructions"}]})
+        return ok({"prompts": [{"name": "sidequests-system", "description": "HippoCampy instructions"}]})
 
     if method == "prompts/get":
-        return ok({"description": "SideQuests Brain instructions",
+        return ok({"description": "HippoCampy instructions",
                    "messages": [{"role": "user", "content": {"type": "text", "text": SYSTEM_PROMPT_FRAGMENT}}]})
 
     if method == "tools/call":

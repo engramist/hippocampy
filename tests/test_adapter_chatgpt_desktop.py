@@ -1,7 +1,7 @@
 """
 tests/test_adapter_chatgpt_desktop.py — Dedicated tests for ChatGPT Desktop adapter.
 
-Ensures it can be run as `python -m sidequests.adapters.chatgpt_desktop`
+Ensures it can be run as `python -m campy.adapters.chatgpt_desktop`
 and returns the correct serverInfo name.
 """
 
@@ -31,7 +31,7 @@ async def test_initialize_server_name(patched):
     response = await adapter.handle_mcp_request({
         "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
     })
-    assert response["result"]["serverInfo"]["name"] == "sidequests-brain-chatgpt"
+    assert response["result"]["serverInfo"]["name"] == "campy-chatgpt"
 
 @pytest.mark.asyncio
 async def test_tools_list(patched):

@@ -1,7 +1,7 @@
 {
-  "name": "sidequests-brain",
+  "name": "hippocampy",
   "version": "0.1.0",
-  "description": "SideQuests Brain memory plugin for OpenClaw",
+  "description": "HippoCampy memory plugin for OpenClaw",
   "type": "module",
   "main": "src/index.ts",
   "openclaw": {
@@ -9,7 +9,7 @@
       "./src/index.ts"
     ],
     "install": {
-      "localPath": "extensions/sidequests-brain",
+      "localPath": "extensions/hippocampy",
       "defaultChoice": "local"
     }
   },

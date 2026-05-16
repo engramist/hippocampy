@@ -8,7 +8,7 @@ Zero LLM involvement — truly passive for user turns.
 Claude Code hook payload (stdin, JSON):
   {"session_id": "...", "prompt": "user message text", ...}
 
-Registered in ~/.claude/settings.json by `sidequests setup`:
+Registered in ~/.claude/settings.json by `campy setup`:
   "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command",
     "command": "python /path/to/hook_user_turn.py"}]}]
 """
@@ -18,9 +18,10 @@ import json
 import sys
 import uuid
 from pathlib import Path
-from sidequests.brain_transport import call_brain
+from campy.brain_transport import call_brain
+from campy.paths import get_daemon_socket_path, runtime_dir
 
-OFFLINE_QUEUE = Path.home() / ".sidequests" / "offline_queue.jsonl"
+OFFLINE_QUEUE = runtime_dir() / "offline_queue.jsonl"
 
 
 def main():

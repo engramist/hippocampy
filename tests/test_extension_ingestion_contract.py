@@ -3,7 +3,7 @@ from pathlib import Path
 EXTENSION_SRC = (
     Path(__file__).parent.parent
     / "extensions"
-    / "sidequests-brain"
+    / "hippocampy"
     / "src"
     / "index.ts"
 )

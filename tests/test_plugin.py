@@ -31,7 +31,7 @@ def test_plugin_manifest_valid_json():
     assert "name" in data
     assert "version" in data
     assert "description" in data
-    assert data["name"] == "sidequests-brain"
+    assert data["name"] == "hippocampy"
 
 
 def test_plugin_manifest_has_author():
@@ -49,12 +49,12 @@ def test_mcp_json_exists():
 
 
 def test_mcp_json_valid():
-    """.mcp.json is valid JSON with sidequests-brain server."""
+    """.mcp.json is valid JSON with hippocampy server."""
     mcp = PLUGIN_DIR / ".mcp.json"
     data = json.loads(mcp.read_text())
     assert "mcpServers" in data
-    assert "sidequests-brain" in data["mcpServers"]
-    server = data["mcpServers"]["sidequests-brain"]
+    assert "hippocampy" in data["mcpServers"]
+    server = data["mcpServers"]["hippocampy"]
     assert "url" in server
     assert "127.0.0.1" in server["url"]
     assert "7799" in server["url"]
@@ -64,7 +64,7 @@ def test_mcp_json_uses_sse_endpoint():
     """.mcp.json points to the SSE endpoint."""
     mcp = PLUGIN_DIR / ".mcp.json"
     data = json.loads(mcp.read_text())
-    url = data["mcpServers"]["sidequests-brain"]["url"]
+    url = data["mcpServers"]["hippocampy"]["url"]
     assert url.endswith("/sse"), f"Expected SSE endpoint, got {url}"
 
 
@@ -139,4 +139,4 @@ def test_readme_mentions_install():
     """README has installation instructions."""
     content = (PLUGIN_DIR / "README.md").read_text()
     assert "install" in content.lower()
-    assert "sidequests" in content.lower()
+    assert "campy" in content.lower() or "sidequests" in content.lower()

@@ -38,7 +38,7 @@ except ModuleNotFoundError as exc:
     if exc.name != "mcp_engine.loop.step4_pattern":
         raise
     # Some benchmark consumers provide a minimal mcp_engine.loop shim while
-    # importing this module from sidequests-brain. Keep the tool surface
+    # importing this module from campy-brain. Keep the tool surface
     # importable with local equivalents of the passive plan/outcome helpers.
     _PLAN_SIGNALS = [
         r"(?:^|\n)\s*(?:step\s+)?\d+[\.\):]",

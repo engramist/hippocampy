@@ -8,7 +8,7 @@ from mcp_engine.tools import TOOL_HANDLERS
 
 def test_openclaw_aliases_resolve_to_handlers():
     """Verify all tools registered in OpenClaw index.ts map to valid TOOL_HANDLERS."""
-    index_path = Path("extensions/sidequests-brain/src/index.ts")
+    index_path = Path("extensions/hippocampy/src/index.ts")
     if not index_path.exists():
         return # Skip if extension not present in this env
 

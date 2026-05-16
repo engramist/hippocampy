@@ -68,11 +68,11 @@ def test_adapter_tool_names_match_handlers():
 
 # Expected serverInfo name per adapter
 EXPECTED_SERVER_NAMES = {
-    "claude_code":    "sidequests-brain",
-    "codex":          "sidequests-brain-codex",
-    "claude_desktop": "sidequests-brain-desktop",
-    "gemini_cli":     "sidequests-brain-gemini",
-    "chatgpt_desktop": "sidequests-brain-chatgpt",
+    "claude_code":    "campy",
+    "codex":          "campy-codex",
+    "claude_desktop": "campy-desktop",
+    "gemini_cli":     "campy-gemini",
+    "chatgpt_desktop": "campy-chatgpt",
 }
 
 

@@ -349,7 +349,7 @@ echo "Brain Daemon stopped. Data preserved at ~/.sidequests/"
 .PHONY: mcpb
 mcpb: ## Build .mcpb bundle for Claude Desktop
 	@echo "Building .mcpb bundle..."
-	cd $(CURDIR) && zip -r sidequests-brain.mcpb \
+	cd $(CURDIR) && zip -r hippocampy.mcpb \
 		mcpb/manifest.json \
 		mcpb/install.sh \
 		mcpb/uninstall.sh \
@@ -362,7 +362,7 @@ mcpb: ## Build .mcpb bundle for Claude Desktop
 		sidequests.toml \
 		InvertorsDocs/GistSeedExamples.md \
 		-x '*.pyc' '__pycache__/*' '.git/*' 'tests/*' '*.db'
-	@echo "Built: sidequests-brain.mcpb"
+	@echo "Built: hippocampy.mcpb"
 ```
 
 ### Notes
@@ -371,7 +371,7 @@ mcpb: ## Build .mcpb bundle for Claude Desktop
 - If the `.mcpb` spec requires a `smithery.yaml` or different manifest format, adapt accordingly.
 
 ### Acceptance Criteria
-- [ ] `make mcpb` produces `sidequests-brain.mcpb` (valid ZIP)
+- [ ] `make mcpb` produces `hippocampy.mcpb` (valid ZIP)
 - [ ] `manifest.json` passes `mcpb validate` if available
 - [ ] `install.sh` starts daemon and adapter smoke test passes
 - [ ] `uninstall.sh` stops daemon cleanly

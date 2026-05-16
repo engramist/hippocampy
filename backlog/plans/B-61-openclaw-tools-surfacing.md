@@ -7,7 +7,7 @@ Ensure all MCP tools are automatically surfaced to OpenClaw agent sessions witho
 
 ## Technical Approach
 
-- Verify `extensions/sidequests-brain/src/index.ts` exposes all 5+ tools in manifest
+- Verify `extensions/hippocampy/src/index.ts` exposes all 5+ tools in manifest
 - Check that OpenClaw gateway properly registers tools with LLM
 - Automate tool registration in plugin init/activation
 
@@ -18,7 +18,7 @@ Ensure all MCP tools are automatically surfaced to OpenClaw agent sessions witho
 
 ## Files to Create/Modify
 
-- `extensions/sidequests-brain/src/index.ts` — verify all tool registrations
+- `extensions/hippocampy/src/index.ts` — verify all tool registrations
 - `tests/test_openclaw_tool_surfacing.py` — automated tool discovery test
 
 ## Acceptance Criteria

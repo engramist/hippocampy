@@ -1035,7 +1035,7 @@ Prompt fragment says "LAST action of every turn → notify_turn" but adapters ar
 
 ### R2-OC1. 31 Tool Aliases vs 17 Tool Handlers [MEDIUM]
 
-**File:** `extensions/sidequests-brain/src/index.ts`
+**File:** `extensions/hippocampy/src/index.ts`
 
 TypeScript extension registers ~31 tools (including aliases like `memory_recall` → `current_truth`). TOOL_HANDLERS only has 19 entries. Unmapped aliases will return errors from the Brain Daemon.
 
@@ -1045,7 +1045,7 @@ TypeScript extension registers ~31 tools (including aliases like `memory_recall`
 
 ### R2-OC2. No Periodic Health Check [MEDIUM]
 
-**File:** `extensions/sidequests-brain/src/index.ts`
+**File:** `extensions/hippocampy/src/index.ts`
 
 `registerService.start()` checks daemon health once at plugin load, never again. If daemon crashes mid-session, OpenClaw stays in stale offline state.
 

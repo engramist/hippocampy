@@ -19,6 +19,19 @@ Note: ARC-only backlog cards and ARC-only planning docs were relocated to the si
 | B233 | Non-Provisional Strategy and Public Disclosure Guardrails - DONE (2026-05-11) | P0 | complete | TBD | TBD | backlog/plans/B-233-non-provisional-strategy-and-public-disclosure-guardrails.md | backlog/B233.md |
 | B234 | Universal SideQuests Memory Usage Skill - DONE (2026-05-11) | P0 | complete | TBD | TBD | backlog/plans/B-234-universal-sidequests-memory-usage-skill.md | backlog/B234.md |
 | B235 | MCP Memory Decision Helper Tool - DONE (2026-05-11) | P0 | complete | TBD | TBD | backlog/plans/B-235-mcp-memory-decision-helper-tool.md | backlog/B235.md |
+| B236 | Public PyPI and pipx Install Path | P0 | ready | TBD | TBD | backlog/plans/B-236-public-pypi-pipx-install-path.md | backlog/B236.md |
+| B237 | Hosted One-Line Bootstrap Installer | P0 | ready | TBD | TBD | backlog/plans/B-237-hosted-one-line-bootstrap-installer.md | backlog/B237.md |
+| B238 | Clean-Machine One-Click Installer Validation Harness | P0 | ready | TBD | TBD | backlog/plans/B-238-clean-machine-one-click-validation-harness.md | backlog/B238.md |
+| B239 | Homebrew Tap and macOS Native Install Path | P1 | ready | TBD | TBD | backlog/plans/B-239-homebrew-tap-and-macos-native-install-path.md | backlog/B239.md |
+| B240 | One-Click Install Release Gate and User-Facing Docs | P0 | ready | TBD | TBD | backlog/plans/B-240-one-click-release-gate-and-user-facing-docs.md | backlog/B240.md |
+| B241 | Rename Product to HippoCampy and Add `campy` CLI - DONE (2026-05-15) | P0 | complete | TBD | TBD | backlog/plans/B-241-rename-product-to-hippocampy-campy.md | backlog/B241.md |
+| B242 | Add `campy` Python Import Namespace Shim | P0 | ready | TBD | TBD | backlog/plans/B-242-add-campy-python-import-namespace-shim.md | backlog/B242.md |
+| B243 | Move Implementation Package from `sidequests` to `campy` | P0 | ready | TBD | TBD | backlog/plans/B-243-move-implementation-package-to-campy.md | backlog/B243.md |
+| B244 | Switch MCP and Installer Module Paths to `campy.*` | P0 | ready | TBD | TBD | backlog/plans/B-244-switch-mcp-and-installer-module-paths-to-campy.md | backlog/B244.md |
+| B245 | Rename Config Namespace from `sidequests.toml` to `campy.toml` | P0 | ready | TBD | TBD | backlog/plans/B-245-rename-config-namespace-to-campy-toml.md | backlog/B245.md |
+| B246 | Make `campy-memory` the Only Primary Skill Namespace | P1 | ready | TBD | TBD | backlog/plans/B-246-make-campy-memory-primary-skill-namespace.md | backlog/B246.md |
+| B247 | Final Legacy Name Audit and Optional Folder Cleanup | P1 | ready | TBD | TBD | backlog/plans/B-247-final-legacy-name-audit-and-folder-cleanup.md | backlog/B247.md |
+| B248 | Update ARC_AGI Consumer to HippoCampy/Campy Namespace | P0 | ready | TBD | TBD | backlog/plans/B-248-update-arc-agi-consumer-to-hippocampy-campy.md | backlog/B248.md |
 | B6 | Claude Desktop Adapter (Full) — ✅ DONE (2026-03-28) | P3 | complete | TBD | TBD | backlog/plans/B-6-claude-desktop-adapter.md | backlog/B6.md |
 | B7 | ChatGPT Desktop Adapter (Stub → Full) — ✅ DONE (2026-03-28) | P3 | complete | TBD | TBD | backlog/plans/B-7-chatgpt-desktop-adapter.md | backlog/B7.md |
 | B8 | Gemini CLI Adapter — DONE | P3 | complete | TBD | TBD | - | backlog/B8.md |
@@ -226,8 +239,8 @@ Note: ARC-only backlog cards and ARC-only planning docs were relocated to the si
 
 ## Summary
 
-- Total cards: 216
-- Ready: 10
+- Total cards: 222
+- Ready: 16
 - Needs work: 0
 - Complete: 199
 - In progress: 0
@@ -253,6 +266,39 @@ Note: ARC-only backlog cards and ARC-only planning docs were relocated to the si
 6. **B235** DONE: Added the `memory_decision` MCP recall-policy helper.
 
 **Public Release Gate:** Wheel/sdist build, twine check, public audit, doctor, and full test suite pass locally. Counsel review and public publishing remain separate go/no-go decisions.
+
+---
+
+
+## One-Click Install Readiness (P0 Initiative)
+
+**Status:** Ready for implementation. B230-B235 built the release-readiness foundation; B236-B240 are the remaining work to make one-click install safe to advertise publicly.
+
+| Card | Title | Purpose | Dependency |
+|------|-------|---------|------------|
+| B241 | Rename Product to HippoCampy and Add `campy` CLI | Establish public identity before package/bootstrap publication | B230, B231 |
+| B236 | Public PyPI and pipx Install Path | Establish package install path for bootstrap | B230, B232, B233, B241 |
+| B237 | Hosted One-Line Bootstrap Installer | Add `curl ... | bash` bootstrap with dry-run/idempotency | B236, B231 |
+| B238 | Clean-Machine Validation Harness | Prove install works outside the dev machine | B236, B237 |
+| B239 | Homebrew Tap and macOS Native Install Path | Optional trusted macOS package-manager path | B236-B238 |
+| B240 | Release Gate and User-Facing Docs | Final go/no-go checklist and docs | B236-B238; B239 optional |
+
+**Canonical release rule:** Do not advertise the one-click command as the primary install path until B241, B236, B237, and B238 are complete and B240 records the passing validation evidence.
+
+### Internal Namespace Migration Follow-Up
+
+B242-B247 intentionally split the deeper SideQuests-to-Campy internal namespace migration into small agent-safe cards. These cards should be implemented after B241 and before public one-click install is broadly advertised if we want public docs and generated client configs to avoid legacy `sidequests.*` paths.
+
+| Card | Purpose | Dependencies |
+|---|---|---|
+| B242 | Add a safe `campy` import namespace shim | B241 |
+| B243 | Move implementation package to `campy` while keeping `sidequests` shims | B242 |
+| B244 | Switch MCP/installer module paths to `campy.*` | B243 |
+| B245 | Prefer `campy.toml` while preserving `sidequests.toml` fallback | B241, B242 |
+| B246 | Make `campy-memory` the primary skill namespace | B241, B242 |
+| B247 | Final legacy-name audit and cleanup | B243-B246 |
+| B248 | Update the sibling ARC_AGI external consumer to Campy names and fallbacks | B241; B242/B244 recommended |
+
 
 ---
 

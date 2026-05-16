@@ -32,7 +32,7 @@ setInterval(async () => {
 
 ## Concrete File Changes
 
-### 1. `extensions/sidequests-brain/src/index.ts`
+### 1. `extensions/hippocampy/src/index.ts`
 - Add health check interval after initial `registerService.start()`
 - Track online/offline state
 - Log transitions
@@ -53,7 +53,7 @@ setInterval(async () => {
 ## Validation Commands
 
 ```bash
-cd extensions/sidequests-brain && npm run build
+cd extensions/hippocampy && npm run build
 pytest tests/test_b41_plugin_startup.py -q
 ```
 

@@ -161,7 +161,7 @@ async def test_cross_session_confidence_low_node_is_included_but_flagged():
 
 def test_auto_recall_scope_is_both():
     """Test 4: Source-inspection to ensure auto-recall uses scope: 'both'."""
-    src = Path("extensions/sidequests-brain/src/index.ts").read_text()
+    src = Path("extensions/hippocampy/src/index.ts").read_text()
     
     # Find the before_agent_start handler block (preAgentEvent)
     assert 'OPENCLAW_EVENT_CONTRACT.preAgentEvent' in src
