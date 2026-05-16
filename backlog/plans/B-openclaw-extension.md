@@ -46,7 +46,7 @@ Also read (in the OpenClaw repo after install):
 ### File Structure
 
 ```
-extensions/sidequests-brain/
+extensions/hippocampy/
 ├── openclaw.plugin.json     # Plugin manifest
 ├── package.json             # npm package metadata
 ├── tsconfig.json            # TypeScript config
@@ -56,7 +56,7 @@ extensions/sidequests-brain/
 
 ### Phase 1: Plugin Manifest
 
-**File: `extensions/sidequests-brain/openclaw.plugin.json`**
+**File: `extensions/hippocampy/openclaw.plugin.json`**
 
 ```json
 {
@@ -99,7 +99,7 @@ extensions/sidequests-brain/
 
 ### Phase 2: Package Configuration
 
-**File: `extensions/sidequests-brain/package.json`**
+**File: `extensions/hippocampy/package.json`**
 
 ```json
 {
@@ -111,7 +111,7 @@ extensions/sidequests-brain/
   "openclaw": {
     "extensions": ["./src/index.ts"],
     "install": {
-      "localPath": "extensions/sidequests-brain",
+      "localPath": "extensions/hippocampy",
       "defaultChoice": "local"
     }
   },
@@ -124,7 +124,7 @@ extensions/sidequests-brain/
 }
 ```
 
-**File: `extensions/sidequests-brain/tsconfig.json`**
+**File: `extensions/hippocampy/tsconfig.json`**
 
 ```json
 {
@@ -143,7 +143,7 @@ extensions/sidequests-brain/
 
 ### Phase 3: Main Extension
 
-**File: `extensions/sidequests-brain/src/index.ts`**
+**File: `extensions/hippocampy/src/index.ts`**
 
 ```typescript
 /**
@@ -579,10 +579,10 @@ All hooks are non-critical — if the Brain Daemon is unreachable, the agent con
 
 | File | Description |
 |------|-------------|
-| `extensions/sidequests-brain/openclaw.plugin.json` | Plugin manifest |
-| `extensions/sidequests-brain/package.json` | npm package config |
-| `extensions/sidequests-brain/tsconfig.json` | TypeScript config |
-| `extensions/sidequests-brain/src/index.ts` | Main extension (~200 lines) |
+| `extensions/hippocampy/openclaw.plugin.json` | Plugin manifest |
+| `extensions/hippocampy/package.json` | npm package config |
+| `extensions/hippocampy/tsconfig.json` | TypeScript config |
+| `extensions/hippocampy/src/index.ts` | Main extension (~200 lines) |
 
 ## Files to Modify
 

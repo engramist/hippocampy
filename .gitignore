@@ -50,8 +50,8 @@ observability/
 # Claude Code worktrees (local only)
 .claude/worktrees/
 
-extensions/sidequests-brain/node_modules/
-extensions/sidequests-brain/dist/
+extensions/hippocampy/node_modules/
+extensions/hippocampy/dist/
 
 # SideQuests Wiki Projection
 wiki/personas/

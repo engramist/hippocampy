@@ -34,7 +34,7 @@ starts. Either the plugin fails to load due to Issue 2, or the TypeScript compil
 
 ## Changes Required
 
-### 1. `extensions/sidequests-brain/package.json`
+### 1. `extensions/hippocampy/package.json`
 Change:
 ```json
 "name": "@sidequests/openclaw-brain"
@@ -68,7 +68,7 @@ Add:
 ### 3. Reinstall plugin after package.json fix
 ```bash
 cd ~/Desktop/GitProjects/sidequests-brain
-openclaw plugins install extensions/sidequests-brain --force
+openclaw plugins install extensions/hippocampy --force
 ```
 
 ### 4. Verify

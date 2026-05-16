@@ -73,7 +73,7 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
 
     Args:
         db: KuzuClient instance (write access)
-        config: full sidequests.toml config dict
+        config: full campy.toml config dict
         llm_client: LLMClient or None — Hebbian Trigger 2 skipped if None
     """
     pruning_cfg         = config.get("pruning", {})
@@ -874,7 +874,7 @@ async def _dream_consolidation(db, config: dict, llm_client: Optional[object]) -
     Cluster Lesson nodes by domain + embedding similarity and synthesize
     meta-lessons using the LLM. Returns (synthesized_count, error_count).
 
-    Config (sidequests.toml):
+    Config (campy.toml):
       [sweep.dreaming]
       min_cluster_size = 3
       similarity_threshold = 0.75

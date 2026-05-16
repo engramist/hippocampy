@@ -1,14 +1,14 @@
-# SideQuests Memory Skill
+# Campy Memory Skill
 
-**Purpose:** Use SideQuests as a reliable durable memory system without bloating your context window.
+**Purpose:** Use HippoCampy (Campy) as a reliable durable memory system without bloating your context window.
 
-SideQuests continuously captures your decisions, constraints, plans, and lessons as you work. This skill teaches you when to recall that memory, which tool to use, and how to keep your context lean.
+Campy continuously captures your decisions, constraints, plans, and lessons as you work. This skill teaches you when to recall that memory, which tool to use, and how to keep your context lean.
 
 ## Core Rule
 
 **Do not recall on every turn. Do not bloat context. Recall only when a decision needs memory.**
 
-SideQuests writes passively. You recall actively and selectively.
+Campy writes passively. You recall actively and selectively.
 
 ---
 
@@ -16,7 +16,7 @@ SideQuests writes passively. You recall actively and selectively.
 
 ### Write (Passive - Always On)
 
-SideQuests captures:
+Campy captures:
 - **Decisions** - what you decided and why
 - **Constraints** - what you must or cannot do
 - **Plans** - your implementation strategies
@@ -167,7 +167,7 @@ You call a recall tool when you need:
 After you use memory, you can verify capture/recall worked:
 
 ```bash
-sidequests activity --follow
+campy activity --follow
 ```
 
 This shows live events:
@@ -182,7 +182,7 @@ This shows live events:
 
 ### "Brain daemon is offline"
 -> Passive capture stops. You can still edit and code. When the daemon restarts, it will resume captures.
--> **Workaround:** `sidequests doctor --repair` and `sidequests activity --follow` to monitor restart.
+-> **Workaround:** `campy doctor --repair` and `campy activity --follow` to monitor restart.
 
 ### "Recall tool timed out"
 -> Network or KuzuDB latency. Recall failed; no memory was added to context.
@@ -200,11 +200,11 @@ This shows live events:
 
 ## Key Takeaways
 
-1. **Write is passive; recall is active.** SideQuests listens. You decide when to remember.
+1. **Write is passive; recall is active.** Campy listens. You decide when to remember.
 2. **Recall is selective.** Use the decision tree to pick the right tool for the question.
 3. **Compact is better.** Summarize, don't dump. Prefer top results. Use evidence for provenance.
 4. **`memory_decision` is your copilot.** If unsure, ask it first.
-5. **`sidequests activity --follow` is your verification.** Watch the feed to confirm capture/recall worked.
+5. **`campy activity --follow` is your verification.** Watch the feed to confirm capture/recall worked.
 
 ---
 

@@ -23,7 +23,7 @@ def _extract_tool_definitions(source: str):
 
 
 def _load_tool_registry():
-    source = Path("extensions/sidequests-brain/src/index.ts").read_text()
+    source = Path("extensions/hippocampy/src/index.ts").read_text()
     tools = _extract_tool_definitions(source)
     return {tool["name"]: tool["callName"] for tool in tools}
 

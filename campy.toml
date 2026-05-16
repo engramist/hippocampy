@@ -1,0 +1,169 @@
+# SideQuest Brain Daemon — Configuration
+# See docs/ARCHITECTURE.md for full documentation on each setting.
+
+[llm]
+provider = "ollama"           # ollama | openai | anthropic | google
+model = "llama3.1:8b"    # ARC local default on this machine: stronger reasoning while still fitting 32GB M2 Max
+base_url = "http://localhost:11434/v1"   # ollama OpenAI-compatible endpoint
+# api_key loaded from env var for cloud providers:
+#   OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY
+
+# B16 — Task-Based Model Routing (optional per-step overrides)
+# Each [llm.STEP_NAME] block overrides provider/model for that specific loop step.
+# Keys not present in the override inherit from the [llm] global block above.
+# Supported step names: step2_gist, step3b_relations, step6_arbitration, quest_purpose
+#
+# Example: use a frontier model for contradiction arbitration only
+# (Step 6 is the hardest reasoning task; Steps 2/3b are tractable for small models)
+#
+# [llm.step6_arbitration]
+# provider = "anthropic"
+# model    = "claude-sonnet-4-6"
+#
+# [llm.quest_purpose]
+# provider = "openai"
+# model    = "gpt-4.1-mini"
+
+[embeddings]
+provider = "sentence-transformers"  # sentence-transformers | ollama | openai
+model = "sentence-transformers/all-MiniLM-L6-v2"   # 384-dim — matches FLOAT[384] schema
+# For ollama: model name is the bare tag, e.g. "all-minilm" (384-dim)
+# For openai: use "text-embedding-3-small" with dimensions=384
+# ollama_base_url defaults to the [llm] base_url minus /v1
+# api_key for openai reads from OPENAI_API_KEY env var if not set here
+# WARNING: changing to a model with different dimensions requires full re-embedding.
+# Run: sidequests reembed --confirm
+
+[nlp]
+spacy_model = "en_core_web_md"   # requires trained dependency parser for Step 1b verb patterns
+# en_core_web_sm will NOT work — no trained dep parser
+
+[ingestion]
+max_ingest_chars = 4000   # passive ingestion (conversational turns only)
+# truncates at last sentence boundary — long docs use Open Brain pipeline (M6)
+
+[capture]
+enabled = true
+
+[capture.codex]
+enabled = true
+scan_interval_seconds = 10
+max_events_per_scan = 50
+initial_backfill_events = 20
+max_initial_backfill_files = 1
+
+[capture.claude_code]
+enabled = true
+scan_interval_seconds = 10
+max_events_per_scan = 50
+initial_backfill_events = 20
+max_initial_backfill_files = 1
+
+[capture.vscode]
+enabled = true
+scan_interval_seconds = 15
+max_events_per_scan = 50
+initial_backfill_events = 20
+max_initial_backfill_files = 5
+
+[quest]
+auto_complete_days = 30   # suggest Quest completion after N days with no new messages (0 = disabled)
+
+[hebbian]
+co_occurrence_threshold = 10   # CO_OCCURS_WITH count before LLM auto-promotion attempt
+
+[pruning]
+# Synaptic Pruning — Ebbinghaus Forgetting Curve modeled per node type.
+# Values 0–1; lower = faster decay. Power user setting — defaults work for most users.
+decay_rate.global_constraint  = 0.999   # half-strength in ~2 years
+decay_rate.global_preference  = 0.999
+decay_rate.decision           = 0.995   # half-strength in ~140 days
+decay_rate.constraint         = 0.995
+decay_rate.requirement        = 0.990   # half-strength in ~70 days
+decay_rate.action_item        = 0.980   # half-strength in ~35 days
+decay_rate.message            = 0.970   # half-strength in ~23 days
+decay_rate.document_extract   = 0.970
+
+archive_threshold       = 0.10   # archive node when pathway_strength falls below this
+resurrection_threshold  = 0.85   # un-archive if similarity to active node exceeds this
+sweep_interval_seconds  = 300    # background sweep: pruning + confidence re-scoring + resurrection
+
+[sweep.dreaming]
+# Dreaming / consolidation step - cluster Lessons and synthesize meta-lessons
+# min_cluster_size: minimum number of Lessons required to synthesize
+# similarity_threshold: cosine similarity threshold for clustering (0..1)
+# max_syntheses_per_sweep: limit how many syntheses are created per sweep
+# decay_boost_multiplier: factor by which constituent Lesson strength is reduced
+min_cluster_size = 3
+similarity_threshold = 0.75
+max_syntheses_per_sweep = 5
+decay_boost_multiplier = 1.3
+
+[web]
+port = 7799   # Memory Control Panel — http://127.0.0.1:7799 (local only)
+
+[mission_control]
+base_url = "http://127.0.0.1:7800"   # Mission Control — deep-link panel_url base (B15)
+
+[observability]
+enabled = true
+backend = "phoenix"   # phoenix | memory(test-only)
+endpoint = "http://127.0.0.1:6006/v1/traces"
+project_name = "sidequests-arc"
+mode = "verbose"
+sample_rate = 1.0
+strict_startup_check = true
+
+[benchmark]
+max_attempts_per_puzzle = 20   # steps per attempt before giving up
+max_retries_per_puzzle = 2     # retry attempts on GAME_OVER before moving on
+
+[cost]
+budget_per_puzzle_usd = 0.50
+# Pricing per million tokens (input/output)
+pricing_per_million_tokens = { "llama3.1:8b" = { input = 0.0, output = 0.0 }, "qwen2.5:7b" = { input = 0.0, output = 0.0 }, "claude-3-5-sonnet-20241022" = { input = 3.0, output = 15.0 }, "gpt-4o-mini" = { input = 0.15, output = 0.60 } }
+
+[judge]
+provider = "ollama"
+model = "qwen2.5:7b"
+timeout_seconds = 60
+
+[wiki_projection]
+enabled = true
+vault_dir = "wiki"
+output_dir = "wiki/personas/default"
+max_pages_per_sweep = 50
+max_chars_per_page = 8000
+max_related_pages = 12
+max_backlinks = 25
+obsidian_vault_name = "wiki"
+
+[[wiki_projection.personas]]
+name = "engineer"
+output_dir = "wiki/personas/engineer"
+include_domains = ["architecture", "implementation", "testing"]
+include_node_types = ["Decision", "Constraint", "Procedure", "Lesson"]
+max_pages_per_sweep = 50
+max_chars_per_page = 8000
+max_related_pages = 12
+home_title = "Engineering Memory"
+
+[[wiki_projection.personas]]
+name = "researcher"
+output_dir = "wiki/personas/researcher"
+include_domains = ["research", "evaluation", "benchmarks"]
+include_node_types = ["Lesson", "KnowledgeGap", "Procedure"]
+max_pages_per_sweep = 40
+max_chars_per_page = 7000
+max_related_pages = 10
+home_title = "Research Memory"
+
+[[wiki_projection.personas]]
+name = "arc_agi"
+output_dir = "wiki/personas/arc_agi"
+include_domains = ["arc", "arc_agi", "benchmark", "benchmarks", "evaluation", "puzzle", "agent-learning"]
+include_node_types = ["ArcRun", "ArcTaskResult", "ArcArtifact", "ArcEvent", "ArcMechanic", "ArcWorldModelStep", "ArcWorldModelSummary", "Lesson", "KnowledgeGap", "Procedure", "Decision", "Constraint"]
+max_pages_per_sweep = 80
+max_chars_per_page = 8000
+max_related_pages = 12
+home_title = "ARC-AGI Memory"

@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 # ---------------------------------------------------------------------------
 
 LAYER_1_TEMPLATE = (
-    "[SideQuests Brain: Memory active]\n"
+    "[HippoCampy: Memory active]\n"
     "Before answering questions about past decisions, architecture, or constraints:\n"
     "→ Call memory_recall to check the knowledge graph\n"
     "For stored facts: use memory_store\n"
@@ -25,7 +25,7 @@ LAYER_1_TEMPLATE = (
 )
 
 LAYER_2_ONBOARDING = (
-    "SideQuests Brain is your persistent knowledge graph. One automatic duty:\n"
+    "HippoCampy is your persistent knowledge graph. One automatic duty:\n"
     "- notify_turn: After EVERY response, forward your output to SideQuests (session_id + role='assistant' + full text)\n"
     "  This is how the Brain learns what you've done. Response is instant, never blocks.\n\n"
     "Tools you control:\n"

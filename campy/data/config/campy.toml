@@ -1,5 +1,5 @@
-# SideQuests default configuration template.
-# User-specific runtime config belongs at ~/.sidequests/config.toml.
+# Campy default configuration template.
+# User-specific runtime config belongs at ~/.campy/config.toml.
 
 [llm]
 provider = "ollama"

@@ -26,7 +26,7 @@ Out of scope:
 - Building a full TypeScript unit-test harness for the extension
 
 ## Current State (verified)
-File: extensions/sidequests-brain/src/index.ts
+File: extensions/hippocampy/src/index.ts
 
 The extension already wires three assumed OpenClaw events:
 - llm_input -> forwards event.prompt as a user notify_turn
@@ -41,7 +41,7 @@ Current weaknesses:
 5. The extension package has no JS/TS test runner configured, so this repo's practical test strategy is Python source-level assertions plus targeted compile validation.
 
 ## Files To Modify
-1. extensions/sidequests-brain/src/index.ts
+1. extensions/hippocampy/src/index.ts
 2. tests/test_extension_aliases.py
 3. tests/test_b41_plugin_startup.py
 
@@ -54,7 +54,7 @@ Optional if the compatibility note is moved out of code:
 ## Implementation Strategy
 
 ### 1. Make the event contract explicit in the extension
-File: extensions/sidequests-brain/src/index.ts
+File: extensions/hippocampy/src/index.ts
 
 Add a small contract block near the top of the file so the expected OpenClaw event names and payload fields are visible and reusable.
 
@@ -76,7 +76,7 @@ Rules:
 - The contract object should be easy for source-level tests to inspect.
 
 ### 2. Centralize payload extraction
-File: extensions/sidequests-brain/src/index.ts
+File: extensions/hippocampy/src/index.ts
 
 Add small helpers so payload handling is uniform and testable.
 
@@ -105,7 +105,7 @@ Expected behavior:
 Do not introduce heavy abstractions. The helpers should remain local to the extension file.
 
 ### 3. Replace silent hook assumptions with contract-based registration
-File: extensions/sidequests-brain/src/index.ts
+File: extensions/hippocampy/src/index.ts
 
 Refactor the passive-ingestion registration blocks to use the contract constants and extraction helpers.
 
@@ -117,7 +117,7 @@ Requirements:
 - Keep failures non-fatal to the agent session
 
 ### 4. Add diagnostic logging for live contract validation
-File: extensions/sidequests-brain/src/index.ts
+File: extensions/hippocampy/src/index.ts
 
 Add concise console logging around hook registration and hook firing.
 
@@ -141,7 +141,7 @@ console.warn(`[SideQuests Brain] Event ${eventName} failed: ${message}`);
 ```
 
 ### 5. Make fallback behavior explicit
-File: extensions/sidequests-brain/src/index.ts
+File: extensions/hippocampy/src/index.ts
 
 The B27 card requires explicit fallback behavior if an expected hook is unavailable or changes shape.
 
@@ -155,7 +155,7 @@ Required behavior:
 - The compatibility note must state exactly which event names and payload fields are expected, and what the fallback behavior is when the payload is present but unusable.
 
 ### 6. Add a compatibility note
-Preferred location: extensions/sidequests-brain/src/index.ts as a short comment block above the contract constants.
+Preferred location: extensions/hippocampy/src/index.ts as a short comment block above the contract constants.
 
 Alternative: docs/openclaw-event-contract.md if the in-code note becomes too large.
 
@@ -209,7 +209,7 @@ Because there is no JS/TS unit test harness here, include a TypeScript compile c
 Use:
 
 ```bash
-npx tsc -p extensions/sidequests-brain/tsconfig.json --noEmit
+npx tsc -p extensions/hippocampy/tsconfig.json --noEmit
 ```
 
 Do not add package scripts for this card.
@@ -236,7 +236,7 @@ Run in this order:
 
 1. `pytest tests/test_extension_ingestion_contract.py -q --no-header`
 2. `pytest tests/test_extension_aliases.py tests/test_b41_plugin_startup.py -q --no-header`
-3. `npx tsc -p extensions/sidequests-brain/tsconfig.json --noEmit`
+3. `npx tsc -p extensions/hippocampy/tsconfig.json --noEmit`
 
 If these pass, proceed to the live OpenClaw validation checklist above.
 
@@ -244,7 +244,7 @@ If these pass, proceed to the live OpenClaw validation checklist above.
 
 Use exactly:
 
-`gemini -p "Read B-27-openclaw-passive-ingestion-validation.md and implement exactly as specified. Read extensions/sidequests-brain/src/index.ts and the existing tests that inspect extension source first. Preserve current tool behavior. Do not invent undocumented OpenClaw APIs. Add only the smallest code and test changes needed to make the passive-ingestion contract explicit, logged, and regression-tested." --yolo 2>&1`
+`gemini -p "Read B-27-openclaw-passive-ingestion-validation.md and implement exactly as specified. Read extensions/hippocampy/src/index.ts and the existing tests that inspect extension source first. Preserve current tool behavior. Do not invent undocumented OpenClaw APIs. Add only the smallest code and test changes needed to make the passive-ingestion contract explicit, logged, and regression-tested." --yolo 2>&1`
 
 ## Acceptance Checklist
 - The extension defines an explicit passive-ingestion event contract instead of relying on scattered hardcoded assumptions.

@@ -1,4 +1,4 @@
-"""Small, durable activity feed for SideQuests operators.
+"""Small, durable activity feed for Campy operators.
 
 This log is intentionally separate from the daemon log: it is compact,
 user-facing, and redacts full message bodies so it can be watched live.
@@ -13,7 +13,13 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-DEFAULT_ACTIVITY_LOG = Path.home() / ".sidequests" / "activity.log"
+def _default_activity_log() -> Path:
+    try:
+        from campy.paths import get_activity_log_path
+
+        return get_activity_log_path()
+    except Exception:
+        return Path.home() / ".campy" / "activity.log"
 
 WRITE_METHODS = {
     "notify_turn",
@@ -43,11 +49,11 @@ RECALL_METHODS = {
 
 
 def activity_log_path(config: dict | None = None) -> Path:
-    """Return configured activity-log path, defaulting under ~/.sidequests."""
+    """Return configured activity-log path, defaulting under active Campy runtime."""
     path = ((config or {}).get("activity", {}) or {}).get("log_path")
     if path:
         return Path(path).expanduser()
-    return DEFAULT_ACTIVITY_LOG
+    return _default_activity_log()
 
 
 def classify_method(method: str) -> str:

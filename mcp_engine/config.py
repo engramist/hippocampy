@@ -1,7 +1,7 @@
 """
 mcp_engine/config.py — Configuration Loader
 
-Loads sidequests.toml using stdlib tomllib (Python 3.11+) or tomli fallback.
+Loads campy/sidequests config using stdlib tomllib (Python 3.11+) or tomli fallback.
 Returns a plain dict — all modules read config from this dict.
 """
 
@@ -12,10 +12,10 @@ from pathlib import Path
 
 def load_config(config_path: str | Path | None = None) -> dict:
     """
-    Load sidequests.toml. Searches in order:
+    Load campy.toml. Searches in order:
       1. Explicit path (if provided)
       2. Current working directory
-      3. ~/.sidequests/config.toml (global fallback)
+      3. ~/.campy/config.toml or legacy ~/.sidequests/config.toml
     Raises FileNotFoundError if no config found.
     """
     if sys.version_info >= (3, 11):
@@ -28,7 +28,7 @@ def load_config(config_path: str | Path | None = None) -> dict:
         explicit = Path(config_path)
         if not explicit.exists():
             raise FileNotFoundError(
-                f"sidequests.toml not found at {explicit}. Run: sidequests setup"
+                f"config not found at {explicit}. Run: campy setup"
             )
         with open(explicit, "rb") as f:
             config = tomllib.load(f)
@@ -37,7 +37,9 @@ def load_config(config_path: str | Path | None = None) -> dict:
 
     # No explicit path — search default locations.
     search_paths = [
+        Path.cwd() / "campy.toml",
         Path.cwd() / "sidequests.toml",
+        Path.home() / ".campy" / "config.toml",
         Path.home() / ".sidequests" / "config.toml",
     ]
 
@@ -49,5 +51,5 @@ def load_config(config_path: str | Path | None = None) -> dict:
             return config
 
     raise FileNotFoundError(
-        "sidequests.toml not found. Run: sidequests setup"
+        "campy/sidequests config not found. Run: campy setup"
     )

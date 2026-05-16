@@ -11,7 +11,7 @@ from mcp_engine.activity_log import (
 
 
 def test_activity_log_path_can_be_configured(tmp_path):
-    path = tmp_path / "sidequests.activity.jsonl"
+    path = tmp_path / "campy.activity.jsonl"
 
     assert activity_log_path({"activity": {"log_path": str(path)}}) == path
 

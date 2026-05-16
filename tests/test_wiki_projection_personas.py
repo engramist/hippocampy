@@ -90,7 +90,7 @@ async def test_global_home_generation(mock_db, tmp_vault):
     assert "[[p2/Home|P2 Persona]]" in global_home
 
 def test_cli_persona_path(tmp_vault):
-    from sidequests.cli.main import app
+    from campy.cli.main import app
     from typer.testing import CliRunner
     runner = CliRunner()
     
@@ -102,7 +102,7 @@ def test_cli_persona_path(tmp_vault):
         }
     }
     
-    with patch("sidequests.cli.main.load_config", return_value=mock_config):
+    with patch("campy.cli.main.load_config", return_value=mock_config):
         result = runner.invoke(app, ["wiki", "path", "--persona", "eng"])
         assert result.exit_code == 0
         assert "/tmp/eng" in result.stdout

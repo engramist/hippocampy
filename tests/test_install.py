@@ -25,13 +25,13 @@ class TestOllamaInstaller:
     def test_is_installed_true(self):
         """Returns True when ollama is in PATH."""
         with patch("shutil.which", return_value="/opt/homebrew/bin/ollama"):
-            from sidequests.cli.install import OllamaInstaller
+            from campy.cli.install import OllamaInstaller
             assert OllamaInstaller.is_installed() is True
 
     def test_is_installed_false(self):
         """Returns False when ollama is not in PATH."""
         with patch("shutil.which", return_value=None):
-            from sidequests.cli.install import OllamaInstaller
+            from campy.cli.install import OllamaInstaller
             assert OllamaInstaller.is_installed() is False
 
     def test_is_running_true(self):
@@ -39,33 +39,33 @@ class TestOllamaInstaller:
         with patch("urllib.request.urlopen") as mock_url:
             mock_url.return_value.__enter__ = lambda s: s
             mock_url.return_value.__exit__ = MagicMock(return_value=False)
-            from sidequests.cli.install import OllamaInstaller
+            from campy.cli.install import OllamaInstaller
             assert OllamaInstaller.is_running() is True
 
     def test_is_running_false(self):
         """Returns False when Ollama server is unreachable."""
         with patch("urllib.request.urlopen", side_effect=ConnectionRefusedError):
-            from sidequests.cli.install import OllamaInstaller
+            from campy.cli.install import OllamaInstaller
             assert OllamaInstaller.is_running() is False
 
     def test_has_model_true(self):
         """Returns True when model appears in ollama list output."""
         mock_result = MagicMock(stdout="NAME\nllama3.1:8b\n", returncode=0)
         with patch("subprocess.run", return_value=mock_result):
-            from sidequests.cli.install import OllamaInstaller
+            from campy.cli.install import OllamaInstaller
             assert OllamaInstaller.has_model("llama3.1:8b") is True
 
     def test_has_model_false(self):
         """Returns False when model not in ollama list output."""
         mock_result = MagicMock(stdout="NAME\nmistral:7b\n", returncode=0)
         with patch("subprocess.run", return_value=mock_result):
-            from sidequests.cli.install import OllamaInstaller
+            from campy.cli.install import OllamaInstaller
             assert OllamaInstaller.has_model("llama3.1:8b") is False
 
     def test_install_no_homebrew(self):
         """Returns False and prints message when brew not available."""
         with patch("shutil.which", return_value=None):
-            from sidequests.cli.install import OllamaInstaller
+            from campy.cli.install import OllamaInstaller
             inst = OllamaInstaller()
             assert inst.install() is False
 
@@ -81,7 +81,7 @@ class TestOllamaInstaller:
         with patch("shutil.which", side_effect=which_side_effect):
             mock_result = MagicMock(returncode=0)
             with patch("subprocess.run", return_value=mock_result):
-                from sidequests.cli.install import OllamaInstaller
+                from campy.cli.install import OllamaInstaller
                 inst = OllamaInstaller()
                 assert inst.install() is True
 
@@ -93,7 +93,7 @@ class TestOllamaInstaller:
         with patch("shutil.which", side_effect=which_side_effect):
             mock_result = MagicMock(returncode=1, stderr="Error")
             with patch("subprocess.run", return_value=mock_result):
-                from sidequests.cli.install import OllamaInstaller
+                from campy.cli.install import OllamaInstaller
                 inst = OllamaInstaller()
                 assert inst.install() is False
 
@@ -108,7 +108,7 @@ class TestOllamaInstaller:
             with patch("shutil.which", side_effect=which_side_effect):
                 with patch("subprocess.run") as mock_run:
                     mock_run.return_value = MagicMock(returncode=0)
-                    from sidequests.cli.install import OllamaInstaller
+                    from campy.cli.install import OllamaInstaller
                     inst = OllamaInstaller()
                     assert inst.install() is True
                     # Should call update and install
@@ -119,7 +119,7 @@ class TestOllamaInstaller:
         """Returns False on Linux when no supported package manager found."""
         with patch("platform.system", return_value="Linux"):
             with patch("shutil.which", return_value=None):
-                from sidequests.cli.install import OllamaInstaller
+                from campy.cli.install import OllamaInstaller
                 inst = OllamaInstaller()
                 assert inst.install() is False
 
@@ -127,7 +127,7 @@ class TestOllamaInstaller:
         """Skips pull when model already available."""
         mock_result = MagicMock(stdout="NAME\nllama3.1:8b\n", returncode=0)
         with patch("subprocess.run", return_value=mock_result):
-            from sidequests.cli.install import OllamaInstaller
+            from campy.cli.install import OllamaInstaller
             inst = OllamaInstaller()
             assert inst.pull_model("llama3.1:8b") is True
 
@@ -141,7 +141,7 @@ class TestOllamaInstaller:
             return MagicMock(returncode=0)  # ollama pull
 
         with patch("subprocess.run", side_effect=run_side_effect):
-            from sidequests.cli.install import OllamaInstaller
+            from campy.cli.install import OllamaInstaller
             inst = OllamaInstaller()
             assert inst.pull_model("llama3.1:8b") is True
 
@@ -152,8 +152,8 @@ class TestBYOKValidator:
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = MagicMock()
 
-        with patch("sidequests.cli.install.OpenAI", return_value=mock_client):
-            from sidequests.cli.install import BYOKValidator
+        with patch("campy.cli.install.OpenAI", return_value=mock_client):
+            from campy.cli.install import BYOKValidator
             v = BYOKValidator()
             assert v.validate_key("openai", "sk-test123") is True
 
@@ -162,8 +162,8 @@ class TestBYOKValidator:
         mock_client = MagicMock()
         mock_client.chat.completions.create.side_effect = Exception("401 Unauthorized")
 
-        with patch("sidequests.cli.install.OpenAI", return_value=mock_client):
-            from sidequests.cli.install import BYOKValidator
+        with patch("campy.cli.install.OpenAI", return_value=mock_client):
+            from campy.cli.install import BYOKValidator
             v = BYOKValidator()
             assert v.validate_key("openai", "bad-key") is False
 
@@ -171,7 +171,7 @@ class TestBYOKValidator:
         """Uses env var when user confirms."""
         monkeypatch.setenv("OPENAI_API_KEY", "sk-from-env")
         with patch("click.confirm", return_value=True):
-            from sidequests.cli.install import BYOKValidator
+            from campy.cli.install import BYOKValidator
             v = BYOKValidator()
             assert v.prompt_api_key("openai") == "sk-from-env"
 
@@ -179,7 +179,7 @@ class TestBYOKValidator:
         """Prompts manually when env var not set."""
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         with patch("click.prompt", return_value="sk-manual"):
-            from sidequests.cli.install import BYOKValidator
+            from campy.cli.install import BYOKValidator
             v = BYOKValidator()
             assert v.prompt_api_key("openai") == "sk-manual"
 
@@ -189,13 +189,13 @@ class TestVenvManager:
         """Returns True when venv python3 binary exists."""
         (tmp_path / "bin").mkdir()
         (tmp_path / "bin" / "python3").touch()
-        from sidequests.cli.install import VenvManager
+        from campy.cli.install import VenvManager
         vm = VenvManager(venv_dir=tmp_path)
         assert vm.exists() is True
 
     def test_exists_false(self, tmp_path):
         """Returns False when venv does not exist."""
-        from sidequests.cli.install import VenvManager
+        from campy.cli.install import VenvManager
         vm = VenvManager(venv_dir=tmp_path / "nonexistent")
         assert vm.exists() is False
 
@@ -203,7 +203,7 @@ class TestVenvManager:
         """Skips creation when venv already exists."""
         (tmp_path / "bin").mkdir()
         (tmp_path / "bin" / "python3").touch()
-        from sidequests.cli.install import VenvManager
+        from campy.cli.install import VenvManager
         vm = VenvManager(venv_dir=tmp_path)
         assert vm.create() is True
 
@@ -213,7 +213,7 @@ class TestVenvManager:
         mock_result = MagicMock(returncode=0)
 
         with patch("subprocess.run", return_value=mock_result):
-            from sidequests.cli.install import VenvManager
+            from campy.cli.install import VenvManager
             vm = VenvManager(venv_dir=venv_dir)
             # Simulate that venv python appears after creation
             with patch.object(vm, "exists", side_effect=[False, True]):
@@ -230,7 +230,7 @@ class TestVenvManager:
         mock_result = MagicMock(returncode=0)
 
         with patch("subprocess.run", return_value=mock_result):
-            from sidequests.cli.install import VenvManager
+            from campy.cli.install import VenvManager
             vm = VenvManager(venv_dir=tmp_path)
             assert vm.install_deps() is True
 
@@ -241,7 +241,7 @@ class TestVenvManager:
         mock_result = MagicMock(returncode=1, stderr="ERROR: No matching distribution")
 
         with patch("subprocess.run", return_value=mock_result):
-            from sidequests.cli.install import VenvManager
+            from campy.cli.install import VenvManager
             vm = VenvManager(venv_dir=tmp_path)
             assert vm.install_deps() is False
 
@@ -252,7 +252,7 @@ class TestVenvManager:
         mock_result = MagicMock(returncode=0)
 
         with patch("subprocess.run", return_value=mock_result):
-            from sidequests.cli.install import VenvManager
+            from campy.cli.install import VenvManager
             vm = VenvManager(venv_dir=tmp_path)
             assert vm.install_spacy_model() is True
 
@@ -263,7 +263,7 @@ class TestVenvManager:
         mock_result = MagicMock(returncode=0)
 
         with patch("subprocess.run", return_value=mock_result):
-            from sidequests.cli.install import VenvManager
+            from campy.cli.install import VenvManager
             vm = VenvManager(venv_dir=tmp_path)
             assert vm.prewarm_embeddings() is True
 
@@ -272,7 +272,7 @@ class TestConfigWriter:
     def test_write_ollama_config(self, tmp_path):
         """Writes correct config for Ollama provider."""
         config_path = tmp_path / "config.toml"
-        from sidequests.cli.install import ConfigWriter
+        from campy.cli.install import ConfigWriter
         ConfigWriter.write(
             {"provider": "ollama", "model": "llama3.1:8b"},
             config_path=config_path
@@ -289,8 +289,8 @@ class TestConfigWriter:
     def test_write_byok_config(self, tmp_path):
         """Writes correct config for cloud provider."""
         config_path = tmp_path / "config.toml"
-        from sidequests.cli.install import ConfigWriter
-        with patch("sidequests.cli.install.SIDEQUESTS_HOME", tmp_path):
+        from campy.cli.install import ConfigWriter
+        with patch("campy.cli.install.SIDEQUESTS_HOME", tmp_path):
             ConfigWriter.write(
                 {"provider": "openai", "model": "gpt-4o-mini",
                  "api_key": "sk-test", "env_var": "OPENAI_API_KEY"},
@@ -306,8 +306,8 @@ class TestConfigWriter:
         """Creates .env file with API key for BYOK providers."""
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         config_path = tmp_path / "config.toml"
-        with patch("sidequests.cli.install.SIDEQUESTS_HOME", tmp_path):
-            from sidequests.cli.install import ConfigWriter
+        with patch("campy.cli.install.SIDEQUESTS_HOME", tmp_path):
+            from campy.cli.install import ConfigWriter
             ConfigWriter.write(
                 {"provider": "openai", "model": "gpt-4o-mini",
                  "api_key": "sk-secret", "env_var": "OPENAI_API_KEY"},
@@ -320,7 +320,7 @@ class TestConfigWriter:
     def test_write_idempotent(self, tmp_path):
         """Running write twice does not corrupt the file."""
         config_path = tmp_path / "config.toml"
-        from sidequests.cli.install import ConfigWriter
+        from campy.cli.install import ConfigWriter
         ConfigWriter.write(
             {"provider": "ollama", "model": "llama3.1:8b"},
             config_path=config_path
@@ -342,7 +342,7 @@ class TestSchemaInitializer:
         mock_result = MagicMock(returncode=0, stdout="...SCHEMA_OK\n", stderr="")
 
         with patch("subprocess.run", return_value=mock_result):
-            from sidequests.cli.install import VenvManager, SchemaInitializer
+            from campy.cli.install import VenvManager, SchemaInitializer
             vm = VenvManager(venv_dir=tmp_path)
             si = SchemaInitializer(vm)
             assert si.init() is True
@@ -354,7 +354,7 @@ class TestSchemaInitializer:
         mock_result = MagicMock(returncode=1, stdout="", stderr="ImportError: kuzu")
 
         with patch("subprocess.run", return_value=mock_result):
-            from sidequests.cli.install import VenvManager, SchemaInitializer
+            from campy.cli.install import VenvManager, SchemaInitializer
             vm = VenvManager(venv_dir=tmp_path)
             si = SchemaInitializer(vm)
             assert si.init() is False
@@ -373,8 +373,8 @@ class TestAdapterRegistrar:
 
         with patch("subprocess.run", side_effect=mock_run):
             with patch("shutil.which", return_value="/usr/local/bin/claude"):
-                with patch("sidequests.cli.install.Path.home", return_value=tmp_path / "home"):
-                    from sidequests.cli.install import VenvManager, AdapterRegistrar
+                with patch("campy.cli.install.Path.home", return_value=tmp_path / "home"):
+                    from campy.cli.install import VenvManager, AdapterRegistrar
                     vm = VenvManager(venv_dir=tmp_path)
                     reg = AdapterRegistrar(vm)
                     result = reg._register_claude_code()
@@ -391,8 +391,8 @@ class TestAdapterRegistrar:
         config_path = tmp_path / "claude_desktop_config.json"
 
         with patch("platform.system", return_value="Darwin"):
-            with patch("sidequests.cli.install.Path.home", return_value=tmp_path):
-                from sidequests.cli.install import VenvManager, AdapterRegistrar
+            with patch("campy.cli.install.Path.home", return_value=tmp_path):
+                from campy.cli.install import VenvManager, AdapterRegistrar
                 vm = VenvManager(venv_dir=tmp_path)
                 reg = AdapterRegistrar(vm)
                 # Directly test _merge_mcp_config
@@ -406,14 +406,14 @@ class TestAdapterRegistrar:
 
     def test_detect_no_clients(self):
         """Returns empty dict when no clients detected."""
-        with patch("sidequests.cli.detect.detect_installed_clients",
+        with patch("campy.cli.detect.detect_installed_clients",
                    return_value={"claude-code": False, "claude-desktop": False,
                                  "codex": False, "codex-desktop": False,
                                  "chatgpt-desktop": False,
                                  "gemini-cli": False,
                                  "vscode": False,
                                  "openclaw": False}):
-            from sidequests.cli.install import VenvManager, AdapterRegistrar
+            from campy.cli.install import VenvManager, AdapterRegistrar
             vm = MagicMock()
             reg = AdapterRegistrar(vm)
             results = reg.register_all()
@@ -431,8 +431,8 @@ class TestAdapterRegistrar:
             "vscode": False,
             "openclaw": False,
         }
-        with patch("sidequests.cli.detect.detect_installed_clients", return_value=detected):
-            from sidequests.cli.install import VenvManager, AdapterRegistrar
+        with patch("campy.cli.detect.detect_installed_clients", return_value=detected):
+            from campy.cli.install import VenvManager, AdapterRegistrar
             vm = MagicMock()
             reg = AdapterRegistrar(vm)
             with patch.object(reg, "_register_codex_desktop", return_value=True) as mock_reg:
@@ -452,8 +452,8 @@ class TestAdapterRegistrar:
             "vscode": True,
             "openclaw": False,
         }
-        with patch("sidequests.cli.detect.detect_installed_clients", return_value=detected):
-            from sidequests.cli.install import AdapterRegistrar
+        with patch("campy.cli.detect.detect_installed_clients", return_value=detected):
+            from campy.cli.install import AdapterRegistrar
             reg = AdapterRegistrar(MagicMock())
             with patch.object(reg, "_register_vscode", return_value=True) as mock_reg:
                 results = reg.register_all()
@@ -468,14 +468,14 @@ class TestAdapterRegistrar:
         desktop_dir.mkdir(parents=True)
 
         with patch("platform.system", return_value="Darwin"):
-            with patch("sidequests.cli.install.Path.home", return_value=tmp_path):
-                from sidequests.cli.install import VenvManager, AdapterRegistrar
+            with patch("campy.cli.install.Path.home", return_value=tmp_path):
+                from campy.cli.install import VenvManager, AdapterRegistrar
                 vm = VenvManager(venv_dir=tmp_path)
                 reg = AdapterRegistrar(vm)
                 result = reg._register_codex_desktop()
                 assert result is True
                 content = (desktop_dir / "config.toml").read_text()
-                assert "[mcp_servers.sidequests]" in content
+                assert "[mcp_servers.campy]" in content
 
     def test_register_all_includes_openclaw(self):
         """register_all wires openclaw when detected."""
@@ -488,8 +488,8 @@ class TestAdapterRegistrar:
             "gemini-cli": False,
             "openclaw": True,
         }
-        with patch("sidequests.cli.detect.detect_installed_clients", return_value=detected):
-            from sidequests.cli.install import VenvManager, AdapterRegistrar
+        with patch("campy.cli.detect.detect_installed_clients", return_value=detected):
+            from campy.cli.install import VenvManager, AdapterRegistrar
             vm = MagicMock()
             reg = AdapterRegistrar(vm)
             with patch.object(reg, "_register_openclaw", return_value=True) as mock_reg:
@@ -503,13 +503,13 @@ class TestDaemonSetup:
         """Plist PYTHONPATH points to ~/.sidequests/venv/ site-packages."""
         (tmp_path / "bin").mkdir()
         (tmp_path / "bin" / "python3").touch()
-        monkeypatch.setattr("sidequests.cli.launchd.PLIST_PATH",
+        monkeypatch.setattr("campy.cli.launchd.PLIST_PATH",
                            tmp_path / "test.plist")
-        monkeypatch.setattr("sidequests.cli.launchd.LOG_PATH",
+        monkeypatch.setattr("campy.cli.launchd.LOG_PATH",
                            tmp_path / "test.log")
 
         with patch("shutil.which", return_value="/usr/bin/python3"):
-            from sidequests.cli.install import VenvManager, DaemonSetup
+            from campy.cli.install import VenvManager, DaemonSetup
             vm = VenvManager(venv_dir=tmp_path)
             with patch.object(vm, "site_packages_dir",
                             return_value=tmp_path / "lib" / "python3.12" / "site-packages"):
@@ -528,17 +528,17 @@ class TestDaemonSetup:
         """Plist includes API key env vars from .env file."""
         (tmp_path / "bin").mkdir()
         (tmp_path / "bin" / "python3").touch()
-        monkeypatch.setattr("sidequests.cli.launchd.PLIST_PATH",
+        monkeypatch.setattr("campy.cli.launchd.PLIST_PATH",
                            tmp_path / "test.plist")
-        monkeypatch.setattr("sidequests.cli.launchd.LOG_PATH",
+        monkeypatch.setattr("campy.cli.launchd.LOG_PATH",
                            tmp_path / "test.log")
 
         env_file = tmp_path / ".env"
         env_file.write_text('OPENAI_API_KEY="sk-test123"\n')
 
         with patch("shutil.which", return_value="/usr/bin/python3"):
-            with patch("sidequests.cli.install.SIDEQUESTS_HOME", tmp_path):
-                from sidequests.cli.install import VenvManager, DaemonSetup
+            with patch("campy.cli.install.SIDEQUESTS_HOME", tmp_path):
+                from campy.cli.install import VenvManager, DaemonSetup
                 vm = VenvManager(venv_dir=tmp_path)
                 with patch.object(vm, "site_packages_dir",
                                 return_value=tmp_path / "lib" / "python3.12" / "site-packages"):
@@ -557,7 +557,7 @@ class TestIdempotency:
         """Running write twice does not corrupt state."""
         config_path = tmp_path / "config.toml"
 
-        from sidequests.cli.install import ConfigWriter
+        from campy.cli.install import ConfigWriter
         ConfigWriter.write(
             {"provider": "ollama", "model": "llama3.1:8b"},
             config_path=config_path
@@ -578,7 +578,7 @@ class TestIdempotency:
         (tmp_path / "bin" / "python3").touch()
 
         with patch("subprocess.run") as mock_run:
-            from sidequests.cli.install import VenvManager
+            from campy.cli.install import VenvManager
             vm = VenvManager(venv_dir=tmp_path)
             assert vm.create() is True
             mock_run.assert_not_called()
@@ -593,7 +593,7 @@ class TestFailureModes:
             raise subprocess.TimeoutExpired(cmd="ollama pull", timeout=600)
 
         with patch("subprocess.run", side_effect=run_side_effect):
-            from sidequests.cli.install import OllamaInstaller
+            from campy.cli.install import OllamaInstaller
             inst = OllamaInstaller()
             assert inst.pull_model("llama3.1:8b") is False
 
@@ -603,7 +603,7 @@ class TestFailureModes:
         (tmp_path / "bin" / "python3").touch()
 
         with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="python", timeout=120)):
-            from sidequests.cli.install import VenvManager, SchemaInitializer
+            from campy.cli.install import VenvManager, SchemaInitializer
             vm = VenvManager(venv_dir=tmp_path)
             si = SchemaInitializer(vm)
             assert si.init() is False
@@ -616,7 +616,7 @@ class TestFailureModes:
         seed_file = docs_dir / "GistSeedExamples.md"
         seed_file.touch()
 
-        import sidequests.cli.install as install_mod
+        import campy.cli.install as install_mod
         monkeypatch.setattr(install_mod, "PROJECT_ROOT", dev_root)
 
         # Mock Path.exists to be true for this specific file
@@ -624,12 +624,12 @@ class TestFailureModes:
         assert str(seed_file.resolve()) == path
 
     def test_resolve_seed_examples_path_falls_back_to_package_data(self, tmp_path, monkeypatch):
-        """Should fall back to sidequests/data/GistSeedExamples.md if dev path missing."""
+        """Should fall back to campy/data/GistSeedExamples.md if dev path missing."""
         # PROJECT_ROOT points to a dir without InvertorsDocs
         dev_root = tmp_path / "empty_dev"
         dev_root.mkdir()
         
-        # sidequests/data exists relative to the module
+        # campy/data exists relative to the module
         fake_mod_dir = tmp_path / "site-packages" / "sidequests" / "cli"
         fake_mod_dir.mkdir(parents=True)
         data_dir = tmp_path / "site-packages" / "sidequests" / "data"
@@ -637,7 +637,7 @@ class TestFailureModes:
         seed_file = data_dir / "GistSeedExamples.md"
         seed_file.touch()
 
-        import sidequests.cli.install as install_mod
+        import campy.cli.install as install_mod
         monkeypatch.setattr(install_mod, "PROJECT_ROOT", dev_root)
         
         # We need to mock __file__ in the module to point to our fake_mod_dir
@@ -651,7 +651,7 @@ class TestFailureModes:
         dev_root = tmp_path / "empty_dev"
         dev_root.mkdir()
         
-        import sidequests.cli.install as install_mod
+        import campy.cli.install as install_mod
         monkeypatch.setattr(install_mod, "PROJECT_ROOT", dev_root)
         
         # Point __file__ to somewhere with no ../data/
@@ -664,14 +664,14 @@ class TestLaunchdResolver:
 
     def test_launchd_resolver_prefers_repo_venv(self):
         """Should prefer the repository venv so launchd sees installed deps."""
-        import sidequests.cli.launchd as launchd
+        import campy.cli.launchd as launchd
 
         resolved = launchd.resolve_system_python()
         assert resolved.endswith(".venv/bin/python")
 
     def test_launchd_resolver_skips_pyenv_shim(self, monkeypatch):
         """Should skip interpreters that resolve to pyenv shims."""
-        import sidequests.cli.launchd as launchd
+        import campy.cli.launchd as launchd
         monkeypatch.setattr(launchd.Path, "exists", lambda self: False)
         
         # 1. which("python3.12") returns a shim
@@ -695,7 +695,7 @@ class TestLaunchdResolver:
 
     def test_launchd_resolver_falls_back_to_sys_executable(self, monkeypatch):
         """Should fall back to sys.executable if no other candidates work."""
-        import sidequests.cli.launchd as launchd
+        import campy.cli.launchd as launchd
         monkeypatch.setattr(launchd.Path, "exists", lambda self: False)
         monkeypatch.setattr(launchd.shutil, "which", lambda cmd: None)
         monkeypatch.setattr(os.path, "exists", lambda p: False)
@@ -711,8 +711,8 @@ class TestDaemonSetupReload:
         (tmp_path / "bin").mkdir()
         (tmp_path / "bin" / "python3").touch()
         
-        import sidequests.cli.install as install_mod
-        from sidequests.cli.install import VenvManager, DaemonSetup
+        import campy.cli.install as install_mod
+        from campy.cli.install import VenvManager, DaemonSetup
         
         vm = VenvManager(venv_dir=tmp_path)
         ds = DaemonSetup(vm)
@@ -723,7 +723,7 @@ class TestDaemonSetupReload:
         # Mock _write_plist, unload_plist, load_plist
         monkeypatch.setattr(ds, "_write_plist", lambda: Path("/tmp/test.plist"))
         
-        import sidequests.cli.launchd as launchd
+        import campy.cli.launchd as launchd
         monkeypatch.setattr(launchd, "unload_plist", MagicMock())
         monkeypatch.setattr(launchd, "load_plist", MagicMock(returncode=0))
         
@@ -739,15 +739,15 @@ class TestDaemonSetupReload:
         ds.setup()
         
         assert any("brain_daemon.py" in str(arg) for arg in pkills)
-        assert any("sidequests.daemon" in str(arg) for arg in pkills)
+        assert any("campy.daemon" in str(arg) for arg in pkills)
 
     def test_daemon_setup_forces_unload_then_load_even_when_not_loaded(self, tmp_path, monkeypatch):
         """setup() should call unload_plist regardless of current state."""
         (tmp_path / "bin").mkdir()
         (tmp_path / "bin" / "python3").touch()
         
-        import sidequests.cli.install as install_mod
-        from sidequests.cli.install import VenvManager, DaemonSetup
+        import campy.cli.install as install_mod
+        from campy.cli.install import VenvManager, DaemonSetup
         
         vm = VenvManager(venv_dir=tmp_path)
         ds = DaemonSetup(vm)
@@ -755,7 +755,7 @@ class TestDaemonSetupReload:
         monkeypatch.setattr(install_mod.platform, "system", lambda: "Darwin")
         monkeypatch.setattr(ds, "_write_plist", lambda: Path("/tmp/test.plist"))
         
-        import sidequests.cli.launchd as launchd
+        import campy.cli.launchd as launchd
         unload_mock = MagicMock()
         load_mock = MagicMock(return_value=True)
         monkeypatch.setattr(launchd, "unload_plist", unload_mock)
@@ -774,8 +774,8 @@ class TestDaemonSetupReload:
         (tmp_path / "bin").mkdir()
         (tmp_path / "bin" / "python3").touch()
         
-        from sidequests.cli.install import VenvManager, DaemonSetup
-        import sidequests.cli.launchd as launchd
+        from campy.cli.install import VenvManager, DaemonSetup
+        import campy.cli.launchd as launchd
         
         vm = VenvManager(venv_dir=tmp_path)
         ds = DaemonSetup(vm)
@@ -795,7 +795,7 @@ class TestInstallReport:
 
     def test_print_report_all_pass(self):
         """Returns True when all steps pass."""
-        from sidequests.cli.install import InstallStepResult, _print_install_report
+        from campy.cli.install import InstallStepResult, _print_install_report
         results = [
             InstallStepResult("Step 1", True, "ok"),
             InstallStepResult("Step 2", True, "ok"),
@@ -804,7 +804,7 @@ class TestInstallReport:
 
     def test_print_report_with_failure(self):
         """Returns False when any step fails."""
-        from sidequests.cli.install import InstallStepResult, _print_install_report
+        from campy.cli.install import InstallStepResult, _print_install_report
         results = [
             InstallStepResult("Step 1", True, "ok"),
             InstallStepResult("Step 2", False, "failed"),
@@ -816,7 +816,7 @@ class TestConnectivity:
     def test_verify_ollama_success(self):
         """Returns True when Ollama endpoint responds."""
         with patch("urllib.request.urlopen") as mock_url:
-            from sidequests.cli.install import verify_llm_connectivity
+            from campy.cli.install import verify_llm_connectivity
             ok, detail = verify_llm_connectivity({"provider": "ollama"})
             assert ok is True
             assert "reachable" in detail
@@ -824,7 +824,7 @@ class TestConnectivity:
     def test_verify_ollama_failure(self):
         """Returns False when Ollama endpoint unreachable."""
         with patch("urllib.request.urlopen", side_effect=Exception("Refused")):
-            from sidequests.cli.install import verify_llm_connectivity
+            from campy.cli.install import verify_llm_connectivity
             ok, detail = verify_llm_connectivity({"provider": "ollama"})
             assert ok is False
             assert "unreachable" in detail
@@ -833,8 +833,8 @@ class TestConnectivity:
         """Returns True when BYOK call succeeds."""
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = MagicMock()
-        with patch("sidequests.cli.install.OpenAI", return_value=mock_client):
-            from sidequests.cli.install import verify_llm_connectivity
+        with patch("campy.cli.install.OpenAI", return_value=mock_client):
+            from campy.cli.install import verify_llm_connectivity
             ok, detail = verify_llm_connectivity({
                 "provider": "openai",
                 "api_key": "sk-test",
@@ -847,8 +847,8 @@ class TestConnectivity:
         """Returns False when BYOK call fails."""
         mock_client = MagicMock()
         mock_client.chat.completions.create.side_effect = Exception("Invalid key")
-        with patch("sidequests.cli.install.OpenAI", return_value=mock_client):
-            from sidequests.cli.install import verify_llm_connectivity
+        with patch("campy.cli.install.OpenAI", return_value=mock_client):
+            from campy.cli.install import verify_llm_connectivity
             ok, detail = verify_llm_connectivity({
                 "provider": "openai",
                 "api_key": "sk-bad",
@@ -859,12 +859,12 @@ class TestConnectivity:
 
 class TestOrchestration:
 
-    @patch("sidequests.cli.install._print_install_report")
-    @patch("sidequests.cli.install._print_step_header")
+    @patch("campy.cli.install._print_install_report")
+    @patch("campy.cli.install._print_step_header")
     @patch("click.prompt")
-    @patch("sidequests.cli.install.OllamaInstaller")
-    @patch("sidequests.cli.install.verify_llm_connectivity")
-    @patch("sidequests.cli.install.VenvManager")
+    @patch("campy.cli.install.OllamaInstaller")
+    @patch("campy.cli.install.verify_llm_connectivity")
+    @patch("campy.cli.install.VenvManager")
     def test_run_install_emits_report_on_failure(self, mock_venv, mock_verify, mock_ollama, mock_prompt, mock_header, mock_report):
         """run_install should continue to report even if a step fails."""
         mock_prompt.return_value = "1" # Ollama
@@ -876,7 +876,7 @@ class TestOrchestration:
 
         mock_report.return_value = False # Force failure return from report
         
-        from sidequests.cli.install import run_install
+        from campy.cli.install import run_install
         import click
         with pytest.raises(click.ClickException):
             run_install()

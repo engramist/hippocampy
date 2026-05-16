@@ -1,0 +1,1 @@
+"""Packaged HippoCampy data resources."""

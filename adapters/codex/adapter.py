@@ -5,7 +5,7 @@ Implements the MCP STDIO server for OpenAI Codex CLI.
 Forwards tool calls to the Brain Daemon via Unix socket (JSON-RPC 2.0).
 
 Registration: add to ~/.codex/config.toml (or project .codex/config.toml):
-  [mcp_servers.sidequests]
+  [mcp_servers.campy]
   command = "python"
   args = ["/path/to/adapters/codex/adapter.py"]
 
@@ -18,7 +18,7 @@ Identical protocol to the Claude Code adapter:
 
 Error/Degraded Mode:
   Scenario A (daemon down): returns OFFLINE status on current_truth,
-    queues notify_turn to ~/.sidequests/offline_queue.jsonl for replay.
+    queues notify_turn to ~/.campy/offline_queue.jsonl for replay.
   Scenario B (Ollama down): Brain handles internally (confidence_low storage).
 """
 
@@ -30,12 +30,13 @@ import sys
 from pathlib import Path
 from datetime import datetime, timezone
 from mcp_engine.tool_schemas import TOOLS
-from sidequests.brain_transport import call_brain
+from campy.brain_transport import call_brain
+from campy.paths import get_daemon_socket_path, runtime_dir
 
 _ALL_TOOL_NAMES = frozenset(t["name"] for t in TOOLS)
 
-SOCKET_PATH   = Path.home() / ".sidequests" / "brain.sock"
-OFFLINE_QUEUE = Path.home() / ".sidequests" / "offline_queue.jsonl"
+SOCKET_PATH   = get_daemon_socket_path()
+OFFLINE_QUEUE = runtime_dir() / "offline_queue.jsonl"
 
 # ---------------------------------------------------------------------------
 # Git context detection (runs once at adapter startup)
@@ -177,7 +178,7 @@ async def handle_mcp_request(request: dict) -> dict:
         return ok({
             "protocolVersion": "2024-11-05",
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "sidequests-brain-codex", "version": "0.1.0"},
+            "serverInfo": {"name": "campy-codex", "version": "0.1.0"},
         })
 
     if method == "notifications/initialized":

@@ -1,4 +1,4 @@
-# SideQuests Brain Installation Instructions
+# HippoCampy Installation Instructions
 
 ## Quick Answer
 
@@ -24,8 +24,8 @@ Notes:
 1. Clone the repository:
 
 ```bash
-git clone git@github.com:djs54/sidequests-brain.git
-cd sidequests-brain
+git clone git@github.com:djs54/hippocampy.git
+cd hippocampy
 ```
 
 2. Create a local bootstrap virtual environment:
@@ -40,7 +40,7 @@ pip install -e .
 3. Run the guided installer:
 
 ```bash
-sidequests install
+campy install
 ```
 
 4. Choose your provider when prompted:
@@ -50,7 +50,7 @@ sidequests install
 5. Verify installation health:
 
 ```bash
-sidequests status
+campy status
 ```
 
 If all checks are green, install is complete.
@@ -66,13 +66,13 @@ On macOS, installer registration targets one of these config paths:
 
 After install:
 1. Restart Codex Desktop.
-2. Confirm SideQuests tools are visible/available in Codex.
+2. Confirm Campy tools are visible/available in Codex.
 
 ## What the Installer Sets Up
 
-- Creates runtime environment under ~/.sidequests
-- Writes config at ~/.sidequests/config.toml
-- Initializes Kuzu DB at ~/.sidequests/brain.db
+- Creates runtime environment under ~/.campy
+- Writes config at ~/.campy/config.toml
+- Initializes Kuzu DB at ~/.campy/brain.db
 - Configures daemon launch agent on macOS
 - Registers detected AI clients (including Codex Desktop)
 - Runs final smoke checks
@@ -82,19 +82,19 @@ After install:
 1. Check health:
 
 ```bash
-sidequests status
+campy status
 ```
 
 2. Check daemon logs:
 
 ```bash
-cat ~/.sidequests/daemon.log
+cat ~/.campy/daemon.log
 ```
 
 3. Re-run installer safely (idempotent):
 
 ```bash
-sidequests install
+campy install
 ```
 
 ## Updating an Existing Installation
@@ -102,14 +102,14 @@ sidequests install
 Run these commands from your local repo when you want the latest changes:
 
 ```bash
-cd ~/path/to/sidequests-brain
+cd ~/path/to/hippocampy
 git pull
 source .venv/bin/activate
 pip install -e .
-sidequests install
-sidequests status
+campy install
+campy status
 ```
 
 ## Public Release Status
 
-The provisional patent application is filed. The remaining blocker for a true public one-line installer is packaging and installer hardening, not IP filing status. Before making the public path canonical, verify that package-installed mode works without source-tree assumptions and that `sidequests install`, `sidequests doctor`, daemon startup, adapter registration, and `sidequests activity --follow` all pass from a clean machine.
+The provisional patent application is filed. The remaining blocker for a true public one-line installer is packaging and installer hardening, not IP filing status. Before making the public path canonical, verify that package-installed mode works without source-tree assumptions and that `campy install`, `campy doctor`, daemon startup, adapter registration, and `campy activity --follow` all pass from a clean machine.

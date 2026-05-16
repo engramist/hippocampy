@@ -43,7 +43,7 @@ def _extract_tool_definitions(source: str) -> dict[str, dict]:
 
 def test_openclaw_extension_registers_all_tools():
     """Verify all canonical tools are registered in the extension."""
-    source = Path("extensions/sidequests-brain/src/index.ts").read_text()
+    source = Path("extensions/hippocampy/src/index.ts").read_text()
     registered = set(_extract_registered_tool_names(source))
 
     canonical_names = {tool["name"] for tool in TOOLS}
@@ -56,7 +56,7 @@ def test_openclaw_extension_registers_all_tools():
 
 def test_openclaw_extension_registers_core_tools():
     """Verify all core 5+ tools are registered."""
-    source = Path("extensions/sidequests-brain/src/index.ts").read_text()
+    source = Path("extensions/hippocampy/src/index.ts").read_text()
     registered = set(_extract_registered_tool_names(source))
 
     missing_core = set(CORE_TOOLS) - registered
@@ -67,7 +67,7 @@ def test_openclaw_extension_registers_core_tools():
 
 def test_openclaw_extension_has_proper_descriptions():
     """Verify all registered tools have descriptions."""
-    source = Path("extensions/sidequests-brain/src/index.ts").read_text()
+    source = Path("extensions/hippocampy/src/index.ts").read_text()
 
     # Check that description field exists for each tool definition
     tool_names = _extract_registered_tool_names(source)
@@ -80,7 +80,7 @@ def test_openclaw_extension_has_proper_descriptions():
 
 def test_openclaw_extension_has_proper_parameters():
     """Verify all registered tools have parameter schemas."""
-    source = Path("extensions/sidequests-brain/src/index.ts").read_text()
+    source = Path("extensions/hippocampy/src/index.ts").read_text()
 
     # Check that parameters field exists for each tool definition
     tool_names = _extract_registered_tool_names(source)
@@ -93,7 +93,7 @@ def test_openclaw_extension_has_proper_parameters():
 
 def test_openclaw_extension_register_function_exists():
     """Verify the register function exists and calls registerBrainTool."""
-    source = Path("extensions/sidequests-brain/src/index.ts").read_text()
+    source = Path("extensions/hippocampy/src/index.ts").read_text()
 
     # Check for register function with api parameter
     assert re.search(r'register\s*\(\s*api:\s*any\s*\)', source), \
@@ -110,20 +110,20 @@ def test_openclaw_extension_register_function_exists():
 
 def test_openclaw_manifest_exists():
     """Verify the plugin manifest file exists and is valid."""
-    manifest_path = Path("extensions/sidequests-brain/openclaw.plugin.json")
+    manifest_path = Path("extensions/hippocampy/openclaw.plugin.json")
     assert manifest_path.exists(), "openclaw.plugin.json not found"
 
     manifest = json.loads(manifest_path.read_text())
-    assert manifest.get("id") == "sidequests-brain"
+    assert manifest.get("id") == "hippocampy"
     assert manifest.get("kind") == "memory"
-    assert manifest.get("name") == "SideQuests Brain"
+    assert manifest.get("name") == "HippoCampy"
     assert "description" in manifest
 
 
 def test_package_json_name_matches_manifest():
     """Verify package.json and manifest have matching plugin IDs."""
-    manifest_path = Path("extensions/sidequests-brain/openclaw.plugin.json")
-    package_path = Path("extensions/sidequests-brain/package.json")
+    manifest_path = Path("extensions/hippocampy/openclaw.plugin.json")
+    package_path = Path("extensions/hippocampy/package.json")
 
     manifest = json.loads(manifest_path.read_text())
     package = json.loads(package_path.read_text())
@@ -137,7 +137,7 @@ def test_package_json_name_matches_manifest():
 
 def test_openclaw_tools_route_to_brain_daemon():
     """Verify all registered tools route to Brain daemon via callTool()."""
-    source = Path("extensions/sidequests-brain/src/index.ts").read_text()
+    source = Path("extensions/hippocampy/src/index.ts").read_text()
 
     # Check that brain.callTool is used in the execute handler
     assert 'brain.callTool(' in source, \

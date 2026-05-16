@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from sidequests import brain_transport
-from sidequests.adapters import mcp_server
+from campy import brain_transport
+from campy.adapters import mcp_server
 
 
 def test_socket_path_uses_env_override(monkeypatch):

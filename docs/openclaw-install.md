@@ -4,7 +4,7 @@
 >
 > Verified against repo state on 2026-03-26/27. OpenClaw CLI help checked locally on
 > `2026.3.13`; SideQuests plugin/tool details taken from
-> `extensions/sidequests-brain/openclaw.plugin.json` and `src/index.ts`.
+> `extensions/hippocampy/openclaw.plugin.json` and `src/index.ts`.
 
 ---
 
@@ -231,7 +231,7 @@ From the SideQuests Brain repo root:
 
 ```bash
 cd ~/Desktop/GitProjects/sidequests-brain
-openclaw plugins install ./extensions/sidequests-brain
+openclaw plugins install ./extensions/hippocampy
 ```
 
 Useful plugin checks:
@@ -487,7 +487,7 @@ After this guide is working manually:
 - [ ] `openclaw --version` works
 - [ ] Docker runtime is healthy
 - [ ] Brain daemon responds at `http://127.0.0.1:7799`
-- [ ] `openclaw plugins install ./extensions/sidequests-brain` succeeds
+- [ ] `openclaw plugins install ./extensions/hippocampy` succeeds
 - [ ] `plugins.allow` includes `sidequests-brain`
 - [ ] sandbox tool policy includes `group:plugins` and/or explicit memory tools
 - [ ] `openclaw gateway restart` succeeds

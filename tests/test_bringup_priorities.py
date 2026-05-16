@@ -19,7 +19,7 @@ import pytest
 
 def _patch_run_install_happy_path(monkeypatch, call_log: list[str], *, daemon_ok: bool = True):
     """Patch run_install dependencies so orchestration can be tested deterministically."""
-    import sidequests.cli.install as install_mod
+    import campy.cli.install as install_mod
 
     monkeypatch.setattr(install_mod.click, "prompt", lambda *a, **k: "1")
     monkeypatch.setattr(install_mod.time, "sleep", lambda *_: None)
@@ -78,7 +78,7 @@ def _patch_run_install_happy_path(monkeypatch, call_log: list[str], *, daemon_ok
             call_log.append("step6_daemon")
             import subprocess
             subprocess.run(["pkill", "-f", "brain_daemon.py"], capture_output=True)
-            subprocess.run(["pkill", "-f", "sidequests.daemon"], capture_output=True)
+            subprocess.run(["pkill", "-f", "campy.daemon"], capture_output=True)
             return daemon_ok
 
     def fake_check_status():
@@ -92,7 +92,7 @@ def _patch_run_install_happy_path(monkeypatch, call_log: list[str], *, daemon_ok
     monkeypatch.setattr(install_mod, "AdapterRegistrar", FakeAdapterRegistrar)
     monkeypatch.setattr(install_mod, "DaemonSetup", FakeDaemonSetup)
 
-    import sidequests.cli.smoke_test as smoke_mod
+    import campy.cli.smoke_test as smoke_mod
 
     monkeypatch.setattr(smoke_mod, "check_status", fake_check_status)
     monkeypatch.setattr(install_mod, "_wait_for_daemon", lambda **k: True)
@@ -123,13 +123,13 @@ def test_schema_initializer_uses_wheel_safe_seed_resource(tmp_path, monkeypatch)
     def mocked_exists(self):
         if "InvertorsDocs" in str(self):
             return False
-        if "sidequests/data" in str(self):
+        if "campy/data" in str(self):
             return True
         return original_exists(self)
     
     monkeypatch.setattr(Path, "exists", mocked_exists)
 
-    from sidequests.cli.install import SchemaInitializer, VenvManager
+    from campy.cli.install import SchemaInitializer, VenvManager
 
     vm = VenvManager(venv_dir=tmp_path)
     si = SchemaInitializer(vm)
@@ -150,7 +150,7 @@ def test_schema_initializer_uses_wheel_safe_seed_resource(tmp_path, monkeypatch)
 def test_launchd_write_plist_resolves_real_python_interpreter(tmp_path, monkeypatch):
     """launchd plist should use a concrete interpreter path, not a pyenv shim path."""
     import plistlib
-    import sidequests.cli.launchd as launchd
+    import campy.cli.launchd as launchd
 
     plist_path = tmp_path / "agent.plist"
     log_path = tmp_path / "daemon.log"
@@ -183,7 +183,7 @@ def test_launchd_write_plist_resolves_real_python_interpreter(tmp_path, monkeypa
 
 def test_run_install_executes_all_7_steps_in_order(monkeypatch):
     """run_install should drive all 7 installer phases on the happy path."""
-    import sidequests.cli.install as install_mod
+    import campy.cli.install as install_mod
 
     call_log: list[str] = []
     _patch_run_install_happy_path(monkeypatch, call_log, daemon_ok=True)
@@ -206,7 +206,7 @@ def test_run_install_executes_all_7_steps_in_order(monkeypatch):
 
 def test_run_install_forces_daemon_reload_before_smoke(monkeypatch):
     """Installer should force-reload daemon process to avoid stale tool registry."""
-    import sidequests.cli.install as install_mod
+    import campy.cli.install as install_mod
     import subprocess
 
     call_log: list[str] = []
@@ -226,7 +226,7 @@ def test_run_install_forces_daemon_reload_before_smoke(monkeypatch):
 
     assert "step6_daemon" in call_log
     assert any("pkill -f brain_daemon.py" in pk for pk in pkills)
-    assert any("pkill -f sidequests.daemon" in pk for pk in pkills)
+    assert any("pkill -f campy.daemon" in pk for pk in pkills)
     assert call_log.index("step6_daemon") < call_log.index("step7_smoke")
 
 
@@ -330,7 +330,7 @@ async def test_codex_adapter_queue_cleared_even_if_replay_entry_fails(tmp_path, 
 
 def test_run_install_retries_smoke_until_ready(monkeypatch):
     """Installer should poll for daemon socket with retry helper, not a bare sleep."""
-    import sidequests.cli.install as install_mod
+    import campy.cli.install as install_mod
 
     call_log: list[str] = []
     _patch_run_install_happy_path(monkeypatch, call_log, daemon_ok=True)

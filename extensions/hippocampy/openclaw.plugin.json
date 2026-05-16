@@ -1,14 +1,14 @@
 {
-  "id": "sidequests-brain",
+  "id": "hippocampy",
   "kind": "memory",
-  "name": "SideQuests Brain",
+  "name": "HippoCampy",
   "description": "Graph-native AI memory powered by the Gated Consolidation Loop. Automatically captures decisions, constraints, and plans — then recalls them with full context across sessions.",
   "version": "0.1.0",
   "uiHints": {
     "brainUrl": {
       "label": "Brain Daemon URL",
       "placeholder": "http://127.0.0.1:7799",
-      "help": "URL of the SideQuests Brain Daemon (must be running locally)"
+      "help": "URL of the HippoCampy Daemon (must be running locally)"
     }
   },
   "configSchema": {
