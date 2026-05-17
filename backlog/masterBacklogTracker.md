@@ -236,11 +236,17 @@ Note: ARC-only backlog cards and ARC-only planning docs were relocated to the si
 | B227 | ARC Mechanic Prior Retrieval and Ranking Tool — ✅ DONE (2026-05-03) | P0 | complete | TBD | TBD | backlog/plans/B-227-arc-mechanic-prior-retrieval.md | backlog/B227.md |
 | B228 | Expose ARC World-Model Tools Through MCP Adapters — ✅ DONE (2026-05-03) | P0 | complete | TBD | TBD | backlog/plans/B-228-expose-arc-world-model-tools-through-mcp-adapters.md | backlog/B228.md |
 | B229 | Ingest ARC World-Model Evaluation Artifacts — ✅ DONE (2026-05-03) | P1 | complete | TBD | TBD | backlog/plans/B-229-ingest-arc-world-model-evaluation-artifacts.md | backlog/B229.md |
+| B249 | Dataset Node + Tabular Data Store | P1 | ready | None | TBD | backlog/plans/B-249-dataset-node-tabular-store.md | backlog/B249.md |
+| B250 | Tabular Ingestion Pipeline | P1 | ready | B249 | TBD | backlog/plans/B-250-tabular-ingestion-pipeline.md | backlog/B250.md |
+| B251 | Memory Router (Ingestion Classification) | P2 | ready | B249, B250 | TBD | backlog/plans/B-251-memory-router-ingestion.md | backlog/B251.md |
+| B252 | Bundle Compiler (Retrieval Assembly) | P1 | ready | B249 (optional) | TBD | backlog/plans/B-252-bundle-compiler.md | backlog/B252.md |
+| B253 | Agent Output Formatters | P2 | ready | B252 | TBD | backlog/plans/B-253-agent-output-formatters.md | backlog/B253.md |
+| B254 | Memory Router Skill (Agent-Side Guidance) | P2 | ready | B252, B253 | TBD | backlog/plans/B-254-memory-router-skill.md | backlog/B254.md |
 
 ## Summary
 
-- Total cards: 222
-- Ready: 16
+- Total cards: 228
+- Ready: 22
 - Needs work: 0
 - Complete: 199
 - In progress: 0
@@ -298,6 +304,36 @@ B242-B247 intentionally split the deeper SideQuests-to-Campy internal namespace 
 | B246 | Make `campy-memory` the primary skill namespace | B241, B242 |
 | B247 | Final legacy-name audit and cleanup | B243-B246 |
 | B248 | Update the sibling ARC_AGI external consumer to Campy names and fallbacks | B241; B242/B244 recommended |
+
+---
+
+## Campy Memory OS Initiative (B249–B254)
+
+**Status:** Planned. Extends Campy from a graph-only memory system into a Polyglot Memory Engine — the Kuzu graph remains the central nervous system but gains tabular data storage, intelligent retrieval bundling, and agent-specific output formatting.
+
+**Problem:** Agents burn up to 85% of their token budget on "rediscovery" — re-learning facts the system already knows. Campy solves this for graph-native knowledge; this initiative extends it to structured datasets and adds a smart delivery layer (bundle compiler) that assembles heterogeneous context shaped for each requesting agent.
+
+| Card | Title | Priority | State | Dependencies | Plan |
+|------|-------|----------|-------|--------------|------|
+| B249 | Dataset Node + Tabular Data Store | P1 | ready | None (foundation) | backlog/plans/B-249-dataset-node-tabular-store.md |
+| B250 | Tabular Ingestion Pipeline | P1 | ready | B249 | backlog/plans/B-250-tabular-ingestion-pipeline.md |
+| B251 | Memory Router (Ingestion Classification) | P2 | ready | B249, B250 | backlog/plans/B-251-memory-router-ingestion.md |
+| B252 | Bundle Compiler (Retrieval Assembly) | P1 | ready | B249 (optional) | backlog/plans/B-252-bundle-compiler.md |
+| B253 | Agent Output Formatters | P2 | ready | B252 | backlog/plans/B-253-agent-output-formatters.md |
+| B254 | Memory Router Skill (Agent-Side Guidance) | P2 | ready | B252, B253 | backlog/plans/B-254-memory-router-skill.md |
+
+**Recommended execution order:** B249 → B250 → B252 → B251 → B253 → B254
+(B252 before B251 because the bundle compiler delivers immediate value; the memory router is a quality-of-life improvement for ingestion.)
+
+**What already exists (no new backends needed):**
+- Kuzu HNSW vector indexes (semantic search)
+- GlobalConstraint/GlobalPreference nodes (key-value facts)
+- Wiki projection B221-B224 (document/Markdown summaries)
+
+**What's genuinely new:**
+- SQLite-per-dataset tabular store (B249) — preserves queryable rows/columns
+- Bundle Compiler (B252) — assembles multi-type context into shaped packages
+- Agent output formatters (B253) — per-adapter delivery shapes
 
 
 ---
