@@ -105,7 +105,7 @@ def _inject_context(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT_FRAGMENT = (
-    "[SideQuest | Brain: ACTIVE]\n"
+    "[Campy | Brain: ACTIVE]\n"
     "Decisions and constraints are captured automatically in the background.\n"
     "Before answering about past choices or architecture → current_truth\n"
     "When you form a multi-step strategy → register_plan(goal, steps, session_id)\n"
@@ -116,7 +116,7 @@ SYSTEM_PROMPT_FRAGMENT = (
     "When current_truth returns a panel_url field, include it as a markdown link: [View in Mission Control](url)"
 )
 
-OFFLINE_FRAGMENT = "[SideQuest | Brain: OFFLINE — memory unavailable]"
+OFFLINE_FRAGMENT = "[Campy | Brain: OFFLINE — memory unavailable]"
 
 _daemon_online = True
 

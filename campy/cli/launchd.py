@@ -4,7 +4,7 @@ import sys
 import shutil
 from pathlib import Path
 
-from campy.branding import LEGACY_LAUNCHD_LABEL, PRIMARY_LAUNCHD_LABEL
+from campy.branding import LEGACY_LAUNCHD_LABEL, LEGACY_LAUNCHD_LABELS, PRIMARY_LAUNCHD_LABEL
 from campy.paths import get_daemon_log_path, get_launchd_plist_path, get_legacy_launchd_plist_path
 
 LABEL = PRIMARY_LAUNCHD_LABEL
@@ -46,9 +46,14 @@ def is_loaded(label: str = LABEL) -> bool:
 def unload_plist(label: str = LABEL, plist_path: Path | None = None) -> bool:
     """Unload the plist from launchctl."""
     path = plist_path or (LEGACY_PLIST_PATH if label == LEGACY_LABEL else PLIST_PATH)
-    if not path.exists() and not is_loaded(label):
-        return True
+    if not path.exists():
+        if not is_loaded(label):
+            return True
+        subprocess.run(["launchctl", "remove", label], capture_output=True, text=True)
+        return not is_loaded(label)
     result = subprocess.run(["launchctl", "unload", str(path)], capture_output=True, text=True)
+    if result.returncode != 0 and is_loaded(label):
+        subprocess.run(["launchctl", "remove", label], capture_output=True, text=True)
     return result.returncode == 0 or not is_loaded(label)
 
 
@@ -113,8 +118,9 @@ def write_plist() -> Path:
 def setup_daemon(brain_daemon_path: str = None) -> bool:
     """Install/reload the Campy daemon launchd plist."""
     write_plist()
-    if is_loaded(LEGACY_LABEL) and not is_loaded(LABEL):
-        unload_plist(LEGACY_LABEL, LEGACY_PLIST_PATH)
+    for legacy_label in LEGACY_LAUNCHD_LABELS:
+        if is_loaded(legacy_label):
+            unload_plist(legacy_label, get_launchd_plist_path(legacy_label))
     if is_loaded(LABEL):
         unload_plist(LABEL, PLIST_PATH)
     return load_plist(LABEL, PLIST_PATH)

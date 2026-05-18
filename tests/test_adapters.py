@@ -39,6 +39,7 @@ ADAPTER_MODULES = [
 EXPECTED_TOOLS = {
     "notify_turn", "current_truth", "branch_quest", "diff_since", "reconstruct_timeline",
     "get_open_loops", "analogical_search", "ingest_document", "explore_graph",
+    "ingest_data", "compile_context",  # B251/B252
     "complete_quest", "set_quest", "context_status", "get_anomalies",
     "upsert_lesson", "recall_relevant_lessons",  # B11
     "register_plan", "report_outcome", "recall_plans",  # B67

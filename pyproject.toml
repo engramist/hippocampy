@@ -55,8 +55,8 @@ sidequests = "sidequests.cli.main:app"
 sidequests-daemon = "sidequests.daemon:main"
 
 [project.urls]
-Homepage = "https://github.com/djs54/sidequests-brain"
-Issues = "https://github.com/djs54/sidequests-brain/issues"
+Homepage = "https://github.com/djs54/hippocampy"
+Issues = "https://github.com/djs54/hippocampy/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
