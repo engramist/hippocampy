@@ -752,6 +752,29 @@ NODE_TABLES = {
         created_at STRING,
         PRIMARY KEY (world_model_summary_id)
     """,
+
+    # B249 — Dataset node + tabular data store
+    "Dataset": """
+        dataset_id STRING,
+        name STRING,
+        description STRING,
+        embedding FLOAT[384],
+        embedding_model STRING,
+        embedding_dim INT32,
+        storage_uri STRING,
+        schema_json STRING,
+        row_count INT64,
+        column_count INT32,
+        source_format STRING,
+        content_hash STRING,
+        confidence DOUBLE,
+        confidence_low BOOLEAN,
+        pathway_strength DOUBLE,
+        archived BOOLEAN,
+        created_at TIMESTAMP,
+        last_accessed_at TIMESTAMP,
+        PRIMARY KEY (dataset_id)
+    """,
 }
 
 # ---------------------------------------------------------------------------
@@ -765,6 +788,10 @@ REL_TABLES = [
     # Document provenance
     "CREATE REL TABLE IF NOT EXISTS DERIVED_FROM (FROM DocumentExtract TO Document)",
     "CREATE REL TABLE IF NOT EXISTS ESTABLISHED (FROM Message TO Decision, FROM Message TO Constraint, FROM DocumentExtract TO Decision, FROM DocumentExtract TO Constraint)",
+    # B249 — Dataset provenance and linkage
+    "CREATE REL TABLE IF NOT EXISTS DATASET_DERIVED_FROM (FROM Dataset TO Document)",
+    "CREATE REL TABLE IF NOT EXISTS DATASET_BELONGS_TO_QUEST (FROM Dataset TO MainQuest, FROM Dataset TO SideQuest)",
+    "CREATE REL TABLE IF NOT EXISTS DESCRIBED_BY_DATASET (FROM Concept TO Dataset, extraction_method STRING, created_at TIMESTAMP)",
     # Audit trail
     "CREATE REL TABLE IF NOT EXISTS DEPRECATED_BY (FROM Concept TO Concept, FROM Decision TO Decision, FROM Constraint TO Constraint, FROM Lesson TO Lesson)",
     "CREATE REL TABLE IF NOT EXISTS TRIGGERED (FROM Message TO MergeEvent)",
@@ -1205,6 +1232,7 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         "PlanStep",  # B66
         "Hypothesis",  # B88
         "Procedure",  # B194
+        "Dataset",  # B249
     ]
     for table in embedding_tables:
         index_name = f"{table.lower()}_emb_idx"

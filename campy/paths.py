@@ -101,10 +101,18 @@ def get_bin_dir() -> Path:
     return bin_dir
 
 
+def tables_dir() -> Path:
+    """Return path to tabular data storage directory, creating if needed."""
+    d = runtime_dir() / "tables"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def ensure_runtime_paths() -> None:
     runtime_dir()
     get_config_dir()
     get_bin_dir()
+    tables_dir()
 
 
 __all__ = [
@@ -123,5 +131,6 @@ __all__ = [
     "get_launchd_plist_path",
     "get_legacy_launchd_plist_path",
     "get_bin_dir",
+    "tables_dir",
     "ensure_runtime_paths",
 ]
