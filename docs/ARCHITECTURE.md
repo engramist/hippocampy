@@ -287,6 +287,18 @@ hippocampy/
 │   ├── graph/
 │   │   ├── kuzu_client.py       # Kùzu connection + Cypher execution
 │   │   └── embeddings.py        # sentence-transformers wrapper
+│   ├── tabular_store.py         # SQLite-per-dataset storage layer (B249)
+│   ├── tabular_ingest.py        # Tabular data ingestion pipeline — CSV/XLSX/TSV (B250)
+│   ├── memory_router.py         # Ingestion classification — routes data to optimal storage (B251)
+│   ├── bundle_compiler.py       # Heterogeneous retrieval — assembles ContextBundles (B252)
+│   ├── formatters/              # Agent output formatters — per-adapter bundle shapes (B253)
+│   │   ├── base.py              # BundleFormatter protocol
+│   │   ├── generic.py           # Default JSON formatter
+│   │   ├── claude_code.py       # Structured markdown with headers and decision lists
+│   │   ├── claude_desktop.py    # Conversational prose with citations
+│   │   ├── codex.py             # Ultra-compact code-focused output
+│   │   ├── chatgpt_desktop.py   # Friendly bullet points
+│   │   └── arc.py               # Structured JSON for ARC agents
 │   └── tools/
 │       ├── __init__.py          # MCP tool implementations: notify_turn, current_truth, etc.
 │       ├── explore_graph.py     # Directed multi-hop graph traversal
@@ -608,6 +620,9 @@ When Step 4 classifies a Concept at >90% confidence as a specific artifact type,
 - `Procedure` (B194) (`procedure_id`, `name`, `domain`, `archetype`, `description`, `steps_json`, `embedding FLOAT[384]`, `embedding_model`, `embedding_dim`, `success_count`, `application_count`, `success_rate`, `confidence`, `pathway_strength`, `archived`, `created_at`, `last_applied_at`) — reusable parameterized strategy templates distilled from successful Plans
 - `KnowledgeGap` (B193) (`gap_id`, `domain`, `gap_type`, `description`, `severity`, `message_count`, `lesson_count`, `resolved`, `created_at`, `resolved_at`) — metacognitive gap tracking for proactive learning
 
+**Tabular Data Nodes** (B249):
+- `Dataset` (`dataset_id`, `name`, `description`, `embedding FLOAT[384]`, `embedding_model`, `embedding_dim`, `storage_uri STRING` — path to per-dataset SQLite file in `~/.campy/tables/`, `schema_json STRING` — column names/types/samples, `row_count INT64`, `column_count INT32`, `source_format STRING` — csv/xlsx/tsv/xls, `content_hash STRING`, `confidence`, `confidence_low`, `pathway_strength`, `archived`, `created_at`, `last_accessed_at`)
+
 **Entity Curation Nodes:**
 - `DisambiguationEvent` (B158) (`event_id`, `concept_id_a`, `concept_id_b`, `similarity`, `status`, `resolved_at`, `resolved_by`, `created_at`) — gray-zone entity pairs awaiting human or system resolution
 
@@ -648,6 +663,11 @@ When Step 4 classifies a Concept at >90% confidence as a specific artifact type,
 # Document provenance
 (DocumentExtract)-[DERIVED_FROM]->(Document)
 (Message | DocumentExtract)-[ESTABLISHED]->(Decision | Constraint)
+
+# Dataset provenance and linkage (B249)
+(Dataset)-[DATASET_DERIVED_FROM]->(Document)
+(Dataset)-[DATASET_BELONGS_TO_QUEST]->(MainQuest | SideQuest)
+(Concept)-[DESCRIBED_BY_DATASET {extraction_method, created_at}]->(Dataset)
 
 # Audit trail
 (Decision)-[DEPRECATED_BY]->(Decision)
@@ -789,7 +809,7 @@ Response: `{ "status": "queued" }` — always immediate, never blocks.
 
 ### Retrieval Tools
 
-**`memory_decision`** — call when unsure whether a prompt warrants recall. Returns a compact recommendation (`should_recall`, `recommended_tool`, `query`, `reason`, `confidence`, `context_budget`, `anti_bloat_guidance`) without retrieving memory. This is the runtime companion to `skills/campy-memory/SKILL.md`.
+**`memory_decision`** — call when unsure whether a prompt warrants recall. Returns a compact recommendation (`should_recall`, `recommended_tool`, `query`, `reason`, `confidence`, `context_budget`, `anti_bloat_guidance`) without retrieving memory. Routes multi-entity or broad context queries to `compile_context` (B254). This is the runtime companion to `skills/campy-memory/SKILL.md`.
 
 **`current_truth`** — call before answering architecture or past-decision questions. Searches consolidated artifacts and bounded episodic `Message` evidence, then ranks by graph strength (`pathway_strength × confidence`, plus bounded outcome valence). Includes optional `include_rationale` for 1-hop provenance context.
 
@@ -806,6 +826,12 @@ Response: `{ "status": "queued" }` — always immediate, never blocks.
 **`recall_procedures`** — retrieve reusable Procedure templates by archetype or semantic query, ranked by success rate (B194)
 
 **`get_knowledge_gaps`** — return active KnowledgeGap nodes for proactive metacognitive review (B193)
+
+### Bundle Compilation & Tabular Tools (B249–B254)
+
+**`compile_context`** — heterogeneous retrieval: assembles a `ContextBundle` from exact facts (GlobalConstraint/Preference), semantic search, graph traversals, tabular data, and wiki summaries. 5-stage pipeline with token budget management (small ≤8K, medium ≤128K, large 200K+). Output formatted per agent type via `mcp_engine/formatters/`. This is the primary retrieval tool for multi-entity queries; `memory_decision` routes here when it detects broad context needs.
+
+**`ingest_document`** (extended) — now dispatches `.csv`, `.xlsx`, `.tsv`, `.xls` files to the tabular ingestion pipeline (B250). Tabular files get dual storage: full data in per-dataset SQLite + metadata/extracted facts in the Kuzu graph.
 
 ### Quest Management Tools
 

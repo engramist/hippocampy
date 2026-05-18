@@ -15,6 +15,14 @@ Use `skills/campy-memory/SKILL.md` as the canonical policy for when to recall Ca
 
 If you are unsure whether recall is warranted, call `memory_decision` first. It recommends the next recall tool without retrieving memory itself.
 
+## Heterogeneous Retrieval (B249–B254)
+
+For multi-entity or broad context queries, use `compile_context` instead of making multiple individual recall calls. It assembles a `ContextBundle` from exact facts, semantic search, graph traversals, tabular data, and wiki summaries — pre-compressed to your token budget and formatted for your agent type.
+
+`memory_decision` automatically routes to `compile_context` when it detects multi-entity queries. You can also call it directly with a `token_budget` and optional `output_format` (generic, claude_code, codex, claude_desktop, chatgpt_desktop, arc).
+
+Tabular data (CSV, XLSX, TSV) ingested via `ingest_document` is stored in per-dataset SQLite files with metadata and extracted facts in the Kuzu graph. The bundle compiler includes relevant tabular data when assembling context.
+
 ## Activity Indicator
 
 Use the Campy activity feed to verify live memory behavior:

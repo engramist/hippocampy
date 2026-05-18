@@ -33,7 +33,7 @@ These are the sources of truth for the system design — shared across all agent
 
 Use `skills/campy-memory/SKILL.md` as the canonical memory-use policy. Do not recall on every turn. Use recall only when the answer or plan depends on durable prior decisions, timeline, lessons, procedures, or similar past work.
 
-If uncertain, call `memory_decision` first; it recommends the appropriate recall tool without retrieving memory itself.
+If uncertain, call `memory_decision` first; it recommends the appropriate recall tool without retrieving memory itself. For multi-entity or broad context queries, `memory_decision` routes to `compile_context` (B252) which assembles heterogeneous context bundles from all memory types.
 
 ## Campy Activity Indicator
 
