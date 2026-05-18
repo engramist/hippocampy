@@ -11,7 +11,6 @@ import sys
 from pathlib import Path
 
 ADAPTER_DIR  = Path(__file__).parent
-ADAPTER_FILE = ADAPTER_DIR / "adapter.py"
 HOOK_FILE    = ADAPTER_DIR / "hook_user_turn.py"
 REPO_ROOT    = ADAPTER_DIR.parent.parent
 
@@ -42,7 +41,7 @@ def _write_mcp_json(project_root: Path) -> None:
         "mcpServers": {
             "campy": {
                 "command": _python_executable(),
-                "args": [str(ADAPTER_FILE)],
+                "args": ["-m", "campy.adapters.mcp_server"],
             }
         }
     }

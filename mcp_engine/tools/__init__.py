@@ -1895,6 +1895,86 @@ async def ingest_document(params: dict, db, config: dict) -> dict:
     )
 
 
+async def ingest_data(params: dict, db, config: dict) -> dict:
+    """
+    Unified ingestion entry point. Classifies file/content input and routes it
+    to the graph/document/tabular ingestion path without creating a shadow store.
+
+    params: {file_path?, content?, mime_type?, session_id, quest_id?}
+    """
+    from mcp_engine.memory_router import classify_input
+
+    file_path = (params.get("file_path") or "").strip()
+    content = params.get("content")
+    mime_type = params.get("mime_type")
+    session_id = (params.get("session_id") or "unknown").strip() or "unknown"
+    quest_id = (params.get("quest_id") or "").strip()
+
+    if not file_path and not content:
+        return {"error": "file_path or content is required"}
+
+    route = classify_input(content=content, file_path=file_path, mime_type=mime_type)
+
+    if file_path:
+        result = await ingest_document({"file_path": file_path, "quest_id": quest_id}, db, config)
+    else:
+        result = await notify_turn(
+            {
+                "role": params.get("role", "user"),
+                "content": content or "",
+                "session_id": session_id,
+            },
+            db,
+            config,
+        )
+
+    return {
+        "route": {
+            "storage_type": route.storage_type,
+            "reason": route.reason,
+            "confidence": route.confidence,
+            "suggested_tool": route.suggested_tool,
+        },
+        "result": result,
+    }
+
+
+async def compile_context(params: dict, db, config: dict) -> dict:
+    """
+    Compile a bounded ContextBundle for multi-entity or broad memory queries.
+
+    params: {query, token_budget?, agent_type?, output_format?, session_id?, quest_id?,
+             include_tabular?, include_summaries?}
+    """
+    from mcp_engine.bundle_compiler import compile_bundle
+    from mcp_engine.formatters import format_bundle
+
+    query = (params.get("query") or "").strip()
+    if not query:
+        return {"error": "query is required"}
+
+    token_budget = int(params.get("token_budget") or 32000)
+    agent_type = params.get("output_format") or params.get("agent_type") or "generic"
+
+    bundle = await compile_bundle(
+        query=query,
+        db=db,
+        config=config,
+        token_budget=token_budget,
+        agent_type=agent_type,
+        quest_id=params.get("quest_id"),
+        session_id=params.get("session_id"),
+        include_tabular=params.get("include_tabular", True),
+        include_summaries=params.get("include_summaries", True),
+    )
+
+    return {
+        "bundle": bundle.to_dict(),
+        "formatted": format_bundle(bundle, agent_type),
+        "agent_type": agent_type,
+    }
+
+
 # ---------------------------------------------------------------------------
 # B11 — complete_quest + Lesson synthesis
 # ---------------------------------------------------------------------------
@@ -2948,6 +3028,8 @@ TOOL_HANDLERS = {
     "reconstruct_timeline": reconstruct_timeline,  # B192
     "get_open_loops":   get_open_loops,
     "ingest_document":  ingest_document,
+    "ingest_data":      ingest_data,            # B251
+    "compile_context":  compile_context,        # B252
     "analogical_search": analogical_search,
     "explore_graph":    explore_graph,
     "set_quest":        set_quest,

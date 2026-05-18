@@ -1,10 +1,10 @@
-# SideQuests Brain — Ecosystem Rules
+# HippoCampy — Ecosystem Rules
 
 Status: active draft
 
 ## Purpose
 
-This document is the source of truth for the ecosystem architecture of the SideQuests Brain platform. It defines stable layers, ownership boundaries, and rules that every coding agent (Claude, Gemini, Codex) and human contributor must follow.
+This document is the source of truth for the ecosystem architecture of the HippoCampy platform. It defines stable layers, ownership boundaries, and rules that every coding agent (Claude, Gemini, Codex) and human contributor must follow.
 
 Use it to answer:
 
@@ -39,11 +39,11 @@ This ecosystem is a local AI agent platform with a small set of stable layers, o
 
 **Future layer (not active):** **Experience & Interaction** — Thin channels for human input, approvals, and supervision. Not needed while the system is benchmark-driven.
 
-### Important boundary: SideQuests and ARC are separate
+### Important boundary: Campy and ARC are separate
 
 This is the most critical architectural rule in this project.
 
-**SideQuests code and ARC code must remain separate.** They communicate only through the `BrainClientProtocol` interface and MCP tool contracts. No ARC file may import from `mcp_engine/`. No SideQuests file may import from `agents/` or `benchmarks/`.
+**Campy code and ARC code must remain separate.** They communicate only through the `BrainClientProtocol` interface and MCP tool contracts. No ARC file may import from `mcp_engine/`. No Campy file may import from `agents/` or `benchmarks/`.
 
 ---
 
@@ -62,7 +62,7 @@ This is the most critical architectural rule in this project.
 
 | Boundary | Interface | Location |
 |---|---|---|
-| ARC ↔ SideQuests | `BrainClientProtocol` | `benchmarks/arc3/adapter.py` |
+| ARC ↔ Campy | `BrainClientProtocol` | `benchmarks/arc3/adapter.py` |
 | ARC ↔ Environment | `ARC3Harness._execute_action()`, `_initial_frame()` | `benchmarks/arc3/harness.py` |
 | Agent ↔ Orchestrator | `ARCOrchestrator` public methods | `agents/arc3/orchestrator.py` |
 | Adapter ↔ Brain Daemon | MCP STDIO / Unix domain socket | `adapters/*/adapter.py` |
@@ -89,7 +89,7 @@ Agent Orchestration & Control Plane owns:
 - run ID and session ID generation
 - progress snapshots and run export
 - write trace collection and aggregation
-- sidequests ledger aggregation
+- Campy ledger aggregation
 - orchestration report generation
 
 Agent Orchestration & Control Plane does not own:
@@ -188,7 +188,7 @@ The agent harness is where planning, retrieval-trigger logic, tool selection, cr
 
 It is not:
 
-- a memory system (that's SideQuests)
+- a memory system (that's Campy)
 - the durable workflow state store (that's the Control Plane)
 - the environment authority (that's the ARC API)
 
@@ -198,9 +198,9 @@ When new agents are added beyond ARC, each agent:
 
 - gets its own directory under `agents/<agent_name>/`
 - uses its own orchestrator and reasoning logic
-- accesses SideQuests through `BrainClientProtocol` (same interface)
+- accesses Campy through `BrainClientProtocol` (same interface)
 - accesses shared assets from the shared knowledge layer
-- does NOT duplicate SideQuests tools, adapters, or memory logic
+- does NOT duplicate Campy tools, adapters, or memory logic
 
 ---
 
@@ -318,39 +318,39 @@ A bad tool:
 
 If a capability is useful across more than one agent or pipeline, it belongs in Deterministic Tools & Services rather than being trapped inside one agent's orchestrator.
 
-### SideQuests internal tools
+### Campy internal tools
 
-The Gated Consolidation Loop steps (NER, gist classification, relation extraction, pattern matching) are deterministic tools owned by SideQuests. They live inside `mcp_engine/loop/` and are NOT exposed to agents. Agents interact with SideQuests only through MCP tool contracts.
+The Gated Consolidation Loop steps (NER, gist classification, relation extraction, pattern matching) are deterministic tools owned by Campy. They live inside `mcp_engine/loop/` and are NOT exposed to agents. Agents interact with Campy only through MCP tool contracts.
 
 ---
 
 ## Data Products & Memory
 
-**Definition** — Governed memory surfaces and durable knowledge graph exposed through versioned MCP tool contracts. This is SideQuests Brain: the Gated Consolidation Loop, Kùzu graph database, and all MCP tools.
+**Definition** — Governed memory surfaces and durable knowledge graph exposed through versioned MCP tool contracts. This is HippoCampy: the Gated Consolidation Loop, Kùzu graph database, and all MCP tools.
 
 ### Current owner
 
 Brain Daemon + `mcp_engine/` + all MCP tool handlers.
 
-### Boundary rule: SideQuests is a separate system
+### Boundary rule: Campy is a separate system
 
-**SideQuests code and ARC code must remain separate.**
+**Campy code and ARC code must remain separate.**
 
 This means:
 
 - No file in `agents/` may import from `mcp_engine/`
 - No file in `mcp_engine/` may import from `agents/` or `benchmarks/`
-- All communication between ARC and SideQuests goes through `BrainClientProtocol`
+- All communication between ARC and Campy goes through `BrainClientProtocol`
 - `BrainClientProtocol` is defined in `benchmarks/arc3/adapter.py` — the only approved interface
 - `LocalBrainClient` may import from `mcp_engine/tools/` because it IS the adapter implementation
 - `NoOpBrainClient` and `LedgerBrainClient` are test/baseline implementations that do not touch `mcp_engine/`
 
 ### Why this rule exists
 
-SideQuests is designed to serve multiple agents, not just ARC. If ARC code reaches into SideQuests internals:
+Campy is designed to serve multiple agents, not just ARC. If ARC code reaches into Campy internals:
 
 - adding a second agent requires duplicating that coupling
-- SideQuests internal refactoring breaks ARC
+- Campy internal refactoring breaks ARC
 - the MCP tool contracts become meaningless
 
 ### Rules
@@ -374,12 +374,12 @@ Data Products & Memory does not own:
 
 ### MCP tool contract
 
-All agent access to SideQuests must go through the MCP tool contract defined in [docs/tool-catalog.md](tool-catalog.md).
+All agent access to Campy must go through the MCP tool contract defined in [docs/tool-catalog.md](tool-catalog.md).
 
 The 19 MCP tools are the stable API surface. Agents must not:
 
 - bypass MCP tools to query Kùzu directly
-- import SideQuests internal modules
+- import Campy internal modules
 - assume internal schema or implementation details
 
 ### Data / memory rule
@@ -456,8 +456,8 @@ When new environments or external data sources are added:
 
 Observability spans every layer:
 
-- **Write traces** — every SideQuests tool call and phase event is recorded in a structured write trace, exported per step
-- **SideQuests ledger** — every MCP tool invocation is logged with timing, phase, and result status
+- **Write traces** — every Campy tool call and phase event is recorded in a structured write trace, exported per step
+- **Campy ledger** — every MCP tool invocation is logged with timing, phase, and result status
 - **Orchestration report** — run-level summary of phase ownership, tool rules, violations, and gate results
 - **Prompt trace / block trace** — ordered block list per step with owner/tool fields
 - **Checkpoint persistence** — crash-safe per-task state for run recovery
@@ -496,10 +496,10 @@ These are the non-negotiable import and dependency rules.
 ### Quick check command
 
 ```bash
-# Verify no SideQuests imports in ARC agent code
+# Verify no Campy imports in ARC agent code
 grep -rn "from mcp_engine\|import mcp_engine" agents/ && echo "VIOLATION" || echo "CLEAN"
 
-# Verify no ARC imports in SideQuests code
+# Verify no ARC imports in Campy code
 grep -rn "from agents\|import agents\|from benchmarks\|import benchmarks" mcp_engine/ && echo "VIOLATION" || echo "CLEAN"
 ```
 
@@ -510,7 +510,7 @@ grep -rn "from agents\|import agents\|from benchmarks\|import benchmarks" mcp_en
 When a second agent is added beyond ARC:
 
 1. Create `agents/<agent_name>/` with its own orchestrator, reasoning, and solver logic.
-2. The agent accesses SideQuests through `BrainClientProtocol` — same interface, same MCP tools.
+2. The agent accesses Campy through `BrainClientProtocol` — same interface, same MCP tools.
 3. The agent gets its own harness in `benchmarks/<benchmark_name>/` or uses a shared harness.
 4. Shared prompts, skills, and knowledge move to a shared `knowledge/` directory.
 5. Agent-specific prompts stay in the agent's own directory.
@@ -520,7 +520,7 @@ When a second agent is added beyond ARC:
 
 ## Adding New Tools
 
-When a new MCP tool is added to SideQuests:
+When a new MCP tool is added to Campy:
 
 1. Define the tool schema in `mcp_engine/tool_schemas.py`.
 2. Implement the handler in `mcp_engine/tools/`.
@@ -538,7 +538,7 @@ When a new MCP tool is added to SideQuests:
 When a new deterministic tool or compute capability is added:
 
 1. If it's ARC-specific, put it in `agents/arc3/` or `benchmarks/arc3/`.
-2. If it's SideQuests-internal, put it in `mcp_engine/loop/` or `mcp_engine/graph/`.
+2. If it's Campy-internal, put it in `mcp_engine/loop/` or `mcp_engine/graph/`.
 3. If it's reusable across agents, put it in a shared `tools/` or `scripts/` directory.
 4. It must not own workflow state, memory, or phase transitions.
 5. It must take explicit inputs and return explicit outputs.
@@ -547,4 +547,4 @@ When a new deterministic tool or compute capability is added:
 
 ## One-Sentence Rule
 
-The control plane owns workflow and phase transitions, the harness owns agent reasoning, shared knowledge feeds prompts and skills, deterministic tools own bounded compute, SideQuests owns memory and is accessed only through MCP, the ARC API is the trusted environment authority, observability spans everything, and **SideQuests code and ARC code never cross-import**.
+The control plane owns workflow and phase transitions, the harness owns agent reasoning, shared knowledge feeds prompts and skills, deterministic tools own bounded compute, Campy owns memory and is accessed only through MCP, the ARC API is the trusted environment authority, observability spans everything, and **Campy code and ARC code never cross-import**.

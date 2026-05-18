@@ -1,4 +1,4 @@
-"""Diagnostic and repair helpers for SideQuests installation."""
+"""Diagnostic and repair helpers for Campy installation."""
 
 from __future__ import annotations
 
@@ -12,7 +12,15 @@ from importlib import resources
 from pathlib import Path
 
 import typer
-from campy.branding import LEGACY_LAUNCHD_LABEL, PRIMARY_LAUNCHD_LABEL, PRODUCT_NAME
+from campy.branding import (
+    LEGACY_LAUNCHD_LABEL,
+    LEGACY_LAUNCHD_LABELS,
+    LEGACY_MCP_SERVER,
+    PRIMARY_LAUNCHD_LABEL,
+    PRIMARY_MCP_SERVER,
+    PRODUCT_NAME,
+)
+from campy.paths import get_launchd_plist_path
 
 
 class DoctorChecker:
@@ -166,6 +174,13 @@ class DoctorChecker:
                 text=True,
             )
             if result.returncode == 0:
+                if self.repair_mode:
+                    from campy.cli.launchd import unload_plist
+
+                    for legacy_label in LEGACY_LAUNCHD_LABELS:
+                        legacy_path = get_launchd_plist_path(legacy_label)
+                        if legacy_path.exists() or self._launchd_loaded(legacy_label):
+                            unload_plist(legacy_label, legacy_path)
                 self.checks.append(("Launchd", True, "plist loaded"))
             else:
                 self.checks.append(("Launchd", False, "plist exists but is not loaded"))
@@ -182,6 +197,12 @@ class DoctorChecker:
     def _ensure_launchd_loaded(self, path: Path) -> bool:
         if self._launchd_loaded(PRIMARY_LAUNCHD_LABEL):
             return True
+        for legacy_label in LEGACY_LAUNCHD_LABELS:
+            legacy_path = get_launchd_plist_path(legacy_label)
+            if legacy_path.exists() or self._launchd_loaded(legacy_label):
+                from campy.cli.launchd import unload_plist
+
+                unload_plist(legacy_label, legacy_path)
         subprocess.run(
             ["launchctl", "load", str(path)],
             capture_output=True,
@@ -280,9 +301,9 @@ class DoctorChecker:
         passed_count = sum(1 for _, passed, _ in self.checks if passed)
         print(f"Result: {passed_count}/{len(self.checks)} checks passed")
         if passed_count == len(self.checks):
-            print("All checks passed. SideQuests is healthy.")
+            print(f"All checks passed. {PRODUCT_NAME} is healthy.")
         else:
-            print("Some checks failed. Run 'sidequests doctor --repair' for safe repairs.")
+            print("Some checks failed. Run 'campy doctor --repair' for safe repairs.")
 
 
 def run_doctor(repair: bool = False, lines: int | None = None) -> bool:
@@ -321,7 +342,7 @@ def doctor(
     repair: bool = typer.Option(False, "--repair", help="Attempt safe repairs"),
     lines: int | None = typer.Option(None, "--lines", help="Show last N activity lines"),
 ) -> None:
-    """Run diagnostics and repair common SideQuests issues."""
+    """Run diagnostics and repair common Campy issues."""
     ok = run_doctor(repair=repair, lines=lines)
     if not ok:
         raise typer.Exit(code=1)
