@@ -43,6 +43,7 @@ from mcp_engine.graph import embeddings as emb
 ALLOWED_EXTENSIONS = {
     ".md", ".txt", ".rst", ".py", ".js", ".ts",
     ".json", ".yaml", ".yml", ".toml", ".html", ".css",
+    ".csv", ".xlsx", ".tsv", ".xls",  # B250 — tabular data
 }
 
 MIME_MAP = {
@@ -58,6 +59,10 @@ MIME_MAP = {
     ".toml": "application/toml",
     ".html": "text/html",
     ".css":  "text/css",
+    ".csv": "text/csv",  # B250 — tabular data
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".tsv": "text/tab-separated-values",
+    ".xls": "application/vnd.ms-excel",
 }
 
 MIN_CHUNK_CHARS = 80    # merge chunks shorter than this with adjacent
@@ -313,6 +318,13 @@ async def ingest_document(db, file_path: str, config: dict,
     location_uri = str(resolved)
     mime_type    = MIME_MAP.get(resolved.suffix.lower(), "text/plain")
     title        = resolved.name
+
+    # B250 — Dispatch to tabular ingestion for spreadsheet/CSV files
+    TABULAR_EXTENSIONS = {".csv", ".xlsx", ".tsv", ".xls"}
+    if resolved.suffix.lower() in TABULAR_EXTENSIONS:
+        # Delegate to tabular ingestion pipeline
+        from mcp_engine import tabular_ingest
+        return await tabular_ingest.ingest_tabular(db, str(resolved), config, loop_queue, quest_id)
 
     # Step 2 — Hash
     content_hash = hash_file(resolved)

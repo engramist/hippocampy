@@ -1,0 +1,7 @@
+category,amount,approved,department
+Marketing,12000,true,Marketing
+Engineering,25000,true,Engineering
+Sales,8000,false,Sales
+Operations,15000,true,Operations
+HR,5000,true,HR
+Legal,7000,true,Legal

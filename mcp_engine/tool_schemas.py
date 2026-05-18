@@ -145,6 +145,45 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "ingest_data",
+        "description": (
+            "Unified data ingestion. Automatically classifies input and routes to optimal storage "
+            "(graph, tabular, or document). Use this instead of calling ingest_document or notify_turn directly."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string", "description": "Path to file to ingest (if not providing content)"},
+                "content": {"type": "string", "description": "Raw content to ingest (if not providing file)"},
+                "mime_type": {"type": "string", "description": "Optional MIME type hint"},
+                "session_id": {"type": "string"},
+                "quest_id": {"type": "string"},
+            },
+            "required": ["session_id"],
+        },
+    },
+    {
+        "name": "compile_context",
+        "description": (
+            "Compile a context bundle from all memory types (graph, exact facts, tabular data, summaries). "
+            "Returns shaped context optimized for the requesting agent's token budget. "
+            "Use this for complex queries that need assembled context; use current_truth for simple fact lookups."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "What context is needed"},
+                "token_budget": {"type": "integer", "description": "Max tokens for the bundle (default: 32000)", "default": 32000},
+                "agent_type": {"type": "string", "description": "Requesting agent type for output formatting"},
+                "include_tabular": {"type": "boolean", "default": True},
+                "include_summaries": {"type": "boolean", "default": True},
+                "session_id": {"type": "string"},
+                "quest_id": {"type": "string"},
+            },
+            "required": ["query", "session_id"],
+        },
+    },
+    {
         "name": "ingest_arc_artifacts",
         "description": (
             "Import ARC_AGI run artifacts into SideQuests graph memory for retrieval and wiki projection."

@@ -86,6 +86,34 @@ You call a recall tool when you need:
 - Use when: "How much context is left?", "Token budget", "Context bloat check"
 - Example: "Am I at risk of context bloat? How many tokens are loaded?"
 
+#### Multi-entity query spanning facts, decisions, and data (Bundle Compilation)
+-> **`compile_context`**
+- Use when: You need a *heterogeneous context bundle* that combines facts, constraints, graph data, and tabular data
+- Example: "Brief me on everything we know about this module's architecture, constraints, and historical performance"
+- Output: Pre-assembled context bundle formatted for your agent type, token budget respected
+
+##### When to Use compile_context
+
+- **Multi-topic queries:** Your question references multiple distinct entities or concepts
+- **Need structured context:** You want facts, constraints, related items, and data all together
+- **Large context available:** The normal recall tools would require multiple calls or manual assembly
+- **Agent supports formatted bundles:** Your client (Claude Code, Codex, Gemini) supports structured markdown or JSON output
+
+##### Token Budget & Output Format
+
+`compile_context` respects your token budget and returns pre-compressed output:
+
+- **Default budget:** 32,000 tokens (configurable)
+- **Output formats:** 
+  - `generic` - JSON (compatible everywhere)
+  - `claude_code` - Markdown with headers and metadata
+  - `codex` - Ultra-compact comments (60 chars/line)
+  - `claude_desktop` - Conversational prose with citations
+  - `chatgpt_desktop` - Friendly bullet points with emojis
+  - `arc` - Structured JSON for ARC agent
+
+**Key benefit:** Bundle is already token-budgeted. Inject directly into your prompt without re-summarizing.
+
 #### Simple local edit or current context sufficient
 -> **Do not recall**
 - Example: "Add a comment to this function" or "Fix the typo on line 42"
@@ -105,6 +133,7 @@ You call a recall tool when you need:
 | `analogical_search` | Similar past projects | 0.7 | Analogies + key differences |
 | `recall_mechanic_priors` | ARC mechanics, world models | 0.75 | Mechanic signature + evidence |
 | `recall_scene_graph_priors` | ARC scene graphs, spatial patterns | 0.75 | Scene pattern + success rate |
+| `compile_context` | Multi-entity bundles with facts, constraints, data | 0.85 | Agent-type-specific formatted bundle |
 | `memory_decision` | Should I recall? Which tool? | 0.9 | Recommendation + confidence |
 | `context_status` | Token/context health | 0.95 | Metrics + warnings |
 
@@ -125,6 +154,16 @@ You call a recall tool when you need:
 6. **If unsure whether to recall, call `memory_decision` first.** It's cheap and faster than guessing wrong.
 
 7. **Recall refines; it doesn't replace current context.** Your current messages remain your primary working context.
+
+### Bundle-Specific Anti-Bloat Rules
+
+8. **Bundle is pre-compressed to your token budget. Do not re-summarize or truncate further.** Inject directly into your response.
+
+9. **Use the bundle's formatted output as-is.** The formatter has already optimized for your agent type (markdown for Claude Code, JSON for APIs, etc.).
+
+10. **If the bundle includes tabular data, reference it by table name or row count—don't paste entire tables inline.** Example: "Dataset 'Q3_metrics' has 1500 rows with columns X, Y, Z. Insights: ..."
+
+11. **Respect the bundle's truncation flag.** If `truncated: true`, some results were dropped due to budget. Inform the user if the answer is incomplete.
 
 ---
 

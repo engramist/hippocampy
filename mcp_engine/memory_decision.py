@@ -42,7 +42,35 @@ def decide_memory_action(
     # Normalize prompt to lowercase for matching
     prompt_lower = user_prompt.lower()
     
-    # Rule 0: Check context/token health first (highest priority)
+    # Rule 0 (Early): Multi-entity or broad context query -> compile_context (B252, B254)
+    # Check this BEFORE context_status to avoid false matches on "full context"
+    bundle_triggers = [
+        "everything about",
+        "full context",
+        "brief me on",
+        "what do we know about",
+        "summary of",
+        "overview of",
+        "bundle",
+        "compile",
+    ]
+    if any(trigger in prompt_lower for trigger in bundle_triggers) or _is_multi_entity(user_prompt):
+        return {
+            "should_recall": True,
+            "recommended_tool": "compile_context",
+            "query": _extract_key_entities(user_prompt),
+            "reason": "Multi-entity query spanning decisions, constraints, and data.",
+            "confidence": 0.85,
+            "context_budget": "moderate",
+            "anti_bloat_guidance": "Bundle is pre-compressed to token budget. Inject directly, do not re-summarize.",
+            "suggested_params": {
+                "token_budget": 32000,
+                "include_tabular": True,
+                "output_format": "claude_code",
+            },
+        }
+    
+    # Rule 1: Check context/token health (high priority)
     context_triggers = [
         "context",
         "token",
@@ -260,6 +288,35 @@ def decide_memory_action(
         "context_budget": "compact",
         "anti_bloat_guidance": "No recall needed. Continue with current context.",
     }
+
+
+def _is_multi_entity(prompt: str) -> bool:
+    """Heuristic: does this prompt reference multiple distinct topics?
+    
+    Counts proper nouns (capitalized words NOT at sentence start) or quoted terms.
+    This avoids false positives from "What did we...", "How should we...", etc.
+    """
+    import re
+    
+    # Find capitalized words that are NOT at the start of a sentence
+    # Pattern: not preceded by start-of-string or period/question mark
+    # This filters out sentence-initial capitals like "What", "How"
+    sentences = re.split(r'[.!?]\s+', prompt)
+    capitalized_count = 0
+    
+    for sentence in sentences:
+        # In each sentence, find capitalized words after the first word
+        words = sentence.split()
+        for i, word in enumerate(words[1:], 1):  # Skip first word (often capitalized)
+            # Check if word is capitalized (not all caps)
+            if word and word[0].isupper() and not word.isupper():
+                capitalized_count += 1
+    
+    # Count quoted terms (more reliable multi-entity indicator)
+    quoted = re.findall(r'"[^"]+"|\'[^\']+\'', prompt)
+    
+    # Multi-entity if 2+ proper nouns or 2+ quoted terms
+    return capitalized_count >= 2 or len(quoted) >= 2
 
 
 def _extract_key_entities(prompt: str) -> str:

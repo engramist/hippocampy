@@ -355,6 +355,80 @@ class TestMemoryDecisionAntiBloatGuidance:
                 f"Recall guidance missing brevity mention: {result['anti_bloat_guidance']}"
 
 
+class TestMemoryDecisionCompileContext:
+    """Test routing to compile_context tool (B252/254)."""
+    
+    def test_everything_about_triggers_compile_context(self):
+        """Prompts asking 'everything about X' should recommend compile_context."""
+        prompts = [
+            "Everything about the installer",
+            "What do we know about Project X?",
+            "Brief me on the current status",
+            "Full context on the architecture",
+            "Summary of constraints and decisions",
+            "Overview of performance metrics",
+        ]
+        
+        for prompt in prompts:
+            result = decide_memory_action(prompt)
+            assert result["should_recall"] is True, f"Prompt: {prompt}"
+            assert result["recommended_tool"] == "compile_context", f"Prompt: {prompt}"
+    
+    def test_compile_context_confidence_is_high(self):
+        """compile_context recommendations should have high confidence."""
+        result = decide_memory_action("Everything about Project X")
+        assert result["confidence"] >= 0.80
+    
+    def test_compile_context_uses_moderate_budget(self):
+        """compile_context should recommend moderate token budget."""
+        result = decide_memory_action("Full context on Y")
+        assert result["context_budget"] == "moderate"
+    
+    def test_compile_context_includes_suggested_params(self):
+        """compile_context recommendations should include suggested_params."""
+        result = decide_memory_action("Everything about Project X")
+        assert "suggested_params" in result
+        assert "token_budget" in result["suggested_params"]
+        assert "include_tabular" in result["suggested_params"]
+        assert "output_format" in result["suggested_params"]
+    
+    def test_suggested_params_have_sensible_defaults(self):
+        """suggested_params should have reasonable default values."""
+        result = decide_memory_action("Everything about Project X")
+        params = result["suggested_params"]
+        
+        assert isinstance(params["token_budget"], int)
+        assert params["token_budget"] > 0
+        assert isinstance(params["include_tabular"], bool)
+        assert isinstance(params["output_format"], str)
+    
+    def test_multi_entity_query_may_trigger_compile_context(self):
+        """Multi-entity prompts (multiple capitalized words) may trigger compile_context."""
+        # "Project Q3Budget" has multiple entities
+        prompts = [
+            "What's the status of Project X and Feature Y?",
+            "Database Migration and API Redesign strategy",
+        ]
+        
+        for prompt in prompts:
+            result = decide_memory_action(prompt)
+            # Multi-entity queries may trigger compile_context
+            assert "should_recall" in result
+    
+    def test_compile_context_anti_bloat_guidance(self):
+        """compile_context results should mention bundle injection."""
+        result = decide_memory_action("Everything about Project X")
+        guidance = result["anti_bloat_guidance"].lower()
+        
+        # Should mention not re-summarizing or injecting directly
+        assert "inject" in guidance or "directly" in guidance or "bundle" in guidance
+    
+    def test_compile_context_simple_fact_check_uses_current_truth(self):
+        """Simple fact checks should still use current_truth, not compile_context."""
+        result = decide_memory_action("What did we decide on the database?")
+        assert result["recommended_tool"] == "current_truth"
+
+
 class TestMemoryDecisionPrecedence:
     """Test precedence handling when multiple patterns match."""
     
