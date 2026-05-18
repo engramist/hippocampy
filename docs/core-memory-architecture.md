@@ -1,12 +1,12 @@
-# SideQuests Architecture
+# HippoCampy Architecture
 
-> Canonical architecture reference for `sidequests-brain`.
+> Canonical architecture reference for `hippocampy`.
 > This document defines the memory-system architecture only.
 > ARC solver and benchmark architecture now lives in the sibling `ARC_AGI` repo.
 
 ## Scope
 
-`sidequests-brain` is the local memory engine.
+`hippocampy` is the local memory engine.
 
 Its responsibilities are:
 
@@ -24,7 +24,7 @@ Read-only Markdown surfaces generated from graph state.
 
 - **Primary UI:** Obsidian (local vault).
 - **Secondary UI:** Any Markdown viewer.
-- **Ownership:** SideQuests (Dreaming phase).
+- **Ownership:** Campy (Dreaming phase).
 - **Invariant:** Graph-native state in KuzuDB is the single source of truth.
   - **ARC artifacts:** ARC_AGI run artifacts are evidence inputs and must be ingested into KuzuDB (for example via `ingest_arc_artifacts`) before the Wiki projects them. The Wiki must not treat raw ARC JSON files as authoritative memory.
 
@@ -41,7 +41,7 @@ Detailed specification: [docs/wiki-projection-architecture.md](wiki-projection-a
 
 ## Mission
 
-SideQuests/Campy is a local-first memory system for multi-agent workflows.
+HippoCampy/Campy is a local-first memory system for multi-agent workflows.
 
 The product goal is simple:
 
@@ -61,7 +61,7 @@ The operating philosophy is:
 
 ### 1. Retrieval should shrink context
 
-SideQuests should make the next prompt smaller and better, not larger and noisier.
+Campy should make the next prompt smaller and better, not larger and noisier.
 
 ### 2. Memory is graph-native
 
@@ -82,7 +82,7 @@ Different assistants should be able to converge on the same quest context and re
 ## High-Level Architecture
 
 ```
-SideQuests Brain Daemon
+Campy Brain Daemon
   ├── embedded graph + vector storage
   ├── gated consolidation loop
   ├── retrieval and memory tools
@@ -122,7 +122,7 @@ The daemon owns the durable state.
 
 ## Runtime Boundaries
 
-### What lives in SideQuests
+### What lives in Campy
 
 - graph schema
 - ingestion loop
@@ -209,7 +209,7 @@ The retrieval layer is the product surface the user feels most directly.
 
 ### Adapters
 
-Implemented under `adapters/` and `sidequests/adapters/`.
+Implemented under `adapters/` and `campy/adapters/`; `sidequests/adapters/` remains a legacy compatibility shim.
 
 Purpose:
 
@@ -243,7 +243,7 @@ The Wiki is a read-only projection; the graph remains the authoritative source.
 ## Repository Structure
 
 ```
-sidequests-brain/
+hippocampy/
 ├── sidequests/
 │   ├── brain_daemon.py
 │   ├── daemon.py
@@ -353,7 +353,7 @@ The near-term roadmap is centered on:
 
 ## Relationship To ARC_AGI
 
-`ARC_AGI` is now a sibling repo and should consume SideQuests as a dependency.
+`ARC_AGI` is now a sibling repo and should consume Campy as a dependency.
 
 This repo should not be the canonical place for:
 

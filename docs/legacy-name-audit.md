@@ -1,6 +1,6 @@
 # SideQuests Legacy Name Audit
 
-This document tracks intentional and unintentional occurrences of the legacy "SideQuests" / "sidequests" naming after the HippoCampy (Campy) rebranding.
+This document tracks intentional and unintentional occurrences of the legacy "SideQuests" / "sidequests" naming after the HippoCampy (Campy) rebranding and repository-folder rename.
 
 ## Public-facing stale names to fix now
 

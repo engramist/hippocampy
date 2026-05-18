@@ -1,4 +1,4 @@
-# SideQuest Brain Daemon — Configuration
+# HippoCampy Brain Daemon — Configuration
 # See docs/ARCHITECTURE.md for full documentation on each setting.
 
 [llm]
@@ -32,7 +32,7 @@ model = "sentence-transformers/all-MiniLM-L6-v2"   # 384-dim — matches FLOAT[3
 # ollama_base_url defaults to the [llm] base_url minus /v1
 # api_key for openai reads from OPENAI_API_KEY env var if not set here
 # WARNING: changing to a model with different dimensions requires full re-embedding.
-# Run: sidequests reembed --confirm
+# Run: campy reembed --confirm
 
 [nlp]
 spacy_model = "en_core_web_md"   # requires trained dependency parser for Step 1b verb patterns

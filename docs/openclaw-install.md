@@ -1,22 +1,22 @@
 # OpenClaw Standalone Install Guide
 
-> B26 — standalone OpenClaw install guide for SideQuests Brain integration.
+> B26 — standalone OpenClaw install guide for HippoCampy integration.
 >
 > Verified against repo state on 2026-03-26/27. OpenClaw CLI help checked locally on
-> `2026.3.13`; SideQuests plugin/tool details taken from
+> `2026.3.13`; HippoCampy plugin/tool details taken from
 > `extensions/hippocampy/openclaw.plugin.json` and `src/index.ts`.
 
 ---
 
 ## Goal
 
-This guide sets up **OpenClaw standalone** with **SideQuests Brain** on a local machine,
+This guide sets up **OpenClaw standalone** with **HippoCampy** on a local machine,
 without depending on NemoClaw. The target outcome is:
 
 - OpenClaw gateway running locally
 - Docker sandbox available
-- SideQuests Brain daemon reachable at `http://127.0.0.1:7799`
-- OpenClaw SideQuests plugin installed
+- HippoCampy daemon reachable at `http://127.0.0.1:7799`
+- OpenClaw HippoCampy plugin installed
 - Memory tools available inside agent sessions
 - Passive capture + auto-recall working across sessions
 
@@ -26,8 +26,8 @@ without depending on NemoClaw. The target outcome is:
 
 1. Install OpenClaw
 2. Prepare sandbox runtime
-3. Install and start SideQuests Brain
-4. Install the OpenClaw SideQuests plugin from this repo
+3. Install and start HippoCampy
+4. Install the OpenClaw HippoCampy plugin from this repo
 5. Configure OpenClaw so plugin tools are usable from agent sessions
 6. Restart and verify the integration
 7. Troubleshoot the common failure modes
@@ -43,7 +43,7 @@ without depending on NemoClaw. The target outcome is:
 - Docker-compatible runtime
   - macOS: OrbStack or Docker Desktop
   - Linux: Docker Engine
-- Python environment capable of running SideQuests Brain
+- Python environment capable of running HippoCampy
 - OpenClaw CLI installed
 
 ### Nice to Have
@@ -101,15 +101,15 @@ openclaw sandbox explain
 
 ---
 
-## 3) Install / Start SideQuests Brain
+## 3) Install / Start HippoCampy
 
-If SideQuests Brain is not already installed, use the project installer first.
+If HippoCampy is not already installed, use the project installer first.
 
 From this repo:
 
 ```bash
-cd ~/Desktop/GitProjects/sidequests-brain
-python3 -m sidequests.cli.main install
+cd ~/Desktop/GitProjects/hippocampy
+python3 -m campy.cli.main install
 ```
 
 If you already have it installed, make sure the daemon is running and healthy.
@@ -130,11 +130,11 @@ curl -sS -X POST http://127.0.0.1:7799/mcp \
 If you need to start the daemon manually from the repo:
 
 ```bash
-cd ~/Desktop/GitProjects/sidequests-brain
+cd ~/Desktop/GitProjects/hippocampy
 .venv/bin/python -u brain_daemon.py > /tmp/brain_daemon.log 2>&1 &
 ```
 
-If you installed via `sidequests install`, prefer the managed service path instead of
+If you installed via `campy install`, prefer the managed service path instead of
 manually backgrounding it.
 
 ---
@@ -159,7 +159,7 @@ Merge the following into `~/.openclaw/openclaw.json`:
 ```json
 {
   "plugins": {
-    "allow": ["sidequests-brain"]
+    "allow": ["hippocampy"]
   },
   "tools": {
     "sandbox": {
@@ -182,7 +182,7 @@ Merge the following into `~/.openclaw/openclaw.json`:
 ### Why these settings matter
 
 - `plugins.allow`: avoids the recurring "plugins.allow is empty" trust warning and
-  explicitly trusts the SideQuests plugin.
+  explicitly trusts the HippoCampy plugin.
 - `tools.sandbox.tools.alsoAllow: ["group:plugins"]`: this is the critical fix for tool
   surfacing in agent sessions. Without it, plugin-registered tools may exist at the gateway
   level but still be unavailable to the running agent.
@@ -213,7 +213,7 @@ If you want to be extra explicit, you can also allow the individual memory tools
 }
 ```
 
-The SideQuests OpenClaw extension currently registers these 7 tools:
+The HippoCampy OpenClaw extension currently registers these 7 tools:
 
 - `memory_recall`
 - `memory_search` (alias)
@@ -225,12 +225,12 @@ The SideQuests OpenClaw extension currently registers these 7 tools:
 
 ---
 
-## 5) Install the SideQuests OpenClaw Plugin
+## 5) Install the HippoCampy OpenClaw Plugin
 
-From the SideQuests Brain repo root:
+From the HippoCampy repo root:
 
 ```bash
-cd ~/Desktop/GitProjects/sidequests-brain
+cd ~/Desktop/GitProjects/hippocampy
 openclaw plugins install ./extensions/hippocampy
 ```
 
@@ -238,14 +238,14 @@ Useful plugin checks:
 
 ```bash
 openclaw plugins list
-openclaw plugins info sidequests-brain
+openclaw plugins info hippocampy
 openclaw plugins doctor
 ```
 
 Notes:
 
-- Plugin manifest ID: `sidequests-brain`
-- Package name in the repo is aligned with the manifest: `@sidequests/sidequests-brain`
+- Plugin manifest ID: `hippocampy`
+- Package name in the repo is aligned with the manifest: `@sidequests/hippocampy`
 - The plugin defaults to Brain URL `http://127.0.0.1:7799`
 
 ---
@@ -280,7 +280,7 @@ openclaw gateway run --force
 
 ```bash
 openclaw plugins list
-openclaw plugins info sidequests-brain
+openclaw plugins info hippocampy
 openclaw plugins doctor
 ```
 
@@ -382,15 +382,15 @@ The plugin now distinguishes two cases:
 **A. "No persistent service found"**
 ```
 Brain Daemon not running and no persistent service found.
-Run `sidequests install` or `sidequests setup` to register the daemon...
+Run `campy install` or `campy setup` to register the daemon...
 ```
-This means `sidequests install` (or `sidequests setup`) was never run. The Brain Daemon
+This means `campy install` (or `campy setup`) was never run. The Brain Daemon
 is not configured to start at login. Fix:
 ```bash
-sidequests install    # or: sidequests setup --target openclaw
+campy install    # or: campy setup --target openclaw
 ```
-This writes `~/Library/LaunchAgents/ai.sidequests.brain.plist` (macOS) or
-`~/.config/systemd/user/sidequests-brain.service` (Linux) and enables `RunAtLoad + KeepAlive`
+This writes `~/Library/LaunchAgents/ai.hippocampy.brain.plist` (macOS) or
+`~/.config/systemd/user/hippocampy.service` (Linux) and enables `RunAtLoad + KeepAlive`
 so the daemon starts at login and auto-restarts on crash.
 
 **B. "Service registered but not reachable"**
@@ -401,10 +401,10 @@ The service should restart automatically.
 This means the plist/unit exists but the daemon is transiently down (crash, cold boot delay).
 It should recover automatically. If it stays offline:
 ```bash
-sidequests status                           # check what's wrong
-launchctl start ai.sidequests.brain         # macOS: kick the service
-systemctl --user start sidequests-brain     # Linux: kick the service
-cat ~/.sidequests/daemon.log                # check daemon logs
+campy status                           # check what's wrong
+launchctl start ai.hippocampy.brain         # macOS: kick the service
+systemctl --user start hippocampy     # Linux: kick the service
+cat ~/.campy/daemon.log                # check daemon logs
 ```
 
 **Opt-in auto-launch (advanced):** You can configure the plugin to attempt launching the daemon
@@ -425,12 +425,12 @@ This is disabled by default to avoid duplicate daemon instances. Prefer the mana
 ```json
 {
   "plugins": {
-    "allow": ["sidequests-brain"]
+    "allow": ["hippocampy"]
   }
 }
 ```
 
-`sidequests setup --target openclaw` now writes this explicit trust entry before running
+`campy setup --target openclaw` now writes this explicit trust entry before running
 `openclaw plugins install`, so the normal setup flow does not trip over the empty-allowlist
 warning first.
 
@@ -462,7 +462,7 @@ this repo's current source state.
   - pre-run recall injection via `before_agent_start`
 - The plugin does **not** manage the Brain daemon lifecycle by default. It warns on startup
   with a diagnostic message that distinguishes "service not installed" from "service temporarily
-  unreachable". The recommended setup (`sidequests install`) configures a persistent user service
+  unreachable". The recommended setup (`campy install`) configures a persistent user service
   (launchd on macOS, systemd on Linux) with `RunAtLoad + KeepAlive` so the daemon is available
   before OpenClaw starts and auto-recovers from crashes.
 - Opt-in `autoLaunch` config is available for power users, but the managed service path is
@@ -474,9 +474,9 @@ this repo's current source state.
 
 After this guide is working manually:
 
-1. ~~Implement `sidequests setup --target openclaw` (B25)~~ ✅ Done.
+1. ~~Implement `campy setup --target openclaw` (B25)~~ ✅ Done.
 2. ~~Ensure the Brain daemon is installed as a persistent service for OpenClaw users (B41)~~ ✅ Done.
-   - `sidequests install` now configures launchd (macOS) / systemd (Linux) with RunAtLoad + KeepAlive.
+   - `campy install` now configures launchd (macOS) / systemd (Linux) with RunAtLoad + KeepAlive.
    - Plugin startup warning now distinguishes "service not installed" vs "service temporarily unreachable".
 3. Keep this guide updated if OpenClaw CLI subcommands or plugin policy semantics change.
 
@@ -488,8 +488,8 @@ After this guide is working manually:
 - [ ] Docker runtime is healthy
 - [ ] Brain daemon responds at `http://127.0.0.1:7799`
 - [ ] `openclaw plugins install ./extensions/hippocampy` succeeds
-- [ ] `plugins.allow` includes `sidequests-brain`
+- [ ] `plugins.allow` includes `hippocampy`
 - [ ] sandbox tool policy includes `group:plugins` and/or explicit memory tools
 - [ ] `openclaw gateway restart` succeeds
 - [ ] `openclaw sandbox explain` shows plugin tools are reachable
-- [ ] agent sessions can use SideQuests memory tools
+- [ ] agent sessions can use HippoCampy memory tools

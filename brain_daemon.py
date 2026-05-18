@@ -1,8 +1,8 @@
 """
-brain_daemon.py — SideQuest Brain Daemon
+brain_daemon.py — HippoCampy Brain Daemon
 
 Entry point. On startup:
-  1. Load sidequests.toml
+  1. Load campy.toml (or legacy sidequests.toml fallback)
   2. Pre-warm sentence-transformers model
   3. Initialize Kùzu schema (idempotent)
   4. Load gist centroids + schema.org routing table
@@ -11,7 +11,7 @@ Entry point. On startup:
   7. Start Unix domain socket IPC server (JSON-RPC 2.0)
   8. Start background sweep asyncio task
 
-IPC: JSON-RPC 2.0 over ~/.sidequests/brain.sock
+IPC: JSON-RPC 2.0 over the active Campy runtime socket.
 Concurrency: single asyncio event loop, asyncio.Lock for all Kùzu writes.
 """
 
@@ -39,6 +39,8 @@ from mcp_engine.loop.orchestrator import run_loop
 from mcp_engine.sweep import run_sweep
 from mcp_engine.dictionary import find_dictionary, load_dictionary, ingest_dictionary
 from mcp_engine.activity_log import compact_details, emit_activity
+from campy.branding import PRODUCT_NAME, PRIMARY_MCP_SERVER
+from campy.paths import get_daemon_socket_path, get_database_path
 from mcp_engine.capture import (
     CaptureEvent,
     ClaudeCodeSessionConnector,
@@ -46,8 +48,8 @@ from mcp_engine.capture import (
     VSCodeChatSessionConnector,
 )
 
-SOCKET_PATH = Path.home() / ".sidequests" / "brain.sock"
-DB_PATH     = Path.home() / ".sidequests" / "brain.db"
+SOCKET_PATH = get_daemon_socket_path()
+DB_PATH     = get_database_path()
 # D3 fix: package-relative seed path — GistSeedExamples.md lives alongside
 # the repo, not in a hardcoded OneDrive path that only works on DJ's machine.
 SEED_PATH   = Path(__file__).parent / "InvertorsDocs" / "GistSeedExamples.md"
@@ -56,7 +58,9 @@ SEED_PATH   = Path(__file__).parent / "InvertorsDocs" / "GistSeedExamples.md"
 def _socket_path() -> Path:
     """Return the daemon socket path, allowing sandbox-safe overrides."""
     configured = (
-        os.environ.get("SIDEQUESTS_BRAIN_SOCKET")
+        os.environ.get("CAMPY_BRAIN_SOCKET")
+        or os.environ.get("CAMPY_SOCKET_PATH")
+        or os.environ.get("SIDEQUESTS_BRAIN_SOCKET")
         or os.environ.get("SIDEQUESTS_SOCKET_PATH")
     )
     if configured:
@@ -79,7 +83,7 @@ class BrainDaemon:
     # ------------------------------------------------------------------
 
     async def start(self):
-        print("SideQuest Brain Daemon starting...")
+        print(f"{PRODUCT_NAME} Brain Daemon starting...")
 
         # Configure embedding provider dispatch (sentence-transformers | ollama | openai)
         emb.configure(self.config)
@@ -196,7 +200,7 @@ class BrainDaemon:
 
     def _resolve_seed_path(self) -> Path:
         """Find GistSeedExamples.md — check config path dir first, then default."""
-        config_dir = Path(self.config.get("_config_path", "sidequests.toml")).parent
+        config_dir = Path(self.config.get("_config_path", "campy.toml")).parent
         candidates = [
             config_dir.parent / "InvertorsDocs" / "GistSeedExamples.md",
             SEED_PATH,
@@ -205,7 +209,7 @@ class BrainDaemon:
             if path.exists():
                 return path
         raise FileNotFoundError(
-            "GistSeedExamples.md not found. Expected alongside sidequests.toml."
+            "GistSeedExamples.md not found. Expected alongside campy.toml."
         )
 
     # ------------------------------------------------------------------
@@ -265,7 +269,7 @@ class BrainDaemon:
         if method == "initialize":
             return {"jsonrpc": "2.0", "id": req_id,
                     "result": {"protocolVersion": "2024-11-05",
-                               "serverInfo": {"name": "sidequests-brain", "version": "0.1.0"},
+                               "serverInfo": {"name": PRIMARY_MCP_SERVER, "version": "0.1.0"},
                                "capabilities": {"tools": {}}}}
         if method == "tools/list":
             tools = [{"name": name} for name in TOOL_HANDLERS]

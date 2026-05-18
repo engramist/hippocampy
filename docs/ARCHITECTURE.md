@@ -1,4 +1,4 @@
-# Side Quests — Architecture Specification
+# HippoCampy — Architecture Specification
 
 > **Canonical architecture reference for all agents and contributors.**
 > This is the single source of truth for the system design, schema, Loop steps, tools, and IP claims.
@@ -19,7 +19,7 @@
 
 ## Project Mission
 
-**Side Quests — Phase 0: Standalone Brain Daemon** — Build a standalone local AI memory system backed by a Gated Consolidation Loop and a Graph-Native Kùzu database. The system exposes MCP STDIO adapters for Claude Code and Codex. OpenClaw integration is deferred to a later phase.
+**HippoCampy (Campy) — Phase 0: Standalone Brain Daemon** — Build a standalone local AI memory system backed by a Gated Consolidation Loop and a Graph-Native Kùzu database. The system exposes MCP STDIO adapters for Claude Code and Codex. OpenClaw integration is deferred to a later phase.
 
 The core invention is the **Gated Consolidation Loop** — an active cognitive processing engine modeled on human biomimetic heuristics (Kahneman System 1/2, Representativeness, Availability) that transforms passive AI memory into a self-correcting, auditable knowledge graph structured around a Main Quest / Side Quest paradigm.
 
@@ -79,7 +79,7 @@ base_url = "http://localhost:11434"   # ollama only
 [embeddings]
 model = "sentence-transformers/all-MiniLM-L6-v2"   # produces 384-dim vectors — matches FLOAT[384] schema
 # WARNING: changing this model requires full re-embedding of all nodes in the graph.
-# Run: sidequests reembed --confirm before switching models.
+# Run: campy reembed --confirm before switching models.
 
 [ingestion]
 max_ingest_chars = 4000   # passive ingestion only (conversational turns). Truncates at last sentence boundary.
@@ -963,7 +963,7 @@ Core invariants:
 Primary implementation files:
 - `mcp_engine/wiki_projection.py`
 - `mcp_engine/sweep.py`
-- `sidequests/cli/wiki.py`
+- `campy/cli/wiki.py`
 - `docs/wiki-projection-architecture.md`
 
 ### ARC Artifact Projection
@@ -1055,11 +1055,11 @@ campy setup --target codex
 
 Historical ARC backlog cards/plans may be archived or migrated, but active ARC solver architecture should be documented in `ARC_AGI`, not here. See `docs/arc-extraction-cleanup-audit.md` for the current boundary manifest.
 
-## Memory Audit CLI (`sidequests review`)
+## Memory Audit CLI (`campy review`)
 
 The system operates fully autonomously — no human confirmation required for uncertain nodes. However, the audit tool exists for users who want visibility or want to manually correct the graph.
 
-`sidequests review` queries the graph for `confidence_low` nodes and displays them with context. User can promote, demote, or edit — but is never required to. M7 (Memory Control Panel) replaces this CLI with a richer web UI reading the same graph data.
+`campy review` queries the graph for `confidence_low` nodes and displays them with context. User can promote, demote, or edit — but is never required to. M7 (Memory Control Panel) replaces this CLI with a richer web UI reading the same graph data.
 
 Optional developer tooling note:
 - local graph-browsing/debug workflows are allowed, but they must remain optional tooling outside the
