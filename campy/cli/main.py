@@ -155,12 +155,20 @@ def setup(
         console.print("\n[bold yellow]Setup finished with some warnings or errors. Check logs for details.[/bold yellow]")
 
 @app.command()
-def install():
+def install(
+    plugin: bool = typer.Option(False, "--plugin", help="Also install plugin for detected agents"),
+    plugin_dir: Optional[str] = typer.Option(None, help="Path to plugin directory (auto-detected if omitted)"),
+):
     """
     One-command installer for HippoCampy.
     """
     from campy.cli.install import run_install
+    from campy.cli.plugin_installer import install_plugin_for_agents
+    
     run_install()
+    
+    if plugin:
+        install_plugin_for_agents(target=None, plugin_dir=plugin_dir)
 
 @app.command()
 def uninstall(
