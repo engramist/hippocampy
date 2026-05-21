@@ -2,7 +2,7 @@
 
 ## Context health
 
-Check how full the current conversation's context window is:
+**ALWAYS check context health when the conversation is getting long:**
 
 ```
 context_status(session_id="<session>")
@@ -12,7 +12,7 @@ This returns token usage, loaded node count, and whether a bloat warning is acti
 
 ## Open loops
 
-Surface unresolved tentative knowledge for user review:
+**Periodically call `get_open_loops()` to surface unresolved items:**
 
 ```
 get_open_loops()
@@ -22,7 +22,7 @@ This returns items the Brain captured with low confidence. Present these to the 
 
 ## What changed since last time
 
-When starting a new conversation about an existing project, check what's changed:
+**When starting a new conversation about an existing project, you MUST call `diff_since`:**
 
 ```
 diff_since(since_iso="<ISO timestamp>")
