@@ -261,5 +261,58 @@ class TestInstalledModeImports:
             ), f"Failed to import {module}: {result.stderr}"
 
 
+class TestInstalledCLICommands:
+    """Test CLI commands work from installed package."""
+
+    def test_campy_help(self, temp_venv, wheel_path):
+        """campy --help should work from installed wheel."""
+        pip_exe = temp_venv / "bin" / "pip"
+        campy_exe = temp_venv / "bin" / "campy"
+        subprocess.run([str(pip_exe), "install", str(wheel_path)], check=True, capture_output=True)
+        result = subprocess.run([str(campy_exe), "--help"], capture_output=True, text=True)
+        assert result.returncode == 0
+        assert "Usage" in result.stdout or "usage" in result.stdout
+
+    def test_campy_doctor_help(self, temp_venv, wheel_path):
+        """campy doctor --help should work from installed wheel."""
+        pip_exe = temp_venv / "bin" / "pip"
+        campy_exe = temp_venv / "bin" / "campy"
+        subprocess.run([str(pip_exe), "install", str(wheel_path)], check=True, capture_output=True)
+        result = subprocess.run([str(campy_exe), "doctor", "--help"], capture_output=True, text=True)
+        assert result.returncode == 0
+
+    def test_campy_install_help(self, temp_venv, wheel_path):
+        """campy install --help should work from installed wheel."""
+        pip_exe = temp_venv / "bin" / "pip"
+        campy_exe = temp_venv / "bin" / "campy"
+        subprocess.run([str(pip_exe), "install", str(wheel_path)], check=True, capture_output=True)
+        result = subprocess.run([str(campy_exe), "install", "--help"], capture_output=True, text=True)
+        assert result.returncode == 0
+
+    def test_campy_activity_help(self, temp_venv, wheel_path):
+        """campy activity --help should work from installed wheel."""
+        pip_exe = temp_venv / "bin" / "pip"
+        campy_exe = temp_venv / "bin" / "campy"
+        subprocess.run([str(pip_exe), "install", str(wheel_path)], check=True, capture_output=True)
+        result = subprocess.run([str(campy_exe), "activity", "--help"], capture_output=True, text=True)
+        assert result.returncode == 0
+
+
+class TestPackageDataAccess:
+    """Test that package data is accessible from installed package."""
+
+    def test_campy_data_accessible(self, temp_venv, wheel_path):
+        """Package data should be accessible from installed package."""
+        python_exe = temp_venv / "bin" / "python"
+        pip_exe = temp_venv / "bin" / "pip"
+        subprocess.run([str(pip_exe), "install", str(wheel_path)], check=True, capture_output=True)
+        # Test that campy.data module can be imported and accessed
+        result = subprocess.run(
+            [str(python_exe), "-c", "from importlib import resources; print(dir(resources.files('campy.data')))"],
+            capture_output=True, text=True, timeout=10
+        )
+        assert result.returncode == 0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
