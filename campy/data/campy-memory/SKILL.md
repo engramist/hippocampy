@@ -1,103 +1,65 @@
-# Campy Memory Skill
+# Campy Memory — Session Recall Protocol
 
-**Purpose:** Use HippoCampy (Campy) as a reliable durable memory system without bloating your context window.
+You have access to a persistent AI memory system called Campy (HippoCampy). It remembers decisions, constraints, plans, and context across all your sessions.
 
-Campy continuously captures your decisions, constraints, plans, and lessons as you work. This skill teaches you when to recall that memory, which tool to use, and how to keep your context lean.
+## At Session Start — MANDATORY
 
-## Core Rule
+**BEFORE doing any work, you MUST follow this protocol:**
 
-**Do not recall on every turn. Do not bloat context. Recall only when a decision needs memory.**
+1. Call `memory_decision` with the user's first message:
+   ```
+   memory_decision(query="<user's first message>", session_id="<session>")
+   ```
 
-Campy writes passively. You recall actively and selectively.
+2. Call the recommended tool from Step 1's response:
+   - `current_truth` for single-topic recall
+   - `compile_context` for broad context needs
+   - `recall_procedures` for process questions
+   - `recall_relevant_lessons` for past outcomes
 
----
+3. If continuing existing work, call `diff_since` to see recent changes:
+   ```
+   diff_since(since_iso="<24 hours ago ISO>")
+   ```
 
-## Write vs Recall
+4. Present findings to the user before starting work.
 
-### Write (Passive - Always On)
+## During the Session — Recall Triggers
 
-Campy captures:
-- **Decisions** - what you decided and why
-- **Constraints** - what you must or cannot do
-- **Plans** - your implementation strategies
-- **Lessons** - what you learned that applies elsewhere
-- **Entity relationships** - how concepts connect
-- **Contradictions** - when expectations differ from reality
+| When You See This | You MUST Call This |
+|---|---|
+| Questions about past decisions | `current_truth(query="<topic>")` |
+| Architecture or design questions | `current_truth(query="<topic>")` |
+| Multi-entity or broad queries | `compile_context(query="<topic>")` |
+| "Why did we choose X?" | `current_truth(query="decision about X")` |
+| Process or procedure questions | `recall_procedures(query="<topic>")` |
+| "What went wrong last time?" | `recall_relevant_lessons(query="<topic>")` |
+| Not sure which tool | `memory_decision(query="<question>")` |
 
-You do nothing. The system listens to your messages and stores the core signal.
+## After Every Response — MANDATORY
 
-### Recall (Active - You Decide)
+**AFTER every response, you MUST call `notify_turn`:**
 
-You call a recall tool when you need:
-- Prior choices or context
-- Timeline of what happened
-- Lessons from similar work
-- Workflow procedures
-- Changes since another session
+```
+notify_turn(role="assistant", content="<your full response>", session_id="<session>")
+```
 
----
+This is how the Brain captures knowledge. Never skip it.
 
-## Recall Decision Tree
+## Available Tools
 
-### **Q: What kind of decision are you making?**
-
-#### Prior decisions, architecture, constraints, or preferences
--> **`current_truth`**
-- Use when: "What did we decide?", "What are the constraints?", "Is feature X enabled?"
-- Example: "What architecture did we settle on for the installer?"
-
-#### What changed since last session or another agent
--> **`diff_since`**
-- Use when: "What changed?", "Since the last time...", "What did the other agent do?"
-- Example: "What's different since the last session?"
-
-#### Sequence, timeline, or debugging history
--> **`reconstruct_timeline`**
-- Use when: "What happened in order?", "How did we get here?", "Walk me through the debug steps"
-- Example: "What was the sequence of steps that led to this bug?"
-
-#### Planning similar work
--> **`recall_plans`**
-- Use when: "How did we do this before?", "Similar project", "Implement X like we did Y"
-- Example: "I need to set up an installer. What did we learn from the last one?"
-
-#### Reusable workflow or procedure
--> **`recall_procedures`**
-- Use when: "How do we usually do this?", "Standard workflow", "Process we use"
-- Example: "What's our standard testing procedure?"
-
-#### Lessons learned or cross-session learning
--> **`recall_relevant_lessons`**
-- Use when: "What did we learn?", "Don't repeat the mistake", "Best practice from before"
-- Example: "What lessons did we learn from the last release?"
-
-#### Similar past project (analogy)
--> **`analogical_search`**
-- Use when: "This is like...", "Similar situation before", "Analogous problem"
-- Example: "We had a similar performance problem before. What did we do?"
-
-#### ARC mechanics, world model, scene graph, or puzzle patterns
--> **`recall_mechanic_priors`** or **`recall_scene_graph_priors`**
-- Use when: "ARC", "world model", "mechanic", "puzzle pattern"
-- Example: "What world-model mechanics did we discover for this type of puzzle?"
-
-#### Context window or token health
--> **`context_status`**
-- Use when: "How much context is left?", "Token budget", "Context bloat check"
-- Example: "Am I at risk of context bloat? How many tokens are loaded?"
-
-#### Simple local edit or current context sufficient
--> **Do not recall**
-- Example: "Add a comment to this function" or "Fix the typo on line 42"
-
----
-
-## Tool Map
-
-| Tool | Use Case | Confidence | Output Format |
-|------|----------|------------|----------------|
-| `current_truth` | Prior decisions, constraints, architecture | 0.9 | Ranked facts + provenance |
-| `diff_since` | Changes since milestone/session | 0.85 | Structured diff + annotation |
+| Tool | Purpose |
+|---|---|
+| `memory_decision` | Ask the Brain which recall tool to use |
+| `current_truth` | Semantic search for specific facts |
+| `compile_context` | Multi-source bundle compilation |
+| `recall_procedures` | Process and procedure knowledge |
+| `recall_relevant_lessons` | Past outcomes and lessons learned |
+| `reconstruct_timeline` | Temporal view of events |
+| `diff_since` | Changes since a timestamp |
+| `analogical_search` | Cross-project pattern matching |
+| `notify_turn` | Capture your response in memory |
+| `ingest_data` | Ingest files/data into memory |
 | `reconstruct_timeline` | Sequence, history, chronology | 0.8 | Ordered events + timestamps |
 | `recall_plans` | Similar prior work, strategies | 0.75 | Plans + outcomes + lessons |
 | `recall_procedures` | Workflows, standard processes | 0.85 | Step-by-step + variants |

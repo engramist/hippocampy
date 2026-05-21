@@ -220,7 +220,7 @@ def _vscode_mcp_config_path() -> Path:
 
 
 def register_vscode(adapter_path: str, config_path: str | None = None) -> bool:
-    """Register Campy as a VS Code/Copilot MCP stdio server."""
+    """Register Campy as a VS Code/Copilot MCP stdio server and add recall instructions."""
     try:
         python_exe = _python_for_adapter(adapter_path)
         path = Path(config_path).expanduser() if config_path else _vscode_mcp_config_path()
@@ -241,15 +241,88 @@ def register_vscode(adapter_path: str, config_path: str | None = None) -> bool:
         }
         path.write_text(json.dumps(config, indent=2) + "\n")
         logging.info(f"VS Code MCP registration success: {path}")
+        
+        # Also add recall instructions to copilot-instructions.md if .github exists
+        repo_root = _repo_root_for_adapter(adapter_path)
+        if (repo_root / ".github").is_dir():
+            _add_copilot_recall_instructions(repo_root)
+        
         return True
     except Exception as e:
         logging.error(f"Failed to register with VS Code: {str(e)}")
         return False
 
 
+def _add_copilot_recall_instructions(repo_root: Path) -> None:
+    """Add Campy recall instructions to .github/copilot-instructions.md."""
+    instructions_path = repo_root / ".github" / "copilot-instructions.md"
+    
+    skill_source = repo_root / "campy" / "data" / "campy-memory" / "SKILL.md"
+    if not skill_source.exists():
+        return
+    
+    marker_start = "<!-- CAMPY-MEMORY-START -->"
+    marker_end = "<!-- CAMPY-MEMORY-END -->"
+    
+    skill_content = skill_source.read_text()
+    campy_block = f"{marker_start}\n## Campy Memory\n\n{skill_content}\n{marker_end}"
+    
+    if instructions_path.exists():
+        existing = instructions_path.read_text()
+        if marker_start in existing:
+            pattern = re.compile(f"{re.escape(marker_start)}.*?{re.escape(marker_end)}", re.DOTALL)
+            updated = pattern.sub(campy_block, existing)
+        else:
+            updated = existing + "\n\n" + campy_block + "\n"
+        instructions_path.write_text(updated)
+    # Don't create the file if .github/ doesn't exist — not our responsibility
+
+
 def register_gemini_cli(adapter_path: str) -> bool:
-    """Register with Gemini CLI (self)."""
+    """Register Campy with Gemini CLI via GEMINI.md instructions."""
     try:
+        repo_root = _repo_root_for_adapter(adapter_path)
+        
+        # Install universal memory skill content into GEMINI.md
+        skill_source = repo_root / "campy" / "data" / "campy-memory" / "SKILL.md"
+        if not skill_source.exists():
+            logging.warning("Universal memory skill not found for Gemini CLI")
+            return True  # Non-fatal — MCP server still works
+        
+        gemini_md = repo_root / "GEMINI.md"
+        skill_content = skill_source.read_text()
+        
+        # Wrap in a Campy section
+        campy_section = (
+            "\n\n## Campy Memory Integration\n\n"
+            "The Campy MCP server provides persistent AI memory. "
+            "Follow the recall protocol below.\n\n"
+            + skill_content
+        )
+        
+        marker_start = "<!-- CAMPY-MEMORY-START -->"
+        marker_end = "<!-- CAMPY-MEMORY-END -->"
+        
+        if gemini_md.exists():
+            existing = gemini_md.read_text()
+            if marker_start in existing:
+                # Replace existing section
+                pattern = re.compile(
+                    f"{re.escape(marker_start)}.*?{re.escape(marker_end)}",
+                    re.DOTALL,
+                )
+                updated = pattern.sub(
+                    f"{marker_start}\n{campy_section}\n{marker_end}",
+                    existing,
+                )
+            else:
+                updated = existing + f"\n{marker_start}\n{campy_section}\n{marker_end}\n"
+        else:
+            updated = f"# Gemini CLI Instructions\n\n{marker_start}\n{campy_section}\n{marker_end}\n"
+        
+        gemini_md.write_text(updated)
+        logging.info(f"Gemini CLI recall instructions written to {gemini_md}")
         return True
-    except Exception:
+    except Exception as e:
+        logging.error(f"Failed to register Gemini CLI: {e}")
         return False
