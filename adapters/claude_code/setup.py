@@ -4,9 +4,11 @@ adapters/claude_code/setup.py — Claude Code Registration
 Called by `campy setup` to register the adapter with Claude Code:
   1. Writes .mcp.json in the project root (registers MCP server)
   2. Adds UserPromptSubmit hook to ~/.claude/settings.json
+  3. Installs hook scripts to .claude/hooks/
 """
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -30,9 +32,34 @@ def register(project_root: Path = None) -> None:
 
     _write_mcp_json(project_root)
     _write_hook_config()
+    install_hooks(project_root)
     print("Claude Code adapter registered.")
     print(f"  MCP server: {project_root / '.mcp.json'}")
     print(f"  Hook config: {Path.home() / '.claude' / 'settings.json'}")
+    print(f"  Hooks: {project_root / '.claude' / 'hooks'}")
+
+
+def install_hooks(project_root: Path = None) -> bool:
+    """Install Claude Code hooks for Campy memory integration."""
+    if project_root is None:
+        project_root = Path.cwd()
+    
+    hooks_dir = project_root / ".claude" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Source hooks from the adapter directory
+    adapter_hooks = ADAPTER_DIR / "hooks"
+    if not adapter_hooks.exists():
+        return False
+    
+    installed = []
+    for hook_script in adapter_hooks.glob("*.sh"):
+        dest = hooks_dir / hook_script.name
+        shutil.copy2(hook_script, dest)
+        dest.chmod(0o755)
+        installed.append(dest)
+    
+    return len(installed) > 0
 
 
 def _write_mcp_json(project_root: Path) -> None:
