@@ -425,6 +425,34 @@ B242-B247 intentionally split the deeper SideQuests-to-Campy internal namespace 
 | 34 | B198 | P2 | **Proactive warnings** — orchestrator parses proactive_context from notify_turn, penalizes warned actions. Depends on B195. |
 | 35 | B199 | P2 | **Gap-aware exploration** — double exploration budget for archetypes with KnowledgeGaps. Depends on B193. |
 
+### Wake Up Campy Initiative (B255–B264)
+
+**Goal:** Fix the zero-recall problem. Campy daemon collects data from 4 agents but no agent ever calls recall tools.
+
+**Sub-Initiative 1 — Plugin + Recall Activation (Implement First)**
+| Order | Card | Priority | State | Title | Plan |
+|-------|------|----------|-------|-------|------|
+| 1 | B255 | P0 | ready | Plugin Installation Path (`campy install --plugin`) | backlog/plans/B-255-plugin-installation-path.md |
+| 2 | B256 | P0 | ready | Verify MCP Server Exposes All Memory OS Tools | backlog/plans/B-256-verify-mcp-tool-surface.md |
+| 3 | B257 | P0 | ready | Upgrade Plugin Skills with Memory OS Tools | backlog/plans/B-257-upgrade-plugin-skills.md |
+| 4 | B258 | P0 | ready | Assertive Trigger Language + Session-Start Skill | backlog/plans/B-258-assertive-triggers-session-start.md |
+| 5 | B259 | P0 | ready | Claude Code Hooks for Automatic Recall | backlog/plans/B-259-claude-code-hooks.md |
+| 6 | B260 | P0 | ready | Codex, Gemini CLI, and VS Code Recall Config | backlog/plans/B-260-multi-agent-recall-config.md |
+
+**Sub-Initiative 2 — CLI & REST Integration Surface (Backlog)**
+| Order | Card | Priority | State | Title | Plan |
+|-------|------|----------|-------|-------|------|
+| 7 | B261 | P1 | backlog | CLI Recall Commands | backlog/plans/B-261-cli-recall-commands.md |
+| 8 | B262 | P1 | backlog | REST API Endpoints for External Integration | backlog/plans/B-262-rest-api-endpoints.md |
+
+**Sub-Initiative 3 — External Agent Adapters (Backlog)**
+| Order | Card | Priority | State | Title | Plan |
+|-------|------|----------|-------|-------|------|
+| 9 | B263 | P2 | backlog | OpenClaw Adapter Activation | backlog/plans/B-263-openclaw-adapter.md |
+| 10 | B264 | P2 | backlog | Hermes Agent Adapter | backlog/plans/B-264-hermes-adapter.md |
+
+**Dependency chain:** B255 → B256 → B257 → B258 → B259/B260 (parallel). B261/B262 independent. B263 needs B255+B262. B264 needs B252+B262.
+
 ### Tier 4 — Blocked until verification lands
 | Order | Card | Blocked by | Why |
 |-------|------|-----------|-----|
