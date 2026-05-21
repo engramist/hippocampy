@@ -8,7 +8,7 @@ A Main Quest is automatically created for each project context. For developers, 
 
 ## Side Quests
 
-When a conversation shifts to a distinct tangent worth tracking separately, offer to create a Side Quest:
+When a conversation shifts to a distinct tangent worth tracking separately, **ALWAYS offer to create a Side Quest:**
 
 ```
 branch_quest(name="<tangent name>", purpose="<what this is about>")
@@ -18,7 +18,7 @@ branch_quest(name="<tangent name>", purpose="<what this is about>")
 
 ## Completing Quests
 
-When a project or workstream wraps up, mark it complete:
+**When a project wraps up, you MUST call `complete_quest`:**
 
 ```
 complete_quest(quest_id="<quest_id>")
