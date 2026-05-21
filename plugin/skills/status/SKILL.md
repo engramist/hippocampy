@@ -39,3 +39,26 @@ analogical_search(query="<what you're looking for>")
 ```
 
 This finds similar decisions, constraints, and patterns from other Quests — useful when starting something new that resembles past work.
+
+## Token Budget Guidance
+
+When using `compile_context`, specify an appropriate token budget based on your context window:
+
+| Agent Context Size | Recommended Budget | What You Get |
+|---|---|---|
+| 4K-8K tokens | `token_budget=4000` | Exact facts + top 3 semantic results |
+| 32K-128K tokens | `token_budget=32000` | Full semantic + graph + tabular summaries |
+| 200K+ tokens | `token_budget=100000` | Everything including raw tabular data |
+
+```
+compile_context(query="<topic>", token_budget=32000, agent_type="claude_code")
+```
+
+## Bundle Truncation Awareness
+
+When a compiled bundle exceeds the token budget, the compiler truncates lower-priority sections. If you see `"truncated": true` in a bundle response:
+- The most important facts are preserved (exact constraints always survive)
+- Tabular data and summaries may be compressed or omitted
+- Request a larger budget if you need the full picture
+- Consider narrowing your query for more focused results
+

@@ -35,3 +35,20 @@ set_quest(session_id="<session>", quest_name="<project name>")
 ```
 
 This overrides automatic routing and locks the session to the named Quest.
+
+## Switching Context with Memory
+
+When switching to a different quest or returning to a project after time away, ALWAYS call `diff_since` to see what changed:
+
+```
+diff_since(since_iso="<last session timestamp>")
+```
+
+This shows nodes created, updated, or deprecated since your last visit — crucial for catching up on changes made in other conversations or by other agents.
+
+If you don't know the last session timestamp, use `reconstruct_timeline` to see recent activity:
+
+```
+reconstruct_timeline(quest_id="<quest>", limit=20)
+```
+
