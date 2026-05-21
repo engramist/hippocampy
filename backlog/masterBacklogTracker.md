@@ -432,9 +432,9 @@ B242-B247 intentionally split the deeper SideQuests-to-Campy internal namespace 
 **Sub-Initiative 1 — Plugin + Recall Activation (Implement First)**
 | Order | Card | Priority | State | Title | Plan |
 |-------|------|----------|-------|-------|------|
-| 1 | B255 | P0 | ready | Plugin Installation Path (`campy install --plugin`) | backlog/plans/B-255-plugin-installation-path.md |
-| 2 | B256 | P0 | ready | Verify MCP Server Exposes All Memory OS Tools | backlog/plans/B-256-verify-mcp-tool-surface.md |
-| 3 | B257 | P0 | ready | Upgrade Plugin Skills with Memory OS Tools | backlog/plans/B-257-upgrade-plugin-skills.md |
+| 1 | B255 | P0 | complete (2026-05-20) | Plugin Installation Path (`campy install --plugin`) | backlog/plans/B-255-plugin-installation-path.md |
+| 2 | B256 | P0 | complete (2026-05-20) | Verify MCP Server Exposes All Memory OS Tools | backlog/plans/B-256-verify-mcp-tool-surface.md |
+| 3 | B257 | P0 | complete (2026-05-20) | Upgrade Plugin Skills with Memory OS Tools | backlog/plans/B-257-upgrade-plugin-skills.md |
 | 4 | B258 | P0 | ready | Assertive Trigger Language + Session-Start Skill | backlog/plans/B-258-assertive-triggers-session-start.md |
 | 5 | B259 | P0 | ready | Claude Code Hooks for Automatic Recall | backlog/plans/B-259-claude-code-hooks.md |
 | 6 | B260 | P0 | ready | Codex, Gemini CLI, and VS Code Recall Config | backlog/plans/B-260-multi-agent-recall-config.md |
