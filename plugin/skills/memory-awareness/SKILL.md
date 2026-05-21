@@ -56,3 +56,28 @@ When insights are present and meaningful (concepts_stored > 0 or reified > 0 or 
 - "The Brain captured that constraint about API response times."
 
 Keep it brief — one sentence, not a summary dump. Don't mention it if nothing was captured (all zeros). The goal is to make the Brain feel alive without being noisy.
+
+## Tabular Data Ingestion
+
+When the user shares spreadsheets, CSVs, or structured data files, use `ingest_data` for intelligent routing:
+
+```
+ingest_data(file_path="/path/to/data.csv", session_id="<session>")
+```
+
+The Brain automatically classifies the data and routes it to the optimal storage:
+- Tabular data → SQLite store (queryable via bundle compiler)
+- Document text → chunked and embedded in the knowledge graph
+- Mixed content → both paths
+
+## Bundle Compilation Awareness
+
+When you call `notify_turn`, the Brain may also compile context bundles in the background. These bundles assemble:
+- Exact facts (constraints, preferences)
+- Semantic search results
+- Graph relationship traversals
+- Tabular data from ingested spreadsheets
+- Synthesized summaries
+
+The bundle compiler shapes this context for your specific agent type, so you get the most relevant information in the format you work best with.
+
