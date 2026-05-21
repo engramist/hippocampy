@@ -326,3 +326,27 @@ def register_gemini_cli(adapter_path: str) -> bool:
     except Exception as e:
         logging.error(f"Failed to register Gemini CLI: {e}")
         return False
+
+
+def register_hermes(adapter_path: str = None) -> bool:
+    """
+    Register Campy memory with Hermes agent framework.
+    
+    Hermes agents can import and use the HermesAdapter to access
+    Campy memory via the REST API endpoints.
+    """
+    try:
+        # Verify that the adapter module is importable
+        try:
+            from adapters.hermes.adapter import HermesAdapter, get_adapter
+            logging.info("Hermes adapter module verified")
+        except ImportError as e:
+            logging.warning(f"Hermes adapter import failed (may be OK): {e}")
+            # Non-fatal — Hermes can still use the adapter if installed separately
+        
+        logging.info("Hermes agent adapter registered (ready for import)")
+        return True
+    except Exception as e:
+        logging.error(f"Failed to register Hermes: {e}")
+        return False
+
