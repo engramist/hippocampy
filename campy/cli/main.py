@@ -19,6 +19,7 @@ from campy.cli.register import (
     register_gemini_cli,
     register_vscode,
 )
+from campy.cli.register_openclaw import register_openclaw
 from campy.cli.launchd import setup_daemon
 from campy.cli.smoke_test import run_smoke_tests, check_status
 from campy.cli.wiki import app as wiki_app
@@ -90,6 +91,8 @@ def setup(
             results["Gemini CLI"] = register_gemini_cli(gemini_adapter)
         elif target == "vscode":
             results["VS Code"] = register_vscode(codex_adapter)
+        elif target == "openclaw":
+            results["OpenClaw"] = register_openclaw()
         else:
             console.print(f"[red]Error: Unknown target '{target}'[/red]")
             raise typer.Exit(code=1)
@@ -119,6 +122,10 @@ def setup(
         if clients.get("vscode"):
             console.print("[green]Detected VS Code. Registering MCP server...[/green]")
             results["VS Code"] = register_vscode(codex_adapter)
+
+        if clients.get("openclaw"):
+            console.print("[green]Detected OpenClaw. Registering...[/green]")
+            results["OpenClaw"] = register_openclaw()
 
     # Daemon setup (macOS only)
     if system == "Darwin":
