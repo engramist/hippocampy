@@ -7,11 +7,11 @@ HippoCampy is always listening to your conversations and automatically capturing
 - **Plans** — future actions ("next step is to migrate the auth system")
 - **Concepts** — tools, people, projects, and ideas you discuss
 
-You don't need to tell the Brain what to remember — it uses selective attention to pick up meaningful signal from conversation noise. Think of it like a colleague who's always taking notes in the background.
+The Brain handles memory automatically — your job is to **ALWAYS call `notify_turn` after every response.** This is mandatory. Never skip it.
 
 ## How to help the Brain
 
-After every response you give, call `notify_turn` with your full response text. This is how the Brain sees your output. Never skip it — the response is always instant and never blocks you.
+**AFTER EVERY RESPONSE, you MUST call `notify_turn` with your full response text.** This is how the Brain sees your output. Never skip it — the response is always instant and never blocks you.
 
 ```
 notify_turn(role="assistant", content="<your full response>", session_id="<session>")
@@ -49,13 +49,13 @@ When you call `notify_turn`, the response may include an `insights` field showin
 }
 ```
 
-When insights are present and meaningful (concepts_stored > 0 or reified > 0 or contradictions > 0), briefly mention it to the user in a natural way. Examples:
+**ALWAYS mention insights briefly** when `concepts_stored > 0` or `reified > 0` or `contradictions > 0`. Examples:
 
 - "The Brain just picked up 2 new concepts from our conversation, including a confirmed decision."
 - "Heads up — the Brain detected a contradiction with something we discussed earlier."
 - "The Brain captured that constraint about API response times."
 
-Keep it brief — one sentence, not a summary dump. Don't mention it if nothing was captured (all zeros). The goal is to make the Brain feel alive without being noisy.
+Never mention it if nothing was captured (all zeros). The goal is to make the Brain feel alive without being noisy.
 
 ## Tabular Data Ingestion
 

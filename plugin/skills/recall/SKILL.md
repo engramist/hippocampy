@@ -1,6 +1,23 @@
 # Recalling Past Decisions and Context
 
-Before answering questions about past decisions, architecture choices, constraints, or project history, ALWAYS check the Brain's memory first.
+**BEFORE answering ANY question about past decisions, architecture, constraints, or project history, you MUST check the Brain's memory.**
+
+## Mandatory Recall Triggers
+
+| When You See This | You MUST Call This |
+|---|---|
+| Questions about past decisions | `current_truth(query="<decision topic>")` |
+| "Why did we choose X?" | `current_truth(query="decision about X")` |
+| Architecture or design questions | `current_truth(query="<architecture topic>")` |
+| Multi-entity or broad context needs | `compile_context(query="<broad topic>")` |
+| "Tell me everything about X" | `compile_context(query="X")` |
+| Not sure which tool to use | `memory_decision(query="<question>")` |
+| Process or procedure questions | `recall_procedures(query="<process>")` |
+| "What went wrong last time?" | `recall_relevant_lessons(query="<topic>")` |
+| "What happened this week?" | `reconstruct_timeline(limit=20)` |
+| "What changed since yesterday?" | `diff_since(since_iso="<ISO timestamp>")` |
+
+**Do NOT answer from your context window alone.** The Brain's graph is more reliable than your training data for project-specific facts.
 
 ## Tool Reference
 
@@ -18,7 +35,7 @@ Before answering questions about past decisions, architecture choices, constrain
 
 ## When to Use current_truth
 
-Call `current_truth` when the user asks about:
+**ALWAYS call `current_truth` when you encounter:**
 - Past decisions ("why did we choose X?", "what did we decide about Y?")
 - Constraints or requirements ("what are the rules for Z?")
 - Project context ("what's the current state of X?")
@@ -51,9 +68,12 @@ It returns a `recommended_tool` field telling you exactly which tool to call nex
 
 ## Scoping
 
-- `scope: "branch"` — search only the current project (default)
-- `scope: "global"` — search cross-project constraints and preferences
-- `scope: "both"` — search everywhere
+**ALWAYS use scope 'both' when the question involves:**
+- Multi-project decisions or patterns
+- Constraints that span multiple services or domains
+- When you're unsure which scope applies
+
+Default scopes:
 
 ## How to Use Results
 
