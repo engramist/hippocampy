@@ -1,0 +1,19 @@
+include LICENSE
+include README.md
+include pyproject.toml
+recursive-include campy *.py *.md *.toml
+recursive-include mcp_engine *.py
+recursive-include adapters *.py *.sh *.md
+recursive-include web *.py *.html *.css *.js
+recursive-include plugin *.md *.json
+prune backlog
+prune InvertorsDocs
+prune tests
+prune scripts
+prune .github
+prune ARC*
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude *.db
+global-exclude *.sock
+global-exclude *.log
