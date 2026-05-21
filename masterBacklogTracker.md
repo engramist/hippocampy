@@ -102,12 +102,22 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B227 | ARC Mechanic Prior Retrieval and Ranking Tool — ✅ DONE (2026-05-03) | P0 | complete | TBD | TBD | backlog/plans/B-227-arc-mechanic-prior-retrieval.md | backlog/B227.md |
 | B228 | Expose ARC World-Model Tools Through MCP Adapters — ✅ DONE (2026-05-03) | P0 | complete | TBD | TBD | backlog/plans/B-228-expose-arc-world-model-tools-through-mcp-adapters.md | backlog/B228.md |
 | B229 | Ingest ARC World-Model Evaluation Artifacts — ✅ DONE (2026-05-03) | P1 | complete | TBD | TBD | backlog/plans/B-229-ingest-arc-world-model-evaluation-artifacts.md | backlog/B229.md |
+| B255 | Plugin Installation Path (manifest + installer) — ✅ DONE (2026-05-08) | P0 | complete | TBD | TBD | backlog/plans/B-255-plugin-installation-path.md | backlog/B255.md |
+| B256 | Verify MCP Tool Surface — ✅ DONE (2026-05-08) | P0 | complete | TBD | TBD | backlog/plans/B-256-verify-mcp-tool-surface.md | backlog/B256.md |
+| B257 | Upgrade Plugin Skills — ✅ DONE (2026-05-08) | P0 | complete | TBD | TBD | backlog/plans/B-257-upgrade-plugin-skills.md | backlog/B257.md |
+| B258 | Assertive Trigger Language + Session-Start Skill — ✅ DONE (2026-05-08) | P0 | complete | TBD | TBD | backlog/plans/B-258-assertive-triggers-session-start.md | backlog/B258.md |
+| B259 | Claude Code Hooks for Automatic Recall — ✅ DONE (2026-05-08) | P0 | complete | TBD | TBD | backlog/plans/B-259-claude-code-hooks.md | backlog/B259.md |
+| B260 | Codex, Gemini CLI, VS Code Recall Config — ✅ DONE (2026-05-08) | P0 | complete | TBD | TBD | backlog/plans/B-260-multi-agent-recall-config.md | backlog/B260.md |
+| B261 | CLI Recall Commands — ✅ DONE (2026-05-08) | P0 | complete | TBD | TBD | backlog/plans/B-261-cli-recall-commands.md | backlog/B261.md |
+| B262 | REST API Endpoints — ✅ DONE (2026-05-08) | P0 | complete | TBD | TBD | backlog/plans/B-262-rest-api-endpoints.md | backlog/B262.md |
+| B263 | OpenClaw Adapter Activation — ✅ DONE (2026-05-08) | P0 | complete | TBD | TBD | backlog/plans/B-263-openclaw-adapter.md | backlog/B263.md |
+| B264 | Hermes Agent Adapter — ✅ DONE (2026-05-08) | P0 | complete | TBD | TBD | backlog/plans/B-264-hermes-adapter.md | backlog/B264.md |
 
 ## Summary
 
-- Total cards: 98
+- Total cards: 108
 - Ready: 15 (B201-B211, B213, B215-B217)
 - Needs work: 0
-- Complete: 83
+- Complete: 93
 - In progress: 0
 - Blocked: 0
