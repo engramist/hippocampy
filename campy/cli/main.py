@@ -23,6 +23,7 @@ from campy.cli.launchd import setup_daemon
 from campy.cli.smoke_test import run_smoke_tests, check_status
 from campy.cli.wiki import app as wiki_app
 from campy.cli.arc import app as arc_app
+from campy.cli.recall import app as recall_app
 from campy.branding import PRODUCT_NAME, SHORT_NAME
 from mcp_engine.config import load_config
 
@@ -349,6 +350,7 @@ app.add_typer(tool_app, name="tool")
 
 app.add_typer(wiki_app, name="wiki")
 app.add_typer(arc_app, name="arc")
+app.add_typer(recall_app, name="memory")
 
 @tool_app.command("list")
 def tool_list():
@@ -368,6 +370,75 @@ def tool_list():
         table.add_row(tool["name"], tool.get("description", ""))
 
     console.print(table)
+
+
+# Shortcut commands for recall (also available via "campy memory recall", etc.)
+@app.command()
+def recall(
+    query: str = typer.Argument(..., help="What to search for"),
+    scope: str = typer.Option("both", "--scope", help="Search scope"),
+    format: str = typer.Option("rich", "--format", help="Output format"),
+    session_id: Optional[str] = typer.Option(None, help="Session ID"),
+):
+    """Quick recall from memory."""
+    from campy.cli.recall import recall as _recall
+    _recall(query=query, scope=scope, format=format, session_id=session_id)
+
+
+@app.command()
+def bundle(
+    query: str = typer.Argument(..., help="Context to compile"),
+    token_budget: int = typer.Option(32000, "--token-budget", help="Token budget"),
+    agent_type: str = typer.Option("generic", "--agent-type", help="Agent type"),
+    format: str = typer.Option("rich", "--format", help="Output format"),
+):
+    """Compile full context bundle."""
+    from campy.cli.recall import bundle as _bundle
+    _bundle(query=query, token_budget=token_budget, agent_type=agent_type, format=format)
+
+
+@app.command()
+def timeline(
+    since: Optional[str] = typer.Option(None, "--since", help="ISO timestamp"),
+    limit: int = typer.Option(20, "--limit", help="Max events"),
+    quest_id: Optional[str] = typer.Option(None, "--quest-id", help="Filter by quest"),
+    format: str = typer.Option("rich", "--format", help="Output format"),
+):
+    """View memory timeline."""
+    from campy.cli.recall import timeline as _timeline
+    _timeline(since=since, limit=limit, quest_id=quest_id, format=format)
+
+
+@app.command(name="diff")
+def diff_cmd(
+    since: Optional[str] = typer.Option(None, "--since", help="ISO timestamp"),
+    format: str = typer.Option("rich", "--format", help="Output format"),
+):
+    """Show memory changes since timestamp."""
+    from campy.cli.recall import diff as _diff
+    _diff(since=since, format=format)
+
+
+@app.command()
+def decide(
+    query: str = typer.Argument(..., help="Question to route"),
+    format: str = typer.Option("rich", "--format", help="Output format"),
+    session_id: Optional[str] = typer.Option(None, help="Session ID"),
+):
+    """Ask memory router which tool to use."""
+    from campy.cli.recall import decide as _decide
+    _decide(query=query, format=format, session_id=session_id)
+
+
+@app.command(name="context")
+def context_cmd(
+    format: str = typer.Option("rich", "--format", help="Output format"),
+    session_id: Optional[str] = typer.Option(None, help="Session ID"),
+):
+    """Check context health."""
+    from campy.cli.recall import context as _context
+    _context(format=format, session_id=session_id)
+
 
 if __name__ == "__main__":
     app()
