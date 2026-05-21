@@ -18,6 +18,7 @@ from campy.cli.register import (
     register_codex,
     register_gemini_cli,
     register_vscode,
+    register_hermes,
 )
 from campy.cli.register_openclaw import register_openclaw
 from campy.cli.launchd import setup_daemon
@@ -93,6 +94,8 @@ def setup(
             results["VS Code"] = register_vscode(codex_adapter)
         elif target == "openclaw":
             results["OpenClaw"] = register_openclaw()
+        elif target == "hermes":
+            results["Hermes"] = register_hermes()
         else:
             console.print(f"[red]Error: Unknown target '{target}'[/red]")
             raise typer.Exit(code=1)
@@ -126,6 +129,10 @@ def setup(
         if clients.get("openclaw"):
             console.print("[green]Detected OpenClaw. Registering...[/green]")
             results["OpenClaw"] = register_openclaw()
+
+        if clients.get("hermes"):
+            console.print("[green]Detected Hermes. Registering...[/green]")
+            results["Hermes"] = register_hermes()
 
     # Daemon setup (macOS only)
     if system == "Darwin":

@@ -54,6 +54,10 @@ def detect_openclaw() -> bool:
     """Check for 'openclaw' CLI in PATH."""
     return shutil.which("openclaw") is not None
 
+def detect_hermes() -> bool:
+    """Check for 'hermes' CLI or package in PATH."""
+    return shutil.which("hermes") is not None
+
 def detect_installed_clients() -> Dict[str, bool]:
     """
     Return a map of client-key to presence.
@@ -68,6 +72,7 @@ def detect_installed_clients() -> Dict[str, bool]:
         "gemini-cli": detect_gemini_cli(),
         "vscode": detect_vscode(),
         "openclaw": detect_openclaw(),
+        "hermes": detect_hermes(),
     }
 
 def detect_all() -> Dict[str, bool]:
