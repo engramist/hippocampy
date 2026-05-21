@@ -40,6 +40,7 @@ class DoctorChecker:
         self._check_activity_log()
         self._check_launchd()
         self._check_mcp_clients()
+        self._check_plugin_status()
         return all(passed for _, passed, _ in self.checks)
 
     def _check_python_version(self) -> None:
@@ -290,6 +291,55 @@ class DoctorChecker:
         )
         path.write_text(template)
         print(f"Created config: {path}")
+
+    def _check_plugin_status(self) -> None:
+        """Check if plugin is installed for detected agents."""
+        try:
+            from campy.cli.plugin_installer import find_plugin_dir
+            from campy.cli.detect import detect_all
+
+            plugin_dir = find_plugin_dir()
+            if plugin_dir is None:
+                self.checks.append(("Plugin Status", False, "Plugin directory not found"))
+                return
+
+            clients = detect_all()
+            installed = []
+            not_detected = []
+
+            # Check Claude Code
+            if clients.get("claude_code") or clients.get("claude-code"):
+                target = Path.home() / ".claude" / "plugins" / "hippocampy"
+                if (target / ".mcp.json").exists():
+                    installed.append("Claude Code")
+                else:
+                    not_detected.append("Claude Code")
+
+            # Check Codex
+            if clients.get("codex"):
+                skill = Path.home() / ".codex" / "skills" / "campy-memory" / "SKILL.md"
+                if skill.exists():
+                    installed.append("Codex")
+                else:
+                    not_detected.append("Codex")
+
+            # Check VS Code
+            if clients.get("vscode"):
+                installed.append("VS Code (config OK)")
+
+            # Check Gemini CLI
+            if clients.get("gemini_cli") or clients.get("gemini-cli"):
+                installed.append("Gemini CLI (config deferred)")
+
+            if installed:
+                message = f"installed: {', '.join(installed)}"
+                if not_detected:
+                    message += f"; not installed: {', '.join(not_detected)}"
+                self.checks.append(("Plugin Status", not not_detected, message))
+            else:
+                self.checks.append(("Plugin Status", False, "no agents detected with plugin"))
+        except Exception as exc:
+            self.checks.append(("Plugin Status", False, f"Error: {exc}"))
 
     def print_report(self) -> None:
         print(f"\n=== {PRODUCT_NAME} Health Check ===\n")
