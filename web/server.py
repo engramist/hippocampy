@@ -914,6 +914,15 @@ def create_app(db, config: dict | None = None) -> FastAPI:
         
         return JSONResponse(result)
 
+    # ------------------------------------------------------------------
+    # REST API endpoints (B262)
+    # ------------------------------------------------------------------
+    from mcp_engine.rest_api import create_router
+    
+    rest_routes = create_router(db=db, config=_config)
+    for route in rest_routes:
+        app.routes.append(route)
+
     return app
 
 
