@@ -6,18 +6,39 @@ Persistent AI memory system with a Gated Consolidation Loop and graph-native Kù
 
 ## Installation
 
-Current recommended path for private testing and work-machine installs is the source install path:
+### Quick Install (Recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/djs54/hippocampy/main/scripts/bootstrap.sh | bash
+```
+
+### Inspect First
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/djs54/hippocampy/main/scripts/bootstrap.sh -o /tmp/campy-bootstrap.sh
+bash /tmp/campy-bootstrap.sh --dry-run   # See what it will do
+bash /tmp/campy-bootstrap.sh             # Run it
+```
+
+### Manual Install
+
+```bash
+pipx install hippocampy    # or: pip install hippocampy
+campy install              # Detect and register AI agents
+campy doctor               # Verify everything works
+campy start                # Start the memory daemon
+```
+
+### Developer Install (from Source)
 
 ```bash
 git clone git@github.com:djs54/hippocampy.git
 cd hippocampy
-python3.12 -m venv .venv
-source .venv/bin/activate
-python -m pip install -U pip
-pip install -e .
+python3 -m venv .venv && source .venv/bin/activate
+pip install -U pip
+pip install -e ".[dev]"
 campy install
 campy status
-campy activity --follow
 ```
 
 The provisional patent application is filed, so public release is no longer blocked by pre-filing disclosure constraints. The remaining work before making the one-line public installer canonical is packaging and installer hardening.
