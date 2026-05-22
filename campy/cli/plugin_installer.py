@@ -13,17 +13,30 @@ logger = logging.getLogger(__name__)
 
 
 def find_plugin_dir(hint: Optional[str] = None) -> Optional[Path]:
-    """Locate the plugin/ directory in the repo."""
+    """Locate the plugin/ directory in the repo or bundled package data."""
     if hint:
         p = Path(hint).expanduser().resolve()
         if (p / ".claude-plugin" / "plugin.json").exists():
             return p
-    # Walk up from this file to find repo root
+    # Walk up from this file to find repo root plugin/ dir
     here = Path(__file__).resolve()
     for parent in [here.parent, here.parent.parent, here.parent.parent.parent]:
         candidate = parent / "plugin"
         if (candidate / ".claude-plugin" / "plugin.json").exists():
             return candidate
+    # Fallback: bundled plugin data inside the installed package
+    # Note: bundled copy uses "claude-plugin/" (no dot) because setuptools
+    # skips hidden directories. install_claude_code_plugin handles both names.
+    try:
+        from importlib import resources
+        pkg_plugin = resources.files("campy.data").joinpath("plugin")
+        pkg_path = Path(str(pkg_plugin))
+        if (pkg_path / "claude-plugin" / "plugin.json").exists():
+            return pkg_path
+        if (pkg_path / ".claude-plugin" / "plugin.json").exists():
+            return pkg_path
+    except Exception:
+        pass
     return None
 
 
@@ -31,8 +44,10 @@ def install_claude_code_plugin(plugin_dir: Path, target_dir: Path) -> bool:
     """Install plugin files for Claude Code."""
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
-        # Copy .claude-plugin/
+        # Copy .claude-plugin/ (bundled copy may be "claude-plugin/" without dot)
         plugin_meta_src = plugin_dir / ".claude-plugin"
+        if not plugin_meta_src.exists():
+            plugin_meta_src = plugin_dir / "claude-plugin"
         plugin_meta_dst = target_dir / ".claude-plugin"
         if plugin_meta_dst.exists():
             shutil.rmtree(plugin_meta_dst)
