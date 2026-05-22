@@ -769,9 +769,10 @@ class AdapterRegistrar:
 
     def _register_claude_desktop(self) -> bool:
         """Register Claude Desktop via plugin directory."""
-        plugin_dir = PROJECT_ROOT / "plugin"
+        from campy.cli.plugin_installer import find_plugin_dir
+        plugin_dir = find_plugin_dir() or (PROJECT_ROOT / "plugin")
         if not plugin_dir.exists():
-            click.echo("    [!] Plugin directory not found at plugin/")
+            click.echo("    [!] Plugin directory not found")
             return False
 
         click.echo("    [ok] Claude Desktop — HippoCampy plugin ready")
