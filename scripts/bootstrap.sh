@@ -127,7 +127,7 @@ if [ -n "$DEV_SOURCE" ]; then
         ok "Would install from $DEV_SOURCE (dev mode)"
     else
         if command -v pipx &>/dev/null; then
-            pipx install "$DEV_SOURCE" --force
+            pipx install "$DEV_SOURCE" --force --python "$PYTHON_CMD"
         else
             "$PYTHON_CMD" -m venv "$CAMPY_VENV_DIR"
             "$CAMPY_VENV_DIR/bin/pip" install -U pip
@@ -141,10 +141,10 @@ elif command -v pipx &>/dev/null; then
     if $DRY_RUN; then
         ok "Would run: pipx install $PACKAGE_NAME"
     else
-        pipx install "$PACKAGE_NAME" --force 2>/dev/null || {
+        pipx install "$PACKAGE_NAME" --force --python "$PYTHON_CMD" 2>/dev/null || {
             # If PyPI package not published yet, install from GitHub
             warn "PyPI package not found, installing from GitHub..."
-            pipx install "git+https://github.com/djs54/hippocampy.git" --force
+            pipx install "git+https://github.com/djs54/hippocampy.git" --force --python "$PYTHON_CMD"
         }
         ok "Installed via pipx"
     fi
