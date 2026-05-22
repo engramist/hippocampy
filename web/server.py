@@ -970,6 +970,7 @@ async def _dispatch_mcp(request: dict, _db, _cfg: dict) -> dict | None:
         return ok({"tools": _TOOLS})
 
     if method == "tools/call":
+        from mcp_engine.activity_log import emit_activity, compact_details
         tool_name = params.get("name", "")
         tool_args = params.get("arguments", {})
         tool_args = _inject_sse_context(tool_args)
@@ -978,9 +979,17 @@ async def _dispatch_mcp(request: dict, _db, _cfg: dict) -> dict | None:
             return err(-32601, f"Unknown tool: {tool_name}")
         try:
             result = await handler(tool_args, _db, _cfg)
+            emit_activity(
+                "tool", config=_cfg, method=tool_name, status="ok",
+                details=compact_details(tool_name, tool_args),
+            )
             return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
         except Exception as e:
             _logger.exception("SSE tool dispatch error for %s", tool_name)
+            emit_activity(
+                "tool", config=_cfg, method=tool_name, status="error",
+                details={**compact_details(tool_name, tool_args), "error": str(e)[:160]},
+            )
             return err(-32000, str(e))
 
     return err(-32601, f"Unknown method: {method}")
