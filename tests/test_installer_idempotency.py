@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 from campy.cli.register import (
@@ -42,4 +43,43 @@ def test_vscode_registration_is_idempotent(tmp_path):
 
     assert second == first
     assert list(second["servers"]).count("campy") == 1
+
+
+# ============================================================================
+# Bootstrap Idempotency Tests (B237)
+# ============================================================================
+
+
+def test_bootstrap_dry_run_twice():
+    """Running bootstrap --dry-run twice should succeed both times."""
+    for _ in range(2):
+        result = subprocess.run(
+            ["bash", "scripts/bootstrap.sh", "--dry-run"],
+            capture_output=True, text=True, timeout=30
+        )
+        assert result.returncode == 0
+
+
+def test_bootstrap_help_is_stable():
+    """--help output should be consistent across runs."""
+    results = []
+    for _ in range(2):
+        result = subprocess.run(
+            ["bash", "scripts/bootstrap.sh", "--help"],
+            capture_output=True, text=True, timeout=10
+        )
+        results.append(result.stdout)
+    assert results[0] == results[1]
+
+
+def test_bootstrap_does_not_delete_campy_dir():
+    """Bootstrap should never contain rm -rf on .campy directory."""
+    content = Path("scripts/bootstrap.sh").read_text()
+    # Check that no line does rm -rf on the .campy directory
+    for line in content.split("\n"):
+        line = line.strip()
+        if line.startswith("#"):
+            continue
+        if "rm -rf" in line and (".campy" in line or "brain.db" in line):
+            assert False, f"Dangerous delete: {line}"
 
