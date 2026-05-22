@@ -254,13 +254,14 @@ def status():
 def doctor(
     repair: bool = typer.Option(False, "--repair", help="Attempt safe repairs"),
     lines: Optional[int] = typer.Option(None, "--lines", help="Show last N activity lines"),
+    json_output: bool = typer.Option(False, "--json", help="Output results as JSON"),
 ):
     """
     Diagnose Campy daemon, config, runtime paths, and MCP registrations.
     """
     from campy.cli.doctor import run_doctor
 
-    if not run_doctor(repair=repair, lines=lines):
+    if not run_doctor(repair=repair, lines=lines, json_output=json_output):
         raise typer.Exit(code=1)
 
 @app.command()
