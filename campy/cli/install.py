@@ -42,6 +42,16 @@ try:
 except ImportError:
     OpenAI = None
 
+
+def _is_installed_mode() -> bool:
+    """Return True if campy was installed via pip/pipx (not running from source)."""
+    try:
+        import campy
+        package_path = Path(campy.__file__ or "").resolve()
+        return "site-packages" in str(package_path)
+    except Exception:
+        return False
+
 @dataclass
 class InstallStepResult:
     name: str
@@ -895,10 +905,14 @@ class AdapterRegistrar:
 
     def _register_openclaw(self) -> bool:
         """Install/configure the OpenClaw extension and restart the gateway."""
-        from campy.cli.setup import _register_openclaw
-        _register_openclaw()
-        click.echo("    [ok] OpenClaw — extension installed, config patched, gateway restarted")
-        return True
+        try:
+            from campy.cli.setup import _register_openclaw
+            _register_openclaw()
+            click.echo("    [ok] OpenClaw — extension installed, config patched, gateway restarted")
+            return True
+        except Exception as e:
+            click.echo(f"    [!] OpenClaw registration failed: {e}")
+            return False
 
     @staticmethod
     def _merge_mcp_config(config_path: Path, server_name: str, entry: dict) -> None:
@@ -959,8 +973,19 @@ class DaemonSetup:
         PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+        # Find brain_daemon.py — in source it's at PROJECT_ROOT/brain_daemon.py,
+        # in installed mode it's at campy/brain_daemon.py inside site-packages.
         daemon_script = str(PROJECT_ROOT / "brain_daemon.py")
-        system_python = resolve_system_python()
+        if not Path(daemon_script).exists():
+            # Installed mode: find it relative to the campy package
+            import campy as _campy_pkg
+            daemon_script = str(Path(_campy_pkg.__file__).parent / "brain_daemon.py")
+        # In installed mode, use the current interpreter (pipx venv python)
+        # which already has all dependencies. In dev mode, use system python.
+        if _is_installed_mode():
+            system_python = str(self.venv.python)
+        else:
+            system_python = resolve_system_python()
 
         site_packages = str(self.venv.site_packages_dir())
         pythonpath = f"{site_packages}:{PROJECT_ROOT}"
@@ -1112,19 +1137,31 @@ def run_install() -> None:
 
     # Step 3: Python Environment
     _print_step_header(3, total_steps, "Python Environment & Dependencies")
-    venv = VenvManager()
-    venv_ok = venv.create()
-    if venv_ok:
-        deps_ok = venv.install_deps()
-        if deps_ok:
-            venv.install_spacy_model()
-            venv.prewarm_embeddings()
-            results.append(InstallStepResult("Python Environment", True, "Venv and dependencies ok"))
-        else:
-            results.append(InstallStepResult("Python Environment", False, "Dependency install failed", "Check network/pip"))
-            venv_ok = False
+    installed_mode = _is_installed_mode()
+    if installed_mode:
+        # When installed via pip/pipx, deps are already in the install venv.
+        # Create a VenvManager that points to our actual Python for schema init etc.
+        click.echo("  [=] Installed via pip/pipx — dependencies already available")
+        venv = VenvManager()
+        # Point the venv manager at the real Python running this process
+        venv.python = Path(sys.executable)
+        venv.pip = Path(sys.executable).parent / "pip3"
+        venv_ok = True
+        results.append(InstallStepResult("Python Environment", True, "Using installed package (pip/pipx)"))
     else:
-        results.append(InstallStepResult("Python Environment", False, "Venv creation failed"))
+        venv = VenvManager()
+        venv_ok = venv.create()
+        if venv_ok:
+            deps_ok = venv.install_deps()
+            if deps_ok:
+                venv.install_spacy_model()
+                venv.prewarm_embeddings()
+                results.append(InstallStepResult("Python Environment", True, "Venv and dependencies ok"))
+            else:
+                results.append(InstallStepResult("Python Environment", False, "Dependency install failed", "Check network/pip"))
+                venv_ok = False
+        else:
+            results.append(InstallStepResult("Python Environment", False, "Venv creation failed"))
 
     # Step 4: Configuration
     _print_step_header(4, total_steps, "Configuration Writing")
@@ -1172,7 +1209,7 @@ def run_install() -> None:
     smoke_ok = False
     if daemon_ok:
         click.echo("  Waiting for daemon to initialize...")
-        ready = _wait_for_daemon(max_wait=20, interval=2)
+        ready = _wait_for_daemon(max_wait=45, interval=3)
         if ready:
             try:
                 from campy.cli.smoke_test import check_status

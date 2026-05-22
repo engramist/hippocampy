@@ -155,6 +155,8 @@ class BrainDaemon:
         candidates = [
             config_dir.parent / "InvertorsDocs" / "GistSeedExamples.md",
             SEED_PATH,
+            # Installed mode: bundled in campy/data/
+            Path(__file__).parent / "data" / "GistSeedExamples.md",
         ]
         for path in candidates:
             if path.exists():
