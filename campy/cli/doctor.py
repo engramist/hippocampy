@@ -26,8 +26,9 @@ from campy.paths import get_launchd_plist_path
 class DoctorChecker:
     """Run diagnostic checks and collect operator-facing results."""
 
-    def __init__(self, repair_mode: bool = False):
+    def __init__(self, repair_mode: bool = False, json_mode: bool = False):
         self.repair_mode = repair_mode
+        self.json_mode = json_mode
         self.checks: list[tuple[str, bool, str]] = []
 
     def run_all_checks(self) -> bool:
@@ -342,6 +343,18 @@ class DoctorChecker:
             self.checks.append(("Plugin Status", False, f"Error: {exc}"))
 
     def print_report(self) -> None:
+        if self.json_mode:
+            self._print_json_report()
+        else:
+            self._print_text_report()
+
+    def _print_json_report(self) -> None:
+        """Output results as JSON for machine readability."""
+        output = self.get_json_results()
+        print(json.dumps(output, indent=2))
+
+    def _print_text_report(self) -> None:
+        """Output results as formatted text for human readability."""
         print(f"\n=== {PRODUCT_NAME} Health Check ===\n")
         print(f"{'Check':<24} {'Status':<6} Details")
         print("-" * 82)
@@ -355,15 +368,45 @@ class DoctorChecker:
         else:
             print("Some checks failed. Run 'campy doctor --repair' for safe repairs.")
 
+    def get_json_results(self) -> dict:
+        """Return check results as a dict suitable for JSON serialization."""
+        checks_list = [
+            {
+                "name": name,
+                "status": "pass" if passed else "fail",
+                "message": message,
+            }
+            for name, passed, message in self.checks
+        ]
+        passed_count = sum(1 for _, passed, _ in self.checks if passed)
+        return {
+            "checks": checks_list,
+            "summary": {
+                "passed": passed_count,
+                "total": len(self.checks),
+                "all_passed": passed_count == len(self.checks),
+            },
+        }
 
-def run_doctor(repair: bool = False, lines: int | None = None) -> bool:
-    if repair:
+
+def run_doctor(repair: bool = False, lines: int | None = None, json_output: bool = False) -> bool:
+    if repair and not json_output:
         print("Running in repair mode...\n")
-    checker = DoctorChecker(repair_mode=repair)
-    ok = checker.run_all_checks()
+    
+    # When json_output is enabled, suppress diagnostic prints from check_status() etc.
+    if json_output:
+        import io
+        import contextlib
+        with contextlib.redirect_stdout(io.StringIO()):
+            checker = DoctorChecker(repair_mode=repair, json_mode=json_output)
+            ok = checker.run_all_checks()
+    else:
+        checker = DoctorChecker(repair_mode=repair, json_mode=json_output)
+        ok = checker.run_all_checks()
+    
     checker.print_report()
 
-    if lines:
+    if lines and not json_output:
         print("\n=== Recent Activity ===\n")
         try:
             from mcp_engine.activity_log import activity_log_path
