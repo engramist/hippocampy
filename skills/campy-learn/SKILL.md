@@ -42,19 +42,38 @@ Encode a new piece of knowledge into Campy's graph.
 3. Confirm with the user that the knowledge was stored.
 
 4. If the user specified a trigger pattern (e.g., "remind me when I run docker"),
-   note it in the plan/lesson metadata. This metadata is inert now but will be
-   consumed by the trigger manifest compiler in Phase 2 (Associative Hooks).
+   pass the trigger metadata in the `trigger` parameter of `upsert_lesson`.
+   The trigger manifest is recompiled every sweep cycle (~5 minutes).
+   After creation, the user can verify with `campy trigger list`.
 
-## Trigger Metadata Format (Phase 2 readiness)
+## Trigger Metadata
 
-When storing a Procedure or Lesson with a trigger, include in metadata:
+When storing a Lesson with a trigger, pass the `trigger` parameter:
+
 ```json
 {
   "trigger": {
-    "pattern": "regex pattern to match",
+    "pattern": "regex pattern to match tool input/output",
     "hook_type": "PreToolUse or PostToolUse",
-    "tool": "Bash or Edit or Write",
-    "project_scope": "optional project path"
+    "tool": "Bash or Edit or Write (empty for all)",
+    "project_scope": "optional project path (empty for all)"
   }
 }
 ```
+
+Example — remember that docker requires OD env vars:
+```json
+{
+  "text": "OD docker containers require OAUTH_TOKEN and CLUSTER_ENV vars",
+  "lesson_type": "edge-case",
+  "trigger": {
+    "pattern": "docker run|docker build|docker compose",
+    "hook_type": "PreToolUse",
+    "tool": "Bash"
+  }
+}
+```
+
+The manifest compiler picks this up on the next sweep and the
+PreToolUse hook will inject the lesson text before any matching
+Bash command runs.

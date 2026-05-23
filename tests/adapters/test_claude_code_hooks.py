@@ -20,11 +20,11 @@ def test_session_start_hook_is_executable():
 
 
 def test_pre_tool_use_hook_exists():
-    """PreToolUse hook script should exist."""
+    """PreToolUse hook script should exist and reference manifest."""
     hook = Path("adapters/claude_code/hooks/pre_tool_use.sh")
     assert hook.exists()
     content = hook.read_text()
-    assert "memory" in content.lower() or "current_truth" in content.lower()
+    assert "manifest" in content.lower()
 
 
 def test_pre_tool_use_hook_is_executable():
@@ -58,3 +58,19 @@ def test_setup_register_installs_hooks(tmp_path):
     
     assert (hooks_dir / "session_start.sh").exists()
     assert (hooks_dir / "pre_tool_use.sh").exists()
+    assert (hooks_dir / "post_tool_use.sh").exists()
+
+
+def test_post_tool_use_hook_exists():
+    """PostToolUse hook script should exist and reference manifest."""
+    hook = Path("adapters/claude_code/hooks/post_tool_use.sh")
+    assert hook.exists()
+    content = hook.read_text()
+    assert "manifest" in content.lower()
+    assert "PostToolUse" in content
+
+
+def test_post_tool_use_hook_is_executable():
+    """PostToolUse hook should be executable."""
+    hook = Path("adapters/claude_code/hooks/post_tool_use.sh")
+    assert os.access(hook, os.X_OK), "PostToolUse hook is not executable"
