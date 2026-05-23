@@ -348,6 +348,24 @@ class BrainDaemon:
             # File Bridge: regenerate stale project files
             await self._file_bridge_regen()
 
+            # Associative Hooks: recompile trigger manifest
+            await self._compile_trigger_manifest()
+
+    async def _compile_trigger_manifest(self):
+        """Recompile the trigger manifest from graph state."""
+        try:
+            from mcp_engine.trigger_manifest import compile_manifest
+            summary = await compile_manifest(self.db, self.config)
+            if summary["triggers_compiled"] > 0:
+                _logger.info(
+                    "[Triggers] compiled %d triggers (%d procedures, %d lessons)",
+                    summary["triggers_compiled"],
+                    summary["procedures"],
+                    summary["lessons"],
+                )
+        except Exception as e:
+            _logger.error("[Triggers] manifest compilation failed: %s", e)
+
     async def _file_bridge_regen(self):
         """Regenerate context files for projects marked stale."""
         if not self._stale_projects:

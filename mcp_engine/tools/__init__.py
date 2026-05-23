@@ -2137,7 +2137,8 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
     """
     Explicitly add or update a Lesson node.
     
-    params: {text, domain, lesson_type, session_id?, lesson_id?, scene_wl_hash?, scene_graph_vector?, archetype?, progress_score?, valence?}
+    params: {text, domain, lesson_type, session_id?, lesson_id?, scene_wl_hash?, scene_graph_vector?, archetype?, progress_score?, valence?, trigger?}
+    trigger is an optional dict: {pattern, hook_type, tool, project_scope}
     """
     text        = params.get("text", "").strip()
     domain      = params.get("domain", "generic").strip()
@@ -2149,6 +2150,13 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
     if scene_graph_vector is not None and not isinstance(scene_graph_vector, str):
         scene_graph_vector = str(scene_graph_vector)
     archetype = (params.get("archetype") or "").strip() or None
+
+    # Phase 2: Associative Hooks — trigger metadata
+    trigger_meta = params.get("trigger") or {}
+    trigger_pattern = (trigger_meta.get("pattern") or "").strip() or None
+    trigger_hook_type = (trigger_meta.get("hook_type") or "").strip() or None
+    trigger_tool = (trigger_meta.get("tool") or "").strip() or None
+    trigger_project_scope = (trigger_meta.get("project_scope") or "").strip() or None
     try:
         progress_score = None if params.get("progress_score") is None else float(params.get("progress_score"))
     except Exception:
@@ -2193,7 +2201,11 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
                 confidence_low:   false,
                 pathway_strength: 1.0,
                 archived:         false,
-                created_at:       timestamp($now)
+                created_at:       timestamp($now),
+                trigger_pattern:       $trig_pattern,
+                trigger_hook_type:     $trig_hook_type,
+                trigger_tool:          $trig_tool,
+                trigger_project_scope: $trig_scope
             })
             """,
             {
@@ -2210,6 +2222,10 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
                 "progress_score": progress_score,
                 "valence": valence,
                 "now":    now,
+                "trig_pattern": trigger_pattern,
+                "trig_hook_type": trigger_hook_type,
+                "trig_tool": trigger_tool,
+                "trig_scope": trigger_project_scope,
             }
         )
     else:
@@ -2225,7 +2241,11 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
                 l.archetype        = $archetype,
                 l.progress_score   = $progress_score,
                 l.valence          = $valence,
-                l.pathway_strength = l.pathway_strength + 0.1
+                l.pathway_strength = l.pathway_strength + 0.1,
+                l.trigger_pattern       = $trig_pattern,
+                l.trigger_hook_type     = $trig_hook_type,
+                l.trigger_tool          = $trig_tool,
+                l.trigger_project_scope = $trig_scope
             """,
             {
                 "lid":    lesson_id,
@@ -2237,6 +2257,10 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
                 "archetype": archetype,
                 "progress_score": progress_score,
                 "valence": valence,
+                "trig_pattern": trigger_pattern,
+                "trig_hook_type": trigger_hook_type,
+                "trig_tool": trigger_tool,
+                "trig_scope": trigger_project_scope,
             }
         )
 
