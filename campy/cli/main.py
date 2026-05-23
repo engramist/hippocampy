@@ -26,6 +26,7 @@ from campy.cli.smoke_test import run_smoke_tests, check_status
 from campy.cli.wiki import app as wiki_app
 from campy.cli.arc import app as arc_app
 from campy.cli.recall import app as recall_app
+from campy.cli.context import app as context_app
 from campy.branding import PRODUCT_NAME, SHORT_NAME
 from mcp_engine.config import load_config
 
@@ -366,6 +367,7 @@ app.add_typer(tool_app, name="tool")
 app.add_typer(wiki_app, name="wiki")
 app.add_typer(arc_app, name="arc")
 app.add_typer(recall_app, name="memory")
+app.add_typer(context_app, name="context")
 
 @tool_app.command("list")
 def tool_list():
@@ -445,7 +447,7 @@ def decide(
     _decide(query=query, format=format, session_id=session_id)
 
 
-@app.command(name="context")
+@app.command(name="context-health")
 def context_cmd(
     format: str = typer.Option("rich", "--format", help="Output format"),
     session_id: Optional[str] = typer.Option(None, help="Session ID"),

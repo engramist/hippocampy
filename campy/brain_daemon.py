@@ -67,6 +67,8 @@ class BrainDaemon:
         self._llm_client = None   # set in start()
         self._centroids  = {}     # set in start()
         self._loop_queue: asyncio.Queue = asyncio.Queue()
+        self._stale_projects: set[str] = set()
+        self._last_file_regen: str | None = None
 
     # ------------------------------------------------------------------
     # Startup
@@ -342,6 +344,33 @@ class BrainDaemon:
                 )
             except Exception as e:
                 print(f"[Sweep] Error during sweep: {e}")
+
+            # File Bridge: regenerate stale project files
+            await self._file_bridge_regen()
+
+    async def _file_bridge_regen(self):
+        """Regenerate context files for projects marked stale."""
+        if not self._stale_projects:
+            return
+        from mcp_engine.file_bridge import regen_all
+        stale = list(self._stale_projects)
+        self._stale_projects.clear()
+        for project_path in stale:
+            try:
+                result = await regen_all(Path(project_path), self.db)
+                _logger.info(
+                    "[FileBridge] regen %s: context_md=%s adrs=%d pointers=%s",
+                    project_path,
+                    result["context_md"],
+                    result["adrs_generated"],
+                    result["pointers_modified"],
+                )
+            except Exception as e:
+                _logger.error("[FileBridge] regen failed for %s: %s", project_path, e)
+
+    def mark_project_stale(self, project_path: str):
+        """Mark a project's context files as needing regeneration."""
+        self._stale_projects.add(project_path)
 
     # ------------------------------------------------------------------
     # Shutdown
