@@ -1,34 +1,34 @@
 #!/usr/bin/env bash
-# Claude Code PreToolUse hook — Campy Associative Memory (Phase 2)
+# Claude Code PostToolUse hook — Campy Error Pattern Matching (Phase 2)
 #
-# Reads the trigger manifest compiled by the Campy daemon and injects
-# matching context into Claude Code's additionalContext.
+# Reads the trigger manifest and matches tool output against error patterns.
+# When a match is found, injects the relevant lesson/procedure as context.
 #
 # Environment variables from Claude Code:
-#   CLAUDE_TOOL_NAME  — the tool being called (Bash, Edit, Write, Read, etc.)
-#   CLAUDE_TOOL_INPUT — JSON string of tool arguments
+#   CLAUDE_TOOL_NAME — the tool that just ran
 #
-# Performance: no manifest file → instant exit (1 shell test).
-# With manifest → Python startup (~30ms) + JSON parse + regex.
+# Tool output is read from stdin.
 
 set -euo pipefail
 
 TOOL_NAME="${CLAUDE_TOOL_NAME:-}"
-TOOL_INPUT="${CLAUDE_TOOL_INPUT:-}"
 MANIFEST="${CAMPY_TRIGGER_MANIFEST:-$HOME/.campy/triggers/manifest.json}"
 
 # Fast exit if no manifest exists
 [ -f "$MANIFEST" ] || exit 0
 
-# Fast exit if no tool input to match against
-[ -n "$TOOL_INPUT" ] || exit 0
+# Read tool output from stdin
+TOOL_OUTPUT="$(cat)"
+
+# Fast exit if no output to match against
+[ -n "$TOOL_OUTPUT" ] || exit 0
 
 # Use Python for reliable JSON parsing + regex matching
-python3 - "$TOOL_NAME" "$TOOL_INPUT" "$MANIFEST" <<'PYEOF'
+python3 - "$TOOL_NAME" "$TOOL_OUTPUT" "$MANIFEST" <<'PYEOF'
 import json, re, sys, os
 
 tool_name = sys.argv[1]
-tool_input = sys.argv[2]
+tool_output = sys.argv[2]
 manifest_path = sys.argv[3]
 
 try:
@@ -41,8 +41,8 @@ cwd = os.getcwd()
 matched = []
 
 for trigger in manifest.get("triggers", []):
-    # Only PreToolUse triggers
-    if trigger.get("hook_type") != "PreToolUse":
+    # Only PostToolUse triggers
+    if trigger.get("hook_type") != "PostToolUse":
         continue
     # Filter by tool (empty = match all tools)
     trigger_tool = trigger.get("tool", "")
@@ -52,12 +52,12 @@ for trigger in manifest.get("triggers", []):
     scope = trigger.get("project_scope", "")
     if scope and not cwd.startswith(scope):
         continue
-    # Match pattern against tool input
+    # Match pattern against tool output
     pattern = trigger.get("pattern", "")
     if not pattern:
         continue
     try:
-        if re.search(pattern, tool_input, re.IGNORECASE):
+        if re.search(pattern, tool_output, re.IGNORECASE):
             matched.append(trigger)
     except re.error:
         continue

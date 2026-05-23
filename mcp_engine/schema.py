@@ -1111,6 +1111,16 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         ("Lesson",          "confidence_low", "BOOLEAN"),
         ("Lesson",          "pathway_strength", "DOUBLE"),
         ("Lesson",          "archived", "BOOLEAN"),
+
+        # Phase 2: Associative Hooks — trigger metadata
+        ("Procedure",      "trigger_pattern",       "STRING"),
+        ("Procedure",      "trigger_hook_type",     "STRING"),
+        ("Procedure",      "trigger_tool",          "STRING"),
+        ("Procedure",      "trigger_project_scope", "STRING"),
+        ("Lesson",         "trigger_pattern",       "STRING"),
+        ("Lesson",         "trigger_hook_type",     "STRING"),
+        ("Lesson",         "trigger_tool",          "STRING"),
+        ("Lesson",         "trigger_project_scope", "STRING"),
     ]
     def _column_exists(table: str, col: str) -> bool:
         """Check whether a column already exists via table_info, avoiding
