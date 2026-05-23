@@ -27,6 +27,7 @@ from campy.cli.wiki import app as wiki_app
 from campy.cli.arc import app as arc_app
 from campy.cli.recall import app as recall_app
 from campy.cli.context import app as context_app
+from campy.cli.trigger import app as trigger_app
 from campy.branding import PRODUCT_NAME, SHORT_NAME
 from mcp_engine.config import load_config
 
@@ -368,6 +369,7 @@ app.add_typer(wiki_app, name="wiki")
 app.add_typer(arc_app, name="arc")
 app.add_typer(recall_app, name="memory")
 app.add_typer(context_app, name="context")
+app.add_typer(trigger_app, name="trigger")
 
 @tool_app.command("list")
 def tool_list():
