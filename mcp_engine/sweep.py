@@ -90,6 +90,8 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
         "decayed": 0, "archived": 0, "resurrected": 0,
         "promoted": 0, "errors": 0,
         "retrospective_plans": 0,
+        "patterns_discovered": 0,    # Phase 4
+        "pattern_candidates": 0,     # Phase 4
         "sweep_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -151,6 +153,17 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
         wiki_summary = await export_wiki_projection(db, config)
         summary["wiki_projection"] = wiki_summary
     except Exception:
+        summary["errors"] += 1
+
+    # Step 7.5: Offline pattern discovery (Phase 4 — Anticipatory Engine)
+    try:
+        from mcp_engine.sweep_patterns import discover_patterns
+        pat_summary = await discover_patterns(db, config, llm_client)
+        summary["patterns_discovered"] = pat_summary.get("triggers_written", 0)
+        summary["pattern_candidates"] = pat_summary.get("candidates_found", 0)
+        summary["errors"] += pat_summary.get("errors", 0)
+    except Exception:
+        _logger.warning("[Sweep] Pattern discovery failed", exc_info=True)
         summary["errors"] += 1
 
     return summary
