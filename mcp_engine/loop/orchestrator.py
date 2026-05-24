@@ -38,6 +38,7 @@ from mcp_engine.loop.step7_pathway   import (
     apply_additive, apply_contradiction, write_co_occurs_with,
     rescore_nearby_low_confidence, create_decision_chain,
 )
+from mcp_engine.loop.step4b_associative import check_associative_triggers  # Phase 3
 from mcp_engine.loop.step7_5_lesson import extract_lessons  # B11
 from mcp_engine.loop.anomaly_detection import check_anomalies, store_anomaly_flag  # B12
 from mcp_engine.graph import embeddings as emb
@@ -85,6 +86,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         "reified":           0,
         "lessons_found":     0,
         "anomalies_detected": 0,  # B12
+        "triggers_bound":    0,   # Phase 3: Step 4b auto-bindings
     }
 
     # ------------------------------------------------------------------
@@ -219,6 +221,20 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         if not step4_result["should_proceed"]:
             summary["noise_count"] += 1
             continue
+
+        # Step 4b — Associative Pattern Check (Anticipatory Engine)
+        # Check if this entity matches stored Lessons/Procedures that need triggers.
+        # Only runs when message contains error/action signals — near-zero cost otherwise.
+        step4b_vector = entity.get("vector")
+        if step4b_vector:
+            step4b_result = await check_associative_triggers(
+                entity_text=entity["text"],
+                entity_vector=step4b_vector,
+                full_message=text,
+                db=db,
+                config=config,
+            )
+            summary["triggers_bound"] += step4b_result["triggers_bound"]
 
         # O1 fix: reuse vector from Step 2 (already embedded there).
         vector = entity.get("vector")
@@ -371,9 +387,11 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         await write_co_occurs_with(concept_ids, min_conf, db, now, co_threshold)
 
     # Step 7.5 — Lesson extraction (indicator-based)
-    summary["lessons_found"] = await extract_lessons(
+    lesson_result = await extract_lessons(
         message_id, text, db, llm_client, config, session_id=session_id
     )
+    # Phase 3: extract_lessons now returns list[str] of IDs; handle both old and new
+    summary["lessons_found"] = len(lesson_result) if isinstance(lesson_result, list) else lesson_result
 
     # B32 fix: flush deferred relations AFTER all Concept nodes are created.
     # _store_relation will ensure both endpoints exist before creating the edge.
