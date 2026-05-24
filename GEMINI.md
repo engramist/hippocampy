@@ -79,6 +79,17 @@ Use the Campy activity feed as the first-line indicator for live memory behavior
 
 This tails `~/.campy/activity.log`, a compact operator feed for memory writes, recall calls, durable capture scans, and daemon lifecycle state. It redacts full prompt and response bodies while preserving useful metadata like source client, role, session, character counts, recall query previews, and success/error status. Use `~/.campy/daemon.log` only for debugging failures or stack traces.
 
+## Context Window Integration (Layer Cake)
+
+Campy uses a 4-layer architecture to automatically inject graph knowledge into agent context windows:
+
+1. **File Bridge** (`mcp_engine/file_bridge.py`) — Generates `CONTEXT.md` and ADR files in project directories from graph state
+2. **Associative Hooks** (`mcp_engine/trigger_manifest.py`) — Compiles trigger manifest from Procedure/Lesson nodes; hook scripts inject matching context on tool calls
+3. **Anticipatory Engine** (`mcp_engine/loop/step4b_associative.py`) — GCL Step 4b auto-discovers and binds triggers during message processing
+4. **Process Skills** (`skills/campy-*/`) — Deliberate recall via Campy-native skills
+
+CLI commands: `campy context regen`, `campy trigger add|list|remove|compile`.
+
 ## Key Directories
 - `mcp_engine/`: Core logic, including the 9-step consolidation loop.
 - `adapters/`: Adapters for Claude, Codex, Gemini CLI, etc.

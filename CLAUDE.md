@@ -35,6 +35,17 @@ Use `skills/campy-memory/SKILL.md` as the canonical memory-use policy. Do not re
 
 If uncertain, call `memory_decision` first; it recommends the appropriate recall tool without retrieving memory itself. For multi-entity or broad context queries, `memory_decision` routes to `compile_context` (B252) which assembles heterogeneous context bundles from all memory types.
 
+## Context Window Integration (Layer Cake)
+
+Campy uses a 4-layer system to automatically inject graph knowledge into agent context windows:
+
+- **Layer 1 — File Bridge:** `CONTEXT.md` and ADR files generated from graph state in project directories. Read automatically by agents as regular files. Regen: `campy context regen`.
+- **Layer 2 — Associative Hooks:** Trigger manifest at `~/.campy/triggers/manifest.json` compiled from Procedure/Lesson nodes. Claude Code hooks (`pre_tool_use.sh`, `post_tool_use.sh`) inject matching context on every tool call. Manage: `campy trigger add|list|remove|compile`.
+- **Layer 3 — Anticipatory Engine:** GCL Step 4b auto-discovers trigger bindings during message processing. When error/action signals appear, checks entity embeddings against stored Lessons/Procedures and auto-binds triggers. No manual configuration needed.
+- **Layer 4 — Process Skills:** `skills/campy-learn/`, `skills/campy-memory/`, `skills/campy-recall/` for deliberate recall.
+
+Design spec: `docs/superpowers/specs/2026-05-22-context-window-integration-design.md`
+
 ## Campy Activity Indicator
 
 Campy exposes a compact operator activity feed at `~/.campy/activity.log`.

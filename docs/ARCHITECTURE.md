@@ -276,6 +276,7 @@ hippocampy/
 │   │   ├── step3_schema_org.py  # schema.org sub-graph routing + mapping table
 │   │   ├── step3b_relations.py  # Relation extraction: Ollama with gist+schema.org type context
 │   │   ├── step4_pattern.py     # Representativeness heuristic + confidence gating
+│   │   ├── step4b_associative.py # Associative Pattern Check — auto-trigger binding (Phase 3)
 │   │   ├── step5_retrieval.py   # Dual-scope retrieval (Availability heuristic)
 │   │   ├── step6_arbitration.py # Constrained contradiction arbitration
 │   │   ├── step7_pathway.py     # Pathway update + DEPRECATED_BY + MergeEvent
@@ -299,13 +300,21 @@ hippocampy/
 │   │   ├── codex.py             # Ultra-compact code-focused output
 │   │   ├── chatgpt_desktop.py   # Friendly bullet points
 │   │   └── arc.py               # Structured JSON for ARC agents
+│   ├── file_bridge.py           # Layer 1: CONTEXT.md + ADR generation from graph (Phase 1)
+│   ├── trigger_manifest.py      # Layer 2: Trigger manifest compiler for hook scripts (Phase 2)
 │   └── tools/
 │       ├── __init__.py          # MCP tool implementations: notify_turn, current_truth, etc.
 │       ├── explore_graph.py     # Directed multi-hop graph traversal
 │       └── task_graph.py        # DAG task graph helpers (B127/B128) — cycle detection, ready frontier
 ├── adapters/
 │   ├── openclaw_gateway.py      # OpenClaw prompt construction (Layer 1 + Layer 2 model)
-│   ├── claude_code/adapter.py        # Phase 0
+│   ├── claude_code/
+│   │   ├── adapter.py                # Phase 0
+│   │   ├── setup.py                  # Hook registration and installation
+│   │   └── hooks/                    # Claude Code hook scripts (Layer 2)
+│   │       ├── session_start.sh      # SessionStart — injects graph context on session init
+│   │       ├── pre_tool_use.sh       # PreToolUse — manifest-driven context injection before tool calls
+│   │       └── post_tool_use.sh      # PostToolUse — error pattern matching after tool calls
 │   ├── claude_desktop/adapter.py     # M8
 │   ├── codex/adapter.py              # M8
 │   ├── chatgpt_desktop/adapter.py    # M8
@@ -424,6 +433,9 @@ The same principle should guide retrieval and prompting:
 | Failure sense (B69) | "that's wrong", "revert", "that broke", "start over" — Pain signal |
 
 No human confirmation required. Uncertain nodes enter as tentative knowledge, re-scored continuously.
+
+**Step 4b — Associative Pattern Check (Anticipatory Engine — Phase 3):**
+When a message contains error/failure signals or significant action patterns (docker, kubectl, deploy, etc.), Step 4b checks the entity's embedding against stored Lessons and Procedures via HNSW vector search. If similarity exceeds 0.65 and the matched node has no trigger metadata, Step 4b auto-binds trigger columns (`trigger_pattern`, `trigger_hook_type`, `trigger_tool`, `trigger_project_scope`). The manifest compiler picks these up on the next sweep cycle, and hook scripts start injecting the Lesson/Procedure text into agent context. Near-zero cost — runs only when signals are present, uses existing entity vectors, no LLM calls.
 
 **Step 5 — Dual-Scope Retrieval (Availability Heuristic):** Check branch scope (same MainQuest + vector similarity) then global scope (GlobalConstraint/GlobalPreference nodes) for existing matches.
 
@@ -607,7 +619,7 @@ When Step 4 classifies a Concept at >90% confidence as a specific artifact type,
 - `GlobalConstraint`, `GlobalPreference` (workspace-level, cross-quest deduplication)
 - `Document` (`document_id`, `location_uri`, `content_hash`, `last_modified_at`, `mime_type`)
 - `Message` / `DocumentExtract` (`byte_start`, `byte_end` or line ranges for provenance)
-- `Lesson` (`lesson_id`, `text_raw`, `embedding`, `domain`, `lesson_type`, `confidence`, `confidence_low`, `pathway_strength`, `archived`, `created_at`, `last_audited_at`, `stale_flagged`, `orphan_flagged`)
+- `Lesson` (`lesson_id`, `text_raw`, `embedding`, `domain`, `lesson_type`, `confidence`, `confidence_low`, `pathway_strength`, `archived`, `created_at`, `last_audited_at`, `stale_flagged`, `orphan_flagged`, `trigger_pattern STRING`, `trigger_hook_type STRING`, `trigger_tool STRING`, `trigger_project_scope STRING`) — trigger columns enable Layer 2 associative hooks and are auto-populated by Layer 3 Step 4b
 - `Plan`, `PlanStep` — see Active Agent System section above
 
 **External Consumer Evidence Nodes**:
@@ -617,7 +629,7 @@ When Step 4 classifies a Concept at >90% confidence as a specific artifact type,
 - `Hypothesis` and `Exploration` — generic graph-native reasoning structures retained for non-ARC and external-consumer experiments
 
 **Metacognitive & Procedural Nodes:**
-- `Procedure` (B194) (`procedure_id`, `name`, `domain`, `archetype`, `description`, `steps_json`, `embedding FLOAT[384]`, `embedding_model`, `embedding_dim`, `success_count`, `application_count`, `success_rate`, `confidence`, `pathway_strength`, `archived`, `created_at`, `last_applied_at`) — reusable parameterized strategy templates distilled from successful Plans
+- `Procedure` (B194) (`procedure_id`, `name`, `domain`, `archetype`, `description`, `steps_json`, `embedding FLOAT[384]`, `embedding_model`, `embedding_dim`, `success_count`, `application_count`, `success_rate`, `confidence`, `pathway_strength`, `archived`, `created_at`, `last_applied_at`, `trigger_pattern STRING`, `trigger_hook_type STRING`, `trigger_tool STRING`, `trigger_project_scope STRING`) — reusable parameterized strategy templates distilled from successful Plans. Trigger columns enable Layer 2 associative hooks — when set, the manifest compiler includes this Procedure in the trigger manifest for automatic context injection.
 - `KnowledgeGap` (B193) (`gap_id`, `domain`, `gap_type`, `description`, `severity`, `message_count`, `lesson_count`, `resolved`, `created_at`, `resolved_at`) — metacognitive gap tracking for proactive learning
 
 **Tabular Data Nodes** (B249):
@@ -899,6 +911,38 @@ These tools exist so external ARC consumers can use Campy as graph-native memory
 
 **`get_openclaw_prompt`** — retrieve OpenClaw plugin prompt (B21)
 
+## Context Window Integration — Layer Cake Architecture
+
+Four layers work together to get graph knowledge into agent context windows without requiring explicit tool calls. Each layer operates at a different timescale and precision level; they compose — higher layers discover and write, lower layers deliver.
+
+### Layer 1 — File Bridge (Semantic Context)
+**Module:** `mcp_engine/file_bridge.py`
+**CLI:** `campy context regen`
+**Delivery:** Generates `CONTEXT.md` (domain vocabulary, active decisions, project constraints) and ADR files from graph state. Written to project directories where agents read them as regular files. Regenerated on sweep cycle or on-demand via CLI.
+
+### Layer 2 — Associative Hooks (Reflexive Memory)
+**Modules:** `mcp_engine/trigger_manifest.py`, `adapters/claude_code/hooks/pre_tool_use.sh`, `post_tool_use.sh`
+**CLI:** `campy trigger add|list|remove|compile`
+**Delivery:** Procedure and Lesson nodes with `trigger_pattern` columns are compiled into `~/.campy/triggers/manifest.json` on each sweep cycle. Claude Code hook scripts grep this manifest on every tool call — if a regex pattern matches the tool input (PreToolUse) or output (PostToolUse), the matching Lesson/Procedure text is injected as `additionalContext`. Zero daemon round-trip on the hot path.
+
+### Layer 3 — Anticipatory Engine (Prospective Memory)
+**Module:** `mcp_engine/loop/step4b_associative.py`
+**Delivery:** Online mode runs as GCL Step 4b during message processing. When error/action signals are detected, checks entity embeddings against stored Lessons/Procedures. Auto-binds trigger metadata to unbound matches (similarity > 0.65). The manifest compiler picks these up next sweep cycle — closing the learn → discover → deliver loop. Near-zero cost: graph queries only, no LLM calls.
+
+### Layer 4 — Process Skills (Deliberate Recall)
+**Modules:** `skills/campy-learn/`, `skills/campy-memory/`, `skills/campy-recall/`
+**Delivery:** User or agent-invoked deep retrieval for complex queries. Campy-native skills that interact with the graph through MCP tools. Matt Pocock's skills (installed verbatim) are enhanced by Layers 1-2 — e.g., `/grill-with-docs` reads Campy-generated CONTEXT.md.
+
+### Layer interaction
+```
+Layer 3 (Anticipatory) discovers patterns → writes trigger metadata to graph
+Layer 2 (Hooks) compiles triggers → delivers context on tool calls
+Layer 1 (File Bridge) generates context files → agents read as regular files
+Layer 4 (Skills) provides deep retrieval → user-initiated complex queries
+```
+
+The trigger manifest (`~/.campy/triggers/manifest.json`) is the shared bus between Layers 2 and 3. Layer 3 writes trigger_pattern columns; Layer 2's manifest compiler reads them and produces the JSON file that hook scripts consume.
+
 ## LLM Adapter Instruction Model
 
 Two-layer instruction model. Every active-mode adapter injects both layers.
@@ -1067,3 +1111,15 @@ Optional developer tooling note:
 - if we use Kuzu Explorer or similar tools to inspect the graph, treat them as read-only developer
   visibility aids, not part of the core product surface
 ace
+
+## Context Integration CLI
+
+**`campy context regen`** — Force-regenerate CONTEXT.md and ADR files for the current project from graph state. Useful after bulk ingestion or when context files are stale.
+
+**`campy trigger add`** — Bind a trigger pattern to a Procedure or Lesson node. Options: `--pattern`, `--hook` (PreToolUse|PostToolUse), `--tool`, `--scope`, `--procedure` or `--lesson`.
+
+**`campy trigger list`** — Show all active trigger bindings in a table.
+
+**`campy trigger remove`** — Clear trigger metadata from a Procedure or Lesson node.
+
+**`campy trigger compile`** — Force-compile the trigger manifest from graph state (normally runs on sweep cycle).

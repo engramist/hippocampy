@@ -529,9 +529,17 @@ These processes run inside the Brain Daemon without explicit tool calls.
   "text": "Always use parameterized Cypher queries — string interpolation enables injection",
   "domain": "kuzu",
   "lesson_type": "mistake",
-  "session_id": "uuid"
+  "session_id": "uuid",
+  "trigger": {
+    "pattern": "cypher|query|injection",
+    "hook_type": "PreToolUse",
+    "tool": "Bash",
+    "project_scope": ""
+  }
 }
 ```
+
+The optional `trigger` parameter binds this Lesson to the Layer 2 Associative Hooks system. When set, the trigger manifest compiler includes it in `~/.campy/triggers/manifest.json`, and Claude Code hooks inject the lesson text when the pattern matches tool input/output.
 
 **Output:** `{ "lesson_id": "uuid" }`
 
@@ -540,6 +548,8 @@ These processes run inside the Brain Daemon without explicit tool calls.
 - T2: lesson_type must be one of: mistake, edge-case, optimization, architecture-principle
 - T3: Lesson linked to Session via LEARNED edge
 - T4: Duplicate text returns existing lesson_id (idempotent)
+- T5: Trigger metadata stored when `trigger` parameter provided
+- T6: Trigger appears in manifest after compilation
 
 ---
 
