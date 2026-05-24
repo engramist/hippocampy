@@ -71,7 +71,7 @@ async def extract_lessons(message_id: str, text: str, db, llm_client,
         if not isinstance(candidates, list):
             candidates = []
 
-        stored_count = 0
+        stored_ids = []
         now = datetime.now(timezone.utc).isoformat()
 
         for cand in candidates:
@@ -131,10 +131,10 @@ async def extract_lessons(message_id: str, text: str, db, llm_client,
                     {"sid": session_id, "lid": lesson_id}
                 )
             
-            stored_count += 1
-            
-        return stored_count
+            stored_ids.append(lesson_id)
+
+        return stored_ids
 
     except Exception as e:
         _logger.exception("extract_lessons failed: %s", e)
-        return 0
+        return []
