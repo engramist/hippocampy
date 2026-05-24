@@ -276,7 +276,8 @@ class BrainDaemon:
                     f"entities={summary['entities_found']} "
                     f"concepts={summary['concepts_stored']} "
                     f"relations={summary['relations_found']} "
-                    f"noise={summary['noise_count']}"
+                    f"noise={summary['noise_count']} "
+                    f"triggers={summary.get('triggers_bound', 0)}"
                 )
 
                 # B14: Persist loop summary to Session node
