@@ -23,6 +23,19 @@ For multi-entity or broad context queries, use `compile_context` instead of maki
 
 Tabular data (CSV, XLSX, TSV) ingested via `ingest_document` is stored in per-dataset SQLite files with metadata and extracted facts in the Kuzu graph. The bundle compiler includes relevant tabular data when assembling context.
 
+## Context Window Integration (Layer Cake)
+
+Campy uses a 4-layer architecture to inject graph knowledge into agent context windows without requiring explicit tool calls:
+
+1. **File Bridge** — `CONTEXT.md` and ADR files generated in project directories from graph state. Agents read these as regular files.
+2. **Associative Hooks** — Trigger manifest compiled from Procedure/Lesson nodes. Claude Code hooks inject matching context before/after tool calls. Other agents get equivalent system prompt guidance.
+3. **Anticipatory Engine** — GCL Step 4b auto-discovers trigger bindings during ingestion. Error/action patterns in messages trigger vector search against stored Lessons/Procedures; matches get auto-bound triggers.
+4. **Process Skills** — Campy-native skills for deliberate deep retrieval.
+
+Key modules: `mcp_engine/file_bridge.py`, `mcp_engine/trigger_manifest.py`, `mcp_engine/loop/step4b_associative.py`.
+CLI: `campy context regen`, `campy trigger add|list|remove|compile`.
+Design spec: `docs/superpowers/specs/2026-05-22-context-window-integration-design.md`.
+
 ## Activity Indicator
 
 Use the Campy activity feed to verify live memory behavior:

@@ -211,12 +211,22 @@ Each phase delivers standalone value. Dependencies flow downward (Phase N+1 bene
 - Verify the discovered pattern creates a new trigger in the manifest
 - Test the feedback loop: online mode recognizes the newly-discovered pattern
 
-## Open Questions
+## Implementation Status
 
-1. **Trigger manifest format:** YAML, JSON, or a custom binary format optimized for grep performance? Recommendation: JSON for programmatic access from hook scripts; YAML as human-readable alternative.
-2. **Hook script language:** Shell script (portable) vs. Python (richer, can call Campy SDK directly)? Recommendation: Shell script for the hot path (grep + output), with Python fallback for complex pattern matching.
-3. **Offline sweep frequency:** Use existing 300s sweep or a separate, less frequent cycle? Recommendation: Separate hourly cycle — pattern discovery is expensive and doesn't need real-time freshness.
-4. **Cross-agent hook parity:** When Codex/Gemini add hooks, how quickly can we generate adapters? The trigger manifest is agent-agnostic; only the hook registration format differs.
-5. **Token budget for Layer 2 injections:** Hard cap per injection? Per turn? Configurable? Recommendation: configurable per-injection cap (default 500 tokens), with a per-turn aggregate cap (default 1000 tokens).
-6. **Trigger manifest location:** `~/.campy/triggers/<project-hash>.json` — one manifest per project, co-located with other Campy runtime files.
-7. **Hook script location:** `~/.campy/hooks/associative-hook.sh` — single script shared across projects, reads the project-specific manifest based on CWD.
+| Layer | Phase | Status | Commit |
+|-------|-------|--------|--------|
+| Layer 1 — File Bridge | Phase 1 | Shipped | `e1b06400` |
+| Layer 4 — Process Skills | Phase 1 | Shipped | `e1b06400` |
+| Layer 2 — Associative Hooks | Phase 2 | Shipped | `0e233ff6` |
+| Layer 3 — Anticipatory Engine (online) | Phase 3 | Shipped | `109cf99e` |
+| Layer 3 — Anticipatory Engine (offline) | Phase 4 | Not started | — |
+
+### Resolved Open Questions
+
+1. **Trigger manifest format:** JSON. Hook scripts use inline Python for JSON parsing + regex matching.
+2. **Hook script language:** Bash wrapper with inline Python heredoc. Fast exit for no-manifest case (~1ms), Python for JSON parse + regex (~30-50ms).
+3. **Offline sweep frequency:** Deferred to Phase 4. Online mode (Step 4b) handles the most common case.
+4. **Cross-agent hook parity:** Manifest format is agent-agnostic. Only `adapters/claude_code/hooks/` is implemented; other agents get equivalent system prompt guidance.
+5. **Token budget for Layer 2 injections:** Configurable via `config["hooks"]["max_snippet_chars"]` (default 2000 chars). Hook scripts cap at 3 matches per tool call.
+6. **Trigger manifest location:** `~/.campy/triggers/manifest.json` — single global manifest (not per-project; project scoping is a trigger column filter).
+7. **Hook script location:** `adapters/claude_code/hooks/` in source; installed to `.claude/hooks/` in project dirs by `adapters/claude_code/setup.py`.

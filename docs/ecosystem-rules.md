@@ -56,6 +56,7 @@ This is the most critical architectural rule in this project.
 | Shared Knowledge Assets | API knowledge cache, prompt strategy, state-to-text prompts | `agents/arc3/api_knowledge.py`, `benchmarks/arc3/prompts/`, `benchmarks/arc3/PROMPT_STRATEGY.md` |
 | Deterministic Tools & Services | StateSerializer, NER pipeline, embedding compute, spaCy, harness baseline | `benchmarks/arc3/state_serializer.py`, `mcp_engine/loop/`, `mcp_engine/graph/embeddings.py` |
 | Data Products & Memory | Brain Daemon, Gated Consolidation Loop, Kùzu graph, all MCP tools | `mcp_engine/`, `brain_daemon.py` |
+| Context Window Integration | File Bridge, Trigger Manifest, Associative Hooks, Anticipatory Engine | `mcp_engine/file_bridge.py`, `mcp_engine/trigger_manifest.py`, `mcp_engine/loop/step4b_associative.py`, `adapters/claude_code/hooks/` |
 | Trusted Systems | ARC-AGI-3 API (Environment) | External API; interface in `benchmarks/arc3/harness.py` |
 
 ### Interface Boundaries
@@ -66,6 +67,8 @@ This is the most critical architectural rule in this project.
 | ARC ↔ Environment | `ARC3Harness._execute_action()`, `_initial_frame()` | `benchmarks/arc3/harness.py` |
 | Agent ↔ Orchestrator | `ARCOrchestrator` public methods | `agents/arc3/orchestrator.py` |
 | Adapter ↔ Brain Daemon | MCP STDIO / Unix domain socket | `adapters/*/adapter.py` |
+| Hook Scripts ↔ Trigger Manifest | JSON file at `~/.campy/triggers/manifest.json` | `adapters/claude_code/hooks/*.sh` reads, `mcp_engine/trigger_manifest.py` writes |
+| File Bridge ↔ Project Dir | Generated files (`CONTEXT.md`, ADRs) | `mcp_engine/file_bridge.py` writes to project `.campy/` dirs |
 
 ---
 
