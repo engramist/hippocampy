@@ -410,6 +410,7 @@ class BrainDaemon:
                     f"resurrected={summary['resurrected']} "
                     f"promoted={summary['promoted']} "
                     f"centroids={summary.get('centroids_updated', 0)} "
+                    f"patterns={summary.get('patterns_discovered', 0)} "
                     f"errors={summary['errors']}"
                 )
             except Exception as e:

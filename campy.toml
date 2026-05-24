@@ -99,6 +99,20 @@ similarity_threshold = 0.75
 max_syntheses_per_sweep = 5
 decay_boost_multiplier = 1.3
 
+[sweep.patterns]
+# Offline pattern discovery (Phase 4 — Anticipatory Engine)
+enabled = true
+temporal_enabled = true
+sequence_enabled = true
+frequency_enabled = true
+min_temporal_instances = 3
+min_sequence_instances = 3
+min_frequency_sessions = 4
+max_temporal_cv = 0.30
+sequence_similarity_threshold = 0.80
+max_candidates_per_type = 5
+max_total_candidates = 10
+
 [web]
 port = 7799   # Memory Control Panel — http://127.0.0.1:7799 (local only)
 
