@@ -31,7 +31,7 @@ These are the sources of truth for the system design — shared across all agent
 
 ## Campy Memory Usage Policy
 
-Use `skills/campy-memory/SKILL.md` as the canonical memory-use policy. Do not recall on every turn. Use recall only when the answer or plan depends on durable prior decisions, timeline, lessons, procedures, or similar past work.
+Use `skills/campy-memory/SKILL.md` (dev-only) or `plugin/skills/recall/SKILL.md` (ships with plugin) as the canonical memory-use policy. Do not recall on every turn. Use recall only when the answer or plan depends on durable prior decisions, timeline, lessons, procedures, or similar past work.
 
 If uncertain, call `memory_decision` first; it recommends the appropriate recall tool without retrieving memory itself. For multi-entity or broad context queries, `memory_decision` routes to `compile_context` (B252) which assembles heterogeneous context bundles from all memory types.
 
@@ -42,7 +42,7 @@ Campy uses a 4-layer system to automatically inject graph knowledge into agent c
 - **Layer 1 — File Bridge:** `CONTEXT.md` and ADR files generated from graph state in project directories. Read automatically by agents as regular files. Regen: `campy context regen`.
 - **Layer 2 — Associative Hooks:** Trigger manifest at `~/.campy/triggers/manifest.json` compiled from Procedure/Lesson nodes. Claude Code hooks (`pre_tool_use.sh`, `post_tool_use.sh`) inject matching context on every tool call. Manage: `campy trigger add|list|remove|compile`.
 - **Layer 3 — Anticipatory Engine:** GCL Step 4b auto-discovers trigger bindings during message processing. When error/action signals appear, checks entity embeddings against stored Lessons/Procedures and auto-binds triggers. No manual configuration needed.
-- **Layer 4 — Process Skills:** `skills/campy-learn/`, `skills/campy-memory/`, `skills/campy-recall/` for deliberate recall.
+- **Layer 4 — Process Skills:** 12 skills in `plugin/skills/` (auto-install with plugin). Includes forked process skills (grill, diagnose, tdd, handoff, improve-architecture) with lean Campy memory integration, plus Campy-native skills (recall, brief, learn, session-start, memory-awareness, quest-management, status). Installed to Codex (`~/.codex/skills/`), Gemini CLI (`~/.gemini/skills/`), and VS Code Copilot (`.github/copilot-instructions.md`) during `campy install-plugin`.
 
 Design spec: `docs/superpowers/specs/2026-05-22-context-window-integration-design.md`
 

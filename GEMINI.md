@@ -66,7 +66,7 @@ pytest
 ### Documentation
 - **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md):** Canonical architecture reference — Loop steps, graph schema, IP claims, MCP tool schemas, and all design details. **Read this for any architecture question.**
 - **[`docs/ecosystem-rules.md`](docs/ecosystem-rules.md):** Ecosystem layer boundaries, separation rules, and import constraints. **Read this before adding new code or changing boundaries.**
-- **[`skills/campy-memory/SKILL.md`](skills/campy-memory/SKILL.md):** Canonical memory-use policy. Do not recall on every turn; if unsure, call `memory_decision` before choosing a recall tool.
+- **[`plugin/skills/recall/SKILL.md`](plugin/skills/recall/SKILL.md):** Canonical memory-use policy (ships with plugin; dev-only: `skills/campy-memory/SKILL.md`). Do not recall on every turn; if unsure, call `memory_decision` before choosing a recall tool.
 - **CLAUDE.md:** Claude-specific workflow (delegation model).
 - **InvertorsDocs/:** Original Inventor's Notebook and seed examples for the ontology.
 
@@ -86,7 +86,7 @@ Campy uses a 4-layer architecture to automatically inject graph knowledge into a
 1. **File Bridge** (`mcp_engine/file_bridge.py`) — Generates `CONTEXT.md` and ADR files in project directories from graph state
 2. **Associative Hooks** (`mcp_engine/trigger_manifest.py`) — Compiles trigger manifest from Procedure/Lesson nodes; hook scripts inject matching context on tool calls
 3. **Anticipatory Engine** (`mcp_engine/loop/step4b_associative.py`) — GCL Step 4b auto-discovers and binds triggers during message processing
-4. **Process Skills** (`skills/campy-*/`) — Deliberate recall via Campy-native skills
+4. **Process Skills** (`plugin/skills/`) — 12 process skills (brief, diagnose, grill, handoff, improve-architecture, learn, memory-awareness, quest-management, recall, session-start, status, tdd) auto-installed to Claude Code, Codex, Gemini CLI, and VS Code Copilot by the plugin installer
 
 CLI commands: `campy context regen`, `campy trigger add|list|remove|compile`.
 
