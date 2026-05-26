@@ -1,5 +1,5 @@
 ---
-name: campy-brief
+name: brief
 description: Deep context briefing from Campy's knowledge graph. Use when starting a new session, switching tasks, or needing full project context. Also use when you feel you're missing context about a project.
 ---
 
