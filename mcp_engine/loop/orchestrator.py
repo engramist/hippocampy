@@ -511,9 +511,11 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
                 "    c.pathway_strength = CASE WHEN $ps > c.pathway_strength THEN $ps "
                 "                              ELSE c.pathway_strength END, "
                 "    c.confidence_low = CASE WHEN $conf >= 0.80 THEN false "
-                "                           ELSE c.confidence_low END",
+                "                           ELSE c.confidence_low END, "
+                "    c.salience_score = CASE WHEN $salience > coalesce(c.salience_score, 1.0) "
+                "                            THEN $salience ELSE coalesce(c.salience_score, 1.0) END",
                 {"id": existing_id, "now": now,
-                 "ps": max(confidence * salience, 0.50), "conf": confidence}
+                 "ps": max(confidence * salience, 0.50), "conf": confidence, "salience": salience}
             )
             _logger.debug("_store_concept: dedup hit for '%s' → %s", entity["text"], existing_id)
             return existing_id
@@ -535,6 +537,7 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
                 confidence:       $confidence,
                 confidence_low:   $confidence_low,
                 pathway_strength: $pathway_strength,
+                salience_score:   $salience_score,
                 archived:         false,
                 anomaly_type:     $anomaly_type,
                 flagged_for_review: $flagged_for_review,
@@ -553,6 +556,7 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
                 "confidence":      confidence,
                 "confidence_low":  step4["confidence_low"],
                 "pathway_strength": max(confidence * salience, 0.50),
+                "salience_score":  salience,
                 "anomaly_type":    anomaly_type,
                 "flagged_for_review": flagged_for_review,
                 "created_at":      now,
