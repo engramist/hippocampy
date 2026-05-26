@@ -180,7 +180,12 @@ def classify_artifact(text: str, gist_class: str | None,
         confidence = min(confidence + 0.10, 0.98)
 
     if confidence < NOISE_FLOOR:
-        return _noise_result()
+        return {
+            "artifact_type":  artifact_type,
+            "confidence":     confidence,  # preserve raw for salience rescue
+            "confidence_low": True,
+            "should_proceed": False,
+        }
 
     # ISSUE-024: assistant turns capped below HARD_LOCK — prevents hallucination
     # poisoning. Assistant content enters as confidence_low=True and must be

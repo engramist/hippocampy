@@ -29,7 +29,7 @@ from mcp_engine.loop.step1b_relations import extract_relations
 from mcp_engine.loop.step2_gist      import classify_concept
 from mcp_engine.loop.step3_schema_org import route_to_schema_org
 from mcp_engine.loop.step3b_relations import extract_semantic_relations
-from mcp_engine.loop.step4_pattern   import classify_artifact
+from mcp_engine.loop.step4_pattern   import classify_artifact, compute_salience_multiplier, NOISE_FLOOR
 from mcp_engine.loop.step5_retrieval import (
     retrieve_candidates, MATCH_THRESHOLD, GRAY_ZONE_UPPER
 )
@@ -218,6 +218,25 @@ async def run_loop(message_id: str, text: str, db, llm_client,
             role=role,
         )
 
+        # Emotion sense — 7th Cocktail Party sense (Amygdala)
+        # Compute salience from full message text (emotional cues are
+        # message-global, not entity-scoped like other senses).
+        salience = compute_salience_multiplier(text)
+
+        # Amygdala rescue: emotional content in the 0.45–0.60 dead zone
+        # gets pulled above the noise floor. Below 0.45 stays noise —
+        # emotion alone can't create memories from nothing.
+        if (not step4_result["should_proceed"]
+                and step4_result["confidence"] >= 0.45
+                and salience >= 1.3):
+            step4_result = {
+                "artifact_type":  step4_result["artifact_type"] or "decision",
+                "confidence":     NOISE_FLOOR + 0.02,  # 0.62
+                "confidence_low": True,
+                "should_proceed": True,
+            }
+            summary["salience_rescues"] = summary.get("salience_rescues", 0) + 1
+
         if not step4_result["should_proceed"]:
             summary["noise_count"] += 1
             continue
@@ -284,7 +303,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                 # Create new concept node, then draw DEPRECATED_BY
                 concept_id = await _store_concept(
                     entity, step4_result, vector, embedding_model, db, now,
-                    anomaly_result=anomaly_result
+                    anomaly_result=anomaly_result, salience=salience,
                 )
                 if concept_id:
                     summary["concepts_stored"] += 1
@@ -323,7 +342,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                 # "uncertain" — store both, both remain confidence_low
                 concept_id = await _store_concept(
                     entity, step4_result, vector, embedding_model, db, now,
-                    anomaly_result=anomaly_result
+                    anomaly_result=anomaly_result, salience=salience,
                 )
                 if concept_id:
                     summary["concepts_stored"] += 1
@@ -352,7 +371,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
             # No match — store as new concept
             concept_id = await _store_concept(
                 entity, step4_result, vector, embedding_model, db, now,
-                anomaly_result=anomaly_result
+                anomaly_result=anomaly_result, salience=salience,
             )
             if concept_id:
                 summary["concepts_stored"] += 1
@@ -449,7 +468,8 @@ async def _create_disambiguation_event(
 
 async def _store_concept(entity: dict, step4: dict, vector: list[float],
                           embedding_model: str, db, now: str,
-                          anomaly_result: dict | None = None) -> str | None:
+                          anomaly_result: dict | None = None,
+                          salience: float = 1.0) -> str | None:
     """
     Create a Concept node for an entity that cleared the noise floor.
 
@@ -492,7 +512,7 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
                 "    c.confidence_low = CASE WHEN $conf >= 0.80 THEN false "
                 "                           ELSE c.confidence_low END",
                 {"id": existing_id, "now": now,
-                 "ps": max(confidence, 0.50), "conf": confidence}
+                 "ps": max(confidence * salience, 0.50), "conf": confidence}
             )
             _logger.debug("_store_concept: dedup hit for '%s' → %s", entity["text"], existing_id)
             return existing_id
@@ -531,7 +551,7 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
                 "schema_org_type": entity.get("schema_org_type", ""),
                 "confidence":      confidence,
                 "confidence_low":  step4["confidence_low"],
-                "pathway_strength": max(confidence, 0.50),
+                "pathway_strength": max(confidence * salience, 0.50),
                 "anomaly_type":    anomaly_type,
                 "flagged_for_review": flagged_for_review,
                 "created_at":      now,
