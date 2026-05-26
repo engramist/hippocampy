@@ -1121,6 +1121,14 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         ("Lesson",         "trigger_hook_type",     "STRING"),
         ("Lesson",         "trigger_tool",          "STRING"),
         ("Lesson",         "trigger_project_scope", "STRING"),
+
+        # Basal Ganglia: salience_score — encoding-time emotional intensity
+        ("Concept",        "salience_score",        "DOUBLE"),
+        ("Decision",       "salience_score",        "DOUBLE"),
+        ("Constraint",     "salience_score",        "DOUBLE"),
+
+        # Basal Ganglia: maturity_stage — Procedure lifecycle tracking
+        ("Procedure",      "maturity_stage",        "STRING"),
     ]
     def _column_exists(table: str, col: str) -> bool:
         """Check whether a column already exists via table_info, avoiding
