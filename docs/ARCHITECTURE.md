@@ -232,12 +232,12 @@ Operator visibility:
 
 Agent memory-use policy:
 
-  `skills/campy-memory/SKILL.md` is the canonical policy for supported
-  agents. It teaches when to recall, when not to recall, which retrieval tool
-  to use, and how to preserve the anti-bloat context strategy. Codex can install
-  this as a local skill; Claude, Gemini, ChatGPT Desktop, VS Code, and other MCP
-  clients receive the same policy through agent docs and adapter prompt
-  fragments.
+  `plugin/skills/recall/SKILL.md` is the canonical recall policy. It ships
+  with the Campy plugin and auto-installs to all supported agents: Claude Code
+  (`~/.claude/plugins/hippocampy/skills/`), Codex (`~/.codex/skills/`),
+  Gemini CLI (`~/.gemini/skills/`), and VS Code Copilot
+  (`.github/copilot-instructions.md`). The dev-only `skills/campy-memory/`
+  remains as the memory-awareness reference for contributors.
 
   `memory_decision` is the runtime helper for uncertain cases. It recommends
   whether to recall and which tool to call, but does not retrieve memory in v1.
@@ -821,7 +821,7 @@ Response: `{ "status": "queued" }` — always immediate, never blocks.
 
 ### Retrieval Tools
 
-**`memory_decision`** — call when unsure whether a prompt warrants recall. Returns a compact recommendation (`should_recall`, `recommended_tool`, `query`, `reason`, `confidence`, `context_budget`, `anti_bloat_guidance`) without retrieving memory. Routes multi-entity or broad context queries to `compile_context` (B254). This is the runtime companion to `skills/campy-memory/SKILL.md`.
+**`memory_decision`** — call when unsure whether a prompt warrants recall. Returns a compact recommendation (`should_recall`, `recommended_tool`, `query`, `reason`, `confidence`, `context_budget`, `anti_bloat_guidance`) without retrieving memory. Routes multi-entity or broad context queries to `compile_context` (B254). This is the runtime companion to the recall skill (`plugin/skills/recall/SKILL.md`).
 
 **`current_truth`** — call before answering architecture or past-decision questions. Searches consolidated artifacts and bounded episodic `Message` evidence, then ranks by graph strength (`pathway_strength × confidence`, plus bounded outcome valence). Includes optional `include_rationale` for 1-hop provenance context.
 
@@ -930,8 +930,8 @@ Four layers work together to get graph knowledge into agent context windows with
 **Delivery:** Online mode runs as GCL Step 4b during message processing. When error/action signals are detected, checks entity embeddings against stored Lessons/Procedures. Auto-binds trigger metadata to unbound matches (similarity > 0.65). The manifest compiler picks these up next sweep cycle — closing the learn → discover → deliver loop. Near-zero cost: graph queries only, no LLM calls.
 
 ### Layer 4 — Process Skills (Deliberate Recall)
-**Modules:** `skills/campy-learn/`, `skills/campy-memory/`, `skills/campy-recall/`
-**Delivery:** User or agent-invoked deep retrieval for complex queries. Campy-native skills that interact with the graph through MCP tools. Matt Pocock's skills (installed verbatim) are enhanced by Layers 1-2 — e.g., `/grill-with-docs` reads Campy-generated CONTEXT.md.
+**Modules:** `plugin/skills/` (12 skills, auto-install with plugin)
+**Delivery:** 12 skills ship with the Campy plugin and auto-install to all supported agents (Claude Code, Codex, Gemini CLI, VS Code Copilot). Five process skills are forked from Matt Pocock's skills with lean Campy memory integration: `grill` (domain grilling), `diagnose` (6-phase debug loop), `tdd` (red-green-refactor), `handoff` (session handoff + graph persistence), `improve-architecture` (deepening opportunities). Seven Campy-native skills handle memory operations: `recall`, `brief`, `learn`, `session-start`, `memory-awareness`, `quest-management`, `status`. Enhanced skills suggest Campy MCP tools at natural inflection points without mandating calls — session-start already loads graph context.
 
 ### Layer interaction
 ```

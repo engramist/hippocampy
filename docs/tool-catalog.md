@@ -154,7 +154,7 @@ These processes run inside the Brain Daemon without explicit tool calls.
 }
 ```
 
-**Policy source:** `skills/campy-memory/SKILL.md`.
+**Policy source:** `plugin/skills/recall/SKILL.md` (ships with plugin; dev-only: `skills/campy-memory/SKILL.md`).
 
 **Integration test cases:**
 - T1: Empty query returns error
