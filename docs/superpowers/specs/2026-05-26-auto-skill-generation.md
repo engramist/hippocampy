@@ -188,8 +188,8 @@ The synergy between Amygdala and Basal Ganglia is the key insight: emotional sal
 
 | Step | Status | Commit |
 |---|---|---|
-| Store salience_score on nodes | Pending | — |
-| Frustration cluster detection | Pending | — |
-| Enhanced Plan clustering | Pending | — |
-| Maturity tracking + degradation | Pending | — |
-| Architecture docs | Pending | — |
+| Store salience_score on nodes | Complete | `894907ed` |
+| Frustration cluster detection | Complete | `d31e5fa8` |
+| Enhanced Plan clustering | Complete | `a06320d4` |
+| Maturity tracking + degradation | Complete | `a06320d4` |
+| Architecture docs | Complete | — |

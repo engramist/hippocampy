@@ -450,6 +450,19 @@ When a message contains error/failure signals or significant action patterns (do
 
 ## Biomimetic Learning Principles
 
+### Basal Ganglia (Procedural & Avoidance Learning)
+
+Two synthesis triggers in the dreaming sweep:
+- **Avoidance archetype:** High-salience frustration clusters → avoidance Procedures (graph-only, no LLM). Detects concentrated pain signals and auto-generates "don't do that" reflexes. Implemented in `sweep.py`: `_detect_frustration_clusters()`.
+- **Automation archetype:** Plan strategy clustering → automation Procedures (LLM synthesis, `min_cluster_size=2`). Enhanced from repetition-only to include lower-threshold clustering and archetype labeling.
+
+Maturity lifecycle tracks Procedure reliability:
+- `nascent` (fresh) → `developing` (3+ applications, 50%+ success) → `mature` (5+ applications, 75%+ success)
+- Degradation detected at `success_rate < 0.30` (→ `degraded`) → archived at `< 0.20`
+- Maturity boosts pathway_strength: no boost (nascent), +10% (developing), +25% (mature)
+
+The synergy with **Amygdala** is critical: emotional salience at encoding time (salience_score) feeds frustration cluster detection at consolidation time. Pain drives habit formation — the same neuroscience principle that makes humans pull their hand from a hot stove.
+
 ### Synaptic Pruning (Named Biomimetic Principle)
 
 Modeled on neuroscience synaptic pruning ("use it or lose it") and the **Ebbinghaus Forgetting Curve** (memories decay exponentially unless actively recalled). Two complementary forces govern every artifact node:
