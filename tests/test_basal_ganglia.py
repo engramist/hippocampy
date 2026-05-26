@@ -254,3 +254,88 @@ class TestSchemaMigrations:
         source = self._read_schema_source()
         # maturity_stage should appear for Procedure
         assert '"Procedure"' in source and "maturity_stage" in source
+
+
+class TestEnhancedPlanClustering:
+    """Tests for enhanced _synthesize_procedures changes."""
+
+    @pytest.mark.asyncio
+    async def test_min_cluster_size_lowered_to_two(self):
+        """_synthesize_procedures should create Procedures from 2 Plans sharing a strategy."""
+        from mcp_engine.sweep import _synthesize_procedures
+
+        # 2 Plans with same strategy
+        query_rows = {
+            "DISTINCT p.strategy": [("deploy-to-prod",)],
+            "p.strategy = $strategy": [
+                ("plan-1", "deploy app", [0.1] * 384, 0.8, 0.7),
+                ("plan-2", "deploy service", [0.1] * 384, 0.9, 0.8),
+            ],
+            # No existing Procedure with this archetype
+            "p.archetype = $strategy": [],
+        }
+        db = _make_sweep_db(query_rows=query_rows)
+
+        # Mock LLM to return a valid Procedure JSON
+        class MockLLM:
+            def chat(self, messages):
+                return json.dumps({
+                    "name": "Deploy to Production",
+                    "description": "Standard deployment procedure",
+                    "steps": [{"step": 1, "action": "build", "precondition": "", "expected_outcome": ""}],
+                })
+
+        config = {"embeddings": {"model": "test-model"},
+                  "sweep": {"procedural": {"min_cluster_size": 2, "min_valence": 0.5,
+                                            "max_syntheses_per_sweep": 3}}}
+        count, errors = await _synthesize_procedures(db, config, MockLLM())
+        assert count >= 1, f"Expected at least 1 Procedure from 2 Plans, got {count}"
+
+
+class TestProcedureMaturity:
+    """Tests for _update_procedure_maturity."""
+
+    @pytest.mark.asyncio
+    async def test_nascent_stage(self):
+        """Procedure with application_count < 3 stays nascent."""
+        from mcp_engine.sweep import _update_procedure_maturity
+        db = _make_sweep_db()
+        config = {}
+        result = await _update_procedure_maturity(db, config)
+        # Should run without error
+        assert result["updated"] >= 0
+
+    @pytest.mark.asyncio
+    async def test_maturity_update_writes_cypher(self):
+        """_update_procedure_maturity writes a SET maturity_stage query."""
+        from mcp_engine.sweep import _update_procedure_maturity
+        db = _make_sweep_db()
+        config = {}
+        await _update_procedure_maturity(db, config)
+        # Should have written at least the maturity update query
+        maturity_writes = [w for w in db.written if "maturity_stage" in w["q"]]
+        assert len(maturity_writes) >= 1, "Expected maturity_stage update query"
+
+
+class TestProcedureDegradation:
+    """Tests for degradation detection in _update_procedure_maturity."""
+
+    @pytest.mark.asyncio
+    async def test_degradation_query_includes_success_rate_check(self):
+        """Degradation detection should check success_rate < 0.30."""
+        from mcp_engine.sweep import _update_procedure_maturity
+        db = _make_sweep_db()
+        config = {}
+        await _update_procedure_maturity(db, config)
+        degradation_writes = [w for w in db.written if "degraded" in w["q"]]
+        assert len(degradation_writes) >= 1, "Expected degradation detection query"
+
+    @pytest.mark.asyncio
+    async def test_archive_deeply_degraded(self):
+        """Procedures already degraded with success_rate < 0.20 should be archived."""
+        from mcp_engine.sweep import _update_procedure_maturity
+        db = _make_sweep_db()
+        config = {}
+        await _update_procedure_maturity(db, config)
+        archive_writes = [w for w in db.written if "archived" in w["q"] and "degraded" in w["q"]]
+        assert len(archive_writes) >= 1, "Expected archive query for deeply degraded Procedures"

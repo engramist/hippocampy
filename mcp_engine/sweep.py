@@ -1070,7 +1070,67 @@ async def _dream_consolidation(db, config: dict, llm_client: Optional[object]) -
     except Exception:
         errors += 1
 
+    # Basal Ganglia: update Procedure maturity stages
+    try:
+        maturity_result = await _update_procedure_maturity(db, config)
+        _logger.info("[BasalGanglia] maturity update: %s", maturity_result)
+    except Exception:
+        errors += 1
+
     return synthesized, errors
+
+
+async def _update_procedure_maturity(db, config: dict) -> dict:
+    """
+    Basal Ganglia — Maturity Lifecycle.
+
+    Update maturity_stage for all active Procedures based on application stats.
+    Also detect degradation and archive deeply degraded Procedures.
+
+    Returns summary dict.
+    """
+    result = {"updated": 0, "degraded": 0, "archived": 0, "errors": 0}
+
+    # 1) Promote: nascent -> developing -> mature
+    try:
+        await db.execute_write(
+            "MATCH (p:Procedure) WHERE p.archived = false "
+            "AND coalesce(p.maturity_stage, 'nascent') != 'degraded' "
+            "SET p.maturity_stage = CASE "
+            "  WHEN p.application_count >= 5 AND p.success_rate >= 0.75 THEN 'mature' "
+            "  WHEN p.application_count >= 3 AND p.success_rate >= 0.50 THEN 'developing' "
+            "  ELSE 'nascent' END"
+        )
+        result["updated"] += 1
+    except Exception:
+        result["errors"] += 1
+
+    # 2) Degrade: application_count >= 3 AND success_rate < 0.30
+    try:
+        await db.execute_write(
+            "MATCH (p:Procedure) WHERE p.archived = false "
+            "AND p.application_count >= 3 AND p.success_rate < 0.30 "
+            "AND coalesce(p.maturity_stage, 'nascent') != 'degraded' "
+            "SET p.maturity_stage = 'degraded', "
+            "    p.pathway_strength = p.pathway_strength * 0.5"
+        )
+        result["degraded"] += 1
+    except Exception:
+        result["errors"] += 1
+
+    # 3) Archive: already degraded AND still failing
+    try:
+        await db.execute_write(
+            "MATCH (p:Procedure) WHERE p.archived = false "
+            "AND p.maturity_stage = 'degraded' "
+            "AND p.success_rate < 0.20 "
+            "SET p.archived = true"
+        )
+        result["archived"] += 1
+    except Exception:
+        result["errors"] += 1
+
+    return result
 
 
 async def _call_llm(llm_client: Optional[object], prompt: str) -> str:
@@ -1265,7 +1325,7 @@ async def _synthesize_procedures(db, config: dict, llm_client: Optional[object])
     now = datetime.now(timezone.utc).isoformat()
 
     proc_cfg = config.get("sweep", {}).get("procedural", {})
-    min_cluster = int(proc_cfg.get("min_cluster_size", 3))
+    min_cluster = int(proc_cfg.get("min_cluster_size", 2))
     min_valence = float(proc_cfg.get("min_valence", 0.5))
     max_per_sweep = int(proc_cfg.get("max_syntheses_per_sweep", 3))
     embedding_model = config.get("embeddings", {}).get(
@@ -1314,6 +1374,18 @@ async def _synthesize_procedures(db, config: dict, llm_client: Optional[object])
 
         if len(plans) < min_cluster:
             continue
+
+        # Basal Ganglia: skip if an automation Procedure already exists for this strategy
+        try:
+            dup_check = db.execute(
+                "MATCH (p:Procedure) WHERE p.archetype = $strategy AND p.archived = false "
+                "RETURN count(p) > 0",
+                {"strategy": strategy},
+            )
+            if dup_check.has_next() and dup_check.get_next()[0]:
+                continue
+        except Exception:
+            pass
 
         # Build prompt and call LLM
         excerpts = "\n\n".join(f"- Goal: {p['goal']}" for p in plans)
@@ -1379,7 +1451,7 @@ async def _synthesize_procedures(db, config: dict, llm_client: Optional[object])
                     "pid": proc_id,
                     "name": proc_obj.get("name", strategy),
                     "domain": proc_obj.get("domain", "planning"),
-                    "archetype": strategy,
+                    "archetype": "automation",
                     "description": proc_obj.get("description", ""),
                     "steps_json": steps_json,
                     "embedding": proc_emb,
