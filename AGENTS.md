@@ -11,7 +11,7 @@ KuzuDB is the single source of truth for persistent memory state. Do not introdu
 
 ## Memory Usage Policy
 
-Use `skills/campy-memory/SKILL.md` as the canonical policy for when to recall Campy memory. The short version: do not recall on every turn; recall only when a decision needs durable memory, and keep returned context compact.
+Use `plugin/skills/recall/SKILL.md` as the canonical policy for when to recall Campy memory (dev-only: `skills/campy-memory/SKILL.md`). The short version: do not recall on every turn; recall only when a decision needs durable memory, and keep returned context compact.
 
 If you are unsure whether recall is warranted, call `memory_decision` first. It recommends the next recall tool without retrieving memory itself.
 
