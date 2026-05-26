@@ -64,5 +64,5 @@ where = ["."]
 include = ["sidequests*", "campy*", "mcp_engine*", "adapters*", "web*"]
 
 [tool.setuptools.package-data]
-"campy.data" = ["**/*.md", "**/*.py", "**/*.toml", "**/*.json", "**/.*"]
+"campy.data" = ["**/*.md", "**/*.py", "**/*.toml", "**/*.json", "**/*.sh", "**/.*"]
 "*" = ["campy.toml", "sidequests.toml"]
