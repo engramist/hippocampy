@@ -92,6 +92,8 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
         "retrospective_plans": 0,
         "patterns_discovered": 0,    # Phase 4
         "pattern_candidates": 0,     # Phase 4
+        "frustration_clusters": 0,   # Basal Ganglia: avoidance Procedures
+        "maturity_updates": 0,       # Basal Ganglia: maturity lifecycle
         "sweep_at": datetime.now(timezone.utc).isoformat(),
     }
 
