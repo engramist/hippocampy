@@ -8,6 +8,156 @@ from __future__ import annotations
 import os
 import pytest
 import asyncio
+import json
+import numpy as np
+
+
+def _cosine_sim(a, b):
+    """Cosine similarity between two vectors."""
+    a, b = np.array(a), np.array(b)
+    dot = np.dot(a, b)
+    norms = np.linalg.norm(a) * np.linalg.norm(b)
+    return float(dot / norms) if norms > 0 else 0.0
+
+
+def _make_sweep_db(query_rows=None, vector_results=None):
+    """Build a mock DB matching sweep.py conventions."""
+    query_rows = query_rows or {}
+    vector_results = vector_results or {}
+
+    class MockResult:
+        def __init__(self, rows):
+            self._rows = list(rows)
+            self._idx = 0
+        def has_next(self): return self._idx < len(self._rows)
+        def get_next(self):
+            row = self._rows[self._idx]
+            self._idx += 1
+            return row
+
+    class MockDB:
+        def __init__(self):
+            self.written = []
+        def execute(self, q, p=None):
+            for pattern, rows in query_rows.items():
+                if pattern in q:
+                    return MockResult(rows)
+            return MockResult([])
+        async def execute_write(self, q, p=None):
+            self.written.append({"q": q, "p": p})
+        async def execute_read(self, q, p=None):
+            for pattern, rows in query_rows.items():
+                if pattern in q:
+                    return [dict(zip(
+                        ["id", "name", "desc", "emb", "salience"],
+                        row
+                    )) for row in rows]
+            return []
+        def vector_search(self, table, index, vec, limit):
+            return vector_results.get(index, [])
+
+    return MockDB()
+
+
+class TestFrustrationClusterDetection:
+    """Tests for _detect_frustration_clusters in sweep.py."""
+
+    @pytest.mark.asyncio
+    async def test_no_high_salience_nodes_returns_zero(self):
+        """No nodes above salience threshold -> no Procedures created."""
+        from mcp_engine.sweep import _detect_frustration_clusters
+        db = _make_sweep_db()
+        config = {"embeddings": {"model": "test-model"}}
+        count, errors = await _detect_frustration_clusters(db, config)
+        assert count == 0
+        assert errors == 0
+
+    @pytest.mark.asyncio
+    async def test_cluster_of_three_creates_avoidance_procedure(self):
+        """3 high-salience nodes with similar embeddings -> 1 avoidance Procedure."""
+        from mcp_engine.sweep import _detect_frustration_clusters
+
+        # Create 3 nodes with identical embeddings (similarity = 1.0)
+        base_emb = [1.0] + [0.0] * 383
+        nodes = [
+            ("id-1", "deployment failure", "deploy broke the build", base_emb, 1.4),
+            ("id-2", "deployment error", "deploy caused 500 errors", base_emb, 1.5),
+            ("id-3", "deploy rollback", "had to rollback deploy", base_emb, 1.3),
+        ]
+
+        db = _make_sweep_db(query_rows={"salience_score": nodes})
+        config = {"embeddings": {"model": "test-model"},
+                  "sweep": {"basal_ganglia": {"min_cluster_size": 3,
+                                              "similarity_threshold": 0.65}}}
+        count, errors = await _detect_frustration_clusters(db, config)
+        assert count == 1, f"Expected 1 Procedure, got {count}"
+
+        # Verify a CREATE (pr:Procedure was written
+        creates = [w for w in db.written if "CREATE" in w["q"] and "Procedure" in w["q"]]
+        assert len(creates) >= 1, "No Procedure CREATE found"
+        params = creates[0]["p"]
+        assert params.get("archetype") == "avoidance"
+        assert params.get("domain") == "auto-discovered"
+
+    @pytest.mark.asyncio
+    async def test_cluster_below_threshold_no_procedure(self):
+        """Only 2 high-salience nodes (below min_cluster=3) -> no Procedure."""
+        from mcp_engine.sweep import _detect_frustration_clusters
+
+        base_emb = [1.0] + [0.0] * 383
+        nodes = [
+            ("id-1", "deployment failure", "deploy broke", base_emb, 1.4),
+            ("id-2", "deployment error", "deploy error", base_emb, 1.5),
+        ]
+
+        db = _make_sweep_db(query_rows={"salience_score": nodes})
+        config = {"embeddings": {"model": "test-model"},
+                  "sweep": {"basal_ganglia": {"min_cluster_size": 3,
+                                              "similarity_threshold": 0.65}}}
+        count, errors = await _detect_frustration_clusters(db, config)
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_dissimilar_nodes_not_clustered(self):
+        """3 high-salience nodes with different embeddings -> no cluster."""
+        from mcp_engine.sweep import _detect_frustration_clusters
+
+        nodes = [
+            ("id-1", "deploy fail", "deploy broke", [1.0] + [0.0] * 383, 1.4),
+            ("id-2", "auth error",  "login failed", [0.0, 1.0] + [0.0] * 382, 1.5),
+            ("id-3", "db timeout",  "query slow",   [0.0, 0.0, 1.0] + [0.0] * 381, 1.3),
+        ]
+
+        db = _make_sweep_db(query_rows={"salience_score": nodes})
+        config = {"embeddings": {"model": "test-model"},
+                  "sweep": {"basal_ganglia": {"min_cluster_size": 3,
+                                              "similarity_threshold": 0.65}}}
+        count, errors = await _detect_frustration_clusters(db, config)
+        assert count == 0, "Dissimilar nodes should not cluster"
+
+    @pytest.mark.asyncio
+    async def test_avoidance_procedure_has_steps_json(self):
+        """Created avoidance Procedure has non-empty steps_json."""
+        from mcp_engine.sweep import _detect_frustration_clusters
+
+        base_emb = [1.0] + [0.0] * 383
+        nodes = [
+            ("id-1", "always breaks", "deployment always breaks", base_emb, 1.4),
+            ("id-2", "keep breaking", "deploys keep breaking", base_emb, 1.5),
+            ("id-3", "broke again", "deploy broke again", base_emb, 1.3),
+        ]
+
+        db = _make_sweep_db(query_rows={"salience_score": nodes})
+        config = {"embeddings": {"model": "test-model"},
+                  "sweep": {"basal_ganglia": {"min_cluster_size": 3,
+                                              "similarity_threshold": 0.65}}}
+        await _detect_frustration_clusters(db, config)
+
+        creates = [w for w in db.written if "CREATE" in w["q"] and "Procedure" in w["q"]]
+        assert len(creates) >= 1
+        steps = json.loads(creates[0]["p"]["steps_json"])
+        assert isinstance(steps, list)
+        assert len(steps) > 0, "steps_json should have at least one step"
 
 
 class TestSalienceScoreStorage:
