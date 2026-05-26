@@ -156,3 +156,11 @@ All changes are to existing GCL modules. No schema migration, no new dependencie
 ## IP Significance
 
 This adds the **Amygdala** to Campy's biomimetic architecture. The existing system models Hebbian learning (fire-together-wire-together), synaptic pruning (Ebbinghaus decay), the hippocampus (quest routing), and the cocktail party effect (selective attention). Emotional salience weighting adds the missing piece: **emotional intensity as a memory encoding multiplier**, directly analogous to how the human amygdala modulates hippocampal memory consolidation based on emotional arousal.
+
+## Implementation Status
+
+| Step | Status | Commit |
+|---|---|---|
+| Add signal lists and compute_salience_multiplier | Complete | `280e2a68` |
+| Wire into orchestrator (rescue + boost) | Complete | `d44aca59` |
+| Update docs and summary counter | Complete | — |
