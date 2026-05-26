@@ -68,6 +68,11 @@ def install_codex_memory_skill(project_root: Path) -> Path | None:
     If the destination already contains user-modified content, keep it intact and
     write the managed copy beside it as `SKILL.md.new`.
     """
+    # If full skill set is already installed, skip legacy single-skill install
+    codex_skills = Path.home() / ".codex" / "skills"
+    if (codex_skills / "recall" / "SKILL.md").exists():
+        return codex_skills / "recall" / "SKILL.md"
+
     source = project_root / "skills" / PRIMARY_SKILL_NAME / "SKILL.md"
     if source.exists():
         source_text = source.read_text()
@@ -253,29 +258,102 @@ def register_vscode(adapter_path: str, config_path: str | None = None) -> bool:
         return False
 
 
+def _build_skill_catalog(repo_root: Path) -> str:
+    """Build a markdown table of all available Campy skills."""
+    # Try to find skill descriptions from plugin skills directory
+    skills_dir = repo_root / "plugin" / "skills"
+    if not skills_dir.exists():
+        # Fallback: try package data
+        try:
+            pkg_plugin = resources.files("campy.data").joinpath("plugin", "skills")
+            skills_dir = Path(str(pkg_plugin))
+        except Exception:
+            skills_dir = None
+
+    # Hardcoded fallback descriptions (used if we can't read SKILL.md files)
+    fallback = {
+        "brief": "Starting a new session, switching tasks, need full project context",
+        "diagnose": "Bug reports, something broken/failing, performance regressions",
+        "grill": "Stress-test a plan against the domain model and documented decisions",
+        "handoff": "Ending a session, context getting large, passing work to another agent",
+        "improve-architecture": "Find refactoring opportunities, improve testability",
+        "learn": "Teach Campy a new pattern, procedure, or lesson",
+        "memory-awareness": "Understand what Campy captures automatically",
+        "quest-management": "Manage project quests and workstreams",
+        "recall": "Questions about past decisions, architecture, project history",
+        "session-start": "Fires at session start to load memory context",
+        "status": "Check Brain health and context window status",
+        "tdd": "Test-driven development with red-green-refactor loop",
+    }
+
+    rows = []
+    for name in sorted(fallback.keys()):
+        desc = fallback[name]
+        # Try to read description from SKILL.md frontmatter
+        if skills_dir and (skills_dir / name / "SKILL.md").exists():
+            try:
+                content = (skills_dir / name / "SKILL.md").read_text()
+                for line in content.splitlines():
+                    if line.startswith("description:"):
+                        desc = line.split(":", 1)[1].strip()
+                        # Truncate long descriptions for the table
+                        if len(desc) > 80:
+                            desc = desc[:77] + "..."
+                        break
+            except Exception:
+                pass
+        rows.append(f"| `{name}` | {desc} |")
+
+    header = "### Available Skills\n\n| Skill | When to Use |\n|---|---|"
+    return header + "\n" + "\n".join(rows)
+
+
 def _add_copilot_recall_instructions(repo_root: Path) -> None:
-    """Add Campy recall instructions to .github/copilot-instructions.md."""
+    """Add Campy skill catalog and recall instructions to .github/copilot-instructions.md."""
     instructions_path = repo_root / ".github" / "copilot-instructions.md"
-    
-    skill_source = repo_root / "campy" / "data" / "campy-memory" / "SKILL.md"
-    if not skill_source.exists():
-        return
-    
+    if not instructions_path.parent.exists():
+        return  # Don't create .github/ if it doesn't exist
+
     marker_start = "<!-- CAMPY-MEMORY-START -->"
     marker_end = "<!-- CAMPY-MEMORY-END -->"
-    
-    skill_content = skill_source.read_text()
-    campy_block = f"{marker_start}\n## Campy Memory\n\n{skill_content}\n{marker_end}"
-    
+
+    # Build the skill catalog
+    skill_table = _build_skill_catalog(repo_root)
+
+    campy_block = (
+        f"{marker_start}\n"
+        "## Campy Memory & Skills\n\n"
+        "HippoCampy provides persistent AI memory via MCP tools and process skills.\n\n"
+        f"{skill_table}\n\n"
+        "### Mandatory Recall Triggers\n\n"
+        "Before answering questions about past decisions, architecture, or project history, check Campy's memory:\n\n"
+        "| When You See This | Call This |\n"
+        "|---|---|\n"
+        '| Questions about past decisions | `current_truth(query="<decision topic>")` |\n'
+        '| "Why did we choose X?" | `current_truth(query="decision about X")` |\n'
+        '| Architecture or design questions | `current_truth(query="<architecture topic>")` |\n'
+        '| Multi-entity or broad context needs | `compile_context(query="<broad topic>")` |\n'
+        '| Not sure which tool to use | `memory_decision(query="<question>")` |\n'
+        '| "What went wrong last time?" | `recall_relevant_lessons(query="<topic>")` |\n'
+        '| "What happened this week?" | `reconstruct_timeline(limit=20)` |\n\n'
+        "### Anti-Bloat Rules\n\n"
+        "- Use top 3 results unless exhaustive review is specifically needed.\n"
+        "- Summarize compactly — memory informs your answer, it IS NOT the answer.\n"
+        "- Do not paste raw memory output. Summarize in 2-3 sentences.\n"
+        f"{marker_end}"
+    )
+
     if instructions_path.exists():
         existing = instructions_path.read_text()
         if marker_start in existing:
-            pattern = re.compile(f"{re.escape(marker_start)}.*?{re.escape(marker_end)}", re.DOTALL)
+            pattern = re.compile(
+                f"{re.escape(marker_start)}.*?{re.escape(marker_end)}",
+                re.DOTALL,
+            )
             updated = pattern.sub(campy_block, existing)
         else:
             updated = existing + "\n\n" + campy_block + "\n"
         instructions_path.write_text(updated)
-    # Don't create the file if .github/ doesn't exist — not our responsibility
 
 
 def register_gemini_cli(adapter_path: str) -> bool:

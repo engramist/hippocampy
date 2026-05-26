@@ -12,6 +12,23 @@ console = Console()
 logger = logging.getLogger(__name__)
 
 
+def _copy_skills_tree(plugin_dir: Path, target_skills_dir: Path) -> bool:
+    """Copy all skill directories from plugin source to target location."""
+    skills_src = plugin_dir / "skills"
+    if not skills_src.exists():
+        logger.error(f"Skills source not found: {skills_src}")
+        return False
+    try:
+        target_skills_dir.parent.mkdir(parents=True, exist_ok=True)
+        if target_skills_dir.exists():
+            shutil.rmtree(target_skills_dir)
+        shutil.copytree(skills_src, target_skills_dir)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to copy skills to {target_skills_dir}: {e}")
+        return False
+
+
 def find_plugin_dir(hint: Optional[str] = None) -> Optional[Path]:
     """Locate the plugin/ directory in the repo or bundled package data."""
     if hint:
@@ -57,11 +74,8 @@ def install_claude_code_plugin(plugin_dir: Path, target_dir: Path) -> bool:
         mcp_dst = target_dir / ".mcp.json"
         shutil.copy2(mcp_src, mcp_dst)
         # Copy skills/
-        skills_src = plugin_dir / "skills"
-        skills_dst = target_dir / "skills"
-        if skills_dst.exists():
-            shutil.rmtree(skills_dst)
-        shutil.copytree(skills_src, skills_dst)
+        if not _copy_skills_tree(plugin_dir, target_dir / "skills"):
+            return False
         logger.info(f"Claude Code plugin installed to {target_dir}")
         return True
     except Exception as e:
@@ -70,16 +84,28 @@ def install_claude_code_plugin(plugin_dir: Path, target_dir: Path) -> bool:
 
 
 def install_codex_plugin(plugin_dir: Path) -> bool:
-    """Install memory skill for Codex."""
+    """Install all Campy skills for Codex CLI."""
     try:
-        skill_src = plugin_dir / "skills" / "recall" / "SKILL.md"
-        if not skill_src.exists():
-            logger.error("recall skill not found in plugin dir")
+        skills_src = plugin_dir / "skills"
+        if not skills_src.exists():
+            logger.error(f"Skills source not found: {skills_src}")
             return False
-        target = Path.home() / ".codex" / "skills" / "campy-memory" / "SKILL.md"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(skill_src, target)
-        logger.info(f"Codex memory skill installed to {target}")
+        target = Path.home() / ".codex" / "skills"
+        target.mkdir(parents=True, exist_ok=True)
+        # Remove legacy single-skill directory
+        legacy = target / "campy-memory"
+        if legacy.exists():
+            shutil.rmtree(legacy)
+        # Copy each skill directory individually (preserve non-Campy skills)
+        count = 0
+        for skill_dir in sorted(skills_src.iterdir()):
+            if skill_dir.is_dir():
+                dst = target / skill_dir.name
+                if dst.exists():
+                    shutil.rmtree(dst)
+                shutil.copytree(skill_dir, dst)
+                count += 1
+        logger.info(f"Codex: {count} skills installed to {target}")
         return True
     except Exception as e:
         logger.error(f"Failed to install Codex plugin: {e}")
@@ -102,10 +128,28 @@ def install_vscode_plugin(plugin_dir: Path) -> bool:
 
 
 def install_gemini_plugin(plugin_dir: Path) -> bool:
-    """Install recall instructions for Gemini CLI."""
-    # Gemini reads GEMINI.md — recall config handled by register_gemini_cli()
-    logger.info("Gemini CLI: plugin config deferred to register_gemini_cli()")
-    return True
+    """Install all Campy skills for Gemini CLI."""
+    try:
+        skills_src = plugin_dir / "skills"
+        if not skills_src.exists():
+            logger.error(f"Skills source not found: {skills_src}")
+            return False
+        target = Path.home() / ".gemini" / "skills"
+        target.mkdir(parents=True, exist_ok=True)
+        # Copy each skill directory individually (preserve non-Campy skills)
+        count = 0
+        for skill_dir in sorted(skills_src.iterdir()):
+            if skill_dir.is_dir():
+                dst = target / skill_dir.name
+                if dst.exists():
+                    shutil.rmtree(dst)
+                shutil.copytree(skill_dir, dst)
+                count += 1
+        logger.info(f"Gemini CLI: {count} skills installed to {target}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to install Gemini CLI plugin: {e}")
+        return False
 
 
 def install_plugin_for_agents(
