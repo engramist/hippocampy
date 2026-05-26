@@ -220,6 +220,7 @@ Each phase delivers standalone value. Dependencies flow downward (Phase N+1 bene
 | Layer 2 — Associative Hooks | Phase 2 | Shipped | `0e233ff6` |
 | Layer 3 — Anticipatory Engine (online) | Phase 3 | Shipped | `109cf99e` |
 | Layer 3 — Anticipatory Engine (offline) | Phase 4 | Not started | — |
+| Layer 4 — Process Skills (deep integration) | Phase 5 | Shipped | — |
 
 ### Resolved Open Questions
 

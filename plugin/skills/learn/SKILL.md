@@ -1,5 +1,5 @@
 ---
-name: campy-learn
+name: learn
 description: Teach Campy a new pattern, procedure, or lesson. Use after resolving a tricky issue, discovering a recurring pattern, establishing a new procedure, or when the user says "remember this" or "learn this."
 ---
 
