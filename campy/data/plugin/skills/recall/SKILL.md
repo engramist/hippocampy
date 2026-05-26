@@ -2,6 +2,16 @@
 
 **BEFORE answering ANY question about past decisions, architecture, constraints, or project history, you MUST check the Brain's memory.**
 
+## Quick Start
+
+Not sure which tool to use? Call `memory_decision` first:
+
+```
+memory_decision(query="<user's question>", session_id="<session>")
+```
+
+It returns a `recommended_tool` field telling you exactly which tool to call next. If confidence is low, skip the recall.
+
 ## Mandatory Recall Triggers
 
 | When You See This | You MUST Call This |
@@ -33,39 +43,6 @@
 | `explore_graph` | Browse entity connections: "What's related to X?" |
 | `diff_since` | "What changed since yesterday?" — recent changes |
 
-## When to Use current_truth
-
-**ALWAYS call `current_truth` when you encounter:**
-- Past decisions ("why did we choose X?", "what did we decide about Y?")
-- Constraints or requirements ("what are the rules for Z?")
-- Project context ("what's the current state of X?")
-- Architecture ("how does X work?", "what's the design for Y?")
-
-```
-current_truth(query="<what you're looking for>", session_id="<session>")
-```
-
-## When to Use compile_context
-
-Call `compile_context` for broad or multi-entity queries:
-- "Tell me everything about the payment system"
-- "What do I need to know before changing the auth module?"
-- Starting work on a component you haven't touched recently
-
-```
-compile_context(query="<broad query>", token_budget=32000, agent_type="claude_code")
-```
-
-## When to Use memory_decision
-
-Call `memory_decision` when you're not sure which tool to use:
-
-```
-memory_decision(query="<user's question>", session_id="<session>")
-```
-
-It returns a `recommended_tool` field telling you exactly which tool to call next.
-
 ## Scoping
 
 **ALWAYS use scope 'both' when the question involves:**
@@ -73,7 +50,12 @@ It returns a `recommended_tool` field telling you exactly which tool to call nex
 - Constraints that span multiple services or domains
 - When you're unsure which scope applies
 
-Default scopes:
+## Anti-Bloat Rules
+
+- Use top 3 results unless exhaustive review is specifically needed.
+- Summarize compactly — memory informs your answer, it IS NOT the answer.
+- Do not paste raw memory output. Summarize in 2-3 sentences.
+- If results include a `bloat_warning`, mention to the user that the conversation is getting long.
 
 ## How to Use Results
 
@@ -81,5 +63,4 @@ Default scopes:
 - High pathway_strength = frequently accessed, well-established knowledge
 - Items marked `confidence_low` are tentative — flag the uncertainty to the user
 - The Brain's graph is more reliable than your context window for historical facts
-- If results include a `bloat_warning`, mention to the user that the conversation is getting long
-
+- If recall returns nothing relevant, say so — don't fabricate context
