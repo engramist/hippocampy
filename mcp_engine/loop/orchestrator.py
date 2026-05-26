@@ -87,6 +87,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         "lessons_found":     0,
         "anomalies_detected": 0,  # B12
         "triggers_bound":    0,   # Phase 3: Step 4b auto-bindings
+        "salience_rescues":  0,   # Emotion sense: amygdala noise-floor rescues
     }
 
     # ------------------------------------------------------------------

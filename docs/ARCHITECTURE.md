@@ -431,6 +431,7 @@ The same principle should guide retrieval and prompting:
 | Anomaly / Security sense | Content contradicts a high-confidence GlobalConstraint (pathway_strength > 0.8) — flags potential prompt injection or goal hijacking |
 | Success sense (B69) | "perfect", "great job", "approved", "all tests pass" — Dopamine signal |
 | Failure sense (B69) | "that's wrong", "revert", "that broke", "start over" — Pain signal |
+| Emotion / Salience sense | Frustration ("I told you", "stop doing"), excitement ("love it", "brilliant"), urgency ("ASAP", "critical") — boosts pathway_strength via multiplier [1.0–1.6], rescues borderline content (0.45–0.60) above noise floor |
 
 No human confirmation required. Uncertain nodes enter as tentative knowledge, re-scored continuously.
 
