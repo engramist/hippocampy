@@ -66,6 +66,31 @@ _FAILURE_SIGNALS = [
     r"\btry again\b", r"\bwrong approach\b",
 ]
 
+# Emotion sense — 7th Cocktail Party sense (Amygdala)
+# Emotional language boosts pathway_strength via salience multiplier.
+_FRUSTRATION_SIGNALS = [
+    r"\bi told you\b", r"\bhow many times\b", r"\bstop doing\b",
+    r"\bwrong again\b", r"\bnot what i (?:asked|wanted|meant)\b",
+    r"\bthis is (?:broken|terrible|awful)\b", r"\bugh\b",
+    r"\bdamn\b", r"\bwhy (?:does|is) (?:it|this)\b",
+    r"\bso frustrat", r"\bi(?:'m| am) (?:annoyed|frustrated|angry)\b",
+    r"\bfor the (?:third|fourth|fifth|last) time\b",
+    r"\bno[,!]+ no\b", r"\bstop[!]+\b",
+]
+_EXCITEMENT_SIGNALS = [
+    r"\byes[!]+", r"\bexactly[!]+", r"\bbrilliant\b",
+    r"\blove (?:it|this|that)\b", r"\bamazing\b",
+    r"\bthis is (?:great|awesome|incredible|fantastic)\b",
+    r"\bhell yeah\b", r"\blet(?:'s| us) go\b",
+    r"\bi(?:'m| am) (?:excited|pumped|stoked)\b",
+]
+_URGENCY_SIGNALS = [
+    r"\basap\b", r"\bneed this (?:now|today|immediately)\b",
+    r"\bcritical\b", r"\bblocking\b", r"\bemergency\b",
+    r"\bdeadline\b", r"\burgent\b", r"\btime.?sensitive\b",
+    r"\bcan(?:'t| not) wait\b", r"\bdrop everything\b",
+]
+
 # gist class → likely artifact type (prior probability)
 _GIST_ARTIFACT_PRIOR: dict[str, tuple[str, float]] = {
     "Restriction":   ("constraint",   0.80),
@@ -244,3 +269,39 @@ def infer_outcome_valence(text: str) -> float | None:
     if failure_hits > success_hits:
         return -0.8
     return None
+
+
+def compute_salience_multiplier(text: str) -> float:
+    """
+    Compute emotional salience multiplier from text signals.
+
+    7th Cocktail Party sense — the Amygdala. Detects frustration,
+    excitement, and urgency language. Returns a multiplier in [1.0, 1.6]
+    that boosts pathway_strength at encoding time.
+
+    Frustration weighs highest (1.0 per hit) because negative emotional
+    memories encode more strongly than positive ones.
+    """
+    if not text:
+        return 1.0
+
+    frustration_hits = _match_signals(text, _FRUSTRATION_SIGNALS)
+    excitement_hits = _match_signals(text, _EXCITEMENT_SIGNALS)
+    urgency_hits = _match_signals(text, _URGENCY_SIGNALS)
+
+    # Reuse existing outcome sense as additional input
+    valence = infer_outcome_valence(text)
+    outcome_boost = 0.5 if valence is not None else 0.0
+
+    # Weight frustration highest (amygdala: negative > positive)
+    raw_score = (
+        frustration_hits * 1.0 +
+        excitement_hits * 0.7 +
+        urgency_hits * 0.8 +
+        outcome_boost
+    )
+
+    if raw_score == 0:
+        return 1.0
+
+    return min(1.0 + (raw_score * 0.15), 1.6)
