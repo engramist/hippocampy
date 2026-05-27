@@ -23,6 +23,8 @@ Optional delegation workflow:
 
 **For ecosystem layer boundaries, separation rules, and import constraints, see [`docs/ecosystem-rules.md`](docs/ecosystem-rules.md).**
 
+**For target region placement during the anatomy refactor, see [`docs/codebase-anatomy.md`](docs/codebase-anatomy.md) and [`docs/codebase-anatomy-refactor-plan.md`](docs/codebase-anatomy-refactor-plan.md).**
+
 These are the sources of truth for the system design — shared across all agents (Claude, Gemini, Codex).
 
 ## Critical Rule: No Shadow Stores
