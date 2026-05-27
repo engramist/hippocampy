@@ -4,12 +4,53 @@ import logging
 import shutil
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
 
 from rich.console import Console
 from campy.cli.detect import detect_all
 
 console = Console()
 logger = logging.getLogger(__name__)
+
+
+# Upstream process-skill names that can confuse users when Campy variants are installed.
+# We archive these (move, not delete) in Codex so the picker has one clear Campy option.
+CODEX_LEGACY_PROCESS_SKILL_NAMES = {
+    "diagnose",
+    "grill",
+    "grill-me",
+    "grill-with-docs",
+    "handoff",
+    "improve-architecture",
+    "improve-codebase-architecture",
+    "tdd",
+}
+
+
+def _archive_codex_skill_dirs(skills_root: Path, skill_names: set[str]) -> int:
+    """Archive known duplicate skill directories under a timestamped folder."""
+    to_archive: list[Path] = []
+    for name in sorted(skill_names):
+        candidate = skills_root / name
+        if candidate.is_dir():
+            to_archive.append(candidate)
+
+    if not to_archive:
+        return 0
+
+    archive_root = skills_root / "_archived_by_campy"
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    archive_dir = archive_root / stamp
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    moved = 0
+    for src in to_archive:
+        dst = archive_dir / src.name
+        if dst.exists():
+            shutil.rmtree(dst)
+        shutil.move(str(src), str(dst))
+        moved += 1
+    return moved
 
 
 def _copy_skills_tree(plugin_dir: Path, target_skills_dir: Path) -> bool:
@@ -92,6 +133,10 @@ def install_codex_plugin(plugin_dir: Path) -> bool:
             return False
         target = Path.home() / ".codex" / "skills"
         target.mkdir(parents=True, exist_ok=True)
+        # Archive known non-Campy process-skill duplicates to reduce picker ambiguity.
+        archived = _archive_codex_skill_dirs(target, CODEX_LEGACY_PROCESS_SKILL_NAMES)
+        if archived:
+            logger.info(f"Codex: archived {archived} legacy process skill(s) under {target / '_archived_by_campy'}")
         # Remove legacy single-skill directory
         legacy = target / "campy-memory"
         if legacy.exists():

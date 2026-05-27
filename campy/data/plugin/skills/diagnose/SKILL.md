@@ -1,6 +1,6 @@
 ---
-name: diagnose
-description: Disciplined diagnosis loop for hard bugs and performance regressions. Enhanced with Campy memory for past error recall and post-mortem capture. Use when user says "diagnose this" / "debug this", reports a bug, says something is broken/throwing/failing, or describes a performance regression.
+name: campy-diagnose
+description: Campy-enhanced diagnosis loop for hard bugs and performance regressions. Use this over generic diagnose variants when you want past-issue recall and post-mortem capture into graph memory.
 ---
 
 # Diagnose

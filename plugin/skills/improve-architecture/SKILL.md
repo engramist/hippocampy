@@ -1,6 +1,6 @@
 ---
-name: improve-architecture
-description: Find deepening opportunities in a codebase, informed by the domain language and recorded decisions. Enhanced with Campy memory for architectural recall and knowledge gap discovery. Use when the user wants to improve architecture, find refactoring opportunities, consolidate tightly-coupled modules, or make a codebase more testable and AI-navigable.
+name: campy-improve-architecture
+description: Campy-enhanced architecture deepening skill. Use this over generic architecture-review variants when you want graph-aware decision recall and knowledge-gap discovery.
 ---
 
 # Improve Codebase Architecture

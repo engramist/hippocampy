@@ -1,6 +1,6 @@
 ---
-name: grill
-description: Grilling session that challenges your plan against the existing domain model, sharpens terminology, and updates documentation (CONTEXT.md, ADRs) inline as decisions crystallise. Enhanced with Campy memory for domain recall and decision capture. Use when user wants to stress-test a plan against their project's language and documented decisions.
+name: campy-grill
+description: Campy-enhanced grilling session that challenges your plan against the existing domain model, sharpens terminology, and updates documentation (CONTEXT.md, ADRs) inline as decisions crystallise. Use this over generic grill variants when you want graph-aware domain recall and decision capture.
 ---
 
 <what-to-do>

@@ -1,10 +1,11 @@
 """REST API endpoints for Campy — thin wrappers around MCP tool handlers."""
+import asyncio
 import json
 import logging
 import time
 from typing import Optional
 
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
 from starlette.requests import Request
 
@@ -142,6 +143,36 @@ def create_router(db=None, config: dict = None):
         tools = [{"name": name} for name in sorted(TOOL_HANDLERS.keys())]
         return _ok({"tools": tools, "count": len(tools)})
 
+    async def heartbeat_endpoint(request: Request) -> JSONResponse:
+        """GET /api/v1/heartbeat — one-shot current phase."""
+        from mcp_engine.phase import get_phase
+        return _ok(get_phase())
+
+    async def activity_stream_endpoint(request: Request) -> StreamingResponse:
+        """GET /api/v1/activity/stream — SSE stream of phase transitions."""
+        from mcp_engine.phase import subscribe, unsubscribe
+
+        q = subscribe()
+
+        async def event_generator():
+            try:
+                while True:
+                    try:
+                        msg = await asyncio.wait_for(q.get(), timeout=30.0)
+                        yield f"event: {msg['event']}\ndata: {json.dumps(msg['data'])}\n\n"
+                    except asyncio.TimeoutError:
+                        yield ": keepalive\n\n"
+            except asyncio.CancelledError:
+                pass
+            finally:
+                unsubscribe(q)
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     routes = [
         Route("/api/v1/recall", recall_endpoint, methods=["GET"]),
         Route("/api/v1/bundle", bundle_endpoint, methods=["POST"]),
@@ -151,5 +182,7 @@ def create_router(db=None, config: dict = None):
         Route("/api/v1/status", status_endpoint, methods=["GET"]),
         Route("/api/v1/notify", notify_endpoint, methods=["POST"]),
         Route("/api/v1/tools", tools_endpoint, methods=["GET"]),
+        Route("/api/v1/heartbeat", heartbeat_endpoint, methods=["GET"]),
+        Route("/api/v1/activity/stream", activity_stream_endpoint, methods=["GET"]),
     ]
     return routes

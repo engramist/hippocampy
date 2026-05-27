@@ -1,0 +1,83 @@
+<h2>Campy Activity Indicator — Architecture Approaches</h2>
+<p class="subtitle">A lightweight status API with three presentation surfaces: menu bar, CLI, web widget</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>SSE Event Stream (Recommended)</h3>
+      <p>Add a <code>GET /api/v1/activity/stream</code> SSE endpoint to the existing daemon. Emits phase transitions as real-time events. All consumers (menu bar, CLI, web widget) subscribe to the same stream.</p>
+      <div class="pros-cons">
+        <div class="pros">
+          <h4>Pros</h4>
+          <ul>
+            <li>Real-time — phase changes push instantly</li>
+            <li>Single source of truth — daemon already knows its own state</li>
+            <li>SSE infrastructure already exists (MCP transport uses it)</li>
+            <li>Multiple consumers can subscribe simultaneously</li>
+            <li>No polling, no file watching, no extra processes</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h4>Cons</h4>
+          <ul>
+            <li>SSE connection per consumer (trivial overhead)</li>
+            <li>Consumers need reconnect logic if daemon restarts</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Polling Status Endpoint</h3>
+      <p>Add a <code>GET /api/v1/heartbeat</code> that returns current phase + last activity timestamp. Consumers poll every 1-2 seconds.</p>
+      <div class="pros-cons">
+        <div class="pros">
+          <h4>Pros</h4>
+          <ul>
+            <li>Simpler to implement — just a JSON endpoint</li>
+            <li>Stateless — no connection management</li>
+            <li>Easy to test with curl</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h4>Cons</h4>
+          <ul>
+            <li>1-2s latency on phase changes</li>
+            <li>Constant polling even when idle</li>
+            <li>N consumers × 1 req/sec = unnecessary load</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>File-Based Status (activity.log watch)</h3>
+      <p>Consumers tail <code>~/.campy/activity.log</code> directly. No new API needed — just parse the existing log stream.</p>
+      <div class="pros-cons">
+        <div class="pros">
+          <h4>Pros</h4>
+          <ul>
+            <li>Zero daemon changes — data already exists</li>
+            <li>Works even if HTTP server is down (file persists)</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h4>Cons</h4>
+          <ul>
+            <li>Log parsing is fragile (format changes break consumers)</li>
+            <li>No structured phase state — must infer from events</li>
+            <li>File I/O + inotify/kqueue per consumer</li>
+            <li>Can't determine "idle" — only "last event was N seconds ago"</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
