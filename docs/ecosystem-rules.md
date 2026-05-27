@@ -16,6 +16,7 @@ Use it to answer:
 Companion references:
 
 - Architecture specification: [docs/ARCHITECTURE.md](ARCHITECTURE.md)
+- Codebase anatomy navigation guide: [docs/codebase-anatomy.md](codebase-anatomy.md)
 - ARC harness ownership rules: [docs/arc-harness-rules.md](arc-harness-rules.md)
 - Tool catalog (MCP tool contracts): [docs/tool-catalog.md](tool-catalog.md)
 - Backlog rules: [backlog/BacklogRules.md](../backlog/BacklogRules.md)

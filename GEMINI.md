@@ -66,6 +66,8 @@ pytest
 ### Documentation
 - **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md):** Canonical architecture reference — Loop steps, graph schema, IP claims, MCP tool schemas, and all design details. **Read this for any architecture question.**
 - **[`docs/ecosystem-rules.md`](docs/ecosystem-rules.md):** Ecosystem layer boundaries, separation rules, and import constraints. **Read this before adding new code or changing boundaries.**
+- **[`docs/codebase-anatomy.md`](docs/codebase-anatomy.md):** Target region map for new code placement during the anatomy refactor.
+- **[`docs/codebase-anatomy-refactor-plan.md`](docs/codebase-anatomy-refactor-plan.md):** Migration notes and sequencing context for the anatomy refactor.
 - **[`plugin/skills/recall/SKILL.md`](plugin/skills/recall/SKILL.md):** Canonical memory-use policy (ships with plugin; dev-only: `skills/campy-memory/SKILL.md`). Do not recall on every turn; if unsure, call `memory_decision` before choosing a recall tool.
 - **CLAUDE.md:** Claude-specific workflow (delegation model).
 - **InvertorsDocs/:** Original Inventor's Notebook and seed examples for the ontology.
