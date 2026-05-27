@@ -243,13 +243,71 @@ def stop():
         console.print("[green]Brain Daemon stopped.[/green]")
 
 @app.command()
-def status():
+def status(
+    watch: bool = typer.Option(False, "--watch", "-w", help="Live-updating phase display"),
+):
     """
     Check the health and status of the HippoCampy memory daemon.
+
+    With --watch, shows a live-updating phase indicator via SSE.
     """
-    console.print(f"[bold blue]{PRODUCT_NAME} Status[/bold blue]")
-    if not check_status():
-        console.print("[red]Daemon is not responding or not healthy.[/red]")
+    import httpx
+    import sys
+
+    HEARTBEAT_URL = "http://127.0.0.1:7799/api/v1/heartbeat"
+    STREAM_URL = "http://127.0.0.1:7799/api/v1/activity/stream"
+
+    PHASE_COLORS = {
+        "idle": "green",
+        "encoding": "yellow",
+        "recalling": "blue",
+        "sweeping": "magenta",
+    }
+
+    def _format_phase(data: dict) -> str:
+        phase = data.get("phase", "unknown")
+        uptime = data.get("uptime_s", 0)
+        color = PHASE_COLORS.get(phase, "white")
+        return f"[{color}]🧠 {phase}[/{color}] · {uptime:.0f}s"
+
+    if not watch:
+        # One-shot mode: hit heartbeat endpoint, fall back to legacy check
+        try:
+            r = httpx.get(HEARTBEAT_URL, timeout=2.0)
+            body = r.json()
+            if body.get("ok"):
+                console.print(_format_phase(body["data"]))
+                return
+        except (httpx.ConnectError, httpx.TimeoutException):
+            pass
+        except Exception:
+            pass
+
+        # Fall back to legacy status check
+        console.print(f"[bold blue]{PRODUCT_NAME} Status[/bold blue]")
+        if not check_status():
+            console.print("[red]🧠 offline[/red]")
+            raise typer.Exit(code=1)
+        return
+
+    # Watch mode: subscribe to SSE stream
+    console.print("[dim]Watching Campy phase changes (Ctrl+C to stop)...[/dim]")
+    try:
+        with httpx.stream("GET", STREAM_URL, timeout=None) as response:
+            event_type = ""
+            for line in response.iter_lines():
+                if line.startswith("event:"):
+                    event_type = line[6:].strip()
+                elif line.startswith("data:") and event_type in ("phase", "heartbeat"):
+                    import json as json_mod
+                    data = json_mod.loads(line[5:].strip())
+                    sys.stdout.write(f"\r{' ' * 60}\r")
+                    console.print(_format_phase(data), end="")
+                    sys.stdout.flush()
+    except KeyboardInterrupt:
+        console.print()
+    except (httpx.ConnectError, httpx.TimeoutException):
+        console.print("[red]🧠 offline[/red]")
         raise typer.Exit(code=1)
 
 @app.command()
