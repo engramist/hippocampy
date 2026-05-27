@@ -1088,7 +1088,7 @@ def run_install() -> None:
     click.echo("=" * 50 + "\n")
 
     results: list[InstallStepResult] = []
-    total_steps = 8
+    total_steps = 10
 
     # Step 1: Provider Setup
     _print_step_header(1, total_steps, "LLM Provider Setup")
@@ -1226,6 +1226,41 @@ def run_install() -> None:
     else:
         results.append(InstallStepResult("Smoke Test", False, "skipped due to earlier failure"))
 
+    # Step 9: Plugin Skill Distribution
+    _print_step_header(9, total_steps, "Plugin Skill Distribution")
+    if venv_ok:
+        try:
+            from campy.cli.plugin_installer import install_plugin_for_agents
+            plugin_results = install_plugin_for_agents()
+            installed_count = sum(1 for v in plugin_results.values() if v)
+            if installed_count > 0:
+                results.append(InstallStepResult("Plugin Skills", True, f"{installed_count} agent(s) configured"))
+            else:
+                results.append(InstallStepResult("Plugin Skills", True, "No agents detected (install agents first)"))
+        except Exception as e:
+            results.append(InstallStepResult("Plugin Skills", False, f"Failed: {e}"))
+    else:
+        results.append(InstallStepResult("Plugin Skills", False, "skipped due to earlier failure"))
+
+    # Step 10: Activity Indicator
+    _print_step_header(10, total_steps, "Activity Indicator Setup")
+    try:
+        import pystray  # noqa: F401
+        indicator_available = True
+    except ImportError:
+        indicator_available = False
+
+    if indicator_available:
+        try:
+            from campy.cli.indicator import install_autostart
+            install_autostart()
+            results.append(InstallStepResult("Activity Indicator", True, "Tray indicator auto-start installed"))
+        except Exception as e:
+            results.append(InstallStepResult("Activity Indicator", False, f"Auto-start failed: {e}"))
+    else:
+        click.echo("  [=] Optional: run 'pip install campy[indicator]' for system tray status icon")
+        results.append(InstallStepResult("Activity Indicator", True, "Skipped (optional — install campy[indicator])"))
+
     # Final Report
     all_critical_passed = _print_install_report(results)
 
@@ -1233,6 +1268,7 @@ def run_install() -> None:
         click.echo(f"\n  Installation complete! Brain is running.")
         click.echo(f"  Commands:")
         click.echo(f"    campy status        — check daemon health")
+        click.echo(f"    campy status --watch — live phase indicator")
         click.echo(f"    campy review        — review open loops")
     else:
         raise click.ClickException("Installation completed with failures. See report above.")
