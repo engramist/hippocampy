@@ -361,6 +361,29 @@ def activity(
             return
 
 @app.command()
+def indicator(
+    install: bool = typer.Option(False, "--install", help="Install auto-start for current platform"),
+    uninstall: bool = typer.Option(False, "--uninstall", help="Remove auto-start"),
+):
+    """
+    Launch the Campy system tray indicator.
+
+    Shows a colored icon in the system tray reflecting the daemon's current phase:
+    green (idle), amber (encoding), blue (recalling), purple (sweeping).
+
+    Install with: pip install campy[indicator]
+    """
+    from campy.cli.indicator import run_indicator, install_autostart, uninstall_autostart
+
+    if install:
+        install_autostart()
+        return
+    if uninstall:
+        uninstall_autostart()
+        return
+    run_indicator()
+
+@app.command()
 def smoke(
     arc_world_model_tools: bool = typer.Option(False, "--arc-world-model-tools", help="Check for ARC world-model tools")
 ):
