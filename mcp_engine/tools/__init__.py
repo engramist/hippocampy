@@ -16,6 +16,25 @@ from typing import TYPE_CHECKING, Optional
 
 _logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Phase transition helper (Task 2)
+# ---------------------------------------------------------------------------
+
+def _with_phase(phase: str, fn):
+    """Wrap a tool handler to set phase during execution."""
+    async def wrapper(params=None, arguments=None, db=None, config=None, **kw):
+        from mcp_engine.phase import set_phase
+        set_phase(phase)
+        try:
+            return await fn(params=params, arguments=arguments, db=db, config=config, **kw)
+        finally:
+            set_phase("idle")
+    wrapper.__name__ = fn.__name__
+    wrapper.__doc__ = fn.__doc__
+    return wrapper
+
+
 # B160 dictionary helpers
 from mcp_engine.dictionary import find_dictionary, load_dictionary, ingest_dictionary, DICTIONARY_PATHS
 # KuzuClient imported only for type checking — kuzu is a C extension not needed
@@ -3044,40 +3063,45 @@ async def memory_decision(params: dict, db: KuzuClient, config: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 TOOL_HANDLERS = {
-    "notify_turn":      notify_turn,
-    "current_truth":    current_truth,
+    # Encoding phase (write path)
+    "notify_turn":      _with_phase("encoding", notify_turn),
+    "ingest_document":  _with_phase("encoding", ingest_document),
+    "ingest_data":      _with_phase("encoding", ingest_data),
+    "upsert_lesson":    _with_phase("encoding", upsert_lesson),
+
+    # Recalling phase (read path)
+    "current_truth":    _with_phase("recalling", current_truth),
+    "compile_context":  _with_phase("recalling", compile_context),
+    "recall_relevant_lessons": _with_phase("recalling", recall_relevant_lessons),
+    "recall_procedures": _with_phase("recalling", recall_procedures),
+    "recall_plans":    _with_phase("recalling", recall_plans),
+    "reconstruct_timeline": _with_phase("recalling", reconstruct_timeline),
+    "analogical_search": _with_phase("recalling", analogical_search),
+    "explore_graph":    _with_phase("recalling", explore_graph),
+    "memory_decision": _with_phase("recalling", memory_decision),
+
+    # Lightweight metadata ops (no phase wrapping)
     "branch_quest":     branch_quest,
     "complete_quest":   complete_quest,
     "diff_since":       diff_since,
-    "reconstruct_timeline": reconstruct_timeline,  # B192
     "get_open_loops":   get_open_loops,
-    "ingest_document":  ingest_document,
-    "ingest_data":      ingest_data,            # B251
-    "compile_context":  compile_context,        # B252
-    "analogical_search": analogical_search,
-    "explore_graph":    explore_graph,
     "set_quest":        set_quest,
     "context_status":   context_status,
-    "get_anomalies":    get_anomalies,           # B12
-    "upsert_lesson":    upsert_lesson,           # B11
-    "recall_relevant_lessons": recall_relevant_lessons,  # B11
-    "recall_scene_graph_priors": recall_scene_graph_priors,  # A050 sibling
-    "get_openclaw_prompt": get_openclaw_prompt,  # B21
-    "register_plan":   register_plan,            # B67
-    "report_outcome":  report_outcome,           # B67/B69
-    "recall_plans":    recall_plans,             # B67
-    "recall_procedures": recall_procedures,     # B194
-    "get_knowledge_gaps": get_knowledge_gaps,   # B193
-    "register_task_graph": register_task_graph,  # B128
-    "get_ready_tasks":     get_ready_tasks,      # B128
-    "advance_task":        advance_task,         # B128
-    "fail_task":           fail_task,            # B128
-    "get_task_graph":      get_task_graph,       # B128
-    "get_disambiguation_queue": get_disambiguation_queue,  # B158
-    "resolve_disambiguation": resolve_disambiguation,      # B158
-    "reload_domain_dictionary": reload_domain_dictionary,  # B160
-    "ingest_arc_artifacts": ingest_arc_artifacts,  # B225
-    "publish_mechanic_summary": publish_mechanic_summary,  # B226
-    "recall_mechanic_priors": recall_mechanic_priors,      # B227
-    "memory_decision": memory_decision,          # B235
+    "get_anomalies":    get_anomalies,
+    "recall_scene_graph_priors": recall_scene_graph_priors,
+    "get_openclaw_prompt": get_openclaw_prompt,
+    "register_plan":   register_plan,
+    "report_outcome":  report_outcome,
+    "get_knowledge_gaps": get_knowledge_gaps,
+    "register_task_graph": register_task_graph,
+    "get_ready_tasks":     get_ready_tasks,
+    "advance_task":        advance_task,
+    "fail_task":           fail_task,
+    "get_task_graph":      get_task_graph,
+    "get_disambiguation_queue": get_disambiguation_queue,
+    "resolve_disambiguation": resolve_disambiguation,
+    "reload_domain_dictionary": reload_domain_dictionary,
+    "ingest_arc_artifacts": ingest_arc_artifacts,
+    "publish_mechanic_summary": publish_mechanic_summary,
+    "recall_mechanic_priors": recall_mechanic_priors,
 }

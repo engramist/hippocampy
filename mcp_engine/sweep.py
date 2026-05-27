@@ -76,99 +76,104 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
         config: full campy.toml config dict
         llm_client: LLMClient or None — Hebbian Trigger 2 skipped if None
     """
-    pruning_cfg         = config.get("pruning", {})
-    sweep_interval      = pruning_cfg.get("sweep_interval_seconds", 300)
-    archive_threshold   = float(pruning_cfg.get("archive_threshold", 0.10))
-    resurrection_thresh = float(pruning_cfg.get("resurrection_threshold", 0.85))
-    decay_rates         = pruning_cfg.get("decay_rate", {})
+    from mcp_engine.phase import set_phase
+    set_phase("sweeping")
+    try:
+        pruning_cfg         = config.get("pruning", {})
+        sweep_interval      = pruning_cfg.get("sweep_interval_seconds", 300)
+        archive_threshold   = float(pruning_cfg.get("archive_threshold", 0.10))
+        resurrection_thresh = float(pruning_cfg.get("resurrection_threshold", 0.85))
+        decay_rates         = pruning_cfg.get("decay_rate", {})
 
-    # Express sweep interval as a fraction of a day — decay applied incrementally
-    # each run rather than re-computing total decay from node creation date.
-    interval_days = sweep_interval / 86400.0
+        # Express sweep interval as a fraction of a day — decay applied incrementally
+        # each run rather than re-computing total decay from node creation date.
+        interval_days = sweep_interval / 86400.0
 
-    summary = {
-        "decayed": 0, "archived": 0, "resurrected": 0,
-        "promoted": 0, "errors": 0,
-        "retrospective_plans": 0,
-        "patterns_discovered": 0,    # Phase 4
-        "pattern_candidates": 0,     # Phase 4
-        "frustration_clusters": 0,   # Basal Ganglia: avoidance Procedures
-        "maturity_updates": 0,       # Basal Ganglia: maturity lifecycle
-        "sweep_at": datetime.now(timezone.utc).isoformat(),
-    }
+        summary = {
+            "decayed": 0, "archived": 0, "resurrected": 0,
+            "promoted": 0, "errors": 0,
+            "retrospective_plans": 0,
+            "patterns_discovered": 0,    # Phase 4
+            "pattern_candidates": 0,     # Phase 4
+            "frustration_clusters": 0,   # Basal Ganglia: avoidance Procedures
+            "maturity_updates": 0,       # Basal Ganglia: maturity lifecycle
+            "sweep_at": datetime.now(timezone.utc).isoformat(),
+        }
 
-    # Step 1: Decay pathway_strength + archive below threshold
-    d, a, e = await _decay_and_archive(db, decay_rates, interval_days, archive_threshold)
-    summary["decayed"]  += d
-    summary["archived"] += a
-    summary["errors"]   += e
-
-    # Step 1.5: B74 valence-aware decay adjustment
-    v, e = await _apply_valence_decay(db)
-    summary["valence_adjusted"] = v
-    summary["errors"] += e
-
-    # Step 2: Resurrect archived nodes with active graph similarity
-    r, e = await _resurrect_archived(db, resurrection_thresh)
-    summary["resurrected"] += r
-    summary["errors"]      += e
-
-    # Step 3: Hebbian Trigger 2 — only when LLM is available
-    if llm_client is not None:
-        hebbian_cfg = config.get("hebbian", {})
-        threshold   = int(hebbian_cfg.get("co_occurrence_threshold", 10))
-        p, e = await _hebbian_promote(db, llm_client, threshold)
-        summary["promoted"] += p
+        # Step 1: Decay pathway_strength + archive below threshold
+        d, a, e = await _decay_and_archive(db, decay_rates, interval_days, archive_threshold)
+        summary["decayed"]  += d
+        summary["archived"] += a
         summary["errors"]   += e
 
-    # Step 3.5: Dream consolidation (synthesis) — only when LLM is available
-    if llm_client is not None:
-        d, e = await _dream_consolidation(db, config, llm_client)
-        summary["synthesized"] = d
+        # Step 1.5: B74 valence-aware decay adjustment
+        v, e = await _apply_valence_decay(db)
+        summary["valence_adjusted"] = v
         summary["errors"] += e
 
-    # Step 3.75: Consistency audit (B196) — LLM-assisted pairwise lesson contradiction detection
-    try:
-        a, e = await _audit_consistency(db, config, llm_client)
-        summary["consistency_audits"] = a
+        # Step 2: Resurrect archived nodes with active graph similarity
+        r, e = await _resurrect_archived(db, resurrection_thresh)
+        summary["resurrected"] += r
+        summary["errors"]      += e
+
+        # Step 3: Hebbian Trigger 2 — only when LLM is available
+        if llm_client is not None:
+            hebbian_cfg = config.get("hebbian", {})
+            threshold   = int(hebbian_cfg.get("co_occurrence_threshold", 10))
+            p, e = await _hebbian_promote(db, llm_client, threshold)
+            summary["promoted"] += p
+            summary["errors"]   += e
+
+        # Step 3.5: Dream consolidation (synthesis) — only when LLM is available
+        if llm_client is not None:
+            d, e = await _dream_consolidation(db, config, llm_client)
+            summary["synthesized"] = d
+            summary["errors"] += e
+
+        # Step 3.75: Consistency audit (B196) — LLM-assisted pairwise lesson contradiction detection
+        try:
+            a, e = await _audit_consistency(db, config, llm_client)
+            summary["consistency_audits"] = a
+            summary["errors"] += e
+        except Exception:
+            summary["errors"] += 1
+
+        # Step 4: Recompute GistClass centroids from accumulated System 2 examples (M4)
+        c, e = await _recompute_centroids(db)
+        summary["centroids_updated"]  = c
+        summary["errors"]            += e
+
+        # Step 5: B68 Layer C retrospective plan inference
+        rp, e = await _infer_retrospective_plans(db, config)
+        summary["retrospective_plans"] += rp
         summary["errors"] += e
-    except Exception:
-        summary["errors"] += 1
 
-    # Step 4: Recompute GistClass centroids from accumulated System 2 examples (M4)
-    c, e = await _recompute_centroids(db)
-    summary["centroids_updated"]  = c
-    summary["errors"]            += e
+        # Step 6: Knowledge gap detection (B193)
+        g, e = await _detect_knowledge_gaps(db, config)
+        summary["gaps_detected"] = g
+        summary["errors"] += e
 
-    # Step 5: B68 Layer C retrospective plan inference
-    rp, e = await _infer_retrospective_plans(db, config)
-    summary["retrospective_plans"] += rp
-    summary["errors"] += e
+        # Step 7: Wiki Projection (B222)
+        try:
+            wiki_summary = await export_wiki_projection(db, config)
+            summary["wiki_projection"] = wiki_summary
+        except Exception:
+            summary["errors"] += 1
 
-    # Step 6: Knowledge gap detection (B193)
-    g, e = await _detect_knowledge_gaps(db, config)
-    summary["gaps_detected"] = g
-    summary["errors"] += e
+        # Step 7.5: Offline pattern discovery (Phase 4 — Anticipatory Engine)
+        try:
+            from mcp_engine.sweep_patterns import discover_patterns
+            pat_summary = await discover_patterns(db, config, llm_client)
+            summary["patterns_discovered"] = pat_summary.get("triggers_written", 0)
+            summary["pattern_candidates"] = pat_summary.get("candidates_found", 0)
+            summary["errors"] += pat_summary.get("errors", 0)
+        except Exception:
+            _logger.warning("[Sweep] Pattern discovery failed", exc_info=True)
+            summary["errors"] += 1
 
-    # Step 7: Wiki Projection (B222)
-    try:
-        wiki_summary = await export_wiki_projection(db, config)
-        summary["wiki_projection"] = wiki_summary
-    except Exception:
-        summary["errors"] += 1
-
-    # Step 7.5: Offline pattern discovery (Phase 4 — Anticipatory Engine)
-    try:
-        from mcp_engine.sweep_patterns import discover_patterns
-        pat_summary = await discover_patterns(db, config, llm_client)
-        summary["patterns_discovered"] = pat_summary.get("triggers_written", 0)
-        summary["pattern_candidates"] = pat_summary.get("candidates_found", 0)
-        summary["errors"] += pat_summary.get("errors", 0)
-    except Exception:
-        _logger.warning("[Sweep] Pattern discovery failed", exc_info=True)
-        summary["errors"] += 1
-
-    return summary
+        return summary
+    finally:
+        set_phase("idle")
 
 
 async def _infer_retrospective_plans(db, config: dict) -> tuple[int, int]:
