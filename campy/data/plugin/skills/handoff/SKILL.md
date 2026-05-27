@@ -1,6 +1,6 @@
 ---
-name: handoff
-description: Compact the current conversation into a handoff document and persist it to Campy's graph. The next agent session can pick up via compile_context. Use when ending a session, context is getting large, or passing work to another agent.
+name: campy-handoff
+description: Campy-enhanced handoff that writes a transfer note and persists it to Campy's graph. Use this over generic handoff variants when you want cross-session retrieval via compile_context.
 argument-hint: "What will the next session be used for?"
 ---
 

@@ -1,6 +1,6 @@
 ---
-name: tdd
-description: Test-driven development with red-green-refactor loop. Enhanced with Campy memory for test pattern recall and insight capture. Use when user wants to build features or fix bugs using TDD, mentions "red-green-refactor", wants integration tests, or asks for test-first development.
+name: campy-tdd
+description: Campy-enhanced test-driven development with red-green-refactor loop. Use this over generic TDD variants when you want graph-backed recall of testing patterns and captured lessons.
 ---
 
 # Test-Driven Development
