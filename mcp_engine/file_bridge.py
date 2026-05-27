@@ -33,6 +33,26 @@ CAMPY_POINTER = (
 )
 
 
+def _resolve_project_child(project_path: Path, *parts: str) -> Path:
+    """Resolve a child path and verify it stays inside the project root.
+
+    Canonicalises both the project root and the target path with
+    ``Path.resolve()`` (which follows symlinks) and checks that the
+    target is still a descendant of the project root.
+
+    Raises ``ValueError`` if the resolved target falls outside the
+    project root — e.g. via ``../`` traversal or a symlink escape.
+    """
+    root = project_path.resolve()
+    target = (project_path / Path(*parts)).resolve()
+    if not target.is_relative_to(root):
+        raise ValueError(
+            f"Path escapes outside project root: "
+            f"{target} is not under {root}"
+        )
+    return target
+
+
 def _slugify(text: str, max_length: int = 50) -> str:
     """Lowercase, replace non-alphanumeric chars with hyphens, strip edges."""
     slug = re.sub(r"[^a-z0-9]+", "-", text.lower())
@@ -141,7 +161,7 @@ async def generate_context_md(project_path: Path, db: "KuzuClient") -> Path:
                 lines.append(f"- {from_name} --[{rel_type}]--> {to_name}")
         lines.append("")
 
-    output_path = project_path / "CONTEXT.md"
+    output_path = _resolve_project_child(project_path, "CONTEXT.md")
     output_path.write_text("\n".join(lines), encoding="utf-8")
     _logger.info("Generated %s (%d concepts)", output_path, len(rows))
     return output_path
@@ -162,7 +182,7 @@ async def generate_adrs(project_path: Path, db: "KuzuClient") -> list[Path]:
         "ORDER BY d.created_at ASC"
     )
 
-    adr_dir = project_path / "docs" / "adr"
+    adr_dir = _resolve_project_child(project_path, "docs", "adr")
     adr_dir.mkdir(parents=True, exist_ok=True)
 
     # Load existing manifest
@@ -227,7 +247,7 @@ def generate_agent_pointers(project_path: Path) -> list[str]:
     """
     modified: list[str] = []
     for filename in ["CLAUDE.md", "AGENTS.md", "GEMINI.md"]:
-        filepath = project_path / filename
+        filepath = _resolve_project_child(project_path, filename)
         if filepath.exists():
             content = filepath.read_text(encoding="utf-8")
             if "memory_decision" not in content:
@@ -269,11 +289,11 @@ async def check_file_changes(
     """
     files_to_check: list[Path] = []
 
-    context_path = project_path / "CONTEXT.md"
+    context_path = _resolve_project_child(project_path, "CONTEXT.md")
     if context_path.exists():
         files_to_check.append(context_path)
 
-    adr_dir = project_path / "docs" / "adr"
+    adr_dir = _resolve_project_child(project_path, "docs", "adr")
     if adr_dir.exists():
         files_to_check.extend(
             p for p in adr_dir.glob("*.md")
