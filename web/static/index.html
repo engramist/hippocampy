@@ -16,6 +16,11 @@
   #status-dot { width: 8px; height: 8px; border-radius: 50%; background: #48bb78;
                 flex-shrink: 0; }
   #status-dot.offline { background: #fc8181; }
+  #status-dot.encoding { background: #ecc94b; }
+  #status-dot.recalling { background: #4299e1; }
+  #status-dot.sweeping { background: #9f7aea; }
+  #phase-label { font-size: 0.7rem; color: #a0aec0; margin-left: 6px;
+                 text-transform: uppercase; letter-spacing: 0.05em; }
   #stats-bar { margin-left: auto; display: flex; gap: 16px; font-size: 0.75rem;
                color: #718096; }
   #stats-bar span b { color: #e2e8f0; }
@@ -131,6 +136,7 @@
 
 <header>
   <div id="status-dot"></div>
+  <span id="phase-label">idle</span>
   <h1>SideQuest Memory Control Panel</h1>
   <div id="stats-bar">
     <span>Concepts: <b id="stat-concept">—</b></span>
@@ -692,6 +698,40 @@ if (nodeIdx !== -1 && pathParts[nodeIdx + 1]) {
 } else {
   loadGraph();
 }
+
+// --- Activity Indicator SSE ---
+(function() {
+  var dot = document.getElementById('status-dot');
+  var label = document.getElementById('phase-label');
+  var PHASE_CLASSES = ['encoding', 'recalling', 'sweeping', 'offline'];
+
+  function updatePhase(phase) {
+    PHASE_CLASSES.forEach(function(c) { dot.classList.remove(c); });
+    if (phase !== 'idle' && PHASE_CLASSES.indexOf(phase) !== -1) {
+      dot.classList.add(phase);
+    }
+    if (label) label.textContent = phase;
+  }
+
+  function connectSSE() {
+    var es = new EventSource('/api/v1/activity/stream');
+    es.addEventListener('phase', function(e) {
+      var data = JSON.parse(e.data);
+      updatePhase(data.phase);
+    });
+    es.addEventListener('heartbeat', function(e) {
+      var data = JSON.parse(e.data);
+      updatePhase(data.phase);
+    });
+    es.onerror = function() {
+      updatePhase('offline');
+      es.close();
+      setTimeout(connectSSE, 5000);
+    };
+  }
+
+  connectSSE();
+})();
 </script>
 <script src="/static/token-dashboard.js"></script>
 </body>
