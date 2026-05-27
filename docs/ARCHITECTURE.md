@@ -7,6 +7,8 @@
 ## Required Companion References
 
 - Ecosystem rules (layer boundaries and separation rules): [docs/ecosystem-rules.md](ecosystem-rules.md)
+- Codebase anatomy navigation guide: [docs/codebase-anatomy.md](codebase-anatomy.md)
+- Codebase anatomy refactor plan: [docs/codebase-anatomy-refactor-plan.md](codebase-anatomy-refactor-plan.md)
 - Tool catalog (keep in sync with tool schemas/handlers): [docs/tool-catalog.md](tool-catalog.md)
 - Wiki projection architecture: [docs/wiki-projection-architecture.md](wiki-projection-architecture.md)
 - ARC extraction boundary audit: [docs/arc-extraction-cleanup-audit.md](arc-extraction-cleanup-audit.md)

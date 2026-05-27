@@ -70,6 +70,7 @@ uvx hippocampy
 - **Gated Consolidation:** Biomimetic heuristic processing to filter noise from knowledge.
 - **MCP Compatible:** Works with any MCP-enabled AI client.
 - **Context Window Integration (Layer Cake):** 4-layer system that automatically injects graph knowledge into agent context windows — File Bridge (CONTEXT.md generation), Associative Hooks (trigger manifest + Claude Code hooks), Anticipatory Engine (auto-discovers trigger bindings), and Process Skills (deliberate recall).
+- **Contributor navigation:** See [docs/codebase-anatomy.md](docs/codebase-anatomy.md) for the target region map, and [docs/codebase-anatomy-refactor-plan.md](docs/codebase-anatomy-refactor-plan.md) for migration context.
 
 ## Optional Debugging
 

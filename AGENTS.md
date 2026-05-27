@@ -6,6 +6,7 @@ This file gives agent-neutral guidance for Codex and other coding agents working
 
 Read `docs/ARCHITECTURE.md` before making architecture, schema, retrieval, capture, or daemon behavior changes.
 Read `docs/ecosystem-rules.md` before changing package boundaries or persistence behavior.
+Use `docs/codebase-anatomy.md` when you need the target region for new code, and `docs/codebase-anatomy-refactor-plan.md` when you need migration context.
 
 KuzuDB is the single source of truth for persistent memory state. Do not introduce shadow stores for durable agent state; in-memory structures are allowed only as caches over graph-backed state.
 
