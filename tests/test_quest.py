@@ -247,7 +247,7 @@ def test_detect_git_context_in_known_repo():
     # We know we're in a git repo
     assert repo_root != ""
     assert git_branch != ""
-    assert "sidequests-brain" in repo_root
+    assert "hippocampy" in repo_root or "sidequests-brain" in repo_root
 
 
 def test_inject_context_adds_fields():
