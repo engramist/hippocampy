@@ -2,7 +2,7 @@
 import pytest
 import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
-from mcp_engine.loop.orchestrator import run_loop
+from campy.brain.temporal_lobe.loop.orchestrator import run_loop
 
 @pytest.mark.asyncio
 async def test_run_loop_with_precomputed_data():
@@ -36,18 +36,18 @@ async def test_run_loop_with_precomputed_data():
     }
     
     # Mock embedding to return dummy vectors
-    with patch("mcp_engine.graph.embeddings.embed", return_value=[0.1] * 384):
+    with patch("campy.brain.hippocampus.graph.embeddings.embed", return_value=[0.1] * 384):
         # Mock extract_entities to prove it's NOT called
-        with patch("mcp_engine.loop.orchestrator.extract_entities") as mock_extract:
+        with patch("campy.brain.temporal_lobe.loop.orchestrator.extract_entities") as mock_extract:
             # Mock classify_artifact to ensure it proceeds
-            with patch("mcp_engine.loop.orchestrator.classify_artifact", return_value={"artifact_type": "decision", "confidence": 0.95, "confidence_low": False, "should_proceed": True}):
+            with patch("campy.brain.temporal_lobe.loop.orchestrator.classify_artifact", return_value={"artifact_type": "decision", "confidence": 0.95, "confidence_low": False, "should_proceed": True}):
                 # Mock storage functions to return string IDs for comparison
                 mock_store_concept = AsyncMock(side_effect=["cid1", "cid2"])
-                with patch("mcp_engine.loop.orchestrator._store_concept", mock_store_concept):
-                    with patch("mcp_engine.loop.orchestrator._ensure_concept_exists", side_effect=["id1", "id2", "id3", "id4"]):
-                        with patch("mcp_engine.loop.orchestrator._store_relation", return_value=None):
-                            with patch("mcp_engine.loop.orchestrator._reify_concept", side_effect=["cid1", "cid2", "cid3", "cid4"]):
-                                with patch("mcp_engine.loop.orchestrator.retrieve_candidates", return_value=[]):
+                with patch("campy.brain.temporal_lobe.loop.orchestrator._store_concept", mock_store_concept):
+                    with patch("campy.brain.temporal_lobe.loop.orchestrator._ensure_concept_exists", side_effect=["id1", "id2", "id3", "id4"]):
+                        with patch("campy.brain.temporal_lobe.loop.orchestrator._store_relation", return_value=None):
+                            with patch("campy.brain.temporal_lobe.loop.orchestrator._reify_concept", side_effect=["cid1", "cid2", "cid3", "cid4"]):
+                                with patch("campy.brain.temporal_lobe.loop.orchestrator.retrieve_candidates", return_value=[]):
                                     summary = await run_loop(
                                         message_id="msg-123",
                                         text="ARC-AGI-3 has ACTION1.",
@@ -88,17 +88,17 @@ async def test_run_loop_without_precomputed_data():
     centroids = {}
     
     # Mock steps that use LLM or spaCy
-    with patch("mcp_engine.graph.embeddings.embed", return_value=[0.1] * 384):
-        with patch("mcp_engine.loop.orchestrator.extract_entities", return_value=(MagicMock(), [{"text": "e1", "label": "ORG"}])):
-            with patch("mcp_engine.loop.orchestrator.classify_concept", return_value={"gist_class": "Category", "confidence": 0.8, "system": "1", "vector": [0.1]*384}):
-                with patch("mcp_engine.loop.orchestrator.route_to_schema_org", return_value={"schema_org_type": "Thing"}):
-                    with patch("mcp_engine.loop.orchestrator.extract_relations", return_value=[]):
-                        with patch("mcp_engine.loop.orchestrator.classify_artifact", return_value={"artifact_type": "decision", "confidence": 0.95, "confidence_low": False, "should_proceed": True}):
+    with patch("campy.brain.hippocampus.graph.embeddings.embed", return_value=[0.1] * 384):
+        with patch("campy.brain.temporal_lobe.loop.orchestrator.extract_entities", return_value=(MagicMock(), [{"text": "e1", "label": "ORG"}])):
+            with patch("campy.brain.temporal_lobe.loop.orchestrator.classify_concept", return_value={"gist_class": "Category", "confidence": 0.8, "system": "1", "vector": [0.1]*384}):
+                with patch("campy.brain.temporal_lobe.loop.orchestrator.route_to_schema_org", return_value={"schema_org_type": "Thing"}):
+                    with patch("campy.brain.temporal_lobe.loop.orchestrator.extract_relations", return_value=[]):
+                        with patch("campy.brain.temporal_lobe.loop.orchestrator.classify_artifact", return_value={"artifact_type": "decision", "confidence": 0.95, "confidence_low": False, "should_proceed": True}):
                             mock_store_concept = AsyncMock(side_effect=["cid1"])
-                            with patch("mcp_engine.loop.orchestrator._store_concept", mock_store_concept):
-                                with patch("mcp_engine.loop.orchestrator._ensure_concept_exists", side_effect=["id1", "id2"]):
-                                    with patch("mcp_engine.loop.orchestrator._reify_concept", side_effect=["cid1", "cid2"]):
-                                        with patch("mcp_engine.loop.orchestrator.retrieve_candidates", return_value=[]):
+                            with patch("campy.brain.temporal_lobe.loop.orchestrator._store_concept", mock_store_concept):
+                                with patch("campy.brain.temporal_lobe.loop.orchestrator._ensure_concept_exists", side_effect=["id1", "id2"]):
+                                    with patch("campy.brain.temporal_lobe.loop.orchestrator._reify_concept", side_effect=["cid1", "cid2"]):
+                                        with patch("campy.brain.temporal_lobe.loop.orchestrator.retrieve_candidates", return_value=[]):
                                             summary = await run_loop(
                                                 message_id="msg-456",
                                                 text="Some text",

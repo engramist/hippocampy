@@ -3,7 +3,7 @@ import os
 import shutil
 from pathlib import Path
 from unittest.mock import MagicMock, AsyncMock
-from mcp_engine.wiki_projection import export_wiki_projection, WikiPage
+from campy.brain.thalamus.wiki_projection import export_wiki_projection, WikiPage
 
 @pytest.fixture
 def mock_db():
@@ -76,13 +76,13 @@ async def test_wiki_projection_basic(mock_db, tmp_vault):
     assert "Test lesson text" in content
 
 def test_slugify():
-    from mcp_engine.wiki_projection import _slugify
+    from campy.brain.thalamus.wiki_projection import _slugify
     assert _slugify("Test Page Name") == "test-page-name"
     assert _slugify("Special! @Characters") == "special-characters"
 
 @pytest.mark.asyncio
 async def test_atomic_write(tmp_path):
-    from mcp_engine.wiki_projection import _write_atomic
+    from campy.brain.thalamus.wiki_projection import _write_atomic
     test_file = tmp_path / "atomic.md"
     _write_atomic(test_file, "initial content")
     assert test_file.read_text() == "initial content"

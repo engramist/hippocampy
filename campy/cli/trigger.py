@@ -20,7 +20,7 @@ def add(
     lesson: Optional[str] = typer.Option(None, "--lesson", help="Lesson ID to bind trigger to"),
 ):
     """Bind a trigger pattern to a Procedure or Lesson node."""
-    from mcp_engine.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
     from campy.paths import get_database_path
 
     if not procedure and not lesson:
@@ -109,7 +109,7 @@ async def _bind_lesson_trigger(db, lesson_id: str, pattern: str, hook_type: str,
 @app.command("list")
 def list_triggers():
     """Show all active triggers across Procedures and Lessons."""
-    from mcp_engine.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
     from campy.paths import get_database_path
 
     db_path = get_database_path()
@@ -210,7 +210,7 @@ def remove(
     lesson: Optional[str] = typer.Option(None, "--lesson", help="Lesson ID to unbind"),
 ):
     """Remove trigger binding from a Procedure or Lesson."""
-    from mcp_engine.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
     from campy.paths import get_database_path
 
     if not procedure and not lesson:
@@ -252,9 +252,9 @@ def remove(
 @app.command("compile")
 def compile_cmd():
     """Force-compile the trigger manifest from graph state."""
-    from mcp_engine.trigger_manifest import compile_manifest
-    from mcp_engine.graph.kuzu_client import KuzuClient
-    from mcp_engine.config import load_config
+    from campy.brain.thalamus.trigger_manifest import compile_manifest
+    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.brainstem.config import load_config
     from campy.paths import get_database_path
 
     db_path = get_database_path()

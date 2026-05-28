@@ -47,7 +47,7 @@ class _LLM:
 
 @pytest.mark.asyncio
 async def test_audit_detects_contradiction_creates_disambiguation():
-    from mcp_engine.sweep import _audit_consistency
+    from campy.brain.brainstem.sweep import _audit_consistency
 
     # Two lessons in same domain with very similar embeddings
     emb = [0.05] * 384
@@ -73,7 +73,7 @@ async def test_audit_detects_contradiction_creates_disambiguation():
 
 @pytest.mark.asyncio
 async def test_stale_and_orphan_flagging():
-    from mcp_engine.sweep import _audit_consistency
+    from campy.brain.brainstem.sweep import _audit_consistency
 
     thirty_one_days_ago = (datetime.now(timezone.utc) - timedelta(days=31)).isoformat()
 

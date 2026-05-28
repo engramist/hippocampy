@@ -17,7 +17,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from campy.brain_transport import call_brain
 from campy.paths import get_daemon_socket_path, runtime_dir
-from mcp_engine.tool_schemas import TOOLS
+from campy.brain.thalamus.tool_schemas import TOOLS
 
 _ALL_TOOL_NAMES = frozenset(t["name"] for t in TOOLS)
 
@@ -56,7 +56,7 @@ _REPO_ROOT, _GIT_BRANCH = detect_git_context()
 # MCP Tool definitions (what Claude Desktop sees)
 # ---------------------------------------------------------------------------
 
-from mcp_engine.tool_schemas import TOOLS
+from campy.brain.thalamus.tool_schemas import TOOLS
 
 # ---------------------------------------------------------------------------
 # Brain socket client

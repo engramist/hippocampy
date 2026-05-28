@@ -27,7 +27,7 @@ def _stub(name, **attrs):
 
 
 def setup_module(module):
-    """Install stubs and import mcp_engine.tools right before tests run."""
+    """Install stubs and import campy.brain.thalamus.tools right before tests run."""
     global report_outcome, current_truth, notify_turn
 
     # Stub external dependencies that kuzu needs
@@ -35,31 +35,31 @@ def setup_module(module):
         if dep not in sys.modules:
             _stub(dep)
 
-    # Stub mcp_engine.graph.embeddings
-    if "mcp_engine.graph.embeddings" not in sys.modules:
-        _stub("mcp_engine.graph.embeddings",
+    # Stub campy.brain.hippocampus.graph.embeddings
+    if "campy.brain.hippocampus.graph.embeddings" not in sys.modules:
+        _stub("campy.brain.hippocampus.graph.embeddings",
               embed=lambda text, model_name=None: [0.01] * 384,
               prewarm=lambda model_name=None: None,
               embed_batch=lambda texts, model_name=None: [[0.01] * 384] * len(texts))
 
-    # Stub mcp_engine.quest
-    if "mcp_engine.quest" not in sys.modules:
-        _stub("mcp_engine.quest",
+    # Stub campy.brain.hippocampus.quest
+    if "campy.brain.hippocampus.quest" not in sys.modules:
+        _stub("campy.brain.hippocampus.quest",
               get_or_create_main_quest=lambda *a, **kw: "",
               get_or_create_session=lambda *a, **kw: None,
               create_side_quest=lambda *a, **kw: "",
               get_quest_context=lambda *a, **kw: {},
               compute_quest_id=lambda *a, **kw: "a" * 32)
 
-    # Stub mcp_engine.warm_frontier
-    if "mcp_engine.warm_frontier" not in sys.modules:
-        _stub("mcp_engine.warm_frontier",
+    # Stub campy.brain.temporal_lobe.warm_frontier
+    if "campy.brain.temporal_lobe.warm_frontier" not in sys.modules:
+        _stub("campy.brain.temporal_lobe.warm_frontier",
               compute_warm_frontier=lambda *a, **kw: None,
               get_warm_nodes=lambda *a, **kw: {})
 
-    # Stub mcp_engine.working_memory
-    if "mcp_engine.working_memory" not in sys.modules:
-        _stub("mcp_engine.working_memory",
+    # Stub campy.brain.thalamus.working_memory
+    if "campy.brain.thalamus.working_memory" not in sys.modules:
+        _stub("campy.brain.thalamus.working_memory",
               update_token_estimate=lambda *a, **kw: None,
               estimate_tokens=lambda text: len(text.split()),
               get_loaded_node_ids=lambda *a, **kw: [],
@@ -75,14 +75,14 @@ def setup_module(module):
     async def _stub_update_routing(*a, **kw):
         return None
 
-    if "mcp_engine.hippocampus" not in sys.modules:
-        _stub("mcp_engine.hippocampus",
+    if "campy.brain.hippocampus.hippocampus" not in sys.modules:
+        _stub("campy.brain.hippocampus.hippocampus",
               route_session=_stub_route_session,
               update_routing_strength=_stub_update_routing,
               get_active_quests_with_embeddings=lambda *a: [])
 
     import importlib
-    tools_mod = importlib.import_module("mcp_engine.tools")
+    tools_mod = importlib.import_module("campy.brain.thalamus.tools")
 
     module.report_outcome = tools_mod.report_outcome
     module.current_truth = tools_mod.current_truth
@@ -99,10 +99,10 @@ def teardown_module(module):
     """Remove stubs and the tools module."""
     for key in _STUBBED_KEYS:
         sys.modules.pop(key, None)
-    sys.modules.pop("mcp_engine.tools", None)
-    for key in ["mcp_engine.graph.embeddings", "mcp_engine.quest",
-                "mcp_engine.warm_frontier", "mcp_engine.working_memory",
-                "mcp_engine.hippocampus"]:
+    sys.modules.pop("campy.brain.thalamus.tools", None)
+    for key in ["campy.brain.hippocampus.graph.embeddings", "campy.brain.hippocampus.quest",
+                "campy.brain.temporal_lobe.warm_frontier", "campy.brain.thalamus.working_memory",
+                "campy.brain.hippocampus.hippocampus"]:
         sys.modules.pop(key, None)
 
 class _Result:

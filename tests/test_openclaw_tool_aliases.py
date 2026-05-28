@@ -1,7 +1,7 @@
 from pathlib import Path
 import re
 
-from mcp_engine.tools import TOOL_HANDLERS
+from campy.brain.thalamus.tools import TOOL_HANDLERS
 
 EXPECTED_ALIASES = {
     "current_truth": {"memory_search", "memory_recall", "memory_get"},

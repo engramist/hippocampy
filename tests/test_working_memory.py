@@ -16,15 +16,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 class TestTokenEstimation:
 
     def test_estimate_tokens_basic(self):
-        from mcp_engine.working_memory import estimate_tokens
+        from campy.brain.thalamus.working_memory import estimate_tokens
         assert estimate_tokens("hello world") > 0
 
     def test_estimate_tokens_empty(self):
-        from mcp_engine.working_memory import estimate_tokens
+        from campy.brain.thalamus.working_memory import estimate_tokens
         assert estimate_tokens("") == 0
 
     def test_estimate_tokens_scales_with_length(self):
-        from mcp_engine.working_memory import estimate_tokens
+        from campy.brain.thalamus.working_memory import estimate_tokens
         short = estimate_tokens("hello")
         long = estimate_tokens("hello " * 100)
         assert long > short * 10
@@ -38,7 +38,7 @@ class TestLoadTracking:
     @pytest.mark.asyncio
     async def test_track_loaded_creates_edges(self):
         """track_loaded creates LOADED edges for each result."""
-        from mcp_engine.working_memory import track_loaded
+        from campy.brain.thalamus.working_memory import track_loaded
 
         writes = []
 
@@ -65,7 +65,7 @@ class TestLoadTracking:
     @pytest.mark.asyncio
     async def test_track_loaded_skips_unknown_types(self):
         """Skips nodes with unrecognized node_type."""
-        from mcp_engine.working_memory import track_loaded
+        from campy.brain.thalamus.working_memory import track_loaded
 
         writes = []
 
@@ -87,7 +87,7 @@ class TestLoadTracking:
     @pytest.mark.asyncio
     async def test_track_loaded_skips_raw_message_nodes(self):
         """Raw episodic recall is token-counted elsewhere, not LOADED-tracked."""
-        from mcp_engine.working_memory import track_loaded
+        from campy.brain.thalamus.working_memory import track_loaded
 
         class MockDB:
             def execute(self, *args, **kwargs):
@@ -111,7 +111,7 @@ class TestDeduplication:
 
     def test_demotes_loaded_nodes(self):
         """Already-loaded nodes get demoted in ranking."""
-        from mcp_engine.working_memory import deduplicate_results
+        from campy.brain.thalamus.working_memory import deduplicate_results
 
         results = [
             {"node_id": "d1", "_rank": 1.0, "text_raw": "old"},
@@ -127,7 +127,7 @@ class TestDeduplication:
 
     def test_empty_loaded_no_change(self):
         """No loaded nodes → no demotion."""
-        from mcp_engine.working_memory import deduplicate_results
+        from campy.brain.thalamus.working_memory import deduplicate_results
 
         results = [
             {"node_id": "d1", "_rank": 1.0},
@@ -141,7 +141,7 @@ class TestDeduplication:
 
     def test_same_query_twice_demotes_second_time(self):
         """Second call with same results ranks fresh content higher."""
-        from mcp_engine.working_memory import deduplicate_results
+        from campy.brain.thalamus.working_memory import deduplicate_results
 
         results = [
             {"node_id": "d1", "_rank": 1.0, "text_raw": "fact A"},
@@ -167,7 +167,7 @@ class TestContextHealth:
 
     def test_bloat_warning_above_threshold(self):
         """Returns warning when utilization exceeds threshold."""
-        from mcp_engine.working_memory import check_context_health
+        from campy.brain.thalamus.working_memory import check_context_health
 
         class MockResult:
             def has_next(self): return True
@@ -182,7 +182,7 @@ class TestContextHealth:
 
     def test_no_warning_below_threshold(self):
         """Returns None when utilization is healthy."""
-        from mcp_engine.working_memory import check_context_health
+        from campy.brain.thalamus.working_memory import check_context_health
 
         class MockResult:
             def has_next(self): return True
@@ -202,7 +202,7 @@ class TestSessionHandoff:
 
     def test_handoff_returns_prior_session_nodes(self):
         """Returns loaded nodes from most recent prior session on same quest."""
-        from mcp_engine.working_memory import get_handoff_context
+        from campy.brain.thalamus.working_memory import get_handoff_context
 
         query_count = [0]
 
@@ -230,7 +230,7 @@ class TestSessionHandoff:
 
     def test_handoff_returns_empty_for_first_session(self):
         """Returns empty list when no prior session exists."""
-        from mcp_engine.working_memory import get_handoff_context
+        from campy.brain.thalamus.working_memory import get_handoff_context
 
         class MockResult:
             def has_next(self): return False
@@ -249,7 +249,7 @@ class TestTokenState:
 
     def test_get_session_token_state_returns_defaults(self):
         """Returns sensible defaults when session has no token data."""
-        from mcp_engine.working_memory import get_session_token_state
+        from campy.brain.thalamus.working_memory import get_session_token_state
 
         class MockResult:
             def has_next(self): return True
@@ -272,7 +272,7 @@ class TestContextStatusTool:
 
     @pytest.mark.asyncio
     async def test_context_status_returns_structure(self):
-        from mcp_engine.tools import context_status
+        from campy.brain.thalamus.tools import context_status
 
         class MockResult:
             def __init__(self, rows=None):
@@ -302,7 +302,7 @@ class TestContextStatusTool:
 
     @pytest.mark.asyncio
     async def test_context_status_requires_session_id(self):
-        from mcp_engine.tools import context_status
+        from campy.brain.thalamus.tools import context_status
 
         result = await context_status({}, None, {})
         assert "error" in result

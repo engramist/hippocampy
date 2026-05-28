@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
 # ---------------------------------------------------------------------------
-# Stub out kuzu so mcp_engine modules can be imported without the real package.
+# Stub out kuzu so campy.brain modules can be imported without the real package.
 # kuzu is a compiled C extension not available in all test environments.
 # ---------------------------------------------------------------------------
 
@@ -60,7 +60,7 @@ class SingleResult:
 
 def test_session_schema_has_loop_summary_field():
     """Session CREATE TABLE includes last_loop_summary."""
-    from mcp_engine import schema
+    from campy.brain.hippocampus import schema
     # Check the NODE_TABLES dict directly
     assert "last_loop_summary" in schema.NODE_TABLES["Session"]
 
@@ -72,7 +72,7 @@ def test_session_schema_has_loop_summary_field():
 @pytest.mark.asyncio
 async def test_notify_turn_returns_insights_when_summary_exists():
     """notify_turn response includes insights from previous loop run."""
-    from mcp_engine.tools import notify_turn
+    from campy.brain.thalamus.tools import notify_turn
 
     summary = json.dumps({
         "message_id": "prev-msg",
@@ -108,7 +108,7 @@ async def test_notify_turn_returns_insights_when_summary_exists():
 @pytest.mark.asyncio
 async def test_notify_turn_omits_insights_when_no_summary():
     """notify_turn response has no insights key when no previous summary."""
-    from mcp_engine.tools import notify_turn
+    from campy.brain.thalamus.tools import notify_turn
 
     class MockDB:
         def execute(self, q, p=None):
@@ -133,7 +133,7 @@ async def test_notify_turn_omits_insights_when_no_summary():
 @pytest.mark.asyncio
 async def test_notify_turn_survives_summary_read_error():
     """notify_turn doesn't crash if reading summary fails."""
-    from mcp_engine.tools import notify_turn
+    from campy.brain.thalamus.tools import notify_turn
 
     class BrokenSummaryDB:
         def execute(self, q, p=None):
@@ -163,7 +163,7 @@ async def test_notify_turn_survives_summary_read_error():
 @pytest.mark.asyncio
 async def test_insights_has_expected_keys():
     """Insights dict contains the standard loop summary fields."""
-    from mcp_engine.tools import notify_turn
+    from campy.brain.thalamus.tools import notify_turn
 
     summary = json.dumps({
         "message_id": "msg-1",

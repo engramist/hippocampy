@@ -83,7 +83,7 @@ class DoctorChecker:
 
     def _check_config_file(self) -> None:
         try:
-            from mcp_engine.config import load_config
+            from campy.brain.brainstem.config import load_config
             try:
                 config = load_config()
                 path_str = config.get("_config_path", "unknown")
@@ -130,8 +130,8 @@ class DoctorChecker:
 
     def _check_activity_log(self) -> None:
         try:
-            from mcp_engine.activity_log import activity_log_path
-            from mcp_engine.config import load_config
+            from campy.brain.brainstem.activity_log import activity_log_path
+            from campy.brain.brainstem.config import load_config
 
             try:
                 config = load_config()
@@ -409,8 +409,8 @@ def run_doctor(repair: bool = False, lines: int | None = None, json_output: bool
     if lines and not json_output:
         print("\n=== Recent Activity ===\n")
         try:
-            from mcp_engine.activity_log import activity_log_path
-            from mcp_engine.config import load_config
+            from campy.brain.brainstem.activity_log import activity_log_path
+            from campy.brain.brainstem.config import load_config
 
             try:
                 config = load_config()

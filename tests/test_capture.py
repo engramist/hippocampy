@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from mcp_engine.capture import (
+from campy.brain.sensory_cortex.capture import (
     CaptureJournal,
     ClaudeCodeSessionConnector,
     CodexSessionConnector,

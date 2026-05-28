@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Any, Set, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from mcp_engine.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 
 _logger = logging.getLogger(__name__)
 

@@ -1,9 +1,9 @@
 import pytest
 import json
 from pathlib import Path
-from mcp_engine.graph.kuzu_client import KuzuClient
-from mcp_engine.schema import NODE_TABLES, REL_TABLES
-from mcp_engine.tools import TOOL_HANDLERS
+from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from campy.brain.hippocampus.schema import NODE_TABLES, REL_TABLES
+from campy.brain.thalamus.tools import TOOL_HANDLERS
 
 def _init_arc_schema(db: KuzuClient) -> None:
     tables = [

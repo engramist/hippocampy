@@ -7,7 +7,7 @@ and other noise — while passing real concepts through.
 """
 
 import pytest
-from mcp_engine.loop.step1_ner import _is_junk_entity
+from campy.brain.temporal_lobe.loop.step1_ner import _is_junk_entity
 
 
 # ---------------------------------------------------------------------------

@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from mcp_engine.graph.kuzu_client import KuzuClient
-from mcp_engine.schema import NODE_TABLES, REL_TABLES
-from mcp_engine.tools.arc_artifacts import ingest_arc_artifacts
+from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from campy.brain.hippocampus.schema import NODE_TABLES, REL_TABLES
+from campy.brain.thalamus.tools.arc_artifacts import ingest_arc_artifacts
 
 
 def _init_arc_schema(db: KuzuClient) -> None:

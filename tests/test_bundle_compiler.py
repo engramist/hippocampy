@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from mcp_engine.bundle_compiler import (
+from campy.brain.thalamus.bundle_compiler import (
     BUDGET_TIERS,
     BundleSection,
     ContextBundle,

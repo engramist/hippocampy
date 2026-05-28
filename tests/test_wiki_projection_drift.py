@@ -2,7 +2,7 @@ import pytest
 import os
 from pathlib import Path
 from unittest.mock import MagicMock
-from mcp_engine.wiki_projection import export_wiki_projection, _write_atomic
+from campy.brain.thalamus.wiki_projection import export_wiki_projection, _write_atomic
 
 @pytest.fixture
 def mock_db():

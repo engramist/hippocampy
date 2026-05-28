@@ -39,31 +39,31 @@ def setup_module(module):
             _stub(dep)
 
     # Stub embeddings
-    if "mcp_engine.graph.embeddings" not in sys.modules:
+    if "campy.brain.hippocampus.graph.embeddings" not in sys.modules:
         _stub(
-            "mcp_engine.graph.embeddings",
+            "campy.brain.hippocampus.graph.embeddings",
             embed=lambda text, model_name=None: [0.01] * 384,
             prewarm=lambda model_name=None: None,
             embed_batch=lambda texts, model_name=None: [[0.01] * 384] * len(texts)
         )
 
     # Stub quest & warm frontier & hippocampus
-    if "mcp_engine.quest" not in sys.modules:
-        _stub("mcp_engine.quest",
+    if "campy.brain.hippocampus.quest" not in sys.modules:
+        _stub("campy.brain.hippocampus.quest",
               get_or_create_main_quest=lambda *a, **kw: "",
               get_or_create_session=lambda *a, **kw: None,
               create_side_quest=lambda *a, **kw: "",
               get_quest_context=lambda *a, **kw: {},
               compute_quest_id=lambda *a, **kw: "a" * 32)
 
-    if "mcp_engine.warm_frontier" not in sys.modules:
-        _stub("mcp_engine.warm_frontier",
+    if "campy.brain.temporal_lobe.warm_frontier" not in sys.modules:
+        _stub("campy.brain.temporal_lobe.warm_frontier",
               compute_warm_frontier=lambda *a, **kw: None,
               get_warm_nodes=lambda *a, **kw: {})
 
     # Stub working_memory (we'll assert track_loaded called)
-    if "mcp_engine.working_memory" not in sys.modules:
-        _stub("mcp_engine.working_memory",
+    if "campy.brain.thalamus.working_memory" not in sys.modules:
+        _stub("campy.brain.thalamus.working_memory",
               update_token_estimate=lambda *a, **kw: None,
               estimate_tokens=lambda text: len(text.split()),
               get_loaded_node_ids=lambda *a, **kw: [],
@@ -75,7 +75,7 @@ def setup_module(module):
 
     # Import tools module after stubbing
     import importlib
-    tools_mod = importlib.import_module("mcp_engine.tools")
+    tools_mod = importlib.import_module("campy.brain.thalamus.tools")
     notify_turn = tools_mod.notify_turn
 
 

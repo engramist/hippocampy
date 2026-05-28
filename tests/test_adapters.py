@@ -61,9 +61,9 @@ EXPECTED_TOOLS = {
 }
 
 def test_adapter_tool_names_match_handlers():
-    """Verify that tool_schemas.TOOLS matches mcp_engine.tools.TOOL_HANDLERS."""
-    from mcp_engine.tool_schemas import TOOLS
-    from mcp_engine.tools import TOOL_HANDLERS
+    """Verify that tool_schemas.TOOLS matches campy.brain.thalamus.tools.TOOL_HANDLERS."""
+    from campy.brain.thalamus.tool_schemas import TOOLS
+    from campy.brain.thalamus.tools import TOOL_HANDLERS
     schema_names = {t["name"] for t in TOOLS}
     assert schema_names == set(TOOL_HANDLERS.keys())
 

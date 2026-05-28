@@ -17,12 +17,12 @@ import pytest
 @pytest.mark.asyncio
 async def test_compile_manifest_empty_graph(tmp_path):
     """Manifest compiles to 0 triggers when graph has no trigger-bearing nodes."""
-    from mcp_engine.trigger_manifest import compile_manifest
+    from campy.brain.thalamus.trigger_manifest import compile_manifest
 
     db = AsyncMock()
     db.execute_read = AsyncMock(return_value=[])
 
-    with patch("mcp_engine.trigger_manifest.get_manifest_path",
+    with patch("campy.brain.thalamus.trigger_manifest.get_manifest_path",
                return_value=tmp_path / "manifest.json"):
         result = await compile_manifest(db, {})
 
@@ -39,7 +39,7 @@ async def test_compile_manifest_empty_graph(tmp_path):
 @pytest.mark.asyncio
 async def test_compile_manifest_with_procedure_trigger(tmp_path):
     """Procedures with trigger_pattern appear in the compiled manifest."""
-    from mcp_engine.trigger_manifest import compile_manifest
+    from campy.brain.thalamus.trigger_manifest import compile_manifest
 
     proc_row = {
         "id": "proc-001",
@@ -58,7 +58,7 @@ async def test_compile_manifest_with_procedure_trigger(tmp_path):
     # First call returns procedures, second returns lessons
     db.execute_read = AsyncMock(side_effect=[[proc_row], []])
 
-    with patch("mcp_engine.trigger_manifest.get_manifest_path",
+    with patch("campy.brain.thalamus.trigger_manifest.get_manifest_path",
                return_value=tmp_path / "manifest.json"):
         result = await compile_manifest(db, {})
 
@@ -79,7 +79,7 @@ async def test_compile_manifest_with_procedure_trigger(tmp_path):
 @pytest.mark.asyncio
 async def test_compile_manifest_with_lesson_trigger(tmp_path):
     """Lessons with trigger_pattern appear in the compiled manifest."""
-    from mcp_engine.trigger_manifest import compile_manifest
+    from campy.brain.thalamus.trigger_manifest import compile_manifest
 
     lesson_row = {
         "id": "lesson-001",
@@ -96,7 +96,7 @@ async def test_compile_manifest_with_lesson_trigger(tmp_path):
     db = AsyncMock()
     db.execute_read = AsyncMock(side_effect=[[], [lesson_row]])
 
-    with patch("mcp_engine.trigger_manifest.get_manifest_path",
+    with patch("campy.brain.thalamus.trigger_manifest.get_manifest_path",
                return_value=tmp_path / "manifest.json"):
         result = await compile_manifest(db, {})
 
@@ -114,7 +114,7 @@ async def test_compile_manifest_with_lesson_trigger(tmp_path):
 @pytest.mark.asyncio
 async def test_compile_manifest_snippet_truncation(tmp_path):
     """Context snippets are capped at max_snippet_chars."""
-    from mcp_engine.trigger_manifest import compile_manifest
+    from campy.brain.thalamus.trigger_manifest import compile_manifest
 
     long_text = "A" * 5000
     lesson_row = {
@@ -133,7 +133,7 @@ async def test_compile_manifest_snippet_truncation(tmp_path):
     db.execute_read = AsyncMock(side_effect=[[], [lesson_row]])
 
     config = {"hooks": {"max_snippet_chars": 200}}
-    with patch("mcp_engine.trigger_manifest.get_manifest_path",
+    with patch("campy.brain.thalamus.trigger_manifest.get_manifest_path",
                return_value=tmp_path / "manifest.json"):
         result = await compile_manifest(db, config)
 
@@ -321,7 +321,7 @@ def test_post_tool_use_no_manifest():
 
 def test_build_snippet_truncation():
     """_build_snippet respects max_chars and tries sentence boundaries."""
-    from mcp_engine.trigger_manifest import _build_snippet
+    from campy.brain.thalamus.trigger_manifest import _build_snippet
 
     # Short text — no truncation
     assert _build_snippet("Hello world.", 100) == "Hello world."
@@ -339,7 +339,7 @@ def test_build_snippet_truncation():
 
 def test_procedure_snippet_with_steps():
     """_procedure_snippet includes name and parsed steps."""
-    from mcp_engine.trigger_manifest import _procedure_snippet
+    from campy.brain.thalamus.trigger_manifest import _procedure_snippet
 
     steps_json = '["Step one", "Step two", "Step three"]'
     snippet = _procedure_snippet("My Proc", "A description.", steps_json, 2000)

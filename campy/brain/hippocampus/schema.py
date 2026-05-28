@@ -9,8 +9,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from mcp_engine.graph.kuzu_client import KuzuClient
-from mcp_engine.graph import embeddings as emb
+from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from campy.brain.hippocampus.graph import embeddings as emb
 
 # ---------------------------------------------------------------------------
 # Node table DDL

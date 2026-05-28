@@ -1,8 +1,8 @@
 import pytest
 from pathlib import Path
-from mcp_engine.graph.kuzu_client import KuzuClient
-from mcp_engine.schema import NODE_TABLES, REL_TABLES
-from mcp_engine.tools.arc_mechanics import publish_mechanic_summary, recall_mechanic_priors
+from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from campy.brain.hippocampus.schema import NODE_TABLES, REL_TABLES
+from campy.brain.thalamus.tools.arc_mechanics import publish_mechanic_summary, recall_mechanic_priors
 
 def _init_mechanic_schema(db: KuzuClient) -> None:
     tables = [

@@ -32,9 +32,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from mcp_engine.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 
-from mcp_engine.graph import embeddings as emb
+from campy.brain.hippocampus.graph import embeddings as emb
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -323,7 +323,7 @@ async def ingest_document(db, file_path: str, config: dict,
     TABULAR_EXTENSIONS = {".csv", ".xlsx", ".tsv", ".xls"}
     if resolved.suffix.lower() in TABULAR_EXTENSIONS:
         # Delegate to tabular ingestion pipeline
-        from mcp_engine import tabular_ingest
+        from campy.brain.sensory_cortex import tabular_ingest
         return await tabular_ingest.ingest_tabular(db, str(resolved), config, loop_queue, quest_id)
 
     # Step 2 — Hash

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from mcp_engine.tools import recall_scene_graph_priors
+from campy.brain.thalamus.tools import recall_scene_graph_priors
 
 
 class _Result:

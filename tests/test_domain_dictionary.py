@@ -4,7 +4,7 @@ import textwrap
 from pathlib import Path
 import pytest
 
-from mcp_engine.dictionary import find_dictionary, load_dictionary, ingest_dictionary
+from campy.brain.temporal_lobe.dictionary import find_dictionary, load_dictionary, ingest_dictionary
 
 
 def test_load_dictionary_valid(tmp_path):
@@ -108,7 +108,7 @@ async def test_ingest_dictionary_idempotent(monkeypatch, tmp_path):
     assert len(loaded) == 1
 
     # patch embed to deterministic vector
-    monkeypatch.setattr("mcp_engine.graph.embeddings.embed", lambda x, model_name=None: [0.0])
+    monkeypatch.setattr("campy.brain.hippocampus.graph.embeddings.embed", lambda x, model_name=None: [0.0])
 
     db = FakeDB()
 

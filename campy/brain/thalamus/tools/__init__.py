@@ -24,7 +24,7 @@ _logger = logging.getLogger(__name__)
 def _with_phase(phase: str, fn):
     """Wrap a tool handler to set phase during execution."""
     async def wrapper(params=None, arguments=None, db=None, config=None, **kw):
-        from mcp_engine.phase import set_phase
+        from campy.brain.brainstem.phase import set_phase
         set_phase(phase)
         try:
             return await fn(params=params, arguments=arguments, db=db, config=config, **kw)
@@ -36,25 +36,25 @@ def _with_phase(phase: str, fn):
 
 
 # B160 dictionary helpers
-from mcp_engine.dictionary import find_dictionary, load_dictionary, ingest_dictionary, DICTIONARY_PATHS
+from campy.brain.temporal_lobe.dictionary import find_dictionary, load_dictionary, ingest_dictionary, DICTIONARY_PATHS
 # KuzuClient imported only for type checking — kuzu is a C extension not needed
 # during unit tests (db is always a mock or real object passed in at runtime).
 if TYPE_CHECKING:
-    from mcp_engine.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 
-from mcp_engine.graph import embeddings as emb
-from mcp_engine.quest import (
+from campy.brain.hippocampus.graph import embeddings as emb
+from campy.brain.hippocampus.quest import (
     get_or_create_main_quest, get_or_create_session,
     create_side_quest, get_quest_context,
 )
 try:
-    from mcp_engine.loop.step4_pattern import (
+    from campy.brain.temporal_lobe.loop.step4_pattern import (
         detect_ordered_plan_steps,
         has_plan_signal,
         infer_outcome_valence,
     )
 except ModuleNotFoundError as exc:
-    if exc.name != "mcp_engine.loop.step4_pattern":
+    if exc.name != "campy.brain.temporal_lobe.loop.step4_pattern":
         raise
     # Some benchmark consumers provide a minimal mcp_engine.loop shim while
     # importing this module from campy-brain. Keep the tool surface
@@ -616,7 +616,7 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
         await get_or_create_session(db, session_id, quest_id, now)
     else:
         # Semantic routing — no git context available
-        from mcp_engine.hippocampus import route_session
+        from campy.brain.hippocampus.hippocampus import route_session
         try:
             result = await route_session(
                 db, session_id, content, embedding_model,
@@ -671,7 +671,7 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
 
     # B18: Update token estimate for this message
     if session_id != "unknown":
-        from mcp_engine.working_memory import update_token_estimate, estimate_tokens
+        from campy.brain.thalamus.working_memory import update_token_estimate, estimate_tokens
         try:
             msg_tokens = estimate_tokens(content)
             await update_token_estimate(db, session_id, msg_tokens)
@@ -680,7 +680,7 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
 
     # B91: Passive Graph Pre-Activation (Warm Frontier)
     if session_id != "unknown":
-        from mcp_engine.warm_frontier import compute_warm_frontier
+        from campy.brain.temporal_lobe.warm_frontier import compute_warm_frontier
         try:
             await compute_warm_frontier(db, session_id, vector, config)
         except Exception:
@@ -731,7 +731,7 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
 
     # Update routing strength for subsequent messages (not the first)
     if quest_id and not repo_root:
-        from mcp_engine.hippocampus import update_routing_strength, get_active_quests_with_embeddings
+        from campy.brain.hippocampus.hippocampus import update_routing_strength, get_active_quests_with_embeddings
         try:
             quests = get_active_quests_with_embeddings(db)
             quest_emb = next((q["purpose_embedding"] for q in quests
@@ -821,7 +821,7 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
     proactive_context = None
     try:
         if session_id != "unknown":
-            from mcp_engine.working_memory import get_session_token_state, track_loaded
+            from campy.brain.thalamus.working_memory import get_session_token_state, track_loaded
 
             state = get_session_token_state(db, session_id) or {}
             current_msg_count = int(state.get("message_count", 0) or 0)
@@ -1134,7 +1134,7 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
 
     # Resolve quest_id: prefer explicit, then git hash, then session binding
     if not quest_id and repo_root:
-        from mcp_engine.quest import compute_quest_id
+        from campy.brain.hippocampus.quest import compute_quest_id
         quest_id = compute_quest_id(repo_root, git_branch)
     if not quest_id and session_id != "unknown":
         # Resolve via Session → WORKING_ON → MainQuest
@@ -1258,7 +1258,7 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
     # B91: Warm Frontier (Passive Graph Pre-Activation)
     warm_nodes = {}
     if session_id != "unknown":
-        from mcp_engine.warm_frontier import get_warm_nodes
+        from campy.brain.temporal_lobe.warm_frontier import get_warm_nodes
         try:
             warm_nodes = get_warm_nodes(db, session_id)
         except Exception:
@@ -1326,7 +1326,7 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
 
 
     # B18: Context Window Awareness (Working Memory) imports
-    from mcp_engine.working_memory import (
+    from campy.brain.thalamus.working_memory import (
         get_loaded_node_ids, deduplicate_results, track_loaded,
         update_token_estimate, estimate_tokens, check_context_health,
         get_session_token_state, get_handoff_context
@@ -1472,7 +1472,7 @@ async def branch_quest(params: dict, db: KuzuClient, config: dict) -> dict:
 
     # Resolve parent quest if not supplied
     if not parent_quest_id and repo_root:
-        from mcp_engine.quest import compute_quest_id
+        from campy.brain.hippocampus.quest import compute_quest_id
         parent_quest_id = compute_quest_id(repo_root, git_branch)
 
     if not parent_quest_id:
@@ -1882,7 +1882,7 @@ async def analogical_search(params: dict, db: KuzuClient, config: dict) -> dict:
     params: {query, current_quest_id?, limit, min_similarity?}
     Returns {results, query, cross_quest, searched_tables}.
     """
-    from mcp_engine.analogical import analogical_search as _search
+    from campy.brain.thalamus.analogical import analogical_search as _search
     return await _search(params, db, config)
 
 
@@ -1904,7 +1904,7 @@ async def ingest_document(params: dict, db, config: dict) -> dict:
     if not file_path:
         return {"error": "file_path is required"}
 
-    from mcp_engine.ingest import ingest_document as _ingest
+    from campy.brain.sensory_cortex.ingest import ingest_document as _ingest
     return await _ingest(
         db=db,
         file_path=file_path,
@@ -1921,7 +1921,7 @@ async def ingest_data(params: dict, db, config: dict) -> dict:
 
     params: {file_path?, content?, mime_type?, session_id, quest_id?}
     """
-    from mcp_engine.memory_router import classify_input
+    from campy.brain.temporal_lobe.memory_router import classify_input
 
     file_path = (params.get("file_path") or "").strip()
     content = params.get("content")
@@ -1965,8 +1965,8 @@ async def compile_context(params: dict, db, config: dict) -> dict:
     params: {query, token_budget?, agent_type?, output_format?, session_id?, quest_id?,
              include_tabular?, include_summaries?}
     """
-    from mcp_engine.bundle_compiler import compile_bundle
-    from mcp_engine.formatters import format_bundle
+    from campy.brain.thalamus.bundle_compiler import compile_bundle
+    from campy.brain.thalamus.formatters import format_bundle
 
     query = (params.get("query") or "").strip()
     if not query:
@@ -2046,7 +2046,7 @@ async def _synthesize_lesson(quest_id: str, db, config: dict) -> None:
     """
     try:
         from mcp_engine.llm.provider import create_llm_client
-        from mcp_engine.graph import embeddings as emb
+        from campy.brain.hippocampus.graph import embeddings as emb
 
         embedding_model = config.get("embeddings", {}).get(
             "model", "sentence-transformers/all-MiniLM-L6-v2"
@@ -2480,14 +2480,14 @@ async def set_quest(params: dict, db: KuzuClient, config: dict) -> dict:
 
     if not found_id:
         # Create new quest
-        from mcp_engine.hippocampus import create_new_quest
+        from campy.brain.hippocampus.hippocampus import create_new_quest
         content_embedding = emb.embed(quest_name, model_name=embedding_model)
         found_id = await create_new_quest(
             db, quest_name, content_embedding, embedding_model
         )
 
     # Bind session with locked state
-    from mcp_engine.hippocampus import _bind_session
+    from campy.brain.hippocampus.hippocampus import _bind_session
     await _bind_session(db, session_id, found_id, 1.0, "explicit", "locked")
 
     return {"quest_id": found_id, "quest_name": quest_name, "routing_state": "locked"}
@@ -2611,7 +2611,7 @@ async def context_status(params: dict, db: KuzuClient, config: dict) -> dict:
     if not session_id:
         return {"error": "session_id is required"}
 
-    from mcp_engine.working_memory import (
+    from campy.brain.thalamus.working_memory import (
         get_session_token_state, check_context_health, get_handoff_context
     )
 
@@ -3028,7 +3028,7 @@ async def memory_decision(params: dict, db: KuzuClient, config: dict) -> dict:
         anti_bloat_guidance: str,
     }
     """
-    from mcp_engine.memory_decision import decide_memory_action
+    from campy.brain.thalamus.memory_decision import decide_memory_action
 
     user_prompt = params.get("user_prompt", "").strip()
     if not user_prompt:

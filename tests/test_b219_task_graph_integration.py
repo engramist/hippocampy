@@ -2,9 +2,9 @@ import os
 import shutil
 import pytest
 import uuid
-from mcp_engine.graph.kuzu_client import KuzuClient
-from mcp_engine.schema import init_schema
-from mcp_engine.tools.task_graph import register_task_graph
+from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from campy.brain.hippocampus.schema import init_schema
+from campy.brain.thalamus.tools.task_graph import register_task_graph
 
 @pytest.mark.asyncio
 async def test_b219_register_task_graph_parser_fix():
@@ -29,7 +29,7 @@ async def test_b219_register_task_graph_parser_fix():
     
     try:
         # Actually, let's just create the tables we need to keep it fast
-        # but matching mcp_engine/schema.py
+        # but matching campy/brain/hippocampus/schema.py
         db.execute("CREATE NODE TABLE TaskGraph (graph_id STRING, name STRING, label STRING, description STRING, session_id STRING, owner STRING, version INT64, status STRING, created_at TIMESTAMP, completed_at TIMESTAMP, PRIMARY KEY (graph_id))")
         db.execute("CREATE NODE TABLE TaskNode (task_id STRING, graph_id STRING, name STRING, label STRING, description STRING, owner STRING, status STRING, input_data STRING, output_data STRING, error_msg STRING, result STRING, created_at TIMESTAMP, started_at TIMESTAMP, completed_at TIMESTAMP, PRIMARY KEY (task_id))")
         db.execute("CREATE REL TABLE TASK_OF (FROM TaskNode TO TaskGraph)")

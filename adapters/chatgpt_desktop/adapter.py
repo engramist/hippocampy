@@ -22,7 +22,7 @@ import subprocess
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
-from mcp_engine.tool_schemas import TOOLS
+from campy.brain.thalamus.tool_schemas import TOOLS
 from campy.brain_transport import call_brain
 from campy.paths import get_daemon_socket_path, runtime_dir
 
@@ -63,7 +63,7 @@ _REPO_ROOT, _GIT_BRANCH = detect_git_context()
 # MCP Tool definitions (what ChatGPT Desktop sees)
 # ---------------------------------------------------------------------------
 
-from mcp_engine.tool_schemas import TOOLS
+from campy.brain.thalamus.tool_schemas import TOOLS
 
 # ---------------------------------------------------------------------------
 # Brain HTTP client

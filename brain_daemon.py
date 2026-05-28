@@ -28,20 +28,20 @@ _logger = logging.getLogger(__name__)
 
 import uvicorn
 
-from mcp_engine.config import load_config
-from mcp_engine.graph.kuzu_client import KuzuClient
-from mcp_engine.graph import embeddings as emb
-from mcp_engine.schema import init_schema
-from mcp_engine.tools import TOOL_HANDLERS, init_loop_queue
+from campy.brain.brainstem.config import load_config
+from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from campy.brain.hippocampus.graph import embeddings as emb
+from campy.brain.hippocampus.schema import init_schema
+from campy.brain.thalamus.tools import TOOL_HANDLERS, init_loop_queue
 from mcp_engine.llm.provider import create_llm_client
-from mcp_engine.loop import step2_gist, step3_schema_org
-from mcp_engine.loop.orchestrator import run_loop
-from mcp_engine.sweep import run_sweep
-from mcp_engine.dictionary import find_dictionary, load_dictionary, ingest_dictionary
-from mcp_engine.activity_log import compact_details, emit_activity
+from campy.brain.temporal_lobe.loop import step2_gist, step3_schema_org
+from campy.brain.temporal_lobe.loop.orchestrator import run_loop
+from campy.brain.brainstem.sweep import run_sweep
+from campy.brain.temporal_lobe.dictionary import find_dictionary, load_dictionary, ingest_dictionary
+from campy.brain.brainstem.activity_log import compact_details, emit_activity
 from campy.branding import PRODUCT_NAME, PRIMARY_MCP_SERVER
 from campy.paths import get_daemon_socket_path, get_database_path
-from mcp_engine.capture import (
+from campy.brain.sensory_cortex.capture import (
     CaptureEvent,
     ClaudeCodeSessionConnector,
     CodexSessionConnector,
@@ -260,7 +260,7 @@ class BrainDaemon:
             await writer.wait_closed()
 
     async def _dispatch(self, request: dict) -> dict:
-        """Route JSON-RPC method calls to tool handlers in mcp_engine/tools.py."""
+        """Route JSON-RPC method calls to tool handlers in campy/brain/thalamus/tools.py."""
         method = request.get("method", "")
         params = request.get("params", {})
         req_id = request.get("id")

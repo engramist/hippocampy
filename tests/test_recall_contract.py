@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from mcp_engine.tools import current_truth, notify_turn
+from campy.brain.thalamus.tools import current_truth, notify_turn
 
 
 class FakeResult:
@@ -160,7 +160,7 @@ class RecallContractDB:
 
 @pytest.fixture(autouse=True)
 def _offline_embeddings(monkeypatch):
-    monkeypatch.setattr("mcp_engine.tools.emb.embed", lambda text, model_name=None: [0.1] * 384)
+    monkeypatch.setattr("campy.brain.thalamus.tools.emb.embed", lambda text, model_name=None: [0.1] * 384)
 
 
 @pytest.fixture
@@ -171,8 +171,8 @@ def _no_git_quest_work(monkeypatch):
     async def _session(*args, **kwargs):
         return None
 
-    monkeypatch.setattr("mcp_engine.tools.get_or_create_main_quest", _quest)
-    monkeypatch.setattr("mcp_engine.tools.get_or_create_session", _session)
+    monkeypatch.setattr("campy.brain.thalamus.tools.get_or_create_main_quest", _quest)
+    monkeypatch.setattr("campy.brain.thalamus.tools.get_or_create_session", _session)
 
 
 @pytest.mark.asyncio

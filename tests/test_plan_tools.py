@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from mcp_engine.tool_schemas import TOOLS
-from mcp_engine.tools import TOOL_HANDLERS, register_plan, report_outcome, recall_plans
+from campy.brain.thalamus.tool_schemas import TOOLS
+from campy.brain.thalamus.tools import TOOL_HANDLERS, register_plan, report_outcome, recall_plans
 
 
 class _Result:
@@ -50,7 +50,7 @@ class MockDB:
 @pytest.fixture(autouse=True)
 def _patch_embed(monkeypatch):
     monkeypatch.setattr(
-        "mcp_engine.tools.emb.embed",
+        "campy.brain.thalamus.tools.emb.embed",
         lambda _text, model_name=None: [0.01] * 384,
     )
 

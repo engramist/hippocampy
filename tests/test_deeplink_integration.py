@@ -66,7 +66,7 @@ def make_client(db=None) -> TestClient:
 @pytest.mark.asyncio
 async def test_current_truth_injects_memory_link():
     """current_truth results include a memory_link for each node."""
-    from mcp_engine.tools import current_truth
+    from campy.brain.thalamus.tools import current_truth
     
     # Mock node result for Decision table
     mock_node = {
@@ -91,7 +91,7 @@ async def test_current_truth_injects_memory_link():
     }
     
     # Patch embeddings.embed to return a dummy vector
-    import mcp_engine.graph.embeddings as emb
+    import campy.brain.hippocampus.graph.embeddings as emb
     original_embed = emb.embed
     emb.embed = lambda text, model_name=None: [0.1] * 384
     
@@ -113,7 +113,7 @@ async def test_current_truth_injects_memory_link():
 @pytest.mark.asyncio
 async def test_notify_turn_injects_memory_link_into_insights():
     """notify_turn insights include memory_link for new entities."""
-    from mcp_engine.tools import notify_turn
+    from campy.brain.thalamus.tools import notify_turn
     
     summary = json.dumps({
         "new_entities": [
@@ -132,7 +132,7 @@ async def test_notify_turn_injects_memory_link_into_insights():
     }
     
     # Patch embeddings.embed
-    import mcp_engine.graph.embeddings as emb
+    import campy.brain.hippocampus.graph.embeddings as emb
     original_embed = emb.embed
     emb.embed = lambda text, model_name=None: [0.1] * 384
     

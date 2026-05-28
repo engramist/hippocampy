@@ -639,7 +639,7 @@ async def test_dispatch_mcp_unknown_tool_direct():
 async def test_sse_context_injection_direct():
     """Test that _dispatch_mcp injects context for tools/call."""
     from web.server import _dispatch_mcp
-    from mcp_engine import tools as tools_mod
+    from campy.brain.thalamus import tools as tools_mod
 
     received_params = {}
 

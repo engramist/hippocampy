@@ -1,7 +1,7 @@
 """Focused checks for MCP tool schema consistency."""
 
-from mcp_engine.tool_schemas import TOOLS
-from mcp_engine.tools import TOOL_HANDLERS
+from campy.brain.thalamus.tool_schemas import TOOLS
+from campy.brain.thalamus.tools import TOOL_HANDLERS
 
 
 def test_tool_schema_names_match_registered_handlers():

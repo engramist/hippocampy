@@ -73,7 +73,7 @@ def _make_llm(response):
 @pytest.mark.asyncio
 async def test_discover_patterns_disabled():
     """When enabled=false, returns zero counts immediately."""
-    from mcp_engine.sweep_patterns import discover_patterns
+    from campy.brain.brainstem.sweep_patterns import discover_patterns
     db = _make_db()
     config = {"sweep": {"patterns": {"enabled": False}}}
     result = await discover_patterns(db, config, llm_client=None)
@@ -85,7 +85,7 @@ async def test_discover_patterns_disabled():
 @pytest.mark.asyncio
 async def test_discover_patterns_empty_graph():
     """Empty graph produces no candidates and no errors."""
-    from mcp_engine.sweep_patterns import discover_patterns
+    from campy.brain.brainstem.sweep_patterns import discover_patterns
     db = _make_db()
     config = {"sweep": {"patterns": {"enabled": True}}}
     result = await discover_patterns(db, config, llm_client=None)
@@ -96,7 +96,7 @@ async def test_discover_patterns_empty_graph():
 @pytest.mark.asyncio
 async def test_discover_patterns_returns_expected_keys():
     """Summary dict contains all expected keys."""
-    from mcp_engine.sweep_patterns import discover_patterns
+    from campy.brain.brainstem.sweep_patterns import discover_patterns
     db = _make_db()
     config = {}
     result = await discover_patterns(db, config, llm_client=None)
@@ -113,7 +113,7 @@ async def test_discover_patterns_returns_expected_keys():
 @pytest.mark.asyncio
 async def test_discover_patterns_individual_type_disable():
     """Each pattern type can be disabled independently."""
-    from mcp_engine.sweep_patterns import discover_patterns
+    from campy.brain.brainstem.sweep_patterns import discover_patterns
     db = _make_db()
     config = {"sweep": {"patterns": {
         "enabled": True,
@@ -134,7 +134,7 @@ async def test_discover_patterns_individual_type_disable():
 @pytest.mark.asyncio
 async def test_temporal_finds_consistent_interval():
     """Detects a pattern when messages occur at consistent intervals."""
-    from mcp_engine.sweep_patterns import _discover_temporal_patterns
+    from campy.brain.brainstem.sweep_patterns import _discover_temporal_patterns
 
     base = datetime(2026, 5, 20, 8, 0, 0, tzinfo=timezone.utc)
     ts1 = base
@@ -159,7 +159,7 @@ async def test_temporal_finds_consistent_interval():
 @pytest.mark.asyncio
 async def test_temporal_rejects_inconsistent_intervals():
     """Rejects patterns where intervals vary too much (high CV)."""
-    from mcp_engine.sweep_patterns import _discover_temporal_patterns
+    from campy.brain.brainstem.sweep_patterns import _discover_temporal_patterns
 
     base = datetime(2026, 5, 20, 8, 0, 0, tzinfo=timezone.utc)
     ts1 = base
@@ -181,7 +181,7 @@ async def test_temporal_rejects_inconsistent_intervals():
 @pytest.mark.asyncio
 async def test_temporal_requires_minimum_instances():
     """Requires at least min_temporal_instances occurrences."""
-    from mcp_engine.sweep_patterns import _discover_temporal_patterns
+    from campy.brain.brainstem.sweep_patterns import _discover_temporal_patterns
 
     base = datetime(2026, 5, 20, 8, 0, 0, tzinfo=timezone.utc)
     db = _make_db(rows_by_query={
@@ -198,7 +198,7 @@ async def test_temporal_requires_minimum_instances():
 @pytest.mark.asyncio
 async def test_temporal_empty_graph_no_error():
     """Empty graph produces empty list, not an error."""
-    from mcp_engine.sweep_patterns import _discover_temporal_patterns
+    from campy.brain.brainstem.sweep_patterns import _discover_temporal_patterns
     db = _make_db()
     result = await _discover_temporal_patterns(db, {})
     assert result == []
@@ -211,7 +211,7 @@ async def test_temporal_empty_graph_no_error():
 @pytest.mark.asyncio
 async def test_sequence_finds_repeated_failure_chain():
     """Detects a pattern when the same action chain precedes failure N+ times."""
-    from mcp_engine.sweep_patterns import _discover_sequence_patterns
+    from campy.brain.brainstem.sweep_patterns import _discover_sequence_patterns
     from unittest.mock import patch
 
     db = _make_db(rows_by_query={
@@ -223,7 +223,7 @@ async def test_sequence_finds_repeated_failure_chain():
     })
 
     mock_embedding = [0.5] * 384
-    with patch("mcp_engine.sweep_patterns.emb.embed_batch",
+    with patch("campy.brain.brainstem.sweep_patterns.emb.embed_batch",
                return_value=[mock_embedding] * 3):
         result = await _discover_sequence_patterns(db, {})
 
@@ -237,7 +237,7 @@ async def test_sequence_finds_repeated_failure_chain():
 @pytest.mark.asyncio
 async def test_sequence_rejects_insufficient_instances():
     """Requires at least min_sequence_instances matching chains."""
-    from mcp_engine.sweep_patterns import _discover_sequence_patterns
+    from campy.brain.brainstem.sweep_patterns import _discover_sequence_patterns
     from unittest.mock import patch
 
     db = _make_db(rows_by_query={
@@ -248,7 +248,7 @@ async def test_sequence_rejects_insufficient_instances():
     })
 
     mock_embedding = [0.5] * 384
-    with patch("mcp_engine.sweep_patterns.emb.embed_batch",
+    with patch("campy.brain.brainstem.sweep_patterns.emb.embed_batch",
                return_value=[mock_embedding] * 2):
         result = await _discover_sequence_patterns(db, {"min_sequence_instances": 3})
 
@@ -258,7 +258,7 @@ async def test_sequence_rejects_insufficient_instances():
 @pytest.mark.asyncio
 async def test_sequence_empty_graph():
     """Empty graph produces no sequence candidates."""
-    from mcp_engine.sweep_patterns import _discover_sequence_patterns
+    from campy.brain.brainstem.sweep_patterns import _discover_sequence_patterns
     db = _make_db()
     result = await _discover_sequence_patterns(db, {})
     assert result == []
@@ -271,7 +271,7 @@ async def test_sequence_empty_graph():
 @pytest.mark.asyncio
 async def test_frequency_detects_increasing_trend():
     """Detects Lessons with increasing occurrence count across sessions."""
-    from mcp_engine.sweep_patterns import _discover_frequency_patterns
+    from campy.brain.brainstem.sweep_patterns import _discover_frequency_patterns
 
     base = datetime(2026, 5, 1, 8, 0, 0, tzinfo=timezone.utc)
     db = _make_db(rows_by_query={
@@ -293,7 +293,7 @@ async def test_frequency_detects_increasing_trend():
 @pytest.mark.asyncio
 async def test_frequency_ignores_decreasing_trend():
     """Does not flag Lessons with decreasing occurrence rate."""
-    from mcp_engine.sweep_patterns import _discover_frequency_patterns
+    from campy.brain.brainstem.sweep_patterns import _discover_frequency_patterns
 
     base = datetime(2026, 5, 1, 8, 0, 0, tzinfo=timezone.utc)
     db = _make_db(rows_by_query={
@@ -312,7 +312,7 @@ async def test_frequency_ignores_decreasing_trend():
 @pytest.mark.asyncio
 async def test_frequency_requires_minimum_sessions():
     """Needs at least min_frequency_sessions to detect a trend."""
-    from mcp_engine.sweep_patterns import _discover_frequency_patterns
+    from campy.brain.brainstem.sweep_patterns import _discover_frequency_patterns
 
     base = datetime(2026, 5, 1, 8, 0, 0, tzinfo=timezone.utc)
     db = _make_db(rows_by_query={
@@ -329,7 +329,7 @@ async def test_frequency_requires_minimum_sessions():
 @pytest.mark.asyncio
 async def test_frequency_empty_graph():
     """Empty graph produces no candidates."""
-    from mcp_engine.sweep_patterns import _discover_frequency_patterns
+    from campy.brain.brainstem.sweep_patterns import _discover_frequency_patterns
     db = _make_db()
     result = await _discover_frequency_patterns(db, {})
     assert result == []
@@ -342,7 +342,7 @@ async def test_frequency_empty_graph():
 @pytest.mark.asyncio
 async def test_dedup_removes_existing_patterns():
     """Candidates with patterns already in the graph are removed."""
-    from mcp_engine.sweep_patterns import _deduplicate_candidates
+    from campy.brain.brainstem.sweep_patterns import _deduplicate_candidates
 
     db = _make_db(rows_by_query={
         "Lesson": [["docker|container"]],
@@ -362,7 +362,7 @@ async def test_dedup_removes_existing_patterns():
 @pytest.mark.asyncio
 async def test_dedup_keeps_all_when_no_existing():
     """All candidates pass through when no existing triggers."""
-    from mcp_engine.sweep_patterns import _deduplicate_candidates
+    from campy.brain.brainstem.sweep_patterns import _deduplicate_candidates
 
     db = _make_db()
     candidates = [
@@ -381,7 +381,7 @@ async def test_dedup_keeps_all_when_no_existing():
 @pytest.mark.asyncio
 async def test_validate_no_llm_accepts_all_as_low_confidence():
     """Without LLM, all candidates are accepted with confidence_low=True."""
-    from mcp_engine.sweep_patterns import _validate_candidates
+    from campy.brain.brainstem.sweep_patterns import _validate_candidates
 
     candidates = [
         {"type": "temporal", "node_text": "test", "evidence": "ev"},
@@ -396,7 +396,7 @@ async def test_validate_no_llm_accepts_all_as_low_confidence():
 @pytest.mark.asyncio
 async def test_validate_llm_filters_invalid():
     """LLM can reject candidates by returning valid=false."""
-    from mcp_engine.sweep_patterns import _validate_candidates
+    from campy.brain.brainstem.sweep_patterns import _validate_candidates
 
     candidates = [
         {"type": "temporal", "node_text": "real", "evidence": "solid",
@@ -420,7 +420,7 @@ async def test_validate_llm_filters_invalid():
 @pytest.mark.asyncio
 async def test_validate_empty_candidates():
     """Empty candidate list returns empty result."""
-    from mcp_engine.sweep_patterns import _validate_candidates
+    from campy.brain.brainstem.sweep_patterns import _validate_candidates
 
     validated, errors = await _validate_candidates([], llm_client=None)
     assert len(validated) == 0
@@ -434,7 +434,7 @@ async def test_validate_empty_candidates():
 @pytest.mark.asyncio
 async def test_write_trigger_updates_existing_lesson():
     """Writes trigger metadata to an existing Lesson node."""
-    from mcp_engine.sweep_patterns import _write_trigger_metadata
+    from campy.brain.brainstem.sweep_patterns import _write_trigger_metadata
 
     db = _make_db()
     candidates = [{
@@ -459,7 +459,7 @@ async def test_write_trigger_updates_existing_lesson():
 @pytest.mark.asyncio
 async def test_write_trigger_creates_new_procedure():
     """Creates a new Procedure node for sequence pattern candidates."""
-    from mcp_engine.sweep_patterns import _write_trigger_metadata
+    from campy.brain.brainstem.sweep_patterns import _write_trigger_metadata
     from unittest.mock import patch
 
     db = _make_db()
@@ -478,7 +478,7 @@ async def test_write_trigger_creates_new_procedure():
         "validation_confidence": 0.80,
     }]
 
-    with patch("mcp_engine.sweep_patterns.emb.embed",
+    with patch("campy.brain.brainstem.sweep_patterns.emb.embed",
                return_value=[0.1] * 384):
         written, errors = await _write_trigger_metadata(db, {}, candidates)
 
@@ -492,7 +492,7 @@ async def test_write_trigger_creates_new_procedure():
 @pytest.mark.asyncio
 async def test_write_trigger_skips_empty_pattern():
     """Candidates with empty trigger patterns are skipped."""
-    from mcp_engine.sweep_patterns import _write_trigger_metadata
+    from campy.brain.brainstem.sweep_patterns import _write_trigger_metadata
 
     db = _make_db()
     candidates = [{
