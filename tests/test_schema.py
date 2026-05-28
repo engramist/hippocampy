@@ -235,7 +235,8 @@ def test_relationship_tables_include_plan_and_outcome_edges():
 
 def test_embedding_tables_include_plan_and_planstep():
     """B66: schema initialization creates vector indexes for Plan and PlanStep."""
-    source = (__import__("pathlib").Path("mcp_engine/schema.py").read_text(encoding="utf-8"))
+    # Read from the canonical location (mcp_engine/schema.py is now a shim).
+    source = (__import__("pathlib").Path("campy/brain/hippocampus/schema.py").read_text(encoding="utf-8"))
     assert '"Plan"' in source
     assert '"PlanStep"' in source
 
@@ -645,7 +646,8 @@ class TestMigrationColumnCheck:
     def test_git_repo_root_in_migrations_list(self):
         """git_repo_root is in _MIGRATIONS (checked via module inspection)."""
         import pathlib
-        src = pathlib.Path(__file__).parent.parent / "mcp_engine" / "schema.py"
+        # Read from the canonical location (mcp_engine/schema.py is now a shim).
+        src = pathlib.Path(__file__).parent.parent / "campy" / "brain" / "hippocampus" / "schema.py"
         text = src.read_text()
         assert '"git_repo_root"' in text or "'git_repo_root'" in text
         # Also verify table_info-based guard is present
