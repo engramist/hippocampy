@@ -1,24 +1,9 @@
 """
-mcp_engine/formatters/base.py — BundleFormatter Protocol
+mcp_engine/formatters/base.py — compatibility shim
 
-Defines the interface for formatting ContextBundles for specific agent types.
+Canonical location: campy/brain/thalamus/formatters/base.py
 """
+# ruff: noqa: F401, F403
+from campy.brain.thalamus.formatters.base import BundleFormatter
 
-from __future__ import annotations
-
-from typing import Protocol
-
-from mcp_engine.bundle_compiler import ContextBundle
-
-
-class BundleFormatter(Protocol):
-    """Protocol for formatting ContextBundles for specific agent types."""
-
-    def format(self, bundle: ContextBundle) -> str:
-        """Convert a ContextBundle into agent-specific text."""
-        ...
-
-    @property
-    def name(self) -> str:
-        """Formatter identifier (matches agent_type parameter)."""
-        ...
+__all__ = ["BundleFormatter"]

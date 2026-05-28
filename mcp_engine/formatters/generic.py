@@ -1,23 +1,9 @@
 """
-mcp_engine/formatters/generic.py — Generic JSON Formatter
+mcp_engine/formatters/generic.py — compatibility shim
 
-Default formatter that returns bundle as JSON (backwards compatible).
+Canonical location: campy/brain/thalamus/formatters/generic.py
 """
+# ruff: noqa: F401, F403
+from campy.brain.thalamus.formatters.generic import GenericFormatter
 
-from __future__ import annotations
-
-import json
-
-from mcp_engine.bundle_compiler import ContextBundle
-
-
-class GenericFormatter:
-    """Generic JSON formatter - returns bundle.to_dict()."""
-
-    @property
-    def name(self) -> str:
-        return "generic"
-
-    def format(self, bundle: ContextBundle) -> str:
-        """Return bundle as formatted JSON."""
-        return json.dumps(bundle.to_dict(), indent=2, default=str)
+__all__ = ["GenericFormatter"]
