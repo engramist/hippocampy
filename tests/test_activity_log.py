@@ -1,6 +1,6 @@
 import json
 
-from mcp_engine.activity_log import (
+from campy.brain.brainstem.activity_log import (
     activity_log_path,
     classify_method,
     compact_details,

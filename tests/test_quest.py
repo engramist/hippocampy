@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 # ---------------------------------------------------------------------------
 
 def test_quest_id_is_deterministic():
-    from mcp_engine.quest import compute_quest_id
+    from campy.brain.hippocampus.quest import compute_quest_id
     id1 = compute_quest_id("/Users/dj/projects/myapp", "main")
     id2 = compute_quest_id("/Users/dj/projects/myapp", "main")
     assert id1 == id2
@@ -23,21 +23,21 @@ def test_quest_id_is_deterministic():
 
 def test_quest_id_same_across_branches():
     """Branches in the same repo share the same MainQuest — decisions carry across."""
-    from mcp_engine.quest import compute_quest_id
+    from campy.brain.hippocampus.quest import compute_quest_id
     id_main   = compute_quest_id("/Users/dj/projects/myapp", "main")
     id_dev    = compute_quest_id("/Users/dj/projects/myapp", "dev")
     assert id_main == id_dev
 
 
 def test_quest_id_different_repos():
-    from mcp_engine.quest import compute_quest_id
+    from campy.brain.hippocampus.quest import compute_quest_id
     id_a = compute_quest_id("/Users/dj/projects/alpha", "main")
     id_b = compute_quest_id("/Users/dj/projects/beta",  "main")
     assert id_a != id_b
 
 
 def test_quest_id_is_32_chars():
-    from mcp_engine.quest import compute_quest_id
+    from campy.brain.hippocampus.quest import compute_quest_id
     qid = compute_quest_id("/repo", "main")
     assert len(qid) == 32
     assert all(c in "0123456789abcdef" for c in qid)
@@ -49,7 +49,7 @@ def test_quest_id_is_32_chars():
 
 @pytest.mark.asyncio
 async def test_get_or_create_main_quest_creates_on_first_call():
-    from mcp_engine.quest import get_or_create_main_quest, compute_quest_id
+    from campy.brain.hippocampus.quest import get_or_create_main_quest, compute_quest_id
 
     writes = []
 
@@ -80,7 +80,7 @@ async def test_get_or_create_main_quest_creates_on_first_call():
 
 @pytest.mark.asyncio
 async def test_get_or_create_main_quest_returns_existing():
-    from mcp_engine.quest import get_or_create_main_quest, compute_quest_id
+    from campy.brain.hippocampus.quest import get_or_create_main_quest, compute_quest_id
 
     writes = []
 
@@ -111,7 +111,7 @@ async def test_get_or_create_main_quest_returns_existing():
 
 @pytest.mark.asyncio
 async def test_get_or_create_session_writes_session_and_link():
-    from mcp_engine.quest import get_or_create_session
+    from campy.brain.hippocampus.quest import get_or_create_session
 
     writes = []
 
@@ -137,7 +137,7 @@ async def test_get_or_create_session_writes_session_and_link():
 
 @pytest.mark.asyncio
 async def test_create_side_quest_creates_node_and_edge():
-    from mcp_engine.quest import create_side_quest
+    from campy.brain.hippocampus.quest import create_side_quest
 
     writes = []
 
@@ -168,7 +168,7 @@ async def test_create_side_quest_creates_node_and_edge():
 # ---------------------------------------------------------------------------
 
 def test_format_context_empty_quest_name():
-    from mcp_engine.quest import format_context_for_prompt
+    from campy.brain.hippocampus.quest import format_context_for_prompt
     result = format_context_for_prompt({"quest_name": "", "status": "active",
                                          "recent_decisions": [], "recent_constraints": [],
                                          "open_loops": [], "side_quests": []})
@@ -176,7 +176,7 @@ def test_format_context_empty_quest_name():
 
 
 def test_format_context_with_decisions_and_constraints():
-    from mcp_engine.quest import format_context_for_prompt
+    from campy.brain.hippocampus.quest import format_context_for_prompt
     ctx = {
         "quest_name": "myapp [main]",
         "status":     "active",
@@ -198,7 +198,7 @@ def test_format_context_with_decisions_and_constraints():
 
 
 def test_format_context_shows_open_loops_count():
-    from mcp_engine.quest import format_context_for_prompt
+    from campy.brain.hippocampus.quest import format_context_for_prompt
     ctx = {
         "quest_name": "myapp [main]",
         "status":     "active",
@@ -213,7 +213,7 @@ def test_format_context_shows_open_loops_count():
 
 
 def test_format_context_shows_side_quests():
-    from mcp_engine.quest import format_context_for_prompt
+    from campy.brain.hippocampus.quest import format_context_for_prompt
     ctx = {
         "quest_name": "myapp [main]",
         "status":     "active",
@@ -268,7 +268,7 @@ def test_inject_context_adds_fields():
 
 @pytest.mark.asyncio
 async def test_branch_quest_tool_creates_side_quest():
-    from mcp_engine.tools import branch_quest
+    from campy.brain.thalamus.tools import branch_quest
 
     writes = []
 
@@ -296,7 +296,7 @@ async def test_branch_quest_tool_creates_side_quest():
 
 @pytest.mark.asyncio
 async def test_branch_quest_missing_name_returns_error():
-    from mcp_engine.tools import branch_quest
+    from campy.brain.thalamus.tools import branch_quest
 
     class MockDB:
         async def execute_write(self, query, params=None): pass
@@ -312,7 +312,7 @@ async def test_branch_quest_missing_name_returns_error():
 
 @pytest.mark.asyncio
 async def test_get_open_loops_returns_list():
-    from mcp_engine.tools import get_open_loops
+    from campy.brain.thalamus.tools import get_open_loops
 
     class MockQueryResult:
         _rows = [
@@ -339,7 +339,7 @@ async def test_get_open_loops_returns_list():
 
 @pytest.mark.asyncio
 async def test_diff_since_missing_timestamp_returns_error():
-    from mcp_engine.tools import diff_since
+    from campy.brain.thalamus.tools import diff_since
 
     class MockDB:
         def execute(self, query, params=None): return None
@@ -350,7 +350,7 @@ async def test_diff_since_missing_timestamp_returns_error():
 
 @pytest.mark.asyncio
 async def test_diff_since_returns_structured_keys():
-    from mcp_engine.tools import diff_since
+    from campy.brain.thalamus.tools import diff_since
 
     class MockQueryResult:
         def has_next(self): return False
@@ -373,7 +373,7 @@ async def test_diff_since_returns_structured_keys():
 @pytest.mark.asyncio
 async def test_notify_turn_creates_main_quest_when_repo_provided():
     """notify_turn with repo_root triggers MainQuest creation."""
-    from mcp_engine.tools import notify_turn, init_loop_queue
+    from campy.brain.thalamus.tools import notify_turn, init_loop_queue
     import asyncio
 
     init_loop_queue(asyncio.Queue())
@@ -415,7 +415,7 @@ async def test_notify_turn_creates_main_quest_when_repo_provided():
 @pytest.mark.asyncio
 async def test_notify_turn_resolves_quest_semantically_without_repo():
     """notify_turn without repo_root triggers semantic routing via hippocampus."""
-    from mcp_engine.tools import notify_turn, init_loop_queue
+    from campy.brain.thalamus.tools import notify_turn, init_loop_queue
     import asyncio
 
     init_loop_queue(asyncio.Queue())
@@ -448,7 +448,7 @@ async def test_notify_turn_resolves_quest_semantically_without_repo():
 @pytest.mark.asyncio
 async def test_notify_turn_empty_content_skipped():
     """Empty content returns skipped without any DB writes."""
-    from mcp_engine.tools import notify_turn
+    from campy.brain.thalamus.tools import notify_turn
 
     writes = []
 
@@ -473,7 +473,7 @@ async def test_notify_turn_empty_content_skipped():
 @pytest.mark.asyncio
 async def test_current_truth_returns_quest_context_for_branch_scope():
     """current_truth with quest_id returns quest_context in response."""
-    from mcp_engine.tools import current_truth
+    from campy.brain.thalamus.tools import current_truth
 
     class MockQueryResult:
         def has_next(self): return False
@@ -502,7 +502,7 @@ async def test_current_truth_returns_quest_context_for_branch_scope():
 
 @pytest.mark.asyncio
 async def test_current_truth_empty_query_returns_empty():
-    from mcp_engine.tools import current_truth
+    from campy.brain.thalamus.tools import current_truth
 
     class MockDB:
         pass
@@ -523,7 +523,7 @@ async def test_current_truth_empty_query_returns_empty():
 @pytest.mark.asyncio
 async def test_maybe_synthesize_purpose_skips_when_no_llm():
     """Returns False immediately when llm_client is None."""
-    from mcp_engine.quest import maybe_synthesize_purpose
+    from campy.brain.hippocampus.quest import maybe_synthesize_purpose
 
     class MockDB:
         def execute(self, q, p=None): return None
@@ -538,7 +538,7 @@ async def test_maybe_synthesize_purpose_skips_when_no_llm():
 @pytest.mark.asyncio
 async def test_maybe_synthesize_purpose_skips_when_session_not_found():
     """Returns False when message has no linked session."""
-    from mcp_engine.quest import maybe_synthesize_purpose
+    from campy.brain.hippocampus.quest import maybe_synthesize_purpose
 
     class MockResult:
         def has_next(self): return False   # no session found
@@ -559,7 +559,7 @@ async def test_maybe_synthesize_purpose_skips_when_session_not_found():
 @pytest.mark.asyncio
 async def test_maybe_synthesize_purpose_skips_when_already_set():
     """Returns False when Session.purpose is already non-empty."""
-    from mcp_engine.quest import maybe_synthesize_purpose
+    from campy.brain.hippocampus.quest import maybe_synthesize_purpose
 
     call_count = [0]
 
@@ -586,7 +586,7 @@ async def test_maybe_synthesize_purpose_skips_when_already_set():
 @pytest.mark.asyncio
 async def test_maybe_synthesize_purpose_writes_on_empty_session():
     """Returns True and writes purpose to Session when session has no purpose."""
-    from mcp_engine.quest import maybe_synthesize_purpose
+    from campy.brain.hippocampus.quest import maybe_synthesize_purpose
 
     writes = []
     query_idx = [0]
@@ -642,7 +642,7 @@ async def test_maybe_synthesize_purpose_writes_on_empty_session():
 @pytest.mark.asyncio
 async def test_maybe_synthesize_purpose_uses_achat_when_available():
     """Uses achat() (async) when the LLM client supports it."""
-    from mcp_engine.quest import maybe_synthesize_purpose
+    from campy.brain.hippocampus.quest import maybe_synthesize_purpose
 
     achat_called = [False]
     query_idx = [0]

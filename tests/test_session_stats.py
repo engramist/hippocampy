@@ -2,7 +2,7 @@
 import pytest
 import uuid
 import asyncio
-from mcp_engine.tools import context_status
+from campy.brain.thalamus.tools import context_status
 
 class RecordingDB:
     class _MockResult:

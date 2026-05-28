@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 def test_has_signal_error():
     """_has_signal detects error signals."""
-    from mcp_engine.loop.step4b_associative import _has_signal
+    from campy.brain.temporal_lobe.loop.step4b_associative import _has_signal
 
     assert _has_signal("The build failed with exit code 1") == "error"
     assert _has_signal("Permission denied when accessing /etc") == "error"
@@ -22,7 +22,7 @@ def test_has_signal_error():
 
 def test_has_signal_action():
     """_has_signal detects action signals."""
-    from mcp_engine.loop.step4b_associative import _has_signal
+    from campy.brain.temporal_lobe.loop.step4b_associative import _has_signal
 
     assert _has_signal("Running docker build for production") == "action"
     assert _has_signal("kubectl apply -f deployment.yaml") == "action"
@@ -32,7 +32,7 @@ def test_has_signal_action():
 
 def test_has_signal_none():
     """_has_signal returns None for neutral text."""
-    from mcp_engine.loop.step4b_associative import _has_signal
+    from campy.brain.temporal_lobe.loop.step4b_associative import _has_signal
 
     assert _has_signal("The weather is nice today") is None
     assert _has_signal("Let me think about this design") is None
@@ -45,7 +45,7 @@ def test_has_signal_none():
 
 def test_build_trigger_pattern_extracts_terms():
     """_build_trigger_pattern extracts key non-stopword terms."""
-    from mcp_engine.loop.step4b_associative import _build_trigger_pattern
+    from campy.brain.temporal_lobe.loop.step4b_associative import _build_trigger_pattern
 
     pattern = _build_trigger_pattern("Docker container OAUTH_TOKEN setup")
     # Should contain key terms joined by |
@@ -58,7 +58,7 @@ def test_build_trigger_pattern_extracts_terms():
 
 def test_build_trigger_pattern_removes_stopwords():
     """_build_trigger_pattern filters out stopwords."""
-    from mcp_engine.loop.step4b_associative import _build_trigger_pattern
+    from campy.brain.temporal_lobe.loop.step4b_associative import _build_trigger_pattern
 
     pattern = _build_trigger_pattern("the error in the system")
     parts = pattern.split("|")
@@ -72,7 +72,7 @@ def test_build_trigger_pattern_removes_stopwords():
 
 def test_build_trigger_pattern_caps_at_five():
     """_build_trigger_pattern caps at 5 terms."""
-    from mcp_engine.loop.step4b_associative import _build_trigger_pattern
+    from campy.brain.temporal_lobe.loop.step4b_associative import _build_trigger_pattern
 
     pattern = _build_trigger_pattern("one two three four five six seven eight")
     assert len(pattern.split("|")) <= 5
@@ -80,7 +80,7 @@ def test_build_trigger_pattern_caps_at_five():
 
 def test_build_trigger_pattern_fallback():
     """_build_trigger_pattern falls back to escaped full text for short words."""
-    from mcp_engine.loop.step4b_associative import _build_trigger_pattern
+    from campy.brain.temporal_lobe.loop.step4b_associative import _build_trigger_pattern
 
     # All words < 3 chars — should use fallback
     pattern = _build_trigger_pattern("a b")
@@ -94,7 +94,7 @@ def test_build_trigger_pattern_fallback():
 @pytest.mark.asyncio
 async def test_no_signal_skips_search():
     """Step 4b returns immediately when message has no error/action signals."""
-    from mcp_engine.loop.step4b_associative import check_associative_triggers
+    from campy.brain.temporal_lobe.loop.step4b_associative import check_associative_triggers
 
     db = AsyncMock()
     result = await check_associative_triggers(
@@ -113,7 +113,7 @@ async def test_no_signal_skips_search():
 @pytest.mark.asyncio
 async def test_no_vector_skips_search():
     """Step 4b returns immediately when no vector is provided."""
-    from mcp_engine.loop.step4b_associative import check_associative_triggers
+    from campy.brain.temporal_lobe.loop.step4b_associative import check_associative_triggers
 
     db = AsyncMock()
     result = await check_associative_triggers(
@@ -131,7 +131,7 @@ async def test_no_vector_skips_search():
 @pytest.mark.asyncio
 async def test_error_signal_triggers_lesson_search():
     """Step 4b searches Lessons when error signal detected and binds trigger."""
-    from mcp_engine.loop.step4b_associative import check_associative_triggers
+    from campy.brain.temporal_lobe.loop.step4b_associative import check_associative_triggers
 
     lesson_node = {
         "lesson_id": "lesson-001",
@@ -167,7 +167,7 @@ async def test_error_signal_triggers_lesson_search():
 @pytest.mark.asyncio
 async def test_action_signal_checks_procedures():
     """Step 4b searches Procedures when action signal detected."""
-    from mcp_engine.loop.step4b_associative import check_associative_triggers
+    from campy.brain.temporal_lobe.loop.step4b_associative import check_associative_triggers
 
     proc_node = {
         "procedure_id": "proc-001",
@@ -200,7 +200,7 @@ async def test_action_signal_checks_procedures():
 @pytest.mark.asyncio
 async def test_skips_already_bound_triggers():
     """Step 4b skips nodes that already have trigger metadata."""
-    from mcp_engine.loop.step4b_associative import check_associative_triggers
+    from campy.brain.temporal_lobe.loop.step4b_associative import check_associative_triggers
 
     lesson_node = {
         "lesson_id": "lesson-001",
@@ -230,7 +230,7 @@ async def test_skips_already_bound_triggers():
 @pytest.mark.asyncio
 async def test_skips_archived_nodes():
     """Step 4b skips archived nodes."""
-    from mcp_engine.loop.step4b_associative import check_associative_triggers
+    from campy.brain.temporal_lobe.loop.step4b_associative import check_associative_triggers
 
     lesson_node = {
         "lesson_id": "lesson-001",
@@ -259,7 +259,7 @@ async def test_skips_archived_nodes():
 @pytest.mark.asyncio
 async def test_below_threshold_ignored():
     """Step 4b ignores matches below similarity threshold."""
-    from mcp_engine.loop.step4b_associative import check_associative_triggers
+    from campy.brain.temporal_lobe.loop.step4b_associative import check_associative_triggers
 
     lesson_node = {
         "lesson_id": "lesson-001",
@@ -288,7 +288,7 @@ async def test_below_threshold_ignored():
 @pytest.mark.asyncio
 async def test_max_bindings_cap():
     """Step 4b caps bindings at MAX_BINDINGS_PER_MESSAGE."""
-    from mcp_engine.loop.step4b_associative import check_associative_triggers
+    from campy.brain.temporal_lobe.loop.step4b_associative import check_associative_triggers
 
     lessons = [
         {"node": {"lesson_id": f"l-{i}", "trigger_pattern": "", "archived": False},
@@ -313,7 +313,7 @@ async def test_max_bindings_cap():
 @pytest.mark.asyncio
 async def test_custom_threshold_from_config():
     """Step 4b respects custom similarity threshold from config."""
-    from mcp_engine.loop.step4b_associative import check_associative_triggers
+    from campy.brain.temporal_lobe.loop.step4b_associative import check_associative_triggers
 
     lesson_node = {
         "lesson_id": "lesson-001",
@@ -341,7 +341,7 @@ async def test_custom_threshold_from_config():
 @pytest.mark.asyncio
 async def test_vector_search_failure_graceful():
     """Step 4b handles vector search exceptions gracefully."""
-    from mcp_engine.loop.step4b_associative import check_associative_triggers
+    from campy.brain.temporal_lobe.loop.step4b_associative import check_associative_triggers
 
     db = MagicMock()
     db.vector_search = MagicMock(side_effect=RuntimeError("Index not found"))

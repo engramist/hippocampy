@@ -16,7 +16,7 @@ import hashlib
 import uuid
 from datetime import datetime, timezone
 
-from mcp_engine.graph import embeddings as emb
+from campy.brain.hippocampus.graph import embeddings as emb
 
 
 def compute_quest_id(repo_root: str, git_branch: str) -> str:

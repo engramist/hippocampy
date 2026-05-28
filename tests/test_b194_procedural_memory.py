@@ -55,8 +55,8 @@ class _LLM:
 
 @pytest.mark.asyncio
 async def test_synthesize_procedures_creates_procedure(monkeypatch):
-    from mcp_engine.sweep import _synthesize_procedures
-    from mcp_engine.graph import embeddings as emb
+    from campy.brain.brainstem.sweep import _synthesize_procedures
+    from campy.brain.hippocampus.graph import embeddings as emb
 
     # Mock embeddings to avoid remote model
     monkeypatch.setattr(emb, "embed", lambda text, model_name=None: [0.01] * 384)
@@ -88,7 +88,7 @@ async def test_synthesize_procedures_creates_procedure(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_recall_procedures_by_archetype():
-    from mcp_engine.tools import recall_procedures
+    from campy.brain.thalamus.tools import recall_procedures
 
     rows_by_query = {
         "MATCH (p:Procedure) WHERE p.archived = false AND p.archetype": [

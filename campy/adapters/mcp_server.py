@@ -54,7 +54,7 @@ _REPO_ROOT, _GIT_BRANCH = detect_git_context()
 # MCP Tool definitions
 # ---------------------------------------------------------------------------
 
-from mcp_engine.tool_schemas import TOOLS
+from campy.brain.thalamus.tool_schemas import TOOLS
 
 # ---------------------------------------------------------------------------
 # Brain socket client

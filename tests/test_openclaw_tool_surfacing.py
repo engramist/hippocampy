@@ -2,7 +2,7 @@ from pathlib import Path
 import re
 import json
 
-from mcp_engine.tool_schemas import TOOLS
+from campy.brain.thalamus.tool_schemas import TOOLS
 
 EXPECTED_ALIAS_TOOLS = [
     "memory_recall",

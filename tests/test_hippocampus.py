@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, AsyncMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from mcp_engine.hippocampus import (
+from campy.brain.hippocampus.hippocampus import (
     _system1_git_match,
     _system1_semantic_match,
     route_session,
@@ -48,7 +48,7 @@ class TestSystem1GitMatch:
 
     def test_git_match_falls_back_to_legacy_hash(self):
         """Falls back to compute_quest_id hash when git_repo_root not populated."""
-        from mcp_engine.quest import compute_quest_id
+        from campy.brain.hippocampus.quest import compute_quest_id
         legacy_id = compute_quest_id("/repo/myapp", "")
 
         class MockDB:
@@ -234,7 +234,7 @@ class TestSetQuest:
 
     @pytest.mark.asyncio
     async def test_set_quest_creates_new_quest_when_not_found(self):
-        from mcp_engine.tools import set_quest
+        from campy.brain.thalamus.tools import set_quest
 
         writes = []
 
@@ -254,7 +254,7 @@ class TestSetQuest:
 
     @pytest.mark.asyncio
     async def test_set_quest_requires_session_id(self):
-        from mcp_engine.tools import set_quest
+        from campy.brain.thalamus.tools import set_quest
         class MockDB: pass
         result = await set_quest({"quest_name": "x"}, MockDB(), {})
         assert "error" in result
@@ -265,7 +265,7 @@ class TestBackwardCompat:
     @pytest.mark.asyncio
     async def test_notify_turn_with_repo_root_still_works(self):
         """Legacy git path in notify_turn still creates quest correctly."""
-        from mcp_engine.tools import notify_turn, init_loop_queue
+        from campy.brain.thalamus.tools import notify_turn, init_loop_queue
         import asyncio
 
         init_loop_queue(asyncio.Queue())

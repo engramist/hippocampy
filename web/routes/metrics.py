@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from mcp_engine.working_memory import (
+from campy.brain.thalamus.working_memory import (
     DEFAULT_TOKEN_LIMIT,
     get_session_token_timeline,
 )

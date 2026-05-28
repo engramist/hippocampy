@@ -15,10 +15,10 @@ import uuid
 from dataclasses import dataclass
 from typing import Optional, TYPE_CHECKING
 
-from mcp_engine.graph import embeddings as emb
+from campy.brain.hippocampus.graph import embeddings as emb
 
 if TYPE_CHECKING:
-    from mcp_engine.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 
 _logger = logging.getLogger(__name__)
 
@@ -196,7 +196,7 @@ def _system1_git_match(db: KuzuClient, git_repo_root: str) -> Optional[str]:
         pass
 
     # Check 2: legacy hash
-    from mcp_engine.quest import compute_quest_id
+    from campy.brain.hippocampus.quest import compute_quest_id
     legacy_id = compute_quest_id(git_repo_root, "")
     try:
         r = db.execute(

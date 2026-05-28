@@ -41,7 +41,7 @@ class MockVectorSearchDB:
 @pytest.mark.asyncio
 async def test_current_truth_empty_query():
     """Empty query returns empty results immediately."""
-    from mcp_engine.tools import current_truth
+    from campy.brain.thalamus.tools import current_truth
     result = await current_truth({"query": "", "session_id": "s1"}, None, {})
     assert result["results"] == []
 
@@ -49,7 +49,7 @@ async def test_current_truth_empty_query():
 @pytest.mark.asyncio
 async def test_current_truth_excludes_archived():
     """Archived nodes are never returned in current_truth results."""
-    from mcp_engine.tools import current_truth
+    from campy.brain.thalamus.tools import current_truth
 
     archived_node = _make_node("arc-1", "archived concept", archived=True)
     db = MockVectorSearchDB({
@@ -68,7 +68,7 @@ async def test_current_truth_excludes_archived():
 @pytest.mark.asyncio
 async def test_current_truth_rank_formula():
     """Architecture invariant: rank by pathway_strength × confidence."""
-    from mcp_engine.tools import current_truth
+    from campy.brain.thalamus.tools import current_truth
 
     strong_node = _make_node("strong-1", "strong concept",
                              pathway_strength=0.9, confidence=0.95)
@@ -95,7 +95,7 @@ async def test_current_truth_rank_formula():
 @pytest.mark.asyncio
 async def test_current_truth_includes_concepts():
     """D6 fix: Concept nodes appear in current_truth results."""
-    from mcp_engine.tools import current_truth
+    from campy.brain.thalamus.tools import current_truth
 
     concept_node = _make_node("c-1", "Kùzu database",
                               pathway_strength=0.8, confidence=0.9)
@@ -116,7 +116,7 @@ async def test_current_truth_includes_concepts():
 @pytest.mark.asyncio
 async def test_current_truth_includes_raw_messages():
     """Fresh captured turns should be recallable before consolidation."""
-    from mcp_engine.tools import current_truth
+    from campy.brain.thalamus.tools import current_truth
 
     message_node = {
         "message_id": "m-1",
@@ -143,7 +143,7 @@ async def test_current_truth_includes_raw_messages():
 @pytest.mark.asyncio
 async def test_current_truth_uses_lesson_primary_key():
     """Lesson results should expose their stable lesson_id, not 'unknown'."""
-    from mcp_engine.tools import current_truth
+    from campy.brain.thalamus.tools import current_truth
 
     lesson_node = {
         "lesson_id": "lesson-1",
@@ -170,7 +170,7 @@ async def test_current_truth_uses_lesson_primary_key():
 @pytest.mark.asyncio
 async def test_current_truth_confidence_low_flag_preserved():
     """confidence_low flag is passed through to caller so LLM can flag uncertainty."""
-    from mcp_engine.tools import current_truth
+    from campy.brain.thalamus.tools import current_truth
 
     tentative_node = _make_node("t-1", "tentative concept",
                                 pathway_strength=0.6, confidence=0.7,
@@ -192,7 +192,7 @@ async def test_current_truth_confidence_low_flag_preserved():
 @pytest.mark.asyncio
 async def test_current_truth_panel_url_default():
     """B15: current_truth includes panel_url pointing to Mission Control thinking tab."""
-    from mcp_engine.tools import current_truth
+    from campy.brain.thalamus.tools import current_truth
 
     concept_node = _make_node("c-2", "some concept", pathway_strength=0.8, confidence=0.9)
     db = MockVectorSearchDB({
@@ -214,7 +214,7 @@ async def test_current_truth_panel_url_default():
 @pytest.mark.asyncio
 async def test_current_truth_panel_url_custom_base():
     """B15: mission_control.base_url config is respected."""
-    from mcp_engine.tools import current_truth
+    from campy.brain.thalamus.tools import current_truth
 
     concept_node = _make_node("c-3", "custom base concept", pathway_strength=0.8, confidence=0.9)
     db = MockVectorSearchDB({
@@ -237,7 +237,7 @@ async def test_current_truth_panel_url_custom_base():
 @pytest.mark.asyncio
 async def test_current_truth_panel_url_board_when_quest_id():
     """B15: panel_url points to /board when quest_id is in params."""
-    from mcp_engine.tools import current_truth
+    from campy.brain.thalamus.tools import current_truth
 
     concept_node = _make_node("c-4", "quest concept", pathway_strength=0.8, confidence=0.9)
     db = MockVectorSearchDB({

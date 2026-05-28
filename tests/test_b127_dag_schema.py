@@ -1,11 +1,11 @@
 import pytest
 import asyncio
 from unittest.mock import MagicMock, AsyncMock
-from mcp_engine.tools.task_graph import (
-    create_task_graph, add_task_node, add_task_dependency, 
+from campy.brain.thalamus.tools.task_graph import (
+    create_task_graph, add_task_node, add_task_dependency,
     _dag_has_cycle, _get_ready_tasks_query
 )
-from mcp_engine.graph.kuzu_client import KuzuClient
+from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 
 class _Result:
     def __init__(self, rows=None):

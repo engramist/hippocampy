@@ -1,6 +1,6 @@
 """Tests for the Emotion sense (7th Cocktail Party sense) in Step 4."""
 import pytest
-from mcp_engine.loop.step4_pattern import compute_salience_multiplier
+from campy.brain.temporal_lobe.loop.step4_pattern import compute_salience_multiplier
 
 
 class TestComputeSalienceMultiplier:
@@ -59,7 +59,7 @@ class TestComputeSalienceMultiplier:
 
 import inspect
 
-from mcp_engine.loop.step4_pattern import (
+from campy.brain.temporal_lobe.loop.step4_pattern import (
     classify_artifact,
     NOISE_FLOOR,
 )
@@ -96,7 +96,7 @@ class TestConfidenceRescue:
 
     def test_salience_above_rescue_threshold(self):
         """Strongly emotional text produces salience >= 1.3."""
-        from mcp_engine.loop.step4_pattern import compute_salience_multiplier
+        from campy.brain.temporal_lobe.loop.step4_pattern import compute_salience_multiplier
         result = compute_salience_multiplier(
             "NO! I told you! Stop doing that! This is broken!"
         )
@@ -108,12 +108,12 @@ class TestPathwayStrengthBoost:
 
     def test_store_concept_signature_accepts_salience(self):
         """Verify _store_concept accepts salience kwarg without error."""
-        from mcp_engine.loop.orchestrator import _store_concept
+        from campy.brain.temporal_lobe.loop.orchestrator import _store_concept
         sig = inspect.signature(_store_concept)
         assert "salience" in sig.parameters
 
     def test_salience_default_is_1(self):
         """Default salience should be 1.0 (no boost)."""
-        from mcp_engine.loop.orchestrator import _store_concept
+        from campy.brain.temporal_lobe.loop.orchestrator import _store_concept
         sig = inspect.signature(_store_concept)
         assert sig.parameters["salience"].default == 1.0

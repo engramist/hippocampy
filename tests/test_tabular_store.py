@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from campy.paths import tables_dir
-from mcp_engine.tabular_store import (
+from campy.brain.sensory_cortex.tabular_store import (
     create_table_from_dataframe,
     delete_table,
     get_table_summary,

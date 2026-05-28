@@ -70,7 +70,7 @@ def _make_bad_llm():
 
 @pytest.mark.asyncio
 async def test_run_sweep_returns_summary_keys():
-    from mcp_engine.sweep import run_sweep
+    from campy.brain.brainstem.sweep import run_sweep
     db = _make_db()
     config = {"pruning": {"sweep_interval_seconds": 300, "archive_threshold": 0.10,
                           "resurrection_threshold": 0.85, "decay_rate": {}}}
@@ -85,7 +85,7 @@ async def test_run_sweep_returns_summary_keys():
 
 @pytest.mark.asyncio
 async def test_run_sweep_skips_hebbian_when_no_llm():
-    from mcp_engine.sweep import run_sweep
+    from campy.brain.brainstem.sweep import run_sweep
     db = _make_db()
     config = {"pruning": {"sweep_interval_seconds": 300, "archive_threshold": 0.10,
                           "resurrection_threshold": 0.85, "decay_rate": {}},
@@ -96,7 +96,7 @@ async def test_run_sweep_skips_hebbian_when_no_llm():
 
 @pytest.mark.asyncio
 async def test_run_sweep_empty_db_no_errors():
-    from mcp_engine.sweep import run_sweep
+    from campy.brain.brainstem.sweep import run_sweep
     db = _make_db()
     config = {"pruning": {"sweep_interval_seconds": 300, "archive_threshold": 0.10,
                           "resurrection_threshold": 0.85, "decay_rate": {}}}
@@ -110,7 +110,7 @@ async def test_run_sweep_empty_db_no_errors():
 
 @pytest.mark.asyncio
 async def test_decay_updates_strength():
-    from mcp_engine.sweep import _decay_and_archive
+    from campy.brain.brainstem.sweep import _decay_and_archive
     # New atomic pattern: execute_write does bulk decay, then execute reads
     # for below-threshold and count. Mock needs to handle all three query types.
     db = _make_db(rows_by_query={
@@ -127,7 +127,7 @@ async def test_decay_updates_strength():
 
 @pytest.mark.asyncio
 async def test_decay_archives_node_below_threshold():
-    from mcp_engine.sweep import _decay_and_archive
+    from campy.brain.brainstem.sweep import _decay_and_archive
     # After atomic decay, one node falls below threshold
     db = _make_db(rows_by_query={
         "pathway_strength < $threshold": [["d1"]],  # d1 below threshold
@@ -140,7 +140,7 @@ async def test_decay_archives_node_below_threshold():
 
 @pytest.mark.asyncio
 async def test_decay_uses_default_rate_when_missing():
-    from mcp_engine.sweep import _decay_and_archive
+    from campy.brain.brainstem.sweep import _decay_and_archive
     # No decay rate for "message" — should use default 0.99 and not crash
     db = _make_db(rows_by_query={
         "pathway_strength < $threshold": [],
@@ -152,7 +152,7 @@ async def test_decay_uses_default_rate_when_missing():
 
 @pytest.mark.asyncio
 async def test_decay_handles_zero_strength_node():
-    from mcp_engine.sweep import _decay_and_archive
+    from campy.brain.brainstem.sweep import _decay_and_archive
     # After atomic decay of 0.0 * factor = 0.0, node should be archived
     db = _make_db(rows_by_query={
         "pathway_strength < $threshold": [["d1"]],
@@ -165,7 +165,7 @@ async def test_decay_handles_zero_strength_node():
 
 @pytest.mark.asyncio
 async def test_decay_handles_none_strength_node():
-    from mcp_engine.sweep import _decay_and_archive
+    from campy.brain.brainstem.sweep import _decay_and_archive
     # None * factor may cause error in atomic query; should be handled
     db = _make_db(rows_by_query={
         "pathway_strength < $threshold": [],
@@ -177,7 +177,7 @@ async def test_decay_handles_none_strength_node():
 
 @pytest.mark.asyncio
 async def test_decay_node_above_threshold_not_archived():
-    from mcp_engine.sweep import _decay_and_archive
+    from campy.brain.brainstem.sweep import _decay_and_archive
     # High-strength node stays above threshold after small decay
     db = _make_db(rows_by_query={
         "pathway_strength < $threshold": [],  # none below threshold
@@ -194,7 +194,7 @@ async def test_decay_node_above_threshold_not_archived():
 
 @pytest.mark.asyncio
 async def test_resurrect_un_archives_similar_node():
-    from mcp_engine.sweep import _resurrect_archived
+    from campy.brain.brainstem.sweep import _resurrect_archived
     embedding = [0.1] * 384
     active_node = {
         "decision_id": "d_active",
@@ -213,7 +213,7 @@ async def test_resurrect_un_archives_similar_node():
 
 @pytest.mark.asyncio
 async def test_resurrect_skips_self_match():
-    from mcp_engine.sweep import _resurrect_archived
+    from campy.brain.brainstem.sweep import _resurrect_archived
     embedding = [0.1] * 384
     # Vector search returns the same node (self-match, score=1.0)
     self_node = {"decision_id": "d_archived", "archived": True}
@@ -227,7 +227,7 @@ async def test_resurrect_skips_self_match():
 
 @pytest.mark.asyncio
 async def test_resurrect_skips_archived_neighbors():
-    from mcp_engine.sweep import _resurrect_archived
+    from campy.brain.brainstem.sweep import _resurrect_archived
     embedding = [0.1] * 384
     archived_neighbor = {"decision_id": "d_neighbor", "archived": True}
     db = _make_db(
@@ -240,7 +240,7 @@ async def test_resurrect_skips_archived_neighbors():
 
 @pytest.mark.asyncio
 async def test_resurrect_below_threshold_not_resurrected():
-    from mcp_engine.sweep import _resurrect_archived
+    from campy.brain.brainstem.sweep import _resurrect_archived
     embedding = [0.1] * 384
     active_node = {"decision_id": "d_active", "archived": False}
     db = _make_db(
@@ -253,7 +253,7 @@ async def test_resurrect_below_threshold_not_resurrected():
 
 @pytest.mark.asyncio
 async def test_resurrect_resets_strength_to_threshold():
-    from mcp_engine.sweep import _resurrect_archived
+    from campy.brain.brainstem.sweep import _resurrect_archived
     embedding = [0.1] * 384
     active_node = {"decision_id": "d_active", "archived": False}
     db = _make_db(
@@ -268,7 +268,7 @@ async def test_resurrect_resets_strength_to_threshold():
 
 @pytest.mark.asyncio
 async def test_resurrect_no_archived_nodes_no_error():
-    from mcp_engine.sweep import _resurrect_archived
+    from campy.brain.brainstem.sweep import _resurrect_archived
     db = _make_db()  # empty DB
     r, e = await _resurrect_archived(db, resurrection_threshold=0.85)
     assert r == 0
@@ -281,7 +281,7 @@ async def test_resurrect_no_archived_nodes_no_error():
 
 @pytest.mark.asyncio
 async def test_hebbian_promote_writes_named_edge():
-    from mcp_engine.sweep import _hebbian_promote
+    from campy.brain.brainstem.sweep import _hebbian_promote
     db = _make_db(rows_by_query={
         "CO_OCCURS_WITH": [["c1", "Kùzu", "c2", "ChromaDB", 15]],
     })
@@ -294,7 +294,7 @@ async def test_hebbian_promote_writes_named_edge():
 
 @pytest.mark.asyncio
 async def test_hebbian_promote_skips_low_confidence():
-    from mcp_engine.sweep import _hebbian_promote
+    from campy.brain.brainstem.sweep import _hebbian_promote
     db = _make_db(rows_by_query={
         "CO_OCCURS_WITH": [["c1", "A", "c2", "B", 12]],
     })
@@ -306,7 +306,7 @@ async def test_hebbian_promote_skips_low_confidence():
 
 @pytest.mark.asyncio
 async def test_hebbian_promote_skips_null_relation():
-    from mcp_engine.sweep import _hebbian_promote
+    from campy.brain.brainstem.sweep import _hebbian_promote
     db = _make_db(rows_by_query={
         "CO_OCCURS_WITH": [["c1", "A", "c2", "B", 12]],
     })
@@ -317,7 +317,7 @@ async def test_hebbian_promote_skips_null_relation():
 
 @pytest.mark.asyncio
 async def test_hebbian_promote_skips_unknown_relation_type():
-    from mcp_engine.sweep import _hebbian_promote
+    from campy.brain.brainstem.sweep import _hebbian_promote
     db = _make_db(rows_by_query={
         "CO_OCCURS_WITH": [["c1", "A", "c2", "B", 12]],
     })
@@ -328,7 +328,7 @@ async def test_hebbian_promote_skips_unknown_relation_type():
 
 @pytest.mark.asyncio
 async def test_hebbian_promote_handles_bad_llm_json():
-    from mcp_engine.sweep import _hebbian_promote
+    from campy.brain.brainstem.sweep import _hebbian_promote
     db = _make_db(rows_by_query={
         "CO_OCCURS_WITH": [["c1", "A", "c2", "B", 12]],
     })
@@ -341,7 +341,7 @@ async def test_hebbian_promote_handles_bad_llm_json():
 
 @pytest.mark.asyncio
 async def test_hebbian_promote_skips_empty_text():
-    from mcp_engine.sweep import _hebbian_promote
+    from campy.brain.brainstem.sweep import _hebbian_promote
     db = _make_db(rows_by_query={
         "CO_OCCURS_WITH": [["c1", "", "c2", "B", 12]],
     })
@@ -352,7 +352,7 @@ async def test_hebbian_promote_skips_empty_text():
 
 @pytest.mark.asyncio
 async def test_hebbian_promote_empty_db_no_error():
-    from mcp_engine.sweep import _hebbian_promote
+    from campy.brain.brainstem.sweep import _hebbian_promote
     db = _make_db()
     llm = _make_llm({"relation_type": "REQUIRES", "confidence": 0.9})
     p, e = await _hebbian_promote(db, llm, co_occurrence_threshold=10)
@@ -362,7 +362,7 @@ async def test_hebbian_promote_empty_db_no_error():
 
 @pytest.mark.asyncio
 async def test_hebbian_promote_writes_inferred_by_llm():
-    from mcp_engine.sweep import _hebbian_promote
+    from campy.brain.brainstem.sweep import _hebbian_promote
     db = _make_db(rows_by_query={
         "CO_OCCURS_WITH": [["c1", "FastAPI", "c2", "uvicorn", 20]],
     })
@@ -379,7 +379,7 @@ async def test_hebbian_promote_writes_inferred_by_llm():
 
 @pytest.mark.asyncio
 async def test_recompute_centroids_updates_gist_class():
-    from mcp_engine.sweep import _recompute_centroids
+    from campy.brain.brainstem.sweep import _recompute_centroids
     embedding = [1.0] + [0.0] * 383
     db = _make_db(rows_by_query={
         "DISTINCT e.gist_class": [["Decision"]],
@@ -394,7 +394,7 @@ async def test_recompute_centroids_updates_gist_class():
 
 @pytest.mark.asyncio
 async def test_recompute_centroids_empty_db_no_error():
-    from mcp_engine.sweep import _recompute_centroids
+    from campy.brain.brainstem.sweep import _recompute_centroids
     db = _make_db()
     c, e = await _recompute_centroids(db)
     assert c == 0
@@ -403,7 +403,7 @@ async def test_recompute_centroids_empty_db_no_error():
 
 @pytest.mark.asyncio
 async def test_recompute_centroids_mean_pools_multiple_examples():
-    from mcp_engine.sweep import _recompute_centroids
+    from campy.brain.brainstem.sweep import _recompute_centroids
     emb_a = [1.0, 0.0] + [0.0] * 382
     emb_b = [0.0, 1.0] + [0.0] * 382
     db = _make_db(rows_by_query={
@@ -422,7 +422,7 @@ async def test_recompute_centroids_mean_pools_multiple_examples():
 
 @pytest.mark.asyncio
 async def test_run_sweep_summary_includes_centroids_updated():
-    from mcp_engine.sweep import run_sweep
+    from campy.brain.brainstem.sweep import run_sweep
     db = _make_db()
     config = {"pruning": {"sweep_interval_seconds": 300, "archive_threshold": 0.10,
                           "resurrection_threshold": 0.85, "decay_rate": {}}}

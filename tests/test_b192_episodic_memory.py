@@ -2,13 +2,13 @@ from __future__ import annotations
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from mcp_engine.tools import notify_turn, reconstruct_timeline
+from campy.brain.thalamus.tools import notify_turn, reconstruct_timeline
 
 
 @pytest.fixture(autouse=True)
 def _mock_embeddings(monkeypatch):
     """Keep tests fully offline; do not load remote sentence-transformer models."""
-    monkeypatch.setattr("mcp_engine.tools.emb.embed", lambda text, model_name=None: [0.1] * 384)
+    monkeypatch.setattr("campy.brain.thalamus.tools.emb.embed", lambda text, model_name=None: [0.1] * 384)
 
 
 class FakeResult:
@@ -66,12 +66,12 @@ async def test_notify_turn_creates_followed_by(monkeypatch):
     async def _fake_get_or_create_main_quest(db, repo_root, git_branch, embedding_model, now):
         return "quest-1"
 
-    monkeypatch.setattr("mcp_engine.tools.get_or_create_main_quest", _fake_get_or_create_main_quest)
+    monkeypatch.setattr("campy.brain.thalamus.tools.get_or_create_main_quest", _fake_get_or_create_main_quest)
 
     async def _fake_get_or_create_session(db_, sid, qid, now):
         return None
 
-    monkeypatch.setattr("mcp_engine.tools.get_or_create_session", _fake_get_or_create_session)
+    monkeypatch.setattr("campy.brain.thalamus.tools.get_or_create_session", _fake_get_or_create_session)
 
     config = {"embeddings": {"model": "mock"}, "ingestion": {"max_ingest_chars": 4000}}
 

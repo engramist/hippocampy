@@ -58,7 +58,7 @@ class TestCSVIngestion:
     async def test_csv_ingestion_basic(self, pandas, mock_db, config, tmp_path):
         """Test basic CSV ingestion."""
         pd = pandas
-        from mcp_engine.tabular_ingest import ingest_tabular
+        from campy.brain.sensory_cortex.tabular_ingest import ingest_tabular
         
         # Create a test CSV file
         csv_file = tmp_path / "test.csv"
@@ -78,7 +78,7 @@ class TestCSVIngestion:
     @pytest.mark.asyncio
     async def test_csv_nonexistent_file(self, mock_db, config):
         """Test ingestion of nonexistent file."""
-        from mcp_engine.tabular_ingest import ingest_tabular
+        from campy.brain.sensory_cortex.tabular_ingest import ingest_tabular
         
         result = await ingest_tabular(mock_db, "/nonexistent/file.csv", config)
         assert "error" in result
@@ -87,7 +87,7 @@ class TestCSVIngestion:
     async def test_csv_creates_dataset_node(self, pandas, mock_db, config, tmp_path):
         """Test that CSV ingestion creates a Dataset node in Kuzu."""
         pd = pandas
-        from mcp_engine.tabular_ingest import ingest_tabular
+        from campy.brain.sensory_cortex.tabular_ingest import ingest_tabular
         
         csv_file = tmp_path / "test.csv"
         df = pd.DataFrame({
@@ -112,7 +112,7 @@ class TestTSVIngestion:
     async def test_tsv_ingestion(self, pandas, mock_db, config, tmp_path):
         """Test TSV file ingestion."""
         pd = pandas
-        from mcp_engine.tabular_ingest import ingest_tabular
+        from campy.brain.sensory_cortex.tabular_ingest import ingest_tabular
         
         # Create a test TSV file
         tsv_file = tmp_path / "test.tsv"
@@ -135,7 +135,7 @@ class TestXLSXIngestion:
     async def test_xlsx_single_sheet(self, pandas, openpyxl, mock_db, config, tmp_path):
         """Test XLSX with single sheet."""
         pd = pandas
-        from mcp_engine.tabular_ingest import ingest_tabular
+        from campy.brain.sensory_cortex.tabular_ingest import ingest_tabular
         
         xlsx_file = tmp_path / "test.xlsx"
         df = pd.DataFrame({
@@ -153,7 +153,7 @@ class TestXLSXIngestion:
     async def test_xlsx_multiple_sheets(self, pandas, openpyxl, mock_db, config, tmp_path):
         """Test XLSX with multiple sheets."""
         pd = pandas
-        from mcp_engine.tabular_ingest import ingest_tabular
+        from campy.brain.sensory_cortex.tabular_ingest import ingest_tabular
         
         xlsx_file = tmp_path / "test.xlsx"
         df1 = pd.DataFrame({"col1": [1, 2], "col2": [10, 20]})
@@ -172,7 +172,7 @@ class TestXLSXIngestion:
     async def test_xlsx_first_sheet_only_strategy(self, pandas, openpyxl, mock_db, tmp_path):
         """Test XLSX with first_only strategy."""
         pd = pandas
-        from mcp_engine.tabular_ingest import ingest_tabular
+        from campy.brain.sensory_cortex.tabular_ingest import ingest_tabular
         
         xlsx_file = tmp_path / "test.xlsx"
         df1 = pd.DataFrame({"col1": [1, 2]})
@@ -200,7 +200,7 @@ class TestChangeDetection:
     async def test_change_detection_same_hash(self, pandas, mock_db, config, tmp_path):
         """Test that re-uploading identical file is detected."""
         pd = pandas
-        from mcp_engine.tabular_ingest import ingest_tabular
+        from campy.brain.sensory_cortex.tabular_ingest import ingest_tabular
         
         csv_file = tmp_path / "test.csv"
         df = pd.DataFrame({"col1": [1, 2], "col2": [10, 20]})
@@ -222,7 +222,7 @@ class TestSchemaExtraction:
     async def test_schema_json_structure(self, pandas, mock_db, config, tmp_path):
         """Test that schema_json is correctly formatted."""
         pd = pandas
-        from mcp_engine.tabular_ingest import ingest_tabular
+        from campy.brain.sensory_cortex.tabular_ingest import ingest_tabular
         
         csv_file = tmp_path / "test.csv"
         df = pd.DataFrame({
@@ -251,7 +251,7 @@ class TestDatasetNodeProperties:
     async def test_dataset_node_has_all_properties(self, pandas, mock_db, config, tmp_path):
         """Test that Dataset node includes required properties."""
         pd = pandas
-        from mcp_engine.tabular_ingest import ingest_tabular
+        from campy.brain.sensory_cortex.tabular_ingest import ingest_tabular
         
         csv_file = tmp_path / "test.csv"
         df = pd.DataFrame({"col": [1, 2, 3]})
@@ -276,7 +276,7 @@ class TestErrorHandling:
         csv_file = tmp_path / "malformed.csv"
         csv_file.write_text("column1,column2\nvalue1\n")  # Missing value in second row
         
-        from mcp_engine.tabular_ingest import ingest_tabular
+        from campy.brain.sensory_cortex.tabular_ingest import ingest_tabular
         
         # Should handle gracefully or raise appropriate error
         result = await ingest_tabular(mock_db, str(csv_file), config)
@@ -287,7 +287,7 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_unsupported_extension(self, mock_db, config, tmp_path):
         """Test handling of unsupported file extension."""
-        from mcp_engine.tabular_ingest import ingest_tabular
+        from campy.brain.sensory_cortex.tabular_ingest import ingest_tabular
         
         unsupported_file = tmp_path / "test.docx"
         unsupported_file.write_text("some content")
@@ -304,7 +304,7 @@ class TestIntegration:
     async def test_full_workflow_csv_to_dataset(self, pandas, mock_db, config, tmp_path):
         """Test complete workflow from CSV to Dataset node."""
         pd = pandas
-        from mcp_engine.tabular_ingest import ingest_tabular
+        from campy.brain.sensory_cortex.tabular_ingest import ingest_tabular
         
         csv_file = tmp_path / "budget.csv"
         df = pd.DataFrame({

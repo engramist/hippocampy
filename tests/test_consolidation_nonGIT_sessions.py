@@ -12,9 +12,9 @@ try:
 except ImportError:
     SPACY_AVAILABLE = False
 
-from mcp_engine.graph import embeddings as emb
-from mcp_engine.loop.orchestrator import run_loop
-from mcp_engine.tools import init_loop_queue, notify_turn
+from campy.brain.hippocampus.graph import embeddings as emb
+from campy.brain.temporal_lobe.loop.orchestrator import run_loop
+from campy.brain.thalamus.tools import init_loop_queue, notify_turn
 
 
 class MockQueryResult:

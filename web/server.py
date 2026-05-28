@@ -917,7 +917,7 @@ def create_app(db, config: dict | None = None) -> FastAPI:
     # ------------------------------------------------------------------
     # REST API endpoints (B262)
     # ------------------------------------------------------------------
-    from mcp_engine.rest_api import create_router
+    from campy.brain.brainstem.rest_api import create_router
     
     rest_routes = create_router(db=db, config=_config)
     for route in rest_routes:
@@ -942,8 +942,8 @@ async def _dispatch_mcp(request: dict, _db, _cfg: dict) -> dict | None:
     the brain_daemon IPC dispatcher but runs in-process (no socket hop).
     Handles: initialize, notifications/initialized, tools/list, tools/call.
     """
-    from mcp_engine.tools import TOOL_HANDLERS
-    from mcp_engine.tool_schemas import TOOLS as _TOOLS
+    from campy.brain.thalamus.tools import TOOL_HANDLERS
+    from campy.brain.thalamus.tool_schemas import TOOLS as _TOOLS
 
     method = request.get("method", "")
     params = request.get("params", {})
@@ -970,7 +970,7 @@ async def _dispatch_mcp(request: dict, _db, _cfg: dict) -> dict | None:
         return ok({"tools": _TOOLS})
 
     if method == "tools/call":
-        from mcp_engine.activity_log import emit_activity, compact_details
+        from campy.brain.brainstem.activity_log import emit_activity, compact_details
         tool_name = params.get("name", "")
         tool_args = params.get("arguments", {})
         tool_args = _inject_sse_context(tool_args)

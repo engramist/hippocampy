@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 # ---------------------------------------------------------------------------
 
 def test_get_quest_for_artifact_returns_empty_when_no_chain():
-    from mcp_engine.analogical import _get_quest_for_artifact
+    from campy.brain.thalamus.analogical import _get_quest_for_artifact
 
     class EmptyResult:
         def has_next(self): return False
@@ -30,7 +30,7 @@ def test_get_quest_for_artifact_returns_empty_when_no_chain():
 
 
 def test_get_quest_for_artifact_returns_quest_when_chain_exists():
-    from mcp_engine.analogical import _get_quest_for_artifact
+    from campy.brain.thalamus.analogical import _get_quest_for_artifact
 
     class ChainResult:
         def has_next(self): return True
@@ -45,7 +45,7 @@ def test_get_quest_for_artifact_returns_quest_when_chain_exists():
 
 
 def test_get_quest_for_artifact_degrades_on_db_error():
-    from mcp_engine.analogical import _get_quest_for_artifact
+    from campy.brain.thalamus.analogical import _get_quest_for_artifact
 
     class BrokenDB:
         def execute(self, q, p=None):
@@ -61,7 +61,7 @@ def test_get_quest_for_artifact_degrades_on_db_error():
 
 @pytest.mark.asyncio
 async def test_analogical_search_empty_query():
-    from mcp_engine.analogical import analogical_search
+    from campy.brain.thalamus.analogical import analogical_search
 
     class MockDB:
         def vector_search(self, table_name, idx, vec, limit): return []
@@ -73,7 +73,7 @@ async def test_analogical_search_empty_query():
 
 @pytest.mark.asyncio
 async def test_analogical_search_returns_cross_quest_flag():
-    from mcp_engine.analogical import analogical_search
+    from campy.brain.thalamus.analogical import analogical_search
 
     class EmptyResult:
         def has_next(self): return False
@@ -94,7 +94,7 @@ async def test_analogical_search_returns_cross_quest_flag():
 
 @pytest.mark.asyncio
 async def test_analogical_search_returns_results_above_threshold():
-    from mcp_engine.analogical import analogical_search
+    from campy.brain.thalamus.analogical import analogical_search
 
     class EmptyResult:
         def has_next(self): return False
@@ -128,7 +128,7 @@ async def test_analogical_search_returns_results_above_threshold():
 
 @pytest.mark.asyncio
 async def test_analogical_search_excludes_archived_nodes():
-    from mcp_engine.analogical import analogical_search
+    from campy.brain.thalamus.analogical import analogical_search
 
     class EmptyResult:
         def has_next(self): return False
@@ -155,7 +155,7 @@ async def test_analogical_search_excludes_archived_nodes():
 
 @pytest.mark.asyncio
 async def test_analogical_search_excludes_current_quest():
-    from mcp_engine.analogical import analogical_search
+    from campy.brain.thalamus.analogical import analogical_search
 
     class SameQuestResult:
         def has_next(self): return True
@@ -184,7 +184,7 @@ async def test_analogical_search_excludes_current_quest():
 
 @pytest.mark.asyncio
 async def test_analogical_search_includes_cross_quest_results():
-    from mcp_engine.analogical import analogical_search
+    from campy.brain.thalamus.analogical import analogical_search
 
     class OtherQuestResult:
         def has_next(self): return True
@@ -215,7 +215,7 @@ async def test_analogical_search_includes_cross_quest_results():
 
 @pytest.mark.asyncio
 async def test_analogical_search_respects_limit():
-    from mcp_engine.analogical import analogical_search
+    from campy.brain.thalamus.analogical import analogical_search
 
     class EmptyResult:
         def has_next(self): return False
@@ -243,7 +243,7 @@ async def test_analogical_search_respects_limit():
 
 @pytest.mark.asyncio
 async def test_analogical_search_results_sorted_by_similarity():
-    from mcp_engine.analogical import analogical_search
+    from campy.brain.thalamus.analogical import analogical_search
 
     class EmptyResult:
         def has_next(self): return False
@@ -273,7 +273,7 @@ async def test_analogical_search_results_sorted_by_similarity():
 
 @pytest.mark.asyncio
 async def test_analogical_search_searches_multiple_tables():
-    from mcp_engine.analogical import analogical_search
+    from campy.brain.thalamus.analogical import analogical_search
 
     class EmptyResult:
         def has_next(self): return False
@@ -303,7 +303,7 @@ async def test_analogical_search_searches_multiple_tables():
 # ---------------------------------------------------------------------------
 
 def test_find_similar_quests_empty_when_no_current_quest():
-    from mcp_engine.analogical import find_similar_quests
+    from campy.brain.thalamus.analogical import find_similar_quests
 
     class MockDB:
         def execute(self, q, p=None): return None
@@ -314,7 +314,7 @@ def test_find_similar_quests_empty_when_no_current_quest():
 
 
 def test_find_similar_quests_skips_current_quest():
-    from mcp_engine.analogical import find_similar_quests
+    from campy.brain.thalamus.analogical import find_similar_quests
 
     class EmbResult:
         def has_next(self): return True
@@ -339,7 +339,7 @@ def test_find_similar_quests_skips_current_quest():
 
 
 def test_find_similar_quests_returns_empty_on_db_error():
-    from mcp_engine.analogical import find_similar_quests
+    from campy.brain.thalamus.analogical import find_similar_quests
 
     class BrokenDB:
         def execute(self, q, p=None):
@@ -352,7 +352,7 @@ def test_find_similar_quests_returns_empty_on_db_error():
 
 
 def test_find_similar_quests_returns_empty_when_no_embedding():
-    from mcp_engine.analogical import find_similar_quests
+    from campy.brain.thalamus.analogical import find_similar_quests
 
     class NoEmbResult:
         def has_next(self): return True
@@ -372,7 +372,7 @@ def test_find_similar_quests_returns_empty_when_no_embedding():
 
 @pytest.mark.asyncio
 async def test_analogical_search_tool_handler():
-    from mcp_engine.tools import analogical_search as tool_handler
+    from campy.brain.thalamus.tools import analogical_search as tool_handler
 
     class EmptyResult:
         def has_next(self): return False
@@ -392,7 +392,7 @@ async def test_analogical_search_tool_handler():
 
 @pytest.mark.asyncio
 async def test_analogical_search_tool_empty_query():
-    from mcp_engine.tools import analogical_search as tool_handler
+    from campy.brain.thalamus.tools import analogical_search as tool_handler
 
     class MockDB:
         def vector_search(self, t, i, v, l): return []

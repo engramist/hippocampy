@@ -13,7 +13,7 @@ from typing import Any
 
 import yaml
 
-from mcp_engine.graph.embeddings import embed
+from campy.brain.hippocampus.graph.embeddings import embed
 
 _logger = logging.getLogger(__name__)
 

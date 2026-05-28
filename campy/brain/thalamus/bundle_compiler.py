@@ -236,7 +236,7 @@ async def _stage_exact_facts(db, query: str, config: dict, tier_config: dict) ->
     These are cheap (short text) and high-value, so always include.
     """
     try:
-        from mcp_engine.graph import embeddings as emb
+        from campy.brain.hippocampus.graph import embeddings as emb
 
         embedding_model = config.get("embeddings", {}).get(
             "model", "sentence-transformers/all-MiniLM-L6-v2"
@@ -286,7 +286,7 @@ async def _stage_semantic_context(db, query: str, config: dict, tier_config: dic
     Top-k results ranked by: pathway_strength * confidence * (1 + outcome_boost)
     """
     try:
-        from mcp_engine.graph import embeddings as emb
+        from campy.brain.hippocampus.graph import embeddings as emb
 
         embedding_model = config.get("embeddings", {}).get(
             "model", "sentence-transformers/all-MiniLM-L6-v2"

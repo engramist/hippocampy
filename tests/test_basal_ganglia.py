@@ -65,7 +65,7 @@ class TestFrustrationClusterDetection:
     @pytest.mark.asyncio
     async def test_no_high_salience_nodes_returns_zero(self):
         """No nodes above salience threshold -> no Procedures created."""
-        from mcp_engine.sweep import _detect_frustration_clusters
+        from campy.brain.brainstem.sweep import _detect_frustration_clusters
         db = _make_sweep_db()
         config = {"embeddings": {"model": "test-model"}}
         count, errors = await _detect_frustration_clusters(db, config)
@@ -75,7 +75,7 @@ class TestFrustrationClusterDetection:
     @pytest.mark.asyncio
     async def test_cluster_of_three_creates_avoidance_procedure(self):
         """3 high-salience nodes with similar embeddings -> 1 avoidance Procedure."""
-        from mcp_engine.sweep import _detect_frustration_clusters
+        from campy.brain.brainstem.sweep import _detect_frustration_clusters
 
         # Create 3 nodes with identical embeddings (similarity = 1.0)
         base_emb = [1.0] + [0.0] * 383
@@ -102,7 +102,7 @@ class TestFrustrationClusterDetection:
     @pytest.mark.asyncio
     async def test_cluster_below_threshold_no_procedure(self):
         """Only 2 high-salience nodes (below min_cluster=3) -> no Procedure."""
-        from mcp_engine.sweep import _detect_frustration_clusters
+        from campy.brain.brainstem.sweep import _detect_frustration_clusters
 
         base_emb = [1.0] + [0.0] * 383
         nodes = [
@@ -120,7 +120,7 @@ class TestFrustrationClusterDetection:
     @pytest.mark.asyncio
     async def test_dissimilar_nodes_not_clustered(self):
         """3 high-salience nodes with different embeddings -> no cluster."""
-        from mcp_engine.sweep import _detect_frustration_clusters
+        from campy.brain.brainstem.sweep import _detect_frustration_clusters
 
         nodes = [
             ("id-1", "deploy fail", "deploy broke", [1.0] + [0.0] * 383, 1.4),
@@ -138,7 +138,7 @@ class TestFrustrationClusterDetection:
     @pytest.mark.asyncio
     async def test_avoidance_procedure_has_steps_json(self):
         """Created avoidance Procedure has non-empty steps_json."""
-        from mcp_engine.sweep import _detect_frustration_clusters
+        from campy.brain.brainstem.sweep import _detect_frustration_clusters
 
         base_emb = [1.0] + [0.0] * 383
         nodes = [
@@ -167,7 +167,7 @@ class TestSalienceScoreStorage:
     async def test_store_concept_includes_salience_score(self):
         """When _store_concept is called with salience=1.4, the CREATE query
         should include salience_score: $salience_score."""
-        from mcp_engine.loop.orchestrator import _store_concept
+        from campy.brain.temporal_lobe.loop.orchestrator import _store_concept
 
         written = []
 
@@ -198,7 +198,7 @@ class TestSalienceScoreStorage:
     @pytest.mark.asyncio
     async def test_store_concept_default_salience_is_1(self):
         """When salience is not specified, salience_score defaults to 1.0."""
-        from mcp_engine.loop.orchestrator import _store_concept
+        from campy.brain.temporal_lobe.loop.orchestrator import _store_concept
 
         written = []
 
@@ -229,7 +229,7 @@ class TestSchemaMigrations:
         """Read schema.py source to check for migration entries."""
         schema_path = os.path.join(
             os.path.dirname(os.path.dirname(__file__)),
-            "mcp_engine",
+            "campy", "brain", "hippocampus",
             "schema.py"
         )
         with open(schema_path, "r") as f:
@@ -262,7 +262,7 @@ class TestEnhancedPlanClustering:
     @pytest.mark.asyncio
     async def test_min_cluster_size_lowered_to_two(self):
         """_synthesize_procedures should create Procedures from 2 Plans sharing a strategy."""
-        from mcp_engine.sweep import _synthesize_procedures
+        from campy.brain.brainstem.sweep import _synthesize_procedures
 
         # 2 Plans with same strategy
         query_rows = {
@@ -298,7 +298,7 @@ class TestProcedureMaturity:
     @pytest.mark.asyncio
     async def test_nascent_stage(self):
         """Procedure with application_count < 3 stays nascent."""
-        from mcp_engine.sweep import _update_procedure_maturity
+        from campy.brain.brainstem.sweep import _update_procedure_maturity
         db = _make_sweep_db()
         config = {}
         result = await _update_procedure_maturity(db, config)
@@ -308,7 +308,7 @@ class TestProcedureMaturity:
     @pytest.mark.asyncio
     async def test_maturity_update_writes_cypher(self):
         """_update_procedure_maturity writes a SET maturity_stage query."""
-        from mcp_engine.sweep import _update_procedure_maturity
+        from campy.brain.brainstem.sweep import _update_procedure_maturity
         db = _make_sweep_db()
         config = {}
         await _update_procedure_maturity(db, config)
@@ -323,7 +323,7 @@ class TestProcedureDegradation:
     @pytest.mark.asyncio
     async def test_degradation_query_includes_success_rate_check(self):
         """Degradation detection should check success_rate < 0.30."""
-        from mcp_engine.sweep import _update_procedure_maturity
+        from campy.brain.brainstem.sweep import _update_procedure_maturity
         db = _make_sweep_db()
         config = {}
         await _update_procedure_maturity(db, config)
@@ -333,7 +333,7 @@ class TestProcedureDegradation:
     @pytest.mark.asyncio
     async def test_archive_deeply_degraded(self):
         """Procedures already degraded with success_rate < 0.20 should be archived."""
-        from mcp_engine.sweep import _update_procedure_maturity
+        from campy.brain.brainstem.sweep import _update_procedure_maturity
         db = _make_sweep_db()
         config = {}
         await _update_procedure_maturity(db, config)

@@ -29,7 +29,7 @@ class EmptyResult:
 
 
 def test_jaccard_similarity_basic():
-    from mcp_engine.loop.step5_retrieval import _jaccard_similarity
+    from campy.brain.temporal_lobe.loop.step5_retrieval import _jaccard_similarity
 
     a = {"a", "b"}
     b = {"b", "c"}
@@ -37,7 +37,7 @@ def test_jaccard_similarity_basic():
 
 
 def test_topological_promotion_boosts_candidate():
-    from mcp_engine.loop.step5_retrieval import retrieve_candidates, MATCH_THRESHOLD
+    from campy.brain.temporal_lobe.loop.step5_retrieval import retrieve_candidates, MATCH_THRESHOLD
 
     class MockDB:
         def vector_search(self, table_name, index_name, embedding, limit):
@@ -70,7 +70,7 @@ def test_topological_promotion_boosts_candidate():
 
 
 def test_topological_no_promotion_if_low_jaccard():
-    from mcp_engine.loop.step5_retrieval import retrieve_candidates
+    from campy.brain.temporal_lobe.loop.step5_retrieval import retrieve_candidates
 
     class MockDB:
         def vector_search(self, table_name, index_name, embedding, limit):
@@ -96,7 +96,7 @@ def test_topological_no_promotion_if_low_jaccard():
 
 
 def test_neighbor_cap_and_promotion_with_large_neighbor_sets():
-    from mcp_engine.loop.step5_retrieval import retrieve_candidates
+    from campy.brain.temporal_lobe.loop.step5_retrieval import retrieve_candidates
 
     # create large neighbor lists for incoming and candidate but identical
     incoming_neighbors = [f'n{i}' for i in range(100)]

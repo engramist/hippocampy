@@ -1,8 +1,8 @@
 """Tests for the phase state machine."""
 import asyncio
 import pytest
-from mcp_engine.phase import set_phase, get_phase, subscribe, unsubscribe
-import mcp_engine.phase as phase_mod
+from campy.brain.brainstem.phase import set_phase, get_phase, subscribe, unsubscribe
+import campy.brain.brainstem.phase as phase_mod
 
 
 class TestPhaseStateMachine:
