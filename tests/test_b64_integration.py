@@ -5,9 +5,9 @@ import pytest
 import asyncio
 import uuid
 from datetime import datetime, timezone
-from mcp_engine.graph.kuzu_client import KuzuClient
-from mcp_engine.schema import init_schema
-from mcp_engine.tools import notify_turn, context_status
+from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from campy.brain.hippocampus.schema import init_schema
+from campy.brain.thalamus.tools import notify_turn, context_status
 
 @pytest.mark.asyncio
 async def test_b64_integration_message_count():

@@ -72,7 +72,7 @@ _CENTROIDS = {}   # no centroids → all entities fall to System 1 noise path
 @pytest.mark.asyncio
 async def test_run_loop_returns_summary_dict():
     """run_loop always returns a dict with standard summary keys."""
-    from mcp_engine.loop.orchestrator import run_loop
+    from campy.brain.temporal_lobe.loop.orchestrator import run_loop
     db = MockWriteLog()
     summary = await run_loop(
         message_id="msg-001",
@@ -96,7 +96,7 @@ async def test_run_loop_returns_summary_dict():
 @pytest.mark.asyncio
 async def test_run_loop_empty_message_stores_nothing():
     """Empty message produces no DB writes."""
-    from mcp_engine.loop.orchestrator import run_loop
+    from campy.brain.temporal_lobe.loop.orchestrator import run_loop
     db = MockWriteLog()
     await run_loop("msg-empty", "", db, None, _CONFIG, _CENTROIDS)
     assert len(db.writes) == 0
@@ -105,7 +105,7 @@ async def test_run_loop_empty_message_stores_nothing():
 @pytest.mark.asyncio
 async def test_run_loop_noise_message_noise_count_positive():
     """A message with no meaningful entities increments noise_count or entities=0."""
-    from mcp_engine.loop.orchestrator import run_loop
+    from campy.brain.temporal_lobe.loop.orchestrator import run_loop
     db = MockWriteLog()
     # Filler sentence — no named entities, no domain patterns
     summary = await run_loop(
@@ -124,7 +124,7 @@ async def test_run_loop_noise_message_noise_count_positive():
 @pytest.mark.asyncio
 async def test_run_loop_entity_sentence_produces_entities():
     """A sentence with clear named entities results in entities_found > 0."""
-    from mcp_engine.loop.orchestrator import run_loop
+    from campy.brain.temporal_lobe.loop.orchestrator import run_loop
     db = MockWriteLog()
     summary = await run_loop(
         "msg-ent",
@@ -141,7 +141,7 @@ async def test_run_loop_entity_sentence_produces_entities():
 @pytest.mark.asyncio
 async def test_run_loop_high_confidence_concept_creates_db_write():
     """A message that passes the confidence gate creates at least one Concept write."""
-    from mcp_engine.loop.orchestrator import run_loop
+    from campy.brain.temporal_lobe.loop.orchestrator import run_loop
 
     # Build centroids that will classify "PostgreSQL" strongly as PhysicalThing
     # (System 1 path — requires centroid embedding close to entity embedding)
@@ -165,7 +165,7 @@ async def test_run_loop_high_confidence_concept_creates_db_write():
 @pytest.mark.asyncio
 async def test_run_loop_requires_relation_detected():
     """A REQUIRES sentence has relations_found > 0 in summary."""
-    from mcp_engine.loop.orchestrator import run_loop
+    from campy.brain.temporal_lobe.loop.orchestrator import run_loop
     db = MockWriteLog()
     summary = await run_loop(
         "msg-rel",
@@ -183,7 +183,7 @@ async def test_run_loop_requires_relation_detected():
 @pytest.mark.asyncio
 async def test_run_loop_very_long_message_truncation():
     """Very long input doesn't raise — max_ingest_chars is respected."""
-    from mcp_engine.loop.orchestrator import run_loop
+    from campy.brain.temporal_lobe.loop.orchestrator import run_loop
     db = MockWriteLog()
     long_text = "PostgreSQL is fast. " * 500   # 10_000 chars
     config_with_limit = dict(_CONFIG, ingestion={"max_ingest_chars": 4000})
@@ -196,7 +196,7 @@ async def test_run_loop_very_long_message_truncation():
 @pytest.mark.asyncio
 async def test_run_loop_unicode_message():
     """Unicode characters (CJK, emoji) don't crash the loop."""
-    from mcp_engine.loop.orchestrator import run_loop
+    from campy.brain.temporal_lobe.loop.orchestrator import run_loop
     db = MockWriteLog()
     summary = await run_loop(
         "msg-unicode",
@@ -209,7 +209,7 @@ async def test_run_loop_unicode_message():
 @pytest.mark.asyncio
 async def test_run_loop_db_write_failure_is_swallowed():
     """A DB write failure during the loop is caught and doesn't propagate."""
-    from mcp_engine.loop.orchestrator import run_loop
+    from campy.brain.temporal_lobe.loop.orchestrator import run_loop
 
     class FailingDB(MockWriteLog):
         async def execute_write(self, query, params=None):
@@ -235,7 +235,7 @@ async def test_run_loop_session_id_passed_through():
     B43: When session_id is provided, run_loop accepts the parameter
     without error and passes it through to _reify_concept internals.
     """
-    from mcp_engine.loop.orchestrator import run_loop
+    from campy.brain.temporal_lobe.loop.orchestrator import run_loop
     db = MockWriteLog()
     # session_id is a new param — should not raise TypeError
     summary = await run_loop(
@@ -254,7 +254,7 @@ async def test_reify_concept_writes_established_in_edge():
     B43: _reify_concept writes an ESTABLISHED_IN edge from the artifact to
     the Session node when a valid session_id is provided.
     """
-    from mcp_engine.loop.orchestrator import _reify_concept
+    from campy.brain.temporal_lobe.loop.orchestrator import _reify_concept
 
     db = MockWriteLog()
 
@@ -262,7 +262,7 @@ async def test_reify_concept_writes_established_in_edge():
     entity = {"text": "Use Postgres for storage"}
 
     import asyncio
-    from mcp_engine.graph import embeddings as emb
+    from campy.brain.hippocampus.graph import embeddings as emb
     vector = emb.embed("Use Postgres for storage")
 
     await _reify_concept(
@@ -294,8 +294,8 @@ async def test_reify_concept_no_established_in_when_session_unknown():
     """
     B43: _reify_concept does NOT write ESTABLISHED_IN when session_id is 'unknown'.
     """
-    from mcp_engine.loop.orchestrator import _reify_concept
-    from mcp_engine.graph import embeddings as emb
+    from campy.brain.temporal_lobe.loop.orchestrator import _reify_concept
+    from campy.brain.hippocampus.graph import embeddings as emb
 
     db = MockWriteLog()
     entity = {"text": "Use Redis for caching"}

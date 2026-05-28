@@ -7,8 +7,8 @@ import types
 # Provide a dummy 'kuzu' module for tests that import graph clients.
 sys.modules.setdefault('kuzu', types.SimpleNamespace())
 
-from mcp_engine.tools import get_disambiguation_queue
-from mcp_engine.loop.step5_retrieval import retrieve_candidates
+from campy.brain.thalamus.tools import get_disambiguation_queue
+from campy.brain.temporal_lobe.loop.step5_retrieval import retrieve_candidates
 
 
 class RowResult:

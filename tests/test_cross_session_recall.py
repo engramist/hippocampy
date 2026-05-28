@@ -8,11 +8,11 @@ from pathlib import Path
 # Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from mcp_engine.tools import current_truth
+from campy.brain.thalamus.tools import current_truth
 
 # Check for embeddings availability
 try:
-    from mcp_engine.graph.embeddings import embed as _embed_check
+    from campy.brain.hippocampus.graph.embeddings import embed as _embed_check
     _embed_check("test")
     EMBEDDINGS_AVAILABLE = True
 except Exception:

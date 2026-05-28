@@ -29,7 +29,7 @@ _needs_spacy = pytest.mark.skipif(
 
 @_needs_spacy
 def test_step1_ner_extracts_entities():
-    from mcp_engine.loop.step1_ner import extract_entities
+    from campy.brain.temporal_lobe.loop.step1_ner import extract_entities
     doc, entities = extract_entities("Apple released the iPhone 16 in California.")
     assert len(entities) > 0
     texts = [e["text"] for e in entities]
@@ -39,7 +39,7 @@ def test_step1_ner_extracts_entities():
 
 @_needs_spacy
 def test_step1_ner_returns_doc_and_list():
-    from mcp_engine.loop.step1_ner import extract_entities
+    from campy.brain.temporal_lobe.loop.step1_ner import extract_entities
     doc, entities = extract_entities("Google is based in Mountain View.")
     assert hasattr(doc, "ents")         # spaCy Doc
     assert isinstance(entities, list)
@@ -50,13 +50,13 @@ def test_step1_ner_returns_doc_and_list():
 
 @_needs_spacy
 def test_step1_ner_empty_text():
-    from mcp_engine.loop.step1_ner import extract_entities
+    from campy.brain.temporal_lobe.loop.step1_ner import extract_entities
     doc, entities = extract_entities("")
     assert entities == []
 
 
 def test_step1_junk_filter_rejects_box_drawing():
-    from mcp_engine.loop.step1_ner import _is_junk_entity
+    from campy.brain.temporal_lobe.loop.step1_ner import _is_junk_entity
     assert _is_junk_entity("╮") is True
     assert _is_junk_entity("─────────") is True
     assert _is_junk_entity("│") is True
@@ -64,13 +64,13 @@ def test_step1_junk_filter_rejects_box_drawing():
 
 
 def test_step1_junk_filter_rejects_uuids():
-    from mcp_engine.loop.step1_ner import _is_junk_entity
+    from campy.brain.temporal_lobe.loop.step1_ner import _is_junk_entity
     assert _is_junk_entity("1b38edeb-7e6d-4023-8bd8-6d95bd30273b") is True
     assert _is_junk_entity("35997791-1232-4022-bb63-2a4379d0c990") is True
 
 
 def test_step1_junk_filter_rejects_formatting_artifacts():
-    from mcp_engine.loop.step1_ner import _is_junk_entity
+    from campy.brain.temporal_lobe.loop.step1_ner import _is_junk_entity
     assert _is_junk_entity("▟▀ Plan") is True     # < 40% alnum
     assert _is_junk_entity("/auth\n  ") is True    # embedded newline
     assert _is_junk_entity("") is True
@@ -78,7 +78,7 @@ def test_step1_junk_filter_rejects_formatting_artifacts():
 
 
 def test_step1_junk_filter_numbers():
-    from mcp_engine.loop.step1_ner import _is_junk_entity
+    from campy.brain.temporal_lobe.loop.step1_ner import _is_junk_entity
     assert _is_junk_entity("0.92") is True
     assert _is_junk_entity("03") is True
     assert _is_junk_entity("18") is True
@@ -88,7 +88,7 @@ def test_step1_junk_filter_numbers():
 
 def test_step1_junk_filter_ordinals():
     """ISSUE-026: ordinal words should be filtered as junk."""
-    from mcp_engine.loop.step1_ner import _is_junk_entity
+    from campy.brain.temporal_lobe.loop.step1_ner import _is_junk_entity
     assert _is_junk_entity("first") is True
     assert _is_junk_entity("Second") is True
     assert _is_junk_entity("1st") is True
@@ -97,7 +97,7 @@ def test_step1_junk_filter_ordinals():
 
 def test_step1_junk_filter_system_terms():
     """ISSUE-026: SideQuests internal vocabulary should be filtered."""
-    from mcp_engine.loop.step1_ner import _is_junk_entity
+    from campy.brain.temporal_lobe.loop.step1_ner import _is_junk_entity
     assert _is_junk_entity("MainQuest") is True
     assert _is_junk_entity("SideQuest") is True
     assert _is_junk_entity("Brain") is True
@@ -110,7 +110,7 @@ def test_step1_junk_filter_system_terms():
 
 
 def test_step1_junk_filter_keeps_real_entities():
-    from mcp_engine.loop.step1_ner import _is_junk_entity
+    from campy.brain.temporal_lobe.loop.step1_ner import _is_junk_entity
     assert _is_junk_entity("PostgreSQL") is False
     assert _is_junk_entity("SQLAlchemy") is False
     assert _is_junk_entity("JWT") is False
@@ -125,8 +125,8 @@ def test_step1_junk_filter_keeps_real_entities():
 
 @_needs_spacy
 def test_step1b_requires_relation():
-    from mcp_engine.loop.step1_ner import extract_entities
-    from mcp_engine.loop.step1b_relations import extract_relations
+    from campy.brain.temporal_lobe.loop.step1_ner import extract_entities
+    from campy.brain.temporal_lobe.loop.step1b_relations import extract_relations
     doc, entities = extract_entities("Authentication requires a valid token.")
     rels = extract_relations(doc, entities)
     # Should extract at least one REQUIRES relation
@@ -144,8 +144,8 @@ def test_step1b_requires_relation():
 
 @_needs_spacy
 def test_step1b_relation_types_are_valid():
-    from mcp_engine.loop.step1b_relations import extract_relations, VALID_RELATION_TYPES
-    from mcp_engine.loop.step1_ner import extract_entities
+    from campy.brain.temporal_lobe.loop.step1b_relations import extract_relations, VALID_RELATION_TYPES
+    from campy.brain.temporal_lobe.loop.step1_ner import extract_entities
     doc, entities = extract_entities("React extends the component model.")
     rels = extract_relations(doc, entities)
     for r in rels:
@@ -158,8 +158,8 @@ def test_step1b_relation_types_are_valid():
 
 def test_step2_system1_high_confidence():
     """If centroid similarity is high, classify without LLM."""
-    from mcp_engine.loop.step2_gist import classify_concept, SYSTEM1_THRESHOLD
-    from mcp_engine.graph import embeddings as emb
+    from campy.brain.temporal_lobe.loop.step2_gist import classify_concept, SYSTEM1_THRESHOLD
+    from campy.brain.hippocampus.graph import embeddings as emb
 
     # Build a fake centroid that IS the embedding of "constraint" text
     text = "you must always validate input"
@@ -176,8 +176,8 @@ def test_step2_system1_high_confidence():
 
 def test_step2_noise_below_floor():
     """Random noise vector far from all centroids → noise exit."""
-    from mcp_engine.loop.step2_gist import classify_concept
-    from mcp_engine.graph import embeddings as emb
+    from campy.brain.temporal_lobe.loop.step2_gist import classify_concept
+    from campy.brain.hippocampus.graph import embeddings as emb
 
     # Two very different concepts → low similarity between them
     centroid_text = "mandatory access control policy enforcement"
@@ -203,8 +203,8 @@ def test_step2_llm_fallback_called_in_gray_zone(monkeypatch):
     rather than relying on real embedding distances which may vary.
     """
     import math
-    from mcp_engine.loop import step2_gist
-    from mcp_engine.graph import embeddings as emb
+    from campy.brain.temporal_lobe.loop import step2_gist
+    from campy.brain.hippocampus.graph import embeddings as emb
 
     class MockLLM:
         def __init__(self):
@@ -244,8 +244,8 @@ def test_step2_llm_fallback_called_in_gray_zone(monkeypatch):
 
 def test_step2_decision_sentence_not_noise():
     """ISSUE-025: decision sentences about tools must not be dropped as noise."""
-    from mcp_engine.loop.step2_gist import classify_concept, NOISE_FLOOR
-    from mcp_engine.graph import embeddings as emb
+    from campy.brain.temporal_lobe.loop.step2_gist import classify_concept, NOISE_FLOOR
+    from campy.brain.hippocampus.graph import embeddings as emb
     import numpy as np
     from pathlib import Path
     import re
@@ -291,32 +291,32 @@ def test_step2_decision_sentence_not_noise():
 # ---------------------------------------------------------------------------
 
 def test_step3_restriction_routes_to_demand():
-    from mcp_engine.loop.step3_schema_org import route_to_schema_org
+    from campy.brain.temporal_lobe.loop.step3_schema_org import route_to_schema_org
     result = route_to_schema_org("Restriction")
     assert result["schema_org_type"] == "Demand"
     assert "description" in result["properties"]
 
 
 def test_step3_planned_event_routes_to_action():
-    from mcp_engine.loop.step3_schema_org import route_to_schema_org
+    from campy.brain.temporal_lobe.loop.step3_schema_org import route_to_schema_org
     result = route_to_schema_org("PlannedEvent")
     assert result["schema_org_type"] == "Action"
 
 
 def test_step3_agent_person_disambiguation():
-    from mcp_engine.loop.step3_schema_org import route_to_schema_org
+    from campy.brain.temporal_lobe.loop.step3_schema_org import route_to_schema_org
     result = route_to_schema_org("Agent", spacy_label="PERSON")
     assert result["schema_org_type"] == "Person"
 
 
 def test_step3_agent_org_disambiguation():
-    from mcp_engine.loop.step3_schema_org import route_to_schema_org
+    from campy.brain.temporal_lobe.loop.step3_schema_org import route_to_schema_org
     result = route_to_schema_org("Agent", spacy_label="ORG")
     assert result["schema_org_type"] == "Organization"
 
 
 def test_step3_unknown_class_fallback():
-    from mcp_engine.loop.step3_schema_org import route_to_schema_org
+    from campy.brain.temporal_lobe.loop.step3_schema_org import route_to_schema_org
     result = route_to_schema_org("NonExistentClass")
     assert result["schema_org_type"] == "Thing"
 
@@ -326,7 +326,7 @@ def test_step3_unknown_class_fallback():
 # ---------------------------------------------------------------------------
 
 def test_step3b_returns_valid_relation():
-    from mcp_engine.loop.step3b_relations import extract_semantic_relations, SEMANTIC_TYPES
+    from campy.brain.temporal_lobe.loop.step3b_relations import extract_semantic_relations, SEMANTIC_TYPES
 
     class MockLLM:
         def chat(self, messages):
@@ -344,7 +344,7 @@ def test_step3b_returns_valid_relation():
 
 
 def test_step3b_null_response_returns_empty():
-    from mcp_engine.loop.step3b_relations import extract_semantic_relations
+    from campy.brain.temporal_lobe.loop.step3b_relations import extract_semantic_relations
 
     class MockLLM:
         def chat(self, messages):
@@ -359,7 +359,7 @@ def test_step3b_null_response_returns_empty():
 
 
 def test_step3b_no_llm_returns_empty():
-    from mcp_engine.loop.step3b_relations import extract_semantic_relations
+    from campy.brain.temporal_lobe.loop.step3b_relations import extract_semantic_relations
     entities = [
         {"text": "A", "label": "ORG", "gist_class": "Agent", "schema_org_type": "Organization"},
         {"text": "B", "label": "ORG", "gist_class": "Agent", "schema_org_type": "Organization"},
@@ -369,7 +369,7 @@ def test_step3b_no_llm_returns_empty():
 
 
 def test_step3b_invalid_relation_type_rejected():
-    from mcp_engine.loop.step3b_relations import extract_semantic_relations
+    from campy.brain.temporal_lobe.loop.step3b_relations import extract_semantic_relations
 
     class MockLLM:
         def chat(self, messages):
@@ -388,7 +388,7 @@ def test_step3b_invalid_relation_type_rejected():
 # ---------------------------------------------------------------------------
 
 def test_step4_decision_keywords_hard_lock():
-    from mcp_engine.loop.step4_pattern import classify_artifact, HARD_LOCK
+    from campy.brain.temporal_lobe.loop.step4_pattern import classify_artifact, HARD_LOCK
     result = classify_artifact(
         "We decided to use PostgreSQL. We agreed on this approach.",
         "Category", "DefinedTerm"
@@ -400,7 +400,7 @@ def test_step4_decision_keywords_hard_lock():
 
 
 def test_step4_constraint_keywords():
-    from mcp_engine.loop.step4_pattern import classify_artifact, NOISE_FLOOR
+    from campy.brain.temporal_lobe.loop.step4_pattern import classify_artifact, NOISE_FLOOR
     result = classify_artifact(
         "You must never store passwords in plaintext.",
         "Restriction", "Demand"
@@ -411,7 +411,7 @@ def test_step4_constraint_keywords():
 
 
 def test_step4_noise_floor_no_keywords_no_prior():
-    from mcp_engine.loop.step4_pattern import classify_artifact
+    from campy.brain.temporal_lobe.loop.step4_pattern import classify_artifact
     # Agent gist with no keywords has prior confidence 0.40 < NOISE_FLOOR
     result = classify_artifact("John Smith", "Agent", "Person")
     assert result["should_proceed"] is False
@@ -419,7 +419,7 @@ def test_step4_noise_floor_no_keywords_no_prior():
 
 
 def test_step4_restriction_prior_soft_lock():
-    from mcp_engine.loop.step4_pattern import classify_artifact, NOISE_FLOOR, HARD_LOCK
+    from campy.brain.temporal_lobe.loop.step4_pattern import classify_artifact, NOISE_FLOOR, HARD_LOCK
     # Restriction gist with no signal keywords → prior 0.80 → soft-lock
     result = classify_artifact(
         "The system will handle this appropriately.",  # no constraint keywords
@@ -432,7 +432,7 @@ def test_step4_restriction_prior_soft_lock():
 
 def test_step4_single_decision_signal_with_gist_crosses_hard_lock():
     """One keyword hit + gist agreement should reach full confidence (>0.90)."""
-    from mcp_engine.loop.step4_pattern import classify_artifact, HARD_LOCK
+    from campy.brain.temporal_lobe.loop.step4_pattern import classify_artifact, HARD_LOCK
     # "Category" gist has prior_type="decision" → gist agrees with keyword signal
     result = classify_artifact(
         "We decided to use SQLAlchemy as the ORM.",
@@ -446,7 +446,7 @@ def test_step4_single_decision_signal_with_gist_crosses_hard_lock():
 
 def test_step4_single_constraint_signal_with_gist_crosses_hard_lock():
     """One constraint keyword + Restriction gist should reach full confidence."""
-    from mcp_engine.loop.step4_pattern import classify_artifact, HARD_LOCK
+    from campy.brain.temporal_lobe.loop.step4_pattern import classify_artifact, HARD_LOCK
     result = classify_artifact(
         "All endpoints must require JWT authentication.",
         "Restriction", "Demand"
@@ -458,13 +458,13 @@ def test_step4_single_constraint_signal_with_gist_crosses_hard_lock():
 
 
 def test_step4_no_gist_class_returns_noise():
-    from mcp_engine.loop.step4_pattern import classify_artifact
+    from campy.brain.temporal_lobe.loop.step4_pattern import classify_artifact
     result = classify_artifact("some text", None, None)
     assert result["should_proceed"] is False
 
 
 def test_step4_requirement_keywords():
-    from mcp_engine.loop.step4_pattern import classify_artifact
+    from campy.brain.temporal_lobe.loop.step4_pattern import classify_artifact
     result = classify_artifact(
         "We need the API to return results within 200ms.",
         "Restriction", "Demand"
@@ -473,7 +473,7 @@ def test_step4_requirement_keywords():
 
 
 def test_step4_action_keywords():
-    from mcp_engine.loop.step4_pattern import classify_artifact
+    from campy.brain.temporal_lobe.loop.step4_pattern import classify_artifact
     result = classify_artifact(
         "We will implement OAuth next sprint.",
         "PlannedEvent", "Action"
@@ -488,7 +488,7 @@ def test_step4_action_keywords():
 
 def test_step4_assistant_role_capped_below_hard_lock():
     """Assistant turns with strong signals should still be capped at ASSISTANT_CAP."""
-    from mcp_engine.loop.step4_pattern import classify_artifact, HARD_LOCK, ASSISTANT_CAP
+    from campy.brain.temporal_lobe.loop.step4_pattern import classify_artifact, HARD_LOCK, ASSISTANT_CAP
     # This same input crosses HARD_LOCK for role="user"
     result_user = classify_artifact(
         "We decided to use SQLAlchemy for the ORM.",
@@ -510,7 +510,7 @@ def test_step4_assistant_role_capped_below_hard_lock():
 
 def test_step4_assistant_constraint_stays_tentative():
     """Assistant-originated constraints must not create confirmed Constraint nodes."""
-    from mcp_engine.loop.step4_pattern import classify_artifact, HARD_LOCK
+    from campy.brain.temporal_lobe.loop.step4_pattern import classify_artifact, HARD_LOCK
     result = classify_artifact(
         "You must always use bcrypt with cost factor 12.",
         "Restriction", "Demand", role="assistant"
@@ -521,7 +521,7 @@ def test_step4_assistant_constraint_stays_tentative():
 
 
 def test_step4_plan_signal_extracts_ordered_steps_numbered():
-    from mcp_engine.loop.step4_pattern import has_plan_signal, detect_ordered_plan_steps
+    from campy.brain.temporal_lobe.loop.step4_pattern import has_plan_signal, detect_ordered_plan_steps
     text = """Here is the plan:
 1. Gather failing tests
 2. Fix schema migration
@@ -534,7 +534,7 @@ def test_step4_plan_signal_extracts_ordered_steps_numbered():
 
 
 def test_step4_plan_signal_extracts_ordered_steps_bullets():
-    from mcp_engine.loop.step4_pattern import detect_ordered_plan_steps
+    from campy.brain.temporal_lobe.loop.step4_pattern import detect_ordered_plan_steps
     text = """My approach:
 - first run smoke tests
 - then patch tool schemas
@@ -545,18 +545,18 @@ def test_step4_plan_signal_extracts_ordered_steps_bullets():
 
 
 def test_step4_outcome_success_signal_valence():
-    from mcp_engine.loop.step4_pattern import infer_outcome_valence
+    from campy.brain.temporal_lobe.loop.step4_pattern import infer_outcome_valence
     assert infer_outcome_valence("Looks good, approved, all tests pass") == 0.8
 
 
 def test_step4_outcome_failure_signal_valence():
-    from mcp_engine.loop.step4_pattern import infer_outcome_valence
+    from campy.brain.temporal_lobe.loop.step4_pattern import infer_outcome_valence
     assert infer_outcome_valence("That broke production, revert and start over") == -0.8
 
 
 def test_step4_user_role_unchanged():
     """User turns are not affected by the assistant cap."""
-    from mcp_engine.loop.step4_pattern import classify_artifact, HARD_LOCK
+    from campy.brain.temporal_lobe.loop.step4_pattern import classify_artifact, HARD_LOCK
     result = classify_artifact(
         "We must never use SQLite in production.",
         "Restriction", "Demand", role="user"
@@ -567,7 +567,7 @@ def test_step4_user_role_unchanged():
 
 def test_step4_default_role_is_user():
     """Omitting role defaults to 'user' — no cap applied."""
-    from mcp_engine.loop.step4_pattern import classify_artifact, HARD_LOCK
+    from campy.brain.temporal_lobe.loop.step4_pattern import classify_artifact, HARD_LOCK
     result = classify_artifact(
         "We decided to use Redis for caching.",
         "Category", "DefinedTerm"
@@ -581,7 +581,7 @@ def test_step4_default_role_is_user():
 # ---------------------------------------------------------------------------
 
 def test_step5_filters_below_threshold():
-    from mcp_engine.loop.step5_retrieval import retrieve_candidates, MATCH_THRESHOLD
+    from campy.brain.temporal_lobe.loop.step5_retrieval import retrieve_candidates, MATCH_THRESHOLD
 
     class MockDB:
         def vector_search(self, table_name, index_name, embedding, limit):
@@ -598,7 +598,7 @@ def test_step5_filters_below_threshold():
 
 
 def test_step5_filters_archived_nodes():
-    from mcp_engine.loop.step5_retrieval import retrieve_candidates
+    from campy.brain.temporal_lobe.loop.step5_retrieval import retrieve_candidates
 
     class MockDB:
         def vector_search(self, table_name, index_name, embedding, limit):
@@ -615,7 +615,7 @@ def test_step5_filters_archived_nodes():
 
 
 def test_step5_filters_self():
-    from mcp_engine.loop.step5_retrieval import retrieve_candidates
+    from campy.brain.temporal_lobe.loop.step5_retrieval import retrieve_candidates
 
     class MockDB:
         def vector_search(self, table_name, index_name, embedding, limit):
@@ -632,7 +632,7 @@ def test_step5_filters_self():
 
 
 def test_step5_returns_sorted_by_similarity():
-    from mcp_engine.loop.step5_retrieval import retrieve_candidates
+    from campy.brain.temporal_lobe.loop.step5_retrieval import retrieve_candidates
 
     class MockDB:
         def vector_search(self, table_name, index_name, embedding, limit):
@@ -659,7 +659,7 @@ def test_step5_returns_sorted_by_similarity():
 # ---------------------------------------------------------------------------
 
 def test_step6_additive_classification():
-    from mcp_engine.loop.step6_arbitration import arbitrate
+    from campy.brain.temporal_lobe.loop.step6_arbitration import arbitrate
 
     class MockLLM:
         def chat(self, messages):
@@ -673,7 +673,7 @@ def test_step6_additive_classification():
 
 
 def test_step6_contradiction_classification():
-    from mcp_engine.loop.step6_arbitration import arbitrate
+    from campy.brain.temporal_lobe.loop.step6_arbitration import arbitrate
 
     class MockLLM:
         def chat(self, messages):
@@ -687,7 +687,7 @@ def test_step6_contradiction_classification():
 
 
 def test_step6_invalid_classification_falls_back_to_uncertain():
-    from mcp_engine.loop.step6_arbitration import arbitrate
+    from campy.brain.temporal_lobe.loop.step6_arbitration import arbitrate
 
     class MockLLM:
         def chat(self, messages):
@@ -700,7 +700,7 @@ def test_step6_invalid_classification_falls_back_to_uncertain():
 
 
 def test_step6_no_llm_returns_uncertain():
-    from mcp_engine.loop.step6_arbitration import arbitrate
+    from campy.brain.temporal_lobe.loop.step6_arbitration import arbitrate
     candidates = [{"concept_id": "abc", "text_raw": "x", "similarity": 0.80,
                    "pathway_strength": 0.5}]
     result = arbitrate({"text": "y"}, candidates, "ctx", llm_client=None)
@@ -708,7 +708,7 @@ def test_step6_no_llm_returns_uncertain():
 
 
 def test_step6_llm_error_returns_uncertain():
-    from mcp_engine.loop.step6_arbitration import arbitrate
+    from campy.brain.temporal_lobe.loop.step6_arbitration import arbitrate
 
     class BrokenLLM:
         def chat(self, messages):
@@ -725,7 +725,7 @@ def test_step6_llm_error_returns_uncertain():
 # ---------------------------------------------------------------------------
 
 def test_step7_increment_formula():
-    from mcp_engine.loop.step7_pathway import pathway_strength_increment
+    from campy.brain.temporal_lobe.loop.step7_pathway import pathway_strength_increment
     # Strengthen 0.5 with 1 day since access
     result = pathway_strength_increment(0.5, 1.0)
     expected = 0.5 + math.log(1 + 1/1.0)
@@ -733,7 +733,7 @@ def test_step7_increment_formula():
 
 
 def test_step7_increment_recent_access_stronger():
-    from mcp_engine.loop.step7_pathway import pathway_strength_increment
+    from campy.brain.temporal_lobe.loop.step7_pathway import pathway_strength_increment
     # More recent = bigger increment
     increment_recent = pathway_strength_increment(0.5, 0.001)
     increment_old    = pathway_strength_increment(0.5, 100.0)
@@ -741,13 +741,13 @@ def test_step7_increment_recent_access_stronger():
 
 
 def test_step7_increment_zero_days_doesnt_crash():
-    from mcp_engine.loop.step7_pathway import pathway_strength_increment
+    from campy.brain.temporal_lobe.loop.step7_pathway import pathway_strength_increment
     result = pathway_strength_increment(0.5, 0.0)
     assert result > 0.5
 
 
 def test_step7_decay_formula():
-    from mcp_engine.loop.step7_pathway import pathway_strength_decay
+    from campy.brain.temporal_lobe.loop.step7_pathway import pathway_strength_decay
     result = pathway_strength_decay(1.0, 0.95, 7.0)
     expected = 1.0 * (0.95 ** 7)
     assert abs(result - expected) < 1e-10
@@ -755,7 +755,7 @@ def test_step7_decay_formula():
 
 @pytest.mark.asyncio
 async def test_step7_apply_additive_updates_strength():
-    from mcp_engine.loop.step7_pathway import apply_additive
+    from campy.brain.temporal_lobe.loop.step7_pathway import apply_additive
 
     calls = []
 
@@ -785,7 +785,7 @@ async def test_step7_apply_additive_updates_strength():
 
 @pytest.mark.asyncio
 async def test_step7_apply_contradiction_archives_old():
-    from mcp_engine.loop.step7_pathway import apply_contradiction
+    from campy.brain.temporal_lobe.loop.step7_pathway import apply_contradiction
 
     writes = []
 
@@ -815,7 +815,7 @@ async def test_step7_apply_contradiction_archives_old():
 
 @pytest.mark.asyncio
 async def test_step7_co_occurs_with_single_pair():
-    from mcp_engine.loop.step7_pathway import write_co_occurs_with
+    from campy.brain.temporal_lobe.loop.step7_pathway import write_co_occurs_with
 
     writes = []
 
@@ -837,7 +837,7 @@ async def test_step7_co_occurs_with_single_pair():
 
 @pytest.mark.asyncio
 async def test_step7_co_occurs_with_three_concepts():
-    from mcp_engine.loop.step7_pathway import write_co_occurs_with
+    from campy.brain.temporal_lobe.loop.step7_pathway import write_co_occurs_with
 
     writes = []
 
@@ -852,7 +852,7 @@ async def test_step7_co_occurs_with_three_concepts():
 
 @pytest.mark.asyncio
 async def test_step7_co_occurs_with_less_than_two():
-    from mcp_engine.loop.step7_pathway import write_co_occurs_with
+    from campy.brain.temporal_lobe.loop.step7_pathway import write_co_occurs_with
 
     class MockDB:
         async def execute_write(self, query, params=None):

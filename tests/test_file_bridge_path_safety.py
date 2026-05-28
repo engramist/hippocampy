@@ -25,7 +25,7 @@ import pytest
 # Import helpers under test
 # ---------------------------------------------------------------------------
 
-from mcp_engine.file_bridge import _slugify, generate_agent_pointers
+from campy.brain.thalamus.file_bridge import _slugify, generate_agent_pointers
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +219,7 @@ class TestProjectChildResolution:
     def test_helper_importable(self):
         """Check whether _resolve_project_child exists yet."""
         try:
-            from mcp_engine.file_bridge import _resolve_project_child
+            from campy.brain.thalamus.file_bridge import _resolve_project_child
             assert callable(_resolve_project_child)
         except ImportError:
             pytest.skip(
@@ -230,7 +230,7 @@ class TestProjectChildResolution:
 
     def test_normal_child_accepted(self, tmp_path: Path):
         try:
-            from mcp_engine.file_bridge import _resolve_project_child
+            from campy.brain.thalamus.file_bridge import _resolve_project_child
         except ImportError:
             pytest.skip("_resolve_project_child not yet implemented")
         project = tmp_path / "project"
@@ -240,7 +240,7 @@ class TestProjectChildResolution:
 
     def test_traversal_rejected(self, tmp_path: Path):
         try:
-            from mcp_engine.file_bridge import _resolve_project_child
+            from campy.brain.thalamus.file_bridge import _resolve_project_child
         except ImportError:
             pytest.skip("_resolve_project_child not yet implemented")
         project = tmp_path / "project"
@@ -254,7 +254,7 @@ class TestProjectChildResolution:
     )
     def test_symlink_escape_rejected(self, tmp_path: Path):
         try:
-            from mcp_engine.file_bridge import _resolve_project_child
+            from campy.brain.thalamus.file_bridge import _resolve_project_child
         except ImportError:
             pytest.skip("_resolve_project_child not yet implemented")
         project = tmp_path / "project"
@@ -268,7 +268,7 @@ class TestProjectChildResolution:
 
     def test_nested_child_accepted(self, tmp_path: Path):
         try:
-            from mcp_engine.file_bridge import _resolve_project_child
+            from campy.brain.thalamus.file_bridge import _resolve_project_child
         except ImportError:
             pytest.skip("_resolve_project_child not yet implemented")
         project = tmp_path / "project"

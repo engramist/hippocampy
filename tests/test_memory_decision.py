@@ -5,7 +5,7 @@ Related card: B235 - MCP Memory Decision Helper Tool
 """
 
 import pytest
-from mcp_engine.memory_decision import decide_memory_action
+from campy.brain.thalamus.memory_decision import decide_memory_action
 
 
 class TestMemoryDecisionBasics:

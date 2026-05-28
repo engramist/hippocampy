@@ -11,8 +11,8 @@ from unittest.mock import MagicMock, AsyncMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from mcp_engine.loop.step7_5_lesson import extract_lessons
-from mcp_engine.tools import upsert_lesson, recall_relevant_lessons
+from campy.brain.temporal_lobe.loop.step7_5_lesson import extract_lessons
+from campy.brain.thalamus.tools import upsert_lesson, recall_relevant_lessons
 
 @pytest.mark.asyncio
 async def test_extract_lessons_trigger(monkeypatch):
@@ -27,9 +27,9 @@ async def test_extract_lessons_trigger(monkeypatch):
     text = "We learned that we should always use unit vectors for cosine similarity."
     
     # Mock embedding
-    from mcp_engine.graph import embeddings as emb
+    from campy.brain.hippocampus.graph import embeddings as emb
     monkeypatch.setattr(emb, "embed", MagicMock(return_value=[0.1] * 384))
-    
+
     count = await extract_lessons("msg-123", text, db, llm, config)
     
     assert count == 1
@@ -68,9 +68,9 @@ async def test_upsert_lesson_tool(monkeypatch):
     }
     
     # Mock embedding
-    from mcp_engine.graph import embeddings as emb
+    from campy.brain.hippocampus.graph import embeddings as emb
     monkeypatch.setattr(emb, "embed", MagicMock(return_value=[0.2] * 384))
-    
+
     result = await upsert_lesson(params, db, config)
     
     assert "lesson_id" in result
@@ -95,7 +95,7 @@ async def test_upsert_lesson_persists_scene_graph_metadata(monkeypatch):
         "valence": 0.8,
     }
 
-    from mcp_engine.graph import embeddings as emb
+    from campy.brain.hippocampus.graph import embeddings as emb
     monkeypatch.setattr(emb, "embed", MagicMock(return_value=[0.2] * 384))
 
     await upsert_lesson(params, db, config)

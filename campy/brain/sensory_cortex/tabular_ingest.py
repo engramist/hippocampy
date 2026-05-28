@@ -20,10 +20,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-from mcp_engine.tabular_store import create_table_from_dataframe
+from campy.brain.sensory_cortex.tabular_store import create_table_from_dataframe
 
 if TYPE_CHECKING:
-    from mcp_engine.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 
 
 async def ingest_tabular(
@@ -163,7 +163,7 @@ async def _ingest_single_dataset(
 
     # Create embedding for dataset (from schema summary)
     try:
-        from mcp_engine.graph import embeddings as emb
+        from campy.brain.hippocampus.graph import embeddings as emb
         col_names_text = "Columns: " + ", ".join(df.columns)
         embedding = emb.embed(col_names_text, model_name=embedding_model)
     except Exception:

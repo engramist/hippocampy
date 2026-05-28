@@ -28,7 +28,6 @@ IGNORED_DIR_NAMES = {
     "tests",
 }
 ALLOWED_KUZU_IMPORT_FILES = {
-    "mcp_engine/graph/kuzu_client.py",
     "campy/brain/hippocampus/graph/kuzu_client.py",
 }
 

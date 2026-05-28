@@ -29,7 +29,7 @@ def create_router(db=None, config: dict = None):
 
     async def _call_tool(tool_name: str, arguments: dict) -> dict:
         """Call an MCP tool handler directly."""
-        from mcp_engine.tools import TOOL_HANDLERS
+        from campy.brain.thalamus.tools import TOOL_HANDLERS
         handler = TOOL_HANDLERS.get(tool_name)
         if handler is None:
             return {"error": f"Unknown tool: {tool_name}"}
@@ -141,18 +141,18 @@ def create_router(db=None, config: dict = None):
 
     async def tools_endpoint(request: Request) -> JSONResponse:
         """GET /api/v1/tools — list available tools"""
-        from mcp_engine.tools import TOOL_HANDLERS
+        from campy.brain.thalamus.tools import TOOL_HANDLERS
         tools = [{"name": name} for name in sorted(TOOL_HANDLERS.keys())]
         return _ok({"tools": tools, "count": len(tools)})
 
     async def heartbeat_endpoint(request: Request) -> JSONResponse:
         """GET /api/v1/heartbeat — one-shot current phase."""
-        from mcp_engine.phase import get_phase
+        from campy.brain.brainstem.phase import get_phase
         return _ok(get_phase())
 
     async def activity_stream_endpoint(request: Request) -> StreamingResponse:
         """GET /api/v1/activity/stream — SSE stream of phase transitions."""
-        from mcp_engine.phase import subscribe, unsubscribe
+        from campy.brain.brainstem.phase import subscribe, unsubscribe
 
         q = subscribe()
 

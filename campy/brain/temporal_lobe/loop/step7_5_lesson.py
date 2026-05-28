@@ -13,7 +13,7 @@ import logging
 import asyncio
 from datetime import datetime, timezone
 
-from mcp_engine.graph import embeddings as emb
+from campy.brain.hippocampus.graph import embeddings as emb
 
 _logger = logging.getLogger(__name__)
 

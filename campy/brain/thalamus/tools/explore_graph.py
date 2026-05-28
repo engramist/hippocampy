@@ -3,9 +3,9 @@ import logging
 from typing import TYPE_CHECKING, List, Dict, Any, Set, Optional, Tuple
 
 if TYPE_CHECKING:
-    from mcp_engine.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 
-from mcp_engine.schema import get_relationship_types
+from campy.brain.hippocampus.schema import get_relationship_types
 
 _logger = logging.getLogger(__name__)
 

@@ -1,5 +1,5 @@
 """
-Tests for mcp_engine/loop/anomaly_detection.py — B12 Coverage
+Tests for campy/brain/temporal_lobe/loop/anomaly_detection.py — B12 Coverage
 
 Tests anomaly detection in Step 4 for constraint violations, value inversions,
 and goal hijacks. Covers IP Claim: structured anomaly detection layer as part
@@ -13,7 +13,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from mcp_engine.loop.anomaly_detection import (
+from campy.brain.temporal_lobe.loop.anomaly_detection import (
     _cosine_similarity,
     check_anomalies,
     store_anomaly_flag,

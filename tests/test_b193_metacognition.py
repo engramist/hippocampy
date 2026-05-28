@@ -42,7 +42,7 @@ def _make_db(rows_by_query=None):
 
 @pytest.mark.asyncio
 async def test_detects_missing_lessons_creates_gap():
-    from mcp_engine.sweep import _detect_knowledge_gaps
+    from campy.brain.brainstem.sweep import _detect_knowledge_gaps
 
     rows_by_query = {
         # No lessons returned
@@ -64,7 +64,7 @@ async def test_detects_missing_lessons_creates_gap():
 
 @pytest.mark.asyncio
 async def test_get_knowledge_gaps_returns_rows():
-    from mcp_engine.tools import get_knowledge_gaps
+    from campy.brain.thalamus.tools import get_knowledge_gaps
 
     rows_by_query = {
         "MATCH (g:KnowledgeGap) WHERE g.resolved = false": [["gap-1", "spatial", "missing_lessons", "desc", 0.8, 6, 0, "2026-04-10T00:00:00Z"]]

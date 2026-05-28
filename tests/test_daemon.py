@@ -88,7 +88,7 @@ async def test_dispatch_unknown_method_returns_error():
 @pytest.mark.asyncio
 async def test_dispatch_known_method_routes_to_handler(monkeypatch):
     """_dispatch calls the registered handler for a known method."""
-    from mcp_engine.tools import TOOL_HANDLERS
+    from campy.brain.thalamus.tools import TOOL_HANDLERS
     daemon = _make_daemon()
 
     called_with = {}
@@ -111,7 +111,7 @@ async def test_dispatch_known_method_routes_to_handler(monkeypatch):
 @pytest.mark.asyncio
 async def test_dispatch_handler_exception_returns_error(monkeypatch):
     """_dispatch wraps handler exceptions in -32000 JSON-RPC error."""
-    from mcp_engine.tools import TOOL_HANDLERS
+    from campy.brain.thalamus.tools import TOOL_HANDLERS
     daemon = _make_daemon()
 
     async def exploding_handler(params, db, config):
@@ -178,7 +178,7 @@ async def test_handle_connection_parse_error():
 @pytest.mark.asyncio
 async def test_handle_connection_valid_request_dispatched():
     """Valid JSON-RPC over the connection is dispatched and response sent."""
-    from mcp_engine.tools import TOOL_HANDLERS
+    from campy.brain.thalamus.tools import TOOL_HANDLERS
     daemon = _make_daemon()
 
     async def echo_handler(params, db, config):
@@ -239,7 +239,7 @@ async def test_loop_worker_continues_after_error(monkeypatch):
             "concepts_stored": 0, "noise_count": 0,
         }
 
-    import mcp_engine.loop.orchestrator as orch_module
+    import campy.brain.temporal_lobe.loop.orchestrator as orch_module
     monkeypatch.setattr(orch_module, "run_loop", mock_run_loop)
 
     # Use run_loop from brain_daemon import

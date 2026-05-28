@@ -2,7 +2,7 @@ import pytest
 import asyncio
 import json
 from unittest.mock import MagicMock, AsyncMock
-from mcp_engine.tools import get_openclaw_prompt
+from campy.brain.thalamus.tools import get_openclaw_prompt
 from adapters.openclaw_gateway import build_openclaw_prompt
 
 @pytest.fixture

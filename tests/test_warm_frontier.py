@@ -1,9 +1,9 @@
 import pytest
 import asyncio
 from unittest.mock import MagicMock, AsyncMock
-from mcp_engine.warm_frontier import compute_warm_frontier, get_warm_nodes
-from mcp_engine.tools import notify_turn, current_truth
-from mcp_engine.graph.kuzu_client import KuzuClient
+from campy.brain.temporal_lobe.warm_frontier import compute_warm_frontier, get_warm_nodes
+from campy.brain.thalamus.tools import notify_turn, current_truth
+from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 
 @pytest.fixture
 def db():
@@ -36,7 +36,7 @@ async def test_warm_frontier_activation_and_retrieval():
     # 2. Call notify_turn (which calls compute_warm_frontier)
     # We need to mock emb.embed too
     with MagicMock() as mock_emb:
-        import mcp_engine.graph.embeddings as emb
+        import campy.brain.hippocampus.graph.embeddings as emb
         original_embed = emb.embed
         emb.embed = MagicMock(return_value=[0.1]*384)
         
@@ -110,7 +110,7 @@ async def test_spread_activation():
         return m
     db.execute = MagicMock(side_effect=mock_execute)
     
-    from mcp_engine.warm_frontier import compute_warm_frontier
+    from campy.brain.temporal_lobe.warm_frontier import compute_warm_frontier
     await compute_warm_frontier(db, "session1", [0.1]*384)
     
     # Verify both c1 and c2 were activated

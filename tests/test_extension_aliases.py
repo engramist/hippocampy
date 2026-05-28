@@ -4,7 +4,7 @@ tests/test_extension_aliases.py — Audit OpenClaw tool aliases.
 
 import re
 from pathlib import Path
-from mcp_engine.tools import TOOL_HANDLERS
+from campy.brain.thalamus.tools import TOOL_HANDLERS
 
 def test_openclaw_aliases_resolve_to_handlers():
     """Verify all tools registered in OpenClaw index.ts map to valid TOOL_HANDLERS."""

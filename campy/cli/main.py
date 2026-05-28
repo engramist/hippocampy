@@ -29,7 +29,7 @@ from campy.cli.recall import app as recall_app
 from campy.cli.context import app as context_app
 from campy.cli.trigger import app as trigger_app
 from campy.branding import PRODUCT_NAME, SHORT_NAME
-from mcp_engine.config import load_config
+from campy.brain.brainstem.config import load_config
 
 app = typer.Typer(help=f"{PRODUCT_NAME} AI Memory System CLI")
 # Backward-compatible entrypoint for installed console scripts that import `cli`.
@@ -332,7 +332,7 @@ def activity(
     """
     Watch Campy memory activity without tailing the noisy daemon log.
     """
-    from mcp_engine.activity_log import (
+    from campy.brain.brainstem.activity_log import (
         activity_log_path,
         follow_records,
         format_activity,

@@ -60,7 +60,7 @@ SAMPLE_SEED_MD = """\
 
 def test_parse_seed_examples_returns_dict(tmp_path):
     """_parse_seed_examples returns a dict keyed by gist class name."""
-    from mcp_engine.schema import _parse_seed_examples
+    from campy.brain.hippocampus.schema import _parse_seed_examples
     seed_file = tmp_path / "GistSeedExamples.md"
     seed_file.write_text(SAMPLE_SEED_MD, encoding="utf-8")
     result = _parse_seed_examples(str(seed_file))
@@ -72,7 +72,7 @@ def test_parse_seed_examples_returns_dict(tmp_path):
 
 def test_parse_seed_examples_correct_sentence_count(tmp_path):
     """Sentence count per class matches the markdown."""
-    from mcp_engine.schema import _parse_seed_examples
+    from campy.brain.hippocampus.schema import _parse_seed_examples
     seed_file = tmp_path / "GistSeedExamples.md"
     seed_file.write_text(SAMPLE_SEED_MD, encoding="utf-8")
     result = _parse_seed_examples(str(seed_file))
@@ -83,7 +83,7 @@ def test_parse_seed_examples_correct_sentence_count(tmp_path):
 
 def test_parse_seed_examples_sentence_text_correct(tmp_path):
     """Extracted sentences match exactly (quotes stripped)."""
-    from mcp_engine.schema import _parse_seed_examples
+    from campy.brain.hippocampus.schema import _parse_seed_examples
     seed_file = tmp_path / "GistSeedExamples.md"
     seed_file.write_text(SAMPLE_SEED_MD, encoding="utf-8")
     result = _parse_seed_examples(str(seed_file))
@@ -93,7 +93,7 @@ def test_parse_seed_examples_sentence_text_correct(tmp_path):
 
 def test_parse_seed_examples_empty_file(tmp_path):
     """Empty seed file returns empty dict."""
-    from mcp_engine.schema import _parse_seed_examples
+    from campy.brain.hippocampus.schema import _parse_seed_examples
     seed_file = tmp_path / "empty.md"
     seed_file.write_text("", encoding="utf-8")
     result = _parse_seed_examples(str(seed_file))
@@ -102,7 +102,7 @@ def test_parse_seed_examples_empty_file(tmp_path):
 
 def test_parse_seed_examples_section_with_no_examples(tmp_path):
     """A section header with no numbered examples returns an empty list."""
-    from mcp_engine.schema import _parse_seed_examples
+    from campy.brain.hippocampus.schema import _parse_seed_examples
     md = "## gist:Category\n\nNo examples here yet.\n"
     seed_file = tmp_path / "partial.md"
     seed_file.write_text(md, encoding="utf-8")
@@ -113,7 +113,7 @@ def test_parse_seed_examples_section_with_no_examples(tmp_path):
 
 def test_parse_seed_examples_ignores_non_section_content(tmp_path):
     """Text before first section header is ignored."""
-    from mcp_engine.schema import _parse_seed_examples
+    from campy.brain.hippocampus.schema import _parse_seed_examples
     md = (
         "# Preamble\n\nSome introduction text.\n\n"
         "## gist:Event\n"
@@ -132,14 +132,14 @@ def test_parse_seed_examples_ignores_non_section_content(tmp_path):
 
 def test_routing_table_is_list():
     """ROUTING_TABLE is a list of tuples."""
-    from mcp_engine.schema import ROUTING_TABLE
+    from campy.brain.hippocampus.schema import ROUTING_TABLE
     assert isinstance(ROUTING_TABLE, list)
     assert len(ROUTING_TABLE) > 0
 
 
 def test_routing_table_entries_are_triples():
     """Each entry is (gist_class, schema_org_type, properties_list)."""
-    from mcp_engine.schema import ROUTING_TABLE
+    from campy.brain.hippocampus.schema import ROUTING_TABLE
     for entry in ROUTING_TABLE:
         assert len(entry) == 3, f"Entry should be 3-tuple: {entry}"
         gist_class, schema_type, props = entry
@@ -151,7 +151,7 @@ def test_routing_table_entries_are_triples():
 
 def test_routing_table_contains_expected_classes():
     """Core gist classes have routing entries."""
-    from mcp_engine.schema import ROUTING_TABLE
+    from campy.brain.hippocampus.schema import ROUTING_TABLE
     gist_classes = {row[0] for row in ROUTING_TABLE}
     for expected in ("Restriction", "PlannedEvent", "PhysicalThing",
                      "Magnitude", "Category", "Agent", "Event"):
@@ -160,7 +160,7 @@ def test_routing_table_contains_expected_classes():
 
 def test_routing_table_agent_maps_to_both_person_and_org():
     """gist:Agent routes to both schema:Person AND schema:Organization."""
-    from mcp_engine.schema import ROUTING_TABLE
+    from campy.brain.hippocampus.schema import ROUTING_TABLE
     agent_targets = [row[1] for row in ROUTING_TABLE if row[0] == "Agent"]
     assert "Person" in agent_targets
     assert "Organization" in agent_targets
@@ -172,7 +172,7 @@ def test_routing_table_agent_maps_to_both_person_and_org():
 
 def test_node_tables_contains_required_tables():
     """All required node tables are defined."""
-    from mcp_engine.schema import NODE_TABLES
+    from campy.brain.hippocampus.schema import NODE_TABLES
     required = {
         "Concept", "Decision", "Constraint", "Requirement", "ActionItem",
         "MainQuest", "SideQuest", "Message", "DocumentExtract", "Document",
@@ -185,25 +185,25 @@ def test_node_tables_contains_required_tables():
 
 def test_concept_table_has_last_accessed_at():
     """Concept table includes last_accessed_at field (L14 fix)."""
-    from mcp_engine.schema import NODE_TABLES
+    from campy.brain.hippocampus.schema import NODE_TABLES
     assert "last_accessed_at" in NODE_TABLES["Concept"]
 
 
 def test_concept_table_has_embedding_float384():
     """Concept table uses FLOAT[384] for HNSW compatibility."""
-    from mcp_engine.schema import NODE_TABLES
+    from campy.brain.hippocampus.schema import NODE_TABLES
     assert "FLOAT[384]" in NODE_TABLES["Concept"]
 
 
 def test_gist_class_table_has_centroid():
     """GistClass table has centroid field for System 1 classifier."""
-    from mcp_engine.schema import NODE_TABLES
+    from campy.brain.hippocampus.schema import NODE_TABLES
     assert "centroid" in NODE_TABLES["GistClass"]
 
 
 def test_plan_table_has_valence_and_status_fields():
     """B66: Plan table includes valence/status tracking fields."""
-    from mcp_engine.schema import NODE_TABLES
+    from campy.brain.hippocampus.schema import NODE_TABLES
     ddl = NODE_TABLES["Plan"]
     assert "valence" in ddl
     assert "valence_source" in ddl
@@ -213,7 +213,7 @@ def test_plan_table_has_valence_and_status_fields():
 
 def test_planstep_table_has_step_and_outcome_fields():
     """B66: PlanStep table includes ordering and outcome fields."""
-    from mcp_engine.schema import NODE_TABLES
+    from campy.brain.hippocampus.schema import NODE_TABLES
     ddl = NODE_TABLES["PlanStep"]
     assert "step_number" in ddl
     assert "expected_outcome" in ddl
@@ -223,7 +223,7 @@ def test_planstep_table_has_step_and_outcome_fields():
 
 def test_relationship_tables_include_plan_and_outcome_edges():
     """B66/B69: relationship DDL includes plan-chain and outcome propagation edges."""
-    from mcp_engine.schema import REL_TABLES
+    from campy.brain.hippocampus.schema import REL_TABLES
     joined = "\n".join(REL_TABLES)
     assert "PLANNED_IN" in joined
     assert "TARGETS" in joined
@@ -248,7 +248,7 @@ def test_embedding_tables_include_plan_and_planstep():
 def test_bootstrap_centroids_produces_unit_vectors(tmp_path):
     """Centroids produced by _bootstrap_centroids are L2-normalized."""
     import math
-    from mcp_engine.schema import _bootstrap_centroids
+    from campy.brain.hippocampus.schema import _bootstrap_centroids
 
     seed_file = tmp_path / "seeds.md"
     seed_file.write_text(SAMPLE_SEED_MD, encoding="utf-8")
@@ -275,7 +275,7 @@ def test_bootstrap_centroids_produces_unit_vectors(tmp_path):
 
 def test_bootstrap_centroids_skips_empty_class(tmp_path):
     """Classes with no examples are skipped without error."""
-    from mcp_engine.schema import _bootstrap_centroids
+    from campy.brain.hippocampus.schema import _bootstrap_centroids
 
     seed_file = tmp_path / "partial.md"
     seed_file.write_text("## gist:Empty\n\n# no numbered examples here\n")
@@ -290,7 +290,7 @@ def test_bootstrap_centroids_skips_empty_class(tmp_path):
 
 def test_real_seed_file_has_diverse_examples():
     """GistSeedExamples.md has domain-diverse examples (B-centroid-diversity)."""
-    from mcp_engine.schema import _parse_seed_examples
+    from campy.brain.hippocampus.schema import _parse_seed_examples
     from pathlib import Path
 
     seed_file = Path(__file__).parent.parent / "InvertorsDocs" / "GistSeedExamples.md"
@@ -476,7 +476,7 @@ class TestMigrationColumnCheck:
 
 def test_lesson_table_has_required_fields():
     """Lesson table includes all B11 required fields."""
-    from mcp_engine.schema import NODE_TABLES
+    from campy.brain.hippocampus.schema import NODE_TABLES
     fields = NODE_TABLES["Lesson"]
     assert "lesson_id" in fields
     assert "domain" in fields
@@ -487,7 +487,7 @@ def test_lesson_table_has_required_fields():
 
 def test_lesson_relationships_defined():
     """B11 lesson relationships are defined in REL_TABLES."""
-    from mcp_engine.schema import REL_TABLES
+    from campy.brain.hippocampus.schema import REL_TABLES
     rels = "".join(REL_TABLES)
     assert "PRODUCED_LESSON" in rels
     assert "LEARNED" in rels
@@ -498,7 +498,7 @@ def test_lesson_relationships_defined():
 
 def test_mainquest_has_git_repo_root_in_node_tables():
     """MainQuest NODE_TABLE definition includes git_repo_root at schema level."""
-    from mcp_engine.schema import NODE_TABLES
+    from campy.brain.hippocampus.schema import NODE_TABLES
     assert "git_repo_root" in NODE_TABLES["MainQuest"]
 
 

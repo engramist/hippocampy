@@ -3,7 +3,7 @@ import pytest
 
 from typing import Any
 
-from mcp_engine.sweep import _dream_consolidation
+from campy.brain.brainstem.sweep import _dream_consolidation
 
 
 class FakeResult:
@@ -73,7 +73,7 @@ async def test_dream_consolidation_creates_meta_and_updates_constituents(monkeyp
     llm = FakeLLM()
 
     # Patch embed to a deterministic 3-d vector for synthesized text
-    monkeypatch.setattr("mcp_engine.graph.embeddings.embed", lambda t, model_name=None: [0.0, 0.0, 1.0])
+    monkeypatch.setattr("campy.brain.hippocampus.graph.embeddings.embed", lambda t, model_name=None: [0.0, 0.0, 1.0])
 
     config = {
         "embeddings": {"model": "mock-model"},

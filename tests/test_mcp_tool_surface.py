@@ -2,7 +2,7 @@
 import pytest
 
 try:
-    from mcp_engine.tools import TOOL_HANDLERS
+    from campy.brain.thalamus.tools import TOOL_HANDLERS
     KUZU_AVAILABLE = True
 except ModuleNotFoundError as e:
     if "kuzu" in str(e):

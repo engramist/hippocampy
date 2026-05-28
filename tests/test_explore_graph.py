@@ -1,7 +1,7 @@
 """
 tests/test_explore_graph.py — Tests for the explore_graph tool (B10).
 
-Tests the modular mcp_engine/tools/explore_graph handler directly using a mock db.
+Tests the modular campy/brain/thalamus/tools/explore_graph handler directly using a mock db.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ _STUBBED_KEYS: set[str] = set()
 
 
 def setup_module(module):
-    """Install stubs and import mcp_engine.tools right before tests run."""
+    """Install stubs and import campy.brain.thalamus.tools right before tests run."""
     global explore_graph, _TRAVERSABLE_RELS, _MAX_DEPTH
 
     def _stub(name, **attrs):
@@ -38,14 +38,14 @@ def setup_module(module):
         if dep not in sys.modules:
             _stub(dep)
 
-    if "mcp_engine.graph.embeddings" not in sys.modules:
-        _stub("mcp_engine.graph.embeddings",
+    if "campy.brain.hippocampus.graph.embeddings" not in sys.modules:
+        _stub("campy.brain.hippocampus.graph.embeddings",
               embed=lambda text, model_name=None: [0.0] * 384,
               prewarm=lambda model_name=None: None,
               embed_batch=lambda texts, model_name=None: [[0.0] * 384] * len(texts))
 
-    if "mcp_engine.quest" not in sys.modules:
-        _stub("mcp_engine.quest",
+    if "campy.brain.hippocampus.quest" not in sys.modules:
+        _stub("campy.brain.hippocampus.quest",
               get_or_create_main_quest=lambda *a, **kw: "",
               get_or_create_session=lambda *a, **kw: None,
               create_side_quest=lambda *a, **kw: "",
@@ -53,7 +53,7 @@ def setup_module(module):
               compute_quest_id=lambda *a, **kw: "a" * 32)
 
     import importlib
-    tools_mod = importlib.import_module("mcp_engine.tools")
+    tools_mod = importlib.import_module("campy.brain.thalamus.tools")
     module.explore_graph = tools_mod.explore_graph
     module._TRAVERSABLE_RELS = tools_mod._TRAVERSABLE_RELS
     module._MAX_DEPTH = tools_mod._MAX_DEPTH
@@ -69,8 +69,8 @@ def teardown_module(module):
     """Remove stubs and the tools module."""
     for key in _STUBBED_KEYS:
         sys.modules.pop(key, None)
-    sys.modules.pop("mcp_engine.tools", None)
-    for key in ["mcp_engine.graph.embeddings", "mcp_engine.quest"]:
+    sys.modules.pop("campy.brain.thalamus.tools", None)
+    for key in ["campy.brain.hippocampus.graph.embeddings", "campy.brain.hippocampus.quest"]:
         sys.modules.pop(key, None)
 
 

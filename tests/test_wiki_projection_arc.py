@@ -3,10 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from mcp_engine.graph.kuzu_client import KuzuClient
-from mcp_engine.schema import NODE_TABLES, REL_TABLES
-from mcp_engine.tools.arc_artifacts import ingest_arc_artifacts
-from mcp_engine.wiki_projection import export_wiki_projection
+from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from campy.brain.hippocampus.schema import NODE_TABLES, REL_TABLES
+from campy.brain.thalamus.tools.arc_artifacts import ingest_arc_artifacts
+from campy.brain.thalamus.wiki_projection import export_wiki_projection
 
 
 def _init_arc_schema(db: KuzuClient) -> None:
@@ -50,7 +50,7 @@ async def test_wiki_projection_for_ingested_arc_run(tmp_path):
     await ingest_arc_artifacts({"artifact_root": str(root)}, db, {})
     
     # Manually add a mechanic
-    from mcp_engine.tools.arc_mechanics import publish_mechanic_summary
+    from campy.brain.thalamus.tools.arc_mechanics import publish_mechanic_summary
     await publish_mechanic_summary({"summary": {"name": "Test Mech", "task_id": "arc_eval_001"}}, db, {})
 
     vault = tmp_path / "wiki"

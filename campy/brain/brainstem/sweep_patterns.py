@@ -33,10 +33,10 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from mcp_engine.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 
-from mcp_engine.graph import embeddings as emb
-from mcp_engine.loop.step4b_associative import _build_trigger_pattern
+from campy.brain.hippocampus.graph import embeddings as emb
+from campy.brain.temporal_lobe.loop.step4b_associative import _build_trigger_pattern
 
 _logger = logging.getLogger(__name__)
 

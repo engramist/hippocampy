@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 # ---------------------------------------------------------------------------
 
 def test_validate_path_allowed_extension(tmp_path):
-    from mcp_engine.ingest import validate_path
+    from campy.brain.sensory_cortex.ingest import validate_path
     f = tmp_path / "test.md"
     f.write_text("hello")
     result = validate_path(str(f))
@@ -30,7 +30,7 @@ def test_validate_path_allowed_extension(tmp_path):
 
 
 def test_validate_path_disallowed_extension(tmp_path):
-    from mcp_engine.ingest import validate_path
+    from campy.brain.sensory_cortex.ingest import validate_path
     f = tmp_path / "secret.exe"
     f.write_bytes(b"data")
     with pytest.raises(ValueError, match="not allowed"):
@@ -38,13 +38,13 @@ def test_validate_path_disallowed_extension(tmp_path):
 
 
 def test_validate_path_missing_file(tmp_path):
-    from mcp_engine.ingest import validate_path
+    from campy.brain.sensory_cortex.ingest import validate_path
     with pytest.raises(FileNotFoundError):
         validate_path(str(tmp_path / "nonexistent.md"))
 
 
 def test_validate_path_directory_rejected(tmp_path):
-    from mcp_engine.ingest import validate_path
+    from campy.brain.sensory_cortex.ingest import validate_path
     # tmp_path has no extension → fails the allowlist check (ValueError either way)
     with pytest.raises((ValueError, FileNotFoundError)):
         validate_path(str(tmp_path))
@@ -52,7 +52,7 @@ def test_validate_path_directory_rejected(tmp_path):
 
 def test_validate_path_dot_db_disallowed(tmp_path):
     """DB files should not be ingestable as documents."""
-    from mcp_engine.ingest import validate_path
+    from campy.brain.sensory_cortex.ingest import validate_path
     f = tmp_path / "data.db"
     f.write_bytes(b"x")
     with pytest.raises(ValueError, match="not allowed"):
@@ -64,7 +64,7 @@ def test_validate_path_dot_db_disallowed(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_hash_file_is_sha256(tmp_path):
-    from mcp_engine.ingest import hash_file
+    from campy.brain.sensory_cortex.ingest import hash_file
     f = tmp_path / "a.txt"
     f.write_bytes(b"hello world")
     result = hash_file(f)
@@ -73,7 +73,7 @@ def test_hash_file_is_sha256(tmp_path):
 
 
 def test_hash_file_different_content(tmp_path):
-    from mcp_engine.ingest import hash_file
+    from campy.brain.sensory_cortex.ingest import hash_file
     f1 = tmp_path / "a.txt"
     f2 = tmp_path / "b.txt"
     f1.write_bytes(b"aaa")
@@ -82,7 +82,7 @@ def test_hash_file_different_content(tmp_path):
 
 
 def test_hash_file_same_content_same_hash(tmp_path):
-    from mcp_engine.ingest import hash_file
+    from campy.brain.sensory_cortex.ingest import hash_file
     f1 = tmp_path / "a.txt"
     f2 = tmp_path / "b.txt"
     f1.write_bytes(b"same content")
@@ -95,12 +95,12 @@ def test_hash_file_same_content_same_hash(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_chunk_empty_text():
-    from mcp_engine.ingest import chunk_document
+    from campy.brain.sensory_cortex.ingest import chunk_document
     assert chunk_document("") == []
 
 
 def test_chunk_single_paragraph():
-    from mcp_engine.ingest import chunk_document
+    from campy.brain.sensory_cortex.ingest import chunk_document
     text = "This is a simple paragraph with enough text to avoid merging. " * 2
     chunks = chunk_document(text)
     assert len(chunks) >= 1
@@ -109,7 +109,7 @@ def test_chunk_single_paragraph():
 
 
 def test_chunk_split_at_blank_lines():
-    from mcp_engine.ingest import chunk_document
+    from campy.brain.sensory_cortex.ingest import chunk_document
     p1 = "First paragraph content with sufficient length to be its own chunk. " * 2
     p2 = "Second paragraph content with sufficient length to be its own chunk. " * 2
     text = p1 + "\n\n" + p2
@@ -121,7 +121,7 @@ def test_chunk_split_at_blank_lines():
 
 
 def test_chunk_split_at_markdown_headings():
-    from mcp_engine.ingest import chunk_document
+    from campy.brain.sensory_cortex.ingest import chunk_document
     text = (
         "## Introduction\n"
         "This is the intro section with enough content to not be merged away.\n\n"
@@ -136,7 +136,7 @@ def test_chunk_split_at_markdown_headings():
 
 
 def test_chunk_byte_offsets_are_valid():
-    from mcp_engine.ingest import chunk_document
+    from campy.brain.sensory_cortex.ingest import chunk_document
     text = "Hello world.\n\nSecond paragraph here with more content to ensure it stands alone.\n"
     chunks = chunk_document(text)
     encoded = text.encode("utf-8")
@@ -152,7 +152,7 @@ def test_chunk_byte_offsets_are_valid():
 def test_chunk_byte_offsets_correct_for_multibyte_utf8():
     """M3 regression: text[:char_idx].encode() correctly converts char→byte offsets
     even when text contains multi-byte UTF-8 characters (emoji, CJK, accented)."""
-    from mcp_engine.ingest import chunk_document
+    from campy.brain.sensory_cortex.ingest import chunk_document
     # Mix of ASCII, 2-byte (accented), 3-byte (CJK), and 4-byte (emoji) codepoints
     text = (
         "Café résumé — standard design.\n\n"
@@ -177,7 +177,7 @@ def test_chunk_byte_offsets_correct_for_multibyte_utf8():
 
 
 def test_chunk_line_numbers_are_positive():
-    from mcp_engine.ingest import chunk_document
+    from campy.brain.sensory_cortex.ingest import chunk_document
     text = "Line 1.\n\nLine 3 paragraph with enough content to survive the merge threshold.\n"
     chunks = chunk_document(text)
     for chunk in chunks:
@@ -186,7 +186,7 @@ def test_chunk_line_numbers_are_positive():
 
 
 def test_chunk_short_segments_merged():
-    from mcp_engine.ingest import chunk_document, MIN_CHUNK_CHARS
+    from campy.brain.sensory_cortex.ingest import chunk_document, MIN_CHUNK_CHARS
     # Create a short paragraph followed by a longer one
     short = "Short."
     long_p = "This is a much longer paragraph that exceeds the minimum chunk size. " * 3
@@ -198,7 +198,7 @@ def test_chunk_short_segments_merged():
 
 
 def test_chunk_oversized_segment_split():
-    from mcp_engine.ingest import chunk_document, MAX_CHUNK_CHARS
+    from campy.brain.sensory_cortex.ingest import chunk_document, MAX_CHUNK_CHARS
     # Create a paragraph that exceeds MAX_CHUNK_CHARS
     long_text = ("This is a sentence that contributes to a very long paragraph. " * 40)
     chunks = chunk_document(long_text)
@@ -207,7 +207,7 @@ def test_chunk_oversized_segment_split():
 
 
 def test_chunk_no_duplicate_text():
-    from mcp_engine.ingest import chunk_document
+    from campy.brain.sensory_cortex.ingest import chunk_document
     text = "Alpha.\n\nBeta section with enough text.\n\nGamma section with enough text.\n"
     chunks = chunk_document(text)
     combined_text = "|||".join(c["text"] for c in chunks)
@@ -220,21 +220,21 @@ def test_chunk_no_duplicate_text():
 # ---------------------------------------------------------------------------
 
 def test_stable_doc_id_is_deterministic():
-    from mcp_engine.ingest import _stable_doc_id
+    from campy.brain.sensory_cortex.ingest import _stable_doc_id
     id1 = _stable_doc_id("/path/to/file.md")
     id2 = _stable_doc_id("/path/to/file.md")
     assert id1 == id2
 
 
 def test_stable_doc_id_different_paths():
-    from mcp_engine.ingest import _stable_doc_id
+    from campy.brain.sensory_cortex.ingest import _stable_doc_id
     id1 = _stable_doc_id("/path/a.md")
     id2 = _stable_doc_id("/path/b.md")
     assert id1 != id2
 
 
 def test_stable_doc_id_is_32_hex_chars():
-    from mcp_engine.ingest import _stable_doc_id
+    from campy.brain.sensory_cortex.ingest import _stable_doc_id
     doc_id = _stable_doc_id("/any/path.txt")
     assert len(doc_id) == 32
     assert all(c in "0123456789abcdef" for c in doc_id)
@@ -245,7 +245,7 @@ def test_stable_doc_id_is_32_hex_chars():
 # ---------------------------------------------------------------------------
 
 def test_get_existing_hash_returns_none_when_not_found():
-    from mcp_engine.ingest import _get_existing_hash
+    from campy.brain.sensory_cortex.ingest import _get_existing_hash
 
     class MockResult:
         def has_next(self): return False
@@ -258,7 +258,7 @@ def test_get_existing_hash_returns_none_when_not_found():
 
 
 def test_get_existing_hash_returns_hash_when_found():
-    from mcp_engine.ingest import _get_existing_hash
+    from campy.brain.sensory_cortex.ingest import _get_existing_hash
 
     class MockResult:
         def has_next(self): return True
@@ -277,7 +277,7 @@ def test_get_existing_hash_returns_hash_when_found():
 
 @pytest.mark.asyncio
 async def test_ingest_document_invalid_extension():
-    from mcp_engine.ingest import ingest_document
+    from campy.brain.sensory_cortex.ingest import ingest_document
 
     class MockDB:
         def execute(self, q, p=None): return None
@@ -288,7 +288,7 @@ async def test_ingest_document_invalid_extension():
 
 @pytest.mark.asyncio
 async def test_ingest_document_nonexistent_file():
-    from mcp_engine.ingest import ingest_document
+    from campy.brain.sensory_cortex.ingest import ingest_document
 
     class MockDB:
         def execute(self, q, p=None): return None
@@ -303,7 +303,7 @@ async def test_ingest_document_nonexistent_file():
 
 @pytest.mark.asyncio
 async def test_ingest_document_skips_if_hash_unchanged(tmp_path):
-    from mcp_engine.ingest import ingest_document, hash_file
+    from campy.brain.sensory_cortex.ingest import ingest_document, hash_file
 
     f = tmp_path / "doc.md"
     f.write_text("# Title\n\nContent here.\n")
@@ -324,7 +324,7 @@ async def test_ingest_document_skips_if_hash_unchanged(tmp_path):
 
 @pytest.mark.asyncio
 async def test_ingest_document_archives_old_on_rehash(tmp_path):
-    from mcp_engine.ingest import ingest_document
+    from campy.brain.sensory_cortex.ingest import ingest_document
 
     f = tmp_path / "doc.md"
     f.write_text("# Section\n\nOld content with sufficient length to generate chunks.\n" * 5)
@@ -355,7 +355,7 @@ async def test_ingest_document_archives_old_on_rehash(tmp_path):
 
 @pytest.mark.asyncio
 async def test_ingest_document_creates_extracts_and_derived_from(tmp_path):
-    from mcp_engine.ingest import ingest_document
+    from campy.brain.sensory_cortex.ingest import ingest_document
 
     content = (
         "# Architecture\n\n"
@@ -400,7 +400,7 @@ async def test_ingest_document_creates_extracts_and_derived_from(tmp_path):
 
 @pytest.mark.asyncio
 async def test_ingest_document_queue_receives_extract_ids(tmp_path):
-    from mcp_engine.ingest import ingest_document
+    from campy.brain.sensory_cortex.ingest import ingest_document
 
     f = tmp_path / "notes.txt"
     f.write_text(
@@ -439,7 +439,7 @@ async def test_ingest_document_queue_receives_extract_ids(tmp_path):
 
 @pytest.mark.asyncio
 async def test_ingest_document_returns_location_uri(tmp_path):
-    from mcp_engine.ingest import ingest_document
+    from campy.brain.sensory_cortex.ingest import ingest_document
 
     f = tmp_path / "readme.md"
     f.write_text("# README\n\nThis is the project readme with enough content.\n")
@@ -462,7 +462,7 @@ async def test_ingest_document_returns_location_uri(tmp_path):
 @pytest.mark.asyncio
 async def test_ingest_document_without_queue_works(tmp_path):
     """loop_queue=None should not raise; extracts are still stored."""
-    from mcp_engine.ingest import ingest_document
+    from campy.brain.sensory_cortex.ingest import ingest_document
 
     f = tmp_path / "notes.txt"
     f.write_text("A standalone note with plenty of content to stand on its own.\n")
@@ -504,7 +504,7 @@ def test_adapter_ingest_document_requires_file_path():
 
 def test_validate_path_blocks_traversal_via_dotdot(tmp_path):
     """Path with .. that would escape project_root is rejected."""
-    from mcp_engine.ingest import validate_path
+    from campy.brain.sensory_cortex.ingest import validate_path
     # Create a real file inside tmp_path
     allowed = tmp_path / "project"
     allowed.mkdir()
@@ -519,7 +519,7 @@ def test_validate_path_blocks_traversal_via_dotdot(tmp_path):
 
 def test_validate_path_blocks_symlink_traversal(tmp_path):
     """Symlink pointing outside project_root is rejected after realpath resolution."""
-    from mcp_engine.ingest import validate_path
+    from campy.brain.sensory_cortex.ingest import validate_path
     project = tmp_path / "project"
     project.mkdir()
 
@@ -537,7 +537,7 @@ def test_validate_path_blocks_symlink_traversal(tmp_path):
 
 def test_validate_path_allows_file_inside_root(tmp_path):
     """A legitimate file inside project_root passes the confinement check."""
-    from mcp_engine.ingest import validate_path
+    from campy.brain.sensory_cortex.ingest import validate_path
     project = tmp_path / "project"
     project.mkdir()
     legitimate = project / "notes.md"
@@ -549,7 +549,7 @@ def test_validate_path_allows_file_inside_root(tmp_path):
 
 def test_validate_path_no_project_root_skips_confinement_check(tmp_path):
     """Without project_root, confinement check is skipped (backward compat)."""
-    from mcp_engine.ingest import validate_path
+    from campy.brain.sensory_cortex.ingest import validate_path
     f = tmp_path / "doc.md"
     f.write_text("hello")
     # Should succeed — no confinement check performed
@@ -559,7 +559,7 @@ def test_validate_path_no_project_root_skips_confinement_check(tmp_path):
 
 def test_validate_path_blocks_absolute_escape(tmp_path):
     """Absolute path to /tmp or / is blocked when project_root is set."""
-    from mcp_engine.ingest import validate_path
+    from campy.brain.sensory_cortex.ingest import validate_path
     project = tmp_path / "project"
     project.mkdir()
 

@@ -22,26 +22,26 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from mcp_engine.loop.step1_ner       import extract_entities
+from campy.brain.temporal_lobe.loop.step1_ner       import extract_entities
 
 _logger = logging.getLogger(__name__)
-from mcp_engine.loop.step1b_relations import extract_relations
-from mcp_engine.loop.step2_gist      import classify_concept
-from mcp_engine.loop.step3_schema_org import route_to_schema_org
-from mcp_engine.loop.step3b_relations import extract_semantic_relations
-from mcp_engine.loop.step4_pattern   import classify_artifact, compute_salience_multiplier, NOISE_FLOOR
-from mcp_engine.loop.step5_retrieval import (
+from campy.brain.temporal_lobe.loop.step1b_relations import extract_relations
+from campy.brain.temporal_lobe.loop.step2_gist      import classify_concept
+from campy.brain.temporal_lobe.loop.step3_schema_org import route_to_schema_org
+from campy.brain.temporal_lobe.loop.step3b_relations import extract_semantic_relations
+from campy.brain.temporal_lobe.loop.step4_pattern   import classify_artifact, compute_salience_multiplier, NOISE_FLOOR
+from campy.brain.temporal_lobe.loop.step5_retrieval import (
     retrieve_candidates, MATCH_THRESHOLD, GRAY_ZONE_UPPER
 )
-from mcp_engine.loop.step6_arbitration import arbitrate
-from mcp_engine.loop.step7_pathway   import (
+from campy.brain.temporal_lobe.loop.step6_arbitration import arbitrate
+from campy.brain.temporal_lobe.loop.step7_pathway   import (
     apply_additive, apply_contradiction, write_co_occurs_with,
     rescore_nearby_low_confidence, create_decision_chain,
 )
-from mcp_engine.loop.step4b_associative import check_associative_triggers  # Phase 3
-from mcp_engine.loop.step7_5_lesson import extract_lessons  # B11
-from mcp_engine.loop.anomaly_detection import check_anomalies, store_anomaly_flag  # B12
-from mcp_engine.graph import embeddings as emb
+from campy.brain.temporal_lobe.loop.step4b_associative import check_associative_triggers  # Phase 3
+from campy.brain.temporal_lobe.loop.step7_5_lesson import extract_lessons  # B11
+from campy.brain.temporal_lobe.loop.anomaly_detection import check_anomalies, store_anomaly_flag  # B12
+from campy.brain.hippocampus.graph import embeddings as emb
 from mcp_engine.llm.provider import create_llm_client_for_step  # B16
 
 
@@ -333,7 +333,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                         )
                         summary["reified"] += 1
                         if summary["reified"] == 1 and llm_client is not None:
-                            from mcp_engine.quest import maybe_synthesize_purpose
+                            from campy.brain.hippocampus.quest import maybe_synthesize_purpose
                             await maybe_synthesize_purpose(
                                 db, message_id, entity["text"],
                                 llm_client, embedding_model, now,
@@ -395,7 +395,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                     )
                     summary["reified"] += 1
                     if summary["reified"] == 1 and llm_client is not None:
-                        from mcp_engine.quest import maybe_synthesize_purpose
+                        from campy.brain.hippocampus.quest import maybe_synthesize_purpose
                         await maybe_synthesize_purpose(
                             db, message_id, entity["text"],
                             llm_client, embedding_model, now,

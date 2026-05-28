@@ -18,8 +18,8 @@ def regen(
     ),
 ):
     """Regenerate CONTEXT.md, ADRs, and agent pointers from the knowledge graph."""
-    from mcp_engine.file_bridge import regen_all
-    from mcp_engine.graph.kuzu_client import KuzuClient
+    from campy.brain.thalamus.file_bridge import regen_all
+    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
     from campy.paths import get_database_path
 
     project_path = Path(project) if project else Path.cwd()

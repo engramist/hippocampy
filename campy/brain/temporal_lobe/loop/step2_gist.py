@@ -7,7 +7,7 @@ System 2: Ollama LLM call for ambiguous 0.60–0.85 range.
 """
 
 import json
-from mcp_engine.graph import embeddings as emb
+from campy.brain.hippocampus.graph import embeddings as emb
 
 # Calibrated for all-MiniLM-L6-v2 (384-dim).
 # Seed examples vs own centroid score ~0.50-0.60; cross-class ~0.20-0.35.
@@ -65,7 +65,7 @@ def classify_concept(entity_text: str, embedding_model: str,
     """
     # Resolve embeddings at call time so tests/runtime that swap or reload
     # mcp_engine.graph.embeddings do not leave this module with a stale handle.
-    from mcp_engine.graph import embeddings as emb_runtime
+    from campy.brain.hippocampus.graph import embeddings as emb_runtime
 
     vector = emb_runtime.embed(entity_text, model_name=embedding_model)
 

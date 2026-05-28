@@ -31,12 +31,12 @@ _logger = logging.getLogger(__name__)
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from mcp_engine.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
     from mcp_engine.llm.provider import LLMClient
 
-from mcp_engine.loop.step7_pathway import pathway_strength_decay
-from mcp_engine.graph import embeddings as emb
-from mcp_engine.wiki_projection import export_wiki_projection
+from campy.brain.temporal_lobe.loop.step7_pathway import pathway_strength_decay
+from campy.brain.hippocampus.graph import embeddings as emb
+from campy.brain.thalamus.wiki_projection import export_wiki_projection
 
 # ---------------------------------------------------------------------------
 # Sweep table registry
@@ -76,7 +76,7 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
         config: full campy.toml config dict
         llm_client: LLMClient or None — Hebbian Trigger 2 skipped if None
     """
-    from mcp_engine.phase import set_phase
+    from campy.brain.brainstem.phase import set_phase
     set_phase("sweeping")
     try:
         pruning_cfg         = config.get("pruning", {})
@@ -162,7 +162,7 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
 
         # Step 7.5: Offline pattern discovery (Phase 4 — Anticipatory Engine)
         try:
-            from mcp_engine.sweep_patterns import discover_patterns
+            from campy.brain.brainstem.sweep_patterns import discover_patterns
             pat_summary = await discover_patterns(db, config, llm_client)
             summary["patterns_discovered"] = pat_summary.get("triggers_written", 0)
             summary["pattern_candidates"] = pat_summary.get("candidates_found", 0)

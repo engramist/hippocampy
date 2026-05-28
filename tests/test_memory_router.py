@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from mcp_engine.memory_router import (
+from campy.brain.temporal_lobe.memory_router import (
     DOCUMENT_EXTENSIONS,
     TABULAR_EXTENSIONS,
     MemoryRoute,

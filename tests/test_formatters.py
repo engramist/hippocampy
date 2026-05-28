@@ -8,8 +8,8 @@ import json
 
 import pytest
 
-from mcp_engine.bundle_compiler import BundleSection, ContextBundle
-from mcp_engine.formatters import (
+from campy.brain.thalamus.bundle_compiler import BundleSection, ContextBundle
+from campy.brain.thalamus.formatters import (
     format_bundle,
     get_formatter,
     ArcFormatter,

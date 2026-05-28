@@ -609,8 +609,8 @@ class SchemaInitializer:
         init_script = f"""
 import sys
 sys.path.insert(0, {str(PROJECT_ROOT)!r})
-from mcp_engine.graph.kuzu_client import KuzuClient
-from mcp_engine.schema import init_schema
+from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from campy.brain.hippocampus.schema import init_schema
 db = KuzuClient({str(DB_PATH)!r})
 seed_path = {seed_path!r}
 init_schema(db, seed_path, 'sentence-transformers/all-MiniLM-L6-v2')
