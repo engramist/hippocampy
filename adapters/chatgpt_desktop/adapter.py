@@ -2,7 +2,7 @@
 adapters/chatgpt_desktop/adapter.py — ChatGPT Desktop MCP STDIO Adapter
 
 Implements the MCP STDIO server for ChatGPT Desktop.
-Forwards tool calls to the Brain Daemon via HTTP/SSE endpoint (B7).
+Forwards tool calls to the Brain Daemon via the MCP HTTP endpoint (B7).
 
 Registration:
   campy setup --target chatgpt-desktop

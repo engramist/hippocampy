@@ -185,12 +185,26 @@ def install(
 
     run_install()
 
+
+@app.command(name="install-plugin")
+def install_plugin_cmd(
+    target: Optional[str] = typer.Option(None, help="Specific agent target (claude-code, codex, gemini-cli, vscode)"),
+    plugin_dir: Optional[str] = typer.Option(None, help="Path to plugin directory (auto-detected if omitted)"),
+):
+    """[DEPRECATED] Install plugin files for AI agents. Use 'campy setup' instead."""
+    console.print("[yellow]install-plugin is deprecated. Use 'campy setup' instead.[/yellow]")
+    console.print("[dim]Running legacy installer for compatibility...[/dim]")
+
+    from campy.cli.plugin_installer import install_plugin_for_agents
+
+    install_plugin_for_agents(target=target, plugin_dir=plugin_dir)
+
 @app.command()
 def uninstall(
     keep_data: bool = typer.Option(True, "--keep-data/--delete-data", help="Whether to keep the memory data"),
     remove_ollama_model: bool = typer.Option(False, help="Whether to remove the Ollama model"),
     ollama_model: str = typer.Option("qwen2.5:3b", help="Ollama model to remove"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt")
+    yes: bool = typer.Option(False, "--yes", "--force", "-y", help="Skip confirmation prompt")
 ):
     """
     Uninstall Campy and remove adapter registrations.

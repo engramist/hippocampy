@@ -102,9 +102,9 @@ def check_arc_tools() -> dict:
 
 
 def check_sse_endpoint(port: int = 7799) -> bool:
-    """Check if the SSE endpoint is responding at the given port."""
+    """Check if the MCP HTTP endpoint is responding at the given port."""
     try:
-        url = f"http://127.0.0.1:{port}/sse"
+        url = f"http://127.0.0.1:{port}/mcp"
         urllib.request.urlopen(url, timeout=2)
         return True
     except Exception:

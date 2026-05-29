@@ -1,3 +1,8 @@
+---
+name: quest-management
+description: Manage quests, side quests, and project context transitions in Campy.
+---
+
 # Quest Management
 
 SideQuests organizes knowledge into Quests — focused contexts for projects or workstreams.

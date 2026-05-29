@@ -1,3 +1,8 @@
+---
+name: session-start
+description: Load relevant Campy memory at the start of every conversation.
+---
+
 # Session Start — Memory Recall Protocol
 
 **This skill fires at the START of every conversation.** Before doing any work, you MUST follow this 4-step protocol to load context from the Brain.

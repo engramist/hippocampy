@@ -13,7 +13,11 @@ def test_full_plugin_install_to_temp_dir():
         result = install_claude_code_plugin(plugin_dir, target)
         assert result is True
         assert (target / ".claude-plugin" / "plugin.json").exists()
+        assert (target / ".codex-plugin" / "plugin.json").exists()
         assert (target / ".mcp.json").exists()
+        assert (target / "gemini-extension.json").exists()
+        assert (target / "GEMINI.md").exists()
+        assert (target / "hooks" / "hooks.json").exists()
         assert (target / "skills" / "recall" / "SKILL.md").exists()
         assert (target / "skills" / "memory-awareness" / "SKILL.md").exists()
         assert (target / "skills" / "quest-management" / "SKILL.md").exists()

@@ -361,8 +361,8 @@ class TestSchemaInitializer:
 
 class TestAdapterRegistrar:
 
-    def test_claude_code_global_scope(self, tmp_path):
-        """Claude Code registers with --scope user, not project-local."""
+    def test_claude_code_prefers_native_plugin_install(self, tmp_path):
+        """Claude Code installer prefers native plugin installation when available."""
         (tmp_path / "bin").mkdir()
         (tmp_path / "bin" / "python3").touch()
 
@@ -373,15 +373,74 @@ class TestAdapterRegistrar:
 
         with patch("subprocess.run", side_effect=mock_run):
             with patch("shutil.which", return_value="/usr/local/bin/claude"):
-                with patch("campy.cli.install.Path.home", return_value=tmp_path / "home"):
+                with patch("campy.cli.install._find_plugin_dir", return_value=Path("/tmp/plugin")):
                     from campy.cli.install import VenvManager, AdapterRegistrar
                     vm = VenvManager(venv_dir=tmp_path)
                     reg = AdapterRegistrar(vm)
                     result = reg._register_claude_code()
                     assert result is True
-                    # Verify --scope user was passed
-                    add_call = [c for c in calls if c and "add" in str(c)]
-                    assert any("--scope" in str(c) and "user" in str(c) for c in add_call)
+                    assert any(c[:3] == ["/usr/local/bin/claude", "plugin", "install"] for c in calls)
+
+    def test_claude_code_legacy_scope_user(self, tmp_path):
+        """Claude Code legacy fallback still registers with --scope user."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+
+        calls = []
+        def mock_run(*args, **kwargs):
+            calls.append(args[0] if args else kwargs.get("args"))
+            return MagicMock(returncode=0)
+
+        with patch("subprocess.run", side_effect=mock_run):
+            with patch("shutil.which", return_value="/usr/local/bin/claude"):
+                with patch("campy.cli.install._find_plugin_dir", return_value=None):
+                    with patch("campy.cli.install.Path.home", return_value=tmp_path / "home"):
+                        from campy.cli.install import VenvManager, AdapterRegistrar
+                        vm = VenvManager(venv_dir=tmp_path)
+                        reg = AdapterRegistrar(vm)
+                        with patch.object(reg, "_register_hook"):
+                            result = reg._register_claude_code()
+                            assert result is True
+                            add_call = [c for c in calls if c and "add" in str(c)]
+                            assert any("--scope" in str(c) and "user" in str(c) for c in add_call)
+
+    def test_codex_prefers_native_plugin_install(self, tmp_path):
+        """Codex installer prefers native plugin installation when available."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+
+        calls = []
+        def mock_run(*args, **kwargs):
+            calls.append(args[0] if args else kwargs.get("args"))
+            return MagicMock(returncode=0, stdout="installed", stderr="")
+
+        with patch("subprocess.run", side_effect=mock_run):
+            with patch("shutil.which", side_effect=lambda name: "/usr/local/bin/codex" if name == "codex" else None):
+                with patch("campy.cli.install._find_plugin_dir", return_value=Path("/tmp/plugin")):
+                    from campy.cli.install import VenvManager, AdapterRegistrar
+                    vm = VenvManager(venv_dir=tmp_path)
+                    reg = AdapterRegistrar(vm)
+                    assert reg._register_codex() is True
+                    assert any(c[:3] == ["/usr/local/bin/codex", "plugin", "install"] for c in calls)
+
+    def test_gemini_prefers_native_extension_link(self, tmp_path):
+        """Gemini installer prefers native extension linking when available."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+
+        calls = []
+        def mock_run(*args, **kwargs):
+            calls.append(args[0] if args else kwargs.get("args"))
+            return MagicMock(returncode=0, stdout="linked", stderr="")
+
+        with patch("subprocess.run", side_effect=mock_run):
+            with patch("shutil.which", side_effect=lambda name: "/usr/local/bin/gemini" if name == "gemini" else None):
+                with patch("campy.cli.install._find_plugin_dir", return_value=Path("/tmp/plugin")):
+                    from campy.cli.install import VenvManager, AdapterRegistrar
+                    vm = VenvManager(venv_dir=tmp_path)
+                    reg = AdapterRegistrar(vm)
+                    assert reg._register_gemini_cli() is True
+                    assert any(c[:3] == ["/usr/local/bin/gemini", "extensions", "link"] for c in calls)
 
     def test_claude_desktop_writes_config(self, tmp_path):
         """Claude Desktop writes to the correct config file."""

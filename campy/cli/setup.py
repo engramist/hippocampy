@@ -145,9 +145,9 @@ def _register_codex_desktop(project_root: Path) -> None:
 
 
 def _register_chatgpt_desktop() -> None:
-    """Print instructions for ChatGPT Desktop (SSE connector URL)."""
+    """Print instructions for ChatGPT Desktop (Streamable HTTP connector URL)."""
     print("  [i] ChatGPT Desktop — paste this URL in Settings > Apps > Add Connector:")
-    print("        http://127.0.0.1:7799/sse")
+    print("        http://127.0.0.1:7799/mcp")
     print("      (Requires the Brain Daemon to be running.)")
 
 

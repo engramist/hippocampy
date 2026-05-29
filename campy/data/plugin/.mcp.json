@@ -2,7 +2,7 @@
   "mcpServers": {
     "hippocampy": {
       "type": "http",
-      "url": "http://127.0.0.1:7799/sse"
+      "url": "http://127.0.0.1:7799/mcp"
     }
   }
 }

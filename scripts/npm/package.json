@@ -1,0 +1,19 @@
+{
+  "name": "hippocampy",
+  "version": "0.1.0",
+  "description": "AI memory that learns from every conversation. Install wrapper for HippoCampy.",
+  "bin": {
+    "hippocampy": "./install.js",
+    "hippocampy-install": "./install.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "keywords": ["ai", "memory", "claude", "codex", "gemini", "mcp"],
+  "author": "HippoCampy",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/djs54/hippocampy"
+  }
+}

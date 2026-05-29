@@ -24,6 +24,7 @@ from typing import Optional
 
 import click
 from campy.cli.register import (
+    _find_plugin_dir,
     _strip_codex_adapter_path_tables,
     _upsert_codex_mcp_block,
     install_codex_memory_skill,
@@ -691,7 +692,31 @@ class AdapterRegistrar:
         return results
 
     def _register_claude_code(self) -> bool:
-        """Register Claude Code adapter with --scope user."""
+        """Register Claude Code, preferring native plugin install."""
+        plugin_dir = _find_plugin_dir()
+        claude_bin = shutil.which("claude")
+
+        if plugin_dir is not None and claude_bin:
+            install_cmd = [claude_bin, "plugin", "install", str(plugin_dir)]
+            result = subprocess.run(install_cmd, capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                click.echo("    [ok] Claude Code — plugin installed")
+                return True
+
+            combined = f"{result.stdout}\n{result.stderr}".lower()
+            if "already" in combined:
+                update_cmd = [claude_bin, "plugin", "update", "hippocampy"]
+                update = subprocess.run(update_cmd, capture_output=True, text=True, timeout=10)
+                if update.returncode == 0:
+                    click.echo("    [ok] Claude Code — plugin updated")
+                    return True
+
+            click.echo(f"    [!] claude plugin install failed: {(result.stderr or result.stdout).strip()}")
+
+        return self._register_claude_code_legacy()
+
+    def _register_claude_code_legacy(self) -> bool:
+        """Register Claude Code adapter with the legacy user-scope MCP flow."""
         adapter_path = (self._adapters_dir / "claude_code" / "adapter.py").resolve()
         claude_bin = shutil.which("claude")
         
@@ -769,8 +794,7 @@ class AdapterRegistrar:
 
     def _register_claude_desktop(self) -> bool:
         """Register Claude Desktop via plugin directory."""
-        from campy.cli.plugin_installer import find_plugin_dir
-        plugin_dir = find_plugin_dir() or (PROJECT_ROOT / "plugin")
+        plugin_dir = _find_plugin_dir() or (PROJECT_ROOT / "plugin")
         if not plugin_dir.exists():
             click.echo("    [!] Plugin directory not found")
             return False
@@ -806,20 +830,26 @@ class AdapterRegistrar:
         return True
 
     def _register_codex(self) -> bool:
+        """Register Codex, preferring native plugin install."""
+        plugin_dir = _find_plugin_dir()
+        codex_bin = shutil.which("codex")
+        if plugin_dir is not None and codex_bin:
+            install_cmd = [codex_bin, "plugin", "install", str(plugin_dir)]
+            result = subprocess.run(install_cmd, capture_output=True, text=True, timeout=10)
+            if result.returncode == 0 or "already" in f"{result.stdout}\n{result.stderr}".lower():
+                click.echo("    [ok] Codex — plugin installed")
+                return True
+
+            click.echo(f"    [!] codex plugin install failed: {(result.stderr or result.stdout).strip()}")
+
+        return self._register_codex_legacy()
+
+    def _register_codex_legacy(self) -> bool:
         """Register the Codex adapter in ~/.codex/config.toml."""
         adapter_path = (self._adapters_dir / "codex" / "adapter.py").resolve()
         config_path = Path.home() / ".codex" / "config.toml"
         self._ensure_codex_entry(config_path, adapter_path)
         install_codex_memory_skill(PROJECT_ROOT)
-        # Install Codex hooks
-        try:
-            from adapters.codex.setup import install_hooks as install_codex_hooks
-            from adapters.codex.setup import _write_hook_config as write_codex_hook_config
-            install_codex_hooks()
-            write_codex_hook_config()
-            click.echo("    [ok] Codex hooks installed")
-        except Exception as e:
-            click.echo(f"    [!] Codex hook installation skipped: {e}")
         click.echo(f"    [ok] Codex — registered at {config_path}")
         return True
 
@@ -868,6 +898,21 @@ class AdapterRegistrar:
         return True
 
     def _register_gemini_cli(self) -> bool:
+        """Register Gemini CLI, preferring native extension link."""
+        plugin_dir = _find_plugin_dir()
+        gemini_bin = shutil.which("gemini")
+        if plugin_dir is not None and gemini_bin:
+            install_cmd = [gemini_bin, "extensions", "link", str(plugin_dir)]
+            result = subprocess.run(install_cmd, capture_output=True, text=True, timeout=10)
+            if result.returncode == 0 or "already" in f"{result.stdout}\n{result.stderr}".lower():
+                click.echo("    [ok] Gemini CLI — extension linked")
+                return True
+
+            click.echo(f"    [!] gemini extensions link failed: {(result.stderr or result.stdout).strip()}")
+
+        return self._register_gemini_cli_legacy()
+
+    def _register_gemini_cli_legacy(self) -> bool:
         """Register the Gemini CLI adapter in settings.json."""
         adapter_path = (self._adapters_dir / "gemini_cli" / "adapter.py").resolve()
 
@@ -889,26 +934,17 @@ class AdapterRegistrar:
             "command": str(self.venv.python),
             "args": [str(adapter_path)],
         })
-        # Install Gemini CLI hooks
-        try:
-            from adapters.gemini_cli.setup import install_hooks as install_gemini_hooks
-            from adapters.gemini_cli.setup import _write_hook_config as write_gemini_hook_config
-            install_gemini_hooks()
-            write_gemini_hook_config()
-            click.echo("    [ok] Gemini CLI hooks installed")
-        except Exception as e:
-            click.echo(f"    [!] Gemini CLI hook installation skipped: {e}")
         click.echo("    [ok] Gemini CLI — registered")
         return True
 
     def _register_chatgpt_desktop(self) -> bool:
-        """Print setup instructions for ChatGPT Desktop (SSE connector)."""
-        click.echo("    [ok] ChatGPT Desktop — SSE endpoint ready")
+        """Print setup instructions for ChatGPT Desktop (Streamable HTTP connector)."""
+        click.echo("    [ok] ChatGPT Desktop — MCP endpoint ready")
         click.echo("")
         click.echo("    To connect ChatGPT Desktop:")
         click.echo("      1. Open ChatGPT Desktop")
         click.echo("      2. Go to Settings → MCP Servers (or Apps → Add Connector)")
-        click.echo("      3. Add server URL: http://127.0.0.1:7799/sse")
+        click.echo("      3. Add server URL: http://127.0.0.1:7799/mcp")
         click.echo("      4. Save — all SideQuest tools will appear automatically")
         click.echo("")
         return True

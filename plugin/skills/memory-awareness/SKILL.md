@@ -1,3 +1,8 @@
+---
+name: memory-awareness
+description: Explain what Campy captures automatically and how agents should surface it.
+---
+
 # HippoCampy — Automatic Memory
 
 HippoCampy is always listening to your conversations and automatically capturing important information:

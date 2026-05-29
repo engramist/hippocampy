@@ -1,0 +1,20 @@
+{
+  "name": "hippocampy",
+  "version": "0.1.0",
+  "description": "AI memory that learns from every conversation. Captures decisions, constraints, and plans, then recalls them when you need them.",
+  "author": {
+    "name": "HippoCampy"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "HippoCampy",
+    "shortDescription": "Persistent AI memory across sessions",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ]
+  }
+}
