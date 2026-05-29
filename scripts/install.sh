@@ -28,11 +28,11 @@ ok() {
 }
 
 python_supported() {
-    "$1" -c 'import sys; raise SystemExit(0 if (3, 12) <= sys.version_info[:2] < (3, 14) else 1)' >/dev/null 2>&1
+    "$1" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3, 12) else 1)' >/dev/null 2>&1
 }
 
 find_python() {
-    for candidate in python3.13 python3.12 python3; do
+    for candidate in python3.14 python3.13 python3.12 python3; do
         if command -v "$candidate" >/dev/null 2>&1 && python_supported "$candidate"; then
             printf '%s\n' "$candidate"
             return 0
@@ -60,7 +60,7 @@ ARCH_TYPE="$(uname -m)"
 printf 'OS: %s\n' "$OS_TYPE"
 printf 'Arch: %s\n\n' "$ARCH_TYPE"
 
-info "[1/4] Checking Python 3.12 or 3.13..."
+info "[1/5] Checking Python 3.12+..."
 PYTHON_CMD="$(find_python || true)"
 if [ -z "$PYTHON_CMD" ]; then
     if [ "$OS_TYPE" = "Darwin" ]; then
@@ -77,7 +77,21 @@ if [ -z "$PYTHON_CMD" ]; then
 fi
 ok "Found $($PYTHON_CMD --version 2>&1)"
 
-info "[2/4] Checking pipx..."
+info "[2/5] Checking build dependencies (cmake)..."
+if ! command -v cmake >/dev/null 2>&1; then
+    if [ "$OS_TYPE" = "Darwin" ]; then
+        info "cmake not found. Installing via Homebrew (required to build KuzuDB)..."
+        if ! command -v brew >/dev/null 2>&1; then
+            fail "Homebrew is not installed. Install it from https://brew.sh and re-run this script."
+        fi
+        brew install cmake
+    else
+        fail "cmake is required to build KuzuDB. Install it with your package manager (e.g. 'sudo apt install cmake') and re-run."
+    fi
+fi
+ok "cmake available ($(cmake --version | head -1))"
+
+info "[3/5] Checking pipx..."
 if ! command -v pipx >/dev/null 2>&1; then
     info "Installing pipx into user space..."
     "$PYTHON_CMD" -m ensurepip --upgrade >/dev/null 2>&1 || true
@@ -92,7 +106,7 @@ if ! run_pipx --version >/dev/null 2>&1; then
 fi
 ok "pipx available"
 
-info "[3/4] Installing HippoCampy via pipx..."
+info "[4/5] Installing HippoCampy via pipx..."
 if run_pipx list 2>/dev/null | grep -q "package hippocampy"; then
     info "Existing HippoCampy installation detected. Upgrading..."
     run_pipx upgrade hippocampy || run_pipx install hippocampy --force
@@ -111,7 +125,7 @@ else
     fail "Installed hippocampy, but could not find the 'campy' command on PATH. Open a new shell and run 'campy setup'."
 fi
 
-info "[4/4] Running campy setup..."
+info "[5/5] Running campy setup..."
 "$CAMPY_BIN" setup
 ok "Campy setup completed"
 
