@@ -785,7 +785,6 @@ class AdapterRegistrar:
         click.echo("")
 
         # Fallback for non-Cowork users: also register via stdio config
-        adapter_path = (self._adapters_dir / "claude_desktop" / "adapter.py").resolve()
         if platform.system() == "Darwin":
             config_path = (
                 Path.home() / "Library" / "Application Support"
@@ -802,7 +801,7 @@ class AdapterRegistrar:
         config_path.parent.mkdir(parents=True, exist_ok=True)
         self._merge_mcp_config(config_path, PRIMARY_MCP_SERVER, {
             "command": str(self.venv.python),
-            "args": [str(adapter_path)],
+            "args": ["-m", "campy.adapters.claude_desktop"],
         })
         return True
 
