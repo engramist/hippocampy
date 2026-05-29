@@ -151,6 +151,26 @@ def install_codex_plugin(plugin_dir: Path) -> bool:
                 shutil.copytree(skill_dir, dst)
                 count += 1
         logger.info(f"Codex: {count} skills installed to {target}")
+        # Install hooks
+        hooks_src = plugin_dir.parent / "adapters" / "codex" / "hooks"
+        if hooks_src.exists():
+            hooks_dst = Path.home() / ".codex" / "hooks" / "campy"
+            hooks_dst.mkdir(parents=True, exist_ok=True)
+            hook_count = 0
+            for hook_file in sorted(hooks_src.glob("*.py")):
+                if hook_file.name == "__init__.py":
+                    continue
+                dst = hooks_dst / hook_file.name
+                shutil.copy2(hook_file, dst)
+                dst.chmod(0o755)
+                hook_count += 1
+            logger.info(f"Codex: {hook_count} hooks installed to {hooks_dst}")
+            # Write hook config
+            try:
+                from adapters.codex.setup import _write_hook_config
+                _write_hook_config()
+            except Exception as e:
+                logger.warning(f"Codex hook config not written: {e}")
         return True
     except Exception as e:
         logger.error(f"Failed to install Codex plugin: {e}")
@@ -191,6 +211,26 @@ def install_gemini_plugin(plugin_dir: Path) -> bool:
                 shutil.copytree(skill_dir, dst)
                 count += 1
         logger.info(f"Gemini CLI: {count} skills installed to {target}")
+        # Install hooks
+        hooks_src = plugin_dir.parent / "adapters" / "gemini_cli" / "hooks"
+        if hooks_src.exists():
+            hooks_dst = Path.home() / ".gemini" / "hooks" / "campy"
+            hooks_dst.mkdir(parents=True, exist_ok=True)
+            hook_count = 0
+            for hook_file in sorted(hooks_src.glob("*.py")):
+                if hook_file.name == "__init__.py":
+                    continue
+                dst = hooks_dst / hook_file.name
+                shutil.copy2(hook_file, dst)
+                dst.chmod(0o755)
+                hook_count += 1
+            logger.info(f"Gemini CLI: {hook_count} hooks installed to {hooks_dst}")
+            # Write hook config
+            try:
+                from adapters.gemini_cli.setup import _write_hook_config
+                _write_hook_config()
+            except Exception as e:
+                logger.warning(f"Gemini CLI hook config not written: {e}")
         return True
     except Exception as e:
         logger.error(f"Failed to install Gemini CLI plugin: {e}")
