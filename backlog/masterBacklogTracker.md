@@ -488,4 +488,9 @@ Restructure Campy's installation to use native plugin systems for Claude Code, C
 | 10 | B274 | P3 | ready | npm Wrapper Package | backlog/plans/B-274-npm-wrapper.md |
 | 11 | B275 | P2 | ready | Publish to Platform Marketplaces | backlog/plans/B-275-marketplace-publishing.md |
 
-**Dependency chain:** B265+B266 (parallel) → B267 → B268 (parallel with B267) → B269 → B270 → B271. B272/B273/B274/B275 depend on B270.
+**Phase 0 — Prerequisites**
+| Order | Card | Priority | State | Title | Plan |
+|-------|------|----------|-------|-------|------|
+| 0 | B276 | P1 | ready | Create campy uninstall Command and Script | backlog/plans/B-276-uninstaller.md |
+
+**Dependency chain:** B276 (first — needed for clean-state testing). B265+B266 (parallel) → B267 → B268 (parallel with B267) → B269 → B270 → B271. B272/B273/B274/B275 depend on B270.
