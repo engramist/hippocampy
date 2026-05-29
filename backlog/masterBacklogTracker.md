@@ -457,3 +457,35 @@ B242-B247 intentionally split the deeper SideQuests-to-Campy internal namespace 
 | Order | Card | Blocked by | Why |
 |-------|------|-----------|-----|
 | 36 | B156 | B152 | Level-aware orchestration should land after the replay-verification layer is complete |
+
+
+---
+
+## Plugin Restructure & Distribution Initiative (B265–B275)
+
+Restructure Campy's installation to use native plugin systems for Claude Code, Codex, and Gemini CLI. Upgrade MCP transport to Streamable HTTP. Add multiple distribution channels for non-technical users.
+
+**Phase 1 — Plugin Restructure (foundation, mostly parallel)**
+| Order | Card | Priority | State | Title | Plan |
+|-------|------|----------|-------|-------|------|
+| 1 | B265 | P1 | ready | Unified Multi-Platform Plugin Directory | backlog/plans/B-265-unified-plugin-directory.md |
+| 2 | B266 | P1 | ready | Rename Overlapping Skills to campy-* Prefix | backlog/plans/B-266-rename-overlapping-skills.md |
+| 3 | B267 | P1 | ready | Consolidate Hook Logic into Shared Module | backlog/plans/B-267-consolidate-hooks.md |
+| 4 | B268 | P1 | ready | Upgrade Daemon to Streamable HTTP Transport | backlog/plans/B-268-streamable-http-transport.md |
+| 5 | B269 | P2 | ready | Update ChatGPT Desktop to Streamable HTTP | backlog/plans/B-269-chatgpt-desktop-update.md |
+
+**Phase 2 — Installer Rewiring (depends on Phase 1)**
+| Order | Card | Priority | State | Title | Plan |
+|-------|------|----------|-------|-------|------|
+| 6 | B270 | P1 | ready | Rewrite campy setup for Native Plugin Install | backlog/plans/B-270-native-plugin-install.md |
+| 7 | B271 | P2 | ready | Deprecate Legacy Installer and Adapter Scripts | backlog/plans/B-271-deprecate-legacy-installer.md |
+
+**Phase 3 — Distribution Channels (depends on Phase 2)**
+| Order | Card | Priority | State | Title | Plan |
+|-------|------|----------|-------|-------|------|
+| 8 | B272 | P1 | ready | curl Install Script (Primary) | backlog/plans/B-272-curl-install-script.md |
+| 9 | B273 | P2 | ready | Homebrew Formula | backlog/plans/B-273-homebrew-formula.md |
+| 10 | B274 | P3 | ready | npm Wrapper Package | backlog/plans/B-274-npm-wrapper.md |
+| 11 | B275 | P2 | ready | Publish to Platform Marketplaces | backlog/plans/B-275-marketplace-publishing.md |
+
+**Dependency chain:** B265+B266 (parallel) → B267 → B268 (parallel with B267) → B269 → B270 → B271. B272/B273/B274/B275 depend on B270.
