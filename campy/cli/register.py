@@ -210,6 +210,14 @@ def register_codex(adapter_path: str) -> bool:
         logging.info(f"Codex registration success: {config_path}")
         if skill_path:
             logging.info(f"Codex Campy memory skill installed: {skill_path}")
+        # Install Codex hooks
+        try:
+            from adapters.codex.setup import install_hooks, _write_hook_config
+            install_hooks()
+            _write_hook_config()
+            logging.info("Codex hooks installed")
+        except Exception as e:
+            logging.warning(f"Codex hook installation skipped: {e}")
         return True
     except Exception as e:
         logging.error(f"Failed to register with Codex: {str(e)}")
@@ -400,6 +408,14 @@ def register_gemini_cli(adapter_path: str) -> bool:
         
         gemini_md.write_text(updated)
         logging.info(f"Gemini CLI recall instructions written to {gemini_md}")
+        # Install Gemini CLI hooks
+        try:
+            from adapters.gemini_cli.setup import install_hooks, _write_hook_config
+            install_hooks()
+            _write_hook_config()
+            logging.info("Gemini CLI hooks installed")
+        except Exception as e:
+            logging.warning(f"Gemini CLI hook installation skipped: {e}")
         return True
     except Exception as e:
         logging.error(f"Failed to register Gemini CLI: {e}")
