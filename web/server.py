@@ -807,7 +807,7 @@ def create_app(db, config: dict | None = None) -> FastAPI:
     # B3 — MCP-over-SSE transport (ChatGPT Desktop / any SSE-capable client)
     #
     # Usage:
-    #   1. Client connects to GET /sse → receives "event: endpoint" with POST URL
+    #   1. Legacy clients connect to GET /sse → receive "event: endpoint" with POST URL
     #   2. Client POSTs JSON-RPC requests to /mcp?connection_id=<id>
     #   3. Server dispatches to tool handlers, streams response back via SSE
     #
@@ -818,8 +818,10 @@ def create_app(db, config: dict | None = None) -> FastAPI:
     @app.get("/sse")
     async def mcp_sse(request: Request):
         """
-        Open an MCP SSE stream. First event tells the client where to POST requests.
-        Sends keepalive comments every 30 s to prevent proxy/firewall timeout.
+        Deprecated MCP SSE stream.
+
+        Legacy clients still use this endpoint to discover a connection-specific
+        POST URL, but new clients should use POST /mcp directly.
         """
         connection_id = str(uuid.uuid4())
         queue: asyncio.Queue = asyncio.Queue()
@@ -850,6 +852,9 @@ def create_app(db, config: dict | None = None) -> FastAPI:
                 "Cache-Control": "no-cache",
                 "X-Accel-Buffering": "no",
                 "Connection": "keep-alive",
+                "Deprecation": "true",
+                "Sunset": "2026-09-01",
+                "Link": '</mcp>; rel="successor-version"',
             },
         )
 
@@ -919,6 +924,17 @@ def create_app(db, config: dict | None = None) -> FastAPI:
         
         return JSONResponse(result)
 
+    @app.get("/mcp")
+    async def mcp_get(request: Request):
+        """Streamable HTTP GET placeholder for server-initiated streams."""
+        accept = request.headers.get("accept", "")
+        if "text/event-stream" not in accept:
+            return JSONResponse(
+                {"error": "Accept header must include text/event-stream"},
+                status_code=406,
+            )
+        return Response(status_code=405)
+
     # ------------------------------------------------------------------
     # REST API endpoints (B262)
     # ------------------------------------------------------------------
@@ -965,7 +981,7 @@ async def _dispatch_mcp(request: dict, _db, _cfg: dict) -> dict | None:
         return ok({
             "protocolVersion": "2025-03-26",
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "sidequests-brain-sse", "version": WEB_VERSION},
+            "serverInfo": {"name": "hippocampy-brain", "version": WEB_VERSION},
         })
 
     if method == "notifications/initialized":

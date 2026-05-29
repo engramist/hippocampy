@@ -2,6 +2,7 @@
 import json
 import logging
 import shutil
+import warnings
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
@@ -11,6 +12,12 @@ from campy.cli.detect import detect_all
 
 console = Console()
 logger = logging.getLogger(__name__)
+
+warnings.warn(
+    "campy.cli.plugin_installer is deprecated. Use 'campy setup' which delegates to native plugin installers.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 # Upstream process-skill names that can confuse users when Campy variants are installed.
@@ -70,6 +77,132 @@ def _copy_skills_tree(plugin_dir: Path, target_skills_dir: Path) -> bool:
         return False
 
 
+def _copy_shared_hooks(plugin_dir: Path, target_hooks_dir: Path) -> bool:
+    """Copy shared Campy hook wrappers into an agent hooks directory."""
+    hooks_src = plugin_dir / "hooks"
+    if not hooks_src.exists():
+        logger.error(f"Hooks source not found: {hooks_src}")
+        return False
+
+    try:
+        target_hooks_dir.mkdir(parents=True, exist_ok=True)
+        for hook_file in sorted(hooks_src.iterdir()):
+            if not hook_file.is_file():
+                continue
+            dest = target_hooks_dir / hook_file.name
+            shutil.copy2(hook_file, dest)
+            dest.chmod(0o755)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to copy hooks to {target_hooks_dir}: {e}")
+        return False
+
+
+def _write_codex_hook_config(hooks_dir: Path) -> None:
+    """Write Codex hook config pointing at the shared wrapper scripts."""
+    config_path = Path.home() / ".codex" / "hooks.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config = {}
+    if config_path.exists():
+        try:
+            config = json.loads(config_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            config = {}
+
+    hooks = config.setdefault("hooks", {})
+    campy_hooks = {
+        "SessionStart": {
+            "matcher": "",
+            "hooks": [{
+                "type": "command",
+                "command": f"python3 {hooks_dir / 'session_start_wrapper.py'}",
+                "timeout": 10,
+            }],
+        },
+        "PreToolUse": {
+            "matcher": "",
+            "hooks": [{
+                "type": "command",
+                "command": f"python3 {hooks_dir / 'pre_tool_use_wrapper.py'}",
+                "timeout": 5,
+            }],
+        },
+        "PostToolUse": {
+            "matcher": "",
+            "hooks": [{
+                "type": "command",
+                "command": f"python3 {hooks_dir / 'post_tool_use_wrapper.py'}",
+                "timeout": 5,
+            }],
+        },
+    }
+
+    for event_name, campy_entry in campy_hooks.items():
+        event_hooks = hooks.setdefault(event_name, [])
+        event_hooks[:] = [
+            entry for entry in event_hooks
+            if not any("campy" in str(h.get("command", "")) for h in entry.get("hooks", []))
+        ]
+        event_hooks.append(campy_entry)
+
+    config_path.write_text(json.dumps(config, indent=2))
+
+
+def _write_gemini_hook_config(hooks_dir: Path) -> None:
+    """Write Gemini hook config pointing at the shared wrapper scripts."""
+    settings_path = Path.home() / ".gemini" / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+
+    settings = {}
+    if settings_path.exists():
+        try:
+            settings = json.loads(settings_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            settings = {}
+
+    hooks = settings.setdefault("hooks", {})
+    campy_hooks = {
+        "SessionStart": {
+            "matcher": "",
+            "hooks": [{
+                "type": "command",
+                "command": f"python3 {hooks_dir / 'session_start_wrapper.py'} --gemini",
+                "timeout": 5000,
+                "name": "campy-session-start",
+            }],
+        },
+        "BeforeTool": {
+            "matcher": "",
+            "hooks": [{
+                "type": "command",
+                "command": f"python3 {hooks_dir / 'pre_tool_use_wrapper.py'} --gemini",
+                "timeout": 5000,
+                "name": "campy-before-tool",
+            }],
+        },
+        "AfterTool": {
+            "matcher": "",
+            "hooks": [{
+                "type": "command",
+                "command": f"python3 {hooks_dir / 'post_tool_use_wrapper.py'} --gemini",
+                "timeout": 5000,
+                "name": "campy-after-tool",
+            }],
+        },
+    }
+
+    for event_name, campy_entry in campy_hooks.items():
+        event_hooks = hooks.setdefault(event_name, [])
+        event_hooks[:] = [
+            entry for entry in event_hooks
+            if not any(h.get("name", "").startswith("campy-") for h in entry.get("hooks", []))
+        ]
+        event_hooks.append(campy_entry)
+
+    settings_path.write_text(json.dumps(settings, indent=2))
+
+
 def find_plugin_dir(hint: Optional[str] = None) -> Optional[Path]:
     """Locate the plugin/ directory in the repo or bundled package data."""
     if hint:
@@ -114,6 +247,23 @@ def install_claude_code_plugin(plugin_dir: Path, target_dir: Path) -> bool:
         mcp_src = plugin_dir / ".mcp.json"
         mcp_dst = target_dir / ".mcp.json"
         shutil.copy2(mcp_src, mcp_dst)
+        # Copy optional multi-platform manifests and shared context files.
+        for name in ("gemini-extension.json", "GEMINI.md"):
+            src = plugin_dir / name
+            if src.exists():
+                shutil.copy2(src, target_dir / name)
+        codex_meta_src = plugin_dir / ".codex-plugin"
+        codex_meta_dst = target_dir / ".codex-plugin"
+        if codex_meta_src.exists():
+            if codex_meta_dst.exists():
+                shutil.rmtree(codex_meta_dst)
+            shutil.copytree(codex_meta_src, codex_meta_dst)
+        hooks_src = plugin_dir / "hooks"
+        hooks_dst = target_dir / "hooks"
+        if hooks_src.exists():
+            if hooks_dst.exists():
+                shutil.rmtree(hooks_dst)
+            shutil.copytree(hooks_src, hooks_dst)
         # Copy skills/
         if not _copy_skills_tree(plugin_dir, target_dir / "skills"):
             return False
@@ -151,26 +301,10 @@ def install_codex_plugin(plugin_dir: Path) -> bool:
                 shutil.copytree(skill_dir, dst)
                 count += 1
         logger.info(f"Codex: {count} skills installed to {target}")
-        # Install hooks
-        hooks_src = plugin_dir.parent / "adapters" / "codex" / "hooks"
-        if hooks_src.exists():
-            hooks_dst = Path.home() / ".codex" / "hooks" / "campy"
-            hooks_dst.mkdir(parents=True, exist_ok=True)
-            hook_count = 0
-            for hook_file in sorted(hooks_src.glob("*.py")):
-                if hook_file.name == "__init__.py":
-                    continue
-                dst = hooks_dst / hook_file.name
-                shutil.copy2(hook_file, dst)
-                dst.chmod(0o755)
-                hook_count += 1
-            logger.info(f"Codex: {hook_count} hooks installed to {hooks_dst}")
-            # Write hook config
-            try:
-                from adapters.codex.setup import _write_hook_config
-                _write_hook_config()
-            except Exception as e:
-                logger.warning(f"Codex hook config not written: {e}")
+        hooks_dst = Path.home() / ".codex" / "hooks" / "campy"
+        if _copy_shared_hooks(plugin_dir, hooks_dst):
+            _write_codex_hook_config(hooks_dst)
+            logger.info(f"Codex: shared hooks installed to {hooks_dst}")
         return True
     except Exception as e:
         logger.error(f"Failed to install Codex plugin: {e}")
@@ -211,26 +345,10 @@ def install_gemini_plugin(plugin_dir: Path) -> bool:
                 shutil.copytree(skill_dir, dst)
                 count += 1
         logger.info(f"Gemini CLI: {count} skills installed to {target}")
-        # Install hooks
-        hooks_src = plugin_dir.parent / "adapters" / "gemini_cli" / "hooks"
-        if hooks_src.exists():
-            hooks_dst = Path.home() / ".gemini" / "hooks" / "campy"
-            hooks_dst.mkdir(parents=True, exist_ok=True)
-            hook_count = 0
-            for hook_file in sorted(hooks_src.glob("*.py")):
-                if hook_file.name == "__init__.py":
-                    continue
-                dst = hooks_dst / hook_file.name
-                shutil.copy2(hook_file, dst)
-                dst.chmod(0o755)
-                hook_count += 1
-            logger.info(f"Gemini CLI: {hook_count} hooks installed to {hooks_dst}")
-            # Write hook config
-            try:
-                from adapters.gemini_cli.setup import _write_hook_config
-                _write_hook_config()
-            except Exception as e:
-                logger.warning(f"Gemini CLI hook config not written: {e}")
+        hooks_dst = Path.home() / ".gemini" / "hooks" / "campy"
+        if _copy_shared_hooks(plugin_dir, hooks_dst):
+            _write_gemini_hook_config(hooks_dst)
+            logger.info(f"Gemini CLI: shared hooks installed to {hooks_dst}")
         return True
     except Exception as e:
         logger.error(f"Failed to install Gemini CLI plugin: {e}")

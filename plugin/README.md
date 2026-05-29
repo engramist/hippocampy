@@ -1,33 +1,66 @@
 # HippoCampy Plugin
 
-AI memory that learns from every conversation. Automatically captures decisions, constraints, and plans — then recalls them when you need them.
+HippoCampy adds durable memory to Claude, Codex, and Gemini clients. The plugin ships shared MCP wiring, hooks, and process skills so the agent can recall prior decisions, keep project context across sessions, and surface relevant lessons without maintaining a separate per-client setup tree.
 
-## Prerequisites
+## Engine Setup
 
-The HippoCampy Daemon must be running. Install it first:
+This plugin is only the agent-side integration layer. Install and start the engine first:
 
 ```bash
 pip install hippocampy
-campy install
+campy start
+campy setup
 ```
 
-This sets up the memory engine, starts the background daemon, and configures the SSE endpoint at `http://127.0.0.1:7799/sse`.
+That installs the daemon-backed memory engine, starts the background process, and exposes the MCP endpoint at `http://127.0.0.1:7799/mcp`.
 
-## Install the Plugin
+## Install By Platform
 
-### Option A: Claude Cowork UI
+### Claude Code / Claude Desktop
+
+Use the plugin folder directly:
+
+```bash
+claude plugin install /path/to/hippocampy/plugin
+```
+
+Or in Claude Desktop Cowork:
+
 1. Open Claude Desktop → switch to Cowork tab
 2. Click "Customize" in the left sidebar
 3. Upload this plugin folder
 
-### Option B: Claude CLI
+### Codex
+
+Install from the plugin directory:
+
 ```bash
-claude plugins add /path/to/hippocampy/plugin
+codex plugin install /path/to/hippocampy/plugin
 ```
 
-## What You Get
+For the git-backed marketplace flow prepared in this repo:
 
-### Tools (available in both Claude Desktop and Cowork)
+```bash
+codex plugin marketplace add djs54/hippocampy
+codex plugin install hippocampy
+```
+
+### Gemini CLI
+
+Link the local extension:
+
+```bash
+gemini extensions link /path/to/hippocampy/plugin
+```
+
+Or install from the repository URL once published through Gemini's gallery flow:
+
+```bash
+gemini extensions install https://github.com/djs54/hippocampy
+```
+
+## Included Tools
+
 - **notify_turn** — forward conversation turns to the Brain
 - **current_truth** — recall past decisions and context
 - **branch_quest** — create a side quest for tangents
@@ -40,13 +73,31 @@ claude plugins add /path/to/hippocampy/plugin
 - **complete_quest** — mark a project as done
 - **ingest_document** — feed documents to the Brain
 
-### Skills (Cowork only)
-- **memory-awareness** — how the Brain captures knowledge automatically
-- **recall** — when and how to check memory before answering
-- **quest-management** — organizing projects and side quests
-- **status** — monitoring context health and reviewing open loops
+## Included Skills
+
+- **brief** — load compact project context at the start of a task or handoff
+- **campy-diagnose** — debug failures and regressions with a disciplined diagnosis loop
+- **campy-grill** — stress-test a plan against the codebase and its decisions
+- **campy-handoff** — compress active context for another agent or a later session
+- **campy-improve-architecture** — find refactoring seams and testability improvements
+- **campy-tdd** — drive changes through red-green-refactor loops
+- **learn** — capture a new lesson or reusable procedure into Campy memory
+- **memory-awareness** — explain what Campy captures automatically and when recall is appropriate
+- **quest-management** — manage project quests, branches, and workstreams
+- **recall** — query durable memory before answering architecture or history questions
+- **session-start** — load memory context at the beginning of a new session
+- **status** — inspect daemon health and context-window state
+
+## Full Docs
+
+- Main documentation: https://github.com/djs54/hippocampy/tree/main/docs
+- Architecture: https://github.com/djs54/hippocampy/blob/main/docs/ARCHITECTURE.md
+- Installation guide: https://github.com/djs54/hippocampy/blob/main/README.md
 
 ## Verify
 
-After installing, ask Claude: "What tools do you have from Campy?"
-Claude should list the tools above. If not, ensure the Brain Daemon is running: `campy status`
+After installing, ask your agent what Campy tools and skills are available. If the plugin loads but memory does not respond, check the engine first:
+
+```bash
+campy status
+```

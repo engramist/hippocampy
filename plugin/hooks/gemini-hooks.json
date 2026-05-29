@@ -1,0 +1,43 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${PLUGIN_ROOT}/hooks/session_start_wrapper.py --gemini",
+            "timeout": 5000,
+            "name": "campy-session-start"
+          }
+        ]
+      }
+    ],
+    "BeforeTool": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${PLUGIN_ROOT}/hooks/pre_tool_use_wrapper.py --gemini",
+            "timeout": 5000,
+            "name": "campy-before-tool"
+          }
+        ]
+      }
+    ],
+    "AfterTool": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${PLUGIN_ROOT}/hooks/post_tool_use_wrapper.py --gemini",
+            "timeout": 5000,
+            "name": "campy-after-tool"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,3 +1,8 @@
+---
+name: status
+description: Check Campy context health, open loops, and cross-project insight status.
+---
+
 # Checking Brain Status
 
 ## Context health
