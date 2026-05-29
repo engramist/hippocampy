@@ -84,6 +84,11 @@ def create_app(db, config: dict | None = None) -> FastAPI:
     # Main UI & Deep-links
     # ------------------------------------------------------------------
 
+    @app.get("/health")
+    async def health():
+        """Lightweight liveness probe used by hook scripts and setup smoke tests."""
+        return {"status": "ok"}
+
     @app.get("/", response_class=HTMLResponse)
     async def index():
         html_path = STATIC_DIR / "index.html"
