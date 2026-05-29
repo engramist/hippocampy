@@ -812,6 +812,15 @@ class AdapterRegistrar:
         config_path = Path.home() / ".codex" / "config.toml"
         self._ensure_codex_entry(config_path, adapter_path)
         install_codex_memory_skill(PROJECT_ROOT)
+        # Install Codex hooks
+        try:
+            from adapters.codex.setup import install_hooks as install_codex_hooks
+            from adapters.codex.setup import _write_hook_config as write_codex_hook_config
+            install_codex_hooks()
+            write_codex_hook_config()
+            click.echo("    [ok] Codex hooks installed")
+        except Exception as e:
+            click.echo(f"    [!] Codex hook installation skipped: {e}")
         click.echo(f"    [ok] Codex — registered at {config_path}")
         return True
 
@@ -881,6 +890,15 @@ class AdapterRegistrar:
             "command": str(self.venv.python),
             "args": [str(adapter_path)],
         })
+        # Install Gemini CLI hooks
+        try:
+            from adapters.gemini_cli.setup import install_hooks as install_gemini_hooks
+            from adapters.gemini_cli.setup import _write_hook_config as write_gemini_hook_config
+            install_gemini_hooks()
+            write_gemini_hook_config()
+            click.echo("    [ok] Gemini CLI hooks installed")
+        except Exception as e:
+            click.echo(f"    [!] Gemini CLI hook installation skipped: {e}")
         click.echo("    [ok] Gemini CLI — registered")
         return True
 
