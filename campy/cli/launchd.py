@@ -30,8 +30,22 @@ def resolve_system_python() -> str:
 
 
 def _daemon_script() -> str:
-    """Return absolute path to brain_daemon.py."""
-    return str(Path(__file__).parent.parent.parent / "brain_daemon.py")
+    """Return absolute path to brain_daemon.py, or the console-script path.
+
+    When installed via pipx the repo-root brain_daemon.py does not exist
+    inside the venv.  Fall back to the ``campy-daemon`` console script
+    which pipx *does* install, or finally ``python -m campy.daemon``.
+    """
+    repo_candidate = Path(__file__).parent.parent.parent / "brain_daemon.py"
+    if repo_candidate.is_file():
+        return str(repo_candidate)
+
+    # pipx / pip console-script
+    console = shutil.which("campy-daemon")
+    if console:
+        return console
+
+    return str(repo_candidate)  # best-effort; plist generation will surface the error
 
 
 def _launchctl_list(label: str) -> subprocess.CompletedProcess:
@@ -71,6 +85,20 @@ def generate_plist(brain_daemon_path: str, plist_path: str, label: str = LABEL) 
     try:
         python_exe = resolve_system_python()
         log_path = get_daemon_log_path()
+
+        # Console scripts (e.g. campy-daemon from pipx) are self-contained;
+        # .py files need the Python interpreter as arg[0].
+        daemon_path = Path(brain_daemon_path)
+        if daemon_path.suffix == ".py":
+            prog_args = (
+                f"        <string>{python_exe}</string>\n"
+                f"        <string>{brain_daemon_path}</string>"
+            )
+            work_dir = str(daemon_path.parent)
+        else:
+            prog_args = f"        <string>{brain_daemon_path}</string>"
+            work_dir = str(Path.home())
+
         plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -79,8 +107,7 @@ def generate_plist(brain_daemon_path: str, plist_path: str, label: str = LABEL) 
     <string>{label}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{python_exe}</string>
-        <string>{brain_daemon_path}</string>
+{prog_args}
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -91,7 +118,7 @@ def generate_plist(brain_daemon_path: str, plist_path: str, label: str = LABEL) 
     <key>StandardErrorPath</key>
     <string>{log_path}</string>
     <key>WorkingDirectory</key>
-    <string>{Path(brain_daemon_path).parent}</string>
+    <string>{work_dir}</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
