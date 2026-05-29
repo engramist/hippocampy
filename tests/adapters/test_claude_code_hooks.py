@@ -1,7 +1,9 @@
 # tests/adapters/test_claude_code_hooks.py
+import json
 from pathlib import Path
 import subprocess
 import os
+from unittest.mock import patch
 
 
 def test_session_start_hook_exists():
@@ -59,6 +61,40 @@ def test_setup_register_installs_hooks(tmp_path):
     assert (hooks_dir / "session_start.sh").exists()
     assert (hooks_dir / "pre_tool_use.sh").exists()
     assert (hooks_dir / "post_tool_use.sh").exists()
+
+
+def test_write_hook_config_replaces_stale_hook_path(tmp_path):
+    """Stale hook_user_turn.py entries should be replaced even if the path changed."""
+    from adapters.claude_code import setup as claude_setup
+
+    home = tmp_path / "home"
+    settings_path = home / ".claude" / "settings.json"
+    settings_path.parent.mkdir(parents=True)
+    settings_path.write_text(json.dumps({
+        "hooks": {
+            "UserPromptSubmit": [
+                {
+                    "matcher": "",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "/old/python /old/site-packages/adapters/claude_code/hook_user_turn.py",
+                        }
+                    ],
+                }
+            ]
+        }
+    }))
+
+    repo_python = claude_setup.REPO_ROOT / ".venv" / "bin" / "python"
+    with patch.object(claude_setup.Path, "home", return_value=home):
+        with patch.object(claude_setup, "_python_executable", return_value=str(repo_python)):
+            claude_setup._write_hook_config()
+
+    settings = json.loads(settings_path.read_text())
+    entries = settings["hooks"]["UserPromptSubmit"]
+    commands = [hook["command"] for entry in entries for hook in entry["hooks"]]
+    assert commands == [f"{repo_python} {claude_setup.HOOK_FILE}"]
 
 
 def test_post_tool_use_hook_exists():
