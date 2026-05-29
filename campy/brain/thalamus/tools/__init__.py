@@ -23,11 +23,11 @@ _logger = logging.getLogger(__name__)
 
 def _with_phase(phase: str, fn):
     """Wrap a tool handler to set phase during execution."""
-    async def wrapper(params=None, arguments=None, db=None, config=None, **kw):
+    async def wrapper(params=None, db=None, config=None, **kw):
         from campy.brain.brainstem.phase import set_phase
         set_phase(phase)
         try:
-            return await fn(params=params, arguments=arguments, db=db, config=config, **kw)
+            return await fn(params=params, db=db, config=config, **kw)
         finally:
             set_phase("idle")
     wrapper.__name__ = fn.__name__
