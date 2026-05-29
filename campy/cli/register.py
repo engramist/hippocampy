@@ -173,7 +173,7 @@ def register_claude_code(adapter_path: str) -> bool:
         try:
             cmd = ["claude", "plugin", "install", str(plugin_dir)]
             logging.info(f"Running command: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             if result.returncode == 0:
                 logging.info("Claude Code plugin installed natively")
                 return True
@@ -292,7 +292,7 @@ def register_codex(adapter_path: str) -> bool:
         try:
             cmd = ["codex", "plugin", "install", str(plugin_dir)]
             logging.info(f"Running command: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             if result.returncode == 0 or "already" in f"{result.stdout}\n{result.stderr}".lower():
                 logging.info("Codex plugin installed natively")
                 return True
@@ -514,7 +514,7 @@ def register_gemini_cli(adapter_path: str) -> bool:
         try:
             cmd = ["gemini", "extensions", "link", str(plugin_dir)]
             logging.info(f"Running command: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             if result.returncode == 0 or "already" in f"{result.stdout}\n{result.stderr}".lower():
                 logging.info("Gemini CLI extension linked natively")
                 return True
@@ -522,6 +522,8 @@ def register_gemini_cli(adapter_path: str) -> bool:
                 "Native Gemini CLI extension link failed (%s); falling back to legacy registration",
                 (result.stderr or result.stdout or "unknown error").strip(),
             )
+        except subprocess.TimeoutExpired:
+            logging.warning("Gemini CLI extension link timed out after 30s; falling back to legacy registration")
         except FileNotFoundError:
             logging.warning("Gemini CLI native extension link unavailable; falling back to legacy registration")
 
