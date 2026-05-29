@@ -56,4 +56,4 @@ async def test_system_prompt(patched):
         "jsonrpc": "2.0", "id": 3, "method": "prompts/get", "params": {"name": "sidequests-system"}
     })
     content = response["result"]["messages"][0]["content"]["text"]
-    assert "[SideQuest | Brain: ACTIVE]" in content
+    assert "[Campy | Brain: ACTIVE]" in content
