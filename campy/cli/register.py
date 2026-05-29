@@ -39,10 +39,17 @@ def _python_for_adapter(adapter_path: str) -> str:
 
 
 def _strip_codex_adapter_path_tables(content: str, adapter_path: str) -> str:
-    """Remove malformed TOML tables like ["/repo/adapters/codex/adapter.py"]."""
+    """Remove malformed TOML tables like ["/repo/adapters/codex/adapter.py"].
+
+    Also removes orphaned args-like lines that previous runs may have left
+    behind (e.g. ``["-m", "campy.adapters.mcp_server"]``).
+    """
     escaped = re.escape(str(Path(adapter_path).expanduser().resolve()))
     pattern = re.compile(rf'^\s*\["{escaped}"\]\s*\n?', re.MULTILINE)
-    return pattern.sub("", content)
+    content = pattern.sub("", content)
+    # Remove orphaned args lines that look like TOML table headers
+    orphan = re.compile(r'^\s*\["-m",\s*"campy\.adapters\.mcp_server"\]\s*\n?', re.MULTILINE)
+    return orphan.sub("", content)
 
 
 def _upsert_codex_mcp_block(content: str, python_exe: str, adapter_path: str) -> str:
@@ -118,10 +125,11 @@ def register_claude_code(adapter_path: str) -> bool:
         _register_claude_code_hook(adapter_path)
         return True
     except subprocess.CalledProcessError as e:
-        logging.error(f"Failed to register with Claude Code: {e.stderr}")
-        if "already exists" in e.stderr.lower():
+        if "already exists" in (e.stderr or "").lower():
+            logging.info(f"Claude Code MCP server already registered — updating hooks only")
             _register_claude_code_hook(adapter_path)
             return True
+        logging.error(f"Failed to register with Claude Code: {e.stderr}")
         return False
     except FileNotFoundError:
         logging.error("Claude Code CLI ('claude') not found in PATH.")
