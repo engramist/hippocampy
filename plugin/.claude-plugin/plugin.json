@@ -4,5 +4,7 @@
   "description": "AI memory that learns from every conversation. Automatically captures decisions, constraints, and plans — then recalls them when you need them. Works across Claude Desktop, Claude Code, Codex, and ChatGPT.",
   "author": {
     "name": "HippoCampy"
-  }
+  },
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json"
 }

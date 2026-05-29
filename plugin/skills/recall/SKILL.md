@@ -1,3 +1,8 @@
+---
+name: recall
+description: Recall past decisions, architecture, and project history from Campy memory.
+---
+
 # Recalling Past Decisions and Context
 
 **BEFORE answering ANY question about past decisions, architecture, constraints, or project history, you MUST check the Brain's memory.**

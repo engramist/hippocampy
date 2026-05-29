@@ -947,7 +947,7 @@ Four layers work together to get graph knowledge into agent context windows with
 
 ### Layer 4 — Process Skills (Deliberate Recall)
 **Modules:** `plugin/skills/` (12 skills, auto-install with plugin)
-**Delivery:** 12 skills ship with the Campy plugin and auto-install to all supported agents (Claude Code, Codex, Gemini CLI, VS Code Copilot). Five process skills are forked from Matt Pocock's skills with lean Campy memory integration: `grill` (domain grilling), `diagnose` (6-phase debug loop), `tdd` (red-green-refactor), `handoff` (session handoff + graph persistence), `improve-architecture` (deepening opportunities). Seven Campy-native skills handle memory operations: `recall`, `brief`, `learn`, `session-start`, `memory-awareness`, `quest-management`, `status`. Enhanced skills suggest Campy MCP tools at natural inflection points without mandating calls — session-start already loads graph context.
+**Delivery:** 12 skills ship with the Campy plugin and auto-install to all supported agents (Claude Code, Codex, Gemini CLI, VS Code Copilot). Five process skills are forked from Matt Pocock's skills with lean Campy memory integration: `campy-grill` (domain grilling), `campy-diagnose` (6-phase debug loop), `campy-tdd` (red-green-refactor), `campy-handoff` (session handoff + graph persistence), `campy-improve-architecture` (deepening opportunities). Seven Campy-native skills handle memory operations: `recall`, `brief`, `learn`, `session-start`, `memory-awareness`, `quest-management`, `status`. Enhanced skills suggest Campy MCP tools at natural inflection points without mandating calls — session-start already loads graph context.
 
 ### Layer interaction
 ```
@@ -1047,6 +1047,9 @@ ARC_AGI artifacts do not become wiki pages directly. They first flow through `in
 ## Installation Story
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/djs54/hippocampy/main/scripts/install.sh | sh
+
+# or install manually
 pip install hippocampy        # or: pip install -e . from repo
 campy setup                    # Claude Code (auto-detected)
 campy setup --target claude-desktop

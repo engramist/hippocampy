@@ -11,7 +11,7 @@ pip install hippocampy
 campy install
 ```
 
-This sets up the memory engine, starts the background daemon, and configures the SSE endpoint at `http://127.0.0.1:7799/sse`.
+This sets up the memory engine, starts the background daemon, and configures the MCP endpoint at `http://127.0.0.1:7799/mcp`.
 
 ## Install the Plugin
 

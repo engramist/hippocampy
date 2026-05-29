@@ -11,6 +11,7 @@ from campy.cli.register import (
     register_claude_code, 
     register_claude_desktop, 
     register_codex,
+    register_gemini_cli,
     register_vscode,
 )
 from campy.cli.launchd import generate_plist
@@ -34,10 +35,19 @@ def test_detect_claude_desktop(tmp_path):
             assert detect_claude_desktop() == str(config_file)
 
 def test_register_claude_code():
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(stdout="Success", returncode=0)
-        assert register_claude_code("/path/to/adapter.py") is True
-        mock_run.assert_called_once()
+    with patch("campy.cli.register._find_plugin_dir", return_value=Path("/tmp/plugin")):
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="Success", stderr="", returncode=0)
+            assert register_claude_code("/path/to/adapter.py") is True
+            assert mock_run.call_args[0][0][:3] == ["claude", "plugin", "install"]
+
+
+def test_register_claude_code_falls_back_to_legacy():
+    with patch("campy.cli.register._find_plugin_dir", return_value=Path("/tmp/plugin")):
+        with patch("subprocess.run", side_effect=FileNotFoundError):
+            with patch("campy.cli.register._register_claude_code_legacy", return_value=True) as legacy:
+                assert register_claude_code("/path/to/adapter.py") is True
+                legacy.assert_called_once()
 
 def test_register_claude_desktop(tmp_path):
     config_file = tmp_path / "claude_desktop_config.json"
@@ -58,11 +68,20 @@ def test_register_codex(tmp_path):
     config_file.write_text("[mcp_servers]\n")
 
     adapter_path = "/path/to/adapter.py"
-    with patch("os.path.expanduser", return_value=str(config_file)):
-        assert register_codex(adapter_path) is True
-        content = config_file.read_text()
-        assert "[mcp_servers.campy]" in content
-        assert '"-m", "campy.adapters.mcp_server"' in content
+    with patch("campy.cli.register._find_plugin_dir", return_value=None):
+        with patch("os.path.expanduser", return_value=str(config_file)):
+            assert register_codex(adapter_path) is True
+            content = config_file.read_text()
+            assert "[mcp_servers.campy]" in content
+            assert '"-m", "campy.adapters.mcp_server"' in content
+
+
+def test_register_codex_native():
+    with patch("campy.cli.register._find_plugin_dir", return_value=Path("/tmp/plugin")):
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="installed", stderr="", returncode=0)
+            assert register_codex("/path/to/adapter.py") is True
+            assert mock_run.call_args[0][0][:3] == ["codex", "plugin", "install"]
 
 def test_register_codex_replaces_stale_and_stray_entries(tmp_path):
     config_dir = tmp_path / ".codex"
@@ -78,14 +97,23 @@ def test_register_codex_replaces_stale_and_stray_entries(tmp_path):
         'args = ["/wrong/adapter.py"]\n'
     )
 
-    with patch("os.path.expanduser", return_value=str(config_file)):
-        assert register_codex(adapter_path) is True
+    with patch("campy.cli.register._find_plugin_dir", return_value=None):
+        with patch("os.path.expanduser", return_value=str(config_file)):
+            assert register_codex(adapter_path) is True
 
     content = config_file.read_text()
     assert f'["{adapter_path}"]' not in content.splitlines()
     assert content.count("[mcp_servers.campy]") == 1
     assert '"-m", "campy.adapters.mcp_server"' in content
     assert "/wrong/python" not in content
+
+
+def test_register_gemini_cli_native():
+    with patch("campy.cli.register._find_plugin_dir", return_value=Path("/tmp/plugin")):
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="linked", stderr="", returncode=0)
+            assert register_gemini_cli("/path/to/adapter.py") is True
+            assert mock_run.call_args[0][0][:3] == ["gemini", "extensions", "link"]
 
 def test_register_vscode(tmp_path):
     config_file = tmp_path / "mcp.json"
@@ -193,6 +221,15 @@ def test_setup_command_target_vscode():
                 result = runner.invoke(app, ["setup", "--target", "vscode"])
                 assert result.exit_code == 0
                 mock_reg.assert_called_once()
+
+
+def test_install_plugin_command_warns_deprecated():
+    with patch("campy.cli.plugin_installer.install_plugin_for_agents", return_value={"codex": True}) as mock_install:
+        result = runner.invoke(app, ["install-plugin", "--target", "codex"])
+        assert result.exit_code == 0
+        assert "install-plugin is deprecated" in result.stdout
+        assert "Running legacy installer for compatibility" in result.stdout
+        mock_install.assert_called_once_with(target="codex", plugin_dir=None)
 
 @pytest.mark.asyncio
 async def test_run_smoke_tests_success():

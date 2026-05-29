@@ -16,6 +16,36 @@ from campy.branding import (
 )
 
 
+def _is_plugin_dir(candidate: Path) -> bool:
+    """Return True when the path looks like a Campy plugin directory."""
+    return any(
+        (candidate / rel).exists()
+        for rel in (
+            ".claude-plugin/plugin.json",
+            "claude-plugin/plugin.json",
+            ".codex-plugin/plugin.json",
+            "gemini-extension.json",
+        )
+    )
+
+
+def _find_plugin_dir() -> Path | None:
+    """Locate the plugin directory from source checkout or installed package data."""
+    repo_candidate = Path(__file__).resolve().parent.parent.parent / "plugin"
+    if _is_plugin_dir(repo_candidate):
+        return repo_candidate
+
+    try:
+        package_candidate = resources.files("campy.data").joinpath("plugin")
+        package_path = Path(str(package_candidate))
+        if _is_plugin_dir(package_path):
+            return package_path
+    except Exception:
+        pass
+
+    return None
+
+
 def _repo_root_for_adapter(adapter_path: str) -> Path:
     """Return the sidequests-brain repo root for a top-level adapter path."""
     path = Path(adapter_path).expanduser().resolve()
@@ -113,8 +143,8 @@ def install_codex_memory_skill(project_root: Path) -> Path | None:
     return target
 
 
-def register_claude_code(adapter_path: str) -> bool:
-    """Register Campy with Claude Code using 'claude mcp add'."""
+def _register_claude_code_legacy(adapter_path: str) -> bool:
+    """Register Campy with Claude Code using the legacy MCP add flow."""
     try:
         python_exe = _python_for_adapter(adapter_path)
         # Use module-mode registration
@@ -134,6 +164,37 @@ def register_claude_code(adapter_path: str) -> bool:
     except FileNotFoundError:
         logging.error("Claude Code CLI ('claude') not found in PATH.")
         return False
+
+
+def register_claude_code(adapter_path: str) -> bool:
+    """Register Campy with Claude Code using native plugin install when available."""
+    plugin_dir = _find_plugin_dir()
+    if plugin_dir is not None:
+        try:
+            cmd = ["claude", "plugin", "install", str(plugin_dir)]
+            logging.info(f"Running command: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                logging.info("Claude Code plugin installed natively")
+                return True
+
+            combined = f"{result.stdout}\n{result.stderr}".lower()
+            if "already" in combined:
+                update_cmd = ["claude", "plugin", "update", "hippocampy"]
+                logging.info(f"Running command: {' '.join(update_cmd)}")
+                update = subprocess.run(update_cmd, capture_output=True, text=True)
+                if update.returncode == 0:
+                    logging.info("Claude Code plugin updated")
+                    return True
+
+            logging.warning(
+                "Native Claude Code plugin install failed (%s); falling back to legacy registration",
+                (result.stderr or result.stdout or "unknown error").strip(),
+            )
+        except FileNotFoundError:
+            logging.warning("Claude Code native plugin install unavailable; falling back to legacy registration")
+
+    return _register_claude_code_legacy(adapter_path)
 
 
 def _register_claude_code_hook(adapter_path: str) -> None:
@@ -195,12 +256,12 @@ def register_chatgpt_desktop() -> bool:
     """
     print("\n  ChatGPT Desktop — Campy connector registration required:")
     print("  1. Open ChatGPT Desktop Settings > Apps > Add Connector")
-    print("  2. Paste this URL: http://127.0.0.1:7799/sse")
+    print("  2. Paste this URL: http://127.0.0.1:7799/mcp")
     print("  (Requires the Brain Daemon to be running.)\n")
     return True
 
 
-def register_codex(adapter_path: str) -> bool:
+def _register_codex_legacy(adapter_path: str) -> bool:
     """Register Campy with Codex by editing ~/.codex/config.toml."""
     try:
         python_exe = _python_for_adapter(adapter_path)
@@ -218,18 +279,31 @@ def register_codex(adapter_path: str) -> bool:
         logging.info(f"Codex registration success: {config_path}")
         if skill_path:
             logging.info(f"Codex Campy memory skill installed: {skill_path}")
-        # Install Codex hooks
-        try:
-            from adapters.codex.setup import install_hooks, _write_hook_config
-            install_hooks()
-            _write_hook_config()
-            logging.info("Codex hooks installed")
-        except Exception as e:
-            logging.warning(f"Codex hook installation skipped: {e}")
         return True
     except Exception as e:
         logging.error(f"Failed to register with Codex: {str(e)}")
         return False
+
+
+def register_codex(adapter_path: str) -> bool:
+    """Register Campy with Codex using native plugin install when available."""
+    plugin_dir = _find_plugin_dir()
+    if plugin_dir is not None:
+        try:
+            cmd = ["codex", "plugin", "install", str(plugin_dir)]
+            logging.info(f"Running command: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0 or "already" in f"{result.stdout}\n{result.stderr}".lower():
+                logging.info("Codex plugin installed natively")
+                return True
+            logging.warning(
+                "Native Codex plugin install failed (%s); falling back to legacy registration",
+                (result.stderr or result.stdout or "unknown error").strip(),
+            )
+        except FileNotFoundError:
+            logging.warning("Codex native plugin install unavailable; falling back to legacy registration")
+
+    return _register_codex_legacy(adapter_path)
 
 
 def _vscode_mcp_config_path() -> Path:
@@ -289,22 +363,33 @@ def _build_skill_catalog(repo_root: Path) -> str:
     # Hardcoded fallback descriptions (used if we can't read SKILL.md files)
     fallback = {
         "brief": "Starting a new session, switching tasks, need full project context",
-        "diagnose": "Bug reports, something broken/failing, performance regressions",
-        "grill": "Stress-test a plan against the domain model and documented decisions",
-        "handoff": "Ending a session, context getting large, passing work to another agent",
-        "improve-architecture": "Find refactoring opportunities, improve testability",
+        "campy-diagnose": "Bug reports, something broken/failing, performance regressions",
+        "campy-grill": "Stress-test a plan against the domain model and documented decisions",
+        "campy-handoff": "Ending a session, context getting large, passing work to another agent",
+        "campy-improve-architecture": "Find refactoring opportunities, improve testability",
+        "campy-tdd": "Test-driven development with red-green-refactor loop",
         "learn": "Teach Campy a new pattern, procedure, or lesson",
         "memory-awareness": "Understand what Campy captures automatically",
         "quest-management": "Manage project quests and workstreams",
         "recall": "Questions about past decisions, architecture, project history",
         "session-start": "Fires at session start to load memory context",
         "status": "Check Brain health and context window status",
-        "tdd": "Test-driven development with red-green-refactor loop",
     }
 
+    skill_names = set(fallback.keys())
+    if skills_dir:
+        try:
+            skill_names.update(
+                child.name
+                for child in skills_dir.iterdir()
+                if child.is_dir() and (child / "SKILL.md").exists()
+            )
+        except Exception:
+            pass
+
     rows = []
-    for name in sorted(fallback.keys()):
-        desc = fallback[name]
+    for name in sorted(skill_names):
+        desc = fallback.get(name, f"Campy skill: {name}")
         # Try to read description from SKILL.md frontmatter
         if skills_dir and (skills_dir / name / "SKILL.md").exists():
             try:
@@ -372,7 +457,7 @@ def _add_copilot_recall_instructions(repo_root: Path) -> None:
         instructions_path.write_text(updated)
 
 
-def register_gemini_cli(adapter_path: str) -> bool:
+def _register_gemini_cli_legacy(adapter_path: str) -> bool:
     """Register Campy with Gemini CLI via GEMINI.md instructions."""
     try:
         repo_root = _repo_root_for_adapter(adapter_path)
@@ -416,18 +501,31 @@ def register_gemini_cli(adapter_path: str) -> bool:
         
         gemini_md.write_text(updated)
         logging.info(f"Gemini CLI recall instructions written to {gemini_md}")
-        # Install Gemini CLI hooks
-        try:
-            from adapters.gemini_cli.setup import install_hooks, _write_hook_config
-            install_hooks()
-            _write_hook_config()
-            logging.info("Gemini CLI hooks installed")
-        except Exception as e:
-            logging.warning(f"Gemini CLI hook installation skipped: {e}")
         return True
     except Exception as e:
         logging.error(f"Failed to register Gemini CLI: {e}")
         return False
+
+
+def register_gemini_cli(adapter_path: str) -> bool:
+    """Register Campy with Gemini CLI using native extension install when available."""
+    plugin_dir = _find_plugin_dir()
+    if plugin_dir is not None:
+        try:
+            cmd = ["gemini", "extensions", "link", str(plugin_dir)]
+            logging.info(f"Running command: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0 or "already" in f"{result.stdout}\n{result.stderr}".lower():
+                logging.info("Gemini CLI extension linked natively")
+                return True
+            logging.warning(
+                "Native Gemini CLI extension link failed (%s); falling back to legacy registration",
+                (result.stderr or result.stdout or "unknown error").strip(),
+            )
+        except FileNotFoundError:
+            logging.warning("Gemini CLI native extension link unavailable; falling back to legacy registration")
+
+    return _register_gemini_cli_legacy(adapter_path)
 
 
 def register_hermes(adapter_path: str = None) -> bool:

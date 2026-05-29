@@ -22,7 +22,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import click
 
@@ -50,6 +50,30 @@ _OPENCLAW_MEMORY_TOOLS  = [
     "memory_open_loops",
 ]
 
+_CAMPY_SKILL_DIR_NAMES = {
+    "brief",
+    "campy-diagnose",
+    "campy-grill",
+    "campy-handoff",
+    "campy-improve-architecture",
+    "campy-memory",
+    "campy-tdd",
+    "diagnose",
+    "grill",
+    "handoff",
+    "improve-architecture",
+    "learn",
+    "memory-awareness",
+    "quest-management",
+    "recall",
+    "session-start",
+    "sidequests-memory",
+    "status",
+    "tdd",
+}
+
+_PACKAGE_NAMES = ("hippocampy", "sidequests")
+
 
 # ---------------------------------------------------------------------------
 # Result dataclass
@@ -60,6 +84,68 @@ class _R:
         self.name   = name
         self.done   = done
         self.detail = detail
+
+
+def _remove_tree(path: Path) -> bool:
+    """Remove a file or directory if it exists."""
+    if not path.exists():
+        return False
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+    return True
+
+
+def _remove_hook_entries(
+    config_path: Path,
+    predicate: Callable[[dict], bool],
+) -> bool:
+    """Remove matching hook entries from a JSON config file."""
+    if not config_path.exists():
+        return False
+
+    try:
+        config = json.loads(config_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return False
+
+    hooks = config.get("hooks")
+    if not isinstance(hooks, dict):
+        return False
+
+    changed = False
+    for event_name, entries in list(hooks.items()):
+        if not isinstance(entries, list):
+            continue
+        filtered = [
+            entry for entry in entries
+            if not (isinstance(entry, dict) and predicate(entry))
+        ]
+        if len(filtered) != len(entries):
+            changed = True
+            if filtered:
+                hooks[event_name] = filtered
+            else:
+                del hooks[event_name]
+
+    if changed:
+        config["hooks"] = hooks
+        config_path.write_text(json.dumps(config, indent=2))
+
+    return changed
+
+
+def _remove_skill_dirs(skills_root: Path) -> int:
+    """Remove known Campy skill directories under a skills root."""
+    removed = 0
+    for name in sorted(_CAMPY_SKILL_DIR_NAMES):
+        try:
+            if _remove_tree(skills_root / name):
+                removed += 1
+        except OSError:
+            continue
+    return removed
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +279,82 @@ def _remove_claude_hook(settings_path: Path) -> bool:
     return False
 
 
+def _remove_codex_hooks(config_path: Path) -> bool:
+    """Remove Campy hook entries from Codex hooks.json."""
+    return _remove_hook_entries(
+        config_path,
+        lambda entry: any(
+            "campy" in str(hook.get("command", ""))
+            for hook in entry.get("hooks", [])
+            if isinstance(hook, dict)
+        ),
+    )
+
+
+def _remove_gemini_hooks(config_path: Path) -> bool:
+    """Remove Campy hook entries from Gemini settings.json."""
+    return _remove_hook_entries(
+        config_path,
+        lambda entry: any(
+            hook.get("name", "").startswith("campy-")
+            or "campy" in str(hook.get("command", ""))
+            for hook in entry.get("hooks", [])
+            if isinstance(hook, dict)
+        ),
+    )
+
+
+def _remove_python_package() -> _R:
+    """Attempt to uninstall Campy from pipx and pip.
+
+    This intentionally runs last; it may remove the `campy` console script.
+    """
+    attempted = False
+    removed = False
+    details: list[str] = []
+
+    pipx_bin = shutil.which("pipx")
+    if pipx_bin:
+        for package_name in _PACKAGE_NAMES:
+            attempted = True
+            result = subprocess.run(
+                [pipx_bin, "uninstall", package_name],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            stdout = result.stdout.lower()
+            stderr = result.stderr.lower()
+            if result.returncode == 0:
+                removed = True
+                details.append(f"pipx:{package_name}")
+            elif "not installed" not in stdout and "nothing to uninstall" not in stdout and "not installed" not in stderr:
+                details.append(f"pipx warning for {package_name}")
+
+    for package_name in _PACKAGE_NAMES:
+        attempted = True
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "uninstall", "-y", package_name],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        stdout = result.stdout.lower()
+        stderr = result.stderr.lower()
+        if result.returncode == 0 and "successfully uninstalled" in stdout:
+            removed = True
+            details.append(f"pip:{package_name}")
+        elif "skipping" not in stdout and "not installed" not in stdout and "warning: skipping" not in stderr:
+            details.append(f"pip warning for {package_name}")
+
+    if removed:
+        return _R("Python package", True, f"removed via {', '.join(details)}")
+    if attempted:
+        detail = "; ".join(details) if details else "not installed (skipped)"
+        return _R("Python package", True, detail)
+    return _R("Python package", True, "pip/pipx not available (skipped)")
+
+
 def _deregister_claude_code() -> _R:
     """Remove the Claude Code adapter registration."""
     changed = False
@@ -216,6 +378,17 @@ def _deregister_claude_code() -> _R:
     hook_settings = Path.home() / ".claude" / "settings.json"
     if _remove_claude_hook(hook_settings):
         changed = True
+
+    # 4. Remove plugin and project-local hook artifacts.
+    for path in [
+        Path.home() / ".claude" / "plugins" / "hippocampy",
+        Path.cwd() / ".claude" / "hooks",
+    ]:
+        try:
+            if _remove_tree(path):
+                changed = True
+        except OSError:
+            pass
 
     if changed:
         return _R("Claude Code", True, "adapter and hook removed")
@@ -259,8 +432,31 @@ def _deregister_codex() -> _R:
         if _remove_codex_toml_entry(p):
             changed = True
 
+    if _remove_codex_hooks(Path.home() / ".codex" / "hooks.json"):
+        changed = True
+
+    try:
+        if _remove_tree(Path.home() / ".codex" / "hooks" / "campy"):
+            changed = True
+    except OSError:
+        pass
+
+    skills_root = Path.home() / ".codex" / "skills"
+    if _remove_skill_dirs(skills_root):
+        changed = True
+
+    for path in [
+        skills_root / "_archived_by_campy",
+        Path.home() / ".codex" / "plugins" / "hippocampy",
+    ]:
+        try:
+            if _remove_tree(path):
+                changed = True
+        except OSError:
+            pass
+
     if changed:
-        return _R("Codex", True, "removed from config")
+        return _R("Codex", True, "removed config, hooks, and plugin artifacts")
     return _R("Codex", True, "not registered (skipped)")
 
 
@@ -273,9 +469,26 @@ def _deregister_gemini_cli() -> _R:
     ]:
         if _remove_mcp_json_entry(config_path):
             changed = True
+        if _remove_gemini_hooks(config_path):
+            changed = True
+
+    try:
+        if _remove_tree(Path.home() / ".gemini" / "hooks" / "campy"):
+            changed = True
+    except OSError:
+        pass
+
+    if _remove_skill_dirs(Path.home() / ".gemini" / "skills"):
+        changed = True
+
+    try:
+        if _remove_tree(Path.home() / ".gemini" / "plugins" / "hippocampy"):
+            changed = True
+    except OSError:
+        pass
 
     if changed:
-        return _R("Gemini CLI", True, "removed from settings.json")
+        return _R("Gemini CLI", True, "removed settings, hooks, and plugin artifacts")
     return _R("Gemini CLI", True, "not registered (skipped)")
 
 
@@ -457,6 +670,8 @@ def run_uninstall(
         results.append(
             _R(f"Ollama model ({ollama_model})", True, "kept (use --remove-ollama-model to delete)")
         )
+
+    results.append(_remove_python_package())
 
     _print_report(results)
 

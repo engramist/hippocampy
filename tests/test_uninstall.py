@@ -131,6 +131,46 @@ class TestRemoveClaudeHook:
         assert not changed
 
 
+class TestRemoveAgentHookEntries:
+    def test_removes_codex_hook_entries(self, tmp_path):
+        hooks = tmp_path / "hooks.json"
+        hooks.write_text(json.dumps({
+            "hooks": {
+                "PreToolUse": [
+                    {"hooks": [{"command": "python3 /Users/me/.codex/hooks/campy/pre_tool_use.py"}]},
+                    {"hooks": [{"command": "python3 /tmp/other_hook.py"}]},
+                ]
+            }
+        }))
+
+        changed = U._remove_codex_hooks(hooks)
+
+        assert changed
+        data = json.loads(hooks.read_text())
+        remaining = data["hooks"]["PreToolUse"]
+        assert len(remaining) == 1
+        assert "other_hook.py" in json.dumps(remaining)
+
+    def test_removes_gemini_hook_entries(self, tmp_path):
+        settings = tmp_path / "settings.json"
+        settings.write_text(json.dumps({
+            "hooks": {
+                "BeforeTool": [
+                    {"hooks": [{"name": "campy-before-tool", "command": "python3 /Users/me/.gemini/hooks/campy/before_tool.py"}]},
+                    {"hooks": [{"name": "other-hook", "command": "python3 /tmp/other_hook.py"}]},
+                ]
+            }
+        }))
+
+        changed = U._remove_gemini_hooks(settings)
+
+        assert changed
+        data = json.loads(settings.read_text())
+        remaining = data["hooks"]["BeforeTool"]
+        assert len(remaining) == 1
+        assert "other-hook" in json.dumps(remaining)
+
+
 # ---------------------------------------------------------------------------
 # OpenClaw config patch reversal
 # ---------------------------------------------------------------------------
@@ -241,6 +281,22 @@ class TestRemoveSideQuestsHome:
         assert home.exists()
 
 
+class TestRemoveSkillDirs:
+    def test_removes_known_skill_directories(self, tmp_path):
+        skills_root = tmp_path / "skills"
+        skills_root.mkdir()
+        (skills_root / "recall").mkdir()
+        (skills_root / "campy-grill").mkdir()
+        (skills_root / "custom-skill").mkdir()
+
+        removed = U._remove_skill_dirs(skills_root)
+
+        assert removed == 2
+        assert not (skills_root / "recall").exists()
+        assert not (skills_root / "campy-grill").exists()
+        assert (skills_root / "custom-skill").exists()
+
+
 # ---------------------------------------------------------------------------
 # Ollama model removal
 # ---------------------------------------------------------------------------
@@ -270,6 +326,36 @@ class TestRemoveOllamaModel:
         monkeypatch.setattr("shutil.which", lambda name: None)
         result = U._remove_ollama_model("qwen2.5:3b")
         assert result.done
+
+
+class TestRemovePythonPackage:
+    def test_reports_removed_package(self, monkeypatch):
+        monkeypatch.setattr("shutil.which", lambda name: "/usr/local/bin/pipx" if name == "pipx" else None)
+
+        def fake_run(cmd, **kwargs):
+            if cmd[0] == "/usr/local/bin/pipx":
+                return MagicMock(returncode=0, stdout="uninstalled", stderr="")
+            return MagicMock(returncode=0, stdout="Successfully uninstalled hippocampy", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        result = U._remove_python_package()
+
+        assert result.done
+        assert "removed via" in result.detail
+
+    def test_reports_skip_when_not_installed(self, monkeypatch):
+        monkeypatch.setattr("shutil.which", lambda name: None)
+
+        def fake_run(cmd, **kwargs):
+            return MagicMock(returncode=1, stdout="WARNING: Skipping hippocampy as it is not installed.", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        result = U._remove_python_package()
+
+        assert result.done
+        assert "not installed" in result.detail or "skipped" in result.detail
 
 
 # ---------------------------------------------------------------------------
@@ -329,6 +415,19 @@ class TestUninstallCli:
         assert result.exit_code == 0
         assert called_with.get("remove_ollama_model") is True
         assert called_with.get("ollama_model") == "llama3.1:8b"
+
+    def test_force_alias_skips_confirmation(self, monkeypatch):
+        called_with = {}
+
+        def fake_run_uninstall(**kwargs):
+            called_with.update(kwargs)
+
+        monkeypatch.setattr("campy.cli.uninstall.run_uninstall", fake_run_uninstall)
+
+        runner = self._make_runner()
+        result = runner.invoke(cli, ["uninstall", "--force"])
+        assert result.exit_code == 0
+        assert called_with.get("keep_data") is True
 
 
 # ---------------------------------------------------------------------------

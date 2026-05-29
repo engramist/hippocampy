@@ -9,22 +9,21 @@ Persistent AI memory system with a Gated Consolidation Loop and graph-native Kù
 ### Quick Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/djs54/hippocampy/main/scripts/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/djs54/hippocampy/main/scripts/install.sh | sh
 ```
 
 ### Inspect First
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/djs54/hippocampy/main/scripts/bootstrap.sh -o /tmp/campy-bootstrap.sh
-bash /tmp/campy-bootstrap.sh --dry-run   # See what it will do
-bash /tmp/campy-bootstrap.sh             # Run it
+curl -fsSL https://raw.githubusercontent.com/djs54/hippocampy/main/scripts/install.sh -o /tmp/campy-install.sh
+sh /tmp/campy-install.sh
 ```
 
 ### Manual Install
 
 ```bash
 pipx install hippocampy    # or: pip install hippocampy
-campy install              # Detect and register AI agents
+campy setup                # Detect and register AI agents
 campy doctor               # Verify everything works
 campy start                # Start the memory daemon
 ```
@@ -37,7 +36,7 @@ cd hippocampy
 python3 -m venv .venv && source .venv/bin/activate
 pip install -U pip
 pip install -e ".[dev]"
-campy install
+campy setup
 campy status
 ```
 

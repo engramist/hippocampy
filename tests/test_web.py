@@ -592,6 +592,31 @@ def test_mcp_post_accepts_configured_token(monkeypatch):
     assert r.json()["result"]["protocolVersion"] == "2025-03-26"
 
 
+def test_mcp_get_requires_event_stream_accept_header():
+    client = make_client()
+
+    r = client.get("/mcp")
+
+    assert r.status_code == 406
+
+
+def test_mcp_get_returns_405_for_stream_requests():
+    client = make_client()
+
+    r = client.get("/mcp", headers={"Accept": "text/event-stream"})
+
+    assert r.status_code == 405
+
+
+def test_sse_endpoint_marks_deprecation():
+    client = make_client()
+
+    with client.stream("GET", "/sse") as response:
+        assert response.status_code == 200
+        assert response.headers["deprecation"] == "true"
+        assert response.headers["link"] == '</mcp>; rel="successor-version"'
+
+
 @pytest.mark.asyncio
 async def test_dispatch_mcp_initialize_direct():
     """Test _dispatch_mcp directly without SSE transport."""
@@ -601,6 +626,7 @@ async def test_dispatch_mcp_initialize_direct():
         EmptyDB(), {}
     )
     assert resp["result"]["protocolVersion"] == "2025-03-26"
+    assert resp["result"]["serverInfo"]["name"] == "hippocampy-brain"
 
 
 @pytest.mark.asyncio

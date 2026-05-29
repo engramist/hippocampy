@@ -42,6 +42,35 @@ def test_plugin_manifest_has_author():
     assert "name" in data["author"]
 
 
+def test_plugin_manifest_has_skills_and_hooks():
+    """Claude plugin manifest exposes shared skills and hooks."""
+    manifest = PLUGIN_DIR / ".claude-plugin" / "plugin.json"
+    data = json.loads(manifest.read_text())
+    assert data["skills"] == "./skills/"
+    assert data["hooks"] == "./hooks/hooks.json"
+
+
+def test_codex_plugin_manifest_valid_json():
+    """Codex plugin manifest exists and is valid JSON."""
+    manifest = PLUGIN_DIR / ".codex-plugin" / "plugin.json"
+    data = json.loads(manifest.read_text())
+    assert data["name"] == "hippocampy"
+    assert data["mcpServers"] == "./.mcp.json"
+
+
+def test_gemini_extension_manifest_valid_json():
+    """Gemini extension manifest exists and points at GEMINI.md."""
+    manifest = PLUGIN_DIR / "gemini-extension.json"
+    data = json.loads(manifest.read_text())
+    assert data["name"] == "hippocampy"
+    assert data["contextFileName"] == "GEMINI.md"
+
+
+def test_gemini_context_file_exists():
+    """Gemini context instructions ship with the plugin."""
+    assert (PLUGIN_DIR / "GEMINI.md").exists()
+
+
 def test_mcp_json_exists():
     """.mcp.json exists in plugin root."""
     mcp = PLUGIN_DIR / ".mcp.json"
@@ -60,12 +89,12 @@ def test_mcp_json_valid():
     assert "7799" in server["url"]
 
 
-def test_mcp_json_uses_sse_endpoint():
-    """.mcp.json points to the SSE endpoint."""
+def test_mcp_json_uses_streamable_http_endpoint():
+    """.mcp.json points to the streamable HTTP endpoint."""
     mcp = PLUGIN_DIR / ".mcp.json"
     data = json.loads(mcp.read_text())
     url = data["mcpServers"]["hippocampy"]["url"]
-    assert url.endswith("/sse"), f"Expected SSE endpoint, got {url}"
+    assert url.endswith("/mcp"), f"Expected /mcp endpoint, got {url}"
 
 
 def test_skills_directory_exists():
@@ -76,11 +105,19 @@ def test_skills_directory_exists():
 
 
 EXPECTED_SKILLS = [
+    "campy-grill",
     "memory-awareness",
     "recall",
     "quest-management",
     "status",
 ]
+
+
+def test_hooks_directory_exists():
+    """hooks/ directory exists for shared plugin hook config."""
+    hooks = PLUGIN_DIR / "hooks"
+    assert hooks.exists()
+    assert (hooks / "hooks.json").exists()
 
 
 @pytest.mark.parametrize("skill_name", EXPECTED_SKILLS)
