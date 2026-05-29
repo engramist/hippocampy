@@ -404,6 +404,28 @@ class TestAdapterRegistrar:
                 config = json.loads(config_path.read_text())
                 assert "sidequests-brain" in config["mcpServers"]
 
+    def test_claude_desktop_registration_uses_module_entrypoint(self, tmp_path):
+        """Claude Desktop installer uses the canonical module-based adapter launch."""
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "python3").touch()
+
+        config_path = (
+            tmp_path / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+        )
+
+        with patch("platform.system", return_value="Darwin"):
+            with patch("campy.cli.install.Path.home", return_value=tmp_path):
+                from campy.cli.install import VenvManager, AdapterRegistrar
+
+                vm = VenvManager(venv_dir=tmp_path)
+                reg = AdapterRegistrar(vm)
+
+                assert reg._register_claude_desktop() is True
+
+        config = json.loads(config_path.read_text())
+        assert config["mcpServers"]["campy"]["command"] == str(tmp_path / "bin" / "python3")
+        assert config["mcpServers"]["campy"]["args"] == ["-m", "campy.adapters.claude_desktop"]
+
     def test_detect_no_clients(self):
         """Returns empty dict when no clients detected."""
         with patch("campy.cli.detect.detect_installed_clients",

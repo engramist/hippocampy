@@ -15,6 +15,7 @@ from pathlib import Path
 ADAPTER_DIR  = Path(__file__).parent
 HOOK_FILE    = ADAPTER_DIR / "hook_user_turn.py"
 REPO_ROOT    = ADAPTER_DIR.parent.parent
+HOOK_BASENAME = HOOK_FILE.name
 
 
 def _python_executable() -> str:
@@ -84,8 +85,11 @@ def _write_hook_config() -> None:
 
     settings = {}
     if settings_path.exists():
-        with open(settings_path) as f:
-            settings = json.load(f)
+        try:
+            with open(settings_path) as f:
+                settings = json.load(f)
+        except json.JSONDecodeError:
+            settings = {}
 
     hook_entry = {
         "matcher": "",
@@ -100,13 +104,18 @@ def _write_hook_config() -> None:
     hooks = settings.setdefault("hooks", {})
     user_prompt_hooks = hooks.setdefault("UserPromptSubmit", [])
 
-    # Repair stale entries as well as avoiding duplicates. Test runs or moved
-    # installs can leave hooks pointing at a temp/interpreter path while still
-    # containing the same hook script.
+    # Repair stale entries as well as avoiding duplicates. Claude updates can
+    # start hard-blocking prompts when an old install path still points at a
+    # missing hook_user_turn.py, so remove any legacy entry for this hook name
+    # before writing the canonical one.
     user_prompt_hooks[:] = [
         entry
         for entry in user_prompt_hooks
-        if not any(str(HOOK_FILE) in str(h) for h in entry.get("hooks", []))
+        if not any(
+            HOOK_BASENAME in str(hook.get("command", ""))
+            for hook in entry.get("hooks", [])
+            if isinstance(hook, dict)
+        )
     ]
     user_prompt_hooks.append(hook_entry)
 
