@@ -331,21 +331,28 @@ def _remove_python_package() -> _R:
             elif "not installed" not in stdout and "nothing to uninstall" not in stdout and "not installed" not in stderr:
                 details.append(f"pipx warning for {package_name}")
 
-    for package_name in _PACKAGE_NAMES:
-        attempted = True
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "uninstall", "-y", package_name],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        stdout = result.stdout.lower()
-        stderr = result.stderr.lower()
-        if result.returncode == 0 and "successfully uninstalled" in stdout:
-            removed = True
-            details.append(f"pip:{package_name}")
-        elif "skipping" not in stdout and "not installed" not in stdout and "warning: skipping" not in stderr:
-            details.append(f"pip warning for {package_name}")
+    # Only try pip uninstall if pipx didn't already remove it.
+    # After pipx uninstall, sys.executable (inside the venv) is gone.
+    if not removed:
+        for package_name in _PACKAGE_NAMES:
+            attempted = True
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-m", "pip", "uninstall", "-y", package_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                stdout = result.stdout.lower()
+                stderr = result.stderr.lower()
+                if result.returncode == 0 and "successfully uninstalled" in stdout:
+                    removed = True
+                    details.append(f"pip:{package_name}")
+                elif "skipping" not in stdout and "not installed" not in stdout and "warning: skipping" not in stderr:
+                    details.append(f"pip warning for {package_name}")
+            except (FileNotFoundError, OSError):
+                # sys.executable no longer exists (venv already removed)
+                pass
 
     if removed:
         return _R("Python package", True, f"removed via {', '.join(details)}")
