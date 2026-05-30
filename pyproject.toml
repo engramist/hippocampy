@@ -56,8 +56,6 @@ indicator = [
 [project.scripts]
 campy = "campy.cli.main:app"
 campy-daemon = "campy.daemon:main"
-sidequests = "sidequests.cli.main:app"
-sidequests-daemon = "sidequests.daemon:main"
 
 [project.urls]
 Homepage = "https://github.com/djs54/hippocampy"
@@ -65,8 +63,8 @@ Issues = "https://github.com/djs54/hippocampy/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["sidequests*", "campy*", "mcp_engine*", "adapters*", "web*"]
+include = ["campy*", "mcp_engine*", "adapters*", "web*"]
 
 [tool.setuptools.package-data]
 "campy.data" = ["**/*.md", "**/*.py", "**/*.toml", "**/*.json", "**/*.sh", "**/.*"]
-"*" = ["campy.toml", "sidequests.toml"]
+"*" = ["campy.toml"]
