@@ -678,15 +678,26 @@ def run_uninstall(
             _R(f"Ollama model ({ollama_model})", True, "kept (use --remove-ollama-model to delete)")
         )
 
-    results.append(_remove_python_package())
-
+    # Print report BEFORE removing the package — after pipx uninstall,
+    # the venv (and all our dependencies like typer/click/rich) are gone
+    # and we can't import anything.
     _print_report(results)
 
     failures = [r for r in results if not r.done]
     if failures:
-        click.echo(f"\n  {len(failures)} step(s) had warnings — see report above.\n")
-    else:
-        click.echo("\n  HippoCampy uninstalled cleanly.\n")
+        click.echo(f"\n  {len(failures)} step(s) had warnings — see report above.")
+    click.echo("\n  Removing Python package (last step)...")
+
+    # This is the last thing we do — after this, the process may die
+    # because pipx deletes the venv our interpreter is running from.
+    try:
+        pkg_result = _remove_python_package()
+        # If we survive, print the result
+        print(f"  {pkg_result.component}: {pkg_result.detail}")
+        print("\n  HippoCampy uninstalled cleanly.")
+    except Exception:
+        # Process dying mid-pipx-uninstall is expected — the uninstall succeeded
+        pass
         if keep_data:
             click.echo(
                 f"  Your memory data is still at {SIDEQUESTS_HOME}.\n"
