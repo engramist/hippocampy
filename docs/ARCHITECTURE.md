@@ -452,16 +452,21 @@ When a message contains error/failure signals or significant action patterns (do
 
 ## Biomimetic Learning Principles
 
-### Basal Ganglia (Procedural & Avoidance Learning)
+### Basal Ganglia (`campy/brain/basal_ganglia/`)
 
-Two synthesis triggers in the dreaming sweep:
-- **Avoidance archetype:** High-salience frustration clusters → avoidance Procedures (graph-only, no LLM). Detects concentrated pain signals and auto-generates "don't do that" reflexes. Implemented in `sweep.py`: `_detect_frustration_clusters()`.
-- **Automation archetype:** Plan strategy clustering → automation Procedures (LLM synthesis, `min_cluster_size=2`). Enhanced from repetition-only to include lower-threshold clustering and archetype labeling.
+Procedural learning, action selection, reward prediction, and exploration policy.
+
+Submodules:
+- **`frustration_clusters.py`** — Detects high-salience frustration clusters and auto-generates avoidance Procedures (graph-only, no LLM)
+- **`procedure_synthesis.py`** — Synthesizes automation Procedures from clusters of successful Plans (LLM-assisted, `min_cluster_size=2`)
+- **`procedure_maturity.py`** — Implements Procedure lifecycle: nascent → developing → mature → degraded → archived
+- **`action_selector.py`** — Go/No-Go gating for action selection based on accumulated graph evidence (used by ARC and general agents)
+- **`reward_predictor.py`** — Records prediction error (dopamine-style learning signal) for plan outcomes
+- **`exploration_policy.py`** — Balances exploitation (repeat known-good actions) with exploration (try untested actions)
 
 Maturity lifecycle tracks Procedure reliability:
-- `nascent` (fresh) → `developing` (3+ applications, 50%+ success) → `mature` (5+ applications, 75%+ success)
-- Degradation detected at `success_rate < 0.30` (→ `degraded`) → archived at `< 0.20`
-- Maturity boosts pathway_strength: no boost (nascent), +10% (developing), +25% (mature)
+- `nascent` (fresh) → `developing` (3+ applications, 50%+ success) → `mature` (10+ applications)
+- Degradation detected at `success_rate < 0.4` (→ `degraded`) → archived (manual or decay)
 
 The synergy with **Amygdala** is critical: emotional salience at encoding time (salience_score) feeds frustration cluster detection at consolidation time. Pain drives habit formation — the same neuroscience principle that makes humans pull their hand from a hot stove.
 

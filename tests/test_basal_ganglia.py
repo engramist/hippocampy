@@ -339,3 +339,131 @@ class TestProcedureDegradation:
         await _update_procedure_maturity(db, config)
         archive_writes = [w for w in db.written if "archived" in w["q"] and "degraded" in w["q"]]
         assert len(archive_writes) >= 1, "Expected archive query for deeply degraded Procedures"
+
+
+class TestActionSelector:
+    """Tests for action selection Go/No-Go gating."""
+
+    @pytest.mark.asyncio
+    async def test_go_decision_with_supporting_evidence(self):
+        """Action with supporting procedures returns 'go' decision."""
+        from campy.brain.basal_ganglia.action_selector import check_action_gate
+        
+        class MockDB:
+            def vector_search(self, table, index, vec, limit):
+                return [
+                    {"node": {"archetype": "automation", "success_rate": 0.8}},
+                    {"node": {"archetype": "automation", "success_rate": 0.75}},
+                ]
+        
+        db = MockDB()
+        result = await check_action_gate(db, "try deployment action")
+        assert result["decision"] == "go"
+        assert result["supporting_evidence"] == 2
+
+    @pytest.mark.asyncio
+    async def test_no_go_after_falsification(self):
+        """Action with avoidance procedures returns 'no_go' decision."""
+        from campy.brain.basal_ganglia.action_selector import check_action_gate
+        
+        class MockDB:
+            def vector_search(self, table, index, vec, limit):
+                return [
+                    {"node": {"archetype": "avoidance"}},
+                    {"node": {"archetype": "avoidance"}},
+                    {"node": {"archetype": "avoidance"}},
+                ]
+        
+        db = MockDB()
+        result = await check_action_gate(db, "try dangerous action")
+        assert result["decision"] == "no_go"
+        assert result["contradictions"] == 3
+
+
+class TestRewardPredictor:
+    """Tests for reward prediction error tracking."""
+
+    @pytest.mark.asyncio
+    async def test_positive_prediction_error(self):
+        """Actual > predicted should return positive error."""
+        from campy.brain.basal_ganglia.reward_predictor import record_reward_prediction_error
+        
+        class MockDB:
+            async def execute_write(self, q, p=None):
+                pass
+        
+        db = MockDB()
+        result = await record_reward_prediction_error(db, "plan-1", 0.5, 0.9)
+        assert result["prediction_error"] == 0.4
+        assert result["direction"] == "positive"
+
+    @pytest.mark.asyncio
+    async def test_negative_prediction_error(self):
+        """Actual < predicted should return negative error."""
+        from campy.brain.basal_ganglia.reward_predictor import record_reward_prediction_error
+        
+        class MockDB:
+            async def execute_write(self, q, p=None):
+                pass
+        
+        db = MockDB()
+        result = await record_reward_prediction_error(db, "plan-1", 0.8, 0.3)
+        assert result["prediction_error"] == -0.5
+        assert result["direction"] == "negative"
+
+
+class TestExplorationPolicy:
+    """Tests for exploration vs exploitation policy."""
+
+    @pytest.mark.asyncio
+    async def test_explore_after_repetition(self):
+        """Repeated same action should trigger exploration."""
+        from campy.brain.basal_ganglia.exploration_policy import should_explore
+        
+        class MockDB:
+            def vector_search(self, table, index, vec, limit):
+                return []
+        
+        db = MockDB()
+        recent = ["deploy", "deploy", "deploy"]
+        result = await should_explore(db, recent)
+        assert result["explore"] is True
+        assert "repeated" in result["reason"]
+
+    @pytest.mark.asyncio
+    async def test_exploit_with_no_repetition(self):
+        """Varied recent actions should not trigger exploration."""
+        from campy.brain.basal_ganglia.exploration_policy import should_explore
+        
+        class MockDB:
+            def vector_search(self, table, index, vec, limit):
+                return [{"node": {"prediction_error": 0.5}}]
+        
+        db = MockDB()
+        recent = ["deploy", "test", "review"]
+        result = await should_explore(db, recent)
+        assert result["explore"] is False
+
+
+class TestProcedureMaturityNew:
+    """Tests for procedure maturity lifecycle stages."""
+
+    def test_nascent_to_developing(self):
+        """Procedure with 3 applications should transition from nascent to developing."""
+        from campy.brain.basal_ganglia.procedure_maturity import _compute_stage
+        assert _compute_stage(3, 0.8, "nascent") == "developing"
+
+    def test_degraded_on_low_success_rate(self):
+        """Procedure with low success rate should become degraded."""
+        from campy.brain.basal_ganglia.procedure_maturity import _compute_stage
+        assert _compute_stage(5, 0.2, "developing") == "degraded"
+
+    def test_mature_with_high_applications(self):
+        """Procedure with 10+ applications should be mature."""
+        from campy.brain.basal_ganglia.procedure_maturity import _compute_stage
+        assert _compute_stage(10, 0.7, "developing") == "mature"
+
+    def test_archived_never_changes(self):
+        """Archived procedures should not auto-transition."""
+        from campy.brain.basal_ganglia.procedure_maturity import _compute_stage
+        assert _compute_stage(20, 0.9, "archived") == "archived"

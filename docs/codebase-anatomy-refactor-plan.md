@@ -43,7 +43,7 @@ The refactor should be treated as a v0.2 architecture milestone, not as a quick 
 
 ## Target Shape
 
-Start with five functional regions. Avoid adding small "vanity" regions until the codebase has enough mass to justify them.
+Six functional brain regions handle memory capture, consolidation, storage, retrieval, and procedural learning.
 
 ```text
 campy/
@@ -53,6 +53,7 @@ campy/
     temporal_lobe/
     hippocampus/
     thalamus/
+    basal_ganglia/
   adapters/
   cli/
   data/
@@ -67,12 +68,12 @@ campy/
 | `temporal_lobe/` | Consolidation, classification, entity routing, salience, anomaly handling | Gated Consolidation Loop steps, dictionary routing, memory routing, anomaly detection |
 | `hippocampus/` | Durable graph memory, schema, quest identity, embeddings, storage facade | schema, Kuzu client abstraction, embeddings, quest state, semantic quest routing |
 | `thalamus/` | Retrieval routing, tool surface, graph traversal, context bundles, working context formatting | MCP tool implementations, tool schemas, `current_truth`, `compile_context`, formatters, retrieval decision helpers |
+| `basal_ganglia/` | Procedural learning, action selection, reward prediction, exploration policy | frustration cluster detection, procedure synthesis, maturity lifecycle, Go/No-Go gating |
 
 Future split candidates:
 
 - `prefrontal_cortex/`: split from `thalamus/` if working memory, File Bridge, trigger manifests, and context projection become large enough to deserve a separate home.
 - `amygdala/`: split from `temporal_lobe/` if salience, valence, behavioral guards, and anomaly code grow into an independent subsystem.
-- `basal_ganglia/`: split from `brainstem/` if background sweeps, pruning, auto-skill compilation, and procedure learning become a larger workflow engine.
 
 ## Current-To-Target Mapping
 
