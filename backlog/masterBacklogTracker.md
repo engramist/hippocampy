@@ -494,3 +494,23 @@ Restructure Campy's installation to use native plugin systems for Claude Code, C
 | 0 | B276 | P1 | ready | Create campy uninstall Command and Script | backlog/plans/B-276-uninstaller.md |
 
 **Dependency chain:** B276 (first — needed for clean-state testing). B265+B266 (parallel) → B267 → B268 (parallel with B267) → B269 → B270 → B271. B272/B273/B274/B275 depend on B270.
+
+---
+
+## Graph Engineering Hardening Initiative (B279–B287)
+
+From the 2026-05-30 graph-solutions evaluation of the Kùzu/LPG layer. Fixes two correctness-level issues (similarity calibration, client-side traversal) plus scaling and maintainability hygiene.
+
+| Order | Card | Priority | State | Title | Plan |
+|-------|------|----------|-------|-------|------|
+| 1 | B279 | P0 | ready | Vector Similarity Calibration Audit and Fix | backlog/plans/B-279-vector-similarity-calibration.md |
+| 2 | B280 | P1 | ready | Server-Side Traversal for explore_graph | backlog/plans/B-280-server-side-traversal.md |
+| 3 | B281 | P1 | ready | Kuzu Export/Restore and Engine Exit Strategy | backlog/plans/B-281-engine-exit-strategy.md |
+| 4 | B286 | P2 | ready | Consolidate Node Table Registry | backlog/plans/B-286-node-table-registry.md |
+| 5 | B282 | P2 | ready | Batch Sweep Writes with UNWIND | backlog/plans/B-282-batch-sweep-writes.md |
+| 6 | B283 | P2 | ready | Supernode Monitoring and Session Edge Pruning | backlog/plans/B-283-supernode-monitoring.md |
+| 7 | B284 | P2 | ready | Bound the Lexical Fallback and Property Scans | backlog/plans/B-284-lexical-scan-hygiene.md |
+| 8 | B285 | P2 | ready | Archived-Node HNSW Index Hygiene | backlog/plans/B-285-hnsw-archive-hygiene.md |
+| 9 | B287 | P3 | ready | Principled Score Fusion in current_truth | backlog/plans/B-287-score-fusion.md |
+
+**Dependency chain:** B279 FIRST (P0 — changes score semantics everywhere). B286 early (B280/B282/B285 consume the registry). B282 → B283 (reuses `_batch_write`). B279 → B285, B279 → B287. B280, B281, B284 independent after B279.
