@@ -22,6 +22,8 @@ _DEFAULT_CONFIG = {
         "degree_alert_threshold": 5000,
         "session_edge_ttl_days": 30,
         "prune_session_edges": True,
+        "index_rebuild_archived_ratio": 0.5,
+        "index_rebuild_enabled": True,
     },
     "loop": {
         "max_co_occurrence_pairs": 45,

@@ -281,9 +281,9 @@ async def _stage_exact_facts(db, query: str, config: dict, tier_config: dict) ->
 
 async def _stage_semantic_context(db, query: str, config: dict, tier_config: dict) -> Optional[BundleSection]:
     """
-    Stage 2: Retrieve semantic context using current_truth logic internally.
+    Stage 2: Retrieve semantic context as a lightweight semantic preview.
 
-    Top-k results ranked by: pathway_strength * confidence * (1 + outcome_boost)
+    Note: This stage does not replicate full current_truth fusion logic.
     """
     try:
         from campy.brain.hippocampus.graph import embeddings as emb
@@ -299,7 +299,7 @@ async def _stage_semantic_context(db, query: str, config: dict, tier_config: dic
             WHERE vector_distance(n.embedding, $query_embedding) < 0.40
             RETURN n.text_raw as text, labels(n)[0] as node_type,
                    n.pathway_strength as pathway_strength, n.confidence as confidence
-            ORDER BY n.pathway_strength * n.confidence DESC
+            ORDER BY vector_distance(n.embedding, $query_embedding) ASC
             LIMIT $limit
         """
 

@@ -21,6 +21,7 @@ Index: Concept embedding HNSW index (derived from table registry)
 """
 
 import logging
+import math
 
 from campy.brain.hippocampus.table_registry import get_table
 
@@ -29,6 +30,7 @@ _logger = logging.getLogger(__name__)
 _CONCEPT_TABLE = get_table("Concept")
 assert _CONCEPT_TABLE is not None and _CONCEPT_TABLE.vector_index is not None
 _CONCEPT_INDEX = _CONCEPT_TABLE.vector_index
+_ARCHIVED_RATIOS: dict[str, float] = {}
 
 MATCH_THRESHOLD  = 0.75   # B279: true cosine similarity below this → no match
 GRAY_ZONE_UPPER  = 0.92   # B279: true cosine similarity above this → additive match
@@ -40,7 +42,24 @@ MIN_JACCARD_BOOST    = 0.50   # min jaccard to apply any boost
 # L10 note: headroom is kept for self-exclusion only. Archived nodes are
 # excluded by the HNSW projected graph at the call site (future M5 upgrade).
 # For now, increase headroom so postfilter has more room after archived removal.
-_FETCH_HEADROOM  = 20
+def set_archived_ratios(report: dict[str, dict]) -> None:
+    """Update cached archived-ratio data from sweep index hygiene reports."""
+    global _ARCHIVED_RATIOS
+    _ARCHIVED_RATIOS = {
+        table: float(data.get("archived_ratio", 0.0) or 0.0)
+        for table, data in (report or {}).items()
+    }
+
+
+def _headroom(limit: int, archived_ratio: float) -> int:
+    """Adaptive fetch budget using archived ratio (B285).
+
+    Returns the total fetch count (not just extra rows). The +5 floor keeps
+    room for the self/exclude_ids postfilter even before the first sweep
+    populates _ARCHIVED_RATIOS (ratio 0); without it, fetch == limit and the
+    exclusion filter can starve the candidate set.
+    """
+    return max(limit + 5, min(50, math.ceil(limit * (1 + 2 * archived_ratio))))
 
 
 def retrieve_candidates(embedding: list[float], exclude_id: str,
@@ -58,7 +77,9 @@ def retrieve_candidates(embedding: list[float], exclude_id: str,
     quest_id scoping is deferred to M5 (MainQuest wiring).
     """
     try:
-        raw = db.vector_search("Concept", _CONCEPT_INDEX, embedding, limit + _FETCH_HEADROOM)
+        archived_ratio = float(_ARCHIVED_RATIOS.get("Concept", 0.0) or 0.0)
+        fetch_k = _headroom(limit, archived_ratio)
+        raw = db.vector_search("Concept", _CONCEPT_INDEX, embedding, fetch_k)
     except Exception:
         # L9 fix: log the error so persistent index failures are visible.
         # Returning [] causes the orchestrator to treat this as "no match",

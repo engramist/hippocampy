@@ -255,6 +255,7 @@ Agent memory-use policy:
 - **Embedding type:** HNSW vector indexes require a fixed-dimension type — declare as `FLOAT[384]` (not `FLOAT[]`). One HNSW index created per node table at M1 schema init.
 - **Filtered vector search:** Use projected graphs to prefilter before HNSW search (not postfilter): `CALL project_graph('active_decisions', 'Decision', {'Decision': 'n.archived = false AND n.confidence_low = false'})` — restricts the index scan to active nodes only.
 - **Multi-table search:** No unified cross-table HNSW index exists. `current_truth` uses `UNION ALL` across per-table index calls in a single Cypher query, then sorts by score and applies `LIMIT`.
+- **Archived-node HNSW hygiene (B285):** Kuzu 0.11.3 supports `DROP_VECTOR_INDEX(table, index)`; inserts are immediately visible in index queries; deletes remove rows from index; updating indexed embeddings is disallowed. Because removing archived vectors requires row movement (invasive archive-table design), current B285 scope ships archived-ratio telemetry + adaptive retrieval headroom. Automatic rebuild remains disabled by behavior design until a dedicated archive-move architecture decision lands.
 - **Relationship table typing:** Named semantic relationships defined as `FROM Concept TO Concept` only. `REIFIED_AS` uses Kùzu's multi-FROM/TO syntax: `CREATE REL TABLE REIFIED_AS (FROM Concept TO Decision, FROM Concept TO Constraint, FROM Concept TO Requirement, FROM Concept TO ActionItem)`.
 
 ### Graph Engine Portability
