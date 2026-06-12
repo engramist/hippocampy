@@ -169,6 +169,21 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
         summary["resurrected"] += r
         summary["errors"]      += e
 
+        # Step 2.5: B285 index hygiene metrics + retrieval headroom telemetry.
+        # NOTE: Step 0 capability probe showed that true index hygiene requires
+        # row movement (delete from indexed table), which is an architecture
+        # decision outside this card's downgraded scope.
+        try:
+            hygiene_report = await _index_hygiene(db, config)
+            summary["index_hygiene"] = hygiene_report
+            try:
+                from campy.brain.temporal_lobe.loop.step5_retrieval import set_archived_ratios
+                set_archived_ratios(hygiene_report)
+            except Exception:
+                _logger.debug("[IndexHygiene] could not update step5 ratio cache", exc_info=True)
+        except Exception:
+            summary["errors"] += 1
+
         # Step 3: Hebbian Trigger 2 — only when LLM is available
         if llm_client is not None:
             hebbian_cfg = config.get("hebbian", {})
@@ -613,6 +628,55 @@ async def _decay_and_archive(
     return decayed, archived, errors
 
 
+async def _index_hygiene(db, config: dict) -> dict:
+    """Compute per-table archived ratios for HNSW-indexed sweep tables.
+
+    Rebuild is intentionally disabled in this downgraded B285 path. The Step 0
+    probe confirmed DROP/CREATE support, but also confirmed indexed embedding
+    updates are disallowed; effective archived-vector removal requires row
+    movement that is deferred to a dedicated architecture decision.
+    """
+    threshold = float(config.get("sweep", {}).get("index_rebuild_archived_ratio", 0.5))
+    enabled = bool(config.get("sweep", {}).get("index_rebuild_enabled", True))
+    report: dict[str, dict] = {}
+
+    for table, _, _, _index_name in SWEEP_TABLES:
+        counts = {True: 0, False: 0}
+        total = 0
+        try:
+            rows = db.execute(
+                f"MATCH (n:{table}) "
+                f"RETURN n.archived AS archived, count(n) AS c"
+            )
+            while rows.has_next():
+                archived, count = rows.get_next()
+                c = int(count or 0)
+                total += c
+                counts[bool(archived)] = counts.get(bool(archived), 0) + c
+        except Exception:
+            _logger.debug("[IndexHygiene] failed ratio query for %s", table, exc_info=True)
+            report[table] = {
+                "archived_ratio": 0.0,
+                "total": 0,
+                "threshold": threshold,
+                "rebuild_enabled": enabled,
+                "rebuilt": False,
+            }
+            continue
+
+        archived_count = counts.get(True, 0)
+        ratio = (archived_count / total) if total > 0 else 0.0
+        report[table] = {
+            "archived_ratio": ratio,
+            "total": total,
+            "threshold": threshold,
+            "rebuild_enabled": enabled,
+            "rebuilt": False,
+        }
+
+    return report
+
+
 # ---------------------------------------------------------------------------
 # B283: Supernode monitoring + session edge pruning
 # ---------------------------------------------------------------------------
@@ -853,16 +917,17 @@ async def _resurrect_archived(
         # B282: batch the resurrection updates (strength is a constant reset,
         # so a plain id list suffices).
         if to_resurrect:
-            ok, bad = await _batch_write(
-                db,
-                f"UNWIND $ids AS nid "
-                f"MATCH (n:{table}) WHERE n.{pk_col} = nid "
-                f"SET n.archived = false, "
-                f"    n.pathway_strength = {float(resurrection_threshold)}",
-                to_resurrect,
-            )
-            resurrected += ok
-            errors += 1 if bad else 0
+            try:
+                await db.execute_write(
+                    f"UNWIND $ids AS nid "
+                    f"MATCH (n:{table}) WHERE n.{pk_col} = nid "
+                    f"SET n.archived = false, "
+                    f"    n.pathway_strength = $strength",
+                    {"ids": to_resurrect, "strength": float(resurrection_threshold)},
+                )
+                resurrected += len(to_resurrect)
+            except Exception:
+                errors += len(to_resurrect)
 
     return resurrected, errors
 

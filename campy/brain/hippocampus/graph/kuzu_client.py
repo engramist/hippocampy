@@ -87,6 +87,30 @@ class KuzuClient:
             f"CALL CREATE_VECTOR_INDEX('{table}', '{index_name}', '{property}', metric := '{_INDEX_METRIC}')"
         )
 
+    def drop_vector_index(self, table: str, index_name: str) -> None:
+        """Drop a vector index by table and index name.
+
+        B285 Step 0 probe (kuzu==0.11.3) confirmed this signature:
+        CALL DROP_VECTOR_INDEX('<table>', '<index_name>')
+        """
+        self.execute(f"CALL DROP_VECTOR_INDEX('{table}', '{index_name}')")
+
+    async def rebuild_vector_index(self, table: str, property: str, index_name: str) -> None:
+        """Drop and recreate a vector index under the global write lock.
+
+        B285 Step 0 probe findings that shape the hygiene design:
+        - Rows inserted after index creation are immediately queryable.
+        - Deleting a row removes it from index query results.
+        - Updating an indexed embedding property is not supported by Kuzu 0.11.3.
+
+        Crash-safety: if recreate fails after drop, schema init recreates missing
+        indexes on next daemon startup via the `embedding_tables` loop in
+        `campy/brain/hippocampus/schema.py`.
+        """
+        async with _get_write_lock():
+            await asyncio.to_thread(self.drop_vector_index, table, index_name)
+            await asyncio.to_thread(self.create_vector_index, table, property, index_name)
+
     def has_fts(self) -> bool:
         """Return True when the loaded Kuzu build can execute FTS queries."""
         if self._fts_checked is not None:
