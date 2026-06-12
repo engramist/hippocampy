@@ -1,11 +1,12 @@
 from __future__ import annotations
 import logging
-from typing import TYPE_CHECKING, List, Dict, Any, Set, Optional, Tuple
+from typing import TYPE_CHECKING, List, Dict, Any, Tuple
 
 if TYPE_CHECKING:
     from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 
 from campy.brain.hippocampus.schema import get_relationship_types
+from campy.brain.hippocampus.table_registry import pk_for, tables_with
 
 _logger = logging.getLogger(__name__)
 
@@ -14,28 +15,185 @@ _logger = logging.getLogger(__name__)
 _TRAVERSABLE_RELS = frozenset(get_relationship_types())
 
 # Node tables to search when resolving start_node_id
-_NODE_TABLES = [
-    ("Concept",          "concept_id"),
-    ("Decision",         "decision_id"),
-    ("Constraint",       "constraint_id"),
-    ("Requirement",      "requirement_id"),
-    ("ActionItem",       "action_item_id"),
-    ("GlobalConstraint", "global_constraint_id"),
-    ("GlobalPreference", "global_preference_id"),
-    ("MainQuest",        "quest_id"),
-    ("SideQuest",        "quest_id"),
-    ("Message",          "message_id"),
-    ("Document",         "document_id"),
-    ("Lesson",           "lesson_id"),
-]
+_NODE_TABLES = [(table.name, table.pk) for table in tables_with("traversable")]
 
 def _get_pk_for_table(table: str) -> str | None:
-    for t, pk in _NODE_TABLES:
-        if t == table:
-            return pk
-    return None
+    return pk_for(table)
 
 _MAX_DEPTH = 5
+_MAX_NODES = 1000
+_TEMPORAL_CONTEXT_RELS = frozenset(
+    rel for rel in ("NEXT_MESSAGE", "CAUSED_BY", "ESTABLISHED_IN") if rel in _TRAVERSABLE_RELS
+)
+
+
+def _node_payload(node: Dict[str, Any] | None, fallback_id: str = "") -> Dict[str, Any]:
+    node = node or {}
+    label = str(node.get("_label") or "")
+    pk = _get_pk_for_table(label) if label else None
+    node_id = ""
+    if pk:
+        node_id = str(node.get(pk) or "")
+    if not node_id:
+        node_id = str(node.get("id") or fallback_id or "")
+    return {
+        "node_id": node_id,
+        "node_type": label,
+        "text": str(node.get("text_raw") or "")[:200],
+        "confidence": float(node.get("confidence") or 0.0),
+    }
+
+
+def _edge_payload(src_id: str, dst_id: str, rel_type: str, rel_conf: Any) -> Dict[str, Any]:
+    try:
+        confidence = float(rel_conf) if rel_conf is not None else 1.0
+    except (TypeError, ValueError):
+        confidence = 1.0
+    return {
+        "from": src_id,
+        "to": dst_id,
+        "type": rel_type,
+        "confidence": confidence,
+    }
+
+
+def _build_frontier_query(edge_types: List[str], direction: str) -> str:
+    rel_pattern = "|".join(edge_types)
+    branches = []
+    for table, pk in _NODE_TABLES:
+        if not pk:
+            continue
+        if direction == "outgoing":
+            match_clause = f"MATCH (a:{table})-[r:{rel_pattern}]->(b)"
+        elif direction == "incoming":
+            match_clause = f"MATCH (a:{table})<-[r:{rel_pattern}]-(b)"
+        else:
+            match_clause = f"MATCH (a:{table})-[r:{rel_pattern}]-(b)"
+        branches.append(
+            f"{match_clause} WHERE a.{pk} IN $ids RETURN a, b, label(r), coalesce(r.confidence, 1.0)"
+        )
+    joiner = "\nUNION ALL\n"
+    return joiner.join(branches)
+
+
+def _execute_frontier_query(db: KuzuClient, frontier_ids: List[str], edge_types: List[str],
+                            direction: str) -> List[Dict[str, Any]]:
+    if not frontier_ids:
+        return []
+
+    query = _build_frontier_query(edge_types, direction)
+    rows: List[Dict[str, Any]] = []
+    try:
+        result = db.execute(query, {"ids": frontier_ids})
+        while result.has_next():
+            row = result.get_next()
+            if not row:
+                continue
+            current_node = row[0] if len(row) > 0 else {}
+            neighbor_node = row[1] if len(row) > 1 else {}
+            rel_type = str(row[2] or "") if len(row) > 2 else ""
+            rel_conf = row[3] if len(row) > 3 else 1.0
+            current_payload = _node_payload(current_node)
+            neighbor_payload = _node_payload(neighbor_node)
+            if not current_payload["node_id"] or not neighbor_payload["node_id"]:
+                continue
+            rows.append({
+                "current_id": current_payload["node_id"],
+                "current_table": current_payload["node_type"],
+                "neighbor_id": neighbor_payload["node_id"],
+                "neighbor_table": neighbor_payload["node_type"],
+                "current_node": current_node,
+                "neighbor_node": neighbor_node,
+                "rel_type": rel_type,
+                "rel_conf": rel_conf,
+                "direction": direction,
+            })
+    except Exception:
+        _logger.exception("Frontier expansion failed for %s", direction)
+    return rows
+
+
+def _expand_frontier(db: KuzuClient, frontier_ids: List[str], edge_types: List[str], direction: str) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    if direction in ("outgoing", "both"):
+        rows.extend(_execute_frontier_query(db, frontier_ids, edge_types, "outgoing"))
+    if direction in ("incoming", "both"):
+        rows.extend(_execute_frontier_query(db, frontier_ids, edge_types, "incoming"))
+    return rows
+
+
+def _reconstruct_paths(start_id: str, start_node_data: Dict[str, Any],
+                       parents: Dict[str, Tuple[str, Dict[str, Any]]],
+                       node_cache: Dict[str, Dict[str, Any]],
+                       discovery_order: List[str]) -> List[Dict[str, Any]]:
+    paths: List[Dict[str, Any]] = []
+    for node_id in discovery_order:
+        curr_id = node_id
+        curr_nodes = [node_cache.get(curr_id, {"node_id": curr_id, "node_type": "", "text": "", "confidence": 0.0})]
+        curr_edges = []
+        while curr_id != start_id and curr_id in parents:
+            parent_id, edge = parents[curr_id]
+            curr_edges.append(edge)
+            curr_id = parent_id
+            curr_nodes.append(node_cache.get(curr_id, start_node_data if curr_id == start_id else {
+                "node_id": curr_id,
+                "node_type": "",
+                "text": "",
+                "confidence": 0.0,
+            }))
+        curr_nodes.reverse()
+        curr_edges.reverse()
+        path_strength = sum(n["confidence"] for n in curr_nodes) / len(curr_nodes) if curr_nodes else 0.0
+        paths.append({
+            "nodes": curr_nodes,
+            "edges": curr_edges,
+            "path_depth": max(len(curr_nodes) - 1, 0),
+            "path_strength": round(path_strength, 3),
+        })
+    return paths
+
+
+def _traverse(db: KuzuClient, start_id: str, start_table: str, max_depth: int,
+              edge_types: List[str], direction: str, max_nodes: int,
+              strategy: str) -> Tuple[List[Dict[str, Any]], int]:
+    visited_node_ids = {start_id}
+    node_cache = {start_id: _get_node_data(db, start_id, start_table)}
+    parents: Dict[str, Tuple[str, Dict[str, Any]]] = {}
+    discovery_order: List[str] = []
+    frontier = [start_id]
+
+    for _depth_level in range(1, max_depth + 1):
+        if not frontier or len(visited_node_ids) >= max_nodes:
+            break
+
+        edges = _expand_frontier(db, frontier, edge_types, direction)
+        next_frontier: List[str] = []
+        for edge in edges:
+            dst_id = edge["neighbor_id"]
+            if dst_id in visited_node_ids:
+                continue
+
+            visited_node_ids.add(dst_id)
+            node_cache[dst_id] = _node_payload(edge["neighbor_node"], dst_id)
+            parents[dst_id] = (
+                edge["current_id"] if edge["direction"] != "incoming" else edge["current_id"],
+                _edge_payload(
+                    edge["neighbor_id"] if edge["direction"] == "incoming" else edge["current_id"],
+                    edge["current_id"] if edge["direction"] == "incoming" else edge["neighbor_id"],
+                    edge["rel_type"],
+                    edge["rel_conf"],
+                ),
+            )
+            discovery_order.append(dst_id)
+            next_frontier.append(dst_id)
+
+            if len(visited_node_ids) >= max_nodes:
+                break
+
+        frontier = next_frontier
+
+    ordered_ids = discovery_order if strategy == "bfs" else list(reversed(discovery_order))
+    return _reconstruct_paths(start_id, node_cache[start_id], parents, node_cache, ordered_ids), len(visited_node_ids)
 
 async def explore_graph(params: Dict[str, Any], db: KuzuClient, config: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -96,13 +254,16 @@ async def explore_graph(params: Dict[str, Any], db: KuzuClient, config: Dict[str
         }
 
     # 2. Traversal logic
-    # Max nodes visited to prevent runaway traversal
-    MAX_NODES = 1000
-
-    if strategy == "bfs":
-        paths, total_visited = _bfs_traversal(db, start_id, start_table, depth, edge_types_to_use, direction, MAX_NODES)
-    else:
-        paths, total_visited = _dfs_traversal(db, start_id, start_table, depth, edge_types_to_use, direction, MAX_NODES)
+    paths, total_visited = _traverse(
+        db,
+        start_id,
+        start_table,
+        depth,
+        edge_types_to_use,
+        direction,
+        _MAX_NODES,
+        strategy,
+    )
 
     # B125: Add context around nodes if context_window > 0
     if context_window > 0:
@@ -112,7 +273,7 @@ async def explore_graph(params: Dict[str, Any], db: KuzuClient, config: Dict[str
         "paths": paths,
         "total_nodes_visited": total_visited,
         "exploration_complete": True,
-        "exploration_truncated": total_visited >= MAX_NODES,
+        "exploration_truncated": total_visited >= _MAX_NODES,
         "context_window": context_window,  # B125: Track if context was included
     }
 
@@ -135,44 +296,18 @@ def _get_node_data(db: KuzuClient, node_id: str, table: str) -> Dict[str, Any]:
     return {"node_id": node_id, "node_type": table, "text": "", "confidence": 0.0}
 
 def _get_neighbors(db: KuzuClient, node_id: str, node_table: str, edge_types: List[str], direction: str) -> List[Dict[str, Any]]:
-    pk = _get_pk_for_table(node_table)
-    neighbors = []
-    
-    for target_table, target_pk in _NODE_TABLES:
-        for rel in edge_types:
-            queries = []
-            if direction in ("outgoing", "both"):
-                queries.append((
-                    f"MATCH (a:{node_table})-[r:{rel}]->(b:{target_table}) WHERE a.{pk} = $id "
-                    f"RETURN b.{target_pk}, r.confidence", "out", rel, target_table
-                ))
-            if direction in ("incoming", "both"):
-                queries.append((
-                    f"MATCH (a:{node_table})<-[r:{rel}]-(b:{target_table}) WHERE a.{pk} = $id "
-                    f"RETURN b.{target_pk}, r.confidence", "in", rel, target_table
-                ))
-            
-            for query, qdir, qrel, qtable in queries:
-                try:
-                    r = db.execute(query, {"id": node_id})
-                    while r.has_next():
-                        row = r.get_next()
-                        target_id = str(row[0])
-                        # Kuzu might return None for missing properties on REL
-                        try:
-                            rel_conf = float(row[1]) if row[1] is not None else 1.0
-                        except (IndexError, TypeError, ValueError):
-                            rel_conf = 1.0
-                            
-                        neighbors.append({
-                            "id": target_id,
-                            "table": qtable,
-                            "rel_type": qrel,
-                            "rel_conf": rel_conf,
-                            "direction": qdir
-                        })
-                except Exception:
-                    continue
+    rows = _expand_frontier(db, [node_id], edge_types, direction)
+    neighbors: List[Dict[str, Any]] = []
+    for row in rows:
+        if row["current_id"] != node_id:
+            continue
+        neighbors.append({
+            "id": row["neighbor_id"],
+            "table": row["neighbor_table"],
+            "rel_type": row["rel_type"],
+            "rel_conf": row["rel_conf"],
+            "direction": "out" if row["direction"] == "outgoing" else "in",
+        })
     return neighbors
 
 def _add_temporal_context(db: KuzuClient, paths: List[Dict[str, Any]], context_window: int) -> List[Dict[str, Any]]:
@@ -184,141 +319,45 @@ def _add_temporal_context(db: KuzuClient, paths: List[Dict[str, Any]], context_w
     """
     if context_window <= 0:
         return paths
+    if not _TEMPORAL_CONTEXT_RELS:
+        return paths
 
     enhanced_paths = []
+    node_refs: Dict[str, str] = {}
     for path in paths:
-        enhanced_nodes = []
         for node in path.get("nodes", []):
             node_id = node.get("node_id")
             node_table = node.get("node_type")
-
-            # Add context wrapper if we have node info
-            enhanced_node = dict(node)
             if node_id and node_table:
-                # Try to fetch temporal neighbors (before and after)
-                try:
-                    # For simplicity in this first pass, we fetch neighbors but preserve
-                    # the original node structure. Full temporal context would require
-                    # more complex graph traversal.
-                    context_edges = ["NEXT_MESSAGE", "CAUSED_BY", "ESTABLISHED_IN"]
-                    neighbors = _get_neighbors(db, node_id, node_table, context_edges, "both")
+                node_refs[node_id] = node_table
 
-                    # Truncate and format neighbor text
-                    context_items = []
-                    for nbr in neighbors[:context_window]:
-                        nbr_data = _get_node_data(db, nbr.get("id"), nbr.get("table"))
-                        nbr_text = nbr_data.get("text", "")
-                        if nbr_text:
-                            # Truncate to 200 chars
-                            context_items.append(nbr_text[:200])
+    if not node_refs:
+        return paths
 
-                    if context_items:
-                        enhanced_node["context_neighbors"] = context_items
-                        enhanced_node["context_count"] = len(context_items)
-                except Exception:
-                    # Gracefully degrade: include node without context if lookup fails
-                    pass
+    context_rows = _expand_frontier(db, list(node_refs.keys()), list(_TEMPORAL_CONTEXT_RELS), "both")
+    context_by_source: Dict[str, List[str]] = {}
+    for row in context_rows:
+        src_id = row["current_id"]
+        if src_id not in node_refs:
+            continue
+        dst_payload = _node_payload(row.get("neighbor_node") if isinstance(row.get("neighbor_node"), dict) else None, row["neighbor_id"])
+        if not dst_payload["text"]:
+            continue
+        context_by_source.setdefault(src_id, []).append(dst_payload["text"])
 
+    for path in paths:
+        enhanced_nodes = []
+        for node in path.get("nodes", []):
+            enhanced_node = dict(node)
+            node_id = node.get("node_id")
+            if node_id and node_id in context_by_source:
+                context_items = context_by_source[node_id][:context_window]
+                if context_items:
+                    enhanced_node["context_neighbors"] = [text[:200] for text in context_items]
+                    enhanced_node["context_count"] = len(context_items)
             enhanced_nodes.append(enhanced_node)
-
         enhanced_path = dict(path)
         enhanced_path["nodes"] = enhanced_nodes
         enhanced_paths.append(enhanced_path)
 
     return enhanced_paths
-
-def _bfs_traversal(db: KuzuClient, start_id: str, start_table: str, max_depth: int, edge_types: List[str], direction: str, max_nodes: int) -> Tuple[List[Dict[str, Any]], int]:
-    paths = []
-    visited_node_ids = {start_id}
-    start_node_data = _get_node_data(db, start_id, start_table)
-    
-    # queue of (current_node_id, current_node_table, current_path_nodes, current_path_edges, current_depth, current_path_ids)
-    # B77: use a set for O(1) cycle detection within the path
-    queue = [(start_id, start_table, [start_node_data], [], 0, {start_id})]
-    
-    while queue and len(visited_node_ids) < max_nodes:
-        curr_id, curr_table, curr_nodes, curr_edges, curr_depth, curr_path_ids = queue.pop(0)
-        
-        # Every node reached (other than start) completes a path from start
-        if curr_depth > 0:
-            path_strength = sum(n["confidence"] for n in curr_nodes) / len(curr_nodes) if curr_nodes else 0.0
-            paths.append({
-                "nodes": curr_nodes,
-                "edges": curr_edges,
-                "path_depth": curr_depth,
-                "path_strength": round(path_strength, 3)
-            })
-
-        if curr_depth < max_depth:
-            neighbors = _get_neighbors(db, curr_id, curr_table, edge_types, direction)
-            for nbr in neighbors:
-                # B77: O(1) cycle detection
-                if nbr["id"] in curr_path_ids:
-                    continue
-                
-                nbr_node_data = _get_node_data(db, nbr["id"], nbr["table"])
-                visited_node_ids.add(nbr["id"])
-                
-                new_nodes = curr_nodes + [nbr_node_data]
-                new_path_ids = curr_path_ids | {nbr["id"]}
-                if nbr["direction"] == "out":
-                    new_edge = {"from": curr_id, "to": nbr["id"], "type": nbr["rel_type"], "confidence": nbr["rel_conf"]}
-                else:
-                    new_edge = {"from": nbr["id"], "to": curr_id, "type": nbr["rel_type"], "confidence": nbr["rel_conf"]}
-                
-                new_edges = curr_edges + [new_edge]
-                queue.append((nbr["id"], nbr["table"], new_nodes, new_edges, curr_depth + 1, new_path_ids))
-                
-                if len(visited_node_ids) >= max_nodes:
-                    break
-                
-    return paths, len(visited_node_ids)
-
-def _dfs_traversal(db: KuzuClient, start_id: str, start_table: str, max_depth: int, edge_types: List[str], direction: str, max_nodes: int) -> Tuple[List[Dict[str, Any]], int]:
-    paths = []
-    visited_node_ids = {start_id}
-    start_node_data = _get_node_data(db, start_id, start_table)
-    
-    # B77: use a set for O(1) cycle detection within the path
-    curr_path_ids = {start_id}
-
-    def _dfs(curr_id: str, curr_table: str, curr_nodes: List[Dict[str, Any]], curr_edges: List[Dict[str, Any]], curr_depth: int):
-        if len(visited_node_ids) >= max_nodes:
-            return
-
-        if curr_depth > 0:
-            path_strength = sum(n["confidence"] for n in curr_nodes) / len(curr_nodes) if curr_nodes else 0.0
-            paths.append({
-                "nodes": curr_nodes,
-                "edges": curr_edges,
-                "path_depth": curr_depth,
-                "path_strength": round(path_strength, 3)
-            })
-            
-        if curr_depth < max_depth:
-            neighbors = _get_neighbors(db, curr_id, curr_table, edge_types, direction)
-            for nbr in neighbors:
-                # B77: O(1) cycle detection
-                if nbr["id"] in curr_path_ids:
-                    continue
-                
-                nbr_node_data = _get_node_data(db, nbr["id"], nbr["table"])
-                visited_node_ids.add(nbr["id"])
-                
-                new_nodes = curr_nodes + [nbr_node_data]
-                if nbr["direction"] == "out":
-                    new_edge = {"from": curr_id, "to": nbr["id"], "type": nbr["rel_type"], "confidence": nbr["rel_conf"]}
-                else:
-                    new_edge = {"from": nbr["id"], "to": curr_id, "type": nbr["rel_type"], "confidence": nbr["rel_conf"]}
-                
-                new_edges = curr_edges + [new_edge]
-                
-                curr_path_ids.add(nbr["id"])
-                _dfs(nbr["id"], nbr["table"], new_nodes, new_edges, curr_depth + 1)
-                curr_path_ids.remove(nbr["id"]) # Backtrack
-                
-                if len(visited_node_ids) >= max_nodes:
-                    break
-
-    _dfs(start_id, start_table, [start_node_data], [], 0)
-    return paths, len(visited_node_ids)

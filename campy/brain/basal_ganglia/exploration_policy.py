@@ -43,6 +43,7 @@ async def should_explore(
     try:
         negative_count = 0
         for action in recent_actions[:5]:
+            # B279: vector_search scores are true cosine similarity.
             result = db.vector_search(
                 "Plan", "plan_embedding",
                 _get_embedding(action), limit=1,

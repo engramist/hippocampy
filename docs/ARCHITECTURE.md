@@ -257,6 +257,16 @@ Agent memory-use policy:
 - **Multi-table search:** No unified cross-table HNSW index exists. `current_truth` uses `UNION ALL` across per-table index calls in a single Cypher query, then sorts by score and applies `LIMIT`.
 - **Relationship table typing:** Named semantic relationships defined as `FROM Concept TO Concept` only. `REIFIED_AS` uses Kùzu's multi-FROM/TO syntax: `CREATE REL TABLE REIFIED_AS (FROM Concept TO Decision, FROM Concept TO Constraint, FROM Concept TO Requirement, FROM Concept TO ActionItem)`.
 
+### Graph Engine Portability
+
+Campy now keeps an engine-neutral escape hatch for the graph itself:
+
+- `campy export-graph --out <dir>` streams every node table to `nodes/<Table>.jsonl`, every relationship table to `rels/<RelTable>.jsonl`, and writes a `manifest.json` with `format_version`, `exported_at`, `engine`, `embedding_dim`, per-table primary keys, and row counts.
+- `campy import-graph --in <dir> --db <fresh.db>` restores a dump into an empty database, recreates the schema, loads nodes first, loads relationships second, and rebuilds vector indexes after bulk load.
+- Export/import must remain streamed. Do not materialize the whole graph in memory just to move between engines.
+- The migration playbook is: export the live graph, implement a new facade behind `campy/brain/hippocampus/graph/kuzu_client.py`, run the facade conformance suite, import into the new engine, then rerun the calibration and round-trip tests.
+- `campy/brain/hippocampus/graph/kuzu_client.py` stays the only module that imports `kuzu` directly. All portability work must route through that facade.
+
 ### Module Structure
 
 ```

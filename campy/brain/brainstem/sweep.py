@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timezone, timedelta
 import asyncio
@@ -36,6 +37,7 @@ if TYPE_CHECKING:
 
 from campy.brain.temporal_lobe.loop.step7_pathway import pathway_strength_decay
 from campy.brain.hippocampus.graph import embeddings as emb
+from campy.brain.hippocampus.table_registry import tables_with
 from campy.brain.thalamus.wiki_projection import export_wiki_projection
 
 # ---------------------------------------------------------------------------
@@ -43,17 +45,23 @@ from campy.brain.thalamus.wiki_projection import export_wiki_projection
 # (table_name, pk_col, decay_config_key, index_name)
 # ---------------------------------------------------------------------------
 
+_CAMEL_SPLIT_RE = re.compile(r"(?<!^)(?=[A-Z])")
+
+
+def _config_key(table_name: str) -> str:
+    return _CAMEL_SPLIT_RE.sub("_", table_name).lower()
+
+
 SWEEP_TABLES = [
-    ("Concept",           "concept_id",             "concept",            "concept_emb_idx"),
-    ("GlobalConstraint", "global_constraint_id", "global_constraint", "globalconstraint_emb_idx"),
-    ("GlobalPreference",  "global_preference_id",  "global_preference",  "globalpreference_emb_idx"),
-    ("Decision",          "decision_id",            "decision",           "decision_emb_idx"),
-    ("Constraint",        "constraint_id",          "constraint",         "constraint_emb_idx"),
-    ("Requirement",       "requirement_id",         "requirement",        "requirement_emb_idx"),
-    ("ActionItem",        "action_item_id",         "action_item",        "actionitem_emb_idx"),
-    ("Message",           "message_id",             "message",            "message_emb_idx"),
-    ("DocumentExtract",   "extract_id",             "document_extract",   "documentextract_emb_idx"),
+    (table.name, table.pk, _config_key(table.name), table.vector_index)
+    for table in tables_with("sweepable")
+    if table.vector_index is not None
 ]
+
+# SCAN BUDGET NOTE (B284): sweep-time full-table scans (archived=false filters,
+# count(n)) are accepted. Sweeps are background, low-frequency maintenance and
+# Kuzu 0.11.x has no secondary property indexes. Hot-path scans are not
+# accepted; retrieval.lexical_window_days bounds the episodic fallback instead.
 
 # Named relationship types eligible for Hebbian auto-promotion
 _NAMED_REL_TYPES = frozenset([
@@ -83,6 +91,8 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
         sweep_interval      = pruning_cfg.get("sweep_interval_seconds", 300)
         archive_threshold   = float(pruning_cfg.get("archive_threshold", 0.10))
         resurrection_thresh = float(pruning_cfg.get("resurrection_threshold", 0.85))
+        # B279: vector_search now returns true cosine similarity, so this
+        # config value is interpreted directly as a cosine threshold.
         decay_rates         = pruning_cfg.get("decay_rate", {})
 
         # Express sweep interval as a fraction of a day — decay applied incrementally
@@ -630,6 +640,8 @@ async def _resurrect_archived(
 
     Strength reset to resurrection_threshold (not 1.0 — node was dormant and
     must earn full strength back through access per the Hebbian model).
+
+    B279: resurrection_threshold is a true cosine similarity threshold.
 
     Returns (resurrected_count, error_count).
     """

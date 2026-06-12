@@ -19,13 +19,22 @@ import logging
 import re
 from datetime import datetime, timezone
 
+from campy.brain.hippocampus.table_registry import get_table
+
 _logger = logging.getLogger(__name__)
+
+_LESSON_TABLE = get_table("Lesson")
+_PROCEDURE_TABLE = get_table("Procedure")
+assert _LESSON_TABLE is not None and _LESSON_TABLE.vector_index is not None
+assert _PROCEDURE_TABLE is not None and _PROCEDURE_TABLE.vector_index is not None
+_LESSON_INDEX = _LESSON_TABLE.vector_index
+_PROCEDURE_INDEX = _PROCEDURE_TABLE.vector_index
 
 # Similarity threshold for auto-binding triggers.
 # Must be high enough to avoid false positives (bad triggers waste context
 # window), but low enough to catch genuine matches. 0.65 is conservative
-# for all-MiniLM-L6-v2 (384-dim) — typical true matches score 0.70-0.85.
-TRIGGER_SIMILARITY_THRESHOLD = 0.65
+# for all-MiniLM-L6-v2 (384-dim) — typical true cosine matches score 0.70-0.85.
+TRIGGER_SIMILARITY_THRESHOLD = 0.65  # B279: true cosine similarity threshold
 
 # Maximum number of trigger bindings created per message to avoid runaway
 # writes on noisy inputs.
@@ -119,7 +128,7 @@ async def check_associative_triggers(
     # --- Check Lessons ---
     try:
         lesson_rows = db.vector_search(
-            "Lesson", "lesson_emb_idx", entity_vector, 5
+            "Lesson", _LESSON_INDEX, entity_vector, 5
         )
         for row in lesson_rows:
             if bindings_created >= max_bindings:
@@ -179,7 +188,7 @@ async def check_associative_triggers(
     # --- Check Procedures ---
     try:
         proc_rows = db.vector_search(
-            "Procedure", "procedure_emb_idx", entity_vector, 3
+            "Procedure", _PROCEDURE_INDEX, entity_vector, 3
         )
         for row in proc_rows:
             if bindings_created >= max_bindings:

@@ -13,22 +13,28 @@ Branch scope first (same MainQuest — M5 adds quest_id filter).
 Global scope: GlobalConstraint/GlobalPreference (M5).
 
 Similarity thresholds:
-  < 0.75        → no match, new concept stands alone
-  0.75 – 0.92   → gray zone → trigger Step 6 contradiction arbitration
-  > 0.92        → strong match → additive update via Step 7
+    < 0.75 true cosine similarity        → no match, new concept stands alone
+    0.75 – 0.92 true cosine similarity   → gray zone → trigger Step 6 contradiction arbitration
+    > 0.92 true cosine similarity        → strong match → additive update via Step 7
 
-Index: concept_emb_idx (HNSW on Concept.embedding FLOAT[384])
+Index: Concept embedding HNSW index (derived from table registry)
 """
 
 import logging
 
+from campy.brain.hippocampus.table_registry import get_table
+
 _logger = logging.getLogger(__name__)
 
-MATCH_THRESHOLD  = 0.75   # below → no match
-GRAY_ZONE_UPPER  = 0.92   # above → strong match (additive, no arbitration)
+_CONCEPT_TABLE = get_table("Concept")
+assert _CONCEPT_TABLE is not None and _CONCEPT_TABLE.vector_index is not None
+_CONCEPT_INDEX = _CONCEPT_TABLE.vector_index
+
+MATCH_THRESHOLD  = 0.75   # B279: true cosine similarity below this → no match
+GRAY_ZONE_UPPER  = 0.92   # B279: true cosine similarity above this → additive match
 
 # B159: Topological overlap tuning
-TOPO_SEARCH_FLOOR    = 0.55   # consider these for topological check
+TOPO_SEARCH_FLOOR    = 0.55   # B279: true cosine similarity floor for topo checks
 TOPO_JACCARD_WEIGHT  = 0.30   # how much jaccard overlap boosts similarity
 MIN_JACCARD_BOOST    = 0.50   # min jaccard to apply any boost
 # L10 note: headroom is kept for self-exclusion only. Archived nodes are
@@ -41,7 +47,7 @@ def retrieve_candidates(embedding: list[float], exclude_id: str,
                         db, limit: int = 5,
                         exclude_ids: list[str] | None = None) -> list[dict]:
     """
-    Search concept_emb_idx for existing Concept nodes similar to embedding.
+    Search the Concept embedding index for existing Concept nodes similar to embedding.
     Excludes the newly-created node (exclude_id) and archived nodes.
 
     Returns list of:
@@ -52,15 +58,15 @@ def retrieve_candidates(embedding: list[float], exclude_id: str,
     quest_id scoping is deferred to M5 (MainQuest wiring).
     """
     try:
-        raw = db.vector_search("Concept", "concept_emb_idx", embedding, limit + _FETCH_HEADROOM)
+        raw = db.vector_search("Concept", _CONCEPT_INDEX, embedding, limit + _FETCH_HEADROOM)
     except Exception:
         # L9 fix: log the error so persistent index failures are visible.
         # Returning [] causes the orchestrator to treat this as "no match",
         # which will create new nodes — a graph fill with duplicates is the
         # failure mode. Operators must monitor these logs.
         _logger.exception(
-            "Vector search on concept_emb_idx failed — "
-            "returning empty candidates (may cause duplicate nodes)"
+            "Vector search on %s failed — returning empty candidates (may cause duplicate nodes)",
+            _CONCEPT_INDEX,
         )
         return []
 

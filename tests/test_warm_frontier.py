@@ -3,6 +3,7 @@ import asyncio
 from unittest.mock import MagicMock, AsyncMock
 from campy.brain.temporal_lobe.warm_frontier import compute_warm_frontier, get_warm_nodes
 from campy.brain.thalamus.tools import notify_turn, current_truth
+import campy.brain.thalamus.tools as tools_mod
 from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 
 @pytest.fixture
@@ -38,7 +39,10 @@ async def test_warm_frontier_activation_and_retrieval():
     with MagicMock() as mock_emb:
         import campy.brain.hippocampus.graph.embeddings as emb
         original_embed = emb.embed
-        emb.embed = MagicMock(return_value=[0.1]*384)
+        original_tools_embed = tools_mod.emb.embed
+        stub_embed = MagicMock(return_value=[0.1] * 384)
+        emb.embed = stub_embed
+        tools_mod.emb.embed = stub_embed
         
         params = {
             "role": "user",
@@ -89,6 +93,7 @@ async def test_warm_frontier_activation_and_retrieval():
         assert results[0]["activation_score"] == 0.9
         
         emb.embed = original_embed
+        tools_mod.emb.embed = original_tools_embed
 
 @pytest.mark.asyncio
 async def test_spread_activation():

@@ -99,6 +99,30 @@ class MockDB:
         self._neighbor_lookup = neighbor_lookup or {}
         self.queries = []
 
+    def _node_dict(self, node_id):
+        table, _ = self._node_lookup.get(node_id, ("Concept", "concept_id"))
+        text, confidence = self._node_data.get(node_id, ("", 0.0))
+        pk = {
+            "Concept": "concept_id",
+            "Decision": "decision_id",
+            "Constraint": "constraint_id",
+            "Requirement": "requirement_id",
+            "ActionItem": "action_item_id",
+            "GlobalConstraint": "global_constraint_id",
+            "GlobalPreference": "global_preference_id",
+            "MainQuest": "quest_id",
+            "SideQuest": "quest_id",
+            "Message": "message_id",
+            "Document": "document_id",
+            "Lesson": "lesson_id",
+        }.get(table, "concept_id")
+        return {
+            "_label": table,
+            pk: node_id,
+            "text_raw": text,
+            "confidence": confidence,
+        }
+
     def execute(self, query, params=None):
         self.queries.append((query, params))
         node_id = (params or {}).get("id", "")
@@ -114,28 +138,30 @@ class MockDB:
         if "RETURN n.text_raw, n.confidence" in query and node_id in self._node_data:
             return _Row([self._node_data[node_id]])
 
-        # Neighbor lookup
-        key_out = (node_id, "out")
-        key_in  = (node_id, "in")
-        
-        # Check for specific rel in query
-        current_rel = None
-        for rel in ["REQUIRES", "ENABLES", "REPLACES", "CONTRADICTS", "PART_OF", "CHOSEN_OVER", "IMPLEMENTS", "EXTENDS", "ALTERNATIVE_TO"]:
-            if f":{rel}" in query:
-                current_rel = rel
-                break
-        
-        if "->" in query and key_out in self._neighbor_lookup:
+        # Batched neighbor lookup
+        if "RETURN a, b, label(r), coalesce(r.confidence, 1.0)" in query:
+            ids = (params or {}).get("ids", [])
+            if isinstance(ids, str):
+                ids = [ids]
+            current_rel = None
+            for rel in ["REQUIRES", "ENABLES", "REPLACES", "CONTRADICTS", "PART_OF", "CHOSEN_OVER", "IMPLEMENTS", "EXTENDS", "ALTERNATIVE_TO", "NEXT_MESSAGE", "CAUSED_BY", "ESTABLISHED_IN"]:
+                if f":{rel}" in query:
+                    current_rel = rel
+                    break
             results = []
-            for n_id, n_conf in self._neighbor_lookup[key_out]:
-                # If query specifies rel, only return if it matches (mock rel type logic)
-                results.append([n_id, n_conf])
-            return _Row(results)
-            
-        if "<-" in query and key_in in self._neighbor_lookup:
-            results = []
-            for n_id, n_conf in self._neighbor_lookup[key_in]:
-                results.append([n_id, n_conf])
+            direction_key = "in" if "<-" in query else "out"
+            for seed_id in ids:
+                key = (seed_id, direction_key)
+                neighbor_rows = self._neighbor_lookup.get(key)
+                if neighbor_rows is None:
+                    neighbor_rows = self._neighbor_lookup.get((seed_id, "both"), [])
+                for n_id, n_conf in neighbor_rows:
+                    results.append([
+                        self._node_dict(seed_id),
+                        self._node_dict(n_id),
+                        current_rel or "REQUIRES",
+                        n_conf,
+                    ])
             return _Row(results)
 
         return _Row([])
@@ -370,3 +396,34 @@ async def test_explore_context_neighbors_included_in_nodes():
     assert result_with_context["context_window"] == 1
     # Result structure should be valid
     assert "paths" in result_with_context
+
+
+@pytest.mark.asyncio
+async def test_explore_graph_query_budget():
+    db = MockDB(
+        node_lookup={
+            "n1": ("Concept", "concept_id"),
+            "n2": ("Concept", "concept_id"),
+            "n3": ("Concept", "concept_id"),
+            "n4": ("Concept", "concept_id"),
+        },
+        node_data={
+            "n1": ("Root", 1.0),
+            "n2": ("A", 0.9),
+            "n3": ("B", 0.8),
+            "n4": ("C", 0.7),
+        },
+        neighbor_lookup={
+            ("n1", "out"): [("n2", 1.0), ("n3", 1.0)],
+            ("n2", "out"): [("n4", 1.0)],
+            ("n3", "out"): [("n1", 1.0)],
+        },
+    )
+
+    result = await explore_graph(
+        {"start_node_id": "n1", "session_id": "s1", "depth": 3, "strategy": "bfs"},
+        db, {}
+    )
+
+    assert result["exploration_complete"] is True
+    assert len(db.queries) <= 30, f"explore_graph issued {len(db.queries)} queries"
