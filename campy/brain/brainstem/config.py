@@ -16,6 +16,16 @@ _DEFAULT_CONFIG = {
         "lexical_window_days": 14,
         "lexical_limit": 10,
     },
+    # B283: supernode monitoring + session cache edge pruning
+    "sweep": {
+        "degree_report_top_k": 10,
+        "degree_alert_threshold": 5000,
+        "session_edge_ttl_days": 30,
+        "prune_session_edges": True,
+    },
+    "loop": {
+        "max_co_occurrence_pairs": 45,
+    },
 }
 
 

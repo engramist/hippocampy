@@ -404,7 +404,9 @@ async def run_loop(message_id: str, text: str, db, llm_client,
     # Step 7 — CO_OCCURS_WITH for all concepts from this message
     if len(concept_ids) > 1:
         min_conf = 0.60  # noise floor minimum
-        await write_co_occurs_with(concept_ids, min_conf, db, now, co_threshold)
+        max_pairs = int(config.get("loop", {}).get("max_co_occurrence_pairs", 45))
+        await write_co_occurs_with(concept_ids, min_conf, db, now, co_threshold,
+                                   max_pairs=max_pairs)
 
     # Step 7.5 — Lesson extraction (indicator-based)
     lesson_result = await extract_lessons(

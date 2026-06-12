@@ -63,6 +63,33 @@ SWEEP_TABLES = [
 # Kuzu 0.11.x has no secondary property indexes. Hot-path scans are not
 # accepted; retrieval.lexical_window_days bounds the episodic fallback instead.
 
+# ---------------------------------------------------------------------------
+# B282: batched writes — the global write lock makes every execute_write a
+# serialization point, so per-row sweep writes contend with live GCL writes.
+# ---------------------------------------------------------------------------
+
+_BATCH_SIZE = 500
+
+
+async def _batch_write(db, query: str, items: list, param_key: str = "ids") -> tuple[int, int]:
+    """Execute an UNWIND-based write in chunks of _BATCH_SIZE.
+
+    `query` must consume the parameter named `param_key` via UNWIND.
+    Returns (submitted_count, errored_chunk_item_count). Errors are counted
+    per chunk — a failed chunk counts all its items as errored.
+    """
+    submitted = errored = 0
+    for i in range(0, len(items), _BATCH_SIZE):
+        chunk = items[i:i + _BATCH_SIZE]
+        try:
+            await db.execute_write(query, {param_key: chunk})
+            submitted += len(chunk)
+        except Exception:
+            _logger.exception("[Sweep] batch write failed (%d items)", len(chunk))
+            errored += len(chunk)
+    return submitted, errored
+
+
 # Named relationship types eligible for Hebbian auto-promotion
 _NAMED_REL_TYPES = frozenset([
     "REQUIRES", "ENABLES", "REPLACES", "CONTRADICTS", "PART_OF",
@@ -115,6 +142,22 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
         summary["decayed"]  += d
         summary["archived"] += a
         summary["errors"]   += e
+
+        # Step 1.2: B283 degree hotspot report + session cache edge pruning
+        try:
+            summary["degree_hotspots"] = await _report_degree_hotspots(db, config)
+        except Exception:
+            _logger.warning("[Sweep] degree hotspot report failed", exc_info=True)
+            summary["degree_hotspots"] = []
+            summary["errors"] += 1
+        try:
+            sp, e = await _prune_session_edges(db, config)
+            summary["sessions_pruned"] = sp
+            summary["errors"] += e
+        except Exception:
+            _logger.warning("[Sweep] session edge pruning failed", exc_info=True)
+            summary["sessions_pruned"] = 0
+            summary["errors"] += 1
 
         # Step 1.5: B74 valence-aware decay adjustment
         v, e = await _apply_valence_decay(db)
@@ -539,40 +582,156 @@ async def _decay_and_archive(
                 {"factor": decay_factor},
             )
 
-            # Now find and archive nodes below threshold
+            # B282: one read serves both the decayed count and the archive
+            # candidate list (previously two scans + one write per candidate).
             result = db.execute(
                 f"MATCH (n:{table}) WHERE n.archived = false "
-                f"AND n.pathway_strength < $threshold "
-                f"RETURN n.{pk_col}",
-                {"threshold": archive_threshold},
+                f"RETURN n.{pk_col}, n.pathway_strength",
             )
 
             to_archive = []
             while result.has_next():
                 row = result.get_next()
-                to_archive.append(row[0])
+                decayed += 1
+                if row[1] is not None and row[1] < archive_threshold:
+                    to_archive.append(row[0])
 
-            # Count decayed (all active nodes were decayed in the bulk update)
-            count_result = db.execute(
-                f"MATCH (n:{table}) WHERE n.archived = false RETURN count(n)"
-            )
-            if count_result.has_next():
-                decayed += count_result.get_next()[0]
-
-            for node_id in to_archive:
-                try:
-                    await db.execute_write(
-                        f"MATCH (n:{table} {{{pk_col}: $id}}) SET n.archived = true",
-                        {"id": node_id},
-                    )
-                    archived += 1
-                except Exception:
-                    errors += 1
+            if to_archive:
+                ok, bad = await _batch_write(
+                    db,
+                    f"UNWIND $ids AS nid "
+                    f"MATCH (n:{table}) WHERE n.{pk_col} = nid "
+                    f"SET n.archived = true",
+                    to_archive,
+                )
+                archived += ok
+                errors += 1 if bad else 0
 
         except Exception:
             errors += 1
 
     return decayed, archived, errors
+
+
+# ---------------------------------------------------------------------------
+# B283: Supernode monitoring + session edge pruning
+# ---------------------------------------------------------------------------
+
+# (rel_table, side) — measure the endpoint that concentrates edges.
+_DEGREE_REPORT_RELS = [
+    ("CO_OCCURS_WITH", "both"),
+    ("ESTABLISHED_IN", "to"),    # Session side
+    ("LOADED",         "from"),  # Session side
+    ("WARM_NODE",      "from"),
+    ("BELONGS_TO",     "to"),    # MainQuest side
+    ("WORKING_ON",     "to"),
+]
+
+# Session-scoped cache rel tables eligible for TTL pruning. These are
+# rebuilt on session activity — deleting them never loses durable memory.
+_SESSION_CACHE_RELS = ("LOADED", "WARM_NODE")
+
+
+def _node_identity(node: dict) -> tuple[str, str]:
+    """Best-effort (table, pk_value) from a Kuzu node property dict."""
+    table = str(node.get("_label", "") or "")
+    for key, value in node.items():
+        if key.endswith("_id") and value:
+            return table, str(value)
+    return table, str(node.get("name", "") or "")
+
+
+async def _report_degree_hotspots(db, config: dict) -> list[dict]:
+    """Top-K highest-degree nodes per monitored rel table.
+
+    Degree hotspots are the first-class supernode risk signal: a node whose
+    edge count keeps climbing will eventually dominate traversals.
+    Read-only; results land in sweep stats and the activity log.
+    """
+    sweep_cfg = config.get("sweep", {})
+    top_k = int(sweep_cfg.get("degree_report_top_k", 10))
+    alert_threshold = int(sweep_cfg.get("degree_alert_threshold", 5000))
+    hotspots: list[dict] = []
+
+    for rel, side in _DEGREE_REPORT_RELS:
+        directions = []
+        if side in ("from", "both"):
+            directions.append(("out", f"MATCH (a)-[r:{rel}]->() "
+                                      f"RETURN a, count(r) AS deg ORDER BY deg DESC LIMIT {top_k}"))
+        if side in ("to", "both"):
+            directions.append(("in", f"MATCH ()-[r:{rel}]->(b) "
+                                     f"RETURN b, count(r) AS deg ORDER BY deg DESC LIMIT {top_k}"))
+        for direction, query in directions:
+            try:
+                result = db.execute(query)
+                while result.has_next():
+                    row = result.get_next()
+                    table, node_id = _node_identity(row[0] or {})
+                    degree = int(row[1] or 0)
+                    hotspots.append({
+                        "node_id": node_id, "table": table,
+                        "rel_table": rel, "degree": degree,
+                        "direction": direction,
+                    })
+                    if degree >= alert_threshold:
+                        _logger.warning(
+                            "[Supernode] %s:%s has degree %d on %s (threshold %d)",
+                            table, node_id, degree, rel, alert_threshold,
+                        )
+            except Exception:
+                _logger.debug("[Supernode] degree query failed for %s", rel, exc_info=True)
+
+    return hotspots
+
+
+async def _prune_session_edges(db, config: dict) -> tuple[int, int]:
+    """Delete LOADED/WARM_NODE cache edges for long-inactive sessions.
+
+    These rel tables are read-through caches over the session's working set;
+    they are rebuilt on the next message in that session. Without pruning,
+    every session ever created keeps its edges forever.
+
+    Returns (sessions_pruned, error_count).
+    """
+    sweep_cfg = config.get("sweep", {})
+    if not bool(sweep_cfg.get("prune_session_edges", True)):
+        return 0, 0
+    ttl_days = float(sweep_cfg.get("session_edge_ttl_days", 30))
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=ttl_days)).isoformat()
+
+    try:
+        result = db.execute(
+            "MATCH (s:Session) "
+            "WHERE coalesce(s.last_active_at, s.started_at) < timestamp($cutoff) "
+            "RETURN s.session_id",
+            {"cutoff": cutoff},
+        )
+        stale = []
+        while result.has_next():
+            row = result.get_next()
+            if row[0]:
+                stale.append(row[0])
+    except Exception:
+        _logger.exception("[Supernode] stale session query failed")
+        return 0, 1
+
+    if not stale:
+        return 0, 0
+
+    errors = 0
+    for rel in _SESSION_CACHE_RELS:
+        _, bad = await _batch_write(
+            db,
+            f"UNWIND $ids AS sid "
+            f"MATCH (s:Session)-[r:{rel}]->() WHERE s.session_id = sid "
+            f"DELETE r",
+            stale,
+        )
+        errors += 1 if bad else 0
+
+    _logger.info("[Supernode] pruned cache edges for %d stale sessions (ttl=%sd)",
+                 len(stale), ttl_days)
+    return len(stale), errors
 
 
 # ---------------------------------------------------------------------------
@@ -665,6 +824,7 @@ async def _resurrect_archived(
             errors += 1
             continue
 
+        to_resurrect = []
         for node_id, embedding in archived_nodes:
             try:
                 # SW2 fix: fetch more results since we'll filter out archived
@@ -684,17 +844,25 @@ async def _resurrect_archived(
                         continue
 
                     if score >= resurrection_threshold:
-                        await db.execute_write(
-                            f"MATCH (n:{table} {{{pk_col}: $id}}) "
-                            f"SET n.archived = false, "
-                            f"    n.pathway_strength = $strength",
-                            {"id": node_id, "strength": resurrection_threshold},
-                        )
-                        resurrected += 1
+                        to_resurrect.append(node_id)
                         break  # one match is enough
 
             except Exception:
                 errors += 1
+
+        # B282: batch the resurrection updates (strength is a constant reset,
+        # so a plain id list suffices).
+        if to_resurrect:
+            ok, bad = await _batch_write(
+                db,
+                f"UNWIND $ids AS nid "
+                f"MATCH (n:{table}) WHERE n.{pk_col} = nid "
+                f"SET n.archived = false, "
+                f"    n.pathway_strength = {float(resurrection_threshold)}",
+                to_resurrect,
+            )
+            resurrected += ok
+            errors += 1 if bad else 0
 
     return resurrected, errors
 
