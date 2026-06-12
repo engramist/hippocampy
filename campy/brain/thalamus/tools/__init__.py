@@ -11,7 +11,7 @@ import logging
 import math
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import TYPE_CHECKING, Optional
 
 _logger = logging.getLogger(__name__)
@@ -47,6 +47,7 @@ from campy.brain.hippocampus.quest import (
     get_or_create_main_quest, get_or_create_session,
     create_side_quest, get_quest_context,
 )
+from campy.brain.hippocampus.table_registry import get_table, pk_for, tables_with
 try:
     from campy.brain.temporal_lobe.loop.step4_pattern import (
         detect_ordered_plan_steps,
@@ -125,6 +126,23 @@ except ModuleNotFoundError as exc:
         return None
 # ARC artifact ingestion tool
 from campy.brain.thalamus.tools.arc_artifacts import ingest_arc_artifacts
+from campy.brain.thalamus.tools.arc_queries import (
+    arc_perceive_state,
+    arc_get_game_context,
+    arc_get_action_evidence,
+    arc_get_untested_actions,
+    arc_get_causal_path,
+    arc_record_action_effect,
+    arc_get_entity_movement,
+    arc_get_goal_evidence,
+    arc_classify_game_archetype,
+    arc_confirm_hypothesis,
+    arc_contradict_hypothesis,
+    arc_update_goal_confidence,
+    arc_get_mechanic_priors,
+    arc_check_action_gate,
+    arc_record_reward_prediction_error,
+)
 from campy.brain.thalamus.tools.arc_mechanics import publish_mechanic_summary, recall_mechanic_priors
 
 # ---------------------------------------------------------------------------
@@ -167,6 +185,22 @@ def _safe_result_dict(node) -> dict:
         return dict(node)
     except Exception:
         return node if isinstance(node, dict) else {}
+
+
+_CONCEPT_TABLE = get_table("Concept")
+_LESSON_TABLE = get_table("Lesson")
+_PLAN_TABLE = get_table("Plan")
+_PROCEDURE_TABLE = get_table("Procedure")
+
+assert _CONCEPT_TABLE is not None and _CONCEPT_TABLE.vector_index is not None
+assert _LESSON_TABLE is not None and _LESSON_TABLE.vector_index is not None
+assert _PLAN_TABLE is not None and _PLAN_TABLE.vector_index is not None
+assert _PROCEDURE_TABLE is not None and _PROCEDURE_TABLE.vector_index is not None
+
+_CONCEPT_INDEX = _CONCEPT_TABLE.vector_index
+_LESSON_INDEX = _LESSON_TABLE.vector_index
+_PLAN_INDEX = _PLAN_TABLE.vector_index
+_PROCEDURE_INDEX = _PROCEDURE_TABLE.vector_index
 
 
 def _session_active_plan_id(db, session_id: str) -> str:
@@ -224,8 +258,9 @@ async def _create_plan_graph(
         acts_on = []
         try:
             # B75: pre-calculate ACTS_ON via vector search
-            rows = db.vector_search("Concept", "concept_emb_idx", step_vec, 5)
+            rows = db.vector_search("Concept", _CONCEPT_INDEX, step_vec, 5)
             for row in rows:
+                # B279: ACTS_ON links require true cosine similarity >= 0.75.
                 if row["score"] >= 0.75:
                     node = _safe_result_dict(row.get("node", {}))
                     cid = node.get("concept_id")
@@ -411,7 +446,7 @@ def _plan_feedback_from_similarity(db, goal_vec: list[float], exclude_plan_id: s
     suggestions: list[dict] = []
 
     try:
-        candidates = db.vector_search("Plan", "plan_emb_idx", goal_vec, 12)
+        candidates = db.vector_search("Plan", _PLAN_INDEX, goal_vec, 12)
     except Exception:
         return warnings, suggestions
 
@@ -422,6 +457,7 @@ def _plan_feedback_from_similarity(db, goal_vec: list[float], exclude_plan_id: s
             continue
 
         similarity = float(item.get("score", 0.0) or 0.0)
+        # B279: warnings/suggestions only consider true cosine similarity > 0.75.
         if similarity <= 0.75:
             continue
 
@@ -545,9 +581,9 @@ async def _maybe_create_passive_plan_from_turn(
     goal = content.split("\n", 1)[0].strip()[:240] or "Passively detected plan"
     goal_vec = emb.embed(goal, model_name=embedding_model)
 
-    # Dedup against existing plans by similarity > 0.90
+    # B279: dedup against existing plans by true cosine similarity > 0.90.
     try:
-        existing = db.vector_search("Plan", "plan_emb_idx", goal_vec, 6)
+        existing = db.vector_search("Plan", _PLAN_INDEX, goal_vec, 6)
         for row in existing:
             if float(row.get("score", 0.0) or 0.0) > 0.90:
                 return None
@@ -864,7 +900,7 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
                 # 1) High-confidence negative Lessons by semantic similarity
                 try:
                     if qvec is not None:
-                        lessons = db.vector_search("Lesson", "lesson_emb_idx", qvec, 5)
+                        lessons = db.vector_search("Lesson", _LESSON_INDEX, qvec, 5)
                         for it in lessons:
                             node = _safe_result_dict(it.get("node", {}))
                             conf = float(node.get("confidence") or 0.0)
@@ -885,7 +921,7 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
                 # 2) Relevant Procedures via semantic search
                 try:
                     if qvec is not None:
-                        procs = db.vector_search("Procedure", "procedure_emb_idx", qvec, 3)
+                        procs = db.vector_search("Procedure", _PROCEDURE_INDEX, qvec, 3)
                         for it in procs:
                             node = _safe_result_dict(it.get("node", {}))
                             text = node.get("description", "") or ""
@@ -969,19 +1005,7 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
 
 def _get_pk_for_node_type(node_type: str) -> str:
     """Map node table name to its primary key column name."""
-    pk_map = {
-        "Concept": "concept_id",
-        "Decision": "decision_id",
-        "Constraint": "constraint_id",
-        "Requirement": "requirement_id",
-        "ActionItem": "action_item_id",
-        "GlobalConstraint": "global_constraint_id",
-        "GlobalPreference": "global_preference_id",
-        "Lesson": "lesson_id",
-        "Message": "message_id",
-        "DocumentExtract": "extract_id",
-    }
-    return pk_map.get(node_type, "id")
+    return pk_for(node_type) or "id"
 
 
 async def reconstruct_timeline(params: dict, db: KuzuClient, config: dict) -> dict:
@@ -1156,19 +1180,9 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
     # and most have not been reified to specific artifact types. Without this,
     # most of the graph is invisible to current_truth.
     artifact_tables = [
-        ("Concept",          "concept_emb_idx",           "concept_id"),
-        ("Decision",         "decision_emb_idx",         "decision_id"),
-        ("Constraint",       "constraint_emb_idx",        "constraint_id"),
-        ("Requirement",      "requirement_emb_idx",       "requirement_id"),
-        ("ActionItem",       "actionitem_emb_idx",        "action_item_id"),
-        ("GlobalConstraint", "globalconstraint_emb_idx",  "global_constraint_id"),
-        ("GlobalPreference", "globalpreference_emb_idx",  "global_preference_id"),
-        ("Lesson",           "lesson_emb_idx",            "lesson_id"),
-        # Raw episodic memory must be searchable too. Consolidated artifacts
-        # are ideal for "current truth", but freshly captured turns may not
-        # have produced a Decision/Lesson yet.
-        ("Message",          "message_emb_idx",           "message_id"),
-        ("DocumentExtract",  "documentextract_emb_idx",   "extract_id"),
+        (table.name, table.vector_index, table.pk)
+        for table in tables_with("retrievable")
+        if table.vector_index is not None
     ]
 
     all_raw_results = []
@@ -1187,37 +1201,71 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
     # low-confidence/low-strength until consolidation. Exact text hits should
     # still surface as recall evidence.
     lexical_message_ids: set[str] = set()
-    try:
-        lexical_limit = max(limit, 5)
-        rr = db.execute(
-            "MATCH (m:Message) "
-            "WHERE lower(m.text_raw) CONTAINS lower($query) "
-            "RETURN m.message_id, m.text_raw, m.role, m.confidence, "
-            "m.confidence_low, m.pathway_strength, m.created_at "
-            f"ORDER BY m.created_at DESC LIMIT {lexical_limit}",
-            {"query": query},
-        )
-        while rr.has_next():
-            mid, text, role, conf, conf_low, ps, created_at = rr.get_next()
-            lexical_message_ids.add(mid)
-            all_raw_results.append((
-                "Message",
-                "message_id",
-                {
-                    "node": {
-                        "message_id": mid,
-                        "text_raw": text,
-                        "role": role,
-                        "confidence": conf or 0.0,
-                        "confidence_low": True if conf_low is None else bool(conf_low),
-                        "pathway_strength": ps or 0.0,
-                        "created_at": created_at,
-                        "archived": False,
-                    },
-                    "score": 1.0,
-                    "lexical_exact": True,
+    retrieval_cfg = config.get("retrieval", {}) or {}
+    window_days = max(0.0, float(retrieval_cfg.get("lexical_window_days", 14)))
+    lexical_limit = max(1, int(retrieval_cfg.get("lexical_limit", max(limit, 5))))
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
+
+    def _append_lexical_message(node: dict, *, score: float = 1.0) -> None:
+        mid = node.get("message_id")
+        if not mid:
+            return
+        lexical_message_ids.add(mid)
+        all_raw_results.append((
+            "Message",
+            "message_id",
+            {
+                "node": {
+                    "message_id": mid,
+                    "text_raw": node.get("text_raw", ""),
+                    "role": node.get("role", ""),
+                    "confidence": node.get("confidence", 0.0) or 0.0,
+                    "confidence_low": True if node.get("confidence_low") is None else bool(node.get("confidence_low")),
+                    "pathway_strength": node.get("pathway_strength", 0.0) or 0.0,
+                    "created_at": node.get("created_at"),
+                    "archived": False,
                 },
-            ))
+                "score": score,
+                "lexical_exact": True,
+            },
+        ))
+
+    try:
+        lexical_rows = []
+        has_fts = getattr(db, "has_fts", None)
+        fts_search = getattr(db, "fts_search", None)
+        if callable(has_fts):
+            try:
+                if has_fts() is True and callable(fts_search):
+                    lexical_rows = fts_search("Message", "message_fts_idx", query, lexical_limit)
+            except Exception:
+                lexical_rows = []
+
+        if lexical_rows:
+            for row in lexical_rows:
+                node = _safe_result_dict(row.get("node", {}))
+                _append_lexical_message(node, score=1.0)
+        else:
+            rr = db.execute(
+                "MATCH (m:Message) "
+                "WHERE lower(m.text_raw) CONTAINS lower($query) "
+                "  AND m.created_at > timestamp($cutoff) "
+                "RETURN m.message_id, m.text_raw, m.role, m.confidence, "
+                "m.confidence_low, m.pathway_strength, m.created_at "
+                f"ORDER BY m.created_at DESC LIMIT {lexical_limit}",
+                {"query": query, "cutoff": cutoff},
+            )
+            while rr.has_next():
+                mid, text, role, conf, conf_low, ps, created_at = rr.get_next()
+                _append_lexical_message({
+                    "message_id": mid,
+                    "text_raw": text,
+                    "role": role,
+                    "confidence": conf,
+                    "confidence_low": conf_low,
+                    "pathway_strength": ps,
+                    "created_at": created_at,
+                })
     except Exception:
         _logger.debug("current_truth lexical message fallback failed", exc_info=True)
 
@@ -2310,7 +2358,7 @@ async def recall_relevant_lessons(params: dict, db: KuzuClient, config: dict) ->
             "model", "sentence-transformers/all-MiniLM-L6-v2"
         )
         vector = emb.embed(query, model_name=embedding_model)
-        rows = db.vector_search("Lesson", "lesson_emb_idx", vector, limit)
+        rows = db.vector_search("Lesson", _LESSON_INDEX, vector, limit)
         for row in rows:
             node = row["node"]
             if node.get("archived"): continue
@@ -2843,7 +2891,7 @@ async def recall_plans(params: dict, db: KuzuClient, config: dict) -> dict:
     query_vec = emb.embed(goal_query, model_name=embedding_model)
 
     try:
-        rows = db.vector_search("Plan", "plan_emb_idx", query_vec, max(limit * 4, 12))
+        rows = db.vector_search("Plan", _PLAN_INDEX, query_vec, max(limit * 4, 12))
     except Exception:
         return {"plans": []}
 
@@ -2938,7 +2986,7 @@ async def recall_procedures(params: dict, db: KuzuClient, config: dict) -> dict:
 
         if query:
             qvec = emb.embed(query, model_name=embedding_model)
-            neighbors = db.vector_search("Procedure", "procedure_emb_idx", qvec, limit)
+            neighbors = db.vector_search("Procedure", _PROCEDURE_INDEX, qvec, limit)
             for item in neighbors:
                 node = _safe_result_dict(item.get("node", {}))
                 results.append({
@@ -3104,4 +3152,19 @@ TOOL_HANDLERS = {
     "ingest_arc_artifacts": ingest_arc_artifacts,
     "publish_mechanic_summary": publish_mechanic_summary,
     "recall_mechanic_priors": recall_mechanic_priors,
+    "arc_perceive_state": arc_perceive_state,
+    "arc_get_game_context": arc_get_game_context,
+    "arc_get_action_evidence": arc_get_action_evidence,
+    "arc_get_untested_actions": arc_get_untested_actions,
+    "arc_get_causal_path": arc_get_causal_path,
+    "arc_record_action_effect": arc_record_action_effect,
+    "arc_get_entity_movement": arc_get_entity_movement,
+    "arc_get_goal_evidence": arc_get_goal_evidence,
+    "arc_classify_game_archetype": arc_classify_game_archetype,
+    "arc_confirm_hypothesis": arc_confirm_hypothesis,
+    "arc_contradict_hypothesis": arc_contradict_hypothesis,
+    "arc_update_goal_confidence": arc_update_goal_confidence,
+    "arc_get_mechanic_priors": arc_get_mechanic_priors,
+    "arc_check_action_gate": arc_check_action_gate,
+    "arc_record_reward_prediction_error": arc_record_reward_prediction_error,
 }

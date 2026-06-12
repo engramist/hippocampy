@@ -1262,6 +1262,16 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
             if "already exists" not in str(e).lower():
                 raise
 
+    # Optional FTS branch: safe to skip on builds that do not expose the
+    # extension. B284 keeps the hot-path fallback bounded even when this is off.
+    try:
+        if getattr(db, "has_fts", None) and db.has_fts() is True:
+            db.create_fts_index("Message", "message_fts_idx", ["text_raw"])
+            print("  FTS index: message_fts_idx")
+    except Exception as e:
+        if "already exists" not in str(e).lower():
+            raise
+
     # GistClass centroid index (for centroid similarity lookups in Step 2)
     try:
         db.create_vector_index("GistClass", "centroid", "gistclass_centroid_idx")

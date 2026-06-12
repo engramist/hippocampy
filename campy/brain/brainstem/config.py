@@ -6,8 +6,29 @@ Returns a plain dict — all modules read config from this dict.
 """
 
 from __future__ import annotations
+import copy
 import sys
 from pathlib import Path
+
+
+_DEFAULT_CONFIG = {
+    "retrieval": {
+        "lexical_window_days": 14,
+        "lexical_limit": 10,
+    },
+}
+
+
+def _merge_defaults(config: dict, defaults: dict) -> dict:
+    for key, default_value in defaults.items():
+        if key not in config:
+            config[key] = copy.deepcopy(default_value)
+            continue
+
+        current_value = config.get(key)
+        if isinstance(default_value, dict) and isinstance(current_value, dict):
+            _merge_defaults(current_value, default_value)
+    return config
 
 
 def load_config(config_path: str | Path | None = None) -> dict:
@@ -32,6 +53,7 @@ def load_config(config_path: str | Path | None = None) -> dict:
             )
         with open(explicit, "rb") as f:
             config = tomllib.load(f)
+        _merge_defaults(config, _DEFAULT_CONFIG)
         config["_config_path"] = str(explicit)
         return config
 
@@ -47,6 +69,7 @@ def load_config(config_path: str | Path | None = None) -> dict:
         if path.exists():
             with open(path, "rb") as f:
                 config = tomllib.load(f)
+            _merge_defaults(config, _DEFAULT_CONFIG)
             config["_config_path"] = str(path)
             return config
 

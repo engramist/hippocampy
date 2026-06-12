@@ -13,24 +13,24 @@ from typing import Dict, List, Any, Set, Tuple, TYPE_CHECKING
 if TYPE_CHECKING:
     from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 
+from campy.brain.hippocampus.table_registry import tables_with
+
 _logger = logging.getLogger(__name__)
 
 # Activation Parameters
 MAX_WARM_NODES = 20           # Bound the frontier size
-SIMILARITY_WEIGHT = 0.6       # Initial activation from vector similarity
+SIMILARITY_WEIGHT = 0.6       # B279: weight applied to true cosine similarity
 HOPS_DECAY = 0.5             # Multiplier for 1-hop neighbor activation
-MIN_ACTIVATION = 0.3          # Minimum score to be considered 'warm'
+MIN_ACTIVATION = 0.3          # B279: minimum activation from true cosine-derived score
 
 # Node type → primary key column mapping
-NODE_PK_MAP = {
-    "Concept":          "concept_id",
-    "Decision":         "decision_id",
-    "Constraint":       "constraint_id",
-    "Requirement":      "requirement_id",
-    "ActionItem":       "action_item_id",
-    "GlobalConstraint": "global_constraint_id",
-    "GlobalPreference": "global_preference_id",
-}
+NODE_PK_MAP = {table.name: table.pk for table in tables_with("warmable")}
+
+_ARTIFACT_TABLES = [
+    (table.name, table.vector_index, table.pk)
+    for table in tables_with("warm_seed")
+    if table.vector_index is not None
+]
 
 async def compute_warm_frontier(
     db: KuzuClient,
@@ -53,15 +53,7 @@ async def compute_warm_frontier(
     activated: Dict[str, Tuple[str, float]] = {}  # node_id -> (table, score)
 
     # Phase 1: Direct Activation (Vector Search)
-    artifact_tables = [
-        ("Concept",          "concept_emb_idx",           "concept_id"),
-        ("Decision",         "decision_emb_idx",         "decision_id"),
-        ("Constraint",       "constraint_emb_idx",        "constraint_id"),
-        ("Requirement",      "requirement_emb_idx",       "requirement_id"),
-        ("ActionItem",       "actionitem_emb_idx",        "action_item_id"),
-    ]
-
-    for table, index, pk in artifact_tables:
+    for table, index, pk in _ARTIFACT_TABLES:
         try:
             # Search for top 10 most similar nodes per table
             results = db.vector_search(table, index, message_vector, 10)
