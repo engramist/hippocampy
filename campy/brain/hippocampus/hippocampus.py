@@ -26,8 +26,8 @@ _logger = logging.getLogger(__name__)
 # Routing thresholds (match CLAUDE.md architecture)
 # ---------------------------------------------------------------------------
 
-S1_AUTO_BIND_THRESHOLD = 0.85     # System 1 accepts immediately
-S1_ESCALATION_THRESHOLD = 0.60    # Below this = new quest; between = escalate to S2
+S1_AUTO_BIND_THRESHOLD = 0.85     # B279: true cosine similarity for System 1 auto-bind
+S1_ESCALATION_THRESHOLD = 0.60    # B279: true cosine similarity floor before S2/new quest
 S2_CONFIDENCE_LOW_THRESHOLD = 0.85  # S2 below this → routing_confidence_low = true
 CONSOLIDATION_THRESHOLD = 0.85    # Promote tentative → consolidated
 DISCONFIRMATION_THRESHOLD = 0.30  # Prediction error trigger

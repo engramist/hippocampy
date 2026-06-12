@@ -12,6 +12,8 @@ from __future__ import annotations
 import asyncio
 import kuzu
 
+_INDEX_METRIC = "cosine"
+
 # S4 fix: Lock lazy-initialized to avoid creation before an event loop exists.
 _write_lock: asyncio.Lock | None = None
 
@@ -30,6 +32,7 @@ class KuzuClient:
         self.db = kuzu.Database(db_path, read_only=read_only)
         self.conn = kuzu.Connection(self.db)
         self.read_only = read_only
+        self._fts_checked: bool | None = None
 
     def execute(self, query: str, params: dict = None):
         """
@@ -81,19 +84,58 @@ class KuzuClient:
         # Implementation note: Kùzu 0.11.3 vector index syntax
         # Kùzu 0.11.3 argument order: (table, index_name, property)
         self.execute(
-            f"CALL CREATE_VECTOR_INDEX('{table}', '{index_name}', '{property}')"
+            f"CALL CREATE_VECTOR_INDEX('{table}', '{index_name}', '{property}', metric := '{_INDEX_METRIC}')"
         )
+
+    def has_fts(self) -> bool:
+        """Return True when the loaded Kuzu build can execute FTS queries."""
+        if self._fts_checked is not None:
+            return self._fts_checked
+
+        try:
+            result = self.execute("CALL SHOW_LOADED_EXTENSIONS() RETURN *;")
+            while result.has_next():
+                row = result.get_next()
+                if any(str(cell).lower() == "fts" for cell in row if cell is not None):
+                    self._fts_checked = True
+                    return True
+            try:
+                self.execute("LOAD fts;")
+                self._fts_checked = True
+            except Exception:
+                self._fts_checked = False
+        except Exception:
+            self._fts_checked = False
+        return self._fts_checked
+
+    def create_fts_index(self, table: str, index_name: str, properties: list[str]):
+        """Create a full-text index on a node table property set."""
+        prop_list = ", ".join(f"'{prop}'" for prop in properties)
+        self.execute(f"CALL CREATE_FTS_INDEX('{table}', '{index_name}', [{prop_list}])")
+
+    def fts_search(self, table: str, index_name: str, query: str, limit: int) -> list[dict]:
+        """Run a bounded full-text search against a prebuilt FTS index."""
+        result = self.execute(
+            f"CALL QUERY_FTS_INDEX('{table}', '{index_name}', $query) "
+            f"YIELD node, score RETURN node, score LIMIT {limit}",
+            {"query": query},
+        )
+        rows = []
+        while result.has_next():
+            row = result.get_next()
+            rows.append({"node": row[0], "score": float(row[1]) if row[1] is not None else 0.0})
+        return rows
 
     def vector_search(self, table_name: str, index_name: str,
                       query_embedding: list[float], limit: int) -> list[dict]:
         """
-        Query a single HNSW index. Returns list of (node, score) results.
+        Query a single HNSW index and return true cosine similarity scores.
         For multi-table search, call this per table and UNION results in Python.
         """
         # Kùzu 0.11.3 QUERY_VECTOR_INDEX signature:
         #   (table_name, index_name, query_vector, k)
-        # Kùzu 0.11.3 yields (node, distance) — distance is L2, lower = closer.
-        # Convert to similarity score (1 / (1 + distance)) for callers.
+        # Kùzu 0.11.3 yields (node, distance). B279 pins metric=cosine at
+        # index creation, so distance = 1 - cosine_similarity.
         result = self.execute(
             f"CALL QUERY_VECTOR_INDEX('{table_name}', '{index_name}', $embedding, {limit}) "
             f"YIELD node, distance RETURN node, distance",
@@ -103,7 +145,7 @@ class KuzuClient:
         while result.has_next():
             row = result.get_next()
             distance = row[1]
-            score = 1.0 / (1.0 + distance)
+            score = max(-1.0, min(1.0, 1.0 - float(distance)))
             rows.append({"node": row[0], "score": score})
         return rows
 

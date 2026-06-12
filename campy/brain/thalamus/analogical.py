@@ -49,7 +49,7 @@ CROSS_QUEST_TABLES = [
 ]
 
 # Default thresholds
-DEFAULT_MIN_SIMILARITY = 0.70
+DEFAULT_MIN_SIMILARITY = 0.70  # B279: true cosine similarity floor for analogical recall
 DEFAULT_LIMIT = 5
 
 

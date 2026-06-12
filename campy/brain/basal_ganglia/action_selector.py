@@ -41,6 +41,7 @@ async def check_action_gate(
     
     try:
         # Check for falsified/avoidance Procedures matching this action
+        # B279: vector_search scores are true cosine similarity.
         result = db.vector_search(
             "Procedure", "procedure_embedding",
             _get_embedding(action_description), limit=5,
