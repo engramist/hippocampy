@@ -214,12 +214,19 @@ async def apply_contradiction(new_concept_id: str, old_concept_id: str,
 # ---------------------------------------------------------------------------
 
 async def write_co_occurs_with(concept_ids: list[str], min_confidence: float,
-                               db, now: str, co_occurrence_threshold: int = 10) -> int:
+                               db, now: str, co_occurrence_threshold: int = 10,
+                               max_pairs: int = 45) -> int:
     """
     Write CO_OCCURS_WITH edges for all pairs of concept_ids from the same message.
     Uses MERGE for idempotent upsert: increments count, updates rolling mean strength.
     Edges are stored as A→B where A.concept_id < B.concept_id (lexicographic)
     to avoid duplicate bidirectional pairs.
+
+    B283: pair generation is quadratic in concepts-per-message (15 concepts =
+    105 edges) — an unbounded supernode feeder. max_pairs caps writes per
+    message (default 45 ≈ 10 concepts); selection is deterministic
+    (lexicographic) because per-pair confidence is not available at this
+    call site. Set max_pairs=0 to disable the cap.
 
     Returns number of edges written/updated.
     """
@@ -232,8 +239,12 @@ async def write_co_occurs_with(concept_ids: list[str], min_confidence: float,
         for i, a in enumerate(concept_ids)
         for b in concept_ids[i+1:]
     ]
-    # Deduplicate (e.g. if same concept_id appears twice in list)
-    pairs = list(set(pairs))
+    # Deduplicate (e.g. if same concept_id appears twice in list), then sort
+    # for deterministic cap selection (B283).
+    pairs = sorted(set(pairs))
+
+    if max_pairs > 0 and len(pairs) > max_pairs:
+        pairs = pairs[:max_pairs]
 
     # L17 fix: batch all pairs into a single UNWIND query instead of
     # n*(n-1)/2 individual write-locked DB calls.
