@@ -40,6 +40,11 @@ _logger = logging.getLogger(__name__)
 # Registry of active SSE connections: connection_id → asyncio.Queue
 _sse_connections: dict[str, asyncio.Queue] = {}
 
+# SSE keepalive interval. The deprecated /sse stream blocks this long between
+# disconnect checks, so closing a client stalls up to this duration — tests
+# patch it down to avoid the wait.
+_SSE_KEEPALIVE_SECONDS = 30.0
+
 STATIC_DIR = Path(__file__).parent / "static"
 WEB_VERSION = "0.1.0"
 
@@ -837,7 +842,9 @@ def create_app(db, config: dict | None = None) -> FastAPI:
                     if await request.is_disconnected():
                         break
                     try:
-                        data = await asyncio.wait_for(queue.get(), timeout=30.0)
+                        data = await asyncio.wait_for(
+                            queue.get(), timeout=_SSE_KEEPALIVE_SECONDS
+                        )
                         yield f"event: message\ndata: {json.dumps(data)}\n\n"
                     except asyncio.TimeoutError:
                         # Keepalive — SSE comment (colon prefix = no-op to client)

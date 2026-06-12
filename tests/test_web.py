@@ -608,13 +608,23 @@ def test_mcp_get_returns_405_for_stream_requests():
     assert r.status_code == 405
 
 
-def test_sse_endpoint_marks_deprecation():
+def test_sse_endpoint_marks_deprecation(monkeypatch):
+    # /sse streams forever and TestClient never delivers http.disconnect to
+    # the generator, so holding the stream open hangs the suite. Force the
+    # disconnect check to fire so the generator exits after its first yield —
+    # the response then completes normally and we can assert on headers.
+    from starlette.requests import Request
+
+    async def _disconnected(self):
+        return True
+
+    monkeypatch.setattr(Request, "is_disconnected", _disconnected)
     client = make_client()
 
-    with client.stream("GET", "/sse") as response:
-        assert response.status_code == 200
-        assert response.headers["deprecation"] == "true"
-        assert response.headers["link"] == '</mcp>; rel="successor-version"'
+    r = client.get("/sse")
+    assert r.status_code == 200
+    assert r.headers["deprecation"] == "true"
+    assert r.headers["link"] == '</mcp>; rel="successor-version"'
 
 
 @pytest.mark.asyncio
