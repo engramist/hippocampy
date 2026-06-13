@@ -631,6 +631,201 @@ TOOLS: list[dict] = [
         }
     },
     {
+        "name": "arc_perceive_state",
+        "description": "Ingest an ARC grid observation and upsert GridSnapshot, GridEntity, and ActionEffect records.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "step": {"type": ["integer", "string"]},
+                "grid_hash": {"type": "string"},
+                "entities": {"type": "array", "items": {"type": "object"}},
+                "action_taken": {"type": "string"},
+                "effect": {"type": "object"},
+            },
+            "required": ["task_id", "step"],
+        },
+    },
+    {
+        "name": "arc_get_game_context",
+        "description": "Return a compact episodic summary of the current ARC game state.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+            },
+            "required": ["task_id"],
+        },
+    },
+    {
+        "name": "arc_get_action_evidence",
+        "description": "Fetch the evidence track record for one ARC action.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "action_id": {"type": "string"},
+            },
+            "required": ["task_id", "action_id"],
+        },
+    },
+    {
+        "name": "arc_get_untested_actions",
+        "description": "Return actions that have not yet been tried for the current ARC task.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "available_actions": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["task_id"],
+        },
+    },
+    {
+        "name": "arc_get_causal_path",
+        "description": "Bounded causal-path lookup from an action to a victory condition.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "action_id": {"type": "string"},
+                "goal_id": {"type": "string"},
+            },
+            "required": ["task_id", "action_id"],
+        },
+    },
+    {
+        "name": "arc_record_action_effect",
+        "description": "Write the observed effect of an ARC action back into graph memory.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "action_id": {"type": "string"},
+                "step": {"type": ["integer", "string"]},
+                "effect": {"type": "object"},
+                "entities_affected": {"type": "array", "items": {"type": "object"}},
+            },
+            "required": ["task_id", "action_id", "step"],
+        },
+    },
+    {
+        "name": "arc_get_entity_movement",
+        "description": "Track entity movement relative to an ARC action step.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "step": {"type": ["integer", "string"]},
+            },
+            "required": ["task_id", "step"],
+        },
+    },
+    {
+        "name": "arc_get_goal_evidence",
+        "description": "Query VictoryCondition evidence for the current ARC task.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+            },
+            "required": ["task_id"],
+        },
+    },
+    {
+        "name": "arc_classify_game_archetype",
+        "description": "Classify the current ARC puzzle into a known archetype.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "grid_features": {"type": "object"},
+            },
+            "required": ["task_id"],
+        },
+    },
+    {
+        "name": "arc_confirm_hypothesis",
+        "description": "Increase confidence in an ARC hypothesis with supporting evidence.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "hypothesis_id": {"type": "string"},
+                "evidence": {"type": "object"},
+            },
+            "required": ["task_id", "hypothesis_id"],
+        },
+    },
+    {
+        "name": "arc_contradict_hypothesis",
+        "description": "Decrease confidence in an ARC hypothesis with contradicting evidence.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "hypothesis_id": {"type": "string"},
+                "evidence": {"type": "object"},
+            },
+            "required": ["task_id", "hypothesis_id"],
+        },
+    },
+    {
+        "name": "arc_update_goal_confidence",
+        "description": "Update VictoryCondition confidence with a progress gate.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "goal_id": {"type": "string"},
+                "new_confidence": {"type": "number"},
+                "has_meaningful_progress": {"type": "boolean", "default": False},
+            },
+            "required": ["task_id", "goal_id", "new_confidence"],
+        },
+    },
+    {
+        "name": "arc_get_mechanic_priors",
+        "description": "Retrieve prior ARC mechanics linked to action patterns.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "action_patterns": {"type": "array", "items": {"type": "object"}},
+                "game_features": {"type": "object"},
+            },
+            "required": ["task_id"],
+        },
+    },
+    {
+        "name": "arc_check_action_gate",
+        "description": "Return the go/no-go decision for an ARC action.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "action_id": {"type": "string"},
+                "available_actions": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["task_id", "action_id"],
+        },
+    },
+    {
+        "name": "arc_record_reward_prediction_error",
+        "description": "Store the reward prediction error for one ARC action.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "action_id": {"type": "string"},
+                "step": {"type": ["integer", "string"]},
+                "predicted_reward": {"type": "number"},
+                "actual_reward": {"type": "number"},
+            },
+            "required": ["task_id", "action_id"],
+        },
+    },
+    {
         "name": "memory_decision",
         "description": (
             "Recommend whether and how to recall SideQuests memory for the current user prompt. "

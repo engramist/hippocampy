@@ -112,6 +112,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B262 | REST API Endpoints — ✅ DONE (2026-05-08) | P0 | complete | TBD | TBD | backlog/plans/B-262-rest-api-endpoints.md | backlog/B262.md |
 | B263 | OpenClaw Adapter Activation — ✅ DONE (2026-05-08) | P0 | complete | TBD | TBD | backlog/plans/B-263-openclaw-adapter.md | backlog/B263.md |
 | B264 | Hermes Agent Adapter — ✅ DONE (2026-05-08) | P0 | complete | TBD | TBD | backlog/plans/B-264-hermes-adapter.md | backlog/B264.md |
+| B278 | ARC-Specific MCP Query Tools for Agent v2 — ✅ DONE (2026-06-12) | P0 | complete | TBD | TBD | backlog/plans/B-278-arc-query-tools-for-agent-v2.md | backlog/B278.md |
 
 ## Summary
 
