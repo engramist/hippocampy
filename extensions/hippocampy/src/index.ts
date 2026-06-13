@@ -750,6 +750,86 @@ export default {
       min_confidence: Type.Optional(Type.Number({ default: 0.0 })),
     });
 
+    const arcPerceiveStateParams = Type.Object({
+      task_id: Type.Optional(Type.String({ description: "ARC task identifier" })),
+      step: Type.Optional(Type.Union([Type.Number(), Type.String()])),
+      grid_hash: Type.Optional(Type.String()),
+      entities: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }))),
+      action_taken: Type.Optional(Type.String()),
+      effect: Type.Optional(Type.Object({}, { additionalProperties: true })),
+    }, { additionalProperties: true });
+
+    const arcTaskParams = Type.Object({
+      task_id: Type.Optional(Type.String({ description: "ARC task identifier" })),
+    }, { additionalProperties: true });
+
+    const arcTaskActionParams = Type.Object({
+      task_id: Type.Optional(Type.String({ description: "ARC task identifier" })),
+      action_id: Type.Optional(Type.String({ description: "ARC action identifier" })),
+    }, { additionalProperties: true });
+
+    const arcTaskActionListParams = Type.Object({
+      task_id: Type.Optional(Type.String({ description: "ARC task identifier" })),
+      available_actions: Type.Optional(Type.Array(Type.String())),
+    }, { additionalProperties: true });
+
+    const arcTaskActionGoalParams = Type.Object({
+      task_id: Type.Optional(Type.String({ description: "ARC task identifier" })),
+      action_id: Type.Optional(Type.String({ description: "ARC action identifier" })),
+      goal_id: Type.Optional(Type.String({ description: "ARC goal identifier" })),
+    }, { additionalProperties: true });
+
+    const arcTaskStepParams = Type.Object({
+      task_id: Type.Optional(Type.String({ description: "ARC task identifier" })),
+      step: Type.Optional(Type.Union([Type.Number(), Type.String()])),
+    }, { additionalProperties: true });
+
+    const arcTaskHypothesisParams = Type.Object({
+      task_id: Type.Optional(Type.String({ description: "ARC task identifier" })),
+      hypothesis_id: Type.Optional(Type.String({ description: "ARC hypothesis identifier" })),
+      evidence: Type.Optional(Type.Object({}, { additionalProperties: true })),
+    }, { additionalProperties: true });
+
+    const arcTaskGoalConfidenceParams = Type.Object({
+      task_id: Type.Optional(Type.String({ description: "ARC task identifier" })),
+      goal_id: Type.Optional(Type.String({ description: "ARC goal identifier" })),
+      new_confidence: Type.Optional(Type.Number()),
+      has_meaningful_progress: Type.Optional(Type.Boolean({ default: false })),
+    }, { additionalProperties: true });
+
+    const arcTaskGameFeaturesParams = Type.Object({
+      task_id: Type.Optional(Type.String({ description: "ARC task identifier" })),
+      grid_features: Type.Optional(Type.Object({}, { additionalProperties: true })),
+      game_features: Type.Optional(Type.Object({}, { additionalProperties: true })),
+      action_patterns: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }))),
+    }, { additionalProperties: true });
+
+    const arcRewardPredictionParams = Type.Object({
+      task_id: Type.Optional(Type.String({ description: "ARC task identifier" })),
+      action_id: Type.Optional(Type.String({ description: "ARC action identifier" })),
+      step: Type.Optional(Type.Union([Type.Number(), Type.String()])),
+      predicted_reward: Type.Optional(Type.Number()),
+      actual_reward: Type.Optional(Type.Number()),
+    }, { additionalProperties: true });
+
+    const arcQueryToolDefinitions: BrainToolDefinition[] = [
+      { name: "arc_perceive_state", label: "ARC Perceive State", description: "Ingest an ARC grid observation and update the graph-backed state.", parameters: arcPerceiveStateParams },
+      { name: "arc_get_game_context", label: "ARC Game Context", description: "Return a compact episodic summary of the current ARC game state.", parameters: arcTaskParams },
+      { name: "arc_get_action_evidence", label: "ARC Action Evidence", description: "Fetch the evidence track record for one ARC action.", parameters: arcTaskActionParams },
+      { name: "arc_get_untested_actions", label: "ARC Untested Actions", description: "Return actions that have not yet been tried for the current ARC task.", parameters: arcTaskActionListParams },
+      { name: "arc_get_causal_path", label: "ARC Causal Path", description: "Bounded causal-path lookup from an action to a victory condition.", parameters: arcTaskActionGoalParams },
+      { name: "arc_record_action_effect", label: "ARC Record Action Effect", description: "Write the observed effect of an ARC action back into graph memory.", parameters: Type.Object({ task_id: Type.Optional(Type.String()), action_id: Type.Optional(Type.String()), step: Type.Optional(Type.Union([Type.Number(), Type.String()])), effect: Type.Optional(Type.Object({}, { additionalProperties: true })), entities_affected: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }))) }, { additionalProperties: true }) },
+      { name: "arc_get_entity_movement", label: "ARC Entity Movement", description: "Track entity movement relative to an ARC action step.", parameters: arcTaskStepParams },
+      { name: "arc_get_goal_evidence", label: "ARC Goal Evidence", description: "Query VictoryCondition evidence for the current ARC task.", parameters: arcTaskParams },
+      { name: "arc_classify_game_archetype", label: "ARC Classify Archetype", description: "Classify the current ARC puzzle into a known archetype.", parameters: arcTaskGameFeaturesParams },
+      { name: "arc_confirm_hypothesis", label: "ARC Confirm Hypothesis", description: "Increase confidence in an ARC hypothesis with supporting evidence.", parameters: arcTaskHypothesisParams },
+      { name: "arc_contradict_hypothesis", label: "ARC Contradict Hypothesis", description: "Decrease confidence in an ARC hypothesis with contradicting evidence.", parameters: arcTaskHypothesisParams },
+      { name: "arc_update_goal_confidence", label: "ARC Update Goal Confidence", description: "Update VictoryCondition confidence with a progress gate.", parameters: arcTaskGoalConfidenceParams },
+      { name: "arc_get_mechanic_priors", label: "ARC Mechanic Priors", description: "Retrieve prior ARC mechanics linked to action patterns.", parameters: arcTaskGameFeaturesParams },
+      { name: "arc_check_action_gate", label: "ARC Action Gate", description: "Return the go/no-go decision for an ARC action.", parameters: arcTaskActionListParams },
+      { name: "arc_record_reward_prediction_error", label: "ARC Record Reward Prediction Error", description: "Store the reward prediction error for one ARC action.", parameters: arcRewardPredictionParams },
+    ];
+
     const memoryDecisionParams = Type.Object({
       user_prompt: Type.String({ description: "The user's current prompt or question" }),
       task_phase: Type.Optional(Type.String({ description: "Optional task phase hint" })),
@@ -1187,6 +1267,7 @@ export default {
           "Retrieve reusable ARC mechanic priors from graph memory based on action/effect signature similarity.",
         parameters: recallMechanicPriorsParams,
       },
+      ...arcQueryToolDefinitions,
       {
         name: "memory_decision",
         label: "Memory Decision (HippoCampy)",
