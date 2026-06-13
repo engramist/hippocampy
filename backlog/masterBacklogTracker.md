@@ -514,3 +514,11 @@ From the 2026-05-30 graph-solutions evaluation of the Kùzu/LPG layer. Fixes two
 | 9 | B287 | P3 | ready | Principled Score Fusion in current_truth | backlog/plans/B-287-score-fusion.md |
 
 **Dependency chain:** B279 FIRST (P0 — changes score semantics everywhere). B286 early (B280/B282/B285 consume the registry). B282 → B283 (reuses `_batch_write`). B279 → B285, B279 → B287. B280, B281, B284 independent after B279.
+
+## Adapter Tool-Surface Cleanup
+
+Pre-existing debt: `ingest_data` (B250) and `compile_context` (B252) never propagated to the OpenClaw extension; the Codex adapter test used a stale hardcoded tool list. Three tests fail on clean `main`.
+
+| Card | Priority | State | Title | Plan |
+|------|----------|-------|-------|------|
+| B288 | P2 | ready | Reconcile Adapter Tool Surfaces (OpenClaw + Codex Allow-Lists) | backlog/plans/B-288-adapter-tool-surface-reconcile.md |
