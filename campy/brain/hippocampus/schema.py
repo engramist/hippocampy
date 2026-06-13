@@ -567,6 +567,7 @@ NODE_TABLES = {
         value_status       STRING,
         evidence_count     INT32,
         observation_count  INT32,
+        falsified_count    INT32,
         delta_row          DOUBLE,
         delta_col          DOUBLE,
         n_cells_changed    INT32,
@@ -1042,6 +1043,11 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
     # 1b. Schema migrations — add columns that may be missing from older DBs
     _MIGRATIONS = [
         # (table, column, type) — ALTER TABLE ADD COLUMN IF NOT EXISTS
+        # B278: explicit falsification counter for the ARC evidence loop.
+        # Derived-from-value_status was a silent-zero bug — a 'valuable' action
+        # contradicted repeatedly read as 0 falsifications, so A135's penalty
+        # never fired.
+        ("ActionFact", "falsified_count",  "INT32"),
         ("MainQuest", "git_repo_root",     "STRING"),
         ("MainQuest", "purpose_embedding", "FLOAT[384]"),
         ("MainQuest", "routing_method",    "STRING"),

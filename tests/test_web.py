@@ -647,8 +647,15 @@ async def test_dispatch_mcp_tools_list_direct():
         EmptyDB(), {}
     )
     tool_names = {t["name"] for t in resp["result"]["tools"]}
-    assert "notify_turn" in tool_names
-    assert len(tool_names) == 34  # Canonical tool set including memory_decision
+    # Core memory tools must always surface.
+    assert {"notify_turn", "current_truth", "memory_decision"} <= tool_names
+    # B278: the 15 ARC v2 tools surface through the same MCP list.
+    arc_tools = {n for n in tool_names if n.startswith("arc_")}
+    assert len(arc_tools) == 15, f"expected 15 ARC tools, got {sorted(arc_tools)}"
+    # Lower bound rather than an exact count — adding a tool shouldn't break
+    # this test (the exact-count form silently went stale at 34 vs 36 before
+    # B278 pushed the surface to 51).
+    assert len(tool_names) >= 49
 
 @pytest.mark.asyncio
 async def test_dispatch_mcp_unknown_method_direct():
