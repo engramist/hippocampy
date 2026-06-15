@@ -17,7 +17,7 @@ app = typer.Typer(help="Ask Campy a question grounded in project memory.")
 console = Console()
 
 
-@app.command()
+@app.callback(invoke_without_command=True)
 def ask(
     query: str = typer.Argument(..., help="Question to answer from project memory."),
     session_id: Optional[str] = typer.Option(
