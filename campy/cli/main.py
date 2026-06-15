@@ -28,6 +28,7 @@ from campy.cli.arc import app as arc_app
 from campy.cli.recall import app as recall_app
 from campy.cli.context import app as context_app
 from campy.cli.trigger import app as trigger_app
+from campy.cli.ask import app as ask_app
 from campy.cli.graph_io import export_graph_cmd, import_graph_cmd
 from campy.branding import PRODUCT_NAME, SHORT_NAME
 from campy.brain.brainstem.config import load_config
@@ -464,6 +465,7 @@ app.add_typer(arc_app, name="arc")
 app.add_typer(recall_app, name="memory")
 app.add_typer(context_app, name="context")
 app.add_typer(trigger_app, name="trigger")
+app.add_typer(ask_app, name="ask")
 app.command(name="export-graph")(export_graph_cmd)
 app.command(name="import-graph")(import_graph_cmd)
 
