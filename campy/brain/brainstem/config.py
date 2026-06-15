@@ -28,6 +28,12 @@ _DEFAULT_CONFIG = {
     "loop": {
         "max_co_occurrence_pairs": 45,
     },
+    "compression": {
+        "compression_model": "",      # empty = inherit from [llm]
+        "graph_prune_threshold": 0.30,
+        "structured_format": "toon",
+        "ast_compression": True,
+    },
 }
 
 
