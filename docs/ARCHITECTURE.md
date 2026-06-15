@@ -305,6 +305,14 @@ hippocampy/
 │   ├── tabular_ingest.py        # Tabular data ingestion pipeline — CSV/XLSX/TSV (B250)
 │   ├── memory_router.py         # Ingestion classification — routes data to optimal storage (B251)
 │   ├── bundle_compiler.py       # Heterogeneous retrieval — assembles ContextBundles (B252)
+│   ├── ask.py                   # Augmented inference orchestrator: augment→compress→send→capture (B289)
+│   ├── compression/             # Pluggable thalamic compression registry (B289)
+│   │   ├── __init__.py          # Compressor ABC, PluggableCompressorRegistry, ContentRouter, build_default_registry
+│   │   ├── fallback.py          # NoOpCompressor — passthrough
+│   │   ├── structured_data.py   # StructuredDataCompressor — TOON via j2toon
+│   │   ├── llm_prose.py         # LLMCompressor — prose via LLMClient
+│   │   ├── ast_mapper.py        # ASTCodeCompressor — signatures via tree-sitter
+│   │   └── graph_bundle.py      # GraphBundleCompressor — graph-native node scoring + compact notation
 │   ├── formatters/              # Agent output formatters — per-adapter bundle shapes (B253)
 │   │   ├── base.py              # BundleFormatter protocol
 │   │   ├── generic.py           # Default JSON formatter
@@ -876,6 +884,18 @@ Response: `{ "status": "queued" }` — always immediate, never blocks.
 **`compile_context`** — heterogeneous retrieval: assembles a `ContextBundle` from exact facts (GlobalConstraint/Preference), semantic search, graph traversals, tabular data, and wiki summaries. 5-stage pipeline with token budget management (small ≤8K, medium ≤128K, large 200K+). Output formatted per agent type via `mcp_engine/formatters/`. This is the primary retrieval tool for multi-entity queries; `memory_decision` routes here when it detects broad context needs.
 
 **`ingest_document`** (extended) — now dispatches `.csv`, `.xlsx`, `.tsv`, `.xls` files to the tabular ingestion pipeline (B250). Tabular files get dual storage: full data in per-dataset SQLite + metadata/extracted facts in the Kuzu graph.
+
+### Augmented Inference Tools (B289)
+
+**`ask`** — thalamic compression pipeline: augments the query with graph-native memory via `compile_bundle`, compresses the context bundle through four pluggable compressors, makes a single LLM inference call, and captures the result via `notify_turn`. Use when you want a synthesized, memory-grounded answer. Use `current_truth` for raw facts; use `compile_context` for assembled context bundles.
+
+**Compression pipeline** (`campy/brain/thalamus/compression/`): pluggable registry with `ContentRouter` dispatching by `section_type`:
+- `StructuredDataCompressor` — converts `exact_fact`/`tabular` sections to TOON format (30–60% token reduction)
+- `LLMCompressor` — compresses `summary` prose sections using the configured LLM
+- `ASTCodeCompressor` — folds `code` sections to signatures using tree-sitter (75–90% token reduction)
+- `GraphBundleCompressor` — graph-native scoring for `semantic`/`graph` sections: scores nodes by `cosine_similarity(query_emb, node_emb) × pathway_strength`, prunes the bottom `graph_prune_threshold` fraction, serializes survivors in compact `PREFIX:text` notation. **Do not substitute with StructuredDataCompressor** — it prunes semantic irrelevance, not syntactic overhead.
+
+Config defaults (all optional, `campy.toml` `[compression]` section): `compression_model` (empty = inherit from `[llm]`), `graph_prune_threshold` (0.30), `structured_format` ("toon"), `ast_compression` (true).
 
 ### Quest Management Tools
 

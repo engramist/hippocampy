@@ -261,7 +261,7 @@ All keys are optional. Defaults produce full compression behavior without any `c
 ### `GraphBundleCompressor`
 Uses deterministic fixture graphs built directly in KuzuDB — not mocks. Each fixture encodes a known topology: a hub node with high expected PageRank, isolated leaf nodes that should be pruned, and a query vector seeded to be close to the hub. Assertions:
 - Pruned output contains hub node; drops leaves below threshold
-- Compact adjacency notation round-trips (decode back to same node/edge set)
+- Compact adjacency notation round-trips via the compressor's own decoder (reconstructs same node/edge set — LLM comprehension is covered by the regression guard)
 - Changing `graph_prune_threshold` produces measurably different output sizes
 - Empty bundle → empty output, no crash
 

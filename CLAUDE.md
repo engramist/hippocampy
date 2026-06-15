@@ -37,6 +37,8 @@ Use `skills/campy-memory/SKILL.md` (dev-only) or `plugin/skills/recall/SKILL.md`
 
 If uncertain, call `memory_decision` first; it recommends the appropriate recall tool without retrieving memory itself. For multi-entity or broad context queries, `memory_decision` routes to `compile_context` (B252) which assembles heterogeneous context bundles from all memory types.
 
+For synthesized answers from memory in a single call, use `ask` (B289): it augments the query, compresses the bundle via the thalamic compression pipeline, calls the LLM, and captures the result. Use `current_truth` for raw fact retrieval; use `compile_context` for context bundles; use `ask` for synthesized answers.
+
 ## Context Window Integration (Layer Cake)
 
 Campy uses a 4-layer system to automatically inject graph knowledge into agent context windows:
