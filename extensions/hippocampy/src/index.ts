@@ -367,6 +367,42 @@ export default {
       ),
     });
 
+    const compileContextParams = Type.Object({
+      query: Type.String({ description: "What context is needed" }),
+      session_id: Type.String({ description: "Session identifier" }),
+      token_budget: Type.Optional(
+        Type.Number({ description: "Max tokens for the bundle", default: 32000 })
+      ),
+      agent_type: Type.Optional(
+        Type.String({ description: "Requesting agent type for output formatting" })
+      ),
+      include_tabular: Type.Optional(
+        Type.Boolean({ description: "Include tabular data", default: true })
+      ),
+      include_summaries: Type.Optional(
+        Type.Boolean({ description: "Include summaries", default: true })
+      ),
+      quest_id: Type.Optional(
+        Type.String({ description: "Optional quest_id scope" })
+      ),
+    });
+
+    const ingestDataParams = Type.Object({
+      session_id: Type.String({ description: "Session identifier" }),
+      file_path: Type.Optional(
+        Type.String({ description: "Path to file to ingest (if not providing content)" })
+      ),
+      content: Type.Optional(
+        Type.String({ description: "Raw content to ingest (if not providing a file)" })
+      ),
+      mime_type: Type.Optional(
+        Type.String({ description: "Optional MIME type hint" })
+      ),
+      quest_id: Type.Optional(
+        Type.String({ description: "Optional quest_id to tag the artifact" })
+      ),
+    });
+
     const exploreGraphParams = Type.Object({
       start_node_id: Type.String({
         description: "Node ID to start traversal (from current_truth results)",
@@ -1099,6 +1135,36 @@ export default {
         parameters: ingestDocumentParams,
         transformParams: (params: any = {}) => ({
           file_path: params.file_path,
+          quest_id: params.quest_id,
+        }),
+      },
+      {
+        name: "compile_context",
+        label: "Compile Context (HippoCampy)",
+        description:
+          "Compile a context bundle from all memory types (graph, exact facts, tabular data, summaries). Returns shaped context optimized for the requesting agent's token budget. Use for complex queries needing assembled context; use current_truth for simple fact lookups.",
+        parameters: compileContextParams,
+        transformParams: (params: any = {}) => ({
+          query: params.query,
+          session_id: params.session_id,
+          token_budget: params.token_budget ?? 32000,
+          agent_type: params.agent_type,
+          include_tabular: params.include_tabular ?? true,
+          include_summaries: params.include_summaries ?? true,
+          quest_id: params.quest_id,
+        }),
+      },
+      {
+        name: "ingest_data",
+        label: "Ingest Data (HippoCampy)",
+        description:
+          "Unified data ingestion. Automatically classifies input and routes to optimal storage (graph, tabular, or document). Use instead of calling ingest_document or notify_turn directly.",
+        parameters: ingestDataParams,
+        transformParams: (params: any = {}) => ({
+          session_id: params.session_id,
+          file_path: params.file_path,
+          content: params.content,
+          mime_type: params.mime_type,
           quest_id: params.quest_id,
         }),
       },
