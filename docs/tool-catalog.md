@@ -7,7 +7,7 @@
 
 ---
 
-## Quick Reference: All 34 MCP Tools
+## Quick Reference: All 52 MCP Tools
 
 | # | Tool Name | Category | Called By | Blocking? | Requires LLM? |
 |---|-----------|----------|-----------|-----------|----------------|
@@ -28,23 +28,41 @@
 | 15 | `context_status` | Monitoring | Agent | Yes | No |
 | 16 | `get_anomalies` | Monitoring | Agent | Yes | No |
 | 17 | `ingest_document` | Ingestion | Agent | Yes | Yes (Loop processing) |
-| 18 | `get_openclaw_prompt` | Infrastructure | OpenClaw plugin | Yes | No |
-| 19 | `register_task_graph` | Execution DAG | Agent | Yes | No |
-| 20 | `get_ready_tasks` | Execution DAG | Agent | Yes | No |
-| 21 | `advance_task` | Execution DAG | Agent | Yes | No |
-| 22 | `fail_task` | Execution DAG | Agent | Yes | No |
-| 23 | `get_task_graph` | Execution DAG | Agent | Yes | No |
-| 24 | `get_disambiguation_queue` | Curation | Human UI / Agent | Yes (human review) | No |
-| 25 | `resolve_disambiguation` | Curation | Human UI / Agent | Yes (human resolution) | No |
-| 26 | `reload_domain_dictionary` | Ingestion | Human UI / Agent | No (non-blocking) | No |
-| 27 | `publish_mechanic_summary` | ARC World-Model | ARC Agent | No (fire-and-forget) | No |
-| 28 | `recall_mechanic_priors` | ARC World-Model | ARC Agent | Yes | No |
-| 29 | `recall_scene_graph_priors` | ARC World-Model | ARC Agent | Yes | No |
-| 30 | `reconstruct_timeline` | Retrieval | Agent | Yes | No |
-| 31 | `recall_procedures` | Retrieval | Agent | Yes | No |
-| 32 | `get_knowledge_gaps` | Monitoring | Agent | Yes | No |
-| 33 | `ingest_arc_artifacts` | Ingestion | Agent / CLI | Yes | No |
-| 34 | `memory_decision` | Recall Policy | Agent | Yes | No |
+| 18 | `ingest_data` | Ingestion | Agent | Yes | No |
+| 19 | `compile_context` | Retrieval | Agent | Yes | No |
+| 20 | `get_openclaw_prompt` | Infrastructure | OpenClaw plugin | Yes | No |
+| 21 | `register_task_graph` | Execution DAG | Agent | Yes | No |
+| 22 | `get_ready_tasks` | Execution DAG | Agent | Yes | No |
+| 23 | `advance_task` | Execution DAG | Agent | Yes | No |
+| 24 | `fail_task` | Execution DAG | Agent | Yes | No |
+| 25 | `get_task_graph` | Execution DAG | Agent | Yes | No |
+| 26 | `get_disambiguation_queue` | Curation | Human UI / Agent | Yes (human review) | No |
+| 27 | `resolve_disambiguation` | Curation | Human UI / Agent | Yes (human resolution) | No |
+| 28 | `reload_domain_dictionary` | Ingestion | Human UI / Agent | No (non-blocking) | No |
+| 29 | `publish_mechanic_summary` | ARC World-Model | ARC Agent | No (fire-and-forget) | No |
+| 30 | `recall_mechanic_priors` | ARC World-Model | ARC Agent | Yes | No |
+| 31 | `recall_scene_graph_priors` | ARC World-Model | ARC Agent | Yes | No |
+| 32 | `arc_perceive_state` | ARC Game Analysis | ARC Agent | Yes | No |
+| 33 | `arc_get_game_context` | ARC Game Analysis | ARC Agent | Yes | No |
+| 34 | `arc_get_untested_actions` | ARC Game Analysis | ARC Agent | Yes | No |
+| 35 | `arc_get_action_evidence` | ARC Game Analysis | ARC Agent | Yes | No |
+| 36 | `arc_get_causal_path` | ARC Game Analysis | ARC Agent | Yes | No |
+| 37 | `arc_record_action_effect` | ARC Game Analysis | ARC Agent | Yes | No |
+| 38 | `arc_get_entity_movement` | ARC Game Analysis | ARC Agent | Yes | No |
+| 39 | `arc_get_goal_evidence` | ARC Game Analysis | ARC Agent | Yes | No |
+| 40 | `arc_classify_game_archetype` | ARC Game Analysis | ARC Agent | Yes | No |
+| 41 | `arc_confirm_hypothesis` | ARC Hypothesis Management | ARC Agent | Yes | No |
+| 42 | `arc_contradict_hypothesis` | ARC Hypothesis Management | ARC Agent | Yes | No |
+| 43 | `arc_update_goal_confidence` | ARC Hypothesis Management | ARC Agent | Yes | No |
+| 44 | `arc_get_mechanic_priors` | ARC World-Model | ARC Agent | Yes | No |
+| 45 | `arc_check_action_gate` | ARC Game Analysis | ARC Agent | Yes | No |
+| 46 | `arc_record_reward_prediction_error` | ARC Game Analysis | ARC Agent | Yes | No |
+| 47 | `reconstruct_timeline` | Retrieval | Agent | Yes | No |
+| 48 | `recall_procedures` | Retrieval | Agent | Yes | No |
+| 49 | `get_knowledge_gaps` | Monitoring | Agent | Yes | No |
+| 50 | `ingest_arc_artifacts` | Ingestion | Agent / CLI | Yes | No |
+| 51 | `memory_decision` | Recall Policy | Agent | Yes | No |
+| 52 | `ask` | Augmented Inference | Agent / Human CLI | Yes (LLM call) | Yes |
 
 ---
 
