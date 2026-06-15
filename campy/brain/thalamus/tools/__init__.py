@@ -2147,6 +2147,24 @@ async def compile_context(params: dict, db, config: dict) -> dict:
     }
 
 
+async def ask(params: dict, db: "KuzuClient", config: dict) -> dict:
+    """MCP tool handler for `ask`. Thin wrapper over run_ask()."""
+    from campy.brain.thalamus.ask import run_ask
+    query = params.get("query", "")
+    session_id = params.get("session_id", "")
+    token_budget = params.get("token_budget", 32000)
+    if not query:
+        return {"error": "query is required"}
+    answer = await run_ask(
+        query=query,
+        session_id=session_id,
+        db=db,
+        config=config,
+        token_budget=token_budget,
+    )
+    return {"answer": answer}
+
+
 # ---------------------------------------------------------------------------
 # B11 — complete_quest + Lesson synthesis
 # ---------------------------------------------------------------------------
@@ -3225,6 +3243,7 @@ TOOL_HANDLERS = {
     # Recalling phase (read path)
     "current_truth":    _with_phase("recalling", current_truth),
     "compile_context":  _with_phase("recalling", compile_context),
+    "ask":              _with_phase("recalling", ask),
     "recall_relevant_lessons": _with_phase("recalling", recall_relevant_lessons),
     "recall_procedures": _with_phase("recalling", recall_procedures),
     "recall_plans":    _with_phase("recalling", recall_plans),

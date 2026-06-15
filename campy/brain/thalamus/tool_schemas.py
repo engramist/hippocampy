@@ -860,4 +860,27 @@ TOOLS: list[dict] = [
             "required": ["user_prompt"],
         },
     },
+    {
+        "name": "ask",
+        "description": (
+            "Answer a question using project memory. Campy augments the query with "
+            "relevant memory, compresses the context bundle, makes an LLM inference "
+            "call, and returns a synthesized answer. "
+            "Use this when you want a memory-grounded answer, NOT for general chat. "
+            "For raw facts use current_truth; for structured context use compile_context."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query":      {"type": "string", "description": "The question to answer from project memory."},
+                "session_id": {"type": "string"},
+                "token_budget": {
+                    "type": "integer",
+                    "default": 32000,
+                    "description": "Token budget for the memory bundle before compression.",
+                },
+            },
+            "required": ["query", "session_id"],
+        },
+    },
 ]
