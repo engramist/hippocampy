@@ -24,6 +24,17 @@ For multi-entity or broad context queries, use `compile_context` instead of maki
 
 Tabular data (CSV, XLSX, TSV) ingested via `ingest_document` is stored in per-dataset SQLite files with metadata and extracted facts in the Kuzu graph. The bundle compiler includes relevant tabular data when assembling context.
 
+## Augmented Inference (B289)
+
+Use `ask` when you want a synthesized, memory-grounded answer in one call. It augments the query with graph-native memory, compresses the bundle through four pluggable compressors (`StructuredDataCompressor`, `LLMCompressor`, `ASTCodeCompressor`, `GraphBundleCompressor`), calls the LLM, and captures the result via `notify_turn`.
+
+Tool selection guide:
+- **Raw fact lookup** → `current_truth`
+- **Assembled context bundle** → `compile_context`
+- **Synthesized answer from memory** → `ask`
+
+Human CLI: `campy ask "question"` (supports `--session`, `--budget`).
+
 ## Context Window Integration (Layer Cake)
 
 Campy uses a 4-layer architecture to inject graph knowledge into agent context windows without requiring explicit tool calls:
