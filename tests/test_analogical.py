@@ -406,25 +406,22 @@ async def test_analogical_search_tool_empty_query():
 # ---------------------------------------------------------------------------
 
 def test_codex_adapter_has_all_tools():
-    from adapters.codex.adapter import TOOLS
-    names = {t["name"] for t in TOOLS}
-    expected = {"notify_turn", "current_truth", "branch_quest", "diff_since",
-                "reconstruct_timeline",
-                "get_open_loops", "analogical_search", "ingest_document",
-                "explore_graph", "complete_quest", "set_quest", "context_status",
-                "get_anomalies", "upsert_lesson", "recall_relevant_lessons",
-                "register_plan", "report_outcome", "recall_plans",
-                "get_knowledge_gaps", "recall_procedures",
-                "recall_scene_graph_priors",
-                "get_openclaw_prompt",
-                "ingest_arc_artifacts",
-                "register_task_graph", "get_ready_tasks", "advance_task",
-                "fail_task", "get_task_graph",
-                "get_disambiguation_queue", "resolve_disambiguation",
-                "reload_domain_dictionary",
-                "publish_mechanic_summary", "recall_mechanic_priors",
-                "memory_decision"}
-    assert names == expected
+    """The Codex adapter must expose exactly the canonical tool set.
+
+    Derived from tool_schemas.TOOLS (not a hardcoded list) so adding a tool
+    cannot silently desync this assertion.
+    """
+    from adapters.codex.adapter import TOOLS as ADAPTER_TOOLS
+    from campy.brain.thalamus.tool_schemas import TOOLS as CANONICAL_TOOLS
+
+    adapter_names = {t["name"] for t in ADAPTER_TOOLS}
+    canonical_names = {t["name"] for t in CANONICAL_TOOLS}
+    assert adapter_names == canonical_names, (
+        f"Codex adapter desynced from canonical registry. "
+        f"Missing: {sorted(canonical_names - adapter_names)}; "
+        f"Extra: {sorted(adapter_names - canonical_names)}"
+    )
+    assert len(adapter_names) >= 49
 
 def test_codex_adapter_analogical_search_schema():
     from adapters.codex.adapter import TOOLS
