@@ -403,6 +403,14 @@ export default {
       ),
     });
 
+    const askParams = Type.Object({
+      query: Type.String({ description: "Question to answer from project memory." }),
+      session_id: Type.String({ description: "Session identifier for memory capture." }),
+      token_budget: Type.Optional(
+        Type.Number({ description: "Token budget for memory bundle before compression.", default: 32000 })
+      ),
+    });
+
     const exploreGraphParams = Type.Object({
       start_node_id: Type.String({
         description: "Node ID to start traversal (from current_truth results)",
@@ -1166,6 +1174,18 @@ export default {
           content: params.content,
           mime_type: params.mime_type,
           quest_id: params.quest_id,
+        }),
+      },
+      {
+        name: "ask",
+        label: "Ask (HippoCampy)",
+        description:
+          "Answer a question using project memory. Augments the query with graph-native memory, compresses the context bundle, makes an LLM inference call, and returns a synthesized answer. Use for memory-grounded answers; use current_truth for raw facts; use compile_context for assembled context bundles.",
+        parameters: askParams,
+        transformParams: (params: any = {}) => ({
+          query: params.query,
+          session_id: params.session_id,
+          token_budget: params.token_budget ?? 32000,
         }),
       },
       {
