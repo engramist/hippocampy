@@ -26,6 +26,9 @@ def ask(
     token_budget: int = typer.Option(
         32000, "--budget", "-b", help="Token budget for memory bundle before compression."
     ),
+    no_capture: bool = typer.Option(
+        False, "--no-capture", help="Don't write this exchange back into project memory."
+    ),
     ctx: typer.Context = typer.Option(None, hidden=True),
 ):
     """Ask Campy a question and get a memory-grounded answer."""
@@ -49,7 +52,14 @@ def ask(
         db = KuzuClient(db_path, read_only=True)
 
         answer = asyncio.run(
-            run_ask(query=query, session_id=sid, db=db, config=config, token_budget=token_budget)
+            run_ask(
+                query=query,
+                session_id=sid,
+                db=db,
+                config=config,
+                token_budget=token_budget,
+                capture=not no_capture,
+            )
         )
         console.print(answer)
     except Exception as exc:

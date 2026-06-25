@@ -37,17 +37,44 @@ def _get_llm(config: dict):
         return None
 
 
-async def _capture_turn(answer: str, session_id: str, db, config: dict) -> None:
-    """Send the ask response through notify_turn for passive ingestion."""
+async def _capture_one(role: str, content: str, session_id: str, db, config: dict) -> None:
+    """Capture a single turn.
+
+    Tries a direct notify_turn first (works in-daemon where `db` is writable).
+    Kuzu is single-writer, so the CLI front door opens the DB read-only and a
+    direct write raises — in that case we route to the daemon (the single
+    writer) over the brain transport. Both paths are best-effort: capture must
+    never fail the answer the user already has.
+    """
+    params = {"role": role, "content": content, "session_id": session_id}
     try:
         from campy.brain.thalamus.tools import notify_turn
-        await notify_turn(
-            params={"role": "assistant", "content": answer, "session_id": session_id},
-            db=db,
-            config=config,
-        )
-    except Exception as exc:
-        _logger.warning("ask: capture_turn failed (non-fatal): %s", exc)
+        await notify_turn(params=params, db=db, config=config)
+        return
+    except Exception as direct_exc:
+        try:
+            from campy.brain_transport import call_brain
+            # Short timeout: notify_turn returns as soon as the daemon queues
+            # the turn, so this can't hang the response for long.
+            await call_brain("notify_turn", params, timeout=3.0)
+        except Exception as transport_exc:
+            _logger.warning(
+                "ask: capture failed for role=%s (direct=%s; transport=%s)",
+                role, direct_exc, transport_exc,
+            )
+
+
+async def _capture_turn(query: str, answer: str, session_id: str, db, config: dict) -> None:
+    """Close the loop: capture both the user's question and the answer.
+
+    The question is captured first — it's often the richer signal (what the
+    project is being asked about) and should land even if the answer write
+    fails. Entered as normal-confidence turns; Campy's confidence/decay
+    machinery down-weights unconfirmed material, so a wrong answer self-corrects
+    rather than locking in.
+    """
+    await _capture_one("user", query, session_id, db, config)
+    await _capture_one("assistant", answer, session_id, db, config)
 
 
 def _bundle_to_prompt(bundle, query: str) -> str:
@@ -75,10 +102,15 @@ async def run_ask(
     db,
     config: dict,
     token_budget: int = 32000,
+    capture: bool = True,
 ) -> str:
     """
     Full ask pipeline: augment → compress → send → capture.
     Returns the LLM answer as a string.
+
+    capture: when True (default), the question + answer are written back into
+    the graph so asking teaches the brain. Set False (--no-capture) for
+    throwaway queries.
     """
     # 1. Augment
     bundle = await compile_bundle(
@@ -116,7 +148,8 @@ async def run_ask(
     ]
     answer = llm.chat(messages)
 
-    # 4. Capture
-    await _capture_turn(answer, session_id, db, config)
+    # 4. Capture (closed loop) — both the question and the answer
+    if capture:
+        await _capture_turn(query, answer, session_id, db, config)
 
     return answer
