@@ -2153,6 +2153,7 @@ async def ask(params: dict, db: "KuzuClient", config: dict) -> dict:
     query = params.get("query", "")
     session_id = params.get("session_id", "")
     token_budget = params.get("token_budget", 32000)
+    capture = params.get("capture", True)
     if not query:
         return {"error": "query is required"}
     answer = await run_ask(
@@ -2161,6 +2162,7 @@ async def ask(params: dict, db: "KuzuClient", config: dict) -> dict:
         db=db,
         config=config,
         token_budget=token_budget,
+        capture=capture,
     )
     return {"answer": answer}
 
