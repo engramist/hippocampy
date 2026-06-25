@@ -77,3 +77,45 @@ def test_token_estimate_reduced_after_pruning():
     compressor = GraphBundleCompressor({"compression": {"graph_prune_threshold": 0.5}})
     result = compressor.compress(section, "test", {})
     assert result.token_estimate < section.token_estimate
+
+
+def test_protected_constraint_survives_aggressive_pruning():
+    """A hard Constraint must never be pruned, even with a 1.0 threshold and a
+    query it has no similarity to and zero pathway strength."""
+    nodes = [
+        {"text": f"irrelevant concept {i}", "type": "Concept",
+         "pathway_strength": 0.9, "confidence": 0.9}
+        for i in range(10)
+    ]
+    nodes.append({
+        "text": "never store secrets in the repo",
+        "type": "Constraint",
+        "pathway_strength": 0.0,   # isolated / weak — would lose on score alone
+        "confidence": 0.5,
+    })
+    section = _graph_section(nodes)
+    # threshold 1.0 would prune everything that isn't protected
+    compressor = GraphBundleCompressor({"compression": {"graph_prune_threshold": 1.0}})
+    result = compressor.compress(section, "completely unrelated query", {})
+    text = result.content[0]["compact"] if result.content else ""
+    assert "never store secrets in the repo" in text
+    assert "K:" in text  # Constraint prefix
+
+
+def test_locked_decision_survives_but_ordinary_decision_prunes():
+    """Decision with confidence>=0.95 is protected; a 0.9 decision is not."""
+    nodes = [
+        {"text": "locked: use JWT", "type": "Decision",
+         "pathway_strength": 0.0, "confidence": 0.97},
+        {"text": "tentative: maybe sessions", "type": "Decision",
+         "pathway_strength": 0.0, "confidence": 0.90},
+    ] + [
+        {"text": f"filler {i}", "type": "Concept", "pathway_strength": 0.99, "confidence": 0.9}
+        for i in range(8)
+    ]
+    section = _graph_section(nodes)
+    compressor = GraphBundleCompressor({"compression": {"graph_prune_threshold": 1.0}})
+    result = compressor.compress(section, "unrelated", {})
+    text = result.content[0]["compact"] if result.content else ""
+    assert "locked: use JWT" in text
+    assert "tentative: maybe sessions" not in text

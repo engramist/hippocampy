@@ -108,6 +108,30 @@ def _compact_line(node: dict) -> str:
     return f"{prefix}:{text}"
 
 
+# Node types that must never be pruned: hard constraints are rules the answer
+# must respect, and PageRank ranks by topology + query similarity, so a
+# critical-but-isolated constraint (few edges, not lexically near the query)
+# would otherwise score low and be dropped. Locked decisions are protected
+# the same way via a confidence gate.
+# Constraints are hard rules — always protected by type. Decisions have no
+# explicit "locked" field in the schema, so a high confidence floor stands in
+# for "effectively locked"; kept high (0.95) so ordinary decisions still prune.
+_PROTECTED_TYPES = frozenset({"Constraint", "GlobalConstraint"})
+_LOCKED_DECISION_CONFIDENCE = 0.95
+
+
+def _is_protected(node: dict) -> bool:
+    node_type = node.get("type", "")
+    if node_type in _PROTECTED_TYPES:
+        return True
+    if node_type == "Decision":
+        try:
+            return float(node.get("confidence", 0.0) or 0.0) >= _LOCKED_DECISION_CONFIDENCE
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
 class GraphBundleCompressor(Compressor):
     """
     Scores, prunes, and serializes graph bundle sections using graph-native signals.
@@ -126,24 +150,32 @@ class GraphBundleCompressor(Compressor):
         effective_config = config or self._config
         threshold = effective_config.get("compression", {}).get("graph_prune_threshold", 0.30)
 
-        # Score each node
+        # Protected lane: hard constraints and locked decisions bypass pruning
+        # entirely and are always retained verbatim. Only the rest is eligible
+        # for PageRank pruning.
+        nodes = [n for n in section.content if isinstance(n, dict)]
+        protected = [n for n in nodes if _is_protected(n)]
+        prunable = [n for n in nodes if not _is_protected(n)]
+
+        # Score + prune only the non-protected nodes
         query_emb = _embed_query(query, effective_config) if query else None
         scored = [
             (node, _score_node(node, query_emb, effective_config))
-            for node in section.content
-            if isinstance(node, dict)
+            for node in prunable
         ]
 
-        if not scored:
+        if not scored and not protected:
             return section
 
-        # Prune bottom `threshold` fraction by score
         scored.sort(key=lambda x: x[1])
         cutoff_index = max(0, int(len(scored) * threshold))
-        surviving = [node for node, _ in scored[cutoff_index:]]
+        survivors = [node for node, _ in scored[cutoff_index:]]
 
-        if not surviving:
-            surviving = [scored[-1][0]]  # always keep at least one node
+        if not survivors and not protected and scored:
+            survivors = [scored[-1][0]]  # always keep at least one node
+
+        # Protected nodes lead (closest to the prompt downstream), then survivors.
+        surviving = protected + survivors
 
         # Serialize in compact adjacency notation
         lines = [_compact_line(n) for n in surviving]
