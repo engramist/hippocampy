@@ -149,6 +149,65 @@ Installed by `campy setup` via `git config core.hooksPath .githooks`. The `|| tr
 
 ---
 
+### 6. WorkArtifact — Document Provenance Tracking
+
+Any time an agent creates or materially edits a structured document (`.md` files: plans, specs, backlog cards, ADRs, READMEs), a `WorkArtifact` node is written to the graph capturing its location and provenance. This makes "files in flight" in the WorkSummary snapshot an authoritative graph query rather than a regex heuristic.
+
+**Node schema:**
+
+```
+WorkArtifact {
+  artifact_id      STRING    PRIMARY KEY
+  file_path        STRING    (repo-relative, e.g. "backlog/B290.md")
+  document_type    STRING    (plan | spec | backlog_card | adr | readme | other)
+  title            STRING    (first H1 heading, extracted from file)
+  summary          STRING    (~100 chars — first non-heading paragraph, extracted from file)
+  linked_card      STRING    (e.g. "B290" — from filename regex or register_artifact call)
+  session_id       STRING    FK → Session
+  agent_source     STRING    (claude_code | codex | gemini_cli | vscode)
+  created_at       TIMESTAMP
+  last_modified_at TIMESTAMP
+}
+```
+
+**Relationships:**
+- `(WorkArtifact)-[:CREATED_IN]->(Session)`
+- `(WorkArtifact)-[:DOCUMENTS]->(Plan)` — when `linked_card` resolves to a Plan node
+
+**Two-path capture:**
+
+*Path 1 — PostToolUse hook (automatic, zero agent burden):*
+The `post_tool_use.sh` / `post_tool_use.py` hook detects Write or Edit tool calls targeting `*.md` files. It:
+1. Extracts `title` via `grep -m1 "^# " <file> | sed 's/^# //'`
+2. Extracts `summary` via first non-heading line > 20 chars
+3. Infers `document_type` from path (`backlog/` → backlog_card, `docs/superpowers/specs/` → spec, `backlog/plans/` → plan, etc.)
+4. Infers `linked_card` from filename regex (`B\d+`)
+5. Fires a bare `register_artifact` MCP call with these fields
+
+*Path 2 — `register_artifact` MCP tool (explicit enrichment):*
+When an agent has richer context (knows the linked card, has a better summary), it calls `register_artifact` directly. Both paths upsert by `file_path` — the explicit call wins on any field it provides.
+
+**WorkSummary integration:**
+`_update_work_summary` replaces the file-path regex with a graph query:
+```cypher
+MATCH (wa:WorkArtifact)-[:CREATED_IN]->(s:Session {session_id: $sid})
+RETURN wa.file_path, wa.document_type, wa.title
+ORDER BY wa.last_modified_at DESC
+LIMIT 10
+```
+
+**New components for this section:**
+
+| Component | File | Notes |
+|-----------|------|-------|
+| WorkArtifact node DDL | `campy/brain/hippocampus/schema.py` | New node table + `CREATED_IN` + `DOCUMENTS` rel tables |
+| `register_artifact` MCP tool | `campy/brain/thalamus/tools/__init__.py` | Upsert WorkArtifact; resolve Plan link if linked_card matches |
+| PostToolUse hook extension | `adapters/claude_code/hooks/post_tool_use.sh` | Detect `*.md` Write/Edit, fire register_artifact |
+| Codex PostToolUse extension | `adapters/codex/hooks/post_tool_use.py` | Same logic in Python (B265) |
+| Gemini AfterTool extension | `adapters/gemini_cli/hooks/after_tool.py` | Same logic in Python (B265) |
+
+---
+
 ## What Doesn't Change
 
 - `compile_context` — unchanged. CWS is a parallel retrieval path for temporal intent, not a replacement for semantic retrieval.
@@ -171,6 +230,9 @@ Installed by `campy setup` via `git config core.hooksPath .githooks`. The `|| tr
 | post-commit hook | `.githooks/post-commit` | New file |
 | `campy notify-turn` CLI command | `campy/cli/notify_turn.py` | Thin CLI wrapper over `call_brain("notify_turn", ...)` — required by post-commit hook |
 | `campy setup` wiring | `adapters/claude_code/setup.py` | `git config core.hooksPath .githooks` |
+| WorkArtifact node DDL | `campy/brain/hippocampus/schema.py` | New node + rel tables (see Section 6) |
+| `register_artifact` MCP tool | `campy/brain/thalamus/tools/__init__.py` | Upsert WorkArtifact with Plan link resolution |
+| PostToolUse hook extension | `adapters/claude_code/hooks/post_tool_use.sh` | Auto-capture on `*.md` Write/Edit |
 
 ---
 
@@ -185,6 +247,10 @@ Installed by `campy setup` via `git config core.hooksPath .githooks`. The `|| tr
 - [ ] `campy context regen` does not overwrite the `## Current Work` section
 - [ ] WorkSummary node is queryable: `MATCH (ws:WorkSummary) ORDER BY ws.last_updated_at DESC LIMIT 1`
 - [ ] All existing tests pass — notify_turn is backward-compatible
+- [ ] Creating a `.md` file via Write tool causes a WorkArtifact node to appear in the graph within one turn
+- [ ] WorkArtifact node has populated `title`, `summary`, `document_type`, `linked_card` (where inferrable)
+- [ ] `register_artifact` MCP tool upserts correctly and resolves Plan link when linked_card matches
+- [ ] WorkSummary "files in flight" uses graph query (not regex) and lists WorkArtifacts created this session
 
 ---
 
