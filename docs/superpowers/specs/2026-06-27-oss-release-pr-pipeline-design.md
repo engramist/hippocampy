@@ -29,7 +29,7 @@ blocking forever.
 | Findings format | Structured table: file, line, rule, severity, fix |
 | Block threshold | Phase 1: any CodeQL/secret/HIGH+ CVE finding; Semgrep HIGH/CRITICAL; Phase 2: Codex "Changes requested" |
 | Escalation trigger | Same rule fires on 2nd push AND contributor posted a comment since last bot comment |
-| OSS org | GitHub org (`campy` or `hippocampy`) — repo transferred from personal account |
+| OSS org | GitHub org `hippocampy` — repo transferred from personal account |
 | License | MIT |
 
 ---
@@ -197,8 +197,8 @@ One-time setup tasks (no code — GitHub web UI + file additions):
 
 | Task | Detail |
 |------|--------|
-| Create GitHub org | `campy` or `hippocampy` — check availability |
-| Transfer repo | Settings → Transfer ownership → org |
+| Create GitHub org | `hippocampy` at github.com/hippocampy |
+| Transfer repo | Settings → Transfer ownership → `hippocampy` org |
 | `LICENSE` | MIT |
 | `CODEOWNERS` | `* @<maintainer-username>` |
 | Branch protection on `main` | Require PR; require CODEOWNERS approval (1); require Phase 1 + Phase 2 status checks to pass; no admin bypass |
