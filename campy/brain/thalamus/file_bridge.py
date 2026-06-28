@@ -162,7 +162,25 @@ async def generate_context_md(project_path: Path, db: "KuzuClient") -> Path:
         lines.append("")
 
     output_path = _resolve_project_child(project_path, "CONTEXT.md")
-    output_path.write_text("\n".join(lines), encoding="utf-8")
+
+    # B290: Preserve the ## Current Work section if it already exists.
+    # CWS owns that section exclusively; regen must not overwrite it.
+    current_work_block = ""
+    if output_path.exists():
+        existing = output_path.read_text(encoding="utf-8")
+        if "## Current Work" in existing:
+            start = existing.index("## Current Work")
+            next_h = existing.find("\n## ", start + 4)
+            if next_h == -1:
+                current_work_block = existing[start:]
+            else:
+                current_work_block = existing[start:next_h + 1]
+
+    body = "\n".join(lines)
+    if current_work_block:
+        body = current_work_block.rstrip("\n") + "\n\n---\n\n" + body
+
+    output_path.write_text(body, encoding="utf-8")
     _logger.info("Generated %s (%d concepts)", output_path, len(rows))
     return output_path
 

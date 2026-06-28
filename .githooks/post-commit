@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# B290: Force a WorkSummary checkpoint on every commit.
+# Installed by: campy setup (git config core.hooksPath .githooks)
+# The || true ensures a missing daemon never blocks a commit.
+COMMIT=$(git log -1 --oneline 2>/dev/null || echo "unknown commit")
+campy notify-turn --role system --content "committed: $COMMIT" 2>/dev/null || true
