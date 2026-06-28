@@ -223,8 +223,8 @@ One-time setup tasks (no code — GitHub web UI + file additions):
 | Security gate workflow | `.github/workflows/security-gate.yml` | CodeQL + Semgrep + pip-audit jobs in parallel |
 | Campy shadow-store Semgrep rule | `.semgrep/campy-no-shadow-stores.yaml` | Custom rule for shadow store detection in `campy/` |
 | CodeQL config | `.github/codeql/codeql-config.yml` | Python query suite, exclude test fixtures |
-| Bot findings script | `.github/scripts/post-findings.py` | Posts/replaces structured findings comment; embeds hidden rule IDs |
-| Escalation script | `.github/scripts/check-escalation.py` | Compares rule IDs, checks for contributor comment, labels PR |
+| Review gate script | `.github/scripts/review_gate.py` | Single stdlib-only script: parses Semgrep + pip-audit JSON, posts/replaces structured findings comment with hidden rule IDs, and handles escalation (rule-ID overlap + contributor comment → label + ping). Gates via exit code. |
+| Review gate tests | `tests/test_review_gate.py` | Unit tests for all pure functions in `review_gate.py` |
 | AGENTS.md PR checklist section | `AGENTS.md` | New `## PR Review Checklist` section for Codex |
 | License | `LICENSE` | MIT |
 | Contributing guide | `CONTRIBUTING.md` | Pipeline explanation + contribution instructions |

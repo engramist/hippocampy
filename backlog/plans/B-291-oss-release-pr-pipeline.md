@@ -798,7 +798,7 @@ def parse_pip_audit_output(data):
                 else "No fix available yet — consider removing this dependency"
             )
             findings.append({
-                "file": f"requirements.txt ({dep['name']}=={dep['version']})",
+                "file": f"dependency: {dep['name']}=={dep['version']}",
                 "line": "-",
                 "rule": vuln.get("id", "unknown-cve"),
                 "severity": "HIGH",
