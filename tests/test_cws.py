@@ -128,3 +128,36 @@ def test_snapshot_not_written_between_intervals(tmp_path):
     content = (tmp_path / "CONTEXT.md").read_text()
     assert "<details>" not in content
     assert "should not appear" not in content
+
+
+@pytest.mark.asyncio
+async def test_notify_turn_fires_update_work_summary():
+    """notify_turn must fire update_work_summary as a background task."""
+    from campy.brain.thalamus.tools import notify_turn
+
+    mock_db = MagicMock()
+    mock_db.execute_read = AsyncMock(return_value=[])
+    mock_db.execute_write = AsyncMock(return_value=None)
+    mock_db.execute = MagicMock()
+    mock_db.execute.return_value.has_next.return_value = False
+
+    config = {"embeddings": {"model": "sentence-transformers/all-MiniLM-L6-v2"}}
+
+    fired = []
+
+    async def fake_update(session_id, db, config, agent_source="mcp", repo_root=""):
+        fired.append(session_id)
+
+    with patch("campy.brain.thalamus.tools.work_summary.update_work_summary", side_effect=fake_update), \
+         patch("campy.brain.hippocampus.graph.embeddings.embed", return_value=[0.1] * 384), \
+         patch("campy.brain.thalamus.tools.get_or_create_main_quest", new_callable=AsyncMock, return_value="q1"), \
+         patch("campy.brain.thalamus.tools.get_or_create_session", new_callable=AsyncMock):
+        await notify_turn(
+            {"role": "user", "content": "hello", "session_id": "sess-cws-1",
+             "repo_root": "/tmp/repo", "agent_source": "claude_code"},
+            mock_db, config,
+        )
+        # Allow background task to run
+        await asyncio.sleep(0)
+
+    assert "sess-cws-1" in fired

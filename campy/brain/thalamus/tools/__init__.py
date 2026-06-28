@@ -1058,6 +1058,22 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
     # Always include proactive_context (B195) for caller to inspect
     response["proactive_context"] = proactive_context if proactive_context is not None else {"pushed": False, "reason": "disabled"}
 
+    # B290: Continuous Work State — fire non-blocking WorkSummary update.
+    # Use module-level attribute access (_cws.update_work_summary) so that
+    # tests can patch the function via patch("...work_summary.update_work_summary")
+    # without the `from ... import` reference-copy defeating the mock.
+    # Note: bare create_task (no retention set) matches the existing pattern in
+    # this file (line 2207). The event loop is long-lived so GC is not a concern here.
+    if session_id != "unknown":
+        try:
+            from campy.brain.thalamus.tools import work_summary as _cws
+            _agent_source = params.get("agent_source", "mcp")
+            asyncio.create_task(
+                _cws.update_work_summary(session_id, db, config, _agent_source, repo_root)
+            )
+        except Exception:
+            pass  # Never block the response path
+
     return response
 
 
