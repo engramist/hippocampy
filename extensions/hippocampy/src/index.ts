@@ -520,6 +520,16 @@ export default {
       ),
     });
 
+    const registerArtifactParams = Type.Object({
+      file_path: Type.String({ description: "Repo-relative path to the document" }),
+      document_type: Type.Optional(Type.String({ description: "plan | spec | backlog_card | adr | readme | other" })),
+      title: Type.Optional(Type.String({ description: "Document title (first H1)" })),
+      summary: Type.Optional(Type.String({ description: "Short summary" })),
+      linked_card: Type.Optional(Type.String({ description: "e.g. B290" })),
+      session_id: Type.Optional(Type.String({ description: "OpenClaw session ID (auto-filled)" })),
+      agent_source: Type.Optional(Type.String({ description: "Originating agent" })),
+    });
+
     const reportOutcomeParams = Type.Object({
       plan_id: Type.String({ description: "Plan ID returned by register_plan" }),
       step_number: Type.Optional(
@@ -1070,6 +1080,13 @@ export default {
           "Declare a multi-step plan so Campy can track strategy quality and warn about similar failed plans.",
         parameters: registerPlanParams,
         transformParams: registerPlanTransform,
+      },
+      {
+        name: "register_artifact",
+        label: "Register Artifact (HippoCampy)",
+        description:
+          "Register or update a WorkArtifact node recording document provenance (path, type, title, summary) for a structured document the agent created or edited. Upserts by file_path.",
+        parameters: registerArtifactParams,
       },
       {
         name: "report_outcome",
