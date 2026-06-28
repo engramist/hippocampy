@@ -36,7 +36,31 @@ def main():
     if not content.strip():
         sys.exit(0)
 
-    params = {"role": "user", "content": content, "session_id": session_id}
+    import os
+    import subprocess
+
+    repo_root = ""
+    git_branch = "main"
+    try:
+        repo_root = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            stderr=subprocess.DEVNULL, timeout=3,
+        ).decode().strip()
+        git_branch = subprocess.check_output(
+            ["git", "branch", "--show-current"],
+            stderr=subprocess.DEVNULL, timeout=3,
+        ).decode().strip()
+    except Exception:
+        pass
+
+    params = {
+        "role": "user",
+        "content": content,
+        "session_id": session_id,
+        "agent_source": "claude_code",
+        "repo_root": repo_root,
+        "git_branch": git_branch,
+    }
 
     try:
         asyncio.run(call_brain("notify_turn", params))
