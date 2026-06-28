@@ -66,7 +66,7 @@ This tails `~/.campy/activity.log`, the compact operator-facing feed for:
 
 The activity feed redacts full prompt and assistant-response bodies. It may include operational metadata such as source client, role, session, character counts, recall query previews, and status. Use `~/.campy/daemon.log` only when debugging failures, launchd issues, or stack traces.
 
-## PR Review Checklist (Codex Ecosystem Gate)
+## PR Review Checklist (Ecosystem Gate)
 
 When reviewing a pull request, check each rule below. Post findings in this exact table format:
 

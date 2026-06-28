@@ -21,9 +21,10 @@ GitHub Actions runs:
 If any HIGH/CRITICAL finding is detected, the PR is blocked and a bot comment lists the findings
 with specific fix instructions. Fix the issues and push — the gate re-runs automatically.
 
-### Gate 2 — Ecosystem Alignment (automatic, Codex review)
+### Gate 2 — Ecosystem Alignment (automatic, GitHub Copilot review)
 
-After Gate 1 passes, Codex reviews the PR for ecosystem compliance:
+GitHub Copilot code review automatically reviews the PR for ecosystem compliance
+(per `.github/copilot-instructions.md`):
 - Code goes in the right directory per `docs/ecosystem-rules.md`
 - No shadow stores (persistent state must go through KuzuDB)
 - New MCP tools are registered in `TOOL_HANDLERS`
