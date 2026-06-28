@@ -34,6 +34,8 @@ def register(project_root: Path = None) -> None:
     _write_mcp_json(project_root)
     _write_hook_config()
     install_hooks(project_root)
+    # B290: Install .githooks directory as the project git hooks path
+    _configure_git_hooks(project_root)
     print("Claude Code adapter registered.")
     print(f"  MCP server: {project_root / '.mcp.json'}")
     print(f"  Hook config: {Path.home() / '.claude' / 'settings.json'}")
@@ -61,6 +63,28 @@ def install_hooks(project_root: Path = None) -> bool:
         installed.append(dest)
     
     return len(installed) > 0
+
+
+def _configure_git_hooks(project_root: Path) -> None:
+    """Set core.hooksPath to .githooks so post-commit fires on every commit."""
+    import subprocess
+    githooks_dir = project_root / ".githooks"
+    githooks_dir.mkdir(exist_ok=True)
+    post_commit = githooks_dir / "post-commit"
+    if not post_commit.exists():
+        # Copy from repo if running from development checkout
+        src = REPO_ROOT / ".githooks" / "post-commit"
+        if src.exists():
+            import shutil
+            shutil.copy2(src, post_commit)
+            post_commit.chmod(0o755)
+    try:
+        subprocess.run(
+            ["git", "-C", str(project_root), "config", "core.hooksPath", ".githooks"],
+            check=True, capture_output=True, timeout=5,
+        )
+    except Exception as e:
+        print(f"  Warning: could not set core.hooksPath: {e}")
 
 
 def _write_mcp_json(project_root: Path) -> None:
