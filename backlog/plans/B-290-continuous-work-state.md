@@ -51,9 +51,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 def test_work_summary_node_exists_in_schema():
     """WorkSummary must be a registered node table."""
-    from campy.brain.hippocampus.schema import _NODE_TABLES
-    assert "WorkSummary" in _NODE_TABLES
-    ddl = _NODE_TABLES["WorkSummary"]
+    from campy.brain.hippocampus.schema import NODE_TABLES
+    assert "WorkSummary" in NODE_TABLES
+    ddl = NODE_TABLES["WorkSummary"]
     assert "summary_id" in ddl
     assert "resume_line" in ddl
     assert "snapshot_text" in ddl
@@ -63,9 +63,9 @@ def test_work_summary_node_exists_in_schema():
 
 def test_work_artifact_node_exists_in_schema():
     """WorkArtifact must be a registered node table."""
-    from campy.brain.hippocampus.schema import _NODE_TABLES
-    assert "WorkArtifact" in _NODE_TABLES
-    ddl = _NODE_TABLES["WorkArtifact"]
+    from campy.brain.hippocampus.schema import NODE_TABLES
+    assert "WorkArtifact" in NODE_TABLES
+    ddl = NODE_TABLES["WorkArtifact"]
     assert "artifact_id" in ddl
     assert "file_path" in ddl
     assert "document_type" in ddl
@@ -80,11 +80,11 @@ def test_work_artifact_node_exists_in_schema():
 pytest tests/test_cws.py::test_work_summary_node_exists_in_schema tests/test_cws.py::test_work_artifact_node_exists_in_schema -v
 ```
 
-Expected: `FAILED` — `WorkSummary` not in `_NODE_TABLES`.
+Expected: `FAILED` — `WorkSummary` not in `NODE_TABLES`.
 
 - [ ] **Step 1.3: Add WorkSummary DDL to schema.py**
 
-In `campy/brain/hippocampus/schema.py`, find `_NODE_TABLES = {` and add these two entries alongside the other node definitions (after the `Session` entry is a good location):
+In `campy/brain/hippocampus/schema.py`, find `NODE_TABLES = {` (line 19, no underscore) and add these two entries alongside the other node definitions (after the `Session` entry is a good location):
 
 ```python
     "WorkSummary": """
@@ -118,7 +118,7 @@ In `campy/brain/hippocampus/schema.py`, find `_NODE_TABLES = {` and add these tw
 
 - [ ] **Step 1.4: Add relationship table DDLs**
 
-In the same file, find the block of `CREATE REL TABLE` strings (around line 839 near `PLANNED_IN`) and add:
+In the same file, find the `REL_TABLES = [` list (line 785, no underscore — confirmed in codebase) near the block around `PLANNED_IN` (line 846) and add inside that list:
 
 ```python
     "CREATE REL TABLE IF NOT EXISTS CREATED_IN (FROM WorkArtifact TO Session)",
@@ -320,6 +320,7 @@ def _read_git_state(repo_root: str) -> tuple[str, str]:
 async def _get_active_plan_info(session_id: str, db: "KuzuClient") -> tuple[str, str]:
     """Return (active_card, plan_goal) for the session's most recent plan."""
     try:
+        # Plan.archived (BOOLEAN) and PLANNED_IN edge both confirmed in schema.py
         rows = await db.execute_read(
             "MATCH (p:Plan)-[:PLANNED_IN]->(s:Session {session_id: $sid}) "
             "WHERE p.archived = false "
@@ -634,6 +635,8 @@ In `campy/brain/thalamus/tools/__init__.py`, find the `return response` at the e
     # Use module-level attribute access (_cws.update_work_summary) so that
     # tests can patch the function via patch("...work_summary.update_work_summary")
     # without the `from ... import` reference-copy defeating the mock.
+    # Note: bare create_task (no retention set) matches the existing pattern in
+    # this file (line 2207). The event loop is long-lived so GC is not a concern here.
     if session_id != "unknown":
         try:
             from campy.brain.thalamus.tools import work_summary as _cws
@@ -856,8 +859,10 @@ Clean up: `rm -rf "$TMPDIR"`
 
 - [ ] **Step 5.4: Also copy the updated hook to .claude/hooks/ (project-level)**
 
+`.claude/hooks/` is untracked (not committed to git). Only copy if it already exists:
+
 ```bash
-cp adapters/claude_code/hooks/session_start.sh .claude/hooks/session_start.sh
+[ -d .claude/hooks ] && cp adapters/claude_code/hooks/session_start.sh .claude/hooks/session_start.sh || echo "Skipped: .claude/hooks/ not present"
 ```
 
 - [ ] **Step 5.5: Commit**
@@ -1350,10 +1355,12 @@ bash -n adapters/claude_code/hooks/post_tool_use.sh
 
 Expected: no output.
 
-- [ ] **Step 8.3: Copy updated hook to project .claude/hooks/**
+- [ ] **Step 8.3: Copy updated hook to project .claude/hooks/ (if present)**
+
+`.claude/hooks/` is untracked. Only copy if it already exists:
 
 ```bash
-cp adapters/claude_code/hooks/post_tool_use.sh .claude/hooks/post_tool_use.sh
+[ -d .claude/hooks ] && cp adapters/claude_code/hooks/post_tool_use.sh .claude/hooks/post_tool_use.sh || echo "Skipped: .claude/hooks/ not present"
 ```
 
 - [ ] **Step 8.4: Commit**
@@ -1379,9 +1386,9 @@ Expected: all tests `PASSED`.
 
 ```bash
 python3 -c "
-from campy.brain.hippocampus.schema import _NODE_TABLES
-print('WorkSummary fields:', [f.strip().split()[0] for f in _NODE_TABLES['WorkSummary'].strip().split(',') if f.strip()])
-print('WorkArtifact fields:', [f.strip().split()[0] for f in _NODE_TABLES['WorkArtifact'].strip().split(',') if f.strip()])
+from campy.brain.hippocampus.schema import NODE_TABLES
+print('WorkSummary fields:', [f.strip().split()[0] for f in NODE_TABLES['WorkSummary'].strip().split(',') if f.strip()])
+print('WorkArtifact fields:', [f.strip().split()[0] for f in NODE_TABLES['WorkArtifact'].strip().split(',') if f.strip()])
 "
 ```
 
@@ -1397,7 +1404,7 @@ print(f'register_artifact registered. Total tools: {len(TOOL_HANDLERS)}')
 "
 ```
 
-Expected: prints tool count (>= 52).
+Expected: prints `register_artifact registered.` (don't assert on the exact count — B288 and other cards change it).
 
 - [ ] **Step 9.4: Verify CONTEXT.md preservation end-to-end**
 

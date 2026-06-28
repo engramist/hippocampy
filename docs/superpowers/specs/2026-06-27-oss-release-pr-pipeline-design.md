@@ -27,7 +27,7 @@ blocking forever.
 | Phase 2 tooling | Codex GitHub App (required reviewer, reads AGENTS.md) |
 | Phase 3 tooling | `/code-review ultra` — maintainer-triggered before merge |
 | Findings format | Structured table: file, line, rule, severity, fix |
-| Block threshold | Phase 1: any CodeQL/secret/HIGH+ CVE finding; Semgrep HIGH/CRITICAL; Phase 2: Codex "Changes requested" |
+| Block threshold | Phase 1: Semgrep HIGH/CRITICAL and pip-audit HIGH+ block via `review_gate.py` exit code; CodeQL requires branch protection "Code scanning" check + alert severity threshold configured separately; Phase 2: Codex "Changes requested" |
 | Escalation trigger | Same rule fires on 2nd push AND contributor posted a comment since last bot comment |
 | OSS org | GitHub org `hippocampy` — repo transferred from personal account |
 | License | MIT |
@@ -41,20 +41,19 @@ blocking forever.
 ```
 PR opened / new push
         │
-        ▼
+        ▼ (runs in parallel)
 ┌─────────────────────────────────────────────────────┐
 │ Phase 1 — Security Gate (GitHub Actions)            │  automatic on every push
 │  CodeQL → Semgrep → pip-audit → secret scan        │
-│  FAIL → hard block + structured findings comment    │
+│  Semgrep/pip-audit FAIL → hard block via exit code  │
+│  + structured findings comment                       │
+│  CodeQL → Security tab (block via branch protection) │
 └─────────────────────────────────────────────────────┘
-        │ ALL PASS
-        ▼
-┌─────────────────────────────────────────────────────┐
-│ Phase 2 — Ecosystem Gate (Codex GitHub App)         │  automatic required reviewer
-│  Reads AGENTS.md + ecosystem-rules.md               │
+│ Phase 2 — Ecosystem Gate (Codex GitHub App)         │  runs in parallel with Phase 1
+│  Reads AGENTS.md + ecosystem-rules.md               │  (cannot enforce sequence via App)
 │  CHANGES REQUESTED → block + structured findings    │
 └─────────────────────────────────────────────────────┘
-        │ APPROVED
+        │ BOTH PASS (required status checks + required reviewer)
         ▼
 ┌─────────────────────────────────────────────────────┐
 │ Phase 3 — Deep Gate (/code-review ultra)            │  maintainer-triggered
@@ -63,6 +62,10 @@ PR opened / new push
         │ PASS
         ▼
      Maintainer approves + merges
+
+Note: Phase 1 and Phase 2 run in parallel — GitHub Apps cannot wait for Actions to pass.
+Enforcement: branch protection requires BOTH the `semgrep-pip` Actions check AND Codex
+approval before merge is possible. A Phase-1 failure blocks merge independently of Phase 2.
 
 Escalation: same rule fires on 2nd push + contributor comment
   → bot labels `needs-human-review`, pings maintainer
@@ -190,6 +193,12 @@ If both are true:
 
 **What the escalation is NOT:** it does not auto-approve. The maintainer looks at it and
 decides whether the finding is a false positive or a real issue.
+
+**Gam-ability note (v1 accepted):** A contributor could trigger escalation without actually
+fixing the finding — e.g., post any comment then re-push with the same issue. This is accepted
+at v1 because @engramist is the sole merger, so a false escalation just pings the maintainer
+who can assess it directly. The cost is low. A future gate could require the previous finding's
+rule to be absent from the new run before escalating.
 
 ### 6. OSS Release Hygiene
 

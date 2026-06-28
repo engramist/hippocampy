@@ -69,12 +69,14 @@ asyncio.create_task(_update_work_summary(session_id, db, config))
 5. Upsert WorkSummary node
 6. Rewrite `## Current Work` section in `CONTEXT.md`
 
-**Every 10th turn — full snapshot (appended to snapshot_text):**
+**Every 10th turn — full snapshot (replaces snapshot_text, not appended):**
 1. Fetch last 20 Messages from this session ordered by `created_at`
 2. Fetch Decisions made this session (via `ESTABLISHED_IN` edges)
-3. Extract file paths from message text (regex: paths containing `/` and a file extension)
+3. Query WorkArtifact nodes created in this session (authoritative; regex fallback removed)
 4. Query open loops (`get_open_loops` for this session)
 5. Format as structured markdown (see CONTEXT.md section below)
+
+**Note on turn_count:** `turn_count` is read-then-incremented (optimistic, not atomic). Under concurrent rapid-fire turns, two increments may collide and produce a duplicate count. This is accepted — off-by-one on `turn_count` doesn't break correctness since snapshot cadence is approximate. The resume line and node upsert are both idempotent.
 
 ### 3. CONTEXT.md Integration
 
