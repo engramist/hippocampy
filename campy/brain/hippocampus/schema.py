@@ -240,6 +240,35 @@ NODE_TABLES = {
         PRIMARY KEY (session_id)
     """,
 
+    # B290 — Continuous Work State: session work summaries and document artifacts
+    "WorkSummary": """
+        summary_id      STRING,
+        session_id      STRING,
+        agent_source    STRING,
+        git_branch      STRING,
+        git_commit      STRING,
+        active_card     STRING,
+        resume_line     STRING,
+        snapshot_text   STRING,
+        turn_count      INT32,
+        last_updated_at TIMESTAMP,
+        PRIMARY KEY (summary_id)
+    """,
+
+    "WorkArtifact": """
+        artifact_id      STRING,
+        file_path        STRING,
+        document_type    STRING,
+        title            STRING,
+        summary          STRING,
+        linked_card      STRING,
+        session_id       STRING,
+        agent_source     STRING,
+        created_at       TIMESTAMP,
+        last_modified_at TIMESTAMP,
+        PRIMARY KEY (artifact_id)
+    """,
+
     "LLMProvider": """
         provider_id   STRING,
         provider_name STRING,
@@ -842,6 +871,9 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS GENERALIZES_LESSON (FROM Lesson TO Lesson, synthesized_at TIMESTAMP, cluster_size INT32)",
     "CREATE REL TABLE IF NOT EXISTS CONTAINS_LESSON (FROM Message TO Lesson)",
     "CREATE REL TABLE IF NOT EXISTS REROUTED_FROM (FROM Session TO MainQuest, rerouted_at TIMESTAMP, reason STRING)",
+    # B290 — Continuous Work State: artifact provenance relationships
+    "CREATE REL TABLE IF NOT EXISTS CREATED_IN (FROM WorkArtifact TO Session)",
+    "CREATE REL TABLE IF NOT EXISTS DOCUMENTS (FROM WorkArtifact TO Plan)",
     # B66/B69 — active planning + outcome propagation
     "CREATE REL TABLE IF NOT EXISTS PLANNED_IN (FROM Plan TO Session)",
     "CREATE REL TABLE IF NOT EXISTS TARGETS (FROM Plan TO MainQuest, FROM Plan TO SideQuest)",
