@@ -58,6 +58,16 @@ EXPECTED_TOOLS = {
     "recall_mechanic_priors",
     # B235 memory recall routing helper
     "memory_decision",
+    # ARC game loop tools (B229-B234)
+    "arc_perceive_state", "arc_get_game_context", "arc_get_action_evidence",
+    "arc_get_untested_actions", "arc_get_causal_path", "arc_record_action_effect",
+    "arc_get_entity_movement", "arc_get_goal_evidence", "arc_classify_game_archetype",
+    "arc_confirm_hypothesis", "arc_contradict_hypothesis", "arc_update_goal_confidence",
+    "arc_get_mechanic_priors", "arc_check_action_gate", "arc_record_reward_prediction_error",
+    # B289 thalamic ask
+    "ask",
+    # B290 CWS document provenance
+    "register_artifact",
 }
 
 def test_adapter_tool_names_match_handlers():
