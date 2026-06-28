@@ -8,6 +8,23 @@
 
 set -euo pipefail
 
+# B290: Inject resume line from CONTEXT.md ## Current Work section.
+# Fast path — no daemon required, reads a plain file.
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
+CONTEXT_FILE="$REPO_ROOT/CONTEXT.md"
+if [ -f "$CONTEXT_FILE" ]; then
+    RESUME=$(grep -A 3 "^## Current Work" "$CONTEXT_FILE" 2>/dev/null \
+      | grep "^\*\*Resume:\*\*" | sed 's/\*\*Resume:\*\* //')
+    if [ -n "$RESUME" ]; then
+        # Validate branch still exists (BSD-compatible — no grep -P)
+        BRANCH=$(echo "$RESUME" | sed -n 's/.*branch: \([^ ·)]*\).*/\1/p')
+        if [ -n "$BRANCH" ] && ! git branch --list "$BRANCH" 2>/dev/null | grep -q "$BRANCH"; then
+            RESUME="$RESUME (note: branch $BRANCH no longer exists — may have been merged)"
+        fi
+        echo "[Campy] $RESUME"
+    fi
+fi
+
 # Check if campy CLI is available
 if ! command -v campy &>/dev/null; then
     # Try the Python module path
