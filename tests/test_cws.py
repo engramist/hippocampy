@@ -161,3 +161,25 @@ async def test_notify_turn_fires_update_work_summary():
         await asyncio.sleep(0)
 
     assert "sess-cws-1" in fired
+
+
+@pytest.mark.asyncio
+async def test_generate_context_md_preserves_current_work_section(tmp_path):
+    """campy context regen must not overwrite the ## Current Work section."""
+    from campy.brain.thalamus.file_bridge import generate_context_md
+
+    # Pre-write a CONTEXT.md with a Current Work section
+    context_file = tmp_path / "CONTEXT.md"
+    context_file.write_text(
+        "## Current Work\n_Last active: now_\n\n**Resume:** Working on B290.\n\n"
+        "## Language\n\n**foo**: bar\n"
+    )
+
+    mock_db = MagicMock()
+    mock_db.execute_read = AsyncMock(return_value=[])
+
+    await generate_context_md(tmp_path, mock_db)
+
+    content = context_file.read_text()
+    assert "## Current Work" in content
+    assert "Working on B290" in content
