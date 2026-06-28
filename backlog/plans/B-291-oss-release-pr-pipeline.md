@@ -1,5 +1,12 @@
 # B291 — OSS Release & Agent PR Review Pipeline Implementation Plan
 
+> **Update (2026-06-28):** Phase 2 (the AI ecosystem reviewer) now uses **GitHub Copilot code
+> review**, not Codex. Codex would require a separate paid OpenAI subscription the maintainer
+> doesn't have; Copilot ships with the maintainer's existing plan. The ecosystem checklist lives
+> in `.github/copilot-instructions.md` (and mirrored in `AGENTS.md`). References to "Codex" below
+> are historical — see the updated spec for the current design. Task 5 (the AGENTS.md checklist)
+> still applies as written; the same content was also added to `.github/copilot-instructions.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a three-gate automated PR review pipeline (security + ecosystem) to the hippocampy OSS repo, with structured findings, escalation on repeat failures, and OSS release hygiene files.
