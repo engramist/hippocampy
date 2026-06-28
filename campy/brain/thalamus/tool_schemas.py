@@ -315,6 +315,26 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "register_artifact",
+        "description": (
+            "Register or update a WorkArtifact node recording document provenance (path, type, title, summary) "
+            "for a structured document the agent created or edited. Upserts by file_path."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "file_path":      {"type": "string", "description": "Repo-relative path to the document."},
+                "document_type":  {"type": "string", "description": "plan | spec | backlog_card | adr | readme | other (inferred from path if omitted)."},
+                "title":          {"type": "string", "description": "Document title (first H1 or explicit override)."},
+                "summary":        {"type": "string", "description": "Short summary of the document's purpose."},
+                "linked_card":    {"type": "string", "description": "Backlog card this document belongs to, e.g. 'B290'."},
+                "session_id":     {"type": "string", "description": "OpenClaw session ID (auto-filled)."},
+                "agent_source":   {"type": "string", "description": "Originating agent identifier."},
+            },
+            "required": ["file_path"],
+        },
+    },
+    {
         "name": "recall_relevant_lessons",
         "description": (
             "Retrieve domain-specific lessons or best practices from the knowledge graph. "
