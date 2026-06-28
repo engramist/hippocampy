@@ -148,7 +148,7 @@ Create `.github/PULL_REQUEST_TEMPLATE.md`:
 - [ ] No new module-level dicts/lists in `campy/` used as persistent stores (use KuzuDB)
 - [ ] New code is in the right directory per `docs/ecosystem-rules.md`
 - [ ] New MCP tools are added to `TOOL_HANDLERS` in `campy/brain/thalamus/tools/__init__.py`
-- [ ] Schema changes include a `_MIGRATIONS` entry in `campy/brain/hippocampus/schema.py`
+- [ ] Schema changes include an entry in the `_MIGRATIONS` list inside `init_schema()` in `campy/brain/hippocampus/schema.py`
 ```
 
 - [ ] **Step 5: Verify files exist**
@@ -182,7 +182,11 @@ Create `.semgrep/campy-no-shadow-stores.yaml`:
 rules:
   - id: campy-shadow-store-dict
     patterns:
-      - pattern: $NAME = {}
+      - pattern-either:
+          - pattern: $NAME = {}
+          - pattern: $NAME = dict()
+          - pattern: $NAME: $TYPE = {}
+          - pattern: $NAME: $TYPE = dict()
       - pattern-not-inside: |
           def $FUNC(...):
             ...
@@ -206,7 +210,11 @@ rules:
 
   - id: campy-shadow-store-list
     patterns:
-      - pattern: $NAME = []
+      - pattern-either:
+          - pattern: $NAME = []
+          - pattern: $NAME = list()
+          - pattern: $NAME: $TYPE = []
+          - pattern: $NAME: $TYPE = list()
       - pattern-not-inside: |
           def $FUNC(...):
             ...
@@ -248,11 +256,23 @@ _store = {}
 # ruleid: campy-shadow-store-dict
 _cache = {}
 
+# ruleid: campy-shadow-store-dict
+_cache: dict = {}
+
+# ruleid: campy-shadow-store-dict
+_store = dict()
+
 # ruleid: campy-shadow-store-list
 _registry = []
 
 # ruleid: campy-shadow-store-list
 _state = []
+
+# ruleid: campy-shadow-store-list
+_registry: list = []
+
+# ruleid: campy-shadow-store-list
+_state = list()
 
 
 def function_with_local():
@@ -268,10 +288,11 @@ class MyClass:
     class_cache = {}  # inside a class — should not flag
 ```
 
-- [ ] **Step 3: Install Semgrep and run the test**
+- [ ] **Step 3: Run Semgrep rule tests (if Semgrep is available)**
+
+If Semgrep is not installed, install it first: `pip install semgrep`. If network access is not available, skip this step and verify rule correctness by inspection.
 
 ```bash
-pip install semgrep
 semgrep --test .semgrep/
 ```
 
@@ -975,7 +996,10 @@ permissions:
 jobs:
   # -------------------------------------------------------------------------
   # Job 1: CodeQL — static security analysis
-  # Reports findings via GitHub's native Security tab and fails the check.
+  # Reports findings to the GitHub Security tab (not to the structured PR
+  # comment — that is Semgrep/pip-audit only). To block PRs on CodeQL alerts,
+  # configure branch protection → Code Scanning → alert severity "Error"
+  # in repo Settings → Code security → Protection rules.
   # -------------------------------------------------------------------------
   codeql:
     name: CodeQL
@@ -1026,13 +1050,18 @@ jobs:
             --output semgrep-results.json \
             campy/ || true
 
+      - name: Install package dependencies
+        # Install the package so pip-audit covers pyproject.toml deps too.
+        # Fall back gracefully if the package isn't directly installable.
+        run: pip install -e . --quiet 2>/dev/null || true
+
       - name: Run pip-audit
-        # || true: let review_gate.py be the gate
+        # Audits the full installed environment (covers both requirements.txt
+        # and pyproject.toml). || true: let review_gate.py be the gate.
         run: |
           pip-audit \
-            -r requirements.txt \
-            -f json \
-            -o pip-audit-results.json || true
+            --format json \
+            --output pip-audit-results.json || true
 
       - name: Post findings and gate
         env:
@@ -1046,10 +1075,11 @@ jobs:
             --phase Security
 ```
 
-- [ ] **Step 3: Validate workflow YAML syntax**
+- [ ] **Step 3: Validate workflow YAML syntax (if yamllint is available)**
+
+If yamllint is not installed and network access is available: `pip install yamllint`. If network access is not available, skip this step and verify YAML by visual inspection.
 
 ```bash
-pip install yamllint
 yamllint .github/workflows/security-gate.yml
 ```
 
@@ -1100,8 +1130,9 @@ When reviewing a pull request, check each rule below. Post findings in this exac
   that does not appear in the `TOOL_HANDLERS` dict in the same file
 
 **4. Schema migrations** — schema additions need a migration entry.
-- Flag: additions to `_NODE_TABLES` or `_REL_TABLES` in `campy/brain/hippocampus/schema.py`
-  that have no corresponding entry added to `_MIGRATIONS` in the same file
+- Flag: additions to `NODE_TABLES` or `REL_TABLES` in `campy/brain/hippocampus/schema.py`
+  (both are module-level, no underscore prefix) that have no corresponding entry added to
+  the `_MIGRATIONS` list inside the `init_schema()` function in the same file
 
 **Decision:**
 - If all rules pass: approve the PR.
