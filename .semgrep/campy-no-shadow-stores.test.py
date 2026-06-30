@@ -30,6 +30,22 @@ _registry: list = []
 _state = list()
 
 
+# ruleid: campy-shadow-store-dict
+session_cache = {}
+
+# ruleid: campy-shadow-store-dict
+agent_state = {}
+
+# ruleid: campy-shadow-store-list
+node_registry = []
+
+# ok: campy-shadow-store-dict
+statement = {}  # "state" is not an underscore-delimited component
+
+# ok: campy-shadow-store-dict
+database = {}  # "db" is not present as an underscore-delimited component
+
+
 def function_with_local():
     # ok: campy-shadow-store-dict
     local_cache = {}  # inside a function — should not flag

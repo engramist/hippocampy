@@ -23,7 +23,7 @@ When reviewing a pull request, check each rule below and report findings in this
 - Flag: new files placed in the wrong top-level directory for their responsibility
 
 **2. No shadow stores** — persistent agent state must go through KuzuDB, not in-memory structures.
-- Flag: module-level `dict` or `list` in `campy/` whose name contains `store`, `cache`, `state`, `registry`, or `db`
+- Flag: module-level `dict` or `list` in `campy/` whose name contains `store`, `cache`, `state`, `registry`, or `db` as an underscore-delimited component (e.g. `_cache`, `session_state`, `vector_db`)
 - In-memory caches backed by KuzuDB reads are permitted; standalone in-memory state is not
 
 **3. Tool registration** — every new MCP tool must be registered across all surfaces.
