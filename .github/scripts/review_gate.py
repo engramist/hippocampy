@@ -30,6 +30,8 @@ import urllib.error
 from datetime import datetime, timezone
 
 CAMPY_BOT_MARKER = "<!-- campy-security-findings -->"
+CAMPY_ESCALATION_MARKER = "<!-- campy-security-escalation -->"
+_BOT_LOGIN = "github-actions[bot]"
 _SEVERITY_MAP = {"ERROR": "HIGH", "WARNING": "MEDIUM", "INFO": "LOW"}
 _ESCALATION_MENTION = "@engramist"
 
@@ -67,10 +69,23 @@ def format_findings_table(findings):
     return header + "\n" + "\n".join(rows), rule_ids
 
 
-def build_comment_body(findings, phase):
-    """Build the full PR comment body, including hidden rule IDs for escalation."""
+def build_comment_body(findings, phase, blocking=True):
+    """Build the full PR comment body, including hidden rule IDs for escalation.
+
+    Args:
+        findings: list of finding dicts (may be empty).
+        phase: gate phase label shown in the comment header.
+        blocking: True  → findings are blocking (status BLOCKED, "fix and push again" footer).
+                  False → findings are advisory (status ADVISORY when non-empty, gentle footer).
+                  Ignored when findings is empty; empty always yields PASSED.
+    """
     table, rule_ids = format_findings_table(findings)
-    status = "BLOCKED" if findings else "PASSED"
+    if not findings:
+        status = "PASSED"
+    elif blocking:
+        status = "BLOCKED"
+    else:
+        status = "ADVISORY"
     parts = [
         CAMPY_BOT_MARKER,
         f"## Campy {phase} Review — {status}",
@@ -82,17 +97,31 @@ def build_comment_body(findings, phase):
             "",
             f"<!-- campy-findings: {','.join(rule_ids)} -->",
             "",
-            f"**Fix the above and push again. The {phase.lower()} gate re-runs automatically.**",
         ]
+        if blocking:
+            parts.append(
+                f"**Fix the above and push again. The {phase.lower()} gate re-runs automatically.**"
+            )
+        else:
+            parts.append(
+                "**These are advisory findings (MEDIUM/LOW). They do not block this PR.**"
+            )
     else:
         parts.append("All checks passed. ✓")
     return "\n".join(parts)
 
 
 def find_bot_comment(comments):
-    """Return the most recent bot findings comment dict, or None."""
+    """Return the most recent bot findings comment dict, or None.
+
+    Only considers comments posted by _BOT_LOGIN to prevent marker spoofing or
+    accidental PATCH of a contributor's comment.
+    """
     for c in reversed(comments):
-        if CAMPY_BOT_MARKER in c.get("body", ""):
+        if (
+            CAMPY_BOT_MARKER in c.get("body", "")
+            and c.get("user", {}).get("login") == _BOT_LOGIN
+        ):
             return c
     return None
 
@@ -183,8 +212,18 @@ def _api_request(method, url, data=None):
 
 
 def _get_pr_comments(repo, pr_number):
-    url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments?per_page=100"
-    return _api_request("GET", url)
+    comments = []
+    page = 1
+    while True:
+        url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments?per_page=100&page={page}"
+        batch = _api_request("GET", url)
+        if not batch:
+            break
+        comments.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    return comments
 
 
 def _get_pr_author(repo, pr_number):
@@ -203,14 +242,24 @@ def _post_or_replace_comment(repo, pr_number, body, previous_bot_comment):
 
 
 def _add_label(repo, pr_number, label):
-    url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/labels"
-    _api_request("POST", url, {"labels": [label]})
+    # Ensure the label exists (ignore "already exists" errors), then attach it.
+    try:
+        _api_request("POST", f"https://api.github.com/repos/{repo}/labels",
+                     {"name": label, "color": "B60205",
+                      "description": "Flagged by the Campy security gate for maintainer review"})
+    except Exception:
+        pass  # label probably already exists
+    try:
+        _api_request("POST", f"https://api.github.com/repos/{repo}/issues/{pr_number}/labels",
+                     {"labels": [label]})
+    except Exception:
+        pass  # never let labeling break escalation
 
 
 def _post_escalation_comment(repo, pr_number, overlapping_ids):
     rule_str = ", ".join(f"`{r}`" for r in sorted(overlapping_ids))
     body = (
-        f"{CAMPY_BOT_MARKER}\n"
+        f"{CAMPY_ESCALATION_MARKER}\n"
         f"## Campy Security Review — ESCALATED\n\n"
         f"This PR has the same finding(s) ({rule_str}) after a re-push and a contributor "
         f"comment. Pinging {_ESCALATION_MENTION} for manual review.\n\n"
@@ -256,8 +305,10 @@ def main():
     previous_bot_comment = find_bot_comment(comments)
 
     # Post or replace the findings comment
-    display_findings = blocking if blocking else advisory[:3]
-    body = build_comment_body(display_findings, args.phase)
+    if blocking:
+        body = build_comment_body(blocking, args.phase, blocking=True)
+    else:
+        body = build_comment_body(advisory[:3], args.phase, blocking=False)
     _post_or_replace_comment(repo, pr_number, body, previous_bot_comment)
 
     # Handle escalation on repeat failures

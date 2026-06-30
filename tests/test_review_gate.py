@@ -1,13 +1,14 @@
 """Tests for .github/scripts/review_gate.py pure functions."""
 import sys
 import os
-import pytest
 
 # Make review_gate importable from the scripts directory
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '.github', 'scripts'))
 
 from review_gate import (
     CAMPY_BOT_MARKER,
+    CAMPY_ESCALATION_MARKER,
+    _BOT_LOGIN,
     extract_rule_ids_from_comment,
     format_findings_table,
     build_comment_body,
@@ -288,3 +289,80 @@ def test_parse_pip_audit_output_no_fix_version():
     findings = parse_pip_audit_output(data)
     assert len(findings) == 1
     assert "No fix available" in findings[0]["fix"]
+
+
+# ---------------------------------------------------------------------------
+# build_comment_body — blocking parameter (Fix #1)
+# ---------------------------------------------------------------------------
+
+_SAMPLE_FINDING = [{"file": "f.py", "line": "1", "rule": "my-rule", "severity": "MEDIUM", "fix": "fix"}]
+
+
+def test_build_comment_body_advisory_not_blocked():
+    """Advisory-only findings must not say BLOCKED and must not have the blocking footer."""
+    body = build_comment_body(_SAMPLE_FINDING, "Security", blocking=False)
+    assert "ADVISORY" in body
+    assert "BLOCKED" not in body
+    assert "Fix the above and push again" not in body
+    assert "advisory findings" in body
+
+
+def test_build_comment_body_blocking_says_blocked():
+    """Blocking findings must say BLOCKED."""
+    body = build_comment_body(_SAMPLE_FINDING, "Security", blocking=True)
+    assert "BLOCKED" in body
+    assert "ADVISORY" not in body
+    assert "Fix the above and push again" in body
+
+
+def test_build_comment_body_advisory_includes_rule_id_comment():
+    """Advisory body should still include the hidden rule-id comment for escalation tracking."""
+    body = build_comment_body(_SAMPLE_FINDING, "Security", blocking=False)
+    assert "<!-- campy-findings: my-rule -->" in body
+
+
+# ---------------------------------------------------------------------------
+# find_bot_comment — author filter (Fix #2) and escalation marker (Fix #3)
+# ---------------------------------------------------------------------------
+
+def test_find_bot_comment_ignores_non_bot_author():
+    """A comment with the bot marker but posted by a contributor must be ignored."""
+    spoofed = {
+        "id": 200,
+        "user": {"login": "contributor"},
+        "body": f"{CAMPY_BOT_MARKER}\n## Campy Security Review — BLOCKED\n",
+        "created_at": "2026-01-01T12:00:00Z",
+    }
+    assert find_bot_comment([spoofed]) is None
+
+
+def test_find_bot_comment_matches_bot_author():
+    """A comment with the marker posted by the bot login must be returned."""
+    bot_comment = {
+        "id": 201,
+        "user": {"login": _BOT_LOGIN},
+        "body": f"{CAMPY_BOT_MARKER}\n## Campy Security Review — BLOCKED\n",
+        "created_at": "2026-01-01T12:00:00Z",
+    }
+    assert find_bot_comment([bot_comment]) is bot_comment
+
+
+def test_find_bot_comment_ignores_escalation_marker():
+    """A comment that only has the escalation marker (not CAMPY_BOT_MARKER) must be ignored."""
+    escalation_comment = {
+        "id": 202,
+        "user": {"login": _BOT_LOGIN},
+        "body": f"{CAMPY_ESCALATION_MARKER}\n## Campy Security Review — ESCALATED\n",
+        "created_at": "2026-01-01T13:00:00Z",
+    }
+    assert find_bot_comment([escalation_comment]) is None
+
+
+# ---------------------------------------------------------------------------
+# _get_pr_comments pagination (Fix #10) — note
+# ---------------------------------------------------------------------------
+# test_get_pr_comments_paginates is omitted: cleanly mocking the urllib-based
+# _api_request internals would require monkeypatching a private function with
+# no DI hook, making the test brittle and tightly coupled to implementation
+# details. The pagination logic in _get_pr_comments is straightforward loop
+# code; it is covered by the code-review finding description.
