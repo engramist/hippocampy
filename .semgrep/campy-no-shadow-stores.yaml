@@ -17,7 +17,7 @@ rules:
             ...
       - metavariable-regex:
           metavariable: $NAME
-          regex: "^_?(store|cache|state|registry|db).*"
+          regex: "(.*_)?(store|cache|state|registry|db)(_.*)?$"
     message: >
       Module-level dict `$NAME` looks like a shadow store.
       Persistent state must go through KuzuDB. See docs/ecosystem-rules.md "No Shadow Stores rule."
@@ -45,7 +45,7 @@ rules:
             ...
       - metavariable-regex:
           metavariable: $NAME
-          regex: "^_?(store|cache|state|registry|db).*"
+          regex: "(.*_)?(store|cache|state|registry|db)(_.*)?$"
     message: >
       Module-level list `$NAME` looks like a shadow store.
       Persistent state must go through KuzuDB. See docs/ecosystem-rules.md "No Shadow Stores rule."
