@@ -67,16 +67,18 @@ jobs:
             --output semgrep-results.json \
             campy/ || true
 
-      - name: Install package dependencies
-        # Install the package so pip-audit covers pyproject.toml deps too.
-        # Fall back gracefully if the package isn't directly installable.
-        run: pip install -e . --quiet 2>/dev/null || true
-
-      - name: Run pip-audit
-        # Audits the full installed environment (covers both requirements.txt
-        # and pyproject.toml). || true: let review_gate.py be the gate.
+      - name: Audit project dependencies (isolated from review tooling)
+        # Install the project into a clean venv, freeze its resolved deps, and
+        # audit only those — so Semgrep/pip-audit's own dependencies don't show
+        # up as spurious findings. Covers both requirements.txt and pyproject.toml.
         run: |
-          pip-audit \
+          python -m venv /tmp/audit-venv
+          /tmp/audit-venv/bin/pip install --quiet --upgrade pip
+          /tmp/audit-venv/bin/pip install --quiet -e . 2>/dev/null \
+            || /tmp/audit-venv/bin/pip install --quiet -r requirements.txt \
+            || true
+          /tmp/audit-venv/bin/pip freeze > /tmp/project-reqs.txt
+          pip-audit -r /tmp/project-reqs.txt \
             --format json \
             --output pip-audit-results.json || true
 
