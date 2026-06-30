@@ -24,8 +24,10 @@ _FALLBACK_ROUTING = {
     "Event":         ("Event",             ["name", "startDate", "endDate", "eventStatus", "location", "organizer", "description"]),
 }
 
-# Module-level cache populated at startup
-_routing_cache: dict[str, dict] = {}
+# Read-through cache over KuzuDB: populated at daemon startup from the graph in
+# load_routing_table() (MATCH (g:GistClass)-[:ROUTES_TO]->(s:SchemaOrgType)). The
+# graph remains the source of truth; this is a cache, not a shadow store.
+_routing_cache: dict[str, dict] = {}  # nosemgrep: campy-shadow-store-dict
 
 
 def load_routing_table(db) -> None:
