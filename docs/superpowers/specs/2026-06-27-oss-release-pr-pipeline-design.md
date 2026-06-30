@@ -27,7 +27,7 @@ blocking forever.
 | Phase 2 tooling | GitHub Copilot code review (automatic reviewer, reads `.github/copilot-instructions.md`) — chosen over Codex because it ships with the maintainer's existing Copilot plan; Codex would require a separate paid OpenAI subscription |
 | Phase 3 tooling | `/code-review ultra` — maintainer-triggered before merge |
 | Findings format | Structured table: file, line, rule, severity, fix |
-| Block threshold | Phase 1: Semgrep HIGH/CRITICAL and pip-audit HIGH+ block via `review_gate.py` exit code; CodeQL requires branch protection "Code scanning" check + alert severity threshold configured separately; Phase 2: Copilot review requests changes |
+| Block threshold | Phase 1: Semgrep HIGH/CRITICAL blocks via `review_gate.py` exit code; pip-audit dependency CVEs are advisory (surfaced, non-blocking) — a heavy ML dependency tree always carries unfixable CVEs; only code-level Semgrep HIGH/CRITICAL findings hard-block; CodeQL requires branch protection "Code scanning" check + alert severity threshold configured separately; Phase 2: Copilot review requests changes |
 | Escalation trigger | Same rule fires on 2nd push AND contributor posted a comment since last bot comment |
 | OSS org | GitHub org `hippocampy` — repo transferred from personal account |
 | License | MIT |

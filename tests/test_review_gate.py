@@ -16,6 +16,7 @@ from review_gate import (
     should_escalate,
     parse_semgrep_output,
     parse_pip_audit_output,
+    partition_findings,
 )
 
 # ---------------------------------------------------------------------------
@@ -222,6 +223,7 @@ def test_parse_semgrep_output_converts_result():
     assert f["line"] == "10"
     assert f["severity"] == "HIGH"
     assert "shadow store" in f["fix"].lower()
+    assert f["source"] == "code"
 
 
 def test_parse_semgrep_output_warning_maps_to_medium():
@@ -271,6 +273,7 @@ def test_parse_pip_audit_output_converts_vulnerability():
     assert "2.28.0" in f["file"]
     assert "2.31.0" in f["fix"]
     assert f["severity"] == "HIGH"
+    assert f["source"] == "dependency"
 
 
 def test_parse_pip_audit_output_no_fix_version():
@@ -366,3 +369,46 @@ def test_find_bot_comment_ignores_escalation_marker():
 # no DI hook, making the test brittle and tightly coupled to implementation
 # details. The pagination logic in _get_pr_comments is straightforward loop
 # code; it is covered by the code-review finding description.
+
+
+# ---------------------------------------------------------------------------
+# partition_findings
+# ---------------------------------------------------------------------------
+
+def test_partition_code_high_blocks():
+    """A code-level HIGH finding is blocking."""
+    findings = [{"source": "code", "severity": "HIGH", "rule": "shell-injection", "file": "f.py", "line": "1", "fix": "fix"}]
+    blocking, advisory = partition_findings(findings)
+    assert len(blocking) == 1
+    assert len(advisory) == 0
+    assert blocking[0]["rule"] == "shell-injection"
+
+
+def test_partition_code_medium_advisory():
+    """A code-level MEDIUM finding is advisory, not blocking."""
+    findings = [{"source": "code", "severity": "MEDIUM", "rule": "some-warning", "file": "f.py", "line": "5", "fix": "fix"}]
+    blocking, advisory = partition_findings(findings)
+    assert len(blocking) == 0
+    assert len(advisory) == 1
+
+
+def test_partition_dependency_high_is_advisory():
+    """A dependency CVE (source=dependency) at HIGH severity is advisory, never blocking."""
+    findings = [{"source": "dependency", "severity": "HIGH", "rule": "CVE-2025-1", "file": "dependency: x==1.0", "line": "-", "fix": "upgrade"}]
+    blocking, advisory = partition_findings(findings)
+    assert len(blocking) == 0
+    assert len(advisory) == 1
+    assert advisory[0]["rule"] == "CVE-2025-1"
+
+
+def test_partition_mixed():
+    """One code HIGH + two dependency HIGHs → blocking has 1, advisory has 2."""
+    findings = [
+        {"source": "code", "severity": "HIGH", "rule": "code-issue", "file": "f.py", "line": "1", "fix": "fix"},
+        {"source": "dependency", "severity": "HIGH", "rule": "CVE-2025-A", "file": "dependency: a==1.0", "line": "-", "fix": "upgrade"},
+        {"source": "dependency", "severity": "HIGH", "rule": "CVE-2025-B", "file": "dependency: b==2.0", "line": "-", "fix": "upgrade"},
+    ]
+    blocking, advisory = partition_findings(findings)
+    assert len(blocking) == 1
+    assert len(advisory) == 2
+    assert blocking[0]["rule"] == "code-issue"

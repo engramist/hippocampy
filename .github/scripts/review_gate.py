@@ -104,7 +104,7 @@ def build_comment_body(findings, phase, blocking=True):
             )
         else:
             parts.append(
-                "**These are advisory findings (MEDIUM/LOW). They do not block this PR.**"
+                "**These are advisory findings (dependency CVEs and non-blocking notes). They do not block this PR — triage at your discretion.**"
             )
     else:
         parts.append("All checks passed. ✓")
@@ -159,6 +159,7 @@ def parse_semgrep_output(data):
             "rule": result.get("check_id", "unknown"),
             "severity": _SEVERITY_MAP.get(sev_raw, "MEDIUM"),
             "fix": result.get("extra", {}).get("message", "See rule documentation")[:100],
+            "source": "code",
         })
     return findings
 
@@ -180,8 +181,27 @@ def parse_pip_audit_output(data):
                 "rule": vuln.get("id", "unknown-cve"),
                 "severity": "HIGH",
                 "fix": fix_str,
+                "source": "dependency",
             })
     return findings
+
+
+def partition_findings(findings):
+    """Split findings into (blocking, advisory).
+
+    Only CODE findings (Semgrep) at HIGH/CRITICAL severity block the PR.
+    DEPENDENCY CVEs (pip-audit, source="dependency") are always advisory —
+    a heavy dependency tree always carries some unfixable CVEs, so they are
+    surfaced for triage rather than hard-blocking every PR.
+    """
+    blocking, advisory = [], []
+    for f in findings:
+        is_dependency = f.get("source") == "dependency"
+        if not is_dependency and f.get("severity") in ("HIGH", "CRITICAL"):
+            blocking.append(f)
+        else:
+            advisory.append(f)
+    return blocking, advisory
 
 
 # ---------------------------------------------------------------------------
@@ -296,9 +316,8 @@ def main():
             with open(path) as fh:
                 all_findings.extend(parser_fn(json.load(fh)))
 
-    # Split into blocking (HIGH/CRITICAL) and advisory
-    blocking = [f for f in all_findings if f["severity"] in ("HIGH", "CRITICAL")]
-    advisory = [f for f in all_findings if f["severity"] not in ("HIGH", "CRITICAL")]
+    # Split into blocking (code-level HIGH/CRITICAL) and advisory (dependency CVEs + others)
+    blocking, advisory = partition_findings(all_findings)
 
     # Get existing PR comments before we post (escalation needs the old bot comment)
     comments = _get_pr_comments(repo, pr_number)
@@ -308,7 +327,7 @@ def main():
     if blocking:
         body = build_comment_body(blocking, args.phase, blocking=True)
     else:
-        body = build_comment_body(advisory[:3], args.phase, blocking=False)
+        body = build_comment_body(advisory[:20], args.phase, blocking=False)
     _post_or_replace_comment(repo, pr_number, body, previous_bot_comment)
 
     # Handle escalation on repeat failures
