@@ -522,3 +522,18 @@ Pre-existing debt: `ingest_data` (B250) and `compile_context` (B252) never propa
 | Card | Priority | State | Title | Plan |
 |------|----------|-------|-------|------|
 | B288 | P2 | ready | Reconcile Adapter Tool Surfaces (OpenClaw + Codex Allow-Lists) | backlog/plans/B-288-adapter-tool-surface-reconcile.md |
+
+## Pre-Launch Hardening (OSS Release Readiness)
+
+Added 2026-06-30 from the Fable codebase assessment. These gate the public launch of `engramist/hippocampy`. B289 (ask, shipped), B290 (CWS, merged PR #2), and B291 (PR pipeline, PR #3) precede this milestone.
+
+| Card | Priority | State | Title | Card File |
+|------|----------|-------|-------|-----------|
+| B295 | P0 | ready | Green Main: Triage Every Failing Test Before Public Launch | backlog/B295.md |
+| B296 | P0 | ready | Public-Tree Audit: Decide What Ships in the Public Repo | backlog/B296.md |
+| B297 | P0 | ready | README + Install Path: Make the Front Door Work and Sell | backlog/B297.md |
+| B294 | P1 | ready | Finish the mcp_engine Migration (Kill the Half-Moved Package) | backlog/B294.md |
+| B292 | P1 | ready | Split the tools/__init__.py God Module | backlog/B292.md |
+| B293 | P2 | ready | Single Source of Truth for the MCP Tool Surface | backlog/B293.md |
+
+**Dependency chain:** B295, B296, B297 are the P0 launch gates (independent of each other; B296 requires maintainer IP decisions and must complete before the repo goes public). B294 before B297's packaging work ideally (removes stray package from discovery). B292 → B293 (codegen is cleaner against split modules). Do NOT run B292 and B295 concurrently (both touch broad test surface).
