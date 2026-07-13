@@ -42,7 +42,7 @@ That matches the repo's current Kuzu abstraction and avoids forcing RDF-style se
 
 ### 2. Relationship semantics are explicit
 
-The schema has a healthy set of named relationship tables in [mcp_engine/schema.py](/Users/djshelton/Desktop/GitProjects/sidequests-brain/mcp_engine/schema.py), especially:
+The schema has a healthy set of named relationship tables in `mcp_engine/schema.py` (historical path at time of writing — see `docs/codebase-anatomy.md` for current location), especially:
 
 - session provenance: `WORKING_ON`, `SENT_IN`, `LOADED`, `USED`
 - knowledge evolution: `CO_OCCURS_WITH`, `REIFIED_AS`, `DEPRECATED_BY`, `TRIGGERED`, `UPDATES_PATHWAY`
@@ -102,7 +102,7 @@ Recommendation:
 
 ### Finding 3. Quest identity semantics are slightly muddy
 
-The legacy git-based quest path in [mcp_engine/quest.py](/Users/djshelton/Desktop/GitProjects/sidequests-brain/mcp_engine/quest.py) says the quest is based on repo + branch, but `compute_quest_id()` currently hashes only `repo_root`. At the same time, Hippocampus introduces semantic quest creation and routing. That creates a mixed identity model:
+The legacy git-based quest path in `mcp_engine/quest.py` (historical path at time of writing — see `docs/codebase-anatomy.md` for current location) says the quest is based on repo + branch, but `compute_quest_id()` currently hashes only `repo_root`. At the same time, Hippocampus introduces semantic quest creation and routing. That creates a mixed identity model:
 
 - some quests are legacy deterministic git quests
 - some are semantic UUID-backed quests

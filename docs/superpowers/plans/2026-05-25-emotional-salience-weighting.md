@@ -89,7 +89,7 @@ class TestComputeSalienceMultiplier:
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/djshelton/Desktop/GitProjects/hippocampy && .venv/bin/pytest tests/test_step4_salience.py -v`
+Run: `cd ~/GitProjects/hippocampy && .venv/bin/pytest tests/test_step4_salience.py -v`
 
 Expected: FAIL — `ImportError: cannot import name 'compute_salience_multiplier'`
 
@@ -167,13 +167,13 @@ def compute_salience_multiplier(text: str) -> float:
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cd /Users/djshelton/Desktop/GitProjects/hippocampy && .venv/bin/pytest tests/test_step4_salience.py -v`
+Run: `cd ~/GitProjects/hippocampy && .venv/bin/pytest tests/test_step4_salience.py -v`
 
 Expected: All 11 tests PASS.
 
 - [ ] **Step 6: Run existing step4/orchestrator tests to check for regressions**
 
-Run: `cd /Users/djshelton/Desktop/GitProjects/hippocampy && .venv/bin/pytest tests/test_orchestrator.py -v`
+Run: `cd ~/GitProjects/hippocampy && .venv/bin/pytest tests/test_orchestrator.py -v`
 
 Expected: All existing tests still PASS — no behavior change yet (multiplier not wired in).
 
@@ -234,7 +234,7 @@ class TestConfidenceRescue:
 
 - [ ] **Step 2: Run tests to verify baseline behavior**
 
-Run: `cd /Users/djshelton/Desktop/GitProjects/hippocampy && .venv/bin/pytest tests/test_step4_salience.py::TestConfidenceRescue -v`
+Run: `cd ~/GitProjects/hippocampy && .venv/bin/pytest tests/test_step4_salience.py::TestConfidenceRescue -v`
 
 Expected: Both tests PASS (documenting current baseline behavior).
 
@@ -443,7 +443,7 @@ class TestPathwayStrengthBoost:
 
 - [ ] **Step 10: Run all tests**
 
-Run: `cd /Users/djshelton/Desktop/GitProjects/hippocampy && .venv/bin/pytest tests/test_step4_salience.py tests/test_orchestrator.py -v`
+Run: `cd ~/GitProjects/hippocampy && .venv/bin/pytest tests/test_step4_salience.py tests/test_orchestrator.py -v`
 
 Expected: All tests PASS, including existing orchestrator tests (no regressions).
 
@@ -501,7 +501,7 @@ In `docs/superpowers/specs/2026-05-25-emotional-salience-weighting.md`, add an I
 
 - [ ] **Step 5: Run full test suite**
 
-Run: `cd /Users/djshelton/Desktop/GitProjects/hippocampy && .venv/bin/pytest tests/ -x -q`
+Run: `cd ~/GitProjects/hippocampy && .venv/bin/pytest tests/ -x -q`
 
 Expected: All tests pass, no regressions.
 

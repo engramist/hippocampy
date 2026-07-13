@@ -40,14 +40,14 @@ Failover order (recommended):
 3. Third executor
 
 ### Model selection lessons learned
-Codex CLI model IDs that were verified usable on this machine/session:
+Codex CLI model IDs verified usable in testing:
 - gpt-5.1-codex-mini
 - gpt-5.1-codex-max
 - gpt-5.4-mini
 
 Note:
-- "codex" and "codex-mini" aliases were rejected under this account.
-- Always smoke-test model IDs before relying on them for a batch.
+- The "codex" and "codex-mini" short aliases were rejected in testing — use the full model IDs above.
+- Model availability varies by account/plan; always smoke-test model IDs before relying on them for a batch.
 - **Codex `exec` subcommand runs in a read-only sandbox** — it cannot write files or run pytest.
   Confirmed on 2026-03-30. Remove Codex from rotation for this project; use Gemini + Haiku only.
 
