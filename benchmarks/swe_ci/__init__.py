@@ -15,7 +15,7 @@ __all__ = [
 ]
 
 DATASET_URL = (
-    "https://raw.githubusercontent.com/djs54/sidequests-brain/main/benchmarks/swe_ci/data/swe_ci_sample.json"
+    "https://raw.githubusercontent.com/engramist/hippocampy/main/benchmarks/swe_ci/data/swe_ci_sample.json"
 )
 CACHE_SUBDIR = Path(__file__).parent / "cache"
 CACHE_FILENAME = "swe_ci_dataset.json"

@@ -24,7 +24,7 @@ Notes:
 1. Clone the repository:
 
 ```bash
-git clone git@github.com:djs54/hippocampy.git
+git clone git@github.com:engramist/hippocampy.git
 cd hippocampy
 ```
 
