@@ -531,7 +531,7 @@ Added 2026-06-30 from the Fable codebase assessment. These gate the public launc
 |------|----------|-------|-------|-----------|
 | B295 | P0 | ready | Green Main: Triage Every Failing Test Before Public Launch | backlog/B295.md |
 | B296 | P0 | ready | Public-Tree Audit: Decide What Ships in the Public Repo | backlog/B296.md |
-| B297 | P0 | ready | README + Install Path: Make the Front Door Work and Sell | backlog/B297.md |
+| B297 | P0 | complete (2026-07-13) | README + Install Path: Make the Front Door Work and Sell | backlog/B297.md |
 | B294 | P1 | ready | Finish the mcp_engine Migration (Kill the Half-Moved Package) | backlog/B294.md |
 | B292 | P1 | ready | Split the tools/__init__.py God Module | backlog/B292.md |
 | B293 | P2 | ready | Single Source of Truth for the MCP Tool Surface | backlog/B293.md |
