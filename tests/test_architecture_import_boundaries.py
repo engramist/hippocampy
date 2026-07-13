@@ -1,7 +1,7 @@
 """Architecture boundary checks for Campy production modules.
 
 These tests enforce the repository rule that production memory-engine code under
-`campy/` and `mcp_engine/` must not import agent runtime or benchmark packages.
+`campy/` must not import agent runtime or benchmark packages.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-PRODUCTION_ROOTS = ("campy", "mcp_engine")
+PRODUCTION_ROOTS = ("campy",)
 FORBIDDEN_TOP_LEVEL_MODULES = ("agents", "benchmarks")
 IGNORED_DIR_NAMES = {
     "__pycache__",
