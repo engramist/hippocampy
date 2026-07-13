@@ -22,7 +22,11 @@ uvicorn==0.32.1
 tomli==2.2.1      # TOML parser for Python < 3.11; stdlib tomllib used on 3.11+
 
 # CLI
-click>=8.1
+# click>=8.2 required by typer>=0.25 (uses click.Choice[T] generic subscripting,
+# added in click 8.2). A looser pin here previously let click get silently
+# downgraded to 8.1.x by an unrelated tool install, breaking all typer CLI
+# test collection with "type 'Choice' is not subscriptable".
+click>=8.2
 
 # YAML parsing for configs
 PyYAML==6.0.2
