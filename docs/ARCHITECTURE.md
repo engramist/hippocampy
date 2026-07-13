@@ -150,10 +150,9 @@ All LLM calls use an OpenAI-SDK-compatible interface so Ollama and cloud provide
 
 ## IP Protection
 
-**Provisional patent filed.** The canonical inventor's notebook records the filing on March 25, 2026:
-Application # **64/017,066**, Confirmation # **7549**, Patent Center # **75018063**.
-Priority date is March 25, 2026; the non-provisional deadline to preserve priority is
-March 25, 2027.
+**Provisional patent filed.** Application # **64/017,066**, filed March 25, 2026. See
+[PATENTS.md](../PATENTS.md) for filing facts. Priority date is March 25, 2026; the
+non-provisional deadline to preserve priority is March 25, 2027.
 
 Public release is no longer blocked by the pre-filing disclosure constraint, but any public
 distribution should still be reviewed for implementation readiness, private data, proprietary
@@ -270,87 +269,37 @@ Campy now keeps an engine-neutral escape hatch for the graph itself:
 
 ### Module Structure
 
+The engine lives under `campy/brain/`, organized into functional brain regions. See
+[docs/codebase-anatomy.md](codebase-anatomy.md) for the region-to-responsibility map and
+placement guide (`brainstem`, `sensory_cortex`, `temporal_lobe`, `hippocampus`, `thalamus`,
+plus `basal_ganglia` for avoidance-learning/frustration-cluster detection and `llm` for the
+provider abstraction).
+
 ```
 hippocampy/
 ├── campy.toml
-├── brain_daemon.py
-├── mcp_engine/
-│   ├── schema.py                # Kùzu schema init (all node + relationship DDL)
-│   ├── tool_schemas.py          # Canonical MCP tool schema definitions (single source of truth)
-│   ├── hippocampus.py           # Semantic Quest Routing (B17)
-│   ├── working_memory.py        # Context Window Awareness (B18)
-│   ├── warm_frontier.py         # Passive graph pre-activation (B91) — bounded warm node frontier
-│   ├── capture.py               # Durable transcript capture fallbacks for supported local clients
-│   ├── dictionary.py            # Domain dictionary pre-seed from YAML (B160)
-│   ├── loop/
-│   │   ├── step1_ner.py         # spaCy NER / Zoning
-│   │   ├── step1b_relations.py  # Relation extraction: universal verb patterns (syntax-level, no LLM)
-│   │   ├── step2_gist.py        # gist hybrid classifier (System 1/2)
-│   │   ├── step3_schema_org.py  # schema.org sub-graph routing + mapping table
-│   │   ├── step3b_relations.py  # Relation extraction: Ollama with gist+schema.org type context
-│   │   ├── step4_pattern.py     # Representativeness heuristic + confidence gating
-│   │   ├── step4b_associative.py # Associative Pattern Check — auto-trigger binding (Phase 3)
-│   │   ├── step5_retrieval.py   # Dual-scope retrieval (Availability heuristic)
-│   │   ├── step6_arbitration.py # Constrained contradiction arbitration
-│   │   ├── step7_pathway.py     # Pathway update + DEPRECATED_BY + MergeEvent
-│   │   ├── step7_5_lesson.py    # Lesson extraction (post-pathway)
-│   │   └── anomaly_detection.py # Out-of-Band Behavioral Integrity Monitoring (B12)
-│   ├── llm/
-│   │   ├── provider.py          # OpenAI-SDK-compatible abstraction
-│   │   └── providers/           # ollama.py, openai.py, anthropic.py, google.py
-│   ├── graph/
-│   │   ├── kuzu_client.py       # Kùzu connection + Cypher execution
-│   │   └── embeddings.py        # sentence-transformers wrapper
-│   ├── tabular_store.py         # SQLite-per-dataset storage layer (B249)
-│   ├── tabular_ingest.py        # Tabular data ingestion pipeline — CSV/XLSX/TSV (B250)
-│   ├── memory_router.py         # Ingestion classification — routes data to optimal storage (B251)
-│   ├── bundle_compiler.py       # Heterogeneous retrieval — assembles ContextBundles (B252)
-│   ├── ask.py                   # Augmented inference orchestrator: augment→compress→send→capture (B289)
-│   ├── compression/             # Pluggable thalamic compression registry (B289)
-│   │   ├── __init__.py          # Compressor ABC, PluggableCompressorRegistry, ContentRouter, build_default_registry
-│   │   ├── fallback.py          # NoOpCompressor — passthrough
-│   │   ├── structured_data.py   # StructuredDataCompressor — TOON via j2toon
-│   │   ├── llm_prose.py         # LLMCompressor — prose via LLMClient
-│   │   ├── ast_mapper.py        # ASTCodeCompressor — signatures via tree-sitter
-│   │   └── graph_bundle.py      # GraphBundleCompressor — graph-native node scoring + compact notation
-│   ├── formatters/              # Agent output formatters — per-adapter bundle shapes (B253)
-│   │   ├── base.py              # BundleFormatter protocol
-│   │   ├── generic.py           # Default JSON formatter
-│   │   ├── claude_code.py       # Structured markdown with headers and decision lists
-│   │   ├── claude_desktop.py    # Conversational prose with citations
-│   │   ├── codex.py             # Ultra-compact code-focused output
-│   │   ├── chatgpt_desktop.py   # Friendly bullet points
-│   │   └── arc.py               # Structured JSON for ARC agents
-│   ├── file_bridge.py           # Layer 1: CONTEXT.md + ADR generation from graph (Phase 1)
-│   ├── trigger_manifest.py      # Layer 2: Trigger manifest compiler for hook scripts (Phase 2)
-│   └── tools/
-│       ├── __init__.py          # MCP tool implementations: notify_turn, current_truth, etc.
-│       ├── explore_graph.py     # Directed multi-hop graph traversal
-│       └── task_graph.py        # DAG task graph helpers (B127/B128) — cycle detection, ready frontier
+├── campy/
+│   ├── brain_daemon.py
+│   ├── cli/                     # campy CLI (setup, install, status, doctor, ...)
+│   ├── brain/
+│   │   ├── brainstem/           # daemon lifecycle, config, sweeps, telemetry
+│   │   ├── sensory_cortex/      # capture, ingestion, tabular data
+│   │   ├── temporal_lobe/       # consolidation loop, routing, anomaly detection
+│   │   │   └── loop/            # Gated Consolidation Loop steps 1–7
+│   │   ├── hippocampus/         # schema, graph client, embeddings, quest identity
+│   │   │   └── graph/           # kuzu_client.py, embeddings.py
+│   │   ├── thalamus/            # MCP tools, tool schemas, retrieval, bundle compiler
+│   │   │   ├── tools/           # MCP tool implementations
+│   │   │   ├── compression/     # pluggable thalamic compression registry (B289)
+│   │   │   └── formatters/      # per-adapter output formatters (B253)
+│   │   ├── basal_ganglia/       # avoidance learning, frustration-cluster detection
+│   │   └── llm/                 # provider.py — OpenAI-SDK-compatible LLM abstraction
 ├── adapters/
 │   ├── openclaw_gateway.py      # OpenClaw prompt construction (Layer 1 + Layer 2 model)
-│   ├── claude_code/
-│   │   ├── adapter.py                # Phase 0
-│   │   ├── setup.py                  # Hook registration and installation
-│   │   └── hooks/                    # Claude Code hook scripts (Layer 2)
-│   │       ├── session_start.sh      # SessionStart — injects graph context on session init
-│   │       ├── pre_tool_use.sh       # PreToolUse — manifest-driven context injection before tool calls
-│   │       └── post_tool_use.sh      # PostToolUse — error pattern matching after tool calls
-│   ├── claude_desktop/adapter.py     # M8
-│   ├── codex/adapter.py              # M8
-│   ├── chatgpt_desktop/adapter.py    # M8
-│   └── gemini_cli/adapter.py         # M8
-├── web/
-│   ├── server.py                # FastAPI, 127.0.0.1 only
-│   └── static/                  # Graph UI, soft-lock UI, merge rollback
-├── sidequests/
-│   ├── brain_transport.py       # shared daemon transport for adapters
-│   └── cli/
-│       ├── arc.py               # ARC artifact ingestion CLI wrapper
-│       └── wiki.py              # wiki projection CLI helpers
+│   ├── claude_code/, codex/, claude_desktop/, chatgpt_desktop/, gemini_cli/
+│   └── */hooks/                 # Claude Code hook scripts (Layer 2)
+├── web/                         # FastAPI, 127.0.0.1 only
 ├── docs/
-│   ├── wiki-projection-architecture.md
-│   └── arc-extraction-cleanup-audit.md
 └── ../ARC_AGI/                  # sibling repo: ARC solver/runtime/benchmark code
 ```
 
@@ -881,7 +830,7 @@ Response: `{ "status": "queued" }` — always immediate, never blocks.
 
 ### Bundle Compilation & Tabular Tools (B249–B254)
 
-**`compile_context`** — heterogeneous retrieval: assembles a `ContextBundle` from exact facts (GlobalConstraint/Preference), semantic search, graph traversals, tabular data, and wiki summaries. 5-stage pipeline with token budget management (small ≤8K, medium ≤128K, large 200K+). Output formatted per agent type via `mcp_engine/formatters/`. This is the primary retrieval tool for multi-entity queries; `memory_decision` routes here when it detects broad context needs.
+**`compile_context`** — heterogeneous retrieval: assembles a `ContextBundle` from exact facts (GlobalConstraint/Preference), semantic search, graph traversals, tabular data, and wiki summaries. 5-stage pipeline with token budget management (small ≤8K, medium ≤128K, large 200K+). Output formatted per agent type via `campy/brain/thalamus/formatters/`. This is the primary retrieval tool for multi-entity queries; `memory_decision` routes here when it detects broad context needs.
 
 **`ingest_document`** (extended) — now dispatches `.csv`, `.xlsx`, `.tsv`, `.xls` files to the tabular ingestion pipeline (B250). Tabular files get dual storage: full data in per-dataset SQLite + metadata/extracted facts in the Kuzu graph.
 
@@ -968,17 +917,17 @@ These tools exist so external ARC consumers can use Campy as graph-native memory
 Four layers work together to get graph knowledge into agent context windows without requiring explicit tool calls. Each layer operates at a different timescale and precision level; they compose — higher layers discover and write, lower layers deliver.
 
 ### Layer 1 — File Bridge (Semantic Context)
-**Module:** `mcp_engine/file_bridge.py`
+**Module:** `campy/brain/thalamus/file_bridge.py`
 **CLI:** `campy context regen`
 **Delivery:** Generates `CONTEXT.md` (domain vocabulary, active decisions, project constraints) and ADR files from graph state. Written to project directories where agents read them as regular files. Regenerated on sweep cycle or on-demand via CLI.
 
 ### Layer 2 — Associative Hooks (Reflexive Memory)
-**Modules:** `mcp_engine/trigger_manifest.py`, `adapters/claude_code/hooks/pre_tool_use.sh`, `post_tool_use.sh`
+**Modules:** `campy/brain/thalamus/trigger_manifest.py`, `adapters/claude_code/hooks/pre_tool_use.sh`, `post_tool_use.sh`
 **CLI:** `campy trigger add|list|remove|compile`
 **Delivery:** Procedure and Lesson nodes with `trigger_pattern` columns are compiled into `~/.campy/triggers/manifest.json` on each sweep cycle. Claude Code hook scripts grep this manifest on every tool call — if a regex pattern matches the tool input (PreToolUse) or output (PostToolUse), the matching Lesson/Procedure text is injected as `additionalContext`. Zero daemon round-trip on the hot path.
 
 ### Layer 3 — Anticipatory Engine (Prospective Memory)
-**Module:** `mcp_engine/loop/step4b_associative.py`
+**Module:** `campy/brain/temporal_lobe/loop/step4b_associative.py`
 **Delivery:** Online mode runs as GCL Step 4b during message processing. When error/action signals are detected, checks entity embeddings against stored Lessons/Procedures. Auto-binds trigger metadata to unbound matches (similarity > 0.65). The manifest compiler picks these up next sweep cycle — closing the learn → discover → deliver loop. Near-zero cost: graph queries only, no LLM calls.
 
 ### Layer 4 — Process Skills (Deliberate Recall)
@@ -1057,8 +1006,8 @@ Core invariants:
 - drift protection moves manually edited generated pages to conflict copies before regenerating canonical pages
 
 Primary implementation files:
-- `mcp_engine/wiki_projection.py`
-- `mcp_engine/sweep.py`
+- `campy/brain/thalamus/wiki_projection.py`
+- `campy/brain/brainstem/sweep.py`
 - `campy/cli/wiki.py`
 - `docs/wiki-projection-architecture.md`
 

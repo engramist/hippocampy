@@ -44,7 +44,7 @@ Campy uses a 4-layer architecture to inject graph knowledge into agent context w
 3. **Anticipatory Engine** — GCL Step 4b auto-discovers trigger bindings during ingestion. Error/action patterns in messages trigger vector search against stored Lessons/Procedures; matches get auto-bound triggers.
 4. **Process Skills** — Campy-native skills for deliberate deep retrieval.
 
-Key modules: `mcp_engine/file_bridge.py`, `mcp_engine/trigger_manifest.py`, `mcp_engine/loop/step4b_associative.py`.
+Key modules: `campy/brain/thalamus/file_bridge.py`, `campy/brain/thalamus/trigger_manifest.py`, `campy/brain/temporal_lobe/loop/step4b_associative.py`.
 CLI: `campy context regen`, `campy trigger add|list|remove|compile`.
 Design spec: `docs/superpowers/specs/2026-05-22-context-window-integration-design.md`.
 

@@ -44,7 +44,7 @@ This ecosystem is a local AI agent platform with a small set of stable layers, o
 
 This is the most critical architectural rule in this project.
 
-**Campy code and ARC code must remain separate.** They communicate only through the `BrainClientProtocol` interface and MCP tool contracts. No ARC file may import from `mcp_engine/`. No Campy file may import from `agents/` or `benchmarks/`.
+**Campy code and ARC code must remain separate.** They communicate only through the `BrainClientProtocol` interface and MCP tool contracts. No ARC file may import from `campy/brain/`. No Campy file may import from `agents/` or `benchmarks/`.
 
 ---
 
@@ -55,9 +55,9 @@ This is the most critical architectural rule in this project.
 | Agent Orchestration & Control Plane | DurableARCRunner, CheckpointManager | `agents/arc3/runner.py`, `agents/arc3/checkpoint.py` |
 | Agent Runtime & Harness | ARCOrchestrator, HypothesisManager, SolveEngine | `agents/arc3/orchestrator.py`, `agents/arc3/hypothesis.py`, `agents/arc3/solver.py` |
 | Shared Knowledge Assets | API knowledge cache, prompt strategy, state-to-text prompts | `agents/arc3/api_knowledge.py`, `benchmarks/arc3/prompts/`, `benchmarks/arc3/PROMPT_STRATEGY.md` |
-| Deterministic Tools & Services | StateSerializer, NER pipeline, embedding compute, spaCy, harness baseline | `benchmarks/arc3/state_serializer.py`, `mcp_engine/loop/`, `mcp_engine/graph/embeddings.py` |
-| Data Products & Memory | Brain Daemon, Gated Consolidation Loop, Kùzu graph, all MCP tools | `mcp_engine/`, `brain_daemon.py` |
-| Context Window Integration | File Bridge, Trigger Manifest, Associative Hooks, Anticipatory Engine | `mcp_engine/file_bridge.py`, `mcp_engine/trigger_manifest.py`, `mcp_engine/loop/step4b_associative.py`, `adapters/claude_code/hooks/` |
+| Deterministic Tools & Services | StateSerializer, NER pipeline, embedding compute, spaCy, harness baseline | `benchmarks/arc3/state_serializer.py`, `campy/brain/temporal_lobe/loop/`, `campy/brain/hippocampus/graph/embeddings.py` |
+| Data Products & Memory | Brain Daemon, Gated Consolidation Loop, Kùzu graph, all MCP tools | `campy/brain/`, `brain_daemon.py` |
+| Context Window Integration | File Bridge, Trigger Manifest, Associative Hooks, Anticipatory Engine | `campy/brain/thalamus/file_bridge.py`, `campy/brain/thalamus/trigger_manifest.py`, `campy/brain/temporal_lobe/loop/step4b_associative.py`, `adapters/claude_code/hooks/` |
 | Trusted Systems | ARC-AGI-3 API (Environment) | External API; interface in `benchmarks/arc3/harness.py` |
 
 ### Interface Boundaries
@@ -68,8 +68,8 @@ This is the most critical architectural rule in this project.
 | ARC ↔ Environment | `ARC3Harness._execute_action()`, `_initial_frame()` | `benchmarks/arc3/harness.py` |
 | Agent ↔ Orchestrator | `ARCOrchestrator` public methods | `agents/arc3/orchestrator.py` |
 | Adapter ↔ Brain Daemon | MCP STDIO / Unix domain socket | `adapters/*/adapter.py` |
-| Hook Scripts ↔ Trigger Manifest | JSON file at `~/.campy/triggers/manifest.json` | `adapters/claude_code/hooks/*.sh` reads, `mcp_engine/trigger_manifest.py` writes |
-| File Bridge ↔ Project Dir | Generated files (`CONTEXT.md`, ADRs) | `mcp_engine/file_bridge.py` writes to project `.campy/` dirs |
+| Hook Scripts ↔ Trigger Manifest | JSON file at `~/.campy/triggers/manifest.json` | `adapters/claude_code/hooks/*.sh` reads, `campy/brain/thalamus/trigger_manifest.py` writes |
+| File Bridge ↔ Project Dir | Generated files (`CONTEXT.md`, ADRs) | `campy/brain/thalamus/file_bridge.py` writes to project `.campy/` dirs |
 
 ---
 
@@ -275,11 +275,11 @@ As agents scale beyond ARC:
 | Component | Location | Purpose |
 |---|---|---|
 | StateSerializerForARC | `benchmarks/arc3/state_serializer.py` | Grid-to-text serialization |
-| NER / Zoning pipeline | `mcp_engine/loop/step1_ner.py` | spaCy entity extraction |
-| Embedding computation | `mcp_engine/graph/embeddings.py` | sentence-transformers vectors |
-| gist classifier | `mcp_engine/loop/step2_gist.py` | Ontological classification |
-| Relation extraction | `mcp_engine/loop/step1b_relations.py`, `step3b_relations.py` | Verb pattern + LLM relation extraction |
-| Anomaly detection | `mcp_engine/loop/anomaly_detection.py` | Behavioral integrity monitoring |
+| NER / Zoning pipeline | `campy/brain/temporal_lobe/loop/step1_ner.py` | spaCy entity extraction |
+| Embedding computation | `campy/brain/hippocampus/graph/embeddings.py` | sentence-transformers vectors |
+| gist classifier | `campy/brain/temporal_lobe/loop/step2_gist.py` | Ontological classification |
+| Relation extraction | `campy/brain/temporal_lobe/loop/step1b_relations.py`, `step3b_relations.py` | Verb pattern + LLM relation extraction |
+| Anomaly detection | `campy/brain/temporal_lobe/loop/anomaly_detection.py` | Behavioral integrity monitoring |
 
 ### Rules
 
@@ -324,7 +324,7 @@ If a capability is useful across more than one agent or pipeline, it belongs in 
 
 ### Campy internal tools
 
-The Gated Consolidation Loop steps (NER, gist classification, relation extraction, pattern matching) are deterministic tools owned by Campy. They live inside `mcp_engine/loop/` and are NOT exposed to agents. Agents interact with Campy only through MCP tool contracts.
+The Gated Consolidation Loop steps (NER, gist classification, relation extraction, pattern matching) are deterministic tools owned by Campy. They live inside `campy/brain/temporal_lobe/loop/` and are NOT exposed to agents. Agents interact with Campy only through MCP tool contracts.
 
 ---
 
@@ -334,7 +334,7 @@ The Gated Consolidation Loop steps (NER, gist classification, relation extractio
 
 ### Current owner
 
-Brain Daemon + `mcp_engine/` + all MCP tool handlers.
+Brain Daemon + `campy/brain/` + all MCP tool handlers.
 
 ### Boundary rule: Campy is a separate system
 
@@ -342,12 +342,12 @@ Brain Daemon + `mcp_engine/` + all MCP tool handlers.
 
 This means:
 
-- No file in `agents/` may import from `mcp_engine/`
-- No file in `mcp_engine/` may import from `agents/` or `benchmarks/`
+- No file in `agents/` may import from `campy/brain/`
+- No file in `campy/brain/` may import from `agents/` or `benchmarks/`
 - All communication between ARC and Campy goes through `BrainClientProtocol`
 - `BrainClientProtocol` is defined in `benchmarks/arc3/adapter.py` — the only approved interface
-- `LocalBrainClient` may import from `mcp_engine/tools/` because it IS the adapter implementation
-- `NoOpBrainClient` and `LedgerBrainClient` are test/baseline implementations that do not touch `mcp_engine/`
+- `LocalBrainClient` may import from `campy/brain/thalamus/tools/` because it IS the adapter implementation
+- `NoOpBrainClient` and `LedgerBrainClient` are test/baseline implementations that do not touch `campy/brain/`
 
 ### Why this rule exists
 
@@ -405,7 +405,7 @@ Violations of this rule:
 - Creating a new dataclass to hold persistent state without a corresponding KuzuDB node type
 
 The correct pattern:
-1. Define the node type in `mcp_engine/schema.py`
+1. Define the node type in `campy/brain/hippocampus/schema.py`
 2. Write to KuzuDB via `KuzuClient` when state changes
 3. Read from KuzuDB (or a per-step cache populated from KuzuDB) when state is needed
 4. Never treat the cache as authoritative — KuzuDB is authoritative
@@ -490,21 +490,21 @@ These are the non-negotiable import and dependency rules.
 
 | Source | May import from | Must NOT import from |
 |---|---|---|
-| `agents/arc3/` | `benchmarks/arc3/adapter.py`, `benchmarks/arc3/schema.py`, `benchmarks/arc3/state_serializer.py` | `mcp_engine/`, `brain_daemon.py` |
-| `benchmarks/arc3/adapter.py` | `mcp_engine/tools/` (only in `LocalBrainClient`) | `agents/` |
-| `benchmarks/arc3/harness.py` | `benchmarks/arc3/adapter.py`, external ARC API | `mcp_engine/` (except via adapter) |
-| `mcp_engine/` | `mcp_engine/` internals only | `agents/`, `benchmarks/` |
-| `adapters/` | `mcp_engine/`, `brain_daemon.py` | `agents/`, `benchmarks/` |
+| `agents/arc3/` | `benchmarks/arc3/adapter.py`, `benchmarks/arc3/schema.py`, `benchmarks/arc3/state_serializer.py` | `campy/brain/`, `brain_daemon.py` |
+| `benchmarks/arc3/adapter.py` | `campy/brain/thalamus/tools/` (only in `LocalBrainClient`) | `agents/` |
+| `benchmarks/arc3/harness.py` | `benchmarks/arc3/adapter.py`, external ARC API | `campy/brain/` (except via adapter) |
+| `campy/brain/` | `campy/brain/` internals only | `agents/`, `benchmarks/` |
+| `adapters/` | `campy/brain/`, `brain_daemon.py` | `agents/`, `benchmarks/` |
 | `tests/` | anything (test code) | — |
 
 ### Quick check command
 
 ```bash
 # Verify no Campy imports in ARC agent code
-grep -rn "from mcp_engine\|import mcp_engine" agents/ && echo "VIOLATION" || echo "CLEAN"
+grep -rn "from campy\|import campy" agents/ && echo "VIOLATION" || echo "CLEAN"
 
 # Verify no ARC imports in Campy code
-grep -rn "from agents\|import agents\|from benchmarks\|import benchmarks" mcp_engine/ && echo "VIOLATION" || echo "CLEAN"
+grep -rn "from agents\|import agents\|from benchmarks\|import benchmarks" campy/ && echo "VIOLATION" || echo "CLEAN"
 ```
 
 ---
@@ -526,8 +526,8 @@ When a second agent is added beyond ARC:
 
 When a new MCP tool is added to Campy:
 
-1. Define the tool schema in `mcp_engine/tool_schemas.py`.
-2. Implement the handler in `mcp_engine/tools/`.
+1. Define the tool schema in `campy/brain/thalamus/tool_schemas.py`.
+2. Implement the handler in `campy/brain/thalamus/tools/`.
 3. Add the tool to [docs/tool-catalog.md](tool-catalog.md).
 4. Add the method to `BrainClientProtocol` in `benchmarks/arc3/adapter.py`.
 5. Implement the method in `LocalBrainClient`, `NoOpBrainClient`, and `LedgerBrainClient`.
@@ -542,7 +542,7 @@ When a new MCP tool is added to Campy:
 When a new deterministic tool or compute capability is added:
 
 1. If it's ARC-specific, put it in `agents/arc3/` or `benchmarks/arc3/`.
-2. If it's Campy-internal, put it in `mcp_engine/loop/` or `mcp_engine/graph/`.
+2. If it's Campy-internal, put it in `campy/brain/temporal_lobe/loop/` or `campy/brain/hippocampus/graph/`.
 3. If it's reusable across agents, put it in a shared `tools/` or `scripts/` directory.
 4. It must not own workflow state, memory, or phase transitions.
 5. It must take explicit inputs and return explicit outputs.

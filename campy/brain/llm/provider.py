@@ -1,5 +1,5 @@
 """
-mcp_engine/llm/provider.py — LLM Provider Abstraction
+campy/brain/llm/provider.py — LLM Provider Abstraction
 
 All LLM calls use the OpenAI SDK wire format so Ollama and cloud providers
 share the same code path (only base_url and api_key differ).
