@@ -10,6 +10,7 @@ Kùzu version: kuzu==0.11.3 (archived Oct 2025, pinned)
 
 from __future__ import annotations
 import asyncio
+import weakref
 import kuzu
 
 _INDEX_METRIC = "cosine"
@@ -24,16 +25,26 @@ _INDEX_METRIC = "cosine"
 # breaking write serialization instead of raising. Within any single loop's
 # lifetime this still behaves as one shared lock across all KuzuClient
 # instances, preserving the original serialization guarantee.
-_write_locks: dict[int, asyncio.Lock] = {}
+#
+# Entries carry a weakref to their loop rather than trusting id() alone:
+# CPython reuses addresses, so after a loop is garbage-collected a new loop
+# can be allocated at the same id and would otherwise inherit the dead
+# loop's lock — the exact stale-binding failure this table exists to
+# prevent. A dead or mismatched weakref means the entry is stale and gets
+# replaced.
+_write_locks: dict[int, tuple[weakref.ref, asyncio.Lock]] = {}
 
 
 def _get_write_lock() -> asyncio.Lock:
     loop = asyncio.get_running_loop()
     key = id(loop)
-    lock = _write_locks.get(key)
-    if lock is None:
-        lock = asyncio.Lock()
-        _write_locks[key] = lock
+    entry = _write_locks.get(key)
+    if entry is not None:
+        loop_ref, lock = entry
+        if loop_ref() is loop:
+            return lock
+    lock = asyncio.Lock()
+    _write_locks[key] = (weakref.ref(loop), lock)
     return lock
 
 

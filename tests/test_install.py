@@ -62,12 +62,17 @@ class TestOllamaInstaller:
             from campy.cli.install import OllamaInstaller
             assert OllamaInstaller.has_model("llama3.1:8b") is False
 
+    # The Darwin-branch tests pin platform.system just like the Linux-branch
+    # tests below already do — install() branches on it first, so on a Linux
+    # CI runner an unpinned test exercises the wrong code path entirely.
+
     def test_install_no_homebrew(self):
         """Returns False and prints message when brew not available."""
-        with patch("shutil.which", return_value=None):
-            from campy.cli.install import OllamaInstaller
-            inst = OllamaInstaller()
-            assert inst.install() is False
+        with patch("platform.system", return_value="Darwin"):
+            with patch("shutil.which", return_value=None):
+                from campy.cli.install import OllamaInstaller
+                inst = OllamaInstaller()
+                assert inst.install() is False
 
     def test_install_brew_succeeds(self):
         """Returns True when brew install ollama succeeds."""
@@ -78,24 +83,26 @@ class TestOllamaInstaller:
                 return "/opt/homebrew/bin/ollama"
             return None
 
-        with patch("shutil.which", side_effect=which_side_effect):
-            mock_result = MagicMock(returncode=0)
-            with patch("subprocess.run", return_value=mock_result):
-                from campy.cli.install import OllamaInstaller
-                inst = OllamaInstaller()
-                assert inst.install() is True
+        with patch("platform.system", return_value="Darwin"):
+            with patch("shutil.which", side_effect=which_side_effect):
+                mock_result = MagicMock(returncode=0)
+                with patch("subprocess.run", return_value=mock_result):
+                    from campy.cli.install import OllamaInstaller
+                    inst = OllamaInstaller()
+                    assert inst.install() is True
 
     def test_install_brew_fails(self):
         """Returns False when brew install returns non-zero."""
         def which_side_effect(name):
             return "/opt/homebrew/bin/brew" if name == "brew" else None
 
-        with patch("shutil.which", side_effect=which_side_effect):
-            mock_result = MagicMock(returncode=1, stderr="Error")
-            with patch("subprocess.run", return_value=mock_result):
-                from campy.cli.install import OllamaInstaller
-                inst = OllamaInstaller()
-                assert inst.install() is False
+        with patch("platform.system", return_value="Darwin"):
+            with patch("shutil.which", side_effect=which_side_effect):
+                mock_result = MagicMock(returncode=1, stderr="Error")
+                with patch("subprocess.run", return_value=mock_result):
+                    from campy.cli.install import OllamaInstaller
+                    inst = OllamaInstaller()
+                    assert inst.install() is False
 
     def test_install_linux_apt(self):
         """Uses apt-get on Linux when available."""
@@ -743,11 +750,17 @@ class TestFailureModes:
 
 class TestLaunchdResolver:
 
-    def test_launchd_resolver_prefers_repo_venv(self):
+    def test_launchd_resolver_prefers_repo_venv(self, tmp_path):
         """Should prefer the repository venv so launchd sees installed deps."""
         import campy.cli.launchd as launchd
 
-        resolved = launchd.resolve_system_python()
+        # Fixture repo root with a venv python — the runner's own checkout
+        # may not have .venv (CI installs deps into the system interpreter).
+        venv_bin = tmp_path / ".venv" / "bin"
+        venv_bin.mkdir(parents=True)
+        (venv_bin / "python").touch()
+
+        resolved = launchd.resolve_system_python(repo_root=tmp_path)
         assert resolved.endswith(".venv/bin/python")
 
     def test_launchd_resolver_skips_pyenv_shim(self, monkeypatch):
