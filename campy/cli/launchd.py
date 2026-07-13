@@ -14,10 +14,16 @@ LEGACY_PLIST_PATH = get_legacy_launchd_plist_path()
 LOG_PATH = get_daemon_log_path()
 
 
-def resolve_system_python() -> str:
-    """Find the Python interpreter launchd should use."""
-    repo_root = Path(__file__).parent.parent.parent
-    venv_python = repo_root / ".venv" / "bin" / "python"
+def resolve_system_python(repo_root: Path | None = None) -> str:
+    """Find the Python interpreter launchd should use.
+
+    repo_root defaults to this package's repository checkout; tests pass an
+    explicit root so the venv-preference branch is exercised regardless of
+    whether the runner's checkout has a .venv.
+    """
+    if repo_root is None:
+        repo_root = Path(__file__).parent.parent.parent
+    venv_python = Path(repo_root) / ".venv" / "bin" / "python"
     if venv_python.exists():
         return str(venv_python)
 

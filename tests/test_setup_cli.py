@@ -29,10 +29,14 @@ def test_detect_claude_desktop(tmp_path):
     config_dir.mkdir(parents=True)
     config_file = config_dir / "claude_desktop_config.json"
     config_file.write_text("{}")
-    
-    with patch("os.path.expanduser", return_value=str(config_file)):
-        with patch("os.path.exists", return_value=True):
-            assert detect_claude_desktop() == str(config_file)
+
+    # detect_claude_desktop returns "" immediately on non-Darwin/-Windows
+    # platforms, so pin the platform or the mocks below never execute (CI
+    # runs on Linux).
+    with patch("platform.system", return_value="Darwin"):
+        with patch("os.path.expanduser", return_value=str(config_file)):
+            with patch("os.path.exists", return_value=True):
+                assert detect_claude_desktop() == str(config_file)
 
 def test_register_claude_code():
     with patch("campy.cli.register._find_plugin_dir", return_value=Path("/tmp/plugin")):

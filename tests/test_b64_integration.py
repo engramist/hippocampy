@@ -27,7 +27,7 @@ async def test_b64_integration_message_count():
     db = KuzuClient(db_path)
     
     # Init schema
-    seed_path = "InvertorsDocs/GistSeedExamples.md"
+    seed_path = "campy/data/GistSeedExamples.md"
     embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
     init_schema(db, seed_path, embedding_model)
     

@@ -10,19 +10,42 @@ Kùzu version: kuzu==0.11.3 (archived Oct 2025, pinned)
 
 from __future__ import annotations
 import asyncio
+import weakref
 import kuzu
 
 _INDEX_METRIC = "cosine"
 
 # S4 fix: Lock lazy-initialized to avoid creation before an event loop exists.
-_write_lock: asyncio.Lock | None = None
+#
+# Keyed per-running-loop (not a single bare lock) because asyncio.Lock binds
+# to whichever event loop is running on first use. A process that runs more
+# than one event loop over its lifetime (e.g. pytest-asyncio's function-scoped
+# loops, or any daemon restart-without-process-restart) would otherwise reuse
+# a lock still attached to a closed loop from an earlier run, silently
+# breaking write serialization instead of raising. Within any single loop's
+# lifetime this still behaves as one shared lock across all KuzuClient
+# instances, preserving the original serialization guarantee.
+#
+# Entries carry a weakref to their loop rather than trusting id() alone:
+# CPython reuses addresses, so after a loop is garbage-collected a new loop
+# can be allocated at the same id and would otherwise inherit the dead
+# loop's lock — the exact stale-binding failure this table exists to
+# prevent. A dead or mismatched weakref means the entry is stale and gets
+# replaced.
+_write_locks: dict[int, tuple[weakref.ref, asyncio.Lock]] = {}
 
 
 def _get_write_lock() -> asyncio.Lock:
-    global _write_lock
-    if _write_lock is None:
-        _write_lock = asyncio.Lock()
-    return _write_lock
+    loop = asyncio.get_running_loop()
+    key = id(loop)
+    entry = _write_locks.get(key)
+    if entry is not None:
+        loop_ref, lock = entry
+        if loop_ref() is loop:
+            return lock
+    lock = asyncio.Lock()
+    _write_locks[key] = (weakref.ref(loop), lock)
+    return lock
 
 
 class KuzuClient:
