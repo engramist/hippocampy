@@ -20,6 +20,12 @@ jobs:
   # -------------------------------------------------------------------------
   codeql:
     name: CodeQL
+    # Skip while the repo is private: SARIF upload requires GitHub code
+    # scanning, which is only available on public repos (or paid Advanced
+    # Security). The analysis itself succeeded on every run — only the upload
+    # failed. This condition self-activates the gate the moment the repo goes
+    # public at launch, with no workflow change needed.
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
