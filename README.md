@@ -2,7 +2,7 @@
 
 Persistent AI memory system with a Gated Consolidation Loop and graph-native Kùzu database.
 
-**Patent Pending:** Campy includes patent-pending memory architecture. A U.S. provisional application was filed March 25, 2026 (Application #64/017,066). No patent has been granted. See [PATENTS.md](PATENTS.md) for filing facts and deadline.
+**Patent Pending:** Campy includes patent-pending memory architecture. A U.S. provisional application was filed March 25, 2026 (Application #64/017,066). No patent has been granted. See [docs/nonprovisional-strategy.md](docs/nonprovisional-strategy.md) for filing facts and deadline.
 
 ## Installation
 
