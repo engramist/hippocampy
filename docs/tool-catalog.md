@@ -1,6 +1,6 @@
 # HippoCampy — Tool Catalog
 
-> **Version:** March 29, 2026 | **Source of truth:** `mcp_engine/tool_schemas.py` + `mcp_engine/tools/__init__.py`
+> **Version:** March 29, 2026 | **Source of truth:** `campy/brain/thalamus/tool_schemas.py` + `campy/brain/thalamus/tools/__init__.py`
 > 
 > This catalog documents every tool available in HippoCampy, both active (callable by agents)
 > and passive (internal processing). Use this for: integration testing, agent training, adapter validation.

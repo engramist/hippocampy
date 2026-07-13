@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-PRODUCTION_ROOTS = ("campy", "mcp_engine")
+PRODUCTION_ROOTS = ("campy",)
 IGNORED_DIR_NAMES = {
     "__pycache__",
     ".git",

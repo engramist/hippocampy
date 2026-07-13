@@ -42,7 +42,7 @@ from campy.brain.temporal_lobe.loop.step4b_associative import check_associative_
 from campy.brain.temporal_lobe.loop.step7_5_lesson import extract_lessons  # B11
 from campy.brain.temporal_lobe.loop.anomaly_detection import check_anomalies, store_anomaly_flag  # B12
 from campy.brain.hippocampus.graph import embeddings as emb
-from mcp_engine.llm.provider import create_llm_client_for_step  # B16
+from campy.brain.llm.provider import create_llm_client_for_step  # B16
 
 
 async def run_loop(message_id: str, text: str, db, llm_client,

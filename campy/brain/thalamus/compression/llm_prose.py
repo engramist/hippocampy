@@ -36,7 +36,7 @@ class LLMCompressor(Compressor):
     def _get_llm(self):
         if self._llm_override is not None:
             return self._llm_override
-        from mcp_engine.llm.provider import create_llm_client
+        from campy.brain.llm.provider import create_llm_client
         compression_model = self._config.get("compression", {}).get("compression_model", "")
         cfg = dict(self._config)
         if compression_model:

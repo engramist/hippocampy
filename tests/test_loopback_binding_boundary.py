@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PRODUCTION_ROOTS = ("campy", "mcp_engine", "adapters", "web")
+PRODUCTION_ROOTS = ("campy", "adapters", "web")
 ALLOWED_PHRASES = ("never 0.0.0.0", "NEVER 0.0.0.0")
 
 

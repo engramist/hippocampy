@@ -1,5 +1,5 @@
 """
-Tests for mcp_engine/llm/provider.py — T7 coverage.
+Tests for campy/brain/llm/provider.py — T7 coverage.
 """
 
 import sys
@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 def test_create_llm_client_ollama_returns_client():
     """Ollama provider config returns an LLMClient (no real connection required)."""
-    from mcp_engine.llm.provider import create_llm_client, LLMClient
+    from campy.brain.llm.provider import create_llm_client, LLMClient
     config = {
         "llm": {
             "provider": "ollama",
@@ -31,7 +31,7 @@ def test_create_llm_client_ollama_returns_client():
 
 def test_create_llm_client_unknown_provider_returns_none():
     """Unknown provider returns None (graceful degradation)."""
-    from mcp_engine.llm.provider import create_llm_client
+    from campy.brain.llm.provider import create_llm_client
     config = {"llm": {"provider": "totally_unknown_provider_xyz", "model": "m"}}
     client = create_llm_client(config)
     assert client is None
@@ -39,7 +39,7 @@ def test_create_llm_client_unknown_provider_returns_none():
 
 def test_create_llm_client_default_config():
     """Empty config falls back to ollama defaults without crashing."""
-    from mcp_engine.llm.provider import create_llm_client
+    from campy.brain.llm.provider import create_llm_client
     # Should not raise even with empty config
     client = create_llm_client({})
     # Either returns LLMClient (openai importable) or None (not importable)
@@ -48,7 +48,7 @@ def test_create_llm_client_default_config():
 
 def test_create_llm_client_ollama_uses_slow_model_friendly_timeout():
     """Local Ollama defaults should tolerate slower reasoning models."""
-    from mcp_engine.llm.provider import create_llm_client, LLMClient
+    from campy.brain.llm.provider import create_llm_client, LLMClient
 
     config = {
         "llm": {
@@ -73,7 +73,7 @@ def test_create_llm_client_ollama_uses_slow_model_friendly_timeout():
 
 def test_create_llm_client_ollama_respects_timeout_override():
     """Explicit timeout/retry config should flow into the OpenAI-compatible client."""
-    from mcp_engine.llm.provider import create_llm_client, LLMClient
+    from campy.brain.llm.provider import create_llm_client, LLMClient
 
     config = {
         "llm": {
@@ -104,7 +104,7 @@ def test_create_llm_client_ollama_respects_timeout_override():
 
 def test_llm_client_has_chat_method():
     """LLMClient exposes .chat() method."""
-    from mcp_engine.llm.provider import LLMClient
+    from campy.brain.llm.provider import LLMClient
 
     class FakeOpenAI:
         class chat:
@@ -125,7 +125,7 @@ def test_llm_client_has_chat_method():
 
 def test_llm_client_chat_returns_empty_string_on_none_content():
     """chat() returns '' when message.content is None (not NoneType error)."""
-    from mcp_engine.llm.provider import LLMClient
+    from campy.brain.llm.provider import LLMClient
 
     class FakeOpenAI:
         class chat:
@@ -147,7 +147,7 @@ def test_llm_client_chat_returns_empty_string_on_none_content():
 @pytest.mark.asyncio
 async def test_llm_client_achat_returns_string():
     """achat() returns the same string as chat() via thread pool."""
-    from mcp_engine.llm.provider import LLMClient
+    from campy.brain.llm.provider import LLMClient
 
     class FakeOpenAI:
         class chat:
@@ -170,7 +170,7 @@ async def test_llm_client_achat_returns_string():
 async def test_llm_client_achat_offloads_to_thread(monkeypatch):
     """achat() calls asyncio.to_thread, not chat() directly in the event loop."""
     import asyncio
-    from mcp_engine.llm.provider import LLMClient
+    from campy.brain.llm.provider import LLMClient
 
     thread_calls = []
 

@@ -53,7 +53,7 @@ pytest
 
 ### Architecture & Data Model
 - **Graph-Native:** Any entity with identity (Decision, Constraint, Concept) is a node, not a property.
-- **Kùzu Abstraction:** All Kùzu-specific logic resides in `mcp_engine/graph/kuzu_client.py`. Do not import `kuzu` directly in other modules.
+- **Kùzu Abstraction:** All Kùzu-specific logic resides in `campy/brain/hippocampus/graph/kuzu_client.py`. Do not import `kuzu` directly in other modules.
 - **Concurrency:** The Brain Daemon holds the sole `READ_WRITE` connection; an `asyncio.Lock` wraps all write operations.
 - **Selective Attention:** The "Cocktail Party Effect" is implemented via a confidence gate (Step 4 of the Loop). Only signals >60% confidence are structured; >90% are fully confirmed.
 
@@ -85,15 +85,15 @@ This tails `~/.campy/activity.log`, a compact operator feed for memory writes, r
 
 Campy uses a 4-layer architecture to automatically inject graph knowledge into agent context windows:
 
-1. **File Bridge** (`mcp_engine/file_bridge.py`) — Generates `CONTEXT.md` and ADR files in project directories from graph state
-2. **Associative Hooks** (`mcp_engine/trigger_manifest.py`) — Compiles trigger manifest from Procedure/Lesson nodes; hook scripts inject matching context on tool calls
-3. **Anticipatory Engine** (`mcp_engine/loop/step4b_associative.py`) — GCL Step 4b auto-discovers and binds triggers during message processing
+1. **File Bridge** (`campy/brain/thalamus/file_bridge.py`) — Generates `CONTEXT.md` and ADR files in project directories from graph state
+2. **Associative Hooks** (`campy/brain/thalamus/trigger_manifest.py`) — Compiles trigger manifest from Procedure/Lesson nodes; hook scripts inject matching context on tool calls
+3. **Anticipatory Engine** (`campy/brain/temporal_lobe/loop/step4b_associative.py`) — GCL Step 4b auto-discovers and binds triggers during message processing
 4. **Process Skills** (`plugin/skills/`) — 12 process skills (brief, diagnose, grill, handoff, improve-architecture, learn, memory-awareness, quest-management, recall, session-start, status, tdd) auto-installed to Claude Code, Codex, Gemini CLI, and VS Code Copilot by the plugin installer
 
 CLI commands: `campy context regen`, `campy trigger add|list|remove|compile`.
 
 ## Key Directories
-- `mcp_engine/`: Core logic, including the 9-step consolidation loop.
+- `campy/brain/`: Core logic, including the 9-step consolidation loop.
 - `adapters/`: Adapters for Claude, Codex, Gemini CLI, etc.
 - `web/`: FastAPI server and static assets for the Memory Control Panel.
 - `tests/`: Comprehensive test suite for all components.

@@ -31,7 +31,7 @@ _logger = logging.getLogger(__name__)
 def _get_llm(config: dict):
     """Return LLMClient for main inference. Returns None if unavailable."""
     try:
-        from mcp_engine.llm.provider import create_llm_client
+        from campy.brain.llm.provider import create_llm_client
         return create_llm_client(config)
     except Exception:
         return None
