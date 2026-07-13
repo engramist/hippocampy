@@ -95,14 +95,6 @@ class TestInstalledModeBasics:
         )
         assert result.returncode == 0, f"campy --help failed: {result.stderr}"
 
-        result = subprocess.run(
-            [str(temp_venv / "bin" / "sidequests"), "--help"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        assert result.returncode == 0, f"sidequests legacy alias failed: {result.stderr}"
-
     def test_cli_subcommands_available(self, temp_venv, wheel_path):
         """Verify key CLI subcommands are available."""
         python_exe = temp_venv / "bin" / "python"
@@ -205,9 +197,8 @@ class TestInstalledModePackageData:
             names = z.namelist()
 
             # Check for required modules
-            assert any(
-                "sidequests/__init__.py" in n for n in names
-            ), "sidequests/__init__.py not in wheel"
+            # (sidequests was fully extracted to a sibling repo; no pyproject.toml
+            # entry point or tracked files remain — see B295 cluster E/F/I)
             assert any(
                 "mcp_engine" in n for n in names
             ), "mcp_engine not in wheel"
@@ -242,8 +233,8 @@ class TestInstalledModeImports:
         subprocess.run([str(pip_exe), "install", str(wheel_path)], check=True)
 
         # Test core imports
+        # (sidequests was fully extracted to a sibling repo — see B295 cluster E/F/I)
         imports_to_test = [
-            "sidequests",
             "campy.paths",
             "campy.cli.main",
             "mcp_engine",
