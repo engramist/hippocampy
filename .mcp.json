@@ -1,11 +1,8 @@
 {
   "mcpServers": {
     "campy": {
-      "command": "/Users/djshelton/Desktop/GitProjects/hippocampy/.venv/bin/python",
-      "args": [
-        "-m",
-        "campy.adapters.mcp_server"
-      ]
+      "type": "http",
+      "url": "http://127.0.0.1:7799/mcp"
     }
   }
 }

@@ -175,7 +175,7 @@ All public-facing materials must include:
 Campy includes patent-pending memory architecture.
 A U.S. provisional application was filed March 25, 2026 (Appl. #64/017,066).
 No patent has been granted.
-See docs/nonprovisional-strategy.md for filing facts and deadline.
+See PATENTS.md for filing facts and deadline.
 ```
 
 ---
