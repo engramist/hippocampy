@@ -53,6 +53,15 @@ class FakeDB:
     async def execute_write(self, query: str, params: dict | None = None):
         self.writes.append({"query": query, "params": params})
 
+    async def execute_read(self, query: str, params: dict | None = None):
+        # Basal Ganglia frustration-cluster detection (detect_frustration_clusters)
+        # queries Concept/Decision/Constraint via execute_read as part of
+        # _dream_consolidation's pipeline. This fixture only models Lesson
+        # nodes, so there are legitimately none to find — return empty rather
+        # than raising AttributeError (which _dream_consolidation counts as
+        # an error, masking the Lesson-clustering behavior this test targets).
+        return []
+
 
 class FakeLLM:
     async def achat(self, messages):

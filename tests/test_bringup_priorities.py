@@ -97,6 +97,33 @@ def _patch_run_install_happy_path(monkeypatch, call_log: list[str], *, daemon_ok
     monkeypatch.setattr(smoke_mod, "check_status", fake_check_status)
     monkeypatch.setattr(install_mod, "_wait_for_daemon", lambda **k: True)
 
+    # Steps run_install calls that the fakes above do NOT cover. Without
+    # these, the tests only pass on a machine where Ollama happens to be
+    # running (verify_llm_connectivity probes localhost:11434 for real) and
+    # they mutate the developer's environment (plugin_installer writes to
+    # ~/.codex etc., FakeDaemonSetup's pkill kills a live campy daemon).
+    monkeypatch.setattr(
+        install_mod, "verify_llm_connectivity",
+        lambda cfg: (True, "mocked connectivity"),
+    )
+    monkeypatch.setattr(install_mod, "_is_installed_mode", lambda: False)
+
+    import campy.cli.plugin_installer as plugin_mod
+    monkeypatch.setattr(plugin_mod, "install_plugin_for_agents", lambda: {})
+
+    try:
+        import campy.cli.indicator as indicator_mod
+        monkeypatch.setattr(indicator_mod, "install_autostart", lambda: None)
+    except ImportError:
+        pass  # pystray extra not installed — run_install skips the step itself
+
+    # Default subprocess guard: FakeDaemonSetup deliberately shells out to
+    # pkill so the reload test can observe it; on a dev machine an unpatched
+    # subprocess.run would genuinely kill the user's running brain daemon.
+    # Individual tests may re-patch this to record calls.
+    import subprocess as _sp
+    monkeypatch.setattr(_sp, "run", lambda *a, **k: MagicMock(returncode=0))
+
 
 # ---------------------------------------------------------------------------
 # P0.1 — Installer seed-path packaging bug

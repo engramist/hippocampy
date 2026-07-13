@@ -1,14 +1,19 @@
 """Test doctor --json output."""
 import json
+import os
 import subprocess
 import sys
+
+# Wide, colorless terminal so rich doesn't truncate option names with an
+# ellipsis at the CI default of 80 columns.
+_HELP_ENV = {**os.environ, "COLUMNS": "200", "TERM": "dumb", "NO_COLOR": "1"}
 
 
 def test_doctor_json_flag_exists():
     """campy doctor should accept --json flag."""
     result = subprocess.run(
         [sys.executable, "-m", "campy.cli.main", "doctor", "--help"],
-        capture_output=True, text=True
+        capture_output=True, text=True, env=_HELP_ENV
     )
     assert "--json" in result.stdout
 

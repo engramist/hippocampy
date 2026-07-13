@@ -38,6 +38,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
+    "pytest-mock>=3.14",
     "build>=1.0",
     "twine>=5.0",
     "black",

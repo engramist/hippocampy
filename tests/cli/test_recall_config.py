@@ -12,7 +12,11 @@ def test_universal_skill_exists():
     assert skill_path.exists()
     content = skill_path.read_text()
     assert "memory_decision" in content
-    assert "MUST" in content
+    # "MUST"-worded mandatory framing predates the canonical policy's shift to
+    # softer, permission-based language (see skills/campy-memory/SKILL.md's
+    # "Core Rule": "Do not recall on every turn... Recall only when a decision
+    # needs memory."). Check for the current policy statement instead.
+    assert "Core Rule" in content
     assert "current_truth" in content
     assert "compile_context" in content
 

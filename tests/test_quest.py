@@ -240,14 +240,34 @@ def test_detect_git_context_returns_strings():
     assert isinstance(git_branch, str)
 
 
-def test_detect_git_context_in_known_repo():
-    """Running inside the sidequests-brain repo — should detect it."""
+def test_detect_git_context_in_known_repo(tmp_path, monkeypatch):
+    """Inside a git repo with a checked-out branch, both values are detected.
+
+    Uses a purpose-built fixture repo rather than the test runner's checkout:
+    CI checks out PRs at a detached HEAD, where `git branch --show-current`
+    legitimately returns "" and this test would fail on environment, not code.
+    """
+    import subprocess
     from adapters.claude_code.adapter import detect_git_context
+
+    repo = tmp_path / "fixture-repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-b", "fixture-branch"], cwd=repo,
+                   check=True, capture_output=True)
+    for k, v in {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                 "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}.items():
+        monkeypatch.setenv(k, v)
+    (repo / "f.txt").write_text("x")
+    subprocess.run(["git", "add", "f.txt"], cwd=repo, check=True,
+                   capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init", "--no-gpg-sign"], cwd=repo,
+                   check=True, capture_output=True)
+
+    monkeypatch.chdir(repo)
     repo_root, git_branch = detect_git_context()
-    # We know we're in a git repo
     assert repo_root != ""
-    assert git_branch != ""
-    assert "hippocampy" in repo_root or "sidequests-brain" in repo_root
+    assert git_branch == "fixture-branch"
+    assert "fixture-repo" in repo_root
 
 
 def test_inject_context_adds_fields():

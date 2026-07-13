@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 
@@ -272,8 +273,10 @@ async def test_codex_connector_backfills_only_newest_file_by_default(tmp_path):
     newer = sessions_root / "newer.jsonl"
     _write_codex_session(older, session_id="older")
     _write_codex_session(newer, session_id="newer")
-    older.touch()
-    newer.touch()
+    # Explicit mtimes — back-to-back touch() calls can land in the same
+    # filesystem timestamp tick, making "newest" selection nondeterministic.
+    os.utime(older, (1_000_000_000, 1_000_000_000))
+    os.utime(newer, (1_000_000_100, 1_000_000_100))
 
     journal = CaptureJournal(tmp_path / "capture")
     connector = CodexSessionConnector(

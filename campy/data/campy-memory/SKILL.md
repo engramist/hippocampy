@@ -1,65 +1,131 @@
-# Campy Memory — Session Recall Protocol
+# Campy Memory Skill
 
-You have access to a persistent AI memory system called Campy (HippoCampy). It remembers decisions, constraints, plans, and context across all your sessions.
+**Purpose:** Use HippoCampy (Campy) as a reliable durable memory system without bloating your context window.
 
-## At Session Start — MANDATORY
+Campy continuously captures your decisions, constraints, plans, and lessons as you work. This skill teaches you when to recall that memory, which tool to use, and how to keep your context lean.
 
-**BEFORE doing any work, you MUST follow this protocol:**
+## Core Rule
 
-1. Call `memory_decision` with the user's first message:
-   ```
-   memory_decision(query="<user's first message>", session_id="<session>")
-   ```
+**Do not recall on every turn. Do not bloat context. Recall only when a decision needs memory.**
 
-2. Call the recommended tool from Step 1's response:
-   - `current_truth` for single-topic recall
-   - `compile_context` for broad context needs
-   - `recall_procedures` for process questions
-   - `recall_relevant_lessons` for past outcomes
+Campy writes passively. You recall actively and selectively.
 
-3. If continuing existing work, call `diff_since` to see recent changes:
-   ```
-   diff_since(since_iso="<24 hours ago ISO>")
-   ```
+---
 
-4. Present findings to the user before starting work.
+## Write vs Recall
 
-## During the Session — Recall Triggers
+### Write (Passive - Always On)
 
-| When You See This | You MUST Call This |
-|---|---|
-| Questions about past decisions | `current_truth(query="<topic>")` |
-| Architecture or design questions | `current_truth(query="<topic>")` |
-| Multi-entity or broad queries | `compile_context(query="<topic>")` |
-| "Why did we choose X?" | `current_truth(query="decision about X")` |
-| Process or procedure questions | `recall_procedures(query="<topic>")` |
-| "What went wrong last time?" | `recall_relevant_lessons(query="<topic>")` |
-| Not sure which tool | `memory_decision(query="<question>")` |
+Campy captures:
+- **Decisions** - what you decided and why
+- **Constraints** - what you must or cannot do
+- **Plans** - your implementation strategies
+- **Lessons** - what you learned that applies elsewhere
+- **Entity relationships** - how concepts connect
+- **Contradictions** - when expectations differ from reality
 
-## After Every Response — MANDATORY
+You do nothing. The system listens to your messages and stores the core signal.
 
-**AFTER every response, you MUST call `notify_turn`:**
+### Recall (Active - You Decide)
 
-```
-notify_turn(role="assistant", content="<your full response>", session_id="<session>")
-```
+You call a recall tool when you need:
+- Prior choices or context
+- Timeline of what happened
+- Lessons from similar work
+- Workflow procedures
+- Changes since another session
 
-This is how the Brain captures knowledge. Never skip it.
+---
 
-## Available Tools
+## Recall Decision Tree
 
-| Tool | Purpose |
-|---|---|
-| `memory_decision` | Ask the Brain which recall tool to use |
-| `current_truth` | Semantic search for specific facts |
-| `compile_context` | Multi-source bundle compilation |
-| `recall_procedures` | Process and procedure knowledge |
-| `recall_relevant_lessons` | Past outcomes and lessons learned |
-| `reconstruct_timeline` | Temporal view of events |
-| `diff_since` | Changes since a timestamp |
-| `analogical_search` | Cross-project pattern matching |
-| `notify_turn` | Capture your response in memory |
-| `ingest_data` | Ingest files/data into memory |
+### **Q: What kind of decision are you making?**
+
+#### Prior decisions, architecture, constraints, or preferences
+-> **`current_truth`**
+- Use when: "What did we decide?", "What are the constraints?", "Is feature X enabled?"
+- Example: "What architecture did we settle on for the installer?"
+
+#### What changed since last session or another agent
+-> **`diff_since`**
+- Use when: "What changed?", "Since the last time...", "What did the other agent do?"
+- Example: "What's different since the last session?"
+
+#### Sequence, timeline, or debugging history
+-> **`reconstruct_timeline`**
+- Use when: "What happened in order?", "How did we get here?", "Walk me through the debug steps"
+- Example: "What was the sequence of steps that led to this bug?"
+
+#### Planning similar work
+-> **`recall_plans`**
+- Use when: "How did we do this before?", "Similar project", "Implement X like we did Y"
+- Example: "I need to set up an installer. What did we learn from the last one?"
+
+#### Reusable workflow or procedure
+-> **`recall_procedures`**
+- Use when: "How do we usually do this?", "Standard workflow", "Process we use"
+- Example: "What's our standard testing procedure?"
+
+#### Lessons learned or cross-session learning
+-> **`recall_relevant_lessons`**
+- Use when: "What did we learn?", "Don't repeat the mistake", "Best practice from before"
+- Example: "What lessons did we learn from the last release?"
+
+#### Similar past project (analogy)
+-> **`analogical_search`**
+- Use when: "This is like...", "Similar situation before", "Analogous problem"
+- Example: "We had a similar performance problem before. What did we do?"
+
+#### ARC mechanics, world model, scene graph, or puzzle patterns
+-> **`recall_mechanic_priors`** or **`recall_scene_graph_priors`**
+- Use when: "ARC", "world model", "mechanic", "puzzle pattern"
+- Example: "What world-model mechanics did we discover for this type of puzzle?"
+
+#### Context window or token health
+-> **`context_status`**
+- Use when: "How much context is left?", "Token budget", "Context bloat check"
+- Example: "Am I at risk of context bloat? How many tokens are loaded?"
+
+#### Multi-entity query spanning facts, decisions, and data (Bundle Compilation)
+-> **`compile_context`**
+- Use when: You need a *heterogeneous context bundle* that combines facts, constraints, graph data, and tabular data
+- Example: "Brief me on everything we know about this module's architecture, constraints, and historical performance"
+- Output: Pre-assembled context bundle formatted for your agent type, token budget respected
+
+##### When to Use compile_context
+
+- **Multi-topic queries:** Your question references multiple distinct entities or concepts
+- **Need structured context:** You want facts, constraints, related items, and data all together
+- **Large context available:** The normal recall tools would require multiple calls or manual assembly
+- **Agent supports formatted bundles:** Your client (Claude Code, Codex, Gemini) supports structured markdown or JSON output
+
+##### Token Budget & Output Format
+
+`compile_context` respects your token budget and returns pre-compressed output:
+
+- **Default budget:** 32,000 tokens (configurable)
+- **Output formats:** 
+  - `generic` - JSON (compatible everywhere)
+  - `claude_code` - Markdown with headers and metadata
+  - `codex` - Ultra-compact comments (60 chars/line)
+  - `claude_desktop` - Conversational prose with citations
+  - `chatgpt_desktop` - Friendly bullet points with emojis
+  - `arc` - Structured JSON for ARC agent
+
+**Key benefit:** Bundle is already token-budgeted. Inject directly into your prompt without re-summarizing.
+
+#### Simple local edit or current context sufficient
+-> **Do not recall**
+- Example: "Add a comment to this function" or "Fix the typo on line 42"
+
+---
+
+## Tool Map
+
+| Tool | Use Case | Confidence | Output Format |
+|------|----------|------------|----------------|
+| `current_truth` | Prior decisions, constraints, architecture | 0.9 | Ranked facts + provenance |
+| `diff_since` | Changes since milestone/session | 0.85 | Structured diff + annotation |
 | `reconstruct_timeline` | Sequence, history, chronology | 0.8 | Ordered events + timestamps |
 | `recall_plans` | Similar prior work, strategies | 0.75 | Plans + outcomes + lessons |
 | `recall_procedures` | Workflows, standard processes | 0.85 | Step-by-step + variants |
@@ -67,6 +133,7 @@ This is how the Brain captures knowledge. Never skip it.
 | `analogical_search` | Similar past projects | 0.7 | Analogies + key differences |
 | `recall_mechanic_priors` | ARC mechanics, world models | 0.75 | Mechanic signature + evidence |
 | `recall_scene_graph_priors` | ARC scene graphs, spatial patterns | 0.75 | Scene pattern + success rate |
+| `compile_context` | Multi-entity bundles with facts, constraints, data | 0.85 | Agent-type-specific formatted bundle |
 | `memory_decision` | Should I recall? Which tool? | 0.9 | Recommendation + confidence |
 | `context_status` | Token/context health | 0.95 | Metrics + warnings |
 
@@ -87,6 +154,16 @@ This is how the Brain captures knowledge. Never skip it.
 6. **If unsure whether to recall, call `memory_decision` first.** It's cheap and faster than guessing wrong.
 
 7. **Recall refines; it doesn't replace current context.** Your current messages remain your primary working context.
+
+### Bundle-Specific Anti-Bloat Rules
+
+8. **Bundle is pre-compressed to your token budget. Do not re-summarize or truncate further.** Inject directly into your response.
+
+9. **Use the bundle's formatted output as-is.** The formatter has already optimized for your agent type (markdown for Claude Code, JSON for APIs, etc.).
+
+10. **If the bundle includes tabular data, reference it by table name or row count—don't paste entire tables inline.** Example: "Dataset 'Q3_metrics' has 1500 rows with columns X, Y, Z. Insights: ..."
+
+11. **Respect the bundle's truncation flag.** If `truncated: true`, some results were dropped due to budget. Inform the user if the answer is incomplete.
 
 ---
 

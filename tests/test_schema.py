@@ -293,9 +293,7 @@ def test_real_seed_file_has_diverse_examples():
     from campy.brain.hippocampus.schema import _parse_seed_examples
     from pathlib import Path
 
-    seed_file = Path(__file__).parent.parent / "InvertorsDocs" / "GistSeedExamples.md"
-    if not seed_file.exists():
-        pytest.skip("Seed file not found")
+    seed_file = Path(__file__).parent.parent / "campy" / "data" / "GistSeedExamples.md"
 
     result = _parse_seed_examples(str(seed_file))
 

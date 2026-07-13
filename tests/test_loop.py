@@ -251,7 +251,7 @@ def test_step2_decision_sentence_not_noise():
     import re
 
     # Build centroids from seed file (same as daemon does)
-    seed_path = Path('InvertorsDocs/GistSeedExamples.md')
+    seed_path = Path('campy/data/GistSeedExamples.md')
     seed_text = seed_path.read_text()
     current_class = None
     class_vectors = {}

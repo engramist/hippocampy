@@ -436,6 +436,12 @@ async def test_tool_dispatch_injects_git_context(patched, monkeypatch):
         return {"status": "ok"}
 
     monkeypatch.setattr(patched, "_call_brain", fake_brain)
+    # _REPO_ROOT/_GIT_BRANCH are resolved at import time from the live
+    # environment; on a detached-HEAD checkout (CI) git_branch is "" and
+    # _inject_context omits empty values by design. Pin known values so this
+    # test verifies the injection logic, not the runner's git state.
+    monkeypatch.setattr(patched, "_REPO_ROOT", "/tmp/fake-repo", raising=False)
+    monkeypatch.setattr(patched, "_GIT_BRANCH", "test-branch", raising=False)
 
     await patched.handle_mcp_request({
         "jsonrpc": "2.0", "id": 50, "method": "tools/call",

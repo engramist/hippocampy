@@ -25,20 +25,20 @@ _LESSON_INDICATORS = [
 ]
 
 async def extract_lessons(message_id: str, text: str, db, llm_client,
-                          config: dict, session_id: str = "unknown") -> int:
+                          config: dict, session_id: str = "unknown") -> list[str]:
     """
-    Scan for lesson indicators in text. If found, use LLM to extract 
+    Scan for lesson indicators in text. If found, use LLM to extract
     structured Lesson nodes.
-    
-    Returns number of lessons stored.
+
+    Returns list of stored lesson IDs (empty list if none were stored).
     """
     text_lower = text.lower()
     if not any(re.search(p, text_lower) for p in _LESSON_INDICATORS):
-        return 0
+        return []
 
     if llm_client is None:
         _logger.debug("extract_lessons: No LLM client available for extraction")
-        return 0
+        return []
 
     embedding_model = config.get("embeddings", {}).get(
         "model", "sentence-transformers/all-MiniLM-L6-v2"
