@@ -12,7 +12,7 @@ Verifies that create_llm_client_for_step() correctly resolves:
 import pytest
 from unittest.mock import MagicMock, patch
 
-from mcp_engine.llm.provider import create_llm_client_for_step, LLMClient
+from campy.brain.llm.provider import create_llm_client_for_step, LLMClient
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +64,7 @@ def _mock_openai_client(provider, model, base_url=None, api_key=None):
 class TestNoOverride:
     def test_unknown_step_returns_default(self):
         """An unrecognised step name falls back to the global provider."""
-        with patch("mcp_engine.llm.provider.create_llm_client") as mock_factory:
+        with patch("campy.brain.llm.provider.create_llm_client") as mock_factory:
             mock_factory.return_value = MagicMock(spec=LLMClient)
             result = create_llm_client_for_step(BASE_CONFIG, "step_does_not_exist")
             assert result is not None
@@ -74,14 +74,14 @@ class TestNoOverride:
             assert called_cfg["llm"]["model"] == "qwen2.5:3b"
 
     def test_step2_no_override_uses_global(self):
-        with patch("mcp_engine.llm.provider.create_llm_client") as mock_factory:
+        with patch("campy.brain.llm.provider.create_llm_client") as mock_factory:
             mock_factory.return_value = MagicMock(spec=LLMClient)
             create_llm_client_for_step(BASE_CONFIG, "step2_gist")
             called_cfg = mock_factory.call_args[0][0]
             assert called_cfg["llm"]["model"] == "qwen2.5:3b"
 
     def test_step6_no_override_uses_global(self):
-        with patch("mcp_engine.llm.provider.create_llm_client") as mock_factory:
+        with patch("campy.brain.llm.provider.create_llm_client") as mock_factory:
             mock_factory.return_value = MagicMock(spec=LLMClient)
             create_llm_client_for_step(BASE_CONFIG, "step6_arbitration")
             called_cfg = mock_factory.call_args[0][0]
@@ -95,7 +95,7 @@ class TestNoOverride:
 class TestStepOverride:
     def test_step6_uses_override_provider_and_model(self):
         """step6_arbitration override replaces provider + model."""
-        with patch("mcp_engine.llm.provider.create_llm_client") as mock_factory:
+        with patch("campy.brain.llm.provider.create_llm_client") as mock_factory:
             mock_factory.return_value = MagicMock(spec=LLMClient)
             create_llm_client_for_step(OVERRIDE_CONFIG, "step6_arbitration")
             called_cfg = mock_factory.call_args[0][0]
@@ -104,7 +104,7 @@ class TestStepOverride:
 
     def test_step2_partial_override_inherits_global_provider(self):
         """step2_gist only overrides model; provider/base_url inherited from global."""
-        with patch("mcp_engine.llm.provider.create_llm_client") as mock_factory:
+        with patch("campy.brain.llm.provider.create_llm_client") as mock_factory:
             mock_factory.return_value = MagicMock(spec=LLMClient)
             create_llm_client_for_step(OVERRIDE_CONFIG, "step2_gist")
             called_cfg = mock_factory.call_args[0][0]
@@ -114,7 +114,7 @@ class TestStepOverride:
 
     def test_step3b_no_override_uses_global(self):
         """step3b_relations has no override in OVERRIDE_CONFIG → global falls through."""
-        with patch("mcp_engine.llm.provider.create_llm_client") as mock_factory:
+        with patch("campy.brain.llm.provider.create_llm_client") as mock_factory:
             mock_factory.return_value = MagicMock(spec=LLMClient)
             create_llm_client_for_step(OVERRIDE_CONFIG, "step3b_relations")
             called_cfg = mock_factory.call_args[0][0]
@@ -122,7 +122,7 @@ class TestStepOverride:
             assert called_cfg["llm"]["model"] == "qwen2.5:3b"
 
     def test_quest_purpose_override(self):
-        with patch("mcp_engine.llm.provider.create_llm_client") as mock_factory:
+        with patch("campy.brain.llm.provider.create_llm_client") as mock_factory:
             mock_factory.return_value = MagicMock(spec=LLMClient)
             create_llm_client_for_step(OVERRIDE_CONFIG, "quest_purpose")
             called_cfg = mock_factory.call_args[0][0]
@@ -137,7 +137,7 @@ class TestStepOverride:
 class TestIsolation:
     def test_step6_override_does_not_bleed_to_step2(self):
         """After resolving step6, config passed for step2 should not contain anthropic."""
-        with patch("mcp_engine.llm.provider.create_llm_client") as mock_factory:
+        with patch("campy.brain.llm.provider.create_llm_client") as mock_factory:
             mock_factory.return_value = MagicMock(spec=LLMClient)
             create_llm_client_for_step(OVERRIDE_CONFIG, "step2_gist")
             called_cfg = mock_factory.call_args[0][0]
@@ -149,7 +149,7 @@ class TestIsolation:
 
     def test_merged_config_has_no_nested_dicts(self):
         """The resolved llm block should be flat (no sub-dicts)."""
-        with patch("mcp_engine.llm.provider.create_llm_client") as mock_factory:
+        with patch("campy.brain.llm.provider.create_llm_client") as mock_factory:
             mock_factory.return_value = MagicMock(spec=LLMClient)
             create_llm_client_for_step(OVERRIDE_CONFIG, "step6_arbitration")
             called_cfg = mock_factory.call_args[0][0]
@@ -160,7 +160,7 @@ class TestIsolation:
         """create_llm_client_for_step must not mutate the config dict it receives."""
         import copy
         original = copy.deepcopy(OVERRIDE_CONFIG)
-        with patch("mcp_engine.llm.provider.create_llm_client"):
+        with patch("campy.brain.llm.provider.create_llm_client"):
             create_llm_client_for_step(OVERRIDE_CONFIG, "step6_arbitration")
         assert OVERRIDE_CONFIG == original, "Config was mutated!"
 
@@ -172,12 +172,12 @@ class TestIsolation:
 class TestNonePropagation:
     def test_returns_none_when_factory_returns_none(self):
         """If the underlying factory can't init the provider, None is returned."""
-        with patch("mcp_engine.llm.provider.create_llm_client", return_value=None):
+        with patch("campy.brain.llm.provider.create_llm_client", return_value=None):
             result = create_llm_client_for_step(BASE_CONFIG, "step6_arbitration")
             assert result is None
 
     def test_returns_none_for_override_when_factory_returns_none(self):
         """Even with a valid override config, None propagates if provider unavailable."""
-        with patch("mcp_engine.llm.provider.create_llm_client", return_value=None):
+        with patch("campy.brain.llm.provider.create_llm_client", return_value=None):
             result = create_llm_client_for_step(OVERRIDE_CONFIG, "step6_arbitration")
             assert result is None
