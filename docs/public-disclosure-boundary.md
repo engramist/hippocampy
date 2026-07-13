@@ -104,7 +104,7 @@ This document classifies all artifact types and establishes explicit disclosure 
 | Artifact | Classification | Rationale | Action |
 |----------|-----------------|-----------|--------|
 | `README.md` | **redact** | Primary public documentation; must be sanitized | Include with patent-pending notice & local-data warning |
-| `Instalation_Instructions.md` | **public** | Setup guide (note: typo in filename) | Publish updated version |
+| `Instalation_Instructions.md` | **removed** (B297) | Stale test-machine Q&A that contradicted the README's install story; typo'd filename | Deleted — README's Install section is the updated version this row called for |
 | `docs/` (user-facing) | **public** | Technical reference | Publish |
 | CONTRIBUTING.md (if added) | **public** | Developer guidelines | Publish if created |
 
