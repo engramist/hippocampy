@@ -55,8 +55,8 @@ class TestWheelDistribution:
         # sidequests was fully extracted to a sibling repo (see B295 cluster E /
         # tests/test_sidequests_compat_namespace.py, deleted): zero tracked
         # files remain under sidequests/ and nothing in this repo imports it.
+        # mcp_engine was fully migrated into campy/brain/llm/ (see B294).
         required_modules = [
-            "mcp_engine/",
             "adapters/",
         ]
 
@@ -117,10 +117,9 @@ class TestSdistDistribution:
 
     def test_sdist_includes_required_modules(self, dist_dir):
         """Verify sdist includes required package modules."""
-        # sidequests was fully extracted to a sibling repo — see note in
+        # sidequests and mcp_engine — see note in
         # test_wheel_includes_required_package_data above.
         required_patterns = [
-            "mcp_engine/",
             "pyproject.toml",
         ]
 

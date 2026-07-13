@@ -197,11 +197,8 @@ class TestInstalledModePackageData:
             names = z.namelist()
 
             # Check for required modules
-            # (sidequests was fully extracted to a sibling repo; no pyproject.toml
-            # entry point or tracked files remain — see B295 cluster E/F/I)
-            assert any(
-                "mcp_engine" in n for n in names
-            ), "mcp_engine not in wheel"
+            # (sidequests fully extracted to a sibling repo; mcp_engine fully
+            # migrated into campy/brain/llm/ — see B295 cluster E/F/I and B294)
             assert any(
                 "adapters" in n for n in names
             ), "adapters not in wheel"
@@ -233,11 +230,11 @@ class TestInstalledModeImports:
         subprocess.run([str(pip_exe), "install", str(wheel_path)], check=True)
 
         # Test core imports
-        # (sidequests was fully extracted to a sibling repo — see B295 cluster E/F/I)
+        # (sidequests fully extracted to a sibling repo; mcp_engine fully
+        # migrated into campy/brain/llm/ — see B295 cluster E/F/I and B294)
         imports_to_test = [
             "campy.paths",
             "campy.cli.main",
-            "mcp_engine",
         ]
 
         for module in imports_to_test:
