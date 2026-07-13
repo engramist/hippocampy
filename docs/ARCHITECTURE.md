@@ -17,7 +17,7 @@
 
 ## Patent Notice
 
-**Patent Pending:** This system includes patent-pending memory architecture. U.S. Provisional Application #64/017,066 was filed March 25, 2026 (Confirmation #7549, Patent Center #75018063). Non-provisional filing deadline: March 25, 2027. No patent has been granted. See [docs/nonprovisional-strategy.md](nonprovisional-strategy.md) for strategy, filing facts, and public disclosure boundaries.
+**Patent Pending:** This system includes patent-pending memory architecture. U.S. Provisional Application #64/017,066 was filed March 25, 2026. Non-provisional filing deadline: March 25, 2027. No patent has been granted. See [PATENTS.md](../PATENTS.md) for filing facts.
 
 ## Project Mission
 

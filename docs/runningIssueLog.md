@@ -145,7 +145,7 @@ for g_name, s_name, _ in ROUTING_TABLE:
 **Symptom:** Daemon started via launchd immediately crashed:
 ```
 PermissionError: [Errno 1] Operation not permitted:
-  '/Users/djshelton/Desktop/GitProjects/sidequests-brain/.venv/pyvenv.cfg'
+  '~/GitProjects/hippocampy/.venv/pyvenv.cfg'
 Fatal Python error: init_import_site: Failed to import the site module
 ```
 

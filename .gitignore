@@ -61,3 +61,12 @@ wiki/.obsidian/workspace*
 wiki/.obsidian/cache/
 wiki/Home.md
 wiki/.obsidian/
+
+# IP-sensitive — not for the public tree (B296). Kept locally / in a private repo.
+InvertorsDocs/
+docs/nonprovisional-strategy.md
+
+# Session/agent-local artifacts (B296)
+CONTEXT.md
+.serena/
+nohup.out

@@ -57,7 +57,7 @@ Open `pyproject.toml`. In the `[project]` `dependencies` list, add after `"typer
 - [ ] **Step 2: Install the new dependencies**
 
 ```bash
-cd /Users/djshelton/Desktop/GitProjects/hippocampy
+cd ~/GitProjects/hippocampy
 pip install -e ".[dev]"
 ```
 
