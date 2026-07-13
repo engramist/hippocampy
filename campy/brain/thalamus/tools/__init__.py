@@ -2234,7 +2234,7 @@ async def _synthesize_lesson(quest_id: str, db, config: dict) -> None:
     3. Store as Lesson node (confidence_low=true) + PRODUCED_LESSON edge
     """
     try:
-        from mcp_engine.llm.provider import create_llm_client
+        from campy.brain.llm.provider import create_llm_client
         from campy.brain.hippocampus.graph import embeddings as emb
 
         embedding_model = config.get("embeddings", {}).get(

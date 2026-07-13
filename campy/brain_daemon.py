@@ -32,7 +32,7 @@ from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.hippocampus.schema import init_schema
 from campy.brain.thalamus.tools import TOOL_HANDLERS, init_loop_queue
-from mcp_engine.llm.provider import create_llm_client
+from campy.brain.llm.provider import create_llm_client
 from campy.brain.temporal_lobe.loop import step2_gist, step3_schema_org
 from campy.brain.temporal_lobe.loop.orchestrator import run_loop
 from campy.brain.brainstem.sweep import run_sweep

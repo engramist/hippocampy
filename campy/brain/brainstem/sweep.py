@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
-    from mcp_engine.llm.provider import LLMClient
+    from campy.brain.llm.provider import LLMClient
 
 from campy.brain.temporal_lobe.loop.step7_pathway import pathway_strength_decay
 from campy.brain.hippocampus.graph import embeddings as emb
