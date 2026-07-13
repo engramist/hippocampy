@@ -140,7 +140,18 @@ async def test_config_overrides_window():
     finally:
         monkeypatch.undo()
 
-    _, params = next(item for item in db.queries if "MATCH (m:Message)" in item[0])
+    # current_truth also awaits working_memory.track_loaded(), which issues its
+    # own "MATCH (m:Message)-[:SENT_IN]->(s:Session ...)" query using that
+    # module's independent (unpatched) datetime import — a filter on
+    # "MATCH (m:Message)" alone can match either query depending on which
+    # lands first in db.queries. The lexical-fallback query this test targets
+    # is the one that also contains "CONTAINS" (see the fixture's own
+    # dispatch condition in LexicalCaptureDB.execute() above), so require
+    # both substrings to disambiguate.
+    _, params = next(
+        item for item in db.queries
+        if "MATCH (m:Message)" in item[0] and "CONTAINS" in item[0]
+    )
     assert params["cutoff"].startswith((fixed_now - timedelta(days=2)).isoformat()[:10])
 
 
