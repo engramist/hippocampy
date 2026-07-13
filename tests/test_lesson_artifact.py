@@ -30,9 +30,11 @@ async def test_extract_lessons_trigger(monkeypatch):
     from campy.brain.hippocampus.graph import embeddings as emb
     monkeypatch.setattr(emb, "embed", MagicMock(return_value=[0.1] * 384))
 
-    count = await extract_lessons("msg-123", text, db, llm, config)
-    
-    assert count == 1
+    lesson_ids = await extract_lessons("msg-123", text, db, llm, config)
+
+    # extract_lessons returns list[str] of stored lesson IDs (Phase 3 change;
+    # see orchestrator.py's "extract_lessons now returns list[str]" comment).
+    assert len(lesson_ids) == 1
     llm.achat.assert_awaited_once()
     messages = llm.achat.await_args.args[0]
     assert messages[0]["role"] == "user"
@@ -48,9 +50,9 @@ async def test_extract_lessons_no_trigger():
     config = {}
     text = "Just a normal message about the weather."
     
-    count = await extract_lessons("msg-123", text, db, llm, config)
-    
-    assert count == 0
+    lesson_ids = await extract_lessons("msg-123", text, db, llm, config)
+
+    assert lesson_ids == []
     assert not llm.chat.called
 
 @pytest.mark.asyncio
