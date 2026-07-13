@@ -1,37 +1,76 @@
 # HippoCampy
 
-Persistent AI memory system with a Gated Consolidation Loop and graph-native Kùzu database.
+**One memory for all your coding agents.**
 
-**Patent Pending:** Campy includes patent-pending memory architecture. A U.S. provisional application was filed March 25, 2026 (Application #64/017,066). No patent has been granted. See [docs/nonprovisional-strategy.md](docs/nonprovisional-strategy.md) for filing facts and deadline.
+Local-first, graph-native AI memory for Claude Code, Codex, Gemini CLI, and VS Code
+Copilot. Hit a token limit in one agent, open another, and it already knows what
+you were doing.
 
-## Installation
+<!-- TODO: record demo GIF per docs/demo-script.md and embed here -->
 
-### Quick Install (Recommended)
+> Hit a context limit mid-task in Claude Code. Opened Codex in the same repo.
+> First line printed, before any prompt:
+> `[Campy] Working on B291 (branch: feat/x · abc1234). Next: wire the new tool
+> into TOOL_HANDLERS.` No summary pasted. No re-explaining. Work continued.
+
+## Quickstart
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/djs54/hippocampy/main/scripts/install.sh | sh
+pipx install hippocampy
+campy setup     # detect and register with Claude Code, Codex, Gemini CLI, etc.
 ```
 
-### Inspect First
+Then just use your agent as normal — Campy captures every turn in the background.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/djs54/hippocampy/main/scripts/install.sh -o /tmp/campy-install.sh
-sh /tmp/campy-install.sh
-```
+## How it works
 
-### Manual Install
+Every turn is captured, run through a Gated Consolidation Loop (biomimetic
+heuristics that filter noise into durable facts), and stored in an embedded
+Kùzu graph — no server, nothing leaves your machine. Recall tools plus a
+`CONTEXT.md` file bridge and a per-turn resume line mean memory shows up in your
+agent's context without it having to ask. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+for the full design.
+
+## What makes it different
+
+- **Cross-agent continuity.** Switch between Claude Code, Codex, Gemini CLI, and
+  VS Code Copilot mid-task — the resume line travels with you, not with the agent.
+- **Local-first and private.** Kùzu runs embedded in-process. No cloud service,
+  no server, your conversations never leave your machine.
+- **Memory arrives, you don't ask for it.** A layered injection system (file
+  bridge, associative hooks, anticipatory triggers) surfaces relevant context
+  automatically, on top of on-demand recall tools.
+
+## Install
 
 ```bash
 pipx install hippocampy    # or: pip install hippocampy
-campy setup                # Detect and register AI agents
-campy doctor               # Verify everything works
-campy start                # Start the memory daemon
+campy setup                # detect and register AI agents
+campy doctor                # verify everything works
+campy start                 # start the memory daemon
 ```
 
-### Developer Install (from Source)
+<details>
+<summary>Alternative install methods</summary>
+
+**Install script** (inspect before running, since this installs a daemon that
+reads your AI conversations):
 
 ```bash
-git clone git@github.com:djs54/hippocampy.git
+curl -fsSL https://raw.githubusercontent.com/engramist/hippocampy/main/scripts/install.sh -o /tmp/campy-install.sh
+sh /tmp/campy-install.sh
+```
+
+**Via Smithery** (for MCP clients like Claude Desktop):
+
+```bash
+npx @smithery/cli install hippocampy --client claude
+```
+
+**From source:**
+
+```bash
+git clone git@github.com:engramist/hippocampy.git
 cd hippocampy
 python3 -m venv .venv && source .venv/bin/activate
 pip install -U pip
@@ -40,54 +79,30 @@ campy setup
 campy status
 ```
 
-The provisional patent application is filed, so public release is no longer blocked by pre-filing disclosure constraints. The remaining work before making the one-line public installer canonical is packaging and installer hardening.
-
-### Via Smithery (Recommended for MCP Clients)
-
-Install the HippoCampy directly into your preferred MCP client (e.g., Claude Desktop):
-
-```bash
-npx @smithery/cli install hippocampy --client claude
-```
-
-### Via Pip
-
-```bash
-pip install hippocampy
-```
-
-Or run directly with uv:
-
-```bash
-uvx hippocampy
-```
-
-## Features
-
-- **Persistent Context:** Remembers your decisions, constraints, and concepts across sessions.
-- **Graph-Native:** Built on Kùzu for efficient relationship management.
-- **Gated Consolidation:** Biomimetic heuristic processing to filter noise from knowledge.
-- **MCP Compatible:** Works with any MCP-enabled AI client.
-- **Context Window Integration (Layer Cake):** 4-layer system that automatically injects graph knowledge into agent context windows — File Bridge (CONTEXT.md generation), Associative Hooks (trigger manifest + Claude Code hooks), Anticipatory Engine (auto-discovers trigger bindings), and Process Skills (deliberate recall).
-- **Contributor navigation:** See [docs/codebase-anatomy.md](docs/codebase-anatomy.md) for the target region map, and [docs/codebase-anatomy-refactor-plan.md](docs/codebase-anatomy-refactor-plan.md) for migration context.
-
-## Optional Debugging
-
-If you want a local graph browser for inspecting Campy data directly, see
-[Local Graph Visibility UI](tools/graph_viewer/README.md). It uses the archived official
-Kuzu Explorer project, defaults to read-only mode, and stays out of the normal install/runtime
-path.
+</details>
 
 ## Requirements
 
-- Python 3.12 or 3.13
-- Kùzu 0.11.3
+Python 3.12 or 3.13, Kùzu 0.11.3 (installed automatically as a dependency).
 
-## Quick Start
+## Status & Contributing
 
-```bash
-campy setup
-campy-daemon start
-```
+Alpha. Every PR runs through an automated security gate (CodeQL, Semgrep,
+pip-audit) plus GitHub Copilot ecosystem review before a maintainer looks at it.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full pipeline and
+[docs/ecosystem-rules.md](docs/ecosystem-rules.md) for the layer boundaries every
+contributor follows. Contributor navigation: [docs/codebase-anatomy.md](docs/codebase-anatomy.md).
 
-For more details, see the [Documentation](docs/).
+## Optional: Local Graph Viewer
+
+For inspecting your Campy graph directly, see
+[tools/graph_viewer/README.md](tools/graph_viewer/README.md) — a read-only
+browser built on the archived Kuzu Explorer project, kept out of the normal
+install/runtime path.
+
+---
+
+**License:** Apache-2.0 — see [LICENSE](LICENSE).
+**Patent Pending:** Campy includes patent-pending memory architecture (U.S. Provisional
+Application #64/017,066, filed March 25, 2026). No patent has been granted. See
+[PATENTS.md](PATENTS.md).

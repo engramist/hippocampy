@@ -41,7 +41,7 @@ codex plugin install /path/to/hippocampy/plugin
 For the git-backed marketplace flow prepared in this repo:
 
 ```bash
-codex plugin marketplace add djs54/hippocampy
+codex plugin marketplace add engramist/hippocampy
 codex plugin install hippocampy
 ```
 
@@ -56,7 +56,7 @@ gemini extensions link /path/to/hippocampy/plugin
 Or install from the repository URL once published through Gemini's gallery flow:
 
 ```bash
-gemini extensions install https://github.com/djs54/hippocampy
+gemini extensions install https://github.com/engramist/hippocampy
 ```
 
 ## Included Tools
@@ -90,9 +90,9 @@ gemini extensions install https://github.com/djs54/hippocampy
 
 ## Full Docs
 
-- Main documentation: https://github.com/djs54/hippocampy/tree/main/docs
-- Architecture: https://github.com/djs54/hippocampy/blob/main/docs/ARCHITECTURE.md
-- Installation guide: https://github.com/djs54/hippocampy/blob/main/README.md
+- Main documentation: https://github.com/engramist/hippocampy/tree/main/docs
+- Architecture: https://github.com/engramist/hippocampy/blob/main/docs/ARCHITECTURE.md
+- Installation guide: https://github.com/engramist/hippocampy/blob/main/README.md
 
 ## Verify
 

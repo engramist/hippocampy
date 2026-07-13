@@ -5,10 +5,10 @@ set -euo pipefail
 # HippoCampy Bootstrap Installer
 # =============================================================================
 # One-line install:
-#   curl -fsSL https://raw.githubusercontent.com/djs54/hippocampy/main/scripts/bootstrap.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/engramist/hippocampy/main/scripts/bootstrap.sh | bash
 #
 # Inspect first:
-#   curl -fsSL https://raw.githubusercontent.com/djs54/hippocampy/main/scripts/bootstrap.sh -o /tmp/campy-bootstrap.sh
+#   curl -fsSL https://raw.githubusercontent.com/engramist/hippocampy/main/scripts/bootstrap.sh -o /tmp/campy-bootstrap.sh
 #   bash /tmp/campy-bootstrap.sh --dry-run
 #   bash /tmp/campy-bootstrap.sh
 # =============================================================================
@@ -144,7 +144,7 @@ elif command -v pipx &>/dev/null; then
         pipx install "$PACKAGE_NAME" --force --python "$PYTHON_CMD" 2>/dev/null || {
             # If PyPI package not published yet, install from GitHub
             warn "PyPI package not found, installing from GitHub..."
-            pipx install "git+https://github.com/djs54/hippocampy.git" --force --python "$PYTHON_CMD"
+            pipx install "git+https://github.com/engramist/hippocampy.git" --force --python "$PYTHON_CMD"
         }
         ok "Installed via pipx"
     fi
@@ -156,7 +156,7 @@ elif command -v uv &>/dev/null; then
     else
         uv tool install "$PACKAGE_NAME" 2>/dev/null || {
             warn "PyPI package not found, installing from GitHub..."
-            uv tool install "git+https://github.com/djs54/hippocampy.git"
+            uv tool install "git+https://github.com/engramist/hippocampy.git"
         }
         ok "Installed via uv"
     fi
@@ -170,7 +170,7 @@ else
         "$CAMPY_VENV_DIR/bin/pip" install -U pip
         "$CAMPY_VENV_DIR/bin/pip" install "$PACKAGE_NAME" 2>/dev/null || {
             warn "PyPI package not found, installing from GitHub..."
-            "$CAMPY_VENV_DIR/bin/pip" install "git+https://github.com/djs54/hippocampy.git"
+            "$CAMPY_VENV_DIR/bin/pip" install "git+https://github.com/engramist/hippocampy.git"
         }
         # Add to PATH hint
         ok "Installed to $CAMPY_VENV_DIR"

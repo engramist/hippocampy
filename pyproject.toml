@@ -18,7 +18,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
-requires-python = ">=3.12,<3.15"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "kuzu==0.11.3",
     "sentence-transformers>=2.2.0",
@@ -61,8 +61,8 @@ campy = "campy.cli.main:app"
 campy-daemon = "campy.daemon:main"
 
 [project.urls]
-Homepage = "https://github.com/djs54/hippocampy"
-Issues = "https://github.com/djs54/hippocampy/issues"
+Homepage = "https://github.com/engramist/hippocampy"
+Issues = "https://github.com/engramist/hippocampy/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
