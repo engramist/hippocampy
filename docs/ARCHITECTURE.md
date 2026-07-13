@@ -1083,7 +1083,7 @@ ARC_AGI artifacts do not become wiki pages directly. They first flow through `in
 ## Installation Story
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/djs54/hippocampy/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/engramist/hippocampy/main/scripts/install.sh | sh
 
 # or install manually
 pip install hippocampy        # or: pip install -e . from repo
