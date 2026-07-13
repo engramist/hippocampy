@@ -1,0 +1,11 @@
+name: "Campy CodeQL Config"
+
+queries:
+  - uses: security-and-quality
+
+paths-ignore:
+  - "tests/"
+  - "**/*.md"
+  - ".venv/"
+  - "benchmarks/arc3/fixtures/"
+  - "**/__pycache__/"

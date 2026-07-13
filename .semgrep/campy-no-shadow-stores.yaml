@@ -1,0 +1,56 @@
+rules:
+  - id: campy-shadow-store-dict
+    patterns:
+      - pattern-either:
+          - pattern: "$NAME = {}"
+          - pattern: "$NAME = dict()"
+          - pattern: "$NAME: $TYPE = {}"
+          - pattern: "$NAME: $TYPE = dict()"
+      - pattern-not-inside: |
+          def $FUNC(...):
+            ...
+      - pattern-not-inside: |
+          class $CLASS:
+            ...
+      - pattern-not-inside: |
+          if ...:
+            ...
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: "(.*_)?(store|cache|state|registry|db)(_.*)?$"
+    message: >
+      Module-level dict `$NAME` looks like a shadow store.
+      Persistent state must go through KuzuDB. See docs/ecosystem-rules.md "No Shadow Stores rule."
+    severity: ERROR
+    languages: [python]
+    paths:
+      include:
+        - "**/campy/**"
+
+  - id: campy-shadow-store-list
+    patterns:
+      - pattern-either:
+          - pattern: "$NAME = []"
+          - pattern: "$NAME = list()"
+          - pattern: "$NAME: $TYPE = []"
+          - pattern: "$NAME: $TYPE = list()"
+      - pattern-not-inside: |
+          def $FUNC(...):
+            ...
+      - pattern-not-inside: |
+          class $CLASS:
+            ...
+      - pattern-not-inside: |
+          if ...:
+            ...
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: "(.*_)?(store|cache|state|registry|db)(_.*)?$"
+    message: >
+      Module-level list `$NAME` looks like a shadow store.
+      Persistent state must go through KuzuDB. See docs/ecosystem-rules.md "No Shadow Stores rule."
+    severity: ERROR
+    languages: [python]
+    paths:
+      include:
+        - "**/campy/**"

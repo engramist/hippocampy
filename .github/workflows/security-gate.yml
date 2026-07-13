@@ -1,0 +1,94 @@
+name: Security Gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  security-events: write
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Job 1: CodeQL — static security analysis
+  # Reports findings to the GitHub Security tab (not to the structured PR
+  # comment — that is Semgrep/pip-audit only). To block PRs on CodeQL alerts,
+  # configure branch protection → Code Scanning → alert severity "Error"
+  # in repo Settings → Code security → Protection rules.
+  # -------------------------------------------------------------------------
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          config-file: .github/codeql/codeql-config.yml
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+  # -------------------------------------------------------------------------
+  # Job 2: Semgrep + pip-audit — pattern checks + dependency CVEs
+  # Parses output and posts a structured findings table on the PR.
+  # -------------------------------------------------------------------------
+  semgrep-pip:
+    name: Semgrep + pip-audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install review tools
+        run: pip install semgrep pip-audit
+
+      - name: Run Semgrep
+        # || true: let review_gate.py be the gate, not the Semgrep exit code
+        run: |
+          semgrep \
+            --json \
+            --config .semgrep/ \
+            --config "p/python" \
+            --output semgrep-results.json \
+            campy/ || true
+
+      - name: Audit project dependencies (isolated from review tooling)
+        # Install the project into a clean venv, freeze its resolved deps, and
+        # audit only those — so Semgrep/pip-audit's own dependencies don't show
+        # up as spurious findings. Covers both requirements.txt and pyproject.toml.
+        run: |
+          python -m venv /tmp/audit-venv
+          /tmp/audit-venv/bin/pip install --quiet --upgrade pip
+          /tmp/audit-venv/bin/pip install --quiet -e . 2>/dev/null \
+            || /tmp/audit-venv/bin/pip install --quiet -r requirements.txt \
+            || true
+          /tmp/audit-venv/bin/pip freeze > /tmp/project-reqs.txt
+          pip-audit -r /tmp/project-reqs.txt \
+            --format json \
+            --output pip-audit-results.json || true
+
+      - name: Post findings and gate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python .github/scripts/review_gate.py \
+            --semgrep semgrep-results.json \
+            --pip-audit pip-audit-results.json \
+            --phase Security
