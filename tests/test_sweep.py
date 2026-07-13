@@ -108,14 +108,25 @@ async def test_run_sweep_empty_db_no_errors():
 # _decay_and_archive
 # ---------------------------------------------------------------------------
 
+# B282 batch-sweep-writes replaced the old two-query pattern (a
+# "pathway_strength < $threshold" scan + a separate "count(n)") with one
+# combined read: "MATCH (n:{table}) WHERE n.archived = false RETURN
+# n.{pk_col}, n.pathway_strength" (campy/brain/brainstem/sweep.py:602-605).
+# _decay_and_archive counts `decayed` by iterating that result set and
+# derives archive candidates from each row's pathway_strength value
+# in-process — it never issues a separate threshold-filter or count(n)
+# query. The mocks below were never updated for that refactor: their
+# registered patterns don't match the real query string, MockDB.execute
+# falls through to an empty result every time, and decayed/archived always
+# came out 0 regardless of what the test configured. "RETURN n." is present
+# in the real read query (and absent from the atomic decay SET write), so
+# it's a stable, unambiguous mock key.
+
 @pytest.mark.asyncio
 async def test_decay_updates_strength():
     from campy.brain.brainstem.sweep import _decay_and_archive
-    # New atomic pattern: execute_write does bulk decay, then execute reads
-    # for below-threshold and count. Mock needs to handle all three query types.
     db = _make_db(rows_by_query={
-        "pathway_strength < $threshold": [],  # none below threshold
-        "count(n)": [[1]],                    # 1 active node after decay
+        "RETURN n.": [["d1", 0.9]],  # 1 active node, strength above archive_threshold=0.10
     })
     d, a, e = await _decay_and_archive(db, {"decision": 0.995}, 300/86400, 0.10)
     assert d >= 1  # at least one node was decayed
@@ -128,10 +139,8 @@ async def test_decay_updates_strength():
 @pytest.mark.asyncio
 async def test_decay_archives_node_below_threshold():
     from campy.brain.brainstem.sweep import _decay_and_archive
-    # After atomic decay, one node falls below threshold
     db = _make_db(rows_by_query={
-        "pathway_strength < $threshold": [["d1"]],  # d1 below threshold
-        "count(n)": [[0]],
+        "RETURN n.": [["d1", 0.05]],  # d1 below archive_threshold=0.10
     })
     d, a, e = await _decay_and_archive(db, {"decision": 0.5}, 1.0, 0.10)
     assert a >= 1
@@ -143,8 +152,7 @@ async def test_decay_uses_default_rate_when_missing():
     from campy.brain.brainstem.sweep import _decay_and_archive
     # No decay rate for "message" — should use default 0.99 and not crash
     db = _make_db(rows_by_query={
-        "pathway_strength < $threshold": [],
-        "count(n)": [[1]],
+        "RETURN n.": [["d1", 0.9]],
     })
     d, a, e = await _decay_and_archive(db, {}, 300/86400, 0.10)
     assert e == 0  # no errors with missing rate
@@ -155,8 +163,7 @@ async def test_decay_handles_zero_strength_node():
     from campy.brain.brainstem.sweep import _decay_and_archive
     # After atomic decay of 0.0 * factor = 0.0, node should be archived
     db = _make_db(rows_by_query={
-        "pathway_strength < $threshold": [["d1"]],
-        "count(n)": [[0]],
+        "RETURN n.": [["d1", 0.0]],
     })
     d, a, e = await _decay_and_archive(db, {"decision": 0.995}, 300/86400, 0.10)
     assert a >= 1
@@ -166,12 +173,14 @@ async def test_decay_handles_zero_strength_node():
 @pytest.mark.asyncio
 async def test_decay_handles_none_strength_node():
     from campy.brain.brainstem.sweep import _decay_and_archive
-    # None * factor may cause error in atomic query; should be handled
+    # A None pathway_strength must not crash the `< archive_threshold`
+    # comparison and must not be archived (`row[1] is not None and ...`
+    # guard in _decay_and_archive).
     db = _make_db(rows_by_query={
-        "pathway_strength < $threshold": [],
-        "count(n)": [[0]],
+        "RETURN n.": [["d1", None]],
     })
     d, a, e = await _decay_and_archive(db, {"decision": 0.995}, 300/86400, 0.10)
+    assert a == 0
     assert e == 0
 
 
@@ -180,8 +189,7 @@ async def test_decay_node_above_threshold_not_archived():
     from campy.brain.brainstem.sweep import _decay_and_archive
     # High-strength node stays above threshold after small decay
     db = _make_db(rows_by_query={
-        "pathway_strength < $threshold": [],  # none below threshold
-        "count(n)": [[1]],                    # 1 active node
+        "RETURN n.": [["d1", 0.9]],  # above archive_threshold=0.10
     })
     d, a, e = await _decay_and_archive(db, {"decision": 0.995}, 300/86400, 0.10)
     assert a == 0
