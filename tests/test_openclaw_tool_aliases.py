@@ -23,8 +23,13 @@ def _extract_tool_definitions(source: str):
 
 
 def _load_tool_registry():
-    source = Path("extensions/hippocampy/src/index.ts").read_text()
-    tools = _extract_tool_definitions(source)
+    sources = [
+        Path("extensions/hippocampy/src/index.ts").read_text(),
+        Path("extensions/hippocampy/src/generated_tools.ts").read_text(),
+    ]
+    tools = []
+    for source in sources:
+        tools.extend(_extract_tool_definitions(source))
     return {tool["name"]: tool["callName"] for tool in tools}
 
 

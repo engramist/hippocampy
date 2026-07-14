@@ -25,5 +25,13 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
 
+      # B293: fail if generated extension tool definitions have drifted from
+      # tool_schemas.TOOLS. Lives here (not security-gate.yml) because the
+      # generator imports campy, which requires the project to be installed.
+      - name: Verify generated extension tools are up to date
+        run: |
+          python scripts/generate_extension_tools.py
+          git diff --exit-code extensions/hippocampy/src/generated_tools.ts
+
       - name: Run test suite
         run: pytest tests/ -q
