@@ -312,12 +312,17 @@ def _plan_feedback_from_similarity(db, goal_vec: list[float], exclude_plan_id: s
 
 
 async def _store_plan_outcome_lesson(db, *, plan_id: str, outcome: str, valence: float, session_id: str,
-                                     embedding_model: str, now_iso: str) -> str | None:
+                                     embedding_model: str, now_iso: str,
+                                     trigger_signals: list[str] | None = None) -> str | None:
     """Create a Lesson and connect it to the Plan when |valence| is strong."""
     if abs(valence) <= 0.7:
         return None
 
     lesson_text = f"Plan outcome ({'success' if valence > 0 else 'failure'}): {outcome.strip()}"
+    # B301: record which signal(s) drove the polarity so a system-labeled
+    # outcome is auditable from the Lesson node itself.
+    if trigger_signals:
+        lesson_text += f"\n[valence_trigger: {', '.join(trigger_signals)}]"
     lesson_id = str(uuid.uuid4())
     vec = emb.embed(lesson_text, model_name=embedding_model)
 
