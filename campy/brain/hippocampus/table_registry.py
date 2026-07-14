@@ -46,6 +46,8 @@ _TAG_ORDER = {
         "Constraint",
         "Requirement",
         "ActionItem",
+        "Plan",
+        "Procedure",
         "GlobalConstraint",
         "GlobalPreference",
         "Lesson",
