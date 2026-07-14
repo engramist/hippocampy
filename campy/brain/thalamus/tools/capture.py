@@ -140,6 +140,25 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
         except Exception:
             pass
 
+    # B298: upsert semantics for piggybacked Claude auto-memory. The hook sends
+    # a stable source_memory_key (hash of the memory's `name:` frontmatter) and
+    # embeds the same key in the content as a "memory_key: <hash>" line. Editing
+    # the same memory file must supersede, not append — so archive any earlier
+    # live Message carrying the same key before writing the new version. The
+    # marker match is on text content because Message has no dedicated key
+    # column; the marker line is machine-generated and collision-safe.
+    source_memory_key = (params.get("source_memory_key") or "").strip()
+    if source_memory_key:
+        try:
+            await db.execute_write(
+                "MATCH (m:Message) "
+                "WHERE m.text_raw CONTAINS $marker AND m.archived = false "
+                "SET m.archived = true",
+                {"marker": f"memory_key: {source_memory_key}"},
+            )
+        except Exception:
+            _logger.exception("B298 auto-memory supersede failed for key %s", source_memory_key)
+
     # Write Message node
     await db.execute_write(
         """
