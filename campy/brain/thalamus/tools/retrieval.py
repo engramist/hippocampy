@@ -268,11 +268,17 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
         if lexical_rows:
             for row in lexical_rows:
                 node = _safe_result_dict(row.get("node", {}))
+                # B298: superseded auto-memory versions are archived; the FTS
+                # index may still return them, so filter here like the vector
+                # path does.
+                if node.get("archived", False):
+                    continue
                 _append_lexical_message(node, score=float(row.get("score", 0.0) or 0.0))
         else:
             rr = db.execute(
                 "MATCH (m:Message) "
                 "WHERE lower(m.text_raw) CONTAINS lower($query) "
+                "  AND m.archived = false "
                 "  AND m.created_at > timestamp($cutoff) "
                 "RETURN m.message_id, m.text_raw, m.role, m.confidence, "
                 "m.confidence_low, m.pathway_strength, m.created_at "
