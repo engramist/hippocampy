@@ -21,7 +21,7 @@ from typing import Optional
 @dataclass
 class BundleSection:
     """One section of a ContextBundle."""
-    section_type: str  # "exact_fact", "semantic", "graph", "tabular", "summary"
+    section_type: str  # "exact_fact", "plans", "semantic", "graph", "tabular", "summary"
     content: list[dict]
     token_estimate: int
     source_node_ids: list[str] = field(default_factory=list)
@@ -108,10 +108,11 @@ async def compile_bundle(
 
     Pipeline stages (in priority order):
     1. Exact facts (GlobalConstraint + GlobalPreference)
-    2. Semantic context (current_truth results)
-    3. Graph structure (relationship traversals)
-    4. Tabular data (if 249 complete and include_tabular=True)
-    5. Summaries (wiki projection, if available)
+    2. Plan lane (Plan + PlanStep outcomes)
+    3. Semantic context (current_truth results)
+    4. Graph structure (relationship traversals)
+    5. Tabular data (if 249 complete and include_tabular=True)
+    6. Summaries (wiki projection, if available)
 
     Returns:
         ContextBundle with assembled and prioritized context
@@ -145,7 +146,26 @@ async def compile_bundle(
         )
         return bundle
 
-    # Stage 2: Semantic context
+    # Stage 2: Plan lane
+    plans_section = await _stage_plans(db, query, config, tier_config)
+    if plans_section and plans_section.content:
+        sections.append(plans_section)
+        cumulative_tokens += plans_section.token_estimate
+        sources.extend(plans_section.source_node_ids)
+
+    if cumulative_tokens >= token_budget * 0.9:
+        bundle = ContextBundle(
+            query=query,
+            sections=sections,
+            total_token_estimate=cumulative_tokens,
+            token_budget=token_budget,
+            truncated=True,
+            sources=sources,
+            compilation_ms=(time.time() - start_time) * 1000,
+        )
+        return bundle
+
+    # Stage 3: Semantic context
     semantic_section = await _stage_semantic_context(db, query, config, tier_config)
     if semantic_section and semantic_section.content:
         sections.append(semantic_section)
@@ -164,7 +184,7 @@ async def compile_bundle(
         )
         return bundle
 
-    # Stage 3: Graph structure
+    # Stage 4: Graph structure
     graph_section = await _stage_graph_structure(db, query, config, tier_config, sources)
     if graph_section and graph_section.content:
         sections.append(graph_section)
@@ -183,7 +203,7 @@ async def compile_bundle(
         )
         return bundle
 
-    # Stage 4: Tabular data
+    # Stage 5: Tabular data
     if include_tabular:
         tabular_section = await _stage_tabular_data(
             db, query, config, tier_config, sources, token_budget - cumulative_tokens
@@ -205,7 +225,7 @@ async def compile_bundle(
         )
         return bundle
 
-    # Stage 5: Summaries
+    # Stage 6: Summaries
     if include_summaries:
         summaries_section = await _stage_summaries(db, query, config, sources, token_budget - cumulative_tokens)
         if summaries_section and summaries_section.content:
@@ -330,6 +350,57 @@ async def _stage_semantic_context(db, query: str, config: dict, tier_config: dic
         )
     except Exception as e:
         print(f"Error in _stage_semantic_context: {e}")
+        return None
+
+
+async def _stage_plans(db, query: str, config: dict, tier_config: dict) -> Optional[BundleSection]:
+    """
+    Stage 2: Retrieve plan lane context using the same ranking as recall_plans.
+
+    PlanStep is not separately retrievable here; steps are carried inline with
+    parent Plan records to preserve execution context.
+    """
+    try:
+        from campy.brain.thalamus.tools.quests import recall_plans_for_query
+
+        limit = tier_config.get("max_semantic", 10)
+        plans = await recall_plans_for_query(
+            goal_query=query,
+            db=db,
+            config=config,
+            limit=limit,
+            min_valence=-1.0,
+        )
+        if not plans:
+            return None
+
+        content = []
+        node_ids = []
+        for plan in plans:
+            node_id = plan.get("plan_id")
+            if node_id:
+                node_ids.append(node_id)
+            content.append(
+                {
+                    "plan_id": node_id,
+                    "goal": plan.get("goal", ""),
+                    "status": plan.get("status"),
+                    "valence": plan.get("valence"),
+                    "pathway_strength": plan.get("pathway_strength"),
+                    "similarity": plan.get("similarity"),
+                    "steps": plan.get("steps", []),
+                }
+            )
+
+        token_estimate = max(1, len(content)) * 150
+        return BundleSection(
+            section_type="plans",
+            content=content,
+            token_estimate=token_estimate,
+            source_node_ids=node_ids,
+        )
+    except Exception as e:
+        print(f"Error in _stage_plans: {e}")
         return None
 
 

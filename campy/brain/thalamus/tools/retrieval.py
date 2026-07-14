@@ -353,12 +353,19 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
             node_id = (node.get("concept_id")
                         or node.get("decision_id") or node.get("constraint_id")
                         or node.get("requirement_id") or node.get("action_item_id")
+                        or node.get("plan_id") or node.get("procedure_id")
                         or node.get("global_constraint_id")
                         or node.get("global_preference_id")
                         or node.get("lesson_id")
                         or node.get("message_id")
                         or node.get("extract_id")
                         or "unknown")
+            text_raw = (
+                node.get("text_raw")
+                or node.get("goal")  # Plan rows use goal instead of text_raw
+                or node.get("description")  # Procedure rows use description
+                or ""
+            )
             ps = node.get("pathway_strength", 0.0) or 0.0
             conf = node.get("confidence", 0.0) or 0.0
             similarity = row["score"]
@@ -387,10 +394,10 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
             strength = (ps * conf) if (ps > 0.0 and conf > 0.0) else 0.0
             rank = strength * (1.0 + outcome_boost)
 
-            all_results.append({
+            result_row = {
                 "node_id":          node_id,
                 "node_type":        table_name,
-                "text_raw":         node.get("text_raw", ""),
+                "text_raw":         text_raw,
                 "confidence":       conf,
                 "confidence_low":   node.get("confidence_low", True),
                 "pathway_strength": ps,
@@ -400,7 +407,13 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
                 "outcome_warning":  outcome_warning,
                 "lexical_exact":     lexical_exact,
                 "_rank":            rank,
-            })
+            }
+            if node.get("status") is not None:
+                result_row["status"] = node.get("status")
+            if node.get("valence") is not None:
+                result_row["valence"] = node.get("valence")
+
+            all_results.append(result_row)
 
             source_name = "lexical" if lexical_exact else f"vector:{table_name}"
             source_lists.setdefault(source_name, [])
