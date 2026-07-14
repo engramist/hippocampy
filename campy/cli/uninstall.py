@@ -201,8 +201,34 @@ def _stop_daemon() -> _R:
 # Adapter / MCP config removal
 # ---------------------------------------------------------------------------
 
-def _remove_mcp_json_entry(config_path: Path, server_name: str = PRIMARY_MCP_SERVER) -> bool:
-    """Remove a named entry from a JSON MCP config file. Returns True if changed."""
+def _is_campy_created_entry(entry) -> bool:
+    """True if an mcpServers entry has the shape campy's own tooling writes.
+
+    Campy registers stdio entries whose command/args reference the
+    `campy.adapters.*` modules or an `adapters/<client>/adapter.py` path.
+    Anything else (e.g. a hand-authored HTTP entry to the daemon in a
+    git-tracked project .mcp.json) is user-managed.
+    """
+    if not isinstance(entry, dict):
+        return False
+    parts = [str(entry.get("command", ""))] + [str(a) for a in entry.get("args", [])]
+    return any(
+        "campy.adapters" in p or "/adapters/" in p or "adapter.py" in p
+        for p in parts
+    )
+
+
+def _remove_mcp_json_entry(
+    config_path: Path,
+    server_name: str = PRIMARY_MCP_SERVER,
+    created_only: bool = False,
+) -> bool:
+    """Remove a named entry from a JSON MCP config file. Returns True if changed.
+
+    With ``created_only=True`` (used for the git-tracked project-root
+    .mcp.json), only entries campy's tooling created are removed;
+    user-managed entries under the same name are preserved.
+    """
     if not config_path.exists():
         return False
 
@@ -221,6 +247,8 @@ def _remove_mcp_json_entry(config_path: Path, server_name: str = PRIMARY_MCP_SER
             "sidequests-brain-desktop",
         ):
             if key in config and name in config[key]:
+                if created_only and not _is_campy_created_entry(config[key][name]):
+                    continue
                 del config[key][name]
                 changed = True
 
@@ -376,10 +404,13 @@ def _deregister_claude_code() -> _R:
         if result.returncode == 0:
             changed = True
 
-    # 2. Also clean up ~/.claude.json (may have been written directly)
-    for config_file in [Path.home() / ".claude.json", Path.cwd() / ".mcp.json"]:
-        if _remove_mcp_json_entry(config_file):
-            changed = True
+    # 2. Also clean up ~/.claude.json (may have been written directly).
+    if _remove_mcp_json_entry(Path.home() / ".claude.json"):
+        changed = True
+    # The project-root .mcp.json is git-tracked and may hold a hand-authored
+    # campy entry (e.g. HTTP to the daemon) — only strip entries we created.
+    if _remove_mcp_json_entry(Path.cwd() / ".mcp.json", created_only=True):
+        changed = True
 
     # 3. Remove UserPromptSubmit hook
     hook_settings = Path.home() / ".claude" / "settings.json"

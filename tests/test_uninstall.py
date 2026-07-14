@@ -69,6 +69,38 @@ class TestRemoveMcpJsonEntry:
         changed = U._remove_mcp_json_entry(cfg)
         assert not changed
 
+    def test_created_only_preserves_user_managed_http_entry(self, tmp_path):
+        """Regression: uninstall must not strip a hand-authored campy entry
+        (e.g. HTTP to the daemon) from a git-tracked project .mcp.json,
+        leaving behind an empty mcpServers map."""
+        cfg = tmp_path / ".mcp.json"
+        original = {
+            "mcpServers": {
+                "campy": {"type": "http", "url": "http://127.0.0.1:7799/mcp"},
+            }
+        }
+        cfg.write_text(json.dumps(original))
+        changed = U._remove_mcp_json_entry(cfg, created_only=True)
+        assert not changed
+        assert json.loads(cfg.read_text()) == original
+
+    def test_created_only_still_removes_campy_created_entry(self, tmp_path):
+        cfg = tmp_path / ".mcp.json"
+        cfg.write_text(json.dumps({
+            "mcpServers": {
+                "campy": {
+                    "command": "/some/venv/bin/python",
+                    "args": ["-m", "campy.adapters.mcp_server"],
+                },
+                "other-tool": {"command": "node"},
+            }
+        }))
+        changed = U._remove_mcp_json_entry(cfg, created_only=True)
+        assert changed
+        data = json.loads(cfg.read_text())
+        assert "campy" not in data["mcpServers"]
+        assert "other-tool" in data["mcpServers"]
+
 
 # ---------------------------------------------------------------------------
 # Codex TOML block removal
