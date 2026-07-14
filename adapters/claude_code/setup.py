@@ -87,19 +87,54 @@ def _configure_git_hooks(project_root: Path) -> None:
         print(f"  Warning: could not set core.hooksPath: {e}")
 
 
+def _is_campy_created_entry(entry) -> bool:
+    """True if an mcpServers entry has the shape campy's own tooling writes.
+
+    Campy registers stdio entries whose command/args reference the
+    `campy.adapters.*` modules or an `adapters/<client>/adapter.py` path.
+    Anything else (e.g. an HTTP entry to the daemon, hand-authored and
+    git-tracked) is user-managed and must not be touched.
+    """
+    if not isinstance(entry, dict):
+        return False
+    parts = [str(entry.get("command", ""))] + [str(a) for a in entry.get("args", [])]
+    return any("campy.adapters" in p or "adapters/claude_code/adapter.py" in p for p in parts)
+
+
 def _write_mcp_json(project_root: Path) -> None:
-    """Write .mcp.json to register the MCP STDIO server with Claude Code."""
-    mcp_config = {
-        "mcpServers": {
-            "campy": {
-                "command": _python_executable(),
-                "args": ["-m", "campy.adapters.mcp_server"],
-            }
-        }
-    }
+    """Merge the campy server entry into the project-root .mcp.json.
+
+    The file is git-tracked and may hold entries for other MCP servers (or a
+    hand-authored campy entry pointing at the HTTP daemon). Merge into the
+    existing config — never drop entries campy didn't create.
+    """
     mcp_path = project_root / ".mcp.json"
+    config = {}
+    if mcp_path.exists():
+        try:
+            config = json.loads(mcp_path.read_text())
+        except json.JSONDecodeError:
+            print(f"  Warning: {mcp_path} is not valid JSON — leaving it untouched")
+            return
+    if not isinstance(config, dict):
+        config = {}
+
+    servers = config.setdefault("mcpServers", {})
+    if not isinstance(servers, dict):
+        servers = config["mcpServers"] = {}
+
+    existing = servers.get("campy")
+    if existing is not None and not _is_campy_created_entry(existing):
+        # User-managed entry (e.g. {"type": "http", "url": ...}) — keep it.
+        return
+
+    servers["campy"] = {
+        "command": _python_executable(),
+        "args": ["-m", "campy.adapters.mcp_server"],
+    }
     with open(mcp_path, "w") as f:
-        json.dump(mcp_config, f, indent=2)
+        json.dump(config, f, indent=2)
+        f.write("\n")
 
 
 def _write_hook_config() -> None:
