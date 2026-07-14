@@ -46,6 +46,7 @@ try:
         detect_ordered_plan_steps,
         has_plan_signal,
         infer_outcome_valence,
+        infer_outcome_valence_detail,
     )
 except ModuleNotFoundError as exc:
     if exc.name != "campy.brain.temporal_lobe.loop.step4_pattern":
@@ -64,7 +65,10 @@ except ModuleNotFoundError as exc:
     ]
     _FAILURE_SIGNALS = [
         r"\bthat(?:'s| is) wrong\b", r"\brevert\b", r"\bundo\b",
-        r"\bthat broke\b", r"\bfailed\b", r"\brollback\b",
+        r"\bthat broke\b",
+        r"\b(?:it|this|that|build|test|tests|deploy|deployment) (?:has )?failed\b",
+        r"\bfailed to\b",
+        r"\brollback\b",
         r"\bnot what i (?:asked|wanted|meant)\b", r"\bstart over\b",
         r"\btry again\b", r"\bwrong approach\b",
     ]
@@ -103,17 +107,25 @@ except ModuleNotFoundError as exc:
         lower = (text or "").lower()
         return any(re.search(p, lower) for p in _PLAN_SIGNALS)
 
-    def infer_outcome_valence(text: str) -> float | None:
+    def infer_outcome_valence_detail(text: str) -> tuple[float | None, list[str]]:
         lower = (text or "").lower()
-        success_hits = sum(1 for p in _SUCCESS_SIGNALS if re.search(p, lower))
-        failure_hits = sum(1 for p in _FAILURE_SIGNALS if re.search(p, lower))
+        success_matches = [p for p in _SUCCESS_SIGNALS if re.search(p, lower)]
+        failure_matches = [p for p in _FAILURE_SIGNALS if re.search(p, lower)]
+        success_hits = len(success_matches)
+        failure_hits = len(failure_matches)
         if success_hits == 0 and failure_hits == 0:
-            return None
-        if success_hits > failure_hits:
-            return 0.8
-        if failure_hits > success_hits:
-            return -0.8
-        return None
+            return None, []
+        if failure_hits == 0:
+            return 0.8, success_matches
+        if success_hits == 0:
+            return -0.8, failure_matches
+        if abs(success_hits - failure_hits) >= 2:
+            return (0.8, success_matches) if success_hits > failure_hits else (-0.8, failure_matches)
+        return None, []
+
+    def infer_outcome_valence(text: str) -> float | None:
+        valence, _signals = infer_outcome_valence_detail(text)
+        return valence
 
 _loop_queue: Optional[asyncio.Queue] = None
 
