@@ -179,6 +179,14 @@ def classify_artifact(text: str, gist_class: str | None,
     if prior_type == artifact_type and best_score > 0:
         confidence = min(confidence + 0.10, 0.98)
 
+    # B300: single-token entities may exist as tentative Concepts but can
+    # never become confirmed artifacts — one word carries no actionable
+    # content on its own. Same kind of cap as ASSISTANT_CAP above, applied
+    # before the HARD_LOCK comparison, overriding any keyword/gist boost.
+    candidate_text = entity_text if entity_text is not None else text
+    if candidate_text.strip() and ' ' not in candidate_text.strip():
+        confidence = min(confidence, 0.60)
+
     if confidence < NOISE_FLOOR:
         return {
             "artifact_type":  artifact_type,
