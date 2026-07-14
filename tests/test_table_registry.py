@@ -81,6 +81,8 @@ def test_retrievable_matches_current_truth_literal() -> None:
         ("Constraint", "constraint_emb_idx", "constraint_id"),
         ("Requirement", "requirement_emb_idx", "requirement_id"),
         ("ActionItem", "actionitem_emb_idx", "action_item_id"),
+        ("Plan", "plan_emb_idx", "plan_id"),
+        ("Procedure", "procedure_emb_idx", "procedure_id"),
         ("GlobalConstraint", "globalconstraint_emb_idx", "global_constraint_id"),
         ("GlobalPreference", "globalpreference_emb_idx", "global_preference_id"),
         ("Lesson", "lesson_emb_idx", "lesson_id"),

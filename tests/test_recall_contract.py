@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from campy.brain.thalamus.tools import current_truth, notify_turn
+from campy.brain.thalamus.tools import (
+    compile_context,
+    current_truth,
+    notify_turn,
+    register_plan,
+    report_outcome,
+)
 
 
 class FakeResult:
@@ -30,6 +36,9 @@ class RecallContractDB:
     def __init__(self):
         self.messages: dict[str, dict] = {}
         self.decisions: dict[str, dict] = {}
+        self.plans: dict[str, dict] = {}
+        self.plan_steps: dict[str, dict] = {}
+        self.step_plan: dict[str, str] = {}
         self.loaded_edges: list[dict] = []
         self.writes: list[dict] = []
         self.token_estimate = 0
@@ -75,6 +84,23 @@ class RecallContractDB:
             return rows[:limit]
         if index_name == "decision_emb_idx":
             return list(self.decisions.values())[:limit]
+        if index_name == "plan_emb_idx":
+            rows = []
+            for plan in self.plans.values():
+                rows.append({
+                    "node": {
+                        "plan_id": plan["plan_id"],
+                        "goal": plan.get("goal", ""),
+                        "status": plan.get("status", "active"),
+                        "valence": plan.get("valence"),
+                        "pathway_strength": plan.get("pathway_strength", 0.9),
+                        "confidence": plan.get("confidence", 0.9),
+                        "confidence_low": False,
+                        "archived": False,
+                    },
+                    "score": plan.get("score", 0.95),
+                })
+            return rows[:limit]
         return []
 
     def execute(self, query: str, params: dict | None = None):
@@ -123,6 +149,22 @@ class RecallContractDB:
                     ])
             return FakeResult(rows)
 
+        if "MATCH (ps:PlanStep)-[:STEP_OF]->(p:Plan {plan_id: $pid})" in q:
+            pid = params.get("pid")
+            rows = []
+            for step_id, plan_id in self.step_plan.items():
+                if plan_id != pid:
+                    continue
+                step = self.plan_steps.get(step_id, {})
+                rows.append([
+                    step.get("step_number", 0),
+                    step.get("description", ""),
+                    step.get("valence"),
+                    step.get("status", "pending"),
+                ])
+            rows.sort(key=lambda r: r[0])
+            return FakeResult(rows)
+
         if "WHERE m.message_id <> $mid" in q:
             return FakeResult([])
 
@@ -144,6 +186,51 @@ class RecallContractDB:
                 "confidence_low": True,
                 "score": 0.95,
             }
+            return
+
+        if "CREATE (p:Plan" in q:
+            self.plans[params["plan_id"]] = {
+                "plan_id": params["plan_id"],
+                "goal": params.get("goal", ""),
+                "status": "active",
+                "valence": None,
+                "pathway_strength": params.get("pathway_strength", 0.9),
+                "confidence": params.get("confidence", 0.9),
+                "score": 0.98,
+            }
+            return
+
+        if "CREATE (ps:PlanStep" in q:
+            self.plan_steps[params["step_id"]] = {
+                "step_id": params["step_id"],
+                "step_number": params.get("step_number", 0),
+                "description": params.get("description", ""),
+                "valence": None,
+                "status": "pending",
+            }
+            return
+
+        if "MERGE (ps)-[:STEP_OF]->(p)" in q:
+            self.step_plan[params["step_id"]] = params["plan_id"]
+            return
+
+        if "SET ps.actual_outcome = $outcome" in q and "ps.status = $status" in q:
+            pid = params.get("pid")
+            step_number = params.get("step_number")
+            for sid, linked_pid in self.step_plan.items():
+                if linked_pid != pid:
+                    continue
+                step = self.plan_steps.get(sid)
+                if step and step.get("step_number") == step_number:
+                    step["valence"] = params.get("valence")
+                    step["status"] = params.get("status", "pending")
+            return
+
+        if "MATCH (p:Plan {plan_id: $pid})" in q and "SET p.valence = $valence" in q:
+            plan = self.plans.get(params.get("pid"))
+            if plan is not None:
+                plan["valence"] = params.get("valence")
+                plan["status"] = "completed"
             return
 
         if "CREATE (s)-[:LOADED" in q:
@@ -282,3 +369,76 @@ async def test_recall_contract_respects_limit(_no_git_quest_work):
     )
 
     assert len(recalled["results"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_plan_lane_surfaces_in_current_truth_and_compile_context(_no_git_quest_work, monkeypatch):
+    import campy.brain.thalamus.tools.quests as quests_mod
+
+    db = RecallContractDB()
+    config = {"embeddings": {"model": "mock"}}
+
+    async def _stub_store_plan_outcome_lesson(*args, **kwargs):
+        return "lesson-plan-lane"
+
+    monkeypatch.setattr(quests_mod, "_store_plan_outcome_lesson", _stub_store_plan_outcome_lesson)
+
+    registered = await register_plan(
+        {
+            "goal": "Implement B299 plan-lane retrieval visibility",
+            "steps": [
+                "Add Plan and Procedure retrievable tags",
+                "Wire plan lane into compile_context",
+            ],
+            "session_id": "recall-contract",
+        },
+        db,
+        config,
+    )
+    assert registered["status"] == "registered"
+
+    completed = await report_outcome(
+        {
+            "plan_id": registered["plan_id"],
+            "outcome": "Implemented and verified with regression tests",
+            "valence": 0.9,
+            "session_id": "recall-contract",
+            "valence_source": "test_result",
+        },
+        db,
+        config,
+    )
+    assert completed["plan_status"] == "completed"
+
+    truth = await current_truth(
+        {
+            "query": "What work did we do for B299 plan lane retrieval?",
+            "session_id": "recall-contract",
+            "scope": "both",
+            "limit": 5,
+        },
+        db,
+        config,
+    )
+
+    plan_rows = [r for r in truth["results"] if r.get("node_type") == "Plan"]
+    assert plan_rows
+    assert plan_rows[0]["text_raw"]
+    assert plan_rows[0].get("status") == "completed"
+    assert plan_rows[0].get("valence") == pytest.approx(0.9)
+
+    compiled = await compile_context(
+        {
+            "query": "Summarize B299 plan lane work",
+            "token_budget": 32000,
+            "session_id": "recall-contract",
+        },
+        db,
+        config,
+    )
+    sections = compiled["bundle"]["sections"]
+    plan_sections = [s for s in sections if s.get("type") == "plans"]
+    assert plan_sections
+    top_plan = plan_sections[0]["content"][0]
+    assert "B299" in top_plan.get("goal", "")
+    assert top_plan.get("steps")

@@ -363,16 +363,41 @@ async def recall_plans(params: dict, db: KuzuClient, config: dict) -> dict:
 
     limit = int(params.get("limit", 5))
     min_valence = float(params.get("min_valence", 0.0))
-    embedding_model = config.get("embeddings", {}).get(
-        "model", "sentence-transformers/all-MiniLM-L6-v2"
+    plans = await recall_plans_for_query(
+        goal_query=goal_query,
+        db=db,
+        config=config,
+        limit=limit,
+        min_valence=min_valence,
     )
-    query_vec = emb.embed(goal_query, model_name=embedding_model)
+    return {"plans": plans}
 
+
+def _fetch_plan_steps(db, plan_id: str) -> list[dict]:
+    steps: list[dict] = []
     try:
-        rows = db.vector_search("Plan", _PLAN_INDEX, query_vec, max(limit * 4, 12))
+        rs = db.execute(
+            "MATCH (ps:PlanStep)-[:STEP_OF]->(p:Plan {plan_id: $pid}) "
+            "RETURN ps.step_number, ps.description, ps.valence, ps.status "
+            "ORDER BY ps.step_number ASC",
+            {"pid": plan_id},
+        )
+        while rs.has_next():
+            sr = rs.get_next()
+            steps.append(
+                {
+                    "step_number": int(sr[0]),
+                    "description": sr[1] or "",
+                    "valence": sr[2],
+                    "status": sr[3] or "pending",
+                }
+            )
     except Exception:
-        return {"plans": []}
+        pass
+    return steps
 
+
+def _rank_plan_neighbors(db, rows: list[dict], limit: int, min_valence: float) -> list[dict]:
     scored: list[dict] = []
     for row in rows:
         node = _safe_result_dict(row.get("node", {}))
@@ -391,35 +416,15 @@ async def recall_plans(params: dict, db: KuzuClient, config: dict) -> dict:
         pathway_strength = float(node.get("pathway_strength", 1.0) or 1.0)
         score = similarity * abs(valence) * max(pathway_strength, 0.1)
 
-        steps: list[dict] = []
-        try:
-            rs = db.execute(
-                "MATCH (ps:PlanStep)-[:STEP_OF]->(p:Plan {plan_id: $pid}) "
-                "RETURN ps.step_number, ps.description, ps.valence, ps.status "
-                "ORDER BY ps.step_number ASC",
-                {"pid": pid},
-            )
-            while rs.has_next():
-                sr = rs.get_next()
-                steps.append(
-                    {
-                        "step_number": int(sr[0]),
-                        "description": sr[1] or "",
-                        "valence": sr[2],
-                        "status": sr[3] or "pending",
-                    }
-                )
-        except Exception:
-            pass
-
         scored.append(
             {
                 "plan_id": pid,
                 "goal": node.get("goal", ""),
+                "status": node.get("status", ""),
                 "valence": valence,
                 "similarity": round(similarity, 4),
                 "pathway_strength": pathway_strength,
-                "steps": steps,
+                "steps": _fetch_plan_steps(db, pid),
                 "_score": score,
             }
         )
@@ -428,7 +433,29 @@ async def recall_plans(params: dict, db: KuzuClient, config: dict) -> dict:
     plans = scored[:max(limit, 1)]
     for plan in plans:
         plan.pop("_score", None)
-    return {"plans": plans}
+    return plans
+
+
+async def recall_plans_for_query(
+    *,
+    goal_query: str,
+    db,
+    config: dict,
+    limit: int = 5,
+    min_valence: float = 0.0,
+) -> list[dict]:
+    """Return ranked plan lane entries for query-time retrieval surfaces."""
+    embedding_model = config.get("embeddings", {}).get(
+        "model", "sentence-transformers/all-MiniLM-L6-v2"
+    )
+    query_vec = emb.embed(goal_query, model_name=embedding_model)
+
+    try:
+        rows = db.vector_search("Plan", _PLAN_INDEX, query_vec, max(limit * 4, 12))
+    except Exception:
+        return []
+
+    return _rank_plan_neighbors(db, rows, limit=limit, min_valence=min_valence)
 
 
 async def recall_procedures(params: dict, db: KuzuClient, config: dict) -> dict:
