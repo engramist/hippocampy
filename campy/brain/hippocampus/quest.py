@@ -248,6 +248,8 @@ def get_quest_context(db, quest_id: str, limit: int = 5) -> dict:
         )
         while r.has_next():
             row = r.get_next()
+            if not _passes_signal_floor(row[1]):
+                continue
             ctx["open_loops"].append({
                 "concept_id": row[0],
                 "text_raw":   row[1],
@@ -317,6 +319,20 @@ def format_context_for_prompt(ctx: dict) -> str:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _passes_signal_floor(text_raw: str | None) -> bool:
+    """
+    B300: a single token under 6 chars (e.g. "four", "maoc") carries no
+    standalone meaning and pollutes quest_context/current_truth. Nodes still
+    exist in the graph — this only keeps them out of this presentation layer.
+    """
+    if not text_raw:
+        return True
+    stripped = text_raw.strip()
+    if ' ' not in stripped and len(stripped) < 6:
+        return False
+    return True
+
+
 def _query_artifacts(db, quest_id: str, label: str, pk: str,
                       limit: int) -> list[dict]:
     """
@@ -338,6 +354,8 @@ def _query_artifacts(db, quest_id: str, label: str, pk: str,
         )
         while r.has_next():
             row = r.get_next()
+            if not _passes_signal_floor(row[1]):
+                continue
             results.append({
                 "node_id":        row[0],
                 "text_raw":       row[1],
