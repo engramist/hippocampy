@@ -22,7 +22,7 @@ from ._shared import (
     get_loop_queue,
     get_or_create_main_quest,
     get_or_create_session,
-    infer_outcome_valence,
+    infer_outcome_valence_detail,
 )
 from .lessons import _create_plan_graph, _store_plan_outcome_lesson
 from .quests import report_outcome
@@ -306,32 +306,43 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
         _logger.exception("passive plan detection failed")
 
     # B69: outcome sense (success/failure language) can auto-report outcome.
+    # B301: restricted to user turns. Outcome valence is meant as a reward
+    # signal from the user/environment ("perfect", "that broke", "revert it"),
+    # not a grade an assistant gives its own work — an assistant summarizing
+    # its own passing test run must not be able to mint a "failure" Lesson.
+    # Mirrors the ISSUE-024 precedent in classify_artifact (step4_pattern.py),
+    # which caps assistant-role artifact confidence for the same self-report-
+    # poisoning reason. Explicit report_outcome MCP calls are unaffected —
+    # agents can still self-report deliberately via that path.
     try:
-        inferred_valence = infer_outcome_valence(content)
-        if inferred_valence is not None and session_id != "unknown":
-            active_plan_id = _session_active_plan_id(db, session_id)
-            if active_plan_id:
-                await report_outcome(
-                    {
-                        "plan_id": active_plan_id,
-                        "outcome": content,
-                        "valence": inferred_valence,
-                        "session_id": session_id,
-                        "valence_source": "system",
-                    },
-                    db,
-                    config,
-                )
-            elif abs(inferred_valence) > 0.7:
-                await _store_plan_outcome_lesson(
-                    db,
-                    plan_id="",
-                    outcome=content,
-                    valence=inferred_valence,
-                    session_id=session_id,
-                    embedding_model=embedding_model,
-                    now_iso=now,
-                )
+        if role == "user":
+            inferred_valence, trigger_signals = infer_outcome_valence_detail(content)
+            if inferred_valence is not None and session_id != "unknown":
+                active_plan_id = _session_active_plan_id(db, session_id)
+                if active_plan_id:
+                    await report_outcome(
+                        {
+                            "plan_id": active_plan_id,
+                            "outcome": content,
+                            "valence": inferred_valence,
+                            "session_id": session_id,
+                            "valence_source": "system",
+                            "trigger_signals": trigger_signals,
+                        },
+                        db,
+                        config,
+                    )
+                elif abs(inferred_valence) > 0.7:
+                    await _store_plan_outcome_lesson(
+                        db,
+                        plan_id="",
+                        outcome=content,
+                        valence=inferred_valence,
+                        session_id=session_id,
+                        embedding_model=embedding_model,
+                        now_iso=now,
+                        trigger_signals=trigger_signals,
+                    )
     except Exception:
         _logger.exception("outcome sense auto-report failed")
 

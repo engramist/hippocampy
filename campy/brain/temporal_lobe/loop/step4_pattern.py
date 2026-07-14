@@ -61,7 +61,10 @@ _SUCCESS_SIGNALS = [
 
 _FAILURE_SIGNALS = [
     r"\bthat(?:'s| is) wrong\b", r"\brevert\b", r"\bundo\b",
-    r"\bthat broke\b", r"\bfailed\b", r"\brollback\b",
+    r"\bthat broke\b",
+    r"\b(?:it|this|that|build|test|tests|deploy|deployment) (?:has )?failed\b",
+    r"\bfailed to\b",
+    r"\brollback\b",
     r"\bnot what i (?:asked|wanted|meant)\b", r"\bstart over\b",
     r"\btry again\b", r"\bwrong approach\b",
 ]
@@ -266,22 +269,43 @@ def has_plan_signal(text: str) -> bool:
     return any(re.search(p, lower) for p in _PLAN_SIGNALS)
 
 
+def infer_outcome_valence_detail(text: str) -> tuple[float | None, list[str]]:
+    """
+    Infer a coarse valence from outcome language, with the matched signals.
+
+    Returns +0.8 for success, -0.8 for failure, None for neutral/ambiguous,
+    alongside the list of signal patterns that drove the call (empty when None).
+
+    B301: a valence is only returned when one side has hits and the other has
+    none, or the margin between sides is >= 2. A 3-vs-2 mixed message is
+    ambiguous and returns None rather than picking the plurality side —
+    a plurality-of-one was how "17 failed + 12 errors" outweighed "192 passed"
+    in an assistant self-summary and mislabeled a success as a failure.
+    """
+    lower = (text or "").lower()
+    success_matches = [p for p in _SUCCESS_SIGNALS if re.search(p, lower)]
+    failure_matches = [p for p in _FAILURE_SIGNALS if re.search(p, lower)]
+    success_hits = len(success_matches)
+    failure_hits = len(failure_matches)
+
+    if success_hits == 0 and failure_hits == 0:
+        return None, []
+    if failure_hits == 0:
+        return 0.8, success_matches
+    if success_hits == 0:
+        return -0.8, failure_matches
+    if abs(success_hits - failure_hits) >= 2:
+        return (0.8, success_matches) if success_hits > failure_hits else (-0.8, failure_matches)
+    return None, []
+
+
 def infer_outcome_valence(text: str) -> float | None:
     """
     Infer a coarse valence from outcome language.
     Returns +0.8 for success, -0.8 for failure, None for neutral/ambiguous.
     """
-    lower = (text or "").lower()
-    success_hits = sum(1 for p in _SUCCESS_SIGNALS if re.search(p, lower))
-    failure_hits = sum(1 for p in _FAILURE_SIGNALS if re.search(p, lower))
-
-    if success_hits == 0 and failure_hits == 0:
-        return None
-    if success_hits > failure_hits:
-        return 0.8
-    if failure_hits > success_hits:
-        return -0.8
-    return None
+    valence, _signals = infer_outcome_valence_detail(text)
+    return valence
 
 
 def compute_salience_multiplier(text: str) -> float:

@@ -311,6 +311,7 @@ async def report_outcome(params: dict, db: KuzuClient, config: dict) -> dict:
         session_id=session_id,
         embedding_model=embedding_model,
         now_iso=now,
+        trigger_signals=params.get("trigger_signals"),
     )
 
     # B197: If a procedure was applied during this plan, update its application stats
