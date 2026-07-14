@@ -26,11 +26,11 @@ When reviewing a pull request, check each rule below and report findings in this
 - Flag: module-level `dict` or `list` in `campy/` whose name contains `store`, `cache`, `state`, `registry`, or `db` as an underscore-delimited component (e.g. `_cache`, `session_state`, `vector_db`)
 - In-memory caches backed by KuzuDB reads are permitted; standalone in-memory state is not
 
-**3. Tool registration** — every new MCP tool must be registered across all surfaces.
+**3. Tool registration** — every new MCP tool must follow the schema-first flow.
 - Flag: a new function in `campy/brain/thalamus/tools/__init__.py` matching `*_tool` or `handle_*`
   that does not appear in the `TOOL_HANDLERS` dict in the same file
-- A new MCP tool must also be added to `tool_schemas.TOOLS`, `extensions/hippocampy/src/index.ts`,
-  and `tests/test_adapters.py` `EXPECTED_TOOLS` (these sets must stay equal)
+- A new MCP tool must be added to `tool_schemas.TOOLS` and `TOOL_HANDLERS`, then regenerate extension entries via
+  `python scripts/generate_extension_tools.py` (CI enforces generated file freshness)
 
 **4. Schema migrations** — schema additions need a migration entry.
 - Flag: additions to `NODE_TABLES` or `REL_TABLES` in `campy/brain/hippocampus/schema.py`

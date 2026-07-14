@@ -12,6 +12,7 @@ import { Type } from "@sinclair/typebox";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { GENERATED_TOOL_DEFINITIONS } from "./generated_tools";
 
 // ---------------------------------------------------------------------------
 // Brain Daemon MCP client
@@ -1371,6 +1372,8 @@ export default {
         parameters: recallMechanicPriorsParams,
       },
       ...arcQueryToolDefinitions,
+      // B293: schema-derived additive tool entries for newly introduced tools.
+      ...GENERATED_TOOL_DEFINITIONS,
       {
         name: "memory_decision",
         label: "Memory Decision (HippoCampy)",

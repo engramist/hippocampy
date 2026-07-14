@@ -104,6 +104,8 @@ def test_post_tool_use_hook_exists():
     content = hook.read_text()
     assert "manifest" in content.lower()
     assert "PostToolUse" in content
+    assert "claude_memory_capture" in content
+    assert "notify_turn" in content
 
 
 def test_post_tool_use_hook_is_executable():

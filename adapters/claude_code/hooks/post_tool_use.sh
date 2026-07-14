@@ -78,6 +78,67 @@ if [ "${CLAUDE_TOOL_NAME:-}" = "Write" ] || [ "${CLAUDE_TOOL_NAME:-}" = "Edit" ]
     # Extract file path from tool output (last line often contains the path)
     FILE_PATH=$(echo "$TOOL_OUTPUT" | grep -o '[^ ]*\.md' | head -1)
     if [ -n "$FILE_PATH" ] && [ -f "$FILE_PATH" ]; then
+        # B298: Piggyback Claude auto-memory files into Campy via notify_turn.
+        IS_CLAUDE_MEMORY_FILE=$(python3 - "$FILE_PATH" <<'MEMCHECK_EOF'
+import sys
+import subprocess
+
+try:
+    repo_root = subprocess.check_output(
+        ["git", "rev-parse", "--show-toplevel"], stderr=subprocess.DEVNULL, timeout=3
+    ).decode().strip()
+    if repo_root:
+        sys.path.insert(0, repo_root)
+except Exception:
+    pass
+
+try:
+    from adapters.claude_code.hooks.claude_memory_capture import should_capture_memory_file
+    print("1" if should_capture_memory_file(sys.argv[1]) else "0")
+except Exception:
+    print("0")
+
+MEMCHECK_EOF
+)
+
+        if [ "$IS_CLAUDE_MEMORY_FILE" = "1" ]; then
+            SESSION="${CLAUDE_SESSION_ID:-unknown}"
+            python3 - "$FILE_PATH" "$SESSION" <<'AUTO_MEMORY_EOF'
+import asyncio
+import sys
+import subprocess
+
+try:
+    try:
+        repo_root = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"], stderr=subprocess.DEVNULL, timeout=3
+        ).decode().strip()
+        if repo_root:
+            sys.path.insert(0, repo_root)
+    except Exception:
+        pass
+
+    from adapters.claude_code.hooks.claude_memory_capture import (
+        build_notify_turn_payload,
+        parse_memory_markdown,
+    )
+    from campy.brain_transport import call_brain
+
+    file_path, session_id = sys.argv[1], sys.argv[2]
+    parsed = parse_memory_markdown(file_path)
+    if parsed is not None:
+        payload = build_notify_turn_payload(parsed, session_id)
+        asyncio.run(call_brain("notify_turn", payload, timeout=3.0))
+except Exception:
+    pass  # Never block the agent
+AUTO_MEMORY_EOF
+        fi
+
+        # Do not run WorkArtifact capture for Claude auto-memory files.
+        if [ "$IS_CLAUDE_MEMORY_FILE" = "1" ]; then
+            exit 0
+        fi
+
         # Extract title (first # heading) and summary (first non-heading line > 20 chars)
         TITLE=$(grep -m1 "^# " "$FILE_PATH" 2>/dev/null | sed 's/^# //')
         SUMMARY=$(grep -v "^#" "$FILE_PATH" 2>/dev/null | grep -v "^$" | awk 'length > 20 {print; exit}' | cut -c1-120)
