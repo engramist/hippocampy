@@ -2,6 +2,8 @@
 
 > **Version:** March 29, 2026 | **Source of truth:** `campy/brain/thalamus/tool_schemas.py` + `campy/brain/thalamus/tools/__init__.py`
 > 
+> **B293 flow:** add new tools in `tool_schemas.TOOLS` + `TOOL_HANDLERS`, then run `python scripts/generate_extension_tools.py` to refresh extension-generated entries.
+> 
 > This catalog documents every tool available in HippoCampy, both active (callable by agents)
 > and passive (internal processing). Use this for: integration testing, agent training, adapter validation.
 

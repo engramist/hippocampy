@@ -24,6 +24,7 @@ import json
 import pytest
 import sys
 import os
+from campy.brain.thalamus.tool_schemas import TOOLS
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -36,39 +37,7 @@ ADAPTER_MODULES = [
     f"adapters.{name.replace('-', '_')}.adapter" for name in ADAPTER_IDS
 ]
 
-EXPECTED_TOOLS = {
-    "notify_turn", "current_truth", "branch_quest", "diff_since", "reconstruct_timeline",
-    "get_open_loops", "analogical_search", "ingest_document", "explore_graph",
-    "ingest_data", "compile_context",  # B251/B252
-    "complete_quest", "set_quest", "context_status", "get_anomalies",
-    "upsert_lesson", "recall_relevant_lessons",  # B11
-    "register_plan", "report_outcome", "recall_plans",  # B67
-    "get_knowledge_gaps", "recall_procedures",  # B193/B197
-    "recall_scene_graph_priors",
-    "get_openclaw_prompt",
-    "register_task_graph", "get_ready_tasks", "advance_task", "fail_task", "get_task_graph",  # B128
-    # B158 human-in-the-loop curation
-    "get_disambiguation_queue", "resolve_disambiguation",
-    # B160 domain dictionary reload
-    "reload_domain_dictionary",
-    # B225 ARC artifacts
-    "ingest_arc_artifacts",
-    # B226/B227 ARC mechanics
-    "publish_mechanic_summary",
-    "recall_mechanic_priors",
-    # B235 memory recall routing helper
-    "memory_decision",
-    # ARC game loop tools (B229-B234)
-    "arc_perceive_state", "arc_get_game_context", "arc_get_action_evidence",
-    "arc_get_untested_actions", "arc_get_causal_path", "arc_record_action_effect",
-    "arc_get_entity_movement", "arc_get_goal_evidence", "arc_classify_game_archetype",
-    "arc_confirm_hypothesis", "arc_contradict_hypothesis", "arc_update_goal_confidence",
-    "arc_get_mechanic_priors", "arc_check_action_gate", "arc_record_reward_prediction_error",
-    # B289 thalamic ask
-    "ask",
-    # B290 CWS document provenance
-    "register_artifact",
-}
+EXPECTED_TOOLS = {tool["name"] for tool in TOOLS}
 
 def test_adapter_tool_names_match_handlers():
     """Verify that tool_schemas.TOOLS matches campy.brain.thalamus.tools.TOOL_HANDLERS."""
