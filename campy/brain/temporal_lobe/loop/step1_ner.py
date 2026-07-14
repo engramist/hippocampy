@@ -31,6 +31,20 @@ _ORDINAL_RE = re.compile(
     r'|\d+(?:st|nd|rd|th))$', re.I
 )
 
+# Cardinal number words — "four", "twenty", "twenty-four", "two hundred" etc.
+# These pass the float() check above (they're alphabetic) but a bare number
+# word carries no standalone meaning (B300). Only matches the whole entity
+# text — "four retries max" is a real phrase and must not be caught here.
+_CARDINAL_WORDS = (
+    r"one|two|three|four|five|six|seven|eight|nine"
+    r"|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen"
+    r"|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety"
+    r"|hundred|thousand|million|billion"
+)
+_CARDINAL_RE = re.compile(
+    rf'^(?:{_CARDINAL_WORDS})(?:[\s-](?:{_CARDINAL_WORDS}))?$', re.I
+)
+
 # SideQuests system vocabulary — internal terms that leak from assistant
 # responses via notify_turn. These are never real user concepts.
 _SYSTEM_TERMS = {
@@ -74,6 +88,10 @@ def _is_junk_entity(text: str) -> bool:
 
     # Ordinal words — "first", "second", "1st", "2nd" etc.
     if _ORDINAL_RE.match(stripped):
+        return True
+
+    # Cardinal number words — "four", "twenty-four", "two hundred" etc.
+    if _CARDINAL_RE.match(stripped):
         return True
 
     # SideQuests system vocabulary
