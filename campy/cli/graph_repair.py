@@ -67,8 +67,8 @@ _PLAN_VALENCE_AUDIT_SOURCE = "system:b303-audited"
 class PlanValenceCandidate:
     plan_id: str
     old_valence: float | None
-    new_valence: float | None  # None means "null out" (ambiguous verdict)
-    action: str  # "flip" | "null"
+    new_valence: float
+    action: str  # always "flip" — ambiguous verdicts are skipped, never nulled
     goal: str = ""
 
 
@@ -207,6 +207,14 @@ async def find_plan_valence_candidates(db) -> list[PlanValenceCandidate]:
     infer_outcome_valence. Plans already audited by this sweep (valence_source
     carries the b303-audited marker) or with an explicit (non-system)
     valence_source are never candidates, nor are archived Plans.
+
+    Flip-only: an ambiguous re-judgment is skipped, never nulled. Until the
+    report_outcome valence_source fix, explicit MCP calls were also stamped
+    "system", so a 'system' source cannot prove the valence was auto-inferred
+    from text. For explicitly-valenced plans the judgment was the number, not
+    the goal/step text — re-judging that text is expected to return None, and
+    nulling on that would erase legitimate valences (recall_plans skips
+    valence-None plans entirely).
     """
     rows = await db.execute_read(
         "MATCH (p:Plan) "
@@ -233,12 +241,7 @@ async def find_plan_valence_candidates(db) -> list[PlanValenceCandidate]:
         new_verdict = infer_outcome_valence(body)
 
         if new_verdict is None:
-            if old_valence is None:
-                continue  # already unset, nothing to repair
-            candidates.append(
-                PlanValenceCandidate(plan_id, old_valence, None, "null", goal)
-            )
-            continue
+            continue  # ambiguous — leave untouched (flip-only, see docstring)
 
         old_sign = 1 if (old_valence or 0) > 0 else (-1 if (old_valence or 0) < 0 else 0)
         new_sign = 1 if new_verdict > 0 else -1
@@ -295,7 +298,7 @@ def repair_plan_valence_cmd(
     table.add_column("action")
     for candidate in candidates:
         old_label = "null" if candidate.old_valence is None else f"{candidate.old_valence:+.1f}"
-        new_label = "null" if candidate.new_valence is None else f"{candidate.new_valence:+.1f}"
+        new_label = f"{candidate.new_valence:+.1f}"
         table.add_row(candidate.plan_id, f"{old_label} → {new_label}", candidate.action)
     console.print(table)
 
