@@ -539,6 +539,7 @@ Added 2026-06-30 from the Fable codebase assessment. These gate the public launc
 | B299 | P1 | complete (2026-07-14) | Surface the Plan Lane in ask / current_truth / compile_context | backlog/B299.md |
 | B300 | P1 | complete (2026-07-14) | Stop Junk Concepts Polluting Recall (Selective-Attention Gate Tightening) | backlog/B300.md |
 | B301 | P1 | complete (2026-07-14) | Fix Outcome-Sense Polarity: Stop Mislabeling Success Reports as Failures | backlog/B301.md |
-| B302 | P2 | ready | Graph Cleanup: Relabel or Retire Wrong-Polarity Outcome Lessons | backlog/B302.md |
+| B302 | P2 | complete (2026-07-14) | Graph Cleanup: Relabel or Retire Wrong-Polarity Outcome Lessons | backlog/B302.md |
+| B303 | P2 | ready | Plan-Lane Retrieval Quality: Question-vs-Goal Mismatch + Residual Plan Valences | backlog/B303.md |
 
 **Dependency chain:** B295, B296, B297 are the P0 launch gates (independent of each other; B296 requires maintainer IP decisions and must complete before the repo goes public). B294 before B297's packaging work ideally (removes stray package from discovery). B292 → B293 (codegen is cleaner against split modules). Do NOT run B292 and B295 concurrently (both touch broad test surface). B298 should land after B292 if B292 is already merged (cleaner to extend the post-split module ownership of `notify_turn`), but is not blocked by it.
