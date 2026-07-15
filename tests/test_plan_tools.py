@@ -113,6 +113,45 @@ async def test_report_outcome_plan_level_creates_lesson_when_strong_valence():
     assert out["lesson_id"] is not None
 
 
+def _plan_valence_write_params(db: MockDB) -> dict:
+    for query, params in db.writes:
+        if "SET p.valence" in query and "valence_source" in params:
+            return params
+    raise AssertionError("no plan-level valence write recorded")
+
+
+@pytest.mark.asyncio
+async def test_report_outcome_without_source_defaults_to_explicit():
+    """A caller supplying a numeric valence made a deliberate judgment —
+    'system' is reserved for capture.py's auto outcome-sense path, and the
+    B302/B303 repair sweeps key on it to decide what is safe to re-judge."""
+    db = MockDB()
+    config = {"embeddings": {"model": "sentence-transformers/all-MiniLM-L6-v2"}}
+
+    await report_outcome(
+        {"plan_id": "p1", "outcome": "shipped", "valence": 0.9, "session_id": "s1"},
+        db,
+        config,
+    )
+
+    assert _plan_valence_write_params(db)["valence_source"] == "explicit"
+
+
+@pytest.mark.asyncio
+async def test_report_outcome_preserves_supplied_valence_source():
+    db = MockDB()
+    config = {"embeddings": {"model": "sentence-transformers/all-MiniLM-L6-v2"}}
+
+    await report_outcome(
+        {"plan_id": "p1", "outcome": "auto", "valence": -0.6, "session_id": "s1",
+         "valence_source": "system"},
+        db,
+        config,
+    )
+
+    assert _plan_valence_write_params(db)["valence_source"] == "system"
+
+
 @pytest.mark.asyncio
 async def test_recall_plans_returns_ranked_steps():
     class RecallDB(MockDB):
