@@ -168,6 +168,19 @@ class RecallContractDB:
         if "WHERE m.message_id <> $mid" in q:
             return FakeResult([])
 
+        if "MATCH (p:Plan) WHERE p.archived = false" in q and "RETURN p.plan_id" in q:
+            rows = []
+            for plan in self.plans.values():
+                rows.append([
+                    plan["plan_id"],
+                    plan.get("goal", ""),
+                    plan.get("status", "active"),
+                    plan.get("valence"),
+                    plan.get("pathway_strength", 0.9),
+                    plan.get("confidence", 0.9),
+                ])
+            return FakeResult(rows)
+
         return FakeResult([])
 
     async def execute_write(self, query: str, params: dict | None = None):
@@ -442,3 +455,76 @@ async def test_plan_lane_surfaces_in_current_truth_and_compile_context(_no_git_q
     top_plan = plan_sections[0]["content"][0]
     assert "B299" in top_plan.get("goal", "")
     assert top_plan.get("steps")
+
+
+@pytest.mark.asyncio
+async def test_recall_plans_lexical_assist_surfaces_identifier_match_over_embedding_noise():
+    """B303: a question mentioning a card identifier ("B292") must always
+    surface plans whose goal mentions that identifier, even when unrelated
+    plans score higher on embedding similarity (the question-vs-goal
+    mismatch B303 documents)."""
+    from campy.brain.thalamus.tools.quests import recall_plans_for_query
+
+    db = RecallContractDB()
+    config = {"embeddings": {"model": "mock"}}
+
+    for i in range(3):
+        db.plans[f"noise-{i}"] = {
+            "plan_id": f"noise-{i}",
+            "goal": f"Unrelated verbose plan {i} about something else entirely",
+            "status": "completed",
+            "valence": 0.8,
+            "pathway_strength": 0.9,
+            "confidence": 0.9,
+            "score": 0.85,
+        }
+
+    db.plans["b292"] = {
+        "plan_id": "b292",
+        "goal": "Implement B292 by splitting tools/__init__.py into focused modules",
+        "status": "completed",
+        "valence": 0.7,
+        "pathway_strength": 0.9,
+        "confidence": 0.9,
+        "score": 0.10,
+    }
+
+    plans = await recall_plans_for_query(
+        goal_query="What work did the agent do on B292?",
+        db=db,
+        config=config,
+        limit=3,
+        min_valence=-1.0,
+    )
+
+    plan_ids = [p["plan_id"] for p in plans]
+    assert "b292" in plan_ids
+    assert plans[0]["plan_id"] == "b292"
+
+
+@pytest.mark.asyncio
+async def test_recall_plans_lexical_assist_noop_without_identifier_or_quoted_phrase():
+    """No lexical terms in the query means no extra candidates are pulled in
+    beyond whatever vector_search already returned."""
+    from campy.brain.thalamus.tools.quests import recall_plans_for_query
+
+    db = RecallContractDB()
+    config = {"embeddings": {"model": "mock"}}
+    db.plans["p1"] = {
+        "plan_id": "p1",
+        "goal": "Some plan with no identifiers",
+        "status": "completed",
+        "valence": 0.5,
+        "pathway_strength": 0.9,
+        "confidence": 0.9,
+        "score": 0.5,
+    }
+
+    plans = await recall_plans_for_query(
+        goal_query="generic question with no identifiers",
+        db=db,
+        config=config,
+        limit=5,
+        min_valence=-1.0,
+    )
+    assert [p["plan_id"] for p in plans] == ["p1"]

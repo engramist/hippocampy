@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.thalamus.tools.task_graph import (
@@ -397,7 +398,67 @@ def _fetch_plan_steps(db, plan_id: str) -> list[dict]:
     return steps
 
 
-def _rank_plan_neighbors(db, rows: list[dict], limit: int, min_valence: float) -> list[dict]:
+_CARD_IDENTIFIER_RE = re.compile(r"\bB\d+\b")
+_QUOTED_PHRASE_RE = re.compile(r'"([^"]+)"|\'([^\']+)\'')
+
+
+def _extract_lexical_terms(query: str) -> set[str]:
+    """Card identifiers (B292) and quoted phrases present in a query.
+
+    B303: plan goals are imperative ("Implement B292 by ...") while users ask
+    questions ("what did agent X do on B292?"); their embeddings land far
+    enough apart that unrelated but verbose plans can outrank exact matches.
+    Terms extracted here are used for a lexical merge so an identifier match
+    doesn't depend on embedding luck.
+    """
+    terms: set[str] = set(_CARD_IDENTIFIER_RE.findall(query or ""))
+    for match in _QUOTED_PHRASE_RE.finditer(query or ""):
+        phrase = match.group(1) or match.group(2)
+        if phrase:
+            terms.add(phrase)
+    return terms
+
+
+def _lexical_plan_rows(db, terms: set[str]) -> list[dict]:
+    """Plans whose goal text contains any of `terms`, shaped like vector_search rows."""
+    if not terms:
+        return []
+    try:
+        rs = db.execute(
+            "MATCH (p:Plan) WHERE p.archived = false "
+            "RETURN p.plan_id, p.goal, p.status, p.valence, p.pathway_strength, p.confidence"
+        )
+    except Exception:
+        return []
+
+    rows: list[dict] = []
+    while rs.has_next():
+        pid, goal, status, valence, pathway_strength, confidence = rs.get_next()
+        goal = goal or ""
+        if not any(term in goal for term in terms):
+            continue
+        rows.append(
+            {
+                "node": {
+                    "plan_id": pid,
+                    "goal": goal,
+                    "status": status,
+                    "valence": valence,
+                    "pathway_strength": pathway_strength if pathway_strength is not None else 1.0,
+                    "confidence": confidence,
+                    "archived": False,
+                },
+                "score": 1.0,
+                "lexical_exact": True,
+            }
+        )
+    return rows
+
+
+def _rank_plan_neighbors(
+    db, rows: list[dict], limit: int, min_valence: float, lexical_ids: Optional[set[str]] = None
+) -> list[dict]:
+    lexical_ids = lexical_ids or set()
     scored: list[dict] = []
     for row in rows:
         node = _safe_result_dict(row.get("node", {}))
@@ -426,13 +487,17 @@ def _rank_plan_neighbors(db, rows: list[dict], limit: int, min_valence: float) -
                 "pathway_strength": pathway_strength,
                 "steps": _fetch_plan_steps(db, pid),
                 "_score": score,
+                "_lexical": pid in lexical_ids,
             }
         )
 
-    scored.sort(key=lambda p: p["_score"], reverse=True)
+    # Lexical exact matches always outrank vector-only matches — an identifier
+    # match must not depend on embedding luck (B303).
+    scored.sort(key=lambda p: (p["_lexical"], p["_score"]), reverse=True)
     plans = scored[:max(limit, 1)]
     for plan in plans:
         plan.pop("_score", None)
+        plan.pop("_lexical", None)
     return plans
 
 
@@ -451,11 +516,26 @@ async def recall_plans_for_query(
     query_vec = emb.embed(goal_query, model_name=embedding_model)
 
     try:
-        rows = db.vector_search("Plan", _PLAN_INDEX, query_vec, max(limit * 4, 12))
+        rows = list(db.vector_search("Plan", _PLAN_INDEX, query_vec, max(limit * 4, 12)))
     except Exception:
-        return []
+        rows = []
 
-    return _rank_plan_neighbors(db, rows, limit=limit, min_valence=min_valence)
+    seen_ids = {_safe_result_dict(r.get("node", {})).get("plan_id") for r in rows}
+
+    lexical_ids: set[str] = set()
+    terms = _extract_lexical_terms(goal_query)
+    if terms:
+        for row in _lexical_plan_rows(db, terms):
+            node = _safe_result_dict(row.get("node", {}))
+            pid = node.get("plan_id")
+            if not pid:
+                continue
+            lexical_ids.add(pid)
+            if pid not in seen_ids:
+                rows.append(row)
+                seen_ids.add(pid)
+
+    return _rank_plan_neighbors(db, rows, limit=limit, min_valence=min_valence, lexical_ids=lexical_ids)
 
 
 async def recall_procedures(params: dict, db: KuzuClient, config: dict) -> dict:
