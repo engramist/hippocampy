@@ -89,17 +89,20 @@ async def test_wrong_polarity_plan_flips():
 
 
 @pytest.mark.asyncio
-async def test_ambiguous_verdict_nulls_valence():
+async def test_ambiguous_verdict_is_left_untouched():
+    """Flip-only: pre-fix report_outcome stamped explicit MCP calls as
+    'system' too, so an ambiguous re-judgment of the text can't distinguish
+    "auto-inferred badly" from "the judgment was the explicit number". Nulling
+    would erase legitimate valences (recall_plans skips valence-None plans)."""
     db = FakeDB([
         {"plan_id": "p1", "goal": "17 failed", "valence": -0.8, "valence_source": "system"},
     ])
     candidates = await find_plan_valence_candidates(db)
-    assert len(candidates) == 1
-    assert candidates[0].action == "null"
-    assert candidates[0].new_valence is None
+    assert candidates == []
 
     await repair_plan_valence(db, apply=True)
-    assert db.plans["p1"]["valence"] is None
+    assert db.plans["p1"]["valence"] == -0.8
+    assert db.plans["p1"]["valence_source"] == "system"
 
 
 @pytest.mark.asyncio
@@ -149,7 +152,7 @@ async def test_apply_is_idempotent():
         {"plan_id": "p2", "goal": "17 failed", "valence": -0.8, "valence_source": "system"},
     ])
     first = await repair_plan_valence(db, apply=True)
-    assert len(first) == 2
+    assert len(first) == 1  # p2 is ambiguous — skipped, not nulled
 
     second = await repair_plan_valence(db, apply=True)
     assert second == []

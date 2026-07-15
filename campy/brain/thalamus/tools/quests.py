@@ -232,7 +232,11 @@ async def report_outcome(params: dict, db: KuzuClient, config: dict) -> dict:
     outcome = (params.get("outcome") or "").strip()
     session_id = (params.get("session_id") or "unknown").strip() or "unknown"
     step_number = params.get("step_number")
-    valence_source = (params.get("valence_source") or "system").strip() or "system"
+    # "system" is reserved for capture.py's auto outcome-sense path (which
+    # passes it explicitly). A caller supplying a numeric valence without a
+    # source made a deliberate judgment, so it defaults to "explicit" — repair
+    # sweeps (B302/B303) key on "system" to decide what is safe to re-judge.
+    valence_source = (params.get("valence_source") or "explicit").strip() or "explicit"
 
     if not plan_id:
         return {"error": "plan_id is required"}

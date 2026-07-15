@@ -398,7 +398,7 @@ TOOLS: list[dict] = [
                 "outcome":     {"type": "string"},
                 "valence":     {"type": "number", "minimum": -1.0, "maximum": 1.0},
                 "session_id":  {"type": "string"},
-                "valence_source": {"type": "string", "description": "user_feedback | exit_code | test_result | system"},
+                "valence_source": {"type": "string", "description": "user_feedback | exit_code | test_result | explicit (default; 'system' is reserved for the auto outcome-sense path)"},
             },
             "required": ["plan_id", "outcome", "valence", "session_id"],
         },
