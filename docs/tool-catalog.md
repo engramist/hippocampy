@@ -1049,3 +1049,40 @@ For integration testing node creation and validation:
 | SchemaOrgType | name | ❌ | ❌ |
 | LLMProvider | provider_id | ❌ | ❌ |
 | Workspace | workspace_id | ❌ | ❌ |
+
+---
+
+## Ask-Eval Harness (B304)
+
+A rerunnable instrument that scores `ask` synthesis quality across (model x
+harness variant) combinations against a deterministic fixture graph — turns
+"which small model + which harness tricks" into a table instead of vibes.
+
+```bash
+# Single run
+python -m benchmarks.ask_eval.runner --model llama3.1:8b --variant H0
+
+# Full matrix: 4 models x 3 variants x 16 questions
+python -m benchmarks.ask_eval.runner \
+  --model llama3.1:8b --model gemma4:e4b --model gemma4:e2b --model qwen3:8b \
+  --variant H0 --variant H1 --variant "H1+H2"
+```
+
+Not wired into the `campy` CLI itself: `docs/ecosystem-rules.md` forbids any
+file under `campy/` from importing `benchmarks/` (enforced by
+`tests/test_architecture_import_boundaries.py`), so this dev/eval tooling
+stays self-contained under `benchmarks/` and is invoked as its own module.
+
+- Fixtures (3 plans, 2 lessons, 4 messages) are written through the real tool
+  handlers (`benchmarks/ask_eval/fixtures.py`), never raw Cypher.
+- Questions (`benchmarks/ask_eval/questions.py`) are scored by deterministic
+  regex, not an LLM judge — 1.0 if covered, 0 if not covered, **-1.0 if
+  hallucinated** (fabrication is worse than ignorance).
+- Harness variants (`campy/brain/thalamus/ask.py`, `config["ask"]["harness_variant"]`,
+  default `"H0"`): H1 prepends a direct-match preamble when the query names a
+  backlog identifier (e.g. `B292`); H2 retries once if the LLM claims empty
+  memory against a non-empty bundle. Both are no-ops under H0.
+- Models must already be pulled (`ollama pull <model>`) — the harness checks
+  `ollama list` and skips missing models rather than auto-pulling.
+- Results are written to `~/.campy/eval_results/ask-eval-<UTC timestamp>.json`
+  (runtime dir — never committed to the repo).
