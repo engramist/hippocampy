@@ -141,6 +141,15 @@ def _bundle_to_prompt(bundle, query: str) -> str:
             "The sections below are NOT empty — relevant memory exists for this "
             "query and must be used to answer it. Do not claim memory is empty.",
         )
+    else:
+        # B305: the bundle can now come back genuinely empty (relevance floor
+        # filtered everything out) — tell the model plainly instead of letting
+        # it treat silence as license to guess.
+        parts.insert(
+            1,
+            "No relevant context was found in memory for this query. Say so "
+            "explicitly — do not guess or fabricate an answer.",
+        )
     return "\n\n".join(parts)
 
 
