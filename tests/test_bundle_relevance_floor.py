@@ -127,6 +127,78 @@ async def test_stage_plans_keeps_candidates_at_or_above_floor(config):
 
 
 @pytest.mark.asyncio
+async def test_stage_plans_keyword_overlap_bypass_survives_floor(config):
+    """B307: a paraphrased question with no card identifier and no quoted
+    phrase still surfaces the correct plan, as long as it shares >= 2
+    significant keyword terms with the plan's goal text. Mirrors
+    `benchmarks/ask_eval/fixtures.py`'s exact P1/B292 pair — the live eval
+    run that motivated this card measured this question/goal pair's cosine
+    similarity at 0.3227, well under the 0.70 floor."""
+    db = PlanFloorDB()
+    db.plans["b292"] = {
+        "plan_id": "b292",
+        "goal": (
+            "Implement B292 by splitting campy/brain/thalamus/tools/__init__.py "
+            "into focused domain modules while preserving behavior and exports"
+        ),
+        "score": 0.32,
+    }
+
+    section = await _stage_plans(
+        db,
+        "Who or what split the big tools module into smaller files?",
+        config,
+        {"max_semantic": 10},
+    )
+
+    assert section is not None
+    plan_ids = [item["plan_id"] for item in section.content]
+    assert "b292" in plan_ids
+
+
+@pytest.mark.asyncio
+async def test_stage_plans_keyword_overlap_rejects_negative_control(config):
+    """B307's 2-term-overlap threshold must not reopen the negative-control
+    hallucination hole B305 closed: a genuinely off-topic query (mirrors
+    `benchmarks/ask_eval/questions.py`'s N1) shares zero or one distinctive
+    term with any fixture plan, so no plan should bypass the floor."""
+    db = PlanFloorDB()
+    db.plans["b292"] = {
+        "plan_id": "b292",
+        "goal": (
+            "Implement B292 by splitting campy/brain/thalamus/tools/__init__.py "
+            "into focused domain modules while preserving behavior and exports"
+        ),
+        "score": 0.15,
+    }
+    db.plans["b293"] = {
+        "plan_id": "b293",
+        "goal": (
+            "Implement B293 so the MCP tool surface is schema-first with "
+            "generated extension definitions and CI drift protection"
+        ),
+        "score": 0.12,
+    }
+    db.plans["b298"] = {
+        "plan_id": "b298",
+        "goal": (
+            "Implement B298 Claude auto-memory piggyback capture into Campy "
+            "via notify_turn with non-blocking hooks"
+        ),
+        "score": 0.10,
+    }
+
+    section = await _stage_plans(
+        db,
+        "What did we decide about Kubernetes deployment?",
+        config,
+        {"max_semantic": 10},
+    )
+
+    assert section is None
+
+
+@pytest.mark.asyncio
 async def test_stage_plans_lexical_identifier_match_survives_floor(config):
     """B303's exact \\bB\\d+\\b bypass must surface a plan even far below 0.70
     cosine similarity — an identifier match is strong evidence on its own."""
