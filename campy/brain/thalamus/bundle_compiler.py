@@ -14,8 +14,11 @@ Pipeline stages:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Optional
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -263,27 +266,42 @@ async def _stage_exact_facts(db, query: str, config: dict, tier_config: dict) ->
         )
         query_embedding = emb.embed(query, model_name=embedding_model)
 
-        # Query for GlobalConstraint and GlobalPreference nodes
-        cypher = """
-            MATCH (n:GlobalConstraint) OR (n:GlobalPreference)
-            WHERE vector_distance(n.embedding, $query_embedding) < 0.30
-            RETURN n.text_raw as text, labels(n)[0] as node_type, n.confidence as confidence
-            LIMIT 10
-        """
+        # Kuzu/openCypher does not allow `OR` between labels inside a single MATCH
+        # pattern, so each label needs its own query. These are issued separately
+        # (not joined with UNION) because Kuzu 0.11.3's ORDER BY/LIMIT after a
+        # chained UNION binds only to the last branch, not the combined result set
+        # - confirmed empirically against the pinned version - so a single UNION'd
+        # query cannot enforce a cap across both labels. Distance is cosine distance
+        # (1 - cosine similarity), matching the metric the HNSW indexes are pinned
+        # to elsewhere (see kuzu_client.py's _INDEX_METRIC); Kuzu has no
+        # `vector_distance` function.
+        limit = 10
+        rows: list[tuple] = []
+        for label in ("GlobalConstraint", "GlobalPreference"):
+            cypher = f"""
+                MATCH (n:{label})
+                WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
+                RETURN n.text_raw as text, label(n) as node_type, n.confidence as confidence
+                LIMIT $limit
+            """
+            result = db.execute(cypher, {"query_embedding": query_embedding, "limit": limit})
+            while result.has_next():
+                rows.append(result.get_next())
 
-        result = db.execute(cypher, {"query_embedding": query_embedding})
-        if not result:
-            return None
+        rows = rows[:limit]
 
         content = []
         node_ids = []
-        for record in result:
+        for text, node_type, confidence in rows:
             content.append({
-                "text": record["text"],
-                "type": record["node_type"],
-                "confidence": record.get("confidence", 0.5),
+                "text": text,
+                "type": node_type,
+                "confidence": confidence if confidence is not None else 0.5,
             })
-            node_ids.append(record.get("text", "")[:20])
+            node_ids.append((text or "")[:20])
+
+        if not content:
+            return None
 
         # Estimate tokens (rough: 1 token per word, avg 5 words per fact)
         token_estimate = len(content) * 50
@@ -295,7 +313,7 @@ async def _stage_exact_facts(db, query: str, config: dict, tier_config: dict) ->
             source_node_ids=node_ids,
         )
     except Exception as e:
-        print(f"Error in _stage_exact_facts: {e}")
+        _logger.warning("Error in _stage_exact_facts: %s", e)
         return None
 
 
@@ -313,32 +331,47 @@ async def _stage_semantic_context(db, query: str, config: dict, tier_config: dic
         )
         query_embedding = emb.embed(query, model_name=embedding_model)
 
-        # Simple semantic search across all searchable nodes
-        cypher = """
-            MATCH (n:Concept) OR (n:Decision) OR (n:Constraint) OR (n:Requirement)
-            WHERE vector_distance(n.embedding, $query_embedding) < 0.40
-            RETURN n.text_raw as text, labels(n)[0] as node_type,
-                   n.pathway_strength as pathway_strength, n.confidence as confidence
-            ORDER BY vector_distance(n.embedding, $query_embedding) ASC
-            LIMIT $limit
-        """
-
+        # Simple semantic search across all searchable nodes. Same per-label-query
+        # and cosine-distance fix as _stage_exact_facts above (see that function's
+        # comment for why UNION isn't used: ORDER BY/LIMIT after a chained UNION
+        # binds only to the last branch in Kuzu 0.11.3, not the combined result
+        # set, so a single UNION'd query can't produce a true top-N across labels).
+        # Each label query is independently ordered/limited (a single MATCH's
+        # ORDER BY/LIMIT is unaffected by the UNION issue), then the per-label
+        # results are merged and re-sorted by distance in Python for a global
+        # top-N cut.
         limit = tier_config.get("max_semantic", 10)
-        result = db.execute(cypher, {"query_embedding": query_embedding, "limit": limit})
+        rows: list[tuple] = []
+        for label in ("Concept", "Decision", "Constraint", "Requirement"):
+            cypher = f"""
+                MATCH (n:{label})
+                WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.40
+                RETURN n.text_raw as text, label(n) as node_type,
+                       n.pathway_strength as pathway_strength, n.confidence as confidence,
+                       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist
+                ORDER BY dist ASC
+                LIMIT $limit
+            """
+            result = db.execute(cypher, {"query_embedding": query_embedding, "limit": limit})
+            while result.has_next():
+                rows.append(result.get_next())
 
-        if not result:
-            return None
+        rows.sort(key=lambda row: row[4])
+        rows = rows[:limit]
 
         content = []
         node_ids = []
-        for record in result:
+        for text, node_type, pathway_strength, confidence, _dist in rows:
             content.append({
-                "text": record.get("text", ""),
-                "type": record.get("node_type", "Unknown"),
-                "pathway_strength": record.get("pathway_strength", 0.5),
-                "confidence": record.get("confidence", 0.5),
+                "text": text if text is not None else "",
+                "type": node_type if node_type is not None else "Unknown",
+                "pathway_strength": pathway_strength if pathway_strength is not None else 0.5,
+                "confidence": confidence if confidence is not None else 0.5,
             })
-            node_ids.append(record.get("text", "")[:20])
+            node_ids.append((text or "")[:20])
+
+        if not content:
+            return None
 
         token_estimate = len(content) * 80  # Semantic results are longer
 
@@ -349,7 +382,7 @@ async def _stage_semantic_context(db, query: str, config: dict, tier_config: dic
             source_node_ids=node_ids,
         )
     except Exception as e:
-        print(f"Error in _stage_semantic_context: {e}")
+        _logger.warning("Error in _stage_semantic_context: %s", e)
         return None
 
 
