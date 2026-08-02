@@ -6,6 +6,23 @@ Regexes are matched case-insensitively. See scoring rules in runner.py.
 
 from __future__ import annotations
 
+# Shared "correctly abstained" pattern for negative-control questions. Broadened
+# 2026-08-02 after a live eval run showed the original per-question regex only
+# recognized llama3.1:8b's exact phrasing ("I don't have...") and scored three
+# other models' equally-correct-but-differently-worded abstentions as failures —
+# including gemma4:e2b's answer, which was verbatim Campy's own canonical
+# empty-bundle message from ask.py ("No relevant context was found in memory
+# for this query."). Covers: "no information/record/memory/context", "do/does
+# not have/contain" (with or without the contraction), "not found/mentioned",
+# "empty". One shared constant so N1-N4 can't drift out of sync with each other
+# again (the pre-fix versions already had — N1 included "memory", N2/N3 didn't).
+_ABSTENTION_RE = (
+    r"\bno (?:relevant )?(?:information|record|memory|context)\b"
+    r"|\b(?:do|does)\s*(?:n't|not)\s+(?:have|contain)\b"
+    r"|\bnot (?:found|mentioned)\b"
+    r"|\bempty\b"
+)
+
 QUESTIONS: list[dict] = [
     # --- Identifier recall (4) ---
     {
@@ -100,28 +117,28 @@ QUESTIONS: list[dict] = [
         "id": "N1",
         "family": "negative_control",
         "question": "What did we decide about Kubernetes deployment?",
-        "must_match": [r"no (information|record|memory)|not (found|mentioned)|don'?t have|empty"],
+        "must_match": [_ABSTENTION_RE],
         "must_not_match": [r"kubernetes.*(cluster|helm|deploy(ed|ment) (is|was|uses))"],
     },
     {
         "id": "N2",
         "family": "negative_control",
         "question": "Who is the database administrator?",
-        "must_match": [r"no (information|record)|not (found|mentioned)|don'?t have|empty"],
+        "must_match": [_ABSTENTION_RE],
         "must_not_match": [],
     },
     {
         "id": "N3",
         "family": "negative_control",
         "question": "What did we conclude about the React frontend rewrite?",
-        "must_match": [r"no (information|record)|not (found|mentioned)|don'?t have|empty"],
+        "must_match": [_ABSTENTION_RE],
         "must_not_match": [r"react.*(chose|decided|rewrote)"],
     },
     {
         "id": "N4",
         "family": "negative_control",
         "question": "When is the production launch date?",
-        "must_match": [r"no (information|record|date)|not (found|mentioned)|don'?t have|empty"],
+        "must_match": [_ABSTENTION_RE],
         "must_not_match": [r"\b20\d\d-\d\d-\d\d\b"],
     },
 ]
