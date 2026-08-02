@@ -3,6 +3,13 @@
 
 [llm]
 provider = "ollama"
+# Default confirmed by the B304/B307 ask-eval harness (benchmarks/ask_eval/,
+# see benchmarks/RESULTS.md "Model Default Decision" for the full writeup):
+# once B305/B306/B307 fixed retrieval-layer bugs, llama3.1:8b tied with
+# gemma4:e4b and qwen3:8b on eval score (0.69/1.0) while being the fastest
+# (~1.4s median vs 2.3-4.5s) and smallest (4.9GB) of the tied group. Do not
+# swap this without re-running the eval matrix — retrieval quality, not raw
+# model size, was the actual bottleneck the whole time.
 model = "llama3.1:8b"
 base_url = "http://localhost:11434/v1"
 
