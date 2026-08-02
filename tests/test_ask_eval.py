@@ -10,6 +10,7 @@ Covers acceptance criteria (a)-(d):
 from __future__ import annotations
 
 import os
+import re
 import shutil
 
 import pytest
@@ -25,6 +26,17 @@ from campy.brain.thalamus.ask import (
 from campy.brain.thalamus.bundle_compiler import BundleSection, ContextBundle
 from benchmarks.ask_eval.runner import eval_app, score_question
 from benchmarks.ask_eval.fixtures import seed_fixture_graph
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    """Typer force-enables Rich color codes under GITHUB_ACTIONS=true (set on
+    every GitHub Actions job) even though CliRunner's captured stream isn't a
+    real terminal — those codes get interleaved inside option names like
+    "--model", breaking a literal substring check. Strip them before asserting
+    so the test is robust in both a plain shell and CI."""
+    return _ANSI_RE.sub("", text)
 
 
 # --- (a) scoring -------------------------------------------------------
@@ -222,8 +234,9 @@ def test_eval_ask_cli_is_registered():
     runner = CliRunner()
     result = runner.invoke(eval_app, ["--help"])
     assert result.exit_code == 0
-    assert "--model" in result.output
-    assert "--variant" in result.output
+    output = _strip_ansi(result.output)
+    assert "--model" in output
+    assert "--variant" in output
 
     # Confirms invalid extra positional args (e.g. a stray "ask") are rejected —
     # --help short-circuits before arg validation, so this check omits it.
