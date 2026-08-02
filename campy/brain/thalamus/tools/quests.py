@@ -404,6 +404,31 @@ def _fetch_plan_steps(db, plan_id: str) -> list[dict]:
 
 _CARD_IDENTIFIER_RE = re.compile(r"\bB\d+\b")
 _QUOTED_PHRASE_RE = re.compile(r'"([^"]+)"|\'([^\']+)\'')
+_WORD_RE = re.compile(r"[a-zA-Z']+")
+
+# B307: a small stopword list for the keyword-overlap bypass extractor below.
+# Not meant to be exhaustive — length >= 4 already screens out most function
+# words ("the", "a", "did"); this catches the >= 4-char ones that would
+# otherwise slip through ("does", "into", "with", "what", "have", ...).
+_STOPWORDS = frozenset({
+    "who", "what", "when", "where", "whom", "whose", "which",
+    "does", "did", "done", "doing",
+    "have", "has", "had", "having",
+    "will", "would", "shall", "should", "could", "might", "must",
+    "into", "onto", "unto", "upon", "with", "from", "about", "over", "under",
+    "this", "that", "these", "those", "there", "here",
+    "they", "them", "their", "your", "ours", "hers",
+    "just", "also", "very", "much", "many", "some", "any", "each", "every",
+    "both", "such", "only", "same", "more", "most", "other", "than", "then",
+    "were", "been", "being",
+})
+
+# B303: a card identifier or quoted phrase is exact evidence on its own.
+_IDENTIFIER_BYPASS_MIN = 1
+# B307: a single shared distinctive word ("module") is too weak a signal on
+# its own and would reopen the negative-control hallucination hole B305
+# closed — require co-occurrence of at least two significant terms.
+_KEYWORD_OVERLAP_MIN = 2
 
 
 def _extract_lexical_terms(query: str) -> set[str]:
@@ -423,10 +448,24 @@ def _extract_lexical_terms(query: str) -> set[str]:
     return terms
 
 
-def _lexical_plan_rows(db, terms: set[str]) -> list[dict]:
-    """Plans whose goal text contains any of `terms`, shaped like vector_search rows."""
-    if not terms:
-        return []
+def _extract_keyword_terms(text: str) -> set[str]:
+    """Lightweight significant-word extractor (B307).
+
+    Lowercase, strip a small stopword list, keep tokens of length >= 4. Not
+    IR-grade (no BM25, no stemming) — just enough to catch shared distinctive
+    nouns/verbs ("split", "tools", "module") between a question and a plan's
+    imperative goal text, so a paraphrased-but-correct match doesn't depend on
+    an embedding model that lands questions and imperative goals far apart
+    (the same mismatch B303 first diagnosed for card identifiers).
+    """
+    tokens = _WORD_RE.findall((text or "").lower())
+    return {t for t in tokens if len(t) >= 4 and t not in _STOPWORDS}
+
+
+def _fetch_plan_goal_rows(db) -> list[tuple]:
+    """Raw (plan_id, goal, status, valence, pathway_strength, confidence)
+    rows for every non-archived Plan — shared scan backing both lexical-bypass
+    paths below (identifier/quoted-phrase and keyword-overlap)."""
     try:
         rs = db.execute(
             "MATCH (p:Plan) WHERE p.archived = false "
@@ -435,9 +474,23 @@ def _lexical_plan_rows(db, terms: set[str]) -> list[dict]:
     except Exception:
         return []
 
-    rows: list[dict] = []
+    rows: list[tuple] = []
     while rs.has_next():
-        pid, goal, status, valence, pathway_strength, confidence = rs.get_next()
+        rows.append(tuple(rs.get_next()))
+    return rows
+
+
+def _lexical_plan_rows(db, terms: set[str]) -> list[dict]:
+    """Plans whose goal text contains any of `terms`, shaped like vector_search rows.
+
+    B303: card-identifier and quoted-phrase matches are exact evidence — a
+    single shared term is sufficient (unchanged by B307).
+    """
+    if not terms:
+        return []
+
+    rows: list[dict] = []
+    for pid, goal, status, valence, pathway_strength, confidence in _fetch_plan_goal_rows(db):
         goal = goal or ""
         if not any(term in goal for term in terms):
             continue
@@ -454,15 +507,82 @@ def _lexical_plan_rows(db, terms: set[str]) -> list[dict]:
                 },
                 "score": 1.0,
                 "lexical_exact": True,
+                "bypass_reason": "identifier",
+            }
+        )
+    return rows
+
+
+def _keyword_plan_rows(db, query_terms: set[str]) -> list[dict]:
+    """Plans whose goal text shares >= 2 significant keyword terms with the
+    query (B307), shaped like vector_search rows.
+
+    This is the paraphrase-recovery path: a question like "who split the big
+    tools module?" shares no card identifier and no quoted phrase with the
+    correct plan's goal ("Implement B292 by splitting ... tools/__init__.py
+    ..."), so `_lexical_plan_rows` never fires for it, and the cosine
+    similarity between the question and the imperative goal text is often
+    well under the 0.70 floor even for a genuinely correct match. Requiring
+    at least 2 shared distinctive terms (not 1) is the co-occurrence signal
+    that distinguishes "weak because paraphrased" from "weak because
+    irrelevant" — a lone shared common word is exactly the kind of noise
+    B305's floor exists to keep out.
+
+    Overlap is checked by substring containment of each query term in the
+    (lowercased) goal text, mirroring `_lexical_plan_rows`'s existing
+    `term in goal` pattern — not independent tokenization of both sides. This
+    is deliberate, not incidental: it's what lets "split"/"module" (query,
+    bare form) match "splitting"/"modules" (goal, inflected) without pulling
+    in an actual stemmer, which the card explicitly rules out.
+    """
+    if len(query_terms) < _KEYWORD_OVERLAP_MIN:
+        return []
+
+    rows: list[dict] = []
+    for pid, goal, status, valence, pathway_strength, confidence in _fetch_plan_goal_rows(db):
+        goal = goal or ""
+        goal_lower = goal.lower()
+        matched_terms = {term for term in query_terms if term in goal_lower}
+        if len(matched_terms) < _KEYWORD_OVERLAP_MIN:
+            continue
+        rows.append(
+            {
+                "node": {
+                    "plan_id": pid,
+                    "goal": goal,
+                    "status": status,
+                    "valence": valence,
+                    "pathway_strength": pathway_strength if pathway_strength is not None else 1.0,
+                    "confidence": confidence,
+                    "archived": False,
+                },
+                "score": 1.0,
+                "lexical_exact": True,
+                "bypass_reason": "keyword_overlap",
             }
         )
     return rows
 
 
 def _rank_plan_neighbors(
-    db, rows: list[dict], limit: int, min_valence: float, lexical_ids: Optional[set[str]] = None
+    db,
+    rows: list[dict],
+    limit: int,
+    min_valence: float,
+    lexical_ids: Optional[set[str]] = None,
+    keyword_ids: Optional[set[str]] = None,
 ) -> list[dict]:
+    """Rank candidate plan rows, threading through two lexical-bypass tiers.
+
+    `lexical_ids` (B303: card identifier / quoted phrase) and `keyword_ids`
+    (B307: >=2 shared significant terms) both bypass the caller's 0.70
+    similarity floor (via the `lexical_exact` flag, which callers like
+    `_stage_plans` already check) — but identifier matches are exact evidence
+    and keep priority ahead of keyword-overlap matches, which are a weaker
+    (though still, at 2+ terms, non-trivial) signal.
+    """
     lexical_ids = lexical_ids or set()
+    keyword_ids = keyword_ids or set()
     scored: list[dict] = []
     for row in rows:
         node = _safe_result_dict(row.get("node", {}))
@@ -481,6 +601,18 @@ def _rank_plan_neighbors(
         pathway_strength = float(node.get("pathway_strength", 1.0) or 1.0)
         score = similarity * abs(valence) * max(pathway_strength, 0.1)
 
+        is_identifier = pid in lexical_ids
+        is_keyword_overlap = pid in keyword_ids
+        if is_identifier:
+            bypass_reason = "identifier"
+            priority = 2
+        elif is_keyword_overlap:
+            bypass_reason = "keyword_overlap"
+            priority = 1
+        else:
+            bypass_reason = None
+            priority = 0
+
         scored.append(
             {
                 "plan_id": pid,
@@ -490,19 +622,22 @@ def _rank_plan_neighbors(
                 "similarity": round(similarity, 4),
                 "pathway_strength": pathway_strength,
                 "steps": _fetch_plan_steps(db, pid),
-                "lexical_exact": pid in lexical_ids,
+                "lexical_exact": is_identifier or is_keyword_overlap,
+                "bypass_reason": bypass_reason,
                 "_score": score,
-                "_lexical": pid in lexical_ids,
+                "_priority": priority,
             }
         )
 
-    # Lexical exact matches always outrank vector-only matches — an identifier
-    # match must not depend on embedding luck (B303).
-    scored.sort(key=lambda p: (p["_lexical"], p["_score"]), reverse=True)
+    # Identifier-lexical matches outrank keyword-overlap matches, which
+    # outrank vector-only matches — an identifier match must not depend on
+    # embedding luck (B303); a keyword-overlap match is real but weaker
+    # evidence than an exact identifier (B307).
+    scored.sort(key=lambda p: (p["_priority"], p["_score"]), reverse=True)
     plans = scored[:max(limit, 1)]
     for plan in plans:
         plan.pop("_score", None)
-        plan.pop("_lexical", None)
+        plan.pop("_priority", None)
     return plans
 
 
@@ -540,7 +675,31 @@ async def recall_plans_for_query(
                 rows.append(row)
                 seen_ids.add(pid)
 
-    return _rank_plan_neighbors(db, rows, limit=limit, min_valence=min_valence, lexical_ids=lexical_ids)
+    # B307: paraphrase recovery — plans that share >= 2 significant keyword
+    # terms with the query, even with no card identifier or quoted phrase in
+    # sight. Identifier hits (above) keep priority; skip re-tagging a plan
+    # that already qualified as an identifier match.
+    keyword_ids: set[str] = set()
+    keyword_terms = _extract_keyword_terms(goal_query)
+    if keyword_terms:
+        for row in _keyword_plan_rows(db, keyword_terms):
+            node = _safe_result_dict(row.get("node", {}))
+            pid = node.get("plan_id")
+            if not pid or pid in lexical_ids:
+                continue
+            keyword_ids.add(pid)
+            if pid not in seen_ids:
+                rows.append(row)
+                seen_ids.add(pid)
+
+    return _rank_plan_neighbors(
+        db,
+        rows,
+        limit=limit,
+        min_valence=min_valence,
+        lexical_ids=lexical_ids,
+        keyword_ids=keyword_ids,
+    )
 
 
 async def recall_procedures(params: dict, db: KuzuClient, config: dict) -> dict:
