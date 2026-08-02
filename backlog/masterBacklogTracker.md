@@ -541,8 +541,8 @@ Added 2026-06-30 from the Fable codebase assessment. These gate the public launc
 | B301 | P1 | complete (2026-07-14) | Fix Outcome-Sense Polarity: Stop Mislabeling Success Reports as Failures | backlog/B301.md |
 | B302 | P2 | complete (2026-07-14) | Graph Cleanup: Relabel or Retire Wrong-Polarity Outcome Lessons | backlog/B302.md |
 | B303 | P2 | ready | Plan-Lane Retrieval Quality: Question-vs-Goal Mismatch + Residual Plan Valences | backlog/B303.md |
-| B304 | P1 | ready | Ask-Eval Harness: Measure Models × Harness Variants for Local Synthesis | backlog/B304.md |
-| B305 | P0 | ready | Bundle Relevance Floor: Stop Feeding Off-Topic Content to ask/Synthesis | backlog/B305.md |
+| B304 | P1 | complete (2026-08-02) | Ask-Eval Harness: Measure Models × Harness Variants for Local Synthesis | backlog/B304.md |
+| B305 | P0 | complete (2026-08-02) | Bundle Relevance Floor: Stop Feeding Off-Topic Content to ask/Synthesis | backlog/B305.md |
 | B306 | P0 | complete (2026-08-02) | Fix Invalid Cypher in `_stage_exact_facts` / `_stage_semantic_context` (Silently Dead Bundle Stages) | backlog/B306.md |
 
 **Dependency chain:** B295, B296, B297 are the P0 launch gates (independent of each other; B296 requires maintainer IP decisions and must complete before the repo goes public). B294 before B297's packaging work ideally (removes stray package from discovery). B292 → B293 (codegen is cleaner against split modules). Do NOT run B292 and B295 concurrently (both touch broad test surface). B298 should land after B292 if B292 is already merged (cleaner to extend the post-split module ownership of `notify_turn`), but is not blocked by it. B306 should land before or alongside B305 (B305's relevance floor is inert on these two stages until B306 fixes the underlying Cypher; B306 has no dependency on B305).
