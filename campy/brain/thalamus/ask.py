@@ -18,6 +18,7 @@ COMPRESSION IS ALWAYS-ON (Option B):
 
 from __future__ import annotations
 import logging
+import re
 from typing import Optional, TYPE_CHECKING
 
 from campy.brain.thalamus.bundle_compiler import compile_bundle  # noqa: F401 — kept at module level for patch targets
@@ -143,6 +144,101 @@ def _bundle_to_prompt(bundle, query: str) -> str:
     return "\n\n".join(parts)
 
 
+_ASK_SYSTEM_PROMPT = (
+    "You are Campy, an AI memory assistant. Answer the user's question "
+    "using only the provided memory context. If the context does not "
+    "contain enough information, say so explicitly."
+)
+
+_EMPTY_CLAIM_RE = re.compile(r"(memory|context) is empty|no information", re.IGNORECASE)
+_IDENTIFIER_RE = re.compile(r"\bB\d+\b")
+
+
+def _harness_variants(config: dict) -> set[str]:
+    """B304: parse config["ask"]["harness_variant"] into a flag set.
+
+    Default "H0" (baseline, no flags) keeps production behavior unchanged.
+    Combined variants use "+" e.g. "H1+H2".
+    """
+    raw = (config.get("ask") or {}).get("harness_variant") or "H0"
+    flags = {part.strip() for part in raw.split("+") if part.strip()}
+    flags.discard("H0")
+    return flags
+
+
+def _extract_identifier_tokens(query: str) -> list[str]:
+    """B304 H1: pull backlog-card-style identifiers (e.g. "B292") out of a query."""
+    return _IDENTIFIER_RE.findall(query)
+
+
+def _h1_identifier_fastpath(prompt: str, bundle, query: str) -> str:
+    """B304 H1 — identifier fast-path.
+
+    If the query names an identifier (e.g. "B292") and any plan/lesson item
+    in the bundle contains that token, prepend a direct-match preamble
+    instructing the LLM to base its answer on those items. No-op otherwise —
+    keeps H0 behavior byte-identical when this isn't called.
+    """
+    tokens = _extract_identifier_tokens(query)
+    if not tokens:
+        return prompt
+
+    matches: list[str] = []
+    for section in bundle.sections:
+        if section.section_type not in ("plans", "semantic"):
+            continue
+        for item in section.content:
+            if not isinstance(item, dict):
+                continue
+            text_bits = []
+            if "goal" in item:
+                text_bits.append(str(item.get("goal", "")))
+                for step in item.get("steps") or []:
+                    if isinstance(step, dict):
+                        text_bits.append(str(step.get("description", "")))
+            if "text" in item:
+                text_bits.append(str(item.get("text", "")))
+            full_text = "\n".join(bit for bit in text_bits if bit)
+            if full_text and any(token in full_text for token in tokens):
+                matches.append(full_text)
+
+    if not matches:
+        return prompt
+
+    preamble = (
+        f"DIRECT MATCHES for {', '.join(tokens)}: " + " | ".join(matches) + "\n\n"
+        "These items directly answer the question — base your answer on them.\n\n"
+    )
+    return preamble + prompt
+
+
+def _h2_empty_claim_guard(answer: str, bundle, prompt: str, llm, meta: Optional[dict] = None) -> str:
+    """B304 H2 — empty-claim guard.
+
+    If the bundle was non-empty but the LLM claimed memory/context is empty,
+    retry once with an explicit instruction that the context is NOT empty.
+    Records meta["retried"] for eval-JSON reporting. No-op (no retry) when the
+    bundle is empty or the answer doesn't make an empty-memory claim.
+    """
+    bundle_nonempty = any(section.content for section in bundle.sections)
+    if bundle_nonempty and _EMPTY_CLAIM_RE.search(answer):
+        retry_prompt = (
+            prompt
+            + "\n\nThe context above is NOT empty. List what the plans section "
+            "contains, then answer the question from it."
+        )
+        retry_messages = [
+            {"role": "system", "content": _ASK_SYSTEM_PROMPT},
+            {"role": "user", "content": retry_prompt},
+        ]
+        answer = llm.chat(retry_messages)
+        if meta is not None:
+            meta["retried"] = True
+    elif meta is not None:
+        meta["retried"] = False
+    return answer
+
+
 async def run_ask(
     query: str,
     session_id: str,
@@ -150,6 +246,7 @@ async def run_ask(
     config: dict,
     token_budget: int = 32000,
     capture: bool = True,
+    meta: Optional[dict] = None,
 ) -> str:
     """
     Full ask pipeline: augment → compress → send → capture.
@@ -158,6 +255,9 @@ async def run_ask(
     capture: when True (default), the question + answer are written back into
     the graph so asking teaches the brain. Set False (--no-capture) for
     throwaway queries.
+
+    meta: optional dict the caller can pass to receive harness-variant
+    bookkeeping (e.g. meta["retried"] from H2). Unused by production callers.
     """
     # 1. Augment
     bundle = await compile_bundle(
@@ -178,22 +278,22 @@ async def run_ask(
 
     # 3. Build prompt and send
     prompt = _bundle_to_prompt(bundle, query)
+    variants = _harness_variants(config)
+    if "H1" in variants:
+        prompt = _h1_identifier_fastpath(prompt, bundle, query)
+
     llm = _get_llm(config)
     if llm is None:
         return "[Error: LLM unavailable. Check campy.toml [llm] configuration.]"
 
     messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are Campy, an AI memory assistant. Answer the user's question "
-                "using only the provided memory context. If the context does not "
-                "contain enough information, say so explicitly."
-            ),
-        },
+        {"role": "system", "content": _ASK_SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ]
     answer = llm.chat(messages)
+
+    if "H2" in variants:
+        answer = _h2_empty_claim_guard(answer, bundle, prompt, llm, meta=meta)
 
     # 4. Capture (closed loop) — both the question and the answer
     if capture:
