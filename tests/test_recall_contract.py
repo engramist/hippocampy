@@ -528,3 +528,82 @@ async def test_recall_plans_lexical_assist_noop_without_identifier_or_quoted_phr
         min_valence=-1.0,
     )
     assert [p["plan_id"] for p in plans] == ["p1"]
+
+
+@pytest.mark.asyncio
+async def test_recall_plans_keyword_overlap_bypass_tags_paraphrased_match():
+    """B307: a paraphrase sharing >= 2 significant terms with a plan's goal
+    (but no card identifier or quoted phrase) is tagged distinctly from an
+    identifier match — `bypass_reason="keyword_overlap"` vs `"identifier"` —
+    while still setting `lexical_exact` so downstream floor checks (e.g.
+    `_stage_plans`) bypass the same way. Mirrors the exact P1/B292 pair from
+    `benchmarks/ask_eval/fixtures.py`."""
+    from campy.brain.thalamus.tools.quests import recall_plans_for_query
+
+    db = RecallContractDB()
+    config = {"embeddings": {"model": "mock"}}
+
+    db.plans["b292"] = {
+        "plan_id": "b292",
+        "goal": (
+            "Implement B292 by splitting campy/brain/thalamus/tools/__init__.py "
+            "into focused domain modules while preserving behavior and exports"
+        ),
+        "status": "completed",
+        "valence": 0.9,
+        "pathway_strength": 0.9,
+        "confidence": 0.9,
+        "score": 0.32,  # below the 0.70 floor enforced downstream in bundle_compiler
+    }
+
+    plans = await recall_plans_for_query(
+        goal_query="Who or what split the big tools module into smaller files?",
+        db=db,
+        config=config,
+        limit=5,
+        min_valence=-1.0,
+    )
+
+    plan_ids = [p["plan_id"] for p in plans]
+    assert "b292" in plan_ids
+    matched = next(p for p in plans if p["plan_id"] == "b292")
+    assert matched["lexical_exact"] is True
+    assert matched["bypass_reason"] == "keyword_overlap"
+
+
+@pytest.mark.asyncio
+async def test_recall_plans_keyword_overlap_requires_two_terms_not_one():
+    """B307: a single shared significant term is too weak a signal on its
+    own and must NOT trigger the bypass — otherwise the 2-term threshold
+    would collapse to 1 and reopen the negative-control hallucination hole
+    B305 closed. Query shares only "module" with the plan's goal."""
+    from campy.brain.thalamus.tools.quests import recall_plans_for_query
+
+    db = RecallContractDB()
+    config = {"embeddings": {"model": "mock"}}
+
+    db.plans["p1"] = {
+        "plan_id": "p1",
+        "goal": "Implement B292 by splitting tools/__init__.py into focused modules",
+        "status": "completed",
+        "valence": 0.9,
+        "pathway_strength": 0.9,
+        "confidence": 0.9,
+        "score": 0.10,  # far below the 0.70 floor, and only 1 shared term
+    }
+
+    plans = await recall_plans_for_query(
+        goal_query="What is a module in general software design?",
+        db=db,
+        config=config,
+        limit=5,
+        min_valence=-1.0,
+    )
+
+    # p1 may still appear (it's the only candidate the fake vector_search
+    # returns), but it must NOT be tagged as a lexical bypass — a single
+    # shared term is insufficient co-occurrence evidence.
+    matched = next((p for p in plans if p["plan_id"] == "p1"), None)
+    assert matched is not None
+    assert matched["lexical_exact"] is False
+    assert matched["bypass_reason"] is None
