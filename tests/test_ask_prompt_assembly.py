@@ -72,3 +72,19 @@ def test_empty_bundle_has_no_memory_exists_claim():
     )
     prompt = _bundle_to_prompt(bundle, bundle.query)
     assert "not empty" not in prompt.lower()
+
+
+def test_empty_bundle_tells_model_no_relevant_context_was_found():
+    """B305: an empty bundle must instruct the model plainly to say so rather
+    than guess — the B303 hardening only covered the non-empty case."""
+    bundle = ContextBundle(
+        query="anything",
+        sections=[],
+        total_token_estimate=0,
+        token_budget=32000,
+        truncated=False,
+    )
+    prompt = _bundle_to_prompt(bundle, bundle.query)
+    lowered = prompt.lower()
+    assert "no relevant context" in lowered or "no relevant memory" in lowered
+    assert "do not guess" in lowered or "do not fabricate" in lowered or "say so" in lowered

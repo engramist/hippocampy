@@ -490,6 +490,7 @@ def _rank_plan_neighbors(
                 "similarity": round(similarity, 4),
                 "pathway_strength": pathway_strength,
                 "steps": _fetch_plan_steps(db, pid),
+                "lexical_exact": pid in lexical_ids,
                 "_score": score,
                 "_lexical": pid in lexical_ids,
             }
