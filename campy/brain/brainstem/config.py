@@ -34,6 +34,10 @@ _DEFAULT_CONFIG = {
         "structured_format": "toon",
         "ast_compression": True,
     },
+    # B304: ask harness variant toggle. "H0" = baseline, unchanged behavior.
+    "ask": {
+        "harness_variant": "H0",
+    },
 }
 
 
