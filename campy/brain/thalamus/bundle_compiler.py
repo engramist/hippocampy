@@ -322,6 +322,9 @@ async def _stage_semantic_context(db, query: str, config: dict, tier_config: dic
     Stage 2: Retrieve semantic context as a lightweight semantic preview.
 
     Note: This stage does not replicate full current_truth fusion logic.
+
+    B305: distance floor tightened from 0.40 to 0.30 (similarity 0.60 → 0.70)
+    to match the convention already enforced in `_stage_exact_facts`.
     """
     try:
         from campy.brain.hippocampus.graph import embeddings as emb
@@ -345,7 +348,7 @@ async def _stage_semantic_context(db, query: str, config: dict, tier_config: dic
         for label in ("Concept", "Decision", "Constraint", "Requirement"):
             cypher = f"""
                 MATCH (n:{label})
-                WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.40
+                WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
                 RETURN n.text_raw as text, label(n) as node_type,
                        n.pathway_strength as pathway_strength, n.confidence as confidence,
                        (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist
@@ -386,12 +389,22 @@ async def _stage_semantic_context(db, query: str, config: dict, tier_config: dic
         return None
 
 
-async def _stage_plans(db, query: str, config: dict, tier_config: dict) -> Optional[BundleSection]:
+async def _stage_plans(
+    db, query: str, config: dict, tier_config: dict, min_similarity: float = 0.70
+) -> Optional[BundleSection]:
     """
     Stage 2: Retrieve plan lane context using the same ranking as recall_plans.
 
     PlanStep is not separately retrievable here; steps are carried inline with
     parent Plan records to preserve execution context.
+
+    B305: plans are ranking-only, no relevance floor — the top-N are handed
+    back regardless of match quality, so an off-topic query still gets "the
+    best available" plans as if relevant. Only plans whose `similarity` field
+    clears `min_similarity` (mirrors the 0.70 convention in
+    `_stage_exact_facts`) are kept. B303's lexical identifier bypass
+    (`lexical_exact`) is exempt from this floor by design — an exact `\\bB\\d+\\b`
+    match is strong evidence regardless of embedding distance.
     """
     try:
         from campy.brain.thalamus.tools.quests import recall_plans_for_query
@@ -404,6 +417,11 @@ async def _stage_plans(db, query: str, config: dict, tier_config: dict) -> Optio
             limit=limit,
             min_valence=-1.0,
         )
+        plans = [
+            plan
+            for plan in plans
+            if plan.get("lexical_exact") or float(plan.get("similarity") or 0.0) >= min_similarity
+        ]
         if not plans:
             return None
 
