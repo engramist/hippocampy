@@ -87,12 +87,17 @@ done
   echo
   echo "## Summary"
   echo
+  # Card states often carry explanatory annotations after the keyword (e.g.
+  # "complete -- verified via git log ..."), so match on the leading keyword
+  # rather than requiring an exact string, or every annotated card silently
+  # falls out of every bucket. "done" is treated as a synonym of "complete"
+  # (inconsistent vocabulary across cards written by different sessions).
   total="$(wc -l < /tmp/tracker_rows.tsv | tr -d ' ')"
-  ready="$(awk -F '\t' '$6=="ready"{c++} END{print c+0}' /tmp/tracker_rows.tsv)"
-  needs="$(awk -F '\t' '$6=="needs work"{c++} END{print c+0}' /tmp/tracker_rows.tsv)"
-  complete="$(awk -F '\t' '$6=="complete"{c++} END{print c+0}' /tmp/tracker_rows.tsv)"
-  inprog="$(awk -F '\t' '$6=="in progress"{c++} END{print c+0}' /tmp/tracker_rows.tsv)"
-  blocked="$(awk -F '\t' '$6=="blocked"{c++} END{print c+0}' /tmp/tracker_rows.tsv)"
+  ready="$(awk -F '\t' '$6 ~ /^ready/{c++} END{print c+0}' /tmp/tracker_rows.tsv)"
+  needs="$(awk -F '\t' '$6 ~ /^needs work/{c++} END{print c+0}' /tmp/tracker_rows.tsv)"
+  complete="$(awk -F '\t' '$6 ~ /^(complete|done)/{c++} END{print c+0}' /tmp/tracker_rows.tsv)"
+  inprog="$(awk -F '\t' '$6 ~ /^in progress/{c++} END{print c+0}' /tmp/tracker_rows.tsv)"
+  blocked="$(awk -F '\t' '$6 ~ /^blocked/{c++} END{print c+0}' /tmp/tracker_rows.tsv)"
 
   echo "- Total cards: $total"
   echo "- Ready: $ready"
