@@ -67,6 +67,20 @@ sh /tmp/campy-install.sh
 npx @smithery/cli install hippocampy --client claude
 ```
 
+**Via Homebrew** (macOS, optional — not yet public; see
+[docs/homebrew-install.md](docs/homebrew-install.md)):
+
+```bash
+brew tap engramist/campy
+brew install hippocampy
+campy install    # Homebrew only installs the CLI; finish setup explicitly
+```
+
+`pipx`/the install script above remain the canonical install path until the
+tap is public. The formula never creates `~/.campy`, starts the daemon, or
+registers AI clients during `brew install` — that's `campy install` /
+`campy doctor`, run by you afterward, same as every other install path.
+
 **From source:**
 
 ```bash
