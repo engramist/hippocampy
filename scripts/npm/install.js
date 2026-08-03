@@ -10,7 +10,7 @@ if (os.platform() === 'win32') {
   process.exit(1);
 }
 
-const command = 'curl -fsSL https://raw.githubusercontent.com/djs54/hippocampy/main/scripts/install.sh | sh';
+const command = 'curl -fsSL https://raw.githubusercontent.com/engramist/hippocampy/main/scripts/install.sh | sh';
 const result = spawnSync('sh', ['-c', command], { stdio: 'inherit' });
 
 if (result.status !== 0) {
