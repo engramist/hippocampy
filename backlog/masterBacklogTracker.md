@@ -8,7 +8,6 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B19 | `sidequests uninstall` Command — ✅ DONE (2026-03-27) | P0 | complete | TBD | TBD | - | backlog/B19.md |
 | B1 | `sidequests setup` CLI | P1 | complete | TBD | TBD | backlog/plans/B-1-setup-cli.md | backlog/B1.md |
 | B2 | `.mcpb` Bundle (One-Click Claude Desktop Install) | P1 | complete | TBD | TBD | backlog/plans/B-2-cowork-plugin.md | backlog/B2.md |
-| B2 | `.mcpb` Bundle (One-Click Claude Desktop Install) | P1 | complete | TBD | TBD | backlog/plans/B-2-cowork-plugin.md | backlog/B2.md |
 | B3 | ChatGPT Desktop SSE Endpoint | P1 | complete | TBD | TBD | backlog/plans/B-3-chatgpt-sse.md | backlog/B3.md |
 | B4 | Publish to PyPI | P2 | complete | TBD | TBD | backlog/plans/B-4-pypi-publish.md | backlog/B4.md |
 | B5 | Smithery Listing | P2 | complete | TBD | TBD | backlog/plans/B-5-smithery-listing.md | backlog/B5.md |
@@ -25,8 +24,6 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B15 | Deep-Link Handoff (Chat → Memory Control Panel) | P6 | complete | TBD | TBD | backlog/plans/B-15-deeplink-handoff.md | backlog/B15.md |
 | B16 | Task-Based Model Routing — ✅ DONE (2026-03-23) | P6 | complete | TBD | TBD | - | backlog/B16.md |
 | B20 | OpenClaw Extension: Plugin ID Mismatch | P7 | complete | TBD | TBD | backlog/plans/B-20-openclaw-plugin-id-mismatch.md | backlog/B20.md |
-| B20 | OpenClaw Extension: Plugin ID Mismatch | P7 | complete | TBD | TBD | backlog/plans/B-20-openclaw-plugin-id-mismatch.md | backlog/B20.md |
-| B21 | OpenClaw System Prompt + Tool Integration (LLM Workflow) | P7 | complete | TBD | TBD | backlog/plans/B-21-openclaw-system-prompt.md | backlog/B21.md |
 | B21 | OpenClaw System Prompt + Tool Integration (LLM Workflow) | P7 | complete | TBD | TBD | backlog/plans/B-21-openclaw-system-prompt.md | backlog/B21.md |
 | B22 | OpenClaw Extension: `plugins.allow` Warning | P7 | complete | TBD | TBD | backlog/plans/B-22-openclaw-plugins-allow-warning.md | backlog/B22.md |
 | B23 | ~~OpenClaw Extension: SSE Connection Per Tool Call is Expensive~~ RESOLVED | P7 | complete | TBD | TBD | - | backlog/B23.md |
@@ -94,12 +91,8 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B192 | # B192: Episodic Memory — Temporal Chains for Decision Reconstruction | P99 | **Status**: complete (2026-04-09) | TBD | TBD | backlog/plans/B-192-episodic-memory.md | backlog/B192.md |
 | B193 | # B193: Metacognition — Knowledge Gap Detection | P99 | **Status**: complete (2026-04-09) | TBD | TBD | backlog/plans/B-193-metacognition-gaps.md | backlog/B193.md |
 | B194 | # B194: Procedural Memory — Reusable Solve Recipes from Successful Plans | P99 | **Status**: complete (2026-04-09) | TBD | TBD | backlog/plans/B-194-procedural-memory.md | backlog/B194.md |
-| B194 | # B194: Procedural Memory — Reusable Solve Recipes from Successful Plans | P99 | **Status**: complete (2026-04-09) | TBD | TBD | backlog/plans/B-194-procedural-memory.md | backlog/B194.md |
-| B195 | # B195: Active Context Push — Proactive Lesson Injection | P99 | **Status**: complete (2026-04-09) | TBD | TBD | backlog/plans/B-195-active-context-push.md | backlog/B195.md |
 | B195 | # B195: Active Context Push — Proactive Lesson Injection | P99 | **Status**: complete (2026-04-09) | TBD | TBD | backlog/plans/B-195-active-context-push.md | backlog/B195.md |
 | B196 | # B196: Internal Consistency Audit — Graph-Wide Contradiction Detection | P99 | **Status**: complete (2026-04-09) | TBD | TBD | backlog/plans/B-196-consistency-audit.md | backlog/B196.md |
-| B196 | # B196: Internal Consistency Audit — Graph-Wide Contradiction Detection | P99 | **Status**: complete (2026-04-09) | TBD | TBD | backlog/plans/B-196-consistency-audit.md | backlog/B196.md |
-| B219 | Fix `register_task_graph` Kuzu Parser Failure on `TaskNode` Creation | P99 | complete | TBD | TBD | backlog/plans/B-219-fix-register-task-graph-kuzu-parser-failure.md | backlog/B219.md |
 | B219 | Fix `register_task_graph` Kuzu Parser Failure on `TaskNode` Creation | P99 | complete | TBD | TBD | backlog/plans/B-219-fix-register-task-graph-kuzu-parser-failure.md | backlog/B219.md |
 | B220 | Post ARC-AGI Extraction Repo Cleanup Audit | P99 | complete | TBD | TBD | backlog/plans/B-220-post-arc-extraction-cleanup.md | backlog/B220.md |
 | B221 | Graph-Native Wiki Projection Architecture | P99 | complete | TBD | TBD | backlog/plans/B-221-graph-native-wiki-architecture.md | backlog/B221.md |
@@ -159,7 +152,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B275 | Publish to Claude Code, Codex, and Gemini Marketplaces | P99 | complete -- verified via git log 2026-08-02 (feat: implement B265-B276 215b588); card file was stale | TBD | TBD | - | backlog/B275.md |
 | B276 | Create campy uninstall Command and Uninstall Script | P99 | complete -- verified via git log 2026-08-02 (feat: implement B265-B276 215b588); card file was stale | TBD | TBD | - | backlog/B276.md |
 | B277 | Extract Basal Ganglia as Sixth Brain Region | P99 | complete -- verified via git log 2026-08-02 (feat: extract Basal Ganglia eb6cb9a); card file was stale | TBD | TBD | - | backlog/B277.md |
-| B278 | # B278 — ARC-Specific MCP Query Tools for Agent v2 | P99 | complete -- verified via git log 2026-08-02 (feat: complete B278 ARC v2 MCP query tools 7d6eec0); card file was stale | TBD | TBD | backlog/plans/B-278-arc-query-tools-for-agent-v2.md | backlog/B278.md |
+| B278 | # B278 — ARC-Specific MCP Query Tools for Agent v2 | P99 | needs work — reopened 2026-08-03. My 2026-08-02 "complete" marking was wrong: I only checked that commit 7d6eec0 existed, not that the feature actually worked. ARC_AGI's A146 consumer-side contract test (2026-06-13, see `ARC_AGI/docs/handoff/B278-graph-evidence.md`) found the `falsified_count` increment in `arc_record_reward_prediction_error` (campy/brain/thalamus/tools/arc_queries.py ~L588) doesn't persist: the tool reports success and `direction: negative`, but `arc_get_action_evidence` still reads back `falsified_count: 0`. I reproduced the exact call sequence from the handoff doc in isolation (fresh KuzuClient, minimal schema) and the write DID persist there — so the Cypher itself is not wrong, and it's not a schema/migration issue (falsified_count column confirmed present and readable). The bug is real but environment-specific to how ARC_AGI's production daemon/connection is wired; root cause still open. Also found in passing: `arc_record_reward_prediction_error`'s returned `direction` field uses a -0.1 threshold while the actual falsified_count write only fires below -0.3, so for -0.3 < error < -0.1 the tool reports "negative" without writing anything — a separate, smaller bug worth fixing alongside the main one. The only existing test for this write path (`tests/test_arc_queries.py::test_arc_record_reward_prediction_error_writes_action_fact`) uses `MockDB` and only exercises the positive-RPE branch, so it would never have caught either bug — needs a real-Kuzu integration test as part of the fix. | TBD | TBD | backlog/plans/B-278-arc-query-tools-for-agent-v2.md | backlog/B278.md |
 | B279 | Vector Similarity Calibration Audit and Fix | P99 | complete -- verified via git log 2026-08-02 (feat: B279-B287 graph hardening 89cacc9/b6d1a09); card file was stale | TBD | TBD | backlog/plans/B-279-vector-similarity-calibration.md | backlog/B279.md |
 | B280 | Server-Side Traversal for explore_graph | P99 | complete -- verified via git log 2026-08-02 (feat: B279-B287 graph hardening 89cacc9/b6d1a09); card file was stale | TBD | TBD | backlog/plans/B-280-server-side-traversal.md | backlog/B280.md |
 | B281 | Kuzu Export/Restore and Engine Exit Strategy | P99 | complete -- verified via git log 2026-08-02 (feat: B279-B287 graph hardening 89cacc9/b6d1a09); card file was stale | TBD | TBD | backlog/plans/B-281-engine-exit-strategy.md | backlog/B281.md |
@@ -190,9 +183,9 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 
 ## Summary
 
-- Total cards: 183
+- Total cards: 176
 - Ready: 2
-- Needs work: 0
-- Complete: 89
+- Needs work: 1
+- Complete: 163
 - In progress: 0
 - Blocked: 0
