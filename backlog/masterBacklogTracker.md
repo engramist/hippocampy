@@ -8,6 +8,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B19 | `sidequests uninstall` Command — ✅ DONE (2026-03-27) | P0 | complete | TBD | TBD | - | backlog/B19.md |
 | B1 | `sidequests setup` CLI | P1 | complete | TBD | TBD | backlog/plans/B-1-setup-cli.md | backlog/B1.md |
 | B2 | `.mcpb` Bundle (One-Click Claude Desktop Install) | P1 | complete | TBD | TBD | backlog/plans/B-2-cowork-plugin.md | backlog/B2.md |
+| B2 | `.mcpb` Bundle (One-Click Claude Desktop Install) | P1 | complete | TBD | TBD | backlog/plans/B-2-cowork-plugin.md | backlog/B2.md |
 | B3 | ChatGPT Desktop SSE Endpoint | P1 | complete | TBD | TBD | backlog/plans/B-3-chatgpt-sse.md | backlog/B3.md |
 | B4 | Publish to PyPI | P2 | complete | TBD | TBD | backlog/plans/B-4-pypi-publish.md | backlog/B4.md |
 | B5 | Smithery Listing | P2 | complete | TBD | TBD | backlog/plans/B-5-smithery-listing.md | backlog/B5.md |
@@ -24,6 +25,8 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B15 | Deep-Link Handoff (Chat → Memory Control Panel) | P6 | complete | TBD | TBD | backlog/plans/B-15-deeplink-handoff.md | backlog/B15.md |
 | B16 | Task-Based Model Routing — ✅ DONE (2026-03-23) | P6 | complete | TBD | TBD | - | backlog/B16.md |
 | B20 | OpenClaw Extension: Plugin ID Mismatch | P7 | complete | TBD | TBD | backlog/plans/B-20-openclaw-plugin-id-mismatch.md | backlog/B20.md |
+| B20 | OpenClaw Extension: Plugin ID Mismatch | P7 | complete | TBD | TBD | backlog/plans/B-20-openclaw-plugin-id-mismatch.md | backlog/B20.md |
+| B21 | OpenClaw System Prompt + Tool Integration (LLM Workflow) | P7 | complete | TBD | TBD | backlog/plans/B-21-openclaw-system-prompt.md | backlog/B21.md |
 | B21 | OpenClaw System Prompt + Tool Integration (LLM Workflow) | P7 | complete | TBD | TBD | backlog/plans/B-21-openclaw-system-prompt.md | backlog/B21.md |
 | B22 | OpenClaw Extension: `plugins.allow` Warning | P7 | complete | TBD | TBD | backlog/plans/B-22-openclaw-plugins-allow-warning.md | backlog/B22.md |
 | B23 | ~~OpenClaw Extension: SSE Connection Per Tool Call is Expensive~~ RESOLVED | P7 | complete | TBD | TBD | - | backlog/B23.md |
@@ -91,8 +94,12 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B192 | # B192: Episodic Memory — Temporal Chains for Decision Reconstruction | P99 | **Status**: complete (2026-04-09) | TBD | TBD | backlog/plans/B-192-episodic-memory.md | backlog/B192.md |
 | B193 | # B193: Metacognition — Knowledge Gap Detection | P99 | **Status**: complete (2026-04-09) | TBD | TBD | backlog/plans/B-193-metacognition-gaps.md | backlog/B193.md |
 | B194 | # B194: Procedural Memory — Reusable Solve Recipes from Successful Plans | P99 | **Status**: complete (2026-04-09) | TBD | TBD | backlog/plans/B-194-procedural-memory.md | backlog/B194.md |
+| B194 | # B194: Procedural Memory — Reusable Solve Recipes from Successful Plans | P99 | **Status**: complete (2026-04-09) | TBD | TBD | backlog/plans/B-194-procedural-memory.md | backlog/B194.md |
+| B195 | # B195: Active Context Push — Proactive Lesson Injection | P99 | **Status**: complete (2026-04-09) | TBD | TBD | backlog/plans/B-195-active-context-push.md | backlog/B195.md |
 | B195 | # B195: Active Context Push — Proactive Lesson Injection | P99 | **Status**: complete (2026-04-09) | TBD | TBD | backlog/plans/B-195-active-context-push.md | backlog/B195.md |
 | B196 | # B196: Internal Consistency Audit — Graph-Wide Contradiction Detection | P99 | **Status**: complete (2026-04-09) | TBD | TBD | backlog/plans/B-196-consistency-audit.md | backlog/B196.md |
+| B196 | # B196: Internal Consistency Audit — Graph-Wide Contradiction Detection | P99 | **Status**: complete (2026-04-09) | TBD | TBD | backlog/plans/B-196-consistency-audit.md | backlog/B196.md |
+| B219 | Fix `register_task_graph` Kuzu Parser Failure on `TaskNode` Creation | P99 | complete | TBD | TBD | backlog/plans/B-219-fix-register-task-graph-kuzu-parser-failure.md | backlog/B219.md |
 | B219 | Fix `register_task_graph` Kuzu Parser Failure on `TaskNode` Creation | P99 | complete | TBD | TBD | backlog/plans/B-219-fix-register-task-graph-kuzu-parser-failure.md | backlog/B219.md |
 | B220 | Post ARC-AGI Extraction Repo Cleanup Audit | P99 | complete | TBD | TBD | backlog/plans/B-220-post-arc-extraction-cleanup.md | backlog/B220.md |
 | B221 | Graph-Native Wiki Projection Architecture | P99 | complete | TBD | TBD | backlog/plans/B-221-graph-native-wiki-architecture.md | backlog/B221.md |
@@ -113,15 +120,15 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B236 | Public PyPI and pipx Install Path | P99 | complete -- verified via git log 2026-08-02 (feat(B236) 8d4be38/9da8a1e/06b4376); card file was stale | TBD | TBD | backlog/plans/B-236-public-pypi-pipx-install-path.md | backlog/B236.md |
 | B237 | Hosted One-Line Bootstrap Installer | P99 | complete -- verified via git log 2026-08-02 (feat(B237) e01ca97); card file was stale | TBD | TBD | backlog/plans/B-237-hosted-one-line-bootstrap-installer.md | backlog/B237.md |
 | B238 | Clean-Machine One-Click Installer Validation Harness | P99 | complete -- verified via git log 2026-08-02 (feat(B238) 1b0fb5d); card file was stale | TBD | TBD | backlog/plans/B-238-clean-machine-one-click-validation-harness.md | backlog/B238.md |
-| B239 | Homebrew Tap and macOS Native Install Path | P99 | ready | TBD | TBD | backlog/plans/B-239-homebrew-tap-and-macos-native-install-path.md | backlog/B239.md |
+| B239 | Homebrew Tap and macOS Native Install Path | P99 | complete | TBD | TBD | backlog/plans/B-239-homebrew-tap-and-macos-native-install-path.md | backlog/B239.md |
 | B240 | One-Click Install Release Gate and User-Facing Docs | P99 | ready | TBD | TBD | backlog/plans/B-240-one-click-release-gate-and-user-facing-docs.md | backlog/B240.md |
 | B241 | Rename Product to HippoCampy and Add `campy` CLI | P99 | complete | TBD | TBD | backlog/plans/B-241-rename-product-to-hippocampy-campy.md | backlog/B241.md |
-| B242 | Add `campy` Python Import Namespace Shim | P99 | ready | TBD | TBD | backlog/plans/B-242-add-campy-python-import-namespace-shim.md | backlog/B242.md |
-| B243 | Move Implementation Package from `sidequests` to `campy` | P99 | ready | TBD | TBD | backlog/plans/B-243-move-implementation-package-to-campy.md | backlog/B243.md |
-| B244 | Switch MCP and Installer Module Paths to `campy.*` | P99 | ready | TBD | TBD | backlog/plans/B-244-switch-mcp-and-installer-module-paths-to-campy.md | backlog/B244.md |
-| B245 | Rename Config Namespace from `sidequests.toml` to `campy.toml` | P99 | ready | TBD | TBD | backlog/plans/B-245-rename-config-namespace-to-campy-toml.md | backlog/B245.md |
-| B246 | Make `campy-memory` the Only Primary Skill Namespace | P99 | ready | TBD | TBD | backlog/plans/B-246-make-campy-memory-primary-skill-namespace.md | backlog/B246.md |
-| B247 | Final Legacy Name Audit and Optional Folder Cleanup | P99 | ready | TBD | TBD | backlog/plans/B-247-final-legacy-name-audit-and-folder-cleanup.md | backlog/B247.md |
+| B242 | Add `campy` Python Import Namespace Shim | P99 | complete | TBD | TBD | backlog/plans/B-242-add-campy-python-import-namespace-shim.md | backlog/B242.md |
+| B243 | Move Implementation Package from `sidequests` to `campy` | P99 | complete | TBD | TBD | backlog/plans/B-243-move-implementation-package-to-campy.md | backlog/B243.md |
+| B244 | Switch MCP and Installer Module Paths to `campy.*` | P99 | complete | TBD | TBD | backlog/plans/B-244-switch-mcp-and-installer-module-paths-to-campy.md | backlog/B244.md |
+| B245 | Rename Config Namespace from `sidequests.toml` to `campy.toml` | P99 | complete | TBD | TBD | backlog/plans/B-245-rename-config-namespace-to-campy-toml.md | backlog/B245.md |
+| B246 | Make `campy-memory` the Only Primary Skill Namespace | P99 | complete | TBD | TBD | backlog/plans/B-246-make-campy-memory-primary-skill-namespace.md | backlog/B246.md |
+| B247 | Final Legacy Name Audit and Optional Folder Cleanup | P99 | complete | TBD | TBD | backlog/plans/B-247-final-legacy-name-audit-and-folder-cleanup.md | backlog/B247.md |
 | B248 | Update ARC_AGI Consumer to HippoCampy/Campy Namespace | P99 | ready | TBD | TBD | backlog/plans/B-248-update-arc-agi-consumer-to-hippocampy-campy.md | backlog/B248.md |
 | B249 | Dataset Node + Tabular Data Store | P99 | complete -- verified via git log 2026-08-02 (Implement Campy Memory OS 8ccea65); card file was stale | TBD | TBD | backlog/plans/B-249-dataset-node-tabular-store.md | backlog/B249.md |
 | B250 | Tabular Ingestion Pipeline | P99 | complete -- verified via git log 2026-08-02 (Implement Campy Memory OS 8ccea65); card file was stale | TBD | TBD | backlog/plans/B-250-tabular-ingestion-pipeline.md | backlog/B250.md |
@@ -147,7 +154,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B270 | Rewrite campy setup to Delegate to Native Plugin Installers | P99 | complete -- verified via git log 2026-08-02 (feat: implement B265-B276 215b588); card file was stale | TBD | TBD | - | backlog/B270.md |
 | B271 | Deprecate plugin_installer.py and Legacy Adapter Setup Scripts | P99 | complete -- verified via git log 2026-08-02 (feat: implement B265-B276 215b588); card file was stale | TBD | TBD | - | backlog/B271.md |
 | B272 | Create curl Install Script (Primary Install Path) | P99 | complete -- verified via git log 2026-08-02 (feat: implement B265-B276 215b588); card file was stale | TBD | TBD | - | backlog/B272.md |
-| B273 | Homebrew Formula for HippoCampy | P99 | complete -- verified via git log 2026-08-02 (feat: implement B265-B276 215b588); card file was stale | TBD | TBD | - | backlog/B273.md |
+| B273 | Homebrew Formula for HippoCampy | P99 | complete — superseded by B239 (2026-08-02). `scripts/homebrew/hippocampy.rb` (this card's original deliverable, from commit 215b588) was removed: it pointed at the wrong GitHub org, used `virtualenv_install_with_resources` (infeasible for Campy's ML dependency graph — would require 100+ hand-pinned resource stanzas), and ran `campy setup` unattended in `post_install`. The canonical, validated formula is now `packaging/homebrew/hippocampy.rb`, built and locally validated (`brew audit --strict`, `brew install --build-from-source`) as part of B239. See `docs/homebrew-install.md`. | TBD | TBD | - | backlog/B273.md |
 | B274 | npm Wrapper Package for HippoCampy | P99 | complete -- verified via git log 2026-08-02 (feat: implement B265-B276 215b588); card file was stale | TBD | TBD | - | backlog/B274.md |
 | B275 | Publish to Claude Code, Codex, and Gemini Marketplaces | P99 | complete -- verified via git log 2026-08-02 (feat: implement B265-B276 215b588); card file was stale | TBD | TBD | - | backlog/B275.md |
 | B276 | Create campy uninstall Command and Uninstall Script | P99 | complete -- verified via git log 2026-08-02 (feat: implement B265-B276 215b588); card file was stale | TBD | TBD | - | backlog/B276.md |
@@ -162,7 +169,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B285 | Archived-Node HNSW Index Hygiene | P99 | complete -- verified via git log 2026-08-02 (feat: implement B285 HNSW / B287 RRF b00b71e); card file was stale | TBD | TBD | backlog/plans/B-285-hnsw-archive-hygiene.md | backlog/B285.md |
 | B286 | Consolidate Node Table Registry | P99 | complete -- verified via git log 2026-08-02 (feat: B279-B287 graph hardening 89cacc9/b6d1a09); card file was stale | TBD | TBD | backlog/plans/B-286-node-table-registry.md | backlog/B286.md |
 | B287 | Principled Score Fusion in current_truth | P99 | complete -- verified via git log 2026-08-02 (feat: implement B285 HNSW / B287 RRF b00b71e); card file was stale | TBD | TBD | backlog/plans/B-287-score-fusion.md | backlog/B287.md |
-| B288 | Reconcile Adapter Tool Surfaces (OpenClaw + Codex Allow-Lists) | P99 | ready | TBD | TBD | backlog/plans/B-288-adapter-tool-surface-reconcile.md | backlog/B288.md |
+| B288 | Reconcile Adapter Tool Surfaces (OpenClaw + Codex Allow-Lists) | P99 | complete (2026-08-02) — Reverified against current main: failures #1 | TBD | TBD | backlog/plans/B-288-adapter-tool-surface-reconcile.md | backlog/B288.md |
 | B292 | Split the tools/__init__.py God Module | P99 | complete (2026-07-13) — implemented by GitHub Copilot (GPT-5.3-Codex), reviewed by Fable; see PR from feat/b292-b293-b298-copilot-batch | TBD | TBD | - | backlog/B292.md |
 | B292-HANDOFF-2026-07-13 | # B292 Handoff - 2026-07-13 | P99 | ## Provenance | TBD | TBD | - | backlog/B292-HANDOFF-2026-07-13.md |
 | B293 | Single Source of Truth for the MCP Tool Surface | P99 | complete (2026-07-13) — implemented by GitHub Copilot (GPT-5.3-Codex), reviewed by Fable; additive generation strategy (existing 53 handwritten entries preserved); see PR from feat/b292-b293-b298-copilot-batch | TBD | TBD | - | backlog/B293.md |
@@ -183,9 +190,9 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 
 ## Summary
 
-- Total cards: 176
-- Ready: 10
+- Total cards: 183
+- Ready: 2
 - Needs work: 0
-- Complete: 78
+- Complete: 89
 - In progress: 0
 - Blocked: 0

@@ -7,6 +7,7 @@ Generated from backlog cards and backlog/plans/*.md.
 - BacklogRules: (none)
 - B1: backlog/plans/B-1-setup-cli.md
 - B2: backlog/plans/B-2-cowork-plugin.md
+- B2: backlog/plans/B-2-cowork-plugin.md
 - B3: backlog/plans/B-3-chatgpt-sse.md
 - B4: backlog/plans/B-4-pypi-publish.md
 - B5: backlog/plans/B-5-smithery-listing.md
@@ -25,6 +26,8 @@ Generated from backlog cards and backlog/plans/*.md.
 - B18: backlog/plans/B-18-working-memory.md, backlog/plans/B17-B18-architecture.md
 - B19: (none)
 - B20: backlog/plans/B-20-openclaw-plugin-id-mismatch.md
+- B20: backlog/plans/B-20-openclaw-plugin-id-mismatch.md
+- B21: backlog/plans/B-21-openclaw-system-prompt.md
 - B21: backlog/plans/B-21-openclaw-system-prompt.md
 - B22: backlog/plans/B-22-openclaw-plugins-allow-warning.md
 - B23: (none)
@@ -91,8 +94,12 @@ Generated from backlog cards and backlog/plans/*.md.
 - B192: backlog/plans/B-192-episodic-memory.md
 - B193: backlog/plans/B-193-metacognition-gaps.md
 - B194: backlog/plans/B-194-procedural-memory.md
+- B194: backlog/plans/B-194-procedural-memory.md
+- B195: backlog/plans/B-195-active-context-push.md
 - B195: backlog/plans/B-195-active-context-push.md
 - B196: backlog/plans/B-196-consistency-audit.md
+- B196: backlog/plans/B-196-consistency-audit.md
+- B219: backlog/plans/B-219-fix-register-task-graph-kuzu-parser-failure.md
 - B219: backlog/plans/B-219-fix-register-task-graph-kuzu-parser-failure.md
 - B220: backlog/plans/B-220-post-arc-extraction-cleanup.md
 - B221: backlog/plans/B-221-graph-native-wiki-architecture.md
