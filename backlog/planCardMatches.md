@@ -4,28 +4,29 @@ Generated from backlog cards and backlog/plans/*.md.
 
 ## Card -> Plan Matches
 
-- B1: (none)
+- BacklogRules: (none)
+- B1: backlog/plans/B-1-setup-cli.md
 - B2: backlog/plans/B-2-cowork-plugin.md
 - B3: backlog/plans/B-3-chatgpt-sse.md
-- B4: (none)
-- B5: (none)
-- B6: (none)
-- B7: (none)
+- B4: backlog/plans/B-4-pypi-publish.md
+- B5: backlog/plans/B-5-smithery-listing.md
+- B6: backlog/plans/B-6-claude-desktop-adapter.md
+- B7: backlog/plans/B-7-chatgpt-desktop-adapter.md
 - B8: (none)
 - B9: (none)
-- B10: (none)
-- B11: (none)
-- B12: (none)
+- B10: backlog/plans/B-10-explore-graph-tool.md
+- B11: backlog/plans/B-11-lesson-artifact-node.md
+- B12: backlog/plans/B-12-anomaly-detection.md
 - B13: (none)
 - B14: backlog/plans/B-14-insight-surfacing.md
-- B15: (none)
+- B15: backlog/plans/B-15-deeplink-handoff.md
 - B16: (none)
 - B17: backlog/plans/B-17-hippocampus.md, backlog/plans/B17-B18-architecture.md
 - B18: backlog/plans/B-18-working-memory.md, backlog/plans/B17-B18-architecture.md
 - B19: (none)
-- B20: (none)
-- B21: (none)
-- B22: (none)
+- B20: backlog/plans/B-20-openclaw-plugin-id-mismatch.md
+- B21: backlog/plans/B-21-openclaw-system-prompt.md
+- B22: backlog/plans/B-22-openclaw-plugins-allow-warning.md
 - B23: (none)
 - B24: (none)
 - B25: (none)
@@ -43,35 +44,154 @@ Generated from backlog cards and backlog/plans/*.md.
 - B41: (none)
 - B42: backlog/plans/B42-p0-bringup-hardening.md
 - B43: (none)
-- B44: (none)
-- B45: (none)
+- B44: backlog/plans/B-44-token-efficiency-side-effect.md
+- B45: backlog/plans/B-45-token-visualization.md
 - B46: (none)
-- B47: (none)
-- B48: (none)
-- B49: (none)
-- B50: (none)
-- B51: (none)
-- B52: (none)
-- B31: (none)
-- B32: (none)
-- B33: (none)
-- B34: backlog/plans/B-junk-filter-v2.md, backlog/plans/B-noise-floor-fix.md
-- B35: (none)
-- B36: backlog/plans/B-streamable-http.md
-- B41: (none)
-...
-- B61: backlog/plans/B-openclaw-extension.md
+- B47: backlog/plans/B-47-benchmark-infrastructure.md
+- B48: backlog/plans/B-48-ab-contract.md
+- B49: backlog/plans/B-49-swe-ci-eval.md
+- B50: backlog/plans/B-50-longcontext-eval.md
+- B51: backlog/plans/B-51-ama-bench-eval.md
+- B52: backlog/plans/B-52-research-sim.md
+- B53: backlog/plans/B-53-benchmark-report.md
+- B61: backlog/plans/B-61-openclaw-tools-surfacing.md
 - B62: (none)
-- B63: (none)
-- B64: (none)
-- B65: (none)
+- B63: backlog/plans/B-63-consolidation-loop-nonGIT.md
+- B64: backlog/plans/B-64-message-count-bug.md
+- B65: backlog/plans/B-65-openclaw-missing-tool-aliases.md
+- B66: (none)
+- B67: (none)
+- B68: (none)
+- B69: (none)
+- B70: backlog/plans/B-70-adapter-missing-tools.md
+- B71: backlog/plans/B-71-centralized-adapter-routing.md
+- B72: backlog/plans/B-72-explore-graph-edges.md
+- B73: backlog/plans/B-73-batch-outcome-signals.md
+- B74: backlog/plans/B-74-valence-sweep-decay.md
+- B75: backlog/plans/B-75-plan-writes-transactional.md
+- B76: backlog/plans/B-76-embedding-dim-validation.md
+- B77: backlog/plans/B-77-explore-graph-set-lookup.md
+- B78: backlog/plans/B-78-plan-dedup-threshold.md
+- B79: backlog/plans/B-79-async-embeddings.md
+- B80: backlog/plans/B-80-step1b-filter-fix.md
+- B81: backlog/plans/B-81-openclaw-alias-audit.md
+- B82: backlog/plans/B-82-openclaw-health-check.md
+- B83: backlog/plans/B-83-explore-graph-truncation-warning.md
+- B84: backlog/plans/B-84-content-embedding-dead-data.md
+- B85: backlog/plans/B-85-gemini-prompt-wording.md
+- B86: backlog/plans/B-86-git-root-workspace-path.md
+- B91: backlog/plans/B-91-passive-graph-preactivation.md
+- B102: backlog/plans/B-102-local-graph-visibility-ui.md
+- B125: backlog/plans/B-125-context-windowed-recall.md
+- B127: backlog/plans/B-127-dag-task-graph-schema.md
+- B128: backlog/plans/B-128-dag-task-graph-tools.md
+- B129: backlog/plans/B-129-task-graph-api-test-alignment.md
+- B160: backlog/plans/B-160-domain-dictionary-preseed.md
+- B191: backlog/plans/B-191-dreaming-consolidation.md
+- B192: backlog/plans/B-192-episodic-memory.md
+- B193: backlog/plans/B-193-metacognition-gaps.md
+- B194: backlog/plans/B-194-procedural-memory.md
+- B195: backlog/plans/B-195-active-context-push.md
+- B196: backlog/plans/B-196-consistency-audit.md
+- B219: backlog/plans/B-219-fix-register-task-graph-kuzu-parser-failure.md
+- B220: backlog/plans/B-220-post-arc-extraction-cleanup.md
+- B221: backlog/plans/B-221-graph-native-wiki-architecture.md
+- B222: backlog/plans/B-222-read-only-markdown-wiki-exporter.md
+- B223: backlog/plans/B-223-persona-isolated-wiki-projections.md
+- B224: backlog/plans/B-224-wiki-projection-drift-guard.md
+- B225: backlog/plans/B-225-arc-artifact-ingestion-into-graph-memory.md
+- B226: backlog/plans/B-226-arc-mechanic-memory-schema-and-publish-tool.md
+- B227: backlog/plans/B-227-arc-mechanic-prior-retrieval.md
+- B228: backlog/plans/B-228-expose-arc-world-model-tools-through-mcp-adapters.md
+- B229: backlog/plans/B-229-ingest-arc-world-model-evaluation-artifacts.md
+- B230: backlog/plans/B-230-packaging-hardening-installed-mode.md
+- B231: backlog/plans/B-231-installer-hardening-one-line-bootstrap.md
+- B232: backlog/plans/B-232-public-release-private-data-audit.md
+- B233: backlog/plans/B-233-non-provisional-strategy-and-public-disclosure-guardrails.md
+- B234: backlog/plans/B-234-universal-sidequests-memory-usage-skill.md
+- B235: backlog/plans/B-235-mcp-memory-decision-helper-tool.md
+- B236: backlog/plans/B-236-public-pypi-pipx-install-path.md
+- B237: backlog/plans/B-237-hosted-one-line-bootstrap-installer.md
+- B238: backlog/plans/B-238-clean-machine-one-click-validation-harness.md
+- B239: backlog/plans/B-239-homebrew-tap-and-macos-native-install-path.md
+- B240: backlog/plans/B-240-one-click-release-gate-and-user-facing-docs.md
+- B241: backlog/plans/B-241-rename-product-to-hippocampy-campy.md
+- B242: backlog/plans/B-242-add-campy-python-import-namespace-shim.md
+- B243: backlog/plans/B-243-move-implementation-package-to-campy.md
+- B244: backlog/plans/B-244-switch-mcp-and-installer-module-paths-to-campy.md
+- B245: backlog/plans/B-245-rename-config-namespace-to-campy-toml.md
+- B246: backlog/plans/B-246-make-campy-memory-primary-skill-namespace.md
+- B247: backlog/plans/B-247-final-legacy-name-audit-and-folder-cleanup.md
+- B248: backlog/plans/B-248-update-arc-agi-consumer-to-hippocampy-campy.md
+- B249: backlog/plans/B-249-dataset-node-tabular-store.md
+- B250: backlog/plans/B-250-tabular-ingestion-pipeline.md
+- B251: backlog/plans/B-251-memory-router-ingestion.md
+- B252: backlog/plans/B-252-bundle-compiler.md
+- B253: backlog/plans/B-253-agent-output-formatters.md
+- B254: backlog/plans/B-254-memory-router-skill.md
+- B255: backlog/plans/B-255-plugin-installation-path.md
+- B256: backlog/plans/B-256-verify-mcp-tool-surface.md
+- B257: backlog/plans/B-257-upgrade-plugin-skills.md
+- B258: backlog/plans/B-258-assertive-triggers-session-start.md
+- B259: backlog/plans/B-259-claude-code-hooks.md
+- B260: backlog/plans/B-260-multi-agent-recall-config.md
+- B261: backlog/plans/B-261-cli-recall-commands.md
+- B262: backlog/plans/B-262-rest-api-endpoints.md
+- B263: backlog/plans/B-263-openclaw-adapter.md
+- B264: backlog/plans/B-264-hermes-adapter.md
+- B265: (none)
+- B266: (none)
+- B267: (none)
+- B268: (none)
+- B269: (none)
+- B270: (none)
+- B271: (none)
+- B272: (none)
+- B273: (none)
+- B274: (none)
+- B275: (none)
+- B276: (none)
+- B277: (none)
+- B278: backlog/plans/B-278-arc-query-tools-for-agent-v2.md
+- B279: backlog/plans/B-279-vector-similarity-calibration.md
+- B280: backlog/plans/B-280-server-side-traversal.md
+- B281: backlog/plans/B-281-engine-exit-strategy.md
+- B282: backlog/plans/B-282-batch-sweep-writes.md
+- B283: backlog/plans/B-283-supernode-monitoring.md
+- B284: backlog/plans/B-284-lexical-scan-hygiene.md
+- B285: backlog/plans/B-285-hnsw-archive-hygiene.md
+- B286: backlog/plans/B-286-node-table-registry.md
+- B287: backlog/plans/B-287-score-fusion.md
+- B288: backlog/plans/B-288-adapter-tool-surface-reconcile.md
+- B292: (none)
+- B292-HANDOFF-2026-07-13: (none)
+- B293: (none)
+- B294: (none)
+- B295: (none)
+- B296: (none)
+- B297: (none)
+- B298: (none)
+- B299: (none)
+- B300: (none)
+- B301: (none)
+- B302: (none)
+- B303: (none)
+- B304: (none)
+- B305: (none)
+- B306: (none)
+- B307: (none)
 
 ## Unmatched Plan Files
 
+- backlog/plans/B-290-continuous-work-state.md
+- backlog/plans/B-291-oss-release-pr-pipeline.md
 - backlog/plans/B-centroid-diversity.md
 - backlog/plans/B-implementation.md
 - backlog/plans/B-install-plan.md
+- backlog/plans/B-junk-filter-v2.md
 - backlog/plans/B-model-eval.md
+- backlog/plans/B-noise-floor-fix.md
 - backlog/plans/B-notebook-update.md
+- backlog/plans/B-openclaw-extension.md
+- backlog/plans/B-streamable-http.md
 - backlog/plans/B37-token-budget.md
-
