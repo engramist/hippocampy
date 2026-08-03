@@ -25,7 +25,7 @@ After both paths:
   from the same message that cleared the noise floor.
 
   MERGE (a)-[r:CO_OCCURS_WITH]->(b)
-  ON CREATE SET r.count = 1, r.strength = $min_conf, r.first_seen = $now
+  ON CREATE SET r.count = 1, r.strength = $min_conf
   ON MATCH  SET r.count = r.count + 1, r.strength = (r.strength + $new_conf) / 2
 
   co_occurrence_threshold (default 10): crossing triggers Hebbian Trigger 2 (M5+).
@@ -257,12 +257,11 @@ async def write_co_occurs_with(concept_ids: list[str], min_confidence: float,
                   (b:Concept {concept_id: pair.b_id})
             MERGE (a)-[r:CO_OCCURS_WITH]->(b)
             ON CREATE SET r.count     = 1,
-                          r.strength  = $strength,
-                          r.first_seen = timestamp($now)
+                          r.strength  = $strength
             ON MATCH SET  r.count    = r.count + 1,
                           r.strength = (r.strength + $strength) / 2.0
             """,
-            {"pairs": pairs_params, "strength": min_confidence, "now": now}
+            {"pairs": pairs_params, "strength": min_confidence}
         )
         written = len(pairs)
     except Exception:
