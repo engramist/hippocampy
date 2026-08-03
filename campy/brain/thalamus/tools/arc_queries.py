@@ -610,7 +610,11 @@ async def arc_record_reward_prediction_error(params: dict, db: KuzuClient, confi
     return {
         "status": "ok",
         "prediction_error": error,
-        "direction": "positive" if error > 0.1 else "negative" if error < -0.1 else "neutral",
+        # Must match the write-trigger thresholds above (0.3), not an
+        # independent threshold — otherwise direction claims a write
+        # happened (e.g. "negative") for error magnitudes that never
+        # actually reach the confidence/falsified_count SET branches.
+        "direction": "positive" if error > 0.3 else "negative" if error < -0.3 else "neutral",
     }
 
 

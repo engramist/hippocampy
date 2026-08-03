@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import shutil
+import tempfile
+
 import pytest
 
 try:
+    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
     from campy.brain.thalamus.tool_schemas import TOOLS
     from campy.brain.thalamus.tools import TOOL_HANDLERS
     KUZU_AVAILABLE = True
@@ -206,3 +210,87 @@ async def test_arc_record_reward_prediction_error_writes_action_fact():
     assert result["direction"] == "positive"
     assert result["prediction_error"] == 0.6
     assert any("prediction_error" in query for query, _ in db.writes)
+
+
+# ---------------------------------------------------------------------------
+# B278 real-Kuzu regression coverage.
+#
+# The MockDB-based test above only exercises the positive-RPE branch and
+# never asserts anything actually persisted — it can't catch a real write
+# silently failing to persist (exactly the class of bug ARC_AGI's A146
+# consumer-side contract test caught in production: falsified_count stayed
+# 0 despite arc_record_reward_prediction_error reporting success). These
+# tests exercise the real Kuzu write/read path end to end.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def arc_db():
+    tmp = tempfile.mkdtemp(prefix="kuzu_arc_queries_")
+    db = KuzuClient(f"{tmp}/db")
+    db.execute(
+        "CREATE NODE TABLE ActionEffect (effect_id STRING, task_id STRING, "
+        "action_id STRING, step INT32, n_cells_changed INT32, "
+        "apparent_effect STRING, created_at TIMESTAMP, PRIMARY KEY (effect_id))"
+    )
+    db.execute(
+        "CREATE NODE TABLE ActionFact (fact_id STRING, task_id STRING, "
+        "action_id STRING, fact_type STRING, confidence DOUBLE, "
+        "value_status STRING, evidence_count INT32, observation_count INT32, "
+        "falsified_count INT32, last_updated TIMESTAMP, PRIMARY KEY (fact_id))"
+    )
+    yield db
+    db.close()
+    shutil.rmtree(tmp, ignore_errors=True)
+
+
+@pytest.mark.asyncio
+async def test_large_negative_rpe_persists_falsified_count(arc_db):
+    """Regression test for the B278 persistence bug (ARC_AGI handoff doc,
+    docs/handoff/B278-graph-evidence.md): a large negative RPE (error < -0.3)
+    must actually increment ActionFact.falsified_count, not just report
+    success. Verified with a real KuzuDB, not a mock."""
+    record_effect = TOOL_HANDLERS["arc_record_action_effect"]
+    record_rpe = TOOL_HANDLERS["arc_record_reward_prediction_error"]
+    get_evidence = TOOL_HANDLERS["arc_get_action_evidence"]
+
+    await record_effect(
+        {"task_id": "t-real", "action_id": "ACTION1", "step": 0, "effect": {}},
+        arc_db, {},
+    )
+    result = await record_rpe(
+        {"task_id": "t-real", "action_id": "ACTION1", "step": 0,
+         "predicted_reward": 1.0, "actual_reward": 0.0},
+        arc_db, {},
+    )
+    assert result["direction"] == "negative"
+
+    evidence = await get_evidence({"task_id": "t-real", "action_id": "ACTION1"}, arc_db, {})
+    assert evidence["falsified_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_moderate_negative_rpe_direction_matches_write_behavior(arc_db):
+    """error in (-0.3, -0.1) currently reports direction="negative" even
+    though the write threshold is -0.3, so no write happens — the caller is
+    told something occurred that didn't. direction must reflect whether a
+    write actually happened, not use an independent threshold."""
+    record_effect = TOOL_HANDLERS["arc_record_action_effect"]
+    record_rpe = TOOL_HANDLERS["arc_record_reward_prediction_error"]
+    get_evidence = TOOL_HANDLERS["arc_get_action_evidence"]
+
+    await record_effect(
+        {"task_id": "t-moderate", "action_id": "ACTION1", "step": 0, "effect": {}},
+        arc_db, {},
+    )
+    # predicted=0.5, actual=0.3 -> error = -0.2 (between -0.3 and -0.1: no write)
+    result = await record_rpe(
+        {"task_id": "t-moderate", "action_id": "ACTION1", "step": 0,
+         "predicted_reward": 0.5, "actual_reward": 0.3},
+        arc_db, {},
+    )
+
+    evidence = await get_evidence({"task_id": "t-moderate", "action_id": "ACTION1"}, arc_db, {})
+    assert evidence["falsified_count"] == 0, "no write should have happened at this error magnitude"
+    assert result["direction"] == "neutral", (
+        "direction must not claim 'negative' when no write occurred"
+    )
