@@ -50,6 +50,33 @@ def test_register_openclaw_missing_config():
         assert success is False
 
 
+def test_register_openclaw_points_at_real_mcp_entrypoint():
+    """The registered MCP server command must be a real, importable module.
+
+    Regression coverage for a real bug found 2026-08-03: register_openclaw()
+    wrote args=["-m", "campy.cli.main", "mcp"] into OpenClaw's config, but
+    "campy.cli.main" has no "mcp" subcommand (`python -m campy.cli.main mcp`
+    -> "No such command 'mcp'."). Every other adapter (Claude Code, VS Code)
+    points at campy.adapters.mcp_server, which is the real stdio entrypoint.
+    """
+    import importlib
+    with tempfile.TemporaryDirectory() as tmpdir:
+        from campy.cli.register_openclaw import register_openclaw
+
+        config_dir = Path(tmpdir)
+        config_file = config_dir / "openclaw.json"
+        config_file.write_text(json.dumps({"mcpServers": {}}))
+
+        assert register_openclaw(str(config_dir)) is True
+
+        updated = json.loads(config_file.read_text())
+        args = updated["mcpServers"]["campy-memory"]["args"]
+        assert args[0] == "-m"
+        module_name = args[1]
+        # Must be importable as a module (this is how "python -m <name>" resolves).
+        importlib.import_module(module_name)
+
+
 def test_openclaw_in_setup_targets():
     """OpenClaw should be available as a setup target."""
     from campy.cli.main import setup
