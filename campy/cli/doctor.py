@@ -332,6 +332,22 @@ class DoctorChecker:
             if clients.get("gemini_cli") or clients.get("gemini-cli"):
                 installed.append("Gemini CLI (config deferred)")
 
+            # Check OpenClaw (B263)
+            if clients.get("openclaw"):
+                import json as _json
+                openclaw_config = Path.home() / ".openclaw" / "openclaw.json"
+                try:
+                    registered = (
+                        openclaw_config.exists()
+                        and "campy-memory" in _json.loads(openclaw_config.read_text()).get("mcpServers", {})
+                    )
+                except Exception:
+                    registered = False
+                if registered:
+                    installed.append("OpenClaw")
+                else:
+                    not_detected.append("OpenClaw")
+
             if installed:
                 message = f"installed: {', '.join(installed)}"
                 if not_detected:
