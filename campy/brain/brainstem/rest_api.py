@@ -34,7 +34,7 @@ def create_router(db=None, config: dict = None):
         if handler is None:
             return {"error": f"Unknown tool: {tool_name}"}
         try:
-            result = await handler(arguments=arguments, db=db, config=config or {})
+            result = await handler(params=arguments, db=db, config=config or {})
             return result
         except Exception as e:
             logger.exception(f"Tool {tool_name} failed")
@@ -114,8 +114,9 @@ def create_router(db=None, config: dict = None):
         return _ok(result)
 
     async def status_endpoint(request: Request) -> JSONResponse:
-        """GET /api/v1/status"""
-        result = await _call_tool("context_status", {})
+        """GET /api/v1/status?session_id=<id>"""
+        session_id = request.query_params.get("session_id", "rest-api")
+        result = await _call_tool("context_status", {"session_id": session_id})
         if "error" in result:
             return _err(result["error"], 500)
         return _ok(result)

@@ -34,9 +34,14 @@ def register_openclaw(adapter_path: str = None) -> bool:
         config["mcpServers"] = {}
     
     # Add campy-memory MCP server entry
+    # NOTE: "campy.cli.main mcp" is not a real subcommand (verified 2026-08-03:
+    # `python -m campy.cli.main mcp` -> "No such command 'mcp'."). The real
+    # stdio MCP entrypoint, used consistently by every other adapter
+    # (register_claude_code, register_vscode, etc. in campy/cli/register.py),
+    # is campy.adapters.mcp_server.
     config["mcpServers"]["campy-memory"] = {
         "command": "python",
-        "args": ["-m", "campy.cli.main", "mcp"],
+        "args": ["-m", "campy.adapters.mcp_server"],
         "description": "Campy memory recall and decision routing"
     }
     
