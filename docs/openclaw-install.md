@@ -245,7 +245,7 @@ openclaw plugins doctor
 Notes:
 
 - Plugin manifest ID: `hippocampy`
-- Package name in the repo is aligned with the manifest: `@sidequests/hippocampy`
+- Package name in the repo is aligned with the manifest: `hippocampy`
 - The plugin defaults to Brain URL `http://127.0.0.1:7799`
 
 ---
@@ -323,10 +323,10 @@ The plugin registers a `before_agent_start` hook that prepends a memory block wh
 formatted like:
 
 ```text
-<sidequests-memory>
+<campy-memory>
 [Decision] ...
 [Constraint] ...
-</sidequests-memory>
+</campy-memory>
 ```
 
 ---
