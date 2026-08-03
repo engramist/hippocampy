@@ -65,6 +65,7 @@
 | 50 | `ingest_arc_artifacts` | Ingestion | Agent / CLI | Yes | No |
 | 51 | `memory_decision` | Recall Policy | Agent | Yes | No |
 | 52 | `ask` | Augmented Inference | Agent / Human CLI | Yes (LLM call) | Yes |
+| 53 | `register_artifact` | Provenance (CWS) | Agent | Yes | No |
 
 ---
 
