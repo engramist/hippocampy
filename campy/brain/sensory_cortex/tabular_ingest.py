@@ -191,8 +191,16 @@ async def _ingest_single_dataset(
         "last_accessed_at": now,
     }
 
-    # Prepare Cypher for Dataset node creation
-    properties = ", ".join(f"{k}: ${k}" for k in dataset_dict.keys())
+    # Prepare Cypher for Dataset node creation.
+    # created_at/last_accessed_at are TIMESTAMP columns; Kuzu does not
+    # implicitly cast a STRING parameter to TIMESTAMP, so those two
+    # properties must be wrapped in timestamp(), matching the pattern
+    # already used in ingest.py's Document node creation (B250 bugfix).
+    _timestamp_props = {"created_at", "last_accessed_at"}
+    properties = ", ".join(
+        f"{k}: timestamp(${k})" if k in _timestamp_props else f"{k}: ${k}"
+        for k in dataset_dict.keys()
+    )
     cypher = f"CREATE (d:Dataset {{{properties}}})"
     
     try:
