@@ -8,6 +8,40 @@ Related card: B235 - MCP Memory Decision Helper Tool
 
 from typing import Optional
 
+# B254: mirrors the _TOKEN_LIMIT constant each adapter already declares
+# (adapters/*/adapter.py, B18) - kept here as a separate copy rather than
+# imported, since campy/brain/ must not depend on adapters/ (adapters wrap
+# campy, not the other way around; see docs/ecosystem-rules.md). If an
+# adapter's _TOKEN_LIMIT changes, update the matching entry here too.
+_CLIENT_CONTEXT_WINDOWS = {
+    "claude_code": 128000,
+    "codex": 128000,
+    "chatgpt_desktop": 128000,
+    "claude_desktop": 200000,
+    "gemini_cli": 1000000,
+}
+
+_DEFAULT_BUNDLE_TOKEN_BUDGET = 32000  # matches the 128k-class adapters' share below
+_MAX_BUNDLE_TOKEN_BUDGET = 128000  # a memory bundle this large is already excessive
+_BUNDLE_SHARE_OF_WINDOW = 0.25  # a bundle shouldn't crowd out the rest of the context
+
+
+def _token_budget_for_client(client_name: Optional[str]) -> int:
+    """Suggested compile_context token_budget, scaled to the requesting
+    agent's context window - a quarter of the window, capped at
+    _MAX_BUNDLE_TOKEN_BUDGET so a huge-context client (e.g. gemini_cli's
+    1M-token window) doesn't get a quarter-million-token bundle
+    recommendation. Falls back to the pre-B254 default for no/unknown
+    client_name so existing callers see unchanged behavior.
+    """
+    if not client_name:
+        return _DEFAULT_BUNDLE_TOKEN_BUDGET
+    normalized = client_name.strip().lower().replace("-", "_")
+    window = _CLIENT_CONTEXT_WINDOWS.get(normalized)
+    if window is None:
+        return _DEFAULT_BUNDLE_TOKEN_BUDGET
+    return min(int(window * _BUNDLE_SHARE_OF_WINDOW), _MAX_BUNDLE_TOKEN_BUDGET)
+
 
 def decide_memory_action(
     user_prompt: str,
@@ -64,7 +98,7 @@ def decide_memory_action(
             "context_budget": "moderate",
             "anti_bloat_guidance": "Bundle is pre-compressed to token budget. Inject directly, do not re-summarize.",
             "suggested_params": {
-                "token_budget": 32000,
+                "token_budget": _token_budget_for_client(client_name),
                 "include_tabular": True,
                 "output_format": "claude_code",
             },

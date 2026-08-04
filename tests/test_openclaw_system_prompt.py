@@ -32,6 +32,18 @@ async def test_build_openclaw_prompt_basic():
     assert "notify_turn" not in prompt
 
 @pytest.mark.asyncio
+async def test_build_openclaw_prompt_mentions_compile_context():
+    """B254: the Layer 2 onboarding prompt never mentioned compile_context
+    (or any bundle-related tool) despite it being a real, directly-registered
+    OpenClaw tool (extensions/hippocampy/src/index.ts) - agents onboarding
+    via OpenClaw had no way to learn it exists from this prompt."""
+    session_id = "test-session"
+
+    prompt = await build_openclaw_prompt(session_id, onboarded=False)
+    assert "compile_context" in prompt
+
+
+@pytest.mark.asyncio
 async def test_build_openclaw_prompt_with_quest():
     """Verify prompt with specific quest info."""
     session_id = "test-session"
