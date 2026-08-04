@@ -253,6 +253,82 @@ class TestDeregisterOpenclaw:
         result = U._deregister_openclaw()
         assert result.done
 
+    def test_gateway_restart_timeout_does_not_crash(self, tmp_path, monkeypatch):
+        """B276: a hung `openclaw gateway restart` previously raised an
+        unhandled subprocess.TimeoutExpired that crashed the entire
+        uninstall after Step 2/4, before data or package removal ran."""
+        monkeypatch.setattr(U, "_OPENCLAW_CONFIG_PATH", tmp_path / "nonexistent.json")
+        monkeypatch.setattr("shutil.which", lambda name: "/usr/local/bin/openclaw")
+
+        def fake_run(cmd, **kwargs):
+            if cmd[1:] == ["plugins", "remove", "hippocampy"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            if cmd[1:] == ["gateway", "restart"]:
+                raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout", 15))
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        result = U._deregister_openclaw()  # must not raise
+
+        assert isinstance(result, U._R)
+        assert result.name == "OpenClaw"
+
+    def test_plugin_remove_timeout_does_not_crash(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(U, "_OPENCLAW_CONFIG_PATH", tmp_path / "nonexistent.json")
+        monkeypatch.setattr("shutil.which", lambda name: "/usr/local/bin/openclaw")
+
+        def fake_run(cmd, **kwargs):
+            if cmd[1:] == ["plugins", "remove", "hippocampy"]:
+                raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout", 15))
+            if cmd[1:] == ["gateway", "restart"]:
+                # Best-effort step still attempted after the plugin-remove
+                # timeout above - not this test's concern, just needs to
+                # not blow up the fake.
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        result = U._deregister_openclaw()  # must not raise
+
+        assert isinstance(result, U._R)
+        assert result.name == "OpenClaw"
+
+    def test_openclaw_binary_missing_from_path_mid_run(self, tmp_path, monkeypatch):
+        """A binary that disappears/becomes unexecutable between shutil.which
+        and subprocess.run (OSError, e.g. FileNotFoundError/PermissionError)
+        must be handled the same way as a timeout."""
+        monkeypatch.setattr(U, "_OPENCLAW_CONFIG_PATH", tmp_path / "nonexistent.json")
+        monkeypatch.setattr("shutil.which", lambda name: "/usr/local/bin/openclaw")
+
+        def fake_run(cmd, **kwargs):
+            raise FileNotFoundError("binary vanished")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        result = U._deregister_openclaw()  # must not raise
+
+        assert isinstance(result, U._R)
+
+
+class TestDeregisterClaudeCode:
+    def test_claude_mcp_remove_timeout_does_not_crash(self, tmp_path, monkeypatch):
+        """B276: the same unguarded subprocess.run pattern found in
+        _deregister_openclaw also exists here - fix it the same way."""
+        monkeypatch.setattr("shutil.which", lambda name: "/usr/local/bin/claude" if name == "claude" else None)
+        monkeypatch.chdir(tmp_path)
+
+        def fake_run(cmd, **kwargs):
+            raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout", 10))
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        result = U._deregister_claude_code()  # must not raise
+
+        assert isinstance(result, U._R)
+        assert result.name == "Claude Code"
+
 
 # ---------------------------------------------------------------------------
 # Database removal
@@ -481,3 +557,31 @@ class TestIdempotency:
 
         # Should not raise
         U.run_uninstall(keep_data=True, remove_ollama_model=False)
+
+    def test_hung_openclaw_gateway_does_not_abort_the_whole_uninstall(self, tmp_path, monkeypatch, capsys):
+        """B276 end-to-end: reproduces the exact audit scenario - a real
+        openclaw binary on PATH whose `gateway restart` hangs/times out.
+        Before the fix this raised an unhandled TimeoutExpired that
+        propagated out of run_uninstall(), aborting after Step 2/4 -
+        Step 3 (data removal) and Step 4 (package removal) never ran."""
+        monkeypatch.setattr(U, "SIDEQUESTS_HOME", tmp_path / ".sidequests")
+        monkeypatch.setattr(U, "DB_PATH", tmp_path / "brain.db")
+        monkeypatch.setattr(U, "_OPENCLAW_CONFIG_PATH", tmp_path / "openclaw.json")
+
+        def fake_which(name):
+            return f"/usr/local/bin/{name}" if name == "openclaw" else None
+
+        def fake_run(cmd, **kwargs):
+            if cmd and cmd[0] == "/usr/local/bin/openclaw" and cmd[1:] == ["gateway", "restart"]:
+                raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout", 15))
+            return MagicMock(returncode=0, stderr="", stdout="")
+
+        monkeypatch.setattr("shutil.which", fake_which)
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        # Should not raise - and should reach the final package-removal step.
+        U.run_uninstall(keep_data=True, remove_ollama_model=False)
+
+        output = capsys.readouterr().out
+        assert "Step 4/4" in output, "uninstall aborted before reaching Step 4/4"
+        assert "Removing Python package" in output, "uninstall aborted before the final package-removal step"
