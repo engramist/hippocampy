@@ -319,8 +319,10 @@ async def ingest_document(db, file_path: str, config: dict,
     mime_type    = MIME_MAP.get(resolved.suffix.lower(), "text/plain")
     title        = resolved.name
 
-    # B250 — Dispatch to tabular ingestion for spreadsheet/CSV files
-    TABULAR_EXTENSIONS = {".csv", ".xlsx", ".tsv", ".xls"}
+    # B250 — Dispatch to tabular ingestion for spreadsheet/CSV files.
+    # B251: extension set now imported from memory_router (single source of
+    # truth for classification) instead of being redefined here.
+    from campy.brain.temporal_lobe.memory_router import TABULAR_EXTENSIONS
     if resolved.suffix.lower() in TABULAR_EXTENSIONS:
         # Delegate to tabular ingestion pipeline
         from campy.brain.sensory_cortex import tabular_ingest

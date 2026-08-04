@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from ._shared import get_loop_queue
@@ -9,6 +10,8 @@ from .capture import notify_turn
 
 if TYPE_CHECKING:
     from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+
+_logger = logging.getLogger(__name__)
 
 
 
@@ -55,11 +58,13 @@ async def ingest_data(params: dict, db, config: dict) -> dict:
         return {"error": "file_path or content is required"}
 
     route = classify_input(content=content, file_path=file_path, mime_type=mime_type)
+    _logger.info(
+        "ingest_data classified input as storage_type=%s confidence=%.2f suggested_tool=%s (%s)",
+        route.storage_type, route.confidence, route.suggested_tool, route.reason,
+    )
 
-    if file_path:
-        result = await ingest_document({"file_path": file_path, "quest_id": quest_id}, db, config)
-    else:
-        result = await notify_turn(
+    async def _record_turn() -> dict:
+        return await notify_turn(
             {
                 "role": params.get("role", "user"),
                 "content": content or "",
@@ -68,6 +73,26 @@ async def ingest_data(params: dict, db, config: dict) -> dict:
             db,
             config,
         )
+
+    if file_path:
+        result = await ingest_document({"file_path": file_path, "quest_id": quest_id}, db, config)
+    elif route.storage_type in ("tabular", "graph+tabular"):
+        # B251: classify_input() can recommend the tabular path for pasted
+        # content (no file_path) - route it there instead of silently
+        # falling through to notify_turn regardless of the classification.
+        # "graph+tabular" is a dual-write: the conversational turn is
+        # still recorded alongside the tabular data.
+        from campy.brain.sensory_cortex.tabular_ingest import ingest_tabular_from_content
+
+        tabular_result = await ingest_tabular_from_content(
+            db, content or "", config, get_loop_queue(), quest_id
+        )
+        if route.storage_type == "graph+tabular":
+            result = {"tabular": tabular_result, "graph": await _record_turn()}
+        else:
+            result = {"tabular": tabular_result}
+    else:
+        result = await _record_turn()
 
     return {
         "route": {
