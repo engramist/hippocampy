@@ -84,6 +84,42 @@ async def test_rebuild_respects_disable_flag() -> None:
     assert db.rebuild_calls == []
 
 
+@pytest.mark.asyncio
+async def test_threshold_crossing_logs_warning_even_though_rebuild_stays_disabled(caplog) -> None:
+    """B285: rebuild is intentionally disabled (Path B - physically moving
+    archived rows to a non-indexed table - was ruled out of scope by the
+    plan without a dedicated architecture decision). But a table crossing
+    the threshold should not accumulate staleness *silently* - the sweep
+    must at least log it so an operator can see it."""
+    import logging
+    db = _MockDB({"Concept": [[False, 1], [True, 9]]})
+
+    with caplog.at_level(logging.WARNING, logger="campy.brain.brainstem.sweep"):
+        report = await _index_hygiene(
+            db,
+            {"sweep": {"index_rebuild_archived_ratio": 0.5, "index_rebuild_enabled": True}},
+        )
+
+    assert report["Concept"]["rebuilt"] is False
+    assert db.rebuild_calls == []
+    warnings = [r.getMessage() for r in caplog.records]
+    assert any("Concept" in w and "0.9" in w for w in warnings)
+
+
+@pytest.mark.asyncio
+async def test_below_threshold_does_not_log_warning(caplog) -> None:
+    import logging
+    db = _MockDB({"Concept": [[False, 9], [True, 1]]})
+
+    with caplog.at_level(logging.WARNING, logger="campy.brain.brainstem.sweep"):
+        await _index_hygiene(
+            db,
+            {"sweep": {"index_rebuild_archived_ratio": 0.5, "index_rebuild_enabled": True}},
+        )
+
+    assert caplog.records == []
+
+
 def test_temp_db_search_returns_active_top4() -> None:
     tmp = tempfile.mkdtemp(prefix="hnsw_hygiene_")
     try:

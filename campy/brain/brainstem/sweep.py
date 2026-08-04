@@ -674,6 +674,18 @@ async def _index_hygiene(db, config: dict) -> dict:
             "rebuilt": False,
         }
 
+        if enabled and ratio >= threshold:
+            # Rebuild is intentionally disabled (see module docstring above) -
+            # but staleness must not accumulate silently. Log it so it's
+            # visible to an operator even though no action is taken.
+            _logger.warning(
+                "[IndexHygiene] %s archived_ratio=%.2f >= threshold=%.2f — "
+                "rebuild is disabled by design (Path B archive-move not yet "
+                "implemented, see backlog/B285.md); index staleness for this "
+                "table is accumulating",
+                table, ratio, threshold,
+            )
+
     return report
 
 
