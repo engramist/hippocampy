@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fakecampy"
+version = "0.1.0"
+requires-python = ">=3.9"
+description = "Minimal stand-in for the campy CLI entry point, used only by tests/test_bootstrap_installer_real.py to exercise scripts/bootstrap.sh's pipx install/verify path without pulling in hippocampy's real dependencies."
+
+[project.scripts]
+campy = "fakecampy:main"
+
+[tool.setuptools]
+packages = ["fakecampy"]

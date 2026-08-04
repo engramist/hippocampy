@@ -53,6 +53,23 @@ campy start                 # start the memory daemon
 <details>
 <summary>Alternative install methods</summary>
 
+**One-line bootstrap** (no local checkout needed — checks for a supported
+Python, installs via `pipx`/`uv tool`/a managed venv, registers detected
+agents, and starts the daemon. Inspect before running, since this installs a
+daemon that reads your AI conversations):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/engramist/hippocampy/main/scripts/bootstrap.sh | bash
+```
+
+Inspect first:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/engramist/hippocampy/main/scripts/bootstrap.sh -o /tmp/campy-bootstrap.sh
+bash /tmp/campy-bootstrap.sh --dry-run
+bash /tmp/campy-bootstrap.sh
+```
+
 **Install script** (inspect before running, since this installs a daemon that
 reads your AI conversations):
 
