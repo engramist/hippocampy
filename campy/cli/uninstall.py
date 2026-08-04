@@ -394,15 +394,20 @@ def _deregister_claude_code() -> _R:
     """Remove the Claude Code adapter registration."""
     changed = False
 
-    # 1. Try `claude mcp remove` if claude CLI is available
+    # 1. Try `claude mcp remove` if claude CLI is available. B276: a hung
+    # or slow `claude` CLI must not crash the whole uninstall - the JSON/
+    # file-based cleanup below is the real fallback and should still run.
     claude_bin = shutil.which("claude")
     if claude_bin:
-        result = subprocess.run(
-            [claude_bin, "mcp", "remove", "hippocampy", "--scope", "user"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if result.returncode == 0:
-            changed = True
+        try:
+            result = subprocess.run(
+                [claude_bin, "mcp", "remove", "hippocampy", "--scope", "user"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                changed = True
+        except (subprocess.TimeoutExpired, OSError):
+            pass
 
     # 2. Also clean up ~/.claude.json (may have been written directly).
     if _remove_mcp_json_entry(Path.home() / ".claude.json"):
@@ -570,21 +575,36 @@ def _deregister_openclaw() -> _R:
         if changed:
             _OPENCLAW_CONFIG_PATH.write_text(json.dumps(config, indent=2))
 
-    # 2. Remove the plugin
+    # 2. Remove the plugin. B276: a hung or missing openclaw gateway must
+    # not crash the whole uninstall - this previously raised an unhandled
+    # subprocess.TimeoutExpired that propagated out of run_uninstall(),
+    # aborting after this step and skipping data/package removal entirely.
+    # The config patches above (step 1) are already applied and saved
+    # regardless of what happens here.
+    warning = None
     if openclaw_bin:
-        result = subprocess.run(
-            [openclaw_bin, "plugins", "remove", "hippocampy"],
-            capture_output=True, text=True, timeout=15,
-        )
-        if result.returncode == 0:
-            changed = True
+        try:
+            result = subprocess.run(
+                [openclaw_bin, "plugins", "remove", "hippocampy"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0:
+                changed = True
+        except (subprocess.TimeoutExpired, OSError) as e:
+            warning = f"plugin removal via openclaw CLI failed ({e}); config patches were still applied"
 
-        # 3. Restart gateway to pick up changes
-        subprocess.run(
-            [openclaw_bin, "gateway", "restart"],
-            capture_output=True, text=True, timeout=15,
-        )
+        # 3. Restart gateway to pick up changes - best effort.
+        try:
+            subprocess.run(
+                [openclaw_bin, "gateway", "restart"],
+                capture_output=True, text=True, timeout=15,
+            )
+        except (subprocess.TimeoutExpired, OSError) as e:
+            if warning is None:
+                warning = f"gateway restart failed ({e}); restart it manually to pick up the change"
 
+    if warning:
+        return _R("OpenClaw", changed, warning)
     if changed:
         return _R("OpenClaw", True, "plugin removed, config patched, gateway restarted")
     return _R("OpenClaw", True, "not registered (skipped)")
@@ -647,6 +667,27 @@ def _remove_ollama_model(model: str = "qwen2.5:3b") -> _R:
 
 
 # ---------------------------------------------------------------------------
+# Safety net
+# ---------------------------------------------------------------------------
+
+def _safe_call(name: str, fn) -> _R:
+    """Run one uninstall step, converting any unexpected exception into a
+    failed _R instead of letting it crash the rest of the uninstall.
+
+    B276: _deregister_openclaw()/_deregister_claude_code() had specific
+    unguarded subprocess calls fixed directly, but this is the general
+    backstop - any *future* integration step with a similar gap should
+    degrade to "this step failed" rather than aborting Step 3 (data
+    removal) and Step 4 (package removal), which is the actual harm: an
+    uninstall that crashes partway through leaves things half-removed.
+    """
+    try:
+        return fn()
+    except Exception as e:  # noqa: BLE001 - intentional catch-all backstop
+        return _R(name, False, f"unexpected error: {e}")
+
+
+# ---------------------------------------------------------------------------
 # Report
 # ---------------------------------------------------------------------------
 
@@ -683,27 +724,27 @@ def run_uninstall(
 
     # ── Step 1: Stop daemon service ──────────────────────────────────────
     click.echo("Step 1/4: Stopping Brain Daemon service...")
-    results.append(_stop_daemon())
+    results.append(_safe_call("Daemon", _stop_daemon))
 
     # ── Step 2: Deregister all AI client adapters ─────────────────────────
     click.echo("\nStep 2/4: Removing adapter registrations...")
-    results.append(_deregister_claude_code())
-    results.append(_deregister_claude_desktop())
-    results.append(_deregister_codex())
-    results.append(_deregister_gemini_cli())
-    results.append(_deregister_openclaw())
+    results.append(_safe_call("Claude Code", _deregister_claude_code))
+    results.append(_safe_call("Claude Desktop", _deregister_claude_desktop))
+    results.append(_safe_call("Codex", _deregister_codex))
+    results.append(_safe_call("Gemini CLI", _deregister_gemini_cli))
+    results.append(_safe_call("OpenClaw", _deregister_openclaw))
 
     # ── Step 3: Data / config removal ─────────────────────────────────────
     click.echo("\nStep 3/4: Data and config removal...")
     if keep_data:
         results.append(_R("Brain data", True, f"kept at {SIDEQUESTS_HOME}"))
     else:
-        results.append(_remove_campy_home(keep_data=False))
+        results.append(_safe_call("Brain data", lambda: _remove_campy_home(keep_data=False)))
 
     # ── Step 4: Optional Ollama model removal ─────────────────────────────
     click.echo("\nStep 4/4: Optional Ollama model removal...")
     if remove_ollama_model:
-        results.append(_remove_ollama_model(ollama_model))
+        results.append(_safe_call(f"Ollama model ({ollama_model})", lambda: _remove_ollama_model(ollama_model)))
     else:
         results.append(
             _R(f"Ollama model ({ollama_model})", True, "kept (use --remove-ollama-model to delete)")
