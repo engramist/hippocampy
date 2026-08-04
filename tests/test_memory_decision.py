@@ -429,6 +429,60 @@ class TestMemoryDecisionCompileContext:
         assert result["recommended_tool"] == "current_truth"
 
 
+class TestMemoryDecisionTokenBudgetByClient:
+    """B254: token_budget should vary by the requesting agent's context
+    window, using the same _TOKEN_LIMIT values already established per
+    adapter (adapters/*/adapter.py) rather than a single hardcoded 32000
+    regardless of which client is asking."""
+
+    def test_no_client_name_keeps_default_budget(self):
+        result = decide_memory_action("Everything about Project X")
+        assert result["suggested_params"]["token_budget"] == 32000
+
+    def test_unknown_client_name_falls_back_to_default_budget(self):
+        result = decide_memory_action("Everything about Project X", client_name="some-unknown-client")
+        assert result["suggested_params"]["token_budget"] == 32000
+
+    def test_claude_code_uses_128k_class_budget(self):
+        """claude_code adapter's _TOKEN_LIMIT is 128000."""
+        result = decide_memory_action("Everything about Project X", client_name="claude_code")
+        assert result["suggested_params"]["token_budget"] == 32000
+
+    def test_claude_desktop_gets_a_larger_budget_than_claude_code(self):
+        """claude_desktop adapter's _TOKEN_LIMIT is 200000, larger than
+        claude_code/codex's 128000 - the recommendation should reflect that,
+        not use one fixed number for every client."""
+        code_result = decide_memory_action("Everything about Project X", client_name="claude_code")
+        desktop_result = decide_memory_action("Everything about Project X", client_name="claude_desktop")
+        assert desktop_result["suggested_params"]["token_budget"] > code_result["suggested_params"]["token_budget"]
+
+    def test_gemini_cli_huge_window_is_capped_not_unbounded(self):
+        """gemini_cli's _TOKEN_LIMIT is 1,000,000 - the suggested memory
+        bundle budget should be capped at a sane ceiling, not scale
+        linearly to a quarter-million-token bundle."""
+        result = decide_memory_action("Everything about Project X", client_name="gemini_cli")
+        budget = result["suggested_params"]["token_budget"]
+        assert budget > 32000
+        assert budget <= 128000
+
+    def test_client_name_matching_is_case_and_separator_insensitive(self):
+        """Callers may pass 'claude-desktop' (hyphenated, per this
+        function's own docstring example) or 'Claude_Desktop' - both must
+        resolve to the same adapter entry as 'claude_desktop'."""
+        underscore = decide_memory_action("Everything about Project X", client_name="claude_desktop")
+        hyphen = decide_memory_action("Everything about Project X", client_name="claude-desktop")
+        mixed_case = decide_memory_action("Everything about Project X", client_name="Claude-Desktop")
+        assert underscore["suggested_params"]["token_budget"] == hyphen["suggested_params"]["token_budget"]
+        assert underscore["suggested_params"]["token_budget"] == mixed_case["suggested_params"]["token_budget"]
+
+    def test_token_budget_always_positive_int(self):
+        for client in (None, "codex", "gemini_cli", "claude_desktop", "chatgpt_desktop", "unknown"):
+            result = decide_memory_action("Everything about Project X", client_name=client)
+            budget = result["suggested_params"]["token_budget"]
+            assert isinstance(budget, int)
+            assert budget > 0
+
+
 class TestMemoryDecisionPrecedence:
     """Test precedence handling when multiple patterns match."""
     
