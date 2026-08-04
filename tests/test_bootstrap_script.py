@@ -77,6 +77,16 @@ def test_bootstrap_script_calls_doctor():
     assert "campy doctor" in content
 
 
+def test_readme_documents_the_one_line_bootstrap_command():
+    """B237: docs/homebrew-install.md already links to 'the main README
+    Quickstart and scripts/bootstrap.sh' for the one-liner, but the README
+    never actually got it - that cross-reference was silently broken."""
+    content = Path("README.md").read_text()
+    assert "curl -fsSL" in content
+    assert "scripts/bootstrap.sh" in content
+    assert "--dry-run" in content  # safer inspect-first variant
+
+
 def test_bootstrap_dry_run_does_not_install():
     """--dry-run should not actually install anything."""
     result = subprocess.run(

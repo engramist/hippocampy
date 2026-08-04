@@ -120,6 +120,13 @@ fi
 # -------------------------------------------------------------------------
 log "Step 3: Installing HippoCampy package..."
 
+# B237: which bin directory Step 4 should check depends on which branch
+# below actually ran - pipx and uv each install into their OWN isolated bin
+# dir (usually ~/.local/bin, but resolved properly rather than assumed),
+# never $CAMPY_VENV_DIR. Populated by every branch so Step 4 has a single,
+# correct place to look regardless of which install method was used.
+INSTALL_BIN_DIR=""
+
 if [ -n "$DEV_SOURCE" ]; then
     # Development mode: install from local source
     log "  Installing from local source: $DEV_SOURCE"
@@ -128,10 +135,13 @@ if [ -n "$DEV_SOURCE" ]; then
     else
         if command -v pipx &>/dev/null; then
             pipx install "$DEV_SOURCE" --force --python "$PYTHON_CMD"
+            INSTALL_BIN_DIR="$(pipx environment --value PIPX_BIN_DIR 2>/dev/null || echo "$HOME/.local/bin")"
+            pipx ensurepath --quiet 2>/dev/null || true
         else
             "$PYTHON_CMD" -m venv "$CAMPY_VENV_DIR"
             "$CAMPY_VENV_DIR/bin/pip" install -U pip
             "$CAMPY_VENV_DIR/bin/pip" install "$DEV_SOURCE"
+            INSTALL_BIN_DIR="$CAMPY_VENV_DIR/bin"
         fi
         ok "Installed from local source"
     fi
@@ -146,6 +156,12 @@ elif command -v pipx &>/dev/null; then
             warn "PyPI package not found, installing from GitHub..."
             pipx install "git+https://github.com/engramist/hippocampy.git" --force --python "$PYTHON_CMD"
         }
+        INSTALL_BIN_DIR="$(pipx environment --value PIPX_BIN_DIR 2>/dev/null || echo "$HOME/.local/bin")"
+        # Persist the PATH fix for future shells too, not just this run -
+        # pipx's own post-install message tells the user to do exactly
+        # this; do it for them rather than leaving Step 4 to paper over it
+        # every single run.
+        pipx ensurepath --quiet 2>/dev/null || true
         ok "Installed via pipx"
     fi
 elif command -v uv &>/dev/null; then
@@ -158,6 +174,8 @@ elif command -v uv &>/dev/null; then
             warn "PyPI package not found, installing from GitHub..."
             uv tool install "git+https://github.com/engramist/hippocampy.git"
         }
+        INSTALL_BIN_DIR="$(uv tool dir --bin 2>/dev/null || echo "$HOME/.local/bin")"
+        uv tool update-shell &>/dev/null || true
         ok "Installed via uv"
     fi
 else
@@ -172,6 +190,7 @@ else
             warn "PyPI package not found, installing from GitHub..."
             "$CAMPY_VENV_DIR/bin/pip" install "git+https://github.com/engramist/hippocampy.git"
         }
+        INSTALL_BIN_DIR="$CAMPY_VENV_DIR/bin"
         # Add to PATH hint
         ok "Installed to $CAMPY_VENV_DIR"
         warn "Add to your PATH: export PATH=\"$CAMPY_VENV_DIR/bin:\$PATH\""
@@ -187,12 +206,13 @@ if $DRY_RUN; then
 else
     if command -v campy &>/dev/null; then
         ok "campy CLI found: $(which campy)"
-    elif [ -f "$CAMPY_VENV_DIR/bin/campy" ]; then
-        export PATH="$CAMPY_VENV_DIR/bin:$PATH"
-        ok "campy CLI found at $CAMPY_VENV_DIR/bin/campy"
+    elif [ -n "$INSTALL_BIN_DIR" ] && [ -f "$INSTALL_BIN_DIR/campy" ]; then
+        export PATH="$INSTALL_BIN_DIR:$PATH"
+        ok "campy CLI found at $INSTALL_BIN_DIR/campy"
+        warn "Add to your PATH for future shells: export PATH=\"$INSTALL_BIN_DIR:\$PATH\""
     else
         err "campy CLI not found in PATH after install"
-        err "Try: export PATH=\"$CAMPY_VENV_DIR/bin:\$PATH\""
+        err "Try: export PATH=\"${INSTALL_BIN_DIR:-$CAMPY_VENV_DIR/bin}:\$PATH\""
         exit 1
     fi
 fi
