@@ -121,6 +121,34 @@ if $USE_TEMP_HOME; then
     export HOME="$TEMP_HOME"
     echo "  Using temp HOME: $TEMP_HOME"
 
+    # B238: isolating HOME alone is not enough to simulate a clean machine
+    # - a pre-existing campy anywhere on the invoking shell's PATH (e.g. a
+    # stale prior install) would silently shadow whatever this run just
+    # installed, and the harness would report success while verifying the
+    # WRONG binary. Confirmed empirically: this exact scenario produced
+    # "6 passed, 0 failed" while every check ran against a stale install.
+    # Strip PATH down to just enough for bash/python/pipx/uv to work.
+    ORIGINAL_PATH="$PATH"
+    ISOLATED_PATH=""
+    for tool in python3.13 python3.12 python3 pipx uv bash uname mktemp cat; do
+        tool_path="$(PATH="$ORIGINAL_PATH" command -v "$tool" 2>/dev/null || true)"
+        if [ -n "$tool_path" ]; then
+            tool_dir="$(dirname "$tool_path")"
+            case ":$ISOLATED_PATH:" in
+                *":$tool_dir:"*) ;;
+                *) ISOLATED_PATH="${ISOLATED_PATH:+$ISOLATED_PATH:}$tool_dir" ;;
+            esac
+        fi
+    done
+    for base in /usr/bin /bin /usr/sbin /sbin; do
+        case ":$ISOLATED_PATH:" in
+            *":$base:"*) ;;
+            *) ISOLATED_PATH="${ISOLATED_PATH:+$ISOLATED_PATH:}$base" ;;
+        esac
+    done
+    export PATH="$ISOLATED_PATH"
+    echo "  Using isolated PATH: $PATH"
+
     # 4. Run bootstrap with dev source or package
     BOOTSTRAP_ARGS="--no-start"
     if [ -n "$PACKAGE_PATH" ]; then
@@ -135,11 +163,36 @@ if $USE_TEMP_HOME; then
         check "bootstrap install (temp HOME)" "fail"
     fi
 
-    # 5. Verify campy CLI
-    if command -v campy &>/dev/null || [ -f "$TEMP_HOME/.campy/venv/bin/campy" ]; then
+    # 5. Verify campy CLI - resolve the real bin dir for whichever install
+    # method bootstrap.sh actually used (pipx, uv, or managed venv), same
+    # fix as B237's bootstrap.sh Step 4. bootstrap.sh's own internal
+    # `export PATH=...` only affects its own subprocess, not this parent
+    # shell, so this harness must independently re-resolve it.
+    CAMPY_BIN_DIR=""
+    if command -v pipx &>/dev/null; then
+        pipx_bin="$(pipx environment --value PIPX_BIN_DIR 2>/dev/null || true)"
+        if [ -n "$pipx_bin" ] && [ -f "$pipx_bin/campy" ]; then
+            CAMPY_BIN_DIR="$pipx_bin"
+        fi
+    fi
+    if [ -z "$CAMPY_BIN_DIR" ] && command -v uv &>/dev/null; then
+        uv_bin="$(uv tool dir --bin 2>/dev/null || true)"
+        if [ -n "$uv_bin" ] && [ -f "$uv_bin/campy" ]; then
+            CAMPY_BIN_DIR="$uv_bin"
+        fi
+    fi
+    if [ -z "$CAMPY_BIN_DIR" ] && [ -f "$TEMP_HOME/.local/bin/campy" ]; then
+        CAMPY_BIN_DIR="$TEMP_HOME/.local/bin"
+    fi
+    if [ -z "$CAMPY_BIN_DIR" ] && [ -f "$TEMP_HOME/.campy/venv/bin/campy" ]; then
+        CAMPY_BIN_DIR="$TEMP_HOME/.campy/venv/bin"
+    fi
+    if [ -n "$CAMPY_BIN_DIR" ]; then
+        export PATH="$CAMPY_BIN_DIR:$PATH"
+    fi
+
+    if command -v campy &>/dev/null; then
         check "campy CLI available" "pass"
-        # Ensure it's in PATH
-        export PATH="$TEMP_HOME/.campy/venv/bin:$PATH"
     else
         check "campy CLI available" "fail"
     fi
@@ -151,7 +204,17 @@ if $USE_TEMP_HOME; then
         check "campy doctor" "fail"
     fi
 
-    # 7-8. Daemon checks
+    # 7. Tool list includes core tools
+    if command -v campy &>/dev/null; then
+        TOOL_LIST_OUTPUT="$(campy tool list 2>/dev/null || true)"
+        if echo "$TOOL_LIST_OUTPUT" | grep -q "memory_decision"; then
+            check "campy tool list (memory_decision present)" "pass"
+        else
+            check "campy tool list (memory_decision present)" "skip"
+        fi
+    fi
+
+    # 8-9. Daemon checks
     if ! $SKIP_DAEMON; then
         campy start 2>/dev/null || true
         sleep 2
@@ -168,6 +231,9 @@ if $USE_TEMP_HOME; then
         fi
         campy stop 2>/dev/null || true
     fi
+
+    # Restore the invoking shell's PATH before cleanup/exit.
+    export PATH="$ORIGINAL_PATH"
 
     # Cleanup temp HOME
     rm -rf "$TEMP_HOME"

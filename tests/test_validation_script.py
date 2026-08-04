@@ -35,6 +35,19 @@ def test_validation_script_supports_temp_home():
     assert "--use-temp-home" in content
 
 
+def test_one_click_validation_doc_exists():
+    """B238: docs/one-click-validation.md is an explicit required deliverable
+    (listed in the card's Files table and its own acceptance criterion)."""
+    assert Path("docs/one-click-validation.md").exists()
+
+
+def test_one_click_validation_doc_has_manual_checklist_and_automated_section():
+    content = Path("docs/one-click-validation.md").read_text()
+    assert "Manual Work-Computer Checklist" in content
+    assert "Automated Validation" in content
+    assert "--use-temp-home" in content
+
+
 def test_validation_dry_run():
     """Validation --dry-run should succeed."""
     result = subprocess.run(
