@@ -49,6 +49,12 @@ async def reconstruct_timeline(params: dict, db: KuzuClient, config: dict) -> di
     session_id = params.get("session_id", "").strip()
     max_hops = int(params.get("max_hops", 20))
     include_decisions = bool(params.get("include_decisions", True))
+    # B284: timeline reconstruction is genuinely "all history" by design -
+    # no recency window belongs here - but the two CONTAINS scans below had
+    # no LIMIT at all, an unbounded full scan of the fastest-growing table
+    # (Message) on every call. A generous cap still bounds worst-case cost
+    # without changing behavior for any topic with a reasonable hit count.
+    timeline_limit = int(config.get("retrieval", {}).get("timeline_limit", 200))
 
     try:
         starts = []
@@ -58,14 +64,14 @@ async def reconstruct_timeline(params: dict, db: KuzuClient, config: dict) -> di
                 "MATCH (m:Message)-[:SENT_IN]->(s:Session {session_id: $sid}) "
                 "WHERE lower(m.text_raw) CONTAINS lower($topic) "
                 "RETURN m.message_id, m.text_raw, m.created_at "
-                "ORDER BY m.created_at ASC",
+                f"ORDER BY m.created_at ASC LIMIT {timeline_limit}",
                 {"sid": session_id, "topic": topic}
             )
         else:
             r = db.execute(
                 "MATCH (m:Message) WHERE lower(m.text_raw) CONTAINS lower($topic) "
                 "RETURN m.message_id, m.text_raw, m.created_at "
-                "ORDER BY m.created_at ASC",
+                f"ORDER BY m.created_at ASC LIMIT {timeline_limit}",
                 {"topic": topic}
             )
         while r.has_next():
@@ -77,7 +83,7 @@ async def reconstruct_timeline(params: dict, db: KuzuClient, config: dict) -> di
             "MATCH (m:Message)-[:ESTABLISHED]->(d:Decision) "
             "WHERE lower(d.text_raw) CONTAINS lower($topic) "
             "RETURN m.message_id, m.text_raw, m.created_at "
-            "ORDER BY m.created_at ASC",
+            f"ORDER BY m.created_at ASC LIMIT {timeline_limit}",
             {"topic": topic}
         )
         while r2.has_next():
@@ -261,7 +267,11 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
         if callable(has_fts):
             try:
                 if has_fts() is True and callable(fts_search):
-                    lexical_rows = fts_search("Message", "message_fts_idx", query, lexical_limit)
+                    # B284: the FTS branch had no recency window at all - only
+                    # the CONTAINS fallback below did, and it never ran once
+                    # FTS was loaded, so stale Messages leaked into recall
+                    # results. Pass the same cutoff the CONTAINS branch uses.
+                    lexical_rows = fts_search("Message", "message_fts_idx", query, lexical_limit, cutoff=cutoff)
             except Exception:
                 lexical_rows = []
 

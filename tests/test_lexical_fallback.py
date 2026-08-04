@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 import pytest
 
 from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
-from campy.brain.thalamus.tools import current_truth
+from campy.brain.thalamus.tools import current_truth, reconstruct_timeline
 
 
 class FakeResult:
@@ -218,3 +218,30 @@ def test_fts_probe_graceful_failure():
 
     assert client.has_fts() is False
     assert client.has_fts() is False
+
+
+class _TimelineCaptureDB:
+    """Minimal capture mock for reconstruct_timeline's two CONTAINS scans."""
+
+    def __init__(self):
+        self.queries: list[str] = []
+
+    def execute(self, query: str, params: dict | None = None):
+        self.queries.append(" ".join(query.split()))
+        return FakeResult([])
+
+
+@pytest.mark.asyncio
+async def test_reconstruct_timeline_queries_are_bounded_by_limit():
+    """B284 plan: reconstruct_timeline is genuinely 'all history' by design
+    (no recency window belongs here), but its two CONTAINS scans over the
+    fastest-growing table (Message) had no LIMIT at all - an unbounded
+    full-table scan on every call, regardless of how common the topic
+    text is."""
+    db = _TimelineCaptureDB()
+
+    await reconstruct_timeline({"topic": "some topic"}, db, {})
+
+    contains_queries = [q for q in db.queries if "CONTAINS lower($topic)" in q]
+    assert len(contains_queries) == 2
+    assert all("LIMIT" in q for q in contains_queries)
