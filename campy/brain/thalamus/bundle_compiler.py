@@ -572,21 +572,85 @@ async def _stage_tabular_data(
     db, query: str, config: dict, tier_config: dict, existing_sources: list[str], remaining_budget: int
 ) -> Optional[BundleSection]:
     """
-    Stage 4: Include tabular data if semantic results link to Dataset nodes.
+    Stage 4: Include tabular data from Dataset nodes linked (via
+    DESCRIBED_BY_DATASET) to Concept nodes matching the query.
 
-    Returns schema summaries and sample rows if within budget.
+    Same 0.30 distance convention as the sibling stages. B250's audit found
+    that nothing in the ingestion pipeline currently creates a
+    DESCRIBED_BY_DATASET edge, so this stage returns None against today's
+    real data - the Cypher and SQLite lookup are exercised directly against
+    fixture data in tests/test_bundle_compiler_stages.py, and it will start
+    surfacing content once B250's key-fact extraction lands.
     """
     try:
-        # Check if any semantic results have DESCRIBED_BY_DATASET edges
-        # If so, call tabular_store.get_table_summary() and include
+        if remaining_budget <= 0:
+            return None
+
+        from campy.brain.hippocampus.graph import embeddings as emb
+        from campy.brain.sensory_cortex import tabular_store
+
+        embedding_model = config.get("embeddings", {}).get(
+            "model", "sentence-transformers/all-MiniLM-L6-v2"
+        )
+        query_embedding = emb.embed(query, model_name=embedding_model)
+
+        cypher = """
+            MATCH (n:Concept)-[:DESCRIBED_BY_DATASET]->(d:Dataset)
+            WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
+                  AND d.archived = false
+            RETURN DISTINCT d.dataset_id as dataset_id, d.name as name,
+                   d.description as description
+            LIMIT 5
+        """
+        result = db.execute(cypher, {"query_embedding": query_embedding})
+        datasets: list[tuple] = []
+        while result.has_next():
+            datasets.append(result.get_next())
+
+        if not datasets:
+            return None
+
+        include_raw = tier_config.get("include_raw_tabular", False)
+        sample_rows = tier_config.get("max_tabular_rows", 20) if include_raw else 0
+
+        content = []
+        node_ids = []
+        tokens_used = 0
+        for dataset_id, name, description in datasets:
+            try:
+                summary = tabular_store.get_table_summary(dataset_id, sample_rows=sample_rows)
+            except FileNotFoundError:
+                continue
+
+            entry = {
+                "dataset_id": dataset_id,
+                "name": name,
+                "description": description,
+                "columns": summary["columns"],
+                "row_count": summary["row_count"],
+            }
+            if include_raw:
+                entry["sample_rows"] = summary["sample_rows"]
+
+            entry_tokens = 30 + len(summary["columns"]) * 5 + len(entry.get("sample_rows", [])) * 20
+            if tokens_used + entry_tokens > remaining_budget:
+                break
+
+            content.append(entry)
+            node_ids.append(dataset_id)
+            tokens_used += entry_tokens
+
+        if not content:
+            return None
+
         return BundleSection(
             section_type="tabular",
-            content=[],  # Placeholder
-            token_estimate=0,
-            source_node_ids=[],
+            content=content,
+            token_estimate=tokens_used,
+            source_node_ids=node_ids,
         )
     except Exception as e:
-        print(f"Error in _stage_tabular_data: {e}")
+        _logger.warning("Error in _stage_tabular_data: %s", e)
         return None
 
 
@@ -594,17 +658,80 @@ async def _stage_summaries(
     db, query: str, config: dict, existing_sources: list[str], remaining_budget: int
 ) -> Optional[BundleSection]:
     """
-    Stage 5: Include wiki summaries or LLM-generated summaries of top results.
+    Stage 5: Include synthesized summaries (Lesson/Procedure nodes) for
+    topics relevant to the query.
+
+    Lesson and Procedure are the same node types the wiki projection
+    (wiki_projection.py) renders into persona pages - Lesson is filtered to
+    lesson_type='synthesis' to mirror that selection convention. Querying
+    them live by embedding similarity (same 0.30 distance convention as the
+    sibling stages) surfaces the same underlying content without depending
+    on the wiki export sweep having run (it's disabled by default -
+    config["wiki_projection"]["enabled"]).
     """
     try:
-        # Check if wiki projection has pages for relevant entities
-        # If yes, include rendered summary text
+        if remaining_budget <= 0:
+            return None
+
+        from campy.brain.hippocampus.graph import embeddings as emb
+
+        embedding_model = config.get("embeddings", {}).get(
+            "model", "sentence-transformers/all-MiniLM-L6-v2"
+        )
+        query_embedding = emb.embed(query, model_name=embedding_model)
+
+        limit = 5
+        rows: list[tuple] = []
+
+        lesson_cypher = """
+            MATCH (n:Lesson)
+            WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
+                  AND n.archived = false AND n.lesson_type = 'synthesis'
+            RETURN n.lesson_id as id, n.text_raw as text, 'Lesson' as node_type,
+                   (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist
+            ORDER BY dist ASC
+            LIMIT $limit
+        """
+        result = db.execute(lesson_cypher, {"query_embedding": query_embedding, "limit": limit})
+        while result.has_next():
+            rows.append(result.get_next())
+
+        procedure_cypher = """
+            MATCH (n:Procedure)
+            WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
+                  AND n.archived = false
+            RETURN n.procedure_id as id, n.description as text, 'Procedure' as node_type,
+                   (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist
+            ORDER BY dist ASC
+            LIMIT $limit
+        """
+        result = db.execute(procedure_cypher, {"query_embedding": query_embedding, "limit": limit})
+        while result.has_next():
+            rows.append(result.get_next())
+
+        rows.sort(key=lambda row: row[3])
+        rows = rows[:limit]
+
+        content = []
+        node_ids = []
+        tokens_used = 0
+        for node_id, text, node_type, _dist in rows:
+            entry_tokens = 60
+            if tokens_used + entry_tokens > remaining_budget:
+                break
+            content.append({"id": node_id, "type": node_type, "summary": text or ""})
+            node_ids.append(node_id)
+            tokens_used += entry_tokens
+
+        if not content:
+            return None
+
         return BundleSection(
             section_type="summary",
-            content=[],  # Placeholder
-            token_estimate=0,
-            source_node_ids=[],
+            content=content,
+            token_estimate=tokens_used,
+            source_node_ids=node_ids,
         )
     except Exception as e:
-        print(f"Error in _stage_summaries: {e}")
+        _logger.warning("Error in _stage_summaries: %s", e)
         return None
