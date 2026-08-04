@@ -15,6 +15,7 @@ _DEFAULT_CONFIG = {
     "retrieval": {
         "lexical_window_days": 14,
         "lexical_limit": 10,
+        "timeline_limit": 200,
     },
     # B283: supernode monitoring + session cache edge pruning
     "sweep": {

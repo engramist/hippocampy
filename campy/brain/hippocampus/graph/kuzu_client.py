@@ -160,13 +160,37 @@ class KuzuClient:
         prop_list = ", ".join(f"'{prop}'" for prop in properties)
         self.execute(f"CALL CREATE_FTS_INDEX('{table}', '{index_name}', [{prop_list}])")
 
-    def fts_search(self, table: str, index_name: str, query: str, limit: int) -> list[dict]:
-        """Run a bounded full-text search against a prebuilt FTS index."""
-        result = self.execute(
-            f"CALL QUERY_FTS_INDEX('{table}', '{index_name}', $query) "
-            f"YIELD node, score RETURN node, score LIMIT {limit}",
-            {"query": query},
-        )
+    def fts_search(self, table: str, index_name: str, query: str, limit: int,
+                   cutoff: str | None = None) -> list[dict]:
+        """Run a bounded full-text search against a prebuilt FTS index.
+
+        B284: optionally bounded to node.created_at > cutoff (ISO8601
+        string) and node.archived = false, applied via a WITH...WHERE
+        continuation before the final LIMIT. Kuzu 0.11.3's parser rejects
+        a WHERE directly after YIELD ("expected rule oC_SingleQuery") -
+        confirmed empirically - so the filter goes in a WITH clause
+        instead. Filtering before LIMIT (rather than fetching top-scored
+        rows and filtering after) matters: with post-filtering, a `limit`
+        of old-but-high-scoring rows could silently crowd out a matching
+        recent row instead of surfacing it.
+        """
+        if cutoff is not None:
+            query_text = (
+                f"CALL QUERY_FTS_INDEX('{table}', '{index_name}', $query) "
+                f"YIELD node, score "
+                f"WITH node, score WHERE node.created_at > timestamp($cutoff) "
+                f"  AND node.archived = false "
+                f"RETURN node, score ORDER BY score DESC LIMIT {limit}"
+            )
+            params = {"query": query, "cutoff": cutoff}
+        else:
+            query_text = (
+                f"CALL QUERY_FTS_INDEX('{table}', '{index_name}', $query) "
+                f"YIELD node, score RETURN node, score LIMIT {limit}"
+            )
+            params = {"query": query}
+
+        result = self.execute(query_text, params)
         rows = []
         while result.has_next():
             row = result.get_next()
