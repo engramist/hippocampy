@@ -1,6 +1,7 @@
 """
 tests/test_bundle_compiler_stages.py — Real-Kuzu regression tests for
-_stage_exact_facts / _stage_semantic_context (B306).
+_stage_exact_facts / _stage_semantic_context (B306) and _stage_graph_structure
+(B252).
 
 Unlike the mocked tests in test_bundle_compiler.py, these run the stages'
 raw Cypher against a real Kuzu database. Mocking db.execute() never
@@ -19,6 +20,7 @@ import pytest
 from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 from campy.brain.thalamus.bundle_compiler import (
     _stage_exact_facts,
+    _stage_graph_structure,
     _stage_semantic_context,
 )
 
@@ -197,3 +199,102 @@ class TestStageSemanticContext:
         section = await _stage_semantic_context(db, "query", CONFIG, TIER_CONFIG)
 
         assert section is None
+
+
+class TestStageGraphStructure:
+    """B252: _stage_graph_structure was a literal placeholder (`content=[]`
+    unconditionally) — never queried the graph at all. These tests exercise
+    the real 1-2 hop Concept<->Concept traversal against a real Kuzu DB.
+
+    Concept is the schema's only node type with a rich set of peer-to-peer
+    relationships (REQUIRES, ENABLES, etc. are all Concept->Concept) — see
+    backlog/B252.md audit findings. The traversal deliberately issues one
+    MATCH per anchor node rather than a UNION across differently-typed node
+    tables: Kuzu 0.11.3's binder rejects that (see B280's "Binder exception:
+    a has data type NODE but NODE was expected").
+    """
+
+    def _create_tables(self, db: KuzuClient) -> None:
+        # concept_id (not generic "id") to match the real production schema
+        # (campy/brain/hippocampus/schema.py) - _stage_graph_structure's
+        # Cypher references this column name explicitly.
+        db.execute(
+            "CREATE NODE TABLE Concept("
+            "concept_id STRING, text_raw STRING, "
+            f"embedding FLOAT[{FAKE_DIM}], PRIMARY KEY (concept_id))"
+        )
+        # All rel types in _GRAPH_REL_TYPES must exist as tables - Kuzu's
+        # multi-type pattern `[r:TYPE1|TYPE2|...]` requires every listed type
+        # to be a real relationship table, even ones with no rows.
+        for rel in (
+            "REQUIRES", "ENABLES", "REPLACES", "CONTRADICTS", "PART_OF",
+            "CHOSEN_OVER", "IMPLEMENTS", "EXTENDS", "ALTERNATIVE_TO",
+        ):
+            db.execute(f"CREATE REL TABLE {rel}(FROM Concept TO Concept, confidence DOUBLE)")
+
+    def _concept(self, db: KuzuClient, cid: str, text: str, emb: list[float]) -> None:
+        db.execute(
+            "CREATE (n:Concept {concept_id: $id, text_raw: $t, embedding: $e})",
+            {"id": cid, "t": text, "e": emb},
+        )
+
+    def _edge(self, db: KuzuClient, rel: str, a: str, b: str) -> None:
+        db.execute(
+            f"MATCH (a:Concept {{concept_id: $a}}), (b:Concept {{concept_id: $b}}) "
+            f"CREATE (a)-[:{rel} {{confidence: 0.9}}]->(b)",
+            {"a": a, "b": b},
+        )
+
+    async def test_returns_neighbor_structure_for_matching_anchor(self, real_db):
+        db = real_db
+        self._create_tables(db)
+        self._concept(db, "a", "concept a", [0.99, 0.01, 0.0, 0.0])  # close to "query"
+        self._concept(db, "b", "concept b", [0.0, 0.0, 1.0, 0.0])
+        self._edge(db, "REQUIRES", "a", "b")
+
+        section = await _stage_graph_structure(db, "query", CONFIG, {"max_graph_hops": 1}, [])
+
+        assert section is not None
+        assert section.section_type == "graph"
+        assert len(section.content) == 1
+        edge = section.content[0]
+        assert edge["from"] == "concept a"
+        assert edge["to"] == "concept b"
+        assert edge["relationship"] == "REQUIRES"
+
+    async def test_returns_none_when_no_anchor_matches_query(self, real_db):
+        db = real_db
+        self._create_tables(db)
+        self._concept(db, "a", "unrelated", [0.0, 0.0, 1.0, 0.0])  # far from "query"
+        self._concept(db, "b", "also unrelated", [0.0, 1.0, 0.0, 0.0])
+        self._edge(db, "REQUIRES", "a", "b")
+
+        section = await _stage_graph_structure(db, "query", CONFIG, {"max_graph_hops": 1}, [])
+
+        assert section is None
+
+    async def test_returns_none_when_anchor_is_isolated(self, real_db):
+        db = real_db
+        self._create_tables(db)
+        self._concept(db, "a", "lonely concept", [0.99, 0.01, 0.0, 0.0])
+
+        section = await _stage_graph_structure(db, "query", CONFIG, {"max_graph_hops": 1}, [])
+
+        assert section is None
+
+    async def test_two_hop_tier_reaches_second_degree_neighbor(self, real_db):
+        db = real_db
+        self._create_tables(db)
+        self._concept(db, "a", "concept a", [0.99, 0.01, 0.0, 0.0])
+        self._concept(db, "b", "concept b", [0.0, 0.0, 1.0, 0.0])
+        self._concept(db, "c", "concept c", [0.0, 1.0, 0.0, 0.0])
+        self._edge(db, "REQUIRES", "a", "b")
+        self._edge(db, "ENABLES", "b", "c")
+
+        one_hop = await _stage_graph_structure(db, "query", CONFIG, {"max_graph_hops": 1}, [])
+        two_hop = await _stage_graph_structure(db, "query", CONFIG, {"max_graph_hops": 2}, [])
+
+        one_hop_targets = {e["to"] for e in one_hop.content}
+        two_hop_targets = {e["to"] for e in two_hop.content}
+        assert one_hop_targets == {"concept b"}
+        assert "concept c" in two_hop_targets
