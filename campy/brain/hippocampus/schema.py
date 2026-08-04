@@ -1167,6 +1167,11 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
 
         # Basal Ganglia: maturity_stage — Procedure lifecycle tracking
         ("Procedure",      "maturity_stage",        "STRING"),
+
+        # B250: source_key — deterministic (file_path, sheet) identity for
+        # tabular re-upload change detection / archive-on-change, mirroring
+        # Document's location_uri-derived identity.
+        ("Dataset",        "source_key",             "STRING"),
     ]
     def _column_exists(table: str, col: str) -> bool:
         """Check whether a column already exists via table_info, avoiding

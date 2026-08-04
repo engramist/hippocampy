@@ -15,17 +15,22 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
+import re
 import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
+from campy.brain.llm.provider import create_llm_client_for_step
 from campy.brain.sensory_cortex.tabular_store import create_table_from_dataframe
 
 if TYPE_CHECKING:
     from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+
+_logger = logging.getLogger(__name__)
 
 
 async def ingest_tabular(
@@ -99,7 +104,8 @@ async def ingest_tabular(
 
     # Step 2: Process each sheet/dataframe
     file_hash = hashlib.sha256(Path(resolved).read_bytes()).hexdigest()
-    
+
+    already_current_flags = []
     for sheet_name, df in dfs.items():
         try:
             dataset_result = await _ingest_single_dataset(
@@ -112,11 +118,14 @@ async def ingest_tabular(
                 results["column_counts"].append(dataset_result.get("column_count"))
                 results["summaries"].append(dataset_result.get("summary"))
                 results["facts_extracted"].append(dataset_result.get("facts_extracted", 0))
+                already_current_flags.append(dataset_result.get("already_current", False))
         except Exception as e:
             return {"error": f"Failed to ingest sheet {sheet_name}: {str(e)}", "file_path": file_path}
-    
+
     results["sheets_processed"] = len(dfs)
-    results["already_current"] = False
+    # Whole-file already_current is true only if every sheet was unchanged -
+    # a multi-sheet XLSX where even one sheet changed still did real work.
+    results["already_current"] = bool(already_current_flags) and all(already_current_flags)
     return results
 
 
@@ -177,6 +186,172 @@ async def ingest_tabular_from_content(
             pass
 
 
+def _stable_dataset_source_key(file_path: Path, sheet_name: str) -> str:
+    """Deterministic identity for a (source path, sheet) pair, mirroring
+    ingest.py's _stable_doc_id for Document nodes - this is what lets a
+    re-upload of the same file find its prior Dataset. Content-based
+    ingestion (ingest_tabular_from_content) always writes to a fresh
+    random temp path, so pasted content naturally never collides with a
+    prior dataset here - only re-running against the same real file path
+    triggers dedup/archiving.
+    """
+    return hashlib.sha256(f"{file_path}::{sheet_name}".encode()).hexdigest()[:32]
+
+
+def _find_active_dataset(db: KuzuClient, source_key: str) -> Optional[dict]:
+    """Return the most recent non-archived Dataset for this source_key, or
+    None if none exists - including on any query error, treated the same
+    as "not found" (matches ingest.py's _get_existing_hash convention)."""
+    try:
+        result = db.execute(
+            "MATCH (d:Dataset {source_key: $sk}) WHERE d.archived = false "
+            "RETURN d.dataset_id, d.content_hash, d.storage_uri, d.row_count, "
+            "       d.column_count, d.description "
+            "ORDER BY d.created_at DESC LIMIT 1",
+            {"sk": source_key},
+        )
+        if result.has_next():
+            row = result.get_next()
+            return {
+                "dataset_id": row[0],
+                "content_hash": row[1],
+                "storage_uri": row[2],
+                "row_count": row[3],
+                "column_count": row[4],
+                "description": row[5],
+            }
+    except Exception:
+        pass
+    return None
+
+
+async def _archive_dataset(db: KuzuClient, dataset_id: str) -> None:
+    """Soft-delete a superseded Dataset node - the SQLite table and any
+    fact Concepts it produced are left alone (same "archive, don't
+    destroy" convention as ingest.py's _archive_old_extracts)."""
+    try:
+        await db.execute_write(
+            "MATCH (d:Dataset {dataset_id: $did}) SET d.archived = true",
+            {"did": dataset_id},
+        )
+    except Exception:
+        _logger.debug("Failed to archive superseded Dataset %s", dataset_id)
+
+
+async def _generate_description(
+    df, sheet_name: str, file_path: Path, config: dict, row_count: int, col_count: int
+) -> str:
+    """Best-effort LLM summary of a dataset. Falls back to a template
+    description on any failure or missing LLM client - same graceful-
+    degradation convention as loop/step7_5_lesson.py's extract_lessons.
+    """
+    fallback = f"Dataset from {file_path.name} sheet '{sheet_name}' with {row_count} rows and {col_count} columns"
+    try:
+        client = create_llm_client_for_step(config, "tabular_ingest")
+        if client is None:
+            return fallback
+
+        columns_desc = ", ".join(f"{c} ({df[c].dtype})" for c in df.columns)
+        sample = df.head(3).to_dict(orient="records")
+        prompt = (
+            "Summarize this dataset in 1-2 sentences, mentioning what it appears to represent.\n"
+            f"Columns: {columns_desc}\n"
+            f"Row count: {row_count}\n"
+            f"Sample rows: {sample}\n"
+        )
+        response = await client.achat([{"role": "user", "content": prompt}])
+        summary = (response or "").strip()
+        return summary if summary else fallback
+    except Exception:
+        _logger.debug("LLM summary generation failed for %s sheet %s", file_path, sheet_name)
+        return fallback
+
+
+async def _extract_and_link_key_facts(db: KuzuClient, df, dataset_id: str, config: dict, now: str) -> int:
+    """Best-effort LLM key-fact extraction. Each fact becomes a minimal
+    Concept node linked to the Dataset via DESCRIBED_BY_DATASET - the same
+    "minimal node, real embedding" shape as
+    loop/orchestrator.py::_ensure_concept_exists, so these facts are
+    structurally indistinguishable from any other retrievable Concept.
+    Returns the count of facts successfully created - 0 on any failure,
+    malformed response, or missing LLM client.
+    """
+    try:
+        client = create_llm_client_for_step(config, "tabular_ingest")
+        if client is None:
+            return 0
+
+        columns_desc = ", ".join(f"{c} ({df[c].dtype})" for c in df.columns)
+        sample = df.head(5).to_dict(orient="records")
+        prompt = (
+            "Extract the 3-5 most important facts from this dataset - totals, "
+            "constraints, notable outliers or patterns.\n"
+            f"Columns: {columns_desc}\n"
+            f"Row count: {len(df)}\n"
+            f"Sample rows: {sample}\n\n"
+            'Return a JSON list of objects: [{"text": "..."}]\n'
+            "If nothing notable, return []"
+        )
+        response = await client.achat([{"role": "user", "content": prompt}])
+        match = re.search(r"\[.*\]", response or "", re.DOTALL)
+        facts = json.loads(match.group(0)) if match else []
+        if not isinstance(facts, list):
+            facts = []
+    except Exception:
+        _logger.debug("Key fact extraction failed for dataset %s", dataset_id)
+        return 0
+
+    embedding_model = config.get("embeddings", {}).get(
+        "model", "sentence-transformers/all-MiniLM-L6-v2"
+    )
+    created = 0
+    for fact in facts:
+        text = str(fact.get("text", "")).strip() if isinstance(fact, dict) else ""
+        if not text:
+            continue
+        try:
+            from campy.brain.hippocampus.graph import embeddings as emb
+            vector = emb.embed(text, model_name=embedding_model)
+            concept_id = str(uuid.uuid4())
+            await db.execute_write(
+                """
+                CREATE (c:Concept {
+                    concept_id:       $concept_id,
+                    text_raw:         $text_raw,
+                    embedding:        $embedding,
+                    embedding_model:  $embedding_model,
+                    embedding_dim:    $embedding_dim,
+                    gist_class:       '',
+                    schema_org_type:  '',
+                    confidence:       0.75,
+                    confidence_low:   false,
+                    pathway_strength: 0.55,
+                    archived:         false,
+                    created_at:       timestamp($now),
+                    last_accessed_at: timestamp($now)
+                })
+                """,
+                {
+                    "concept_id": concept_id,
+                    "text_raw": text,
+                    "embedding": vector,
+                    "embedding_model": embedding_model,
+                    "embedding_dim": len(vector),
+                    "now": now,
+                },
+            )
+            await db.execute_write(
+                "MATCH (c:Concept {concept_id: $cid}), (d:Dataset {dataset_id: $did}) "
+                "CREATE (c)-[:DESCRIBED_BY_DATASET {extraction_method: 'llm', created_at: timestamp($now)}]->(d)",
+                {"cid": concept_id, "did": dataset_id, "now": now},
+            )
+            created += 1
+        except Exception:
+            _logger.debug("Failed to create fact concept for dataset %s", dataset_id)
+            continue
+    return created
+
+
 async def _ingest_single_dataset(
     db: KuzuClient,
     file_path: Path,
@@ -189,10 +364,34 @@ async def _ingest_single_dataset(
     now: str
 ) -> dict:
     """Process a single DataFrame as a Dataset node."""
-    
-    # Generate dataset_id
+
+    source_key = _stable_dataset_source_key(file_path, sheet_name)
+    name = sheet_name if sheet_name != "sheet_1" else file_path.stem
+
+    # Change detection: skip all re-processing (no SQLite write, no LLM
+    # calls) when an active Dataset for this source already has this exact
+    # content hash.
+    existing = _find_active_dataset(db, source_key)
+    if existing and existing["content_hash"] == file_hash:
+        return {
+            "dataset_id": existing["dataset_id"],
+            "name": name,
+            "storage_uri": existing["storage_uri"],
+            "row_count": existing["row_count"],
+            "column_count": existing["column_count"],
+            "summary": existing["description"],
+            "facts_extracted": 0,
+            "already_current": True,
+        }
+
+    # Changed re-upload: archive the superseded Dataset node before
+    # creating its replacement (its SQLite table and any fact Concepts
+    # already linked to it are left in place, per _archive_dataset).
+    if existing:
+        await _archive_dataset(db, existing["dataset_id"])
+
     dataset_id = str(uuid.uuid4())
-    
+
     # Step 3: Schema extraction
     schema_json = json.dumps({
         "columns": [
@@ -218,9 +417,8 @@ async def _ingest_single_dataset(
     embedding_model = config.get("embeddings", {}).get(
         "model", "sentence-transformers/all-MiniLM-L6-v2"
     )
-    
-    # Generate a description (simplified - LLM generation would require async LLM call)
-    description = f"Dataset from {file_path.name} sheet '{sheet_name}' with {row_count} rows and {col_count} columns"
+
+    description = await _generate_description(df, sheet_name, file_path, config, row_count, col_count)
 
     # Create embedding for dataset (from schema summary)
     try:
@@ -233,7 +431,7 @@ async def _ingest_single_dataset(
     # Create Dataset node
     dataset_dict = {
         "dataset_id": dataset_id,
-        "name": sheet_name if sheet_name != "sheet_1" else file_path.stem,
+        "name": name,
         "description": description,
         "embedding": embedding,
         "embedding_model": embedding_model,
@@ -244,6 +442,7 @@ async def _ingest_single_dataset(
         "column_count": col_count,
         "source_format": file_path.suffix.lower(),
         "content_hash": file_hash,
+        "source_key": source_key,
         "confidence": 0.95,
         "confidence_low": False,
         "pathway_strength": 0.5,
@@ -263,7 +462,7 @@ async def _ingest_single_dataset(
         for k in dataset_dict.keys()
     )
     cypher = f"CREATE (d:Dataset {{{properties}}})"
-    
+
     try:
         db.execute(cypher, dataset_dict)
     except Exception as e:
@@ -279,6 +478,8 @@ async def _ingest_single_dataset(
             {"did": dataset_id, "qid": quest_id}
         )
 
+    facts_extracted = await _extract_and_link_key_facts(db, df, dataset_id, config, now)
+
     return {
         "dataset_id": dataset_id,
         "name": dataset_dict["name"],
@@ -286,5 +487,6 @@ async def _ingest_single_dataset(
         "row_count": row_count,
         "column_count": col_count,
         "summary": description,
-        "facts_extracted": 0,  # Could extract facts from data summary
+        "facts_extracted": facts_extracted,
+        "already_current": False,
     }

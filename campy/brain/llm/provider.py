@@ -30,6 +30,7 @@ B16 — Task-Based Model Routing:
         step3b_relations    — Relation extraction with type context (tractable for small models)
         step6_arbitration   — Contradiction arbitration (benefits most from frontier models)
         quest_purpose       — Quest purpose synthesis
+        tabular_ingest      — Dataset summary + key-fact extraction (B250)
 """
 
 import os
