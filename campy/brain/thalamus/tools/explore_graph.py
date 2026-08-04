@@ -57,34 +57,60 @@ def _edge_payload(src_id: str, dst_id: str, rel_type: str, rel_conf: Any) -> Dic
     }
 
 
-def _build_frontier_query(edge_types: List[str], direction: str) -> str:
+def _internal_id_literal(internal_ids: List[Dict[str, int]]) -> str:
+    """Build a Cypher list literal of INTERNAL_ID(table, offset) constructors.
+
+    B280: Kuzu 0.11.3's Python client serializes an internal node id as a
+    {"table": int, "offset": int} STRUCT, and the binder rejects comparing
+    that STRUCT against the engine's actual INTERNAL_ID type ("Cannot
+    compare types INTERNAL_ID and STRUCT(offset INT8, table INT8)" -
+    confirmed empirically). INTERNAL_ID(table, offset) is a real Kuzu
+    constructor function, so building the literal directly in the query
+    text sidesteps the mismatch entirely (there is no working parameterized
+    form). table/offset are small non-negative ints minted by Kuzu itself
+    via id(n) - never user-controlled strings - so interpolating them is
+    not a string-injection risk.
+    """
+    parts = [f"INTERNAL_ID({int(iid['table'])}, {int(iid['offset'])})" for iid in internal_ids]
+    return "[" + ", ".join(parts) + "]"
+
+
+def _build_frontier_query(edge_types: List[str], direction: str, internal_ids: List[Dict[str, int]]) -> str:
+    """One query per direction per depth level, unlabeled on both ends.
+
+    B280: the previous implementation built one MATCH branch PER NODE TABLE
+    and UNION ALL'd them together (`MATCH (a:Concept)...UNION ALL MATCH
+    (a:Decision)...`). Kuzu 0.11.3's binder rejects that once enough
+    differently-typed tables are unioned - "Binder exception: a has data
+    type NODE but NODE was expected" - confirmed against the real 12-table/
+    92-rel-type production schema, where every real explore_graph() call
+    hit this and silently returned zero neighbors. Leaving `a`/`b`
+    unlabeled and filtering by internal id instead avoids the union
+    entirely: Kuzu scans every node table in one query, matching only the
+    frontier's actual ids (see _internal_id_literal for why internal ids
+    rather than primary keys - a single query can't otherwise express "the
+    right pk column" across heterogeneous node tables).
+    """
     rel_pattern = "|".join(edge_types)
-    branches = []
-    for table, pk in _NODE_TABLES:
-        if not pk:
-            continue
-        if direction == "outgoing":
-            match_clause = f"MATCH (a:{table})-[r:{rel_pattern}]->(b)"
-        elif direction == "incoming":
-            match_clause = f"MATCH (a:{table})<-[r:{rel_pattern}]-(b)"
-        else:
-            match_clause = f"MATCH (a:{table})-[r:{rel_pattern}]-(b)"
-        branches.append(
-            f"{match_clause} WHERE a.{pk} IN $ids RETURN a, b, label(r), coalesce(r.confidence, 1.0)"
-        )
-    joiner = "\nUNION ALL\n"
-    return joiner.join(branches)
+    id_literal = _internal_id_literal(internal_ids)
+    if direction == "outgoing":
+        match_clause = f"MATCH (a)-[r:{rel_pattern}]->(b)"
+    elif direction == "incoming":
+        match_clause = f"MATCH (a)<-[r:{rel_pattern}]-(b)"
+    else:
+        match_clause = f"MATCH (a)-[r:{rel_pattern}]-(b)"
+    return f"{match_clause} WHERE id(a) IN {id_literal} RETURN a, b, label(r), coalesce(r.confidence, 1.0)"
 
 
-def _execute_frontier_query(db: KuzuClient, frontier_ids: List[str], edge_types: List[str],
-                            direction: str) -> List[Dict[str, Any]]:
-    if not frontier_ids:
+def _execute_frontier_query(db: KuzuClient, frontier_internal_ids: List[Dict[str, int]],
+                            edge_types: List[str], direction: str) -> List[Dict[str, Any]]:
+    if not frontier_internal_ids:
         return []
 
-    query = _build_frontier_query(edge_types, direction)
+    query = _build_frontier_query(edge_types, direction, frontier_internal_ids)
     rows: List[Dict[str, Any]] = []
     try:
-        result = db.execute(query, {"ids": frontier_ids})
+        result = db.execute(query)
         while result.has_next():
             row = result.get_next()
             if not row:
@@ -97,6 +123,7 @@ def _execute_frontier_query(db: KuzuClient, frontier_ids: List[str], edge_types:
             neighbor_payload = _node_payload(neighbor_node)
             if not current_payload["node_id"] or not neighbor_payload["node_id"]:
                 continue
+            neighbor_internal_id = neighbor_node.get("_id") if isinstance(neighbor_node, dict) else None
             rows.append({
                 "current_id": current_payload["node_id"],
                 "current_table": current_payload["node_type"],
@@ -104,6 +131,7 @@ def _execute_frontier_query(db: KuzuClient, frontier_ids: List[str], edge_types:
                 "neighbor_table": neighbor_payload["node_type"],
                 "current_node": current_node,
                 "neighbor_node": neighbor_node,
+                "neighbor_internal_id": neighbor_internal_id,
                 "rel_type": rel_type,
                 "rel_conf": rel_conf,
                 "direction": direction,
@@ -113,12 +141,13 @@ def _execute_frontier_query(db: KuzuClient, frontier_ids: List[str], edge_types:
     return rows
 
 
-def _expand_frontier(db: KuzuClient, frontier_ids: List[str], edge_types: List[str], direction: str) -> List[Dict[str, Any]]:
+def _expand_frontier(db: KuzuClient, frontier_internal_ids: List[Dict[str, int]],
+                     edge_types: List[str], direction: str) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     if direction in ("outgoing", "both"):
-        rows.extend(_execute_frontier_query(db, frontier_ids, edge_types, "outgoing"))
+        rows.extend(_execute_frontier_query(db, frontier_internal_ids, edge_types, "outgoing"))
     if direction in ("incoming", "both"):
-        rows.extend(_execute_frontier_query(db, frontier_ids, edge_types, "incoming"))
+        rows.extend(_execute_frontier_query(db, frontier_internal_ids, edge_types, "incoming"))
     return rows
 
 
@@ -153,21 +182,26 @@ def _reconstruct_paths(start_id: str, start_node_data: Dict[str, Any],
     return paths
 
 
-def _traverse(db: KuzuClient, start_id: str, start_table: str, max_depth: int,
+def _traverse(db: KuzuClient, start_id: str, start_node_data: Dict[str, Any],
+              start_internal_id: Dict[str, int], max_depth: int,
               edge_types: List[str], direction: str, max_nodes: int,
-              strategy: str) -> Tuple[List[Dict[str, Any]], int]:
+              strategy: str) -> Tuple[List[Dict[str, Any]], int, Dict[str, Dict[str, int]]]:
     visited_node_ids = {start_id}
-    node_cache = {start_id: _get_node_data(db, start_id, start_table)}
+    node_cache = {start_id: start_node_data}
+    # Internal ids drive the next hop's query (see _internal_id_literal) and
+    # are kept separate from node_cache/the public node payload - they must
+    # never leak into the response shape.
+    internal_id_cache: Dict[str, Dict[str, int]] = {start_id: start_internal_id}
     parents: Dict[str, Tuple[str, Dict[str, Any]]] = {}
     discovery_order: List[str] = []
-    frontier = [start_id]
+    frontier_internal_ids = [start_internal_id]
 
     for _depth_level in range(1, max_depth + 1):
-        if not frontier or len(visited_node_ids) >= max_nodes:
+        if not frontier_internal_ids or len(visited_node_ids) >= max_nodes:
             break
 
-        edges = _expand_frontier(db, frontier, edge_types, direction)
-        next_frontier: List[str] = []
+        edges = _expand_frontier(db, frontier_internal_ids, edge_types, direction)
+        next_frontier_internal_ids: List[Dict[str, int]] = []
         for edge in edges:
             dst_id = edge["neighbor_id"]
             if dst_id in visited_node_ids:
@@ -175,8 +209,9 @@ def _traverse(db: KuzuClient, start_id: str, start_table: str, max_depth: int,
 
             visited_node_ids.add(dst_id)
             node_cache[dst_id] = _node_payload(edge["neighbor_node"], dst_id)
+            internal_id_cache[dst_id] = edge["neighbor_internal_id"]
             parents[dst_id] = (
-                edge["current_id"] if edge["direction"] != "incoming" else edge["current_id"],
+                edge["current_id"],
                 _edge_payload(
                     edge["neighbor_id"] if edge["direction"] == "incoming" else edge["current_id"],
                     edge["current_id"] if edge["direction"] == "incoming" else edge["neighbor_id"],
@@ -185,15 +220,17 @@ def _traverse(db: KuzuClient, start_id: str, start_table: str, max_depth: int,
                 ),
             )
             discovery_order.append(dst_id)
-            next_frontier.append(dst_id)
+            if edge["neighbor_internal_id"] is not None:
+                next_frontier_internal_ids.append(edge["neighbor_internal_id"])
 
             if len(visited_node_ids) >= max_nodes:
                 break
 
-        frontier = next_frontier
+        frontier_internal_ids = next_frontier_internal_ids
 
     ordered_ids = discovery_order if strategy == "bfs" else list(reversed(discovery_order))
-    return _reconstruct_paths(start_id, node_cache[start_id], parents, node_cache, ordered_ids), len(visited_node_ids)
+    paths = _reconstruct_paths(start_id, node_cache[start_id], parents, node_cache, ordered_ids)
+    return paths, len(visited_node_ids), internal_id_cache
 
 async def explore_graph(params: Dict[str, Any], db: KuzuClient, config: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -233,18 +270,27 @@ async def explore_graph(params: Dict[str, Any], db: KuzuClient, config: Dict[str
     if direction not in ("outgoing", "incoming", "both"):
         direction = "both"
 
-    # 1. Find start node
+    # 1. Find start node. Fetching id(n) alongside the node itself means we
+    # never need a separate _get_node_data() round-trip - the node's own
+    # properties and its internal id (needed to seed the frontier) both
+    # come back from this one query.
     start_table = None
+    start_node_data = None
+    start_internal_id = None
     for table, pk in _NODE_TABLES:
         try:
-            r = db.execute(f"MATCH (n:{table}) WHERE n.{pk} = $id RETURN n LIMIT 1", {"id": start_id})
+            r = db.execute(f"MATCH (n:{table}) WHERE n.{pk} = $id RETURN n, id(n) LIMIT 1", {"id": start_id})
             if r.has_next():
+                row = r.get_next()
+                node_dict = row[0] if len(row) > 0 else {}
+                start_internal_id = row[1] if len(row) > 1 else None
+                start_node_data = _node_payload(node_dict, start_id)
                 start_table = table
                 break
         except Exception:
             continue
-    
-    if not start_table:
+
+    if not start_table or start_internal_id is None:
         return {
             "start_node_id": start_id,
             "paths": [],
@@ -254,10 +300,11 @@ async def explore_graph(params: Dict[str, Any], db: KuzuClient, config: Dict[str
         }
 
     # 2. Traversal logic
-    paths, total_visited = _traverse(
+    paths, total_visited, internal_id_cache = _traverse(
         db,
         start_id,
-        start_table,
+        start_node_data,
+        start_internal_id,
         depth,
         edge_types_to_use,
         direction,
@@ -267,7 +314,7 @@ async def explore_graph(params: Dict[str, Any], db: KuzuClient, config: Dict[str
 
     # B125: Add context around nodes if context_window > 0
     if context_window > 0:
-        paths = _add_temporal_context(db, paths, context_window)
+        paths = _add_temporal_context(db, paths, context_window, internal_id_cache)
 
     return {
         "paths": paths,
@@ -277,40 +324,9 @@ async def explore_graph(params: Dict[str, Any], db: KuzuClient, config: Dict[str
         "context_window": context_window,  # B125: Track if context was included
     }
 
-def _get_node_data(db: KuzuClient, node_id: str, table: str) -> Dict[str, Any]:
-    pk = _get_pk_for_table(table)
-    # Most tables have text_raw and confidence.
-    query = f"MATCH (n:{table}) WHERE n.{pk} = $id RETURN n.text_raw, n.confidence"
-    try:
-        r = db.execute(query, {"id": node_id})
-        if r.has_next():
-            row = r.get_next()
-            return {
-                "node_id": node_id,
-                "node_type": table,
-                "text": str(row[0] or "")[:200],
-                "confidence": float(row[1] or 0.0)
-            }
-    except Exception:
-        pass
-    return {"node_id": node_id, "node_type": table, "text": "", "confidence": 0.0}
 
-def _get_neighbors(db: KuzuClient, node_id: str, node_table: str, edge_types: List[str], direction: str) -> List[Dict[str, Any]]:
-    rows = _expand_frontier(db, [node_id], edge_types, direction)
-    neighbors: List[Dict[str, Any]] = []
-    for row in rows:
-        if row["current_id"] != node_id:
-            continue
-        neighbors.append({
-            "id": row["neighbor_id"],
-            "table": row["neighbor_table"],
-            "rel_type": row["rel_type"],
-            "rel_conf": row["rel_conf"],
-            "direction": "out" if row["direction"] == "outgoing" else "in",
-        })
-    return neighbors
-
-def _add_temporal_context(db: KuzuClient, paths: List[Dict[str, Any]], context_window: int) -> List[Dict[str, Any]]:
+def _add_temporal_context(db: KuzuClient, paths: List[Dict[str, Any]], context_window: int,
+                          internal_id_cache: Dict[str, Dict[str, int]]) -> List[Dict[str, Any]]:
     """B125: Add temporal/causal context neighbors around each node in paths.
 
     For each node, fetch up to context_window neighbors connected by temporal edges
@@ -334,7 +350,14 @@ def _add_temporal_context(db: KuzuClient, paths: List[Dict[str, Any]], context_w
     if not node_refs:
         return paths
 
-    context_rows = _expand_frontier(db, list(node_refs.keys()), list(_TEMPORAL_CONTEXT_RELS), "both")
+    frontier_internal_ids = [
+        internal_id_cache[node_id] for node_id in node_refs
+        if internal_id_cache.get(node_id) is not None
+    ]
+    if not frontier_internal_ids:
+        return paths
+
+    context_rows = _expand_frontier(db, frontier_internal_ids, list(_TEMPORAL_CONTEXT_RELS), "both")
     context_by_source: Dict[str, List[str]] = {}
     for row in context_rows:
         src_id = row["current_id"]

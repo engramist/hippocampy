@@ -6,6 +6,7 @@ Tests the modular campy/brain/thalamus/tools/explore_graph handler directly usin
 
 from __future__ import annotations
 import asyncio
+import re
 import sys
 import os
 import types
@@ -93,11 +94,26 @@ class _Row:
 
 
 class MockDB:
+    """B280: real Kuzu has no working parameterized form for internal-id
+    filtering, so the real implementation embeds `id(a) IN [INTERNAL_ID(t,
+    o), ...]` literals directly in the query text (see explore_graph.py's
+    _internal_id_literal). This mock simulates that by assigning every
+    known node_id a stable fake internal id ({"table": 0, "offset": N}) up
+    front, returning it alongside node dicts (mirroring real Kuzu's `_id`
+    key), and parsing offsets back out of the query text via regex instead
+    of reading an `ids` param - there is no `ids` param anymore.
+    """
+
     def __init__(self, node_lookup=None, node_data=None, neighbor_lookup=None):
         self._node_lookup = node_lookup or {}
         self._node_data = node_data or {}
         self._neighbor_lookup = neighbor_lookup or {}
         self.queries = []
+        self._internal_ids = {
+            node_id: {"table": 0, "offset": i}
+            for i, node_id in enumerate(self._node_lookup)
+        }
+        self._offset_to_node = {iid["offset"]: node_id for node_id, iid in self._internal_ids.items()}
 
     def _node_dict(self, node_id):
         table, _ = self._node_lookup.get(node_id, ("Concept", "concept_id"))
@@ -117,6 +133,7 @@ class MockDB:
             "Lesson": "lesson_id",
         }.get(table, "concept_id")
         return {
+            "_id": self._internal_ids.get(node_id, {"table": 0, "offset": -1}),
             "_label": table,
             pk: node_id,
             "text_raw": text,
@@ -127,22 +144,18 @@ class MockDB:
         self.queries.append((query, params))
         node_id = (params or {}).get("id", "")
 
-        # Node existence lookup
+        # Start-node resolution: now `RETURN n, id(n) LIMIT 1`.
         if "LIMIT 1" in query and node_id in self._node_lookup:
             table, _ = self._node_lookup[node_id]
             if f"n:{table}" in query:
-                return _Row([[node_id]])
+                return _Row([[self._node_dict(node_id), self._internal_ids[node_id]]])
             return _Row([])
 
-        # Node data lookup (text_raw, confidence)
-        if "RETURN n.text_raw, n.confidence" in query and node_id in self._node_data:
-            return _Row([self._node_data[node_id]])
-
-        # Batched neighbor lookup
+        # Batched neighbor lookup: ids now embedded as INTERNAL_ID(table, offset)
+        # literals in the query text rather than an "ids" param.
         if "RETURN a, b, label(r), coalesce(r.confidence, 1.0)" in query:
-            ids = (params or {}).get("ids", [])
-            if isinstance(ids, str):
-                ids = [ids]
+            offsets = [int(o) for o in re.findall(r"INTERNAL_ID\(\d+,\s*(\d+)\)", query)]
+            ids = [self._offset_to_node[o] for o in offsets if o in self._offset_to_node]
             current_rel = None
             for rel in ["REQUIRES", "ENABLES", "REPLACES", "CONTRADICTS", "PART_OF", "CHOSEN_OVER", "IMPLEMENTS", "EXTENDS", "ALTERNATIVE_TO", "NEXT_MESSAGE", "CAUSED_BY", "ESTABLISHED_IN"]:
                 if f":{rel}" in query:
