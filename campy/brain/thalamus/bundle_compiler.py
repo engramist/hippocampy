@@ -455,25 +455,116 @@ async def _stage_plans(
         return None
 
 
+
+# Concept<->Concept is the schema's only rich set of peer-to-peer semantic
+# relationships (Decision/Constraint/Requirement mostly point to Session/Label
+# provenance edges, not to each other) - see backlog/B252.md audit findings.
+_GRAPH_REL_TYPES = (
+    "REQUIRES|ENABLES|REPLACES|CONTRADICTS|PART_OF|CHOSEN_OVER"
+    "|IMPLEMENTS|EXTENDS|ALTERNATIVE_TO"
+)
+
+
 async def _stage_graph_structure(
     db, query: str, config: dict, tier_config: dict, existing_sources: list[str]
 ) -> Optional[BundleSection]:
     """
     Stage 3: Extract graph structure (relationships) from top semantic results.
 
-    Returns: structured connections like "Decision X → REQUIRES → Concept Y"
+    Finds Concept nodes closest to the query (same 0.30 distance convention as
+    _stage_exact_facts/_stage_semantic_context), then traverses 1-2 hops of
+    Concept<->Concept relationships from each anchor. Hop depth is one MATCH
+    per depth level (not Kuzu variable-length syntax) chained in a single
+    query per depth, since both ends stay within the Concept table - this
+    deliberately avoids UNION ALL across differently-typed node tables, which
+    Kuzu 0.11.3's binder rejects (see B280's "Binder exception: a has data
+    type NODE but NODE was expected").
+
+    Returns: structured connections like "concept a --REQUIRES--> concept b"
     """
     try:
-        # For now, return minimal structure
-        # In production, would traverse 1-2 hops from semantic result nodes
+        from campy.brain.hippocampus.graph import embeddings as emb
+
+        embedding_model = config.get("embeddings", {}).get(
+            "model", "sentence-transformers/all-MiniLM-L6-v2"
+        )
+        query_embedding = emb.embed(query, model_name=embedding_model)
+
+        anchor_cypher = """
+            MATCH (n:Concept)
+            WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
+            RETURN n.concept_id as id, n.text_raw as text,
+                   (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist
+            ORDER BY dist ASC
+            LIMIT 5
+        """
+        result = db.execute(anchor_cypher, {"query_embedding": query_embedding})
+        anchors: list[tuple] = []
+        while result.has_next():
+            anchors.append(result.get_next())
+
+        if not anchors:
+            return None
+
+        max_hops = max(1, min(2, tier_config.get("max_graph_hops", 1)))
+
+        content = []
+        node_ids = []
+        seen_edges: set[tuple] = set()
+        for anchor_id, anchor_text, _dist in anchors:
+            one_hop_cypher = f"""
+                MATCH (a:Concept)-[r:{_GRAPH_REL_TYPES}]-(b:Concept)
+                WHERE a.concept_id = $aid
+                RETURN label(r), b.concept_id, b.text_raw
+                LIMIT 10
+            """
+            result = db.execute(one_hop_cypher, {"aid": anchor_id})
+            while result.has_next():
+                rel_type, b_id, b_text = result.get_next()
+                key = (anchor_id, rel_type, b_id)
+                if key not in seen_edges:
+                    seen_edges.add(key)
+                    content.append({
+                        "from": anchor_text,
+                        "relationship": rel_type,
+                        "to": b_text,
+                    })
+                    node_ids.append(b_id)
+
+            if max_hops >= 2:
+                two_hop_cypher = f"""
+                    MATCH (a:Concept)-[r1:{_GRAPH_REL_TYPES}]-(mid:Concept)
+                          -[r2:{_GRAPH_REL_TYPES}]-(c:Concept)
+                    WHERE a.concept_id = $aid AND c.concept_id <> a.concept_id
+                    RETURN label(r1), mid.text_raw, label(r2), c.concept_id, c.text_raw
+                    LIMIT 10
+                """
+                result = db.execute(two_hop_cypher, {"aid": anchor_id})
+                while result.has_next():
+                    r1_type, mid_text, r2_type, c_id, c_text = result.get_next()
+                    key = (anchor_id, r1_type, mid_text, r2_type, c_id)
+                    if key not in seen_edges:
+                        seen_edges.add(key)
+                        content.append({
+                            "from": anchor_text,
+                            "relationship": f"{r1_type} -> {mid_text} -> {r2_type}",
+                            "to": c_text,
+                        })
+                        node_ids.append(c_id)
+
+        if not content:
+            return None
+
+        token_estimate = len(content) * 30
+
         return BundleSection(
             section_type="graph",
-            content=[],  # Placeholder
-            token_estimate=0,
-            source_node_ids=[],
+            content=content,
+            token_estimate=token_estimate,
+            source_node_ids=node_ids,
         )
     except Exception as e:
-        print(f"Error in _stage_graph_structure: {e}")
+        _logger.warning("Error in _stage_graph_structure: %s", e)
         return None
 
 
