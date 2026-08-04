@@ -1356,10 +1356,14 @@ async def _update_procedure_maturity(db, config: dict) -> dict:
     result = {"updated": 0, "degraded": 0, "archived": 0, "errors": 0}
 
     # 1) Promote: nascent -> developing -> mature
+    # B277: Kuzu's Cypher dialect does not support `!=` (only `<>`) - every
+    # real invocation of this and the degrade query below raised a Parser
+    # exception, silently swallowed with no logging, so the entire
+    # Procedure maturity lifecycle never worked against a real database.
     try:
         await db.execute_write(
             "MATCH (p:Procedure) WHERE p.archived = false "
-            "AND coalesce(p.maturity_stage, 'nascent') != 'degraded' "
+            "AND coalesce(p.maturity_stage, 'nascent') <> 'degraded' "
             "SET p.maturity_stage = CASE "
             "  WHEN p.application_count >= 5 AND p.success_rate >= 0.75 THEN 'mature' "
             "  WHEN p.application_count >= 3 AND p.success_rate >= 0.50 THEN 'developing' "
@@ -1367,6 +1371,7 @@ async def _update_procedure_maturity(db, config: dict) -> dict:
         )
         result["updated"] += 1
     except Exception:
+        _logger.exception("[BasalGanglia] Procedure maturity promotion query failed")
         result["errors"] += 1
 
     # 2) Degrade: application_count >= 3 AND success_rate < 0.30
@@ -1374,12 +1379,13 @@ async def _update_procedure_maturity(db, config: dict) -> dict:
         await db.execute_write(
             "MATCH (p:Procedure) WHERE p.archived = false "
             "AND p.application_count >= 3 AND p.success_rate < 0.30 "
-            "AND coalesce(p.maturity_stage, 'nascent') != 'degraded' "
+            "AND coalesce(p.maturity_stage, 'nascent') <> 'degraded' "
             "SET p.maturity_stage = 'degraded', "
             "    p.pathway_strength = p.pathway_strength * 0.5"
         )
         result["degraded"] += 1
     except Exception:
+        _logger.exception("[BasalGanglia] Procedure maturity degrade query failed")
         result["errors"] += 1
 
     # 3) Archive: already degraded AND still failing
@@ -1392,6 +1398,7 @@ async def _update_procedure_maturity(db, config: dict) -> dict:
         )
         result["archived"] += 1
     except Exception:
+        _logger.exception("[BasalGanglia] Procedure archive query failed")
         result["errors"] += 1
 
     return result

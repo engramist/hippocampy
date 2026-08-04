@@ -861,7 +861,17 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS ANOMALY_DETECTED (FROM Concept TO GlobalConstraint, FROM Concept TO GlobalPreference, FROM Decision TO GlobalConstraint, FROM Constraint TO GlobalConstraint, FROM Requirement TO GlobalConstraint, FROM ActionItem TO GlobalConstraint, FROM Message TO GlobalConstraint, FROM DocumentExtract TO GlobalConstraint, type STRING, confidence DOUBLE, detected_at TIMESTAMP)",
     # B11 — Lesson
     "CREATE REL TABLE IF NOT EXISTS PRODUCED_LESSON (FROM MainQuest TO Lesson)",
-    "CREATE REL TABLE IF NOT EXISTS DISTILLED_FROM (FROM Procedure TO Plan, synthesized_at TIMESTAMP)",
+    # B277: widened beyond FROM Procedure TO Plan (procedure_synthesis.py's
+    # use) to also cover FROM Procedure TO Concept/Decision/Constraint
+    # (frustration_clusters.py links avoidance Procedures back to the
+    # high-salience source nodes they were distilled from). Kuzu rel tables
+    # can't ALTER to add new FROM/TO pairs after creation - `IF NOT EXISTS`
+    # means a pre-existing DB with the narrower definition won't gain the
+    # new pairs automatically. Low risk today: frustration_clusters.py's
+    # CREATE was itself broken (missing Procedure.salience_score) until
+    # this same change, so no real installation has ever successfully
+    # written a DISTILLED_FROM edge to a non-Plan node to migrate.
+    "CREATE REL TABLE IF NOT EXISTS DISTILLED_FROM (FROM Procedure TO Plan, FROM Procedure TO Concept, FROM Procedure TO Decision, FROM Procedure TO Constraint, synthesized_at TIMESTAMP)",
     "CREATE REL TABLE IF NOT EXISTS APPLIES_TO_ARCHETYPE (FROM Procedure TO Concept)",
     "CREATE REL TABLE IF NOT EXISTS APPLIED_PROCEDURE (FROM Plan TO Procedure, success BOOLEAN, applied_at TIMESTAMP)",
     "CREATE REL TABLE IF NOT EXISTS IDENTIFIED_GAP_IN (FROM KnowledgeGap TO MainQuest, FROM KnowledgeGap TO Concept)",
@@ -1164,9 +1174,21 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         ("Concept",        "salience_score",        "DOUBLE"),
         ("Decision",       "salience_score",        "DOUBLE"),
         ("Constraint",     "salience_score",        "DOUBLE"),
+        # B277: frustration_clusters.py writes salience_score onto the
+        # avoidance Procedures it synthesizes (provenance for how salient
+        # the source cluster was) - was missing, so every CREATE failed.
+        ("Procedure",      "salience_score",        "DOUBLE"),
 
         # Basal Ganglia: maturity_stage — Procedure lifecycle tracking
         ("Procedure",      "maturity_stage",        "STRING"),
+
+        # B277: reward_predictor.py writes these on every call (live-reachable
+        # from campy/brain/thalamus/tools/arc_queries.py) - were missing
+        # entirely, so every write silently failed and exploration_policy.py's
+        # read of prediction_error could never fire in production.
+        ("Plan",           "predicted_valence",     "DOUBLE"),
+        ("Plan",           "actual_valence",        "DOUBLE"),
+        ("Plan",           "prediction_error",      "DOUBLE"),
 
         # B250: source_key — deterministic (file_path, sheet) identity for
         # tabular re-upload change detection / archive-on-change, mirroring

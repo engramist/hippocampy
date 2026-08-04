@@ -49,7 +49,7 @@ def _make_sweep_db(query_rows=None, vector_results=None):
             for pattern, rows in query_rows.items():
                 if pattern in q:
                     return [dict(zip(
-                        ["id", "name", "desc", "emb", "salience"],
+                        ["id", "name", "description", "emb", "salience"],
                         row
                     )) for row in rows]
             return []

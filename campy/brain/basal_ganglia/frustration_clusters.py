@@ -13,6 +13,16 @@ import numpy as np
 
 _logger = logging.getLogger(__name__)
 
+# Source tables scanned for high-salience clustering, and their pk column -
+# used to build the correctly-labeled DISTILLED_FROM edge per node (B277:
+# previously hardcoded to :Concept regardless of which table a clustered
+# node actually came from).
+_SOURCE_ID_COLUMNS = {
+    "Concept": "concept_id",
+    "Decision": "decision_id",
+    "Constraint": "constraint_id",
+}
+
 
 async def detect_frustration_clusters(db, config: dict) -> tuple[int, int]:
     """
@@ -41,11 +51,16 @@ async def detect_frustration_clusters(db, config: dict) -> tuple[int, int]:
     for table, id_col in [("Concept", "concept_id"), ("Decision", "decision_id"),
                           ("Constraint", "constraint_id")]:
         try:
+            # B277: `desc` is a reserved keyword in Kuzu's Cypher dialect
+            # (collides with ORDER BY ... DESC) - aliasing to it raised a
+            # Parser exception on every call, so this query - the very
+            # first step of frustration cluster detection - never
+            # successfully returned a single row in production.
             rows = await db.execute_read(
                 f"MATCH (n:{table}) WHERE n.archived = false "
                 f"  AND n.salience_score >= $floor "
                 f"RETURN n.{id_col} AS id, n.text_raw AS name, "
-                f"  coalesce(n.text_raw, '') AS desc, n.embedding AS emb, "
+                f"  coalesce(n.text_raw, '') AS description, n.embedding AS emb, "
                 f"  n.salience_score AS salience "
                 f"ORDER BY n.salience_score DESC LIMIT 50",
                 {"floor": salience_floor},
@@ -54,6 +69,11 @@ async def detect_frustration_clusters(db, config: dict) -> tuple[int, int]:
                 node_id = row.get("id", "")
                 if row.get("emb") and node_id not in seen_ids:
                     seen_ids.add(node_id)
+                    # B277: remember which table this node came from - the
+                    # DISTILLED_FROM edge below needs the real label, not a
+                    # hardcoded :Concept (Decision/Constraint-sourced
+                    # cluster members previously failed to link at all).
+                    row["_source_table"] = table
                     all_nodes.append(row)
         except Exception:
             errors += 1
@@ -101,7 +121,7 @@ async def detect_frustration_clusters(db, config: dict) -> tuple[int, int]:
 
         steps = []
         for n in cluster_nodes[:5]:
-            desc = n.get("desc", "")
+            desc = n.get("description", "")
             if desc:
                 steps.append({
                     "step": len(steps) + 1,
@@ -153,17 +173,24 @@ async def detect_frustration_clusters(db, config: dict) -> tuple[int, int]:
             )
 
             for node in cluster_nodes:
+                node_id = node.get("id", "")
+                source_table = node.get("_source_table", "Concept")
+                id_col = _SOURCE_ID_COLUMNS.get(source_table, "concept_id")
+                if not node_id:
+                    continue
                 try:
-                    node_id = node.get("id", "")
-                    if node_id:
-                        await db.execute_write(
-                            "MATCH (pr:Procedure {procedure_id: $pid}), (c:Concept {concept_id: $cid}) "
-                            "MERGE (pr)-[r:DISTILLED_FROM]->(c) "
-                            "ON CREATE SET r.synthesized_at = timestamp($now)",
-                            {"pid": proc_id, "cid": node_id, "now": now},
-                        )
+                    await db.execute_write(
+                        f"MATCH (pr:Procedure {{procedure_id: $pid}}), "
+                        f"(c:{source_table} {{{id_col}: $cid}}) "
+                        "MERGE (pr)-[r:DISTILLED_FROM]->(c) "
+                        "ON CREATE SET r.synthesized_at = timestamp($now)",
+                        {"pid": proc_id, "cid": node_id, "now": now},
+                    )
                 except Exception:
-                    pass
+                    _logger.exception(
+                        "[BasalGanglia] Failed to link avoidance Procedure %s to %s %s",
+                        proc_id[:8], source_table, node_id,
+                    )
 
             synthesized += 1
             _logger.info(
