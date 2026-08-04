@@ -41,6 +41,7 @@ _DATASET_DDL = """
     column_count INT32,
     source_format STRING,
     content_hash STRING,
+    source_key STRING,
     confidence DOUBLE,
     confidence_low BOOLEAN,
     pathway_strength DOUBLE,
