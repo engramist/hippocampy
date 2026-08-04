@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -80,6 +82,8 @@ async def ingest_tabular(
             dfs = {"sheet_1": pd.read_csv(resolved)}
         elif extension == ".tsv":
             dfs = {"sheet_1": pd.read_csv(resolved, sep="\t")}
+        elif extension == ".json":
+            dfs = {"sheet_1": pd.read_json(resolved)}
         elif extension in {".xlsx", ".xls"}:
             # Read all sheets; config can override to first-sheet-only
             multi_sheet_strategy = config.get("tabular", {}).get("multi_sheet_strategy", "per_sheet")
@@ -114,6 +118,63 @@ async def ingest_tabular(
     results["sheets_processed"] = len(dfs)
     results["already_current"] = False
     return results
+
+
+def _infer_content_extension(content: str) -> str:
+    """Infer a file extension for raw tabular-shaped content.
+
+    Mirrors the structural checks in memory_router._looks_tabular (JSON
+    array, then delimiter consistency), but returns a suffix rather than a
+    bool since ingest_tabular() dispatches its parser purely off the file
+    extension.
+    """
+    stripped = content.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        try:
+            json.loads(stripped)
+            return ".json"
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    non_empty_lines = [line for line in stripped.split("\n")[:10] if line.strip()]
+    if non_empty_lines:
+        tab_counts = [line.count("\t") for line in non_empty_lines]
+        if tab_counts[0] > 0 and len(set(tab_counts)) <= 2:
+            return ".tsv"
+
+    return ".csv"
+
+
+async def ingest_tabular_from_content(
+    db: KuzuClient,
+    content: str,
+    config: dict,
+    loop_queue=None,
+    quest_id: str = "",
+) -> dict:
+    """Ingest raw tabular-shaped text (pasted content, no source file).
+
+    B251: classify_input() can recommend the tabular path for pasted
+    content, but ingest_tabular() only ever accepted a file path - so
+    tabular-shaped content pasted directly (not uploaded as a file) had no
+    way into the tabular pipeline. This writes the content to a throwaway
+    temp file with an extension inferred from its structure, delegates to
+    ingest_tabular(), and always removes the temp file afterward -
+    Dataset.storage_uri points at the independently created SQLite table,
+    not the source file, so nothing depends on the temp file surviving
+    past this call.
+    """
+    extension = _infer_content_extension(content)
+    fd, tmp_path = tempfile.mkstemp(suffix=extension)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        return await ingest_tabular(db, tmp_path, config, loop_queue, quest_id)
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 async def _ingest_single_dataset(
