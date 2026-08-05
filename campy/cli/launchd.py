@@ -14,15 +14,58 @@ LEGACY_PLIST_PATH = get_legacy_launchd_plist_path()
 LOG_PATH = get_daemon_log_path()
 
 
+def _canonical_repo_root() -> Path:
+    """Resolve the main-checkout repo root, never an ephemeral git worktree.
+
+    ``Path(__file__).parent.parent.parent`` is wrong when this module is
+    imported from inside a git worktree (e.g. an isolated agent worktree
+    under ``.claude/worktrees/``) — it resolves to the worktree itself, not
+    the primary checkout. Since the launchd job this module configures is a
+    single shared, machine-wide daemon, generating its plist from a worktree
+    silently repoints that shared daemon at a directory that will eventually
+    be deleted, and that (being an ephemeral worktree) typically lacks
+    untracked runtime assets the main checkout has — the daemon then
+    crash-loops under launchd's keep-alive supervision. See B-series
+    incident write-up for the concrete case (all worktrees under
+    .claude/worktrees/, launchd stuck respawning a worktree copy that was
+    missing InvertorsDocs/GistSeedExamples.md, an untracked file).
+
+    ``git rev-parse --git-common-dir`` resolves correctly from any worktree
+    back to the main checkout's shared ``.git`` directory, so we use that
+    instead of a plain ``__file__``-relative path whenever git is available
+    and the result actually looks like the repo (has ``brain_daemon.py``).
+    Falls back to the ``__file__``-relative path for non-git installs
+    (e.g. pipx/pip, where ``_daemon_script`` also has its own fallback).
+    """
+    fallback = Path(__file__).parent.parent.parent
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=str(fallback),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            common_dir = Path(result.stdout.strip())
+            root = common_dir.parent if common_dir.name == ".git" else common_dir
+            if (root / "brain_daemon.py").is_file():
+                return root
+    except Exception:
+        pass
+    return fallback
+
+
 def resolve_system_python(repo_root: Path | None = None) -> str:
     """Find the Python interpreter launchd should use.
 
-    repo_root defaults to this package's repository checkout; tests pass an
-    explicit root so the venv-preference branch is exercised regardless of
-    whether the runner's checkout has a .venv.
+    repo_root defaults to the canonical repo checkout (never an ephemeral
+    worktree, see ``_canonical_repo_root``); tests pass an explicit root so
+    the venv-preference branch is exercised regardless of whether the
+    runner's checkout has a .venv.
     """
     if repo_root is None:
-        repo_root = Path(__file__).parent.parent.parent
+        repo_root = _canonical_repo_root()
     venv_python = Path(repo_root) / ".venv" / "bin" / "python"
     if venv_python.exists():
         return str(venv_python)
@@ -38,11 +81,16 @@ def resolve_system_python(repo_root: Path | None = None) -> str:
 def _daemon_script() -> str:
     """Return absolute path to brain_daemon.py, or the console-script path.
 
+    Always resolves against the canonical repo root (see
+    ``_canonical_repo_root``), never an ephemeral git worktree — this is the
+    shared, machine-wide daemon, so its script path must be stable
+    regardless of which worktree happened to generate the plist.
+
     When installed via pipx the repo-root brain_daemon.py does not exist
     inside the venv.  Fall back to the ``campy-daemon`` console script
     which pipx *does* install, or finally ``python -m campy.daemon``.
     """
-    repo_candidate = Path(__file__).parent.parent.parent / "brain_daemon.py"
+    repo_candidate = _canonical_repo_root() / "brain_daemon.py"
     if repo_candidate.is_file():
         return str(repo_candidate)
 
