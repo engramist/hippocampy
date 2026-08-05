@@ -45,84 +45,167 @@ class HermesAdapter:
     async def recall(self, query: str, scope: str = "both") -> Optional[Dict[str, Any]]:
         """
         Recall from memory using the query.
-        
+
         Args:
             query: What to search for
             scope: Search scope (both | lessons | timeline)
-        
+
         Returns:
             Memory recall result or None if failed
         """
         try:
-            import aiohttp
+            import httpx
             url = f"{self.memory_url}/api/v1/recall"
             params = {"q": query, "scope": scope, "session_id": self._session_id}
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        return data.get("data")
-                    else:
-                        logger.warning(f"Memory recall failed: {resp.status}")
-                        return None
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, params=params)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return data.get("data")
+                else:
+                    logger.warning(f"Memory recall failed: {resp.status_code}")
+                    return None
         except Exception as e:
             logger.error(f"Error recalling memory: {e}")
             return None
-    
+
     async def decide(self, query: str) -> Optional[Dict[str, Any]]:
         """
         Ask the memory router which tool to use.
-        
+
         Args:
             query: Decision question
-        
+
         Returns:
             Router recommendation or None
         """
         try:
-            import aiohttp
+            import httpx
             url = f"{self.memory_url}/api/v1/decide"
             payload = {"query": query, "session_id": self._session_id}
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        return data.get("data")
-                    else:
-                        logger.warning(f"Memory decision failed: {resp.status}")
-                        return None
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return data.get("data")
+                else:
+                    logger.warning(f"Memory decision failed: {resp.status_code}")
+                    return None
         except Exception as e:
             logger.error(f"Error making memory decision: {e}")
             return None
-    
+
     async def notify(self, role: str, content: str) -> bool:
         """
         Notify the memory system of a message exchange.
-        
+
         Args:
             role: Message role (user | assistant | system)
             content: Message content
-        
+
         Returns:
             True if notification succeeded
         """
         try:
-            import aiohttp
+            import httpx
             url = f"{self.memory_url}/api/v1/notify"
             payload = {
                 "role": role,
                 "content": content,
                 "session_id": self._session_id,
             }
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload) as resp:
-                    return resp.status == 200
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, json=payload)
+                return resp.status_code == 200
         except Exception as e:
             logger.error(f"Error notifying memory: {e}")
             return False
+
+    async def session_recall(
+        self, task_description: str, token_budget: int = 32000, agent_type: str = "generic"
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve a compiled context bundle (decisions, constraints, tabular data,
+        summaries) for a broad or multi-entity task - the compile_context-backed
+        counterpart to recall()'s single-fact current_truth lookup.
+
+        Args:
+            task_description: What the agent is about to work on
+            token_budget: Max tokens the bundle should target
+            agent_type: Output formatting hint (e.g. "generic", "claude_code")
+
+        Returns:
+            Compiled context bundle or None if failed
+        """
+        try:
+            import httpx
+            url = f"{self.memory_url}/api/v1/bundle"
+            payload = {
+                "query": task_description,
+                "token_budget": token_budget,
+                "agent_type": agent_type,
+            }
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return data.get("data")
+                else:
+                    logger.warning(f"session_recall failed: {resp.status_code}")
+                    return None
+        except Exception as e:
+            logger.error(f"Error in session_recall: {e}")
+            return None
+
+    async def spawn_context(
+        self, parent_session_id: str, task_description: str, token_budget: int = 8000
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get a task-scoped context bundle for a Hermes-spawned sub-agent. Same
+        compile_context backing as session_recall(), but a smaller default
+        token budget since spawned agents work a narrower slice of the task.
+
+        Args:
+            parent_session_id: Session ID of the Hermes agent doing the spawning
+            task_description: What the spawned agent is being asked to do
+            token_budget: Max tokens the bundle should target
+
+        Returns:
+            Compiled context bundle or None if failed
+        """
+        return await self.session_recall(
+            task_description, token_budget=token_budget, agent_type="spawned"
+        )
+
+    async def capture_turn(
+        self, role: str, content: str, session_id: Optional[str] = None
+    ) -> bool:
+        """
+        Forward a message exchange to memory, like notify(), with an optional
+        per-call session_id override that does not persist past this call.
+
+        Args:
+            role: Message role (user | assistant | system)
+            content: Message content
+            session_id: Session to attribute this turn to; defaults to the
+                adapter's configured session when omitted
+
+        Returns:
+            True if notification succeeded
+        """
+        if session_id is None:
+            return await self.notify(role, content)
+
+        prior_session_id = self._session_id
+        self._session_id = session_id
+        try:
+            return await self.notify(role, content)
+        finally:
+            self._session_id = prior_session_id
     
     def health_check(self) -> bool:
         """
