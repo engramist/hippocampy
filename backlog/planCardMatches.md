@@ -180,6 +180,7 @@ Generated from backlog cards and backlog/plans/*.md.
 - B305: (none)
 - B306: (none)
 - B307: (none)
+- B308: (none)
 
 ## Unmatched Plan Files
 
