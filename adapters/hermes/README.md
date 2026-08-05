@@ -7,6 +7,8 @@ This adapter integrates the Campy AI memory system with the Hermes agent orchest
 Hermes agents can use the `HermesAdapter` to access persistent memory capabilities from Campy, including:
 
 - **Memory Recall**: Search the knowledge graph for relevant facts and lessons
+- **Session Recall**: Retrieve a compiled context bundle for broad or multi-entity tasks
+- **Spawned-Agent Context**: Get a task-scoped context bundle for Hermes-spawned sub-agents
 - **Routing Decisions**: Ask the memory system which recall tool to use
 - **Memory Notification**: Notify memory about interactions for future learning
 - **Health Checks**: Verify the Campy daemon is running
@@ -40,6 +42,28 @@ if not adapter:
 result = await adapter.recall("What have we learned about customer preferences?")
 if result:
     print(f"Relevant memories: {result}")
+```
+
+### Session Recall (compiled context bundle)
+
+```python
+# Get a full compiled bundle (decisions, constraints, tabular data, summaries)
+# for a broad or multi-entity task - use this instead of recall() when the
+# task spans more than one topic.
+bundle = await adapter.session_recall("brief me on the auth refactor", token_budget=32000)
+if bundle:
+    print(bundle["bundle"])
+```
+
+### Spawned-Agent Context
+
+```python
+# When this Hermes agent spawns a sub-agent for a narrower task, give it a
+# task-scoped slice of context (smaller default token budget than session_recall).
+context = await adapter.spawn_context(
+    parent_session_id="my-hermes-agent-001",
+    task_description="investigate the failing test",
+)
 ```
 
 ### Get Router Recommendation
@@ -131,13 +155,22 @@ Initialize the adapter with a memory daemon URL.
 Configure the adapter with runtime settings. Returns True if successful.
 
 #### `async recall(query: str, scope: str = "both") -> Optional[Dict[str, Any]]`
-Recall relevant memories for a query. Scopes: "both", "lessons", "timeline".
+Recall relevant memories for a query. Scopes: "both", "lessons", "timeline". Backed by `current_truth` - single-fact lookups.
+
+#### `async session_recall(task_description: str, token_budget: int = 32000, agent_type: str = "generic") -> Optional[Dict[str, Any]]`
+Retrieve a compiled context bundle (decisions, constraints, tabular data, summaries). Backed by `compile_context` - use for broad or multi-entity tasks, unlike `recall()`.
+
+#### `async spawn_context(parent_session_id: str, task_description: str, token_budget: int = 8000) -> Optional[Dict[str, Any]]`
+Get a task-scoped context bundle for a Hermes-spawned sub-agent. Same `compile_context` backing as `session_recall()`, smaller default token budget.
 
 #### `async decide(query: str) -> Optional[Dict[str, Any]]`
 Get routing recommendation from memory system.
 
 #### `async notify(role: str, content: str) -> bool`
 Notify memory about a message exchange. Returns True if successful.
+
+#### `async capture_turn(role: str, content: str, session_id: Optional[str] = None) -> bool`
+Like `notify()`, with an optional per-call `session_id` override that does not persist past the call.
 
 #### `health_check() -> bool`
 Check if the daemon is running and healthy.
