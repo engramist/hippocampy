@@ -867,6 +867,33 @@ export default {
       actual_reward: Type.Optional(Type.Number()),
     }, { additionalProperties: true });
 
+    const recordTransitionParams = Type.Object({
+      task_id: Type.Optional(Type.String({ description: "ARC task identifier" })),
+      step: Type.Optional(Type.Union([Type.Number(), Type.String()])),
+      action_id: Type.Optional(Type.String({ description: "ARC action identifier" })),
+      changed_count: Type.Optional(Type.Number()),
+      color_transitions: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }))),
+      entity_ref: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+    }, { additionalProperties: true });
+
+    const entityHistoryParams = Type.Object({
+      task_id: Type.Optional(Type.String({ description: "ARC task identifier" })),
+      entity_ref: Type.Optional(Type.Number()),
+    }, { additionalProperties: true });
+
+    const recordRuleParams = Type.Object({
+      task_id: Type.Optional(Type.String({ description: "ARC task identifier" })),
+      step: Type.Optional(Type.Union([Type.Number(), Type.String()])),
+      action_id: Type.Optional(Type.String({ description: "ARC action identifier" })),
+      candidate_signatures: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }))),
+      fingerprint: Type.Optional(Type.String({ description: "Structural fingerprint, e.g. ACTION6:small" })),
+    }, { additionalProperties: true });
+
+    const transferredRulesParams = Type.Object({
+      task_id: Type.Optional(Type.String({ description: "ARC task identifier" })),
+      fingerprint: Type.Optional(Type.String({ description: "Structural fingerprint, e.g. ACTION6:small" })),
+    }, { additionalProperties: true });
+
     const arcQueryToolDefinitions: BrainToolDefinition[] = [
       { name: "arc_perceive_state", label: "ARC Perceive State", description: "Ingest an ARC grid observation and update the graph-backed state.", parameters: arcPerceiveStateParams },
       { name: "arc_get_game_context", label: "ARC Game Context", description: "Return a compact episodic summary of the current ARC game state.", parameters: arcTaskParams },
@@ -883,6 +910,11 @@ export default {
       { name: "arc_get_mechanic_priors", label: "ARC Mechanic Priors", description: "Retrieve prior ARC mechanics linked to action patterns.", parameters: arcTaskGameFeaturesParams },
       { name: "arc_check_action_gate", label: "ARC Action Gate", description: "Return the go/no-go decision for an ARC action.", parameters: arcTaskActionListParams },
       { name: "arc_record_reward_prediction_error", label: "ARC Record Reward Prediction Error", description: "Store the reward prediction error for one ARC action.", parameters: arcRewardPredictionParams },
+      { name: "record_transition", label: "Record Transition", description: "Persist an observed state-change histogram for a tracked entity, linked to it when entity_ref is known.", parameters: recordTransitionParams },
+      { name: "get_entity_history", label: "Entity History", description: "Retrieve the recorded transition history for one tracked entity.", parameters: entityHistoryParams },
+      { name: "record_rule", label: "Record Rule", description: "Confirm, falsify, or create causal Rule nodes from candidate signatures.", parameters: recordRuleParams },
+      { name: "get_rules_for_action", label: "Rules For Action", description: "Retrieve live (unfalsified) causal rules for an action.", parameters: arcTaskActionParams },
+      { name: "get_transferred_rules", label: "Transferred Rules", description: "Retrieve live rules recorded under other task_ids matching a structural fingerprint (cross-context transfer).", parameters: transferredRulesParams },
     ];
 
     const memoryDecisionParams = Type.Object({

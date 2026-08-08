@@ -6,6 +6,7 @@ predictable dictionaries for the ARC-side adapter.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any, Iterable
 
 if TYPE_CHECKING:
@@ -92,8 +93,32 @@ async def arc_perceive_state(params: dict, db: KuzuClient, config: dict) -> dict
         },
     )
 
+    # A175: entity_id is stable across steps for the same physical object
+    # (client now sends real color_id/region_index, not always-default 0/0).
+    # Read each entity's stored centroid *before* overwriting it, so a real
+    # move can be detected and written as MOVED_BY once the effect node
+    # exists below.
+    moved: list[tuple[str, float, float]] = []
     for ent in entities:
         entity_id = f"{task_id}_e{ent.get('color_id', 0)}_{ent.get('region_index', 0)}"
+        new_cr = ent.get("centroid_row")
+        new_cc = ent.get("centroid_col")
+
+        existing_result = db.execute(
+            "MATCH (e:GridEntity {entity_id: $eid}) RETURN e.centroid_row, e.centroid_col",
+            {"eid": entity_id},
+        )
+        existing_row = _first_row(existing_result)
+        if existing_row is not None:
+            old_cr = _row_get(existing_row, "e.centroid_row", 0, None)
+            old_cc = _row_get(existing_row, "e.centroid_col", 1, None)
+            if (
+                old_cr is not None and old_cc is not None
+                and new_cr is not None and new_cc is not None
+                and (old_cr != new_cr or old_cc != new_cc)
+            ):
+                moved.append((entity_id, new_cr - old_cr, new_cc - old_cc))
+
         await db.execute_write(
             "MERGE (e:GridEntity {entity_id: $eid}) "
             "SET e.task_id = $tid, e.color_id = $cid, "
@@ -104,17 +129,17 @@ async def arc_perceive_state(params: dict, db: KuzuClient, config: dict) -> dict
                 "eid": entity_id,
                 "tid": task_id,
                 "cid": ent.get("color_id"),
-                "cr": ent.get("centroid_row"),
-                "cc": ent.get("centroid_col"),
+                "cr": new_cr,
+                "cc": new_cc,
                 "pc": ent.get("pixel_count"),
                 "role": ent.get("role", "unknown"),
                 "step": step,
             },
         )
 
-    effect_id = None
+    effect_id = f"{task_id}_step{step}_effect"
+    effect_written = False
     if params.get("action_taken"):
-        effect_id = f"{task_id}_step{step}_effect"
         effect = params.get("effect") or {}
         await db.execute_write(
             "MERGE (ae:ActionEffect {effect_id: $eid}) "
@@ -129,6 +154,24 @@ async def arc_perceive_state(params: dict, db: KuzuClient, config: dict) -> dict
                 "eff": effect.get("apparent_effect", "unknown"),
             },
         )
+        effect_written = True
+    elif moved:
+        # A175: no explicit action_taken, but an entity genuinely moved this
+        # call — still need an ActionEffect node to anchor MOVED_BY to.
+        await db.execute_write(
+            "MERGE (ae:ActionEffect {effect_id: $eid}) "
+            "SET ae.task_id = $tid, ae.step = $step",
+            {"eid": effect_id, "tid": task_id, "step": step},
+        )
+        effect_written = True
+
+    for entity_id, delta_row, delta_col in moved:
+        await db.execute_write(
+            "MATCH (e:GridEntity {entity_id: $eid}), (ae:ActionEffect {effect_id: $aeid}) "
+            "MERGE (e)-[m:MOVED_BY]->(ae) "
+            "SET m.delta_row = $dr, m.delta_col = $dc",
+            {"eid": entity_id, "aeid": effect_id, "dr": delta_row, "dc": delta_col},
+        )
 
     return {
         "ok": True,
@@ -136,7 +179,7 @@ async def arc_perceive_state(params: dict, db: KuzuClient, config: dict) -> dict
         "entity_count": len(entities),
         "delta_from_previous": None,
         "action_taken": params.get("action_taken"),
-        "effect_id": effect_id,
+        "effect_id": effect_id if effect_written else None,
     }
 
 
@@ -618,6 +661,230 @@ async def arc_record_reward_prediction_error(params: dict, db: KuzuClient, confi
     }
 
 
+async def record_transition(params: dict, db: KuzuClient, config: dict) -> dict:
+    """A176: persist one observed color-transition histogram as a Transition
+    node, linked to the GridEntity identified by entity_ref (A175's stable
+    correspondence id) when non-null. One node per call, keyed by
+    (task_id, action_id, step, entity_ref) — deliberately not merged/updated
+    per (action_id, entity_ref), since get_entity_history needs the full
+    per-step history to compute changed_count_total, not just the latest call.
+    """
+    task_id = params.get("task_id")
+    step = params.get("step")
+    action_id = params.get("action_id")
+    if not task_id:
+        return _error("task_id is required")
+    if step is None:
+        return _error("step is required")
+    if not action_id:
+        return _error("action_id is required")
+
+    entity_ref = params.get("entity_ref")
+    changed_count = _safe_int(params.get("changed_count"), 0)
+    color_transitions = params.get("color_transitions") or []
+
+    eref_key = entity_ref if entity_ref is not None else "none"
+    transition_id = f"{task_id}_{action_id}_step{step}_{eref_key}"
+
+    await db.execute_write(
+        "MERGE (t:Transition {transition_id: $tid}) "
+        "SET t.task_id = $task_id, t.step = $step, t.action_id = $aid, "
+        "    t.entity_ref = $eref, t.changed_count = $cc, "
+        "    t.color_transitions = $ct, t.created_at = current_timestamp()",
+        {
+            "tid": transition_id,
+            "task_id": task_id,
+            "step": step,
+            "aid": action_id,
+            "eref": entity_ref,
+            "cc": changed_count,
+            "ct": json.dumps(color_transitions, sort_keys=True, default=str),
+        },
+    )
+
+    if entity_ref is not None:
+        # A175's region_index is the stable per-task correspondence id — at
+        # most one GridEntity should match; LIMIT 1 keeps this bounded and
+        # deterministic if an edge case ever produces more than one.
+        await db.execute_write(
+            "MATCH (t:Transition {transition_id: $tid}), "
+            "      (ge:GridEntity {task_id: $task_id, region_index: $eref}) "
+            "WITH t, ge LIMIT 1 "
+            "MERGE (t)-[:TRANSITION_OF]->(ge)",
+            {"tid": transition_id, "task_id": task_id, "eref": entity_ref},
+        )
+
+    return {"ok": True, "transition_id": transition_id}
+
+
+async def get_entity_history(params: dict, db: KuzuClient, config: dict) -> dict:
+    """A176: what has happened to this entity across the game so far."""
+    task_id = params.get("task_id")
+    if not task_id:
+        return _error("task_id is required")
+    entity_ref = params.get("entity_ref")
+    if entity_ref is None:
+        return _error("entity_ref is required")
+
+    result = db.execute(
+        "MATCH (t:Transition {task_id: $tid, entity_ref: $eref}) "
+        "RETURN t.action_id, t.step, t.color_transitions, t.changed_count "
+        "ORDER BY t.step",
+        {"tid": task_id, "eref": entity_ref},
+    )
+
+    transitions = []
+    total = 0
+    for row in _iter_rows(result):
+        raw_ct = _row_get(row, "t.color_transitions", 2, None)
+        try:
+            color_transitions = json.loads(raw_ct) if raw_ct else []
+        except Exception:
+            color_transitions = []
+        transitions.append(
+            {
+                "action_id": _row_get(row, "t.action_id", 0, None),
+                "step": _safe_int(_row_get(row, "t.step", 1, 0)),
+                "color_transitions": color_transitions,
+            }
+        )
+        total += _safe_int(_row_get(row, "t.changed_count", 3, 0))
+
+    return {"transitions": transitions, "changed_count_total": total}
+
+
+async def record_rule(params: dict, db: KuzuClient, config: dict) -> dict:
+    """A177 (+ A179's fingerprint field): bookkeeping over deterministic
+    candidate signatures already extracted client-side. For each signature,
+    find a live (unfalsified) Rule for this task_id + action_family +
+    from_color: same to_color -> confirm (bump confidence); different
+    to_color -> falsify; no match -> create."""
+    task_id = params.get("task_id")
+    step = params.get("step")
+    if not task_id:
+        return _error("task_id is required")
+    if step is None:
+        return _error("step is required")
+
+    fingerprint = params.get("fingerprint")
+    signatures = params.get("candidate_signatures") or []
+
+    results = []
+    for sig in signatures:
+        action_family = sig.get("action_family")
+        from_color = sig.get("from_color")
+        to_color = sig.get("to_color")
+        if not action_family or from_color is None or to_color is None:
+            continue
+
+        existing_result = db.execute(
+            "MATCH (r:Rule {task_id: $tid, action_family: $af, from_color: $fc}) "
+            "WHERE r.falsified = false "
+            "RETURN r.rule_id, r.to_color, r.confidence",
+            {"tid": task_id, "af": action_family, "fc": from_color},
+        )
+        existing_row = _first_row(existing_result)
+
+        if existing_row is None:
+            rule_id = f"{task_id}_{action_family}_{from_color}_{to_color}_{step}"
+            await db.execute_write(
+                "MERGE (r:Rule {rule_id: $rid}) "
+                "SET r.task_id = $tid, r.action_family = $af, r.from_color = $fc, "
+                "    r.to_color = $tc, r.fingerprint = $fp, r.confidence = 0.5, "
+                "    r.falsified = false, r.created_step = $step",
+                {
+                    "rid": rule_id, "tid": task_id, "af": action_family, "fc": from_color,
+                    "tc": to_color, "fp": fingerprint, "step": step,
+                },
+            )
+            results.append({"rule_id": rule_id, "status": "created"})
+            continue
+
+        existing_rule_id = _row_get(existing_row, "r.rule_id", 0, None)
+        existing_to_color = _row_get(existing_row, "r.to_color", 1, None)
+        existing_confidence = _safe_float(_row_get(existing_row, "r.confidence", 2, 0.5))
+
+        if existing_to_color == to_color:
+            new_confidence = min(1.0, existing_confidence + 0.1)
+            await db.execute_write(
+                "MATCH (r:Rule {rule_id: $rid}) "
+                "SET r.confidence = $conf, r.fingerprint = coalesce(r.fingerprint, $fp)",
+                {"rid": existing_rule_id, "conf": new_confidence, "fp": fingerprint},
+            )
+            results.append({"rule_id": existing_rule_id, "status": "confirmed"})
+        else:
+            await db.execute_write(
+                "MATCH (r:Rule {rule_id: $rid}) SET r.falsified = true",
+                {"rid": existing_rule_id},
+            )
+            results.append({"rule_id": existing_rule_id, "status": "falsified"})
+
+    return {"ok": True, "results": results}
+
+
+async def get_rules_for_action(params: dict, db: KuzuClient, config: dict) -> dict:
+    """A177: live (unfalsified) rules relevant to this action."""
+    task_id = params.get("task_id")
+    action_id = params.get("action_id")
+    if not task_id:
+        return _error("task_id is required")
+    if not action_id:
+        return _error("action_id is required")
+
+    result = db.execute(
+        "MATCH (r:Rule {task_id: $tid, action_family: $af}) "
+        "WHERE r.falsified = false "
+        "RETURN r.rule_id, r.from_color, r.to_color, r.confidence, r.falsified",
+        {"tid": task_id, "af": action_id},
+    )
+
+    rules = []
+    for row in _iter_rows(result):
+        rules.append(
+            {
+                "rule_id": _row_get(row, "r.rule_id", 0, None),
+                "from_color": _safe_int(_row_get(row, "r.from_color", 1, 0)),
+                "to_color": _safe_int(_row_get(row, "r.to_color", 2, 0)),
+                "confidence": _safe_float(_row_get(row, "r.confidence", 3, 0.0)),
+                "falsified": bool(_row_get(row, "r.falsified", 4, False)),
+            }
+        )
+
+    return {"rules": rules}
+
+
+async def get_transferred_rules(params: dict, db: KuzuClient, config: dict) -> dict:
+    """A179: live rules from OTHER task_ids whose recorded fingerprint
+    matches — deliberately cross-game only, not self-referential (A164's
+    existing per-game scoping via get_rules_for_action already covers
+    in-game evidence)."""
+    task_id = params.get("task_id")
+    fingerprint = params.get("fingerprint")
+    if not task_id:
+        return _error("task_id is required")
+    if not fingerprint:
+        return _error("fingerprint is required")
+
+    result = db.execute(
+        "MATCH (r:Rule {fingerprint: $fp}) "
+        "WHERE r.task_id <> $tid AND r.falsified = false "
+        "RETURN r.rule_id, r.confidence, r.task_id",
+        {"fp": fingerprint, "tid": task_id},
+    )
+
+    rules = []
+    for row in _iter_rows(result):
+        rules.append(
+            {
+                "rule_id": _row_get(row, "r.rule_id", 0, None),
+                "confidence": _safe_float(_row_get(row, "r.confidence", 1, 0.0)),
+                "source_game_id": _row_get(row, "r.task_id", 2, None),
+            }
+        )
+
+    return {"rules": rules}
+
+
 __all__ = [
     "arc_perceive_state",
     "arc_get_game_context",
@@ -634,4 +901,9 @@ __all__ = [
     "arc_get_mechanic_priors",
     "arc_check_action_gate",
     "arc_record_reward_prediction_error",
+    "record_transition",
+    "get_entity_history",
+    "record_rule",
+    "get_rules_for_action",
+    "get_transferred_rules",
 ]
