@@ -9,7 +9,7 @@
 
 ---
 
-## Quick Reference: All 52 MCP Tools
+## Quick Reference: All 58 MCP Tools
 
 | # | Tool Name | Category | Called By | Blocking? | Requires LLM? |
 |---|-----------|----------|-----------|-----------|----------------|
@@ -66,6 +66,11 @@
 | 51 | `memory_decision` | Recall Policy | Agent | Yes | No |
 | 52 | `ask` | Augmented Inference | Agent / Human CLI | Yes (LLM call) | Yes |
 | 53 | `register_artifact` | Provenance (CWS) | Agent | Yes | No |
+| 54 | `record_transition` | World-Model | Agent | Yes | No |
+| 55 | `get_entity_history` | World-Model | Agent | Yes | No |
+| 56 | `record_rule` | World-Model | Agent | Yes | No |
+| 57 | `get_rules_for_action` | World-Model | Agent | Yes | No |
+| 58 | `get_transferred_rules` | World-Model | Agent | Yes | No |
 
 ---
 

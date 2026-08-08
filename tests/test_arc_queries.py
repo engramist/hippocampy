@@ -37,6 +37,11 @@ EXPECTED_ARC_TOOLS = {
     "arc_get_mechanic_priors",
     "arc_check_action_gate",
     "arc_record_reward_prediction_error",
+    "record_transition",
+    "get_entity_history",
+    "record_rule",
+    "get_rules_for_action",
+    "get_transferred_rules",
 }
 
 
@@ -294,3 +299,222 @@ async def test_moderate_negative_rpe_direction_matches_write_behavior(arc_db):
     assert result["direction"] == "neutral", (
         "direction must not claim 'negative' when no write occurred"
     )
+
+
+# ---------------------------------------------------------------------------
+# B309 real-Kuzu regression coverage — A175-A179's pending server-side half.
+#
+# These tools traverse GridEntity/ActionEffect/MOVED_BY (existing B168/B278
+# schema) plus the new Transition/Rule node tables and TRANSITION_OF rel
+# table. The MockDB above can't validate real Cypher against real column/rel
+# definitions (same class of bug B277/B280/B284 found this session), so this
+# uses the full production schema via init_schema(), module-scoped since
+# it's expensive; tests use disjoint task_ids to stay independent.
+# ---------------------------------------------------------------------------
+
+from campy.brain.hippocampus.schema import init_schema
+
+_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+_SEED_EXAMPLES_PATH = "campy/data/GistSeedExamples.md"
+
+
+@pytest.fixture(scope="module")
+def b309_db():
+    tmp = tempfile.mkdtemp(prefix="kuzu_b309_arc_")
+    db = KuzuClient(f"{tmp}/db")
+    init_schema(db, _SEED_EXAMPLES_PATH, _EMBEDDING_MODEL)
+    yield db
+    db.close()
+    shutil.rmtree(tmp, ignore_errors=True)
+
+
+@pytest.mark.asyncio
+async def test_a175_moved_by_written_when_entity_centroid_changes(b309_db):
+    """Reproduction from docs/handoff/B278-entity-identity-and-moved-by.md:
+    same task_id/color_id/region_index across two steps, centroid genuinely
+    moves -> arc_get_entity_movement must return a non-empty entry with the
+    correct delta, and arc_get_causal_path's MOVED_BY hop becomes reachable."""
+    perceive = TOOL_HANDLERS["arc_perceive_state"]
+    get_movement = TOOL_HANDLERS["arc_get_entity_movement"]
+
+    await perceive(
+        {"task_id": "b309-moved", "step": 0, "grid_hash": "h0",
+         "entities": [{"color_id": 5, "region_index": 0,
+                       "centroid_row": 2.0, "centroid_col": 2.0, "pixel_count": 1}]},
+        b309_db, {},
+    )
+    await perceive(
+        {"task_id": "b309-moved", "step": 1, "grid_hash": "h1",
+         "entities": [{"color_id": 5, "region_index": 0,
+                       "centroid_row": 2.0, "centroid_col": 5.0, "pixel_count": 1}]},
+        b309_db, {},
+    )
+
+    result = await get_movement({"task_id": "b309-moved", "step": 1}, b309_db, {})
+
+    assert result["entities"], "expected a MOVED_BY entry, got none"
+    entry = result["entities"][0]
+    assert entry["id"] == "b309-moved_e5_0"
+    assert entry["delta_col"] == pytest.approx(3.0)
+    assert entry["delta_row"] == pytest.approx(0.0)
+
+
+@pytest.mark.asyncio
+async def test_a175_no_moved_by_when_centroid_unchanged(b309_db):
+    """A stationary entity across two steps must not produce a MOVED_BY edge."""
+    perceive = TOOL_HANDLERS["arc_perceive_state"]
+    get_movement = TOOL_HANDLERS["arc_get_entity_movement"]
+
+    await perceive(
+        {"task_id": "b309-still", "step": 0, "grid_hash": "h0",
+         "entities": [{"color_id": 7, "region_index": 0,
+                       "centroid_row": 1.0, "centroid_col": 1.0, "pixel_count": 1}]},
+        b309_db, {},
+    )
+    await perceive(
+        {"task_id": "b309-still", "step": 1, "grid_hash": "h1",
+         "entities": [{"color_id": 7, "region_index": 0,
+                       "centroid_row": 1.0, "centroid_col": 1.0, "pixel_count": 1}]},
+        b309_db, {},
+    )
+
+    result = await get_movement({"task_id": "b309-still", "step": 1}, b309_db, {})
+    assert result["entities"] == []
+
+
+@pytest.mark.asyncio
+async def test_a176_record_transition_and_get_entity_history(b309_db):
+    """record_transition persists per-step history; get_entity_history
+    reads it back matching the request/response shapes in the A176 hand-off doc."""
+    perceive = TOOL_HANDLERS["arc_perceive_state"]
+    record_transition = TOOL_HANDLERS["record_transition"]
+    get_history = TOOL_HANDLERS["get_entity_history"]
+
+    # entity_ref resolves against a real GridEntity's region_index.
+    await perceive(
+        {"task_id": "b309-hist", "step": 0, "grid_hash": "h0",
+         "entities": [{"color_id": 5, "region_index": 1,
+                       "centroid_row": 0.0, "centroid_col": 0.0, "pixel_count": 1}]},
+        b309_db, {},
+    )
+
+    result = await record_transition(
+        {"task_id": "b309-hist", "step": 4, "action_id": "ACTION6",
+         "changed_count": 3, "color_transitions": [{"from": 2, "to": 5, "count": 3}],
+         "entity_ref": 1},
+        b309_db, {},
+    )
+    assert result["ok"] is True
+    assert result["transition_id"]
+
+    history = await get_history({"task_id": "b309-hist", "entity_ref": 1}, b309_db, {})
+    assert history["changed_count_total"] == 3
+    assert len(history["transitions"]) == 1
+    entry = history["transitions"][0]
+    assert entry["action_id"] == "ACTION6"
+    assert entry["step"] == 4
+    assert entry["color_transitions"] == [{"from": 2, "to": 5, "count": 3}]
+
+
+@pytest.mark.asyncio
+async def test_a176_entity_ref_null_is_legitimate_not_an_error(b309_db):
+    """entity_ref may be null (changed cells didn't fall inside a known
+    entity's bbox) - must persist cleanly, not error."""
+    record_transition = TOOL_HANDLERS["record_transition"]
+
+    result = await record_transition(
+        {"task_id": "b309-noref", "step": 2, "action_id": "ACTION3",
+         "changed_count": 1, "color_transitions": [{"from": 1, "to": 2, "count": 1}],
+         "entity_ref": None},
+        b309_db, {},
+    )
+    assert result["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_a176_get_entity_history_empty_for_unknown_entity(b309_db):
+    """No recorded history -> empty result, not an error."""
+    get_history = TOOL_HANDLERS["get_entity_history"]
+
+    history = await get_history({"task_id": "b309-nohist", "entity_ref": 99}, b309_db, {})
+    assert history == {"transitions": [], "changed_count_total": 0}
+
+
+@pytest.mark.asyncio
+async def test_a177_record_rule_creates_confirms_falsifies(b309_db):
+    """A new (action_family, from_color) creates a Rule; a repeat with the
+    same to_color confirms it (confidence increases, stays unfalsified); a
+    repeat with a different to_color falsifies it."""
+    record_rule = TOOL_HANDLERS["record_rule"]
+    get_rules = TOOL_HANDLERS["get_rules_for_action"]
+
+    task_id = "b309-rules"
+    sig = {"action_family": "ACTION6", "from_color": 2, "to_color": 5}
+
+    created = await record_rule(
+        {"task_id": task_id, "step": 0, "action_id": "ACTION6",
+         "candidate_signatures": [sig], "fingerprint": "ACTION6:small"},
+        b309_db, {},
+    )
+    assert created["results"][0]["status"] == "created"
+
+    rules_after_create = await get_rules({"task_id": task_id, "action_id": "ACTION6"}, b309_db, {})
+    assert len(rules_after_create["rules"]) == 1
+    initial_confidence = rules_after_create["rules"][0]["confidence"]
+    assert rules_after_create["rules"][0]["falsified"] is False
+
+    confirmed = await record_rule(
+        {"task_id": task_id, "step": 1, "action_id": "ACTION6",
+         "candidate_signatures": [sig], "fingerprint": "ACTION6:small"},
+        b309_db, {},
+    )
+    assert confirmed["results"][0]["status"] == "confirmed"
+
+    rules_after_confirm = await get_rules({"task_id": task_id, "action_id": "ACTION6"}, b309_db, {})
+    assert len(rules_after_confirm["rules"]) == 1
+    assert rules_after_confirm["rules"][0]["confidence"] > initial_confidence
+    assert rules_after_confirm["rules"][0]["falsified"] is False
+
+    falsifying_sig = {"action_family": "ACTION6", "from_color": 2, "to_color": 9}
+    falsified = await record_rule(
+        {"task_id": task_id, "step": 2, "action_id": "ACTION6",
+         "candidate_signatures": [falsifying_sig], "fingerprint": "ACTION6:small"},
+        b309_db, {},
+    )
+    assert falsified["results"][0]["status"] == "falsified"
+
+    rules_after_falsify = await get_rules({"task_id": task_id, "action_id": "ACTION6"}, b309_db, {})
+    assert rules_after_falsify["rules"] == [], "falsified rule must not be returned as a live rule"
+
+
+@pytest.mark.asyncio
+async def test_a179_get_transferred_rules_is_cross_game_only(b309_db):
+    """A rule recorded under task_id=A with fingerprint=X is returned when
+    queried from a different task_id=B with the same fingerprint, and is NOT
+    returned when queried from task_id=A itself (self) or a different
+    fingerprint."""
+    record_rule = TOOL_HANDLERS["record_rule"]
+    get_transferred = TOOL_HANDLERS["get_transferred_rules"]
+
+    await record_rule(
+        {"task_id": "b309-game-a", "step": 0, "action_id": "ACTION6",
+         "candidate_signatures": [{"action_family": "ACTION6", "from_color": 2, "to_color": 5}],
+         "fingerprint": "ACTION6:small"},
+        b309_db, {},
+    )
+
+    same_fp_other_game = await get_transferred(
+        {"task_id": "b309-game-b", "fingerprint": "ACTION6:small"}, b309_db, {}
+    )
+    assert len(same_fp_other_game["rules"]) == 1
+    assert same_fp_other_game["rules"][0]["source_game_id"] == "b309-game-a"
+
+    self_query = await get_transferred(
+        {"task_id": "b309-game-a", "fingerprint": "ACTION6:small"}, b309_db, {}
+    )
+    assert self_query["rules"] == [], "must not return a game's own rules as 'transferred'"
+
+    different_fp = await get_transferred(
+        {"task_id": "b309-game-b", "fingerprint": "ACTION1:large"}, b309_db, {}
+    )
+    assert different_fp["rules"] == []
