@@ -805,6 +805,34 @@ NODE_TABLES = {
         last_accessed_at TIMESTAMP,
         PRIMARY KEY (dataset_id)
     """,
+
+    # B309 — A176: persisted color-transition history per ARC entity/action/step
+    "Transition": """
+        transition_id     STRING,
+        task_id           STRING,
+        step              INT32,
+        action_id         STRING,
+        entity_ref        INT32,
+        changed_count     INT32,
+        color_transitions STRING,
+        created_at        TIMESTAMP,
+        PRIMARY KEY (transition_id)
+    """,
+
+    # B309 — A177/A179: causal rules as graph nodes (PREDICTS/confirm/falsify),
+    # indexed by fingerprint for A179's cross-game transfer lookup.
+    "Rule": """
+        rule_id       STRING,
+        task_id       STRING,
+        action_family STRING,
+        from_color    INT32,
+        to_color      INT32,
+        fingerprint   STRING,
+        confidence    DOUBLE,
+        falsified     BOOLEAN,
+        created_step  INT32,
+        PRIMARY KEY (rule_id)
+    """,
 }
 
 # ---------------------------------------------------------------------------
@@ -921,6 +949,8 @@ REL_TABLES = [
     # B172 — Victory Condition persistence
     "CREATE REL TABLE IF NOT EXISTS INFERRED_FROM (FROM VictoryCondition TO Hypothesis, weight FLOAT)",
     "CREATE REL TABLE IF NOT EXISTS REQUIRES_ENTITY (FROM VictoryCondition TO GridEntity, requirement STRING)",
+    # B309 — A176: Transition -> the GridEntity it was attributed to (entity_ref)
+    "CREATE REL TABLE IF NOT EXISTS TRANSITION_OF (FROM Transition TO GridEntity)",
     # B225 — ARC Artifact Ingestion relationships
     "CREATE REL TABLE IF NOT EXISTS ARC_RUN_HAS_TASK (FROM ArcRun TO ArcTaskResult)",
     "CREATE REL TABLE IF NOT EXISTS ARC_RUN_HAS_ARTIFACT (FROM ArcRun TO ArcArtifact)",

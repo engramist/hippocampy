@@ -181,12 +181,14 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B306 | Fix Invalid Cypher in `_stage_exact_facts` / `_stage_semantic_context` (Silently Dead Bundle Stages) | P99 | complete (2026-08-02) | TBD | TBD | - | backlog/B306.md |
 | B307 | Lexical Bypass for Paraphrased Plan Queries (Retrieval Floor Too Strict) | P99 | complete (2026-08-02) — PR #20. Full eval matrix (4 models x H0/H1/H1+H2): | TBD | TBD | - | backlog/B307.md |
 | B308 | Archive-Move HNSW Rebuild Mechanism (B285 Path B) | P99 | not started — filed 2026-08-04 as a follow-up to B285's scope-alignment pass. Requires an architecture decision before implementation, not just a coding pass. | TBD | TBD | - | backlog/B308.md |
+| B309 | ARC World-Model Tools: Implement A175-A179's Pending Server-Side Half (Entity Movement, Transitions, Rules, Cross-Game Transfer) | P1 | complete (2026-08-08) — shipped as generic tool names (record_transition, get_entity_history, record_rule, get_rules_for_action, get_transferred_rules) rather than arc_-prefixed, per user direction; ARC_AGI's client-side tool-name mapping updated to match in the same pass. | TBD | TBD | - | backlog/B309.md |
+| B310 | Fix `scripts/generate_extension_tools.py` Crash on Multi-Type JSON Schema Fields | P3 | ready — filed 2026-08-08, found while implementing B309: `_schema_to_typebox()` raises `TypeError: unhashable type: 'list'` on any `inputSchema` field with a list `"type"` (e.g. `["integer", "null"]`). Undetected until now because the generator only walks tools NOT already hand-written in index.ts, and every pre-existing multi-type field happened to already be hand-written. | TBD | TBD | - | backlog/B310.md |
 
 ## Summary
 
-- Total cards: 177
-- Ready: 2
+- Total cards: 179
+- Ready: 3
 - Needs work: 0
-- Complete: 164
+- Complete: 165
 - In progress: 0
 - Blocked: 0

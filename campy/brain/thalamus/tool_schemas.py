@@ -846,6 +846,73 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "record_transition",
+        "description": "Persist an observed state-change histogram for a tracked entity, linked to it when entity_ref is known.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "step": {"type": ["integer", "string"]},
+                "action_id": {"type": "string"},
+                "changed_count": {"type": "integer"},
+                "color_transitions": {"type": "array", "items": {"type": "object"}},
+                "entity_ref": {"type": ["integer", "null"]},
+            },
+            "required": ["task_id", "step", "action_id"],
+        },
+    },
+    {
+        "name": "get_entity_history",
+        "description": "Retrieve the recorded transition history for one tracked entity.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "entity_ref": {"type": "integer"},
+            },
+            "required": ["task_id", "entity_ref"],
+        },
+    },
+    {
+        "name": "record_rule",
+        "description": "Confirm, falsify, or create causal Rule nodes from candidate signatures.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "step": {"type": ["integer", "string"]},
+                "action_id": {"type": "string"},
+                "candidate_signatures": {"type": "array", "items": {"type": "object"}},
+                "fingerprint": {"type": "string"},
+            },
+            "required": ["task_id", "step", "candidate_signatures"],
+        },
+    },
+    {
+        "name": "get_rules_for_action",
+        "description": "Retrieve live (unfalsified) causal rules for an action.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "action_id": {"type": "string"},
+            },
+            "required": ["task_id", "action_id"],
+        },
+    },
+    {
+        "name": "get_transferred_rules",
+        "description": "Retrieve live rules recorded under other task_ids matching a structural fingerprint (cross-context transfer).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "fingerprint": {"type": "string"},
+            },
+            "required": ["task_id", "fingerprint"],
+        },
+    },
+    {
         "name": "memory_decision",
         "description": (
             "Recommend whether and how to recall SideQuests memory for the current user prompt. "
