@@ -53,6 +53,19 @@ def _opts(schema: dict, allowed: tuple[str, ...]) -> str:
 def _schema_to_typebox(schema: dict) -> str:
     stype = schema.get("type")
 
+    if isinstance(stype, list):
+        # Multi-type JSON Schema, e.g. {"type": ["integer", "string"]} or a
+        # nullable field {"type": ["integer", "null"]}. "null" has no
+        # TypeBox constraints of its own, so map it directly; every other
+        # member re-enters with the full schema (minus the list) so its own
+        # constraints (description, minimum, etc.) still apply.
+        member_exprs = [
+            "Type.Null()" if member_type == "null"
+            else _schema_to_typebox({**schema, "type": member_type})
+            for member_type in stype
+        ]
+        return f"Type.Union([{', '.join(member_exprs)}])"
+
     if stype == "string":
         enum_vals = schema.get("enum")
         if enum_vals:
