@@ -183,10 +183,11 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B308 | Archive-Move HNSW Rebuild Mechanism (B285 Path B) | P99 | not started — filed 2026-08-04 as a follow-up to B285's scope-alignment pass. Requires an architecture decision before implementation, not just a coding pass. | TBD | TBD | - | backlog/B308.md |
 | B309 | ARC World-Model Tools: Implement A175-A179's Pending Server-Side Half (Entity Movement, Transitions, Rules, Cross-Game Transfer) | P1 | complete (2026-08-08) — shipped as generic tool names (record_transition, get_entity_history, record_rule, get_rules_for_action, get_transferred_rules) rather than arc_-prefixed, per user direction; ARC_AGI's client-side tool-name mapping updated to match in the same pass. | TBD | TBD | - | backlog/B309.md |
 | B310 | Fix `scripts/generate_extension_tools.py` Crash on Multi-Type JSON Schema Fields | P3 | complete (2026-08-08) — `_schema_to_typebox()` now handles list-typed `"type"` via `Type.Union([...])`, `"null"` mapped to `Type.Null()`. Verified against the real CI drift-guard sequence (generate + `git diff --exit-code`), which would have crashed before this fix. | TBD | TBD | - | backlog/B310.md |
+| B311 | Investigate Brain Daemon's Large Transient Memory Spikes (100-150MB Baseline to 600MB-1.2GB Peaks) During ARC Live-Smoke Runs | P2 | open — investigation only, no fix proposed. Filed from ARC_AGI side with full RSS measurement data (154 samples, 2s interval, ~308s live episode) and concrete investigation hypotheses (embedding model reload, KuzuDB buffer bursts, GC-deferred reclaim). Root cause not yet identified. | TBD | TBD | - | backlog/B311.md |
 
 ## Summary
 
-- Total cards: 179
+- Total cards: 180
 - Ready: 2
 - Needs work: 0
 - Complete: 166
