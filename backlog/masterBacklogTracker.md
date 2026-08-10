@@ -185,10 +185,17 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B310 | Fix `scripts/generate_extension_tools.py` Crash on Multi-Type JSON Schema Fields | P3 | complete (2026-08-08) — `_schema_to_typebox()` now handles list-typed `"type"` via `Type.Union([...])`, `"null"` mapped to `Type.Null()`. Verified against the real CI drift-guard sequence (generate + `git diff --exit-code`), which would have crashed before this fix. | TBD | TBD | - | backlog/B310.md |
 | B311 | Investigate Brain Daemon's Large Transient Memory Spikes (100-150MB Baseline to 600MB-1.2GB Peaks) During ARC Live-Smoke Runs | P2 | open — investigation only, no fix proposed. Filed from ARC_AGI side with full RSS measurement data (154 samples, 2s interval, ~308s live episode) and concrete investigation hypotheses (embedding model reload, KuzuDB buffer bursts, GC-deferred reclaim). Root cause not yet identified. | TBD | TBD | - | backlog/B311.md |
 
+| B312 | Provenance Fields + Explicit Supersession on Fact-Bearing Nodes | P0 | todo — cloud/interop series (B312–B317). Foundation card; the rest of the series assumes it has landed. | TBD | TBD | - | backlog/B312.md |
+| B313 | Authority Property: Projected vs Earned Memory | P0 | todo — depends on B312. Lets Campy mirror externally-owned facts without becoming a second source of truth for them. | TBD | TBD | - | backlog/B313.md |
+| B314 | GraphGateway: Named-Query Chokepoint + Raw-Cypher Ratchet | P0 | todo — no hard deps. Builds the seam, migrates `tools/lessons.py` as proof, installs a ratchet over the ~500 remaining inline-Cypher sites. B316 depends on it. | TBD | TBD | - | backlog/B314.md |
+| B315 | AuthContext: Principal Derivation and Threading | P0 | todo — no hard deps. Tenant/workspace derived from transport credentials, never from request params. B316 depends on it. | TBD | TBD | - | backlog/B315.md |
+| B316 | Workspace Router: One Database Per Workspace | P1 | todo — depends on B315. Physical tenant isolation; also fixes the globally-shared write lock in `kuzu_client.py`. | TBD | TBD | - | backlog/B316.md |
+| B317 | Named-Query Eval Pack: Bounded Multi-Hop Conformance Suite | P1 | todo — depends on B312/B313/B314. Doubles as the backend-conformance suite any future storage adapter must pass. | TBD | TBD | - | backlog/B317.md |
+
 ## Summary
 
-- Total cards: 180
-- Ready: 2
+- Total cards: 186
+- Ready: 8
 - Needs work: 0
 - Complete: 166
 - In progress: 0
