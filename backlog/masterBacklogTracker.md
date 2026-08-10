@@ -192,10 +192,14 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B316 | Workspace Router: One Database Per Workspace | P1 | todo — depends on B315. Physical tenant isolation; also fixes the globally-shared write lock in `kuzu_client.py`. | TBD | TBD | - | backlog/B316.md |
 | B317 | Named-Query Eval Pack: Bounded Multi-Hop Conformance Suite | P1 | todo — depends on B312/B313/B314. Doubles as the backend-conformance suite any future storage adapter must pass. | TBD | TBD | - | backlog/B317.md |
 
+| B318 | Fail-Open: A Campy Outage Must Degrade Agents, Never Block Them | P0 | todo — no deps. Also fixes the 10s default timeout on the per-tool-call hook path. | TBD | TBD | - | backlog/B318.md |
+| B319 | Backup and Restore for Earned Memory | P1 | todo — depends on B313 (authority split defines what needs backing up). No backup command exists today. | TBD | TBD | - | backlog/B319.md |
+| B320 | Idempotent Writes: Content-Addressed Deduplication for Retried Captures | P1 | todo — depends on B312. Adds content_hash without changing primary keys (Kùzu 0.11.3 cannot alter a PK in place). | TBD | TBD | - | backlog/B320.md |
+
 ## Summary
 
-- Total cards: 186
-- Ready: 8
+- Total cards: 189
+- Ready: 11
 - Needs work: 0
 - Complete: 166
 - In progress: 0
