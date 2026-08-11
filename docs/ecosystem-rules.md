@@ -412,6 +412,13 @@ The correct pattern:
 
 This rule exists because the whole point of a knowledge graph is to make inferences across data. Data trapped in Python dicts is invisible to graph queries, cross-puzzle learning, and any future agent that needs to reason about the same state.
 
+**Clarification (B313) — this rule governs *earned* state.** "KuzuDB is the single source of truth" is unconditionally true for facts Campy itself learns: a `Hypothesis`, a `Lesson`, a chunk-history row exists nowhere else, so a Python dict holding one instead of (or ahead of) KuzuDB is exactly the shadow store this rule forbids. It does not, by itself, forbid Campy from also holding a *mirror* of state some other system already owns as canonical — a harvested capability catalog, App/Iteration records, workflow-engine run history. Mirroring an external authority into the graph is not a shadow store, because Campy was never the source of truth for it in the first place; there is nothing to "shadow." Two conditions make that distinction real instead of a loophole:
+
+1. The mirrored row **must be labelled** `authority = 'projected'` (`schema.AUTHORITY_VALUES`, `campy/brain/hippocampus/schema.py`) — never left indistinguishable from `earned` state. An unlabelled mirror is a shadow store with extra steps: nothing downstream can tell it apart from a fact Campy is solely responsible for, so it decays the same way — silently, unnoticed, and trusted as authoritative long after the real owner has moved on.
+2. The mirrored row **must be rebuildable** — non-NULL `source` + `source_version`, enforced at write time by `provenance.py`'s `validate_authority()`. A `projected` row that cannot be traced back to what it mirrors and at what version is an unlabelled shadow store wearing the label; the label is only meaningful if "rebuild it from the source" is a claim someone could actually act on. `find_stale_projections()` and `drop_projections()` (same module) exist so that claim is exercised, not just asserted once at write time.
+
+In short: the "no shadow stores" rule is about *unlabelled, unaccountable* duplication of authoritative state, not about whether Campy is allowed to hold a copy at all. `earned` facts must live in KuzuDB and nowhere else, full stop. `projected` facts may live in KuzuDB *in addition to* their real owner, provided the label and the rebuild path both hold — see `docs/ARCHITECTURE.md`'s B313 section for the full contract.
+
 ---
 
 ## Trusted Systems

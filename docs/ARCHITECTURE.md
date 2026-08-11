@@ -1518,3 +1518,115 @@ deployment — it's a `converse()` parameter, so this card's shape accommodates 
 Streaming (`converse_stream`) is not added — Campy's synthesis path is non-streaming today.
 Bedrock Agents/Knowledge Bases are out of scope — this card is model inference only. The default
 provider is unchanged (`ollama`); Bedrock is opt-in.
+
+## B313 — Authority: Projected vs Earned Memory
+
+Depends on B312 (reuses `source` and `source_version`). Answers the question B312 left open
+(see B312's "Explicitly out of scope" list above): not every fact-bearing row is something
+Campy alone knows. Some are mirrors of a catalog, record, or run history owned by another
+system. `CLAUDE.md`'s "KuzuDB is the single source of truth for all persistent agent state"
+rule is correct for the former and wrong for the latter — holding a mirrored fact as if Campy
+were its source of truth creates exactly the "second, silently-stale authority" failure mode
+governed platforms reject. `authority` gives the two kinds of fact a shared graph without a
+shared authority contract.
+
+### The `authority` column
+
+One column, same table set as B312 (`schema.PROVENANCE_TABLES` — Tier 1 fact-bearing tables
+plus the Tier 2 Arc\* learned-pattern tables):
+
+| Column | Type | Values |
+|---|---|---|
+| `authority` | `STRING` | one of `schema.AUTHORITY_VALUES` — `earned` \| `projected` |
+
+- **`earned`** — the fact exists nowhere else; Campy is the only place it lives, and losing
+  the row loses it permanently. This is the default, and it is the conservative one: treating
+  a projected fact as earned merely backs up something that didn't need it, while treating an
+  earned fact as projected risks *deleting something unrecoverable* during a `drop_projections()`
+  rebuild. When in doubt, a row reads as earned.
+- **`projected`** — the fact is a mirror of something owned elsewhere (a harvested capability
+  catalog, another service's App/Iteration records, workflow-engine run history, ...). A
+  projected fact is only meaningful if it can actually be rebuilt, so it **requires** non-NULL
+  `source` and `source_version` — see "Write-time invariant" below.
+
+`authority_of(row) -> str` (`campy/brain/hippocampus/provenance.py`) is the single NULL-safe
+read path: a NULL/missing column, an unrecognized value, or a genuinely absent row all read
+back as `"earned"` — the same conservative default, applied uniformly rather than scattered as
+`row.get("authority") or "earned"` across call sites. Pre-B313 rows (and any row from a table
+whose local schema predates this migration) are NULL and therefore read as earned, which is
+correct: they were never anything but earned.
+
+### Write-time invariant (`validate_authority()`)
+
+```python
+def validate_authority(authority: str, source: str | None, source_version: str | None) -> None
+```
+
+Raises `ValueError` when `authority == "projected"` and either `source` or `source_version` is
+NULL/empty — without both, "this is rebuildable from the source" is an unverifiable claim.
+`authority == "earned"` has no such requirement (there is nothing external for an earned fact
+to point at). `provenance_fields()` (B312's write helper) grew an optional `authority` kwarg
+that runs through this validation when passed; when omitted (every pre-B313 call site), the
+returned dict is byte-for-byte what it was before this card — `authority` is left out of the
+dict entirely rather than defaulted in, so the column is written NULL and reads back as earned
+via `authority_of()`. No existing caller had to change.
+
+### Two read paths that make the property useful (`provenance.py`)
+
+- `async find_stale_projections(db, *, source, current_version, tables=None) -> list[dict]` —
+  every projected fact from `source` whose `source_version` no longer matches
+  `current_version`. This is what turns projection drift from an invisible risk into a report:
+  "show me everything Campy is still presenting as current that the source has since moved
+  past." Rows with a NULL `source_version` are excluded (not reported as stale) — that state
+  should be unreachable through `validate_authority()`, so it's a pre-B313 anomaly this
+  function doesn't try to diagnose.
+- `async drop_projections(db, *, source, dry_run=True, tables=None) -> dict` — deletes every
+  `projected` row from one `source` so it can be safely re-projected. The single most
+  dangerous function this card adds, so it carries three safeguards: the delete (and the count
+  behind it) always filters on `authority = 'projected' AND source = $source` together, never
+  on `source` alone; `dry_run` defaults to `True`; and the return shape
+  `{"deleted": N, "skipped_earned": M}` surfaces `skipped_earned` explicitly so a caller can
+  see the authority filter actually excluded something, not just trust that it would have.
+
+Neither function is a scheduled job — B313 establishes the query and the safe-delete
+primitive; running them on a schedule, and the harvester that would actually write `projected`
+rows in the first place, are both future work.
+
+### Recall surfaces authority (`current_truth`, `bundle_compiler`)
+
+`current_truth` (`campy/brain/thalamus/tools/retrieval.py`) includes `authority` in every
+result row alongside `confidence`, read via `authority_of(node)` off the already-fetched node
+dict — no extra query. `bundle_compiler`'s `_stage_exact_facts` / `_stage_semantic_context`
+(`campy/brain/thalamus/bundle_compiler.py`) do the same for `GlobalConstraint`/
+`GlobalPreference`/`Concept`/`Decision`/`Constraint`/`Requirement`, but those two stages
+project named columns in their Cypher (`RETURN n.text_raw as text, ...`) rather than the whole
+node, and Kùzu raises a binder error on a `RETURN`ed property a table's schema doesn't have.
+Reduced test fixtures (and any local schema that predates this card) don't have `authority`,
+so both stages first check for the column (`_table_has_authority()`, a `CALL table_info(...)`
+probe mirroring `schema.py`'s `_column_exists()`) and fall back to defaulting every row's
+`authority` to `"earned"` when it's absent, rather than raising and losing the whole section.
+This card does not re-rank or filter on `authority` — it is visible, not yet actionable.
+
+### Export/backup: earned by default
+
+`campy/brain/hippocampus/graph/export.py`'s `export_graph_dump()` / `export_graph()` both
+gained `include_projected: bool = False`. Default excludes rows where `authority = 'projected'`
+(rows with NULL `authority` are still included — NULL reads as earned) from every
+`PROVENANCE_TABLES` table; every other table is unaffected, since only that table set carries
+the column at all. The rationale mirrors the column's own: a disaster-recovery export exists
+to protect memory that cannot be reconstructed. A projected fact is by definition reconstructible
+from its source, so the default export is smaller with no loss of anything actually
+irreplaceable; pass `include_projected=True` for a full mirror. `import_graph_dump()` needs no
+code change to tolerate an earned-only dump — a `PROVENANCE_TABLES` table's JSONL file simply
+has fewer rows, not a missing file, and a relationship whose endpoint was an omitted projected
+row fails its `MATCH` during `_create_relationships()` and is silently skipped (standard Cypher
+semantics: zero `MATCH` rows means the paired `CREATE` never fires), not an error.
+
+### Explicitly out of scope for B313
+
+- No harvester or projection-ingest path — nothing writes `projected` facts today except
+  tests. This card establishes the contract; the first real producer is future work.
+- No re-ranking or filtering of recall by `authority`.
+- No scheduled drift detection — `find_stale_projections()` is a function, not a background
+  job.
+- No change to what `archived` means or how `campy/brain/brainstem/sweep.py` behaves.

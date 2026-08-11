@@ -52,6 +52,28 @@ PROVENANCE_TABLES = (
 )
 
 # ---------------------------------------------------------------------------
+# B313 — Authority: projected vs earned memory
+#
+# Every PROVENANCE_TABLES table also carries an eighth column, `authority`,
+# alongside the seven B312 provenance/supersession columns:
+#
+#   authority STRING — one of AUTHORITY_VALUES below.
+#
+# "earned" (the default — see authority_of() in provenance.py) means Campy
+# is the only place this fact lives; losing the row loses the fact forever.
+# "projected" means the fact is a mirror of something owned elsewhere
+# (a harvested capability catalog, another service's records, ...) and
+# MUST carry non-NULL `source` + `source_version` so it can be rebuilt —
+# see provenance.py's validate_authority(). See docs/ARCHITECTURE.md for
+# the full contract.
+# ---------------------------------------------------------------------------
+
+AUTHORITY_VALUES = frozenset({
+    "earned",     # exists nowhere else — Campy is the source of truth
+    "projected",  # mirrored from an external authority — rebuildable, not owned
+})
+
+# ---------------------------------------------------------------------------
 # B323 — Task dependency graph, agent provenance, card/branch context bundle
 #
 # Three additions, all new tables (never redefinitions of BLOCKS/ENABLES,
@@ -108,6 +130,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (concept_id)
     """,
 
@@ -131,6 +154,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (decision_id)
     """,
 
@@ -154,6 +178,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (constraint_id)
     """,
 
@@ -177,6 +202,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (requirement_id)
     """,
 
@@ -200,6 +226,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (action_item_id)
     """,
 
@@ -223,6 +250,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (global_constraint_id)
     """,
 
@@ -246,6 +274,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (global_preference_id)
     """,
 
@@ -341,6 +370,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (extract_id)
     """,
 
@@ -383,6 +413,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (summary_id)
     """,
 
@@ -404,6 +435,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (artifact_id)
     """,
 
@@ -512,6 +544,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (lesson_id)
     """,
 
@@ -541,6 +574,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (procedure_id)
     """,
 
@@ -563,6 +597,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (gap_id)
     """,
 
@@ -591,6 +626,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (plan_id)
     """,
 
@@ -614,6 +650,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (step_id)
     """,
 
@@ -637,6 +674,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (id)
     """,
 
@@ -732,6 +770,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (effect_id)
     """,
 
@@ -771,6 +810,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (condition_id)
     """,
 
@@ -801,6 +841,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (fact_id)
     """,
 
@@ -908,6 +949,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (mechanic_id)
     """,
 
@@ -924,6 +966,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (pattern_id)
     """,
 
@@ -941,6 +984,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (pattern_id)
     """,
 
@@ -956,6 +1000,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (precondition_id)
     """,
 
@@ -971,6 +1016,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (failure_mode_id)
     """,
 
@@ -986,6 +1032,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (recovery_policy_id)
     """,
 
@@ -1011,6 +1058,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (world_model_step_id)
     """,
 
@@ -1071,6 +1119,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (transition_id)
     """,
 
@@ -1093,6 +1142,7 @@ NODE_TABLES = {
         superseded_by       STRING,
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
+        authority            STRING,
         PRIMARY KEY (rule_id)
     """,
 
@@ -1584,6 +1634,15 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
                 ("superseded_at", "TIMESTAMP"),
                 ("supersession_reason", "STRING"),
             )
+        ],
+
+        # B313: authority — projected vs earned memory. Same PROVENANCE_TABLES
+        # set as B312's migration above (Plan/VictoryCondition included here
+        # too — unlike "source", "authority" has no pre-existing column on
+        # either table to collide with).
+        *[
+            (table, "authority", "STRING")
+            for table in PROVENANCE_TABLES
         ],
 
         # B323: Workspace gains branch_name (for compile_card_context's
