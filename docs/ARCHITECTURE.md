@@ -1127,3 +1127,114 @@ ace
 **`campy trigger remove`** — Clear trigger metadata from a Procedure or Lesson node.
 
 **`campy trigger compile`** — Force-compile the trigger manifest from graph state (normally runs on sweep cycle).
+
+## B312 — Provenance + Explicit Supersession on Fact-Bearing Nodes
+
+First card in the cloud/interop series (B312–B317). Every other card in that series
+assumes this has landed, and it is the schema contract downstream agents (Claude,
+Gemini, Codex) should read before writing to fact-bearing tables.
+
+### Provenance columns
+
+Four columns on every table in `schema.PROVENANCE_TABLES`:
+
+| Column | Type | Meaning |
+|---|---|---|
+| `source` | `STRING` | Owning source identifier, namespaced `<kind>:<id>` — e.g. `agent:claude-code`, `harvest:git`, `user:direct`, `import:temporal`. |
+| `source_version` | `STRING` | Version of the source at observation time (git SHA, adapter version, model ID). Nullable when genuinely unversioned. |
+| `observed_at` | `TIMESTAMP` | When the fact became true / was observed. Distinct from `created_at` (when Campy wrote the row) — the two match for live capture, diverge for backfill/harvest. |
+| `evidence_ref` | `STRING` | Pointer to evidence — message ID, file path + line, run ID, URL. Nullable but strongly preferred. |
+
+`PROVENANCE_TABLES` (`campy/brain/hippocampus/schema.py`) is the Tier 1 (claimed/observed
+facts: `Concept`, `Decision`, `Constraint`, `Requirement`, `ActionItem`, `GlobalConstraint`,
+`GlobalPreference`, `Lesson`, `Procedure`, `KnowledgeGap`, `Plan`, `PlanStep`, `Hypothesis`,
+`ActionFact`, `ActionEffect`, `VictoryCondition`, `Rule`, `Transition`, `DocumentExtract`,
+`WorkSummary`, `WorkArtifact`) + Tier 2 (learned/inferred Arc\* patterns: `ArcMechanic`,
+`ArcActionPattern`, `ArcEffectPattern`, `ArcPrecondition`, `ArcFailureMode`,
+`ArcRecoveryPolicy`, `ArcWorldModelStep`) table set. Structural/ontology/runtime-record
+tables (`Session`, `Message`, `Document`, `MainQuest`, `ArcRun`, `TaskGraph`, ...) do **not**
+carry provenance — they are Campy's own bookkeeping, not claims about the world.
+
+`Plan` and `VictoryCondition` already had a `source` column before this card (plan
+origin `"active"`/`"passive"`, VC origin) — a different, narrower concept than the B312
+provenance `source`. B312 did not overwrite or duplicate that column; those two tables
+only gained the other six columns (`PlanStep`, which had no pre-existing `source` column,
+got the full seven).
+
+### Explicit supersession
+
+Three node columns (same table set as provenance) plus a `SUPERSEDES` rel table:
+
+| Column | Type | Meaning |
+|---|---|---|
+| `superseded_by` | `STRING` | Primary key of the node that replaced this one. `NULL` = current. |
+| `superseded_at` | `TIMESTAMP` | When supersession happened. |
+| `supersession_reason` | `STRING` | One of `SUPERSESSION_REASONS` (below). |
+
+`SUPERSESSION_REASONS` (module-level frozenset in `schema.py`): `replaced` (a newer fact
+says it better), `contradicted` (proven false), `source_removed` (upstream source no
+longer asserts it), `merged` (folded into another node — pairs with `MergeEvent`),
+`expired` (time-bounded fact whose window closed).
+
+`SUPERSEDES` is a same-type-pair-only rel table (`FROM Concept TO Concept`, `FROM Decision
+TO Decision`, ... one pair per `PROVENANCE_TABLES` entry; cross-type supersession is out
+of scope). Direction is `(newer)-[:SUPERSEDES]->(older)` — "A SUPERSEDES B" reads "A
+replaces B". **This is the mirror image of the pre-existing `DEPRECATED_BY` rel table**
+(`FROM Concept TO Concept, FROM Decision TO Decision, FROM Constraint TO Constraint, FROM
+Lesson TO Lesson`, present in `schema.py` before this card), whose convention is
+`(older)-[:DEPRECATED_BY]->(newer)` — "A is deprecated by B". B312 did not touch
+`DEPRECATED_BY`; **B323 is expected to reconcile the two mechanisms** (they currently
+overlap on Concept/Decision/Constraint/Lesson with opposite arrow directions and no
+shared write path).
+
+### Write-side API (`campy/brain/hippocampus/provenance.py`)
+
+- `provenance_fields(*, source, source_version=None, observed_at=None, evidence_ref=None) -> dict`
+  — builds the four provenance params for a `CREATE`, defaulting `observed_at` to
+  `now(UTC)` (returned as an ISO-8601 string, matching this codebase's `timestamp($x)`
+  convention).
+- `async mark_superseded(db, *, table, node_id, superseded_by, reason, at=None) -> None`
+  — sets the three supersession columns **and** creates the `SUPERSEDES` edge in one call,
+  so the two halves cannot drift. Raises `ValueError` for a `reason` outside
+  `SUPERSESSION_REASONS` or a `table` outside the provenance-tracked set. A caller that
+  sets `superseded_by` directly without going through this function (and thus without the
+  matching edge) has introduced a bug — the ID becomes a dangling reference instead of
+  traversable lineage.
+
+### Populated at capture time (best-effort, bounded)
+
+Only two write paths populate non-NULL provenance today, per this card's scope:
+
+- `campy/brain/thalamus/tools/lessons.py`: `upsert_lesson` (source defaults from the
+  caller's `agent_source` param via the existing `agent:<id>` convention, `evidence_ref`
+  defaults to `session_id`), and the Plan/PlanStep/Lesson writes inside
+  `_create_plan_graph` / `_store_plan_outcome_lesson` when called with `capture_source`/
+  `evidence_ref`.
+- `campy/brain/thalamus/tools/capture.py`: `notify_turn` derives `capture_source` as
+  `"user:direct"` for user turns or `"agent:<agent_source>"` for assistant turns, and
+  threads it (with `evidence_ref=message_id`) into the passive-plan-detection and
+  outcome-sense-lesson calls above.
+
+Every other write site (`quests.py`'s `report_outcome`/`register_plan`, the ~500 other
+Tier 1/Tier 2 writers) still writes `NULL` provenance. That is intentional — B312 does not
+retrofit all write sites, and NULL is the correct value for facts written before this
+card landed. Recall paths (`recall_relevant_lessons`, `current_truth`, etc.) must — and
+do — tolerate NULL provenance without error; neither reads the provenance columns
+directly, so this holds by construction.
+
+### Migration
+
+`schema.py`'s existing additive `_MIGRATIONS` mechanism (`ALTER TABLE ... ADD`, guarded
+by `_column_exists()`) carries all 28 tables' worth of new columns — no new migration
+path was introduced. `init_schema()` is idempotent and safe to run against an existing
+pre-B312 database: node tables use `IF NOT EXISTS`, so pre-existing rows are untouched;
+the new columns are added and default to `NULL`.
+
+### Explicitly out of scope for B312
+
+- The `authority` property (projected vs. earned) — **B313**.
+- Backfilling provenance onto existing rows.
+- Retrofitting provenance into write sites beyond `upsert_lesson` and `notify_turn`.
+- Changing `campy/brain/brainstem/sweep.py` to emit `expired` supersessions instead of
+  silent `archived` flips.
+- Cross-type supersession edges.

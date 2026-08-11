@@ -39,6 +39,8 @@ async def _maybe_create_passive_plan_from_turn(
     session_id: str,
     embedding_model: str,
     now_iso: str,
+    capture_source: str | None = None,
+    evidence_ref: str | None = None,
 ) -> dict | None:
     """B68 Layer B fallback: infer plan from structured text if not actively declared."""
     if not has_plan_signal(content):
@@ -70,6 +72,8 @@ async def _maybe_create_passive_plan_from_turn(
         source="passive",
         confidence=0.70,
         confidence_low=True,
+        capture_source=capture_source,
+        evidence_ref=evidence_ref,
     )
     return {"plan_id": plan_id, "step_ids": step_ids, "quest_id": quest_id}
 
@@ -86,6 +90,15 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
     session_id = params.get("session_id", "unknown")
     repo_root  = params.get("repo_root", "")
     git_branch = params.get("git_branch", "main")
+
+    # B312: provenance identifier for any Tier-1 facts this turn causes to be
+    # written (passive plan detection, outcome-sense lessons). Mirrors the
+    # "agent:<id>" / "user:direct" convention documented in schema.py's
+    # PROVENANCE_TABLES comment. agent_source follows the same
+    # params.get("agent_source", "mcp") convention already used below for
+    # WorkSummary (B290).
+    _capture_agent_source = params.get("agent_source", "mcp")
+    capture_source = "user:direct" if role == "user" else f"agent:{_capture_agent_source}"
 
     max_chars = config.get("ingestion", {}).get("max_ingest_chars", 4000)
     if len(content) > max_chars:
@@ -301,6 +314,8 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
                 session_id=session_id,
                 embedding_model=embedding_model,
                 now_iso=now,
+                capture_source=capture_source,
+                evidence_ref=message_id,
             )
     except Exception:
         _logger.exception("passive plan detection failed")
@@ -342,6 +357,8 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
                         embedding_model=embedding_model,
                         now_iso=now,
                         trigger_signals=trigger_signals,
+                        capture_source=capture_source,
+                        evidence_ref=message_id,
                     )
     except Exception:
         _logger.exception("outcome sense auto-report failed")

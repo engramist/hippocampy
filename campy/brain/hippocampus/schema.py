@@ -13,6 +13,44 @@ from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 from campy.brain.hippocampus.graph import embeddings as emb
 
 # ---------------------------------------------------------------------------
+# B312 — Provenance + explicit supersession
+#
+# Every fact-bearing node table (Tier 1 claimed/observed facts, Tier 2
+# learned/inferred Arc* patterns) carries seven additional columns:
+#
+#   source, source_version, observed_at, evidence_ref        — provenance
+#   superseded_by, superseded_at, supersession_reason         — supersession
+#
+# `supersession_reason` must be one of SUPERSESSION_REASONS below. See
+# campy/brain/hippocampus/provenance.py for the write-side helpers
+# (`provenance_fields()`, `mark_superseded()`) and docs/ARCHITECTURE.md for
+# the full contract.
+# ---------------------------------------------------------------------------
+
+SUPERSESSION_REASONS = frozenset({
+    "replaced",       # a newer fact says it better
+    "contradicted",   # proven false
+    "source_removed", # the upstream source no longer asserts it
+    "merged",         # folded into another node (pairs with MergeEvent)
+    "expired",        # time-bounded fact whose window closed
+})
+
+# Tables carrying provenance + supersession columns: Tier 1 fact-bearing
+# tables required by B312, plus the Tier 2 Arc* learned/inferred-pattern
+# tables (included per B312's judgement call — they are learned patterns,
+# not structural/runtime bookkeeping, so provenance applies the same way).
+PROVENANCE_TABLES = (
+    "Concept", "Decision", "Constraint", "Requirement", "ActionItem",
+    "GlobalConstraint", "GlobalPreference", "Lesson", "Procedure",
+    "KnowledgeGap", "Plan", "PlanStep", "Hypothesis", "ActionFact",
+    "ActionEffect", "VictoryCondition", "Rule", "Transition",
+    "DocumentExtract", "WorkSummary", "WorkArtifact",
+    "ArcMechanic", "ArcActionPattern", "ArcEffectPattern",
+    "ArcPrecondition", "ArcFailureMode", "ArcRecoveryPolicy",
+    "ArcWorldModelStep",
+)
+
+# ---------------------------------------------------------------------------
 # Node table DDL
 # ---------------------------------------------------------------------------
 
@@ -33,6 +71,13 @@ NODE_TABLES = {
         flagged_for_review BOOLEAN,
         created_at    TIMESTAMP,
         last_accessed_at TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (concept_id)
     """,
 
@@ -49,6 +94,13 @@ NODE_TABLES = {
         anomaly_type  STRING,
         flagged_for_review BOOLEAN,
         created_at    TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (decision_id)
     """,
 
@@ -65,6 +117,13 @@ NODE_TABLES = {
         anomaly_type  STRING,
         flagged_for_review BOOLEAN,
         created_at    TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (constraint_id)
     """,
 
@@ -81,6 +140,13 @@ NODE_TABLES = {
         anomaly_type   STRING,
         flagged_for_review BOOLEAN,
         created_at     TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (requirement_id)
     """,
 
@@ -97,6 +163,13 @@ NODE_TABLES = {
         anomaly_type   STRING,
         flagged_for_review BOOLEAN,
         created_at     TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (action_item_id)
     """,
 
@@ -113,6 +186,13 @@ NODE_TABLES = {
         anomaly_type         STRING,
         flagged_for_review   BOOLEAN,
         created_at           TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (global_constraint_id)
     """,
 
@@ -129,6 +209,13 @@ NODE_TABLES = {
         anomaly_type         STRING,
         flagged_for_review   BOOLEAN,
         created_at           TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (global_preference_id)
     """,
 
@@ -217,6 +304,13 @@ NODE_TABLES = {
         anomaly_type    STRING,
         flagged_for_review BOOLEAN,
         created_at      TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (extract_id)
     """,
 
@@ -252,6 +346,13 @@ NODE_TABLES = {
         snapshot_text   STRING,
         turn_count      INT32,
         last_updated_at TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (summary_id)
     """,
 
@@ -266,6 +367,13 @@ NODE_TABLES = {
         agent_source     STRING,
         created_at       TIMESTAMP,
         last_modified_at TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (artifact_id)
     """,
 
@@ -367,6 +475,13 @@ NODE_TABLES = {
         stale_flagged_at TIMESTAMP,
         orphan_flagged   BOOLEAN,
         orphan_flagged_at TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (lesson_id)
     """,
 
@@ -389,6 +504,13 @@ NODE_TABLES = {
         archived           BOOLEAN,
         created_at         TIMESTAMP,
         last_applied_at    TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (procedure_id)
     """,
 
@@ -404,6 +526,13 @@ NODE_TABLES = {
         resolved         BOOLEAN,
         created_at       TIMESTAMP,
         resolved_at      TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (gap_id)
     """,
 
@@ -426,6 +555,12 @@ NODE_TABLES = {
         archived         BOOLEAN,
         created_at       TIMESTAMP,
         completed_at     TIMESTAMP,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (plan_id)
     """,
 
@@ -442,6 +577,13 @@ NODE_TABLES = {
         status            STRING,
         created_at        TIMESTAMP,
         completed_at      TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (step_id)
     """,
 
@@ -458,6 +600,13 @@ NODE_TABLES = {
         text_raw         STRING,
         embedding        FLOAT[384],
         created_at       TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (id)
     """,
 
@@ -546,6 +695,13 @@ NODE_TABLES = {
         direction_row     DOUBLE,
         direction_col     DOUBLE,
         created_at        TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (effect_id)
     """,
 
@@ -579,6 +735,12 @@ NODE_TABLES = {
         evidence_steps   STRING,
         created_at       TIMESTAMP,
         last_updated     TIMESTAMP,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (condition_id)
     """,
 
@@ -602,6 +764,13 @@ NODE_TABLES = {
         n_cells_changed    INT32,
         created_at         TIMESTAMP,
         last_updated       TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (fact_id)
     """,
 
@@ -702,6 +871,13 @@ NODE_TABLES = {
         summary STRING,
         created_at STRING,
         updated_at STRING,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (mechanic_id)
     """,
 
@@ -711,6 +887,13 @@ NODE_TABLES = {
         action_set STRING,
         action_count INT64,
         summary STRING,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (pattern_id)
     """,
 
@@ -721,6 +904,13 @@ NODE_TABLES = {
         terminal_trend STRING,
         object_progress DOUBLE,
         summary STRING,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (pattern_id)
     """,
 
@@ -729,6 +919,13 @@ NODE_TABLES = {
         kind STRING,
         signature STRING,
         summary STRING,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (precondition_id)
     """,
 
@@ -737,6 +934,13 @@ NODE_TABLES = {
         name STRING,
         signature STRING,
         summary STRING,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (failure_mode_id)
     """,
 
@@ -745,6 +949,13 @@ NODE_TABLES = {
         name STRING,
         summary STRING,
         confidence DOUBLE,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (recovery_policy_id)
     """,
 
@@ -763,6 +974,13 @@ NODE_TABLES = {
         single_action_stall_detected BOOL,
         summary STRING,
         created_at STRING,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (world_model_step_id)
     """,
 
@@ -816,6 +1034,13 @@ NODE_TABLES = {
         changed_count     INT32,
         color_transitions STRING,
         created_at        TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (transition_id)
     """,
 
@@ -831,6 +1056,13 @@ NODE_TABLES = {
         confidence    DOUBLE,
         falsified     BOOLEAN,
         created_step  INT32,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
         PRIMARY KEY (rule_id)
     """,
 }
@@ -967,6 +1199,18 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS ARC_RUN_HAS_WORLD_MODEL_SUMMARY(FROM ArcRun TO ArcWorldModelSummary)",
     "CREATE REL TABLE IF NOT EXISTS ARC_WORLD_MODEL_FROM_ARTIFACT(FROM ArcWorldModelStep TO ArcArtifact)",
     "CREATE REL TABLE IF NOT EXISTS ARC_WORLD_MODEL_SUMMARY_FROM_ARTIFACT(FROM ArcWorldModelSummary TO ArcArtifact)",
+    # B312 — explicit supersession lineage. Same-type pairs only (cross-type
+    # supersession is out of scope for this card); covers Tier 1 + Tier 2
+    # PROVENANCE_TABLES. Direction: (newer)-[:SUPERSEDES]->(older) — the
+    # node passed as `superseded_by` points at the node passed as `node_id`
+    # in mark_superseded(). Note this is the *opposite* arrow convention
+    # from the pre-existing DEPRECATED_BY table above (FROM Concept TO
+    # Concept, ...), which reads (older)-[:DEPRECATED_BY]->(newer). B323
+    # reconciles the two mechanisms; flagging the direction mismatch here
+    # for that reconciliation.
+    "CREATE REL TABLE IF NOT EXISTS SUPERSEDES (" +
+    ", ".join(f"FROM {t} TO {t}" for t in PROVENANCE_TABLES) +
+    ")",
 ]
 
 def get_relationship_types() -> list[str]:
@@ -1224,6 +1468,42 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         # tabular re-upload change detection / archive-on-change, mirroring
         # Document's location_uri-derived identity.
         ("Dataset",        "source_key",             "STRING"),
+
+        # B312: provenance (source, source_version, observed_at, evidence_ref)
+        # + explicit supersession (superseded_by, superseded_at,
+        # supersession_reason) on every Tier 1 fact-bearing table and the
+        # Tier 2 Arc* learned-pattern tables. Plan and VictoryCondition
+        # already had a "source" column (plan origin / VC origin — a
+        # different, narrower meaning than the provenance "source" defined
+        # here); we do not overwrite or duplicate it, so those two tables
+        # only pick up the other six columns.
+        *[
+            (table, col, col_type)
+            for table in PROVENANCE_TABLES
+            if table not in ("Plan", "VictoryCondition")
+            for col, col_type in (
+                ("source", "STRING"),
+                ("source_version", "STRING"),
+                ("observed_at", "TIMESTAMP"),
+                ("evidence_ref", "STRING"),
+                ("superseded_by", "STRING"),
+                ("superseded_at", "TIMESTAMP"),
+                ("supersession_reason", "STRING"),
+            )
+        ],
+        # Plan / VictoryCondition: skip "source" (pre-existing column, kept as-is).
+        *[
+            (table, col, col_type)
+            for table in ("Plan", "VictoryCondition")
+            for col, col_type in (
+                ("source_version", "STRING"),
+                ("observed_at", "TIMESTAMP"),
+                ("evidence_ref", "STRING"),
+                ("superseded_by", "STRING"),
+                ("superseded_at", "TIMESTAMP"),
+                ("supersession_reason", "STRING"),
+            )
+        ],
     ]
     def _column_exists(table: str, col: str) -> bool:
         """Check whether a column already exists via table_info, avoiding

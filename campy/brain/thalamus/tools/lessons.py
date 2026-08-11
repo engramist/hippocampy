@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from campy.brain.hippocampus.graph import embeddings as emb
+from campy.brain.hippocampus.provenance import provenance_fields
 
 from ._shared import (
     _CONCEPT_INDEX,
@@ -34,11 +35,29 @@ async def _create_plan_graph(
     source: str = "active",
     confidence: float = 0.90,
     confidence_low: bool = False,
+    capture_source: str | None = None,
+    evidence_ref: str | None = None,
 ) -> tuple[str, list[str], str]:
-    """Create Plan + PlanStep chain and basic relationships."""
+    """Create Plan + PlanStep chain and basic relationships.
+
+    B312: `capture_source`/`evidence_ref` are the primary-capture-path
+    provenance identifiers (e.g. "agent:claude-code" / a message_id). When
+    omitted (the default — every caller other than capture.py's
+    notify_turn), all four provenance columns stay NULL, matching prior
+    behavior. Note `source` here is Plan's pre-existing "plan origin"
+    field ("active"/"passive") — a different, narrower concept than the
+    B312 provenance `source` column, which PlanStep gets but Plan does not
+    (Plan already had a `source` column before this card; see schema.py).
+    """
     plan_id = str(uuid.uuid4())
     step_ids = [str(uuid.uuid4()) for _ in steps]
     goal_vec = emb.embed(goal, model_name=embedding_model)
+
+    prov = (
+        provenance_fields(source=capture_source, evidence_ref=evidence_ref)
+        if capture_source
+        else {"source": None, "source_version": None, "observed_at": None, "evidence_ref": None}
+    )
 
     # Resolve quest_id from session if not provided
     quest_id = ""
@@ -101,7 +120,10 @@ async def _create_plan_graph(
                 pathway_strength: $pathway_strength,
                 archived: false,
                 created_at: timestamp($created_at),
-                completed_at: NULL
+                completed_at: NULL,
+                source_version: $prov_source_version,
+                observed_at: timestamp($prov_observed_at),
+                evidence_ref: $prov_evidence_ref
             })
             """,
             {
@@ -117,6 +139,9 @@ async def _create_plan_graph(
                 "confidence_low": confidence_low,
                 "pathway_strength": max(confidence, 0.5),
                 "created_at": now_iso,
+                "prov_source_version": prov["source_version"],
+                "prov_observed_at": prov["observed_at"],
+                "prov_evidence_ref": prov["evidence_ref"],
             }
         )
 
@@ -137,7 +162,11 @@ async def _create_plan_graph(
                     valence: NULL,
                     status: 'pending',
                     created_at: timestamp($created_at),
-                    completed_at: NULL
+                    completed_at: NULL,
+                    source: $prov_source,
+                    source_version: $prov_source_version,
+                    observed_at: timestamp($prov_observed_at),
+                    evidence_ref: $prov_evidence_ref
                 })
                 """,
                 {
@@ -148,6 +177,10 @@ async def _create_plan_graph(
                     "embedding_model": embedding_model,
                     "embedding_dim": len(s["embedding"]),
                     "created_at": now_iso,
+                    "prov_source": prov["source"],
+                    "prov_source_version": prov["source_version"],
+                    "prov_observed_at": prov["observed_at"],
+                    "prov_evidence_ref": prov["evidence_ref"],
                 }
             )
             # Link to Plan
@@ -313,8 +346,16 @@ def _plan_feedback_from_similarity(db, goal_vec: list[float], exclude_plan_id: s
 
 async def _store_plan_outcome_lesson(db, *, plan_id: str, outcome: str, valence: float, session_id: str,
                                      embedding_model: str, now_iso: str,
-                                     trigger_signals: list[str] | None = None) -> str | None:
-    """Create a Lesson and connect it to the Plan when |valence| is strong."""
+                                     trigger_signals: list[str] | None = None,
+                                     capture_source: str | None = None,
+                                     evidence_ref: str | None = None) -> str | None:
+    """Create a Lesson and connect it to the Plan when |valence| is strong.
+
+    B312: `capture_source`/`evidence_ref` populate provenance when this is
+    called from the primary capture path (capture.py's notify_turn). Other
+    callers (e.g. quests.py's report_outcome) omit them and the Lesson's
+    provenance columns stay NULL, matching prior behavior.
+    """
     if abs(valence) <= 0.7:
         return None
 
@@ -325,6 +366,12 @@ async def _store_plan_outcome_lesson(db, *, plan_id: str, outcome: str, valence:
         lesson_text += f"\n[valence_trigger: {', '.join(trigger_signals)}]"
     lesson_id = str(uuid.uuid4())
     vec = emb.embed(lesson_text, model_name=embedding_model)
+
+    prov = (
+        provenance_fields(source=capture_source, evidence_ref=evidence_ref)
+        if capture_source
+        else {"source": None, "source_version": None, "observed_at": None, "evidence_ref": None}
+    )
 
     await db.execute_write(
         """
@@ -340,7 +387,11 @@ async def _store_plan_outcome_lesson(db, *, plan_id: str, outcome: str, valence:
             confidence_low: false,
             pathway_strength: 0.85,
             archived: false,
-            created_at: timestamp($created_at)
+            created_at: timestamp($created_at),
+            source: $prov_source,
+            source_version: $prov_source_version,
+            observed_at: timestamp($prov_observed_at),
+            evidence_ref: $prov_evidence_ref
         })
         """,
         {
@@ -350,6 +401,10 @@ async def _store_plan_outcome_lesson(db, *, plan_id: str, outcome: str, valence:
             "embedding_model": embedding_model,
             "embedding_dim": len(vec),
             "created_at": now_iso,
+            "prov_source": prov["source"],
+            "prov_source_version": prov["source_version"],
+            "prov_observed_at": prov["observed_at"],
+            "prov_evidence_ref": prov["evidence_ref"],
         },
     )
 
@@ -527,6 +582,24 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
     vector = emb.embed(text, model_name=embedding_model)
     now = datetime.now(timezone.utc).isoformat()
 
+    # B312: upsert_lesson is one of the two named primary-capture-path
+    # write sites (the other is capture.py's notify_turn). `source`
+    # defaults from the caller's agent_source using the same "agent:<id>"
+    # convention already used elsewhere (see capture.py / work_summary.py);
+    # `evidence_ref` defaults to the session_id being processed. Explicit
+    # params always win.
+    agent_source = (params.get("agent_source") or "mcp").strip()
+    prov_source = (params.get("source") or f"agent:{agent_source}").strip()
+    prov_source_version = params.get("source_version")
+    prov_evidence_ref = params.get("evidence_ref") or (
+        session_id if session_id != "unknown" else None
+    )
+    prov = provenance_fields(
+        source=prov_source,
+        source_version=prov_source_version,
+        evidence_ref=prov_evidence_ref,
+    )
+
     # KuzuDB 0.11.3: MERGE is incompatible with vector-indexed tables.
     # Use SELECT→CREATE-or-UPDATE instead.
     existing = await db.execute_read(
@@ -557,7 +630,11 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
                 trigger_pattern:       $trig_pattern,
                 trigger_hook_type:     $trig_hook_type,
                 trigger_tool:          $trig_tool,
-                trigger_project_scope: $trig_scope
+                trigger_project_scope: $trig_scope,
+                source:                $prov_source,
+                source_version:        $prov_source_version,
+                observed_at:           timestamp($prov_observed_at),
+                evidence_ref:          $prov_evidence_ref
             })
             """,
             {
@@ -578,6 +655,10 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
                 "trig_hook_type": trigger_hook_type,
                 "trig_tool": trigger_tool,
                 "trig_scope": trigger_project_scope,
+                "prov_source": prov["source"],
+                "prov_source_version": prov["source_version"],
+                "prov_observed_at": prov["observed_at"],
+                "prov_evidence_ref": prov["evidence_ref"],
             }
         )
     else:
@@ -597,7 +678,11 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
                 l.trigger_pattern       = $trig_pattern,
                 l.trigger_hook_type     = $trig_hook_type,
                 l.trigger_tool          = $trig_tool,
-                l.trigger_project_scope = $trig_scope
+                l.trigger_project_scope = $trig_scope,
+                l.source                = $prov_source,
+                l.source_version        = $prov_source_version,
+                l.observed_at           = timestamp($prov_observed_at),
+                l.evidence_ref          = $prov_evidence_ref
             """,
             {
                 "lid":    lesson_id,
@@ -613,6 +698,10 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
                 "trig_hook_type": trigger_hook_type,
                 "trig_tool": trigger_tool,
                 "trig_scope": trigger_project_scope,
+                "prov_source": prov["source"],
+                "prov_source_version": prov["source_version"],
+                "prov_observed_at": prov["observed_at"],
+                "prov_evidence_ref": prov["evidence_ref"],
             }
         )
 
