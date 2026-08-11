@@ -198,10 +198,13 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 
 | B321 | Advisory Co-Activity: Surface What Other Agents Just Touched | P1 | todo — advisory only, explicitly NOT a fix for concurrent-overwrite bugs (that needs worktree isolation in the build runtime). Most substrate already exists from B290's WorkArtifact. | TBD | TBD | - | backlog/B321.md |
 
+| B322 | Learned Change Coupling and Conflict Forecast | P1 | todo — BLOCKED in practice on B321 Task 5 (does WorkArtifact get written on ordinary edits?). Learns file coupling from observed co-change instead of parsing imports; ambient/supernode exclusion is the make-or-break detail. | TBD | TBD | - | backlog/B322.md |
+
 ## Summary
 
-- Total cards: 190
+- Total cards: 191
 - Ready: 12
+- Blocked on investigation: 1
 - Needs work: 0
 - Complete: 166
 - In progress: 0
