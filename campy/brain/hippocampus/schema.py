@@ -7,6 +7,7 @@ Creates all node/relationship tables, seeds ontology, bootstraps gist centroids.
 
 from __future__ import annotations
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
@@ -49,6 +50,35 @@ PROVENANCE_TABLES = (
     "ArcPrecondition", "ArcFailureMode", "ArcRecoveryPolicy",
     "ArcWorldModelStep",
 )
+
+# ---------------------------------------------------------------------------
+# B323 — Task dependency graph, agent provenance, card/branch context bundle
+#
+# Three additions, all new tables (never redefinitions of BLOCKS/ENABLES,
+# which stay untouched — see the B323 backlog card for why reusing those
+# names would be a data-loss hazard for ARC's GridEntity BLOCKS edges):
+#
+#   TASK_BLOCKS / TASK_ENABLES — declared (not learned; that's B322) task
+#     dependency, same-type pairs only (MainQuest/SideQuest/ActionItem).
+#     Cycle-checked at insert time by campy/brain/thalamus/tools/task_graph.py
+#     via a bounded (*1..10) traversal — see add_task_dependency_edge().
+#
+#   AgentWorker + SOLVED_BY — a traversable node for "what else did this
+#     agent touch", reconciled against (not duplicating) B312's `source`
+#     string column and the pre-existing `agent_source` column on
+#     WorkArtifact/WorkSummary. AgentWorker.worker_id is always the same
+#     string a write's B312 `source` column holds (the "agent:<id>"
+#     convention) — SOLVED_BY_TABLES lists the PROVENANCE_TABLES subset
+#     (Decision, ActionItem, Lesson) a worker can be linked from.
+#     upsert_agent_worker_and_link() below is the single write path; call it
+#     in the same write that sets B312 provenance, never as a separate pass.
+# ---------------------------------------------------------------------------
+
+SOLVED_BY_TABLES: dict[str, str] = {
+    "Decision": "decision_id",
+    "ActionItem": "action_item_id",
+    "Lesson": "lesson_id",
+}
 
 # ---------------------------------------------------------------------------
 # Node table DDL
@@ -1065,6 +1095,18 @@ NODE_TABLES = {
         supersession_reason STRING,
         PRIMARY KEY (rule_id)
     """,
+
+    # B323 — traversable agent-as-node provenance. worker_id follows the same
+    # "agent:<id>" convention as B312's `source` column (see SOLVED_BY_TABLES
+    # comment above); model_name/provider are best-effort and may be NULL.
+    "AgentWorker": """
+        worker_id      STRING,
+        model_name     STRING,
+        provider       STRING,
+        first_seen_at  TIMESTAMP,
+        last_seen_at   TIMESTAMP,
+        PRIMARY KEY (worker_id)
+    """,
 }
 
 # ---------------------------------------------------------------------------
@@ -1074,7 +1116,13 @@ NODE_TABLES = {
 REL_TABLES = [
     # Quest structure
     "CREATE REL TABLE IF NOT EXISTS BELONGS_TO (FROM SideQuest TO MainQuest)",
-    "CREATE REL TABLE IF NOT EXISTS ANCHORED_TO (FROM MainQuest TO Workspace)",
+    # B323: widened FROM MainQuest TO Workspace to also cover
+    # FROM ActionItem TO Workspace (card-level anchoring, not just
+    # quest-level). No ANCHORED_TO write path exists anywhere in campy/
+    # today (only the DDL here and one read in hippocampus.py), so the
+    # _REL_MIGRATIONS entry below is a defensive upgrade path, not evidence
+    # any edges actually exist to preserve.
+    "CREATE REL TABLE IF NOT EXISTS ANCHORED_TO (FROM MainQuest TO Workspace, FROM ActionItem TO Workspace)",
     # Document provenance
     "CREATE REL TABLE IF NOT EXISTS DERIVED_FROM (FROM DocumentExtract TO Document)",
     "CREATE REL TABLE IF NOT EXISTS ESTABLISHED (FROM Message TO Decision, FROM Message TO Constraint, FROM DocumentExtract TO Decision, FROM DocumentExtract TO Constraint)",
@@ -1205,12 +1253,45 @@ REL_TABLES = [
     # node passed as `superseded_by` points at the node passed as `node_id`
     # in mark_superseded(). Note this is the *opposite* arrow convention
     # from the pre-existing DEPRECATED_BY table above (FROM Concept TO
-    # Concept, ...), which reads (older)-[:DEPRECATED_BY]->(newer). B323
-    # reconciles the two mechanisms; flagging the direction mismatch here
-    # for that reconciliation.
+    # Concept, ...), which reads (older)-[:DEPRECATED_BY]->(newer).
+    #
+    # B323 audited this drift (its Task 4) and did NOT merge SUPERSEDES into
+    # DEPRECATED_BY here: B312 had already landed with SUPERSEDES live
+    # (mark_superseded() writes it, tests/test_provenance.py exercises it),
+    # so folding the two mechanisms now would mean an in-place rel-table
+    # migration whose safety this card did not audit. Per B323's own
+    # instructions for this exact situation ("if B312 has already landed,
+    # file the reconciliation as a follow-up and say so — do not silently
+    # add a third mechanism"), no third table was added; the merge is
+    # tracked as a follow-up in backlog/B325.md. Both tables keep working
+    # independently until that follow-up lands.
     "CREATE REL TABLE IF NOT EXISTS SUPERSEDES (" +
     ", ".join(f"FROM {t} TO {t}" for t in PROVENANCE_TABLES) +
     ")",
+
+    # ------------------------------------------------------------------
+    # B323 — declared task dependency graph (composes with B322's learned
+    # coupling). New names, never touching the existing GridEntity BLOCKS /
+    # Concept ENABLES tables (see the B323 backlog card's audit for why
+    # reusing those names would have been a data-loss hazard for ARC's
+    # BLOCKS edges). Cycle safety is enforced at write time by
+    # task_graph.add_task_dependency_edge(), not by the schema.
+    # ------------------------------------------------------------------
+    "CREATE REL TABLE IF NOT EXISTS TASK_BLOCKS ("
+    "FROM MainQuest TO MainQuest, FROM SideQuest TO SideQuest, FROM ActionItem TO ActionItem, "
+    "declared_by STRING, confidence DOUBLE, observed_at TIMESTAMP, "
+    "source STRING, source_version STRING, authority STRING)",
+    "CREATE REL TABLE IF NOT EXISTS TASK_ENABLES ("
+    "FROM MainQuest TO MainQuest, FROM SideQuest TO SideQuest, FROM ActionItem TO ActionItem, "
+    "declared_by STRING, confidence DOUBLE, observed_at TIMESTAMP, "
+    "source STRING, source_version STRING, authority STRING)",
+
+    # B323 — agent-as-node provenance (traversal-only; see SOLVED_BY_TABLES
+    # comment above for why this doesn't replace B312's `source` column or
+    # WorkArtifact/WorkSummary's pre-existing `agent_source` column).
+    "CREATE REL TABLE IF NOT EXISTS SOLVED_BY ("
+    "FROM Decision TO AgentWorker, FROM ActionItem TO AgentWorker, FROM Lesson TO AgentWorker, "
+    "confidence DOUBLE, observed_at TIMESTAMP)",
 ]
 
 def get_relationship_types() -> list[str]:
@@ -1504,6 +1585,13 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
                 ("supersession_reason", "STRING"),
             )
         ],
+
+        # B323: Workspace gains branch_name (for compile_card_context's
+        # branch-name resolution) and active (whether this workspace is
+        # currently in use). Extends the existing table via the additive
+        # migration path — never redefines Workspace's DDL.
+        ("Workspace", "branch_name", "STRING"),
+        ("Workspace", "active", "BOOLEAN"),
     ]
     def _column_exists(table: str, col: str) -> bool:
         """Check whether a column already exists via table_info, avoiding
@@ -1536,6 +1624,11 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
     # 1c. Relationship table migrations — handle tables that need FROM clause expansion.
     # Kùzu 0.11.3 doesn't support ALTER REL TABLE. We drop + recreate tables that
     # have expanded FROM clauses. Only safe when no existing edges use the old types.
+    # B323: generalized to a "check" query per entry (was hardcoded to the
+    # single ESTABLISHED_IN case before this card). Each entry's "check"
+    # must raise if-and-only-if the widened FROM type isn't registered yet
+    # — behavior for the pre-existing ESTABLISHED_IN entry is unchanged
+    # (same check/probe/new_ddl strings as before).
     _REL_MIGRATIONS = [
         # B43: ESTABLISHED_IN expanded to include Requirement and ActionItem.
         # Old definition only had Decision + Constraint. No ESTABLISHED_IN edges
@@ -1543,25 +1636,35 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         # so DETACH DELETE is safe.
         {
             "table": "ESTABLISHED_IN",
+            "check": "MATCH (a:Requirement)-[:ESTABLISHED_IN]->(s:Session) "
+                     "RETURN count(a) LIMIT 1",
             "probe":  "MATCH ()-[e:ESTABLISHED_IN]->() RETURN count(e) AS cnt",
             "new_ddl": "CREATE REL TABLE ESTABLISHED_IN "
                         "(FROM Decision TO Session, FROM Constraint TO Session, "
                         "FROM Requirement TO Session, FROM ActionItem TO Session)",
         },
+        # B323: ANCHORED_TO expanded to include ActionItem alongside
+        # MainQuest. No ANCHORED_TO write path exists anywhere in campy/
+        # today (grep confirms only this DDL and one read in
+        # hippocampus.py), so this branch is defensive — it will typically
+        # take the "0 edges, safe to drop+recreate" path on any real DB.
+        {
+            "table": "ANCHORED_TO",
+            "check": "MATCH (a:ActionItem)-[:ANCHORED_TO]->(w:Workspace) "
+                     "RETURN count(a) LIMIT 1",
+            "probe": "MATCH ()-[e:ANCHORED_TO]->() RETURN count(e) AS cnt",
+            "new_ddl": "CREATE REL TABLE ANCHORED_TO "
+                       "(FROM MainQuest TO Workspace, FROM ActionItem TO Workspace)",
+        },
     ]
     for rmig in _REL_MIGRATIONS:
         try:
-            # Check if existing table has the full definition by probing a
-            # Requirement→Session ESTABLISHED_IN edge (this will error if the
-            # FROM type isn't registered).
-            db.execute(
-                "MATCH (a:Requirement)-[:ESTABLISHED_IN]->(s:Session) "
-                "RETURN count(a) LIMIT 1"
-            )
-            # If it didn't raise — table already has Requirement. No migration needed.
+            # If this doesn't raise, the table already has the widened FROM
+            # type registered — no migration needed.
+            db.execute(rmig["check"])
         except Exception:
-            # Table either doesn't exist or is missing Requirement as a FROM type.
-            # Drop and recreate (safe: no ESTABLISHED_IN edges ever existed before B43).
+            # Table either doesn't exist or is missing the new FROM type.
+            # Drop and recreate only if no edges exist yet (checked via probe).
             try:
                 existing = db.execute(rmig["probe"])
                 edge_count = existing.get_next()[0] if existing.has_next() else 0
@@ -1656,3 +1759,56 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
             raise
 
     print("Schema initialization complete.")
+
+
+async def upsert_agent_worker_and_link(
+    db: KuzuClient,
+    *,
+    worker_id: str | None,
+    node_table: str,
+    node_id: str | None,
+    confidence: float = 1.0,
+    observed_at: str | None = None,
+    model_name: str | None = None,
+    provider: str | None = None,
+) -> None:
+    """B323 — upsert an AgentWorker node and a SOLVED_BY edge from a
+    provenance-carrying node to it.
+
+    Call this in the *same write* that sets a node's B312 `source` column,
+    passing that identical string as `worker_id` — never as a separate
+    capture pass (see the B323 header comment above SOLVED_BY_TABLES). This
+    keeps AgentWorker.worker_id and the B312 `source` column as one
+    identity with two access paths (column for filtering, node for
+    traversal) rather than a drifting third mechanism.
+
+    No-ops (does not raise) when:
+      - `worker_id` is falsy or doesn't follow the "agent:<id>" convention
+        this codebase uses for agent-sourced provenance (see
+        capture.py/lessons.py) — there is no AgentWorker for a human
+        ("user:direct") or harvester ("harvest:*") source.
+      - `node_table` isn't in SOLVED_BY_TABLES, or `node_id` is falsy.
+    """
+    if not worker_id or not worker_id.startswith("agent:"):
+        return
+    pk = SOLVED_BY_TABLES.get(node_table)
+    if not pk or not node_id:
+        return
+
+    now_iso = observed_at or datetime.now(timezone.utc).isoformat()
+
+    await db.execute_write(
+        "MERGE (w:AgentWorker {worker_id: $wid}) "
+        "ON CREATE SET w.first_seen_at = timestamp($now), "
+        "w.last_seen_at = timestamp($now), "
+        "w.model_name = $model_name, w.provider = $provider "
+        "ON MATCH SET w.last_seen_at = timestamp($now)",
+        {"wid": worker_id, "now": now_iso, "model_name": model_name, "provider": provider},
+    )
+    await db.execute_write(
+        f"MATCH (n:{node_table} {{{pk}: $nid}}), (w:AgentWorker {{worker_id: $wid}}) "
+        f"MERGE (n)-[r:SOLVED_BY]->(w) "
+        f"ON CREATE SET r.confidence = $conf, r.observed_at = timestamp($now) "
+        f"ON MATCH SET r.confidence = $conf, r.observed_at = timestamp($now)",
+        {"nid": node_id, "wid": worker_id, "conf": confidence, "now": now_iso},
+    )

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import uuid
 
 from campy.brain.hippocampus.graph import embeddings as emb
+from campy.brain.hippocampus.schema import upsert_agent_worker_and_link
 
 from ._shared import (
     _CONCEPT_INDEX,
@@ -305,6 +306,7 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
             pass  # Non-critical
 
     passive_plan = None
+    response_outcome_lesson_id = None
     # B68: passive structural plan detection from natural-language ordered steps.
     try:
         if session_id != "unknown":
@@ -348,7 +350,7 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
                         config,
                     )
                 elif abs(inferred_valence) > 0.7:
-                    await _store_plan_outcome_lesson(
+                    outcome_lesson_id = await _store_plan_outcome_lesson(
                         db,
                         plan_id="",
                         outcome=content,
@@ -360,6 +362,23 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
                         capture_source=capture_source,
                         evidence_ref=message_id,
                     )
+                    if outcome_lesson_id:
+                        # B323: derive AgentWorker + SOLVED_BY in the same
+                        # write that set this Lesson's B312 provenance
+                        # (capture_source), never as a separate pass. No-ops
+                        # for "user:direct" (this branch is user-turn-only —
+                        # see the B301 note above) since there is no
+                        # AgentWorker for a human source; kept here so the
+                        # derivation lives alongside notify_turn's other
+                        # capture_source-driven writes.
+                        await upsert_agent_worker_and_link(
+                            db,
+                            worker_id=capture_source,
+                            node_table="Lesson",
+                            node_id=outcome_lesson_id,
+                            observed_at=now,
+                        )
+                        response_outcome_lesson_id = outcome_lesson_id
     except Exception:
         _logger.exception("outcome sense auto-report failed")
 
@@ -507,6 +526,8 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
         response["insights"] = insights
     if passive_plan:
         response["passive_plan"] = passive_plan
+    if response_outcome_lesson_id:
+        response["outcome_lesson_id"] = response_outcome_lesson_id
     # Always include proactive_context (B195) for caller to inspect
     response["proactive_context"] = proactive_context if proactive_context is not None else {"pushed": False, "reason": "disabled"}
 

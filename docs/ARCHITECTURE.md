@@ -1238,3 +1238,151 @@ the new columns are added and default to `NULL`.
 - Changing `campy/brain/brainstem/sweep.py` to emit `expired` supersessions instead of
   silent `archived` flips.
 - Cross-type supersession edges.
+
+## B323 — Task Dependency Graph, Agent Provenance, and Card/Branch Context Bundle
+
+Reconciles against B312 rather than duplicating it. Composes with B322 (learned coupling) —
+B322 *learns* dependency from observed co-change; this card *declares* it. Three additions,
+all new tables; nothing pre-existing is redefined.
+
+### Task 0 audit findings
+
+Confirmed against `campy/brain/hippocampus/schema.py` before writing any DDL:
+
+- `Workspace`, `ANCHORED_TO`, `DEPRECATED_BY`, `LOADED`, `PRODUCED_LESSON` all already
+  existed exactly as the backlog card described.
+- `BLOCKS` (`FROM GridEntity TO GridEntity, action_id STRING, step INT32` — ARC puzzle-grid
+  mechanics) and `ENABLES` (`FROM Concept TO Concept, confidence DOUBLE, inferred_by STRING,
+  inferred_at TIMESTAMP` — concept inference) are untouched by this card. Neither their
+  definitions nor any pre-existing edges are affected by `init_schema()` — regression-tested
+  in `tests/test_task_dependency.py`.
+- No write path anywhere in `campy/` creates an `ANCHORED_TO` edge (confirmed by grep) —
+  only the DDL and one read in `hippocampus.py` existed. This made the `ANCHORED_TO` widening
+  (Task 2) a defensive, not evidence-based, migration.
+
+### TASK_BLOCKS / TASK_ENABLES — declared task dependency
+
+New rel tables, multi-pair like the pre-existing `DEPRECATED_BY`:
+
+```
+TASK_BLOCKS:  FROM MainQuest TO MainQuest, FROM SideQuest TO SideQuest, FROM ActionItem TO ActionItem
+TASK_ENABLES: same pairs
+```
+
+Edge properties: `declared_by STRING`, `confidence DOUBLE`, `observed_at TIMESTAMP`,
+`source STRING`, `source_version STRING` (B312 provenance), `authority STRING` ("earned" for
+an agent-declared edge, per B313).
+
+**Cycle safety** (`campy/brain/thalamus/tools/task_graph.py`,
+`add_task_dependency_edge()` / `TASK_DEPENDENCY_TABLES`): before inserting
+`(from_id)-[:TASK_BLOCKS|TASK_ENABLES]->(to_id)`, a bounded `*1..10` traversal checks for an
+existing path from `to_id` back to `from_id` — if found, the edge would close a cycle and is
+rejected with `TaskDependencyCycleError` naming the full loop path. A self-edge
+(`from_id == to_id`) is rejected the same way without a traversal. This is a bounded check,
+not full transitive-closure maintenance — a cycle more than 10 hops away in a same-type
+dependency chain would be missed, judged acceptable for hand-declared card dependencies.
+`TASK_BLOCKS` and `TASK_ENABLES` are checked independently of each other.
+
+### Workspace / ANCHORED_TO extension
+
+`Workspace` gains `branch_name STRING` and `active BOOLEAN` via the existing additive
+`_MIGRATIONS` mechanism — the table itself is never redefined. `ANCHORED_TO` widens from
+`FROM MainQuest TO Workspace` to also cover `FROM ActionItem TO Workspace`, via the
+drop+recreate `_REL_MIGRATIONS` path (now data-driven over a `"check"` query per entry,
+generalized from the single hardcoded `ESTABLISHED_IN` case). Both the fresh-DB `REL_TABLES`
+DDL and the upgrade-path `_REL_MIGRATIONS` entry carry the widened definition, matching the
+`ESTABLISHED_IN` precedent. Safety: the migration probes for existing `ANCHORED_TO` edges
+first and only drops+recreates when none exist; if edges are ever found on a real DB, the
+migration is skipped (logged, not silently forced) rather than risking data loss — the same
+defer behavior `ESTABLISHED_IN`'s migration already uses.
+
+### AgentWorker + SOLVED_BY — agent-as-node provenance
+
+A third agent-identity mechanism was explicitly rejected. There were already two: B312's
+`source` column (`"agent:<id>"` convention) and the pre-existing `agent_source` column on
+`WorkArtifact`/`WorkSummary`. This card adds a node type only for what a string column
+cannot do — traversing *from* an agent:
+
+- `AgentWorker (worker_id STRING PRIMARY KEY, model_name STRING, provider STRING,
+  first_seen_at TIMESTAMP, last_seen_at TIMESTAMP)`
+- `SOLVED_BY: FROM Decision TO AgentWorker, FROM ActionItem TO AgentWorker, FROM Lesson TO AgentWorker`
+  (`confidence DOUBLE, observed_at TIMESTAMP`) — `SOLVED_BY_TABLES` in `schema.py` is the
+  authoritative table/pk map.
+- `upsert_agent_worker_and_link()` (`campy/brain/hippocampus/schema.py`) is the single write
+  path: it no-ops (never raises) unless `worker_id` follows the `"agent:<id>"` convention and
+  `node_table` is in `SOLVED_BY_TABLES` — there is no `AgentWorker` for a human
+  (`"user:direct"`) or harvester (`"harvest:*"`) source. `AgentWorker.worker_id` is always the
+  identical string a write's B312 `source` column holds; this is asserted directly in
+  `tests/test_task_dependency.py`.
+- Called in the same write that sets B312 provenance, never as a separate capture pass:
+  `campy/brain/thalamus/tools/lessons.py`'s `upsert_lesson()` and
+  `_store_plan_outcome_lesson()` call it immediately after the `Lesson` CREATE/UPDATE that
+  sets `source`, using that identical value. `capture.py`'s `notify_turn()` also calls it
+  after `_store_plan_outcome_lesson()` (surfacing the new `outcome_lesson_id` in its
+  response) — a no-op today since that call site is user-turn-only and therefore always
+  `"user:direct"`, but kept for when that guard changes rather than adding the wiring later.
+  **Deviation from the card's file list:** the card's "Files to Modify" named only
+  `capture.py` for this task, but capture.py's own writes never carry non-NULL agent-sourced
+  provenance on a `SOLVED_BY`-covered table — the real write site is `lessons.py`'s two
+  functions above (`upsert_lesson` is explicitly one of B312's two named capture paths). This
+  card therefore also touches `campy/brain/thalamus/tools/lessons.py`, which was necessary to
+  make the "same write as B312 provenance" requirement (and its acceptance criterion) true
+  rather than aspirational.
+
+### DEPRECATED_BY / SUPERSEDES reconciliation (Task 4)
+
+B312 landed with a `SUPERSEDES` rel table whose arrow direction
+(`(newer)-[:SUPERSEDES]->(older)`) mirrors the pre-existing `DEPRECATED_BY` table
+(`(older)-[:DEPRECATED_BY]->(newer)`) in reverse, with no shared write path — drift this
+card was written to catch. The preferred fix (extend `DEPRECATED_BY`, retire `SUPERSEDES`)
+was **not** applied in this card: B312 had already landed with `SUPERSEDES` live
+(`mark_superseded()` writing it, `tests/test_provenance.py` exercising it) by the time this
+card's audit ran, and merging two live rel tables in place is a schema-safety decision that
+deserves its own audited card rather than a drive-by inside this one — exactly the situation
+the B323 card text anticipated ("if B312 has already landed, file the reconciliation as a
+follow-up and say so — do not silently add a third mechanism"). No third mechanism was
+added. The merge is tracked as **`backlog/B325.md`**; `backlog/B312.md` was updated in this
+same change to record the decision. Until B325 lands, `SUPERSEDES` and `DEPRECATED_BY` both
+exist and neither writes the other.
+
+### compile_card_context — card/branch context bundle
+
+New tool (`campy/brain/thalamus/tools/context_tools.py`, registered in `TOOL_HANDLERS`):
+`compile_card_context(params, db, config)`, `params: {target_id, max_hops?}`.
+
+- **Resolution**: `target_id` is matched first against a card
+  (`MainQuest`/`SideQuest`/`ActionItem`, exact match on `name`/`text_raw` then a `CONTAINS`
+  lexical fallback mirroring quests.py's B303 card-identifier convention), then against
+  `Workspace.branch_name`. Cards win on ambiguity. The response's `interpreted_as` field
+  always says which table/column resolved the target, so a caller is never guessing.
+- **Bounded traversal**: expands `TASK_BLOCKS` / `TASK_ENABLES` / `ANCHORED_TO` one hop at a
+  time in a Python-driven BFS (`_card_context_dependency_hop`), both directions, from the
+  resolved node outward. `max_hops` defaults to 3 and is clamped to a hard cap of 5
+  (`max_hops=99` clamps to 5). No Cypher `*` (bounded or unbounded) appears anywhere in the
+  issued queries — each hop is a single fixed-depth `MATCH` per (node, rel type, direction);
+  the bound comes from the Python loop, not the query. `tests/test_card_context_bundle.py`
+  asserts this directly by capturing every issued query and checking none contain `*`.
+  Rediscovering the same underlying edge from both endpoints (inherent to a bidirectional
+  BFS) is deduplicated by normalizing each edge to its true DB direction before recording it.
+- **Content on everything reached**: for every `MainQuest` reached (including the target
+  itself), `PRODUCED_LESSON` edges pull its Lessons; for each such Lesson,
+  `DEPRECATED_BY` is checked in both directions (this Lesson deprecated by something newer,
+  or deprecating something older) and `SOLVED_BY` attribution is pulled. `SOLVED_BY` is also
+  pulled directly for any reached `ActionItem`/`Decision` (the other `SOLVED_BY_TABLES`
+  members). `DEPRECATED_BY` only fires here for `Lesson` nodes reached via
+  `PRODUCED_LESSON` — `MainQuest`/`SideQuest`/`ActionItem` themselves are not
+  `DEPRECATED_BY`-covered tables, so a quest/action-item's own supersession status isn't
+  applicable and is correctly absent.
+- **Structured + Markdown**: returns `bundle` (a `bundle_compiler.ContextBundle.to_dict()`,
+  reusing that module's `BundleSection`/`ContextBundle` shapes rather than inventing a
+  second bundle representation) and `markdown` (rendered from that same structure by a
+  dedicated section-type renderer in `context_tools.py`, mirroring
+  `ClaudeCodeFormatter._format_section`'s per-section-type convention rather than routing
+  through the `formatters/` package, whose section vocabulary — `exact_fact`/`semantic`/
+  `graph`/`tabular`/`summary` — is shaped for the free-text-query bundle, not this one's
+  `target`/`dependencies`/`lessons`/`superseded`/`attribution` sections).
+- **Fail-open (B318)**: the entire hop-traversal loop is wrapped in one `try`/`except` in
+  `compile_card_context` itself; a failure there sets `dependency_traversal_failed: true` in
+  the response and the bundle keeps only its `target` section — no exception propagates to
+  the caller. Only a missing or unresolvable `target_id` returns an `{"error": ...}` dict;
+  a resolved target whose traversal fails never does.

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.hippocampus.provenance import provenance_fields
+from campy.brain.hippocampus.schema import upsert_agent_worker_and_link
 
 from ._shared import (
     _CONCEPT_INDEX,
@@ -421,6 +422,21 @@ async def _store_plan_outcome_lesson(db, *, plan_id: str, outcome: str, valence:
             {"sid": session_id, "lid": lesson_id},
         )
 
+    # B323: derive AgentWorker + SOLVED_BY in the same write that set this
+    # Lesson's B312 provenance (prov["source"]) — never as a separate pass.
+    # No-ops when capture_source is None/"user:direct" (see
+    # upsert_agent_worker_and_link's docstring).
+    try:
+        await upsert_agent_worker_and_link(
+            db,
+            worker_id=prov["source"],
+            node_table="Lesson",
+            node_id=lesson_id,
+            observed_at=prov["observed_at"],
+        )
+    except Exception:
+        _logger.exception("B323: SOLVED_BY link failed for lesson %s", lesson_id)
+
     return lesson_id
 
 
@@ -711,6 +727,20 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
             "MERGE (s)-[:LEARNED]->(l)",
             {"sid": session_id, "lid": lesson_id}
         )
+
+    # B323: derive AgentWorker + SOLVED_BY in the same write that set this
+    # Lesson's B312 provenance (prov_source, which defaults to
+    # "agent:<agent_source>" above) — never as a separate capture pass.
+    try:
+        await upsert_agent_worker_and_link(
+            db,
+            worker_id=prov["source"],
+            node_table="Lesson",
+            node_id=lesson_id,
+            observed_at=prov["observed_at"],
+        )
+    except Exception:
+        _logger.exception("B323: SOLVED_BY link failed for lesson %s", lesson_id)
 
     return {"lesson_id": lesson_id, "status": "upserted"}
 
