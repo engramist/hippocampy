@@ -200,10 +200,13 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 
 | B322 | Learned Change Coupling and Conflict Forecast | P1 | todo — BLOCKED in practice on B321 Task 5 (does WorkArtifact get written on ordinary edits?). Learns file coupling from observed co-change instead of parsing imports; ambient/supernode exclusion is the make-or-break detail. | TBD | TBD | - | backlog/B322.md |
 
+| B323 | Task Dependency Graph, Agent Provenance, and Card/Branch Context Bundle | P1 | todo — salvaged core of an external "Star Map" draft that was mostly wrong (6 of 8 tables already exist; BLOCKS/ENABLES exist for other domains, so reusing those names would drop ARC edges). Uses TASK_BLOCKS/TASK_ENABLES. Also carries the B312 DEPRECATED_BY-vs-SUPERSEDES reconciliation. | TBD | TBD | - | backlog/B323.md |
+| B324 | AWS Bedrock LLM Provider | P0 | todo — unblocks synthesis in any cloud deployment (default provider points at localhost:11434, which does not exist in ECS). Uses the Converse API so model choice stays a config change. Deliberately does NOT move embeddings to Bedrock: no Bedrock model emits 384 dims and every embedding column is FLOAT[384]. | TBD | TBD | - | backlog/B324.md |
+
 ## Summary
 
-- Total cards: 191
-- Ready: 12
+- Total cards: 193
+- Ready: 14
 - Blocked on investigation: 1
 - Needs work: 0
 - Complete: 166
