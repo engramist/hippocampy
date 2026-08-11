@@ -115,15 +115,25 @@ async def test_upsert_lesson_persists_scene_graph_metadata(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_recall_relevant_lessons_domain():
-    """recall_relevant_lessons fetches by domain."""
+    """recall_relevant_lessons fetches by domain.
+
+    B314: the domain-lookup Cypher moved into a named query
+    (`lessons.list_lessons_by_domain`) run through GraphGateway, which
+    routes non-mutating queries through `KuzuClient.execute_read()` —
+    materialized dict rows, aliased to clean column names — rather than
+    the raw synchronous cursor (`db.execute()` + `has_next()`/`get_next()`)
+    this test previously mocked directly. Mocking `execute_read` instead
+    is the legitimate update that follows from that deliberate chokepoint
+    change; the tool's external return shape (asserted below) is
+    unaffected.
+    """
     db = MagicMock()
-    mock_result = MagicMock()
-    mock_result.has_next.side_effect = [True, False]
-    mock_result.get_next.return_value = ["less-1", "Use python 3.11", "optimization"]
-    db.execute.return_value = mock_result
-    
+    db.execute_read = AsyncMock(return_value=[
+        {"lesson_id": "less-1", "text_raw": "Use python 3.11", "lesson_type": "optimization"}
+    ])
+
     params = {"domain": "python"}
     result = await recall_relevant_lessons(params, db, {})
-    
+
     assert len(result["lessons"]) == 1
     assert result["lessons"][0]["text"] == "Use python 3.11"

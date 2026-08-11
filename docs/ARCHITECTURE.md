@@ -1792,3 +1792,140 @@ stated intent.
   differently-worded restatement of the same plan", B320 catches "the exact same capture,
   retried". Embedding-similarity merging elsewhere in Campy (`MergeEvent`,
   `DisambiguationEvent`) is likewise a separate mechanism with different risks.
+
+## B314 — GraphGateway: Named-Query Chokepoint + Raw-Cypher Ratchet
+
+`campy/brain/hippocampus/graph/kuzu_client.py`'s docstring has always claimed *"THIS IS THE
+ONLY FILE THAT IMPORTS KUZU. Migration to Neo4j or another provider = rewrite this file
+only."* The `import kuzu` half of that was always true. The rewrite-one-file half was not:
+Cypher text was written inline at every call site across the codebase and passed straight
+through `KuzuClient.execute()`/`execute_read()`/`execute_write()` as strings — measured at
+~500+ lines across 33 files at the time this card was written. Kùzu is pinned at `0.11.3` and
+was archived upstream in Oct 2025, which makes that not a hypothetical risk. Separately, a
+chokepoint is the only place a future tenant-visibility predicate (B316, workspace router)
+can be injected reliably — enforcing it at 500 call sites individually is not auditable;
+enforcing it at one is.
+
+A single card cannot safely migrate 500 query sites. B314 builds the seam, proves it on one
+vertical slice, and installs a ratchet so the count can only go down from here. Bulk
+migration is follow-up work, one module at a time.
+
+### `GraphGateway` / `NamedQuery` / `QueryRegistry`
+
+New module `campy/brain/hippocampus/graph/gateway.py`:
+
+- **`NamedQuery`** (frozen dataclass): `name` (dotted, `<domain>.<verb>_<subject>` —
+  e.g. `"lessons.recall_by_similarity"`), `cypher` (a static parameterized template —
+  all variable input goes through `$param`, never string interpolation), `params` (the
+  declared, required parameter names), `mutating` (routes to `execute_write` vs
+  `execute_read`), `description` (one line). Validated in `__post_init__`, so a bad query
+  raises at import time, not in production: non-static/empty cypher, a bare `{` that isn't
+  part of a Kùzu literal property map (the signature of a leftover, unresolved format
+  placeholder — e.g. `f"MATCH (a:{table})"` left half-built), params not a `tuple[str,
+  ...]`, or a missing description.
+- **`QueryRegistry`**: holds `NamedQuery` objects keyed by name; `register()` raises on a
+  duplicate name.
+- **`GraphGateway`**: wraps a `KuzuClient` + `QueryRegistry`.
+  - `run(name, /, **params)` — the sanctioned path. Looks up `name` (raises `KeyError`
+    naming it if unregistered), validates the caller's kwargs against the query's declared
+    `params` *before touching the database* (raises `TypeError` on any mismatch, missing or
+    unexpected), then routes to `KuzuClient.execute_write()` (mutating queries — preserving
+    the existing per-event-loop asyncio write-lock discipline in `_get_write_lock()`, never
+    bypassed) or `KuzuClient.execute_read()` (reads — materialized dict rows, keyed by each
+    RETURN clause's alias).
+  - `execute_raw(cypher, params, *, mutating, reason)` — the escape hatch. `reason` is a
+    required keyword (omitting it is a `TypeError`) and is logged; every call is migration
+    debt, counted by the ratchet below.
+
+Registry organization: one module per domain under
+`campy/brain/hippocampus/graph/queries/` (`lessons.py` today; `quests.py`, `retrieval.py`,
+... as follow-up cards migrate them), each exporting a tuple of `NamedQuery` objects,
+assembled into one process-wide `REGISTRY` in `queries/__init__.py`.
+
+### The proof slice: `campy/brain/thalamus/tools/lessons.py`
+
+Every one of the file's ~41 Cypher lines moved into
+`campy/brain/hippocampus/graph/queries/lessons.py` as 27 `NamedQuery` objects (a few 1:1;
+plan/lesson writes decompose into more, smaller named steps than the original inline blocks
+had). The tool functions call `gateway.run("lessons.…", …)` instead of building Cypher
+strings. A module-level `_gateway(db)` helper wraps whatever `db` a caller passes (a
+`KuzuClient`, or already a `GraphGateway`) — this keeps every public function's signature
+exactly `async def x(params: dict, db: KuzuClient, config: dict)`, unchanged, because ~14
+tool modules and the daemon dispatch depend on that shape (changing it is B315's job, not
+this card's).
+
+Two internal helpers changed shape to fit the chokepoint: `_plan_feedback_from_similarity`
+became `async` (it wasn't before) so its one Cypher read could go through `gateway.run()`
+like everything else in the file — its sole caller, `quests.py`'s `register_plan`, already
+awaits everything else in its own async body, so this was a one-line `await` addition at
+that call site. `_synthesize_lesson`'s per-artifact-table read loop (`Decision`,
+`Constraint`, `Requirement`) became three separate static named queries instead of one
+f-string-templated `MATCH (a:{table})` — table names aren't parameterizable in Cypher, and a
+templated table name is exactly the kind of call-site interpolation `NamedQuery`'s
+bare-brace check exists to catch.
+
+**A behavior-preservation subtlety worth recording:** several reads in this file previously
+called the raw synchronous `KuzuClient.execute()` and drained a `has_next()`/`get_next()`
+cursor by hand — a different, lower-level path than `execute_read()`'s materialized,
+column-aliased dict rows. Routing every read through the gateway means every read now goes
+through `execute_read()` uniformly. That's a genuine, deliberate call-path change (not just a
+textual relocation), so the pre-existing hand-rolled test doubles that mocked the raw
+`execute()`/cursor shape directly (`tests/test_scene_graph_priors.py`'s `_DB`,
+`tests/test_lesson_artifact.py`'s domain-recall test) were updated to expose an async
+`execute_read` returning the same fixture data as materialized dict rows instead — the
+tool's externally observable return values are unchanged; only the internal double's shape
+is. Fakes that never actually reach these particular reads in their exercised paths
+(`tests/test_plan_tools.py`'s `MockDB`, `tests/test_recall_contract.py`'s
+`RecallContractDB`) needed no change: the calls they'd otherwise miss are already
+inside this file's existing best-effort `try`/`except` blocks, so an unimplemented method on
+an old-style fake is swallowed exactly as an empty/no-match result already was.
+
+### The ratchet: `scripts/check_cypher_ratchet.py` + `scripts/cypher_baseline.json`
+
+Counts, over `campy/**` and `scripts/**` (deliberately **not** `tests/**` — fakes, mocks, and
+real-`KuzuClient` integration tests legitimately contain Cypher text and aren't part of the
+"500 call sites to migrate" problem):
+
+1. Lines matching `MATCH `/`CREATE `/`MERGE ` outside the allowlist.
+2. `GraphGateway.execute_raw(` call sites, everywhere (allowlisted or not — the escape hatch
+   is debt wherever it's used).
+
+Both counts are compared against the checked-in baseline (`scripts/cypher_baseline.json`);
+the script exits non-zero if *either* increased, prints the offending files, and only
+rewrites the baseline when run with `--update` — so lowering the bar is always a deliberate,
+reviewable commit, never a silent side effect of `--update` being run by habit. Wired as
+`make check-cypher` and as a step in `.github/workflows/tests.yml` (alongside B293's
+generated-tools-drift check, the closest existing precedent for "a non-pytest script that
+must pass in CI").
+
+**Allowlist, with reasons (per Task 3 — neither of these gets migrated):**
+
+- `campy/brain/hippocampus/schema.py` — its Cypher is DDL (`CREATE NODE TABLE`, `ALTER
+  TABLE`), which is inherently engine-specific and correctly lives next to the engine
+  adapter, not behind a portability seam meant for application-level queries.
+- `campy/brain/hippocampus/graph/kuzu_client.py` — the one file that imports `kuzu`. Its
+  Cypher is engine plumbing (`CALL CREATE_VECTOR_INDEX`, `CALL QUERY_FTS_INDEX`, schema
+  introspection) that `GraphGateway` itself is built on top of; routing it back through the
+  gateway would be circular.
+- `campy/brain/hippocampus/graph/queries/**` — this is where migrated Cypher is supposed to
+  live; counting it as debt would be counting the fix as the problem.
+
+The line-based counting is deliberately blunt (matching the card's own original
+measurement methodology) — it will count an English-language comment that happens to
+contain the word "Create" as a line. That's fine for the ratchet's job (a monotonic
+direction signal across the whole tree); it is *not* the mechanism that proves `lessons.py`
+itself is fully migrated. That's `tests/test_graph_gateway.py`'s
+`test_lessons_module_calls_no_raw_kuzu_execute_methods`, which greps for the precise thing
+that actually matters — no remaining `db.execute(`/`db.execute_write(`/`db.execute_read(`
+call sites in that file.
+
+### What this card does not do
+
+- Does not migrate the other ~32 files with inline Cypher — follow-up cards, one module at a
+  time; the ratchet enforces the count can only go down from here.
+- Does not migrate `schema.py`'s DDL (allowlisted by design — see above).
+- Does not add a second storage backend — the portability seam exists; no adapter is built.
+- Does not change any tool function's `(params, db, config)` signature — that's B315.
+- Does not inject any tenant/workspace-visibility predicate yet — that's B316, which depends
+  on this seam existing (`GraphGateway.run()` is the one place such a predicate could be
+  added later without touching every call site again).

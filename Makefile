@@ -1,6 +1,6 @@
 # HippoCampy Daemon — Makefile
 
-.PHONY: help install test mcpb clean
+.PHONY: help install test mcpb clean check-cypher
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -16,6 +16,9 @@ test: ## Run the full test suite
 
 test-adapters: ## Run adapter tests only
 	python3 -m pytest tests/test_adapters.py -v
+
+check-cypher: ## B314 ratchet: fail if inline Cypher outside the allowlist increased
+	python3 scripts/check_cypher_ratchet.py
 
 mcpb: ## Build .mcpb bundle for Claude Desktop
 	@echo "Building hippocampy.mcpb..."

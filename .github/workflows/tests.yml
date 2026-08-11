@@ -33,5 +33,10 @@ jobs:
           python scripts/generate_extension_tools.py
           git diff --exit-code extensions/hippocampy/src/generated_tools.ts
 
+      # B314: fail if inline Cypher outside the allowlist (or execute_raw()
+      # escape-hatch call sites) increased relative to scripts/cypher_baseline.json.
+      - name: Check Cypher ratchet
+        run: python scripts/check_cypher_ratchet.py
+
       - name: Run test suite
         run: pytest tests/ -q
