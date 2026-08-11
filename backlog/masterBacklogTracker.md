@@ -196,10 +196,12 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B319 | Backup and Restore for Earned Memory | P1 | todo — depends on B313 (authority split defines what needs backing up). No backup command exists today. | TBD | TBD | - | backlog/B319.md |
 | B320 | Idempotent Writes: Content-Addressed Deduplication for Retried Captures | P1 | todo — depends on B312. Adds content_hash without changing primary keys (Kùzu 0.11.3 cannot alter a PK in place). | TBD | TBD | - | backlog/B320.md |
 
+| B321 | Advisory Co-Activity: Surface What Other Agents Just Touched | P1 | todo — advisory only, explicitly NOT a fix for concurrent-overwrite bugs (that needs worktree isolation in the build runtime). Most substrate already exists from B290's WorkArtifact. | TBD | TBD | - | backlog/B321.md |
+
 ## Summary
 
-- Total cards: 189
-- Ready: 11
+- Total cards: 190
+- Ready: 12
 - Needs work: 0
 - Complete: 166
 - In progress: 0
