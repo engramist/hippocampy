@@ -1,6 +1,6 @@
 """
 campy/brain/hippocampus/provenance.py — B312 provenance + explicit supersession,
-B313 authority (projected vs earned memory).
+B313 authority (projected vs earned memory), B320 idempotent writes.
 
 Write-side helpers for the provenance/supersession contract defined in
 schema.py (PROVENANCE_TABLES, SUPERSESSION_REASONS, AUTHORITY_VALUES):
@@ -20,12 +20,24 @@ schema.py (PROVENANCE_TABLES, SUPERSESSION_REASONS, AUTHORITY_VALUES):
     drop_projections()      — safe re-projection: delete only 'projected'
                                rows from one source, never 'earned' ones
                                (B313).
+    content_hash()          — stable sha256 identity hash for a fact, over
+                               its canonical (table, text, source,
+                               workspace_id, extra) tuple (B320).
+    resolve_dedupe_key()    — content_hash(), unless the caller supplies an
+                               explicit idempotency_key, which wins (B320).
+    find_live_by_dedupe_key() — look up a non-superseded row already
+                               carrying a given dedupe key, so a retried
+                               write can reuse its id instead of forking a
+                               second node (B320).
 
 See docs/ARCHITECTURE.md for the full contract this module implements.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
+import unicodedata
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -318,3 +330,192 @@ async def drop_projections(
             )
 
     return {"deleted": deleted, "skipped_earned": skipped_earned}
+
+
+# ---------------------------------------------------------------------------
+# B320 — Idempotent writes: content-addressed deduplication
+# ---------------------------------------------------------------------------
+
+# Bump this if the canonicalization rules below ever change. It is folded
+# into the hashed payload itself (see content_hash()), so a version bump
+# automatically re-partitions every future dedup decision instead of
+# silently colliding old and new hashes for what canonicalization now
+# treats as different text. Existing NULL content_hash rows (pre-B320) are
+# unaffected either way — they never match anything (see
+# find_live_by_dedupe_key()).
+CONTENT_HASH_VERSION = 1
+
+
+def _normalize_text_for_hash(text: str) -> str:
+    """Canonicalize text for content_hash() — the exact rules the card
+    specifies, and nothing more:
+
+      1. Unicode-normalize to NFC (composed form) so the same visible
+         string always hashes the same regardless of how the client's
+         input method / OS produced it (precomposed vs. combining-mark
+         sequences).
+      2. Strip leading/trailing whitespace and collapse internal runs of
+         whitespace (any run of \\s, including newlines/tabs) to a single
+         ASCII space, via `str.split()` + `" ".join(...)`.
+
+    Deliberately does NOT lowercase: case is semantically load-bearing in
+    code, identifiers, and proper nouns, and folding it would merge facts
+    that a caller means to keep distinct (the card is explicit on this).
+    """
+    return " ".join(unicodedata.normalize("NFC", text).split())
+
+
+def content_hash(
+    *,
+    table: str,
+    text: str,
+    source: str,
+    workspace_id: str = "local",
+    extra: dict | None = None,
+) -> str:
+    """Stable identity hash for a fact. Same inputs -> same hash, forever.
+
+    This is the floor for retry-safety: a client that does nothing special
+    still gets exact-content dedup, because re-issuing the same capture
+    (same text, same source, same workspace) always yields the same hash,
+    regardless of when the retry happens or what fresh uuid4/timestamp the
+    retry would otherwise have minted.
+
+    Included in the hash (these define "the same fact"):
+      - `table`     — a Concept and a Lesson with identical text are not
+                      the same fact; the table name disambiguates them.
+      - `text`      — normalized per `_normalize_text_for_hash()`: NFC,
+                      whitespace-collapsed, case-PRESERVED.
+      - `source`    — the B312 provenance source string (e.g.
+                      "agent:claude-code", "user:direct"). The same text
+                      asserted by two different sources is two different
+                      facts (one may be wrong, or they may agree — either
+                      way that's a fact about the world Campy should not
+                      erase by merging).
+      - `workspace_id` — the same fact learned in two workspaces stays two
+                      distinct facts: different owners, different
+                      lifecycles, and (per B316) different databases
+                      entirely. Defaults to "local" for the common
+                      single-workspace case.
+      - `extra`     — caller-supplied discriminators (e.g. a `domain` or
+                      `lesson_type` the caller considers identity-bearing
+                      for a particular table). Canonicalized as
+                      `json.dumps(extra, sort_keys=True, separators=(',',
+                      ':'))` so key order never affects the hash. Omit or
+                      pass `None`/`{}` when a table has no extra
+                      discriminators.
+      - `CONTENT_HASH_VERSION` — a version tag, so a future change to these
+                      rules cannot silently re-partition old hashes as if
+                      nothing changed (bump the constant instead).
+
+    Deliberately EXCLUDED (anything that legitimately varies between a call
+    and its retry would make the hash useless — a retry producing a
+    *different* hash is precisely the bug this card exists to fix):
+    `observed_at`, `created_at`, `session_id`, `message_id`, embeddings,
+    `confidence`, and every uuid.
+
+    Returns a 64-character lowercase hex sha256 digest. Stable across
+    process restarts and across calls separated in time — this function is
+    pure (no clock, no randomness, no I/O), so the same inputs always
+    produce the same digest; see
+    tests/test_idempotent_writes.py::test_content_hash_hardcoded_digest for
+    the frozen-digest regression test the card requires.
+    """
+    payload = {
+        "v": CONTENT_HASH_VERSION,
+        "table": table,
+        "text": _normalize_text_for_hash(text),
+        "source": source,
+        "workspace_id": workspace_id,
+        "extra": extra or {},
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def resolve_dedupe_key(
+    *,
+    table: str,
+    text: str,
+    source: str,
+    workspace_id: str = "local",
+    extra: dict | None = None,
+    idempotency_key: str | None = None,
+) -> str:
+    """B320 Task 4: the actual key a write helper dedupes on.
+
+    When the caller supplies `idempotency_key` (a well-behaved client that
+    can guarantee exact-once semantics for a specific logical write, even
+    across retries whose text differs slightly — content hashing alone
+    cannot catch that), it *replaces* content_hash() entirely as the dedup
+    key. Content hashing remains the floor for callers that pass nothing.
+
+    The returned key is prefixed `idemp:` when it comes from an explicit
+    idempotency_key, keeping it in a namespace disjoint from
+    content_hash()'s raw 64-hex-char sha256 digests — a caller-chosen
+    idempotency_key is under no obligation to look like a hash, and this
+    guarantees it can never accidentally collide with one computed for
+    unrelated content.
+    """
+    if idempotency_key:
+        return f"idemp:{idempotency_key.strip()}"
+    return content_hash(
+        table=table, text=text, source=source, workspace_id=workspace_id, extra=extra
+    )
+
+
+async def find_live_by_dedupe_key(
+    db: "KuzuClient",
+    *,
+    table: str,
+    pk_column: str,
+    dedupe_key: str,
+    touch_last_accessed: bool = False,
+    now_iso: str | None = None,
+) -> str | None:
+    """Look up a live (non-superseded) row in `table` whose `content_hash`
+    column equals `dedupe_key`. Returns its primary key, or `None` if no
+    such row exists — the caller should then proceed with a normal insert.
+
+    Two things make this NULL-safe and supersession-safe by construction,
+    not by convention:
+
+      - `n.content_hash = $key` — Cypher/Kùzu's `=` against a NULL operand
+        is never true, so every pre-B320 row (content_hash NULL) is
+        excluded automatically. NULL never matches anything, which is
+        exactly this card's "never backfilled, never matched" requirement.
+      - `n.superseded_by IS NULL` — a superseded row is explicitly excluded
+        so that re-capturing content identical to a fact that has since
+        been superseded (B312) creates a fresh live node rather than
+        resurrecting the dead one.
+
+    `touch_last_accessed`: B320 Task 3's reinforcement judgement call is to
+    default to NOT bumping `pathway_strength` on a dedup hit (under-
+    counting reinforcement is recoverable; inflating it from a network
+    retry poisons ranking in a way nothing later can undo — see this
+    module's module docstring / docs/ARCHITECTURE.md for the full
+    reasoning). The one thing this function *will* update on a hit, if the
+    caller opts in via `touch_last_accessed=True`, is `last_accessed_at` —
+    but only when the table actually has that column (`Concept` does; most
+    of the Tier 1 tables this card touches — `Lesson`, `Plan`, `PlanStep`
+    — do not, so callers for those tables should leave this False). This
+    function does not try to detect the column itself; passing
+    `touch_last_accessed=True` for a table without it would raise from
+    Kùzu, so the caller must know its own table's schema.
+    """
+    rows = await db.execute_read(
+        f"MATCH (n:{table}) "
+        f"WHERE n.content_hash = $key AND n.superseded_by IS NULL "
+        f"RETURN n.{pk_column} AS id LIMIT 1",
+        {"key": dedupe_key},
+    )
+    if not rows:
+        return None
+    existing_id = rows[0].get("id")
+    if touch_last_accessed and existing_id:
+        await db.execute_write(
+            f"MATCH (n:{table} {{{pk_column}: $id}}) "
+            f"SET n.last_accessed_at = timestamp($now)",
+            {"id": existing_id, "now": now_iso or datetime.now(timezone.utc).isoformat()},
+        )
+    return existing_id

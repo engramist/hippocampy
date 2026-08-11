@@ -74,6 +74,31 @@ AUTHORITY_VALUES = frozenset({
 })
 
 # ---------------------------------------------------------------------------
+# B320 — Idempotent writes: content-addressed deduplication
+#
+# Every table also carries a ninth column, `content_hash`:
+#
+#   content_hash STRING — sha256 identity hash (see provenance.content_hash())
+#                         over the fact's canonical (table, text, source,
+#                         workspace_id, extra) tuple. NULL on rows written
+#                         before B320 — see provenance.py's dedupe helper for
+#                         why a NULL content_hash must never be treated as a
+#                         dedup match.
+#
+# Deliberately narrower than PROVENANCE_TABLES/AUTHORITY_VALUES's table set:
+# B320 scopes the column to the Tier 1 claimed/observed-fact tables only
+# (excludes the Tier 2 Arc* learned-pattern tables), matching the card's own
+# "B312's Tier 1 fact-bearing tables" instruction — dedup-on-write is only
+# wired up for capture.py/lessons.py in this card anyway (see
+# provenance.content_hash()/campy/brain/thalamus/tools/capture.py,lessons.py),
+# so extending the column to tables nothing writes it to yet would be dead
+# schema. Computed as "not an Arc* table" rather than hardcoded so it stays
+# in lockstep with PROVENANCE_TABLES if Tier 1 ever grows.
+# ---------------------------------------------------------------------------
+
+CONTENT_HASH_TABLES = tuple(t for t in PROVENANCE_TABLES if not t.startswith("Arc"))
+
+# ---------------------------------------------------------------------------
 # B323 — Task dependency graph, agent provenance, card/branch context bundle
 #
 # Three additions, all new tables (never redefinitions of BLOCKS/ENABLES,
@@ -131,6 +156,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (concept_id)
     """,
 
@@ -155,6 +181,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (decision_id)
     """,
 
@@ -179,6 +206,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (constraint_id)
     """,
 
@@ -203,6 +231,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (requirement_id)
     """,
 
@@ -227,6 +256,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (action_item_id)
     """,
 
@@ -251,6 +281,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (global_constraint_id)
     """,
 
@@ -275,6 +306,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (global_preference_id)
     """,
 
@@ -371,6 +403,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (extract_id)
     """,
 
@@ -414,6 +447,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (summary_id)
     """,
 
@@ -436,6 +470,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (artifact_id)
     """,
 
@@ -545,6 +580,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (lesson_id)
     """,
 
@@ -575,6 +611,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (procedure_id)
     """,
 
@@ -598,6 +635,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (gap_id)
     """,
 
@@ -627,6 +665,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (plan_id)
     """,
 
@@ -651,6 +690,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (step_id)
     """,
 
@@ -675,6 +715,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (id)
     """,
 
@@ -771,6 +812,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (effect_id)
     """,
 
@@ -811,6 +853,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (condition_id)
     """,
 
@@ -842,6 +885,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (fact_id)
     """,
 
@@ -1120,6 +1164,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (transition_id)
     """,
 
@@ -1143,6 +1188,7 @@ NODE_TABLES = {
         superseded_at       TIMESTAMP,
         supersession_reason STRING,
         authority            STRING,
+        content_hash         STRING,
         PRIMARY KEY (rule_id)
     """,
 
@@ -1651,6 +1697,17 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         # migration path — never redefines Workspace's DDL.
         ("Workspace", "branch_name", "STRING"),
         ("Workspace", "active", "BOOLEAN"),
+
+        # B320: content_hash — dedup-on-write identity for retried captures.
+        # CONTENT_HASH_TABLES (Tier 1 fact-bearing tables only — see the
+        # comment above that constant) is a narrower set than B312/B313's
+        # PROVENANCE_TABLES. NULL on every pre-B320 row; provenance.py's
+        # dedup helper treats NULL as "never matches" by construction (an
+        # equality comparison against NULL is never true in Cypher/Kùzu).
+        *[
+            (table, "content_hash", "STRING")
+            for table in CONTENT_HASH_TABLES
+        ],
     ]
     def _column_exists(table: str, col: str) -> bool:
         """Check whether a column already exists via table_info, avoiding

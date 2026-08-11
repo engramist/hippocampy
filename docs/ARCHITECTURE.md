@@ -1630,3 +1630,165 @@ semantics: zero `MATCH` rows means the paired `CREATE` never fires), not an erro
 - No scheduled drift detection — `find_stale_projections()` is a function, not a background
   job.
 - No change to what `archived` means or how `campy/brain/brainstem/sweep.py` behaves.
+
+## B320 — Idempotent Writes: Content-Addressed Deduplication
+
+Retried captures (timeout, dropped socket, an ambiguous error under B318's fail-open
+transport) are correct client behavior that Campy cannot prevent. Before this card, every
+write minted a fresh `uuid4()` primary key, so the same fact captured twice became two
+unrelated nodes — inflating recall bundles and corrupting every frequency-derived signal
+(`pathway_strength`, valence aggregation, consolidation clustering) into treating a network
+blip as reinforcement.
+
+**The constraint that shapes this card, unchanged from the backlog card:** Kùzu 0.11.3
+cannot alter a primary key in place — changing one means dropping and recreating the table,
+destroying every existing edge into it. So primary keys stay exactly `uuid4()` as before;
+dedup happens on a new additive `content_hash` column instead.
+
+### `content_hash` column
+
+One column, added to `schema.CONTENT_HASH_TABLES` — a **narrower** set than B312/B313's
+`PROVENANCE_TABLES`: the 21 Tier 1 claimed/observed-fact tables only (`Concept`, `Decision`,
+`Constraint`, `Requirement`, `ActionItem`, `GlobalConstraint`, `GlobalPreference`, `Lesson`,
+`Procedure`, `KnowledgeGap`, `Plan`, `PlanStep`, `Hypothesis`, `ActionFact`, `ActionEffect`,
+`VictoryCondition`, `Rule`, `Transition`, `DocumentExtract`, `WorkSummary`, `WorkArtifact`).
+The Tier 2 Arc\* learned-pattern tables are deliberately excluded — this card only wires
+dedup-on-write into `capture.py`/`lessons.py`, so extending the column to tables nothing
+writes it to yet would be dead schema. `CONTENT_HASH_TABLES` is computed as "every
+`PROVENANCE_TABLES` entry that isn't an `Arc*` table" so it stays in lockstep with
+`PROVENANCE_TABLES` if Tier 1 ever grows, rather than being a second hardcoded list that can
+drift from the first.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `content_hash` | `STRING` | sha256 identity hash of the fact's canonical (table, text, source, workspace_id, extra) tuple. `NULL` on every pre-B320 row. |
+
+Added both directly in `NODE_TABLES`' DDL (for fresh installs) and via `_MIGRATIONS`
+(`ALTER TABLE ... ADD`, guarded by the existing `_column_exists()` check) for upgrades —
+the same two-mechanism pattern B312/B313 used, for the same reason: a fresh `CREATE TABLE`
+already has the column so the migration is a no-op there, while an existing database only
+gains it through the `ALTER`.
+
+**No backfill.** `content_hash` is never computed for existing rows — a backfill would
+surface pre-existing duplicates and invite an automated merge, which is a destructive
+operation against real user memory that belongs in its own card with its own dry-run and a
+human in the loop. `NULL` means "written before B320" and is guaranteed to never match
+anything (see below) — it is not treated as a wildcard or an implicit empty-string hash.
+
+### The hash contract (`campy/brain/hippocampus/provenance.py`)
+
+`content_hash(*, table, text, source, workspace_id="local", extra=None) -> str` — a pure
+function (no clock, no randomness, no I/O) returning a 64-character lowercase hex sha256
+digest, stable across process restarts and calls separated in time by construction.
+
+**Included** (this is what "the same fact" means):
+
+- `table` — a `Concept` and a `Lesson` with identical text are not the same fact.
+- `text`, normalized via `_normalize_text_for_hash()`: Unicode NFC, leading/trailing
+  whitespace stripped, internal whitespace runs collapsed to a single space. **Case is
+  preserved, never folded** — case can be semantically load-bearing (code, identifiers,
+  proper nouns), and lowercasing would silently merge facts a caller means to keep distinct.
+- `source` — the B312 provenance source string. The same text asserted by two different
+  sources is two different facts, not a duplicate to collapse.
+- `workspace_id` (default `"local"`) — the same fact learned in two workspaces stays two
+  distinct facts: different owners, different lifecycles, and (per B316) different
+  databases entirely.
+- `extra` — optional caller-supplied discriminators, canonicalized as
+  `json.dumps(extra, sort_keys=True, separators=(',', ':'))` so key order never affects the
+  hash.
+- `CONTENT_HASH_VERSION` (currently `1`) — folded into the hashed payload itself, so bumping
+  the constant re-partitions every future dedup decision instead of silently colliding old
+  and new hashes for text the rules now treat differently. Treat this constant, and the
+  canonicalization rules above, as a versioned contract — changing what "the same fact"
+  means is a deliberate, visible act (a version bump), never a silent drift.
+
+**Excluded** — anything that legitimately varies between a call and its retry, because
+including it would make the hash useless (a retry producing a *different* hash is exactly
+the bug this card exists to fix): `observed_at`, `created_at`, `session_id`, `message_id`,
+embeddings, `confidence`, and every uuid.
+
+`resolve_dedupe_key(..., idempotency_key=None)` is the key a write helper actually dedupes
+on: `content_hash()` unless the caller supplies `idempotency_key`, which replaces it
+entirely. This is the floor-vs-ceiling split the card calls for — content hashing is the
+floor every caller gets for free, while a well-behaved client that already tracks its own
+logical-write identity can guarantee exact-once semantics even when its retry's text
+differs slightly (content hashing alone can't catch that). An explicit `idempotency_key` is
+stored prefixed `idemp:` — a namespace disjoint from `content_hash()`'s raw 64-hex-char
+digests, so a caller-chosen key can never accidentally collide with a hash computed for
+unrelated content.
+
+`find_live_by_dedupe_key(db, *, table, pk_column, dedupe_key, touch_last_accessed=False)` —
+the lookup side. Two things are true by construction, not convention:
+
+- `n.content_hash = $key` — Kùzu's `=` against a `NULL` operand is never true, so every
+  pre-B320 row is excluded automatically; there is no separate `IS NOT NULL` guard to forget.
+- `n.superseded_by IS NULL` — a superseded row (B312) is excluded, so re-capturing content
+  identical to a fact that has since been superseded creates a fresh live node instead of
+  resurrecting the dead one.
+
+### Dedupe-on-write and the reinforcement judgement call
+
+Before inserting a fact-bearing node in a converted write path: compute the dedupe key, look
+for a live match, and if found, **do not insert** — return the existing node's id instead,
+in a shape indistinguishable from a fresh insert. A retrying caller cannot tell it was
+deduped: no exception, no warning, same response keys.
+
+**A dedup hit never bumps `pathway_strength`.** A genuine re-observation arguably *is*
+reinforcement, while a retry is not, and content alone cannot distinguish the two. The card
+defaults to *not* reinforcing: under-counting reinforcement is recoverable (a later, clearly
+distinct observation still reinforces normally), while inflating it from a network retry
+poisons ranking in a way nothing later can undo. Where a table has a `last_accessed_at`
+column (`Concept` does — though `Concept` writes are not converted by this card, so nothing
+currently exercises this path), `find_live_by_dedupe_key(..., touch_last_accessed=True)` may
+refresh *only* that column on a hit, never `pathway_strength`.
+
+**Dedup lookups fail open.** Every call site wraps the `find_live_by_dedupe_key()` lookup in
+a `try`/`except` that falls back to `existing = None` (i.e. proceeds with a normal insert) on
+any error. Dedup is a best-effort optimization on the primary capture path, never a hard
+dependency of it — matching the existing try/except-around-optional-enhancement style
+already used throughout `notify_turn` (warm frontier, proactive push, and friends). This is
+also what makes the feature safe against a caller (or test double) whose `db` doesn't
+implement `execute_read`.
+
+### Scope: `capture.py` and `lessons.py` only
+
+The same two write paths B312 named as the primary capture path — `capture.py`'s
+`notify_turn` (and the two functions it calls into for Tier-1 writes,
+`_maybe_create_passive_plan_from_turn` → `lessons._create_plan_graph`, and the outcome-sense
+branch → `lessons._store_plan_outcome_lesson`) — plus `lessons.upsert_lesson` directly.
+`sweep.py`, `temporal_lobe/loop/*`, and `dictionary.py` are untouched: those are internal
+consolidation paths the daemon itself controls, where a retry is not the failure mode this
+card is defending against. They can be converted later against this same pattern if they
+prove to need it.
+
+Both `_create_plan_graph` and `_store_plan_outcome_lesson` only activate dedup when the
+caller supplies `capture_source` or `idempotency_key` — which is true for every call from
+`notify_turn` (it always derives a non-empty `capture_source`), but false for `quests.py`'s
+`register_plan`/`report_outcome`, which pass neither. Those callers see **zero** behavior
+change from this card: `content_hash` stays `NULL` on their writes, and every call inserts,
+exactly as before B320. This is a deliberate scope fence, not an oversight — quests.py's
+callers are explicit user-declared actions (`register_plan`), not retriable network-facing
+captures.
+
+`upsert_lesson` applies content-hash dedup only when the caller omits `lesson_id` — an
+explicit `lesson_id` is already a stronger identity mechanism than content hashing (the
+pre-existing match-by-id branch, unchanged by this card, including its
+`pathway_strength += 0.1` reinforcement on update) and silently redirecting an explicit-id
+call to a different node because its content happens to match would violate the caller's
+stated intent.
+
+### What this card does not do
+
+- Does not change any primary key.
+- Does not backfill `content_hash` onto existing rows.
+- Does not merge or clean up duplicates that already exist in a user's graph — a destructive
+  operation against real memory that needs its own card, its own dry-run, and a human in the
+  loop.
+- Does not convert `sweep.py`, `temporal_lobe/loop/*`, or `dictionary.py`.
+- Does not do semantic/near-duplicate detection — this is exact-content dedup only.
+  `capture.py`'s pre-existing B279 cosine-similarity guard (>0.90 against recent `Plan`
+  embeddings, inside `_maybe_create_passive_plan_from_turn`) is a *different*, fuzzier
+  mechanism the two are complementary rather than redundant: B279 catches "a
+  differently-worded restatement of the same plan", B320 catches "the exact same capture,
+  retried". Embedding-similarity merging elsewhere in Campy (`MergeEvent`,
+  `DisambiguationEvent`) is likewise a separate mechanism with different risks.

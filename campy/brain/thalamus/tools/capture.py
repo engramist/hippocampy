@@ -42,8 +42,21 @@ async def _maybe_create_passive_plan_from_turn(
     now_iso: str,
     capture_source: str | None = None,
     evidence_ref: str | None = None,
+    idempotency_key: str | None = None,
+    workspace_id: str = "local",
 ) -> dict | None:
-    """B68 Layer B fallback: infer plan from structured text if not actively declared."""
+    """B68 Layer B fallback: infer plan from structured text if not actively declared.
+
+    B320: `idempotency_key`/`workspace_id` thread straight through to
+    `_create_plan_graph`'s content-hash dedup — see that function's
+    docstring. Note this function already had its own B279 near-duplicate
+    guard (embedding cosine similarity > 0.90 against recent Plans, just
+    below) before this card; that is a *different*, fuzzier mechanism
+    (semantic near-duplicate detection) than B320's exact-content dedup,
+    and the two are complementary, not redundant — B279 catches "a
+    differently-worded restatement of the same plan", B320 catches "the
+    exact same capture, retried".
+    """
     if not has_plan_signal(content):
         return None
 
@@ -75,6 +88,8 @@ async def _maybe_create_passive_plan_from_turn(
         confidence_low=True,
         capture_source=capture_source,
         evidence_ref=evidence_ref,
+        idempotency_key=idempotency_key,
+        workspace_id=workspace_id,
     )
     return {"plan_id": plan_id, "step_ids": step_ids, "quest_id": quest_id}
 
@@ -84,13 +99,28 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
     Receive a conversation turn from the adapter and store it as a Message node.
     M5: also resolves/creates the MainQuest from git context, upserts Session.
 
-    params: {role, content, session_id, repo_root?, git_branch?}
+    params: {role, content, session_id, repo_root?, git_branch?, idempotency_key?, workspace_id?}
+
+    B320: `idempotency_key`, when supplied, replaces content-hash dedup as
+    the identity key for any Tier-1 fact-bearing node this turn causes to
+    be written (passive plan detection, outcome-sense lesson) — see
+    provenance.resolve_dedupe_key(). A well-behaved client that retries
+    this exact call should pass the same `idempotency_key` on every
+    attempt; a client that does nothing still gets exact-content dedup for
+    free via content_hash(). `workspace_id` (default "local") is threaded
+    the same way and is part of the content-hash identity itself. Neither
+    parameter affects the Message node this call also writes — Message is
+    a structural/runtime-record table (B312's PROVENANCE_TABLES scope
+    excludes it), not a fact-bearing one, so it carries no content_hash
+    column and is out of this card's scope by design.
     """
     role       = params.get("role", "user")
     content    = params.get("content", "")
     session_id = params.get("session_id", "unknown")
     repo_root  = params.get("repo_root", "")
     git_branch = params.get("git_branch", "main")
+    idempotency_key = (params.get("idempotency_key") or "").strip() or None
+    workspace_id = (params.get("workspace_id") or "local").strip() or "local"
 
     # B312: provenance identifier for any Tier-1 facts this turn causes to be
     # written (passive plan detection, outcome-sense lessons). Mirrors the
@@ -318,6 +348,8 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
                 now_iso=now,
                 capture_source=capture_source,
                 evidence_ref=message_id,
+                idempotency_key=idempotency_key,
+                workspace_id=workspace_id,
             )
     except Exception:
         _logger.exception("passive plan detection failed")
@@ -361,6 +393,8 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
                         trigger_signals=trigger_signals,
                         capture_source=capture_source,
                         evidence_ref=message_id,
+                        idempotency_key=idempotency_key,
+                        workspace_id=workspace_id,
                     )
                     if outcome_lesson_id:
                         # B323: derive AgentWorker + SOLVED_BY in the same

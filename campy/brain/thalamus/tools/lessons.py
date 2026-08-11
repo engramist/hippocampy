@@ -8,7 +8,11 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from campy.brain.hippocampus.graph import embeddings as emb
-from campy.brain.hippocampus.provenance import provenance_fields
+from campy.brain.hippocampus.provenance import (
+    find_live_by_dedupe_key,
+    provenance_fields,
+    resolve_dedupe_key,
+)
 from campy.brain.hippocampus.schema import upsert_agent_worker_and_link
 
 from ._shared import (
@@ -38,6 +42,8 @@ async def _create_plan_graph(
     confidence_low: bool = False,
     capture_source: str | None = None,
     evidence_ref: str | None = None,
+    idempotency_key: str | None = None,
+    workspace_id: str = "local",
 ) -> tuple[str, list[str], str]:
     """Create Plan + PlanStep chain and basic relationships.
 
@@ -49,7 +55,64 @@ async def _create_plan_graph(
     field ("active"/"passive") — a different, narrower concept than the
     B312 provenance `source` column, which PlanStep gets but Plan does not
     (Plan already had a `source` column before this card; see schema.py).
+
+    B320: dedup-on-write only activates when `capture_source` or
+    `idempotency_key` is supplied — i.e. only for the primary capture path
+    (capture.py's notify_turn), matching this card's declared scope. Other
+    callers (quests.py's register_plan) pass neither, so `dedupe_key` stays
+    None below and every call behaves exactly as it did pre-B320 (always
+    inserts, content_hash column stays NULL). A dedup hit returns the
+    *existing* plan's id/step_ids/quest_id — indistinguishable in shape
+    from a fresh insert — instead of creating a duplicate Plan node.
     """
+    dedupe_key: str | None = None
+    if capture_source or idempotency_key:
+        dedupe_key = resolve_dedupe_key(
+            table="Plan",
+            text=goal,
+            source=capture_source or "",
+            workspace_id=workspace_id,
+            idempotency_key=idempotency_key,
+        )
+        # B320: the dedup lookup fails open — any error here (including a
+        # test double / caller-supplied `db` that doesn't implement
+        # execute_read) falls through to a normal insert rather than
+        # raising and blocking the write. Mirrors this file's/capture.py's
+        # existing try/except-around-optional-enhancement style throughout
+        # notify_turn (warm frontier, proactive push, etc.) — dedup is a
+        # best-effort optimization on the primary capture path, never a
+        # hard dependency of it.
+        try:
+            existing_plan_id = await find_live_by_dedupe_key(
+                db, table="Plan", pk_column="plan_id", dedupe_key=dedupe_key
+            )
+        except Exception:
+            _logger.exception("B320: dedup lookup failed for Plan; proceeding with insert")
+            existing_plan_id = None
+        if existing_plan_id:
+            existing_step_ids: list[str] = []
+            try:
+                step_rows = await db.execute_read(
+                    "MATCH (ps:PlanStep)-[:STEP_OF]->(p:Plan {plan_id: $pid}) "
+                    "RETURN ps.step_id AS step_id ORDER BY ps.step_number ASC",
+                    {"pid": existing_plan_id},
+                )
+                existing_step_ids = [r["step_id"] for r in step_rows]
+            except Exception:
+                _logger.exception("B320: failed to load steps for deduped plan %s", existing_plan_id)
+            existing_quest_id = ""
+            try:
+                quest_rows = await db.execute_read(
+                    "MATCH (p:Plan {plan_id: $pid})-[:TARGETS]->(q) "
+                    "RETURN q.quest_id AS quest_id LIMIT 1",
+                    {"pid": existing_plan_id},
+                )
+                if quest_rows:
+                    existing_quest_id = quest_rows[0].get("quest_id") or ""
+            except Exception:
+                _logger.exception("B320: failed to load quest for deduped plan %s", existing_plan_id)
+            return existing_plan_id, existing_step_ids, existing_quest_id
+
     plan_id = str(uuid.uuid4())
     step_ids = [str(uuid.uuid4()) for _ in steps]
     goal_vec = emb.embed(goal, model_name=embedding_model)
@@ -124,7 +187,8 @@ async def _create_plan_graph(
                 completed_at: NULL,
                 source_version: $prov_source_version,
                 observed_at: timestamp($prov_observed_at),
-                evidence_ref: $prov_evidence_ref
+                evidence_ref: $prov_evidence_ref,
+                content_hash: $content_hash
             })
             """,
             {
@@ -143,6 +207,10 @@ async def _create_plan_graph(
                 "prov_source_version": prov["source_version"],
                 "prov_observed_at": prov["observed_at"],
                 "prov_evidence_ref": prov["evidence_ref"],
+                # B320: NULL unless capture_source/idempotency_key made this
+                # call dedup-eligible (see the docstring above) — matches
+                # every other pre-B320 Plan row's NULL content_hash.
+                "content_hash": dedupe_key,
             }
         )
 
@@ -349,13 +417,27 @@ async def _store_plan_outcome_lesson(db, *, plan_id: str, outcome: str, valence:
                                      embedding_model: str, now_iso: str,
                                      trigger_signals: list[str] | None = None,
                                      capture_source: str | None = None,
-                                     evidence_ref: str | None = None) -> str | None:
+                                     evidence_ref: str | None = None,
+                                     idempotency_key: str | None = None,
+                                     workspace_id: str = "local") -> str | None:
     """Create a Lesson and connect it to the Plan when |valence| is strong.
 
     B312: `capture_source`/`evidence_ref` populate provenance when this is
     called from the primary capture path (capture.py's notify_turn). Other
     callers (e.g. quests.py's report_outcome) omit them and the Lesson's
     provenance columns stay NULL, matching prior behavior.
+
+    B320: dedup-on-write, same scope rule as `_create_plan_graph` — only
+    activates when `capture_source` or `idempotency_key` is supplied, so
+    callers that pass neither (quests.py) are unaffected: `dedupe_key`
+    stays None, content_hash stays NULL, every call inserts, exactly as
+    before this card. On a dedup hit the freshly-computed embedding is
+    skipped entirely (no CREATE happens) and the function falls through to
+    reuse the *existing* lesson's id for the PRODUCED_PLAN_LESSON/LEARNED
+    edge writes and the SOLVED_BY derivation below — those are MERGE-based
+    and therefore idempotent, so re-running them against a retry is safe
+    and in fact desirable (a first attempt that created the Lesson but
+    died before linking it gets the link on the retry).
     """
     if abs(valence) <= 0.7:
         return None
@@ -365,8 +447,26 @@ async def _store_plan_outcome_lesson(db, *, plan_id: str, outcome: str, valence:
     # outcome is auditable from the Lesson node itself.
     if trigger_signals:
         lesson_text += f"\n[valence_trigger: {', '.join(trigger_signals)}]"
-    lesson_id = str(uuid.uuid4())
-    vec = emb.embed(lesson_text, model_name=embedding_model)
+
+    dedupe_key: str | None = None
+    existing_lesson_id: str | None = None
+    if capture_source or idempotency_key:
+        dedupe_key = resolve_dedupe_key(
+            table="Lesson",
+            text=lesson_text,
+            source=capture_source or "",
+            workspace_id=workspace_id,
+            idempotency_key=idempotency_key,
+        )
+        # B320: fails open on lookup error — see the matching comment in
+        # _create_plan_graph above.
+        try:
+            existing_lesson_id = await find_live_by_dedupe_key(
+                db, table="Lesson", pk_column="lesson_id", dedupe_key=dedupe_key
+            )
+        except Exception:
+            _logger.exception("B320: dedup lookup failed for Lesson; proceeding with insert")
+            existing_lesson_id = None
 
     prov = (
         provenance_fields(source=capture_source, evidence_ref=evidence_ref)
@@ -374,40 +474,49 @@ async def _store_plan_outcome_lesson(db, *, plan_id: str, outcome: str, valence:
         else {"source": None, "source_version": None, "observed_at": None, "evidence_ref": None}
     )
 
-    await db.execute_write(
-        """
-        CREATE (l:Lesson {
-            lesson_id: $lesson_id,
-            text_raw: $text_raw,
-            embedding: $embedding,
-            embedding_model: $embedding_model,
-            embedding_dim: $embedding_dim,
-            domain: 'planning',
-            lesson_type: 'optimization',
-            confidence: 0.85,
-            confidence_low: false,
-            pathway_strength: 0.85,
-            archived: false,
-            created_at: timestamp($created_at),
-            source: $prov_source,
-            source_version: $prov_source_version,
-            observed_at: timestamp($prov_observed_at),
-            evidence_ref: $prov_evidence_ref
-        })
-        """,
-        {
-            "lesson_id": lesson_id,
-            "text_raw": lesson_text,
-            "embedding": vec,
-            "embedding_model": embedding_model,
-            "embedding_dim": len(vec),
-            "created_at": now_iso,
-            "prov_source": prov["source"],
-            "prov_source_version": prov["source_version"],
-            "prov_observed_at": prov["observed_at"],
-            "prov_evidence_ref": prov["evidence_ref"],
-        },
-    )
+    if existing_lesson_id:
+        lesson_id = existing_lesson_id
+    else:
+        lesson_id = str(uuid.uuid4())
+        vec = emb.embed(lesson_text, model_name=embedding_model)
+        await db.execute_write(
+            """
+            CREATE (l:Lesson {
+                lesson_id: $lesson_id,
+                text_raw: $text_raw,
+                embedding: $embedding,
+                embedding_model: $embedding_model,
+                embedding_dim: $embedding_dim,
+                domain: 'planning',
+                lesson_type: 'optimization',
+                confidence: 0.85,
+                confidence_low: false,
+                pathway_strength: 0.85,
+                archived: false,
+                created_at: timestamp($created_at),
+                source: $prov_source,
+                source_version: $prov_source_version,
+                observed_at: timestamp($prov_observed_at),
+                evidence_ref: $prov_evidence_ref,
+                content_hash: $content_hash
+            })
+            """,
+            {
+                "lesson_id": lesson_id,
+                "text_raw": lesson_text,
+                "embedding": vec,
+                "embedding_model": embedding_model,
+                "embedding_dim": len(vec),
+                "created_at": now_iso,
+                "prov_source": prov["source"],
+                "prov_source_version": prov["source_version"],
+                "prov_observed_at": prov["observed_at"],
+                "prov_evidence_ref": prov["evidence_ref"],
+                # B320: NULL unless capture_source/idempotency_key made
+                # this call dedup-eligible (see the docstring above).
+                "content_hash": dedupe_key,
+            },
+        )
 
     await db.execute_write(
         "MATCH (p:Plan {plan_id: $pid}), (l:Lesson {lesson_id: $lid}) "
@@ -559,15 +668,29 @@ async def _synthesize_lesson(quest_id: str, db, config: dict) -> None:
 async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
     """
     Explicitly add or update a Lesson node.
-    
-    params: {text, domain, lesson_type, session_id?, lesson_id?, scene_wl_hash?, scene_graph_vector?, archetype?, progress_score?, valence?, trigger?}
+
+    params: {text, domain, lesson_type, session_id?, lesson_id?, scene_wl_hash?, scene_graph_vector?, archetype?, progress_score?, valence?, trigger?, idempotency_key?, workspace_id?}
     trigger is an optional dict: {pattern, hook_type, tool, project_scope}
+
+    B320: when the caller omits `lesson_id` (the common case — most callers
+    have no durable id to pass, which is exactly what makes a retry mint a
+    second node under the pre-B320 `str(uuid.uuid4())` fallback), this
+    function dedupes on content_hash (or `idempotency_key`, if supplied)
+    before minting a new id — see the dedup block below. An explicit
+    `lesson_id` bypasses content-hash dedup entirely and keeps its
+    pre-B320 match-by-id semantics (including the existing
+    pathway_strength += 0.1 reinforcement on update), because a caller
+    that names its own id has already declared its intent; silently
+    routing that call to a different node because the content happens to
+    match would violate it.
     """
     text        = params.get("text", "").strip()
     domain      = params.get("domain", "generic").strip()
     lesson_type = params.get("lesson_type", "optimization").strip()
     session_id  = params.get("session_id", "unknown")
-    lesson_id   = params.get("lesson_id") or str(uuid.uuid4())
+    explicit_lesson_id = (params.get("lesson_id") or "").strip() or None
+    idempotency_key = (params.get("idempotency_key") or "").strip() or None
+    workspace_id = (params.get("workspace_id") or "local").strip() or "local"
     scene_wl_hash = (params.get("scene_wl_hash") or "").strip() or None
     scene_graph_vector = params.get("scene_graph_vector")
     if scene_graph_vector is not None and not isinstance(scene_graph_vector, str):
@@ -616,6 +739,31 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
         evidence_ref=prov_evidence_ref,
     )
 
+    # B320: content_hash is always computed from what's about to be
+    # written — even on an explicit-lesson_id call — so a *future* retry
+    # that omits lesson_id can still find and dedupe against this row.
+    content_hash_value = resolve_dedupe_key(
+        table="Lesson",
+        text=text,
+        source=prov_source,
+        workspace_id=workspace_id,
+        extra={"domain": domain, "lesson_type": lesson_type},
+        idempotency_key=idempotency_key,
+    )
+
+    # B320 Task 3/4: dedupe-on-write, only when no explicit lesson_id was
+    # given (see the docstring above for why an explicit id bypasses this).
+    content_dedup_hit = False
+    lesson_id = explicit_lesson_id
+    if lesson_id is None:
+        lesson_id = await find_live_by_dedupe_key(
+            db, table="Lesson", pk_column="lesson_id", dedupe_key=content_hash_value
+        )
+        if lesson_id is not None:
+            content_dedup_hit = True
+        else:
+            lesson_id = str(uuid.uuid4())
+
     # KuzuDB 0.11.3: MERGE is incompatible with vector-indexed tables.
     # Use SELECT→CREATE-or-UPDATE instead.
     existing = await db.execute_read(
@@ -650,7 +798,8 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
                 source:                $prov_source,
                 source_version:        $prov_source_version,
                 observed_at:           timestamp($prov_observed_at),
-                evidence_ref:          $prov_evidence_ref
+                evidence_ref:          $prov_evidence_ref,
+                content_hash:          $content_hash
             })
             """,
             {
@@ -675,8 +824,21 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
                 "prov_source_version": prov["source_version"],
                 "prov_observed_at": prov["observed_at"],
                 "prov_evidence_ref": prov["evidence_ref"],
+                "content_hash": content_hash_value,
             }
         )
+    elif content_dedup_hit:
+        # B320 Task 3: a content-hash (or idempotency_key) dedup hit is a
+        # retry, not a reinforcement — default to NOT bumping
+        # pathway_strength (under-counting reinforcement is recoverable;
+        # inflating it from a network retry poisons ranking in a way
+        # nothing later can undo). Deliberately skip the
+        # `pathway_strength = pathway_strength + 0.1` branch below, which
+        # is reserved for a caller-supplied `lesson_id` (a deliberate
+        # re-upsert-by-id predating this card, not a retry) — the matched
+        # row's content already equals what we were about to write (that's
+        # what made the hash match), so there is nothing else to update.
+        pass
     else:
         # Update non-embedding fields only (embedding cannot be SET on indexed property)
         await db.execute_write(
@@ -698,7 +860,8 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
                 l.source                = $prov_source,
                 l.source_version        = $prov_source_version,
                 l.observed_at           = timestamp($prov_observed_at),
-                l.evidence_ref          = $prov_evidence_ref
+                l.evidence_ref          = $prov_evidence_ref,
+                l.content_hash          = $content_hash
             """,
             {
                 "lid":    lesson_id,
@@ -718,6 +881,7 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
                 "prov_source_version": prov["source_version"],
                 "prov_observed_at": prov["observed_at"],
                 "prov_evidence_ref": prov["evidence_ref"],
+                "content_hash": content_hash_value,
             }
         )
 
