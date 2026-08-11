@@ -482,6 +482,78 @@ Observability spans every layer:
 
 ---
 
+## Fail-Open (CRITICAL)
+
+**Fail-open.** No Campy call may block, fail, or error an agent's own work when the
+daemon is unavailable, slow, or returns an error. Read paths (recall, context injection,
+hooks) degrade to empty and let the caller proceed. Write paths (capture) drop the write
+and log — memory loss is acceptable, blocking the agent is not. The only surfaces allowed
+to hard-fail are explicit user-invoked CLI commands, where the user asked Campy a direct
+question and deserves a real error.
+
+This is non-negotiable, in the same class as "no shadow stores" above. Campy sits on other
+products' build paths; an outage in Campy must never become an outage in whatever the agent
+was actually trying to do.
+
+### Why this rule exists
+
+Campy is positioned as a Layer-5 data product inside platforms explicitly designed so no
+single component is unrecoverable. If Campy is down, the customer's agents must keep
+working — degraded, slower, dumber, but running. An agent that *fails* because a memory
+service is unreachable makes Campy a new outage source for someone else's product, which is
+disqualifying regardless of how good the memory is.
+
+Latency is the same failure by another name. A hung or slow daemon that holds a per-tool-call
+hook for seconds is indistinguishable, from the customer's side, from an agent that is fully
+blocked. A shared, generous default timeout is how this happens by accident — so there is no
+shared default; every call site states its own budget.
+
+### The exemption: implicit vs. explicit
+
+- **Implicit calls** — anything the agent triggers on the caller's behalf without a human
+  directly asking Campy a question: recall, context injection, session-start hooks,
+  per-tool-call hooks, background capture/`notify_turn`. These MUST degrade silently to an
+  empty/default result and let the caller proceed.
+- **Explicit CLI commands** — `campy ask`, `campy recall`, `campy doctor`, and similar
+  human-typed commands. A human asked Campy a direct question and is waiting on the answer;
+  these should report a real "daemon offline" error rather than silently returning nothing,
+  because a silent empty answer would be indistinguishable from "memory has nothing to say"
+  and would mislead the user.
+
+### The mechanism
+
+- `campy/brain_transport.py` exposes two client functions:
+  - `call_brain()` — raises on failure. Used only by explicit CLI paths.
+  - `call_brain_soft()` — never raises; returns a caller-supplied default on any failure
+    (unreachable daemon, timeout, HTTP error, JSON-RPC error object, malformed/truncated
+    response). Used by every implicit path: adapters, hooks, background capture.
+- `call_brain_soft()`'s `timeout` parameter is keyword-only and required — no default. Every
+  call site must state its own budget from the timeout table below (or the shell-side
+  equivalent, for `.sh` hooks that cannot import the Python constants).
+- No retry/backoff on the soft path — a retry on a per-tool-call hook multiplies the latency
+  problem instead of fixing it. Fire once, degrade, move on.
+
+| Surface | Budget | Reasoning |
+|---|---|---|
+| `pre_tool_use` / `post_tool_use` hooks | 1.0s (`HOOK_TIMEOUT`) | fires per tool call; anything more is a tax on every agent action |
+| session start / context injection | 3.0s (`CONTEXT_TIMEOUT`) | once per session, some latency tolerable |
+| capture / write paths | 2.0s (`CAPTURE_TIMEOUT`) | fire-and-forget; the agent is not waiting on the result |
+| explicit CLI (`ask`, `recall`) | 30.0s (`CLI_TIMEOUT`) | user asked, user waits, synthesis is slow |
+
+### Degraded-state visibility
+
+Degrading silently forever is its own failure. `call_brain_soft()` records consecutive
+soft-failure counts (see `campy/brain_transport.py: read_soft_failure_state()`), surfaced in
+`campy doctor` (the "Fail-Open State" check) and the activity feed
+(`~/.campy/activity.log`, see `campy/cli/indicator.py` and `campy/brain/brainstem/activity_log.py`).
+This is informational, not a health-check failure — a degraded streak means the daemon has
+been unreachable, not that Campy is broken — so it must never flip `campy doctor`'s overall
+exit code. It must also never be surfaced into the agent's own context: an infrastructure
+complaint in front of an end user who cannot act on it is not "fail-open," it's noise
+disguised as help.
+
+---
+
 ## Separation Rules Summary
 
 These are the non-negotiable import and dependency rules.
