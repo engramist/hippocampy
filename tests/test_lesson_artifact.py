@@ -102,7 +102,13 @@ async def test_upsert_lesson_persists_scene_graph_metadata(monkeypatch):
 
     await upsert_lesson(params, db, config)
 
-    query, write_params = db.execute_write.await_args.args
+    # B323 added a second db.execute_write call (AgentWorker/SOLVED_BY link)
+    # after the Lesson upsert, so `await_args` (the most recent call) is no
+    # longer reliably the Lesson write — search all calls for the one that
+    # actually wrote the Lesson node.
+    calls = [c.args for c in db.execute_write.await_args_list if c.args and "scene_wl_hash" in c.args[0]]
+    assert calls, f"no execute_write call contained scene_wl_hash; calls were: {db.execute_write.await_args_list}"
+    query, write_params = calls[0]
     assert "scene_wl_hash" in query
     assert write_params["scene_wl_hash"] == "wl:123"
     assert write_params["archetype"] == "race"
