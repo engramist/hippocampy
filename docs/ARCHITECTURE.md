@@ -1386,3 +1386,135 @@ New tool (`campy/brain/thalamus/tools/context_tools.py`, registered in `TOOL_HAN
   the response and the bundle keeps only its `target` section — no exception propagates to
   the caller. Only a missing or unresolvable `target_id` returns an `{"error": ...}` dict;
   a resolved target whose traversal fails never does.
+
+## AWS Bedrock LLM Provider (B324)
+
+A Campy deployed inside a customer's AWS account (see B315/B316) has no local Ollama —
+an ECS task cannot reach `http://localhost:11434/v1`, so the synthesis path (`ask`,
+consolidation, lesson synthesis) was dead in any cloud deployment until this card. Bedrock lets
+Campy use whatever models the customer's Bedrock account already exposes, inheriting the
+model-governance decision (access, guardrails, logging, region, data residency) that customer
+made at the Bedrock level rather than routing around it. `ollama` remains the default provider;
+Bedrock is opt-in.
+
+**Why a sibling class, not a fifth `OpenAI(base_url=...)` branch.** Every other provider in
+`campy/brain/llm/provider.py` is constructed as `OpenAI(base_url=..., api_key=...)` because
+Ollama/OpenAI/Anthropic/Google all expose (or shim) the OpenAI chat-completions wire format.
+Bedrock does not — it is `bedrock-runtime` with SigV4 auth and its own request/response shapes.
+`campy/brain/llm/bedrock.py` implements `BedrockLLMClient`, a class satisfying the same
+interface (`chat()`, `chat_with_usage()`, `achat()`, `achat_with_usage()`, `last_usage`) that
+`LLMClient` does, over `boto3.client("bedrock-runtime").converse(...)`.
+
+**Interface extraction.** `create_llm_client()` / `create_llm_client_for_step()` in
+`provider.py` are typed to return `LLMClientProtocol` (a `typing.Protocol`) rather than the
+concrete `LLMClient` class, so callers holding the return value don't need to know which
+provider they actually got. `create_llm_client_for_step()` delegates to `create_llm_client()`
+for provider dispatch (it only resolves per-step config overrides), so Bedrock support did not
+need to be duplicated there.
+
+**Why Converse, not `InvokeModel`.** `InvokeModel` requires a different request/response body
+per model family (Anthropic, Llama, Mistral, Titan, Nova all differ) — per-family branching
+that breaks whenever the customer picks a different model. Converse normalizes all of them
+behind one request shape, which is the actual requirement here: the customer chooses the
+model, Campy does not.
+
+**Message translation (OpenAI-style → Converse).**
+
+- `{"role": "system", "content": ...}` messages are lifted out of `messages` entirely and
+  passed as the top-level `system=[{"text": ...}, ...]` parameter — Converse has no `system`
+  message role.
+- Every remaining message's string `content` is wrapped as `[{"text": ...}]`.
+- Converse requires strict user/assistant alternation and rejects consecutive same-role
+  messages; adjacent same-role messages are merged into one message with multiple content
+  blocks before sending.
+- `temperature` is nested under `inferenceConfig`, not passed at the top level.
+- Usage comes back as `response["usage"]` with `inputTokens` / `outputTokens` / `totalTokens`,
+  mapped to the `prompt_tokens` / `completion_tokens` / `total_tokens` keys B180's usage
+  tracking already expects — `last_usage` behaves identically regardless of provider.
+- Response text is read from `response["output"]["message"]["content"][0]["text"]`; an empty
+  `content` list returns `""` instead of raising `IndexError`.
+
+**Auth — no stored secret.** Bedrock has no `api_key` config key. `create_bedrock_client()`
+uses `boto3.Session(profile_name=...)` and boto3's default credential chain: the ECS task role
+in deployment, the developer's local profile/SSO/env credentials otherwise. This is what makes
+Bedrock compose naturally with B315/B316 — the same IAM identity that scopes the workspace also
+authorizes the model call, with nothing for Campy to store or rotate.
+
+**Config (`config["llm"]`):**
+
+```toml
+[llm]
+provider = "bedrock"
+model    = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"   # or any Bedrock model id
+region   = "us-east-1"          # optional; falls back to AWS_REGION / boto3 default
+profile  = "..."                # optional, local dev only — not used in ECS
+```
+
+`timeout_seconds` / `max_retries` — the same keys every other provider reads — are honored via
+botocore's `Config(read_timeout=..., retries={"max_attempts": ...})`, so behavior matches the
+rest of the file.
+
+**Inference profile errors are translated, not surfaced raw.** Bedrock has both bare model IDs
+and cross-region *inference profile* IDs prefixed by geography (`us.`, `eu.`, `apac.`). Several
+current models are only invocable via an inference profile; passing the bare ID returns a
+`ValidationException` that does not explain this. `BedrockLLMClient` detects that specific
+failure (matching on Bedrock's known "on-demand throughput isn't supported ... inference
+profile" wording) and raises `BedrockInferenceProfileError` naming the likely fix — prefixing
+the model ID with a geography — rather than surfacing the raw boto error.
+
+**`boto3` is an optional dependency.** It is declared under the `bedrock` extra in
+`pyproject.toml` (`pip install 'hippocampy[bedrock]'`) and imported lazily inside
+`bedrock.py`/inside the `"bedrock"` branch of `create_llm_client()` — never at module import
+time. A machine that never installed boto3 can still `import campy.brain.llm.provider` and use
+every other provider; only asking for `provider = "bedrock"` without boto3 installed raises a
+message naming the extra to install (caught by the same try/except that already returns `None`
+for any unavailable provider, so callers keep the existing graceful-degradation contract).
+
+**Installer + smoke test.** `campy/cli/install.py`'s guided installer (`run_install()`) adds a
+third LLM provider choice — "AWS Bedrock (uses your AWS credentials — no API key)" — handled by
+`BedrockInstaller`, which prompts for region, model ID, and an optional named AWS profile, and
+never prompts for an API key. `verify_llm_connectivity()` and
+`campy/cli/smoke_test.py::check_bedrock()` both validate Bedrock reachability via the
+control-plane `list_foundation_models()` call rather than invoking a model — consistent with the
+existing smoke test's reasoning for BYOK providers ("we don't want to burn tokens on a smoke
+test"). `campy/cli/setup.py` does not prompt for a provider (it registers adapters against
+whatever `campy.toml` already has); it now documents that Bedrock is configured via
+`campy install`, not `campy setup`.
+
+### Embeddings decision — deliberately NOT moved to Bedrock
+
+This card does **not** move embeddings to Bedrock, and that is a considered decision, not an
+oversight:
+
+- `campy/brain/hippocampus/graph/embeddings.py` uses a local `SentenceTransformer`
+  (`all-MiniLM-L6-v2`, 384-dim), and **every embedding column across ~53 node tables in
+  `schema.py` is `FLOAT[384]`**, with Kùzu HNSW indexes built on that fixed dimension.
+  `schema.py` has a startup dimension check specifically to stop a mismatched model from
+  corrupting the index.
+- No Bedrock embedding model outputs 384 dimensions: Titan Text Embeddings V2 supports
+  1024/512/256, Cohere Embed outputs 1024. Switching embeddings to Bedrock is therefore not a
+  provider swap — it is a schema migration across every embedding column, a full re-embed of
+  the existing graph, and an index rebuild, with silently-degraded recall if any part is missed.
+- **Recommendation: keep local `SentenceTransformer` embeddings even in cloud deployments.** It
+  is a small CPU model, runs fine in a container, and avoids the dimension problem entirely.
+  Revisit only if a deployment forbids shipping model weights — and then as its own card with an
+  explicit re-embed plan, not folded into a provider card.
+
+**Known cost of that recommendation.** `sentence-transformers==3.3.1` (`requirements.txt`) pulls
+in `transformers`, which currently carries several HIGH `pip-audit` advisories in this repo —
+two marked "no fix available yet — consider removing this dependency." Keeping local embeddings
+keeps that dependency inside any container shipped to a customer, and an enterprise security
+review will raise it. This does not reverse the recommendation — the `FLOAT[384]` dimension
+problem is concrete and immediate, while the CVEs are a posture issue with mitigations (pinned
+base image, no untrusted model loading, network-isolated inference) — but a cloud deployment
+needs a dependency-posture review as its own piece of work. That review should also cover
+`starlette` (pulled in via `fastapi==0.115.6`) — the web/SSE surface matters much more behind an
+ALB than bound to localhost. Neither belongs in this card; both are noted here as follow-ups so
+the decision is recorded rather than rediscovered during a customer security review.
+
+**Explicitly out of scope for B324:** Bedrock Guardrails, model-invocation logging, and
+provisioned throughput are not implemented (Guardrails is a plausible follow-up for a governed
+deployment — it's a `converse()` parameter, so this card's shape accommodates it later).
+Streaming (`converse_stream`) is not added — Campy's synthesis path is non-streaming today.
+Bedrock Agents/Knowledge Bases are out of scope — this card is model inference only. The default
+provider is unchanged (`ollama`); Bedrock is opt-in.

@@ -14,6 +14,12 @@ spacy==3.8.3
 # LLM provider abstraction (OpenAI-SDK-compatible for Ollama + cloud providers)
 openai==1.58.1
 
+# AWS Bedrock LLM provider (B324) — OPTIONAL. Only needed if campy.toml sets
+# [llm] provider = "bedrock". Local users who never touch Bedrock should not
+# install this; it is not listed above the "Testing" section on purpose.
+# Install with: pip install 'hippocampy[bedrock]'  (or: pip install boto3)
+# boto3>=1.34.0
+
 # Web server (Memory Control Panel — M7)
 fastapi==0.115.6
 uvicorn==0.32.1
