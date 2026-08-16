@@ -23,7 +23,8 @@ import sys
 from pathlib import Path
 from datetime import datetime, timezone
 from campy.brain.thalamus.tool_schemas import TOOLS
-from campy.brain_transport import call_brain
+from campy.brain.brainstem.activity_log import WRITE_METHODS
+from campy.brain_transport import CAPTURE_TIMEOUT, CONTEXT_TIMEOUT, call_brain_soft
 from campy.paths import get_daemon_socket_path, runtime_dir
 
 _ALL_TOOL_NAMES = frozenset(t["name"] for t in TOOLS)
@@ -69,12 +70,25 @@ from campy.brain.thalamus.tool_schemas import TOOLS
 # Brain HTTP client
 # ---------------------------------------------------------------------------
 
-_HTTP_TIMEOUT = 10.0
 _TOKEN_LIMIT  = 128000  # GPT-4o class
 
+_SOFT_FAIL = object()  # sentinel: distinguishes "call_brain_soft degraded" from a real result
+
 async def _call_brain(method: str, params: dict) -> dict:
-    """Send a JSON-RPC call to the Brain Daemon via HTTP. Returns the result dict."""
-    return await call_brain(method, params, timeout=_HTTP_TIMEOUT)
+    """Send a JSON-RPC call to the Brain Daemon via HTTP. Returns the result dict.
+
+    B318: routed through call_brain_soft() so an unreachable/slow/erroring
+    daemon can never hang or hard-fail this adapter past its timeout budget
+    (CAPTURE_TIMEOUT for write methods, CONTEXT_TIMEOUT for reads — see the
+    table in campy/brain_transport.py). Re-raises RuntimeError("DAEMON_OFFLINE: ...")
+    on soft-failure so this function's external contract — and every
+    existing try/except RuntimeError call site below — is unchanged.
+    """
+    timeout = CAPTURE_TIMEOUT if method in WRITE_METHODS else CONTEXT_TIMEOUT
+    result = await call_brain_soft(method, params, timeout=timeout, default=_SOFT_FAIL)
+    if result is _SOFT_FAIL:
+        raise RuntimeError(f"DAEMON_OFFLINE: soft-failure calling {method}")
+    return result
 
 
 def _queue_offline(method: str, params: dict) -> None:

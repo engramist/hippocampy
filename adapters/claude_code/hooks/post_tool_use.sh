@@ -103,7 +103,11 @@ MEMCHECK_EOF
 
         if [ "$IS_CLAUDE_MEMORY_FILE" = "1" ]; then
             SESSION="${CLAUDE_SESSION_ID:-unknown}"
-            python3 - "$FILE_PATH" "$SESSION" <<'AUTO_MEMORY_EOF'
+            # B318: shell-side belt-and-suspenders on top of the internal
+            # HOOK_TIMEOUT (1.0s, campy/brain_transport.py) — `|| true` so a
+            # `timeout`-triggered non-zero exit never trips `set -e` and
+            # blocks the agent's tool call.
+            timeout 2 python3 - "$FILE_PATH" "$SESSION" <<'AUTO_MEMORY_EOF' || true
 import asyncio
 import sys
 import subprocess
@@ -122,13 +126,18 @@ try:
         build_notify_turn_payload,
         parse_memory_markdown,
     )
-    from campy.brain_transport import call_brain
+    # B318: fail-open — this hook fires on every PostToolUse Write/Edit
+    # call, so it must obey the per-tool-call hook budget (HOOK_TIMEOUT,
+    # currently 1.0s — see the table in campy/brain_transport.py) rather
+    # than the generic write-path budget. call_brain_soft() degrades to
+    # None on any failure and never raises.
+    from campy.brain_transport import HOOK_TIMEOUT, call_brain_soft
 
     file_path, session_id = sys.argv[1], sys.argv[2]
     parsed = parse_memory_markdown(file_path)
     if parsed is not None:
         payload = build_notify_turn_payload(parsed, session_id)
-        asyncio.run(call_brain("notify_turn", payload, timeout=3.0))
+        asyncio.run(call_brain_soft("notify_turn", payload, timeout=HOOK_TIMEOUT))
 except Exception:
     pass  # Never block the agent
 AUTO_MEMORY_EOF
@@ -145,10 +154,17 @@ AUTO_MEMORY_EOF
         # Infer session from env (Claude Code sets CLAUDE_SESSION_ID)
         SESSION="${CLAUDE_SESSION_ID:-unknown}"
 
-        python3 - "$FILE_PATH" "$TITLE" "$SUMMARY" "$SESSION" <<'ARTIFACT_EOF'
+        # B318: shell-side belt-and-suspenders on top of the internal
+        # HOOK_TIMEOUT (1.0s, campy/brain_transport.py) — `|| true` so a
+        # `timeout`-triggered non-zero exit never trips `set -e` and blocks
+        # the agent's tool call.
+        timeout 2 python3 - "$FILE_PATH" "$TITLE" "$SUMMARY" "$SESSION" <<'ARTIFACT_EOF' || true
 import sys, json, os
 try:
-    from campy.brain_transport import call_brain
+    # B318: fail-open — HOOK_TIMEOUT (1.0s), see campy/brain_transport.py.
+    # This hook fires on every PostToolUse Write/Edit call; call_brain_soft()
+    # degrades to None on any failure and never raises.
+    from campy.brain_transport import HOOK_TIMEOUT, call_brain_soft
     import asyncio
     file_path, title, summary, session_id = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
     # Make path repo-relative
@@ -170,7 +186,7 @@ try:
         "session_id": session_id,
         "agent_source": "claude_code",
     }
-    asyncio.run(call_brain("register_artifact", params, timeout=3.0))
+    asyncio.run(call_brain_soft("register_artifact", params, timeout=HOOK_TIMEOUT))
 except Exception:
     pass  # Never block the agent
 ARTIFACT_EOF

@@ -3,6 +3,15 @@ mcp_engine/tools/task_graph.py — DAG Task Graph Schema Helpers (B127/B128)
 
 Provides helper logic for managing TaskGraph and TaskNode DAGs,
 including cycle detection and ready-frontier queries.
+
+B323 extends this module (rather than adding a sibling) with declared
+task dependency edges — TASK_BLOCKS / TASK_ENABLES between MainQuest,
+SideQuest, and ActionItem nodes. This is deliberately a separate mechanism
+from the TaskGraph/TaskNode DAG above: TaskGraph/TaskNode is B127/B128's
+own internal execution DAG, while TASK_BLOCKS/TASK_ENABLES declares
+dependency between backlog-card-level work items. Both use the same
+bounded-cycle-check pattern (see _dag_has_cycle above vs.
+_task_dependency_cycle_path below).
 """
 
 from __future__ import annotations
@@ -15,6 +24,139 @@ if TYPE_CHECKING:
     from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 
 _logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# B323 — declared task dependency graph (TASK_BLOCKS / TASK_ENABLES)
+# ---------------------------------------------------------------------------
+
+# Node tables TASK_BLOCKS/TASK_ENABLES are defined over (schema.py), and
+# each table's primary-key column.
+TASK_DEPENDENCY_TABLES: dict[str, str] = {
+    "MainQuest": "quest_id",
+    "SideQuest": "quest_id",
+    "ActionItem": "action_item_id",
+}
+
+_TASK_DEPENDENCY_REL_TYPES = ("TASK_BLOCKS", "TASK_ENABLES")
+
+# B323: bounded cycle-check depth. The card is explicit that this is a
+# bounded traversal, not full transitive-closure maintenance — a genuine
+# cycle 11+ hops away in a same-type dependency chain would be missed, but
+# that is judged vanishingly unlikely for hand-declared card dependencies
+# and is the same tradeoff the card's own spec calls for ("*..10").
+_CYCLE_CHECK_BOUND = 10
+
+
+class TaskDependencyCycleError(ValueError):
+    """Raised when a TASK_BLOCKS/TASK_ENABLES edge would close a cycle."""
+
+
+async def _task_dependency_cycle_path(
+    db: KuzuClient, rel_type: str, table: str, pk: str, from_id: str, to_id: str
+) -> Optional[List[str]]:
+    """Return the existing path (list of node ids, `to_id` first) if a path
+    already exists from `to_id` back to `from_id` — meaning the caller's
+    proposed (from_id)-[:rel_type]->(to_id) edge would close a cycle.
+
+    Bounded to _CYCLE_CHECK_BOUND hops (`*1..10`), matching the card's
+    instruction to check with a bounded traversal rather than maintain full
+    transitive closure. Mirrors _dag_has_cycle's direction convention above
+    (probe from the target back to the source).
+    """
+    q = (
+        f"MATCH p = (b:{table} {{{pk}: $to_id}})"
+        f"-[:{rel_type}*1..{_CYCLE_CHECK_BOUND}]->(a:{table} {{{pk}: $from_id}}) "
+        f"RETURN nodes(p) LIMIT 1"
+    )
+    try:
+        r = db.execute(q, {"to_id": to_id, "from_id": from_id})
+        if r.has_next():
+            row = r.get_next()
+            path_nodes = row[0] if row else None
+            if path_nodes:
+                return [str(dict(n).get(pk)) for n in path_nodes]
+    except Exception:
+        _logger.exception(
+            "_task_dependency_cycle_path failed for %s %s -> %s", rel_type, from_id, to_id
+        )
+    return None
+
+
+async def add_task_dependency_edge(
+    db: KuzuClient,
+    *,
+    rel_type: str,
+    table: str,
+    from_id: str,
+    to_id: str,
+    declared_by: str,
+    confidence: float = 1.0,
+    source: Optional[str] = None,
+    source_version: Optional[str] = None,
+    authority: Optional[str] = None,
+    observed_at: Optional[str] = None,
+) -> Dict[str, Any]:
+    """B323 — declare a TASK_BLOCKS or TASK_ENABLES edge between two
+    same-type task nodes (MainQuest/SideQuest/ActionItem), rejecting the
+    write if it would close a cycle.
+
+    Raises:
+        ValueError: unsupported rel_type/table.
+        TaskDependencyCycleError: the edge would close a cycle (self-edge,
+            or a path already exists from `to_id` back to `from_id` within
+            the bounded check depth). The error message names the cycle
+            path when one was found by the bounded traversal.
+    """
+    if rel_type not in _TASK_DEPENDENCY_REL_TYPES:
+        raise ValueError(
+            f"unsupported rel_type {rel_type!r}; must be one of {_TASK_DEPENDENCY_REL_TYPES}"
+        )
+    pk = TASK_DEPENDENCY_TABLES.get(table)
+    if pk is None:
+        raise ValueError(
+            f"unsupported table {table!r} for task dependency edges; "
+            f"must be one of {sorted(TASK_DEPENDENCY_TABLES)}"
+        )
+    if from_id == to_id:
+        raise TaskDependencyCycleError(
+            f"{rel_type}: {from_id!r} cannot depend on itself"
+        )
+
+    cycle_path = await _task_dependency_cycle_path(db, rel_type, table, pk, from_id, to_id)
+    if cycle_path:
+        # cycle_path is [to_id, ..., from_id] (the existing path back to the
+        # source); prepending from_id renders the full loop the new edge
+        # would close without repeating from_id at both ends.
+        full_path = " -> ".join([from_id] + cycle_path)
+        raise TaskDependencyCycleError(
+            f"{rel_type} edge {from_id} -> {to_id} would close a cycle: {full_path}"
+        )
+
+    now_iso = observed_at or datetime.now(timezone.utc).isoformat()
+    await db.execute_write(
+        f"MATCH (a:{table} {{{pk}: $from_id}}), (b:{table} {{{pk}: $to_id}}) "
+        f"MERGE (a)-[r:{rel_type}]->(b) "
+        f"SET r.declared_by = $declared_by, r.confidence = $confidence, "
+        f"r.observed_at = timestamp($now), r.source = $source, "
+        f"r.source_version = $source_version, r.authority = $authority",
+        {
+            "from_id": from_id,
+            "to_id": to_id,
+            "declared_by": declared_by,
+            "confidence": confidence,
+            "now": now_iso,
+            "source": source,
+            "source_version": source_version,
+            "authority": authority,
+        },
+    )
+    return {
+        "rel_type": rel_type,
+        "table": table,
+        "from_id": from_id,
+        "to_id": to_id,
+        "status": "created",
+    }
 
 
 async def create_task_graph(db: KuzuClient, name: str, description: str = "") -> str:

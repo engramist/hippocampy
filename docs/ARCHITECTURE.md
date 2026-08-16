@@ -1127,3 +1127,805 @@ ace
 **`campy trigger remove`** — Clear trigger metadata from a Procedure or Lesson node.
 
 **`campy trigger compile`** — Force-compile the trigger manifest from graph state (normally runs on sweep cycle).
+
+## B312 — Provenance + Explicit Supersession on Fact-Bearing Nodes
+
+First card in the cloud/interop series (B312–B317). Every other card in that series
+assumes this has landed, and it is the schema contract downstream agents (Claude,
+Gemini, Codex) should read before writing to fact-bearing tables.
+
+### Provenance columns
+
+Four columns on every table in `schema.PROVENANCE_TABLES`:
+
+| Column | Type | Meaning |
+|---|---|---|
+| `source` | `STRING` | Owning source identifier, namespaced `<kind>:<id>` — e.g. `agent:claude-code`, `harvest:git`, `user:direct`, `import:temporal`. |
+| `source_version` | `STRING` | Version of the source at observation time (git SHA, adapter version, model ID). Nullable when genuinely unversioned. |
+| `observed_at` | `TIMESTAMP` | When the fact became true / was observed. Distinct from `created_at` (when Campy wrote the row) — the two match for live capture, diverge for backfill/harvest. |
+| `evidence_ref` | `STRING` | Pointer to evidence — message ID, file path + line, run ID, URL. Nullable but strongly preferred. |
+
+`PROVENANCE_TABLES` (`campy/brain/hippocampus/schema.py`) is the Tier 1 (claimed/observed
+facts: `Concept`, `Decision`, `Constraint`, `Requirement`, `ActionItem`, `GlobalConstraint`,
+`GlobalPreference`, `Lesson`, `Procedure`, `KnowledgeGap`, `Plan`, `PlanStep`, `Hypothesis`,
+`ActionFact`, `ActionEffect`, `VictoryCondition`, `Rule`, `Transition`, `DocumentExtract`,
+`WorkSummary`, `WorkArtifact`) + Tier 2 (learned/inferred Arc\* patterns: `ArcMechanic`,
+`ArcActionPattern`, `ArcEffectPattern`, `ArcPrecondition`, `ArcFailureMode`,
+`ArcRecoveryPolicy`, `ArcWorldModelStep`) table set. Structural/ontology/runtime-record
+tables (`Session`, `Message`, `Document`, `MainQuest`, `ArcRun`, `TaskGraph`, ...) do **not**
+carry provenance — they are Campy's own bookkeeping, not claims about the world.
+
+`Plan` and `VictoryCondition` already had a `source` column before this card (plan
+origin `"active"`/`"passive"`, VC origin) — a different, narrower concept than the B312
+provenance `source`. B312 did not overwrite or duplicate that column; those two tables
+only gained the other six columns (`PlanStep`, which had no pre-existing `source` column,
+got the full seven).
+
+### Explicit supersession
+
+Three node columns (same table set as provenance) plus a `SUPERSEDES` rel table:
+
+| Column | Type | Meaning |
+|---|---|---|
+| `superseded_by` | `STRING` | Primary key of the node that replaced this one. `NULL` = current. |
+| `superseded_at` | `TIMESTAMP` | When supersession happened. |
+| `supersession_reason` | `STRING` | One of `SUPERSESSION_REASONS` (below). |
+
+`SUPERSESSION_REASONS` (module-level frozenset in `schema.py`): `replaced` (a newer fact
+says it better), `contradicted` (proven false), `source_removed` (upstream source no
+longer asserts it), `merged` (folded into another node — pairs with `MergeEvent`),
+`expired` (time-bounded fact whose window closed).
+
+`SUPERSEDES` is a same-type-pair-only rel table (`FROM Concept TO Concept`, `FROM Decision
+TO Decision`, ... one pair per `PROVENANCE_TABLES` entry; cross-type supersession is out
+of scope). Direction is `(newer)-[:SUPERSEDES]->(older)` — "A SUPERSEDES B" reads "A
+replaces B". **This is the mirror image of the pre-existing `DEPRECATED_BY` rel table**
+(`FROM Concept TO Concept, FROM Decision TO Decision, FROM Constraint TO Constraint, FROM
+Lesson TO Lesson`, present in `schema.py` before this card), whose convention is
+`(older)-[:DEPRECATED_BY]->(newer)` — "A is deprecated by B". B312 did not touch
+`DEPRECATED_BY`; **B323 is expected to reconcile the two mechanisms** (they currently
+overlap on Concept/Decision/Constraint/Lesson with opposite arrow directions and no
+shared write path).
+
+### Write-side API (`campy/brain/hippocampus/provenance.py`)
+
+- `provenance_fields(*, source, source_version=None, observed_at=None, evidence_ref=None) -> dict`
+  — builds the four provenance params for a `CREATE`, defaulting `observed_at` to
+  `now(UTC)` (returned as an ISO-8601 string, matching this codebase's `timestamp($x)`
+  convention).
+- `async mark_superseded(db, *, table, node_id, superseded_by, reason, at=None) -> None`
+  — sets the three supersession columns **and** creates the `SUPERSEDES` edge in one call,
+  so the two halves cannot drift. Raises `ValueError` for a `reason` outside
+  `SUPERSESSION_REASONS` or a `table` outside the provenance-tracked set. A caller that
+  sets `superseded_by` directly without going through this function (and thus without the
+  matching edge) has introduced a bug — the ID becomes a dangling reference instead of
+  traversable lineage.
+
+### Populated at capture time (best-effort, bounded)
+
+Only two write paths populate non-NULL provenance today, per this card's scope:
+
+- `campy/brain/thalamus/tools/lessons.py`: `upsert_lesson` (source defaults from the
+  caller's `agent_source` param via the existing `agent:<id>` convention, `evidence_ref`
+  defaults to `session_id`), and the Plan/PlanStep/Lesson writes inside
+  `_create_plan_graph` / `_store_plan_outcome_lesson` when called with `capture_source`/
+  `evidence_ref`.
+- `campy/brain/thalamus/tools/capture.py`: `notify_turn` derives `capture_source` as
+  `"user:direct"` for user turns or `"agent:<agent_source>"` for assistant turns, and
+  threads it (with `evidence_ref=message_id`) into the passive-plan-detection and
+  outcome-sense-lesson calls above.
+
+Every other write site (`quests.py`'s `report_outcome`/`register_plan`, the ~500 other
+Tier 1/Tier 2 writers) still writes `NULL` provenance. That is intentional — B312 does not
+retrofit all write sites, and NULL is the correct value for facts written before this
+card landed. Recall paths (`recall_relevant_lessons`, `current_truth`, etc.) must — and
+do — tolerate NULL provenance without error; neither reads the provenance columns
+directly, so this holds by construction.
+
+### Migration
+
+`schema.py`'s existing additive `_MIGRATIONS` mechanism (`ALTER TABLE ... ADD`, guarded
+by `_column_exists()`) carries all 28 tables' worth of new columns — no new migration
+path was introduced. `init_schema()` is idempotent and safe to run against an existing
+pre-B312 database: node tables use `IF NOT EXISTS`, so pre-existing rows are untouched;
+the new columns are added and default to `NULL`.
+
+### Explicitly out of scope for B312
+
+- The `authority` property (projected vs. earned) — **B313**.
+- Backfilling provenance onto existing rows.
+- Retrofitting provenance into write sites beyond `upsert_lesson` and `notify_turn`.
+- Changing `campy/brain/brainstem/sweep.py` to emit `expired` supersessions instead of
+  silent `archived` flips.
+- Cross-type supersession edges.
+
+## B323 — Task Dependency Graph, Agent Provenance, and Card/Branch Context Bundle
+
+Reconciles against B312 rather than duplicating it. Composes with B322 (learned coupling) —
+B322 *learns* dependency from observed co-change; this card *declares* it. Three additions,
+all new tables; nothing pre-existing is redefined.
+
+### Task 0 audit findings
+
+Confirmed against `campy/brain/hippocampus/schema.py` before writing any DDL:
+
+- `Workspace`, `ANCHORED_TO`, `DEPRECATED_BY`, `LOADED`, `PRODUCED_LESSON` all already
+  existed exactly as the backlog card described.
+- `BLOCKS` (`FROM GridEntity TO GridEntity, action_id STRING, step INT32` — ARC puzzle-grid
+  mechanics) and `ENABLES` (`FROM Concept TO Concept, confidence DOUBLE, inferred_by STRING,
+  inferred_at TIMESTAMP` — concept inference) are untouched by this card. Neither their
+  definitions nor any pre-existing edges are affected by `init_schema()` — regression-tested
+  in `tests/test_task_dependency.py`.
+- No write path anywhere in `campy/` creates an `ANCHORED_TO` edge (confirmed by grep) —
+  only the DDL and one read in `hippocampus.py` existed. This made the `ANCHORED_TO` widening
+  (Task 2) a defensive, not evidence-based, migration.
+
+### TASK_BLOCKS / TASK_ENABLES — declared task dependency
+
+New rel tables, multi-pair like the pre-existing `DEPRECATED_BY`:
+
+```
+TASK_BLOCKS:  FROM MainQuest TO MainQuest, FROM SideQuest TO SideQuest, FROM ActionItem TO ActionItem
+TASK_ENABLES: same pairs
+```
+
+Edge properties: `declared_by STRING`, `confidence DOUBLE`, `observed_at TIMESTAMP`,
+`source STRING`, `source_version STRING` (B312 provenance), `authority STRING` ("earned" for
+an agent-declared edge, per B313).
+
+**Cycle safety** (`campy/brain/thalamus/tools/task_graph.py`,
+`add_task_dependency_edge()` / `TASK_DEPENDENCY_TABLES`): before inserting
+`(from_id)-[:TASK_BLOCKS|TASK_ENABLES]->(to_id)`, a bounded `*1..10` traversal checks for an
+existing path from `to_id` back to `from_id` — if found, the edge would close a cycle and is
+rejected with `TaskDependencyCycleError` naming the full loop path. A self-edge
+(`from_id == to_id`) is rejected the same way without a traversal. This is a bounded check,
+not full transitive-closure maintenance — a cycle more than 10 hops away in a same-type
+dependency chain would be missed, judged acceptable for hand-declared card dependencies.
+`TASK_BLOCKS` and `TASK_ENABLES` are checked independently of each other.
+
+### Workspace / ANCHORED_TO extension
+
+`Workspace` gains `branch_name STRING` and `active BOOLEAN` via the existing additive
+`_MIGRATIONS` mechanism — the table itself is never redefined. `ANCHORED_TO` widens from
+`FROM MainQuest TO Workspace` to also cover `FROM ActionItem TO Workspace`, via the
+drop+recreate `_REL_MIGRATIONS` path (now data-driven over a `"check"` query per entry,
+generalized from the single hardcoded `ESTABLISHED_IN` case). Both the fresh-DB `REL_TABLES`
+DDL and the upgrade-path `_REL_MIGRATIONS` entry carry the widened definition, matching the
+`ESTABLISHED_IN` precedent. Safety: the migration probes for existing `ANCHORED_TO` edges
+first and only drops+recreates when none exist; if edges are ever found on a real DB, the
+migration is skipped (logged, not silently forced) rather than risking data loss — the same
+defer behavior `ESTABLISHED_IN`'s migration already uses.
+
+### AgentWorker + SOLVED_BY — agent-as-node provenance
+
+A third agent-identity mechanism was explicitly rejected. There were already two: B312's
+`source` column (`"agent:<id>"` convention) and the pre-existing `agent_source` column on
+`WorkArtifact`/`WorkSummary`. This card adds a node type only for what a string column
+cannot do — traversing *from* an agent:
+
+- `AgentWorker (worker_id STRING PRIMARY KEY, model_name STRING, provider STRING,
+  first_seen_at TIMESTAMP, last_seen_at TIMESTAMP)`
+- `SOLVED_BY: FROM Decision TO AgentWorker, FROM ActionItem TO AgentWorker, FROM Lesson TO AgentWorker`
+  (`confidence DOUBLE, observed_at TIMESTAMP`) — `SOLVED_BY_TABLES` in `schema.py` is the
+  authoritative table/pk map.
+- `upsert_agent_worker_and_link()` (`campy/brain/hippocampus/schema.py`) is the single write
+  path: it no-ops (never raises) unless `worker_id` follows the `"agent:<id>"` convention and
+  `node_table` is in `SOLVED_BY_TABLES` — there is no `AgentWorker` for a human
+  (`"user:direct"`) or harvester (`"harvest:*"`) source. `AgentWorker.worker_id` is always the
+  identical string a write's B312 `source` column holds; this is asserted directly in
+  `tests/test_task_dependency.py`.
+- Called in the same write that sets B312 provenance, never as a separate capture pass:
+  `campy/brain/thalamus/tools/lessons.py`'s `upsert_lesson()` and
+  `_store_plan_outcome_lesson()` call it immediately after the `Lesson` CREATE/UPDATE that
+  sets `source`, using that identical value. `capture.py`'s `notify_turn()` also calls it
+  after `_store_plan_outcome_lesson()` (surfacing the new `outcome_lesson_id` in its
+  response) — a no-op today since that call site is user-turn-only and therefore always
+  `"user:direct"`, but kept for when that guard changes rather than adding the wiring later.
+  **Deviation from the card's file list:** the card's "Files to Modify" named only
+  `capture.py` for this task, but capture.py's own writes never carry non-NULL agent-sourced
+  provenance on a `SOLVED_BY`-covered table — the real write site is `lessons.py`'s two
+  functions above (`upsert_lesson` is explicitly one of B312's two named capture paths). This
+  card therefore also touches `campy/brain/thalamus/tools/lessons.py`, which was necessary to
+  make the "same write as B312 provenance" requirement (and its acceptance criterion) true
+  rather than aspirational.
+
+### DEPRECATED_BY / SUPERSEDES reconciliation (Task 4)
+
+B312 landed with a `SUPERSEDES` rel table whose arrow direction
+(`(newer)-[:SUPERSEDES]->(older)`) mirrors the pre-existing `DEPRECATED_BY` table
+(`(older)-[:DEPRECATED_BY]->(newer)`) in reverse, with no shared write path — drift this
+card was written to catch. The preferred fix (extend `DEPRECATED_BY`, retire `SUPERSEDES`)
+was **not** applied in this card: B312 had already landed with `SUPERSEDES` live
+(`mark_superseded()` writing it, `tests/test_provenance.py` exercising it) by the time this
+card's audit ran, and merging two live rel tables in place is a schema-safety decision that
+deserves its own audited card rather than a drive-by inside this one — exactly the situation
+the B323 card text anticipated ("if B312 has already landed, file the reconciliation as a
+follow-up and say so — do not silently add a third mechanism"). No third mechanism was
+added. The merge is tracked as **`backlog/B326.md`**; `backlog/B312.md` was updated in this
+same change to record the decision. Until B326 lands, `SUPERSEDES` and `DEPRECATED_BY` both
+exist and neither writes the other.
+
+### compile_card_context — card/branch context bundle
+
+New tool (`campy/brain/thalamus/tools/context_tools.py`, registered in `TOOL_HANDLERS`):
+`compile_card_context(params, db, config)`, `params: {target_id, max_hops?}`.
+
+- **Resolution**: `target_id` is matched first against a card
+  (`MainQuest`/`SideQuest`/`ActionItem`, exact match on `name`/`text_raw` then a `CONTAINS`
+  lexical fallback mirroring quests.py's B303 card-identifier convention), then against
+  `Workspace.branch_name`. Cards win on ambiguity. The response's `interpreted_as` field
+  always says which table/column resolved the target, so a caller is never guessing.
+- **Bounded traversal**: expands `TASK_BLOCKS` / `TASK_ENABLES` / `ANCHORED_TO` one hop at a
+  time in a Python-driven BFS (`_card_context_dependency_hop`), both directions, from the
+  resolved node outward. `max_hops` defaults to 3 and is clamped to a hard cap of 5
+  (`max_hops=99` clamps to 5). No Cypher `*` (bounded or unbounded) appears anywhere in the
+  issued queries — each hop is a single fixed-depth `MATCH` per (node, rel type, direction);
+  the bound comes from the Python loop, not the query. `tests/test_card_context_bundle.py`
+  asserts this directly by capturing every issued query and checking none contain `*`.
+  Rediscovering the same underlying edge from both endpoints (inherent to a bidirectional
+  BFS) is deduplicated by normalizing each edge to its true DB direction before recording it.
+- **Content on everything reached**: for every `MainQuest` reached (including the target
+  itself), `PRODUCED_LESSON` edges pull its Lessons; for each such Lesson,
+  `DEPRECATED_BY` is checked in both directions (this Lesson deprecated by something newer,
+  or deprecating something older) and `SOLVED_BY` attribution is pulled. `SOLVED_BY` is also
+  pulled directly for any reached `ActionItem`/`Decision` (the other `SOLVED_BY_TABLES`
+  members). `DEPRECATED_BY` only fires here for `Lesson` nodes reached via
+  `PRODUCED_LESSON` — `MainQuest`/`SideQuest`/`ActionItem` themselves are not
+  `DEPRECATED_BY`-covered tables, so a quest/action-item's own supersession status isn't
+  applicable and is correctly absent.
+- **Structured + Markdown**: returns `bundle` (a `bundle_compiler.ContextBundle.to_dict()`,
+  reusing that module's `BundleSection`/`ContextBundle` shapes rather than inventing a
+  second bundle representation) and `markdown` (rendered from that same structure by a
+  dedicated section-type renderer in `context_tools.py`, mirroring
+  `ClaudeCodeFormatter._format_section`'s per-section-type convention rather than routing
+  through the `formatters/` package, whose section vocabulary — `exact_fact`/`semantic`/
+  `graph`/`tabular`/`summary` — is shaped for the free-text-query bundle, not this one's
+  `target`/`dependencies`/`lessons`/`superseded`/`attribution` sections).
+- **Fail-open (B318)**: the entire hop-traversal loop is wrapped in one `try`/`except` in
+  `compile_card_context` itself; a failure there sets `dependency_traversal_failed: true` in
+  the response and the bundle keeps only its `target` section — no exception propagates to
+  the caller. Only a missing or unresolvable `target_id` returns an `{"error": ...}` dict;
+  a resolved target whose traversal fails never does.
+
+## AWS Bedrock LLM Provider (B324)
+
+A Campy deployed inside a customer's AWS account (see B315/B316) has no local Ollama —
+an ECS task cannot reach `http://localhost:11434/v1`, so the synthesis path (`ask`,
+consolidation, lesson synthesis) was dead in any cloud deployment until this card. Bedrock lets
+Campy use whatever models the customer's Bedrock account already exposes, inheriting the
+model-governance decision (access, guardrails, logging, region, data residency) that customer
+made at the Bedrock level rather than routing around it. `ollama` remains the default provider;
+Bedrock is opt-in.
+
+**Why a sibling class, not a fifth `OpenAI(base_url=...)` branch.** Every other provider in
+`campy/brain/llm/provider.py` is constructed as `OpenAI(base_url=..., api_key=...)` because
+Ollama/OpenAI/Anthropic/Google all expose (or shim) the OpenAI chat-completions wire format.
+Bedrock does not — it is `bedrock-runtime` with SigV4 auth and its own request/response shapes.
+`campy/brain/llm/bedrock.py` implements `BedrockLLMClient`, a class satisfying the same
+interface (`chat()`, `chat_with_usage()`, `achat()`, `achat_with_usage()`, `last_usage`) that
+`LLMClient` does, over `boto3.client("bedrock-runtime").converse(...)`.
+
+**Interface extraction.** `create_llm_client()` / `create_llm_client_for_step()` in
+`provider.py` are typed to return `LLMClientProtocol` (a `typing.Protocol`) rather than the
+concrete `LLMClient` class, so callers holding the return value don't need to know which
+provider they actually got. `create_llm_client_for_step()` delegates to `create_llm_client()`
+for provider dispatch (it only resolves per-step config overrides), so Bedrock support did not
+need to be duplicated there.
+
+**Why Converse, not `InvokeModel`.** `InvokeModel` requires a different request/response body
+per model family (Anthropic, Llama, Mistral, Titan, Nova all differ) — per-family branching
+that breaks whenever the customer picks a different model. Converse normalizes all of them
+behind one request shape, which is the actual requirement here: the customer chooses the
+model, Campy does not.
+
+**Message translation (OpenAI-style → Converse).**
+
+- `{"role": "system", "content": ...}` messages are lifted out of `messages` entirely and
+  passed as the top-level `system=[{"text": ...}, ...]` parameter — Converse has no `system`
+  message role.
+- Every remaining message's string `content` is wrapped as `[{"text": ...}]`.
+- Converse requires strict user/assistant alternation and rejects consecutive same-role
+  messages; adjacent same-role messages are merged into one message with multiple content
+  blocks before sending.
+- `temperature` is nested under `inferenceConfig`, not passed at the top level.
+- Usage comes back as `response["usage"]` with `inputTokens` / `outputTokens` / `totalTokens`,
+  mapped to the `prompt_tokens` / `completion_tokens` / `total_tokens` keys B180's usage
+  tracking already expects — `last_usage` behaves identically regardless of provider.
+- Response text is read from `response["output"]["message"]["content"][0]["text"]`; an empty
+  `content` list returns `""` instead of raising `IndexError`.
+
+**Auth — no stored secret.** Bedrock has no `api_key` config key. `create_bedrock_client()`
+uses `boto3.Session(profile_name=...)` and boto3's default credential chain: the ECS task role
+in deployment, the developer's local profile/SSO/env credentials otherwise. This is what makes
+Bedrock compose naturally with B315/B316 — the same IAM identity that scopes the workspace also
+authorizes the model call, with nothing for Campy to store or rotate.
+
+**Config (`config["llm"]`):**
+
+```toml
+[llm]
+provider = "bedrock"
+model    = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"   # or any Bedrock model id
+region   = "us-east-1"          # optional; falls back to AWS_REGION / boto3 default
+profile  = "..."                # optional, local dev only — not used in ECS
+```
+
+`timeout_seconds` / `max_retries` — the same keys every other provider reads — are honored via
+botocore's `Config(read_timeout=..., retries={"max_attempts": ...})`, so behavior matches the
+rest of the file.
+
+**Inference profile errors are translated, not surfaced raw.** Bedrock has both bare model IDs
+and cross-region *inference profile* IDs prefixed by geography (`us.`, `eu.`, `apac.`). Several
+current models are only invocable via an inference profile; passing the bare ID returns a
+`ValidationException` that does not explain this. `BedrockLLMClient` detects that specific
+failure (matching on Bedrock's known "on-demand throughput isn't supported ... inference
+profile" wording) and raises `BedrockInferenceProfileError` naming the likely fix — prefixing
+the model ID with a geography — rather than surfacing the raw boto error.
+
+**`boto3` is an optional dependency.** It is declared under the `bedrock` extra in
+`pyproject.toml` (`pip install 'hippocampy[bedrock]'`) and imported lazily inside
+`bedrock.py`/inside the `"bedrock"` branch of `create_llm_client()` — never at module import
+time. A machine that never installed boto3 can still `import campy.brain.llm.provider` and use
+every other provider; only asking for `provider = "bedrock"` without boto3 installed raises a
+message naming the extra to install (caught by the same try/except that already returns `None`
+for any unavailable provider, so callers keep the existing graceful-degradation contract).
+
+**Installer + smoke test.** `campy/cli/install.py`'s guided installer (`run_install()`) adds a
+third LLM provider choice — "AWS Bedrock (uses your AWS credentials — no API key)" — handled by
+`BedrockInstaller`, which prompts for region, model ID, and an optional named AWS profile, and
+never prompts for an API key. `verify_llm_connectivity()` and
+`campy/cli/smoke_test.py::check_bedrock()` both validate Bedrock reachability via the
+control-plane `list_foundation_models()` call rather than invoking a model — consistent with the
+existing smoke test's reasoning for BYOK providers ("we don't want to burn tokens on a smoke
+test"). `campy/cli/setup.py` does not prompt for a provider (it registers adapters against
+whatever `campy.toml` already has); it now documents that Bedrock is configured via
+`campy install`, not `campy setup`.
+
+### Embeddings decision — deliberately NOT moved to Bedrock
+
+This card does **not** move embeddings to Bedrock, and that is a considered decision, not an
+oversight:
+
+- `campy/brain/hippocampus/graph/embeddings.py` uses a local `SentenceTransformer`
+  (`all-MiniLM-L6-v2`, 384-dim), and **every embedding column across ~53 node tables in
+  `schema.py` is `FLOAT[384]`**, with Kùzu HNSW indexes built on that fixed dimension.
+  `schema.py` has a startup dimension check specifically to stop a mismatched model from
+  corrupting the index.
+- No Bedrock embedding model outputs 384 dimensions: Titan Text Embeddings V2 supports
+  1024/512/256, Cohere Embed outputs 1024. Switching embeddings to Bedrock is therefore not a
+  provider swap — it is a schema migration across every embedding column, a full re-embed of
+  the existing graph, and an index rebuild, with silently-degraded recall if any part is missed.
+- **Recommendation: keep local `SentenceTransformer` embeddings even in cloud deployments.** It
+  is a small CPU model, runs fine in a container, and avoids the dimension problem entirely.
+  Revisit only if a deployment forbids shipping model weights — and then as its own card with an
+  explicit re-embed plan, not folded into a provider card.
+
+**Known cost of that recommendation.** `sentence-transformers==3.3.1` (`requirements.txt`) pulls
+in `transformers`, which currently carries several HIGH `pip-audit` advisories in this repo —
+two marked "no fix available yet — consider removing this dependency." Keeping local embeddings
+keeps that dependency inside any container shipped to a customer, and an enterprise security
+review will raise it. This does not reverse the recommendation — the `FLOAT[384]` dimension
+problem is concrete and immediate, while the CVEs are a posture issue with mitigations (pinned
+base image, no untrusted model loading, network-isolated inference) — but a cloud deployment
+needs a dependency-posture review as its own piece of work. That review should also cover
+`starlette` (pulled in via `fastapi==0.115.6`) — the web/SSE surface matters much more behind an
+ALB than bound to localhost. Neither belongs in this card; both are noted here as follow-ups so
+the decision is recorded rather than rediscovered during a customer security review.
+
+**Explicitly out of scope for B324:** Bedrock Guardrails, model-invocation logging, and
+provisioned throughput are not implemented (Guardrails is a plausible follow-up for a governed
+deployment — it's a `converse()` parameter, so this card's shape accommodates it later).
+Streaming (`converse_stream`) is not added — Campy's synthesis path is non-streaming today.
+Bedrock Agents/Knowledge Bases are out of scope — this card is model inference only. The default
+provider is unchanged (`ollama`); Bedrock is opt-in.
+
+## B313 — Authority: Projected vs Earned Memory
+
+Depends on B312 (reuses `source` and `source_version`). Answers the question B312 left open
+(see B312's "Explicitly out of scope" list above): not every fact-bearing row is something
+Campy alone knows. Some are mirrors of a catalog, record, or run history owned by another
+system. `CLAUDE.md`'s "KuzuDB is the single source of truth for all persistent agent state"
+rule is correct for the former and wrong for the latter — holding a mirrored fact as if Campy
+were its source of truth creates exactly the "second, silently-stale authority" failure mode
+governed platforms reject. `authority` gives the two kinds of fact a shared graph without a
+shared authority contract.
+
+### The `authority` column
+
+One column, same table set as B312 (`schema.PROVENANCE_TABLES` — Tier 1 fact-bearing tables
+plus the Tier 2 Arc\* learned-pattern tables):
+
+| Column | Type | Values |
+|---|---|---|
+| `authority` | `STRING` | one of `schema.AUTHORITY_VALUES` — `earned` \| `projected` |
+
+- **`earned`** — the fact exists nowhere else; Campy is the only place it lives, and losing
+  the row loses it permanently. This is the default, and it is the conservative one: treating
+  a projected fact as earned merely backs up something that didn't need it, while treating an
+  earned fact as projected risks *deleting something unrecoverable* during a `drop_projections()`
+  rebuild. When in doubt, a row reads as earned.
+- **`projected`** — the fact is a mirror of something owned elsewhere (a harvested capability
+  catalog, another service's App/Iteration records, workflow-engine run history, ...). A
+  projected fact is only meaningful if it can actually be rebuilt, so it **requires** non-NULL
+  `source` and `source_version` — see "Write-time invariant" below.
+
+`authority_of(row) -> str` (`campy/brain/hippocampus/provenance.py`) is the single NULL-safe
+read path: a NULL/missing column, an unrecognized value, or a genuinely absent row all read
+back as `"earned"` — the same conservative default, applied uniformly rather than scattered as
+`row.get("authority") or "earned"` across call sites. Pre-B313 rows (and any row from a table
+whose local schema predates this migration) are NULL and therefore read as earned, which is
+correct: they were never anything but earned.
+
+### Write-time invariant (`validate_authority()`)
+
+```python
+def validate_authority(authority: str, source: str | None, source_version: str | None) -> None
+```
+
+Raises `ValueError` when `authority == "projected"` and either `source` or `source_version` is
+NULL/empty — without both, "this is rebuildable from the source" is an unverifiable claim.
+`authority == "earned"` has no such requirement (there is nothing external for an earned fact
+to point at). `provenance_fields()` (B312's write helper) grew an optional `authority` kwarg
+that runs through this validation when passed; when omitted (every pre-B313 call site), the
+returned dict is byte-for-byte what it was before this card — `authority` is left out of the
+dict entirely rather than defaulted in, so the column is written NULL and reads back as earned
+via `authority_of()`. No existing caller had to change.
+
+### Two read paths that make the property useful (`provenance.py`)
+
+- `async find_stale_projections(db, *, source, current_version, tables=None) -> list[dict]` —
+  every projected fact from `source` whose `source_version` no longer matches
+  `current_version`. This is what turns projection drift from an invisible risk into a report:
+  "show me everything Campy is still presenting as current that the source has since moved
+  past." Rows with a NULL `source_version` are excluded (not reported as stale) — that state
+  should be unreachable through `validate_authority()`, so it's a pre-B313 anomaly this
+  function doesn't try to diagnose.
+- `async drop_projections(db, *, source, dry_run=True, tables=None) -> dict` — deletes every
+  `projected` row from one `source` so it can be safely re-projected. The single most
+  dangerous function this card adds, so it carries three safeguards: the delete (and the count
+  behind it) always filters on `authority = 'projected' AND source = $source` together, never
+  on `source` alone; `dry_run` defaults to `True`; and the return shape
+  `{"deleted": N, "skipped_earned": M}` surfaces `skipped_earned` explicitly so a caller can
+  see the authority filter actually excluded something, not just trust that it would have.
+
+Neither function is a scheduled job — B313 establishes the query and the safe-delete
+primitive; running them on a schedule, and the harvester that would actually write `projected`
+rows in the first place, are both future work.
+
+### Recall surfaces authority (`current_truth`, `bundle_compiler`)
+
+`current_truth` (`campy/brain/thalamus/tools/retrieval.py`) includes `authority` in every
+result row alongside `confidence`, read via `authority_of(node)` off the already-fetched node
+dict — no extra query. `bundle_compiler`'s `_stage_exact_facts` / `_stage_semantic_context`
+(`campy/brain/thalamus/bundle_compiler.py`) do the same for `GlobalConstraint`/
+`GlobalPreference`/`Concept`/`Decision`/`Constraint`/`Requirement`, but those two stages
+project named columns in their Cypher (`RETURN n.text_raw as text, ...`) rather than the whole
+node, and Kùzu raises a binder error on a `RETURN`ed property a table's schema doesn't have.
+Reduced test fixtures (and any local schema that predates this card) don't have `authority`,
+so both stages first check for the column (`_table_has_authority()`, a `CALL table_info(...)`
+probe mirroring `schema.py`'s `_column_exists()`) and fall back to defaulting every row's
+`authority` to `"earned"` when it's absent, rather than raising and losing the whole section.
+This card does not re-rank or filter on `authority` — it is visible, not yet actionable.
+
+### Export/backup: earned by default
+
+`campy/brain/hippocampus/graph/export.py`'s `export_graph_dump()` / `export_graph()` both
+gained `include_projected: bool = False`. Default excludes rows where `authority = 'projected'`
+(rows with NULL `authority` are still included — NULL reads as earned) from every
+`PROVENANCE_TABLES` table; every other table is unaffected, since only that table set carries
+the column at all. The rationale mirrors the column's own: a disaster-recovery export exists
+to protect memory that cannot be reconstructed. A projected fact is by definition reconstructible
+from its source, so the default export is smaller with no loss of anything actually
+irreplaceable; pass `include_projected=True` for a full mirror. `import_graph_dump()` needs no
+code change to tolerate an earned-only dump — a `PROVENANCE_TABLES` table's JSONL file simply
+has fewer rows, not a missing file, and a relationship whose endpoint was an omitted projected
+row fails its `MATCH` during `_create_relationships()` and is silently skipped (standard Cypher
+semantics: zero `MATCH` rows means the paired `CREATE` never fires), not an error.
+
+### Explicitly out of scope for B313
+
+- No harvester or projection-ingest path — nothing writes `projected` facts today except
+  tests. This card establishes the contract; the first real producer is future work.
+- No re-ranking or filtering of recall by `authority`.
+- No scheduled drift detection — `find_stale_projections()` is a function, not a background
+  job.
+- No change to what `archived` means or how `campy/brain/brainstem/sweep.py` behaves.
+
+## B320 — Idempotent Writes: Content-Addressed Deduplication
+
+Retried captures (timeout, dropped socket, an ambiguous error under B318's fail-open
+transport) are correct client behavior that Campy cannot prevent. Before this card, every
+write minted a fresh `uuid4()` primary key, so the same fact captured twice became two
+unrelated nodes — inflating recall bundles and corrupting every frequency-derived signal
+(`pathway_strength`, valence aggregation, consolidation clustering) into treating a network
+blip as reinforcement.
+
+**The constraint that shapes this card, unchanged from the backlog card:** Kùzu 0.11.3
+cannot alter a primary key in place — changing one means dropping and recreating the table,
+destroying every existing edge into it. So primary keys stay exactly `uuid4()` as before;
+dedup happens on a new additive `content_hash` column instead.
+
+### `content_hash` column
+
+One column, added to `schema.CONTENT_HASH_TABLES` — a **narrower** set than B312/B313's
+`PROVENANCE_TABLES`: the 21 Tier 1 claimed/observed-fact tables only (`Concept`, `Decision`,
+`Constraint`, `Requirement`, `ActionItem`, `GlobalConstraint`, `GlobalPreference`, `Lesson`,
+`Procedure`, `KnowledgeGap`, `Plan`, `PlanStep`, `Hypothesis`, `ActionFact`, `ActionEffect`,
+`VictoryCondition`, `Rule`, `Transition`, `DocumentExtract`, `WorkSummary`, `WorkArtifact`).
+The Tier 2 Arc\* learned-pattern tables are deliberately excluded — this card only wires
+dedup-on-write into `capture.py`/`lessons.py`, so extending the column to tables nothing
+writes it to yet would be dead schema. `CONTENT_HASH_TABLES` is computed as "every
+`PROVENANCE_TABLES` entry that isn't an `Arc*` table" so it stays in lockstep with
+`PROVENANCE_TABLES` if Tier 1 ever grows, rather than being a second hardcoded list that can
+drift from the first.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `content_hash` | `STRING` | sha256 identity hash of the fact's canonical (table, text, source, workspace_id, extra) tuple. `NULL` on every pre-B320 row. |
+
+Added both directly in `NODE_TABLES`' DDL (for fresh installs) and via `_MIGRATIONS`
+(`ALTER TABLE ... ADD`, guarded by the existing `_column_exists()` check) for upgrades —
+the same two-mechanism pattern B312/B313 used, for the same reason: a fresh `CREATE TABLE`
+already has the column so the migration is a no-op there, while an existing database only
+gains it through the `ALTER`.
+
+**No backfill.** `content_hash` is never computed for existing rows — a backfill would
+surface pre-existing duplicates and invite an automated merge, which is a destructive
+operation against real user memory that belongs in its own card with its own dry-run and a
+human in the loop. `NULL` means "written before B320" and is guaranteed to never match
+anything (see below) — it is not treated as a wildcard or an implicit empty-string hash.
+
+### The hash contract (`campy/brain/hippocampus/provenance.py`)
+
+`content_hash(*, table, text, source, workspace_id="local", extra=None) -> str` — a pure
+function (no clock, no randomness, no I/O) returning a 64-character lowercase hex sha256
+digest, stable across process restarts and calls separated in time by construction.
+
+**Included** (this is what "the same fact" means):
+
+- `table` — a `Concept` and a `Lesson` with identical text are not the same fact.
+- `text`, normalized via `_normalize_text_for_hash()`: Unicode NFC, leading/trailing
+  whitespace stripped, internal whitespace runs collapsed to a single space. **Case is
+  preserved, never folded** — case can be semantically load-bearing (code, identifiers,
+  proper nouns), and lowercasing would silently merge facts a caller means to keep distinct.
+- `source` — the B312 provenance source string. The same text asserted by two different
+  sources is two different facts, not a duplicate to collapse.
+- `workspace_id` (default `"local"`) — the same fact learned in two workspaces stays two
+  distinct facts: different owners, different lifecycles, and (per B316) different
+  databases entirely.
+- `extra` — optional caller-supplied discriminators, canonicalized as
+  `json.dumps(extra, sort_keys=True, separators=(',', ':'))` so key order never affects the
+  hash.
+- `CONTENT_HASH_VERSION` (currently `1`) — folded into the hashed payload itself, so bumping
+  the constant re-partitions every future dedup decision instead of silently colliding old
+  and new hashes for text the rules now treat differently. Treat this constant, and the
+  canonicalization rules above, as a versioned contract — changing what "the same fact"
+  means is a deliberate, visible act (a version bump), never a silent drift.
+
+**Excluded** — anything that legitimately varies between a call and its retry, because
+including it would make the hash useless (a retry producing a *different* hash is exactly
+the bug this card exists to fix): `observed_at`, `created_at`, `session_id`, `message_id`,
+embeddings, `confidence`, and every uuid.
+
+`resolve_dedupe_key(..., idempotency_key=None)` is the key a write helper actually dedupes
+on: `content_hash()` unless the caller supplies `idempotency_key`, which replaces it
+entirely. This is the floor-vs-ceiling split the card calls for — content hashing is the
+floor every caller gets for free, while a well-behaved client that already tracks its own
+logical-write identity can guarantee exact-once semantics even when its retry's text
+differs slightly (content hashing alone can't catch that). An explicit `idempotency_key` is
+stored prefixed `idemp:` — a namespace disjoint from `content_hash()`'s raw 64-hex-char
+digests, so a caller-chosen key can never accidentally collide with a hash computed for
+unrelated content.
+
+`find_live_by_dedupe_key(db, *, table, pk_column, dedupe_key, touch_last_accessed=False)` —
+the lookup side. Two things are true by construction, not convention:
+
+- `n.content_hash = $key` — Kùzu's `=` against a `NULL` operand is never true, so every
+  pre-B320 row is excluded automatically; there is no separate `IS NOT NULL` guard to forget.
+- `n.superseded_by IS NULL` — a superseded row (B312) is excluded, so re-capturing content
+  identical to a fact that has since been superseded creates a fresh live node instead of
+  resurrecting the dead one.
+
+### Dedupe-on-write and the reinforcement judgement call
+
+Before inserting a fact-bearing node in a converted write path: compute the dedupe key, look
+for a live match, and if found, **do not insert** — return the existing node's id instead,
+in a shape indistinguishable from a fresh insert. A retrying caller cannot tell it was
+deduped: no exception, no warning, same response keys.
+
+**A dedup hit never bumps `pathway_strength`.** A genuine re-observation arguably *is*
+reinforcement, while a retry is not, and content alone cannot distinguish the two. The card
+defaults to *not* reinforcing: under-counting reinforcement is recoverable (a later, clearly
+distinct observation still reinforces normally), while inflating it from a network retry
+poisons ranking in a way nothing later can undo. Where a table has a `last_accessed_at`
+column (`Concept` does — though `Concept` writes are not converted by this card, so nothing
+currently exercises this path), `find_live_by_dedupe_key(..., touch_last_accessed=True)` may
+refresh *only* that column on a hit, never `pathway_strength`.
+
+**Dedup lookups fail open.** Every call site wraps the `find_live_by_dedupe_key()` lookup in
+a `try`/`except` that falls back to `existing = None` (i.e. proceeds with a normal insert) on
+any error. Dedup is a best-effort optimization on the primary capture path, never a hard
+dependency of it — matching the existing try/except-around-optional-enhancement style
+already used throughout `notify_turn` (warm frontier, proactive push, and friends). This is
+also what makes the feature safe against a caller (or test double) whose `db` doesn't
+implement `execute_read`.
+
+### Scope: `capture.py` and `lessons.py` only
+
+The same two write paths B312 named as the primary capture path — `capture.py`'s
+`notify_turn` (and the two functions it calls into for Tier-1 writes,
+`_maybe_create_passive_plan_from_turn` → `lessons._create_plan_graph`, and the outcome-sense
+branch → `lessons._store_plan_outcome_lesson`) — plus `lessons.upsert_lesson` directly.
+`sweep.py`, `temporal_lobe/loop/*`, and `dictionary.py` are untouched: those are internal
+consolidation paths the daemon itself controls, where a retry is not the failure mode this
+card is defending against. They can be converted later against this same pattern if they
+prove to need it.
+
+Both `_create_plan_graph` and `_store_plan_outcome_lesson` only activate dedup when the
+caller supplies `capture_source` or `idempotency_key` — which is true for every call from
+`notify_turn` (it always derives a non-empty `capture_source`), but false for `quests.py`'s
+`register_plan`/`report_outcome`, which pass neither. Those callers see **zero** behavior
+change from this card: `content_hash` stays `NULL` on their writes, and every call inserts,
+exactly as before B320. This is a deliberate scope fence, not an oversight — quests.py's
+callers are explicit user-declared actions (`register_plan`), not retriable network-facing
+captures.
+
+`upsert_lesson` applies content-hash dedup only when the caller omits `lesson_id` — an
+explicit `lesson_id` is already a stronger identity mechanism than content hashing (the
+pre-existing match-by-id branch, unchanged by this card, including its
+`pathway_strength += 0.1` reinforcement on update) and silently redirecting an explicit-id
+call to a different node because its content happens to match would violate the caller's
+stated intent.
+
+### What this card does not do
+
+- Does not change any primary key.
+- Does not backfill `content_hash` onto existing rows.
+- Does not merge or clean up duplicates that already exist in a user's graph — a destructive
+  operation against real memory that needs its own card, its own dry-run, and a human in the
+  loop.
+- Does not convert `sweep.py`, `temporal_lobe/loop/*`, or `dictionary.py`.
+- Does not do semantic/near-duplicate detection — this is exact-content dedup only.
+  `capture.py`'s pre-existing B279 cosine-similarity guard (>0.90 against recent `Plan`
+  embeddings, inside `_maybe_create_passive_plan_from_turn`) is a *different*, fuzzier
+  mechanism the two are complementary rather than redundant: B279 catches "a
+  differently-worded restatement of the same plan", B320 catches "the exact same capture,
+  retried". Embedding-similarity merging elsewhere in Campy (`MergeEvent`,
+  `DisambiguationEvent`) is likewise a separate mechanism with different risks.
+
+## B314 — GraphGateway: Named-Query Chokepoint + Raw-Cypher Ratchet
+
+`campy/brain/hippocampus/graph/kuzu_client.py`'s docstring has always claimed *"THIS IS THE
+ONLY FILE THAT IMPORTS KUZU. Migration to Neo4j or another provider = rewrite this file
+only."* The `import kuzu` half of that was always true. The rewrite-one-file half was not:
+Cypher text was written inline at every call site across the codebase and passed straight
+through `KuzuClient.execute()`/`execute_read()`/`execute_write()` as strings — measured at
+~500+ lines across 33 files at the time this card was written. Kùzu is pinned at `0.11.3` and
+was archived upstream in Oct 2025, which makes that not a hypothetical risk. Separately, a
+chokepoint is the only place a future tenant-visibility predicate (B316, workspace router)
+can be injected reliably — enforcing it at 500 call sites individually is not auditable;
+enforcing it at one is.
+
+A single card cannot safely migrate 500 query sites. B314 builds the seam, proves it on one
+vertical slice, and installs a ratchet so the count can only go down from here. Bulk
+migration is follow-up work, one module at a time.
+
+### `GraphGateway` / `NamedQuery` / `QueryRegistry`
+
+New module `campy/brain/hippocampus/graph/gateway.py`:
+
+- **`NamedQuery`** (frozen dataclass): `name` (dotted, `<domain>.<verb>_<subject>` —
+  e.g. `"lessons.recall_by_similarity"`), `cypher` (a static parameterized template —
+  all variable input goes through `$param`, never string interpolation), `params` (the
+  declared, required parameter names), `mutating` (routes to `execute_write` vs
+  `execute_read`), `description` (one line). Validated in `__post_init__`, so a bad query
+  raises at import time, not in production: non-static/empty cypher, a bare `{` that isn't
+  part of a Kùzu literal property map (the signature of a leftover, unresolved format
+  placeholder — e.g. `f"MATCH (a:{table})"` left half-built), params not a `tuple[str,
+  ...]`, or a missing description.
+- **`QueryRegistry`**: holds `NamedQuery` objects keyed by name; `register()` raises on a
+  duplicate name.
+- **`GraphGateway`**: wraps a `KuzuClient` + `QueryRegistry`.
+  - `run(name, /, **params)` — the sanctioned path. Looks up `name` (raises `KeyError`
+    naming it if unregistered), validates the caller's kwargs against the query's declared
+    `params` *before touching the database* (raises `TypeError` on any mismatch, missing or
+    unexpected), then routes to `KuzuClient.execute_write()` (mutating queries — preserving
+    the existing per-event-loop asyncio write-lock discipline in `_get_write_lock()`, never
+    bypassed) or `KuzuClient.execute_read()` (reads — materialized dict rows, keyed by each
+    RETURN clause's alias).
+  - `execute_raw(cypher, params, *, mutating, reason)` — the escape hatch. `reason` is a
+    required keyword (omitting it is a `TypeError`) and is logged; every call is migration
+    debt, counted by the ratchet below.
+
+Registry organization: one module per domain under
+`campy/brain/hippocampus/graph/queries/` (`lessons.py` today; `quests.py`, `retrieval.py`,
+... as follow-up cards migrate them), each exporting a tuple of `NamedQuery` objects,
+assembled into one process-wide `REGISTRY` in `queries/__init__.py`.
+
+### The proof slice: `campy/brain/thalamus/tools/lessons.py`
+
+Every one of the file's ~41 Cypher lines moved into
+`campy/brain/hippocampus/graph/queries/lessons.py` as 27 `NamedQuery` objects (a few 1:1;
+plan/lesson writes decompose into more, smaller named steps than the original inline blocks
+had). The tool functions call `gateway.run("lessons.…", …)` instead of building Cypher
+strings. A module-level `_gateway(db)` helper wraps whatever `db` a caller passes (a
+`KuzuClient`, or already a `GraphGateway`) — this keeps every public function's signature
+exactly `async def x(params: dict, db: KuzuClient, config: dict)`, unchanged, because ~14
+tool modules and the daemon dispatch depend on that shape (changing it is B315's job, not
+this card's).
+
+Two internal helpers changed shape to fit the chokepoint: `_plan_feedback_from_similarity`
+became `async` (it wasn't before) so its one Cypher read could go through `gateway.run()`
+like everything else in the file — its sole caller, `quests.py`'s `register_plan`, already
+awaits everything else in its own async body, so this was a one-line `await` addition at
+that call site. `_synthesize_lesson`'s per-artifact-table read loop (`Decision`,
+`Constraint`, `Requirement`) became three separate static named queries instead of one
+f-string-templated `MATCH (a:{table})` — table names aren't parameterizable in Cypher, and a
+templated table name is exactly the kind of call-site interpolation `NamedQuery`'s
+bare-brace check exists to catch.
+
+**A behavior-preservation subtlety worth recording:** several reads in this file previously
+called the raw synchronous `KuzuClient.execute()` and drained a `has_next()`/`get_next()`
+cursor by hand — a different, lower-level path than `execute_read()`'s materialized,
+column-aliased dict rows. Routing every read through the gateway means every read now goes
+through `execute_read()` uniformly. That's a genuine, deliberate call-path change (not just a
+textual relocation), so the pre-existing hand-rolled test doubles that mocked the raw
+`execute()`/cursor shape directly (`tests/test_scene_graph_priors.py`'s `_DB`,
+`tests/test_lesson_artifact.py`'s domain-recall test) were updated to expose an async
+`execute_read` returning the same fixture data as materialized dict rows instead — the
+tool's externally observable return values are unchanged; only the internal double's shape
+is. Fakes that never actually reach these particular reads in their exercised paths
+(`tests/test_plan_tools.py`'s `MockDB`, `tests/test_recall_contract.py`'s
+`RecallContractDB`) needed no change: the calls they'd otherwise miss are already
+inside this file's existing best-effort `try`/`except` blocks, so an unimplemented method on
+an old-style fake is swallowed exactly as an empty/no-match result already was.
+
+### The ratchet: `scripts/check_cypher_ratchet.py` + `scripts/cypher_baseline.json`
+
+Counts, over `campy/**` and `scripts/**` (deliberately **not** `tests/**` — fakes, mocks, and
+real-`KuzuClient` integration tests legitimately contain Cypher text and aren't part of the
+"500 call sites to migrate" problem):
+
+1. Lines matching `MATCH `/`CREATE `/`MERGE ` outside the allowlist.
+2. `GraphGateway.execute_raw(` call sites, everywhere (allowlisted or not — the escape hatch
+   is debt wherever it's used).
+
+Both counts are compared against the checked-in baseline (`scripts/cypher_baseline.json`);
+the script exits non-zero if *either* increased, prints the offending files, and only
+rewrites the baseline when run with `--update` — so lowering the bar is always a deliberate,
+reviewable commit, never a silent side effect of `--update` being run by habit. Wired as
+`make check-cypher` and as a step in `.github/workflows/tests.yml` (alongside B293's
+generated-tools-drift check, the closest existing precedent for "a non-pytest script that
+must pass in CI").
+
+**Allowlist, with reasons (per Task 3 — neither of these gets migrated):**
+
+- `campy/brain/hippocampus/schema.py` — its Cypher is DDL (`CREATE NODE TABLE`, `ALTER
+  TABLE`), which is inherently engine-specific and correctly lives next to the engine
+  adapter, not behind a portability seam meant for application-level queries.
+- `campy/brain/hippocampus/graph/kuzu_client.py` — the one file that imports `kuzu`. Its
+  Cypher is engine plumbing (`CALL CREATE_VECTOR_INDEX`, `CALL QUERY_FTS_INDEX`, schema
+  introspection) that `GraphGateway` itself is built on top of; routing it back through the
+  gateway would be circular.
+- `campy/brain/hippocampus/graph/queries/**` — this is where migrated Cypher is supposed to
+  live; counting it as debt would be counting the fix as the problem.
+
+The line-based counting is deliberately blunt (matching the card's own original
+measurement methodology) — it will count an English-language comment that happens to
+contain the word "Create" as a line. That's fine for the ratchet's job (a monotonic
+direction signal across the whole tree); it is *not* the mechanism that proves `lessons.py`
+itself is fully migrated. That's `tests/test_graph_gateway.py`'s
+`test_lessons_module_calls_no_raw_kuzu_execute_methods`, which greps for the precise thing
+that actually matters — no remaining `db.execute(`/`db.execute_write(`/`db.execute_read(`
+call sites in that file.
+
+### What this card does not do
+
+- Does not migrate the other ~32 files with inline Cypher — follow-up cards, one module at a
+  time; the ratchet enforces the count can only go down from here.
+- Does not migrate `schema.py`'s DDL (allowlisted by design — see above).
+- Does not add a second storage backend — the portability seam exists; no adapter is built.
+- Does not change any tool function's `(params, db, config)` signature — that's B315.
+- Does not inject any tenant/workspace-visibility predicate yet — that's B316, which depends
+  on this seam existing (`GraphGateway.run()` is the one place such a predicate could be
+  added later without touching every call site again).

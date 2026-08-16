@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import uuid
 
 from campy.brain.hippocampus.graph import embeddings as emb
+from campy.brain.hippocampus.schema import upsert_agent_worker_and_link
 
 from ._shared import (
     _CONCEPT_INDEX,
@@ -39,8 +40,23 @@ async def _maybe_create_passive_plan_from_turn(
     session_id: str,
     embedding_model: str,
     now_iso: str,
+    capture_source: str | None = None,
+    evidence_ref: str | None = None,
+    idempotency_key: str | None = None,
+    workspace_id: str = "local",
 ) -> dict | None:
-    """B68 Layer B fallback: infer plan from structured text if not actively declared."""
+    """B68 Layer B fallback: infer plan from structured text if not actively declared.
+
+    B320: `idempotency_key`/`workspace_id` thread straight through to
+    `_create_plan_graph`'s content-hash dedup — see that function's
+    docstring. Note this function already had its own B279 near-duplicate
+    guard (embedding cosine similarity > 0.90 against recent Plans, just
+    below) before this card; that is a *different*, fuzzier mechanism
+    (semantic near-duplicate detection) than B320's exact-content dedup,
+    and the two are complementary, not redundant — B279 catches "a
+    differently-worded restatement of the same plan", B320 catches "the
+    exact same capture, retried".
+    """
     if not has_plan_signal(content):
         return None
 
@@ -70,6 +86,10 @@ async def _maybe_create_passive_plan_from_turn(
         source="passive",
         confidence=0.70,
         confidence_low=True,
+        capture_source=capture_source,
+        evidence_ref=evidence_ref,
+        idempotency_key=idempotency_key,
+        workspace_id=workspace_id,
     )
     return {"plan_id": plan_id, "step_ids": step_ids, "quest_id": quest_id}
 
@@ -79,13 +99,37 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
     Receive a conversation turn from the adapter and store it as a Message node.
     M5: also resolves/creates the MainQuest from git context, upserts Session.
 
-    params: {role, content, session_id, repo_root?, git_branch?}
+    params: {role, content, session_id, repo_root?, git_branch?, idempotency_key?, workspace_id?}
+
+    B320: `idempotency_key`, when supplied, replaces content-hash dedup as
+    the identity key for any Tier-1 fact-bearing node this turn causes to
+    be written (passive plan detection, outcome-sense lesson) — see
+    provenance.resolve_dedupe_key(). A well-behaved client that retries
+    this exact call should pass the same `idempotency_key` on every
+    attempt; a client that does nothing still gets exact-content dedup for
+    free via content_hash(). `workspace_id` (default "local") is threaded
+    the same way and is part of the content-hash identity itself. Neither
+    parameter affects the Message node this call also writes — Message is
+    a structural/runtime-record table (B312's PROVENANCE_TABLES scope
+    excludes it), not a fact-bearing one, so it carries no content_hash
+    column and is out of this card's scope by design.
     """
     role       = params.get("role", "user")
     content    = params.get("content", "")
     session_id = params.get("session_id", "unknown")
     repo_root  = params.get("repo_root", "")
     git_branch = params.get("git_branch", "main")
+    idempotency_key = (params.get("idempotency_key") or "").strip() or None
+    workspace_id = (params.get("workspace_id") or "local").strip() or "local"
+
+    # B312: provenance identifier for any Tier-1 facts this turn causes to be
+    # written (passive plan detection, outcome-sense lessons). Mirrors the
+    # "agent:<id>" / "user:direct" convention documented in schema.py's
+    # PROVENANCE_TABLES comment. agent_source follows the same
+    # params.get("agent_source", "mcp") convention already used below for
+    # WorkSummary (B290).
+    _capture_agent_source = params.get("agent_source", "mcp")
+    capture_source = "user:direct" if role == "user" else f"agent:{_capture_agent_source}"
 
     max_chars = config.get("ingestion", {}).get("max_ingest_chars", 4000)
     if len(content) > max_chars:
@@ -292,6 +336,7 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
             pass  # Non-critical
 
     passive_plan = None
+    response_outcome_lesson_id = None
     # B68: passive structural plan detection from natural-language ordered steps.
     try:
         if session_id != "unknown":
@@ -301,6 +346,10 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
                 session_id=session_id,
                 embedding_model=embedding_model,
                 now_iso=now,
+                capture_source=capture_source,
+                evidence_ref=message_id,
+                idempotency_key=idempotency_key,
+                workspace_id=workspace_id,
             )
     except Exception:
         _logger.exception("passive plan detection failed")
@@ -333,7 +382,7 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
                         config,
                     )
                 elif abs(inferred_valence) > 0.7:
-                    await _store_plan_outcome_lesson(
+                    outcome_lesson_id = await _store_plan_outcome_lesson(
                         db,
                         plan_id="",
                         outcome=content,
@@ -342,7 +391,28 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
                         embedding_model=embedding_model,
                         now_iso=now,
                         trigger_signals=trigger_signals,
+                        capture_source=capture_source,
+                        evidence_ref=message_id,
+                        idempotency_key=idempotency_key,
+                        workspace_id=workspace_id,
                     )
+                    if outcome_lesson_id:
+                        # B323: derive AgentWorker + SOLVED_BY in the same
+                        # write that set this Lesson's B312 provenance
+                        # (capture_source), never as a separate pass. No-ops
+                        # for "user:direct" (this branch is user-turn-only —
+                        # see the B301 note above) since there is no
+                        # AgentWorker for a human source; kept here so the
+                        # derivation lives alongside notify_turn's other
+                        # capture_source-driven writes.
+                        await upsert_agent_worker_and_link(
+                            db,
+                            worker_id=capture_source,
+                            node_table="Lesson",
+                            node_id=outcome_lesson_id,
+                            observed_at=now,
+                        )
+                        response_outcome_lesson_id = outcome_lesson_id
     except Exception:
         _logger.exception("outcome sense auto-report failed")
 
@@ -490,6 +560,8 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
         response["insights"] = insights
     if passive_plan:
         response["passive_plan"] = passive_plan
+    if response_outcome_lesson_id:
+        response["outcome_lesson_id"] = response_outcome_lesson_id
     # Always include proactive_context (B195) for caller to inspect
     response["proactive_context"] = proactive_context if proactive_context is not None else {"pushed": False, "reason": "disabled"}
 

@@ -304,6 +304,56 @@ class OllamaInstaller:
 
         return self.pull_model(model)
 
+class BedrockInstaller:
+    """
+    Configure AWS Bedrock as the LLM provider (B324).
+
+    No API key: auth uses boto3's default credential chain (ECS task role in
+    deployment, developer's local profile/SSO/env credentials otherwise).
+    """
+
+    DEFAULT_MODEL = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+    def prompt_region(self) -> str:
+        """Ask for the AWS region, defaulting to AWS_REGION/AWS_DEFAULT_REGION if set."""
+        env_region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+        return click.prompt(
+            "  AWS region",
+            default=env_region or "us-east-1",
+        )
+
+    def prompt_model(self) -> str:
+        """Ask for the Bedrock model id (bare id or cross-region inference profile id)."""
+        click.echo(
+            "  Note: several current models are only invocable via a cross-region "
+            "inference profile id (e.g. 'us.anthropic....'), not the bare model id."
+        )
+        return click.prompt("  Bedrock model id", default=self.DEFAULT_MODEL)
+
+    def prompt_profile(self) -> str:
+        """Ask for an optional named AWS CLI profile (local dev only)."""
+        return click.prompt(
+            "  AWS profile (leave blank to use the default credential chain)",
+            default="",
+            show_default=False,
+        )
+
+    def setup(self) -> dict:
+        """Collect Bedrock config. No API key is ever requested or stored."""
+        region = self.prompt_region()
+        model = self.prompt_model()
+        profile = self.prompt_profile()
+
+        llm_config = {
+            "provider": "bedrock",
+            "model": model,
+            "region": region,
+        }
+        if profile:
+            llm_config["profile"] = profile
+        return llm_config
+
+
 class BYOKValidator:
     """Validate Bring Your Own Key configurations."""
 
@@ -543,6 +593,25 @@ class ConfigWriter:
             content = re.sub(
                 r'^base_url\s*=\s*"[^"]*"',
                 f'# base_url not needed for {provider}',
+                content, count=1, flags=re.MULTILINE
+            )
+
+        if provider == "bedrock":
+            # No api_key line for bedrock — auth uses boto3's default credential
+            # chain. Insert region/profile right after the base_url comment we
+            # just wrote so they land inside the [llm] block.
+            region = llm_config.get("region", "")
+            profile = llm_config.get("profile", "")
+            region_line = (
+                f'region = "{region}"' if region
+                else "# region falls back to AWS_REGION / boto3 default"
+            )
+            profile_line = (
+                f'profile = "{profile}"\n' if profile else ""
+            )
+            content = re.sub(
+                r'(^# base_url not needed for bedrock\n)',
+                lambda m: m.group(1) + region_line + "\n" + profile_line,
                 content, count=1, flags=re.MULTILINE
             )
 
@@ -1100,7 +1169,33 @@ def verify_llm_connectivity(llm_config: dict) -> tuple[bool, str]:
             return True, f"Ollama reachable at {base_url}"
         except Exception as e:
             return False, f"Ollama unreachable: {e}"
-    
+
+    elif provider == "bedrock":
+        # No API key to validate, and we deliberately don't invoke a model here
+        # (same reasoning as the daemon-side smoke test: don't burn tokens on
+        # an install-time check). Instead verify boto3 is installed and that
+        # credentials + region resolve enough to hit Bedrock's control-plane
+        # ListFoundationModels call, which costs nothing and invokes no model.
+        try:
+            import boto3
+        except ImportError:
+            return False, "boto3 not installed — run: pip install 'hippocampy[bedrock]'"
+
+        try:
+            region = llm_config.get("region") or os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+            session_kwargs = {}
+            if llm_config.get("profile"):
+                session_kwargs["profile_name"] = llm_config["profile"]
+            session = boto3.Session(**session_kwargs)
+            client_kwargs = {}
+            if region:
+                client_kwargs["region_name"] = region
+            client = session.client("bedrock", **client_kwargs)
+            client.list_foundation_models()
+            return True, f"Bedrock reachable (region={region or 'default'})"
+        except Exception as e:
+            return False, f"Bedrock connection failed: {e}"
+
     else:
         # BYOK providers
         if OpenAI is None:
@@ -1148,11 +1243,12 @@ def run_install() -> None:
     click.echo("  HippoCampy needs a language model for advanced reasoning.")
     click.echo("  Options:")
     click.echo("    1) Ollama (free, local, private — recommended)")
-    click.echo("    2) Bring Your Own API Key (OpenAI / Anthropic / Google)\n")
+    click.echo("    2) Bring Your Own API Key (OpenAI / Anthropic / Google)")
+    click.echo("    3) AWS Bedrock (uses your AWS credentials — no API key)\n")
 
     choice = click.prompt(
         "  Choose",
-        type=click.Choice(["1", "2"]),
+        type=click.Choice(["1", "2", "3"]),
         default="1"
     )
 
@@ -1171,6 +1267,15 @@ def run_install() -> None:
             results.append(InstallStepResult("LLM Provider", True, "Ollama local setup ok"))
         else:
             results.append(InstallStepResult("LLM Provider", False, "Ollama setup failed", "Check https://ollama.com"))
+    elif choice == "3":
+        click.echo("\n  Setting up AWS Bedrock...\n")
+        bedrock = BedrockInstaller()
+        try:
+            llm_config = bedrock.setup()
+            provider_ok = True
+            results.append(InstallStepResult("LLM Provider", True, f"Bedrock ({llm_config['model']}) configured"))
+        except Exception as e:
+            results.append(InstallStepResult("LLM Provider", False, f"Bedrock setup failed: {e}"))
     else:
         click.echo("\n  Setting up cloud provider...\n")
         byok = BYOKValidator()

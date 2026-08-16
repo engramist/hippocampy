@@ -1,7 +1,7 @@
 """
 campy/cli/notify_turn_cmd.py — `campy notify-turn` CLI subcommand.
 
-Thin wrapper over call_brain("notify_turn", ...) used by the
+Thin wrapper over call_brain_soft("notify_turn", ...) used by the
 .githooks/post-commit hook to force a WorkSummary checkpoint on commit.
 
 Usage:
@@ -48,8 +48,9 @@ def notify_turn_cmd(
         "git_branch": git_branch,
     }
 
-    try:
-        from campy.brain_transport import call_brain
-        asyncio.run(call_brain("notify_turn", params, timeout=5.0))
-    except Exception:
-        pass  # Never block a commit
+    # B318: fail-open — this is a git hook (implicit, no human waiting on a
+    # direct answer), so a slow/unreachable daemon must never fail or hold
+    # up the commit. call_brain_soft() degrades to `default` on any failure
+    # and never raises; CAPTURE_TIMEOUT is the write-path budget.
+    from campy.brain_transport import CAPTURE_TIMEOUT, call_brain_soft
+    asyncio.run(call_brain_soft("notify_turn", params, timeout=CAPTURE_TIMEOUT))

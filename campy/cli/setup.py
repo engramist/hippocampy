@@ -3,6 +3,17 @@ sidequests/cli/setup.py — Register adapters + start the Brain Daemon.
 
 Called by `campy setup [--target <client>] [--project-root <path>]`.
 Idempotent: safe to run multiple times.
+
+Note on LLM providers (B324): this module does not prompt for an LLM
+provider — it registers adapters against whatever campy.toml already says
+(writing a default-ollama campy.toml only if none exists yet). Interactive
+provider selection, including "AWS Bedrock (uses your AWS credentials — no
+API key)", lives in `campy/cli/install.py`'s guided installer
+(`run_install()` / `BedrockInstaller`). A campy.toml with
+`[llm] provider = "bedrock"` (plus `model`/`region`/optional `profile`) is
+consumed here exactly like any other provider — `run_setup()`'s final smoke
+test (see `campy/cli/smoke_test.py`) already reports Bedrock connectivity
+without change to this file.
 """
 
 from __future__ import annotations

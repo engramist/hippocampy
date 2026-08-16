@@ -75,7 +75,7 @@ from .arc_tools import (
 )
 from .artifacts import _ARTIFACT_TYPE_MAP, _infer_document_type, register_artifact
 from .capture import _maybe_create_passive_plan_from_turn, notify_turn
-from .context_tools import ask, compile_context, ingest_data, ingest_document, memory_decision
+from .context_tools import ask, compile_card_context, compile_context, ingest_data, ingest_document, memory_decision
 from .lessons import (
     _create_plan_graph,
     _plan_feedback_from_similarity,
@@ -129,6 +129,7 @@ TOOL_HANDLERS = {
     # Recalling phase (read path)
     "current_truth":    _with_phase("recalling", current_truth),
     "compile_context":  _with_phase("recalling", compile_context),
+    "compile_card_context": _with_phase("recalling", compile_card_context),
     "ask":              _with_phase("recalling", ask),
     "recall_relevant_lessons": _with_phase("recalling", recall_relevant_lessons),
     "recall_procedures": _with_phase("recalling", recall_procedures),

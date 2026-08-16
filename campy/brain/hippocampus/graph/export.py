@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
-from campy.brain.hippocampus.schema import NODE_TABLES, REL_TABLES
+from campy.brain.hippocampus.schema import NODE_TABLES, PROVENANCE_TABLES, REL_TABLES
 from campy.brain.hippocampus.table_registry import get_registry, pk_for
 
 _FORMAT_VERSION = 1
@@ -213,8 +213,22 @@ def _create_relationships(
         db.execute(query, params)
 
 
-def export_graph_dump(db: KuzuClient, out_dir: str | Path) -> dict[str, Any]:
-    """Stream the full graph to JSONL files plus a manifest."""
+def export_graph_dump(
+    db: KuzuClient, out_dir: str | Path, *, include_projected: bool = False
+) -> dict[str, Any]:
+    """Stream the full graph to JSONL files plus a manifest.
+
+    B313: `include_projected` controls whether rows carrying
+    `authority = 'projected'` (see schema.AUTHORITY_VALUES) are included.
+    Default is False — a disaster-recovery export exists to protect
+    **earned** memory (the only copy of a fact Campy holds); a projected
+    fact is by definition a rebuildable mirror of something an external
+    system already owns, so omitting it makes the default export smaller
+    with no loss of anything actually irreplaceable. Pass
+    `include_projected=True` for a full mirror (e.g. cloning a dev DB).
+    Only PROVENANCE_TABLES tables carry the `authority` column at all;
+    every other table is exported in full regardless of this flag.
+    """
     out_path = Path(out_dir)
     nodes_dir = out_path / "nodes"
     rels_dir = out_path / "rels"
@@ -226,6 +240,7 @@ def export_graph_dump(db: KuzuClient, out_dir: str | Path) -> dict[str, Any]:
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "engine": _ENGINE,
         "embedding_dim": _EMBEDDING_DIM,
+        "include_projected": include_projected,
         "node_tables": {},
         "rel_tables": {},
     }
@@ -236,7 +251,17 @@ def export_graph_dump(db: KuzuClient, out_dir: str | Path) -> dict[str, Any]:
             raise ValueError(f"Missing primary key metadata for node table {table_name!r}")
         row_count = 0
         with (nodes_dir / f"{table_name}.jsonl").open("w", encoding="utf-8") as handle:
-            query = f"MATCH (n:{table_name}) RETURN n ORDER BY n.{pk_name}"
+            if not include_projected and table_name in PROVENANCE_TABLES:
+                # NULL authority reads as 'earned' (see authority_of()) and
+                # must still be exported, so exclude only the explicit
+                # 'projected' rows rather than requiring authority = 'earned'.
+                query = (
+                    f"MATCH (n:{table_name}) "
+                    f"WHERE n.authority IS NULL OR n.authority <> 'projected' "
+                    f"RETURN n ORDER BY n.{pk_name}"
+                )
+            else:
+                query = f"MATCH (n:{table_name}) RETURN n ORDER BY n.{pk_name}"
             result = _try_execute(db, query)
             if result is not None:
                 while result.has_next():
@@ -282,7 +307,17 @@ def export_graph_dump(db: KuzuClient, out_dir: str | Path) -> dict[str, Any]:
 
 
 def import_graph_dump(db: KuzuClient, dump_dir: str | Path) -> dict[str, Any]:
-    """Restore a graph dump into an empty database."""
+    """Restore a graph dump into an empty database.
+
+    B313: tolerates a dump produced with `include_projected=False`. A
+    PROVENANCE_TABLES jsonl file simply has fewer (possibly zero) rows in
+    that case, not a missing file, so the per-table `.exists()` check and
+    row loop below need no special-casing. Any relationship whose endpoint
+    was a projected row omitted from the dump fails its MATCH during
+    `_create_relationships()` and is silently skipped (standard Cypher
+    semantics: zero MATCH rows means the paired CREATE never fires) rather
+    than raising — the missing node is expected, not corrupt data.
+    """
     dump_path = Path(dump_dir)
     manifest = json.loads((dump_path / "manifest.json").read_text(encoding="utf-8"))
     if int(manifest.get("format_version", 0)) != _FORMAT_VERSION:
@@ -336,11 +371,22 @@ def import_graph_dump(db: KuzuClient, dump_dir: str | Path) -> dict[str, Any]:
     }
 
 
-def export_graph(db_path: str | Path, out_dir: str | Path, *, warn_if_live: bool = True) -> dict[str, Any]:
-    """Convenience wrapper that opens the database read-only and exports it."""
+def export_graph(
+    db_path: str | Path,
+    out_dir: str | Path,
+    *,
+    warn_if_live: bool = True,
+    include_projected: bool = False,
+) -> dict[str, Any]:
+    """Convenience wrapper that opens the database read-only and exports it.
+
+    `include_projected` is forwarded to `export_graph_dump()` — see that
+    function's docstring. Default (False) exports earned memory only, the
+    scope that actually matters for disaster recovery.
+    """
     db = KuzuClient(str(db_path), read_only=True)
     try:
-        return export_graph_dump(db, out_dir)
+        return export_graph_dump(db, out_dir, include_projected=include_projected)
     finally:
         db.close()
 

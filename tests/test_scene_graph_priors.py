@@ -4,27 +4,24 @@ import pytest
 
 from campy.brain.thalamus.tools import recall_scene_graph_priors
 
-
-class _Result:
-    def __init__(self, rows=None):
-        self._rows = rows or []
-        self._idx = 0
-
-    def has_next(self):
-        return self._idx < len(self._rows)
-
-    def get_next(self):
-        row = self._rows[self._idx]
-        self._idx += 1
-        return row
+# B314: recall_scene_graph_priors' Cypher moved into the named query
+# `lessons.list_scene_graph_priors`, run through GraphGateway — which
+# routes non-mutating queries through `KuzuClient.execute_read()`
+# (materialized dict rows, aliased to clean column names) rather than the
+# raw synchronous cursor this fake previously exposed via `execute()`.
+# `_DB` now implements `execute_read` directly, zipping each row's raw
+# tuple against the same aliases the named query's RETURN clause declares
+# (lesson_id, progress_score, valence, archetype, text) — the fixture data
+# below is unchanged, only how it's delivered to the tool.
+_COLUMNS = ("lesson_id", "progress_score", "valence", "archetype", "text")
 
 
 class _DB:
     def __init__(self, rows=None):
         self._rows = rows or []
 
-    def execute(self, query, params=None):
-        return _Result(self._rows)
+    async def execute_read(self, query, params=None):
+        return [dict(zip(_COLUMNS, row)) for row in self._rows]
 
 
 @pytest.mark.asyncio
