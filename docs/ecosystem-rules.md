@@ -633,3 +633,43 @@ When a new deterministic tool or compute capability is added:
 ## One-Sentence Rule
 
 The control plane owns workflow and phase transitions, the harness owns agent reasoning, shared knowledge feeds prompts and skills, deterministic tools own bounded compute, Campy owns memory and is accessed only through MCP, the ARC API is the trusted environment authority, observability spans everything, and **Campy code and ARC code never cross-import**.
+
+---
+
+## Principal derivation rule (B315) — non-negotiable
+
+**Tenant and workspace are derived from the transport credential, never from request params.**
+
+`campy/brain/auth.py` defines `Principal` (who is asking: `subject_id`, `tenant_id`,
+`workspace_id`, `scopes`, `client`, `session_id`, `derived_from`) and `TransportContext`
+(what the transport itself knows about the caller — peer credentials, verified headers —
+constructed strictly *before* a request's JSON-RPC body is parsed). A `PrincipalResolver`
+maps `TransportContext -> Principal`; it never sees `params`.
+
+This is enforced two ways, and both must hold for the rule to be more than convention:
+
+1. **Structural separation.** `TransportContext` has no field a client could populate via
+   `params` — see its type definition and `tests/test_auth_context.py`'s assertion over
+   its declared fields. It is built once per connection (`_handle_connection` for the Unix
+   socket, the HTTP request handler for the streamable-HTTP transport) before any request
+   line is read.
+2. **The forbidden-key guard.** `campy.brain_daemon.route_tool_call` (used by every
+   transport — see the "Transports" section of `docs/ARCHITECTURE.md`) rejects any request
+   whose `params` contain `tenant_id`, `workspace_id`, `subject_id`, `principal`, or
+   `scopes`, with JSON-RPC `-32602` and the offending key named, logged at WARNING with the
+   rejecting principal's `subject_id`. This is belt-and-braces on top of (1): even though
+   `params` can never reach a `TransportContext`, a handler could in principle still read
+   one of these keys directly out of its own `params` dict, and the guard makes that
+   attempt a loud, visible failure instead of a silent no-op.
+
+**Local Campy is single-tenant cloud with auth stubbed** — `LocalSingleUserResolver`
+always returns a real `Principal` (tenant `local`, workspace `local`, every known scope),
+never `None`. Handlers never branch on "are we local?"; the same dispatch path cloud
+resolvers (OIDC, IAM — see `IAMPrincipalResolver`) use is exercised by every local test
+run, not only in production.
+
+Adoption of `principal` by individual tool handlers is incremental (signature inspection,
+`_WANTS_PRINCIPAL` in `campy/brain_daemon.py`, ratcheted by
+`scripts/check_principal_ratchet.py`) — a handler that has not yet adopted `principal` is
+not a violation of this rule by itself, but a handler that reads `tenant_id`/`workspace_id`
+out of its own `params` instead of its threaded `principal` is.
