@@ -203,10 +203,12 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B323 | Task Dependency Graph, Agent Provenance, and Card/Branch Context Bundle | P1 | todo — salvaged core of an external "Star Map" draft that was mostly wrong (6 of 8 tables already exist; BLOCKS/ENABLES exist for other domains, so reusing those names would drop ARC edges). Uses TASK_BLOCKS/TASK_ENABLES. Also carries the B312 DEPRECATED_BY-vs-SUPERSEDES reconciliation. | TBD | TBD | - | backlog/B323.md |
 | B324 | AWS Bedrock LLM Provider | P0 | todo — unblocks synthesis in any cloud deployment (default provider points at localhost:11434, which does not exist in ECS). Uses the Converse API so model choice stays a config change. Deliberately does NOT move embeddings to Bedrock: no Bedrock model emits 384 dims and every embedding column is FLOAT[384]. | TBD | TBD | - | backlog/B324.md |
 
+| B325 | Remote MCP Server Surface with Pluggable Auth | P0 | todo — depends on B315. Campy currently has NO remote surface: stdio + unix socket + 127.0.0.1 only, nothing authenticated. Closes the gap between "deployable in your AWS" and "your agents can reach it". Binding non-loopback without auth must be a hard startup failure. | TBD | TBD | - | backlog/B325.md |
+
 ## Summary
 
-- Total cards: 193
-- Ready: 14
+- Total cards: 194
+- Ready: 15
 - Blocked on investigation: 1
 - Needs work: 0
 - Complete: 166
