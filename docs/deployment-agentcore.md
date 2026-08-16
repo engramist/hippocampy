@@ -1,9 +1,8 @@
 # Deploying Campy Behind AWS Bedrock AgentCore Gateway
 
-**Status: partially pending** — the Gateway target-type decision and the identity-propagation
-question below are marked explicitly and are not guessed at. This document records what B325
-established plus the two open items its author (the customer's platform team) still needs to
-answer.
+**Status: identity propagation resolved 2026-08-16 (open item 1, below); target-type mechanics
+(open item 2) still pending the platform team.** This document records what B325 established,
+the customer's answer to the identity-propagation question, and what remains open.
 
 ## What B325 built
 
@@ -64,33 +63,59 @@ wasted work under the Lambda topology above:
   a future direct Gateway `mcp.mcp_server` target if the platform ever picks that escape hatch
   instead.
 
-## Open item 1 — identity does not propagate through the Gateway today
+## Open item 1 — RESOLVED 2026-08-16: identity propagation is now required by their own policy
 
-The customer's Gateway invokes with its own service role (`gateway_iam_role {}`); the provider's
-`metadata_configuration` is never set. Concretely: **neither the calling agent's IAM identity
-nor any session attribute reaches the Lambda or Campy today.** ADR-0031 accepts this as a known
-risk.
+Original finding: the customer's Gateway invoked every target with its own service role
+(`gateway_iam_role {}`); `metadata_configuration` was never set; ADR-0031 accepted this as a
+known risk. We asked whether `caller_iam_credentials` or `metadata_configuration` could be
+enabled for a Campy target. Their answer, quoted in full because it is a policy decision other
+cards depend on:
 
-The provider *does* support two mechanisms that would fix this, both currently unused:
+> Decided and codified 2026-08-16 (ADR-0031 amendment, merged, PR #851): every new gateway
+> target gets `metadata_configuration` by default — session/workspace attributes travel as
+> trusted transport metadata, never only in the request body — and any target holding
+> per-tenant data additionally requires `caller_iam_credentials`, so the upstream call is
+> signed as the real caller. A Campy target would be per-tenant by definition, so it gets both.
+> The choice is recorded per target through a required `tenancy_decision` variable in our
+> lambda-target Terraform module — a target without an explicit tenancy statement won't
+> register.
+>
+> The accepted-risk clause in ADR-0031 is amended too: it now explicitly ends at the second
+> target. The original acceptance was scoped to the single shared read-only Airtable target,
+> which is grandfathered by name. Any second target must declare its tenancy posture; the old
+> acceptance does not carry over.
 
-- `caller_iam_credentials` — would let the Gateway forward the calling identity instead of its
-  own service role.
-- `metadata_configuration` — would let the Gateway attach session attributes (e.g. a workspace
-  tag) that reach the target.
+**Consequence for this repo:** if/when a Campy Gateway target is ever registered, it will
+receive both `caller_iam_credentials` and `metadata_configuration` by the platform's own
+mechanically-enforced policy — not as a request we'd need to keep making. `IAMPrincipalResolver`
+(`campy/brain/auth.py`) is exactly the receiving side this feeds: `caller_iam_credentials` means
+the SigV4 identity `IAMPrincipalResolver` verifies is the *real* calling agent's, not the
+Gateway's own role.
 
-**Until one of these is enabled, B315's rule — workspace derives from the transport credential,
-never from request params — cannot hold behind this Gateway.** The only channel available today
-is the request body, which is precisely what B315 forbids trusting.
+**The signed-token fallback described in the previous version of this section is explicitly
+rejected — do not build it.** Their reasoning, also quoted:
 
-**Documented fallback (not implemented in B325):** a short-lived signed token, minted by the
-platform's own backend and scoped to exactly one workspace, passed through in a way the Lambda
-can treat as a transport-level credential (e.g. a header it attaches before calling Campy,
-verified by a resolver the same way `IAMPrincipalResolver` verifies SigV4). This is categorically
-different from a plaintext `workspace_id` in the JSON-RPC body: it's signed, short-lived, and
-scoped — the security properties `TransportContext` needs to hold, carried on the transport
-rather than in `params`. Building this resolver is a follow-up card, gated on the platform
-enabling `caller_iam_credentials` or `metadata_configuration` (or committing to the signed-token
-approach independently of either).
+> Don't build the interim token. The real fix is pre-decided policy plus provider-supported
+> Terraform config, not new engineering — and a bespoke minted-token plane would be a second
+> auth mechanism of exactly the "per-agent side-channel" shape our standards reject.
+
+This is worth internalizing beyond this one document: a **workaround for someone else's
+platform gap is itself a new side-channel**, and the fix belongs in the platform's own
+governed config surface, not in Campy. No follow-up card for the token resolver exists or
+should be filed.
+
+**Important — this is not evaluation approval.** Their own caution, quoted so it isn't lost in
+the good news above:
+
+> These are policy answers about how any second target must be wired — not a green light for a
+> Campy target. Our evaluation posture on Campy stands: reject-as-shipped, conditional on the
+> six items we sent, the first of which (independently auditable source — your repo URL still
+> 404s for us) is unmet. The gateway plumbing is the easy part; the conditions are the gate.
+
+As of this writing, condition #1 (repo access) is the active blocker and is unrelated to
+anything in this document — it requires the repo owner to grant read access or change
+visibility. See the evaluation-response cards (B321/B324/B325's "customer evaluation" notes) for
+the full six-condition list.
 
 ## Open item 2 — the Gateway target-type question is unresolved by definition
 
