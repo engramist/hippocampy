@@ -196,17 +196,19 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B319 | Backup and Restore for Earned Memory | P1 | todo — depends on B313 (authority split defines what needs backing up). No backup command exists today. | TBD | TBD | - | backlog/B319.md |
 | B320 | Idempotent Writes: Content-Addressed Deduplication for Retried Captures | P1 | todo — depends on B312. Adds content_hash without changing primary keys (Kùzu 0.11.3 cannot alter a PK in place). | TBD | TBD | - | backlog/B320.md |
 
-| B321 | Advisory Co-Activity: Surface What Other Agents Just Touched | P1 | todo — advisory only, explicitly NOT a fix for concurrent-overwrite bugs (that needs worktree isolation in the build runtime). Most substrate already exists from B290's WorkArtifact. | TBD | TBD | - | backlog/B321.md |
+| B321 | Cross-Session Continuity for an App | P1 | todo — REWRITTEN 2026-08-16. Original "advisory co-activity" framing was built on a misdiagnosis; the customer audit showed per-session workspace directories make same-file collisions impossible. Now closes the "no visibility between concurrent sessions on the same app" gap their own ADR-0050 names (cards 2-6 unbuilt). | TBD | TBD | - | backlog/B321.md |
 
-| B322 | Learned Change Coupling and Conflict Forecast | P1 | todo — BLOCKED in practice on B321 Task 5 (does WorkArtifact get written on ordinary edits?). Learns file coupling from observed co-change instead of parsing imports; ambient/supernode exclusion is the make-or-break detail. | TBD | TBD | - | backlog/B322.md |
+| B322 | Learned Change Coupling and Conflict Forecast | — | DEFERRED 2026-08-16 — do not implement. Customer audit removed both inputs: per-session directories mean no same-file collisions to forecast, and there is no bundler step so no dependency graph exists (grep for --metafile/webpack stats/tsc --listFiles returned zero). Superseded in purpose by the B321 rewrite. | TBD | TBD | - | backlog/B322.md |
 
 | B323 | Task Dependency Graph, Agent Provenance, and Card/Branch Context Bundle | P1 | todo — salvaged core of an external "Star Map" draft that was mostly wrong (6 of 8 tables already exist; BLOCKS/ENABLES exist for other domains, so reusing those names would drop ARC edges). Uses TASK_BLOCKS/TASK_ENABLES. Also carries the B312 DEPRECATED_BY-vs-SUPERSEDES reconciliation. | TBD | TBD | - | backlog/B323.md |
 | B324 | AWS Bedrock LLM Provider | P0 | todo — unblocks synthesis in any cloud deployment (default provider points at localhost:11434, which does not exist in ECS). Uses the Converse API so model choice stays a config change. Deliberately does NOT move embeddings to Bedrock: no Bedrock model emits 384 dims and every embedding column is FLOAT[384]. | TBD | TBD | - | backlog/B324.md |
 
+| B325 | Remote MCP Server Surface with Pluggable Auth | P0 | todo — depends on B315. Campy currently has NO remote surface: stdio + unix socket + 127.0.0.1 only, nothing authenticated. Closes the gap between "deployable in your AWS" and "your agents can reach it". Binding non-loopback without auth must be a hard startup failure. | TBD | TBD | - | backlog/B325.md |
+
 ## Summary
 
-- Total cards: 193
-- Ready: 14
+- Total cards: 194
+- Ready: 15
 - Blocked on investigation: 1
 - Needs work: 0
 - Complete: 166
