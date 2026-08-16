@@ -2055,3 +2055,140 @@ from a silent no-op into a logged, visible failure.
 - Does not convert the other ~57 handlers — the ratchet enforces direction only.
 - Does not add authentication to the Unix socket transport itself (filesystem permissions
   remain the access control there, as before).
+
+## B325 — Remote MCP Server Surface with Pluggable Auth
+
+### Why
+
+B315/B324's identity and provider seams make Campy *deployable* into a customer's AWS account.
+Before this card, nothing made it *reachable*: a container running Campy that no remote agent
+can call is not a service. AWS Bedrock AgentCore Gateway (the immediate consumer) reaches
+governed tools through a shared, IAM-authenticated MCP tool plane; Campy needed to register there
+as a target.
+
+**The generic surface, not an AgentCore adapter.** Every serious agent framework speaks MCP —
+one streamable-HTTP transport serves AgentCore, Strands, LangGraph, CrewAI, and the existing
+local harnesses. This matches the project's stated positioning (works across harnesses, across
+providers, local or cloud) — an AWS-specific integration would have contradicted it directly.
+
+### Task 0 finding — `/mcp` already existed, outside `campy/`
+
+The card's own investigation section listed three possible outcomes and asked that the actual
+one be reported rather than assumed. The actual outcome: **`POST /mcp` already existed**, in
+`web/server.py` (outside `campy/`, in the Memory Control Panel's FastAPI app — B3's "MCP-over-SSE"
+work had already been upgraded to streamable HTTP per `docs/transport-audit.md`, predating this
+card). It was bound to `127.0.0.1` only by `campy/brain_daemon.py::_start_web_server`'s
+hardcoded `host="127.0.0.1"  # NEVER 0.0.0.0 — local-only by design` — i.e. the surface existed
+but was unreachable from outside the local machine, and had no bind-address configuration at
+all, let alone a guard.
+
+**Decision: extend the existing surface rather than add a parallel one** — Task 1's "reuse
+`TOOL_HANDLERS` unchanged, do not fork the tool list per transport" would otherwise be violated
+immediately by building a second `/mcp`.
+
+**A real gap this surfaced**: `web/server.py::_dispatch_mcp` (the HTTP dispatcher) called
+`TOOL_HANDLERS[name]` **directly**, bypassing `campy_daemon.py::_dispatch` (the Unix-socket
+dispatcher) entirely — exactly the "IPC Dispatch Divergence" `docs/transport-audit.md` had
+already flagged as a documented future risk, now realized: the HTTP path never ran B315's
+forbidden-key guard or principal threading at all before this card.
+
+### Task 1 — the shared dispatch chokepoint: `route_tool_call()`
+
+Rather than duplicating B315's guard logic into `_dispatch_mcp` (the divergence-widening
+option `docs/transport-audit.md` warned against), the guard + handler-invocation logic was
+extracted out of `campy.brain_daemon.BrainDaemon._dispatch` into a module-level function:
+
+```python
+async def route_tool_call(method, params, db, config, principal) -> Any:
+    ...  # forbidden-key guard, then _WANTS_PRINCIPAL-conditional handler call
+```
+
+Both `BrainDaemon._dispatch` (Unix socket) and `web/server.py::_dispatch_mcp` (streamable HTTP)
+now call through this one function. `ForbiddenParamError` / `UnknownMethodError` are raised by
+`route_tool_call()` and translated into each transport's own error envelope (JSON-RPC `-32602`
+/ `-32601` on the socket path; the equivalent MCP `tools/call` error shape over HTTP) — so
+B315's guard, and (once B316 lands) workspace routing, apply identically regardless of which
+transport a request arrived on, closing the divergence rather than adding a second copy of it.
+
+Protocol version: HTTP already advertised `"2025-03-26"` (streamable HTTP) before this card; the
+Unix-socket path keeps advertising `"2024-11-05"` unchanged — the card's own guidance ("if any
+pinned client breaks, keep the old version for stdio and advertise the new one only on HTTP")
+turned out to already be satisfied by the pre-existing code, so no version-string change was
+needed.
+
+### Task 2 — the bind guard (`campy.brain_daemon._enforce_bind_guard`)
+
+**The single most important property in this card**: binding `[server].bind_host` to any
+non-loopback address while `[server].auth = "none"` is a **hard startup failure**. Checked
+synchronously in `BrainDaemon.start()`, before the IPC socket server, the background tasks, or
+the web/MCP server are ever created — an uncaught `BindGuardError` propagates out of `main()`
+and exits the process. This ordering matters: `_start_web_server` runs as a background asyncio
+task with a crash-and-restart wrapper (`_restart_on_failure`) — if the guard lived *inside* that
+task instead, a misconfiguration would become an infinite crash-restart loop (a message logged
+every few seconds), not the hard failure the card requires. `tests/test_bind_guard.py` proves
+nothing is bound (not merely that a message was logged) by asserting the code path that would
+call `asyncio.start_server`/uvicorn is never reached when the guard fires, across `0.0.0.0`,
+`::`, and a concrete LAN address.
+
+`bind_host` defaults to `127.0.0.1` (`campy/brain/brainstem/config.py`'s `_DEFAULT_CONFIG`) —
+an existing local install sees no behavioral change. `auth` defaults to `"none"`.
+
+### Task 3 — `IAMPrincipalResolver`
+
+Implements B315's `PrincipalResolver` Protocol. Verifies a SigV4-signed request by replaying its
+exact signed headers (`Authorization`, `X-Amz-Date`, `X-Amz-Security-Token`) against AWS STS
+`GetCallerIdentity` — the same "IAM auth via STS" pattern HashiCorp Vault's `aws` auth method
+uses: a SigV4 signature is only valid for the exact request it was computed over, so a
+successful STS call with the caller's own headers proves the caller holds the named credentials
+without Campy ever handling a raw AWS secret key. Returns the caller ARN as `subject_id`;
+`tenant_id`/`workspace_id` come from a configured map keyed by ARN, or an HTTP header the
+Gateway forwards as a session attribute (a transport-level credential, per B315's rule — not the
+JSON-RPC body). `boto3` is an optional import (mirrors `campy/brain/llm/bedrock.py`'s pattern
+exactly) — `tests/test_remote_mcp.py::test_module_imports_without_boto3_installed` proves every
+non-IAM mode imports and starts with `boto3` absent, in a subprocess so faking its absence can't
+corrupt the already-imported module objects the rest of the test suite shares.
+
+### Task 4b — the actual deployment topology is Lambda-fronted, not a direct Gateway target
+
+See `docs/deployment-agentcore.md` for the full writeup. Short version: the customer's ADR-0031
+registers Campy behind `AgentCore agent → Gateway (AWS_IAM) → Lambda (thin adapter) → Campy HTTP
+MCP surface`, not a direct `mcp.mcp_server` Gateway target — a **policy** decision (the provider
+supports both; ADR-0031 picked Lambda). Tasks 1–3 remain the prerequisite either way: the Lambda
+still needs an HTTP surface to proxy to (Kùzu is single-process-writer, so the Lambda cannot open
+the database file directly), and `IAMPrincipalResolver` is what verifies its calls. Two items are
+recorded as open in that doc rather than guessed at: identity does not currently propagate
+through the customer's Gateway (`gateway_iam_role {}`, no `metadata_configuration`), so B315's
+transport-derived-workspace rule cannot fully hold behind it yet; and the Gateway target's
+specific IAM policy / network path is pending the platform team.
+
+### Files
+
+- `web/server.py` — `create_app()` gained `principal_resolver` and (B316) `router` kwargs;
+  `_dispatch_mcp` threads `principal` and routes through `route_tool_call()`; `mcp_post` builds
+  `TransportContext` from HTTP headers before the body is parsed.
+- `campy/brain_daemon.py` — `route_tool_call`, `ForbiddenParamError`, `UnknownMethodError`,
+  `_enforce_bind_guard`, `BindGuardError`, `_build_http_principal_resolver`; `start()` runs the
+  guard synchronously before anything else; `_start_web_server` reads `[server].bind_host`.
+  `_dispatch` no longer inlines the guard/dispatch logic — it calls `route_tool_call()`.
+- `campy/brain/auth.py` — `IAMPrincipalResolver`, `IAMConfigError`,
+  `_sts_get_caller_identity_verifier`.
+- `campy/brain/brainstem/config.py` — `_DEFAULT_CONFIG["server"]` (`bind_host`, `auth`).
+- `campy/cli/smoke_test.py` — `check_remote_mcp_surface()`.
+- `docs/deployment-agentcore.md` — new.
+- `tests/test_bind_guard.py`, `tests/test_remote_mcp.py` — new.
+
+### What this card does not do
+
+- Does not build an AgentCore-specific adapter — generic MCP; AgentCore Gateway is one consumer,
+  reached via the Lambda topology in `docs/deployment-agentcore.md`.
+- Does not build the Lambda proxy itself — a separate, small follow-up card once the platform
+  answers on identity propagation.
+- Does not implement the signed-token workspace fallback — recorded as an open decision only.
+- Does not implement OIDC (the config accepts the value; `_build_http_principal_resolver` fails
+  loudly rather than silently degrading if `auth = "oidc"` is actually selected before a
+  resolver exists).
+- Does not add TLS termination, rate limiting, quotas, or per-tenant throttling.
+- Does not change the default bind address or local behavior in any way — `tests/test_web.py`'s
+  existing suite (updated only for `_dispatch_mcp`'s new required `principal` parameter) passes
+  unmodified otherwise.
+- Does not finish the Gateway registration doc — blocked on the platform team, marked pending.

@@ -39,6 +39,14 @@ _DEFAULT_CONFIG = {
     "ask": {
         "harness_variant": "H0",
     },
+    # B325: remote MCP transport bind address + auth mode, explicit and
+    # guarded (see campy/brain_daemon.py::_enforce_bind_guard). Defaults
+    # reproduce today's local-only behavior exactly — bind_host stays
+    # loopback and auth stays "none" unless a config file opts in.
+    "server": {
+        "bind_host": "127.0.0.1",
+        "auth": "none",   # "none" | "iam" | "oidc"
+    },
 }
 
 

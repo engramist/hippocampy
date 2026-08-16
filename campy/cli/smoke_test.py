@@ -146,6 +146,45 @@ def check_sse_endpoint(port: int = 7799) -> bool:
     except Exception:
         return False
 
+
+def check_remote_mcp_surface(port: int = 7799, host: str = "127.0.0.1") -> dict:
+    """B325: verify the streamable-HTTP MCP surface (`POST /mcp`) is up and
+    advertises the same tools the Unix-socket transport does — the two
+    dispatch paths sharing `campy.brain_daemon.route_tool_call()` is what
+    makes that comparison meaningful rather than coincidental. This is a
+    smoke check against an already-running daemon, not a bind-guard test
+    (see tests/test_bind_guard.py for the startup-time hard-failure
+    behavior this function can't observe from outside the process)."""
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).encode()
+    req = urllib.request.Request(
+        f"http://{host}:{port}/mcp", data=body,
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            payload = json.loads(resp.read())
+    except Exception as e:
+        return {"ok": False, "detail": f"remote MCP surface unreachable: {e}"}
+
+    if "error" in payload:
+        return {"ok": False, "detail": payload["error"].get("message", "unknown error")}
+
+    http_tools = {t["name"] for t in payload.get("result", {}).get("tools", [])}
+    socket_response = _send("tools/list")
+    socket_tools = {t["name"] for t in socket_response.get("result", {}).get("tools", [])}
+
+    # HTTP's tool_schemas.TOOLS is a curated subset with published schemas
+    # (see docs/ARCHITECTURE.md's Transports section) — every HTTP name
+    # must still be one the socket transport actually knows how to
+    # dispatch, but HTTP need not list every internal/unpublished tool.
+    missing = http_tools - socket_tools
+    if missing:
+        return {"ok": False, "detail": f"HTTP-only tools not in socket dispatch: {sorted(missing)}"}
+    if not http_tools:
+        return {"ok": False, "detail": "remote MCP surface returned no tools"}
+
+    return {"ok": True, "detail": f"Remote MCP surface OK ({len(http_tools)} tools, port {port})"}
+
 def check_status() -> bool:
     """Print human-readable status and return True if healthy."""
     res = smoke_test()
