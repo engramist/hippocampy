@@ -1341,8 +1341,8 @@ card's audit ran, and merging two live rel tables in place is a schema-safety de
 deserves its own audited card rather than a drive-by inside this one — exactly the situation
 the B323 card text anticipated ("if B312 has already landed, file the reconciliation as a
 follow-up and say so — do not silently add a third mechanism"). No third mechanism was
-added. The merge is tracked as **`backlog/B325.md`**; `backlog/B312.md` was updated in this
-same change to record the decision. Until B325 lands, `SUPERSEDES` and `DEPRECATED_BY` both
+added. The merge is tracked as **`backlog/B326.md`**; `backlog/B312.md` was updated in this
+same change to record the decision. Until B326 lands, `SUPERSEDES` and `DEPRECATED_BY` both
 exist and neither writes the other.
 
 ### compile_card_context — card/branch context bundle

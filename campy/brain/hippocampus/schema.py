@@ -1359,7 +1359,7 @@ REL_TABLES = [
     # instructions for this exact situation ("if B312 has already landed,
     # file the reconciliation as a follow-up and say so — do not silently
     # add a third mechanism"), no third table was added; the merge is
-    # tracked as a follow-up in backlog/B325.md. Both tables keep working
+    # tracked as a follow-up in backlog/B326.md. Both tables keep working
     # independently until that follow-up lands.
     "CREATE REL TABLE IF NOT EXISTS SUPERSEDES (" +
     ", ".join(f"FROM {t} TO {t}" for t in PROVENANCE_TABLES) +
