@@ -67,6 +67,42 @@ def check_ollama(base_url: str = "http://localhost:11434/v1") -> bool:
         except Exception:
             return False
 
+def check_bedrock(llm_cfg: dict) -> bool:
+    """
+    Verify AWS Bedrock is reachable for the configured provider (B324).
+
+    Deliberately does NOT invoke a model (no `converse()` call, no tokens
+    burned) — same reasoning as `check_ollama`'s cheap ping. Instead it
+    confirms boto3 is installed and that credentials + region resolve enough
+    to hit Bedrock's control-plane `list_foundation_models`, which is free
+    and invokes no model.
+    """
+    try:
+        import boto3
+    except ImportError:
+        return False
+
+    try:
+        region = (
+            llm_cfg.get("region")
+            or os.environ.get("AWS_REGION")
+            or os.environ.get("AWS_DEFAULT_REGION")
+        )
+        session_kwargs = {}
+        if llm_cfg.get("profile"):
+            session_kwargs["profile_name"] = llm_cfg["profile"]
+        session = boto3.Session(**session_kwargs)
+
+        client_kwargs = {}
+        if region:
+            client_kwargs["region_name"] = region
+        client = session.client("bedrock", **client_kwargs)
+        client.list_foundation_models()
+        return True
+    except Exception:
+        return False
+
+
 def smoke_test() -> dict:
     """Run a health check via the MCP tools list."""
     response = _send("tools/list")
@@ -151,6 +187,7 @@ async def run_smoke_tests() -> dict:
     config_path = repo_root / "campy.toml"
     provider = "ollama"
     base_url = "http://localhost:11434/v1"
+    llm_cfg: dict = {}
 
     if config_path.exists():
         try:
@@ -165,6 +202,8 @@ async def run_smoke_tests() -> dict:
 
     if provider == "ollama":
         results["LLM Provider Connectivity"] = check_ollama(base_url)
+    elif provider == "bedrock":
+        results["LLM Provider Connectivity"] = check_bedrock(llm_cfg)
     else:
         # For cloud providers, we just assume if we have an API key they are "connected"
         # because we don't want to burn tokens on a smoke test.

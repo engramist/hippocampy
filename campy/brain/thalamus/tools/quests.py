@@ -211,7 +211,7 @@ async def register_plan(params: dict, db: KuzuClient, config: dict) -> dict:
     )
 
     goal_vec = emb.embed(goal, model_name=embedding_model)
-    warnings, suggestions = _plan_feedback_from_similarity(db, goal_vec, plan_id)
+    warnings, suggestions = await _plan_feedback_from_similarity(db, goal_vec, plan_id)
 
     return {
         "status": "registered",

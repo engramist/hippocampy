@@ -102,22 +102,38 @@ async def test_upsert_lesson_persists_scene_graph_metadata(monkeypatch):
 
     await upsert_lesson(params, db, config)
 
-    query, write_params = db.execute_write.await_args.args
+    # B323 added a second db.execute_write call (AgentWorker/SOLVED_BY link)
+    # after the Lesson upsert, so `await_args` (the most recent call) is no
+    # longer reliably the Lesson write — search all calls for the one that
+    # actually wrote the Lesson node.
+    calls = [c.args for c in db.execute_write.await_args_list if c.args and "scene_wl_hash" in c.args[0]]
+    assert calls, f"no execute_write call contained scene_wl_hash; calls were: {db.execute_write.await_args_list}"
+    query, write_params = calls[0]
     assert "scene_wl_hash" in query
     assert write_params["scene_wl_hash"] == "wl:123"
     assert write_params["archetype"] == "race"
 
 @pytest.mark.asyncio
 async def test_recall_relevant_lessons_domain():
-    """recall_relevant_lessons fetches by domain."""
+    """recall_relevant_lessons fetches by domain.
+
+    B314: the domain-lookup Cypher moved into a named query
+    (`lessons.list_lessons_by_domain`) run through GraphGateway, which
+    routes non-mutating queries through `KuzuClient.execute_read()` —
+    materialized dict rows, aliased to clean column names — rather than
+    the raw synchronous cursor (`db.execute()` + `has_next()`/`get_next()`)
+    this test previously mocked directly. Mocking `execute_read` instead
+    is the legitimate update that follows from that deliberate chokepoint
+    change; the tool's external return shape (asserted below) is
+    unaffected.
+    """
     db = MagicMock()
-    mock_result = MagicMock()
-    mock_result.has_next.side_effect = [True, False]
-    mock_result.get_next.return_value = ["less-1", "Use python 3.11", "optimization"]
-    db.execute.return_value = mock_result
-    
+    db.execute_read = AsyncMock(return_value=[
+        {"lesson_id": "less-1", "text_raw": "Use python 3.11", "lesson_type": "optimization"}
+    ])
+
     params = {"domain": "python"}
     result = await recall_relevant_lessons(params, db, {})
-    
+
     assert len(result["lessons"]) == 1
     assert result["lessons"][0]["text"] == "Use python 3.11"

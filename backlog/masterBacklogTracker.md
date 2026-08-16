@@ -204,6 +204,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B324 | AWS Bedrock LLM Provider | P0 | todo — P0, unblocks cloud synthesis. UPDATED 2026-08-16: added Task 6, bake the embedding model into the container image. Customer's cloud-tier egress allowlist omits huggingface.co, so the first-run SentenceTransformer download is firewall-denied and recall dies. | TBD | TBD | - | backlog/B324.md |
 
 | B325 | Remote MCP Server Surface with Pluggable Auth | P0 | todo — depends on B315. UPDATED 2026-08-16: added Task 4b, the AWS path is Lambda-fronted per their ADR-0031 ("targets are Lambdas wrapping ecosystem adapters"), and remote_mcp without a cited ADR is a HIGH gate finding. Transport/auth work is unchanged; deployment topology is not. | TBD | TBD | - | backlog/B325.md |
+| B326 | Reconcile SUPERSEDES into DEPRECATED_BY | P1 | todo — B323's Task 4 follow-up. Two supersession mechanisms with OPPOSITE arrow directions currently coexist: SUPERSEDES is (newer)->(older), DEPRECATED_BY is (older)->(newer). A wrong-direction traversal returns plausible rows rather than erroring, so this fails silently. | TBD | TBD | - | backlog/B326.md |
 
 ## Summary
 
