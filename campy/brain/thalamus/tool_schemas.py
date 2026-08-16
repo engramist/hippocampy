@@ -184,6 +184,25 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "compile_card_context",
+        "description": (
+            "Compile a bounded context bundle keyed on a backlog card id (e.g. 'B317') or a "
+            "git branch name, rather than a free-text query. Traverses declared task "
+            "dependencies (TASK_BLOCKS/TASK_ENABLES) and workspace anchoring (ANCHORED_TO) up "
+            "to max_hops, and includes prior lessons, superseded/deprecated decisions, and "
+            "agent attribution for everything reached. Use this when picking up a card or "
+            "branch; use compile_context for free-text queries instead."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target_id": {"type": "string", "description": "Card identifier (e.g. 'B317') or branch name (e.g. 'feature/foo')."},
+                "max_hops": {"type": "integer", "description": "Dependency traversal depth (default 3, hard-capped at 5).", "default": 3},
+            },
+            "required": ["target_id"],
+        },
+    },
+    {
         "name": "ingest_arc_artifacts",
         "description": (
             "Import ARC_AGI run artifacts into SideQuests graph memory for retrieval and wiki projection."

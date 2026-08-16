@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from campy.brain.hippocampus.graph import embeddings as emb
+from campy.brain.hippocampus.provenance import authority_of
 from campy.brain.thalamus.tools.explore_graph import (
     _MAX_DEPTH,
     _NODE_TABLES,
@@ -410,6 +411,11 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
                 "text_raw":         text_raw,
                 "confidence":       conf,
                 "confidence_low":   node.get("confidence_low", True),
+                # B313: surfaced alongside confidence so callers can tell
+                # "Campy learned this" (earned) from "Campy is mirroring
+                # this from somewhere else" (projected) — NULL-safe via
+                # authority_of() since most tables/rows predate B313.
+                "authority":        authority_of(node),
                 "pathway_strength": ps,
                 "similarity":       similarity,
                 "activation_score": activation_score, # B91: expose for debugging/tests

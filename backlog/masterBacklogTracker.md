@@ -204,6 +204,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B324 | AWS Bedrock LLM Provider | P0 | todo — unblocks synthesis in any cloud deployment (default provider points at localhost:11434, which does not exist in ECS). Uses the Converse API so model choice stays a config change. Deliberately does NOT move embeddings to Bedrock: no Bedrock model emits 384 dims and every embedding column is FLOAT[384]. | TBD | TBD | - | backlog/B324.md |
 
 | B325 | Remote MCP Server Surface with Pluggable Auth | P0 | todo — depends on B315. Campy currently has NO remote surface: stdio + unix socket + 127.0.0.1 only, nothing authenticated. Closes the gap between "deployable in your AWS" and "your agents can reach it". Binding non-loopback without auth must be a hard startup failure. | TBD | TBD | - | backlog/B325.md |
+| B326 | Reconcile SUPERSEDES into DEPRECATED_BY | P1 | todo — B323's Task 4 follow-up. Two supersession mechanisms with OPPOSITE arrow directions currently coexist: SUPERSEDES is (newer)->(older), DEPRECATED_BY is (older)->(newer). A wrong-direction traversal returns plausible rows rather than erroring, so this fails silently. | TBD | TBD | - | backlog/B326.md |
 
 ## Summary
 

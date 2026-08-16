@@ -39,6 +39,7 @@ class DoctorChecker:
         self._check_database()
         self._check_daemon()
         self._check_activity_log()
+        self._check_fail_open_state()
         self._check_launchd()
         self._check_mcp_clients()
         self._check_plugin_status()
@@ -147,6 +148,33 @@ class DoctorChecker:
                     path.touch(mode=0o600)
         except Exception as exc:
             self.checks.append(("Activity Log", False, f"Error: {exc}"))
+
+    def _check_fail_open_state(self) -> None:
+        """B318: surface how many consecutive implicit calls (recall, hooks,
+        capture) have degraded in a row via call_brain_soft(). This is
+        informational, not a pass/fail health signal — a degraded streak
+        means the daemon has been unreachable, not that Campy is broken, so
+        it never flips the overall `campy doctor` exit code. The point is
+        that a user whose memory has been silently offline for a while can
+        find out."""
+        try:
+            from campy.brain_transport import read_soft_failure_state
+
+            state = read_soft_failure_state()
+            count = state.get("consecutive_failures", 0) or 0
+            if count:
+                last_method = state.get("last_method") or "unknown"
+                last_error = state.get("last_error") or "unknown"
+                updated_at = state.get("updated_at") or "unknown"
+                msg = (
+                    f"{count} consecutive soft failure(s); last: {last_method} "
+                    f"({last_error}) at {updated_at}"
+                )
+            else:
+                msg = "0 consecutive soft failures"
+            self.checks.append(("Fail-Open State", True, msg))
+        except Exception as exc:
+            self.checks.append(("Fail-Open State", False, f"Error: {exc}"))
 
     def _check_launchd(self) -> None:
         if platform.system() != "Darwin":

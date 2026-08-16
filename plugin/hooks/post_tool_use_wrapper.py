@@ -57,4 +57,14 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # B318: non-zero-exit tolerance — a PostToolUse hook fires on every tool
+    # call and must never block the agent, so any unexpected failure here
+    # degrades to empty output and exit 0 rather than propagating a
+    # traceback/non-zero exit code. This hook makes no daemon calls (pure
+    # local trigger-manifest matching), so no timeout budget applies.
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except Exception:
+        raise SystemExit(0)

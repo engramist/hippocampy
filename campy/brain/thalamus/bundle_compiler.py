@@ -18,7 +18,30 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional
 
+from campy.brain.hippocampus.provenance import authority_of
+
 _logger = logging.getLogger(__name__)
+
+
+def _table_has_authority(db, table: str) -> bool:
+    """B313: best-effort check for whether `table` already has the
+    `authority` column, so the exact-fact / semantic-context stages below
+    can include it in their RETURN when present without hard-failing (a
+    Kuzu binder exception) against a schema that predates B313 — e.g. the
+    reduced fixture tables some tests build directly rather than going
+    through campy.brain.hippocampus.schema.NODE_TABLES. Mirrors the
+    exception-tolerant `_column_exists()` pattern in schema.py's migration
+    step.
+    """
+    try:
+        r = db.execute(f"CALL table_info('{table}') RETURN *")
+        while r.has_next():
+            row = r.get_next()
+            if str(row[1]).lower() == "authority":
+                return True
+    except Exception:
+        pass
+    return False
 
 
 @dataclass
@@ -278,25 +301,32 @@ async def _stage_exact_facts(db, query: str, config: dict, tier_config: dict) ->
         limit = 10
         rows: list[tuple] = []
         for label in ("GlobalConstraint", "GlobalPreference"):
+            # B313: include authority when the table has the column (see
+            # _table_has_authority docstring for why this is checked rather
+            # than assumed).
+            has_authority = _table_has_authority(db, label)
+            authority_select = ", n.authority as authority" if has_authority else ""
             cypher = f"""
                 MATCH (n:{label})
                 WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
-                RETURN n.text_raw as text, label(n) as node_type, n.confidence as confidence
+                RETURN n.text_raw as text, label(n) as node_type, n.confidence as confidence{authority_select}
                 LIMIT $limit
             """
             result = db.execute(cypher, {"query_embedding": query_embedding, "limit": limit})
             while result.has_next():
-                rows.append(result.get_next())
+                row = result.get_next()
+                rows.append(row if has_authority else (*row, None))
 
         rows = rows[:limit]
 
         content = []
         node_ids = []
-        for text, node_type, confidence in rows:
+        for text, node_type, confidence, authority in rows:
             content.append({
                 "text": text,
                 "type": node_type,
                 "confidence": confidence if confidence is not None else 0.5,
+                "authority": authority_of(authority),
             })
             node_ids.append((text or "")[:20])
 
@@ -346,30 +376,36 @@ async def _stage_semantic_context(db, query: str, config: dict, tier_config: dic
         limit = tier_config.get("max_semantic", 10)
         rows: list[tuple] = []
         for label in ("Concept", "Decision", "Constraint", "Requirement"):
+            # B313: include authority when the table has the column — see
+            # _table_has_authority docstring.
+            has_authority = _table_has_authority(db, label)
+            authority_select = ", n.authority as authority" if has_authority else ""
             cypher = f"""
                 MATCH (n:{label})
                 WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
                 RETURN n.text_raw as text, label(n) as node_type,
                        n.pathway_strength as pathway_strength, n.confidence as confidence,
-                       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist
+                       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist{authority_select}
                 ORDER BY dist ASC
                 LIMIT $limit
             """
             result = db.execute(cypher, {"query_embedding": query_embedding, "limit": limit})
             while result.has_next():
-                rows.append(result.get_next())
+                row = result.get_next()
+                rows.append(row if has_authority else (*row, None))
 
         rows.sort(key=lambda row: row[4])
         rows = rows[:limit]
 
         content = []
         node_ids = []
-        for text, node_type, pathway_strength, confidence, _dist in rows:
+        for text, node_type, pathway_strength, confidence, _dist, authority in rows:
             content.append({
                 "text": text if text is not None else "",
                 "type": node_type if node_type is not None else "Unknown",
                 "pathway_strength": pathway_strength if pathway_strength is not None else 0.5,
                 "confidence": confidence if confidence is not None else 0.5,
+                "authority": authority_of(authority),
             })
             node_ids.append((text or "")[:20])
 

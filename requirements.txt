@@ -14,6 +14,15 @@ spacy==3.8.3
 # LLM provider abstraction (OpenAI-SDK-compatible for Ollama + cloud providers)
 openai==1.58.1
 
+# AWS Bedrock LLM provider (B324) — NOT a runtime dependency of the packaged
+# library (pip install hippocampy does not pull this in; see the `bedrock`
+# extra in pyproject.toml). It IS needed here: this file is the flat
+# dev/CI environment spec (same install path used by `make install` and
+# .github/workflows/tests.yml, which does not read pyproject.toml's `dev`
+# extra), and tests/test_bedrock_provider.py needs boto3 importable to
+# exercise BedrockLLMClient against a stubbed client.
+boto3>=1.34.0
+
 # Web server (Memory Control Panel — M7)
 fastapi==0.115.6
 uvicorn==0.32.1

@@ -16,9 +16,20 @@ Supported providers (configured in campy.toml [llm] section):
     openai      → OpenAI cloud API
     anthropic   → Anthropic cloud API (via openai-compatible shim)
     google      → Google Gemini (via openai-compatible endpoint)
+    bedrock     → AWS Bedrock (via boto3 Converse API — B324; see campy/brain/llm/bedrock.py)
 
 Returns None from create_llm_client() if provider is unavailable —
 callers must handle None gracefully (graceful degradation to System 1 only).
+
+B324 — Provider Protocol:
+    create_llm_client()/create_llm_client_for_step() are typed to return
+    LLMClientProtocol rather than the concrete LLMClient class. Bedrock does
+    not speak the OpenAI chat-completions wire format (SigV4 auth, Converse
+    request/response shapes), so it is implemented as a sibling class
+    (BedrockLLMClient in campy/brain/llm/bedrock.py) satisfying the same
+    protocol rather than as another OpenAI(base_url=...) branch. Callers that
+    only use chat()/chat_with_usage()/achat()/achat_with_usage()/last_usage
+    work unmodified against either implementation.
 
 B16 — Task-Based Model Routing:
     Per-step LLM overrides use a merged config strategy.
@@ -34,6 +45,33 @@ B16 — Task-Based Model Routing:
 """
 
 import os
+from typing import Protocol, runtime_checkable
+
+
+@runtime_checkable
+class LLMClientProtocol(Protocol):
+    """
+    B324 — Interface every LLM client implementation must satisfy.
+
+    Captures exactly what callers touch across the codebase (verified by
+    grepping for `create_llm_client`, `create_llm_client_for_step`, and
+    `last_usage` under campy/): chat(), chat_with_usage(), achat(),
+    achat_with_usage(), and the last_usage attribute used by B180's token
+    tracking. create_llm_client()/create_llm_client_for_step() are typed to
+    return this protocol rather than the concrete LLMClient class so that a
+    non-OpenAI-wire-format implementation (e.g. BedrockLLMClient) can stand
+    in without callers needing to know which concrete class they hold.
+    """
+
+    last_usage: dict | None
+
+    def chat(self, messages: list[dict], **kwargs) -> str: ...
+
+    def chat_with_usage(self, messages: list[dict]) -> tuple[str, dict]: ...
+
+    async def achat(self, messages: list[dict]) -> str: ...
+
+    async def achat_with_usage(self, messages: list[dict]) -> tuple[str, dict]: ...
 
 
 def _resolve_timeout_seconds(provider: str, llm_cfg: dict) -> float | None:
@@ -127,17 +165,23 @@ class LLMClient:
         return await asyncio.to_thread(self.chat_with_usage, messages)
 
 
-def create_llm_client(config: dict):
+def create_llm_client(config: dict) -> LLMClientProtocol | None:
     """
-    Factory. Returns an LLMClient instance or None if unavailable.
+    Factory. Returns a client satisfying LLMClientProtocol, or None if unavailable.
 
     Config keys read from config["llm"]:
-        provider          — "ollama" | "openai" | "anthropic" | "google"
+        provider          — "ollama" | "openai" | "anthropic" | "google" | "bedrock"
         model             — model identifier string
         base_url          — required for ollama; optional override for others
         api_key           — cloud providers: read from env var if not set
         timeout_seconds   — optional request timeout for slow models / long reasoning
         max_retries       — optional retry count for transient provider errors
+
+    Bedrock-only keys (see campy/brain/llm/bedrock.py):
+        region            — optional; falls back to AWS_REGION / boto3 default
+        profile           — optional, local dev only; no api_key — auth uses
+                             boto3's default credential chain (ECS task role
+                             in deployment, developer's local profile otherwise)
     """
     llm_cfg  = config.get("llm", {})
     provider = llm_cfg.get("provider", "ollama").lower()
@@ -181,6 +225,16 @@ def create_llm_client(config: dict):
             client = OpenAI(base_url=base_url, api_key=api_key, **client_options)
             return LLMClient(client, model)
 
+        if provider == "bedrock":
+            # Bedrock does not speak the OpenAI chat-completions wire format
+            # (SigV4 auth, Converse request/response shapes) — it is a sibling
+            # class over boto3, not another OpenAI(base_url=...) branch.
+            # Imported here (not at module top) so boto3 stays an optional
+            # dependency: importing this module never requires boto3 unless
+            # a caller actually asks for provider="bedrock".
+            from campy.brain.llm.bedrock import create_bedrock_client
+            return create_bedrock_client(llm_cfg, model, timeout_seconds, max_retries)
+
         print(f"[LLM] Unknown provider '{provider}'. Loop will run in degraded mode.")
         return None
 
@@ -194,9 +248,10 @@ def create_llm_client(config: dict):
 # B16 — Task-Based Model Routing
 # ---------------------------------------------------------------------------
 
-def create_llm_client_for_step(config: dict, step_name: str):
+def create_llm_client_for_step(config: dict, step_name: str) -> LLMClientProtocol | None:
     """
-    Return an LLMClient for the given loop step, honouring per-step overrides.
+    Return a client (satisfying LLMClientProtocol) for the given loop step,
+    honouring per-step overrides.
 
     Resolution order (first match wins):
       1. config["llm"][step_name] — per-step override block

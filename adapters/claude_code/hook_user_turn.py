@@ -18,7 +18,7 @@ import json
 import sys
 import uuid
 from pathlib import Path
-from campy.brain_transport import call_brain
+from campy.brain_transport import CAPTURE_TIMEOUT, call_brain_soft
 from campy.paths import get_daemon_socket_path, runtime_dir
 
 OFFLINE_QUEUE = runtime_dir() / "offline_queue.jsonl"
@@ -62,10 +62,16 @@ def main():
         "git_branch": git_branch,
     }
 
-    try:
-        asyncio.run(call_brain("notify_turn", params))
-    except RuntimeError:
-        # Daemon offline — queue for replay
+    # B318: fail-open — a UserPromptSubmit hook must never block the agent
+    # on a slow/unreachable daemon. call_brain_soft() degrades to the
+    # sentinel below on any failure instead of raising; CAPTURE_TIMEOUT is
+    # the write-path budget (see campy/brain_transport.py timeout table).
+    _SOFT_FAIL = object()
+    result = asyncio.run(
+        call_brain_soft("notify_turn", params, timeout=CAPTURE_TIMEOUT, default=_SOFT_FAIL)
+    )
+    if result is _SOFT_FAIL:
+        # Daemon offline/slow/erroring — queue for replay
         OFFLINE_QUEUE.parent.mkdir(parents=True, exist_ok=True)
         with open(OFFLINE_QUEUE, "a") as f:
             f.write(json.dumps({

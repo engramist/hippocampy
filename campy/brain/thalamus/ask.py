@@ -53,15 +53,20 @@ async def _capture_one(role: str, content: str, session_id: str, db, config: dic
         await notify_turn(params=params, db=db, config=config)
         return
     except Exception as direct_exc:
-        try:
-            from campy.brain_transport import call_brain
-            # Short timeout: notify_turn returns as soon as the daemon queues
-            # the turn, so this can't hang the response for long.
-            await call_brain("notify_turn", params, timeout=3.0)
-        except Exception as transport_exc:
-            _logger.warning(
-                "ask: capture failed for role=%s (direct=%s; transport=%s)",
-                role, direct_exc, transport_exc,
+        from campy.brain_transport import CAPTURE_TIMEOUT, call_brain_soft
+
+        # B318: fail-open — capture is best-effort and must never raise past
+        # the answer the user already has. CAPTURE_TIMEOUT (write path):
+        # notify_turn returns as soon as the daemon queues the turn, so this
+        # can't hang the response for long even when it succeeds.
+        _SOFT_FAIL = object()
+        result = await call_brain_soft(
+            "notify_turn", params, timeout=CAPTURE_TIMEOUT, default=_SOFT_FAIL
+        )
+        if result is _SOFT_FAIL:
+            _logger.debug(
+                "ask: capture failed for role=%s (direct=%s; transport soft-failed)",
+                role, direct_exc,
             )
 
 

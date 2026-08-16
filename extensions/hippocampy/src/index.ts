@@ -388,6 +388,15 @@ export default {
       ),
     });
 
+    const compileCardContextParams = Type.Object({
+      target_id: Type.String({
+        description: "Card identifier (e.g. 'B317') or branch name (e.g. 'feature/foo')",
+      }),
+      max_hops: Type.Optional(
+        Type.Number({ description: "Dependency traversal depth (default 3, hard-capped at 5)", default: 3 })
+      ),
+    });
+
     const ingestDataParams = Type.Object({
       session_id: Type.String({ description: "Session identifier" }),
       file_path: Type.Optional(
@@ -1210,6 +1219,17 @@ export default {
           include_tabular: params.include_tabular ?? true,
           include_summaries: params.include_summaries ?? true,
           quest_id: params.quest_id,
+        }),
+      },
+      {
+        name: "compile_card_context",
+        label: "Compile Card Context (HippoCampy)",
+        description:
+          "Compile a bounded context bundle keyed on a backlog card id (e.g. 'B317') or a git branch name, rather than a free-text query. Traverses declared task dependencies (TASK_BLOCKS/TASK_ENABLES) and workspace anchoring (ANCHORED_TO) up to max_hops, and includes prior lessons, superseded/deprecated decisions, and agent attribution for everything reached. Use this when picking up a card or branch; use compile_context for free-text queries instead.",
+        parameters: compileCardContextParams,
+        transformParams: (params: any = {}) => ({
+          target_id: params.target_id,
+          max_hops: params.max_hops ?? 3,
         }),
       },
       {

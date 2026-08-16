@@ -191,6 +191,8 @@ async def test_response_shape_unchanged(monkeypatch):
         "text_raw",
         "confidence",
         "confidence_low",
+        # B313: authority (earned|projected) surfaced alongside confidence.
+        "authority",
         "pathway_strength",
         "similarity",
         "activation_score",
