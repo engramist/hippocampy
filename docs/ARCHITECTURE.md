@@ -1929,3 +1929,129 @@ call sites in that file.
 - Does not inject any tenant/workspace-visibility predicate yet — that's B316, which depends
   on this seam existing (`GraphGateway.run()` is the one place such a predicate could be
   added later without touching every call site again).
+
+## B315 — AuthContext: Principal Derivation and Threading
+
+### Why
+
+Before this card, Campy had no concept of *who* is asking. `campy/brain_daemon.py`'s
+`_dispatch` routed every JSON-RPC call as `handler(params, self.db, self.config)` — one
+global `self.db`, no caller identity, no scoping. Correct for local single-user Campy,
+insufficient the moment more than one principal shares a deployment: if an agent can pass a
+`workspace_id` argument, an agent can read another tenant's memory — confused-deputy, one
+prompt injection away from being exercised by an LLM agent.
+
+**The rule:** tenant and workspace are derived from the transport credential, never from
+request params. See docs/ecosystem-rules.md's "Principal derivation rule" section for the
+full non-negotiable statement — this section covers the implementation.
+
+**Framing:** local Campy is single-tenant cloud with auth stubbed. `LocalSingleUserResolver`
+returns a real `Principal` (tenant `local`, workspace `local`, every known scope), never
+`None`. Handlers never branch on "are we local?" — the multi-tenant dispatch path is
+exercised by every local test run, not only in production.
+
+### The types (`campy/brain/auth.py`)
+
+- **`Principal`** — frozen dataclass: `subject_id`, `tenant_id`, `workspace_id`, `scopes`
+  (`frozenset[str]`), `client` (observability only — `"claude-code"`, `"agentcore"`, …),
+  `session_id`, `derived_from` (`"local-single-user" | "oidc" | "iam"` — during an incident,
+  the difference between "we trusted a token" and "we trusted a request body"). Scope
+  vocabulary: `memory.read`, `memory.write`, `memory.admin`, `visibility.override`
+  (`KNOWN_SCOPES`). `Principal.require(scope)` raises `PermissionError` if the scope isn't
+  held, returns `None` otherwise.
+- **`TransportContext`** — frozen dataclass carrying only what the *transport* knows:
+  `transport` (`"unix-socket" | "http" | "stdio"`), `peer_credential` (opaque,
+  transport-verified identity string — `None` locally, a verified SigV4 ARN or OIDC subject
+  over HTTP), `headers` (HTTP only). Deliberately has **no field a client could populate via
+  `params`** — enforced structurally by `TRANSPORT_CONTEXT_FIELDS` and asserted in
+  `tests/test_auth_context.py`. Constructed once per connection, strictly before any
+  request body is parsed: `brain_daemon.py::_handle_connection` for the Unix socket,
+  `web/server.py::mcp_post` for the streamable-HTTP transport (B325).
+- **`PrincipalResolver`** (`Protocol`) — `async resolve(transport_ctx) -> Principal`. Never
+  sees `params`.
+- **`LocalSingleUserResolver`** — the local-mode implementation described above.
+- **`IAMPrincipalResolver`** (B325) — verifies a SigV4-signed request by replaying its
+  exact signed headers against AWS STS `GetCallerIdentity` (the same "IAM auth via STS"
+  pattern HashiCorp Vault's `aws` auth method uses), then maps the caller ARN to
+  `subject_id`, with `tenant_id`/`workspace_id` from a configured map or a
+  Gateway-forwarded header (never from `params`). `boto3` is an optional import, mirroring
+  `campy/brain/llm/bedrock.py`'s pattern exactly.
+
+### Threading `principal` to handlers (Task 3 — incremental adoption)
+
+The tool convention is uniform: `async def name(params, db, config) -> dict`, across ~14
+modules in `campy/brain/thalamus/tools/`. Rewriting every handler's signature in one commit
+is a large mechanical diff with real regression risk, so adoption is **incremental, via
+signature inspection**:
+
+```python
+_WANTS_PRINCIPAL = {
+    name for name, fn in TOOL_HANDLERS.items()
+    if "principal" in inspect.signature(fn).parameters
+}
+```
+
+computed once at import in `campy/brain_daemon.py`. A handler opts in by adding `*,
+principal: Principal | None = None` to its signature. **Gotcha not anticipated by the
+original card**: most `TOOL_HANDLERS` entries are wrapped by
+`campy/brain/thalamus/tools/_shared.py::_with_phase()`, whose wrapper signature is
+`(params=None, db=None, config=None, **kw)` — `inspect.signature()` on the *wrapper* would
+see `**kw`, never the real `principal` parameter underneath. Fixed by setting
+`wrapper.__wrapped__ = fn` (the same mechanism `functools.wraps` uses), which makes
+`inspect.signature()` follow through to the real handler by default. Without this, the
+signature-inspection adoption mechanism the card specifies would silently never detect any
+converted handler.
+
+`scripts/check_principal_ratchet.py` + `scripts/principal_baseline.json` (same shape as
+B314's Cypher ratchet) count handlers **not** declaring `principal`, fail if the count rises
+above baseline (currently 57 of 59 — `notify_turn` and `upsert_lesson` are the two converted
+in this card). Wired as `make check-principal`. Follow-up cards drive it to zero, at which
+point the inspection branch is deleted and the parameter becomes required.
+
+### The two converted capture paths
+
+`campy/brain/thalamus/tools/capture.py::notify_turn` and
+`campy/brain/thalamus/tools/lessons.py::upsert_lesson` — B312's two named primary-capture-path
+write sites — now accept `principal` and use it for B312's `source` field:
+`f"{principal.client}:{principal.subject_id}"`, replacing the previous guessed
+`"agent:<agent_source>"` / `"user:direct"` convention when a principal is present (falls
+back to the old convention when it isn't — the ~57 not-yet-converted call sites still work
+unchanged). This is what makes B312 and B315 compose: facts become attributable to a
+transport-verified principal instead of a caller-declared string.
+
+**A real conflict the card didn't anticipate, and how it was resolved:** both handlers used
+to read an optional `workspace_id` from `params` (default `"local"`) purely as a B320
+content-hash discriminator — never for DB routing, since B316 hadn't landed yet when B320
+wrote it. That is now exactly the shape of an attack the forbidden-key guard exists to
+close: a client-supplied `workspace_id`. Per the card's own instruction ("check whether any
+current tool legitimately accepts one of these names before adding the guard"), this was
+resolved by **removing the request-param path entirely** rather than renaming it: both
+handlers now derive `workspace_id` for the content hash from `principal.workspace_id`
+(falling back to `"local"` only when no principal was threaded in). This is strictly more
+correct than the pre-B315 behavior — the discriminator now comes from a transport-verified
+identity instead of an unverified request field — and it means B320's content-hash identity
+and B316's DB-routing key are, from day one, the same value: `principal.workspace_id`, never
+`params["workspace_id"]`. `tests/test_idempotent_writes.py::test_upsert_lesson_workspace_differs_no_dedupe`
+was updated to exercise this through two `Principal`s instead of two request bodies — the
+B320 property it tests (same text, different workspace, no false dedupe) is unchanged.
+
+### The forbidden-key guard (Task 5)
+
+In `campy.brain_daemon.route_tool_call` — the single chokepoint both the Unix-socket
+dispatcher and the streamable-HTTP transport call through (see "Transports" below) — before
+invoking a handler, reject any request whose `params` contain `tenant_id`, `workspace_id`,
+`subject_id`, `principal`, or `scopes` (`FORBIDDEN_PARAM_KEYS`, defined once in
+`campy/brain/auth.py`). Returns JSON-RPC `-32602` naming the offending key; logs at WARNING
+with the rejecting principal's `subject_id`. This is belt-and-braces on top of
+`TransportContext`'s structural separation — it is what turns "an agent tried to escalate"
+from a silent no-op into a logged, visible failure.
+
+### What this card does not do
+
+- Does not build OIDC, IAM, or Cognito resolvers beyond `IAMPrincipalResolver` (B325) —
+  Protocol + local + IAM only; OIDC config is accepted, the resolver is a follow-up.
+- Does not open more than one database — B316's job.
+- Does not add visibility (`private`/`team`/`org`) fields or filtering — separate card.
+- Does not convert the other ~57 handlers — the ratchet enforces direction only.
+- Does not add authentication to the Unix socket transport itself (filesystem permissions
+  remain the access control there, as before).
