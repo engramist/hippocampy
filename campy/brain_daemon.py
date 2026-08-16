@@ -38,13 +38,14 @@ from campy.brain.auth import (
 from campy.brain.brainstem.config import load_config
 from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 from campy.brain.hippocampus.graph import embeddings as emb
+from campy.brain.hippocampus.graph.router import WorkspaceRouter
 from campy.brain.hippocampus.schema import init_schema
 from campy.brain.thalamus.tools import TOOL_HANDLERS, init_loop_queue
 from campy.brain.llm.provider import create_llm_client
 from campy.brain.temporal_lobe.loop import step2_gist, step3_schema_org
 from campy.brain.temporal_lobe.loop.orchestrator import run_loop
 from campy.brain.brainstem.sweep import run_sweep
-from campy.paths import get_daemon_socket_path, get_database_path
+from campy.paths import get_daemon_socket_path, get_database_path, get_workspace_root
 
 SOCKET_PATH = get_daemon_socket_path()
 DB_PATH     = get_database_path()
@@ -233,6 +234,11 @@ class BrainDaemon:
         # guard has passed. None until then — _start_web_server always
         # runs after start()'s guard check, so this is never used unset.
         self._http_principal_resolver = None
+        # B316: constructed in start(), once the seed path / embedding
+        # model needed by schema_init are known. None until then — code
+        # that might run before start() (tests constructing BrainDaemon
+        # directly) falls back to self.db, matching pre-B316 behavior.
+        self._router: WorkspaceRouter | None = None
 
     # ------------------------------------------------------------------
     # Startup
@@ -269,6 +275,27 @@ class BrainDaemon:
         # Initialize Kùzu schema (idempotent)
         seed_path = self._resolve_seed_path()
         init_schema(self.db, str(seed_path), embedding_model)
+
+        # B316: WorkspaceRouter, rooted at the parent of the existing
+        # DB_PATH — the same directory the pre-B316 single database has
+        # always lived in. `local_db_path=DB_PATH` is what makes the
+        # "local" workspace resolve to the pre-existing path with no
+        # migration (see router.py's LOCAL_WORKSPACE_ID special case).
+        # register("local", self.db) wires in the *already-open* client
+        # from __init__ rather than letting get("local") open a second
+        # kuzu.Database handle on the identical directory — Kùzu is
+        # single-process-writer, so two live handles on one path is a
+        # hazard, not just waste. schema_init is a thin async wrapper
+        # around the same synchronous init_schema() just called above for
+        # self.db, run in a thread so it doesn't block the event loop for
+        # a newly-created workspace's first access.
+        async def _schema_init_for_router(client: KuzuClient) -> None:
+            await asyncio.to_thread(init_schema, client, str(seed_path), embedding_model)
+
+        self._router = WorkspaceRouter(
+            get_workspace_root(), schema_init=_schema_init_for_router, local_db_path=DB_PATH,
+        )
+        self._router.register("local", self.db)
 
         # Load gist centroids (needed by Step 2 System 1 classifier)
         self._centroids = step2_gist.load_centroids(self.db)
@@ -453,8 +480,19 @@ class BrainDaemon:
             tools = [{"name": name} for name in TOOL_HANDLERS]
             return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": tools}}
 
+        # B316: resolve this request's database from the router, keyed on
+        # the transport-derived principal.workspace_id — never from
+        # `params` (B315's rule, unchanged). Falls back to `self.db` when
+        # no router exists yet (a BrainDaemon constructed directly, e.g.
+        # in a test, without calling start()), matching pre-B316 behavior.
         try:
-            result = await route_tool_call(method, params, self.db, self.config, principal)
+            db = await self._resolve_workspace_db(principal.workspace_id)
+        except ValueError as e:
+            return {"jsonrpc": "2.0", "id": req_id,
+                    "error": {"code": -32602, "message": f"Invalid workspace: {e}"}}
+
+        try:
+            result = await route_tool_call(method, params, db, self.config, principal)
             return {"jsonrpc": "2.0", "id": req_id, "result": result}
         except ForbiddenParamError as e:
             return {"jsonrpc": "2.0", "id": req_id,
@@ -467,6 +505,21 @@ class BrainDaemon:
                 "jsonrpc": "2.0", "id": req_id,
                 "error": {"code": -32000, "message": str(e)}
             }
+        finally:
+            self._release_workspace_db(principal.workspace_id)
+
+    async def _resolve_workspace_db(self, workspace_id: str) -> KuzuClient:
+        """B316: the router-backed replacement for always using `self.db`.
+        Raises ValueError for a workspace_id `WorkspaceRouter._workspace_dir`
+        rejects (invalid shape, traversal attempt) — translated to a
+        JSON-RPC -32602 by the one caller, `_dispatch`."""
+        if self._router is None:
+            return self.db
+        return await self._router.get(workspace_id)
+
+    def _release_workspace_db(self, workspace_id: str) -> None:
+        if self._router is not None:
+            self._router.release(workspace_id)
 
     # ------------------------------------------------------------------
     # Gated Consolidation Loop worker (M3)
@@ -539,7 +592,11 @@ class BrainDaemon:
         bind_host = server_cfg.get("bind_host", "127.0.0.1")
 
         from web.server import create_app
-        app = create_app(self.db, self.config, principal_resolver=self._http_principal_resolver)
+        app = create_app(
+            self.db, self.config,
+            principal_resolver=self._http_principal_resolver,
+            router=self._router,
+        )
         config = uvicorn.Config(
             app,
             host=bind_host,
@@ -631,7 +688,17 @@ class BrainDaemon:
 
     def shutdown(self):
         self.running = False
-        self.db.close()
+        # B316: close every open workspace client, not just the local one.
+        # shutdown() runs from a signal handler and cannot await, so this
+        # uses the router's synchronous close_all_sync() rather than the
+        # async close_all(). self.db was registered into the router as the
+        # "local" workspace client in start() (WorkspaceRouter.register),
+        # so closing via the router closes it exactly once — the `else`
+        # branch below only fires when start() never ran (no router yet).
+        if self._router is not None:
+            self._router.close_all_sync()
+        else:
+            self.db.close()
         socket_path = _socket_path()
         if socket_path.exists():
             socket_path.unlink()

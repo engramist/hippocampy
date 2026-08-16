@@ -77,6 +77,18 @@ def get_database_path() -> Path:
     return runtime_dir() / "brain.db"
 
 
+def get_workspace_root() -> Path:
+    """B316: the directory `WorkspaceRouter` shards per-workspace databases
+    under. Always `get_database_path().parent` — the same directory the
+    pre-B316 single local database has always lived in — so a workspace
+    directory and the pre-existing `brain.db` are always siblings, and the
+    "local" workspace's special-cased path
+    (`campy.brain.hippocampus.graph.router.LOCAL_WORKSPACE_ID`) is always
+    exactly `get_database_path()` with no separate resolution logic to
+    keep in sync."""
+    return get_database_path().parent
+
+
 def get_activity_log_path() -> Path:
     return runtime_dir() / "activity.log"
 
@@ -126,6 +138,7 @@ __all__ = [
     "get_legacy_config_path",
     "get_daemon_socket_path",
     "get_database_path",
+    "get_workspace_root",
     "get_activity_log_path",
     "get_daemon_log_path",
     "get_launchd_plist_path",

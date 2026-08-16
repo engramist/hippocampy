@@ -61,6 +61,7 @@ def _make_daemon(db=None):
     daemon._centroids = {}
     daemon._loop_queue = None
     daemon._principal_resolver = LocalSingleUserResolver()
+    daemon._router = None  # B316: falls back to self.db, matching pre-B316 behavior
     return daemon
 
 

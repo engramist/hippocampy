@@ -2192,3 +2192,123 @@ specific IAM policy / network path is pending the platform team.
   existing suite (updated only for `_dispatch_mcp`'s new required `principal` parameter) passes
   unmodified otherwise.
 - Does not finish the Gateway registration doc — blocked on the platform team, marked pending.
+
+## B316 — Workspace Router: One Database Per Workspace
+
+### Why
+
+Before this card, `campy/brain_daemon.py` opened exactly one database for the process life
+(`self.db = KuzuClient(str(DB_PATH))`). For a multi-tenant deployment, the isolation model has
+to be physical, not predicate-based: with ~500 Cypher call sites (B314), a shared graph plus a
+`tenant_id` filter is not auditable — nothing proves every query carries it. **Database per
+workspace** makes isolation provable by construction: a routing bug is loud (wrong directory,
+missing data) rather than silent (one dropped `WHERE` leaking another tenant's memory). It also
+turns Kùzu's single-writer-per-database constraint into per-workspace parallelism instead of a
+global bottleneck.
+
+**Sharding boundary rule**: shard where traversal does not need to cross. Agents working in one
+workspace never traverse into another; cross-workspace knowledge is a separate, deliberately
+promoted store, not an accidental traversal.
+
+### `WorkspaceRouter` (`campy/brain/hippocampus/graph/router.py`)
+
+LRU-bounded cache of `KuzuClient` instances, one per workspace:
+
+- **`get(workspace_id)`** / **`release(workspace_id)`** — a matched pair. `get()` returns a
+  client (opening it, and running `schema_init()`, on first access) and increments a per-
+  workspace borrow count; `release()` decrements it. This borrow accounting is what makes "a
+  busy client is not evicted" enforceable — `campy.brain_daemon.BrainDaemon._dispatch` and
+  `web/server.py::_dispatch_mcp` both call `get()`/`release()` around exactly one request's
+  handler invocation, in a `try`/`finally`.
+- **First access to a new workspace** is guarded by a per-workspace `asyncio.Lock` (a dict of
+  locks keyed by workspace_id — never a global lock, which would serialize unrelated
+  workspaces' first access against each other). Ten concurrent `get()` calls for the same new
+  workspace run `schema_init()` exactly once.
+- **`register(workspace_id, client)`** — pre-seeds the cache with an already-open client,
+  without going through `get()`'s creation path. Exists for exactly one caller:
+  `BrainDaemon.start()` wires its pre-existing `self.db` (opened at `__init__`, before a router
+  exists) in as the `"local"` workspace client via `register("local", self.db)`. Without this,
+  `get("local")` would open a *second* `kuzu.Database` handle on the identical directory —
+  Kùzu is single-process-writer, so two live handles on one path is a hazard the router exists
+  to prevent, not create.
+- **Eviction** is LRU, skipping any workspace with a nonzero borrow count. If every open client
+  is busy when `max_open` is exceeded, the router logs at WARNING and exceeds the bound rather
+  than blocking a caller or closing something in use.
+- **`close_all()`** (async) / **`close_all_sync()`** — the latter exists because
+  `BrainDaemon.shutdown()` runs from a signal handler and cannot `await`.
+
+### Path safety: `_workspace_dir()`
+
+`workspace_id` is treated as untrusted input for filesystem purposes — principals are minted
+from external identity systems in cloud deployments, so this module never trusts a
+`workspace_id` string enough to interpolate it into a path without validating it first.
+
+**Allowlist regex, not a blocklist**: `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`. A blocklist of "bad"
+characters loses — there is always one more way to spell `..`. The allowlist makes traversal
+structurally impossible: every character in `../../etc`, `a/b`, `..`, an empty string, a
+200-char id, or an id containing a null byte falls outside the allowed set, so `fullmatch()`
+rejects all of them uniformly, with nothing disk-side created before the rejection. A sha256
+digest (first 16 hex chars) is appended to the directory name for every *non-local* workspace —
+this is a different safeguard than the regex: the regex prevents traversal, the digest prevents
+case-insensitive-filesystem collisions (`Foo` and `foo` are different workspace ids that could
+otherwise collide as directory names). A final `is_relative_to(root)`-equivalent check backstops
+both — belt and braces, because this is the one place in the module where a bug is a security
+bug (path traversal) rather than an availability bug.
+
+**`"local"` is special-cased explicitly**, not left to the digest happening to match: it
+resolves to `local_db_path` — the exact pre-existing `DB_PATH`, passed in by
+`BrainDaemon.start()` — so an existing local install keeps its memory with zero migration.
+`campy/paths.py::get_workspace_root()` (`= get_database_path().parent`) is what
+`WorkspaceRouter` is rooted at, so the "local" workspace and every other workspace are always
+siblings under the same directory.
+
+### Task 3 — the write lock, keyed per `(loop, db_path)`
+
+`campy/brain/hippocampus/graph/kuzu_client.py::_get_write_lock()` used to key on `id(loop)`
+alone — correct with one database (every write anywhere correctly serialized against every
+other write), wrong with N per-workspace databases (it would serialize every write across every
+tenant, destroying the entire benefit of sharding). Changed the key to `(id(loop), db_path)`,
+**preserving the pre-existing weakref-to-loop staleness check exactly** — a stale entry (loop
+garbage-collected, id() address reused by CPython) is still detected and replaced, just scoped
+per-workspace now instead of globally. `KuzuClient.__init__` gained `self.db_path = db_path`
+(the constructor already took `db_path` as a parameter; it just hadn't stored it) so
+`execute_write()` and `rebuild_vector_index()` can pass it to `_get_write_lock()`.
+
+**Card fact-check** (see the PR): the card asks to "run the existing kuzu_client lock tests
+unmodified (grep tests/ for them first)." No dedicated test file or test function for this
+locking behavior exists anywhere in `tests/` — confirmed by grepping for `_get_write_lock`,
+`_write_locks`, `weakref`, `loop_ref`, and `stale.*lock` across the whole directory (zero hits
+before this card). `tests/test_workspace_router.py` adds new, direct tests for both the
+staleness behavior and the per-`db_path` keying instead of "running something unmodified",
+since there was nothing pre-existing to run.
+
+### Task 4 — daemon wiring, backward-compatibly
+
+`BrainDaemon._dispatch` resolves `db = await self._router.get(principal.workspace_id)` (never
+from `params`) instead of always using `self.db`, releasing it in a `finally` block.
+`web/server.py::_dispatch_mcp` does the same when a router is passed to `create_app()` (from
+`BrainDaemon._start_web_server`) — B325's `route_tool_call()` chokepoint means this workspace
+routing applies identically on both transports rather than needing to be implemented twice.
+Both fall back to a fixed `db` when no router exists (a `BrainDaemon`/`create_app()` constructed
+directly in a test, without calling `start()`), matching pre-B316 behavior exactly.
+
+**Four background tasks intentionally still operate on `self.db` (the local/default workspace)
+only**, per the card's own scope: the Gated Consolidation Loop worker (`_loop_worker`),
+background sweep (`_background_sweep`), trigger manifest compilation
+(`_compile_trigger_manifest`), and file-bridge regen (`_file_bridge_regen`). Making sweep/loop
+workspace-aware is a real follow-up card, not a small one — a per-workspace consolidation
+scheduler needs its own design.
+
+`BrainDaemon.shutdown()` (runs from a signal handler, cannot `await`) calls
+`self._router.close_all_sync()`, which closes `self.db` exactly once (it was registered into
+the router, not a second handle) rather than calling `self.db.close()` directly and separately.
+
+### What this card does not do
+
+- Does not make sweep/consolidation, the loop worker, trigger compile, or file-bridge regen
+  workspace-aware — they stay on the default workspace; follow-up card.
+- Does not implement S3 cold storage / dormant-workspace eviction to object storage.
+- Does not implement cross-workspace promotion (the shared knowledge tier).
+- Does not add per-workspace quotas, backup, or PITR.
+- Does not change how `workspace_id` is *derived* — that is B315's job and stays there; this
+  card only consumes `principal.workspace_id`.

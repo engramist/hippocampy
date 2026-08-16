@@ -66,7 +66,7 @@ ARTIFACT_TABLES = [
 # App factory
 # ---------------------------------------------------------------------------
 
-def create_app(db, config: dict | None = None, *, principal_resolver=None) -> FastAPI:
+def create_app(db, config: dict | None = None, *, principal_resolver=None, router=None) -> FastAPI:
     """
     Create the FastAPI app with a db reference and optional config dict.
     Called by BrainDaemon.start() with the live KuzuClient.
@@ -82,9 +82,17 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None) -> Fa
     so every existing caller of `create_app(db)` (tests included) keeps
     working exactly as before; `BrainDaemon.start()` passes the resolver
     built from `[server].auth` once the B325 bind guard has passed.
+
+    B316: `router` (a `campy.brain.hippocampus.graph.router.WorkspaceRouter`)
+    is what `tools/call` resolves its database from, keyed on
+    `principal.workspace_id` — the same routing the Unix-socket transport
+    does in `BrainDaemon._dispatch`. `None` (the default — every existing
+    test) falls back to the fixed `db` this function was called with,
+    matching pre-B316 behavior exactly.
     """
     _config = config or {}
     _principal_resolver = principal_resolver or LocalSingleUserResolver()
+    _router = router
     app = FastAPI(
         title="SideQuest Memory Control Panel",
         version=WEB_VERSION,
@@ -890,7 +898,7 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None) -> Fa
         except Exception:
             return JSONResponse({"error": "Invalid JSON"}, status_code=400)
 
-        response = await _dispatch_mcp(body, db, _config, principal)
+        response = await _dispatch_mcp(body, db, _config, principal, _router)
         if response is not None:
             await queue.put(response)
 
@@ -950,7 +958,7 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None) -> Fa
                 status_code=400,
             )
 
-        result = await _dispatch_mcp(body, db, _config, principal)
+        result = await _dispatch_mcp(body, db, _config, principal, _router)
 
         # Notifications return no result
         if result is None:
@@ -991,7 +999,8 @@ def _inject_sse_context(tool_args: dict) -> dict:
     return enriched
 
 
-async def _dispatch_mcp(request: dict, _db, _cfg: dict, principal: Principal) -> dict | None:
+async def _dispatch_mcp(request: dict, _db, _cfg: dict, principal: Principal,
+                         _router=None) -> dict | None:
     """
     Dispatch a JSON-RPC MCP request to tool handlers.
 
@@ -1004,6 +1013,12 @@ async def _dispatch_mcp(request: dict, _db, _cfg: dict, principal: Principal) ->
     is resolved by the caller (`mcp_post`, from HTTP headers, before this
     function ever sees the parsed body) and threaded through exactly as the
     socket transport does.
+
+    B316: when `_router` is given, `tools/call` resolves its database from
+    it (keyed on `principal.workspace_id`) instead of the fixed `_db` —
+    the same workspace routing `BrainDaemon._dispatch` does. `_router=None`
+    (every call site before B316, and every test that doesn't pass one)
+    keeps using `_db` unchanged.
     """
     from campy.brain.thalamus.tool_schemas import TOOLS as _TOOLS
     from campy.brain_daemon import ForbiddenParamError, UnknownMethodError, route_tool_call
@@ -1037,8 +1052,21 @@ async def _dispatch_mcp(request: dict, _db, _cfg: dict, principal: Principal) ->
         tool_name = params.get("name", "")
         tool_args = params.get("arguments", {})
         tool_args = _inject_sse_context(tool_args)
+
+        # B316: resolve this call's database from the router, keyed on the
+        # transport-derived principal.workspace_id — mirrors
+        # BrainDaemon._dispatch exactly. Falls back to the fixed `_db`
+        # when no router was given (pre-B316 behavior, every existing test).
+        if _router is not None:
+            try:
+                db = await _router.get(principal.workspace_id)
+            except ValueError as e:
+                return err(-32602, f"Invalid workspace: {e}")
+        else:
+            db = _db
+
         try:
-            result = await route_tool_call(tool_name, tool_args, _db, _cfg, principal)
+            result = await route_tool_call(tool_name, tool_args, db, _cfg, principal)
             emit_activity(
                 "tool", config=_cfg, method=tool_name, status="ok",
                 details=compact_details(tool_name, tool_args),
@@ -1059,5 +1087,8 @@ async def _dispatch_mcp(request: dict, _db, _cfg: dict, principal: Principal) ->
                 details={**compact_details(tool_name, tool_args), "error": str(e)[:160]},
             )
             return err(-32000, str(e))
+        finally:
+            if _router is not None:
+                _router.release(principal.workspace_id)
 
     return err(-32601, f"Unknown method: {method}")
