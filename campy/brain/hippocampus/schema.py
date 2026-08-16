@@ -99,6 +99,29 @@ AUTHORITY_VALUES = frozenset({
 CONTENT_HASH_TABLES = tuple(t for t in PROVENANCE_TABLES if not t.startswith("Arc"))
 
 # ---------------------------------------------------------------------------
+# B319 — Schema version, for backup/restore compatibility checks
+#
+# A single hand-maintained integer, bumped whenever a new entry is added to
+# `_MIGRATIONS` below (or NODE_TABLES/REL_TABLES DDL otherwise changes in a
+# way an older running binary could not correctly write back). This is the
+# first release tracking the concept explicitly, so it starts at 1 rather
+# than trying to retroactively number every migration back to B12 — a
+# snapshot manifest with no `schema_version` key at all (anything backed up
+# before B319) is treated as version 0 by backup.py, i.e. "older than
+# anything", which is always safe to restore.
+#
+# `campy/cli/backup.py`'s restore path compares a snapshot manifest's
+# `schema_version` against this constant:
+#   - snapshot newer than this constant  -> refuse outright (a forward
+#     restore would silently drop columns this running code does not know
+#     to write back)
+#   - snapshot older than or equal to this constant -> proceed; `init_schema()`
+#     runs `_MIGRATIONS` afterward to bring the restored database up to date.
+# ---------------------------------------------------------------------------
+
+SCHEMA_VERSION = 1
+
+# ---------------------------------------------------------------------------
 # B323 — Task dependency graph, agent provenance, card/branch context bundle
 #
 # Three additions, all new tables (never redefinitions of BLOCKS/ENABLES,
