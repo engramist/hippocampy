@@ -58,6 +58,15 @@ def make_client(db=None) -> TestClient:
     return TestClient(create_app(db or EmptyDB()))
 
 
+async def _local_principal():
+    """B325: _dispatch_mcp requires a Principal (resolved from the HTTP
+    transport in production — see web/server.py::mcp_post). Direct-call
+    tests exercise the local, all-scopes principal, matching how the
+    default `auth = "none"` resolver behaves."""
+    from campy.brain.auth import LocalSingleUserResolver, TransportContext
+    return await LocalSingleUserResolver().resolve(TransportContext(transport="http"))
+
+
 # ---------------------------------------------------------------------------
 # App creation + static serving
 # ---------------------------------------------------------------------------
@@ -633,7 +642,7 @@ async def test_dispatch_mcp_initialize_direct():
     from web.server import _dispatch_mcp
     resp = await _dispatch_mcp(
         {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
-        EmptyDB(), {}
+        EmptyDB(), {}, await _local_principal(),
     )
     assert resp["result"]["protocolVersion"] == "2025-03-26"
     assert resp["result"]["serverInfo"]["name"] == "hippocampy-brain"
@@ -644,7 +653,7 @@ async def test_dispatch_mcp_tools_list_direct():
     from web.server import _dispatch_mcp
     resp = await _dispatch_mcp(
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
-        EmptyDB(), {}
+        EmptyDB(), {}, await _local_principal(),
     )
     tool_names = {t["name"] for t in resp["result"]["tools"]}
     # Core memory tools must always surface.
@@ -662,7 +671,7 @@ async def test_dispatch_mcp_unknown_method_direct():
     from web.server import _dispatch_mcp
     resp = await _dispatch_mcp(
         {"jsonrpc": "2.0", "id": 3, "method": "fake/method", "params": {}},
-        EmptyDB(), {}
+        EmptyDB(), {}, await _local_principal(),
     )
     assert resp["error"]["code"] == -32601
 
@@ -673,7 +682,7 @@ async def test_dispatch_mcp_unknown_tool_direct():
     resp = await _dispatch_mcp(
         {"jsonrpc": "2.0", "id": 4, "method": "tools/call",
          "params": {"name": "no_such_tool", "arguments": {}}},
-        EmptyDB(), {}
+        EmptyDB(), {}, await _local_principal(),
     )
     assert resp["error"]["code"] == -32601
 
@@ -698,7 +707,7 @@ async def test_sse_context_injection_direct():
         await _dispatch_mcp(
             {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
              "params": {"name": "get_open_loops", "arguments": {}}},
-            EmptyDB(), {}
+            EmptyDB(), {}, await _local_principal(),
         )
         assert "workspace_path" in received_params
         assert "token_limit" in received_params
