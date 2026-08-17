@@ -39,6 +39,18 @@ def _with_phase(phase: str, fn):
             set_phase("idle")
     wrapper.__name__ = fn.__name__
     wrapper.__doc__ = fn.__doc__
+    # B315: `wrapper`'s own signature is `(params=None, db=None, config=None,
+    # **kw)` — it swallows everything into `**kw`, which hides `fn`'s real
+    # parameter names from `inspect.signature()`. brain_daemon.py computes
+    # `_WANTS_PRINCIPAL` by inspecting each TOOL_HANDLERS entry for a
+    # `principal` parameter, and every entry here is `fn` wrapped by this
+    # function — without `__wrapped__` set, that inspection would silently
+    # see `**kw` and never detect a converted handler. Setting `__wrapped__`
+    # makes `inspect.signature()` follow through to `fn` by default (this is
+    # the same mechanism `functools.wraps` uses), so the wrapper stays
+    # transparent to signature introspection without changing its runtime
+    # behavior at all.
+    wrapper.__wrapped__ = fn
     return wrapper
 
 try:

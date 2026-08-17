@@ -238,12 +238,15 @@ async def test_sse_dispatch_notify_turn_includes_insights():
             return EmptyResult()
         async def execute_write(self, q, p=None): pass
 
+    from campy.brain.auth import LocalSingleUserResolver, TransportContext
+    principal = await LocalSingleUserResolver().resolve(TransportContext(transport="http"))
+
     resp = await _dispatch_mcp(
         {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
          "params": {"name": "notify_turn", "arguments": {
              "role": "user", "content": "hi", "session_id": "s1"
          }}},
-        MockDB(), {}
+        MockDB(), {}, principal
     )
 
     text = json.loads(resp["result"]["content"][0]["text"])

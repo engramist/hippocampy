@@ -58,6 +58,15 @@ def make_client(db=None) -> TestClient:
     return TestClient(create_app(db or EmptyDB()))
 
 
+async def _local_principal():
+    """B325: _dispatch_mcp requires a Principal (resolved from the HTTP
+    transport in production — see web/server.py::mcp_post). Direct-call
+    tests exercise the local, all-scopes principal, matching how the
+    default `auth = "none"` resolver behaves."""
+    from campy.brain.auth import LocalSingleUserResolver, TransportContext
+    return await LocalSingleUserResolver().resolve(TransportContext(transport="http"))
+
+
 # ---------------------------------------------------------------------------
 # App creation + static serving
 # ---------------------------------------------------------------------------
@@ -633,7 +642,7 @@ async def test_dispatch_mcp_initialize_direct():
     from web.server import _dispatch_mcp
     resp = await _dispatch_mcp(
         {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
-        EmptyDB(), {}
+        EmptyDB(), {}, await _local_principal(),
     )
     assert resp["result"]["protocolVersion"] == "2025-03-26"
     assert resp["result"]["serverInfo"]["name"] == "hippocampy-brain"
@@ -644,7 +653,7 @@ async def test_dispatch_mcp_tools_list_direct():
     from web.server import _dispatch_mcp
     resp = await _dispatch_mcp(
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
-        EmptyDB(), {}
+        EmptyDB(), {}, await _local_principal(),
     )
     tool_names = {t["name"] for t in resp["result"]["tools"]}
     # Core memory tools must always surface.
@@ -662,7 +671,7 @@ async def test_dispatch_mcp_unknown_method_direct():
     from web.server import _dispatch_mcp
     resp = await _dispatch_mcp(
         {"jsonrpc": "2.0", "id": 3, "method": "fake/method", "params": {}},
-        EmptyDB(), {}
+        EmptyDB(), {}, await _local_principal(),
     )
     assert resp["error"]["code"] == -32601
 
@@ -673,7 +682,7 @@ async def test_dispatch_mcp_unknown_tool_direct():
     resp = await _dispatch_mcp(
         {"jsonrpc": "2.0", "id": 4, "method": "tools/call",
          "params": {"name": "no_such_tool", "arguments": {}}},
-        EmptyDB(), {}
+        EmptyDB(), {}, await _local_principal(),
     )
     assert resp["error"]["code"] == -32601
 
@@ -682,7 +691,6 @@ async def test_dispatch_mcp_unknown_tool_direct():
 async def test_sse_context_injection_direct():
     """Test that _dispatch_mcp injects context for tools/call."""
     from web.server import _dispatch_mcp
-    from campy.brain.thalamus import tools as tools_mod
 
     received_params = {}
 
@@ -690,18 +698,30 @@ async def test_sse_context_injection_direct():
         received_params.update(params)
         return {"items": [], "count": 0}
 
-    # Patch handler
-    original = tools_mod.TOOL_HANDLERS.get("get_open_loops")
-    tools_mod.TOOL_HANDLERS["get_open_loops"] = spy_handler
+    # Patch handler. B325's route_tool_call() reads TOOL_HANDLERS via its own
+    # `campy.brain_daemon` binding, not via `tools_mod` — a handful of other
+    # test files (test_b68_passive_plans.py, test_b69_valence.py,
+    # test_explore_graph.py) evict "campy.brain.thalamus.tools" from
+    # sys.modules in teardown_module without restoring it, so a later fresh
+    # reimport of that module (whatever next re-imports it, `tools_mod` here
+    # included) can end up as a *different* TOOL_HANDLERS dict object than
+    # the one brain_daemon already holds a reference to — patching only
+    # `tools_mod.TOOL_HANDLERS` would then silently patch the wrong dict,
+    # invisible to route_tool_call, depending on unrelated test ordering.
+    # Patch through brain_daemon's own binding so this test asserts against
+    # the exact dict dispatch actually reads.
+    import campy.brain_daemon as _bd
+    original = _bd.TOOL_HANDLERS.get("get_open_loops")
+    _bd.TOOL_HANDLERS["get_open_loops"] = spy_handler
 
     try:
         await _dispatch_mcp(
             {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
              "params": {"name": "get_open_loops", "arguments": {}}},
-            EmptyDB(), {}
+            EmptyDB(), {}, await _local_principal(),
         )
         assert "workspace_path" in received_params
         assert "token_limit" in received_params
         assert received_params["token_limit"] == 128000
     finally:
-        tools_mod.TOOL_HANDLERS["get_open_loops"] = original
+        _bd.TOOL_HANDLERS["get_open_loops"] = original

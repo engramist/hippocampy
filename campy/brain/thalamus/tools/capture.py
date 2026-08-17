@@ -30,6 +30,7 @@ from .quests import report_outcome
 
 if TYPE_CHECKING:
     from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.auth import Principal
 
 
 
@@ -94,12 +95,13 @@ async def _maybe_create_passive_plan_from_turn(
     return {"plan_id": plan_id, "step_ids": step_ids, "quest_id": quest_id}
 
 
-async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
+async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
+                       principal: "Principal | None" = None) -> dict:
     """
     Receive a conversation turn from the adapter and store it as a Message node.
     M5: also resolves/creates the MainQuest from git context, upserts Session.
 
-    params: {role, content, session_id, repo_root?, git_branch?, idempotency_key?, workspace_id?}
+    params: {role, content, session_id, repo_root?, git_branch?, idempotency_key?}
 
     B320: `idempotency_key`, when supplied, replaces content-hash dedup as
     the identity key for any Tier-1 fact-bearing node this turn causes to
@@ -107,12 +109,22 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
     provenance.resolve_dedupe_key(). A well-behaved client that retries
     this exact call should pass the same `idempotency_key` on every
     attempt; a client that does nothing still gets exact-content dedup for
-    free via content_hash(). `workspace_id` (default "local") is threaded
-    the same way and is part of the content-hash identity itself. Neither
-    parameter affects the Message node this call also writes — Message is
-    a structural/runtime-record table (B312's PROVENANCE_TABLES scope
-    excludes it), not a fact-bearing one, so it carries no content_hash
-    column and is out of this card's scope by design.
+    free via content_hash(). Neither parameter affects the Message node
+    this call also writes — Message is a structural/runtime-record table
+    (B312's PROVENANCE_TABLES scope excludes it), not a fact-bearing one,
+    so it carries no content_hash column and is out of this card's scope
+    by design.
+
+    B315: `workspace_id` used to be read from `params` here (with a
+    "local" default) purely as a content-hash discriminator — it never
+    routed to a different database, since B316 (per-workspace DB) had not
+    landed yet. B315's forbidden-key guard now rejects any request whose
+    `params` contains `workspace_id` before this handler ever runs (see
+    brain_daemon.py::_dispatch), so that path is gone: workspace identity
+    for the content hash now comes from `principal.workspace_id` — the
+    transport-derived value, never the request body — defaulting to
+    "local" only when no principal was threaded in (an un-converted
+    caller path; see the `_WANTS_PRINCIPAL` ratchet).
     """
     role       = params.get("role", "user")
     content    = params.get("content", "")
@@ -120,16 +132,24 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
     repo_root  = params.get("repo_root", "")
     git_branch = params.get("git_branch", "main")
     idempotency_key = (params.get("idempotency_key") or "").strip() or None
-    workspace_id = (params.get("workspace_id") or "local").strip() or "local"
+    workspace_id = principal.workspace_id if principal is not None else "local"
 
     # B312: provenance identifier for any Tier-1 facts this turn causes to be
-    # written (passive plan detection, outcome-sense lessons). Mirrors the
-    # "agent:<id>" / "user:direct" convention documented in schema.py's
-    # PROVENANCE_TABLES comment. agent_source follows the same
+    # written (passive plan detection, outcome-sense lessons). B315: when a
+    # principal has been threaded in, it is the authoritative identity for
+    # this write — "<client>:<subject_id>" — rather than the guessed
+    # "agent:<agent_source>" string, so facts become attributable to a real
+    # transport-derived principal instead of a caller-declared label.
+    # Without a principal (an un-converted caller path), fall back to the
+    # pre-B315 "agent:<id>" / "user:direct" convention documented in
+    # schema.py's PROVENANCE_TABLES comment. agent_source follows the same
     # params.get("agent_source", "mcp") convention already used below for
     # WorkSummary (B290).
     _capture_agent_source = params.get("agent_source", "mcp")
-    capture_source = "user:direct" if role == "user" else f"agent:{_capture_agent_source}"
+    if principal is not None:
+        capture_source = f"{principal.client}:{principal.subject_id}"
+    else:
+        capture_source = "user:direct" if role == "user" else f"agent:{_capture_agent_source}"
 
     max_chars = config.get("ingestion", {}).get("max_ingest_chars", 4000)
     if len(content) > max_chars:
