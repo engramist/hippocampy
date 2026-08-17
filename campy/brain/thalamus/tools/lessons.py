@@ -27,6 +27,7 @@ from ._shared import (
 
 if TYPE_CHECKING:
     from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.auth import Principal
 
 
 def _gateway(db) -> GraphGateway:
@@ -536,11 +537,12 @@ async def _synthesize_lesson(quest_id: str, db, config: dict) -> None:
         _logger.exception("_synthesize_lesson error for quest %s: %s", quest_id, e)
 
 
-async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
+async def upsert_lesson(params: dict, db: KuzuClient, config: dict, *,
+                         principal: "Principal | None" = None) -> dict:
     """
     Explicitly add or update a Lesson node.
 
-    params: {text, domain, lesson_type, session_id?, lesson_id?, scene_wl_hash?, scene_graph_vector?, archetype?, progress_score?, valence?, trigger?, idempotency_key?, workspace_id?}
+    params: {text, domain, lesson_type, session_id?, lesson_id?, scene_wl_hash?, scene_graph_vector?, archetype?, progress_score?, valence?, trigger?, idempotency_key?}
     trigger is an optional dict: {pattern, hook_type, tool, project_scope}
 
     B320: when the caller omits `lesson_id` (the common case — most callers
@@ -554,6 +556,13 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
     that names its own id has already declared its intent; silently
     routing that call to a different node because the content happens to
     match would violate it.
+
+    B315: `workspace_id` used to be an optional request param here (B320's
+    content-hash discriminator, default "local"). B315's forbidden-key
+    guard now rejects any request whose `params` contains `workspace_id`
+    before this handler ever runs (see brain_daemon.py::_dispatch) — the
+    transport-derived `principal.workspace_id` is the only source now,
+    defaulting to "local" when no principal was threaded in.
     """
     text        = params.get("text", "").strip()
     domain      = params.get("domain", "generic").strip()
@@ -561,7 +570,7 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
     session_id  = params.get("session_id", "unknown")
     explicit_lesson_id = (params.get("lesson_id") or "").strip() or None
     idempotency_key = (params.get("idempotency_key") or "").strip() or None
-    workspace_id = (params.get("workspace_id") or "local").strip() or "local"
+    workspace_id = principal.workspace_id if principal is not None else "local"
     scene_wl_hash = (params.get("scene_wl_hash") or "").strip() or None
     scene_graph_vector = params.get("scene_graph_vector")
     if scene_graph_vector is not None and not isinstance(scene_graph_vector, str):
@@ -599,8 +608,19 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict) -> dict:
     # convention already used elsewhere (see capture.py / work_summary.py);
     # `evidence_ref` defaults to the session_id being processed. Explicit
     # params always win.
+    #
+    # B315: when a principal has been threaded in, "<client>:<subject_id>"
+    # is the authoritative default source — it composes B312 and B315, so
+    # facts become attributable to a real transport-derived principal
+    # rather than a caller-declared agent_source string. An explicit
+    # `params["source"]` still wins over either default (a caller that
+    # names its own source has a reason to).
     agent_source = (params.get("agent_source") or "mcp").strip()
-    prov_source = (params.get("source") or f"agent:{agent_source}").strip()
+    _default_source = (
+        f"{principal.client}:{principal.subject_id}"
+        if principal is not None else f"agent:{agent_source}"
+    )
+    prov_source = (params.get("source") or _default_source).strip()
     prov_source_version = params.get("source_version")
     prov_evidence_ref = params.get("evidence_ref") or (
         session_id if session_id != "unknown" else None

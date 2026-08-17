@@ -33,6 +33,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from campy.brain.auth import LocalSingleUserResolver, Principal, TransportContext
 from web.routes.metrics import register_token_metrics_routes
 
 _logger = logging.getLogger(__name__)
@@ -65,15 +66,33 @@ ARTIFACT_TABLES = [
 # App factory
 # ---------------------------------------------------------------------------
 
-def create_app(db, config: dict | None = None) -> FastAPI:
+def create_app(db, config: dict | None = None, *, principal_resolver=None, router=None) -> FastAPI:
     """
     Create the FastAPI app with a db reference and optional config dict.
     Called by BrainDaemon.start() with the live KuzuClient.
     For tests, pass a mock db that implements .execute() and .execute_write().
 
     config is used by the SSE /mcp endpoint to pass to tool handlers.
+
+    B325: `principal_resolver` (a `campy.brain.auth.PrincipalResolver`) is
+    what the streamable-HTTP `/mcp` transport uses to derive a Principal
+    from each request's headers, before its body is parsed — the same
+    structural rule `campy/brain_daemon.py::_handle_connection` follows
+    for the Unix socket transport. Defaults to `LocalSingleUserResolver()`
+    so every existing caller of `create_app(db)` (tests included) keeps
+    working exactly as before; `BrainDaemon.start()` passes the resolver
+    built from `[server].auth` once the B325 bind guard has passed.
+
+    B316: `router` (a `campy.brain.hippocampus.graph.router.WorkspaceRouter`)
+    is what `tools/call` resolves its database from, keyed on
+    `principal.workspace_id` — the same routing the Unix-socket transport
+    does in `BrainDaemon._dispatch`. `None` (the default — every existing
+    test) falls back to the fixed `db` this function was called with,
+    matching pre-B316 behavior exactly.
     """
     _config = config or {}
+    _principal_resolver = principal_resolver or LocalSingleUserResolver()
+    _router = router
     app = FastAPI(
         title="SideQuest Memory Control Panel",
         version=WEB_VERSION,
@@ -865,7 +884,7 @@ def create_app(db, config: dict | None = None) -> FastAPI:
             },
         )
 
-    async def _mcp_post_legacy_sse(request: Request, connection_id: str):
+    async def _mcp_post_legacy_sse(request: Request, connection_id: str, principal: Principal):
         """Legacy SSE transport (MCP 2024-11-05). Kept for ChatGPT Desktop adapter."""
         queue = _sse_connections.get(connection_id)
         if not queue:
@@ -879,7 +898,7 @@ def create_app(db, config: dict | None = None) -> FastAPI:
         except Exception:
             return JSONResponse({"error": "Invalid JSON"}, status_code=400)
 
-        response = await _dispatch_mcp(body, db, _config)
+        response = await _dispatch_mcp(body, db, _config, principal, _router)
         if response is not None:
             await queue.put(response)
 
@@ -889,10 +908,10 @@ def create_app(db, config: dict | None = None) -> FastAPI:
     async def mcp_post(request: Request):
         """
         Streamable HTTP transport (MCP 2025-03-26).
-        
+
         Accepts JSON-RPC 2.0 requests and returns results directly in the
         HTTP response body. No connection_id or SSE stream needed.
-        
+
         Also supports legacy SSE transport via connection_id query param
         for backwards compatibility with ChatGPT Desktop adapter.
         """
@@ -908,11 +927,27 @@ def create_app(db, config: dict | None = None) -> FastAPI:
                     status_code=401,
                 )
 
+        # B325/B315: TransportContext is built from the HTTP request's
+        # headers — BEFORE the JSON-RPC body is parsed below — mirroring
+        # brain_daemon.py::_handle_connection's ordering for the Unix
+        # socket transport exactly. See campy/brain/auth.py::TransportContext
+        # for why this ordering is structural, not stylistic: the resolved
+        # principal must never be able to trace back to the request body.
+        transport_ctx = TransportContext(transport="http", headers=dict(request.headers))
+        try:
+            principal = await _principal_resolver.resolve(transport_ctx)
+        except Exception as e:
+            return JSONResponse(
+                {"jsonrpc": "2.0", "id": None,
+                 "error": {"code": -32001, "message": f"Unauthorized: {e}"}},
+                status_code=401,
+            )
+
         # Legacy SSE transport — if connection_id is present, use old flow
         connection_id = request.query_params.get("connection_id")
         if connection_id:
-            return await _mcp_post_legacy_sse(request, connection_id)
-        
+            return await _mcp_post_legacy_sse(request, connection_id, principal)
+
         # Streamable HTTP transport — return result directly
         try:
             body = await request.json()
@@ -922,13 +957,13 @@ def create_app(db, config: dict | None = None) -> FastAPI:
                  "error": {"code": -32700, "message": "Parse error"}},
                 status_code=400,
             )
-        
-        result = await _dispatch_mcp(body, db, _config)
-        
+
+        result = await _dispatch_mcp(body, db, _config, principal, _router)
+
         # Notifications return no result
         if result is None:
             return Response(status_code=202)
-        
+
         return JSONResponse(result)
 
     @app.get("/mcp")
@@ -964,14 +999,29 @@ def _inject_sse_context(tool_args: dict) -> dict:
     return enriched
 
 
-async def _dispatch_mcp(request: dict, _db, _cfg: dict) -> dict | None:
+async def _dispatch_mcp(request: dict, _db, _cfg: dict, principal: Principal,
+                         _router=None) -> dict | None:
     """
-    Dispatch a JSON-RPC MCP request to tool handlers — same logic as
-    the brain_daemon IPC dispatcher but runs in-process (no socket hop).
-    Handles: initialize, notifications/initialized, tools/list, tools/call.
+    Dispatch a JSON-RPC MCP request to tool handlers.
+
+    B325: `tools/call` now routes through `campy.brain_daemon.route_tool_call`
+    — the exact same chokepoint the Unix-socket IPC dispatcher
+    (`brain_daemon.py::_dispatch`) uses — instead of calling
+    `TOOL_HANDLERS[name]` directly. That was the "IPC Dispatch Divergence"
+    documented in docs/transport-audit.md: this HTTP path used to skip
+    B315's forbidden-key guard and principal threading entirely. `principal`
+    is resolved by the caller (`mcp_post`, from HTTP headers, before this
+    function ever sees the parsed body) and threaded through exactly as the
+    socket transport does.
+
+    B316: when `_router` is given, `tools/call` resolves its database from
+    it (keyed on `principal.workspace_id`) instead of the fixed `_db` —
+    the same workspace routing `BrainDaemon._dispatch` does. `_router=None`
+    (every call site before B316, and every test that doesn't pass one)
+    keeps using `_db` unchanged.
     """
-    from campy.brain.thalamus.tools import TOOL_HANDLERS
     from campy.brain.thalamus.tool_schemas import TOOLS as _TOOLS
+    from campy.brain_daemon import ForbiddenParamError, UnknownMethodError, route_tool_call
 
     method = request.get("method", "")
     params = request.get("params", {})
@@ -1002,22 +1052,43 @@ async def _dispatch_mcp(request: dict, _db, _cfg: dict) -> dict | None:
         tool_name = params.get("name", "")
         tool_args = params.get("arguments", {})
         tool_args = _inject_sse_context(tool_args)
-        handler = TOOL_HANDLERS.get(tool_name)
-        if not handler:
-            return err(-32601, f"Unknown tool: {tool_name}")
+
+        # B316: resolve this call's database from the router, keyed on the
+        # transport-derived principal.workspace_id — mirrors
+        # BrainDaemon._dispatch exactly. Falls back to the fixed `_db`
+        # when no router was given (pre-B316 behavior, every existing test).
+        if _router is not None:
+            try:
+                db = await _router.get(principal.workspace_id)
+            except ValueError as e:
+                return err(-32602, f"Invalid workspace: {e}")
+        else:
+            db = _db
+
         try:
-            result = await handler(tool_args, _db, _cfg)
+            result = await route_tool_call(tool_name, tool_args, db, _cfg, principal)
             emit_activity(
                 "tool", config=_cfg, method=tool_name, status="ok",
                 details=compact_details(tool_name, tool_args),
             )
             return ok({"content": [{"type": "text", "text": json.dumps(result)}]})
+        except UnknownMethodError:
+            return err(-32601, f"Unknown tool: {tool_name}")
+        except ForbiddenParamError as e:
+            emit_activity(
+                "tool", config=_cfg, method=tool_name, status="error",
+                details={**compact_details(tool_name, tool_args), "error": str(e)[:160]},
+            )
+            return err(-32602, str(e))
         except Exception as e:
-            _logger.exception("SSE tool dispatch error for %s", tool_name)
+            _logger.exception("MCP tool dispatch error for %s", tool_name)
             emit_activity(
                 "tool", config=_cfg, method=tool_name, status="error",
                 details={**compact_details(tool_name, tool_args), "error": str(e)[:160]},
             )
             return err(-32000, str(e))
+        finally:
+            if _router is not None:
+                _router.release(principal.workspace_id)
 
     return err(-32601, f"Unknown method: {method}")
