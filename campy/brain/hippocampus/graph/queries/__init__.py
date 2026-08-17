@@ -14,9 +14,11 @@ here, at import time — see `gateway.NamedQuery.__post_init__` /
 from __future__ import annotations
 
 from campy.brain.hippocampus.graph.gateway import QueryRegistry
+from campy.brain.hippocampus.graph.queries.capability import CAPABILITY_QUERIES
 from campy.brain.hippocampus.graph.queries.lessons import LESSONS_QUERIES
 
 REGISTRY = QueryRegistry()
 REGISTRY.register_all(LESSONS_QUERIES)
+REGISTRY.register_all(CAPABILITY_QUERIES)
 
 __all__ = ["REGISTRY"]
