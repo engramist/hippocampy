@@ -319,8 +319,19 @@ def main():
     # Split into blocking (code-level HIGH/CRITICAL) and advisory (dependency CVEs + others)
     blocking, advisory = partition_findings(all_findings)
 
-    # Get existing PR comments before we post (escalation needs the old bot comment)
-    comments = _get_pr_comments(repo, pr_number)
+    # Get existing PR comments before we post (escalation needs the old bot
+    # comment). Fails open: some token/permission configurations allow
+    # posting a new issue comment but not listing existing ones (a 403 on
+    # GET .../comments has been observed here even with `issues: write`
+    # declared) — in that case fall back to posting a fresh comment and
+    # skipping escalation, rather than crashing the whole gate and masking
+    # a real pass/fail result behind an unrelated API error.
+    try:
+        comments = _get_pr_comments(repo, pr_number)
+    except RuntimeError as e:
+        print(f"WARNING: could not list existing PR comments ({e}); "
+              f"posting a new comment instead of patching, skipping escalation check.")
+        comments = []
     previous_bot_comment = find_bot_comment(comments)
 
     # Post or replace the findings comment
