@@ -23,6 +23,18 @@ _REL_NAME_RE = re.compile(r"CREATE REL TABLE(?: IF NOT EXISTS)?\s+(\w+)", re.IGN
 _REL_PAIR_RE = re.compile(r"FROM\s+(\w+)\s+TO\s+(\w+)", re.IGNORECASE)
 _COLUMN_RE = re.compile(r"^([A-Za-z_]\w*)\s+(.+)$")
 
+# B317: FactEntity/FACT_* rows are ALWAYS `authority='projected'` — they
+# are a deliberately separate subgraph from PROVENANCE_TABLES (see
+# docs/ARCHITECTURE.md's B317 section and schema.py's FactEntity
+# comment), so they never appear in PROVENANCE_TABLES and the
+# `authority IS NULL OR <> 'projected'` filter below (written for tables
+# where NULL means "earned") would incorrectly keep every FactEntity row
+# regardless of `include_projected`. Since every row here is projected
+# unconditionally, `include_projected=False` excludes the whole table
+# rather than running a per-row authority check.
+_ALWAYS_PROJECTED_NODE_TABLES = frozenset({"FactEntity"})
+_ALWAYS_PROJECTED_REL_PREFIX = "FACT_"
+
 
 @dataclass(frozen=True)
 class RelationshipEndpoint:
@@ -251,7 +263,10 @@ def export_graph_dump(
             raise ValueError(f"Missing primary key metadata for node table {table_name!r}")
         row_count = 0
         with (nodes_dir / f"{table_name}.jsonl").open("w", encoding="utf-8") as handle:
-            if not include_projected and table_name in PROVENANCE_TABLES:
+            if not include_projected and table_name in _ALWAYS_PROJECTED_NODE_TABLES:
+                # Every row is unconditionally 'projected' — nothing to export.
+                query = None
+            elif not include_projected and table_name in PROVENANCE_TABLES:
                 # NULL authority reads as 'earned' (see authority_of()) and
                 # must still be exported, so exclude only the explicit
                 # 'projected' rows rather than requiring authority = 'earned'.
@@ -262,7 +277,7 @@ def export_graph_dump(
                 )
             else:
                 query = f"MATCH (n:{table_name}) RETURN n ORDER BY n.{pk_name}"
-            result = _try_execute(db, query)
+            result = _try_execute(db, query) if query is not None else None
             if result is not None:
                 while result.has_next():
                     node = _clean_node_row(result.get_next()[0])
@@ -274,8 +289,13 @@ def export_graph_dump(
         rel_table = _parse_relationship_name(ddl)
         row_count = 0
         with (rels_dir / f"{rel_table}.jsonl").open("w", encoding="utf-8") as handle:
-            query = f"MATCH (a)-[r:{rel_table}]->(b) RETURN a, r, b"
-            result = _try_execute(db, query)
+            if not include_projected and rel_table.startswith(_ALWAYS_PROJECTED_REL_PREFIX):
+                # FACT_* edges are unconditionally 'projected' (B317) —
+                # nothing to export; see _ALWAYS_PROJECTED_NODE_TABLES above.
+                result = None
+            else:
+                query = f"MATCH (a)-[r:{rel_table}]->(b) RETURN a, r, b"
+                result = _try_execute(db, query)
             if result is not None:
                 while result.has_next():
                     source, rel, target = result.get_next()
