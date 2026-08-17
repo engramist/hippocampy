@@ -97,8 +97,10 @@ def test_fresh_db_creates_provenance_and_supersession_columns(tmp_path):
     assert missing == {}, f"tables missing provenance columns: {missing}"
 
 
-def test_supersedes_rel_table_created(tmp_path):
-    """SUPERSEDES rel table exists after init_schema()."""
+def test_deprecated_by_rel_table_created_and_supersedes_retired(tmp_path):
+    """B326: DEPRECATED_BY is the one and only "replaced by" rel table after
+    init_schema() — SUPERSEDES (B312) was merged into it and no longer
+    exists on a fresh database."""
     db = KuzuClient(str(tmp_path / "fresh_rel.db"))
     init_schema(db, SEED_PATH, EMBEDDING_MODEL)
 
@@ -106,7 +108,8 @@ def test_supersedes_rel_table_created(tmp_path):
     names = set()
     while r.has_next():
         names.add(r.get_next()[1])
-    assert "SUPERSEDES" in names
+    assert "DEPRECATED_BY" in names
+    assert "SUPERSEDES" not in names
 
 
 # ---------------------------------------------------------------------------
@@ -271,8 +274,11 @@ async def test_mark_superseded_sets_columns_and_creates_edge(tmp_path):
     assert row[1] is not None
     assert row[2] == "replaced"
 
+    # B326: mark_superseded() writes DEPRECATED_BY, not SUPERSEDES, keeping
+    # DEPRECATED_BY's original (older)->(newer) direction — the old node
+    # points at the new one.
     r2 = db.execute(
-        "MATCH (a:Lesson {lesson_id: $new})-[:SUPERSEDES]->(b:Lesson {lesson_id: $old}) "
+        "MATCH (a:Lesson {lesson_id: $old})-[:DEPRECATED_BY]->(b:Lesson {lesson_id: $new}) "
         "RETURN count(*)",
         {"new": new_id, "old": old_id},
     )
