@@ -185,26 +185,26 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B310 | Fix `scripts/generate_extension_tools.py` Crash on Multi-Type JSON Schema Fields | P3 | complete (2026-08-08) — `_schema_to_typebox()` now handles list-typed `"type"` via `Type.Union([...])`, `"null"` mapped to `Type.Null()`. Verified against the real CI drift-guard sequence (generate + `git diff --exit-code`), which would have crashed before this fix. | TBD | TBD | - | backlog/B310.md |
 | B311 | Investigate Brain Daemon's Large Transient Memory Spikes (100-150MB Baseline to 600MB-1.2GB Peaks) During ARC Live-Smoke Runs | P2 | open — investigation only, no fix proposed. Filed from ARC_AGI side with full RSS measurement data (154 samples, 2s interval, ~308s live episode) and concrete investigation hypotheses (embedding model reload, KuzuDB buffer bursts, GC-deferred reclaim). Root cause not yet identified. | TBD | TBD | - | backlog/B311.md |
 
-| B312 | Provenance Fields + Explicit Supersession on Fact-Bearing Nodes | P0 | todo — cloud/interop series (B312–B317). Foundation card; the rest of the series assumes it has landed. | TBD | TBD | - | backlog/B312.md |
-| B313 | Authority Property: Projected vs Earned Memory | P0 | todo — depends on B312. Lets Campy mirror externally-owned facts without becoming a second source of truth for them. | TBD | TBD | - | backlog/B313.md |
-| B314 | GraphGateway: Named-Query Chokepoint + Raw-Cypher Ratchet | P0 | todo — no hard deps. Builds the seam, migrates `tools/lessons.py` as proof, installs a ratchet over the ~500 remaining inline-Cypher sites. B316 depends on it. | TBD | TBD | - | backlog/B314.md |
-| B315 | AuthContext: Principal Derivation and Threading | P0 | todo — no hard deps. Tenant/workspace derived from transport credentials, never from request params. B316 depends on it. | TBD | TBD | - | backlog/B315.md |
-| B316 | Workspace Router: One Database Per Workspace | P1 | todo — depends on B315. Physical tenant isolation; also fixes the globally-shared write lock in `kuzu_client.py`. | TBD | TBD | - | backlog/B316.md |
-| B317 | Named-Query Eval Pack: Bounded Multi-Hop Conformance Suite | P1 | todo — depends on B312/B313/B314. Doubles as the backend-conformance suite any future storage adapter must pass. | TBD | TBD | - | backlog/B317.md |
+| B312 | Provenance Fields + Explicit Supersession on Fact-Bearing Nodes | P0 | done — merged (#38). Foundation card for the cloud/interop series; superseded by B326's SUPERSEDES/DEPRECATED_BY reconciliation. | TBD | TBD | - | backlog/B312.md |
+| B313 | Authority Property: Projected vs Earned Memory | P0 | done — merged (#38). | TBD | TBD | - | backlog/B313.md |
+| B314 | GraphGateway: Named-Query Chokepoint + Raw-Cypher Ratchet | P0 | done — merged (#38). Ratchet live in CI (`scripts/check_cypher_ratchet.py`). | TBD | TBD | - | backlog/B314.md |
+| B315 | AuthContext: Principal Derivation and Threading | P0 | done — merged (#44). | TBD | TBD | - | backlog/B315.md |
+| B316 | Workspace Router: One Database Per Workspace | P1 | done — merged (#44). | TBD | TBD | - | backlog/B316.md |
+| B317 | Named-Query Eval Pack: Bounded Multi-Hop Conformance Suite | P1 | done — merged (#42). | TBD | TBD | - | backlog/B317.md |
 
-| B318 | Fail-Open: A Campy Outage Must Degrade Agents, Never Block Them | P0 | todo — no deps. Also fixes the 10s default timeout on the per-tool-call hook path. | TBD | TBD | - | backlog/B318.md |
-| B319 | Backup and Restore for Earned Memory | P1 | todo — depends on B313 (authority split defines what needs backing up). No backup command exists today. | TBD | TBD | - | backlog/B319.md |
-| B320 | Idempotent Writes: Content-Addressed Deduplication for Retried Captures | P1 | todo — depends on B312. Adds content_hash without changing primary keys (Kùzu 0.11.3 cannot alter a PK in place). | TBD | TBD | - | backlog/B320.md |
+| B318 | Fail-Open: A Campy Outage Must Degrade Agents, Never Block Them | P0 | done — merged (#38). | TBD | TBD | - | backlog/B318.md |
+| B319 | Backup and Restore for Earned Memory | P1 | done — merged (#43). | TBD | TBD | - | backlog/B319.md |
+| B320 | Idempotent Writes: Content-Addressed Deduplication for Retried Captures | P1 | done — merged (#38). | TBD | TBD | - | backlog/B320.md |
 
 | B321 | Cross-Session Continuity for an App | P1 | todo — REWRITTEN 2026-08-16. Original "advisory co-activity" framing was built on a misdiagnosis; the customer audit showed per-session workspace directories make same-file collisions impossible. Now closes the "no visibility between concurrent sessions on the same app" gap their own ADR-0050 names (cards 2-6 unbuilt). | TBD | TBD | - | backlog/B321.md |
 
 | B322 | Learned Change Coupling and Conflict Forecast | — | DEFERRED 2026-08-16 — do not implement. Customer audit removed both inputs: per-session directories mean no same-file collisions to forecast, and there is no bundler step so no dependency graph exists (grep for --metafile/webpack stats/tsc --listFiles returned zero). Superseded in purpose by the B321 rewrite. | TBD | TBD | - | backlog/B322.md |
 
-| B323 | Task Dependency Graph, Agent Provenance, and Card/Branch Context Bundle | P1 | todo — salvaged core of an external "Star Map" draft that was mostly wrong (6 of 8 tables already exist; BLOCKS/ENABLES exist for other domains, so reusing those names would drop ARC edges). Uses TASK_BLOCKS/TASK_ENABLES. Also carries the B312 DEPRECATED_BY-vs-SUPERSEDES reconciliation. | TBD | TBD | - | backlog/B323.md |
-| B324 | AWS Bedrock LLM Provider | P0 | todo — P0, unblocks cloud synthesis. UPDATED 2026-08-16: added Task 6, bake the embedding model into the container image. Customer's cloud-tier egress allowlist omits huggingface.co, so the first-run SentenceTransformer download is firewall-denied and recall dies. | TBD | TBD | - | backlog/B324.md |
+| B323 | Task Dependency Graph, Agent Provenance, and Card/Branch Context Bundle | P1 | done — merged (#38). Its Task 4 (SUPERSEDES/DEPRECATED_BY drift) was filed as B326 rather than fixed in place; B326 has since landed. | TBD | TBD | - | backlog/B323.md |
+| B324 | AWS Bedrock LLM Provider | P0 | done — merged (#38), including Task 6 (embedding model baked into the container image). | TBD | TBD | - | backlog/B324.md |
 
-| B325 | Remote MCP Server Surface with Pluggable Auth | P0 | todo — depends on B315. UPDATED 2026-08-16: added Task 4b, the AWS path is Lambda-fronted per their ADR-0031 ("targets are Lambdas wrapping ecosystem adapters"), and remote_mcp without a cited ADR is a HIGH gate finding. Transport/auth work is unchanged; deployment topology is not. | TBD | TBD | - | backlog/B325.md |
-| B326 | Reconcile SUPERSEDES into DEPRECATED_BY | P1 | todo — B323's Task 4 follow-up. Two supersession mechanisms with OPPOSITE arrow directions currently coexist: SUPERSEDES is (newer)->(older), DEPRECATED_BY is (older)->(newer). A wrong-direction traversal returns plausible rows rather than erroring, so this fails silently. | TBD | TBD | - | backlog/B326.md |
+| B325 | Remote MCP Server Surface with Pluggable Auth | P0 | done — merged (#44), including Task 4b (Lambda-fronted Gateway topology per ADR-0031) and the customer's identity-propagation decision (`docs/deployment-agentcore.md`). | TBD | TBD | - | backlog/B325.md |
+| B326 | Reconcile SUPERSEDES into DEPRECATED_BY | P1 | done — merged. DEPRECATED_BY is now the only "replaced by" rel table, widened to cover every PROVENANCE_TABLES pair, keeping its original (older)->(newer) direction; SUPERSEDES retired and migrated. | TBD | TBD | - | backlog/B326.md |
 
 ## Summary
 
