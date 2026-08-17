@@ -1237,7 +1237,8 @@ NODE_TABLES = {
     # graph (PROVENANCE_TABLES above): FactEntity/FACT_* carry their own
     # copies of the provenance/supersession/authority columns rather than
     # being folded into PROVENANCE_TABLES, CONTENT_HASH_TABLES, or the
-    # SUPERSEDES rel table. Two subgraphs, one engine, different authority
+    # DEPRECATED_BY rel table (B326: merged from SUPERSEDES). Two
+    # subgraphs, one engine, different authority
     # contracts — see docs/ARCHITECTURE.md's B317 section. `authority` is
     # always 'projected' here: every FactEntity/FACT_* row has an external
     # owner by definition (see campy/brain/hippocampus/facts.py).
@@ -1289,7 +1290,34 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS DATASET_BELONGS_TO_QUEST (FROM Dataset TO MainQuest, FROM Dataset TO SideQuest)",
     "CREATE REL TABLE IF NOT EXISTS DESCRIBED_BY_DATASET (FROM Concept TO Dataset, extraction_method STRING, created_at TIMESTAMP)",
     # Audit trail
-    "CREATE REL TABLE IF NOT EXISTS DEPRECATED_BY (FROM Concept TO Concept, FROM Decision TO Decision, FROM Constraint TO Constraint, FROM Lesson TO Lesson)",
+    # B326 — widened from the original four self-pairs (Concept/Decision/
+    # Constraint/Lesson) to cover every PROVENANCE_TABLES same-type pair,
+    # absorbing B312's SUPERSEDES rel table (retired — see the B326 comment
+    # further below, where SUPERSEDES used to be defined, for the full
+    # migration story).
+    #
+    # Direction: (older)-[:DEPRECATED_BY]->(newer) — "A is deprecated by B".
+    # This is the ORIGINAL DEPRECATED_BY convention, kept as-is rather than
+    # flipped to match SUPERSEDES's (newer)->(older) convention. B326 audited
+    # every existing reader/writer before deciding: apply_contradiction() in
+    # campy/brain/temporal_lobe/loop/step7_pathway.py, the Lesson-dedup
+    # archival path in campy/brain/brainstem/sweep.py, the graph-view +
+    # MergeEvent-rollback endpoints in web/server.py, and
+    # compile_card_context() in campy/brain/thalamus/tools/context_tools.py
+    # all already read/write (older)-[:DEPRECATED_BY]->(newer) — five
+    # independent call sites relying on that direction. SUPERSEDES, by
+    # contrast, had exactly one writer (mark_superseded() in provenance.py)
+    # and no readers outside its own tests. Keeping DEPRECATED_BY's original
+    # direction and repointing mark_superseded() to write it instead is
+    # therefore the strictly smaller, safer change — flipping DEPRECATED_BY
+    # would have silently broken five call sites (a wrong-direction Cypher
+    # MATCH returns zero rows, not an error), while repointing
+    # mark_superseded() only touches that one function and its own tests.
+    # See docs/ARCHITECTURE.md's B312 "Explicit supersession" section for
+    # the full writeup.
+    "CREATE REL TABLE IF NOT EXISTS DEPRECATED_BY (" +
+    ", ".join(f"FROM {t} TO {t}" for t in PROVENANCE_TABLES) +
+    ")",
     "CREATE REL TABLE IF NOT EXISTS TRIGGERED (FROM Message TO MergeEvent)",
     "CREATE REL TABLE IF NOT EXISTS UPDATES_PATHWAY (FROM MergeEvent TO Concept)",
     # Session provenance
@@ -1405,27 +1433,22 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS ARC_RUN_HAS_WORLD_MODEL_SUMMARY(FROM ArcRun TO ArcWorldModelSummary)",
     "CREATE REL TABLE IF NOT EXISTS ARC_WORLD_MODEL_FROM_ARTIFACT(FROM ArcWorldModelStep TO ArcArtifact)",
     "CREATE REL TABLE IF NOT EXISTS ARC_WORLD_MODEL_SUMMARY_FROM_ARTIFACT(FROM ArcWorldModelSummary TO ArcArtifact)",
-    # B312 — explicit supersession lineage. Same-type pairs only (cross-type
-    # supersession is out of scope for this card); covers Tier 1 + Tier 2
-    # PROVENANCE_TABLES. Direction: (newer)-[:SUPERSEDES]->(older) — the
-    # node passed as `superseded_by` points at the node passed as `node_id`
-    # in mark_superseded(). Note this is the *opposite* arrow convention
-    # from the pre-existing DEPRECATED_BY table above (FROM Concept TO
-    # Concept, ...), which reads (older)-[:DEPRECATED_BY]->(newer).
-    #
-    # B323 audited this drift (its Task 4) and did NOT merge SUPERSEDES into
-    # DEPRECATED_BY here: B312 had already landed with SUPERSEDES live
-    # (mark_superseded() writes it, tests/test_provenance.py exercises it),
-    # so folding the two mechanisms now would mean an in-place rel-table
-    # migration whose safety this card did not audit. Per B323's own
-    # instructions for this exact situation ("if B312 has already landed,
-    # file the reconciliation as a follow-up and say so — do not silently
-    # add a third mechanism"), no third table was added; the merge is
-    # tracked as a follow-up in backlog/B326.md. Both tables keep working
-    # independently until that follow-up lands.
-    "CREATE REL TABLE IF NOT EXISTS SUPERSEDES (" +
-    ", ".join(f"FROM {t} TO {t}" for t in PROVENANCE_TABLES) +
-    ")",
+    # B312 introduced a SUPERSEDES rel table here (same-type pairs, one per
+    # PROVENANCE_TABLES entry, direction (newer)-[:SUPERSEDES]->(older)) as
+    # a second "this was replaced by that" mechanism alongside the
+    # pre-existing DEPRECATED_BY table above — with the opposite arrow
+    # convention and no shared write path. B323's audit (its Task 4) flagged
+    # the drift but did not fix it in place (B312 had already landed with
+    # SUPERSEDES live), filing the reconciliation as backlog/B326.md instead.
+    # B326 retired SUPERSEDES: DEPRECATED_BY above was widened to cover the
+    # same PROVENANCE_TABLES pairs SUPERSEDES used to, mark_superseded() (in
+    # provenance.py) now writes DEPRECATED_BY instead, and any pre-existing
+    # SUPERSEDES edges are migrated to DEPRECATED_BY (reversing direction)
+    # by the SUPERSEDES-retirement step in init_schema() below before this
+    # table is dropped. No DDL for SUPERSEDES remains here by design — a
+    # fresh DB never creates it, and init_schema() DROP TABLEs it on an
+    # existing DB that still has it. See docs/ARCHITECTURE.md's B312
+    # "Explicit supersession" section for the full writeup.
 
     # ------------------------------------------------------------------
     # B323 — declared task dependency graph (composes with B322's learned
@@ -1870,6 +1893,24 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
             "new_ddl": "CREATE REL TABLE ANCHORED_TO "
                        "(FROM MainQuest TO Workspace, FROM ActionItem TO Workspace)",
         },
+        # B326: DEPRECATED_BY widened from its original four self-pairs
+        # (Concept/Decision/Constraint/Lesson) to every PROVENANCE_TABLES
+        # same-type pair, absorbing the now-retired SUPERSEDES table's
+        # coverage. "Requirement" is used as the check probe because it's
+        # in PROVENANCE_TABLES but was never one of the original four pairs
+        # — if it's already registered as a FROM/TO type, the widening has
+        # already happened. Direction is unchanged ((older)->(newer)); see
+        # the DEPRECATED_BY DDL comment above for why this table keeps its
+        # original arrow convention instead of adopting SUPERSEDES's.
+        {
+            "table": "DEPRECATED_BY",
+            "check": "MATCH (a:Requirement)-[:DEPRECATED_BY]->(b:Requirement) "
+                     "RETURN count(a) LIMIT 1",
+            "probe": "MATCH ()-[e:DEPRECATED_BY]->() RETURN count(e) AS cnt",
+            "new_ddl": "CREATE REL TABLE DEPRECATED_BY (" +
+                       ", ".join(f"FROM {t} TO {t}" for t in PROVENANCE_TABLES) +
+                       ")",
+        },
     ]
     for rmig in _REL_MIGRATIONS:
         try:
@@ -1897,6 +1938,56 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         db.execute(ddl)
 
     print("  Relationship tables created.")
+
+    # 2b. B326 — retire SUPERSEDES. REL_TABLES above no longer defines it, so
+    # a fresh DB never creates it; an existing DB that still has it (from a
+    # pre-B326 init_schema() run) keeps the table on disk until we handle it
+    # here. Any pre-existing SUPERSEDES edges are migrated into DEPRECATED_BY
+    # — reversing direction, since SUPERSEDES was (newer)-[:SUPERSEDES]->
+    # (older) and DEPRECATED_BY is (older)-[:DEPRECATED_BY]->(newer) — before
+    # the table is dropped, so no lineage is silently orphaned. Per-table
+    # migration (rather than one untyped query) because DEPRECATED_BY's
+    # widened FROM/TO pairs (see the _REL_MIGRATIONS entry above) might still
+    # be the narrower pre-B326 set on a DB where that widening was itself
+    # skipped (existing DEPRECATED_BY edges present) — a per-table MERGE
+    # fails closed (caught, logged, skipped) for any table DEPRECATED_BY
+    # doesn't yet cover, rather than the whole migration aborting.
+    try:
+        probe = db.execute("MATCH ()-[e:SUPERSEDES]->() RETURN count(e) AS cnt")
+        supersedes_edge_count = probe.get_next()[0] if probe.has_next() else 0
+        supersedes_exists = True
+    except Exception:
+        supersedes_edge_count = 0
+        supersedes_exists = False  # fresh DB, or already migrated+dropped
+
+    if supersedes_exists:
+        migrated = 0
+        skipped = 0
+        if supersedes_edge_count > 0:
+            for table in PROVENANCE_TABLES:
+                try:
+                    before = db.execute(
+                        f"MATCH (newer:{table})-[:SUPERSEDES]->(older:{table}) "
+                        f"RETURN count(newer) AS cnt"
+                    )
+                    table_count = before.get_next()[0] if before.has_next() else 0
+                    if table_count == 0:
+                        continue
+                    db.execute(
+                        f"MATCH (newer:{table})-[:SUPERSEDES]->(older:{table}) "
+                        f"MERGE (older)-[:DEPRECATED_BY]->(newer)"
+                    )
+                    migrated += table_count
+                except Exception as mig_err:
+                    skipped += 1
+                    print(f"  SUPERSEDES migration warning: {table}: {mig_err}")
+            print(f"  SUPERSEDES → DEPRECATED_BY: migrated {migrated} edge(s)"
+                  + (f", {skipped} table(s) skipped (see warnings above)" if skipped else ""))
+        try:
+            db.execute("DROP TABLE SUPERSEDES")
+            print("  Dropped SUPERSEDES rel table (B326: merged into DEPRECATED_BY).")
+        except Exception as drop_err:
+            print(f"  SUPERSEDES drop skipped: {drop_err}")
 
     # 3. Seed ontology (GistClass + SchemaOrgType + ROUTES_TO)
     gist_classes_seen = set()

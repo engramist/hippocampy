@@ -9,8 +9,11 @@ schema.py (PROVENANCE_TABLES, SUPERSESSION_REASONS, AUTHORITY_VALUES):
                                (source, source_version, observed_at,
                                evidence_ref, and — when passed — authority).
     mark_superseded()       — flip a node to "superseded" AND record the
-                               SUPERSEDES edge, in one call, so the two
+                               DEPRECATED_BY edge, in one call, so the two
                                halves of a supersession cannot drift apart.
+                               (B326: writes DEPRECATED_BY, not SUPERSEDES —
+                               SUPERSEDES was retired and merged into
+                               DEPRECATED_BY. See this function's docstring.)
     authority_of()          — read a row's authority, NULL-safe (B313).
     validate_authority()    — enforce that "projected" rows carry the
                                source/source_version they claim to be
@@ -130,21 +133,37 @@ async def mark_superseded(
     reason: str,
     at: datetime | None = None,
 ) -> None:
-    """Set the three node columns AND create the SUPERSEDES edge together.
+    """Set the three node columns AND create the DEPRECATED_BY edge together.
 
     Both halves happen inside this single call so they cannot drift apart.
     If a caller ever sets `superseded_by` directly (e.g. a raw `SET` in
     some other write path) without going through this function — and thus
-    without creating the matching SUPERSEDES edge — that is a bug: the
+    without creating the matching DEPRECATED_BY edge — that is a bug: the
     stored ID becomes a dangling reference instead of traversable lineage.
 
-    Edge direction: `(new)-[:SUPERSEDES]->(old)`, i.e. the node identified
-    by `superseded_by` (the replacement) points at the node identified by
-    `node_id` (the one being replaced). This reads "A SUPERSEDES B" as "A
-    replaces B", which is the mirror image of the pre-existing
-    DEPRECATED_BY table's convention (`(older)-[:DEPRECATED_BY]->(newer)`
-    — "A is deprecated by B"). See the SUPERSEDES comment in schema.py;
-    B323 is expected to reconcile the two mechanisms.
+    Edge direction: `(old)-[:DEPRECATED_BY]->(new)`, i.e. the node
+    identified by `node_id` (the one being replaced) points at the node
+    identified by `superseded_by` (the replacement). This reads "A is
+    DEPRECATED_BY B" as "A is deprecated by B" — the ORIGINAL, pre-existing
+    DEPRECATED_BY convention (`(older)-[:DEPRECATED_BY]->(newer)`).
+
+    B326: this function used to write a separate `SUPERSEDES` edge in the
+    opposite direction (`(new)-[:SUPERSEDES]->(old)`, "A supersedes B").
+    B326 retired SUPERSEDES and merged it into DEPRECATED_BY, keeping
+    DEPRECATED_BY's original arrow direction rather than flipping it —
+    DEPRECATED_BY already had several independent readers/writers assuming
+    `(older)->(newer)` (`apply_contradiction()` in
+    `campy/brain/temporal_lobe/loop/step7_pathway.py`, the Lesson-dedup
+    archival path in `campy/brain/brainstem/sweep.py`, the graph-view and
+    MergeEvent-rollback endpoints in `web/server.py`, and
+    `compile_card_context()` in
+    `campy/brain/thalamus/tools/context_tools.py`), while SUPERSEDES had
+    only this one writer and no external readers. Flipping DEPRECATED_BY
+    would have silently broken all of those call sites (a wrong-direction
+    Cypher pattern match returns zero rows, not an error); repointing this function
+    to DEPRECATED_BY's existing direction was the smaller, safer change. See
+    the DEPRECATED_BY DDL comment in schema.py and docs/ARCHITECTURE.md's
+    B312 "Explicit supersession" section for the full writeup.
 
     Raises:
         ValueError: if `reason` is not one of SUPERSESSION_REASONS, or
@@ -177,8 +196,8 @@ async def mark_superseded(
         },
     )
     await db.execute_write(
-        f"MATCH (new:{table} {{{pk}: $superseded_by}}), (old:{table} {{{pk}: $node_id}}) "
-        f"MERGE (new)-[:SUPERSEDES]->(old)",
+        f"MATCH (old:{table} {{{pk}: $node_id}}), (new:{table} {{{pk}: $superseded_by}}) "
+        f"MERGE (old)-[:DEPRECATED_BY]->(new)",
         {"superseded_by": superseded_by, "node_id": node_id},
     )
 

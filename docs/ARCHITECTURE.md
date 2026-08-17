@@ -1163,7 +1163,7 @@ got the full seven).
 
 ### Explicit supersession
 
-Three node columns (same table set as provenance) plus a `SUPERSEDES` rel table:
+Three node columns (same table set as provenance) plus a `DEPRECATED_BY` rel table:
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -1176,16 +1176,44 @@ says it better), `contradicted` (proven false), `source_removed` (upstream sourc
 longer asserts it), `merged` (folded into another node — pairs with `MergeEvent`),
 `expired` (time-bounded fact whose window closed).
 
-`SUPERSEDES` is a same-type-pair-only rel table (`FROM Concept TO Concept`, `FROM Decision
-TO Decision`, ... one pair per `PROVENANCE_TABLES` entry; cross-type supersession is out
-of scope). Direction is `(newer)-[:SUPERSEDES]->(older)` — "A SUPERSEDES B" reads "A
-replaces B". **This is the mirror image of the pre-existing `DEPRECATED_BY` rel table**
-(`FROM Concept TO Concept, FROM Decision TO Decision, FROM Constraint TO Constraint, FROM
-Lesson TO Lesson`, present in `schema.py` before this card), whose convention is
-`(older)-[:DEPRECATED_BY]->(newer)` — "A is deprecated by B". B312 did not touch
-`DEPRECATED_BY`; **B323 is expected to reconcile the two mechanisms** (they currently
-overlap on Concept/Decision/Constraint/Lesson with opposite arrow directions and no
-shared write path).
+**B326 update — SUPERSEDES/DEPRECATED_BY reconciliation, final state.** B312 originally
+introduced this contract backed by a new `SUPERSEDES` rel table (same-type-pair-only,
+direction `(newer)-[:SUPERSEDES]->(older)`), which turned out to be the mirror image of
+the pre-existing `DEPRECATED_BY` rel table (`(older)-[:DEPRECATED_BY]->(newer)`,
+originally covering only `Concept`/`Decision`/`Constraint`/`Lesson` self-pairs) — two
+mechanisms for "this was replaced by that" with opposite arrows and no shared write path.
+B323's audit (Task 4) flagged the drift and filed the merge as **`backlog/B326.md`** rather
+than fixing it in place. B326 landed that merge:
+
+- `DEPRECATED_BY` is now the **only** "replaced by" rel table. It was widened from its
+  original four self-pairs to cover every `PROVENANCE_TABLES` entry as a same-type pair
+  (`FROM Concept TO Concept, FROM Decision TO Decision, ...`), matching what `SUPERSEDES`
+  used to cover. Cross-type supersession/deprecation edges remain out of scope, unchanged
+  from both B312 and B323's scope boundary.
+- **Direction: `(older)-[:DEPRECATED_BY]->(newer)`** — "A is deprecated by B" — is the
+  direction that survived. This is `DEPRECATED_BY`'s *original*, pre-B312 convention, kept
+  as-is rather than flipped to match `SUPERSEDES`'s `(newer)->(older)` convention. The
+  decision was made by auditing every existing reader/writer: `DEPRECATED_BY` already had
+  five independent call sites depending on `(older)->(newer)` —
+  `apply_contradiction()` in `campy/brain/temporal_lobe/loop/step7_pathway.py`, the
+  Lesson-dedup archival path in `campy/brain/brainstem/sweep.py`, two endpoints in
+  `web/server.py` (the graph-view export and the MergeEvent-rollback edge cleanup), and
+  `compile_card_context()` in `campy/brain/thalamus/tools/context_tools.py` — while
+  `SUPERSEDES` had exactly one writer (`mark_superseded()`) and no readers outside its own
+  tests. Flipping `DEPRECATED_BY` would have silently broken all five call sites (a
+  wrong-direction Cypher `MATCH` returns zero or wrong rows, not an error); repointing
+  `mark_superseded()` to `DEPRECATED_BY`'s existing direction was the strictly smaller,
+  safer change.
+- `SUPERSEDES` no longer exists. `mark_superseded()` writes `DEPRECATED_BY` directly (see
+  below). `init_schema()` migrates any pre-existing `SUPERSEDES` edges on an older database
+  into `DEPRECATED_BY` (reversing direction per-table, via a per-`PROVENANCE_TABLES`-table
+  `MATCH`/`MERGE` so one table's failure doesn't abort the rest) before dropping the
+  `SUPERSEDES` table — no lineage is silently orphaned. See the `DEPRECATED_BY` DDL comment
+  and the "B326 — retire SUPERSEDES" step in `schema.py`'s `init_schema()` for the exact
+  mechanics.
+- The `superseded_by`/`superseded_at`/`supersession_reason` node columns above are
+  unchanged by this merge — they remain the fast filter regardless of which rel table backs
+  the traversable edge.
 
 ### Write-side API (`campy/brain/hippocampus/provenance.py`)
 
@@ -1194,12 +1222,12 @@ shared write path).
   `now(UTC)` (returned as an ISO-8601 string, matching this codebase's `timestamp($x)`
   convention).
 - `async mark_superseded(db, *, table, node_id, superseded_by, reason, at=None) -> None`
-  — sets the three supersession columns **and** creates the `SUPERSEDES` edge in one call,
-  so the two halves cannot drift. Raises `ValueError` for a `reason` outside
-  `SUPERSESSION_REASONS` or a `table` outside the provenance-tracked set. A caller that
-  sets `superseded_by` directly without going through this function (and thus without the
-  matching edge) has introduced a bug — the ID becomes a dangling reference instead of
-  traversable lineage.
+  — sets the three supersession columns **and** creates the `DEPRECATED_BY` edge
+  (`(old)-[:DEPRECATED_BY]->(new)`, per the B326 update above) in one call, so the two
+  halves cannot drift. Raises `ValueError` for a `reason` outside `SUPERSESSION_REASONS` or
+  a `table` outside the provenance-tracked set. A caller that sets `superseded_by` directly
+  without going through this function (and thus without the matching edge) has introduced a
+  bug — the ID becomes a dangling reference instead of traversable lineage.
 
 ### Populated at capture time (best-effort, bounded)
 

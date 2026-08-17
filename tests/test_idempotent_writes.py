@@ -421,7 +421,8 @@ async def test_upsert_lesson_superseded_row_not_matched(db):
     original = await upsert_lesson(dict(params), db, CONFIG)
     original_id = original["lesson_id"]
 
-    # A distinct replacement node to point SUPERSEDES at.
+    # A distinct replacement node for mark_superseded()'s DEPRECATED_BY edge
+    # (B326: mark_superseded() writes DEPRECATED_BY, not SUPERSEDES).
     replacement = await upsert_lesson(
         {"text": "the replacement fact", "domain": "b320-superseded", "agent_source": "claude-code"},
         db, CONFIG,
