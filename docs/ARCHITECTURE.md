@@ -1929,3 +1929,386 @@ call sites in that file.
 - Does not inject any tenant/workspace-visibility predicate yet — that's B316, which depends
   on this seam existing (`GraphGateway.run()` is the one place such a predicate could be
   added later without touching every call site again).
+
+## B315 — AuthContext: Principal Derivation and Threading
+
+### Why
+
+Before this card, Campy had no concept of *who* is asking. `campy/brain_daemon.py`'s
+`_dispatch` routed every JSON-RPC call as `handler(params, self.db, self.config)` — one
+global `self.db`, no caller identity, no scoping. Correct for local single-user Campy,
+insufficient the moment more than one principal shares a deployment: if an agent can pass a
+`workspace_id` argument, an agent can read another tenant's memory — confused-deputy, one
+prompt injection away from being exercised by an LLM agent.
+
+**The rule:** tenant and workspace are derived from the transport credential, never from
+request params. See docs/ecosystem-rules.md's "Principal derivation rule" section for the
+full non-negotiable statement — this section covers the implementation.
+
+**Framing:** local Campy is single-tenant cloud with auth stubbed. `LocalSingleUserResolver`
+returns a real `Principal` (tenant `local`, workspace `local`, every known scope), never
+`None`. Handlers never branch on "are we local?" — the multi-tenant dispatch path is
+exercised by every local test run, not only in production.
+
+### The types (`campy/brain/auth.py`)
+
+- **`Principal`** — frozen dataclass: `subject_id`, `tenant_id`, `workspace_id`, `scopes`
+  (`frozenset[str]`), `client` (observability only — `"claude-code"`, `"agentcore"`, …),
+  `session_id`, `derived_from` (`"local-single-user" | "oidc" | "iam"` — during an incident,
+  the difference between "we trusted a token" and "we trusted a request body"). Scope
+  vocabulary: `memory.read`, `memory.write`, `memory.admin`, `visibility.override`
+  (`KNOWN_SCOPES`). `Principal.require(scope)` raises `PermissionError` if the scope isn't
+  held, returns `None` otherwise.
+- **`TransportContext`** — frozen dataclass carrying only what the *transport* knows:
+  `transport` (`"unix-socket" | "http" | "stdio"`), `peer_credential` (opaque,
+  transport-verified identity string — `None` locally, a verified SigV4 ARN or OIDC subject
+  over HTTP), `headers` (HTTP only). Deliberately has **no field a client could populate via
+  `params`** — enforced structurally by `TRANSPORT_CONTEXT_FIELDS` and asserted in
+  `tests/test_auth_context.py`. Constructed once per connection, strictly before any
+  request body is parsed: `brain_daemon.py::_handle_connection` for the Unix socket,
+  `web/server.py::mcp_post` for the streamable-HTTP transport (B325).
+- **`PrincipalResolver`** (`Protocol`) — `async resolve(transport_ctx) -> Principal`. Never
+  sees `params`.
+- **`LocalSingleUserResolver`** — the local-mode implementation described above.
+- **`IAMPrincipalResolver`** (B325) — verifies a SigV4-signed request by replaying its
+  exact signed headers against AWS STS `GetCallerIdentity` (the same "IAM auth via STS"
+  pattern HashiCorp Vault's `aws` auth method uses), then maps the caller ARN to
+  `subject_id`, with `tenant_id`/`workspace_id` from a configured map or a
+  Gateway-forwarded header (never from `params`). `boto3` is an optional import, mirroring
+  `campy/brain/llm/bedrock.py`'s pattern exactly.
+
+### Threading `principal` to handlers (Task 3 — incremental adoption)
+
+The tool convention is uniform: `async def name(params, db, config) -> dict`, across ~14
+modules in `campy/brain/thalamus/tools/`. Rewriting every handler's signature in one commit
+is a large mechanical diff with real regression risk, so adoption is **incremental, via
+signature inspection**:
+
+```python
+_WANTS_PRINCIPAL = {
+    name for name, fn in TOOL_HANDLERS.items()
+    if "principal" in inspect.signature(fn).parameters
+}
+```
+
+computed once at import in `campy/brain_daemon.py`. A handler opts in by adding `*,
+principal: Principal | None = None` to its signature. **Gotcha not anticipated by the
+original card**: most `TOOL_HANDLERS` entries are wrapped by
+`campy/brain/thalamus/tools/_shared.py::_with_phase()`, whose wrapper signature is
+`(params=None, db=None, config=None, **kw)` — `inspect.signature()` on the *wrapper* would
+see `**kw`, never the real `principal` parameter underneath. Fixed by setting
+`wrapper.__wrapped__ = fn` (the same mechanism `functools.wraps` uses), which makes
+`inspect.signature()` follow through to the real handler by default. Without this, the
+signature-inspection adoption mechanism the card specifies would silently never detect any
+converted handler.
+
+`scripts/check_principal_ratchet.py` + `scripts/principal_baseline.json` (same shape as
+B314's Cypher ratchet) count handlers **not** declaring `principal`, fail if the count rises
+above baseline (currently 57 of 59 — `notify_turn` and `upsert_lesson` are the two converted
+in this card). Wired as `make check-principal`. Follow-up cards drive it to zero, at which
+point the inspection branch is deleted and the parameter becomes required.
+
+### The two converted capture paths
+
+`campy/brain/thalamus/tools/capture.py::notify_turn` and
+`campy/brain/thalamus/tools/lessons.py::upsert_lesson` — B312's two named primary-capture-path
+write sites — now accept `principal` and use it for B312's `source` field:
+`f"{principal.client}:{principal.subject_id}"`, replacing the previous guessed
+`"agent:<agent_source>"` / `"user:direct"` convention when a principal is present (falls
+back to the old convention when it isn't — the ~57 not-yet-converted call sites still work
+unchanged). This is what makes B312 and B315 compose: facts become attributable to a
+transport-verified principal instead of a caller-declared string.
+
+**A real conflict the card didn't anticipate, and how it was resolved:** both handlers used
+to read an optional `workspace_id` from `params` (default `"local"`) purely as a B320
+content-hash discriminator — never for DB routing, since B316 hadn't landed yet when B320
+wrote it. That is now exactly the shape of an attack the forbidden-key guard exists to
+close: a client-supplied `workspace_id`. Per the card's own instruction ("check whether any
+current tool legitimately accepts one of these names before adding the guard"), this was
+resolved by **removing the request-param path entirely** rather than renaming it: both
+handlers now derive `workspace_id` for the content hash from `principal.workspace_id`
+(falling back to `"local"` only when no principal was threaded in). This is strictly more
+correct than the pre-B315 behavior — the discriminator now comes from a transport-verified
+identity instead of an unverified request field — and it means B320's content-hash identity
+and B316's DB-routing key are, from day one, the same value: `principal.workspace_id`, never
+`params["workspace_id"]`. `tests/test_idempotent_writes.py::test_upsert_lesson_workspace_differs_no_dedupe`
+was updated to exercise this through two `Principal`s instead of two request bodies — the
+B320 property it tests (same text, different workspace, no false dedupe) is unchanged.
+
+### The forbidden-key guard (Task 5)
+
+In `campy.brain_daemon.route_tool_call` — the single chokepoint both the Unix-socket
+dispatcher and the streamable-HTTP transport call through (see "Transports" below) — before
+invoking a handler, reject any request whose `params` contain `tenant_id`, `workspace_id`,
+`subject_id`, `principal`, or `scopes` (`FORBIDDEN_PARAM_KEYS`, defined once in
+`campy/brain/auth.py`). Returns JSON-RPC `-32602` naming the offending key; logs at WARNING
+with the rejecting principal's `subject_id`. This is belt-and-braces on top of
+`TransportContext`'s structural separation — it is what turns "an agent tried to escalate"
+from a silent no-op into a logged, visible failure.
+
+### What this card does not do
+
+- Does not build OIDC, IAM, or Cognito resolvers beyond `IAMPrincipalResolver` (B325) —
+  Protocol + local + IAM only; OIDC config is accepted, the resolver is a follow-up.
+- Does not open more than one database — B316's job.
+- Does not add visibility (`private`/`team`/`org`) fields or filtering — separate card.
+- Does not convert the other ~57 handlers — the ratchet enforces direction only.
+- Does not add authentication to the Unix socket transport itself (filesystem permissions
+  remain the access control there, as before).
+
+## B325 — Remote MCP Server Surface with Pluggable Auth
+
+### Why
+
+B315/B324's identity and provider seams make Campy *deployable* into a customer's AWS account.
+Before this card, nothing made it *reachable*: a container running Campy that no remote agent
+can call is not a service. AWS Bedrock AgentCore Gateway (the immediate consumer) reaches
+governed tools through a shared, IAM-authenticated MCP tool plane; Campy needed to register there
+as a target.
+
+**The generic surface, not an AgentCore adapter.** Every serious agent framework speaks MCP —
+one streamable-HTTP transport serves AgentCore, Strands, LangGraph, CrewAI, and the existing
+local harnesses. This matches the project's stated positioning (works across harnesses, across
+providers, local or cloud) — an AWS-specific integration would have contradicted it directly.
+
+### Task 0 finding — `/mcp` already existed, outside `campy/`
+
+The card's own investigation section listed three possible outcomes and asked that the actual
+one be reported rather than assumed. The actual outcome: **`POST /mcp` already existed**, in
+`web/server.py` (outside `campy/`, in the Memory Control Panel's FastAPI app — B3's "MCP-over-SSE"
+work had already been upgraded to streamable HTTP per `docs/transport-audit.md`, predating this
+card). It was bound to `127.0.0.1` only by `campy/brain_daemon.py::_start_web_server`'s
+hardcoded `host="127.0.0.1"  # NEVER 0.0.0.0 — local-only by design` — i.e. the surface existed
+but was unreachable from outside the local machine, and had no bind-address configuration at
+all, let alone a guard.
+
+**Decision: extend the existing surface rather than add a parallel one** — Task 1's "reuse
+`TOOL_HANDLERS` unchanged, do not fork the tool list per transport" would otherwise be violated
+immediately by building a second `/mcp`.
+
+**A real gap this surfaced**: `web/server.py::_dispatch_mcp` (the HTTP dispatcher) called
+`TOOL_HANDLERS[name]` **directly**, bypassing `campy_daemon.py::_dispatch` (the Unix-socket
+dispatcher) entirely — exactly the "IPC Dispatch Divergence" `docs/transport-audit.md` had
+already flagged as a documented future risk, now realized: the HTTP path never ran B315's
+forbidden-key guard or principal threading at all before this card.
+
+### Task 1 — the shared dispatch chokepoint: `route_tool_call()`
+
+Rather than duplicating B315's guard logic into `_dispatch_mcp` (the divergence-widening
+option `docs/transport-audit.md` warned against), the guard + handler-invocation logic was
+extracted out of `campy.brain_daemon.BrainDaemon._dispatch` into a module-level function:
+
+```python
+async def route_tool_call(method, params, db, config, principal) -> Any:
+    ...  # forbidden-key guard, then _WANTS_PRINCIPAL-conditional handler call
+```
+
+Both `BrainDaemon._dispatch` (Unix socket) and `web/server.py::_dispatch_mcp` (streamable HTTP)
+now call through this one function. `ForbiddenParamError` / `UnknownMethodError` are raised by
+`route_tool_call()` and translated into each transport's own error envelope (JSON-RPC `-32602`
+/ `-32601` on the socket path; the equivalent MCP `tools/call` error shape over HTTP) — so
+B315's guard, and (once B316 lands) workspace routing, apply identically regardless of which
+transport a request arrived on, closing the divergence rather than adding a second copy of it.
+
+Protocol version: HTTP already advertised `"2025-03-26"` (streamable HTTP) before this card; the
+Unix-socket path keeps advertising `"2024-11-05"` unchanged — the card's own guidance ("if any
+pinned client breaks, keep the old version for stdio and advertise the new one only on HTTP")
+turned out to already be satisfied by the pre-existing code, so no version-string change was
+needed.
+
+### Task 2 — the bind guard (`campy.brain_daemon._enforce_bind_guard`)
+
+**The single most important property in this card**: binding `[server].bind_host` to any
+non-loopback address while `[server].auth = "none"` is a **hard startup failure**. Checked
+synchronously in `BrainDaemon.start()`, before the IPC socket server, the background tasks, or
+the web/MCP server are ever created — an uncaught `BindGuardError` propagates out of `main()`
+and exits the process. This ordering matters: `_start_web_server` runs as a background asyncio
+task with a crash-and-restart wrapper (`_restart_on_failure`) — if the guard lived *inside* that
+task instead, a misconfiguration would become an infinite crash-restart loop (a message logged
+every few seconds), not the hard failure the card requires. `tests/test_bind_guard.py` proves
+nothing is bound (not merely that a message was logged) by asserting the code path that would
+call `asyncio.start_server`/uvicorn is never reached when the guard fires, across `0.0.0.0`,
+`::`, and a concrete LAN address.
+
+`bind_host` defaults to `127.0.0.1` (`campy/brain/brainstem/config.py`'s `_DEFAULT_CONFIG`) —
+an existing local install sees no behavioral change. `auth` defaults to `"none"`.
+
+### Task 3 — `IAMPrincipalResolver`
+
+Implements B315's `PrincipalResolver` Protocol. Verifies a SigV4-signed request by replaying its
+exact signed headers (`Authorization`, `X-Amz-Date`, `X-Amz-Security-Token`) against AWS STS
+`GetCallerIdentity` — the same "IAM auth via STS" pattern HashiCorp Vault's `aws` auth method
+uses: a SigV4 signature is only valid for the exact request it was computed over, so a
+successful STS call with the caller's own headers proves the caller holds the named credentials
+without Campy ever handling a raw AWS secret key. Returns the caller ARN as `subject_id`;
+`tenant_id`/`workspace_id` come from a configured map keyed by ARN, or an HTTP header the
+Gateway forwards as a session attribute (a transport-level credential, per B315's rule — not the
+JSON-RPC body). `boto3` is an optional import (mirrors `campy/brain/llm/bedrock.py`'s pattern
+exactly) — `tests/test_remote_mcp.py::test_module_imports_without_boto3_installed` proves every
+non-IAM mode imports and starts with `boto3` absent, in a subprocess so faking its absence can't
+corrupt the already-imported module objects the rest of the test suite shares.
+
+### Task 4b — the actual deployment topology is Lambda-fronted, not a direct Gateway target
+
+See `docs/deployment-agentcore.md` for the full writeup. Short version: the customer's ADR-0031
+registers Campy behind `AgentCore agent → Gateway (AWS_IAM) → Lambda (thin adapter) → Campy HTTP
+MCP surface`, not a direct `mcp.mcp_server` Gateway target — a **policy** decision (the provider
+supports both; ADR-0031 picked Lambda). Tasks 1–3 remain the prerequisite either way: the Lambda
+still needs an HTTP surface to proxy to (Kùzu is single-process-writer, so the Lambda cannot open
+the database file directly), and `IAMPrincipalResolver` is what verifies its calls. Two items are
+recorded as open in that doc rather than guessed at: identity does not currently propagate
+through the customer's Gateway (`gateway_iam_role {}`, no `metadata_configuration`), so B315's
+transport-derived-workspace rule cannot fully hold behind it yet; and the Gateway target's
+specific IAM policy / network path is pending the platform team.
+
+### Files
+
+- `web/server.py` — `create_app()` gained `principal_resolver` and (B316) `router` kwargs;
+  `_dispatch_mcp` threads `principal` and routes through `route_tool_call()`; `mcp_post` builds
+  `TransportContext` from HTTP headers before the body is parsed.
+- `campy/brain_daemon.py` — `route_tool_call`, `ForbiddenParamError`, `UnknownMethodError`,
+  `_enforce_bind_guard`, `BindGuardError`, `_build_http_principal_resolver`; `start()` runs the
+  guard synchronously before anything else; `_start_web_server` reads `[server].bind_host`.
+  `_dispatch` no longer inlines the guard/dispatch logic — it calls `route_tool_call()`.
+- `campy/brain/auth.py` — `IAMPrincipalResolver`, `IAMConfigError`,
+  `_sts_get_caller_identity_verifier`.
+- `campy/brain/brainstem/config.py` — `_DEFAULT_CONFIG["server"]` (`bind_host`, `auth`).
+- `campy/cli/smoke_test.py` — `check_remote_mcp_surface()`.
+- `docs/deployment-agentcore.md` — new.
+- `tests/test_bind_guard.py`, `tests/test_remote_mcp.py` — new.
+
+### What this card does not do
+
+- Does not build an AgentCore-specific adapter — generic MCP; AgentCore Gateway is one consumer,
+  reached via the Lambda topology in `docs/deployment-agentcore.md`.
+- Does not build the Lambda proxy itself — a separate, small follow-up card once the platform
+  answers on identity propagation.
+- Does not implement the signed-token workspace fallback — recorded as an open decision only.
+- Does not implement OIDC (the config accepts the value; `_build_http_principal_resolver` fails
+  loudly rather than silently degrading if `auth = "oidc"` is actually selected before a
+  resolver exists).
+- Does not add TLS termination, rate limiting, quotas, or per-tenant throttling.
+- Does not change the default bind address or local behavior in any way — `tests/test_web.py`'s
+  existing suite (updated only for `_dispatch_mcp`'s new required `principal` parameter) passes
+  unmodified otherwise.
+- Does not finish the Gateway registration doc — blocked on the platform team, marked pending.
+
+## B316 — Workspace Router: One Database Per Workspace
+
+### Why
+
+Before this card, `campy/brain_daemon.py` opened exactly one database for the process life
+(`self.db = KuzuClient(str(DB_PATH))`). For a multi-tenant deployment, the isolation model has
+to be physical, not predicate-based: with ~500 Cypher call sites (B314), a shared graph plus a
+`tenant_id` filter is not auditable — nothing proves every query carries it. **Database per
+workspace** makes isolation provable by construction: a routing bug is loud (wrong directory,
+missing data) rather than silent (one dropped `WHERE` leaking another tenant's memory). It also
+turns Kùzu's single-writer-per-database constraint into per-workspace parallelism instead of a
+global bottleneck.
+
+**Sharding boundary rule**: shard where traversal does not need to cross. Agents working in one
+workspace never traverse into another; cross-workspace knowledge is a separate, deliberately
+promoted store, not an accidental traversal.
+
+### `WorkspaceRouter` (`campy/brain/hippocampus/graph/router.py`)
+
+LRU-bounded cache of `KuzuClient` instances, one per workspace:
+
+- **`get(workspace_id)`** / **`release(workspace_id)`** — a matched pair. `get()` returns a
+  client (opening it, and running `schema_init()`, on first access) and increments a per-
+  workspace borrow count; `release()` decrements it. This borrow accounting is what makes "a
+  busy client is not evicted" enforceable — `campy.brain_daemon.BrainDaemon._dispatch` and
+  `web/server.py::_dispatch_mcp` both call `get()`/`release()` around exactly one request's
+  handler invocation, in a `try`/`finally`.
+- **First access to a new workspace** is guarded by a per-workspace `asyncio.Lock` (a dict of
+  locks keyed by workspace_id — never a global lock, which would serialize unrelated
+  workspaces' first access against each other). Ten concurrent `get()` calls for the same new
+  workspace run `schema_init()` exactly once.
+- **`register(workspace_id, client)`** — pre-seeds the cache with an already-open client,
+  without going through `get()`'s creation path. Exists for exactly one caller:
+  `BrainDaemon.start()` wires its pre-existing `self.db` (opened at `__init__`, before a router
+  exists) in as the `"local"` workspace client via `register("local", self.db)`. Without this,
+  `get("local")` would open a *second* `kuzu.Database` handle on the identical directory —
+  Kùzu is single-process-writer, so two live handles on one path is a hazard the router exists
+  to prevent, not create.
+- **Eviction** is LRU, skipping any workspace with a nonzero borrow count. If every open client
+  is busy when `max_open` is exceeded, the router logs at WARNING and exceeds the bound rather
+  than blocking a caller or closing something in use.
+- **`close_all()`** (async) / **`close_all_sync()`** — the latter exists because
+  `BrainDaemon.shutdown()` runs from a signal handler and cannot `await`.
+
+### Path safety: `_workspace_dir()`
+
+`workspace_id` is treated as untrusted input for filesystem purposes — principals are minted
+from external identity systems in cloud deployments, so this module never trusts a
+`workspace_id` string enough to interpolate it into a path without validating it first.
+
+**Allowlist regex, not a blocklist**: `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`. A blocklist of "bad"
+characters loses — there is always one more way to spell `..`. The allowlist makes traversal
+structurally impossible: every character in `../../etc`, `a/b`, `..`, an empty string, a
+200-char id, or an id containing a null byte falls outside the allowed set, so `fullmatch()`
+rejects all of them uniformly, with nothing disk-side created before the rejection. A sha256
+digest (first 16 hex chars) is appended to the directory name for every *non-local* workspace —
+this is a different safeguard than the regex: the regex prevents traversal, the digest prevents
+case-insensitive-filesystem collisions (`Foo` and `foo` are different workspace ids that could
+otherwise collide as directory names). A final `is_relative_to(root)`-equivalent check backstops
+both — belt and braces, because this is the one place in the module where a bug is a security
+bug (path traversal) rather than an availability bug.
+
+**`"local"` is special-cased explicitly**, not left to the digest happening to match: it
+resolves to `local_db_path` — the exact pre-existing `DB_PATH`, passed in by
+`BrainDaemon.start()` — so an existing local install keeps its memory with zero migration.
+`campy/paths.py::get_workspace_root()` (`= get_database_path().parent`) is what
+`WorkspaceRouter` is rooted at, so the "local" workspace and every other workspace are always
+siblings under the same directory.
+
+### Task 3 — the write lock, keyed per `(loop, db_path)`
+
+`campy/brain/hippocampus/graph/kuzu_client.py::_get_write_lock()` used to key on `id(loop)`
+alone — correct with one database (every write anywhere correctly serialized against every
+other write), wrong with N per-workspace databases (it would serialize every write across every
+tenant, destroying the entire benefit of sharding). Changed the key to `(id(loop), db_path)`,
+**preserving the pre-existing weakref-to-loop staleness check exactly** — a stale entry (loop
+garbage-collected, id() address reused by CPython) is still detected and replaced, just scoped
+per-workspace now instead of globally. `KuzuClient.__init__` gained `self.db_path = db_path`
+(the constructor already took `db_path` as a parameter; it just hadn't stored it) so
+`execute_write()` and `rebuild_vector_index()` can pass it to `_get_write_lock()`.
+
+**Card fact-check** (see the PR): the card asks to "run the existing kuzu_client lock tests
+unmodified (grep tests/ for them first)." No dedicated test file or test function for this
+locking behavior exists anywhere in `tests/` — confirmed by grepping for `_get_write_lock`,
+`_write_locks`, `weakref`, `loop_ref`, and `stale.*lock` across the whole directory (zero hits
+before this card). `tests/test_workspace_router.py` adds new, direct tests for both the
+staleness behavior and the per-`db_path` keying instead of "running something unmodified",
+since there was nothing pre-existing to run.
+
+### Task 4 — daemon wiring, backward-compatibly
+
+`BrainDaemon._dispatch` resolves `db = await self._router.get(principal.workspace_id)` (never
+from `params`) instead of always using `self.db`, releasing it in a `finally` block.
+`web/server.py::_dispatch_mcp` does the same when a router is passed to `create_app()` (from
+`BrainDaemon._start_web_server`) — B325's `route_tool_call()` chokepoint means this workspace
+routing applies identically on both transports rather than needing to be implemented twice.
+Both fall back to a fixed `db` when no router exists (a `BrainDaemon`/`create_app()` constructed
+directly in a test, without calling `start()`), matching pre-B316 behavior exactly.
+
+**Four background tasks intentionally still operate on `self.db` (the local/default workspace)
+only**, per the card's own scope: the Gated Consolidation Loop worker (`_loop_worker`),
+background sweep (`_background_sweep`), trigger manifest compilation
+(`_compile_trigger_manifest`), and file-bridge regen (`_file_bridge_regen`). Making sweep/loop
+workspace-aware is a real follow-up card, not a small one — a per-workspace consolidation
+scheduler needs its own design.
+
+`BrainDaemon.shutdown()` (runs from a signal handler, cannot `await`) calls
+`self._router.close_all_sync()`, which closes `self.db` exactly once (it was registered into
+the router, not a second handle) rather than calling `self.db.close()` directly and separately.
+
+### What this card does not do
+
+- Does not make sweep/consolidation, the loop worker, trigger compile, or file-bridge regen
+  workspace-aware — they stay on the default workspace; follow-up card.
+- Does not implement S3 cold storage / dormant-workspace eviction to object storage.
+- Does not implement cross-workspace promotion (the shared knowledge tier).
+- Does not add per-workspace quotas, backup, or PITR.
+- Does not change how `workspace_id` is *derived* — that is B315's job and stays there; this
+  card only consumes `principal.workspace_id`.

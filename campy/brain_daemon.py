@@ -16,6 +16,7 @@ Concurrency: single asyncio event loop, asyncio.Lock for all Kùzu writes.
 """
 
 import asyncio
+import inspect
 import json
 import logging
 import os
@@ -27,22 +28,103 @@ _logger = logging.getLogger(__name__)
 
 import uvicorn
 
+from campy.brain.auth import (
+    FORBIDDEN_PARAM_KEYS,
+    IAMPrincipalResolver,
+    LocalSingleUserResolver,
+    Principal,
+    TransportContext,
+)
 from campy.brain.brainstem.config import load_config
 from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 from campy.brain.hippocampus.graph import embeddings as emb
+from campy.brain.hippocampus.graph.router import WorkspaceRouter
 from campy.brain.hippocampus.schema import init_schema
 from campy.brain.thalamus.tools import TOOL_HANDLERS, init_loop_queue
 from campy.brain.llm.provider import create_llm_client
 from campy.brain.temporal_lobe.loop import step2_gist, step3_schema_org
 from campy.brain.temporal_lobe.loop.orchestrator import run_loop
 from campy.brain.brainstem.sweep import run_sweep
-from campy.paths import get_daemon_socket_path, get_database_path
+from campy.paths import get_daemon_socket_path, get_database_path, get_workspace_root
 
 SOCKET_PATH = get_daemon_socket_path()
 DB_PATH     = get_database_path()
 # D3 fix: package-relative seed path — GistSeedExamples.md lives alongside
 # the repo, not in a hardcoded OneDrive path that only works on DJ's machine.
 SEED_PATH   = Path(__file__).parent / "InvertorsDocs" / "GistSeedExamples.md"
+
+# B315 Task 3 — incremental adoption via signature inspection. Computed once
+# at import rather than per-dispatch: a handler "wants" a principal if its
+# real signature (see _shared.py::_with_phase's `__wrapped__` note — most
+# TOOL_HANDLERS entries are wrapped, and inspect.signature() follows
+# `__wrapped__` to the underlying function automatically) declares a
+# `principal` parameter. This is a deliberate tradeoff: slightly implicit,
+# in exchange for not rewriting ~40 handler signatures in one commit. The
+# end state is mandatory — scripts/check_principal_ratchet.py drives the
+# non-adopting count to zero, at which point this inspection branch and the
+# `principal` default go away and the parameter becomes required on every
+# handler.
+_WANTS_PRINCIPAL = {
+    name for name, fn in TOOL_HANDLERS.items()
+    if "principal" in inspect.signature(fn).parameters
+}
+
+# B315 Task 5 — forbidden-key guard. Re-exported from campy.brain.auth (the
+# canonical set) under the name the card's pseudocode uses at the call site.
+_FORBIDDEN_PARAM_KEYS = FORBIDDEN_PARAM_KEYS
+
+
+class ForbiddenParamError(Exception):
+    """Raised by `route_tool_call` when `params` contains a B315 forbidden key."""
+
+    def __init__(self, key: str):
+        self.key = key
+        super().__init__(f"Invalid params: {key!r} must not be supplied by the caller")
+
+
+class UnknownMethodError(Exception):
+    """Raised by `route_tool_call` when `method` is not a registered tool."""
+
+    def __init__(self, method: str):
+        self.method = method
+        super().__init__(f"Unknown method: {method}")
+
+
+async def route_tool_call(method: str, params: dict, db, config: dict, principal: Principal):
+    """Shared chokepoint for invoking a `TOOL_HANDLERS` entry.
+
+    B325: used by BOTH the Unix-socket JSON-RPC dispatcher (`_dispatch`,
+    below) and the streamable-HTTP MCP transport
+    (`web/server.py::_dispatch_mcp`) — see docs/transport-audit.md's
+    "IPC Dispatch Divergence" section, which this function exists to
+    close. Applies B315's forbidden-key guard and Task 3's
+    principal-threading convention identically on every transport, so
+    principal derivation, the forbidden-key guard, and (B316) workspace
+    routing cannot drift between transports the way the two dispatch
+    paths already had before this card.
+
+    Raises `ForbiddenParamError` if `params` contains a B315 forbidden
+    key, `UnknownMethodError` if `method` is not registered. Any exception
+    a handler itself raises propagates unchanged — callers translate both
+    into their own transport's error envelope.
+    """
+    if isinstance(params, dict):
+        offending = _FORBIDDEN_PARAM_KEYS & params.keys()
+        if offending:
+            offending_key = sorted(offending)[0]
+            _logger.warning(
+                "Rejected request: forbidden param key %r (method=%s, subject_id=%s)",
+                offending_key, method, principal.subject_id,
+            )
+            raise ForbiddenParamError(offending_key)
+
+    handler = TOOL_HANDLERS.get(method)
+    if not handler:
+        raise UnknownMethodError(method)
+
+    if method in _WANTS_PRINCIPAL:
+        return await handler(params, db, config, principal=principal)
+    return await handler(params, db, config)
 
 
 def _socket_path() -> Path:
@@ -58,6 +140,79 @@ def _socket_path() -> Path:
     return SOCKET_PATH
 
 
+# B325 Task 2 — bind address as explicit, guarded configuration.
+#
+# Loopback addresses a bind_host is allowed to sit on without any auth
+# resolver configured. Kept as a positive allowlist (rather than checking
+# for specific non-loopback literals) so the guard below is correct for
+# every non-loopback address there is, not just the handful anyone thought
+# to list — see the module-level comment in tests/test_bind_guard.py for
+# why a blocklist of "known-bad" hosts is the wrong shape for this check.
+_LOOPBACK_BIND_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+class BindGuardError(RuntimeError):
+    """Raised at startup when the configured bind address would expose
+    Campy's memory surface without authentication.
+
+    This must be a HARD STARTUP FAILURE — refuse to listen, not warn —
+    because Campy stores a customer's accumulated memory, and exposing it
+    on a non-loopback interface without auth is a one-environment-variable
+    mistake away from a serious breach. Raised synchronously from
+    `BrainDaemon.start()`, before any socket or web server task is
+    created, so the process never binds anything: an uncaught exception
+    here propagates out of `main()` and exits the process instead of being
+    logged-and-retried by the background-task restart machinery (which
+    would turn a misconfiguration into a crash loop, not a hard failure).
+    """
+
+
+def _enforce_bind_guard(bind_host: str, auth_mode: str) -> None:
+    """B325's single most important check: binding to any non-loopback
+    address while no auth resolver is configured (`auth = "none"`) is a
+    hard startup failure. Loopback + "none" (today's only supported local
+    configuration) and non-loopback + a real auth mode ("iam"/"oidc") are
+    both fine — this only rejects the one combination that would expose
+    unauthenticated memory to the network.
+    """
+    if bind_host not in _LOOPBACK_BIND_HOSTS and auth_mode == "none":
+        raise BindGuardError(
+            f"Refusing to start: [server].bind_host={bind_host!r} is not "
+            f"loopback ({sorted(_LOOPBACK_BIND_HOSTS)}) and [server].auth="
+            f"{auth_mode!r}. Configure [server].auth to \"iam\" or \"oidc\" "
+            "before binding to a non-loopback address, or leave bind_host "
+            "on loopback for local-only use."
+        )
+
+
+def _build_http_principal_resolver(auth_mode: str, server_cfg: dict):
+    """B325 Task 2/3 — the PrincipalResolver the streamable-HTTP transport
+    uses, chosen from `[server].auth`. Mirrors `_enforce_bind_guard`'s
+    view of the same config: "none" is only ever reachable on loopback (the
+    guard already enforced that), so it is safe to reuse the same
+    all-scopes local Principal the Unix socket uses. "iam" builds a real
+    `IAMPrincipalResolver` (B325 Task 3). "oidc" is accepted as
+    configuration (per the card) but has no resolver yet — fail loudly at
+    startup rather than silently falling back to an unauthenticated mode.
+    """
+    if auth_mode == "none":
+        return LocalSingleUserResolver()
+    if auth_mode == "iam":
+        return IAMPrincipalResolver(
+            tenant_id=server_cfg.get("iam_tenant_id", "default"),
+            workspace_id=server_cfg.get("iam_workspace_id", "default"),
+            workspace_map=server_cfg.get("iam_workspace_map"),
+            tenant_map=server_cfg.get("iam_tenant_map"),
+        )
+    if auth_mode == "oidc":
+        raise BindGuardError(
+            "[server].auth = \"oidc\" is accepted as configuration but no "
+            "OIDC resolver is implemented yet (B325 follow-up card) — use "
+            "\"iam\", or \"none\" on a loopback bind_host."
+        )
+    raise BindGuardError(f"[server].auth={auth_mode!r} is not a recognized auth mode")
+
+
 class BrainDaemon:
 
     def __init__(self, config: dict):
@@ -69,6 +224,21 @@ class BrainDaemon:
         self._loop_queue: asyncio.Queue = asyncio.Queue()
         self._stale_projects: set[str] = set()
         self._last_file_regen: str | None = None
+        # B315: local Campy is single-tenant cloud with auth stubbed — this
+        # resolver always returns a real Principal (tenant "local",
+        # workspace "local", every known scope), never None. Cloud
+        # resolvers (OIDC/IAM) implement the same PrincipalResolver
+        # Protocol; see campy/brain/auth.py and B325's IAMPrincipalResolver.
+        self._principal_resolver = LocalSingleUserResolver()
+        # B325: set for real in start() from [server].auth, once the bind
+        # guard has passed. None until then — _start_web_server always
+        # runs after start()'s guard check, so this is never used unset.
+        self._http_principal_resolver = None
+        # B316: constructed in start(), once the seed path / embedding
+        # model needed by schema_init are known. None until then — code
+        # that might run before start() (tests constructing BrainDaemon
+        # directly) falls back to self.db, matching pre-B316 behavior.
+        self._router: WorkspaceRouter | None = None
 
     # ------------------------------------------------------------------
     # Startup
@@ -76,6 +246,21 @@ class BrainDaemon:
 
     async def start(self):
         print("HippoCampy daemon starting...")
+
+        # B325 Task 2 — bind guard, checked synchronously before anything
+        # else starts. A misconfigured [server] block must be a hard
+        # startup failure: raising here propagates out of main() and exits
+        # the process, rather than surfacing as a background-task crash
+        # that _restart_on_failure would just retry forever. Nothing is
+        # bound — no IPC socket, no web/MCP server — if this raises.
+        server_cfg = self.config.get("server", {})
+        bind_host = server_cfg.get("bind_host", "127.0.0.1")
+        auth_mode = server_cfg.get("auth", "none")
+        _enforce_bind_guard(bind_host, auth_mode)
+        self._http_principal_resolver = _build_http_principal_resolver(auth_mode, server_cfg)
+        # Log the effective bind address and auth mode every time, so an
+        # operator never has to guess whether the daemon is exposed.
+        print(f"[server] bind_host={bind_host} auth={auth_mode}")
 
         # Configure embedding provider dispatch (sentence-transformers | ollama | openai)
         emb.configure(self.config)
@@ -90,6 +275,27 @@ class BrainDaemon:
         # Initialize Kùzu schema (idempotent)
         seed_path = self._resolve_seed_path()
         init_schema(self.db, str(seed_path), embedding_model)
+
+        # B316: WorkspaceRouter, rooted at the parent of the existing
+        # DB_PATH — the same directory the pre-B316 single database has
+        # always lived in. `local_db_path=DB_PATH` is what makes the
+        # "local" workspace resolve to the pre-existing path with no
+        # migration (see router.py's LOCAL_WORKSPACE_ID special case).
+        # register("local", self.db) wires in the *already-open* client
+        # from __init__ rather than letting get("local") open a second
+        # kuzu.Database handle on the identical directory — Kùzu is
+        # single-process-writer, so two live handles on one path is a
+        # hazard, not just waste. schema_init is a thin async wrapper
+        # around the same synchronous init_schema() just called above for
+        # self.db, run in a thread so it doesn't block the event loop for
+        # a newly-created workspace's first access.
+        async def _schema_init_for_router(client: KuzuClient) -> None:
+            await asyncio.to_thread(init_schema, client, str(seed_path), embedding_model)
+
+        self._router = WorkspaceRouter(
+            get_workspace_root(), schema_init=_schema_init_for_router, local_db_path=DB_PATH,
+        )
+        self._router.register("local", self.db)
 
         # Load gist centroids (needed by Step 2 System 1 classifier)
         self._centroids = step2_gist.load_centroids(self.db)
@@ -190,9 +396,42 @@ class BrainDaemon:
         async with server:
             await server.serve_forever()
 
+    def _peer_credential(self, writer: asyncio.StreamWriter) -> str | None:
+        """Best-effort opaque peer identity for the Unix socket transport.
+
+        A local Unix socket carries no cryptographic identity — filesystem
+        permissions on the socket path are the access control, same as
+        before this card. This exists so TransportContext always has
+        *something* transport-derived to carry, and so the remote HTTP
+        transport (B325) has an obvious analogous slot to fill with a
+        verified SigV4/OIDC identity instead of a guess.
+        """
+        try:
+            sock = writer.get_extra_info("socket")
+            if sock is not None:
+                return f"unix:{sock.fileno()}"
+        except Exception:
+            pass
+        return None
+
     async def _handle_connection(self, reader: asyncio.StreamReader,
                                   writer: asyncio.StreamWriter):
         """Handle a single adapter connection. Reads newline-delimited JSON-RPC 2.0."""
+        # B315: TransportContext is built from what this connection itself
+        # knows — BEFORE any request line is read, let alone parsed — and
+        # the Principal resolved from it is reused for every JSON-RPC
+        # request that arrives on this connection. This ordering is
+        # structural, not stylistic: if a TransportContext were ever built
+        # from `request` or `request["params"]`, an agent could forge its
+        # own tenant/workspace identity from the request body — exactly the
+        # confused-deputy hole this card exists to close. Do not move this
+        # below the read loop, and do not add a TransportContext field that
+        # comes from anything but the transport connection itself.
+        transport_ctx = TransportContext(
+            transport="unix-socket",
+            peer_credential=self._peer_credential(writer),
+        )
+        principal = await self._principal_resolver.resolve(transport_ctx)
         try:
             while True:
                 line = await reader.readline()
@@ -200,7 +439,7 @@ class BrainDaemon:
                     break
                 try:
                     request = json.loads(line)
-                    response = await self._dispatch(request)
+                    response = await self._dispatch(request, principal)
                     writer.write((json.dumps(response) + "\n").encode())
                     await writer.drain()
                 except json.JSONDecodeError:
@@ -214,8 +453,19 @@ class BrainDaemon:
             writer.close()
             await writer.wait_closed()
 
-    async def _dispatch(self, request: dict) -> dict:
-        """Route JSON-RPC method calls to tool handlers in campy/brain/thalamus/tools.py."""
+    async def _dispatch(self, request: dict, principal: Principal) -> dict:
+        """Route JSON-RPC method calls to tool handlers in campy/brain/thalamus/tools.py.
+
+        `principal` is resolved once per connection from the transport
+        credential (see `_handle_connection`) and passed to every handler
+        that opted in via Task 3's signature-inspection adoption
+        (`_WANTS_PRINCIPAL`, computed at import time above). It is never
+        derived from `request` or `params` here. The actual guard +
+        handler invocation lives in the module-level `route_tool_call()`
+        so the streamable-HTTP transport (B325,
+        `web/server.py::_dispatch_mcp`) shares this exact behavior instead
+        of reimplementing it — see that function's docstring.
+        """
         method = request.get("method", "")
         params = request.get("params", {})
         req_id = request.get("id")
@@ -230,21 +480,46 @@ class BrainDaemon:
             tools = [{"name": name} for name in TOOL_HANDLERS]
             return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": tools}}
 
-        handler = TOOL_HANDLERS.get(method)
-        if not handler:
-            return {
-                "jsonrpc": "2.0", "id": req_id,
-                "error": {"code": -32601, "message": f"Unknown method: {method}"}
-            }
+        # B316: resolve this request's database from the router, keyed on
+        # the transport-derived principal.workspace_id — never from
+        # `params` (B315's rule, unchanged). Falls back to `self.db` when
+        # no router exists yet (a BrainDaemon constructed directly, e.g.
+        # in a test, without calling start()), matching pre-B316 behavior.
+        try:
+            db = await self._resolve_workspace_db(principal.workspace_id)
+        except ValueError as e:
+            return {"jsonrpc": "2.0", "id": req_id,
+                    "error": {"code": -32602, "message": f"Invalid workspace: {e}"}}
 
         try:
-            result = await handler(params, self.db, self.config)
+            result = await route_tool_call(method, params, db, self.config, principal)
             return {"jsonrpc": "2.0", "id": req_id, "result": result}
+        except ForbiddenParamError as e:
+            return {"jsonrpc": "2.0", "id": req_id,
+                    "error": {"code": -32602, "message": str(e)}}
+        except UnknownMethodError as e:
+            return {"jsonrpc": "2.0", "id": req_id,
+                    "error": {"code": -32601, "message": str(e)}}
         except Exception as e:
             return {
                 "jsonrpc": "2.0", "id": req_id,
                 "error": {"code": -32000, "message": str(e)}
             }
+        finally:
+            self._release_workspace_db(principal.workspace_id)
+
+    async def _resolve_workspace_db(self, workspace_id: str) -> KuzuClient:
+        """B316: the router-backed replacement for always using `self.db`.
+        Raises ValueError for a workspace_id `WorkspaceRouter._workspace_dir`
+        rejects (invalid shape, traversal attempt) — translated to a
+        JSON-RPC -32602 by the one caller, `_dispatch`."""
+        if self._router is None:
+            return self.db
+        return await self._router.get(workspace_id)
+
+    def _release_workspace_db(self, workspace_id: str) -> None:
+        if self._router is not None:
+            self._router.release(workspace_id)
 
     # ------------------------------------------------------------------
     # Gated Consolidation Loop worker (M3)
@@ -302,19 +577,34 @@ class BrainDaemon:
 
     async def _start_web_server(self, port: int):
         """
-        Start the FastAPI Memory Control Panel on 127.0.0.1 only.
-        Runs as a background asyncio task alongside the IPC server.
+        Start the FastAPI Memory Control Panel + streamable-HTTP MCP
+        surface (B325). Runs as a background asyncio task alongside the
+        IPC server.
+
+        B325: bind address is `[server].bind_host`, defaulting to
+        127.0.0.1 — an existing local install sees no change. The bind
+        guard already ran synchronously in `start()` before this task was
+        ever created (see `_enforce_bind_guard`), so by the time this
+        method runs, binding here is known to be safe for the configured
+        auth mode.
         """
+        server_cfg = self.config.get("server", {})
+        bind_host = server_cfg.get("bind_host", "127.0.0.1")
+
         from web.server import create_app
-        app = create_app(self.db)
+        app = create_app(
+            self.db, self.config,
+            principal_resolver=self._http_principal_resolver,
+            router=self._router,
+        )
         config = uvicorn.Config(
             app,
-            host="127.0.0.1",   # NEVER 0.0.0.0 — local-only by design
+            host=bind_host,
             port=port,
             log_level="error",
         )
         server = uvicorn.Server(config)
-        print(f"Memory Control Panel: http://127.0.0.1:{port}")
+        print(f"Memory Control Panel + MCP: http://{bind_host}:{port}")
         await server.serve()
 
     # ------------------------------------------------------------------
@@ -398,7 +688,17 @@ class BrainDaemon:
 
     def shutdown(self):
         self.running = False
-        self.db.close()
+        # B316: close every open workspace client, not just the local one.
+        # shutdown() runs from a signal handler and cannot await, so this
+        # uses the router's synchronous close_all_sync() rather than the
+        # async close_all(). self.db was registered into the router as the
+        # "local" workspace client in start() (WorkspaceRouter.register),
+        # so closing via the router closes it exactly once — the `else`
+        # branch below only fires when start() never ran (no router yet).
+        if self._router is not None:
+            self._router.close_all_sync()
+        else:
+            self.db.close()
         socket_path = _socket_path()
         if socket_path.exists():
             socket_path.unlink()

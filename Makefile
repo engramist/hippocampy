@@ -20,6 +20,9 @@ test-adapters: ## Run adapter tests only
 check-cypher: ## B314 ratchet: fail if inline Cypher outside the allowlist increased
 	python3 scripts/check_cypher_ratchet.py
 
+check-principal: ## B315 ratchet: fail if handlers not declaring `principal` increases
+	python3 scripts/check_principal_ratchet.py
+
 mcpb: ## Build .mcpb bundle for Claude Desktop
 	@echo "Building hippocampy.mcpb..."
 	@cd $(CURDIR) && zip -r hippocampy.mcpb \
