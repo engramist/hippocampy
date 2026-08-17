@@ -1930,6 +1930,189 @@ call sites in that file.
   on this seam existing (`GraphGateway.run()` is the one place such a predicate could be
   added later without touching every call site again).
 
+## B319 — Backup and Restore for Earned Memory
+
+B313 split Campy's facts into `earned` (Campy is the only place it lives — losing it loses it
+forever) and `projected` (a rebuildable mirror of something owned elsewhere). Before this
+card, nothing backed that claim up: `campy/cli/graph_io.py` was a developer JSONL dump/restore
+tool with no scheduling, retention, or verified restore. "We have an export script" is not a
+disaster-recovery story.
+
+### Commands (`campy/cli/backup.py`)
+
+```
+campy backup create   [--workspace ID|--all] [--out DIR] [--include-projected] [--db-path PATH]
+campy backup list     [--workspace ID] [--out DIR]
+campy backup verify   SNAPSHOT [--out DIR]
+campy backup prune    [--keep-daily N --keep-weekly N] [--workspace ID] [--out DIR] [--dry-run]
+campy restore         SNAPSHOT [--workspace ID] [--force] [--yes] [--db-path PATH] [--out DIR]
+```
+
+`--db-path`/`--out` are testability/override escape hatches (matching `graph_io.py`'s existing
+`--db-path`/`--db` convention) — omitted, `create`/`restore` use `campy.paths.get_database_path()`
+and `campy.paths.get_backup_root()` (`~/.campy/backups/`) exactly as an installed user would.
+
+### Snapshot format: the existing JSONL dump, not a database-directory copy
+
+A snapshot is `export_graph_dump()`'s output (`campy/brain/hippocampus/graph/export.py`,
+already built for B313) plus an extended `manifest.json` — never a copy of the Kùzu database
+file itself. A file copy would be faster, but it is opaque and version-locked to the pinned
+Kùzu 0.11.3, which defeats the portability B314's `GraphGateway` seam is buying. Default
+excludes `authority='projected'` rows (`export_graph_dump(..., include_projected=False)`,
+reused as-is from B313 — not reimplemented); `--include-projected` includes them.
+
+On a graph of ~50 node rows / a handful of rel rows (this card's test fixtures — the repo has
+no larger seeded graph available in this sandbox to time against), dump+manifest+checksum and
+restore+`init_schema()` each complete in well under a second. See the PR description for the
+actual numbers measured in CI; if dump/restore ever proves unacceptably slow on a large
+production graph, the answer is to report that with numbers, not to silently switch to a file
+copy — this card did not need to make that call.
+
+### Manifest — what proves a snapshot is what it claims to be
+
+`export_graph_dump()`'s own manifest (`format_version`, `engine`, `embedding_dim`,
+per-table `node_tables`/`rel_tables` row counts, `exported_at`) is extended with:
+
+| Field | Purpose |
+|---|---|
+| `schema_version` | compared against `schema.SCHEMA_VERSION` on restore (see below) |
+| `campy_version` | `importlib.metadata.version("hippocampy")`, best-effort |
+| `embedding_model` | the *configured* model at backup time — without this, a restore onto a differently-configured install silently produces a graph whose vectors don't match the running model, and retrieval degrades with no error anywhere |
+| `workspace_id` | which workspace this snapshot belongs to (see below) |
+| `payload_checksum` | sha256 over every `nodes/*.jsonl` + `rels/*.jsonl` file's bytes, in sorted-path order |
+
+`payload_checksum` is computed after the JSONL files are written and stored in the same
+`manifest.json` `export_graph_dump()` already writes — `create_snapshot()`
+(`campy/cli/backup.py`) reads that file back, merges in the fields above, and rewrites it,
+rather than adding a second manifest file or a parallel export path.
+
+### `schema.SCHEMA_VERSION` — the field restore refuses to go forward on
+
+`campy/brain/hippocampus/schema.py` gained a single hand-maintained integer,
+`SCHEMA_VERSION = 1`, bumped whenever a new `_MIGRATIONS` entry (or NODE_TABLES/REL_TABLES DDL
+change) lands. This is the first release tracking the concept explicitly — no attempt was made
+to retroactively number every migration back to B12. A snapshot manifest with no
+`schema_version` key at all (anything backed up before B319) reads as version `0`, i.e. "older
+than anything," which is always safe to restore.
+
+`restore_snapshot()` refuses outright (`BackupError`, nothing touched) when a snapshot's
+`schema_version` is *newer* than the running code's `SCHEMA_VERSION` — a forward restore would
+silently drop columns the current code doesn't know to write back. Older is fine: restore
+proceeds, and `init_schema()` runs afterward so `_MIGRATIONS` brings the resulting database's
+columns up to date. In practice `_ensure_graph_schema()` (inside `import_graph_dump()`) already
+creates every table from the *current* `NODE_TABLES` DDL regardless of the snapshot's vintage —
+an older snapshot's JSONL rows just have fewer keys, which insert as NULLs for the newer
+columns — so `init_schema()`'s post-restore call is a defensive, idempotent belt-and-suspenders
+step for the case where `restore` targets a pre-existing (not freshly wiped) database file with
+a stale on-disk schema, rather than the only thing making a fresh restore schema-current.
+
+### `backup verify` — restores into a throwaway database, never the live one
+
+`verify_snapshot(snapshot_dir)` takes **no live-database argument at all** — there is nothing
+in its body that can reach `campy.paths.get_database_path()` or any path a caller doesn't
+explicitly hand it. That is what makes "verify never touches the live database" true by
+construction, not by discipline. Steps:
+
+1. Recompute the payload checksum and compare against the manifest.
+2. Restore into a private `tempfile.mkdtemp()` database.
+3. Re-derive per-table counts from the restored database (by calling `export_graph_dump()`
+   again against a scratch directory — reusing its existing counting Cypher rather than
+   hand-writing new counting queries, which would grow B314's inline-Cypher ratchet for no
+   reason) and assert they match what the snapshot's own JSONL files should actually produce.
+   That is deliberately *not* a blind comparison against the manifest's raw counts:
+   `import_graph_dump()`'s documented behavior (B313) is that a relationship row whose
+   endpoint was a `projected` node omitted from the dump fails its `MATCH` and is silently
+   skipped — expected, not corruption. `_expected_counts_from_dump()` re-derives the
+   restorable rel count directly from which node primary keys are actually present in the
+   dump, so that documented exclusion doesn't fail verification while a genuine import
+   discrepancy still would.
+4. Run one real recall query against the restored graph
+   (`campy.brain.hippocampus.graph.queries.backup.BACKUP_QUERIES` —
+   `backup.recall_sample`, a `UNION ALL` lexical existence check across live Concept/
+   Decision/Lesson rows, reached through `GraphGateway.run()`) and assert it returns rows.
+5. Compare the manifest's `embedding_model` against the currently configured one —
+   mismatch is appended to a `warnings` list, never to `errors`; `verify_snapshot()`'s `ok`
+   key is unaffected by it. Restoring onto a different model is legitimate (a migration in
+   progress), it just means vectors need rebuilding afterward.
+
+The `backup.recall_sample` query lives in `campy/brain/hippocampus/graph/queries/backup.py` —
+the B314-allowlisted `graph/queries/` directory — specifically so this module needn't add any
+new inline Cypher of its own and the B314 ratchet (`scripts/check_cypher_ratchet.py`) stays
+unchanged by this card.
+
+### `restore` — the dangerous one
+
+- Refuses a non-empty target database without `--force`, changing nothing.
+- With `--force` and a non-empty target, `restore_snapshot()` takes an automatic pre-restore
+  snapshot of *whatever is currently at the target path* before touching anything — a normal
+  snapshot via the same `create_snapshot()` path (so it is itself independently restorable and
+  verifiable, and participates in ordinary `backup prune` retention) — and returns its
+  directory so the CLI can print it before doing anything destructive. The CLI's confirmation
+  prompt (`--yes` to skip) fires after this, on top of it, not instead of it.
+- Refuses a snapshot whose `schema_version` is newer than the running code's
+  `SCHEMA_VERSION` (see above).
+- After import, calls `init_schema()` with the snapshot's recorded `embedding_model` (falling
+  back to the currently configured one) so `_MIGRATIONS` runs regardless of whether it's
+  strictly needed for a freshly-wiped target.
+
+### Workspace awareness, from the start (composes with B316, doesn't block on it)
+
+Every function below `create_snapshot()`/`verify_snapshot()`/`restore_snapshot()`/
+`prune_workspace()` already takes `workspace_id`/`workspace_root` as a plain parameter.
+Snapshot layout is `<backup_root>/<workspace_id>/<timestamp>/`, so a restore can never land in
+the wrong workspace's directory by construction. The only function that knows there is
+currently exactly one workspace is `_list_workspace_ids()` (`campy/cli/backup.py`), which
+today returns `["local"]` — a single-database install has one implicit workspace. When B316's
+per-workspace router lands, this is the one function that changes (to walk the router's
+workspace root and return real ids); nothing else in this module needs a rewrite.
+
+### Dedup via hard links, not a duplicate-tracking manifest field
+
+`create_snapshot()` compares a fresh dump's `payload_checksum` against the immediately
+preceding snapshot in the same workspace. On a match, the new snapshot's `nodes/*.jsonl` /
+`rels/*.jsonl` files are replaced with hard links to the prior snapshot's byte-identical files
+(`_hardlink_dedupe()`), falling back to a plain copy if the filesystem doesn't support hard
+links. This was chosen over a "pointer" manifest field (`duplicate_of: <other-snapshot>`)
+specifically so every snapshot directory stays fully self-contained and independently
+restorable/prunable: pruning the *original* snapshot a later one was hard-linked from has no
+effect on the later one (the OS keeps the shared blocks alive as long as any directory entry
+still references them), so `backup prune`'s retention math needs no special-casing for dedup at
+all. `manifest["deduplicated_from"]` still records which prior snapshot the content matched,
+for operator visibility — it just isn't load-bearing for restore.
+
+### `backup prune` — minimal daily/weekly retention
+
+`prune_workspace()` always keeps the single most recent snapshot regardless of
+`--keep-daily`/`--keep-weekly` (there must always be at least one restorable point), then keeps
+the most recent snapshot per calendar day up to `--keep-daily` distinct days, then the most
+recent snapshot per ISO week up to `--keep-weekly` additional distinct weeks, deleting
+everything else. `--dry-run` reports the same decision without deleting.
+
+### Scheduling — minimal, per the card's own instruction not to build a scheduler
+
+The card asks for a daily `campy backup create --all` wired into the platform service Campy
+already installs (`campy/cli/launchd.py` on macOS; "whatever the Linux equivalent is" in
+`campy/cli/install.py`). Reading `campy/cli/install.py`'s `DaemonSetup` confirms there is, in
+fact, no Linux equivalent today — `DaemonSetup.setup()` explicitly no-ops off of macOS
+(`"launchd only available on macOS ... Start manually: campy start"`); there is no systemd unit
+or cron entry this card could extend. Rather than inventing a new Linux service-management
+mechanism as a side effect of a backup card, B319 ships the `campy backup` commands themselves
+(schedulable by whatever mechanism a given install already uses — cron, systemd timer, launchd,
+a CI job) and leaves wiring an actual daily launchd/systemd entry as follow-up work once B319's
+commands exist to schedule. See the PR description for this discrepancy between the card and
+the code it described.
+
+### What this card does not do
+
+- No continuous point-in-time recovery — snapshot-based only. Real PITR needs a write-ahead
+  log Campy does not have.
+- No remote/offsite backup targets (S3 et al.) — local directory only, on the assumption that a
+  customer's existing backup tooling picks up `~/.campy/backups/` from there.
+- No encryption at rest.
+- No backup of `~/.campy/config.toml`, triggers, or the activity log — graph only.
+- No actual daily launchd/systemd job wired up yet (see "Scheduling" above) — the commands
+  exist; scheduling them is follow-up work.
+
 ## B315 — AuthContext: Principal Derivation and Threading
 
 ### Why

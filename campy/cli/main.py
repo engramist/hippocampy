@@ -31,6 +31,7 @@ from campy.cli.trigger import app as trigger_app
 from campy.cli.ask import app as ask_app
 from campy.cli.graph_io import export_graph_cmd, import_graph_cmd
 from campy.cli.graph_repair import graph_app
+from campy.cli.backup import app as backup_app, restore_cmd
 from campy.cli.notify_turn_cmd import app as notify_turn_app
 from campy.branding import PRODUCT_NAME, SHORT_NAME
 from campy.brain.brainstem.config import load_config
@@ -472,6 +473,8 @@ app.add_typer(notify_turn_app, name="notify-turn")
 app.command(name="export-graph")(export_graph_cmd)
 app.command(name="import-graph")(import_graph_cmd)
 app.add_typer(graph_app, name="graph")
+app.add_typer(backup_app, name="backup")
+app.command(name="restore")(restore_cmd)
 
 @tool_app.command("list")
 def tool_list():

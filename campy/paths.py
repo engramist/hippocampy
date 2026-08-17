@@ -120,6 +120,19 @@ def tables_dir() -> Path:
     return d
 
 
+def get_backup_root() -> Path:
+    """Return the root directory for `campy backup` snapshots, creating it.
+
+    B319. Layout is workspace-first (``<root>/<workspace_id>/<timestamp>/``)
+    so a single-database install (today: one implicit ``local`` workspace)
+    and a future B316 multi-workspace router both fall out of the same
+    directory walk with no rewrite — see ``campy/cli/backup.py``.
+    """
+    d = runtime_dir() / "backups"
+    d.mkdir(parents=True, exist_ok=True, mode=0o700)
+    return d
+
+
 def ensure_runtime_paths() -> None:
     runtime_dir()
     get_config_dir()
@@ -145,5 +158,6 @@ __all__ = [
     "get_legacy_launchd_plist_path",
     "get_bin_dir",
     "tables_dir",
+    "get_backup_root",
     "ensure_runtime_paths",
 ]
