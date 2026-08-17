@@ -691,7 +691,6 @@ async def test_dispatch_mcp_unknown_tool_direct():
 async def test_sse_context_injection_direct():
     """Test that _dispatch_mcp injects context for tools/call."""
     from web.server import _dispatch_mcp
-    from campy.brain.thalamus import tools as tools_mod
 
     received_params = {}
 
@@ -699,9 +698,21 @@ async def test_sse_context_injection_direct():
         received_params.update(params)
         return {"items": [], "count": 0}
 
-    # Patch handler
-    original = tools_mod.TOOL_HANDLERS.get("get_open_loops")
-    tools_mod.TOOL_HANDLERS["get_open_loops"] = spy_handler
+    # Patch handler. B325's route_tool_call() reads TOOL_HANDLERS via its own
+    # `campy.brain_daemon` binding, not via `tools_mod` — a handful of other
+    # test files (test_b68_passive_plans.py, test_b69_valence.py,
+    # test_explore_graph.py) evict "campy.brain.thalamus.tools" from
+    # sys.modules in teardown_module without restoring it, so a later fresh
+    # reimport of that module (whatever next re-imports it, `tools_mod` here
+    # included) can end up as a *different* TOOL_HANDLERS dict object than
+    # the one brain_daemon already holds a reference to — patching only
+    # `tools_mod.TOOL_HANDLERS` would then silently patch the wrong dict,
+    # invisible to route_tool_call, depending on unrelated test ordering.
+    # Patch through brain_daemon's own binding so this test asserts against
+    # the exact dict dispatch actually reads.
+    import campy.brain_daemon as _bd
+    original = _bd.TOOL_HANDLERS.get("get_open_loops")
+    _bd.TOOL_HANDLERS["get_open_loops"] = spy_handler
 
     try:
         await _dispatch_mcp(
@@ -713,4 +724,4 @@ async def test_sse_context_injection_direct():
         assert "token_limit" in received_params
         assert received_params["token_limit"] == 128000
     finally:
-        tools_mod.TOOL_HANDLERS["get_open_loops"] = original
+        _bd.TOOL_HANDLERS["get_open_loops"] = original
