@@ -1226,6 +1226,45 @@ NODE_TABLES = {
         last_seen_at   TIMESTAMP,
         PRIMARY KEY (worker_id)
     """,
+
+    # B317 — projected capability-graph facts (external platform's
+    # multi-hop conformance suite). Deliberately generic: one entity table
+    # + one rel table per predicate (see FACT_* below), rather than ten
+    # domain-specific node tables — the external ontology will change and
+    # Campy's schema should not churn with it.
+    #
+    # This is a DELIBERATELY SEPARATE subgraph from Campy's own memory
+    # graph (PROVENANCE_TABLES above): FactEntity/FACT_* carry their own
+    # copies of the provenance/supersession/authority columns rather than
+    # being folded into PROVENANCE_TABLES, CONTENT_HASH_TABLES, or the
+    # SUPERSEDES rel table. Two subgraphs, one engine, different authority
+    # contracts — see docs/ARCHITECTURE.md's B317 section. `authority` is
+    # always 'projected' here: every FactEntity/FACT_* row has an external
+    # owner by definition (see campy/brain/hippocampus/facts.py).
+    #
+    # entity_id is the SOURCE SYSTEM's stable domain identifier (e.g.
+    # "agent/claude-design", "service/servicesmcp#quote.verify"), never a
+    # Campy-minted one — that is the join key that makes cross-system
+    # traversal possible at all.
+    "FactEntity": """
+        entity_id     STRING,
+        entity_type   STRING,
+        label         STRING,
+        properties    STRING,
+        embedding     FLOAT[384],
+        embedding_model STRING,
+        embedding_dim INT64,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        authority            STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
+        created_at    TIMESTAMP,
+        PRIMARY KEY (entity_id)
+    """,
 }
 
 # ---------------------------------------------------------------------------
@@ -1411,7 +1450,43 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS SOLVED_BY ("
     "FROM Decision TO AgentWorker, FROM ActionItem TO AgentWorker, FROM Lesson TO AgentWorker, "
     "confidence DOUBLE, observed_at TIMESTAMP)",
+
+    # ------------------------------------------------------------------
+    # B317 — projected capability-graph facts. One rel table per
+    # predicate in the customer's starter relationship set, all
+    # FROM FactEntity TO FactEntity, prefixed FACT_ so they never collide
+    # with Campy's own memory rel tables (e.g. REQUIRES already exists as
+    # a Concept->Concept table above). Every edge carries the full LPG
+    # property set the customer asked for ("the edges need operational
+    # properties such as version, access mode, confidence, run ID and
+    # evidence") plus B312/B313's provenance/authority/supersession
+    # columns — see campy/brain/hippocampus/facts.py for the write path.
+    # ------------------------------------------------------------------
+    *[
+        f"CREATE REL TABLE IF NOT EXISTS FACT_{predicate} ("
+        "FROM FactEntity TO FactEntity, "
+        "version STRING, access_mode STRING, confidence DOUBLE, run_id STRING, "
+        "evidence_ref STRING, source STRING, source_version STRING, "
+        "observed_at TIMESTAMP, authority STRING, "
+        "superseded_by STRING, superseded_at TIMESTAMP, supersession_reason STRING)"
+        for predicate in (
+            "INVOKES", "REQUIRES", "IMPLEMENTS", "READS", "WRITES",
+            "CONSTRAINED_BY", "DEPLOYED_ON", "PRODUCED", "APPROVED_BY", "REUSES",
+        )
+    ],
 ]
+
+# B317 — the ten-predicate vocabulary ingest_facts() validates against,
+# and the FACT_<predicate> rel table each one maps to. Single source of
+# truth for both schema.py's REL_TABLES generation above and
+# facts.py/graph/queries/capability.py's read of the same mapping.
+FACT_PREDICATE_TABLES: dict[str, str] = {
+    predicate: f"FACT_{predicate}"
+    for predicate in (
+        "INVOKES", "REQUIRES", "IMPLEMENTS", "READS", "WRITES",
+        "CONSTRAINED_BY", "DEPLOYED_ON", "PRODUCED", "APPROVED_BY", "REUSES",
+    )
+}
 
 def get_relationship_types() -> list[str]:
     """Parse REL_TABLES to extract all relationship table names."""
@@ -1868,6 +1943,13 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         "Hypothesis",  # B88
         "Procedure",  # B194
         "Dataset",  # B249
+        "FactEntity",  # B317 — table_registry.py derives has_embedding=True from the DDL
+                       # regardless; build the real HNSW index too so that claim is never a
+                       # lie. Q5 (capability.reuse_candidates) itself uses a plain filtered
+                       # array_cosine_similarity scan (matching bundle_compiler.py's
+                       # convention, not QUERY_VECTOR_INDEX), so this index isn't on that
+                       # query's hot path today — it exists for consistency and any future
+                       # caller that does want KNN search over FactEntity.
     ]
     for table in embedding_tables:
         index_name = f"{table.lower()}_emb_idx"
