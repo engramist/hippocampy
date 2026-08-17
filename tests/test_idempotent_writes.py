@@ -341,18 +341,31 @@ async def test_upsert_lesson_source_differs_no_dedupe(db):
 
 @pytest.mark.asyncio
 async def test_upsert_lesson_workspace_differs_no_dedupe(db):
+    """B315: workspace identity for the content-hash discriminator comes
+    from `principal.workspace_id` — never from a `workspace_id` request
+    param (the forbidden-key guard now rejects that at the daemon
+    dispatch layer before this handler would ever see it; see
+    tests/test_auth_context.py). This test's B320 property — the same
+    text in two different workspaces must NOT dedupe together — still
+    holds, just exercised through the correct channel: two principals with
+    different `workspace_id`, not two request bodies."""
+    from campy.brain.auth import Principal
+
+    def _principal(workspace_id: str) -> Principal:
+        return Principal(
+            subject_id="test-subject", tenant_id="test-tenant",
+            workspace_id=workspace_id, scopes=frozenset({"memory.write"}),
+            client="claude-code", session_id=None, derived_from="test",
+        )
+
     text = "same text, different workspace, b320"
     r1 = await upsert_lesson(
-        {
-            "text": text, "domain": "b320-ws", "agent_source": "claude-code",
-            "workspace_id": "ws-alpha",
-        }, db, CONFIG,
+        {"text": text, "domain": "b320-ws", "agent_source": "claude-code"},
+        db, CONFIG, principal=_principal("ws-alpha"),
     )
     r2 = await upsert_lesson(
-        {
-            "text": text, "domain": "b320-ws", "agent_source": "claude-code",
-            "workspace_id": "ws-beta",
-        }, db, CONFIG,
+        {"text": text, "domain": "b320-ws", "agent_source": "claude-code"},
+        db, CONFIG, principal=_principal("ws-beta"),
     )
     assert r1["lesson_id"] != r2["lesson_id"]
 

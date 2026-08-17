@@ -32,12 +32,23 @@ _INDEX_METRIC = "cosine"
 # loop's lock — the exact stale-binding failure this table exists to
 # prevent. A dead or mismatched weakref means the entry is stale and gets
 # replaced.
-_write_locks: dict[int, tuple[weakref.ref, asyncio.Lock]] = {}
+#
+# B316: keyed on (id(loop), db_path) rather than id(loop) alone. With one
+# database the lock was correctly global — every write anywhere serialized
+# against every other write. With N per-workspace databases (WorkspaceRouter,
+# campy/brain/hippocampus/graph/router.py), a lock shared across all of them
+# would serialize every write across every tenant, destroying the entire
+# benefit of sharding. The db_path component of the key is the only change:
+# the weakref-to-loop staleness check above is preserved exactly, per
+# workspace, so a stale entry for one workspace's db_path is detected and
+# replaced the same way a stale entry ever was — just scoped to that
+# workspace's own lock instead of the one shared lock.
+_write_locks: dict[tuple[int, str], tuple[weakref.ref, asyncio.Lock]] = {}
 
 
-def _get_write_lock() -> asyncio.Lock:
+def _get_write_lock(db_path: str) -> asyncio.Lock:
     loop = asyncio.get_running_loop()
-    key = id(loop)
+    key = (id(loop), db_path)
     entry = _write_locks.get(key)
     if entry is not None:
         loop_ref, lock = entry
@@ -56,6 +67,11 @@ class KuzuClient:
         self.conn = kuzu.Connection(self.db)
         self.read_only = read_only
         self._fts_checked: bool | None = None
+        # B316: retained so _get_write_lock() can key the write lock per
+        # database, not just per event loop. See the comment above
+        # _write_locks for why a single shared lock stops being correct
+        # once more than one workspace database exists.
+        self.db_path = db_path
 
     def execute(self, query: str, params: dict = None):
         """
@@ -74,7 +90,7 @@ class KuzuClient:
         S3 fix: Kùzu I/O runs in a thread so it doesn't block the event loop
         while the lock is held.
         """
-        async with _get_write_lock():
+        async with _get_write_lock(self.db_path):
             return await asyncio.to_thread(self.execute, query, params)
 
     async def execute_read(self, query: str, params: dict = None):
@@ -130,7 +146,7 @@ class KuzuClient:
         indexes on next daemon startup via the `embedding_tables` loop in
         `campy/brain/hippocampus/schema.py`.
         """
-        async with _get_write_lock():
+        async with _get_write_lock(self.db_path):
             await asyncio.to_thread(self.drop_vector_index, table, index_name)
             await asyncio.to_thread(self.create_vector_index, table, property, index_name)
 
