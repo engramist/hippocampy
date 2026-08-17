@@ -2495,3 +2495,141 @@ the router, not a second handle) rather than calling `self.db.close()` directly 
 - Does not add per-workspace quotas, backup, or PITR.
 - Does not change how `workspace_id` is *derived* — that is B315's job and stays there; this
   card only consumes `principal.workspace_id`.
+
+## B321 — Cross-Session Continuity for an App
+
+**Positioning, stated first because it was misdiagnosed once already:** this card is
+additive to a customer platform's ADR-0050, never a substitute for it. ADR-0050 (real git
+branches per session, `vibe/<slug>-<session_id>`, a genuine merge base) answers "what changed
+in the files, and how do I reconcile it." B321 answers a different question — "what did an
+earlier session on this same App decide, try, and learn." A diff carries neither a decision
+nor its reason; this card exists because ADR-0050's own status is "cards 2-6 (shared ancestry,
+divergence reads, rebase) Proposed, unbuilt," and their own review names the gap directly:
+sessions on the same App today have "no visibility between concurrent sessions."
+
+**Campy provides no mutual exclusion, locking, or collision prevention of any kind — this
+card is purely advisory and pull-only.** A factual audit of the customer's live system (cited
+in backlog/B321.md) found the hazard the original card assumed — two sessions overwriting the
+same file — does not exist there: each session gets its own workspace directory, the shared
+root's read bit is stripped, and a Landlock fence confines each build subprocess to its own
+workspace, all verified in production. The actual gap is the opposite of collision: isolation.
+Nothing here claims a resource, gates a write, or warns about "in progress" work — the wording
+denylist enforced by `tests/test_app_continuity.py` (`do not`, `already claimed`, `in progress`,
+`owned by`, `locked`) exists specifically so an advisory section can never accidentally read
+like a guarantee it isn't.
+
+### The join key
+
+The unit of continuity is the **App**, not the session and not the file. Two new nullable
+`Session` columns, added via the existing `_MIGRATIONS` additive path (never redefining
+`Session`'s base DDL, matching B323's `Workspace.branch_name`/`active` precedent):
+
+| Column | Meaning |
+|---|---|
+| `external_app_id` | the platform's App id, e.g. `VG_portfolio-assistant` (`VG_<kebab-name>`) |
+| `external_session_id` | the platform's own session id, for correlation |
+
+Both are `NULL` on every pre-B321 row and on every local-Campy session going forward — local
+Campy has no App concept, and this card must not (and does not) change its behavior at all.
+"Iteration" has no identity of its own upstream (`iteration_id == session.id`), so continuity
+is modeled as **App → many Sessions**, ordered by `started_at`, never a separate Iteration
+concept. App-slug rename instability (a pre-lock rename mints a different `app_id` for what a
+human considers the same App) is a known, explicitly deferred hazard — nothing here reconciles
+it; a rename simply starts a new, disconnected continuity chain.
+
+### The continuity query — `app_continuity()`
+
+`campy/brain/thalamus/tools/context_tools.py::app_continuity(db, *, external_app_id,
+exclude_session, limit_sessions=5, since_days=30)`. `exclude_session` is a required
+keyword-only argument with no default — Python itself raises `TypeError` if a caller omits
+it, which is exactly the contract this card wants: a session must never see its own work
+reported back as "earlier work" (an agent that sees its own last turn described as history
+learns to ignore the whole section). Bounded on both axes — at most `limit_sessions` prior
+sessions, newest first, and a `since_days` floor on `started_at` — this is a briefing, not an
+archive dump.
+
+Per prior session, returns **decisions, constraints, lessons, and Plan outcomes** — never bare
+`Concept` rows (the card: "prefer lessons and decisions over raw concepts"). Each item carries
+B312 provenance (`source`, `source_version`, `observed_at`, `evidence_ref`) and B313
+`authority` (`authority_of()`, NULL-safe). The joins are all pre-existing relationship tables —
+`ESTABLISHED_IN` (Decision/Constraint → Session), `LEARNED` (Session → Lesson), `PLANNED_IN`
+(Plan → Session) — no new relationship tables were added; this card is a read path over facts
+the graph already captures.
+
+Six `NamedQuery` entries in `campy/brain/hippocampus/graph/queries/continuity.py` (B314's
+chokepoint — no raw Cypher in `context_tools.py`, `bundle_compiler.py`, or `capture.py`):
+`app_continuity.prior_sessions`, `.decisions_for_sessions`, `.constraints_for_sessions`,
+`.lessons_for_sessions`, `.plans_for_sessions` (the four fact queries each `UNWIND` a single
+`$session_ids` list rather than one round trip per session), and
+`.session_external_app_id` (the one-row lookup the bundle stage uses to decide whether to run
+the rest at all) plus `.set_session_external_ids` (the capture-side write, below).
+
+### Surfacing — `bundle_compiler._stage_app_continuity`
+
+A new Stage 7, following the file's existing `_stage_*` convention exactly, with one
+deliberate difference from every stage before it: **this is an exact-id join, not a similarity
+match** — the `0.30` distance floor (`_stage_exact_facts`, `_stage_semantic_context`, etc.)
+does not apply, because there is no query embedding involved at all, only `session_id →
+Session.external_app_id → app_continuity()`.
+
+Two B305/B318 conventions this stage follows precisely:
+
+- **Omit when empty, not present-and-empty.** No `external_app_id` on the calling session
+  (the common local-Campy case), or an `external_app_id` with no prior sessions in the window,
+  returns `None` from the stage function — the `"app_continuity"` key is simply absent from
+  the compiled bundle's `sections`, exactly like every other stage's "nothing matched" case.
+- **Fails open.** Any exception — a schema that predates this card's migration, a query
+  timeout, a malformed `db` — is caught and logged; the section is dropped, and the overall
+  `compile_bundle()` call never raises because of it (B318's contract; verified directly with
+  a `db` double whose `execute_read`/`execute_write` always raise).
+
+Wording (`_format_continuity_text`) is retrospective and advisory only, matching the card's
+worked example ("Session 3 days ago (`agent:build-worker`) — decided Postgres over Mongo for
+the task store; lesson: the Stripe webhook needs an idempotency key"): a relative-time phrase,
+an optional `(source)` parenthetical, then up to one decision highlight and one lesson
+highlight (falling back to a constraint or plan-outcome highlight only when neither exists).
+`tests/test_app_continuity.py::TestDenylistWording` asserts the generated scaffolding — not
+the underlying fact text, which callers control — never contains `do not`, `already claimed`,
+`in progress`, `owned by`, or `locked`, across every highlight-selection branch.
+
+### Capture-side wiring — which of the three options applies
+
+The card's Task 5 asks a client to pass `external_app_id`/`external_session_id` into a capture
+call and names three options in preference order. **Option 1 applies**: `capture.py`'s
+`notify_turn` reads both as ordinary keys off its `params` dict, exactly like `role` and
+`content`. This is deliberately not the `workspace_id` pattern — B315 forbids `workspace_id`
+from request params specifically because it is a *security boundary* (it selects which
+per-tenant database a request routes to, B316); an App id is not that. It is an opaque label
+the caller attaches to its own `Session` row, so it is fine as a normal tool-call parameter.
+The write goes through `app_continuity.set_session_external_ids`
+(`GraphGateway`/`NamedQuery`, not raw Cypher), and uses `COALESCE(s.external_app_id,
+$external_app_id)` rather than an unconditional `SET` — a later turn can fill in an App id an
+earlier turn omitted, but a value already recorded is never overwritten by a subsequent call
+that supplies a different or absent one.
+
+### Verified acceptance criteria
+
+`tests/test_app_continuity.py` (25 tests, real Kùzu via `KuzuClient` + `init_schema`, same
+pattern as `tests/test_idempotent_writes.py`) covers, directly: two sessions sharing an App —
+the second sees the first's decisions/lessons, never its own; `exclude_session` omitted raises
+`TypeError`; a different `external_app_id` sees nothing; `external_app_id` NULL behaves exactly
+as today (section absent, nothing errors); `limit_sessions` and `since_days` both measurably
+bound the result; the bundle section is absent — key missing, not empty — with no prior work;
+every returned item carries provenance and `authority`; a broken `db` fails the whole stage
+(and a full `compile_bundle()` call) open rather than raising; and two independent `KuzuClient`
+databases sharing an `external_app_id` string never leak into each other (the workspace
+isolation acceptance criterion — trivially true under B316's per-workspace routing, asserted
+directly rather than only by architectural argument).
+
+### What this card does not do
+
+- Does not detect, warn about, or prevent file collisions of any kind — there is no collision
+  to prevent on the platform this card targets (see the audit findings above).
+- Does not lock, lease, claim, or gate anything. Nothing here is enforceable; it is a briefing
+  an agent is free to ignore.
+- Does not implement, replace, or reimplement ADR-0050's git-native workspace seeding,
+  divergence reads, or rebase affordance.
+- Does not model Iteration as a concept separate from Session — upstream does not either.
+- Does not fix App-slug rename instability — recorded above as a known, deferred hazard.
+- Does not push or notify. Pull-only: surfaced the next time a session on the same App calls
+  `compile_context`/`ask` and a bundle gets compiled.
