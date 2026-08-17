@@ -5,6 +5,17 @@
 kuzu==0.11.3
 
 # Embeddings (384-dim — matches FLOAT[384] schema; changing requires full re-embedding)
+# NOT bumping: transformers (transitive, currently resolves to 4.57.6) has
+# several HIGH pip-audit findings whose fixes require transformers>=5.0.0
+# (two others have no fix at any version). sentence-transformers==3.3.1
+# pins `transformers<5.0.0,>=4.41.0` in its own metadata (confirmed via
+# PyPI JSON), and 4.57.6 is the newest 4.x release that exists on PyPI —
+# there is no patched 4.x to move to instead. A direct transformers>=5.0.0
+# pin is therefore impossible to satisfy alongside sentence-transformers
+# ==3.3.1 (hard pip resolution conflict), and bumping sentence-transformers
+# is explicitly out of scope here (breaks the 384-dim embedding pin above,
+# would require full re-embedding). Left unfixed; see commit message /
+# task report for the full reasoning.
 sentence-transformers==3.3.1
 
 # NLP / NER / dependency parsing (en_core_web_md required — sm has no dep parser)
@@ -24,7 +35,20 @@ openai==1.58.1
 boto3>=1.34.0
 
 # Web server (Memory Control Panel — M7)
-fastapi==0.115.6
+# fastapi bumped 0.115.6 -> 0.133.0 (security gate: starlette HIGH CVEs
+# PYSEC-2026-{161,248,249,1942,1941,2281,2280}, fixes require starlette
+# >=1.0.1..>=1.3.1). starlette is a transitive dep, not listed directly
+# below, but fastapi==0.115.6 pins it to <0.42.0 in its own metadata, so a
+# direct starlette override can't coexist with fastapi==0.115.6 (pip would
+# hit a hard resolution conflict). 0.133.0 is the first fastapi release
+# that drops the starlette upper bound entirely (0.132.0 still caps it at
+# <1.0.0) — smallest fastapi bump that unblocks the fix. No on_event/other
+# deprecated APIs used in web/server.py; full pytest + live-server smoke
+# test passed post-bump (see commit message).
+fastapi==0.133.0
+# Direct pin (transitive via fastapi) to satisfy the highest starlette CVE
+# fix floor (>=1.3.1) explicitly, per "pin all versions" policy above.
+starlette==1.6.0
 uvicorn==0.32.1
 
 # Config
@@ -51,6 +75,13 @@ opentelemetry-sdk>=1.28.0
 opentelemetry-exporter-otlp-proto-http>=1.28.0
 
 # Testing
-pytest==8.3.4
-pytest-asyncio==0.24.0
+# pytest bumped 8.3.4 -> 9.1.1 (security gate: PYSEC-2026-1845, HIGH, fix
+# is pytest>=9.0.3; 9.1.1 is the latest 9.x patch). pytest-asyncio==0.24.0
+# declares pytest<9,>=8.2 in its own metadata, so it must move too or pip
+# resolution fails outright; bumped to 1.4.0, the current stable release,
+# which declares pytest<10,>=8.4 (compatible; 1.3.0 was the first release
+# to support pytest 9, but 1.4.0 carries additional bug fixes). Full async
+# test suite (pytest-asyncio-marked tests) verified green post-bump.
+pytest==9.1.1
+pytest-asyncio==1.4.0
 pytest-mock>=3.14
