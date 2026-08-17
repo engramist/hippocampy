@@ -10,6 +10,9 @@ Pipeline stages:
 3. Graph structure (relationship traversals)
 4. Tabular data (if Dataset links exist)
 5. Summaries (wiki projection or LLM-generated)
+6. App continuity (B321 — earlier sessions of the same platform App;
+   exact-id join, not similarity, and omitted entirely when the calling
+   session has no `external_app_id`)
 """
 
 from __future__ import annotations
@@ -139,6 +142,9 @@ async def compile_bundle(
     4. Graph structure (relationship traversals)
     5. Tabular data (if 249 complete and include_tabular=True)
     6. Summaries (wiki projection, if available)
+    7. App continuity (B321 — earlier sessions of the same App, keyed off
+       `session_id`; requires `Session.external_app_id` to be set, so this
+       is a no-op for local Campy)
 
     Returns:
         ContextBundle with assembled and prioritized context
@@ -258,6 +264,19 @@ async def compile_bundle(
             sections.append(summaries_section)
             cumulative_tokens += summaries_section.token_estimate
             sources.extend(summaries_section.source_node_ids)
+
+    # Stage 7: App continuity (B321). Not budget-gated like the stages
+    # above — it's an exact-id join keyed off session_id, not a query
+    # embedding pass, so it's cheap regardless of how much budget the
+    # earlier stages already spent, and skipping it purely because the
+    # budget is nearly exhausted would silently drop the one section
+    # whose whole point is "don't start from nothing" continuity.
+    if cumulative_tokens < token_budget * 0.95:
+        continuity_section = await _stage_app_continuity(db, session_id)
+        if continuity_section and continuity_section.content:
+            sections.append(continuity_section)
+            cumulative_tokens += continuity_section.token_estimate
+            sources.extend(continuity_section.source_node_ids)
 
     truncated = cumulative_tokens >= token_budget * 0.95
 
@@ -770,4 +789,139 @@ async def _stage_summaries(
         )
     except Exception as e:
         _logger.warning("Error in _stage_summaries: %s", e)
+        return None
+
+
+def _relative_time_phrase(started_at) -> str:
+    """"3 days ago" / "today" from an ISO timestamp string or datetime,
+    for `_format_continuity_text`'s retrospective wording. Never raises —
+    an unparseable/missing value degrades to "earlier" rather than
+    breaking the whole section (B318 fail-open applies inside this
+    formatting helper too, not just around the query)."""
+    if not started_at:
+        return "earlier"
+    try:
+        from datetime import datetime, timezone
+
+        ts = started_at
+        if isinstance(ts, str):
+            ts = datetime.fromisoformat(ts)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        days = (datetime.now(timezone.utc) - ts).days
+        if days <= 0:
+            return "today"
+        if days == 1:
+            return "1 day ago"
+        return f"{days} days ago"
+    except Exception:
+        return "earlier"
+
+
+def _format_continuity_text(entry: dict) -> str:
+    """Retrospective, advisory wording for one prior session's "Earlier
+    work on this app" line — never imperative (B321). This scaffolding is
+    the only place the wording is generated, and it must never contain
+    "do not", "already claimed", "in progress", "owned by", or "locked" —
+    see tests/test_app_continuity.py's denylist test. Prefers decisions
+    and lessons over constraints/plan outcomes per the card ("a briefing,
+    not a term dump"), and degrades gracefully (never raises) when a
+    session has none of the above — bundle_compiler's caller already
+    filters out sessions with nothing at all, so this only has to handle
+    "some but not all four buckets populated".
+    """
+    when = _relative_time_phrase(entry.get("started_at"))
+
+    decisions = entry.get("decisions") or []
+    constraints = entry.get("constraints") or []
+    lessons = entry.get("lessons") or []
+    plans = entry.get("plans") or []
+
+    highlights: list[str] = []
+    if decisions:
+        highlights.append(f"decided {decisions[0]['text']}")
+    if lessons:
+        highlights.append(f"lesson: {lessons[0]['text']}")
+    if not highlights and constraints:
+        highlights.append(f"noted a constraint: {constraints[0]['text']}")
+    if not highlights and plans:
+        highlights.append(f"tried: {plans[0]['text']}")
+
+    body = "; ".join(highlights) if highlights else "recorded earlier activity on this app"
+
+    source = None
+    for bucket in (decisions, lessons, constraints, plans):
+        if bucket and bucket[0].get("source"):
+            source = bucket[0]["source"]
+            break
+
+    prefix = f"Session {when} (`{source}`)" if source else f"Session {when}"
+    return f"{prefix} — {body}"
+
+
+async def _stage_app_continuity(db, session_id: Optional[str]) -> Optional[BundleSection]:
+    """
+    Stage 7 (B321): earlier work on this platform App, surfaced across
+    prior sessions sharing the calling session's `Session.external_app_id`.
+
+    Unlike every sibling stage above, this is an **exact-id join**, not a
+    similarity match — the `0.30` distance floor those stages use does not
+    apply here (see backlog/B321.md). It is also the one stage whose whole
+    premise is "no App id, nothing to show": local Campy (the common case)
+    never sets `external_app_id`, so this returns `None` — not an empty
+    section — for every session outside the platform-evaluation scenario
+    this card targets. That distinction matters: an absent section key
+    means "not applicable"; a present-but-empty one would read as "checked
+    and found nothing", which is not true here.
+
+    Fails open (B318): any error — a missing column on an older schema
+    that hasn't run migrations yet, a query timeout, a malformed
+    `db` — is caught and logged, and the section is simply omitted. This
+    must never be the reason a whole recall fails.
+    """
+    try:
+        if not session_id or session_id == "unknown":
+            return None
+
+        from campy.brain.thalamus.tools.context_tools import _gateway, app_continuity
+
+        gw = _gateway(db)
+
+        rows = await gw.run("app_continuity.session_external_app_id", session_id=session_id)
+        external_app_id = rows[0].get("external_app_id") if rows else None
+        if not external_app_id:
+            return None
+
+        result = await app_continuity(
+            gw, external_app_id=external_app_id, exclude_session=session_id,
+        )
+        sessions = result.get("sessions") or []
+        if not sessions:
+            return None
+
+        content = []
+        node_ids = []
+        for entry in sessions:
+            content.append({
+                "session_id": entry["session_id"],
+                "external_session_id": entry.get("external_session_id"),
+                "started_at": entry.get("started_at"),
+                "text": _format_continuity_text(entry),
+                "decisions": entry["decisions"],
+                "constraints": entry["constraints"],
+                "lessons": entry["lessons"],
+                "plans": entry["plans"],
+            })
+            node_ids.append(entry["session_id"])
+
+        token_estimate = len(content) * 80
+
+        return BundleSection(
+            section_type="app_continuity",
+            content=content,
+            token_estimate=token_estimate,
+            source_node_ids=node_ids,
+        )
+    except Exception as e:
+        _logger.warning("Error in _stage_app_continuity: %s", e)
         return None
