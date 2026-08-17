@@ -665,3 +665,152 @@ async def compile_card_context(params: dict, db, config: dict) -> dict:
         "max_hops": max_hops,
         "dependency_traversal_failed": dependency_failed,
     }
+
+
+def _gateway(db):
+    """B314/B321: wrap `db` in a `GraphGateway` bound to the shared
+    registry, or pass a `GraphGateway` through unchanged. Same pattern as
+    `lessons.py`'s private helper of the same name — duplicated rather
+    than imported, matching this codebase's existing per-module
+    convention (see backup.py, capability.py, lessons.py) rather than
+    introducing a new shared-helper module for a four-line function.
+    """
+    from campy.brain.hippocampus.graph.gateway import GraphGateway
+    from campy.brain.hippocampus.graph.queries import REGISTRY
+
+    if isinstance(db, GraphGateway):
+        return db
+    return GraphGateway(db, REGISTRY)
+
+
+def _continuity_item(row: dict) -> dict:
+    """Shape one Decision/Constraint/Lesson/Plan row into a B312-provenanced,
+    B313-authority-carrying item for `app_continuity()`'s output. `text`
+    covers both `text_raw`-bearing tables and Plan (aliased to `text` as
+    `p.goal` in the query itself, so this is just a passthrough)."""
+    from campy.brain.hippocampus.provenance import authority_of
+
+    observed_at = row.get("observed_at")
+    item = {
+        "id": row.get("id"),
+        "text": row.get("text") or "",
+        "source": row.get("source"),
+        "source_version": row.get("source_version"),
+        "observed_at": observed_at.isoformat() if hasattr(observed_at, "isoformat") else observed_at,
+        "evidence_ref": row.get("evidence_ref"),
+        "authority": authority_of(row),
+    }
+    if "status" in row:
+        item["status"] = row.get("status")
+    if "valence" in row:
+        item["valence"] = row.get("valence")
+    return item
+
+
+async def app_continuity(
+    db,
+    *,
+    external_app_id: str,
+    exclude_session: str,
+    limit_sessions: int = 5,
+    since_days: int = 30,
+) -> dict:
+    """B321: what earlier sessions of this App decided, tried, and learned.
+
+    The unit of continuity is the App (`Session.external_app_id`), not the
+    session and not the file — see backlog/B321.md's "the join key, and
+    its one weakness". This is a pull-only, advisory briefing, never a
+    lock or a collision check: Campy has nothing to say about whether two
+    sessions can safely write the same file at the same time, only about
+    what an earlier session on the same App decided, tried, and learned.
+
+    `exclude_session` is a required keyword-only argument on purpose —
+    Python itself raises `TypeError` if a caller omits it, which is
+    exactly the contract this card wants: a session must never see its
+    own work reported back as "earlier work" (that's noise that teaches
+    agents to skip the section entirely).
+
+    Bounded by `limit_sessions` (at most that many prior sessions,
+    newest first) and `since_days` (a floor on `Session.started_at`) —
+    this is a briefing, not an archive dump. Decisions/constraints/lessons
+    are preferred over raw concepts (per the card); Plan rows are included
+    too, as outcomes ("what was tried"), each carrying B312 provenance
+    (source/source_version/observed_at/evidence_ref) and B313 `authority`.
+
+    Returns `{"external_app_id", "since_days", "limit_sessions",
+    "sessions": [...]}`, newest session first. `sessions` is `[]` (never
+    absent — the empty-vs-absent distinction is the bundle_compiler
+    stage's job, not this function's) when the App has no prior sessions,
+    when `external_app_id` is falsy, or when nothing in the window
+    exists. Never raises for "no results" — only truly unexpected errors
+    (a broken query, a database that refuses the connection) propagate,
+    matching every other read-side tool handler in this package; the
+    B318 fail-open behavior (dropping the section from a bundle without
+    failing the whole recall) is implemented one layer up, in
+    `bundle_compiler._stage_app_continuity`.
+    """
+    if not external_app_id:
+        return {
+            "external_app_id": external_app_id,
+            "since_days": since_days,
+            "limit_sessions": limit_sessions,
+            "sessions": [],
+        }
+
+    from datetime import datetime, timedelta, timezone
+
+    gw = _gateway(db)
+
+    since_iso = (datetime.now(timezone.utc) - timedelta(days=int(since_days))).isoformat()
+
+    prior = await gw.run(
+        "app_continuity.prior_sessions",
+        external_app_id=external_app_id,
+        exclude_session=exclude_session,
+        since_iso=since_iso,
+        limit_sessions=int(limit_sessions),
+    )
+
+    result = {
+        "external_app_id": external_app_id,
+        "since_days": since_days,
+        "limit_sessions": limit_sessions,
+        "sessions": [],
+    }
+    if not prior:
+        return result
+
+    session_ids = [row["session_id"] for row in prior]
+
+    decisions = await gw.run("app_continuity.decisions_for_sessions", session_ids=session_ids)
+    constraints = await gw.run("app_continuity.constraints_for_sessions", session_ids=session_ids)
+    lessons = await gw.run("app_continuity.lessons_for_sessions", session_ids=session_ids)
+    plans = await gw.run("app_continuity.plans_for_sessions", session_ids=session_ids)
+
+    def _bucket(rows: list[dict]) -> dict:
+        out: dict = {}
+        for row in rows:
+            out.setdefault(row["session_id"], []).append(row)
+        return out
+
+    decisions_by_session = _bucket(decisions)
+    constraints_by_session = _bucket(constraints)
+    lessons_by_session = _bucket(lessons)
+    plans_by_session = _bucket(plans)
+
+    sessions_out = []
+    for row in prior:
+        sid = row["session_id"]
+        started_at = row.get("started_at")
+        sessions_out.append({
+            "session_id": sid,
+            "external_session_id": row.get("external_session_id"),
+            "started_at": started_at.isoformat() if hasattr(started_at, "isoformat") else started_at,
+            "decisions": [_continuity_item(r) for r in decisions_by_session.get(sid, [])],
+            "constraints": [_continuity_item(r) for r in constraints_by_session.get(sid, [])],
+            "lessons": [_continuity_item(r) for r in lessons_by_session.get(sid, [])],
+            "plans": [_continuity_item(r) for r in plans_by_session.get(sid, [])],
+        })
+
+    result["sessions"] = sessions_out
+    return result

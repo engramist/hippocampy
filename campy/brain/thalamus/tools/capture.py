@@ -134,6 +134,16 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
     idempotency_key = (params.get("idempotency_key") or "").strip() or None
     workspace_id = principal.workspace_id if principal is not None else "local"
 
+    # B321: the platform's App id/session id, for cross-session continuity
+    # (app_continuity() / bundle_compiler._stage_app_continuity). Unlike
+    # workspace_id above, an App id is NOT a security boundary — B315
+    # forbids workspace_id from request params specifically because it
+    # controls *which database* a request routes to; external_app_id is
+    # just an opaque label the caller attaches to its own Session row, so
+    # it is fine as ordinary tool input (see backlog/B321.md Task 5).
+    external_app_id = (params.get("external_app_id") or "").strip() or None
+    external_session_id = (params.get("external_session_id") or "").strip() or None
+
     # B312: provenance identifier for any Tier-1 facts this turn causes to be
     # written (passive plan detection, outcome-sense lessons). B315: when a
     # principal has been threaded in, it is the authoritative identity for
@@ -203,6 +213,26 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
             )
         except Exception:
             pass
+
+    # B321: best-effort — never blocks capture, never overwrites a value
+    # already recorded from an earlier turn (see the NamedQuery's
+    # COALESCE). Routed through GraphGateway/NamedQuery (B314), not raw
+    # Cypher here, per the card.
+    if (external_app_id or external_session_id) and session_id != "unknown":
+        try:
+            from .context_tools import _gateway
+
+            await _gateway(db).run(
+                "app_continuity.set_session_external_ids",
+                session_id=session_id,
+                external_app_id=external_app_id,
+                external_session_id=external_session_id,
+            )
+        except Exception:
+            _logger.exception(
+                "B321: failed to set external_app_id/external_session_id for session %s",
+                session_id,
+            )
 
     # B298: upsert semantics for piggybacked Claude auto-memory. The hook sends
     # a stable source_memory_key (hash of the memory's `name:` frontmatter) and

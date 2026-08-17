@@ -1829,6 +1829,16 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
             (table, "content_hash", "STRING")
             for table in CONTENT_HASH_TABLES
         ],
+
+        # B321: cross-session continuity for an App. Both nullable — local
+        # Campy (no App concept) writes neither column and every existing
+        # NULL-valued row is unaffected; only sessions whose capture path
+        # supplies an external App id (e.g. the VibeGuide platform's
+        # `VG_<kebab-name>`) ever populate them. See app_continuity() in
+        # campy/brain/thalamus/tools/context_tools.py and
+        # docs/ARCHITECTURE.md's B321 section for the full contract.
+        ("Session", "external_app_id", "STRING"),
+        ("Session", "external_session_id", "STRING"),
     ]
     def _column_exists(table: str, col: str) -> bool:
         """Check whether a column already exists via table_info, avoiding
