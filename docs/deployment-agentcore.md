@@ -2,7 +2,9 @@
 
 **Status: identity propagation resolved 2026-08-16 (open item 1, below); target-type mechanics
 (open item 2) still pending the platform team.** This document records what B325 established,
-the customer's answer to the identity-propagation question, and what remains open.
+an evaluating platform's answer to the identity-propagation question, and what remains open.
+Specifics that identify the platform have been generalized below; the technical reasoning is
+unchanged.
 
 ## What B325 built
 
@@ -21,20 +23,19 @@ see `web/server.py`, wired into `campy/brain_daemon.py::_start_web_server`. B325
   and (once B316 lands) workspace routing apply identically on every transport — no separate
   code path to drift.
 
-## The actual deployment topology (ADR-0031)
+## The actual deployment topology
 
 The customer's architecture review (2026-08-15) established that Campy is **not** registered as
-a direct MCP-server Gateway target. Per **ADR-0031 decision #3**: *"Targets are Lambdas
-wrapping ecosystem adapters — Layer 6/5 adapter code is reused server-side as the Lambda
-implementation. Adapters are never reimplemented per-gateway."* Their single registered Gateway
-target is `target_configuration.mcp.lambda` (`targetType: LAMBDA`). No MCP-server target is
-registered anywhere.
+a direct MCP-server Gateway target. Their governing architecture decision: targets are Lambdas
+wrapping ecosystem adapters — the same adapter code is reused server-side as the Lambda
+implementation, and adapters are never reimplemented per-gateway. Their single registered
+Gateway target is a Lambda target. No MCP-server target is registered anywhere.
 
 This is a **policy** decision, not a technical limitation — AWS Bedrock AgentCore Gateway
-supports an `mcp.mcp_server` target type, and the provider's own escape hatch is to cite an ADR
-(Gate check #8, `agent_harness_schema.py:35`, `_ADR_REQUIRED_TYPES`: a `harness.json` wiring a
-`remote_mcp` tool without a cited ADR is a HIGH finding). Both paths are legitimate; the
-platform picked Lambda-fronted.
+supports an `mcp.mcp_server` target type, and the provider's own escape hatch is to cite an
+approved architecture decision (their own automated review gate treats a `remote_mcp` tool
+wired without one as a HIGH finding). Both paths are legitimate; the platform picked
+Lambda-fronted.
 
 ```
 AgentCore agent → Gateway (AWS_IAM) → Lambda (thin adapter) → Campy HTTP MCP surface
@@ -42,9 +43,9 @@ AgentCore agent → Gateway (AWS_IAM) → Lambda (thin adapter) → Campy HTTP M
 
 The Lambda is a **thin proxy**: it receives the tool name in
 `context.client_context.custom["bedrockAgentCoreToolName"]` plus tool arguments, and forwards
-both to Campy's `/mcp` endpoint. **The Lambda must not reimplement tool logic** — ADR-0031
-forbids exactly that; Campy's existing `TOOL_HANDLERS` is the adapter code being reused, per the
-ADR's own framing.
+both to Campy's `/mcp` endpoint. **The Lambda must not reimplement tool logic** — their
+architecture decision forbids exactly that; Campy's existing `TOOL_HANDLERS` is the adapter code
+being reused, per that decision's own framing.
 
 Why Campy's HTTP surface is the prerequisite (not an alternative) for this topology, not just
 one option among several: **Kùzu is single-process-writer.** A Lambda cannot open the database
@@ -65,25 +66,23 @@ wasted work under the Lambda topology above:
 
 ## Open item 1 — RESOLVED 2026-08-16: identity propagation is now required by their own policy
 
-Original finding: the customer's Gateway invoked every target with its own service role
-(`gateway_iam_role {}`); `metadata_configuration` was never set; ADR-0031 accepted this as a
+Original finding: the customer's Gateway invoked every target with its own service role, with
+no per-caller metadata configured; their governing architecture decision accepted this as a
 known risk. We asked whether `caller_iam_credentials` or `metadata_configuration` could be
-enabled for a Campy target. Their answer, quoted in full because it is a policy decision other
+enabled for a Campy target. Their answer, summarized because it is a policy decision other
 cards depend on:
 
-> Decided and codified 2026-08-16 (ADR-0031 amendment, merged, PR #851): every new gateway
-> target gets `metadata_configuration` by default — session/workspace attributes travel as
-> trusted transport metadata, never only in the request body — and any target holding
-> per-tenant data additionally requires `caller_iam_credentials`, so the upstream call is
-> signed as the real caller. A Campy target would be per-tenant by definition, so it gets both.
-> The choice is recorded per target through a required `tenancy_decision` variable in our
-> lambda-target Terraform module — a target without an explicit tenancy statement won't
-> register.
->
-> The accepted-risk clause in ADR-0031 is amended too: it now explicitly ends at the second
-> target. The original acceptance was scoped to the single shared read-only Airtable target,
-> which is grandfathered by name. Any second target must declare its tenancy posture; the old
-> acceptance does not carry over.
+- Decided and codified 2026-08-16: every new gateway target gets `metadata_configuration` by
+  default — session/workspace attributes travel as trusted transport metadata, never only in
+  the request body — and any target holding per-tenant data additionally requires
+  `caller_iam_credentials`, so the upstream call is signed as the real caller. A Campy target
+  would be per-tenant by definition, so it gets both. The choice is recorded per target through
+  a required tenancy-declaration variable in their infrastructure-as-code module for gateway
+  targets — a target without an explicit tenancy statement won't register.
+- The accepted-risk clause in their earlier decision is amended too: it now explicitly ends at
+  the second target. The original acceptance was scoped to a single pre-existing, grandfathered
+  read-only target. Any second target must declare its tenancy posture; the old acceptance does
+  not carry over.
 
 **Consequence for this repo:** if/when a Campy Gateway target is ever registered, it will
 receive both `caller_iam_credentials` and `metadata_configuration` by the platform's own
@@ -93,29 +92,21 @@ the SigV4 identity `IAMPrincipalResolver` verifies is the *real* calling agent's
 Gateway's own role.
 
 **The signed-token fallback described in the previous version of this section is explicitly
-rejected — do not build it.** Their reasoning, also quoted:
-
-> Don't build the interim token. The real fix is pre-decided policy plus provider-supported
-> Terraform config, not new engineering — and a bespoke minted-token plane would be a second
-> auth mechanism of exactly the "per-agent side-channel" shape our standards reject.
+rejected — do not build it.** Their reasoning, summarized: the real fix is pre-decided policy
+plus provider-supported infrastructure config, not new engineering — a bespoke minted-token
+plane would be a second auth mechanism of exactly the "per-agent side-channel" shape their
+standards reject.
 
 This is worth internalizing beyond this one document: a **workaround for someone else's
 platform gap is itself a new side-channel**, and the fix belongs in the platform's own
 governed config surface, not in Campy. No follow-up card for the token resolver exists or
 should be filed.
 
-**Important — this is not evaluation approval.** Their own caution, quoted so it isn't lost in
-the good news above:
-
-> These are policy answers about how any second target must be wired — not a green light for a
-> Campy target. Our evaluation posture on Campy stands: reject-as-shipped, conditional on the
-> six items we sent, the first of which (independently auditable source — your repo URL still
-> 404s for us) is unmet. The gateway plumbing is the easy part; the conditions are the gate.
-
-As of this writing, condition #1 (repo access) is the active blocker and is unrelated to
-anything in this document — it requires the repo owner to grant read access or change
-visibility. See the evaluation-response cards (B321/B324/B325's "customer evaluation" notes) for
-the full six-condition list.
+**Important — this is not evaluation approval.** Their own caution, summarized so it isn't lost
+in the good news above: these are policy answers about how any second target must be wired, not
+a green light for a Campy target specifically. Their evaluation posture on Campy stands as of
+this writing — pending resolution of the conditions they raised, independently auditable source
+access being the first. The gateway plumbing is the easy part; the conditions are the gate.
 
 ## Open item 2 — the Gateway target-type question is unresolved by definition
 
