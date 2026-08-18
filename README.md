@@ -170,6 +170,65 @@ not touch.
 
 Python 3.12 or 3.13, Kùzu 0.11.3 (installed automatically as a dependency).
 
+## Cloud / Multi-Tenant Deployment (AWS)
+
+Everything above is the default: local-first, embedded, single-user. Campy can
+also run as a persistent service inside your own AWS account, serving multiple
+agents/tenants over HTTP instead of a local Unix socket — the same
+`TOOL_HANDLERS` and Gated Consolidation Loop, with a few things added
+specifically for that topology:
+
+- **Streamable-HTTP MCP transport** (`POST /mcp`, MCP spec 2025-03-26)
+  alongside the existing local Unix-socket transport — both now dispatch
+  through the same `route_tool_call()` chokepoint, so auth and workspace
+  routing apply identically regardless of which transport a request came in
+  on. Any MCP-speaking agent framework can talk to it — AWS Bedrock
+  AgentCore, Strands, LangGraph, CrewAI, not just Claude-family clients.
+- **IAM-based identity.** `IAMPrincipalResolver` verifies a SigV4-signed
+  request by replaying it against AWS STS `GetCallerIdentity` and maps the
+  caller to a `Principal` — no separate API keys or tokens for Campy to
+  store or rotate. A **bind guard** makes it a hard startup failure to bind
+  to any non-loopback address while auth is off, so a misconfigured deploy
+  can't silently expose memory unauthenticated.
+- **Per-workspace database isolation.** `WorkspaceRouter` opens one physical
+  Kùzu database per workspace/tenant rather than sharing a database with
+  row-level filtering — with hundreds of existing Cypher call sites, physical
+  separation is the isolation boundary that doesn't depend on every query
+  remembering a predicate.
+- **AWS Bedrock as an LLM provider**, alongside the default local Ollama —
+  `BedrockLLMClient` speaks Bedrock's Converse API so synthesis (`ask`,
+  consolidation, lesson synthesis) works from inside an AWS account with no
+  local model server reachable, using whatever models and guardrails your
+  Bedrock account is already governed by:
+
+  ```toml
+  [llm]
+  provider = "bedrock"
+  model    = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"   # or any Bedrock model id
+  region   = "us-east-1"   # optional; falls back to AWS_REGION / boto3 default
+  ```
+
+  Auth uses boto3's default credential chain (task role in deployment, local
+  profile/SSO otherwise) — the same IAM identity that scopes the workspace
+  authorizes the model call.
+- **Fail-open by design.** A Campy outage degrades an agent's context rather
+  than blocking it — every read/write path this topology depends on is
+  wrapped to fail open, not raise into the caller.
+
+Because Kùzu is single-process-writer, nothing can open the database file
+directly from a stateless compute layer (e.g. a Lambda) — callers proxy to
+this long-running daemon process over the HTTP transport above instead of
+opening the database themselves.
+
+This is new, actively-evolving surface — see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (Deployment Model, and the
+B312-B326 cards for the full identity/workspace/provenance design) and
+[docs/deployment-agentcore.md](docs/deployment-agentcore.md) for a concrete
+Gateway/Lambda topology, including what's still open pending a platform
+team's own IAM/networking decisions. None of it changes the default
+single-user path above — local install with no configuration remains fully
+private and untouched by any of this.
+
 ## Status & Contributing
 
 Alpha. Every PR runs through an automated security gate (CodeQL, Semgrep,
