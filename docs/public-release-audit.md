@@ -1,8 +1,8 @@
 # Public Release Audit Manifest
 
-**Last Run:** 2026-05-11  
-**Release Mode:** Not yet released  
-**Status:** Local audit and distribution checks pass
+**Last Run:** 2026-08-18 (B240)
+**Release Mode:** Not yet released
+**Status:** Local audit and distribution checks pass; package is not yet published to PyPI (see "One-Click Install Gate" below)
 
 ## Scope
 
@@ -139,3 +139,28 @@ Items requiring patent attorney approval before public release:
 
 **Last Updated:** 2026-05-11  
 **Responsible:** DShelton (Engineering)
+
+## One-Click Install Gate (B240, 2026-08-18)
+
+This section records the final one-click-install release-gate status on top of
+the audit above; it does not change any finding, decision, or the
+patent-pending language elsewhere in this document — those remain accurate
+and unchanged.
+
+- Re-ran `bash scripts/audit_public_release.sh --release` against a freshly
+  built `dist/` (`python -m build --wheel --sdist`, `python -m twine check
+  dist/*` both `PASSED`): **`AUDIT PASSED: No high-risk patterns detected`**,
+  0 blocked patterns, 0 high-risk artifacts, wheel and sdist both reported
+  clean.
+- This does **not** mean the package is public. `hippocampy` remains
+  unpublished on PyPI (`pip index versions hippocampy` → no matching
+  distribution). The audit validates that *if* published, the artifacts
+  contain no private data — it does not itself publish anything, and
+  publication is a separate, not-yet-taken step.
+- Full go/no-go decision record, supported platforms, and the two
+  specific unmet B236 acceptance criteria this depends on:
+  [`docs/one-click-install-release-gate.md`](one-click-install-release-gate.md).
+- Patent-pending language (this document's "Patent & Proprietary
+  Documentation" section, `PATENTS.md`, and README's footer) was reviewed
+  as part of this pass and left unchanged — still accurate, still marked
+  private/counsel-review where it was before.
