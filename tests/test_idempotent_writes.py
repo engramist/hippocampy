@@ -341,17 +341,24 @@ async def test_upsert_lesson_source_differs_no_dedupe(db):
 
 @pytest.mark.asyncio
 async def test_upsert_lesson_workspace_differs_no_dedupe(db):
+    """B315: the B320 request-param key for this was renamed `workspace_id`
+    -> `dedupe_workspace_id` (see lessons.py's upsert_lesson docstring) —
+    `_dispatch`'s forbidden-key guard now rejects plain `workspace_id`
+    outright, since that name is reserved for the transport-derived
+    tenant-isolation identifier. Direct calls (as here, bypassing
+    `_dispatch`) still control the content-hash workspace discriminator,
+    just under the new name."""
     text = "same text, different workspace, b320"
     r1 = await upsert_lesson(
         {
             "text": text, "domain": "b320-ws", "agent_source": "claude-code",
-            "workspace_id": "ws-alpha",
+            "dedupe_workspace_id": "ws-alpha",
         }, db, CONFIG,
     )
     r2 = await upsert_lesson(
         {
             "text": text, "domain": "b320-ws", "agent_source": "claude-code",
-            "workspace_id": "ws-beta",
+            "dedupe_workspace_id": "ws-beta",
         }, db, CONFIG,
     )
     assert r1["lesson_id"] != r2["lesson_id"]

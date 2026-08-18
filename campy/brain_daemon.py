@@ -16,6 +16,7 @@ Concurrency: single asyncio event loop, asyncio.Lock for all Kùzu writes.
 """
 
 import asyncio
+import inspect
 import json
 import logging
 import os
@@ -27,6 +28,12 @@ _logger = logging.getLogger(__name__)
 
 import uvicorn
 
+from campy.brain.auth import (
+    LocalSingleUserResolver,
+    Principal,
+    PrincipalResolver,
+    TransportContext,
+)
 from campy.brain.brainstem.config import load_config
 from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 from campy.brain.hippocampus.graph import embeddings as emb
@@ -43,6 +50,45 @@ DB_PATH     = get_database_path()
 # D3 fix: package-relative seed path — GistSeedExamples.md lives alongside
 # the repo, not in a hardcoded OneDrive path that only works on DJ's machine.
 SEED_PATH   = Path(__file__).parent / "InvertorsDocs" / "GistSeedExamples.md"
+
+# ---------------------------------------------------------------------------
+# B315 — AuthContext: principal derivation and threading
+#
+# `_FORBIDDEN_PARAM_KEYS` — belt-and-braces confused-deputy guard. None of
+# these may ever arrive as a JSON-RPC request param: tenant/workspace/
+# subject identity is derived from the transport credential (see
+# `TransportContext` / `PrincipalResolver` in campy/brain/auth.py and the
+# non-negotiable rule in docs/ecosystem-rules.md), never from a request
+# body an agent controls. `_dispatch` rejects any request whose `params`
+# contains one of these with JSON-RPC -32602 before a handler ever sees
+# it. (B320's Tier-1 write helpers previously accepted a client-supplied
+# `workspace_id` request param as a content-hash dedup discriminator —
+# see capture.py/lessons.py's `dedupe_workspace_id`. That legitimate use
+# was renamed off `workspace_id` as part of this card specifically so it
+# doesn't collide with this guard; see those modules' docstrings.)
+_FORBIDDEN_PARAM_KEYS = frozenset({
+    "tenant_id", "workspace_id", "subject_id", "principal", "scopes",
+})
+
+# Signature-inspection set for incremental `principal` adoption (Task 3).
+# Computed once at import time — TOOL_HANDLERS is fixed at import time too,
+# and this is a `frozenset`-shaped decision, not something that needs to be
+# recomputed per request. A handler opts in by adding `*, principal:
+# Principal` to its signature (see capture.py's notify_turn and
+# lessons.py's upsert_lesson, the two converted by this card).
+#
+# Deliberate tradeoff: this is slightly implicit — a handler's
+# participation is discovered by reflection rather than declared anywhere
+# else — in exchange for not rewriting ~40 handler signatures in a single
+# commit. The end state is mandatory: `scripts/check_principal_ratchet.py`
+# (wired into `make check-principal` / CI) enforces that the count of
+# handlers WITHOUT `principal` only ever goes down; once it reaches zero,
+# this inspection branch should be deleted and `principal` should become a
+# normal required parameter on every handler, not an opt-in one.
+_WANTS_PRINCIPAL = {
+    name for name, fn in TOOL_HANDLERS.items()
+    if "principal" in inspect.signature(fn).parameters
+}
 
 
 def _socket_path() -> Path:
@@ -69,6 +115,13 @@ class BrainDaemon:
         self._loop_queue: asyncio.Queue = asyncio.Queue()
         self._stale_projects: set[str] = set()
         self._last_file_regen: str | None = None
+        # B315: local mode's resolver — always yields a real Principal
+        # (tenant "local", workspace "local", all scopes), never None. See
+        # campy/brain/auth.py's module docstring for why local mode is
+        # framed as "single-tenant cloud with auth stubbed" rather than a
+        # branch handlers have to special-case.
+        self._principal_resolver: PrincipalResolver = LocalSingleUserResolver()
+        self._default_principal: Principal | None = None  # lazy cache, see _get_default_principal()
 
     # ------------------------------------------------------------------
     # Startup
@@ -193,6 +246,20 @@ class BrainDaemon:
     async def _handle_connection(self, reader: asyncio.StreamReader,
                                   writer: asyncio.StreamWriter):
         """Handle a single adapter connection. Reads newline-delimited JSON-RPC 2.0."""
+        # B315: the TransportContext — and the Principal resolved from it —
+        # are built HERE, before a single byte of the request body has been
+        # read, let alone parsed. That ordering is structural, not a style
+        # choice: TransportContext (campy/brain/auth.py) has no field a
+        # request body could populate, so a Principal derived from it
+        # cannot carry tenant/workspace identity an agent asked for in its
+        # own params, even by a future bug that tries to thread one
+        # through. One Principal is resolved per connection and reused for
+        # every request on it — if you are about to "just read
+        # workspace_id off params for convenience", that is exactly the
+        # confused-deputy shortcut this ordering exists to make
+        # impossible; see docs/ecosystem-rules.md's B315 entry instead.
+        transport_ctx = TransportContext()
+        principal = await self._principal_resolver.resolve(transport_ctx)
         try:
             while True:
                 line = await reader.readline()
@@ -200,7 +267,7 @@ class BrainDaemon:
                     break
                 try:
                     request = json.loads(line)
-                    response = await self._dispatch(request)
+                    response = await self._dispatch(request, principal)
                     writer.write((json.dumps(response) + "\n").encode())
                     await writer.drain()
                 except json.JSONDecodeError:
@@ -214,11 +281,75 @@ class BrainDaemon:
             writer.close()
             await writer.wait_closed()
 
-    async def _dispatch(self, request: dict) -> dict:
-        """Route JSON-RPC method calls to tool handlers in campy/brain/thalamus/tools.py."""
+    async def _get_default_principal(self) -> Principal:
+        """Fallback principal for `_dispatch` calls made without one already
+        resolved (e.g. any caller that hasn't gone through
+        `_handle_connection` — most directly, tests that construct a
+        `BrainDaemon` and call `_dispatch()` straight with one argument, a
+        pattern that predates this card and is worth keeping working).
+
+        Resolves once via `self._principal_resolver` (defensively
+        constructed here too, via `getattr`, for the same reason —
+        `BrainDaemon.__new__`-based test doubles that skip `__init__`
+        wouldn't otherwise have one) and caches the result; local mode's
+        `LocalSingleUserResolver` is stateless per-connection anyway, so
+        there is nothing connection-specific being reused across calls.
+        """
+        resolver = getattr(self, "_principal_resolver", None)
+        if resolver is None:
+            resolver = LocalSingleUserResolver()
+            self._principal_resolver = resolver
+        principal = getattr(self, "_default_principal", None)
+        if principal is None:
+            principal = await resolver.resolve(TransportContext())
+            self._default_principal = principal
+        return principal
+
+    async def _dispatch(self, request: dict, principal: Principal | None = None) -> dict:
+        """Route JSON-RPC method calls to tool handlers in campy/brain/thalamus/tools.py.
+
+        B315: `principal` is normally the one `_handle_connection` already
+        resolved for this connection (from a `TransportContext` built
+        before the request body was parsed — see that method). It defaults
+        to `None` here, with a lazily-resolved fallback
+        (`_get_default_principal`), purely so this method keeps its
+        existing one-argument call shape for callers that invoke it
+        directly rather than through the IPC server — local mode's
+        principal is never actually `None` by the time a handler sees it.
+        """
         method = request.get("method", "")
-        params = request.get("params", {})
+        params = request.get("params", {}) or {}
         req_id = request.get("id")
+
+        if principal is None:
+            principal = await self._get_default_principal()
+
+        # B315 Task 5: forbidden-key guard. Belt-and-braces on top of the
+        # structural separation above — TransportContext already makes it
+        # impossible for a Principal to be built FROM params, but this is
+        # what turns "an agent tried to escalate anyway" from a silent
+        # no-op into a logged, visible, immediately-rejected failure.
+        if isinstance(params, dict):
+            for key in _FORBIDDEN_PARAM_KEYS:
+                if key in params:
+                    _logger.warning(
+                        "Rejected request from principal=%r (tenant=%r): "
+                        "forbidden param key %r in params for method=%r — "
+                        "tenant/workspace/subject identity must come from "
+                        "the transport credential, never request params.",
+                        principal.subject_id, principal.tenant_id, key, method,
+                    )
+                    return {
+                        "jsonrpc": "2.0", "id": req_id,
+                        "error": {
+                            "code": -32602,
+                            "message": (
+                                f"Invalid params: {key!r} must not be supplied in request "
+                                "params — tenant/workspace/subject identity is derived from "
+                                "the transport credential only"
+                            ),
+                        },
+                    }
 
         # MCP protocol introspection methods
         if method == "initialize":
@@ -238,7 +369,10 @@ class BrainDaemon:
             }
 
         try:
-            result = await handler(params, self.db, self.config)
+            if method in _WANTS_PRINCIPAL:
+                result = await handler(params, self.db, self.config, principal=principal)
+            else:
+                result = await handler(params, self.db, self.config)
             return {"jsonrpc": "2.0", "id": req_id, "result": result}
         except Exception as e:
             return {

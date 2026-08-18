@@ -38,5 +38,10 @@ jobs:
       - name: Check Cypher ratchet
         run: python scripts/check_cypher_ratchet.py
 
+      # B315: fail if the count of TOOL_HANDLERS entries missing a `principal`
+      # parameter increased relative to scripts/principal_baseline.json.
+      - name: Check principal ratchet
+        run: python scripts/check_principal_ratchet.py
+
       - name: Run test suite
         run: pytest tests/ -q
