@@ -1929,3 +1929,108 @@ call sites in that file.
 - Does not inject any tenant/workspace-visibility predicate yet — that's B316, which depends
   on this seam existing (`GraphGateway.run()` is the one place such a predicate could be
   added later without touching every call site again).
+
+## B317 — Named-Query Eval Pack: Projected Capability Graph
+
+A second, deliberately generic subgraph living inside the same Kùzu database as Campy's own
+memory graph — a harvested mirror of an external governed platform's capability catalog
+(agent cards, MCP contracts, workflow/policy definitions, infra records), used to prove that
+`GraphGateway`'s named-query seam (B314) can answer bounded, provenance-aware, multi-hop
+questions a real customer evaluation would ask, not just Campy's own recall paths.
+
+### Two subgraphs, one engine
+
+Campy's own memory (`Concept`, `Decision`, `Lesson`, `Plan`, the Arc\* learned-pattern
+tables, ...) and this capability-graph subset are structurally distinct, on purpose:
+
+- **Schema shape.** Campy's own graph has one node table per concept kind, because Campy
+  itself defines that ontology and controls when it changes. The capability-graph subset is
+  the opposite: **one generic node table** (`FactEntity`) plus **one relationship table per
+  predicate** (`FACT_INVOKES`, `FACT_REQUIRES`, `FACT_IMPLEMENTS`, `FACT_READS`,
+  `FACT_WRITES`, `FACT_CONSTRAINED_BY`, `FACT_DEPLOYED_ON`, `FACT_PRODUCED`,
+  `FACT_APPROVED_BY`, `FACT_REUSES` — the `FACT_PREDICATES` dict in `schema.py`). An external
+  platform's ontology is not Campy's to define, and it will change on its own schedule;
+  hard-coding domain-specific node tables for it would mean Campy's schema churns every time
+  the source system's does. `FactEntity.entity_id` is deliberately the *source system's own*
+  stable identifier, never a Campy-minted one — that is the join key that makes cross-system
+  traversal meaningful at all. `FACT_`-prefixed rel table names can never collide with
+  Campy's own named rel tables (e.g. `REQUIRES`/`IMPLEMENTS` already exist as
+  `Concept`→`Concept` "Shape-First Principle" edges in Campy's own graph — an entirely
+  different mechanism, same predicate word, disjoint tables).
+- **Authority contract.** Every row this subset ever writes carries B313's
+  `authority='projected'` — never `'earned'`, never NULL. This is not a default that happens
+  to apply; it is enforced structurally: `campy/brain/hippocampus/facts.py`'s
+  `ingest_entities()`/`ingest_facts()` are the *only* write path into this subset (every
+  write and read goes through a `NamedQuery` registered in
+  `campy/brain/hippocampus/graph/queries/capability.py`, never `GraphGateway.execute_raw()`),
+  and both functions call B313's `provenance.validate_authority()` before writing anything —
+  a fact without a non-NULL `source`/`source_version` is rejected outright, because a
+  `'projected'` row that isn't rebuildable would be a silent lie about its own recoverability.
+
+### Why the separation matters
+
+1. **Governed-platform evaluation requires it.** A platform capability catalog is not
+   something Campy asserts — it's something Campy *observes*. Blending harvested,
+   externally-owned facts into the same tables as Campy's own earned conclusions would make
+   it impossible to answer "is this true because Campy figured it out, or because some other
+   system said so" — exactly the question B313's authority column exists to keep answerable
+   everywhere else in the graph. Keeping the capability subset in its own tables makes that
+   distinction structural (a table-level fact, checkable by a `CALL table_info(...)`) rather
+   than a per-row convention someone could forget to set.
+2. **`drop_projections()` safety.** B313's `provenance.drop_projections(source=...)` is the
+   operation that makes re-harvesting a capability catalog safe — delete every `'projected'`
+   row from one `source`, re-ingest fresh. Its only real danger is deleting something that
+   turns out not to be rebuildable. Keeping `FactEntity`/`FACT_*` a subgraph whose *every* row
+   is `'projected'` by construction means a `drop_projections()` call scoped to this subset
+   can never accidentally reach into Campy's own earned memory — there is no row in
+   `FactEntity` a supersession bug could mistake for something irreplaceable. (In practice
+   `drop_projections()`'s default table list is still B312's `PROVENANCE_TABLES`-derived
+   `_PK_COLUMN` set, which predates `FactEntity`; a caller must pass
+   `tables=["FactEntity"]` explicitly to reach this subset — the function itself has no
+   dependency on that default beyond convenience, since it matches purely on `n.source`/
+   `n.authority`. See `tests/test_capability_queries.py`'s
+   `test_drop_projections_removes_fixture_graph_leaves_earned_lesson` for the round-trip
+   proof, including the case where an *earned* row deliberately shares the projected
+   subgraph's own `source` string and still survives.)
+3. **Conformance, not just correctness.** `benchmarks/capability_eval/` doubles as a
+   backend-conformance suite: any storage adapter claiming to back Campy must reproduce the
+   five named queries' exact expected result sets (`capability.permitted_paths`,
+   `capability.explain_path`, `capability.impact_of`, `capability.lineage_of`,
+   `capability.reuse_candidates`) against the fixture graph in
+   `benchmarks/capability_eval/fixtures.py`, via `tests/test_capability_queries.py`
+   unmodified. That conformance bar only makes sense against a subgraph with a fixed,
+   generic shape — testing conformance against Campy's own bespoke, ever-growing node-table
+   set would mean the bar moves every time Campy's own ontology does.
+
+### The five customer questions
+
+Each of `capability.permitted_paths` (Q1), `capability.explain_path` (Q2),
+`capability.impact_of` (Q3), `capability.lineage_of` (Q4), and
+`capability.reuse_candidates` (Q5) is a `NamedQuery` in `graph/queries/capability.py` with an
+explicit hop bound (`*1..5`, `*1..4`, `*1..6` — never a bare unbounded `*`) and an
+`include_superseded` parameter that excludes B312-superseded rows by default. Q5
+(`reuse_candidates`) is the one exception to "bounded means an explicit `N..M` quantifier": it
+has no variable-length traversal at all (a single candidate node plus one fixed-depth
+`OPTIONAL MATCH` hop for its REQUIRES chain), so there is no quantifier to bound in the first
+place — its vector-similarity floor (0.70, via `array_cosine_similarity`) and its
+satisfiability check (excluding candidates whose REQUIRES chain points at a
+node-level-superseded dependency) are two independent filters, proven independent by a fixture
+entity that is above the similarity floor but still excluded on satisfiability grounds. See
+`campy/brain/hippocampus/graph/queries/capability.py`'s module docstring for the Kùzu 0.11.3
+quirks its Cypher works around (bare `$param` inside `ALL()`/`ANY()` crashing the binder,
+`collect(DISTINCT ...)` returning `NULL` rather than `[]` when every collected value was NULL,
+`UNWIND nodes(p)` values not being usable as pattern positions, and the absence of list
+comprehensions).
+
+### What this card does not do
+
+- Does not add a real harvester for any specific external platform — `facts.py`'s
+  `ingest_entities()`/`ingest_facts()` are the write path a future harvester would call;
+  `benchmarks/capability_eval/fixtures.py` seeds synthetic data through that same path
+  purely for the eval pack, not a production integration.
+- Does not extend B316's tenant/workspace-visibility predicate to this subset — out of scope
+  for this card, same open item B314 already noted for Campy's own graph.
+- Does not change `drop_projections()`'s default `tables` list to include `FactEntity` —
+  left as an explicit-`tables=` call at every capability-subgraph call site (see point 2
+  above) rather than risk changing behavior for every *other* existing caller of
+  `drop_projections()` that relies on the current default.

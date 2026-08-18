@@ -128,6 +128,63 @@ SOLVED_BY_TABLES: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
+# B317 — Named-Query Eval Pack: projected capability-graph fact schema
+#
+# A second, deliberately generic subgraph living in the same Kùzu database as
+# Campy's own memory graph above: ONE node table (`FactEntity`) plus one rel
+# table per predicate (`FACT_*`), rather than domain-specific node tables for
+# every entity kind an external platform's ontology happens to define today.
+# Their ontology will change; this schema should not have to churn with it.
+#
+#   FactEntity.entity_id  — the SOURCE SYSTEM's stable domain identifier, not
+#     a Campy-minted one. That is the join key that makes cross-system
+#     traversal possible at all.
+#   FACT_* rel tables — one per predicate in FACT_PREDICATES below, all
+#     `FROM FactEntity TO FactEntity`, each carrying the full LPG edge
+#     property set the customer's evaluation criterion asked for (version,
+#     access_mode, confidence, run_id, evidence, plus B312 provenance +
+#     supersession + B313 authority). FACT_-prefixed so these can never
+#     collide with Campy's own named rel tables (REQUIRES/IMPLEMENTS above
+#     are Concept->Concept "Shape-First Principle" edges — an entirely
+#     different mechanism; see docs/ARCHITECTURE.md's "two subgraphs, one
+#     engine" section for how the two stay distinct).
+#
+# Every row in this subgraph carries authority='projected' — see
+# campy/brain/hippocampus/facts.py (ingest_facts / ingest_entities) for the
+# single write path, which always sets it and always runs
+# provenance.validate_authority() first. This subgraph is never authoritative
+# for anything Campy itself asserts; it is a harvested mirror of an external
+# system, by construction.
+# ---------------------------------------------------------------------------
+
+# The ten-predicate vocabulary the customer's starter relationship set
+# defines, mapped to their FACT_-prefixed rel table names. facts.py's
+# ingest_facts() rejects any FactEnvelope whose predicate isn't a key here
+# (returned in the "rejected" list, never raised) — see its docstring.
+FACT_PREDICATES: dict[str, str] = {
+    "INVOKES": "FACT_INVOKES",
+    "REQUIRES": "FACT_REQUIRES",
+    "IMPLEMENTS": "FACT_IMPLEMENTS",
+    "READS": "FACT_READS",
+    "WRITES": "FACT_WRITES",
+    "CONSTRAINED_BY": "FACT_CONSTRAINED_BY",
+    "DEPLOYED_ON": "FACT_DEPLOYED_ON",
+    "PRODUCED": "FACT_PRODUCED",
+    "APPROVED_BY": "FACT_APPROVED_BY",
+    "REUSES": "FACT_REUSES",
+}
+
+# Shared LPG property set for every FACT_* rel table — see the CREATE REL
+# TABLE splice in REL_TABLES below. Kept as one constant so the ten tables
+# can never drift from each other's property set by a copy-paste slip.
+_FACT_REL_PROPERTIES = (
+    "version STRING, access_mode STRING, confidence DOUBLE, run_id STRING, "
+    "evidence_ref STRING, source STRING, source_version STRING, "
+    "observed_at TIMESTAMP, authority STRING, "
+    "superseded_by STRING, superseded_at TIMESTAMP, supersession_reason STRING"
+)
+
+# ---------------------------------------------------------------------------
 # Node table DDL
 # ---------------------------------------------------------------------------
 
@@ -1203,6 +1260,31 @@ NODE_TABLES = {
         last_seen_at   TIMESTAMP,
         PRIMARY KEY (worker_id)
     """,
+
+    # B317 — projected capability-graph entity. See the "B317" comment block
+    # above (near FACT_PREDICATES) for the full rationale. `properties` is a
+    # JSON-blob escape hatch for source-specific attributes this generic
+    # schema doesn't model explicitly — never queried structurally, only
+    # round-tripped.
+    "FactEntity": """
+        entity_id     STRING,
+        entity_type   STRING,
+        label         STRING,
+        properties    STRING,
+        embedding     FLOAT[384],
+        embedding_model STRING,
+        embedding_dim INT64,
+        source        STRING,
+        source_version STRING,
+        observed_at   TIMESTAMP,
+        evidence_ref  STRING,
+        authority     STRING,
+        superseded_by STRING,
+        superseded_at TIMESTAMP,
+        supersession_reason STRING,
+        created_at    TIMESTAMP,
+        PRIMARY KEY (entity_id)
+    """,
 }
 
 # ---------------------------------------------------------------------------
@@ -1388,6 +1470,15 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS SOLVED_BY ("
     "FROM Decision TO AgentWorker, FROM ActionItem TO AgentWorker, FROM Lesson TO AgentWorker, "
     "confidence DOUBLE, observed_at TIMESTAMP)",
+
+    # B317 — projected capability-graph fact edges, one rel table per
+    # predicate in FACT_PREDICATES, all FROM FactEntity TO FactEntity. See
+    # the B317 comment block above NODE_TABLES for the full rationale.
+    *[
+        f"CREATE REL TABLE IF NOT EXISTS {rel_table} "
+        f"(FROM FactEntity TO FactEntity, {_FACT_REL_PROPERTIES})"
+        for rel_table in FACT_PREDICATES.values()
+    ],
 ]
 
 def get_relationship_types() -> list[str]:
