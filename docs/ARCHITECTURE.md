@@ -1929,3 +1929,89 @@ call sites in that file.
 - Does not inject any tenant/workspace-visibility predicate yet — that's B316, which depends
   on this seam existing (`GraphGateway.run()` is the one place such a predicate could be
   added later without touching every call site again).
+
+## B315 — AuthContext: Principal Derivation and Threading
+
+Campy previously had no concept of *who* is asking — every JSON-RPC call routed through one
+global `self.db` with no caller identity. This card adds that identity, and makes it
+structurally impossible to forge from the request body: the rule enforced here is that
+tenant and workspace are derived from the transport credential, never from request params. If
+an agent could pass `workspace_id` as an ordinary argument, any agent could read another
+tenant's memory — a confused-deputy vulnerability one prompt injection away from being
+exercised. See `docs/ecosystem-rules.md`'s B315 entry for the non-negotiable statement.
+
+### `Principal` and `TransportContext` (`campy/brain/auth.py`)
+
+- `Principal` — `subject_id`, `tenant_id`, `workspace_id` (B316 consumes this as the DB shard
+  key), `scopes: frozenset[str]`, `client` (observability only), `session_id`, `derived_from`
+  ("local-single-user" | "oidc" | "iam" — during an incident, the difference between "we
+  trusted a token" and "we trusted a request body"). `Principal.require(scope)` raises
+  `PermissionError` if the scope isn't held. `SCOPES` (module-level frozenset, starts small):
+  `memory.read`, `memory.write`, `memory.admin`, `visibility.override`.
+- `TransportContext` — everything the *transport* knows about the caller (peer credentials,
+  TLS identity, an observability-only `client_hint`). It has no field a JSON-RPC request body
+  could populate — there is no "extra params" or "raw request" field to abuse. `brain_daemon.py`'s
+  `_handle_connection` constructs one before a single byte of the request is parsed.
+- `PrincipalResolver` (Protocol) → `Principal`. `LocalSingleUserResolver` is the only concrete
+  implementation this card builds — cloud resolvers (OIDC/IAM) are out of scope. **Local Campy
+  is framed as single-tenant cloud with auth stubbed**: `LocalSingleUserResolver` always
+  returns a real `Principal` (tenant `local`, workspace `local`, every scope), never `None`.
+  Handlers never branch on "are we local?" — if local became a special-cased path, the two
+  deployments would drift and the cloud path would stop being exercised by local tests.
+
+### Threading (`campy/brain_daemon.py`)
+
+Updating all ~59 tool-handler signatures in one commit was judged too large a mechanical diff
+for the regression risk. Instead, signature inspection enables incremental adoption:
+
+```python
+_WANTS_PRINCIPAL = {
+    name for name, fn in TOOL_HANDLERS.items()
+    if "principal" in inspect.signature(fn).parameters
+}
+```
+
+`_dispatch` threads `principal=principal` only to handlers in that set; everything else keeps
+its original `(params, db, config)` call, unchanged. A handler opts in by adding `*, principal:
+Principal` to its signature — `capture.py`'s `notify_turn` and `lessons.py`'s `upsert_lesson`
+are the two this card converts, per its declared scope. This is a deliberate tradeoff (slightly
+implicit, in exchange for not touching ~57 other handlers at once); `scripts/check_principal_ratchet.py`
+(`make check-principal`, wired into CI, same shape as B314's Cypher ratchet) tracks the count of
+handlers still missing `principal` and fails if it rises, so the end state — every handler
+requiring `principal`, and this inspection branch deleted — is enforced as a direction rather
+than hoped for. Baseline at this card's landing: 57 of 59 handlers still missing it.
+
+One non-obvious dependency: `inspect.signature()` only sees through a wrapped function if the
+wrapper was built with `functools.wraps`. `campy/brain/thalamus/tools/_shared.py`'s
+`_with_phase()` decorator — which wraps both of this card's converted handlers — previously
+copied `__name__`/`__doc__` by hand instead, which left `inspect.signature()` seeing the
+wrapper's own `(params=None, db=None, config=None, **kw)` shape rather than the wrapped
+function's real parameters. Without `functools.wraps` there, `_WANTS_PRINCIPAL` would never
+have detected either handler regardless of their own signatures.
+
+### The forbidden-key guard
+
+Belt-and-braces on top of `TransportContext`'s structural separation: before invoking a
+handler, `_dispatch` rejects any request whose `params` contains `tenant_id`, `workspace_id`,
+`subject_id`, `principal`, or `scopes`, returning JSON-RPC `-32602` and logging the rejection
+at WARNING with the principal's `subject_id` and the offending key. This is what turns "an
+agent tried to escalate" from a silent no-op into a logged, visible, immediately-rejected
+failure. One existing parameter collided with this guard: B320's content-hash dedup helper
+accepted a client-supplied `workspace_id` as a discriminator (see `docs/ARCHITECTURE.md`'s
+B320 section); it was renamed to `dedupe_workspace_id` in `capture.py`/`lessons.py` as part of
+this card specifically to avoid that collision — that parameter still works exactly as B320
+specified, just under a name the guard doesn't intercept.
+
+### Composition with B312
+
+`capture.py`/`lessons.py`'s converted handlers attribute B312's `source` provenance field to
+`f"{principal.client}:{principal.subject_id}"` when a principal is present, rather than a
+guessed client string — facts become attributable to a principal, not a client label.
+
+### What this card does not do
+
+- Does not build OIDC, IAM, or Cognito resolvers — Protocol + local implementation only.
+- Does not open more than one database — still one global `self.db` (that's B316).
+- Does not add visibility (private/team/org) filtering — a separate, later card.
+- Does not convert the other ~57 handlers — the ratchet enforces direction, not completeness.
+- Does not add authentication to the HTTP/socket transports themselves.

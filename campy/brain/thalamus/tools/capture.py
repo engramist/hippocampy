@@ -29,6 +29,7 @@ from .lessons import _create_plan_graph, _store_plan_outcome_lesson
 from .quests import report_outcome
 
 if TYPE_CHECKING:
+    from campy.brain.auth import Principal
     from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 
 
@@ -94,12 +95,14 @@ async def _maybe_create_passive_plan_from_turn(
     return {"plan_id": plan_id, "step_ids": step_ids, "quest_id": quest_id}
 
 
-async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
+async def notify_turn(
+    params: dict, db: KuzuClient, config: dict, *, principal: "Principal | None" = None
+) -> dict:
     """
     Receive a conversation turn from the adapter and store it as a Message node.
     M5: also resolves/creates the MainQuest from git context, upserts Session.
 
-    params: {role, content, session_id, repo_root?, git_branch?, idempotency_key?, workspace_id?}
+    params: {role, content, session_id, repo_root?, git_branch?, idempotency_key?, dedupe_workspace_id?}
 
     B320: `idempotency_key`, when supplied, replaces content-hash dedup as
     the identity key for any Tier-1 fact-bearing node this turn causes to
@@ -107,12 +110,43 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
     provenance.resolve_dedupe_key(). A well-behaved client that retries
     this exact call should pass the same `idempotency_key` on every
     attempt; a client that does nothing still gets exact-content dedup for
-    free via content_hash(). `workspace_id` (default "local") is threaded
-    the same way and is part of the content-hash identity itself. Neither
-    parameter affects the Message node this call also writes — Message is
-    a structural/runtime-record table (B312's PROVENANCE_TABLES scope
-    excludes it), not a fact-bearing one, so it carries no content_hash
-    column and is out of this card's scope by design.
+    free via content_hash(). `dedupe_workspace_id` (default "local") is
+    threaded the same way and is part of the content-hash identity itself
+    — see the B315 note below for why it is no longer named plain
+    `workspace_id`. Neither parameter affects the Message node this call
+    also writes — Message is a structural/runtime-record table (B312's
+    PROVENANCE_TABLES scope excludes it), not a fact-bearing one, so it
+    carries no content_hash column and is out of this card's scope by
+    design.
+
+    B315: `principal` is normally supplied by `brain_daemon.py`'s
+    `_dispatch` (resolved once per connection from a `TransportContext` —
+    see `campy/brain/auth.py`). When present, it — not the request's
+    `role`/`agent_source` — drives both:
+
+      - the B312 `source` provenance string, as
+        `f"{principal.client}:{principal.subject_id}"` (replacing the
+        pre-B315 "user:direct" / "agent:<agent_source>" convention derived
+        from request-controlled fields); and
+      - the content-hash workspace discriminator, as
+        `principal.workspace_id` (replacing the request param below).
+
+    Direct callers that omit `principal` (the majority of this module's
+    existing tests, and any caller not going through the daemon) keep the
+    exact pre-B315 behavior — this parameter is additive, not a breaking
+    change to the function's other 40+ call sites.
+
+    B315 Task 5 note on the `workspace_id` -> `dedupe_workspace_id` rename:
+    `_dispatch`'s forbidden-key guard rejects any request whose top-level
+    `params` contains `workspace_id` (it is a tenant-isolation identifier
+    that must come from the transport credential, never request params —
+    see docs/ecosystem-rules.md). This function's pre-existing B320 use of
+    `workspace_id` as a content-hash dedup discriminator was a different,
+    lower-stakes concept that happened to share the name; renaming it here
+    is what the card's Task 5 instruction ("if one does, rename that
+    parameter") requires, and it composes cleanly with the point above:
+    when a real `principal` is present, `principal.workspace_id` (the
+    transport-derived value) is used instead of this legacy param anyway.
     """
     role       = params.get("role", "user")
     content    = params.get("content", "")
@@ -120,7 +154,10 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
     repo_root  = params.get("repo_root", "")
     git_branch = params.get("git_branch", "main")
     idempotency_key = (params.get("idempotency_key") or "").strip() or None
-    workspace_id = (params.get("workspace_id") or "local").strip() or "local"
+    if principal is not None:
+        workspace_id = principal.workspace_id
+    else:
+        workspace_id = (params.get("dedupe_workspace_id") or "local").strip() or "local"
 
     # B312: provenance identifier for any Tier-1 facts this turn causes to be
     # written (passive plan detection, outcome-sense lessons). Mirrors the
@@ -128,8 +165,15 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict) -> dict:
     # PROVENANCE_TABLES comment. agent_source follows the same
     # params.get("agent_source", "mcp") convention already used below for
     # WorkSummary (B290).
-    _capture_agent_source = params.get("agent_source", "mcp")
-    capture_source = "user:direct" if role == "user" else f"agent:{_capture_agent_source}"
+    #
+    # B315: a real `principal` takes over source attribution entirely (see
+    # the docstring above) — facts become attributable to a principal
+    # rather than to a client-supplied role/agent_source guess.
+    if principal is not None:
+        capture_source = f"{principal.client}:{principal.subject_id}"
+    else:
+        _capture_agent_source = params.get("agent_source", "mcp")
+        capture_source = "user:direct" if role == "user" else f"agent:{_capture_agent_source}"
 
     max_chars = config.get("ingestion", {}).get("max_ingest_chars", 4000)
     if len(content) > max_chars:

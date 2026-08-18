@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import re
 from typing import TYPE_CHECKING, Optional
@@ -29,7 +30,22 @@ from campy.brain.hippocampus.table_registry import get_table, pk_for, tables_wit
 _logger = logging.getLogger(__name__)
 
 def _with_phase(phase: str, fn):
-    """Wrap a tool handler to set phase during execution."""
+    """Wrap a tool handler to set phase during execution.
+
+    B315: uses `functools.wraps(fn)` (not just copying `__name__`/`__doc__`
+    by hand, as before this card) so `wrapper.__wrapped__ is fn`. That one
+    attribute is what lets `inspect.signature(wrapper)` — the mechanism
+    `brain_daemon.py`'s `_WANTS_PRINCIPAL` set is built from — see straight
+    through to `fn`'s real parameter list. Without it, every handler
+    registered through `_with_phase()` (which includes both of B315's
+    converted handlers, `notify_turn` and `upsert_lesson`) would look like
+    it only accepts `(params=None, db=None, config=None, **kw)` no matter
+    what `fn` itself declares, and `_WANTS_PRINCIPAL` would never see
+    their `principal` parameter. The actual call below already forwards
+    `**kw` (including a `principal=` kwarg) to `fn` unchanged — this only
+    fixes what the *inspector* sees, not the call semantics.
+    """
+    @functools.wraps(fn)
     async def wrapper(params=None, db=None, config=None, **kw):
         from campy.brain.brainstem.phase import set_phase
         set_phase(phase)
@@ -37,8 +53,6 @@ def _with_phase(phase: str, fn):
             return await fn(params=params, db=db, config=config, **kw)
         finally:
             set_phase("idle")
-    wrapper.__name__ = fn.__name__
-    wrapper.__doc__ = fn.__doc__
     return wrapper
 
 try:
