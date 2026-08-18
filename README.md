@@ -15,6 +15,13 @@ you were doing.
 
 ## Quickstart
 
+> **Not yet on PyPI.** `hippocampy` has not been published to PyPI yet
+> (tracked in [`backlog/B236.md`](backlog/B236.md);
+> [go/no-go status](docs/one-click-install-release-gate.md)). The commands
+> below are the *recommended* install path once a release exists, and are
+> kept here validated and ready to go — but **today**, use
+> [Install from source](#install) instead, which always works.
+
 ```bash
 pipx install hippocampy
 campy setup     # detect and register with Claude Code, Codex, Gemini CLI, etc.
@@ -43,6 +50,28 @@ for the full design.
 
 ## Install
 
+> **No single command is "canonical" yet.** `hippocampy` is not published to
+> PyPI, so `pipx install hippocampy` does not work today. Source install
+> (below) is the one path guaranteed to work right now. See the
+> [one-click install release gate](docs/one-click-install-release-gate.md)
+> for the full go/no-go record and why this framing is honest rather than
+> just "not finished yet."
+
+**From source (works today):**
+
+```bash
+git clone git@github.com:engramist/hippocampy.git
+cd hippocampy
+python3 -m venv .venv && source .venv/bin/activate
+pip install -U pip
+pip install -e ".[dev]"
+campy setup       # detect and register AI agents
+campy doctor       # verify everything works
+campy start        # start the memory daemon
+```
+
+**Once published (recommended path, validated and ready — not live yet):**
+
 ```bash
 pipx install hippocampy    # or: pip install hippocampy
 campy setup                # detect and register AI agents
@@ -56,13 +85,16 @@ campy start                 # start the memory daemon
 **One-line bootstrap** (no local checkout needed — checks for a supported
 Python, installs via `pipx`/`uv tool`/a managed venv, registers detected
 agents, and starts the daemon. Inspect before running, since this installs a
-daemon that reads your AI conversations):
+daemon that reads your AI conversations. The script itself is validated
+end-to-end — see [B237](backlog/B237.md)/[B238](backlog/B238.md) — but its
+default install step depends on the not-yet-published PyPI package above,
+so it will fail at that step until publication happens):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/engramist/hippocampy/main/scripts/bootstrap.sh | bash
 ```
 
-Inspect first:
+Inspect first (recommended):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/engramist/hippocampy/main/scripts/bootstrap.sh -o /tmp/campy-bootstrap.sh
@@ -93,24 +125,46 @@ brew install hippocampy
 campy install    # Homebrew only installs the CLI; finish setup explicitly
 ```
 
-`pipx`/the install script above remain the canonical install path until the
-tap is public. The formula never creates `~/.campy`, starts the daemon, or
+Homebrew is optional and secondary regardless of PyPI status — macOS users
+who trust `brew` more than piping a shell script can use it once the tap is
+public. The formula never creates `~/.campy`, starts the daemon, or
 registers AI clients during `brew install` — that's `campy install` /
 `campy doctor`, run by you afterward, same as every other install path.
 
-**From source:**
+</details>
+
+### Verify the install
 
 ```bash
-git clone git@github.com:engramist/hippocampy.git
-cd hippocampy
-python3 -m venv .venv && source .venv/bin/activate
-pip install -U pip
-pip install -e ".[dev]"
-campy setup
-campy status
+campy doctor              # full health check — Python version, DB, daemon, client registration
+campy doctor --repair     # attempt automatic repair of anything doctor flags
+campy status               # is the memory daemon running?
+campy activity --follow    # live feed of captures/recalls as they happen
 ```
 
-</details>
+`campy doctor`'s "MCP Clients" and "Plugin Status" checks report,
+per-client, whether **Codex**, **Claude Desktop**/**Claude Code**, and
+**VS Code Copilot** are registered — a client that isn't installed on your
+machine is reported as "not found," not a failure. See
+[docs/troubleshooting-install.md](docs/troubleshooting-install.md) for fixes
+to specific check failures.
+
+### Where your memory lives
+
+All captured memory — the Kùzu graph database, activity log, and config —
+lives under `~/.campy` (or `~/.sidequests` if you have a pre-existing
+install; Campy won't silently move it). **Installing, repairing, or
+uninstalling never deletes this data by default.** Deleting it is a
+separate, explicit step:
+
+```bash
+campy uninstall               # remove client registrations + daemon; keeps ~/.campy by default
+campy uninstall --delete-data # separate, explicit step: also deletes ~/.campy (your memory)
+```
+
+See [docs/troubleshooting-install.md](docs/troubleshooting-install.md) for
+the full breakdown of what each install/repair/uninstall path does and does
+not touch.
 
 ## Requirements
 
