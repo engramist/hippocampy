@@ -2361,16 +2361,17 @@ corrupt the already-imported module objects the rest of the test suite shares.
 
 ### Task 4b — the actual deployment topology is Lambda-fronted, not a direct Gateway target
 
-See `docs/deployment-agentcore.md` for the full writeup. Short version: the customer's ADR-0031
-registers Campy behind `AgentCore agent → Gateway (AWS_IAM) → Lambda (thin adapter) → Campy HTTP
-MCP surface`, not a direct `mcp.mcp_server` Gateway target — a **policy** decision (the provider
-supports both; ADR-0031 picked Lambda). Tasks 1–3 remain the prerequisite either way: the Lambda
-still needs an HTTP surface to proxy to (Kùzu is single-process-writer, so the Lambda cannot open
-the database file directly), and `IAMPrincipalResolver` is what verifies its calls. Two items are
-recorded as open in that doc rather than guessed at: identity does not currently propagate
-through the customer's Gateway (`gateway_iam_role {}`, no `metadata_configuration`), so B315's
-transport-derived-workspace rule cannot fully hold behind it yet; and the Gateway target's
-specific IAM policy / network path is pending the platform team.
+See `docs/deployment-agentcore.md` for the full writeup. Short version: the evaluating
+platform's own architecture policy registers Campy behind `AgentCore agent → Gateway (AWS_IAM)
+→ Lambda (thin adapter) → Campy HTTP MCP surface`, not a direct `mcp.mcp_server` Gateway target
+— a **policy** decision (the provider supports both; they picked Lambda). Tasks 1–3 remain the
+prerequisite either way: the Lambda still needs an HTTP surface to proxy to (Kùzu is
+single-process-writer, so the Lambda cannot open the database file directly), and
+`IAMPrincipalResolver` is what verifies its calls. Two items are recorded as open in that doc
+rather than guessed at: identity does not currently propagate through the platform's Gateway (no
+`metadata_configuration` set), so B315's transport-derived-workspace rule cannot fully hold
+behind it yet; and the Gateway target's specific IAM policy / network path is pending the
+platform team.
 
 ### Files
 
@@ -2527,20 +2528,21 @@ the router, not a second handle) rather than calling `self.db.close()` directly 
 ## B321 — Cross-Session Continuity for an App
 
 **Positioning, stated first because it was misdiagnosed once already:** this card is
-additive to a customer platform's ADR-0050, never a substitute for it. ADR-0050 (real git
-branches per session, `vibe/<slug>-<session_id>`, a genuine merge base) answers "what changed
+additive to an evaluating platform's own git-workspace design, never a substitute for it. That
+design (real git branches per session, cloned with a genuine merge base) answers "what changed
 in the files, and how do I reconcile it." B321 answers a different question — "what did an
 earlier session on this same App decide, try, and learn." A diff carries neither a decision
-nor its reason; this card exists because ADR-0050's own status is "cards 2-6 (shared ancestry,
-divergence reads, rebase) Proposed, unbuilt," and their own review names the gap directly:
+nor its reason; this card exists because that design's follow-on work ("shared ancestry,
+divergence reads, rebase") is Proposed but unbuilt, and their own review names the gap directly:
 sessions on the same App today have "no visibility between concurrent sessions."
 
 **Campy provides no mutual exclusion, locking, or collision prevention of any kind — this
-card is purely advisory and pull-only.** A factual audit of the customer's live system (cited
-in backlog/B321.md) found the hazard the original card assumed — two sessions overwriting the
-same file — does not exist there: each session gets its own workspace directory, the shared
-root's read bit is stripped, and a Landlock fence confines each build subprocess to its own
-workspace, all verified in production. The actual gap is the opposite of collision: isolation.
+card is purely advisory and pull-only.** A factual audit of the target platform's live system
+(cited in backlog/B321.md) found the hazard the original card assumed — two sessions
+overwriting the same file — does not exist there: each session gets its own workspace
+directory, the shared root's read bit is stripped, and an OS-level sandbox confines each build
+subprocess to its own workspace, all verified in production. The actual gap is the opposite of
+collision: isolation.
 Nothing here claims a resource, gates a write, or warns about "in progress" work — the wording
 denylist enforced by `tests/test_app_continuity.py` (`do not`, `already claimed`, `in progress`,
 `owned by`, `locked`) exists specifically so an advisory section can never accidentally read
@@ -2554,7 +2556,7 @@ The unit of continuity is the **App**, not the session and not the file. Two new
 
 | Column | Meaning |
 |---|---|
-| `external_app_id` | the platform's App id, e.g. `VG_portfolio-assistant` (`VG_<kebab-name>`) |
+| `external_app_id` | the platform's App id, an opaque `<prefix>_<kebab-name>` string (e.g. `APP_notes-service`) |
 | `external_session_id` | the platform's own session id, for correlation |
 
 Both are `NULL` on every pre-B321 row and on every local-Campy session going forward — local
@@ -2655,7 +2657,7 @@ directly rather than only by architectural argument).
   to prevent on the platform this card targets (see the audit findings above).
 - Does not lock, lease, claim, or gate anything. Nothing here is enforceable; it is a briefing
   an agent is free to ignore.
-- Does not implement, replace, or reimplement ADR-0050's git-native workspace seeding,
+- Does not implement, replace, or reimplement the platform's own git-native workspace seeding,
   divergence reads, or rebase affordance.
 - Does not model Iteration as a concept separate from Session — upstream does not either.
 - Does not fix App-slug rename instability — recorded above as a known, deferred hazard.
