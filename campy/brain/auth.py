@@ -55,6 +55,10 @@ KNOWN_SCOPES: frozenset[str] = frozenset({
 # Local mode is single-tenant cloud with auth stubbed — it holds every scope
 # Campy currently knows about, by definition (there is no one else to deny).
 _ALL_SCOPES: frozenset[str] = frozenset(KNOWN_SCOPES)
+_DEFAULT_RUNTIME_SCOPES: frozenset[str] = frozenset({
+    SCOPE_MEMORY_READ,
+    SCOPE_MEMORY_WRITE,
+})
 
 
 @dataclass(frozen=True)
@@ -317,7 +321,7 @@ class IAMPrincipalResolver:
         self._tenant_map = tenant_map or {}
         self._principal_scope_map = principal_scope_map or {}
         if default_scopes is None:
-            self._default_scopes = _ALL_SCOPES
+            self._default_scopes = _DEFAULT_RUNTIME_SCOPES
         else:
             unknown = set(default_scopes) - KNOWN_SCOPES
             if unknown:

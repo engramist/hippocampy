@@ -60,8 +60,18 @@ async def test_scope_tiering_can_deny_admin_scope():
 
 
 @pytest.mark.asyncio
+async def test_default_scopes_are_minimal_until_operator_grants_more():
+    resolver = IAMPrincipalResolver(verifier=_verifier)
+
+    principal = await resolver.resolve(TransportContext(transport="http", headers={}))
+    assert principal.scopes == frozenset({"memory.read", "memory.write"})
+    with pytest.raises(PermissionError):
+        principal.require("memory.admin")
+
+
+@pytest.mark.asyncio
 async def test_default_scopes_remain_unchanged_without_scope_map():
     resolver = IAMPrincipalResolver(verifier=_verifier)
 
     principal = await resolver.resolve(TransportContext(transport="http", headers={}))
-    assert principal.scopes == KNOWN_SCOPES
+    assert principal.scopes == frozenset({"memory.read", "memory.write"})
