@@ -30,6 +30,7 @@ dependencies = [
     "tree-sitter-languages>=1.10.0",
     "httpx>=0.24.0",
     "pydantic>=2.0.0",
+    "packaging>=24.0",
     "openai>=1.58.1",
     # Floors aligned with reviewed FastAPI/Starlette CVE remediation set.
     "fastapi>=0.133.0",

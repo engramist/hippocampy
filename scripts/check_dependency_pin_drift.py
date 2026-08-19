@@ -16,6 +16,7 @@ PYPROJECT = REPO_ROOT / "pyproject.toml"
 
 REQ_PIN_RE = re.compile(r"^([A-Za-z0-9_.-]+)==([A-Za-z0-9_.!+-]+)$")
 SPEC_RE = re.compile(r"([A-Za-z0-9_.-]+)\s*([<>=!~]{1,2})\s*([A-Za-z0-9_.!+-]+)")
+EXACT_RE = re.compile(r"^([A-Za-z0-9_.-]+)===?([A-Za-z0-9_.!+-]+)$")
 
 
 def _normalize_name(name: str) -> str:
