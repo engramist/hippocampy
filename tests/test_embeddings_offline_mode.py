@@ -51,3 +51,13 @@ def test_offline_mode_cache_miss_has_actionable_error(monkeypatch):
 
     with pytest.raises(RuntimeError, match="Embedding model not found in local cache"):
         emb._get_st_model("sentence-transformers/all-MiniLM-L6-v2")
+
+
+def test_offline_env_var_overrides_config_when_true(monkeypatch):
+    import campy.brain.hippocampus.graph.embeddings as emb
+
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    emb.configure({"embeddings": {"offline": False}})
+
+    assert emb._offline_mode is True
+    assert emb._is_offline_enabled() is True

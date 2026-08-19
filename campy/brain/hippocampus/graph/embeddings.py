@@ -65,7 +65,9 @@ def configure(config: dict) -> None:
         or os.environ.get("OPENAI_API_KEY", "")
     )
     _openai_base_url = emb_cfg.get("base_url", "")
-    _offline_mode = bool(emb_cfg.get("offline", False))
+    env_offline = os.environ.get("HF_HUB_OFFLINE", "").lower() in {"1", "true", "yes"} \
+        or os.environ.get("TRANSFORMERS_OFFLINE", "").lower() in {"1", "true", "yes"}
+    _offline_mode = bool(emb_cfg.get("offline", False)) or env_offline
     if _offline_mode:
         # Ensure downstream huggingface/transformers loaders stay network-off.
         os.environ.setdefault("HF_HUB_OFFLINE", "1")
