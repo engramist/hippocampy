@@ -306,6 +306,8 @@ class IAMPrincipalResolver:
         workspace_id: str = "default",
         workspace_map: dict[str, str] | None = None,
         tenant_map: dict[str, str] | None = None,
+        principal_scope_map: dict[str, list[str] | tuple[str, ...] | set[str]] | None = None,
+        default_scopes: list[str] | tuple[str, ...] | set[str] | None = None,
         client: str = "agentcore",
         verifier=_sts_get_caller_identity_verifier,
     ) -> None:
@@ -313,6 +315,14 @@ class IAMPrincipalResolver:
         self._default_workspace_id = workspace_id
         self._workspace_map = workspace_map or {}
         self._tenant_map = tenant_map or {}
+        self._principal_scope_map = principal_scope_map or {}
+        if default_scopes is None:
+            self._default_scopes = _ALL_SCOPES
+        else:
+            unknown = set(default_scopes) - KNOWN_SCOPES
+            if unknown:
+                raise IAMConfigError(f"unknown default scope(s): {sorted(unknown)}")
+            self._default_scopes = frozenset(default_scopes)
         self._client = client
         self._verifier = verifier
 
@@ -320,23 +330,43 @@ class IAMPrincipalResolver:
         headers = transport_ctx.headers or {}
         caller_arn = await self._verifier(headers)
 
-        # B325: a Gateway session attribute forwarded as an HTTP header is
-        # a transport-level credential, not a request param — acceptable
-        # per B315's rule. Falls through to the configured map, then the
-        # resolver's default, in that order.
+        # Operator-configured workspace mapping is authoritative. A caller
+        # can request a workspace via header, but that value never overrides
+        # explicit operator policy.
         header_workspace = headers.get("x-campy-workspace-id") or headers.get("X-Campy-Workspace-Id")
-        workspace_id = (
-            header_workspace
-            or self._workspace_map.get(caller_arn)
-            or self._default_workspace_id
-        )
+        mapped_workspace = self._workspace_map.get(caller_arn)
+        if mapped_workspace:
+            if header_workspace and header_workspace != mapped_workspace:
+                raise IAMConfigError(
+                    "workspace header override rejected: caller is bound to operator-configured workspace"
+                )
+            workspace_id = mapped_workspace
+        else:
+            # No explicit grant for this caller: never allow an arbitrary
+            # caller-supplied workspace id.
+            if header_workspace and header_workspace != self._default_workspace_id:
+                raise IAMConfigError(
+                    "workspace header requires explicit iam_workspace_map grant for this caller"
+                )
+            workspace_id = self._default_workspace_id
+
         tenant_id = self._tenant_map.get(caller_arn) or self._default_tenant_id
+        scoped = self._principal_scope_map.get(caller_arn)
+        if scoped is None:
+            scopes = self._default_scopes
+        else:
+            unknown = set(scoped) - KNOWN_SCOPES
+            if unknown:
+                raise IAMConfigError(
+                    f"unknown scope(s) configured for {caller_arn}: {sorted(unknown)}"
+                )
+            scopes = frozenset(scoped)
 
         return Principal(
             subject_id=caller_arn,
             tenant_id=tenant_id,
             workspace_id=workspace_id,
-            scopes=_ALL_SCOPES,
+            scopes=scopes,
             client=self._client,
             session_id=None,
             derived_from="iam",
