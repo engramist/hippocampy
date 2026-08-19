@@ -120,10 +120,12 @@ Open items for whoever turns this into public copy:
 2. **Benchmarks ran on small local models via Ollama** (qwen2.5:3b, llama3.2:3b, phi3.5,
    llama3.1:8b). That is a fair setup to publish, but say so — results on frontier models are
    not established by this run.
-3. **B324 (Bedrock) is a card, not shipped.** The provider table above lists it as such; keep
-   that distinction if the table is reused.
-4. **B313/B315/B316/B318/B319 are likewise cards.** Anything citing them must say "planned," not
-   "available."
+3. **Bedrock, backup/restore, principal derivation, and workspace isolation are now shipped.**
+  If you cite capability status, reference real implementation paths (`campy/brain/llm/bedrock.py`,
+  `campy/cli/backup.py`, `campy/brain/auth.py`,
+  `campy/brain/hippocampus/graph/router.py`) and keep wording aligned to the code.
+4. **Do not copy stale card status language into public copy.** Older notes framed some shipped
+  capabilities as planned; keep public claims source-grounded and date-stamped.
 5. **Do not make factual claims about named competitors** without a dated, linkable source —
    particularly claims about their security or encryption posture. The argument above does not
    need one, which is a feature.

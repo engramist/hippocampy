@@ -1,5 +1,5 @@
 {
-  "benchmark_name": "ama",
+  "benchmark_name": "synthetic_causal_arithmetic",
   "success": true,
   "duration": 900,
   "metrics": {

@@ -1,5 +1,5 @@
 {
-  "benchmark_name": "longcontext",
+  "benchmark_name": "synthetic_longcontext_needle",
   "success": true,
   "duration": 7200,
   "metrics": {

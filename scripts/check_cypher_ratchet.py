@@ -53,7 +53,7 @@ ALLOWLIST_DIR_PREFIXES = (
 # excludes tests/ — fakes/mocks and real-KuzuClient integration tests
 # legitimately contain Cypher text and are not part of the "~500+ call
 # sites to migrate" problem this ratchet tracks.
-SCANNED_PREFIXES = ("campy/", "scripts/")
+SCANNED_PREFIXES = ("campy/", "scripts/", "web/")
 
 # Files that talk *about* execute_raw() (this script's own regex source
 # text, and gateway.py's own def/docstring/messages) but contain no actual

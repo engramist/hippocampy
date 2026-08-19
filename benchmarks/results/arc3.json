@@ -1,11 +1,11 @@
 {
+  "status": "retracted, unable to reproduce — see backlog/B332.md",
   "benchmark_name": "arc3",
-  "success": true,
-  "duration": 3600,
+  "success": false,
+  "duration": 0,
   "metrics": {
-    "solve_rate_improvement": 0.08,
-    "p_value": 0.042
+    "retracted": true
   },
-  "error": null,
+  "error": "Original ARC3 claim was not reproducible from repository sources.",
   "timestamp": 1774716222.9183722
 }
