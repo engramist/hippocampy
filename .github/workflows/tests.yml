@@ -38,5 +38,8 @@ jobs:
       - name: Check Cypher ratchet
         run: python scripts/check_cypher_ratchet.py
 
+      - name: Check dependency floor drift
+        run: python scripts/check_dependency_pin_drift.py
+
       - name: Run test suite
         run: pytest tests/ -q
