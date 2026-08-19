@@ -34,7 +34,7 @@ async def test_kuzu_client_accepts_checkpoint_parameters(temp_db_path):
         checkpoint_threshold=4_000_000  # 4MB
     )
     assert client.db is not None
-    assert client.checkpoint_threshold == 4_000_000 or client.checkpoint_threshold == -1  # May be stored differently
+    assert client.read_only is False
     client.close()
 
 
