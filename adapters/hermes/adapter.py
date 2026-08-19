@@ -3,7 +3,7 @@
 Hermes is an AI agent orchestration framework. This adapter provides
 Hermes with persistent memory capabilities via the Campy MCP server.
 """
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 import logging
 
 logger = logging.getLogger(__name__)
@@ -12,7 +12,11 @@ logger = logging.getLogger(__name__)
 class HermesAdapter:
     """Adapter for integrating Campy memory with Hermes agents."""
     
-    def __init__(self, memory_url: str = "http://127.0.0.1:7799"):
+    def __init__(
+        self,
+        memory_url: str = "http://127.0.0.1:7799",
+        async_client_factory: Optional[Callable[[], Any]] = None,
+    ):
         """
         Initialize the Hermes adapter.
         
@@ -23,6 +27,14 @@ class HermesAdapter:
         self.name = "hermes-campy"
         self.version = "0.1.0"
         self._session_id = None
+        self._async_client_factory = async_client_factory
+
+    def _make_async_client(self):
+        if self._async_client_factory is not None:
+            return self._async_client_factory()
+        import httpx
+
+        return httpx.AsyncClient()
     
     def configure(self, config: Dict[str, Any]) -> bool:
         """
@@ -54,11 +66,10 @@ class HermesAdapter:
             Memory recall result or None if failed
         """
         try:
-            import httpx
             url = f"{self.memory_url}/api/v1/recall"
             params = {"q": query, "scope": scope, "session_id": self._session_id}
 
-            async with httpx.AsyncClient() as client:
+            async with self._make_async_client() as client:
                 resp = await client.get(url, params=params)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -81,11 +92,10 @@ class HermesAdapter:
             Router recommendation or None
         """
         try:
-            import httpx
             url = f"{self.memory_url}/api/v1/decide"
             payload = {"query": query, "session_id": self._session_id}
 
-            async with httpx.AsyncClient() as client:
+            async with self._make_async_client() as client:
                 resp = await client.post(url, json=payload)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -109,7 +119,6 @@ class HermesAdapter:
             True if notification succeeded
         """
         try:
-            import httpx
             url = f"{self.memory_url}/api/v1/notify"
             payload = {
                 "role": role,
@@ -117,7 +126,7 @@ class HermesAdapter:
                 "session_id": self._session_id,
             }
 
-            async with httpx.AsyncClient() as client:
+            async with self._make_async_client() as client:
                 resp = await client.post(url, json=payload)
                 return resp.status_code == 200
         except Exception as e:
@@ -141,7 +150,6 @@ class HermesAdapter:
             Compiled context bundle or None if failed
         """
         try:
-            import httpx
             url = f"{self.memory_url}/api/v1/bundle"
             payload = {
                 "query": task_description,
@@ -149,7 +157,7 @@ class HermesAdapter:
                 "agent_type": agent_type,
             }
 
-            async with httpx.AsyncClient() as client:
+            async with self._make_async_client() as client:
                 resp = await client.post(url, json=payload)
                 if resp.status_code == 200:
                     data = resp.json()
