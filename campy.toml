@@ -114,6 +114,28 @@ sequence_similarity_threshold = 0.80
 max_candidates_per_type = 5
 max_total_candidates = 10
 
+[checkpoint]
+# B337: Manual checkpoint control for memory spike mitigation during write-heavy phases.
+# Decouples checkpoint cadence from transaction commit boundaries.
+#
+# auto_checkpoint: enable Kuzu's automatic checkpoint (default true).
+#   Set to false to rely on manual checkpoint control only.
+#
+# threshold_bytes: WAL file size threshold for auto-checkpoint in bytes.
+#   -1 = Kuzu default (~262MB). Common tuning values from investigation:
+#   - 256KB (256000): more frequent checkpoints, lower peak RSS but higher CPU
+#   - 1MB (1000000): balanced
+#   - 4MB (4000000): less frequent, higher peak RSS
+#   - 32-64MB: experimental (larger batches)
+#
+# interval_seconds: period for manual checkpoint task (0 = disabled).
+#   Runs independent of commit count, mitigating the "commit-boundary
+#   starvation" effect where batched writes suppress checkpoints.
+#   Recommended: 60-300 seconds depending on write load.
+auto_checkpoint = true
+threshold_bytes = -1
+interval_seconds = 60
+
 [web]
 port = 7799   # Memory Control Panel — http://127.0.0.1:7799 (local only)
 

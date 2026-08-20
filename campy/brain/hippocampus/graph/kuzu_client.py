@@ -62,8 +62,16 @@ def _get_write_lock(db_path: str) -> asyncio.Lock:
 class KuzuClient:
     """Sole interface to the Kùzu database."""
 
-    def __init__(self, db_path: str, read_only: bool = False):
-        self.db = kuzu.Database(db_path, read_only=read_only)
+    def __init__(self, db_path: str, read_only: bool = False,
+                 auto_checkpoint: bool = True, checkpoint_threshold: int = -1):
+        # B337: Support manual checkpoint control and WAL threshold tuning.
+        # checkpoint_threshold in bytes (-1 = Kuzu default ~262MB).
+        # Common tuning values from investigation: 256KB, 1MB, 4MB, 32-64MB.
+        self.db = kuzu.Database(
+            db_path, read_only=read_only,
+            auto_checkpoint=auto_checkpoint,
+            checkpoint_threshold=checkpoint_threshold if checkpoint_threshold > 0 else -1
+        )
         self.conn = kuzu.Connection(self.db)
         self.read_only = read_only
         self._fts_checked: bool | None = None
@@ -239,3 +247,22 @@ class KuzuClient:
     def close(self):
         del self.conn
         del self.db
+
+    async def checkpoint(self) -> bool:
+        """Force a manual checkpoint under the write lock.
+        
+        B337: Decouples checkpoint cadence from transaction boundaries,
+        mitigating memory spikes during write-heavy phases. Routes through
+        the same per-db write lock as execute_write() to prevent races with
+        in-flight writes.
+        
+        Returns True on success, False on error.
+        """
+        try:
+            async with _get_write_lock(self.db_path):
+                await asyncio.to_thread(self.execute, "CHECKPOINT")
+            return True
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Manual checkpoint failed: %s", e)
+            return False
