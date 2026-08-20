@@ -72,7 +72,15 @@ class BrainDaemon:
 
     def __init__(self, config: dict):
         self.config      = config
-        self.db          = KuzuClient(str(DB_PATH))
+        # B337: Extract checkpoint tuning from config (memory spike mitigation)
+        checkpoint_cfg = config.get("checkpoint", {})
+        auto_checkpoint = checkpoint_cfg.get("auto_checkpoint", True)
+        checkpoint_threshold_bytes = checkpoint_cfg.get("threshold_bytes", -1)
+        self.db = KuzuClient(
+            str(DB_PATH),
+            auto_checkpoint=auto_checkpoint,
+            checkpoint_threshold=checkpoint_threshold_bytes
+        )
         self.running     = False
         self._llm_client = None   # set in start()
         self._centroids  = {}     # set in start()
@@ -164,6 +172,18 @@ class BrainDaemon:
         sweep_task.add_done_callback(
             lambda t: _restart_on_failure(t, self._background_sweep, sweep_interval)
         )
+
+        # B337: Start periodic checkpoint task (memory spike mitigation)
+        # Decouples checkpoint cadence from transaction commit boundaries,
+        # allowing tuned checkpoints independent of write load.
+        checkpoint_interval = self.config.get("checkpoint", {}).get("interval_seconds", 60)
+        if checkpoint_interval > 0:
+            checkpoint_task = asyncio.create_task(
+                self._periodic_checkpoint(checkpoint_interval), name="periodic_checkpoint"
+            )
+            checkpoint_task.add_done_callback(
+                lambda t: _restart_on_failure(t, self._periodic_checkpoint, checkpoint_interval)
+            )
 
         # Start Memory Control Panel web server (M7)
         web_port = self.config.get("web", {}).get("port", 7799)
@@ -415,6 +435,25 @@ class BrainDaemon:
                 )
             except Exception as e:
                 print(f"[Sweep] Error during sweep: {e}")
+
+    async def _periodic_checkpoint(self, interval_seconds: int):
+        """
+        B337: Periodic manual checkpoint to decouple checkpoint cadence from
+        transaction commit boundaries. Mitigates memory spikes during write-heavy phases
+        by forcing checkpoints independent of WAL threshold triggers.
+        
+        First run is deferred by one full interval to let the daemon warm up.
+        """
+        while True:
+            await asyncio.sleep(interval_seconds)
+            try:
+                success = await self.db.checkpoint()
+                if success:
+                    _logger.info("[Checkpoint] Manual checkpoint completed")
+                else:
+                    _logger.warning("[Checkpoint] Manual checkpoint failed")
+            except Exception as e:
+                _logger.exception("[Checkpoint] Unexpected error during checkpoint: %s", e)
 
     # ------------------------------------------------------------------
     # Durable passive capture
