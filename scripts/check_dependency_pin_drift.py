@@ -95,23 +95,44 @@ def _extract_floor(spec: str) -> tuple[str, str] | None:
 def _load_pyproject_floors(path: Path) -> dict[str, str]:
     """Load dependency specifications from pyproject.toml.
     
-    B340: Improved to track and warn about unparseable dependencies.
+    B340: Reads both main dependencies and optional-dependencies (dev extras).
+    Returns a dict mapping package name (normalized) to minimum version floor.
     """
     data = tomllib.loads(path.read_text(encoding="utf-8"))
+    
+    # Main dependencies
     deps = data.get("project", {}).get("dependencies", [])
     floors: dict[str, str] = {}
-    skipped_count = 0
+    unparseable = []
     
     for dep in deps:
         parsed = _extract_floor(dep)
         if parsed is None:
-            skipped_count += 1
+            unparseable.append(dep)
             continue
         name, floor = parsed
         floors[name] = floor
     
-    if skipped_count > 0:
-        logger.info(f"B340: Skipped {skipped_count} dependencies without version floors")
+    if unparseable:
+        logger.warning(f"B340: {len(unparseable)} main dependencies have no version floor: {unparseable}")
+    
+    # B340: Optional dependencies (dev extras, tests, etc.)
+    optional_deps = data.get("project", {}).get("optional-dependencies", {})
+    opt_unparseable = []
+    
+    for extra_name, extra_deps in optional_deps.items():
+        for dep in extra_deps:
+            parsed = _extract_floor(dep)
+            if parsed is None:
+                opt_unparseable.append(f"{extra_name}: {dep}")
+                continue
+            name, floor = parsed
+            # If already in main deps, main floor wins (stricter)
+            if name not in floors or Version(floor) > Version(floors[name]):
+                floors[name] = floor
+    
+    if opt_unparseable:
+        logger.warning(f"B340: {len(opt_unparseable)} optional dependencies have no version floor: {opt_unparseable}")
     
     return floors
 
@@ -121,14 +142,15 @@ def main() -> int:
     py_floors = _load_pyproject_floors(PYPROJECT)
 
     failures: list[str] = []
+    missing_floors: list[str] = []
     checked = 0
-    skipped = 0
 
     for name, pinned in sorted(req_pins.items()):
         floor = py_floors.get(name)
         if floor is None:
-            skipped += 1
-            logger.debug(f"B340: {name} has no floor in pyproject (or could not be parsed)")
+            # B340: Fail-closed — a pin in requirements.txt MUST have a floor in pyproject.
+            # This is a structural gap that should not be silently ignored.
+            missing_floors.append(name)
             continue
         checked += 1
         try:
@@ -141,13 +163,17 @@ def main() -> int:
                 f"{name}: could not compare versions (floor={floor!r}, pinned={pinned!r}): {e}"
             )
 
-    if failures:
+    if failures or missing_floors:
         print("Dependency floor drift detected:")
         for f in failures:
             print(f"  - {f}")
+        if missing_floors:
+            print(f"\nMissing floors (requirements.txt pins not covered by pyproject):")
+            for name in missing_floors:
+                print(f"  - {name}: {req_pins[name]}")
         return 1
 
-    print(f"B340: Dependency floor check passed ({checked} verified, {skipped} skipped).")
+    print(f"B340: Dependency floor check passed ({checked} verified).")
     return 0
 
 
