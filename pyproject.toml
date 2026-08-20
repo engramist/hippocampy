@@ -21,28 +21,37 @@ classifiers = [
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "kuzu==0.11.3",
-    "sentence-transformers>=2.2.0",
-    "spacy>=3.7.0",
+    # Floor matches reviewed requirements pin; see requirements.txt for
+    # transformer-range/CVE tradeoff details.
+    "sentence-transformers>=3.3.1",
+    "spacy>=3.8.3",
     "typer>=0.9.0",
     "j2toon>=0.1.0",
     "tree-sitter-languages>=1.10.0",
     "httpx>=0.24.0",
     "pydantic>=2.0.0",
-    "openai>=1.50.0",
-    "fastapi>=0.115.0",
-    "uvicorn>=0.32.0",
+    "packaging>=24.0",
+    "openai>=1.58.1",
+    # Floors aligned with reviewed FastAPI/Starlette CVE remediation set.
+    "fastapi>=0.133.0",
+    "starlette>=1.6.0",
+    "uvicorn>=0.32.1",
     "rich>=13.0.0",
+    # B340: Dependency floors matching reviewed requirements.txt pins
+    "PyYAML>=6.0.2",    # Used by benchmarks and temporal_lobe.dictionary
+    "psutil>=6.1.1",    # Used by benchmark harness for system metrics
+    "tomli>=2.2.1",     # TOML parser fallback (Python < 3.11 compat)
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0",
-    "pytest-asyncio>=0.24",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "pytest-mock>=3.14",
     "build>=1.0",
     "twine>=5.0",
-    "black",
-    "ruff",
+    "black>=24.1.0",    # B340: Code formatter with version floor
+    "ruff>=0.4.0",      # B340: Linter with version floor
     # boto3 is an optional runtime dependency (see the `bedrock` extra below) —
     # it is listed here too purely so `tests/test_bedrock_provider.py` can
     # exercise BedrockLLMClient against a stubbed boto3 client without every
