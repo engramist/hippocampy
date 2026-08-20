@@ -1828,7 +1828,7 @@ ONLY FILE THAT IMPORTS KUZU. Migration to Neo4j or another provider = rewrite th
 only."* The `import kuzu` half of that was always true. The rewrite-one-file half was not:
 Cypher text was written inline at every call site across the codebase and passed straight
 through `KuzuClient.execute()`/`execute_read()`/`execute_write()` as strings — measured at
-~500+ lines across 33 files at the time this card was written. Kùzu is pinned at `0.11.3` and
+~500+ lines across 46 files at the time this card was written. Kùzu is pinned at `0.11.3` and
 was archived upstream in Oct 2025, which makes that not a hypothetical risk. Separately, a
 chokepoint is the only place a future tenant-visibility predicate (B316, workspace router)
 can be injected reliably — enforcing it at 500 call sites individually is not auditable;

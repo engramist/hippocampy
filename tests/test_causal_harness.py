@@ -1,5 +1,5 @@
 """
-Tests for causal reasoning benchmark harness (AMA-Bench + MemoryArena).
+Tests for synthetic causal reasoning benchmark harness.
 """
 
 import pytest
@@ -22,15 +22,15 @@ from benchmarks.ab_harness import ABVariant
 
 
 class TestCausalTaskGeneration:
-    """Test task generation for both AMA-Bench and MemoryArena."""
+    """Test task generation for both synthetic task families."""
 
     def test_ama_bench_task_generation(self):
-        """Test AMA-Bench task generation."""
+        """Test synthetic causal arithmetic task generation."""
         tasks = generate_ama_bench_tasks(num_tasks=5, seed=42)
 
         assert len(tasks) == 5
         for task in tasks:
-            assert task.task_id.startswith("ama_bench_")
+            assert task.task_id.startswith("synthetic_causal_arithmetic_")
             assert task.category == "arithmetic_reasoning"
             assert len(task.constraints) >= 2
             assert len(task.causal_steps) >= 2
@@ -38,12 +38,12 @@ class TestCausalTaskGeneration:
             assert task.expected_solution is not None
 
     def test_memory_arena_task_generation(self):
-        """Test MemoryArena task generation."""
+        """Test synthetic capacity-constraints task generation."""
         tasks = generate_memory_arena_tasks(num_tasks=5, seed=42)
 
         assert len(tasks) == 5
         for task in tasks:
-            assert task.task_id.startswith("memory_arena_")
+            assert task.task_id.startswith("synthetic_capacity_constraints_")
             assert task.category == "spatial_reasoning"
             assert len(task.constraints) >= 2
             assert len(task.causal_steps) >= 1
@@ -287,8 +287,8 @@ async def test_causal_harness_initialization():
     assert harness.config.name == "causal_test"
     assert len(harness.ama_bench_tasks) == 0
     assert len(harness.memory_arena_tasks) == 0
-    assert harness.baseline_results["ama_bench"] == []
-    assert harness.sidequests_results["memory_arena"] == []
+    assert harness.baseline_results["synthetic_causal_arithmetic"] == []
+    assert harness.sidequests_results["synthetic_capacity_constraints"] == []
 
 
 @pytest.mark.asyncio
@@ -330,8 +330,8 @@ async def test_causal_harness_run():
     assert "task_counts" in result.metrics
 
     # Check task counts
-    assert result.metrics["task_counts"]["ama_bench"] == 3
-    assert result.metrics["task_counts"]["memory_arena"] == 3
+    assert result.metrics["task_counts"]["synthetic_causal_arithmetic"] == 3
+    assert result.metrics["task_counts"]["synthetic_capacity_constraints"] == 3
 
 
 @pytest.mark.asyncio
@@ -374,7 +374,10 @@ async def test_task_results_structure():
     await harness.run()
 
     # Check baseline results
-    all_baseline = harness.baseline_results["ama_bench"] + harness.baseline_results["memory_arena"]
+    all_baseline = (
+        harness.baseline_results["synthetic_causal_arithmetic"]
+        + harness.baseline_results["synthetic_capacity_constraints"]
+    )
     assert len(all_baseline) == 4
 
     for result in all_baseline:
@@ -388,7 +391,10 @@ async def test_task_results_structure():
         assert result.variant == ABVariant.BASELINE
 
     # Check sidequests results
-    all_sidequests = harness.sidequests_results["ama_bench"] + harness.sidequests_results["memory_arena"]
+    all_sidequests = (
+        harness.sidequests_results["synthetic_causal_arithmetic"]
+        + harness.sidequests_results["synthetic_capacity_constraints"]
+    )
     assert len(all_sidequests) == 4
 
     for result in all_sidequests:

@@ -9,14 +9,8 @@ global:
   results_format: "json"
 
 benchmarks:
-  - name: "arc3"
-    description: "Abstraction and Reasoning Corpus (ARC-3) Benchmark"
-    timeout: 3600
-    parameters:
-      difficulty: "medium"
-
   - name: "longcontext"
-    description: "Long-Context Memory Recall Benchmark (LoCoBench)"
+    description: "Synthetic long-context needle benchmark"
     timeout: 7200
     parameters:
       context_sizes: [8192, 32768, 131072]
