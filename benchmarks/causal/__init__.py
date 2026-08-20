@@ -1,5 +1,5 @@
 """
-Causal Reasoning Benchmark Tasks: AMA-Bench and MemoryArena.
+Causal reasoning benchmark tasks using in-repo synthetic generators.
 
 Tasks requiring multi-step causal chains and interdependent constraints.
 SideQuests advantage: maintains constraint consistency across steps via memory retrieval.
@@ -50,7 +50,7 @@ class CausalTask:
 
 @dataclass
 class AmaBenchTask(CausalTask):
-    """AMA-Bench: Arithmetic reasoning with shared constraints across steps."""
+    """Synthetic causal arithmetic task with shared constraints across steps."""
     arithmetic_operations: List[dict] = None  # List of operations with constraints
 
     def __post_init__(self):
@@ -60,7 +60,7 @@ class AmaBenchTask(CausalTask):
 
 @dataclass
 class MemoryArenaTask(CausalTask):
-    """MemoryArena: Spatial/abstract state with interdependent updates."""
+    """Synthetic capacity-constraints task with interdependent state updates."""
     state_variables: dict = None  # Named state variables and their interdependencies
     action_sequence: List[str] = None  # Sequence of actions to perform
 
@@ -73,7 +73,7 @@ class MemoryArenaTask(CausalTask):
 
 def generate_ama_bench_tasks(num_tasks: int = 10, seed: int = 42) -> List[AmaBenchTask]:
     """
-    Generate AMA-Bench tasks: multi-step arithmetic with shared constraints.
+    Generate synthetic causal arithmetic tasks.
 
     Example: "If X + Y = 20 and X > Y, find X when Y = 7"
     Constraint: "All values must be positive integers"
@@ -123,7 +123,7 @@ def generate_ama_bench_tasks(num_tasks: int = 10, seed: int = 42) -> List[AmaBen
         ]
 
         task = AmaBenchTask(
-            task_id=f"ama_bench_{i:03d}",
+            task_id=f"synthetic_causal_arithmetic_{i:03d}",
             category="arithmetic_reasoning",
             description=f"Solve: If Y = {b} and X + Y = {target_sum}, find X. Constraints: {', '.join(constraints[:2])}",
             initial_state={"Y": b},
@@ -147,7 +147,7 @@ def generate_ama_bench_tasks(num_tasks: int = 10, seed: int = 42) -> List[AmaBen
 
 def generate_memory_arena_tasks(num_tasks: int = 10, seed: int = 42) -> List[MemoryArenaTask]:
     """
-    Generate MemoryArena tasks: spatial/abstract state with interdependent updates.
+    Generate synthetic capacity-constraints tasks.
 
     Example: "Move object A from Box1 to Box3. Constraint: Box1 has capacity 2."
     State: {box1_items=2, box2_items=1, box3_items=0, ...}
@@ -209,7 +209,7 @@ def generate_memory_arena_tasks(num_tasks: int = 10, seed: int = 42) -> List[Mem
         }
 
         task = MemoryArenaTask(
-            task_id=f"memory_arena_{i:03d}",
+            task_id=f"synthetic_capacity_constraints_{i:03d}",
             category="spatial_reasoning",
             description=f"Manage {num_objects} objects across {num_boxes} boxes with constraints",
             initial_state={

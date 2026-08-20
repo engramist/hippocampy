@@ -2,41 +2,46 @@
 
 This document provides canonical links, citations, and license terms for the benchmarks used to evaluate the SideQuest Brain Daemon.
 
-## SWE-CI (SoftWare Engineering – Continuous Integration)
-- **Goal:** Long-term codebase maintenance and EvoScore (maintenance vs. technical debt).
-- **Source:** [SoftWare Engineering – Continuous Integration for Long-Term Maintenance](https://arxiv.org/abs/2603.xxxxx) (March 2026)
-- **Repository:** `TBD` (Private/Beta early access)
-- **License:** Apache 2.0
-- **Release Date:** March 15, 2026
-- **Task Count:** 100 tasks across 68 repositories.
-- **Notes:** Specifically evaluates the ability to sustain code quality across multiple commits.
+## ARC3
+- **Status:** Retracted.
+- **Reason:** `benchmarks/results/arc3.json` was not reproducible from any committed harness.
+- **Current Action:** Treated as historical placeholder data only. Do not use in claims.
 
-## LoCoBench (Long-Context Benchmark)
-- **Goal:** Complex, large-scale software engineering scenarios (10k to 1M tokens).
-- **Source:** [arxiv:2509.09614](https://arxiv.org/abs/2509.09614)
-- **Repository:** [SalesforceAIResearch/LoCoBench](https://github.com/SalesforceAIResearch/LoCoBench)
-- **License:** BSD 3-Clause
-- **Release Date:** September 2025
-- **Task Count:** 8,000 evaluation scenarios across 10 languages.
-- **Notes:** High token volume testing; measures how models handle deep multi-file dependencies.
+## SWE-CI (Internal Synthetic Sample)
+- **Goal:** Constraint-compliance comparison between baseline and memory-assisted variants.
+- **Source:** Internal sample dataset (`benchmarks/swe_ci/data/swe_ci_sample.json`).
+- **Repository:** This repository only (no external benchmark repository linked).
+- **License:** Project License.
+- **Task Count:** 4 tasks (current checked-in dataset).
+- **Notes:** Prior placeholder citation (`arxiv:2603.xxxxx`, `Repository: TBD`, and
+	"100 tasks across 68 repositories") was removed as unverified.
 
-## AMA-Bench (Agent Memory with Any length)
-- **Goal:** Long-horizon memory and continuous stream interaction.
-- **Source:** [arxiv:2602.22769](https://arxiv.org/abs/2602.22769)
-- **Repository:** [AMA-Bench/AMA-Bench](https://github.com/AMA-Bench/AMA-Bench)
-- **License:** MIT
-- **Release Date:** February 2026
-- **Task Count:** 2,496 expert-curated QA pairs (Real-world subset).
-- **Notes:** Tests the "Causality Graph" and tool-augmented retrieval performance.
+## Synthetic Long-Context Needle Proxy
+- **Goal:** Stress long-context retrieval behavior with synthetic needle-in-haystack prompts.
+- **Source:** Internal generator in `benchmarks/longcontext/harness.py`.
+- **Task Count:** 5 tasks per configured context size (`context_sizes`).
+- **Notes:** Inspired by LoCoBench-style evaluation design but does not run the external
+	8,000-scenario LoCoBench dataset.
 
-## MemoryArena
-- **Goal:** Agentic memory in interdependent multi-session agentic tasks.
-- **Source:** [memoryarena.github.io](https://memoryarena.github.io/) / [arxiv:2602.16313](https://arxiv.org/abs/2602.16313)
-- **Repository:** [MemoryArena/MemoryArena](https://github.com/MemoryArena/MemoryArena)
-- **License:** MIT
-- **Release Date:** February 2026
-- **Task Count:** 4 Domains (Bundled Shopping, Travel Planning, Info Search, Formal Reasoning).
-- **Notes:** Focuses on the "Memory-Agent-Environment loop" and latent task state maintenance.
+## Synthetic Causal Arithmetic Proxy
+- **Goal:** Multi-step arithmetic reasoning with shared constraints.
+- **Source:** Internal generator in `benchmarks/causal/__init__.py::generate_ama_bench_tasks`.
+- **Task Count:** Configurable synthetic tasks (default 10).
+- **Notes:** Inspired by AMA-Bench themes; does not run the published AMA-Bench dataset.
+
+## Synthetic Capacity-Constraints Proxy
+- **Goal:** Interdependent state transitions with capacity/dependency constraints.
+- **Source:** Internal generator in `benchmarks/causal/__init__.py::generate_memory_arena_tasks`.
+- **Task Count:** Configurable synthetic tasks (default 10).
+- **Notes:** Inspired by MemoryArena-style scenarios; does not run the published MemoryArena dataset.
+
+## External Papers Referenced as Design Inspiration (Not Directly Executed Here)
+- LoCoBench: [arxiv:2509.09614](https://arxiv.org/abs/2509.09614),
+	[SalesforceAIResearch/LoCoBench](https://github.com/SalesforceAIResearch/LoCoBench)
+- AMA-Bench: [arxiv:2602.22769](https://arxiv.org/abs/2602.22769),
+	[AMA-Bench/AMA-Bench](https://github.com/AMA-Bench/AMA-Bench)
+- MemoryArena: [arxiv:2602.16313](https://arxiv.org/abs/2602.16313),
+	[MemoryArena/MemoryArena](https://github.com/MemoryArena/MemoryArena)
 
 ## Autonomous Research Simulation Harness (Local Custom)
 - **Goal:** Verify memory-augmented hypothesis regression rate in autonomous loops.

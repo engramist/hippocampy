@@ -1,5 +1,5 @@
 """
-Causal Reasoning Evaluation Harness for AMA-Bench and MemoryArena.
+Causal reasoning evaluation harness for synthetic proxy task sets.
 
 Tests SideQuests on tasks requiring multi-step causal chains and interdependent constraints.
 Measures: solve rate, constraint consistency, causal chain depth.
@@ -35,7 +35,7 @@ class CausalTaskResult:
     """Result of executing a causal reasoning task."""
     task_id: str
     variant: ABVariant
-    task_type: str  # "ama_bench" or "memory_arena"
+    task_type: str  # "synthetic_causal_arithmetic" or "synthetic_capacity_constraints"
     correct: bool
     steps_completed: int
     constraint_violations: int
@@ -47,7 +47,7 @@ class CausalTaskResult:
 
 class CausalHarness(BenchmarkHarness):
     """
-    Harness for causal reasoning evaluation (AMA-Bench + MemoryArena).
+    Harness for causal reasoning evaluation (synthetic arithmetic + capacity constraints).
 
     Compares Baseline (no memory) vs SideQuests (with memory-retrieved constraints).
     Tracks: solve rate, constraint consistency, causal chain depth.
@@ -58,12 +58,12 @@ class CausalHarness(BenchmarkHarness):
         self.ama_bench_tasks: List[AmaBenchTask] = []
         self.memory_arena_tasks: List[MemoryArenaTask] = []
         self.baseline_results: Dict[str, List[CausalTaskResult]] = {
-            "ama_bench": [],
-            "memory_arena": [],
+            "synthetic_causal_arithmetic": [],
+            "synthetic_capacity_constraints": [],
         }
         self.sidequests_results: Dict[str, List[CausalTaskResult]] = {
-            "ama_bench": [],
-            "memory_arena": [],
+            "synthetic_causal_arithmetic": [],
+            "synthetic_capacity_constraints": [],
         }
 
     async def setup(self) -> None:
@@ -79,22 +79,26 @@ class CausalHarness(BenchmarkHarness):
         start_time = time.perf_counter()
 
         # Run Baseline (no memory)
-        baseline_ama = await self._evaluate_variant(self.ama_bench_tasks, ABVariant.BASELINE, "ama_bench")
-        self.baseline_results["ama_bench"] = baseline_ama
+        baseline_ama = await self._evaluate_variant(
+            self.ama_bench_tasks, ABVariant.BASELINE, "synthetic_causal_arithmetic"
+        )
+        self.baseline_results["synthetic_causal_arithmetic"] = baseline_ama
 
         baseline_memory = await self._evaluate_variant(
-            self.memory_arena_tasks, ABVariant.BASELINE, "memory_arena"
+            self.memory_arena_tasks, ABVariant.BASELINE, "synthetic_capacity_constraints"
         )
-        self.baseline_results["memory_arena"] = baseline_memory
+        self.baseline_results["synthetic_capacity_constraints"] = baseline_memory
 
         # Run SideQuests (with memory)
-        sidequests_ama = await self._evaluate_variant(self.ama_bench_tasks, ABVariant.SIDEQUESTS, "ama_bench")
-        self.sidequests_results["ama_bench"] = sidequests_ama
+        sidequests_ama = await self._evaluate_variant(
+            self.ama_bench_tasks, ABVariant.SIDEQUESTS, "synthetic_causal_arithmetic"
+        )
+        self.sidequests_results["synthetic_causal_arithmetic"] = sidequests_ama
 
         sidequests_memory = await self._evaluate_variant(
-            self.memory_arena_tasks, ABVariant.SIDEQUESTS, "memory_arena"
+            self.memory_arena_tasks, ABVariant.SIDEQUESTS, "synthetic_capacity_constraints"
         )
-        self.sidequests_results["memory_arena"] = sidequests_memory
+        self.sidequests_results["synthetic_capacity_constraints"] = sidequests_memory
 
         # Aggregate metrics
         all_baseline_results = baseline_ama + baseline_memory
@@ -114,8 +118,8 @@ class CausalHarness(BenchmarkHarness):
                 "sidequests": vars(sidequests_metrics),
                 "comparison": self._compare_metrics(baseline_metrics, sidequests_metrics),
                 "task_counts": {
-                    "ama_bench": len(self.ama_bench_tasks),
-                    "memory_arena": len(self.memory_arena_tasks),
+                    "synthetic_causal_arithmetic": len(self.ama_bench_tasks),
+                    "synthetic_capacity_constraints": len(self.memory_arena_tasks),
                 },
             },
         )
@@ -153,9 +157,9 @@ class CausalHarness(BenchmarkHarness):
 
         causal_depth = len(task.causal_steps)
 
-        if task_type == "ama_bench":
+        if task_type == "synthetic_causal_arithmetic":
             result = self._simulate_ama_bench(task, variant, causal_depth)
-        elif task_type == "memory_arena":
+        elif task_type == "synthetic_capacity_constraints":
             result = self._simulate_memory_arena(task, variant, causal_depth)
         else:
             result = CausalTaskResult(
@@ -177,7 +181,7 @@ class CausalHarness(BenchmarkHarness):
         variant: ABVariant,
         causal_depth: int,
     ) -> CausalTaskResult:
-        """Simulate AMA-Bench arithmetic reasoning task execution."""
+        """Simulate synthetic arithmetic reasoning task execution."""
         # Baseline: solve with degraded performance (more constraint violations)
         # SideQuests: solve with better performance (fewer violations via memory)
         if variant == ABVariant.BASELINE:
@@ -203,7 +207,7 @@ class CausalHarness(BenchmarkHarness):
         return CausalTaskResult(
             task_id=task.task_id,
             variant=variant,
-            task_type="ama_bench",
+            task_type="synthetic_causal_arithmetic",
             correct=is_correct,
             steps_completed=steps_completed,
             constraint_violations=constraint_violations,
@@ -217,7 +221,7 @@ class CausalHarness(BenchmarkHarness):
         variant: ABVariant,
         causal_depth: int,
     ) -> CausalTaskResult:
-        """Simulate MemoryArena spatial reasoning task execution."""
+        """Simulate synthetic capacity-constraints task execution."""
         # Baseline: solve with violations due to losing track of state
         # SideQuests: solve with fewer violations via memory-maintained state
         if variant == ABVariant.BASELINE:
@@ -251,7 +255,7 @@ class CausalHarness(BenchmarkHarness):
         return CausalTaskResult(
             task_id=task.task_id,
             variant=variant,
-            task_type="memory_arena",
+            task_type="synthetic_capacity_constraints",
             correct=is_correct,
             steps_completed=steps_completed,
             constraint_violations=constraint_violations,

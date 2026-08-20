@@ -10,21 +10,21 @@ from benchmarks.ab_harness import ABVariant, ABTask, ABTaskResult
 from benchmarks.longcontext.metrics import aggregate_metrics, LongContextMetrics
 
 @dataclass
-class LoCoTask(ABTask):
-    """A LoCoBench task with haystack and needle."""
+class SyntheticLongContextNeedleTask(ABTask):
+    """Synthetic needle-in-haystack task."""
     haystack: str = ""
     needle: str = ""
     target_context_size: int = 8192
 
 class LongContextHarness(BenchmarkHarness):
     """
-    Harness for LoCoBench evaluation of long-context degradation.
+    Harness for synthetic long-context degradation evaluation.
     Compares Baseline (full context) vs SideQuests (memory-retrieval).
     """
 
     def __init__(self, config: BenchmarkConfig):
         super().__init__(config)
-        self.tasks: List[LoCoTask] = []
+        self.tasks: List[SyntheticLongContextNeedleTask] = []
         # Use context_sizes from config if provided, otherwise use defaults
         self.context_sizes = self.config.parameters.get("context_sizes", [8192, 32768, 131072])
         self.results_by_size: Dict[int, Dict[ABVariant, List[Dict[str, Any]]]] = {
@@ -39,12 +39,12 @@ class LongContextHarness(BenchmarkHarness):
             self._load_or_generate_tasks()
 
     def _load_or_generate_tasks(self):
-        """Mock or load LoCoBench tasks."""
+        """Generate synthetic long-context tasks."""
         # Simulated tasks for each context size
         for size in self.context_sizes:
             for i in range(5):  # 5 tasks per context size
                 task_id = f"loco_{size}_{i}"
-                # In LoCoBench, we insert a needle into a large haystack
+                # Insert a needle into a large synthetic haystack.
                 needle_val = random.randint(10000, 99999)
                 needle = f"The unique verification code for this session is {needle_val}."
                 
@@ -56,7 +56,7 @@ class LongContextHarness(BenchmarkHarness):
                 insert_pos = random.randint(len(filler)//5, 4*len(filler)//5)
                 haystack = filler[:insert_pos] + needle + filler[insert_pos:]
                 
-                self.tasks.append(LoCoTask(
+                self.tasks.append(SyntheticLongContextNeedleTask(
                     task_id=task_id,
                     category="needle_in_haystack",
                     prompt=f"Please read the following text carefully and answer: What is the verification code?\n\n{haystack}",
