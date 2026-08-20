@@ -95,6 +95,10 @@ async def set_quest(params: dict, db: KuzuClient, config: dict) -> dict:
     if not quest_name and not quest_id:
         return {"error": "quest_name or quest_id is required"}
 
+    # B338: Scrub secrets from quest_name before storing
+    from campy.brain.brainstem.secret_scrubber import scrub_before_ingest
+    quest_name, _ = await scrub_before_ingest(quest_name)
+
     embedding_model = config.get("embeddings", {}).get(
         "model", "sentence-transformers/all-MiniLM-L6-v2"
     )
