@@ -150,13 +150,36 @@ def test_slack_token_detection():
 
 def test_redaction_preserves_structure():
     """B338: Redaction marks clearly indicate what was redacted."""
-    text = 'Connect using password: "super_secret_password_123" and api_key: "sk-12345-abcdefghij"'
+    # Original case: unquoted password (common in .env and config files)
+    text = "Connect using password: super_secret_password_123 and timeout: 30"
     scrubbed, count = scrub_secrets(text)
     
-    assert count >= 1
+    assert count >= 1, "Should detect unquoted password pattern"
+    assert "super_secret_password_123" not in scrubbed
     assert "[REDACTED:" in scrubbed  # Marker format is clear
     # Structure preserved
-    assert "Connect using password:" in scrubbed or "Connect" in scrubbed
+    assert "Connect using" in scrubbed
+    assert "and timeout: 30" in scrubbed  # Short value not scrubbed
+
+
+def test_database_password_unquoted():
+    """B338: Detect and scrub unquoted database passwords (.env style)."""
+    text = "DATABASE_PASSWORD=MySecurePass123456"
+    scrubbed, count = scrub_secrets(text)
+    
+    assert count == 1, "Should detect unquoted database password"
+    assert "MySecurePass123456" not in scrubbed
+    assert "[REDACTED:database_password]" in scrubbed
+
+
+def test_database_password_quoted():
+    """B338: Also detect quoted database passwords."""
+    text = 'password: "super_secret_password_123"'
+    scrubbed, count = scrub_secrets(text)
+    
+    assert count == 1, "Should detect quoted database password"
+    assert "super_secret_password_123" not in scrubbed
+    assert "[REDACTED:database_password]" in scrubbed
 
 
 def test_aws_secret_key_with_equals():

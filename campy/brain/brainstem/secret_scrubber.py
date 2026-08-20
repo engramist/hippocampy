@@ -66,8 +66,9 @@ _PATTERNS = {
     ),
     
     # Database passwords: password=value patterns (8+ chars to reduce false positives)
+    # Handles both quoted and unquoted: PASSWORD=hunter2345 or password: "secret"
     "database_password": re.compile(
-        r"(?i)(?:password|passwd|pwd|db_password|dbpasswd)\s*[:=]\s*['\"]([^\s'\"]{8,})['\"]?",
+        r"(?i)(?:password|passwd|pwd|db_password|dbpasswd)\s*[:=]\s*['\"]?([^\s'\"=:]{8,})['\"]?",
         re.MULTILINE
     ),
     
