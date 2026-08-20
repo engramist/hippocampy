@@ -37,6 +37,10 @@ dependencies = [
     "starlette>=1.6.0",
     "uvicorn>=0.32.1",
     "rich>=13.0.0",
+    # B340: Dependency floors matching reviewed requirements.txt pins
+    "PyYAML>=6.0.2",    # Used by benchmarks and temporal_lobe.dictionary
+    "psutil>=6.1.1",    # Used by benchmark harness for system metrics
+    "tomli>=2.2.1",     # TOML parser fallback (Python < 3.11 compat)
 ]
 
 [project.optional-dependencies]
@@ -46,8 +50,8 @@ dev = [
     "pytest-mock>=3.14",
     "build>=1.0",
     "twine>=5.0",
-    "black",
-    "ruff",
+    "black>=24.1.0",    # B340: Code formatter with version floor
+    "ruff>=0.4.0",      # B340: Linter with version floor
     # boto3 is an optional runtime dependency (see the `bedrock` extra below) —
     # it is listed here too purely so `tests/test_bedrock_provider.py` can
     # exercise BedrockLLMClient against a stubbed boto3 client without every
