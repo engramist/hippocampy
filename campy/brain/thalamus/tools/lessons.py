@@ -595,6 +595,10 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict, *,
     if not text:
         return {"error": "text is required"}
 
+    # B338: Scrub secrets before storing and embedding
+    from campy.brain.brainstem.secret_scrubber import scrub_before_ingest
+    text, scrub_metadata = await scrub_before_ingest(text)
+
     embedding_model = config.get("embeddings", {}).get(
         "model", "sentence-transformers/all-MiniLM-L6-v2"
     )
