@@ -95,6 +95,18 @@ this is a complete gate rather than a pointer to four other documents:
 | 10 | `bash scripts/validate_one_click_install.sh --use-temp-home --skip-daemon` | Isolates `$HOME` and `$PATH`, resolves the freshly-installed binary (not a stale one), ends `N passed, 0 failed`. |
 | 11 | `brew audit --strict packaging/homebrew/hippocampy.rb` | Exits 0 against a local/scratch tap (macOS only; not run in this Linux sandbox — carried forward from B239's own validation). |
 
+## npm Wrapper Install Behavior
+
+The npm wrapper no longer executes remote installer code during `npm install`.
+It prints an instruction message and requires explicit opt-in via:
+
+```bash
+npx hippocampy-install
+```
+
+The installer script fetch is pinned to an immutable Git ref and checksum-
+verified before execution.
+
 ## Package Path Status (B236)
 
 **complete-with-caveats.** Build, twine check, audit, pipx install, uv

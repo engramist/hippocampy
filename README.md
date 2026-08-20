@@ -101,6 +101,15 @@ sh /tmp/campy-install.sh
 npx @smithery/cli install hippocampy --client claude
 ```
 
+If you install via npm wrappers, setup is explicit opt-in:
+
+```bash
+npm install hippocampy
+npx hippocampy-install
+```
+
+`npm install` does not execute remote installer code automatically.
+
 **Via Homebrew** (macOS, optional — not yet public; see
 [docs/homebrew-install.md](docs/homebrew-install.md)):
 

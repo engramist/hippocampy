@@ -7,7 +7,7 @@
     "hippocampy-install": "./install.js"
   },
   "scripts": {
-    "postinstall": "node install.js"
+    "postinstall": "node postinstall.js"
   },
   "keywords": ["ai", "memory", "claude", "codex", "gemini", "mcp"],
   "author": "HippoCampy",
