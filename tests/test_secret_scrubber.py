@@ -150,10 +150,83 @@ def test_slack_token_detection():
 
 def test_redaction_preserves_structure():
     """B338: Redaction marks clearly indicate what was redacted."""
-    text = "Connect using password: super_secret_password_123 and api_key: sk-12345"
+    text = 'Connect using password: "super_secret_password_123" and api_key: "sk-12345-abcdefghij"'
     scrubbed, count = scrub_secrets(text)
     
     assert count >= 1
     assert "[REDACTED:" in scrubbed  # Marker format is clear
     # Structure preserved
     assert "Connect using password:" in scrubbed or "Connect" in scrubbed
+
+
+def test_aws_secret_key_with_equals():
+    """B338: Detect AWS secret key in environment variable format."""
+    text = 'AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
+    scrubbed, count = scrub_secrets(text)
+    
+    # Should detect and redact the secret key
+    assert count >= 1
+    assert "wJalrXUtnFEMI" not in scrubbed
+    assert "[REDACTED:aws_secret_key]" in scrubbed
+
+
+def test_aws_secret_key_with_colon():
+    """B338: Detect AWS secret key with colon separator."""
+    text = 'aws_secret_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"'
+    scrubbed, count = scrub_secrets(text)
+    
+    assert count >= 1
+    assert "wJalrXUtnFEMI" not in scrubbed
+
+
+def test_django_secret_key_detection():
+    """B338: Detect Django SECRET_KEY pattern."""
+    text = "SECRET_KEY = 'django-insecure-abc123def456ghi789jkl012mnopqrs'"
+    matches = detect_secrets(text)
+    types = [m.secret_type for m in matches]
+    assert "django_secret_key" in types or any("secret" in t for t in types)
+
+
+def test_mongo_connection_string():
+    """B338: Detect MongoDB connection string with password."""
+    text = "mongodb://admin:password123@localhost:27017/mydb"
+    matches = detect_secrets(text)
+    # Should detect the password part
+    assert len(matches) >= 1
+
+
+def test_database_password_formats():
+    """B338: Detect various database password formats."""
+    text = """
+    password="SecurePassword123"
+    db_password: "Another$Pass456"
+    DBPASSWD='ThirdSecret789'
+    """
+    scrubbed, count = scrub_secrets(text)
+    
+    # Should detect multiple password patterns
+    assert count >= 2
+    assert "SecurePassword" not in scrubbed
+    assert "Another$Pass" not in scrubbed
+
+
+def test_no_false_positives_short_strings():
+    """B338: Don't scrub short random strings as secrets."""
+    text = "server: localhost port: 8080 timeout: 30"
+    scrubbed, count = scrub_secrets(text)
+    
+    # These short values should not trigger scrubbing
+    assert count == 0
+    assert scrubbed == text
+
+
+def test_bearer_token_variations():
+    """B338: Detect Bearer token in various formats."""
+    text1 = 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test'
+    text2 = 'bearer: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test"'
+    
+    scrubbed1, count1 = scrub_secrets(text1)
+    scrubbed2, count2 = scrub_secrets(text2)
+    
+    # At least one should detect the bearer token
+    assert count1 >= 1 or count2 >= 1

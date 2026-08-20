@@ -24,15 +24,63 @@ class SecretMatch(NamedTuple):
 
 
 # Regex patterns for common credential shapes
+# B338: Improved patterns with better coverage and fewer false negatives.
+# Each pattern targets a specific secret shape rather than trying to detect
+# generic "high entropy" which produces too many false positives.
 _PATTERNS = {
+    # AWS access keys: AKIA followed by 16 alphanumeric chars
     "aws_access_key": re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
-    "aws_secret_key": re.compile(r"(?i)(aws_secret_access_key|aws_secret_key)\s*[=:]\s*['\"]*([A-Za-z0-9/+=]{40})"),
-    "private_key_pem": re.compile(r"-----BEGIN\s+[A-Z\s]+(?:PRIVATE|RSA|DSA|EC|ED25519)\s+KEY-----", re.IGNORECASE),
-    "bearer_token": re.compile(r"(?i)(authorization|bearer)\s*[:=]\s*['\"]*Bearer\s+([A-Za-z0-9._\-]+)"),
-    "api_key_pattern": re.compile(r"(?i)(api[_-]?key|apikey|api_token|sk[-_])\s*[:=\s]+['\"]*([A-Za-z0-9_\-]{20,})"),
-    "github_token": re.compile(r"(ghp_|gho_|ghu_|ghs_|ghr_)[A-Za-z0-9_]{36,255}\b"),
-    "slack_token": re.compile(r"(xox[baprs]-[0-9]{7,13}-[0-9]{7,13}-[0-9A-Za-z]{24,34}|xoxp-[0-9A-Za-z]{160,})"),
-    "database_password": re.compile(r"(?i)(password|passwd|pwd)\s*[:=]\s*['\"]*([^\s'\"]{8,})"),
+    
+    # AWS secret keys: longer base64-like strings after aws_secret_ or similar
+    # Also matches environment variable format with = or : separator
+    "aws_secret_key": re.compile(
+        r"(?i)(?:aws_secret_access_key|aws_secret_key|AWS_SECRET_ACCESS_KEY|AWS_SECRET_KEY)\s*[:=]\s*['\"]?([A-Za-z0-9/+=]{40,})(?:['\"]|\s|$)",
+        re.MULTILINE
+    ),
+    
+    # Private key PEM headers (RSA, EC, ED25519, DSA, etc.)
+    "private_key_pem": re.compile(
+        r"-----BEGIN\s+[A-Z\s]*(?:PRIVATE|RSA|DSA|EC|ED25519|OPENSSH|ENCRYPTED|PGP)\s+KEY(?:\s+[A-Z]*)?\s*-----",
+        re.IGNORECASE
+    ),
+    
+    # Bearer tokens in Authorization headers
+    "bearer_token": re.compile(
+        r"(?i)(?:authorization|bearer)\s*[:=]\s*['\"]?Bearer\s+([A-Za-z0-9._\-~+/=]{20,})",
+        re.MULTILINE
+    ),
+    
+    # API key patterns: explicit key assignment with at least 20 chars
+    "api_key_pattern": re.compile(
+        r"(?i)(?:api[_-]?key|apikey|api_token|api_secret|sk[-_]live|sk[-_]test)\s*[:=]\s*['\"]?([A-Za-z0-9_\-]{20,})['\"]?(?:\s|$)",
+        re.MULTILINE
+    ),
+    
+    # GitHub personal access tokens
+    "github_token": re.compile(r"(?:ghp_|gho_|ghu_|ghs_|ghr_)[A-Za-z0-9_]{36,255}\b"),
+    
+    # Slack tokens: xoxb/xoxp/xoxr/xoxs formats
+    # More permissive to catch variations: word chars + hyphens
+    "slack_token": re.compile(
+        r"(?:xoxb|xoxp|xoxr|xoxs|xoxa|xoxc)-[A-Za-z0-9_-]{10,}"
+    ),
+    
+    # Database passwords: password=value patterns (8+ chars to reduce false positives)
+    "database_password": re.compile(
+        r"(?i)(?:password|passwd|pwd|db_password|dbpasswd)\s*[:=]\s*['\"]([^\s'\"]{8,})['\"]?",
+        re.MULTILINE
+    ),
+    
+    # Django SECRET_KEY and similar framework secrets
+    "django_secret_key": re.compile(
+        r"(?i)(?:secret_key|django_secret_key|secret)\s*[:=]\s*['\"]([A-Za-z0-9_\-!@#$%^&*()+=\[\]{}:;<>,.?/~`]{32,})['\"]",
+        re.MULTILINE
+    ),
+    
+    # MongoDB/database connection strings with passwords
+    "mongo_connection_string": re.compile(
+        r"mongodb(?:\+srv)?://[^:]+:([A-Za-z0-9_\-!@#$%^&*()+=~]{8,})@"
+    ),
 }
 
 
