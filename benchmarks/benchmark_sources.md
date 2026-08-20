@@ -3,9 +3,17 @@
 This document provides canonical links, citations, and license terms for the benchmarks used to evaluate the SideQuest Brain Daemon.
 
 ## ARC3
-- **Status:** Retracted.
-- **Reason:** `benchmarks/results/arc3.json` was not reproducible from any committed harness.
-- **Current Action:** Treated as historical placeholder data only. Do not use in claims.
+- **Status:** Unverified (not confirmed fabricated, not confirmed reproducible — see
+  `backlog/B332.md`'s 2026-08-20 correction).
+- **Reason:** `benchmarks/results/arc3.json`'s specific numbers (`solve_rate_improvement: 0.08`,
+  `p_value: 0.042`) don't trace to any harness or run in *this* repo. A real ARC-AGI-3 A/B harness does
+  exist in the sibling `ARC_AGI` repo (`benchmarks/arc3/harness.py` — "ARC-AGI-3 A/B Harness (Baseline
+  vs SideQuests-Augmented)", wired to Campy over MCP via `sidequest_mcp_client`), and could plausibly
+  produce a result in this shape — but a search of that repo's
+  `benchmarks/results/regression_history.jsonl` found no matching run.
+- **Current Action:** Treat this specific number as unverified, not established. Do not cite it in
+  claims. Cross-repo reconciliation (locating or re-running the actual source of this number in
+  ARC_AGI, or confirming conclusively it can't be found) is open work.
 
 ## SWE-CI (Internal Synthetic Sample)
 - **Goal:** Constraint-compliance comparison between baseline and memory-assisted variants.

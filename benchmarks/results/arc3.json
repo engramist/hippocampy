@@ -1,11 +1,15 @@
 {
-  "status": "retracted, unable to reproduce — see backlog/B332.md",
+  "status": "unverified — see backlog/B332.md",
   "benchmark_name": "arc3",
   "success": false,
   "duration": 0,
   "metrics": {
-    "retracted": true
+    "unverified": true
   },
-  "error": "Original ARC3 claim was not reproducible from repository sources.",
+  "error": "No ARC3 harness exists in this repo. A real ARC-AGI-3 A/B harness does exist in the sibling ARC_AGI repo (benchmarks/arc3/harness.py, wired to Campy over MCP), but the specific numbers below (solve_rate_improvement 0.08, p_value 0.042) do not appear in that repo's regression_history.jsonl. Not confirmed fabricated; not confirmed reproducible. Original unverified metrics retained below for reference only, not as an established result.",
+  "original_unverified_metrics": {
+    "solve_rate_improvement": 0.08,
+    "p_value": 0.042
+  },
   "timestamp": 1774716222.9183722
 }

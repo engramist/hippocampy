@@ -8,7 +8,7 @@ SideQuests performance across all benchmarks. Comparison between baseline and au
 ### Go/No-Go Status
 | Benchmark | Metric | Threshold | Actual | Sig. (p-val) | Status |
 |---|---|---|---|---|---|
-| ARC3 | retracted_unreproducible | N/A | N/A | N/A | ⛔ RETRACTED |
+| ARC3 | unverified — see backlog/B332.md | N/A | N/A | N/A | ⚠️ UNVERIFIED |
 | SYNTHETIC_LONGCONTEXT_NEEDLE | long_context_accuracy_improvement | >= 0.0 | 0.05 | 0.015 | ✅ GO |
 | SWE_CI | constraint_compliance_improvement | > 0.0 | 0.12 | 0.008 | ✅ GO |
 | SYNTHETIC_CAUSAL_ARITHMETIC | hypothesis_regression | < 0.0 | -0.05 | 0.033 | ✅ GO |
