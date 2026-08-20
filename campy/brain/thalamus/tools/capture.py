@@ -9,6 +9,7 @@ import uuid
 
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.hippocampus.schema import upsert_agent_worker_and_link
+from campy.brain.brainstem.secret_scrubber import scrub_before_ingest
 
 from ._shared import (
     _CONCEPT_INDEX,
@@ -181,6 +182,17 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
     vector     = emb.embed(content, model_name=embedding_model)
     message_id = str(uuid.uuid4())
     now        = datetime.now(timezone.utc).isoformat()
+
+    # B338: Scrub secrets from content before persisting as text_raw
+    content, scrub_metadata = await scrub_before_ingest(content)
+    if scrub_metadata.get("was_scrubbed"):
+        _logger.warning(
+            "B338: Content scrubbed before ingest. Detected %d secrets (types: %s) "
+            "in session %s. Secrets redacted as [REDACTED:secret_type].",
+            scrub_metadata["secrets_found"],
+            ", ".join(scrub_metadata["secret_types"]),
+            session_id,
+        )
 
     # Route session via Hippocampus (all sessions, not just git)
     quest_id = ""

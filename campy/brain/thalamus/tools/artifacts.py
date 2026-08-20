@@ -56,6 +56,11 @@ async def register_artifact(params: dict, db: KuzuClient, config: dict) -> dict:
     summary = params.get("summary", "")
     linked_card = params.get("linked_card", "")
 
+    # B338: Scrub secrets from title and summary before storing
+    from campy.brain.brainstem.secret_scrubber import scrub_before_ingest
+    title, _ = await scrub_before_ingest(title)
+    summary, _ = await scrub_before_ingest(summary)
+
     # Infer linked_card from filename if not provided
     if not linked_card:
         import re as _re
