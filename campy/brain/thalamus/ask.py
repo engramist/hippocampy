@@ -17,7 +17,6 @@ COMPRESSION IS ALWAYS-ON (Option B):
 """
 
 from __future__ import annotations
-import html
 import logging
 import re
 from typing import Optional, TYPE_CHECKING
@@ -115,16 +114,13 @@ def _render_plan_item(item: dict) -> str:
     return "\n".join(lines)
 
 
-def _escape_memory_text(value: str) -> str:
-    """Escape literal XML-like closing tags inside retrieved memory so they
-    remain data, never a prompt boundary terminator.
-    """
-    return html.escape(str(value), quote=False)
-
-
 def _bundle_to_prompt(bundle, query: str) -> str:
-    """Flatten compressed bundle sections into a single prompt string."""
-    from campy.brain.thalamus.memory_formatter import format_memory_with_boundary
+    """Flatten compressed bundle sections into a single prompt string.
+    
+    B339: Uses memory_formatter.escape_memory_content() to prevent boundary
+    tag injection from stored memory content before rendering into the prompt.
+    """
+    from campy.brain.thalamus.memory_formatter import format_memory_with_boundary, escape_memory_content
     
     parts = [f"Query: {query}\n\nContext from memory:\n"]
     has_content = False
@@ -136,15 +132,15 @@ def _bundle_to_prompt(bundle, query: str) -> str:
             if not isinstance(item, dict):
                 continue
             if "compact" in item:
-                rendered_items.append(_escape_memory_text(item["compact"]))
+                rendered_items.append(escape_memory_content(item["compact"]))
             elif "toon" in item:
-                rendered_items.append(_escape_memory_text(item["toon"]))
+                rendered_items.append(escape_memory_content(item["toon"]))
             elif section_type == "plans" and "goal" in item:
-                rendered_items.append(_escape_memory_text(_render_plan_item(item)))
+                rendered_items.append(escape_memory_content(_render_plan_item(item)))
             elif "text" in item:
-                rendered_items.append(_escape_memory_text(item["text"]))
+                rendered_items.append(escape_memory_content(item["text"]))
             elif "source" in item:
-                rendered_items.append(_escape_memory_text(item["source"]))
+                rendered_items.append(escape_memory_content(item["source"]))
         
         # B339: Wrap rendered items with data/instruction boundaries
         if rendered_items:

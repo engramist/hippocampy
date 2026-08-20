@@ -7,9 +7,31 @@ be treated as information to reason about, not commands to follow.
 
 Strategy: XML-style tags with optional source and trust metadata.
 System instruction reinforces that tagged content is data, not directives.
+
+B339: All memory content is HTML-escaped before injection to prevent boundary
+tag injection via stored memory containing literal </campy-memory> or similar.
+Escaping is centralized here so all callers get protection automatically.
 """
 
+import html
 from typing import NamedTuple
+
+
+def escape_memory_content(value: str) -> str:
+    """
+    B339: Escape literal XML-like tags inside memory content so they
+    remain data, never a prompt boundary terminator or injection vector.
+    
+    Called automatically by format_memory_with_boundary; can be used
+    directly by callers who format memory outside this module.
+    
+    Args:
+        value: The memory text to escape
+        
+    Returns:
+        HTML-escaped string safe for prompt injection (< and > escaped)
+    """
+    return html.escape(str(value), quote=False)
 
 
 class FormattedMemory(NamedTuple):
@@ -36,6 +58,9 @@ def format_memory_with_boundary(
 ) -> FormattedMemory:
     """
     B339: Wrap a memory snippet with explicit data/instruction boundaries.
+    
+    Content is automatically HTML-escaped to prevent boundary tag injection
+    from stored memory containing literal </campy-memory> tags or similar.
 
     Args:
         content: The raw memory text to be replayed
@@ -43,7 +68,7 @@ def format_memory_with_boundary(
         trust_level: How much to trust this data ("stored_data", "inferred", "unreliable")
 
     Returns:
-        FormattedMemory with tagged content and metadata
+        FormattedMemory with escaped, tagged content and metadata
     """
     if not content or not content.strip():
         return FormattedMemory(
@@ -53,10 +78,12 @@ def format_memory_with_boundary(
             trust_level=trust_level,
         )
 
+    # B339: Escape content before injection into template
+    escaped_content = escape_memory_content(content.strip())
     tagged = _DATA_BOUNDARY_TEMPLATE.format(
         source=source,
         trust=trust_level,
-        content=content.strip(),
+        content=escaped_content,
     )
 
     return FormattedMemory(
