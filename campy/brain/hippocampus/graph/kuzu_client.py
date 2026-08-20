@@ -249,14 +249,18 @@ class KuzuClient:
         del self.db
 
     async def checkpoint(self) -> bool:
-        """
-        Force a manual checkpoint independent of commit count.
+        """Force a manual checkpoint under the write lock.
+        
         B337: Decouples checkpoint cadence from transaction boundaries,
-        mitigating memory spikes during write-heavy phases.
+        mitigating memory spikes during write-heavy phases. Routes through
+        the same per-db write lock as execute_write() to prevent races with
+        in-flight writes.
+        
         Returns True on success, False on error.
         """
         try:
-            await asyncio.to_thread(self.execute, "CHECKPOINT")
+            async with _get_write_lock(self.db_path):
+                await asyncio.to_thread(self.execute, "CHECKPOINT")
             return True
         except Exception as e:
             import logging
