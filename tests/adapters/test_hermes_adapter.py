@@ -1,6 +1,7 @@
 # tests/adapters/test_hermes_adapter.py
 """Test Hermes agent adapter."""
 import asyncio
+import pytest
 from unittest.mock import patch
 
 
@@ -100,7 +101,12 @@ def test_hermes_register_function():
 
 def test_hermes_in_setup_targets():
     """Hermes should be available as a setup target."""
-    from campy.cli.main import setup
+    try:
+        from campy.cli.main import setup
+    except ModuleNotFoundError as exc:
+        if "kuzu" in str(exc):
+            pytest.skip("kuzu optional dependency not installed in this test environment")
+        raise
     import inspect
     
     source = inspect.getsource(setup)
@@ -274,3 +280,71 @@ async def test_hermes_capture_turn_overrides_session_id_without_leaking():
     _, _, payload = fake_client.calls[0]
     assert payload["session_id"] == "one-off-session"
     assert adapter._session_id == "configured-session"
+
+
+async def test_hermes_adapter_calls_real_app_routes_via_asgi_transport():
+    """Integration guard: exercise adapter calls against create_app() routes,
+    not a fully mocked transport, so route drift is caught by tests."""
+    import httpx
+    import sys
+    import types
+
+    from adapters.hermes.adapter import HermesAdapter
+    from web.server import create_app
+
+    class _EmptyResult:
+        def has_next(self):
+            return False
+
+    class _EmptyDB:
+        def execute(self, q, p=None):
+            return _EmptyResult()
+
+        async def execute_write(self, q, p=None):
+            pass
+
+    app = create_app(_EmptyDB(), config={"server": {"auth": "none"}})
+
+    async def _current_truth(*, params, db, config):
+        return {"results": [{"fact": params["query"]}], "session_id": params.get("session_id")}
+
+    async def _memory_decision(*, params, db, config):
+        return {"recommended_tool": "compile_context", "query": params["query"]}
+
+    async def _notify_turn(*, params, db, config):
+        return {"status": "queued", "session_id": params.get("session_id")}
+
+    async def _compile_context(*, params, db, config):
+        return {"bundle": {"query": params["query"], "agent_type": params.get("agent_type", "generic")}}
+
+    fake_tools_module = types.SimpleNamespace(
+        TOOL_HANDLERS={
+            "current_truth": _current_truth,
+            "memory_decision": _memory_decision,
+            "notify_turn": _notify_turn,
+            "compile_context": _compile_context,
+        }
+    )
+
+    with patch.dict(sys.modules, {"campy.brain.thalamus.tools": fake_tools_module}):
+        def _client_factory():
+            return httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://testserver",
+            )
+
+        adapter = HermesAdapter(
+            memory_url="http://testserver",
+            async_client_factory=_client_factory,
+        )
+        adapter.configure({"session_id": "sess-int"})
+
+        recall = await adapter.recall("what changed?")
+        decide = await adapter.decide("which tool")
+        notified = await adapter.notify("assistant", "done")
+        bundle = await adapter.session_recall("auth rollout", agent_type="spawned")
+
+    assert recall == {"results": [{"fact": "what changed?"}], "session_id": "sess-int"}
+    assert decide == {"recommended_tool": "compile_context", "query": "which tool"}
+    assert notified is True
+    assert bundle == {"bundle": {"query": "auth rollout", "agent_type": "spawned"}}
