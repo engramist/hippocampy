@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
 from typing import Protocol, runtime_checkable
@@ -55,6 +56,10 @@ KNOWN_SCOPES: frozenset[str] = frozenset({
 # Local mode is single-tenant cloud with auth stubbed — it holds every scope
 # Campy currently knows about, by definition (there is no one else to deny).
 _ALL_SCOPES: frozenset[str] = frozenset(KNOWN_SCOPES)
+_DEFAULT_RUNTIME_SCOPES: frozenset[str] = frozenset({
+    SCOPE_MEMORY_READ,
+    SCOPE_MEMORY_WRITE,
+})
 
 
 @dataclass(frozen=True)
@@ -213,6 +218,36 @@ def _import_boto3_for_iam():
     return boto3
 
 
+# B328: STS verification cache to prevent hammering AWS on every request.
+# Key: (auth_header, amz_date) → Value: (arn, expiry_time)
+# TTL: 15 minutes. SigV4 timestamps are per-request, so we cache on the
+# exact Auth + Date pair. A new request with different Date is a different
+# cache entry, so this is safe: no "stale" ARN can be reused beyond the
+# actual signature's validity window (which is much shorter than 15min).
+_STS_CACHE: dict[tuple[str, str], tuple[str, float]] = {}
+_STS_CACHE_TTL_SECONDS = 15 * 60  # 15 minutes
+
+
+def _get_cached_arn(auth: str, amz_date: str) -> str | None:
+    """Retrieve cached ARN if present and not expired."""
+    key = (auth, amz_date)
+    entry = _STS_CACHE.get(key)
+    if entry is None:
+        return None
+    arn, expiry = entry
+    if time.time() > expiry:
+        del _STS_CACHE[key]
+        return None
+    return arn
+
+
+def _cache_arn(auth: str, amz_date: str, arn: str) -> None:
+    """Cache the ARN with expiry time."""
+    key = (auth, amz_date)
+    expiry = time.time() + _STS_CACHE_TTL_SECONDS
+    _STS_CACHE[key] = (arn, expiry)
+
+
 async def _sts_get_caller_identity_verifier(headers: Mapping[str, str]) -> str:
     """Verify a SigV4-signed request by replaying its exact signed headers
     against AWS STS `GetCallerIdentity`.
@@ -226,6 +261,13 @@ async def _sts_get_caller_identity_verifier(headers: Mapping[str, str]) -> str:
     Authorization header — Campy never sees a raw AWS secret key, only
     headers the caller already signed for this exact purpose.
 
+    B328: Results are cached for 15 minutes keyed on (Authorization,
+    X-Amz-Date) to prevent hammering STS on every request from the same
+    credential. This is safe: a SigV4 signature is only valid for the exact
+    request it was computed for, so if an attacker replayed an old Auth
+    header, it would be a different X-Amz-Date, resulting in a different
+    cache entry.
+
     Returns the caller's ARN. Raises IAMConfigError on any failure
     (missing headers, non-SigV4 auth, STS rejects the signature, network
     error) — never lets a verification failure look like success.
@@ -238,6 +280,11 @@ async def _sts_get_caller_identity_verifier(headers: Mapping[str, str]) -> str:
         raise IAMConfigError("missing SigV4 Authorization/X-Amz-Date headers")
     if not authorization.startswith("AWS4-HMAC-SHA256"):
         raise IAMConfigError("Authorization header is not a SigV4 signature")
+
+    # B328: Check cache before calling STS
+    cached_arn = _get_cached_arn(authorization, amz_date)
+    if cached_arn is not None:
+        return cached_arn
 
     security_token = headers.get("x-amz-security-token") or headers.get("X-Amz-Security-Token")
 
@@ -270,7 +317,12 @@ async def _sts_get_caller_identity_verifier(headers: Mapping[str, str]) -> str:
     match = re.search(r"<Arn>([^<]+)</Arn>", body)
     if not match:
         raise IAMConfigError("STS response did not contain a caller ARN")
-    return match.group(1)
+    arn = match.group(1)
+    
+    # B328: Cache the verified ARN
+    _cache_arn(authorization, amz_date, arn)
+    
+    return arn
 
 
 class IAMPrincipalResolver:
@@ -306,6 +358,8 @@ class IAMPrincipalResolver:
         workspace_id: str = "default",
         workspace_map: dict[str, str] | None = None,
         tenant_map: dict[str, str] | None = None,
+        principal_scope_map: dict[str, list[str] | tuple[str, ...] | set[str]] | None = None,
+        default_scopes: list[str] | tuple[str, ...] | set[str] | None = None,
         client: str = "agentcore",
         verifier=_sts_get_caller_identity_verifier,
     ) -> None:
@@ -313,6 +367,14 @@ class IAMPrincipalResolver:
         self._default_workspace_id = workspace_id
         self._workspace_map = workspace_map or {}
         self._tenant_map = tenant_map or {}
+        self._principal_scope_map = principal_scope_map or {}
+        if default_scopes is None:
+            self._default_scopes = _DEFAULT_RUNTIME_SCOPES
+        else:
+            unknown = set(default_scopes) - KNOWN_SCOPES
+            if unknown:
+                raise IAMConfigError(f"unknown default scope(s): {sorted(unknown)}")
+            self._default_scopes = frozenset(default_scopes)
         self._client = client
         self._verifier = verifier
 
@@ -320,23 +382,43 @@ class IAMPrincipalResolver:
         headers = transport_ctx.headers or {}
         caller_arn = await self._verifier(headers)
 
-        # B325: a Gateway session attribute forwarded as an HTTP header is
-        # a transport-level credential, not a request param — acceptable
-        # per B315's rule. Falls through to the configured map, then the
-        # resolver's default, in that order.
+        # Operator-configured workspace mapping is authoritative. A caller
+        # can request a workspace via header, but that value never overrides
+        # explicit operator policy.
         header_workspace = headers.get("x-campy-workspace-id") or headers.get("X-Campy-Workspace-Id")
-        workspace_id = (
-            header_workspace
-            or self._workspace_map.get(caller_arn)
-            or self._default_workspace_id
-        )
+        mapped_workspace = self._workspace_map.get(caller_arn)
+        if mapped_workspace:
+            if header_workspace and header_workspace != mapped_workspace:
+                raise IAMConfigError(
+                    "workspace header override rejected: caller is bound to operator-configured workspace"
+                )
+            workspace_id = mapped_workspace
+        else:
+            # No explicit grant for this caller: never allow an arbitrary
+            # caller-supplied workspace id.
+            if header_workspace and header_workspace != self._default_workspace_id:
+                raise IAMConfigError(
+                    "workspace header requires explicit iam_workspace_map grant for this caller"
+                )
+            workspace_id = self._default_workspace_id
+
         tenant_id = self._tenant_map.get(caller_arn) or self._default_tenant_id
+        scoped = self._principal_scope_map.get(caller_arn)
+        if scoped is None:
+            scopes = self._default_scopes
+        else:
+            unknown = set(scoped) - KNOWN_SCOPES
+            if unknown:
+                raise IAMConfigError(
+                    f"unknown scope(s) configured for {caller_arn}: {sorted(unknown)}"
+                )
+            scopes = frozenset(scoped)
 
         return Principal(
             subject_id=caller_arn,
             tenant_id=tenant_id,
             workspace_id=workspace_id,
-            scopes=_ALL_SCOPES,
+            scopes=scopes,
             client=self._client,
             session_id=None,
             derived_from="iam",

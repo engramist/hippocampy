@@ -1,8 +1,10 @@
 # One-Click Install Release Gate
 
-**Status as of this document: NO-GO for promoting the one-click command as the
-canonical/primary install path. GO for continuing to document it as a
-recommended, actively-validated path alongside source install.**
+**Status as of this document: GO for promoting the one-click command as the
+canonical/primary install path.** `hippocampy` 0.1.0 published to PyPI on
+2026-08-18 (https://pypi.org/project/hippocampy/0.1.0/; see
+[B327](backlog/B327.md)) — the literal Quickstart command now works for a
+real user.
 
 This is the final go/no-go checklist for Campy's one-click install story
 (B236 package path, B237 hosted bootstrap script, B238 clean-machine
@@ -21,41 +23,35 @@ See also: [`docs/troubleshooting-install.md`](troubleshooting-install.md),
 | Question | Answer |
 |---|---|
 | Is `bootstrap.sh` itself correct and validated? | **Yes** (B237, B238 — see below). |
-| Does `pipx install hippocampy` (the thing `bootstrap.sh` runs by default) work today, for a real user, right now? | **No.** `hippocampy` is not published to PyPI. `pip index versions hippocampy` returns no distribution. |
-| Is the gap disclosed anywhere a user would see it before running the one-liner? | Partially — `docs/homebrew-install.md` says so; `README.md`'s Quickstart did not, until this card. |
-| Verdict | **NO-GO** on calling the one-click command *canonical*. **GO** on documenting it as the *recommended* path once a real package/tag exists to install from, with the current gap stated plainly next to the command. |
+| Does `pipx install hippocampy` (the thing `bootstrap.sh` runs by default) work today, for a real user, right now? | **Yes.** `hippocampy` 0.1.0 was published to PyPI on 2026-08-18 (https://pypi.org/project/hippocampy/0.1.0/). Verified in a clean venv: `pip install hippocampy`, then `campy --help` and `campy doctor --help` both run cleanly. |
+| Is the gap disclosed anywhere a user would see it before running the one-liner? | N/A — the gap is closed. `README.md`'s Quickstart and Install sections present `pipx install hippocampy` as the recommended path without caveat. |
+| Verdict | **GO** on calling the one-click command *canonical*. |
 
-**Why not just say "go"?** B236's own re-verification (`backlog/B236.md`,
-"Re-verification Notes (2026-08-03)") records two acceptance criteria as
-genuinely unmet, not stylistic nitpicks:
+**Why this was NO-GO until 2026-08-18.** B236's own re-verification
+(`backlog/B236.md`, "Re-verification Notes (2026-08-03)") recorded two
+acceptance criteria as genuinely unmet, not stylistic nitpicks:
 
 1. **README did not label the install command's publish status, and the
-   literal top command did not work.** `pipx install hippocampy` fails
-   today (`ERROR: No matching distribution found for hippocampy`) because
-   the package has never been published to PyPI. Prior to this card,
-   nothing in `README.md` said so.
-2. **No TestPyPI dry-run completion or skip record exists.** The publish
+   literal top command did not work.** `pipx install hippocampy` failed
+   (`ERROR: No matching distribution found for hippocampy`) because
+   the package had never been published to PyPI.
+2. **No TestPyPI dry-run completion or skip record existed.** The publish
    *procedure* is documented (`docs/release-publish-checklist.md`), but no
-   one has run it against TestPyPI, and no one had written down a reasoned
+   one had run it against TestPyPI, and no one had written down a reasoned
    decision to skip it.
 
-A release gate that says "go" while the literal first command in the README
-fails for every real user would be exactly the kind of gate this card exists
-to prevent. Per this card's own acceptance criterion — *"README does not
-promote the one-click command as canonical until B236–B238 pass"* — and
-because B236 has 2 unmet ACs, README is written (see the Install section)
-to recommend the one-line bootstrap and `pipx install` as the
-best-currently-available path while being explicit that PyPI publication
-hasn't happened yet, rather than calling either one "the" canonical,
-guaranteed-to-work command. Source install remains the fallback that is
-guaranteed to work regardless of PyPI status.
+Both are now closed. (1): `hippocampy` 0.1.0 was published to real PyPI on
+2026-08-18 (B327), and README's Install section now presents
+`pipx install hippocampy` as the single recommended path. (2): the TestPyPI
+dry run was explicitly skipped — no separate TestPyPI account/token existed,
+and build/`twine check`/audit/packaging tests had already passed repeatedly
+against the real artifacts (see B236's closure notes) — a reasoned,
+documented decision rather than a silent gap. Source install remains
+available as an alternative that works regardless of PyPI status.
 
-**What would flip this to GO:** either (a) `hippocampy` gets published to
-PyPI (even to TestPyPI with a recorded dry-run) so the literal Quickstart
-command works, or (b) the bootstrap script's `--dev-source` local-build path
-becomes the one-liner's default so it never depends on an unpublished
-package. Neither happened in this card — this card's job is the gate and
-the docs, not shipping the package.
+**What flipped this to GO:** `hippocampy` was published to PyPI on
+2026-08-18 (B327), so the literal Quickstart command now works for a real
+user.
 
 ## Supported Platforms
 
@@ -140,21 +136,18 @@ real-dependency reason as B237 — covered by the manual checklist instead.
 
 **complete**, explicitly optional and explicitly not canonical. The formula
 is validated locally (`brew audit --strict`, `brew install
---build-from-source` against a scratch tap) but its `url`/`sha256` point at
-placeholder PyPI coordinates, because there is no published release to
-point at yet (same root cause as B236's gap). `docs/homebrew-install.md`
-states this plainly: *"brew install hippocampy will not work until [a
-public tap] exists... The canonical install path remains pipx install
-hippocampy / curl ... bootstrap.sh"* — itself an overstatement given B236's
-gaps, which is why this gate does not call *any* single command canonical
-yet. Homebrew stays macOS-only and secondary regardless of PyPI status.
+--build-from-source` against a scratch tap) but its `url`/`sha256` still
+point at placeholder coordinates — they were never updated to the real
+PyPI release now that one exists (B327); that update is tracked as a
+separate follow-up, not part of this card. `docs/homebrew-install.md`
+states: *"brew install hippocampy will not work until [a public tap]
+exists... The canonical install path remains pipx install hippocampy /
+curl ... bootstrap.sh"* — consistent with this gate's verdict above, since
+`pipx install hippocampy` is now the canonical path and Homebrew stays
+macOS-only and secondary regardless.
 
 ## Known Limitations
 
-- **`hippocampy` is not on PyPI.** `pipx install hippocampy` and `pip
-  install hippocampy` do not work for any user today. `bootstrap.sh`'s
-  default (non-`--dev-source`) path depends on this and will fail the same
-  way at Step 3 until publication happens.
 - **The repo (`engramist/hippocampy`) is not confirmed public.** The
   `curl -fsSL https://raw.githubusercontent.com/engramist/hippocampy/...`
   URLs in README/bootstrap docs assume a public GitHub repo at that path;

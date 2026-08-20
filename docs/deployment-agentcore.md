@@ -135,13 +135,62 @@ For IAM mode, set `[server]` in `campy.toml`:
 [server]
 bind_host = "0.0.0.0"   # or a concrete bind address — see the bind guard below
 auth      = "iam"
+# Optional hardening: disable dashboard/REST surface entirely.
+# dashboard_enabled = false
 ```
+
+With this configuration, Campy now enforces auth on every HTTP route except
+`GET /health` via a global request auth middleware, not only on `POST /mcp`.
+If you set `dashboard_enabled = false`, only `/health`, `/mcp`, and `/sse`
+are mounted.
+
+Workspace and scope policy in IAM mode:
+
+- `iam_workspace_map` is authoritative per caller ARN.
+- `x-campy-workspace-id` is treated as a request, never an override of
+  operator policy; unmapped callers cannot select arbitrary workspace IDs.
+- Optional `iam_principal_scope_map` allows per-principal scope tiering.
+  Without this map, behavior stays backward-compatible (all known scopes).
 
 then sign a request the same way the eventual Lambda proxy will (SigV4 over the exact request,
 verified server-side by replaying it against STS `GetCallerIdentity` — see
 `campy.brain.auth._sts_get_caller_identity_verifier`). An unsigned request is rejected before
 any tool handler runs.
 
+Note on SigV4 replay semantics: this pattern authenticates the caller identity
+to STS, not a nonce-bound Campy request payload. Captured SigV4 headers are
+therefore replayable within STS's clock-skew window. Keep the header-binding
+and operator workspace/scope policy above in place; they are defense in depth,
+not optional.
+
 Also see `campy.cli.smoke_test.check_remote_mcp_surface()` for a scripted check that the HTTP
 surface advertises the same tools the Unix-socket transport does — both now share
 `route_tool_call()`, so that comparison means something.
+
+## Offline / Egress-Locked Embedding Deployments
+
+Campy's default sentence-transformers path will download model weights on first use if the
+cache is empty. For egress-locked deployments, pre-bake the model and run in offline mode.
+
+Pre-bake at image-build time (while network is available):
+
+```bash
+python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
+```
+
+Then run with offline mode enabled:
+
+```bash
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+```
+
+Optional Campy config equivalent:
+
+```toml
+[embeddings]
+offline = true
+```
+
+If offline mode is enabled and the model is missing from cache, startup fails with an actionable
+error telling you to pre-bake the model cache or disable offline mode.

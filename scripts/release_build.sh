@@ -23,23 +23,24 @@ echo "Step 1: Cleaning previous build artifacts..."
 rm -rf dist build *.egg-info
 echo "  ✓ Clean"
 
-# Step 2: Run public release audit
+# Step 2: Build wheel and sdist
 echo ""
-echo "Step 2: Running public release audit..."
-bash scripts/audit_public_release.sh --release
-echo "  ✓ Audit passed"
-
-# Step 3: Build wheel and sdist
-echo ""
-echo "Step 3: Building wheel and sdist..."
+echo "Step 2: Building wheel and sdist..."
 python3 -m build --wheel --sdist
 echo "  ✓ Built: $(ls dist/)"
 
-# Step 4: Run twine check
+# Step 3: Run twine check
 echo ""
-echo "Step 4: Running twine check..."
+echo "Step 3: Running twine check..."
 python3 -m twine check dist/*
 echo "  ✓ Twine check passed"
+
+# Step 4: Run public release audit (now that dist/ exists, --release mode
+# can scan the actual built wheel/sdist contents, not just tracked files)
+echo ""
+echo "Step 4: Running public release audit..."
+bash scripts/audit_public_release.sh --release
+echo "  ✓ Audit passed"
 
 # Step 5: Run packaging tests
 echo ""

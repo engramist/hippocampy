@@ -1,8 +1,13 @@
 """
 web/server.py — Memory Control Panel (M7)
 
-FastAPI server bound strictly to 127.0.0.1 — never 0.0.0.0.
-No authentication needed (local-only access by design).
+FastAPI memory/UI surface plus MCP HTTP transport.
+
+Auth model:
+    - Loopback with [server].auth = "none": local-only mode, no auth checks.
+    - Non-loopback with [server].auth != "none": enforced by
+        campy.brain_daemon._enforce_bind_guard, with per-request auth checks in
+        _global_http_auth_middleware() below.
 
 Endpoints:
   GET  /                                → Single-page UI (index.html)
@@ -91,6 +96,13 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
     matching pre-B316 behavior exactly.
     """
     _config = config or {}
+    _server_cfg = _config.get("server", {}) if isinstance(_config.get("server"), dict) else {}
+    _auth_mode = str(_server_cfg.get("auth", "none")).lower()
+    _auth_required = _auth_mode != "none"
+    _dashboard_enabled_raw = _server_cfg.get("dashboard_enabled", True)
+    _dashboard_enabled = str(_dashboard_enabled_raw).strip().lower() not in {
+        "0", "false", "no", "off"
+    }
     _principal_resolver = principal_resolver or LocalSingleUserResolver()
     _router = router
     app = FastAPI(
@@ -100,8 +112,31 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
         redoc_url=None,
     )
 
+    @app.middleware("http")
+    async def _global_http_auth_middleware(request: Request, call_next):
+        if not _auth_required or request.url.path == "/health":
+            return await call_next(request)
+
+        transport_ctx = TransportContext(transport="http", headers=dict(request.headers))
+        try:
+            principal = await _principal_resolver.resolve(transport_ctx)
+        except Exception as e:
+            if request.url.path == "/mcp" and request.method.upper() == "POST":
+                return JSONResponse(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": None,
+                        "error": {"code": -32001, "message": f"Unauthorized: {e}"},
+                    },
+                    status_code=401,
+                )
+            return JSONResponse({"detail": f"Unauthorized: {e}"}, status_code=401)
+
+        request.state.principal = principal
+        return await call_next(request)
+
     # Serve static assets (CSS, JS, icons)
-    if STATIC_DIR.exists():
+    if STATIC_DIR.exists() and _dashboard_enabled:
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     # ------------------------------------------------------------------
@@ -835,8 +870,8 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
     #   2. Client POSTs JSON-RPC requests to /mcp?connection_id=<id>
     #   3. Server dispatches to tool handlers, streams response back via SSE
     #
-    # Security: endpoint bound to 127.0.0.1 by the server runner — same as all
-    # other endpoints. No token auth needed (local-only access by design).
+    # Security: in remote mode ([server].auth != "none"), auth is enforced by
+    # _global_http_auth_middleware for all routes except /health.
     # ------------------------------------------------------------------
 
     @app.get("/sse")
@@ -927,21 +962,18 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
                     status_code=401,
                 )
 
-        # B325/B315: TransportContext is built from the HTTP request's
-        # headers — BEFORE the JSON-RPC body is parsed below — mirroring
-        # brain_daemon.py::_handle_connection's ordering for the Unix
-        # socket transport exactly. See campy/brain/auth.py::TransportContext
-        # for why this ordering is structural, not stylistic: the resolved
-        # principal must never be able to trace back to the request body.
-        transport_ctx = TransportContext(transport="http", headers=dict(request.headers))
-        try:
-            principal = await _principal_resolver.resolve(transport_ctx)
-        except Exception as e:
-            return JSONResponse(
-                {"jsonrpc": "2.0", "id": None,
-                 "error": {"code": -32001, "message": f"Unauthorized: {e}"}},
-                status_code=401,
-            )
+        principal = getattr(request.state, "principal", None)
+        if principal is None:
+            # Backstop for tests/alternate wiring that bypass middleware.
+            transport_ctx = TransportContext(transport="http", headers=dict(request.headers))
+            try:
+                principal = await _principal_resolver.resolve(transport_ctx)
+            except Exception as e:
+                return JSONResponse(
+                    {"jsonrpc": "2.0", "id": None,
+                     "error": {"code": -32001, "message": f"Unauthorized: {e}"}},
+                    status_code=401,
+                )
 
         # Legacy SSE transport — if connection_id is present, use old flow
         connection_id = request.query_params.get("connection_id")
@@ -985,6 +1017,13 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
     rest_routes = create_router(db=db, config=_config)
     for route in rest_routes:
         app.routes.append(route)
+
+    if not _dashboard_enabled:
+        allowed_paths = {"/health", "/mcp", "/sse"}
+        app.router.routes = [
+            route for route in app.router.routes
+            if getattr(route, "path", None) in allowed_paths
+        ]
 
     return app
 

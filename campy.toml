@@ -27,6 +27,7 @@ base_url = "http://localhost:11434/v1"   # ollama OpenAI-compatible endpoint
 [embeddings]
 provider = "sentence-transformers"  # sentence-transformers | ollama | openai
 model = "sentence-transformers/all-MiniLM-L6-v2"   # 384-dim — matches FLOAT[384] schema
+offline = false  # when true, load sentence-transformers from local cache only
 # For ollama: model name is the bare tag, e.g. "all-minilm" (384-dim)
 # For openai: use "text-embedding-3-small" with dimensions=384
 # ollama_base_url defaults to the [llm] base_url minus /v1
@@ -115,6 +116,19 @@ max_total_candidates = 10
 
 [web]
 port = 7799   # Memory Control Panel — http://127.0.0.1:7799 (local only)
+
+[server]
+bind_host = "127.0.0.1"    # non-loopback requires auth != "none" (enforced at startup)
+auth = "none"              # none | iam | oidc (oidc reserved/not yet implemented)
+dashboard_enabled = true    # set false to mount only /health, /mcp, /sse
+
+# Optional IAM auth controls for multi-tenant remote deployments.
+# iam_workspace_id = "default"
+# iam_workspace_map = { "arn:aws:iam::123456789012:role/agent-a" = "workspace-a" }
+# iam_principal_scope_map = {
+#   "arn:aws:iam::123456789012:role/agent-a" = ["memory.read", "memory.write"]
+# }
+# iam_default_scopes = ["memory.read", "memory.write", "memory.admin", "visibility.override"]
 
 [mission_control]
 base_url = "http://127.0.0.1:7800"   # Mission Control — deep-link panel_url base (B15)
