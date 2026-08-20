@@ -110,7 +110,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B233 | Non-Provisional Strategy and Public Disclosure Guardrails | P99 | complete | TBD | TBD | backlog/plans/B-233-non-provisional-strategy-and-public-disclosure-guardrails.md | backlog/B233.md |
 | B234 | Universal SideQuests Memory Usage Skill | P99 | complete | TBD | TBD | backlog/plans/B-234-universal-sidequests-memory-usage-skill.md | backlog/B234.md |
 | B235 | MCP Memory Decision Helper Tool | P99 | complete | TBD | TBD | backlog/plans/B-235-mcp-memory-decision-helper-tool.md | backlog/B235.md |
-| B236 | Public PyPI and pipx Install Path | P99 | complete-with-caveats -- re-verified 2026-08-03: build/twine/audit/pipx/uv/venv install all actually run and passed (32/32 real pytest, not mocked); 2 of 10 acceptance criteria are genuinely unmet (README doesn't label install-command publish status, and it is misleading; TestPyPI dry-run has no completion/skip record) -- see Re-verification Notes below | TBD | TBD | backlog/plans/B-236-public-pypi-pipx-install-path.md | backlog/B236.md |
+| B236 | Public PyPI and pipx Install Path | P99 | complete -- both previously-unmet acceptance criteria closed 2026-08-18 when hippocampy 0.1.0 actually published to PyPI; see B327 | TBD | TBD | backlog/plans/B-236-public-pypi-pipx-install-path.md | backlog/B236.md |
 | B237 | Hosted One-Line Bootstrap Installer | P99 | complete -- independently re-verified 2026-08-04 (fresh audit pass, not the same session that made the fix): the original Step-4 exit-1 bug is confirmed genuinely gone via real, non-mocked execution -- not just a read of the diff. Reproduced the exact original failing scenario (temp HOME, PATH stripped of this dev machine's own stale pipx `campy` entry, real `pipx install` via `--dev-source`) and Step 4 now correctly resolves and reports the freshly-installed binary, full pipeline reaches "Installation Complete", exit 0. See "Independent Re-verification (2026-08-04)" below for exact commands/output; the "Implementation (2026-08-04)" and historical "Re-verification Notes" sections below are preserved from the fix commit for context. | TBD | TBD | backlog/plans/B-237-hosted-one-line-bootstrap-installer.md | backlog/B237.md |
 | B238 | Clean-Machine One-Click Installer Validation Harness | P99 | complete -- independently re-verified 2026-08-04 (fresh audit pass, not the same session that made the fix): confirmed via real execution, on this actual dev machine which still carries the exact stale-`campy`-on-PATH confound the original report described, that the harness now correctly isolates PATH and verifies the freshly-installed binary rather than silently certifying the wrong one. `docs/one-click-validation.md` genuinely exists (132 lines) with the required sections. See "Independent Re-verification (2026-08-04)" below for exact commands/output; the "Implementation (2026-08-04)" and historical "Re-verification Notes" sections below are preserved from the fix commit for context. | TBD | TBD | backlog/plans/B-238-clean-machine-one-click-validation-harness.md | backlog/B238.md |
 | B239 | Homebrew Tap and macOS Native Install Path | P99 | complete | TBD | TBD | backlog/plans/B-239-homebrew-tap-and-macos-native-install-path.md | backlog/B239.md |
@@ -205,13 +205,14 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 
 | B325 | Remote MCP Server Surface with Pluggable Auth | P0 | done — merged (#44), including Task 4b (Lambda-fronted Gateway topology per the evaluating platform's own architecture policy) and their identity-propagation decision (`docs/deployment-agentcore.md`). | TBD | TBD | - | backlog/B325.md |
 | B326 | Reconcile SUPERSEDES into DEPRECATED_BY | P1 | done — merged. DEPRECATED_BY is now the only "replaced by" rel table, widened to cover every PROVENANCE_TABLES pair, keeping its original (older)->(newer) direction; SUPERSEDES retired and migrated. | TBD | TBD | - | backlog/B326.md |
+| B327 | hippocampy 0.1.0 Published to PyPI | P0 | done — hippocampy 0.1.0 published to real PyPI 2026-08-18 (https://pypi.org/project/hippocampy/0.1.0/); closes B236's two unmet ACs; found+fixed a release_build.sh audit/build ordering bug. | TBD | TBD | - | backlog/B327.md |
 
 ## Summary
 
-- Total cards: 194
+- Total cards: 195
 - Ready: 15
 - Blocked on investigation: 1
 - Needs work: 0
-- Complete: 166
+- Complete: 167
 - In progress: 0
 - Blocked: 0

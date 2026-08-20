@@ -15,13 +15,6 @@ you were doing.
 
 ## Quickstart
 
-> **Not yet on PyPI.** `hippocampy` has not been published to PyPI yet
-> (tracked in [`backlog/B236.md`](backlog/B236.md);
-> [go/no-go status](docs/one-click-install-release-gate.md)). The commands
-> below are the *recommended* install path once a release exists, and are
-> kept here validated and ready to go — but **today**, use
-> [Install from source](#install) instead, which always works.
-
 ```bash
 pipx install hippocampy
 campy setup     # detect and register with Claude Code, Codex, Gemini CLI, etc.
@@ -50,14 +43,16 @@ for the full design.
 
 ## Install
 
-> **No single command is "canonical" yet.** `hippocampy` is not published to
-> PyPI, so `pipx install hippocampy` does not work today. Source install
-> (below) is the one path guaranteed to work right now. See the
-> [one-click install release gate](docs/one-click-install-release-gate.md)
-> for the full go/no-go record and why this framing is honest rather than
-> just "not finished yet."
+**Recommended:**
 
-**From source (works today):**
+```bash
+pipx install hippocampy    # or: pip install hippocampy
+campy setup                # detect and register AI agents
+campy doctor                # verify everything works
+campy start                 # start the memory daemon
+```
+
+**From source (alternative — always works):**
 
 ```bash
 git clone git@github.com:engramist/hippocampy.git
@@ -70,15 +65,6 @@ campy doctor       # verify everything works
 campy start        # start the memory daemon
 ```
 
-**Once published (recommended path, validated and ready — not live yet):**
-
-```bash
-pipx install hippocampy    # or: pip install hippocampy
-campy setup                # detect and register AI agents
-campy doctor                # verify everything works
-campy start                 # start the memory daemon
-```
-
 <details>
 <summary>Alternative install methods</summary>
 
@@ -86,9 +72,8 @@ campy start                 # start the memory daemon
 Python, installs via `pipx`/`uv tool`/a managed venv, registers detected
 agents, and starts the daemon. Inspect before running, since this installs a
 daemon that reads your AI conversations. The script itself is validated
-end-to-end — see [B237](backlog/B237.md)/[B238](backlog/B238.md) — but its
-default install step depends on the not-yet-published PyPI package above,
-so it will fail at that step until publication happens):
+end-to-end — see [B237](backlog/B237.md)/[B238](backlog/B238.md) — and its
+default install step installs the published PyPI package above):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/engramist/hippocampy/main/scripts/bootstrap.sh | bash

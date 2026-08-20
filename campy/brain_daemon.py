@@ -203,6 +203,8 @@ def _build_http_principal_resolver(auth_mode: str, server_cfg: dict):
             workspace_id=server_cfg.get("iam_workspace_id", "default"),
             workspace_map=server_cfg.get("iam_workspace_map"),
             tenant_map=server_cfg.get("iam_tenant_map"),
+            principal_scope_map=server_cfg.get("iam_principal_scope_map"),
+            default_scopes=server_cfg.get("iam_default_scopes"),
         )
     if auth_mode == "oidc":
         raise BindGuardError(
