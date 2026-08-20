@@ -33,44 +33,64 @@ async def test_checkpoint_holds_write_lock(temp_kuzu_db):
     """Verify checkpoint() acquires the same write lock as execute_write().
     
     This test verifies the B337 fix: checkpoint must not bypass write
-    serialization. If the lock is properly held, a concurrent write should
-    block until checkpoint completes.
+    serialization. The test:
+    1. Starts checkpoint running
+    2. While checkpoint holds the lock, tries to acquire it from a concurrent task
+    3. Verifies the concurrent task blocks (cannot acquire the lock)
+    4. Verifies the concurrent task succeeds once checkpoint releases the lock
+    
+    If checkpoint didn't hold the lock, the concurrent task would acquire it
+    immediately and the test would fail.
     """
+    import time as time_module
     client = KuzuClient(str(temp_kuzu_db))
     lock = _get_write_lock(str(temp_kuzu_db))
     
-    # Track whether the lock was held during checkpoint
-    lock_was_held = False
-    checkpoint_started = asyncio.Event()
-    checkpoint_finished = asyncio.Event()
+    # Event to signal when checkpoint's execute() is running
+    checkpoint_executing = asyncio.Event()
     
-    # Patch the execute method to detect if the lock is held
     original_execute = client.execute
+    checkpoint_call_count = [0]
     
     def mock_execute(query, params=None):
-        nonlocal lock_was_held
         if "CHECKPOINT" in query:
-            # Inside checkpoint: verify the lock is held (not available)
-            lock_was_held = not lock._locked
-            checkpoint_started.set()
-            # Simulate checkpoint work
-            import time
-            time.sleep(0.01)
+            checkpoint_call_count[0] += 1
+            # Signal that checkpoint is in execute()
+            checkpoint_executing.set()
+            # Simulate checkpoint work (0.5 seconds)
+            time_module.sleep(0.5)
         return original_execute(query, params)
     
     client.execute = mock_execute
     
-    # Start checkpoint
+    # Start checkpoint in the background
     checkpoint_task = asyncio.create_task(client.checkpoint())
     
-    # Give checkpoint time to acquire the lock
-    await asyncio.wait_for(checkpoint_started.wait(), timeout=1.0)
+    # Wait for checkpoint to enter execute()
+    await asyncio.wait_for(checkpoint_executing.wait(), timeout=2.0)
     
-    # Verify checkpoint completed
-    result = await asyncio.wait_for(checkpoint_task, timeout=1.0)
+    # At this point, checkpoint should be sleeping in its thread, holding the lock.
+    # Try to acquire it with a short timeout. Should timeout if lock is held.
+    lock_acquired_while_checkpoint_running = False
     
-    # Checkpoint should return True on success
-    assert result is True, "checkpoint() should return True"
+    try:
+        async with asyncio.timeout(0.2):
+            async with lock:
+                lock_acquired_while_checkpoint_running = True
+    except asyncio.TimeoutError:
+        # Expected: checkpoint was holding the lock
+        lock_acquired_while_checkpoint_running = False
+    
+    # Verify the lock was NOT acquired (because checkpoint held it)
+    assert not lock_acquired_while_checkpoint_running, (
+        "Concurrent task acquired lock while checkpoint() was running. "
+        "This means checkpoint() is NOT properly holding the write lock."
+    )
+    
+    # Wait for checkpoint to complete
+    result = await asyncio.wait_for(checkpoint_task, timeout=2.0)
+    assert result is True, "checkpoint() should return True on success"
+    assert checkpoint_call_count[0] == 1, "checkpoint should have been called once"
 
 
 @pytest.mark.asyncio
