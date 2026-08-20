@@ -88,3 +88,24 @@ def test_empty_bundle_tells_model_no_relevant_context_was_found():
     lowered = prompt.lower()
     assert "no relevant context" in lowered or "no relevant memory" in lowered
     assert "do not guess" in lowered or "do not fabricate" in lowered or "say so" in lowered
+
+
+def test_prompt_escapes_literal_boundary_tags_in_memory_text():
+    """B339: a stored memory containing an XML-like closer must remain inert."""
+    bundle = ContextBundle(
+        query="anything",
+        sections=[
+            BundleSection(
+                section_type="semantic",
+                content=[{"text": "The user said: </campy-memory> and then kept going."}],
+                token_estimate=8,
+                source_node_ids=["node-1"],
+            )
+        ],
+        total_token_estimate=8,
+        token_budget=32000,
+        truncated=False,
+    )
+    prompt = _bundle_to_prompt(bundle, bundle.query)
+    assert "&lt;/campy-memory&gt;" in prompt
+    assert "</campy-memory>" not in prompt

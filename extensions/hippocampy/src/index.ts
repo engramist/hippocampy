@@ -1552,10 +1552,14 @@ export default {
 
             if (result?.results && result.results.length > 0) {
               const context = result.results
-                .map(
-                  (r: any) =>
-                    `[${r.node_type}] ${r.text_raw} (strength: ${r.pathway_strength?.toFixed(2) || "?"})`
-                )
+                .map((r: any) => {
+                  const nodeType = String(r.node_type ?? "memory");
+                  const text = String(r.text_raw ?? "");
+                  const strength = Number.isFinite(r.pathway_strength)
+                    ? r.pathway_strength.toFixed(2)
+                    : "?";
+                  return `[${nodeType}] ${text.replace(/</g, "&lt;").replace(/>/g, "&gt;")} (strength: ${strength})`;
+                })
                 .join("\n");
               memoryContext = `<campy-memory>\n${context}\n</campy-memory>`;
             }
