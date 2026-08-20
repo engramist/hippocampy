@@ -116,12 +116,13 @@ def _render_plan_item(item: dict) -> str:
 
 def _bundle_to_prompt(bundle, query: str) -> str:
     """Flatten compressed bundle sections into a single prompt string.
-    
-    B339: Uses memory_formatter.escape_memory_content() to prevent boundary
-    tag injection from stored memory content before rendering into the prompt.
+
+    B339: format_memory_with_boundary() escapes content internally before
+    wrapping it in boundary tags, so raw item text is passed through here
+    unescaped — escaping it again at this call site would double-escape it.
     """
-    from campy.brain.thalamus.memory_formatter import format_memory_with_boundary, escape_memory_content
-    
+    from campy.brain.thalamus.memory_formatter import format_memory_with_boundary
+
     parts = [f"Query: {query}\n\nContext from memory:\n"]
     has_content = False
     for section in bundle.sections:
@@ -132,15 +133,15 @@ def _bundle_to_prompt(bundle, query: str) -> str:
             if not isinstance(item, dict):
                 continue
             if "compact" in item:
-                rendered_items.append(escape_memory_content(item["compact"]))
+                rendered_items.append(item["compact"])
             elif "toon" in item:
-                rendered_items.append(escape_memory_content(item["toon"]))
+                rendered_items.append(item["toon"])
             elif section_type == "plans" and "goal" in item:
-                rendered_items.append(escape_memory_content(_render_plan_item(item)))
+                rendered_items.append(_render_plan_item(item))
             elif "text" in item:
-                rendered_items.append(escape_memory_content(item["text"]))
+                rendered_items.append(item["text"])
             elif "source" in item:
-                rendered_items.append(escape_memory_content(item["source"]))
+                rendered_items.append(item["source"])
         
         # B339: Wrap rendered items with data/instruction boundaries
         if rendered_items:
