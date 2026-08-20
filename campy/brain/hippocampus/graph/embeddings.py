@@ -33,6 +33,7 @@ _model_name: str = MODEL_NAME
 _ollama_base_url: str = "http://localhost:11434"
 _openai_api_key: str = ""
 _openai_base_url: str = ""  # empty = default OpenAI endpoint
+_offline_mode: bool = False
 _configured: bool = False
 
 # Provider-specific singletons
@@ -48,7 +49,7 @@ def configure(config: dict) -> None:
     times (last call wins).  If never called, defaults to sentence-transformers.
     """
     global _provider, _model_name, _ollama_base_url
-    global _openai_api_key, _openai_base_url, _configured
+    global _openai_api_key, _openai_base_url, _offline_mode, _configured
 
     emb_cfg = config.get("embeddings", {})
 
@@ -64,6 +65,13 @@ def configure(config: dict) -> None:
         or os.environ.get("OPENAI_API_KEY", "")
     )
     _openai_base_url = emb_cfg.get("base_url", "")
+    env_offline = os.environ.get("HF_HUB_OFFLINE", "").lower() in {"1", "true", "yes"} \
+        or os.environ.get("TRANSFORMERS_OFFLINE", "").lower() in {"1", "true", "yes"}
+    _offline_mode = bool(emb_cfg.get("offline", False)) or env_offline
+    if _offline_mode:
+        # Ensure downstream huggingface/transformers loaders stay network-off.
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     _configured = True
 
     _logger.info(
@@ -75,12 +83,31 @@ def configure(config: dict) -> None:
 # Provider backends
 # ---------------------------------------------------------------------------
 
+def _is_offline_enabled() -> bool:
+    if _offline_mode:
+        return True
+    return os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1"
+
+
 def _get_st_model(model_name: str):
     """Lazy singleton for sentence-transformers."""
     global _st_model
     if _st_model is None:
         from sentence_transformers import SentenceTransformer
-        _st_model = SentenceTransformer(model_name)
+        offline = _is_offline_enabled()
+        try:
+            if offline:
+                _st_model = SentenceTransformer(model_name, local_files_only=True)
+            else:
+                _st_model = SentenceTransformer(model_name)
+        except Exception as e:
+            if offline:
+                raise RuntimeError(
+                    "Embedding model not found in local cache and offline mode is enabled. "
+                    "Pre-bake the model into the image cache (HF_HOME/~/.cache/huggingface) "
+                    "or unset HF_HUB_OFFLINE/TRANSFORMERS_OFFLINE (or [embeddings].offline)."
+                ) from e
+            raise
     return _st_model
 
 
