@@ -16,11 +16,14 @@ Concurrency: single asyncio event loop, asyncio.Lock for all Kùzu writes.
 """
 
 import asyncio
+import gc
 import json
 import logging
 import os
+import resource
 import signal
 import socket
+import tracemalloc
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -534,6 +537,79 @@ class BrainDaemon:
 
 
 # ---------------------------------------------------------------------------
+# B343: on-demand, in-process memory diagnostic (no external attach needed --
+# a process can always introspect itself; this sidesteps macOS's
+# task_for_pid/sudo requirement for external profilers like py-spy).
+# Trigger with: kill -USR1 <pid>
+# Output: ~/.campy/memory_debug.log (created on first trigger)
+# ---------------------------------------------------------------------------
+
+_MEMORY_DEBUG_LOG = Path.home() / ".campy" / "memory_debug.log"
+_last_tracemalloc_snapshot = None
+
+
+def _dump_memory_snapshot():
+    """B343: on-demand snapshot, triggered by `kill -USR1 <pid>`.
+
+    tracemalloc is started LAZILY here, not at daemon startup -- measured
+    directly (2026-08-21): tracemalloc.start(10) made this daemon's schema
+    init take 96s instead of 2s (43x slower), and starting it unconditionally
+    at process launch made a live restart hang at ~98% CPU, unhealthy, for
+    over a minute before being caught. It is NOT safe to enable during the
+    allocation-heavy startup phase (schema init + embedding model load).
+
+    Because of this, the first SIGUSR1 after a restart only starts tracing
+    and will show little/nothing (tracemalloc can't see allocations from
+    before it started) -- trigger it again after some time/traffic has
+    passed to get a snapshot worth diffing.
+    """
+    global _last_tracemalloc_snapshot
+
+    now = datetime.now(timezone.utc).isoformat()
+    rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss  # bytes on macOS, KB on Linux
+    obj_count = len(gc.get_objects())
+
+    just_started = False
+    if not tracemalloc.is_tracing():
+        tracemalloc.start(10)
+        just_started = True
+
+    snapshot = tracemalloc.take_snapshot()
+    lines = [
+        f"=== memory snapshot {now} ===",
+        f"ru_maxrss={rss_kb} (bytes on macOS, KB on Linux -- high-water mark, not current RSS)",
+        f"gc object count={obj_count}",
+    ]
+    if just_started:
+        lines.append("")
+        lines.append("tracemalloc started by THIS call -- allocations before now are invisible to it.")
+        lines.append("Trigger SIGUSR1 again after some time/traffic to get a snapshot worth diffing.")
+    lines.append("")
+    lines.append("-- top 15 allocations by current size --")
+    for stat in snapshot.statistics("lineno")[:15]:
+        lines.append(str(stat))
+
+    if _last_tracemalloc_snapshot is not None:
+        lines.append("")
+        lines.append("-- top 15 growth since last snapshot --")
+        diff = snapshot.compare_to(_last_tracemalloc_snapshot, "lineno")
+        for stat in diff[:15]:
+            lines.append(str(stat))
+    elif not just_started:
+        lines.append("")
+        lines.append("(no prior snapshot -- this is the first dump, nothing to diff against yet)")
+
+    lines.append("")
+    _last_tracemalloc_snapshot = snapshot
+
+    _MEMORY_DEBUG_LOG.parent.mkdir(parents=True, exist_ok=True)
+    with open(_MEMORY_DEBUG_LOG, "a") as f:
+        f.write("\n".join(lines) + "\n")
+
+    print(f"[MemoryDebug] Snapshot written to {_MEMORY_DEBUG_LOG}", flush=True)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -544,6 +620,11 @@ async def main():
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, daemon.shutdown)
+    # B343: SIGUSR1 triggers an in-process memory snapshot -- always
+    # registered (negligible cost), but tracemalloc itself only starts
+    # lazily on first trigger, well after startup's allocation-heavy phase
+    # has finished. See _dump_memory_snapshot's docstring for why.
+    loop.add_signal_handler(signal.SIGUSR1, _dump_memory_snapshot)
 
     await daemon.start()
 
