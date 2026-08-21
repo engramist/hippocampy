@@ -214,7 +214,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B339 | Label Replayed Memories as Data, Not Instructions, in ask/compile_context Output | P99 | complete — merged via PR #63 (2026-08-20) | TBD | TBD | - | backlog/B339.md |
 | B340 | `pip install hippocampy` Doesn't Get the Reviewed/Pinned Dependency Versions | P99 | complete — merged via PR #59 (2026-08-20) | TBD | TBD | - | backlog/B340.md |
 | B341 | Support Pre-Baked/Offline Embedding Models for Egress-Locked Deployments | P99 | complete — merged via PR #60 (2026-08-20) | TBD | TBD | - | backlog/B341.md |
-| B342 | Live brain_daemon.py Observed at ~5.4GB RSS with Near-Empty Graph (Unrelated to B311) | P99 | open — observation only, not investigated | TBD | TBD | - | backlog/B342.md |
+| B342 | Live brain_daemon.py Observed at ~5.4GB RSS (99GB Physical Footprint) with Near-Empty Graph | P99 | open — deeper diagnostic done (2026-08-21), root cause still not identified. Escalated from P3: | TBD | TBD | - | backlog/B342.md |
 
 ## Summary
 
