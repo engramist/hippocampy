@@ -16,6 +16,7 @@ Concurrency: single asyncio event loop, asyncio.Lock for all Kùzu writes.
 """
 
 import asyncio
+import collections
 import gc
 import json
 import logging
@@ -23,7 +24,6 @@ import os
 import resource
 import signal
 import socket
-import tracemalloc
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -537,70 +537,94 @@ class BrainDaemon:
 
 
 # ---------------------------------------------------------------------------
-# B343: on-demand, in-process memory diagnostic (no external attach needed --
-# a process can always introspect itself; this sidesteps macOS's
+# B343/B344: on-demand, in-process memory diagnostic (no external attach
+# needed -- a process can always introspect itself; this sidesteps macOS's
 # task_for_pid/sudo requirement for external profilers like py-spy).
 # Trigger with: kill -USR1 <pid>
 # Output: ~/.campy/memory_debug.log (created on first trigger)
+#
+# Deliberately does NOT use tracemalloc. It was tried and reverted, twice,
+# on this exact daemon, 2026-08-21 -- kept here so it isn't tried a third
+# time:
+#   1. tracemalloc.start() unconditionally at process launch made a live
+#      restart hang at ~98% CPU, unhealthy, for over a minute. Root cause:
+#      it's expensive during the startup phase's allocation-heavy schema
+#      init + embedding model load -- measured in isolation afterward,
+#      tracemalloc.start(10) made schema init alone take 96s instead of 2s
+#      (43x slower).
+#   2. Fixed by starting tracemalloc lazily on first SIGUSR1 instead, well
+#      after startup -- this looked safe (verified via a careful restart)
+#      but left tracemalloc running continuously afterward, since nothing
+#      ever called tracemalloc.stop(). ~24 minutes later the same daemon
+#      was found pegged at 100%+ CPU and unresponsive again. Confirmed by
+#      isolated test that lower depth doesn't fix it either: even
+#      tracemalloc.start(1), the minimum, was ~8x slower on the same
+#      schema-init benchmark (17.9s vs 2.2s) -- the overhead comes from
+#      instrumenting every allocation, not primarily from traceback depth.
+#      tracemalloc is not compatible with this daemon's allocation-heavy
+#      workload (embedding model, KuzuDB's C++ extension) at any depth,
+#      for continuous use.
+#
+# What this diagnostic does instead: gc.get_objects(), grouped by type
+# name. Far coarser than a real allocation-site profile (it can show "N
+# more dict objects than last time", not which line created them), but it
+# is a single pass over already-live objects -- no per-allocation
+# instrumentation, no ongoing cost after the call returns. Safe to leave
+# wired up permanently. If a real allocation-site profile is ever needed,
+# that requires a deliberate, supervised session against a disposable
+# instance (not this shared daemon) with tracemalloc enabled for a known,
+# bounded, consented window -- not something to wire into a signal handler
+# on the production process again.
 # ---------------------------------------------------------------------------
 
 _MEMORY_DEBUG_LOG = Path.home() / ".campy" / "memory_debug.log"
-_last_tracemalloc_snapshot = None
+_last_type_counts = None
 
 
 def _dump_memory_snapshot():
-    """B343: on-demand snapshot, triggered by `kill -USR1 <pid>`.
+    """B343/B344: on-demand snapshot, triggered by `kill -USR1 <pid>`.
 
-    tracemalloc is started LAZILY here, not at daemon startup -- measured
-    directly (2026-08-21): tracemalloc.start(10) made this daemon's schema
-    init take 96s instead of 2s (43x slower), and starting it unconditionally
-    at process launch made a live restart hang at ~98% CPU, unhealthy, for
-    over a minute before being caught. It is NOT safe to enable during the
-    allocation-heavy startup phase (schema init + embedding model load).
-
-    Because of this, the first SIGUSR1 after a restart only starts tracing
-    and will show little/nothing (tracemalloc can't see allocations from
-    before it started) -- trigger it again after some time/traffic has
-    passed to get a snapshot worth diffing.
+    Cheap by construction (see the module comment above for why tracemalloc
+    is deliberately not used here): RSS high-water mark, total gc object
+    count, and top object-type counts, diffed against the previous trigger
+    if there was one.
     """
-    global _last_tracemalloc_snapshot
+    global _last_type_counts
 
     now = datetime.now(timezone.utc).isoformat()
     rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss  # bytes on macOS, KB on Linux
-    obj_count = len(gc.get_objects())
 
-    just_started = False
-    if not tracemalloc.is_tracing():
-        tracemalloc.start(10)
-        just_started = True
+    objects = gc.get_objects()
+    obj_count = len(objects)
+    type_counts = collections.Counter(type(o).__name__ for o in objects)
+    del objects  # don't hold the whole live-object list any longer than needed
 
-    snapshot = tracemalloc.take_snapshot()
     lines = [
         f"=== memory snapshot {now} ===",
         f"ru_maxrss={rss_kb} (bytes on macOS, KB on Linux -- high-water mark, not current RSS)",
         f"gc object count={obj_count}",
+        "",
+        "-- top 15 object types by count --",
     ]
-    if just_started:
-        lines.append("")
-        lines.append("tracemalloc started by THIS call -- allocations before now are invisible to it.")
-        lines.append("Trigger SIGUSR1 again after some time/traffic to get a snapshot worth diffing.")
-    lines.append("")
-    lines.append("-- top 15 allocations by current size --")
-    for stat in snapshot.statistics("lineno")[:15]:
-        lines.append(str(stat))
+    for type_name, count in type_counts.most_common(15):
+        lines.append(f"{type_name}: {count}")
 
-    if _last_tracemalloc_snapshot is not None:
+    if _last_type_counts is not None:
         lines.append("")
-        lines.append("-- top 15 growth since last snapshot --")
-        diff = snapshot.compare_to(_last_tracemalloc_snapshot, "lineno")
-        for stat in diff[:15]:
-            lines.append(str(stat))
-    elif not just_started:
+        lines.append("-- top 15 type-count growth since last snapshot --")
+        deltas = collections.Counter()
+        for type_name, count in type_counts.items():
+            delta = count - _last_type_counts.get(type_name, 0)
+            if delta != 0:
+                deltas[type_name] = delta
+        for type_name, delta in deltas.most_common(15):
+            lines.append(f"{type_name}: {'+' if delta > 0 else ''}{delta}")
+    else:
         lines.append("")
         lines.append("(no prior snapshot -- this is the first dump, nothing to diff against yet)")
 
     lines.append("")
-    _last_tracemalloc_snapshot = snapshot
+    _last_type_counts = type_counts
 
     _MEMORY_DEBUG_LOG.parent.mkdir(parents=True, exist_ok=True)
     with open(_MEMORY_DEBUG_LOG, "a") as f:
@@ -620,10 +644,10 @@ async def main():
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, daemon.shutdown)
-    # B343: SIGUSR1 triggers an in-process memory snapshot -- always
-    # registered (negligible cost), but tracemalloc itself only starts
-    # lazily on first trigger, well after startup's allocation-heavy phase
-    # has finished. See _dump_memory_snapshot's docstring for why.
+    # B343/B344: SIGUSR1 triggers an in-process memory snapshot -- a plain
+    # gc.get_objects() type-count pass, negligible cost, safe to leave
+    # wired up permanently. See the comment above _dump_memory_snapshot
+    # for why this deliberately does NOT use tracemalloc.
     loop.add_signal_handler(signal.SIGUSR1, _dump_memory_snapshot)
 
     await daemon.start()
