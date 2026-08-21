@@ -183,7 +183,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B308 | Archive-Move HNSW Rebuild Mechanism (B285 Path B) | P99 | not started — filed 2026-08-04 as a follow-up to B285's scope-alignment pass. Requires an architecture decision before implementation, not just a coding pass. | TBD | TBD | - | backlog/B308.md |
 | B309 | ARC World-Model Tools: Implement A175-A179's Pending Server-Side Half (Entity Movement, Transitions, Rules, Cross-Game Transfer) | P99 | complete -- 2026-08-08: implemented all 5 tools plus the `arc_perceive_state` MOVED_BY fix. Mid-implementation, shipped as generic (non-`arc_`-prefixed) tool names — `record_transition`, `get_entity_history`, `record_rule`, `get_rules_for_action`, `get_transferred_rules` — since Transition/Rule tracking isn't ARC-specific; ARC_AGI's client-side name-mapping table updated to match (cross-repo commit, see Implementation below). See Implementation section for what shipped; original card text below (written before the rename decision) kept for history — read `arc_*` names in it as their generic equivalents. | TBD | TBD | - | backlog/B309.md |
 | B310 | Fix `scripts/generate_extension_tools.py` Crash on Multi-Type JSON Schema Fields | P99 | complete -- 2026-08-08: fixed `_schema_to_typebox()` to handle list-typed `"type"` fields (`Type.Union([...])`, with `"null"` mapped to `Type.Null()`). See Implementation section below. | TBD | TBD | - | backlog/B310.md |
-| B311 | Investigate Brain Daemon's Large Transient Memory Spikes (100-150MB Baseline to 600MB-1.2GB Peaks) During ARC Live-Smoke Runs | P99 | open — investigating (campy-side follow-up 2026-08-09, round 2). Root cause narrowed to | TBD | TBD | - | backlog/B311.md |
+| B311 | Investigate Brain Daemon's Large Transient Memory Spikes (100-150MB Baseline to 600MB-1.2GB Peaks) During ARC Live-Smoke Runs | P99 | open — investigating (round 5, 2026-08-20). B337 shipped manual/periodic checkpoint control | TBD | TBD | - | backlog/B311.md |
 | B312 | Provenance Fields + Explicit Supersession on Fact-Bearing Nodes | P99 | done | TBD | TBD | - | backlog/B312.md |
 | B313 | Authority Property: Projected vs Earned Memory | P99 | done | TBD | TBD | - | backlog/B313.md |
 | B314 | GraphGateway: Named-Query Chokepoint + Raw-Cypher Ratchet | P99 | done | TBD | TBD | - | backlog/B314.md |
@@ -209,15 +209,16 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B334 | LONGCONTEXT Benchmark Self-Admits It's a Mock; benchmark_sources.md Claims the Real 8,000-Scenario Dataset | P99 | complete — merged via PR #57 (2026-08-20) | TBD | TBD | - | backlog/B334.md |
 | B335 | SWE_CI Benchmark Cites a Placeholder arXiv ID and "TBD" Repository, Dataset n=4 | P99 | complete — merged via PR #57 (2026-08-20) | TBD | TBD | - | backlog/B335.md |
 | B336 | Hermes Adapter Calls REST Routes That Don't Exist on the Server (404s Live, CI Can't Catch It) | P99 | complete — merged via PR #58 (2026-08-20) | TBD | TBD | - | backlog/B336.md |
-| B337 | B311 Round 3: Manual Checkpoint Control + Inverse-Batching Experiment for Daemon Memory Spikes | P99 | complete — merged via PR #61 (2026-08-20) | TBD | TBD | - | backlog/B337.md |
+| B337 | B311 Round 3: Manual Checkpoint Control + Inverse-Batching Experiment for Daemon Memory Spikes | P99 | complete — merged via PR #61 (2026-08-20). Effectiveness measured in backlog/B311.md's "Round | TBD | TBD | - | backlog/B337.md |
 | B338 | No Encryption at Rest, No Content-Level Secret Scrubbing on Stored `text_raw` | P99 | complete — merged via PR #62 (2026-08-20) | TBD | TBD | - | backlog/B338.md |
 | B339 | Label Replayed Memories as Data, Not Instructions, in ask/compile_context Output | P99 | complete — merged via PR #63 (2026-08-20) | TBD | TBD | - | backlog/B339.md |
 | B340 | `pip install hippocampy` Doesn't Get the Reviewed/Pinned Dependency Versions | P99 | complete — merged via PR #59 (2026-08-20) | TBD | TBD | - | backlog/B340.md |
 | B341 | Support Pre-Baked/Offline Embedding Models for Egress-Locked Deployments | P99 | complete — merged via PR #60 (2026-08-20) | TBD | TBD | - | backlog/B341.md |
+| B342 | Live brain_daemon.py Observed at ~5.4GB RSS with Near-Empty Graph (Unrelated to B311) | P99 | open — observation only, not investigated | TBD | TBD | - | backlog/B342.md |
 
 ## Summary
 
-- Total cards: 210
+- Total cards: 211
 - Ready: 0
 - Needs work: 0
 - Complete: 197
