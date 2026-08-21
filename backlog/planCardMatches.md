@@ -214,6 +214,7 @@ Generated from backlog cards and backlog/plans/*.md.
 - B339: (none)
 - B340: (none)
 - B341: (none)
+- B342: (none)
 
 ## Unmatched Plan Files
 
