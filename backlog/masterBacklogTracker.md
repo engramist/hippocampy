@@ -183,7 +183,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B308 | Archive-Move HNSW Rebuild Mechanism (B285 Path B) | P99 | not started — filed 2026-08-04 as a follow-up to B285's scope-alignment pass. Requires an architecture decision before implementation, not just a coding pass. | TBD | TBD | - | backlog/B308.md |
 | B309 | ARC World-Model Tools: Implement A175-A179's Pending Server-Side Half (Entity Movement, Transitions, Rules, Cross-Game Transfer) | P99 | complete -- 2026-08-08: implemented all 5 tools plus the `arc_perceive_state` MOVED_BY fix. Mid-implementation, shipped as generic (non-`arc_`-prefixed) tool names — `record_transition`, `get_entity_history`, `record_rule`, `get_rules_for_action`, `get_transferred_rules` — since Transition/Rule tracking isn't ARC-specific; ARC_AGI's client-side name-mapping table updated to match (cross-repo commit, see Implementation below). See Implementation section for what shipped; original card text below (written before the rename decision) kept for history — read `arc_*` names in it as their generic equivalents. | TBD | TBD | - | backlog/B309.md |
 | B310 | Fix `scripts/generate_extension_tools.py` Crash on Multi-Type JSON Schema Fields | P99 | complete -- 2026-08-08: fixed `_schema_to_typebox()` to handle list-typed `"type"` fields (`Type.Union([...])`, with `"null"` mapped to `Type.Null()`). See Implementation section below. | TBD | TBD | - | backlog/B310.md |
-| B311 | Investigate Brain Daemon's Large Transient Memory Spikes (100-150MB Baseline to 600MB-1.2GB Peaks) During ARC Live-Smoke Runs | P99 | open — investigating (round 6, 2026-08-21). B337 shipped periodic checkpoint control (round 3, | TBD | TBD | - | backlog/B311.md |
+| B311 | Investigate Brain Daemon's Large Transient Memory Spikes (100-150MB Baseline to 600MB-1.2GB Peaks) During ARC Live-Smoke Runs | P99 | open — investigating (round 7, 2026-08-21), but the core mitigation is now confirmed. B337 | TBD | TBD | - | backlog/B311.md |
 | B312 | Provenance Fields + Explicit Supersession on Fact-Bearing Nodes | P99 | done | TBD | TBD | - | backlog/B312.md |
 | B313 | Authority Property: Projected vs Earned Memory | P99 | done | TBD | TBD | - | backlog/B313.md |
 | B314 | GraphGateway: Named-Query Chokepoint + Raw-Cypher Ratchet | P99 | done | TBD | TBD | - | backlog/B314.md |
@@ -222,13 +222,13 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B347 | Bounded Restart Policy for brain_daemon.py (Interim Mitigation for Unbounded Footprint Growth) | P99 | ready | TBD | TBD | - | backlog/B347.md |
 | B348 | Local Memory-Pressure Watchdog/Alarm for brain_daemon.py | P99 | ready | TBD | TBD | - | backlog/B348.md |
 | B349 | Tune campy.toml's Shipped Checkpoint Interval Default (Currently 60s, Round 5 Recommends 15-30s) | P99 | ready | TBD | TBD | - | backlog/B349.md |
-| B350 | Longer Live ARC_AGI Episode to Observe a Real Spike-and-Release Under B337's Fix | P99 | ready — requires the ARC_AGI-side Claude Code session (cross-repo) | TBD | TBD | - | backlog/B350.md |
+| B350 | Longer Live ARC_AGI Episode to Observe a Real Spike-and-Release Under B337's Fix | P99 | complete — see backlog/B311.md's "Round 7" (2026-08-21). Cross-repo collaboration with the | TBD | TBD | - | backlog/B350.md |
 
 ## Summary
 
 - Total cards: 219
-- Ready: 8
+- Ready: 7
 - Needs work: 0
-- Complete: 197
+- Complete: 198
 - In progress: 0
 - Blocked: 0
