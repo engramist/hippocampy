@@ -215,11 +215,19 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B340 | `pip install hippocampy` Doesn't Get the Reviewed/Pinned Dependency Versions | P99 | complete — merged via PR #59 (2026-08-20) | TBD | TBD | - | backlog/B340.md |
 | B341 | Support Pre-Baked/Offline Embedding Models for Egress-Locked Deployments | P99 | complete — merged via PR #60 (2026-08-20) | TBD | TBD | - | backlog/B341.md |
 | B342 | Live brain_daemon.py Observed at ~5.4GB RSS (99GB Physical Footprint) with Near-Empty Graph | P99 | open — deeper diagnostic done (2026-08-21), root cause still not identified. Escalated from P3: | TBD | TBD | - | backlog/B342.md |
+| B343 | Root-Cause B342's Leak: Real Heap Profiling on a Grown brain_daemon.py Process | P99 | ready | TBD | TBD | - | backlog/B343.md |
+| B344 | Add Lightweight Continuous Memory Instrumentation to brain_daemon.py | P99 | ready | TBD | TBD | - | backlog/B344.md |
+| B345 | Resolve the Two brain_daemon.py Files (Top-Level vs campy/brain_daemon.py) | P99 | ready | TBD | TBD | - | backlog/B345.md |
+| B346 | Fix Dead Port 7800 in Campy MCP Tool Response Links | P99 | ready | TBD | TBD | - | backlog/B346.md |
+| B347 | Bounded Restart Policy for brain_daemon.py (Interim Mitigation for Unbounded Footprint Growth) | P99 | ready | TBD | TBD | - | backlog/B347.md |
+| B348 | Local Memory-Pressure Watchdog/Alarm for brain_daemon.py | P99 | ready | TBD | TBD | - | backlog/B348.md |
+| B349 | Tune campy.toml's Shipped Checkpoint Interval Default (Currently 60s, Round 5 Recommends 15-30s) | P99 | ready | TBD | TBD | - | backlog/B349.md |
+| B350 | Longer Live ARC_AGI Episode to Observe a Real Spike-and-Release Under B337's Fix | P99 | ready — requires the ARC_AGI-side Claude Code session (cross-repo) | TBD | TBD | - | backlog/B350.md |
 
 ## Summary
 
-- Total cards: 211
-- Ready: 0
+- Total cards: 219
+- Ready: 8
 - Needs work: 0
 - Complete: 197
 - In progress: 0
