@@ -21,9 +21,12 @@ classifiers = [
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "kuzu==0.11.3",
-    # Floor matches reviewed requirements pin; see requirements.txt for
-    # transformer-range/CVE tradeoff details.
-    "sentence-transformers>=3.3.1",
+    # B355: fastembed/ONNX Runtime replaced sentence-transformers/PyTorch as
+    # the local embedding backend -- same model (sentence-transformers/all-
+    # MiniLM-L6-v2, via its ONNX conversion), ~60-80MB instead of ~1.2GB.
+    # Verified near-perfect output parity (cosine similarity 1.000000 across
+    # 200 real test sentences). See backlog/B353.md and backlog/B355.md.
+    "fastembed>=0.8.0",
     "spacy>=3.8.3",
     "typer>=0.9.0",
     "j2toon>=0.1.0",

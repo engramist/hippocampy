@@ -5,18 +5,18 @@
 kuzu==0.11.3
 
 # Embeddings (384-dim — matches FLOAT[384] schema; changing requires full re-embedding)
-# NOT bumping: transformers (transitive, currently resolves to 4.57.6) has
-# several HIGH pip-audit findings whose fixes require transformers>=5.0.0
-# (two others have no fix at any version). sentence-transformers==3.3.1
-# pins `transformers<5.0.0,>=4.41.0` in its own metadata (confirmed via
-# PyPI JSON), and 4.57.6 is the newest 4.x release that exists on PyPI —
-# there is no patched 4.x to move to instead. A direct transformers>=5.0.0
-# pin is therefore impossible to satisfy alongside sentence-transformers
-# ==3.3.1 (hard pip resolution conflict), and bumping sentence-transformers
-# is explicitly out of scope here (breaks the 384-dim embedding pin above,
-# would require full re-embedding). Left unfixed; see commit message /
-# task report for the full reasoning.
-sentence-transformers==3.3.1
+# B355: fastembed/ONNX Runtime replaced sentence-transformers/PyTorch as the
+# local embedding backend -- same model (sentence-transformers/all-MiniLM-
+# L6-v2, via its ONNX conversion, qdrant/all-MiniLM-L6-v2-onnx), verified
+# near-perfect output parity (cosine similarity 1.000000 across 200 real
+# test sentences). Motivated by B342/B353: PyTorch/sentence-transformers
+# was the dominant contributor to brain_daemon.py's ~1.2-2GB fresh-start
+# memory footprint; fastembed runs the identical model at ~60-80MB. This
+# also resolves the transformers-CVE pinning conflict the previous
+# sentence-transformers==3.3.1 pin was stuck with (fastembed does not
+# depend on the `transformers` package at all). See backlog/B353.md and
+# backlog/B355.md for the full investigation and verification.
+fastembed==0.8.0
 
 # NLP / NER / dependency parsing (en_core_web_md required — sm has no dep parser)
 spacy==3.8.3

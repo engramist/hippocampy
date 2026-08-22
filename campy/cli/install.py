@@ -545,13 +545,13 @@ class VenvManager:
         return True
 
     def prewarm_embeddings(self) -> bool:
-        """Pre-warm sentence-transformers model."""
+        """Pre-warm the local embedding model (fastembed/ONNX, B355)."""
         click.echo("  Pre-warming embedding model...")
         result = subprocess.run(
             [str(self.python), "-c",
-             "from sentence_transformers import SentenceTransformer; "
-             "m = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2'); "
-             "m.encode('test')"],
+             "from fastembed import TextEmbedding; "
+             "m = TextEmbedding(model_name='sentence-transformers/all-MiniLM-L6-v2'); "
+             "list(m.embed(['test']))"],
             capture_output=True, text=True, timeout=300
         )
         if result.returncode != 0:
