@@ -1,5 +1,7 @@
 # tests/adapters/test_claude_code_hooks.py
 import json
+import tempfile
+import uuid
 from pathlib import Path
 import subprocess
 import os
@@ -36,11 +38,35 @@ def test_pre_tool_use_hook_is_executable():
 
 
 def test_session_start_hook_graceful_when_daemon_down():
-    """Hook should not error when daemon is not running."""
+    """Hook should not error when daemon is not running.
+
+    B351: this used to run with `env=dict(os.environ)` unmodified, so on a
+    dev machine with a real daemon actually running (true for essentially
+    this entire repo's own test sessions) it silently tested against the
+    *real* daemon instead of a down one -- occasionally flaking with a
+    subprocess timeout when the live daemon was slow to respond (itself
+    tied to B342's memory-pressure findings), not because the hook script
+    handled "daemon down" incorrectly. Point CAMPY_BRAIN_SOCKET at a
+    guaranteed-nonexistent short path so this test actually exercises the
+    down-daemon path it claims to, regardless of what's really running.
+
+    Uses the system temp root directly (not pytest's `tmp_path`, which
+    nests under a long per-test directory) -- AF_UNIX's sockaddr_un caps
+    the path at roughly 104 bytes on macOS/BSD, and the hook script's own
+    connect() attempt is subject to the same limit (see the `short_sock_path`
+    fixture in tests/test_fail_open.py for the same reasoning in more
+    detail).
+    """
+    env = dict(os.environ)
+    env["CAMPY_BRAIN_SOCKET"] = str(
+        Path(tempfile.gettempdir()) / f"campy-test-down-{uuid.uuid4().hex[:8]}.sock"
+    )
+    env.pop("CAMPY_BRAIN_URL", None)
+
     result = subprocess.run(
         ["bash", "adapters/claude_code/hooks/session_start.sh"],
         capture_output=True, text=True, timeout=10,
-        env=dict(os.environ)
+        env=env,
     )
     # Should exit 0 even if daemon is down
     assert result.returncode == 0
