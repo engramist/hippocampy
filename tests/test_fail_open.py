@@ -16,8 +16,10 @@ import os
 import re
 import socket
 import subprocess
+import tempfile
 import threading
 import time
+import uuid
 from pathlib import Path
 
 import pytest
@@ -107,25 +109,52 @@ def unix_stub_server(sock_path: Path, *, stall: bool = False, response: bytes | 
             srv.close()
 
 
-def _refused_socket_path(tmp_path: Path) -> Path:
+def _refused_socket_path(path: Path) -> Path:
     """A Unix socket file that exists but has nothing listening on it —
     connecting yields ConnectionRefusedError, distinct from FileNotFoundError."""
-    path = tmp_path / "refused.sock"
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.bind(str(path))
     s.close()  # bound, never listened on, file left behind — connect() refuses
     return path
 
 
+@pytest.fixture
+def short_sock_path():
+    """B351: AF_UNIX's sockaddr_un caps sun_path at roughly 104 bytes on
+    macOS/BSD. pytest's `tmp_path` fixture nests under
+    .../pytest-of-<user>/pytest-<N>/<test-name><N>/, which can exceed that
+    on its own — especially for long test names, or as pytest's run counter
+    grows across repeated local runs (intermittent: which test trips the
+    limit shifts run to run, not a fixed always-reproducible failure).
+
+    Returns a factory that builds a short path directly under the system
+    temp root (a short, fixed prefix) instead, with a short unique suffix so
+    parallel/repeated test runs don't collide. Cleans up any files it
+    created after the test.
+    """
+    created: list[Path] = []
+
+    def _make(label: str) -> Path:
+        path = Path(tempfile.gettempdir()) / f"campy-test-{label}-{uuid.uuid4().hex[:8]}.sock"
+        created.append(path)
+        return path
+
+    yield _make
+
+    for path in created:
+        with contextlib.suppress(OSError):
+            path.unlink()
+
+
 # ---------------------------------------------------------------------------
 # Task 4 — call_brain_soft() never raises, for every failure mode.
 # ---------------------------------------------------------------------------
 class TestCallBrainSoftFailureModes:
-    async def test_no_socket_no_http_returns_default(self, tmp_path, monkeypatch):
+    async def test_no_socket_no_http_returns_default(self, short_sock_path, monkeypatch):
         """DAEMON_OFFLINE path: nonexistent socket, unreachable HTTP fallback."""
         from campy.brain_transport import call_brain_soft
 
-        monkeypatch.setenv("CAMPY_BRAIN_SOCKET", str(tmp_path / "does-not-exist.sock"))
+        monkeypatch.setenv("CAMPY_BRAIN_SOCKET", str(short_sock_path("does-not-exist")))
         monkeypatch.setenv("CAMPY_BRAIN_URL", _REFUSED_HTTP_URL)
 
         sentinel = object()
@@ -133,11 +162,11 @@ class TestCallBrainSoftFailureModes:
 
         assert result is sentinel
 
-    async def test_connection_refused_returns_default(self, tmp_path, monkeypatch):
+    async def test_connection_refused_returns_default(self, short_sock_path, monkeypatch):
         """Socket file exists but nothing is listening — ConnectionRefusedError."""
         from campy.brain_transport import call_brain_soft
 
-        sock_path = _refused_socket_path(tmp_path)
+        sock_path = _refused_socket_path(short_sock_path("refused"))
         monkeypatch.setenv("CAMPY_BRAIN_SOCKET", str(sock_path))
         monkeypatch.setenv("CAMPY_BRAIN_URL", _REFUSED_HTTP_URL)
 
@@ -146,7 +175,7 @@ class TestCallBrainSoftFailureModes:
 
         assert result is sentinel
 
-    async def test_stalled_daemon_times_out_and_returns_default(self, tmp_path, monkeypatch):
+    async def test_stalled_daemon_times_out_and_returns_default(self, short_sock_path, monkeypatch):
         """Daemon accepts the connection and never responds — the timeout path.
 
         Uses a real stub server that accepts and stalls (not a client mock)
@@ -155,7 +184,7 @@ class TestCallBrainSoftFailureModes:
         """
         from campy.brain_transport import call_brain_soft
 
-        sock_path = tmp_path / "stall.sock"
+        sock_path = short_sock_path("stall")
         monkeypatch.setenv("CAMPY_BRAIN_SOCKET", str(sock_path))
         monkeypatch.setenv("CAMPY_BRAIN_URL", _REFUSED_HTTP_URL)
 
@@ -171,11 +200,11 @@ class TestCallBrainSoftFailureModes:
         # Must return close to the requested timeout, not hang indefinitely.
         assert elapsed < 2.0, f"call_brain_soft took {elapsed:.2f}s against a stalled daemon"
 
-    async def test_jsonrpc_error_object_returns_default(self, tmp_path, monkeypatch):
+    async def test_jsonrpc_error_object_returns_default(self, short_sock_path, monkeypatch):
         """Daemon responds, but with a JSON-RPC error object."""
         from campy.brain_transport import call_brain_soft
 
-        sock_path = tmp_path / "jsonrpc_error.sock"
+        sock_path = short_sock_path("jsonrpc-error")
         monkeypatch.setenv("CAMPY_BRAIN_SOCKET", str(sock_path))
         monkeypatch.setenv("CAMPY_BRAIN_URL", _REFUSED_HTTP_URL)
 
@@ -190,11 +219,11 @@ class TestCallBrainSoftFailureModes:
 
         assert result is sentinel
 
-    async def test_malformed_json_returns_default(self, tmp_path, monkeypatch):
+    async def test_malformed_json_returns_default(self, short_sock_path, monkeypatch):
         """Daemon responds with malformed/truncated JSON."""
         from campy.brain_transport import call_brain_soft
 
-        sock_path = tmp_path / "malformed.sock"
+        sock_path = short_sock_path("malformed")
         monkeypatch.setenv("CAMPY_BRAIN_SOCKET", str(sock_path))
         monkeypatch.setenv("CAMPY_BRAIN_URL", _REFUSED_HTTP_URL)
 
@@ -204,12 +233,12 @@ class TestCallBrainSoftFailureModes:
 
         assert result is sentinel
 
-    async def test_success_returns_real_result_unmodified(self, tmp_path, monkeypatch):
+    async def test_success_returns_real_result_unmodified(self, short_sock_path, monkeypatch):
         """Sanity check: when the daemon *is* reachable, call_brain_soft
         returns the real result, not the default."""
         from campy.brain_transport import call_brain_soft
 
-        sock_path = tmp_path / "ok.sock"
+        sock_path = short_sock_path("ok")
         monkeypatch.setenv("CAMPY_BRAIN_SOCKET", str(sock_path))
         monkeypatch.setenv("CAMPY_BRAIN_URL", _REFUSED_HTTP_URL)
 
@@ -242,13 +271,13 @@ def test_timeout_cannot_be_passed_positionally():
         call_brain_soft("current_truth", {}, 1.0)  # positional timeout must fail
 
 
-def test_call_brain_soft_never_raises_even_with_bad_params(tmp_path, monkeypatch):
+def test_call_brain_soft_never_raises_even_with_bad_params(short_sock_path, monkeypatch):
     """Defense in depth: even a wildly malformed call degrades, doesn't raise."""
     import asyncio
 
     from campy.brain_transport import call_brain_soft
 
-    monkeypatch.setenv("CAMPY_BRAIN_SOCKET", str(tmp_path / "nope.sock"))
+    monkeypatch.setenv("CAMPY_BRAIN_SOCKET", str(short_sock_path("nope")))
     monkeypatch.setenv("CAMPY_BRAIN_URL", _REFUSED_HTTP_URL)
 
     result = asyncio.run(call_brain_soft("not_a_real_method", {"whatever": 1}, timeout=0.5))
@@ -337,7 +366,7 @@ def test_explicit_ask_cli_reports_failure_not_empty_answer(monkeypatch):
     assert "DAEMON_OFFLINE" in result.output
 
 
-def test_call_brain_still_raises_for_explicit_paths(tmp_path, monkeypatch):
+def test_call_brain_still_raises_for_explicit_paths(short_sock_path, monkeypatch):
     """call_brain() (used by explicit CLI paths) keeps its raising contract
     — B318 only adds call_brain_soft() alongside it, it does not change
     call_brain()'s behavior."""
@@ -345,7 +374,7 @@ def test_call_brain_still_raises_for_explicit_paths(tmp_path, monkeypatch):
 
     from campy.brain_transport import call_brain
 
-    monkeypatch.setenv("CAMPY_BRAIN_SOCKET", str(tmp_path / "nope.sock"))
+    monkeypatch.setenv("CAMPY_BRAIN_SOCKET", str(short_sock_path("nope")))
     monkeypatch.setenv("CAMPY_BRAIN_URL", _REFUSED_HTTP_URL)
 
     with pytest.raises(RuntimeError):
@@ -377,13 +406,13 @@ def test_plugin_pre_tool_use_hook_exits_zero_with_empty_valid_output(tmp_path, m
 
 
 def test_claude_code_post_tool_use_hook_exits_zero_and_stays_under_budget_against_stalled_daemon(
-    tmp_path,
+    tmp_path, short_sock_path,
 ):
     """B318 acceptance criterion: the per-tool-call hook path completes in
     under 1.5s wall-clock against a stalled daemon (HOOK_TIMEOUT 1.0s +
     overhead), measured against a real stub server that accepts and stalls
     — and always exits 0."""
-    sock_path = tmp_path / "brain.sock"
+    sock_path = short_sock_path("brain")
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(json.dumps({"triggers": []}))
 
@@ -439,12 +468,12 @@ def test_doctor_reports_zero_soft_failures_by_default(tmp_path, monkeypatch):
 
 
 def test_doctor_reports_consecutive_soft_failure_count_after_degraded_calls(
-    tmp_path, monkeypatch
+    tmp_path, short_sock_path, monkeypatch
 ):
     from pathlib import Path as _Path
 
     monkeypatch.setattr(_Path, "home", lambda: tmp_path)
-    monkeypatch.setenv("CAMPY_BRAIN_SOCKET", str(tmp_path / "nope.sock"))
+    monkeypatch.setenv("CAMPY_BRAIN_SOCKET", str(short_sock_path("nope")))
     monkeypatch.setenv("CAMPY_BRAIN_URL", _REFUSED_HTTP_URL)
 
     import asyncio
@@ -465,11 +494,11 @@ def test_doctor_reports_consecutive_soft_failure_count_after_degraded_calls(
     assert "3 consecutive soft failure" in message
 
 
-def test_soft_failure_counter_resets_on_success(tmp_path, monkeypatch):
+def test_soft_failure_counter_resets_on_success(tmp_path, short_sock_path, monkeypatch):
     from pathlib import Path as _Path
 
     monkeypatch.setattr(_Path, "home", lambda: tmp_path)
-    monkeypatch.setenv("CAMPY_BRAIN_SOCKET", str(tmp_path / "nope.sock"))
+    monkeypatch.setenv("CAMPY_BRAIN_SOCKET", str(short_sock_path("nope")))
     monkeypatch.setenv("CAMPY_BRAIN_URL", _REFUSED_HTTP_URL)
 
     import asyncio
@@ -479,7 +508,7 @@ def test_soft_failure_counter_resets_on_success(tmp_path, monkeypatch):
     asyncio.run(call_brain_soft("current_truth", {}, timeout=0.5))
     assert read_soft_failure_state()["consecutive_failures"] == 1
 
-    sock_path = tmp_path / "ok.sock"
+    sock_path = short_sock_path("ok")
     monkeypatch.setenv("CAMPY_BRAIN_SOCKET", str(sock_path))
     ok_response = (
         json.dumps({"jsonrpc": "2.0", "id": "1", "result": {"status": "ok"}}) + "\n"
