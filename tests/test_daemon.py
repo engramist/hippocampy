@@ -260,3 +260,48 @@ async def test_loop_worker_continues_after_error(monkeypatch):
         pass
 
     assert "msg-good" in processed
+
+
+# ---------------------------------------------------------------------------
+# _periodic_restart — B342 fragmentation-mitigation self-restart
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_periodic_restart_calls_shutdown_after_interval(monkeypatch):
+    """B342: after the configured interval (+/- jitter), the task calls
+    self.shutdown() so launchd's KeepAlive can bring up a fresh process."""
+    daemon = _make_daemon()
+
+    shutdown_calls = []
+    monkeypatch.setattr(daemon, "shutdown", lambda: shutdown_calls.append(True))
+
+    # 0.0001h = 0.36s, plus up to +/-10% jitter -- still fast for a unit test.
+    await daemon._periodic_restart(0.0001)
+
+    assert shutdown_calls == [True]
+
+
+@pytest.mark.asyncio
+async def test_periodic_restart_applies_jitter(monkeypatch):
+    """B342: actual delay should vary run to run within the documented
+    +/-10% jitter band, not fire at exactly the nominal interval every time."""
+    daemon = _make_daemon()
+    monkeypatch.setattr(daemon, "shutdown", lambda: None)
+
+    interval_hours = 0.0001
+    nominal_seconds = interval_hours * 3600
+
+    observed = []
+    real_sleep = asyncio.sleep
+
+    async def spy_sleep(delay):
+        observed.append(delay)
+        await real_sleep(0)  # don't actually wait in the test
+
+    monkeypatch.setattr(asyncio, "sleep", spy_sleep)
+
+    await daemon._periodic_restart(interval_hours)
+
+    assert len(observed) == 1
+    delay = observed[0]
+    assert nominal_seconds * 0.9 <= delay <= nominal_seconds * 1.1
