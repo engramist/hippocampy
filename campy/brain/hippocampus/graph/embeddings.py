@@ -2,7 +2,20 @@
 mcp_engine/graph/embeddings.py — Multi-Provider Embedding Dispatch Layer
 
 Supports three providers (configured in campy.toml [embeddings]):
-    sentence-transformers  → local Python, fastest (default)
+    sentence-transformers  → local, fastest (default) — despite the config
+                              label (kept for backward compatibility with
+                              existing campy.toml files), this is backed by
+                              fastembed/ONNX Runtime, not PyTorch, as of
+                              B355. See that card for why: the PyTorch/
+                              sentence-transformers stack was the dominant
+                              contributor to brain_daemon.py's ~1.2-2GB
+                              fresh-start memory footprint (B342/B353);
+                              fastembed runs the identical model
+                              (sentence-transformers/all-MiniLM-L6-v2, via
+                              its ONNX conversion) at ~60-80MB, with
+                              verified near-perfect output parity (cosine
+                              similarity 1.000000 across 200 real test
+                              sentences — see B353/B355 for the test).
     ollama                 → local Ollama server via HTTP
     openai                 → OpenAI cloud API
 
@@ -37,7 +50,7 @@ _offline_mode: bool = False
 _configured: bool = False
 
 # Provider-specific singletons
-_st_model = None          # SentenceTransformer instance
+_fe_model = None          # fastembed.TextEmbedding instance (B355)
 _openai_client = None     # openai.OpenAI instance
 
 
@@ -89,38 +102,42 @@ def _is_offline_enabled() -> bool:
     return os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1"
 
 
-def _get_st_model(model_name: str):
-    """Lazy singleton for sentence-transformers."""
-    global _st_model
-    if _st_model is None:
-        from sentence_transformers import SentenceTransformer
+def _get_fe_model(model_name: str):
+    """Lazy singleton for the local embedding backend.
+
+    B355: fastembed/ONNX Runtime, not sentence-transformers/PyTorch — see
+    the module docstring for why. fastembed's `all-MiniLM-L6-v2` conversion
+    (qdrant/all-MiniLM-L6-v2-onnx) outputs unit-normalized vectors already
+    (verified directly: L2 norm == 1.0), matching what the old
+    `normalize_embeddings=True` call used to produce, so no extra
+    normalization step is needed in `_embed_fe`/`_embed_batch_fe` below.
+    """
+    global _fe_model
+    if _fe_model is None:
+        from fastembed import TextEmbedding
         offline = _is_offline_enabled()
         try:
-            if offline:
-                _st_model = SentenceTransformer(model_name, local_files_only=True)
-            else:
-                _st_model = SentenceTransformer(model_name)
+            _fe_model = TextEmbedding(model_name=model_name, local_files_only=offline)
         except Exception as e:
             if offline:
                 raise RuntimeError(
                     "Embedding model not found in local cache and offline mode is enabled. "
-                    "Pre-bake the model into the image cache (HF_HOME/~/.cache/huggingface) "
+                    "Pre-bake the model into the image cache (HF_HOME/~/.cache/huggingface, "
+                    "fastembed shares the huggingface_hub cache) "
                     "or unset HF_HUB_OFFLINE/TRANSFORMERS_OFFLINE (or [embeddings].offline)."
                 ) from e
             raise
-    return _st_model
+    return _fe_model
 
 
-def _embed_st(text: str, model_name: str) -> list[float]:
-    model = _get_st_model(model_name)
-    return model.encode(text, normalize_embeddings=True).tolist()
+def _embed_fe(text: str, model_name: str) -> list[float]:
+    model = _get_fe_model(model_name)
+    return next(model.embed([text])).tolist()
 
 
-def _embed_batch_st(texts: list[str], model_name: str) -> list[list[float]]:
-    model = _get_st_model(model_name)
-    return model.encode(
-        texts, normalize_embeddings=True, show_progress_bar=False
-    ).tolist()
+def _embed_batch_fe(texts: list[str], model_name: str) -> list[list[float]]:
+    model = _get_fe_model(model_name)
+    return [vec.tolist() for vec in model.embed(texts)]
 
 
 def _embed_ollama(text: str, model_name: str) -> list[float]:
@@ -194,13 +211,13 @@ _FALLBACK_ORDER = {
 }
 
 _EMBED_FN = {
-    "sentence-transformers": _embed_st,
+    "sentence-transformers": _embed_fe,
     "ollama":                _embed_ollama,
     "openai":                _embed_openai,
 }
 
 _EMBED_BATCH_FN = {
-    "sentence-transformers": _embed_batch_st,
+    "sentence-transformers": _embed_batch_fe,
     "ollama":                _embed_batch_ollama,
     "openai":                _embed_batch_openai,
 }
@@ -249,23 +266,24 @@ def _embed_batch_with_fallback(texts: list[str], model_name: str) -> list[list[f
 # ---------------------------------------------------------------------------
 
 def get_model(model_name: str = MODEL_NAME):
-    """Return the sentence-transformers model (backward compat for callers)."""
-    return _get_st_model(model_name)
+    """Return the local embedding model (backward compat for callers)."""
+    return _get_fe_model(model_name)
 
 
 def prewarm(model_name: str = MODEL_NAME) -> None:
     """
     Called at daemon startup to eagerly load the embedding model.
 
-    For sentence-transformers: loads weights into memory.
-    For ollama/openai: issues a single test embed to verify connectivity.
+    For sentence-transformers (fastembed/ONNX as of B355): loads weights
+    into memory. For ollama/openai: issues a single test embed to verify
+    connectivity.
     """
     global _model_name
     _model_name = model_name
 
     if _provider == "sentence-transformers":
-        _get_st_model(model_name)
-        _logger.info("Sentence-transformers model pre-warmed: %s", model_name)
+        _get_fe_model(model_name)
+        _logger.info("Local embedding model pre-warmed: %s", model_name)
     elif _provider == "ollama":
         try:
             vec = _embed_ollama("prewarm test", model_name)
@@ -275,9 +293,9 @@ def prewarm(model_name: str = MODEL_NAME) -> None:
         except Exception as e:
             _logger.warning(
                 "Ollama embedding prewarm failed (%s); will fallback to "
-                "sentence-transformers at runtime", e
+                "local embedding model at runtime", e
             )
-            _get_st_model(model_name)
+            _get_fe_model(model_name)
     elif _provider == "openai":
         try:
             vec = _embed_openai("prewarm test", model_name)
@@ -287,15 +305,15 @@ def prewarm(model_name: str = MODEL_NAME) -> None:
         except Exception as e:
             _logger.warning(
                 "OpenAI embedding prewarm failed (%s); will fallback to "
-                "sentence-transformers at runtime", e
+                "local embedding model at runtime", e
             )
-            _get_st_model(model_name)
+            _get_fe_model(model_name)
     else:
         _logger.warning(
-            "Unknown embedding provider '%s'; defaulting to sentence-transformers",
+            "Unknown embedding provider '%s'; defaulting to local embedding model",
             _provider,
         )
-        _get_st_model(model_name)
+        _get_fe_model(model_name)
 
 
 def embed(text: str, model_name: str = MODEL_NAME) -> list[float]:
