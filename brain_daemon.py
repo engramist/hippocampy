@@ -21,9 +21,11 @@ import gc
 import json
 import logging
 import os
+import re
 import resource
 import signal
 import socket
+import subprocess
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -581,18 +583,62 @@ _MEMORY_DEBUG_LOG = Path.home() / ".campy" / "memory_debug.log"
 _last_type_counts = None
 
 
+def _vmmap_swap_summary() -> str:
+    """B342: gc object counts and RSS both miss OS-level page compression/
+    swap. B342's investigation found `ps`/`ru_maxrss`-style RSS readings can
+    swing by hundreds of MB purely from macOS compressing pages, with no
+    change in what the process actually holds -- the original B342 incident
+    (5.4GB RSS, 99GB physical footprint) had 94.5GB of one malloc zone
+    sitting swapped, which RSS alone never showed. `vmmap -summary` on your
+    own PID needs no elevated privileges. Best-effort: if vmmap is
+    unavailable or its output format changes, report that plainly rather
+    than raising out of a signal handler.
+    """
+    try:
+        out = subprocess.run(
+            ["vmmap", "-summary", str(os.getpid())],
+            capture_output=True, text=True, timeout=10,
+        )
+    except Exception as e:
+        return f"(vmmap unavailable: {e})"
+
+    footprint = None
+    small_resident = None
+    small_swapped = None
+    for line in out.stdout.splitlines():
+        if "Physical footprint:" in line and "peak" not in line:
+            m = re.search(r"Physical footprint:\s+(\S+)", line)
+            if m:
+                footprint = m.group(1)
+        elif line.strip().startswith("MALLOC_SMALL") and "(empty)" not in line:
+            tokens = [c for c in line.split() if re.match(r"^[\d.]+[KMG]$", c)]
+            if len(tokens) >= 4:
+                small_resident = tokens[1]
+                small_swapped = tokens[3]
+
+    if footprint is None:
+        return "(vmmap output format not recognized -- see memory_debug.log history or run vmmap manually)"
+    return (
+        f"physical_footprint={footprint} "
+        f"malloc_small_resident={small_resident or 'n/a'} "
+        f"malloc_small_swapped={small_swapped or 'n/a'}"
+    )
+
+
 def _dump_memory_snapshot():
     """B343/B344: on-demand snapshot, triggered by `kill -USR1 <pid>`.
 
     Cheap by construction (see the module comment above for why tracemalloc
     is deliberately not used here): RSS high-water mark, total gc object
-    count, and top object-type counts, diffed against the previous trigger
-    if there was one.
+    count, top object-type counts (diffed against the previous trigger if
+    there was one), and a `vmmap` physical-footprint/swap summary (B342 --
+    see `_vmmap_swap_summary` for why RSS/gc counts alone are misleading).
     """
     global _last_type_counts
 
     now = datetime.now(timezone.utc).isoformat()
     rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss  # bytes on macOS, KB on Linux
+    vmmap_summary = _vmmap_swap_summary()
 
     objects = gc.get_objects()
     obj_count = len(objects)
@@ -602,6 +648,7 @@ def _dump_memory_snapshot():
     lines = [
         f"=== memory snapshot {now} ===",
         f"ru_maxrss={rss_kb} (bytes on macOS, KB on Linux -- high-water mark, not current RSS)",
+        f"vmmap: {vmmap_summary}",
         f"gc object count={obj_count}",
         "",
         "-- top 15 object types by count --",
