@@ -183,7 +183,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B308 | Archive-Move HNSW Rebuild Mechanism (B285 Path B) | P99 | not started — filed 2026-08-04 as a follow-up to B285's scope-alignment pass. Requires an architecture decision before implementation, not just a coding pass. | TBD | TBD | - | backlog/B308.md |
 | B309 | ARC World-Model Tools: Implement A175-A179's Pending Server-Side Half (Entity Movement, Transitions, Rules, Cross-Game Transfer) | P99 | complete -- 2026-08-08: implemented all 5 tools plus the `arc_perceive_state` MOVED_BY fix. Mid-implementation, shipped as generic (non-`arc_`-prefixed) tool names — `record_transition`, `get_entity_history`, `record_rule`, `get_rules_for_action`, `get_transferred_rules` — since Transition/Rule tracking isn't ARC-specific; ARC_AGI's client-side name-mapping table updated to match (cross-repo commit, see Implementation below). See Implementation section for what shipped; original card text below (written before the rename decision) kept for history — read `arc_*` names in it as their generic equivalents. | TBD | TBD | - | backlog/B309.md |
 | B310 | Fix `scripts/generate_extension_tools.py` Crash on Multi-Type JSON Schema Fields | P99 | complete -- 2026-08-08: fixed `_schema_to_typebox()` to handle list-typed `"type"` fields (`Type.Union([...])`, with `"null"` mapped to `Type.Null()`). See Implementation section below. | TBD | TBD | - | backlog/B310.md |
-| B311 | Investigate Brain Daemon's Large Transient Memory Spikes (100-150MB Baseline to 600MB-1.2GB Peaks) During ARC Live-Smoke Runs | P99 | open — investigating (round 7, 2026-08-21), but the core mitigation is now confirmed. B337 | TBD | TBD | - | backlog/B311.md |
+| B311 | Investigate Brain Daemon's Large Transient Memory Spikes (100-150MB Baseline to 600MB-1.2GB Peaks) During ARC Live-Smoke Runs | P99 | open — investigating. Round 7 (2026-08-21, longer episode, 5 puzzles/30 steps, ~30.6 min, closes | TBD | TBD | - | backlog/B311.md |
 | B312 | Provenance Fields + Explicit Supersession on Fact-Bearing Nodes | P99 | done | TBD | TBD | - | backlog/B312.md |
 | B313 | Authority Property: Projected vs Earned Memory | P99 | done | TBD | TBD | - | backlog/B313.md |
 | B314 | GraphGateway: Named-Query Chokepoint + Raw-Cypher Ratchet | P99 | done | TBD | TBD | - | backlog/B314.md |
@@ -214,7 +214,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B339 | Label Replayed Memories as Data, Not Instructions, in ask/compile_context Output | P99 | complete — merged via PR #63 (2026-08-20) | TBD | TBD | - | backlog/B339.md |
 | B340 | `pip install hippocampy` Doesn't Get the Reviewed/Pinned Dependency Versions | P99 | complete — merged via PR #59 (2026-08-20) | TBD | TBD | - | backlog/B340.md |
 | B341 | Support Pre-Baked/Offline Embedding Models for Egress-Locked Deployments | P99 | complete — merged via PR #60 (2026-08-20) | TBD | TBD | - | backlog/B341.md |
-| B342 | Live brain_daemon.py Observed at ~5.4GB RSS (99GB Physical Footprint) with Near-Empty Graph | P99 | open — deeper diagnostic done (2026-08-21), root cause still not identified. Escalated from P3: | TBD | TBD | - | backlog/B342.md |
+| B342 | Live brain_daemon.py Observed at ~5.4GB RSS (99GB Physical Footprint) with Near-Empty Graph | P99 | open — root cause not fully identified, but the necessary/sufficient behavioral question is | TBD | TBD | - | backlog/B342.md |
 | B343 | Root-Cause B342's Leak: Real Heap Profiling on a Grown brain_daemon.py Process | P99 | ready | TBD | TBD | - | backlog/B343.md |
 | B344 | Add Lightweight Continuous Memory Instrumentation to brain_daemon.py | P99 | ready | TBD | TBD | - | backlog/B344.md |
 | B345 | Resolve the Two brain_daemon.py Files (Top-Level vs campy/brain_daemon.py) | P99 | ready | TBD | TBD | - | backlog/B345.md |
@@ -223,11 +223,18 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B348 | Local Memory-Pressure Watchdog/Alarm for brain_daemon.py | P99 | ready | TBD | TBD | - | backlog/B348.md |
 | B349 | Tune campy.toml's Shipped Checkpoint Interval Default (Currently 60s, Round 5 Recommends 15-30s) | P99 | ready | TBD | TBD | - | backlog/B349.md |
 | B350 | Longer Live ARC_AGI Episode to Observe a Real Spike-and-Release Under B337's Fix | P99 | complete — see backlog/B311.md's "Round 7" (2026-08-21). Cross-repo collaboration with the | TBD | TBD | - | backlog/B350.md |
+| B351 | AF_UNIX Path-Too-Long Failures in Socket-Stub Tests (Environmental, Pre-Existing) | P99 | closed — fixed, PR pending. Two of the three originally-listed failures were genuinely the | TBD | TBD | - | backlog/B351.md |
+| B352 | Flaky Timing Assertion in test_periodic_checkpoint_task_interval | P99 | ready | TBD | TBD | - | backlog/B352.md |
+| B353 | PARENT: Campy Memory Footprint Reduction Initiative | P99 | ready — planning complete, child cards approved to implement. | TBD | TBD | - | backlog/B353.md |
+| B354 | Footprint/Swap-Aware Memory Watchdog (vmmap-Based, Alongside PR #86) | P99 | ready | TBD | TBD | - | backlog/B354.md |
+| B355 | Migrate Embedding Backend to fastembed/ONNX (Same Model, Baseline Reduction) | P99 | ready | TBD | TBD | - | backlog/B355.md |
+| B356 | KuzuDB Buffer Pool Bounding (Deferred, Future-Proofing Only) | P99 | deferred — not blocking, not scheduled. Revisit only per the trigger condition below. | TBD | TBD | - | backlog/B356.md |
+| B357 | Backlog Tracker Ignores Each Card's Own Priority Line (Shows P99 for Most Recent Cards) | P99 | ready | TBD | TBD | - | backlog/B357.md |
 
 ## Summary
 
-- Total cards: 219
-- Ready: 7
+- Total cards: 226
+- Ready: 12
 - Needs work: 0
 - Complete: 198
 - In progress: 0
