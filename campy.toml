@@ -136,6 +136,20 @@ auto_checkpoint = true
 threshold_bytes = -1
 interval_seconds = 60
 
+[daemon]
+# B342: periodic self-restart to bound allocator fragmentation. The
+# daemon's physical memory footprint (resident + swapped) was found to
+# grow slowly with no observed plateau over long uptime -- allocator
+# fragmentation, not a Python-level leak (see backlog/B342.md). A clean
+# restart is cheap since KuzuDB is the durable source of truth; launchd's
+# KeepAlive brings up a fresh process immediately.
+#
+# restart_interval_hours: hours of uptime before a scheduled graceful
+#   restart (+/-10% random jitter). 24h is roughly an order of magnitude
+#   inside the observed danger zone (original incident needed ~a week of
+#   continuous uptime to develop). Set to 0 to disable.
+restart_interval_hours = 24
+
 [web]
 port = 7799   # Memory Control Panel — http://127.0.0.1:7799 (local only)
 
