@@ -227,15 +227,16 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B352 | Flaky Timing Assertion in test_periodic_checkpoint_task_interval | P99 | ready | TBD | TBD | - | backlog/B352.md |
 | B353 | PARENT: Campy Memory Footprint Reduction Initiative | P99 | ready — planning complete, child cards approved to implement. | TBD | TBD | - | backlog/B353.md |
 | B354 | Footprint/Swap-Aware Memory Watchdog (vmmap-Based, Alongside PR #86) | P99 | ready | TBD | TBD | - | backlog/B354.md |
-| B355 | Migrate Embedding Backend to fastembed/ONNX (Same Model, Baseline Reduction) | P99 | ready | TBD | TBD | - | backlog/B355.md |
+| B355 | Migrate Embedding Backend to fastembed/ONNX (Same Model, Baseline Reduction) | P99 | done — merged to main via PR #93 (2026-08-22). Fresh-start footprint after full model load | TBD | TBD | - | backlog/B355.md |
 | B356 | KuzuDB Buffer Pool Bounding (Deferred, Future-Proofing Only) | P99 | deferred — not blocking, not scheduled. Revisit only per the trigger condition below. | TBD | TBD | - | backlog/B356.md |
 | B357 | Backlog Tracker Ignores Each Card's Own Priority Line (Shows P99 for Most Recent Cards) | P99 | ready | TBD | TBD | - | backlog/B357.md |
+| B358 | Flaky test_q5_verifies_requires_satisfiable (requires_satisfiable Returns None, Not True/False) | P99 | ready | TBD | TBD | - | backlog/B358.md |
 
 ## Summary
 
-- Total cards: 226
+- Total cards: 227
 - Ready: 12
 - Needs work: 0
-- Complete: 198
+- Complete: 199
 - In progress: 0
 - Blocked: 0
