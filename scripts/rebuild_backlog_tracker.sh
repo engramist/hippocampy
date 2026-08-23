@@ -40,7 +40,14 @@ for f in "$BACKLOG_DIR"/B*.md; do
   title="$(sed -n '1p' "$f" | sed -E 's/^# B[0-9]+ - //')"
   state="$(sed -n '3p' "$f" | sed -E 's/^State: //')"
 
-  pri="$(grep -E "^${card}[[:space:]]" /tmp/card_priority.tsv | head -n 1 | cut -f2 || true)"
+  # B357: prefer the card's own "Priority: P<N>" line (position varies per file,
+  # so grep the whole file rather than assuming a fixed line number) over the
+  # static legacy archive, which only covers cards that existed as of
+  # 2026-03-27 and silently falls back to P99 for everything created since.
+  pri="$(grep -oE "^Priority: P[0-9]+" "$f" | head -n 1 | sed -E 's/^Priority: //' || true)"
+  if [[ -z "$pri" ]]; then
+    pri="$(grep -E "^${card}[[:space:]]" /tmp/card_priority.tsv | head -n 1 | cut -f2 || true)"
+  fi
   [[ -n "$pri" ]] || pri="P99"
   pri_num="$(echo "$pri" | sed -E 's/^P([0-9]+)$/\1/')"
 
