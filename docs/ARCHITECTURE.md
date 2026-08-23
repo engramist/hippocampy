@@ -80,7 +80,10 @@ base_url = "http://localhost:11434"   # ollama only
 
 [embeddings]
 provider = "sentence-transformers"   # config label kept for backward compat; backed by fastembed/ONNX
-                                      # since B355, not PyTorch — same model, ~1.2-2GB -> ~228MB footprint
+                                      # since B355, not PyTorch -- same model, ~6.5x smaller footprint
+                                      # contribution from the embedding backend itself (1.22GB -> 186MB,
+                                      # see B355's correction note; the daemon's own torch floor from
+                                      # spaCy is unrelated and unaffected by this)
 model = "sentence-transformers/all-MiniLM-L6-v2"   # produces 384-dim vectors — matches FLOAT[384] schema
 # WARNING: changing this model requires full re-embedding of all nodes in the graph.
 # Run: campy reembed --confirm before switching models.
@@ -1538,10 +1541,13 @@ oversight:
   provider swap — it is a schema migration across every embedding column, a full re-embed of
   the existing graph, and an index rebuild, with silently-degraded recall if any part is missed.
 - **Recommendation: keep the local embedding model even in cloud deployments.** It is a small
-  CPU model (as of B355, a genuinely small one — ~228MB resident, not the ~1.2-2GB PyTorch stack
-  this recommendation originally weighed), runs fine in a container, and avoids the dimension
-  problem entirely. Revisit only if a deployment forbids shipping model weights — and then as
-  its own card with an explicit re-embed plan, not folded into a provider card.
+  CPU model, and as of B355 the embedding backend itself contributes roughly 6.5x less footprint
+  than the PyTorch stack this recommendation originally weighed (~186MB vs. ~1.22GB, measured on
+  top of the daemon's other fixed costs — see B355's correction note for the full accounting; an
+  earlier draft of this section cited a 228MB whole-daemon figure that was an isolated-test
+  artifact, not the real daemon's baseline). It runs fine in a container and avoids the dimension
+  problem entirely either way. Revisit only if a deployment forbids shipping model weights — and
+  then as its own card with an explicit re-embed plan, not folded into a provider card.
 
 **Cost this recommendation used to carry, resolved by B355.** This section originally flagged
 that `sentence-transformers==3.3.1` pulled in `transformers`, which carried several HIGH
@@ -2722,10 +2728,16 @@ finding — see `brain_daemon.py` for both:**
 **Baseline reduction (B355):** the embedding backend (see the Bedrock/embeddings decision section above)
 moved from PyTorch/`sentence-transformers` to `fastembed`/ONNX Runtime, same model, verified near-perfect
 output parity (cosine similarity 1.000000 across 200 real test sentences, 100% top-10 retrieval
-agreement). This was the highest-leverage single change for the daemon's *perceived* weight: fresh-start
-physical footprint measured at 228.1MB, down from ~1.9-2.1GB — the growth-mitigation work above bounds
-the worst case, but this is what actually determines whether the daemon looks like a "memory hogging
-app" during ordinary, unremarkable operation.
+agreement). This was the highest-leverage single change for the daemon's *perceived* weight, but be
+precise about the number: an initial measurement (the embedding module tested in complete isolation)
+reported 228MB and was wrong as a whole-daemon claim — it never loaded `spacy`, whose own ML backend
+(`thinc`) imports `torch` unconditionally at Python import time, independent of the embedding backend.
+The real, live daemon's fresh-start baseline is **~1.2GB**. A fair comparison (spaCy loaded first, then
+each embedding backend layered on top of that same starting point) confirms the embedding backend's own
+contribution genuinely dropped ~6.5x (1.22GB -> 186MB); the best estimate for the full daemon's baseline
+before B355 (extrapolated, not directly re-measured) is ~2.2GB, putting the real whole-daemon improvement
+around 45-50% — real, but not the dramatic number first reported. See `backlog/B355.md`'s own correction
+note for the full measurement trail.
 
 **What this does not claim:** the allocator-level root cause is not fully understood (see above), and
 neither mitigation eliminates the underlying growth mechanism — they bound its consequences. If the
