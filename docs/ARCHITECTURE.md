@@ -63,7 +63,7 @@ Everything else should earn its way into the prompt.
 - **Language:** Python
 - **Database:** Kùzu (`kuzu==0.11.3` — pin this exact version; kuzu-db was archived October 2025, last stable release. Watch **RyuGraph** fork for future migration path.) — embedded graph + vector store. `kuzu_client.py` is an abstraction layer to simplify migration if needed. Never spin up external DB servers. No Neo4j, Postgres, ChromaDB, Pinecone, or LanceDB.
 - **NER / Zoning:** `spaCy` (local, zero LLM cost for concept extraction)
-- **Embeddings:** `sentence-transformers` (local, lightweight)
+- **Embeddings:** `fastembed`/ONNX Runtime (local; `sentence-transformers/all-MiniLM-L6-v2`, same model as before B355 — see B342/B353/B355 below for why the runtime changed)
 - **Ontologies:** gist (Semantic Arts) for upper-level classification → schema.org sub-graphs for domain-specific attributes
 - **LLM:** Configurable via `campy.toml` — Ollama (default/local) or cloud providers (OpenAI, Anthropic, Google) as opt-in
 - **Memory Control Panel:** FastAPI web app bound strictly to `127.0.0.1` (no external access)
@@ -79,6 +79,8 @@ base_url = "http://localhost:11434"   # ollama only
 # api_key loaded from env var for cloud providers
 
 [embeddings]
+provider = "sentence-transformers"   # config label kept for backward compat; backed by fastembed/ONNX
+                                      # since B355, not PyTorch — same model, ~1.2-2GB -> ~228MB footprint
 model = "sentence-transformers/all-MiniLM-L6-v2"   # produces 384-dim vectors — matches FLOAT[384] schema
 # WARNING: changing this model requires full re-embedding of all nodes in the graph.
 # Run: campy reembed --confirm before switching models.
@@ -1017,11 +1019,22 @@ ARC_AGI artifacts do not become wiki pages directly. They first flow through `in
 
 ## Error / Degraded Mode
 
-**Scenario A — Brain Daemon unreachable** (socket missing — crashed or never started):
-- Adapter detects connection failure at startup
+**Scenario A — Brain Daemon unreachable** (socket missing/refused — crashed or never started — **or**
+alive but too slow to answer within its timeout budget, see below):
+- Adapter detects connection failure (or timeout) at startup or per-call
 - Modifies injected fragment to: `[SideQuest OFFLINE — memory unavailable]`
 - Returns graceful MCP error on `current_truth` calls (LLM session continues without memory)
 - Queues failed passive ingestion messages to a local flat file; replays when daemon reconnects
+
+This message is a generic soft-failure indicator, not literally "the process is down" — `call_brain_soft()`
+(`campy/brain_transport.py`) treats a socket connect refused/missing, a malformed response, *and* a plain
+timeout (`CONTEXT_TIMEOUT`/`CAPTURE_TIMEOUT`, both a few seconds) identically, fail-open by design so an
+unresponsive daemon never hangs the calling agent. B342's investigation (see below) found a real, live
+case of the timeout path firing with the daemon fully alive: under heavy memory pressure (page faults
+into swapped/compressed memory are slow), an otherwise sub-100ms response can exceed the timeout budget,
+producing this exact message even though nothing crashed. The fail-open design itself is correct and
+deliberately not changed by that finding — the daemon's own memory footprint being small and bounded
+(B353's initiative) is what actually reduces how often this happens in practice, not a wider timeout.
 
 **Scenario B — Ollama unreachable** (daemon up, LLM steps fail):
 - Step 2 System 1 (embedding similarity) still runs — only LLM-dependent sub-steps degrade
@@ -1514,31 +1527,30 @@ whatever `campy.toml` already has); it now documents that Bedrock is configured 
 This card does **not** move embeddings to Bedrock, and that is a considered decision, not an
 oversight:
 
-- `campy/brain/hippocampus/graph/embeddings.py` uses a local `SentenceTransformer`
-  (`all-MiniLM-L6-v2`, 384-dim), and **every embedding column across ~53 node tables in
-  `schema.py` is `FLOAT[384]`**, with Kùzu HNSW indexes built on that fixed dimension.
-  `schema.py` has a startup dimension check specifically to stop a mismatched model from
-  corrupting the index.
+- `campy/brain/hippocampus/graph/embeddings.py` uses a local embedding model
+  (`sentence-transformers/all-MiniLM-L6-v2`, 384-dim — run via `fastembed`/ONNX Runtime as of
+  B355, previously PyTorch/`SentenceTransformer`; same model, same output, see B342/B353/B355
+  below), and **every embedding column across ~53 node tables in `schema.py` is `FLOAT[384]`**,
+  with Kùzu HNSW indexes built on that fixed dimension. `schema.py` has a startup dimension
+  check specifically to stop a mismatched model from corrupting the index.
 - No Bedrock embedding model outputs 384 dimensions: Titan Text Embeddings V2 supports
   1024/512/256, Cohere Embed outputs 1024. Switching embeddings to Bedrock is therefore not a
   provider swap — it is a schema migration across every embedding column, a full re-embed of
   the existing graph, and an index rebuild, with silently-degraded recall if any part is missed.
-- **Recommendation: keep local `SentenceTransformer` embeddings even in cloud deployments.** It
-  is a small CPU model, runs fine in a container, and avoids the dimension problem entirely.
-  Revisit only if a deployment forbids shipping model weights — and then as its own card with an
-  explicit re-embed plan, not folded into a provider card.
+- **Recommendation: keep the local embedding model even in cloud deployments.** It is a small
+  CPU model (as of B355, a genuinely small one — ~228MB resident, not the ~1.2-2GB PyTorch stack
+  this recommendation originally weighed), runs fine in a container, and avoids the dimension
+  problem entirely. Revisit only if a deployment forbids shipping model weights — and then as
+  its own card with an explicit re-embed plan, not folded into a provider card.
 
-**Known cost of that recommendation.** `sentence-transformers==3.3.1` (`requirements.txt`) pulls
-in `transformers`, which currently carries several HIGH `pip-audit` advisories in this repo —
-two marked "no fix available yet — consider removing this dependency." Keeping local embeddings
-keeps that dependency inside any container shipped to a customer, and an enterprise security
-review will raise it. This does not reverse the recommendation — the `FLOAT[384]` dimension
-problem is concrete and immediate, while the CVEs are a posture issue with mitigations (pinned
-base image, no untrusted model loading, network-isolated inference) — but a cloud deployment
-needs a dependency-posture review as its own piece of work. That review should also cover
-`starlette` (pulled in via `fastapi==0.115.6`) — the web/SSE surface matters much more behind an
-ALB than bound to localhost. Neither belongs in this card; both are noted here as follow-ups so
-the decision is recorded rather than rediscovered during a customer security review.
+**Cost this recommendation used to carry, resolved by B355.** This section originally flagged
+that `sentence-transformers==3.3.1` pulled in `transformers`, which carried several HIGH
+`pip-audit` advisories with no available fix at the time — a real dependency-posture concern for
+any container shipped to a customer. B355 (2026-08-22) replaced that stack with `fastembed`/ONNX
+Runtime, which does not depend on `transformers` at all; that specific advisory surface is gone
+from this dependency tree, not merely mitigated. The `starlette` posture note (pulled in via
+`fastapi`) is unrelated and still stands as its own follow-up for a cloud deployment's dependency
+review.
 
 **Explicitly out of scope for B324:** Bedrock Guardrails, model-invocation logging, and
 provisioned throughput are not implemented (Guardrails is a plausible follow-up for a governed
@@ -2663,3 +2675,59 @@ directly rather than only by architectural argument).
 - Does not fix App-slug rename instability — recorded above as a known, deferred hazard.
 - Does not push or notify. Pull-only: surfaced the next time a session on the same App calls
   `compile_context`/`ask` and a bundle gets compiled.
+
+## Brain Daemon Memory Behavior (B311, B342, B353–B358)
+
+`brain_daemon.py`'s memory footprint was investigated across two related but distinct problems, and the
+distinction matters for anyone reading this section: B311 is about *transient spikes during write-heavy
+bursts*; B342/B353 is about *steady-state baseline size and slow growth over long uptime*. Both are open
+investigation cards (`backlog/B311.md`, `backlog/B342.md`) with far more detail than belongs here — this
+section records the parts of the finding that should shape how anyone reads this daemon's memory
+behavior going forward, not the full investigation trail.
+
+**RSS is not a reliable signal on macOS for this process — this is the single most important finding.**
+`ps -o rss=`, `resource.getrusage().ru_maxrss`, and `psutil`'s `rss`/`uss` fields all measure only
+*uncompressed resident* pages. macOS's memory compressor can swap/compress a process's pages under
+system-wide memory pressure, which makes RSS drop by hundreds of MB while the process's actual memory
+burden (what `vmmap -summary`'s "Physical footprint" reports, resident + compressed/swapped) is
+unchanged or still climbing. B342 spent several investigation rounds confirming this is not occasional
+noise: it is the dominant behavior of this process's memory profile. **Any future memory diagnostic,
+watchdog, or investigation for this daemon must use `vmmap`'s physical footprint, never RSS.**
+
+**The growth mechanism (B342):** isolated, controlled testing found the footprint grows slowly with no
+observed plateau over a 2-hour, 1200-cycle stress run — consistent with small-object allocator
+fragmentation (macOS `libmalloc` not returning partially-used memory regions to the OS as the process
+churns through many small allocate/free cycles), not a Python-level object leak (`gc.get_objects()`
+counts stay flat throughout). The trigger was narrowed to work routed through `asyncio.to_thread` (the
+executor handoff itself — real traffic does this constantly via embedding calls and KuzuDB writes/
+checkpoints), not KuzuDB checkpointing specifically (an earlier hypothesis, ruled out by a controlled
+2x2) and not CPU load in general (ruled out by a matched in-event-loop control). The exact allocator-level
+mechanism (why the executor handoff specifically triggers this) remains unconfirmed — profiling further
+would need `dtrace`-level system access this project's investigation sessions have not had.
+
+**Two independent mitigations now run in production, addressing two different aspects of this
+finding — see `brain_daemon.py` for both:**
+
+1. **Periodic self-restart** (`_periodic_restart`, `[daemon] restart_interval_hours`, default 24h):
+   time-based, same pattern gunicorn/uWSGI use for exactly this class of problem (`max_requests` worker
+   recycling). Bounds the worst case regardless of root cause — KuzuDB is the durable source of truth
+   (see CLAUDE.md's "No Shadow Stores" rule, detailed in `docs/ecosystem-rules.md`), so a restart loses
+   no real state.
+2. **Footprint-aware watchdog** (`_periodic_footprint_watchdog`, `[watchdog]` section, B354): reacts to
+   actual growth rather than only a clock, using `vmmap` physical footprint (never RSS, per the finding
+   above) measured relative to this process's own startup baseline — not a hardcoded absolute number,
+   which would break the moment the baseline itself changes (exactly what would have happened had an
+   earlier, externally-proposed fixed-350MB design shipped before the baseline reduction below).
+
+**Baseline reduction (B355):** the embedding backend (see the Bedrock/embeddings decision section above)
+moved from PyTorch/`sentence-transformers` to `fastembed`/ONNX Runtime, same model, verified near-perfect
+output parity (cosine similarity 1.000000 across 200 real test sentences, 100% top-10 retrieval
+agreement). This was the highest-leverage single change for the daemon's *perceived* weight: fresh-start
+physical footprint measured at 228.1MB, down from ~1.9-2.1GB — the growth-mitigation work above bounds
+the worst case, but this is what actually determines whether the daemon looks like a "memory hogging
+app" during ordinary, unremarkable operation.
+
+**What this does not claim:** the allocator-level root cause is not fully understood (see above), and
+neither mitigation eliminates the underlying growth mechanism — they bound its consequences. If the
+daemon's memory behavior is ever revisited, start from `backlog/B342.md` and `backlog/B353.md` rather
+than re-deriving the RSS-vs-footprint distinction from scratch.
