@@ -40,10 +40,6 @@ for the full design.
 - **Memory arrives, you don't ask for it.** A layered injection system (file
   bridge, associative hooks, anticipatory triggers) surfaces relevant context
   automatically, on top of on-demand recall tools.
-- **Actually lightweight.** The background memory daemon runs at ~228MB
-  resident, not the 1-2GB+ some local embedding stacks carry, with a
-  self-monitoring safety net that keeps it there over long uptime rather than
-  slowly growing in the background.
 
 ## Install
 
