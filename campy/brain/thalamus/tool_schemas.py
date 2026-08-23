@@ -761,6 +761,18 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "arc_get_entity_neighborhood",
+        "description": "Retrieve live hypotheses and task-scoped mechanics already associated with a specific tracked entity.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "entity_ref": {"type": "integer"},
+            },
+            "required": ["task_id", "entity_ref"],
+        },
+    },
+    {
         "name": "arc_get_goal_evidence",
         "description": "Query VictoryCondition evidence for the current ARC task.",
         "inputSchema": {
@@ -785,26 +797,30 @@ TOOLS: list[dict] = [
     },
     {
         "name": "arc_confirm_hypothesis",
-        "description": "Increase confidence in an ARC hypothesis with supporting evidence.",
+        "description": "Increase confidence in an ARC hypothesis with supporting evidence. Optionally pass entity_ref (and step) to also link this hypothesis to the specific tracked entity it's about, for later retrieval via arc_get_entity_neighborhood.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "task_id": {"type": "string"},
                 "hypothesis_id": {"type": "string"},
                 "evidence": {"type": "object"},
+                "entity_ref": {"type": "integer"},
+                "step": {"type": ["integer", "string"]},
             },
             "required": ["task_id", "hypothesis_id"],
         },
     },
     {
         "name": "arc_contradict_hypothesis",
-        "description": "Decrease confidence in an ARC hypothesis with contradicting evidence.",
+        "description": "Decrease confidence in an ARC hypothesis with contradicting evidence. Optionally pass entity_ref (and step) to also link this hypothesis to the specific tracked entity it's about, for later retrieval via arc_get_entity_neighborhood.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "task_id": {"type": "string"},
                 "hypothesis_id": {"type": "string"},
                 "evidence": {"type": "object"},
+                "entity_ref": {"type": "integer"},
+                "step": {"type": ["integer", "string"]},
             },
             "required": ["task_id", "hypothesis_id"],
         },

@@ -121,7 +121,7 @@ async def arc_perceive_state(params: dict, db: KuzuClient, config: dict) -> dict
 
         await db.execute_write(
             "MERGE (e:GridEntity {entity_id: $eid}) "
-            "SET e.task_id = $tid, e.color_id = $cid, "
+            "SET e.task_id = $tid, e.color_id = $cid, e.region_index = $ridx, "
             "    e.centroid_row = $cr, e.centroid_col = $cc, "
             "    e.pixel_count = $pc, e.inferred_role = $role, "
             "    e.last_updated_step = $step",
@@ -129,6 +129,7 @@ async def arc_perceive_state(params: dict, db: KuzuClient, config: dict) -> dict
                 "eid": entity_id,
                 "tid": task_id,
                 "cid": ent.get("color_id"),
+                "ridx": ent.get("region_index", 0),
                 "cr": new_cr,
                 "cc": new_cc,
                 "pc": ent.get("pixel_count"),
@@ -405,6 +406,66 @@ async def arc_get_entity_movement(params: dict, db: KuzuClient, config: dict) ->
     return {"entities": entities}
 
 
+async def arc_get_entity_neighborhood(params: dict, db: KuzuClient, config: dict) -> dict:
+    """B359: what does the graph already know about this specific entity,
+    via A175's entity_ref/region_index correspondence.
+
+    Hypotheses come from ENTITY_HYPOTHESIS (GridEntity -> Hypothesis),
+    populated by arc_confirm_hypothesis/arc_contradict_hypothesis when
+    those are called with entity_ref -- an optional param on both, so
+    this can legitimately return an empty list for an entity nothing has
+    been confirmed/contradicted against yet with entity context, not just
+    for a nonexistent entity.
+
+    Mechanics have no per-entity edge anywhere in this schema -- ArcMechanic
+    only tracks which task_ids it's been observed in (source_task_ids),
+    never a specific GridEntity. "mechanics" here is therefore task-scoped
+    (live mechanics for this entity's game), not literal per-entity
+    attribution -- the honest answer given what the schema actually
+    models, not a fabricated finer granularity.
+    """
+    task_id = params.get("task_id")
+    entity_ref = params.get("entity_ref")
+    if not task_id:
+        return _error("task_id is required")
+    if entity_ref is None:
+        return _error("entity_ref is required")
+
+    hyp_result = db.execute(
+        "MATCH (ge:GridEntity {task_id: $tid, region_index: $eref})-[:ENTITY_HYPOTHESIS]->(h:Hypothesis) "
+        "WHERE h.status IS NULL OR h.status <> 'demoted' "
+        "RETURN h.id, h.description, h.confidence, h.status",
+        {"tid": task_id, "eref": entity_ref},
+    )
+    hypotheses = []
+    for row in _iter_rows(hyp_result):
+        hypotheses.append(
+            {
+                "hypothesis_id": _row_get(row, "h.id", 0, None),
+                "claim": _row_get(row, "h.description", 1, None),
+                "confidence": _safe_float(_row_get(row, "h.confidence", 2, 0.0)),
+                "falsified": _row_get(row, "h.status", 3, None) == "demoted",
+            }
+        )
+
+    mech_result = db.execute(
+        "MATCH (m:ArcMechanic) WHERE m.source_task_ids CONTAINS $tid "
+        "RETURN m.name, m.confidence "
+        "ORDER BY m.confidence DESC",
+        {"tid": task_id},
+    )
+    mechanics = []
+    for row in _iter_rows(mech_result):
+        mechanics.append(
+            {
+                "name": _row_get(row, "m.name", 0, None),
+                "confidence": _safe_float(_row_get(row, "m.confidence", 1, 0.0)),
+            }
+        )
+
+    return {"hypotheses": hypotheses, "mechanics": mechanics}
+
+
 async def arc_get_goal_evidence(params: dict, db: KuzuClient, config: dict) -> dict:
     task_id = params.get("task_id")
     if not task_id:
@@ -456,6 +517,27 @@ async def arc_classify_game_archetype(params: dict, db: KuzuClient, config: dict
         return {"archetype": "unknown", "confidence": 0.0, "matching_concepts": []}
 
 
+async def _link_entity_hypothesis(
+    db: KuzuClient, task_id: Any, entity_ref: Any, hypothesis_id: str, weight: float, step: Any
+) -> None:
+    """B359: record (or refresh) the ENTITY_HYPOTHESIS edge so
+    arc_get_entity_neighborhood has something real to traverse. Only
+    called when the caller actually supplied entity context -- most
+    confirm/contradict calls won't (this stays optional, not a required
+    param), and this repo has no other write path that ever populates
+    this edge. `weight` tracks the hypothesis's current confidence at
+    time of call, not a separate per-edge score; step is nullable."""
+    if not task_id or entity_ref is None:
+        return
+    await db.execute_write(
+        "MATCH (ge:GridEntity {task_id: $tid, region_index: $eref}), (h:Hypothesis {id: $hid}) "
+        "WITH ge, h LIMIT 1 "
+        "MERGE (ge)-[eh:ENTITY_HYPOTHESIS]->(h) "
+        "SET eh.weight = $weight, eh.step = $step",
+        {"tid": task_id, "eref": entity_ref, "hid": hypothesis_id, "weight": weight, "step": step},
+    )
+
+
 async def arc_confirm_hypothesis(params: dict, db: KuzuClient, config: dict) -> dict:
     hypothesis_id = params.get("hypothesis_id")
     if not hypothesis_id:
@@ -477,6 +559,12 @@ async def arc_confirm_hypothesis(params: dict, db: KuzuClient, config: dict) -> 
     )
     row = _first_row(result)
     new_confidence = _safe_float(_row_get(row, "h.confidence", 0, 0.0))
+
+    await _link_entity_hypothesis(
+        db, params.get("task_id"), params.get("entity_ref"), hypothesis_id,
+        new_confidence, params.get("step"),
+    )
+
     return {"status": "ok", "hypothesis_id": hypothesis_id, "new_confidence": new_confidence, "falsified": False}
 
 
@@ -507,6 +595,12 @@ async def arc_contradict_hypothesis(params: dict, db: KuzuClient, config: dict) 
             "MATCH (h:Hypothesis) WHERE h.id = $hid SET h.status = 'demoted'",
             {"hid": hypothesis_id},
         )
+
+    await _link_entity_hypothesis(
+        db, params.get("task_id"), params.get("entity_ref"), hypothesis_id,
+        new_confidence, params.get("step"),
+    )
+
     return {"status": "ok", "hypothesis_id": hypothesis_id, "new_confidence": new_confidence, "falsified": falsified}
 
 
@@ -893,6 +987,7 @@ __all__ = [
     "arc_get_causal_path",
     "arc_record_action_effect",
     "arc_get_entity_movement",
+    "arc_get_entity_neighborhood",
     "arc_get_goal_evidence",
     "arc_classify_game_archetype",
     "arc_confirm_hypothesis",

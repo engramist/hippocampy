@@ -16,6 +16,7 @@ from campy.brain.thalamus.tools.arc_queries import (
     arc_get_causal_path,
     get_entity_history,
     arc_get_entity_movement,
+    arc_get_entity_neighborhood,
     arc_get_game_context,
     arc_get_goal_evidence,
     arc_get_mechanic_priors,
