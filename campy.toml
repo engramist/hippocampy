@@ -150,6 +150,37 @@ interval_seconds = 60
 #   continuous uptime to develop). Set to 0 to disable.
 restart_interval_hours = 24
 
+[watchdog]
+# B354: footprint/swap-aware safety net, additive alongside [daemon]'s
+# time-based restart above (never a replacement for it). Reacts to actual
+# memory growth rather than waiting for the clock, without repeating the
+# mistake of gating on RSS -- see backlog/B354.md and
+# _periodic_footprint_watchdog's docstring in brain_daemon.py for why RSS
+# is misleading on this platform (macOS memory compression can make RSS
+# look healthy while the real footprint keeps climbing) and why the
+# threshold below is relative to this process's own startup baseline
+# rather than a hardcoded absolute number.
+#
+# enabled: set to false to disable the watchdog entirely.
+#
+# check_interval_seconds: how often to sample `vmmap -summary`'s physical
+#   footprint. Cheap (tens to a couple hundred ms per call) but not free --
+#   don't set this to a few seconds.
+#
+# growth_threshold_mb: how much the footprint may grow above this
+#   process's own measured startup baseline before counting as a breach.
+#   Not independently re-tuned against B355's new (~228MB) baseline -- a
+#   reasonable starting point given B342's observed growth rate, not a
+#   value verified against a long real-world run at the new baseline yet.
+#
+# consecutive_breaches_required: breaches must occur on this many
+#   consecutive checks (not a single sample) before a restart fires, so a
+#   real but transient write burst doesn't trigger one on its own.
+enabled = true
+check_interval_seconds = 90
+growth_threshold_mb = 500
+consecutive_breaches_required = 3
+
 [web]
 port = 7799   # Memory Control Panel — http://127.0.0.1:7799 (local only)
 
