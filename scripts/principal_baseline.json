@@ -1,5 +1,5 @@
 {
-  "non_adopting_count": 57,
+  "non_adopting_count": 58,
   "non_adopting_handlers": [
     "advance_task",
     "analogical_search",
@@ -10,6 +10,7 @@
     "arc_get_action_evidence",
     "arc_get_causal_path",
     "arc_get_entity_movement",
+    "arc_get_entity_neighborhood",
     "arc_get_game_context",
     "arc_get_goal_evidence",
     "arc_get_mechanic_priors",

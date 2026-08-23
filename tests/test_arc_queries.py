@@ -29,6 +29,7 @@ EXPECTED_ARC_TOOLS = {
     "arc_get_causal_path",
     "arc_record_action_effect",
     "arc_get_entity_movement",
+    "arc_get_entity_neighborhood",
     "arc_get_goal_evidence",
     "arc_classify_game_archetype",
     "arc_confirm_hypothesis",
@@ -415,6 +416,19 @@ async def test_a176_record_transition_and_get_entity_history(b309_db):
     assert entry["step"] == 4
     assert entry["color_transitions"] == [{"from": 2, "to": 5, "count": 3}]
 
+    # B359 regression: arc_perceive_state previously never persisted
+    # e.region_index on the GridEntity node (only used it to build
+    # entity_id), so this join always silently matched zero rows and the
+    # TRANSITION_OF edge was never actually created -- get_entity_history
+    # never needed the edge (it reads Transition.entity_ref directly), so
+    # nothing caught it until B359 tried to join on region_index too.
+    edge_result = b309_db.execute(
+        "MATCH (t:Transition {task_id: $tid, entity_ref: $eref})-[:TRANSITION_OF]->(ge:GridEntity) "
+        "RETURN ge.entity_id",
+        {"tid": "b309-hist", "eref": 1},
+    )
+    assert edge_result.has_next(), "TRANSITION_OF edge was not created -- region_index join is broken again"
+
 
 @pytest.mark.asyncio
 async def test_a176_entity_ref_null_is_legitimate_not_an_error(b309_db):
@@ -518,3 +532,151 @@ async def test_a179_get_transferred_rules_is_cross_game_only(b309_db):
         {"task_id": "b309-game-b", "fingerprint": "ACTION1:large"}, b309_db, {}
     )
     assert different_fp["rules"] == []
+
+
+# ---------------------------------------------------------------------------
+# B359 — arc_get_entity_neighborhood, plus the entity_ref write-path added
+# to arc_confirm_hypothesis/arc_contradict_hypothesis to populate it.
+#
+# Nothing in this codebase has a tool to CREATE a Hypothesis node (confirmed
+# by grepping for MERGE/CREATE (h:Hypothesis) across the repo -- there is
+# none); arc_confirm_hypothesis/arc_contradict_hypothesis both only ever
+# MATCH by id. These tests write the Hypothesis node directly via
+# db.execute_write, matching how a real caller's hypothesis presumably
+# already exists by the time it confirms/contradicts one.
+# ---------------------------------------------------------------------------
+
+
+async def _create_hypothesis(db, hyp_id: str, task_id: str, description: str, confidence: float = 0.5):
+    # $desc collides with the DESC keyword (same class of bug as B277) --
+    # use $hdesc instead.
+    await db.execute_write(
+        "CREATE (h:Hypothesis {id: $id, task_id: $tid, description: $hdesc, "
+        "confidence: $conf, status: 'active', evidence_count: 0})",
+        {"id": hyp_id, "tid": task_id, "hdesc": description, "conf": confidence},
+    )
+
+
+@pytest.mark.asyncio
+async def test_b359_confirm_hypothesis_with_entity_ref_links_it_for_neighborhood(b309_db):
+    """arc_confirm_hypothesis's optional entity_ref must populate
+    ENTITY_HYPOTHESIS so arc_get_entity_neighborhood can find it."""
+    perceive = TOOL_HANDLERS["arc_perceive_state"]
+    confirm = TOOL_HANDLERS["arc_confirm_hypothesis"]
+    get_neighborhood = TOOL_HANDLERS["arc_get_entity_neighborhood"]
+
+    task_id = "b359-confirm"
+    await perceive(
+        {"task_id": task_id, "step": 0, "grid_hash": "h0",
+         "entities": [{"color_id": 3, "region_index": 2,
+                       "centroid_row": 0.0, "centroid_col": 0.0, "pixel_count": 1}]},
+        b309_db, {},
+    )
+    await _create_hypothesis(b309_db, "b359-hyp-1", task_id, "this entity is the player avatar")
+
+    result = await confirm(
+        {"task_id": task_id, "hypothesis_id": "b359-hyp-1", "entity_ref": 2,
+         "step": 0, "evidence": {"weight": 1.0}},
+        b309_db, {},
+    )
+    assert result["status"] == "ok"
+
+    neighborhood = await get_neighborhood({"task_id": task_id, "entity_ref": 2}, b309_db, {})
+    assert len(neighborhood["hypotheses"]) == 1
+    entry = neighborhood["hypotheses"][0]
+    assert entry["hypothesis_id"] == "b359-hyp-1"
+    assert entry["claim"] == "this entity is the player avatar"
+    assert entry["falsified"] is False
+    assert entry["confidence"] == pytest.approx(result["new_confidence"])
+
+
+@pytest.mark.asyncio
+async def test_b359_confirm_hypothesis_without_entity_ref_does_not_link(b309_db):
+    """entity_ref stays optional -- a plain confirm/contradict call (no
+    entity context) must not error and must not fabricate a link."""
+    confirm = TOOL_HANDLERS["arc_confirm_hypothesis"]
+    task_id = "b359-noref"
+    await _create_hypothesis(b309_db, "b359-hyp-2", task_id, "no entity context here")
+
+    result = await confirm(
+        {"task_id": task_id, "hypothesis_id": "b359-hyp-2", "evidence": {"weight": 1.0}},
+        b309_db, {},
+    )
+    assert result["status"] == "ok"
+    # No GridEntity exists for this task_id at all -- confirms the write
+    # path degrades to a no-op rather than erroring when entity_ref is absent.
+
+
+@pytest.mark.asyncio
+async def test_b359_entity_neighborhood_excludes_falsified_hypothesis(b309_db):
+    """A hypothesis pushed to 'demoted' status via arc_contradict_hypothesis
+    must drop out of arc_get_entity_neighborhood's default (live-only) view."""
+    perceive = TOOL_HANDLERS["arc_perceive_state"]
+    contradict = TOOL_HANDLERS["arc_contradict_hypothesis"]
+    get_neighborhood = TOOL_HANDLERS["arc_get_entity_neighborhood"]
+
+    task_id = "b359-falsify"
+    await perceive(
+        {"task_id": task_id, "step": 0, "grid_hash": "h0",
+         "entities": [{"color_id": 4, "region_index": 5,
+                       "centroid_row": 0.0, "centroid_col": 0.0, "pixel_count": 1}]},
+        b309_db, {},
+    )
+    await _create_hypothesis(b309_db, "b359-hyp-3", task_id, "will be falsified", confidence=0.15)
+
+    result = await contradict(
+        {"task_id": task_id, "hypothesis_id": "b359-hyp-3", "entity_ref": 5,
+         "evidence": {"weight": 1.0}},
+        b309_db, {},
+    )
+    assert result["falsified"] is True
+
+    neighborhood = await get_neighborhood({"task_id": task_id, "entity_ref": 5}, b309_db, {})
+    assert neighborhood["hypotheses"] == []
+
+
+@pytest.mark.asyncio
+async def test_b359_entity_neighborhood_returns_task_scoped_mechanics(b309_db):
+    """Mechanics have no per-entity edge in the schema (ArcMechanic only
+    tracks task_id via source_task_ids) -- arc_get_entity_neighborhood's
+    'mechanics' is task-scoped, so any entity_ref within the same task_id
+    sees the same mechanic list."""
+    perceive = TOOL_HANDLERS["arc_perceive_state"]
+    publish = TOOL_HANDLERS["publish_mechanic_summary"]
+    get_neighborhood = TOOL_HANDLERS["arc_get_entity_neighborhood"]
+
+    task_id = "b359-mech"
+    await perceive(
+        {"task_id": task_id, "step": 0, "grid_hash": "h0",
+         "entities": [{"color_id": 6, "region_index": 9,
+                       "centroid_row": 0.0, "centroid_col": 0.0, "pixel_count": 1}]},
+        b309_db, {},
+    )
+    await publish(
+        {"summary": {"id": "b359-mech-1", "name": "color-cycling toggle",
+                      "task_id": task_id, "confidence": 0.8}},
+        b309_db, {},
+    )
+
+    neighborhood = await get_neighborhood({"task_id": task_id, "entity_ref": 9}, b309_db, {})
+    assert neighborhood["mechanics"] == [{"name": "color-cycling toggle", "confidence": 0.8}]
+
+
+@pytest.mark.asyncio
+async def test_b359_entity_neighborhood_empty_for_entity_with_no_associations(b309_db):
+    """An entity that exists but has never been confirmed/contradicted with
+    entity context, and a task with no published mechanics, returns empty
+    lists -- not an error."""
+    perceive = TOOL_HANDLERS["arc_perceive_state"]
+    get_neighborhood = TOOL_HANDLERS["arc_get_entity_neighborhood"]
+
+    task_id = "b359-empty"
+    await perceive(
+        {"task_id": task_id, "step": 0, "grid_hash": "h0",
+         "entities": [{"color_id": 1, "region_index": 0,
+                       "centroid_row": 0.0, "centroid_col": 0.0, "pixel_count": 1}]},
+        b309_db, {},
+    )
+
+    neighborhood = await get_neighborhood({"task_id": task_id, "entity_ref": 0}, b309_db, {})
+    assert neighborhood == {"hypotheses": [], "mechanics": []}
