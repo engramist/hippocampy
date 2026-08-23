@@ -417,6 +417,15 @@ async def arc_get_entity_neighborhood(params: dict, db: KuzuClient, config: dict
     been confirmed/contradicted against yet with entity context, not just
     for a nonexistent entity.
 
+    Rules come from ENTITY_RULE (GridEntity -> Rule), populated by
+    record_rule when called with entity_ref -- deliberately a separate key
+    from "hypotheses", not merged in, even though both are live/falsified
+    confidence-bearing claims: a confirmed/falsified causal Rule is a
+    different epistemic category from a still-under-test Hypothesis (per
+    joint design discussion with the ARC_AGI-side session, 2026-08-23),
+    and Kuzu's rel tables are typed to a fixed FROM/TO node pair anyway so
+    reusing ENTITY_HYPOTHESIS for Rule was never actually possible.
+
     Mechanics have no per-entity edge anywhere in this schema -- ArcMechanic
     only tracks which task_ids it's been observed in (source_task_ids),
     never a specific GridEntity. "mechanics" here is therefore task-scoped
@@ -463,7 +472,26 @@ async def arc_get_entity_neighborhood(params: dict, db: KuzuClient, config: dict
             }
         )
 
-    return {"hypotheses": hypotheses, "mechanics": mechanics}
+    rule_result = db.execute(
+        "MATCH (ge:GridEntity {task_id: $tid, region_index: $eref})-[:ENTITY_RULE]->(r:Rule) "
+        "WHERE r.falsified = false "
+        "RETURN r.rule_id, r.action_family, r.from_color, r.to_color, r.confidence",
+        {"tid": task_id, "eref": entity_ref},
+    )
+    rules = []
+    for row in _iter_rows(rule_result):
+        rules.append(
+            {
+                "rule_id": _row_get(row, "r.rule_id", 0, None),
+                "action_family": _row_get(row, "r.action_family", 1, None),
+                "from_color": _safe_int(_row_get(row, "r.from_color", 2, 0)),
+                "to_color": _safe_int(_row_get(row, "r.to_color", 3, 0)),
+                "confidence": _safe_float(_row_get(row, "r.confidence", 4, 0.0)),
+                "falsified": False,
+            }
+        )
+
+    return {"hypotheses": hypotheses, "rules": rules, "mechanics": mechanics}
 
 
 async def arc_get_goal_evidence(params: dict, db: KuzuClient, config: dict) -> dict:
@@ -847,12 +875,35 @@ async def get_entity_history(params: dict, db: KuzuClient, config: dict) -> dict
     return {"transitions": transitions, "changed_count_total": total}
 
 
+async def _link_entity_rule(
+    db: KuzuClient, task_id: Any, entity_ref: Any, rule_id: str, weight: float, step: Any
+) -> None:
+    """B359 follow-up: analog of _link_entity_hypothesis for Rule -- a
+    genuinely different node type (a confirmed/falsified causal claim, not
+    a still-under-test belief), kept on its own edge type (ENTITY_RULE)
+    rather than folded into ENTITY_HYPOTHESIS. Only called when the caller
+    supplied entity context; optional, not required."""
+    if not task_id or entity_ref is None:
+        return
+    await db.execute_write(
+        "MATCH (ge:GridEntity {task_id: $tid, region_index: $eref}), (r:Rule {rule_id: $rid}) "
+        "WITH ge, r LIMIT 1 "
+        "MERGE (ge)-[er:ENTITY_RULE]->(r) "
+        "SET er.weight = $weight, er.step = $step",
+        {"tid": task_id, "eref": entity_ref, "rid": rule_id, "weight": weight, "step": step},
+    )
+
+
 async def record_rule(params: dict, db: KuzuClient, config: dict) -> dict:
     """A177 (+ A179's fingerprint field): bookkeeping over deterministic
     candidate signatures already extracted client-side. For each signature,
     find a live (unfalsified) Rule for this task_id + action_family +
     from_color: same to_color -> confirm (bump confidence); different
-    to_color -> falsify; no match -> create."""
+    to_color -> falsify; no match -> create.
+
+    B359 follow-up: optional top-level entity_ref links every rule this
+    call touches to that entity via ENTITY_RULE, for
+    arc_get_entity_neighborhood's "rules" field."""
     task_id = params.get("task_id")
     step = params.get("step")
     if not task_id:
@@ -862,6 +913,7 @@ async def record_rule(params: dict, db: KuzuClient, config: dict) -> dict:
 
     fingerprint = params.get("fingerprint")
     signatures = params.get("candidate_signatures") or []
+    entity_ref = params.get("entity_ref")
 
     results = []
     for sig in signatures:
@@ -892,6 +944,7 @@ async def record_rule(params: dict, db: KuzuClient, config: dict) -> dict:
                 },
             )
             results.append({"rule_id": rule_id, "status": "created"})
+            await _link_entity_rule(db, task_id, entity_ref, rule_id, 0.5, step)
             continue
 
         existing_rule_id = _row_get(existing_row, "r.rule_id", 0, None)
@@ -906,12 +959,14 @@ async def record_rule(params: dict, db: KuzuClient, config: dict) -> dict:
                 {"rid": existing_rule_id, "conf": new_confidence, "fp": fingerprint},
             )
             results.append({"rule_id": existing_rule_id, "status": "confirmed"})
+            await _link_entity_rule(db, task_id, entity_ref, existing_rule_id, new_confidence, step)
         else:
             await db.execute_write(
                 "MATCH (r:Rule {rule_id: $rid}) SET r.falsified = true",
                 {"rid": existing_rule_id},
             )
             results.append({"rule_id": existing_rule_id, "status": "falsified"})
+            await _link_entity_rule(db, task_id, entity_ref, existing_rule_id, existing_confidence, step)
 
     return {"ok": True, "results": results}
 

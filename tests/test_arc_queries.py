@@ -679,4 +679,110 @@ async def test_b359_entity_neighborhood_empty_for_entity_with_no_associations(b3
     )
 
     neighborhood = await get_neighborhood({"task_id": task_id, "entity_ref": 0}, b309_db, {})
-    assert neighborhood == {"hypotheses": [], "mechanics": []}
+    assert neighborhood == {"hypotheses": [], "rules": [], "mechanics": []}
+
+
+# ---------------------------------------------------------------------------
+# B359 follow-up (2026-08-23) -- record_rule's entity_ref write-path and
+# arc_get_entity_neighborhood's separate "rules" key.
+#
+# Live testing on the ARC side found arc_confirm_hypothesis/
+# arc_contradict_hypothesis are unreachable in their production runtime
+# (never called from real gameplay) -- record_rule IS called every real
+# step there. Rule and Hypothesis are genuinely different node types
+# (Kuzu rel tables are typed to a fixed FROM/TO pair, and the two also
+# represent different epistemic categories -- a confirmed/falsified causal
+# claim vs. a still-under-test belief), so this is a separate edge
+# (ENTITY_RULE) and a separate response key ("rules"), not folded into
+# "hypotheses" -- joint design decision with the ARC_AGI-side session.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_b359_record_rule_with_entity_ref_links_created_rule(b309_db):
+    """record_rule's optional entity_ref must populate ENTITY_RULE for a
+    newly-created rule, retrievable via arc_get_entity_neighborhood's
+    separate "rules" key (not "hypotheses")."""
+    perceive = TOOL_HANDLERS["arc_perceive_state"]
+    record_rule = TOOL_HANDLERS["record_rule"]
+    get_neighborhood = TOOL_HANDLERS["arc_get_entity_neighborhood"]
+
+    task_id = "b359-rule-create"
+    await perceive(
+        {"task_id": task_id, "step": 0, "grid_hash": "h0",
+         "entities": [{"color_id": 8, "region_index": 3,
+                       "centroid_row": 0.0, "centroid_col": 0.0, "pixel_count": 1}]},
+        b309_db, {},
+    )
+
+    created = await record_rule(
+        {"task_id": task_id, "step": 0, "action_id": "ACTION6", "entity_ref": 3,
+         "candidate_signatures": [{"action_family": "ACTION6", "from_color": 2, "to_color": 5}],
+         "fingerprint": "ACTION6:small"},
+        b309_db, {},
+    )
+    assert created["results"][0]["status"] == "created"
+
+    neighborhood = await get_neighborhood({"task_id": task_id, "entity_ref": 3}, b309_db, {})
+    assert neighborhood["hypotheses"] == []
+    assert len(neighborhood["rules"]) == 1
+    rule = neighborhood["rules"][0]
+    assert rule["rule_id"] == created["results"][0]["rule_id"]
+    assert rule["action_family"] == "ACTION6"
+    assert rule["from_color"] == 2
+    assert rule["to_color"] == 5
+    assert rule["falsified"] is False
+
+
+@pytest.mark.asyncio
+async def test_b359_record_rule_falsified_excludes_from_neighborhood(b309_db):
+    """A rule that gets falsified (a repeat signature with a different
+    to_color) must drop out of arc_get_entity_neighborhood's default
+    (live-only) "rules" view, mirroring the hypothesis behavior."""
+    perceive = TOOL_HANDLERS["arc_perceive_state"]
+    record_rule = TOOL_HANDLERS["record_rule"]
+    get_neighborhood = TOOL_HANDLERS["arc_get_entity_neighborhood"]
+
+    task_id = "b359-rule-falsify"
+    await perceive(
+        {"task_id": task_id, "step": 0, "grid_hash": "h0",
+         "entities": [{"color_id": 9, "region_index": 4,
+                       "centroid_row": 0.0, "centroid_col": 0.0, "pixel_count": 1}]},
+        b309_db, {},
+    )
+
+    sig = {"action_family": "ACTION6", "from_color": 3, "to_color": 5}
+    await record_rule(
+        {"task_id": task_id, "step": 0, "action_id": "ACTION6", "entity_ref": 4,
+         "candidate_signatures": [sig], "fingerprint": "ACTION6:small"},
+        b309_db, {},
+    )
+
+    conflicting_sig = {"action_family": "ACTION6", "from_color": 3, "to_color": 9}
+    falsified = await record_rule(
+        {"task_id": task_id, "step": 1, "action_id": "ACTION6", "entity_ref": 4,
+         "candidate_signatures": [conflicting_sig], "fingerprint": "ACTION6:small"},
+        b309_db, {},
+    )
+    assert falsified["results"][0]["status"] == "falsified"
+
+    neighborhood = await get_neighborhood({"task_id": task_id, "entity_ref": 4}, b309_db, {})
+    assert neighborhood["rules"] == []
+
+
+@pytest.mark.asyncio
+async def test_b359_record_rule_without_entity_ref_does_not_link(b309_db):
+    """entity_ref stays optional on record_rule too -- a plain call must
+    not error and must not fabricate a link."""
+    record_rule = TOOL_HANDLERS["record_rule"]
+    task_id = "b359-rule-noref"
+
+    result = await record_rule(
+        {"task_id": task_id, "step": 0, "action_id": "ACTION6",
+         "candidate_signatures": [{"action_family": "ACTION6", "from_color": 1, "to_color": 2}],
+         "fingerprint": "ACTION6:small"},
+        b309_db, {},
+    )
+    assert result["results"][0]["status"] == "created"
+    # No GridEntity exists for this task_id at all -- confirms the write
+    # path degrades to a no-op rather than erroring when entity_ref is absent.

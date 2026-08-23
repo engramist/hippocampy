@@ -898,6 +898,7 @@ export default {
       action_id: Type.Optional(Type.String({ description: "ARC action identifier" })),
       candidate_signatures: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }))),
       fingerprint: Type.Optional(Type.String({ description: "Structural fingerprint, e.g. ACTION6:small" })),
+      entity_ref: Type.Optional(Type.Number({ description: "Optional: link every touched rule to a specific tracked entity" })),
     }, { additionalProperties: true });
 
     const transferredRulesParams = Type.Object({
@@ -913,7 +914,7 @@ export default {
       { name: "arc_get_causal_path", label: "ARC Causal Path", description: "Bounded causal-path lookup from an action to a victory condition.", parameters: arcTaskActionGoalParams },
       { name: "arc_record_action_effect", label: "ARC Record Action Effect", description: "Write the observed effect of an ARC action back into graph memory.", parameters: Type.Object({ task_id: Type.Optional(Type.String()), action_id: Type.Optional(Type.String()), step: Type.Optional(Type.Union([Type.Number(), Type.String()])), effect: Type.Optional(Type.Object({}, { additionalProperties: true })), entities_affected: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }))) }, { additionalProperties: true }) },
       { name: "arc_get_entity_movement", label: "ARC Entity Movement", description: "Track entity movement relative to an ARC action step.", parameters: arcTaskStepParams },
-      { name: "arc_get_entity_neighborhood", label: "ARC Entity Neighborhood", description: "Retrieve live hypotheses and task-scoped mechanics already associated with a specific tracked entity.", parameters: entityHistoryParams },
+      { name: "arc_get_entity_neighborhood", label: "ARC Entity Neighborhood", description: "Retrieve live hypotheses, live causal rules, and task-scoped mechanics already associated with a specific tracked entity.", parameters: entityHistoryParams },
       { name: "arc_get_goal_evidence", label: "ARC Goal Evidence", description: "Query VictoryCondition evidence for the current ARC task.", parameters: arcTaskParams },
       { name: "arc_classify_game_archetype", label: "ARC Classify Archetype", description: "Classify the current ARC puzzle into a known archetype.", parameters: arcTaskGameFeaturesParams },
       { name: "arc_confirm_hypothesis", label: "ARC Confirm Hypothesis", description: "Increase confidence in an ARC hypothesis with supporting evidence.", parameters: arcTaskHypothesisParams },
