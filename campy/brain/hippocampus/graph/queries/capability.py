@@ -235,9 +235,8 @@ _QUESTION_QUERIES: tuple[NamedQuery, ...] = (
             OPTIONAL MATCH (m:FactEntity {entity_id: n.entity_id})-[c:FACT_CONSTRAINED_BY]->(:FactEntity)
             WHERE (c.superseded_by IS NULL OR incsup)
             WITH target AS target, trust_tier AS trust_tier, hops AS hops,
-                 collect(c.access_mode) AS blocking_modes
-            WHERE size(blocking_modes) = 0
-               OR NOT ANY(v IN blocking_modes WHERE v IS NOT NULL AND v <> trust_tier)
+                 count(CASE WHEN c.access_mode IS NOT NULL AND c.access_mode <> trust_tier THEN 1 END) AS num_blocking_modes
+            WHERE num_blocking_modes = 0
             RETURN target.entity_id AS entity_id, target.entity_type AS entity_type,
                    target.label AS label, min(hops) AS hops
             ORDER BY hops, entity_id
@@ -360,10 +359,10 @@ _QUESTION_QUERIES: tuple[NamedQuery, ...] = (
             OPTIONAL MATCH (c)-[req:FACT_REQUIRES]->(dep:FactEntity)
             WHERE (req.superseded_by IS NULL OR incsup)
             WITH c AS c, sim AS sim, collect(dep.entity_id) AS required_ids,
-                 collect(dep.superseded_by) AS dep_superseded
+                 count(CASE WHEN dep.superseded_by IS NOT NULL THEN 1 END) AS num_superseded_deps
             RETURN c.entity_id AS entity_id, c.entity_type AS entity_type, c.label AS label,
                    sim AS similarity, required_ids AS required_ids,
-                   (size(dep_superseded) = 0 OR NOT ANY(x IN dep_superseded WHERE x IS NOT NULL)) AS requires_satisfiable
+                   (num_superseded_deps = 0) AS requires_satisfiable
             ORDER BY sim DESC, entity_id
             """,
         params=("entity_id", "query_embedding", "floor", "include_superseded"),
