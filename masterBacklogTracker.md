@@ -152,7 +152,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B358 | Flaky test_q5_verifies_requires_satisfiable (requires_satisfiable Returns None, Not True/False) | P3 | ready — a second flaky test in the same file found since this card was opened, see the update | TBD | TBD | - | backlog/B358.md |
 | B9 | `tests/test_adapters.py` — ✅ DONE (2026-03-24) | P4 | complete | TBD | TBD | - | backlog/B9.md |
 | B356 | KuzuDB Buffer Pool Bounding (Deferred, Future-Proofing Only) | P4 | deferred — not blocking, not scheduled. Revisit only per the trigger condition below. | TBD | TBD | - | backlog/B356.md |
-| B357 | Backlog Tracker Ignores Each Card's Own Priority Line (Shows P99 for Most Recent Cards) | P4 | ready | TBD | TBD | - | backlog/B357.md |
+| B357 | Backlog Tracker Ignores Each Card's Own Priority Line (Shows P99 for Most Recent Cards) | P4 | done — fixed in `scripts/rebuild_backlog_tracker.sh` (2026-08-22). Priority now read directly | TBD | TBD | - | backlog/B357.md |
 | B10 | `explore_graph` Tool (Directed Graph Traversal) | P5 | complete | TBD | TBD | backlog/plans/B-10-explore-graph-tool.md | backlog/B10.md |
 | B11 | `Lesson` Artifact Node | P5 | complete | TBD | TBD | backlog/plans/B-11-lesson-artifact-node.md | backlog/B11.md |
 | B12 | Memory-Based Anomaly Detection (IP Formalization) | P5 | complete | TBD | TBD | backlog/plans/B-12-anomaly-detection.md | backlog/B12.md |
@@ -235,8 +235,8 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 ## Summary
 
 - Total cards: 227
-- Ready: 10
+- Ready: 9
 - Needs work: 0
-- Complete: 199
+- Complete: 200
 - In progress: 0
 - Blocked: 0

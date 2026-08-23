@@ -236,3 +236,13 @@ Generated from backlog cards and backlog/plans/*.md.
 
 - backlog/plans/B-290-continuous-work-state.md
 - backlog/plans/B-291-oss-release-pr-pipeline.md
+- backlog/plans/B-centroid-diversity.md
+- backlog/plans/B-implementation.md
+- backlog/plans/B-install-plan.md
+- backlog/plans/B-junk-filter-v2.md
+- backlog/plans/B-model-eval.md
+- backlog/plans/B-noise-floor-fix.md
+- backlog/plans/B-notebook-update.md
+- backlog/plans/B-openclaw-extension.md
+- backlog/plans/B-streamable-http.md
+- backlog/plans/B37-token-budget.md
