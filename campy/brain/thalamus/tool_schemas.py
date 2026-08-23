@@ -762,7 +762,7 @@ TOOLS: list[dict] = [
     },
     {
         "name": "arc_get_entity_neighborhood",
-        "description": "Retrieve live hypotheses and task-scoped mechanics already associated with a specific tracked entity.",
+        "description": "Retrieve live hypotheses, live causal rules, and task-scoped mechanics already associated with a specific tracked entity.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -910,7 +910,7 @@ TOOLS: list[dict] = [
     },
     {
         "name": "record_rule",
-        "description": "Confirm, falsify, or create causal Rule nodes from candidate signatures.",
+        "description": "Confirm, falsify, or create causal Rule nodes from candidate signatures. Optionally pass entity_ref to also link every touched rule to the specific tracked entity it's about, for later retrieval via arc_get_entity_neighborhood.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -919,6 +919,7 @@ TOOLS: list[dict] = [
                 "action_id": {"type": "string"},
                 "candidate_signatures": {"type": "array", "items": {"type": "object"}},
                 "fingerprint": {"type": "string"},
+                "entity_ref": {"type": "integer"},
             },
             "required": ["task_id", "step", "candidate_signatures"],
         },

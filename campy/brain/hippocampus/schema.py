@@ -1408,6 +1408,12 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS DERIVED_FROM_FACT (FROM ActionFact TO ActionEffect, step INT32)",
     "CREATE REL TABLE IF NOT EXISTS BLOCKS (FROM GridEntity TO GridEntity, action_id STRING, step INT32)",
     "CREATE REL TABLE IF NOT EXISTS ENTITY_HYPOTHESIS (FROM GridEntity TO Hypothesis, weight FLOAT, step INT32)",
+    # B359 follow-up: Rule is a genuinely different node type from Hypothesis
+    # (a confirmed/falsified causal claim vs. a still-under-test belief) --
+    # deliberately kept as a separate rel table rather than reusing
+    # ENTITY_HYPOTHESIS (Kuzu rel tables are typed to a fixed FROM/TO node
+    # pair anyway, so reuse wasn't possible even before the design reason).
+    "CREATE REL TABLE IF NOT EXISTS ENTITY_RULE (FROM GridEntity TO Rule, weight FLOAT, step INT32)",
     # B168 — Inference relationship types
     "CREATE REL TABLE IF NOT EXISTS CO_MOVES_WITH (FROM GridEntity TO GridEntity, step INT32)",
     "CREATE REL TABLE IF NOT EXISTS CORRELATES_WITH (FROM GridEntity TO GridEntity, step INT32, mechanism STRING)",
