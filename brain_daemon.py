@@ -202,6 +202,28 @@ class BrainDaemon:
                 lambda t: _restart_on_failure(t, self._periodic_restart, restart_interval_hours)
             )
 
+        # B354: Start footprint/swap-aware watchdog (additive safety net
+        # alongside _periodic_restart, not a replacement -- see
+        # _periodic_footprint_watchdog for why growth is measured relative
+        # to this process's own startup baseline, not an absolute threshold).
+        watchdog_cfg = self.config.get("watchdog", {})
+        if watchdog_cfg.get("enabled", True):
+            watchdog_check_interval = watchdog_cfg.get("check_interval_seconds", 90)
+            watchdog_growth_threshold_mb = watchdog_cfg.get("growth_threshold_mb", 500)
+            watchdog_consecutive_breaches = watchdog_cfg.get("consecutive_breaches_required", 3)
+            watchdog_task = asyncio.create_task(
+                self._periodic_footprint_watchdog(
+                    watchdog_check_interval, watchdog_growth_threshold_mb, watchdog_consecutive_breaches
+                ),
+                name="footprint_watchdog",
+            )
+            watchdog_task.add_done_callback(
+                lambda t: _restart_on_failure(
+                    t, self._periodic_footprint_watchdog,
+                    watchdog_check_interval, watchdog_growth_threshold_mb, watchdog_consecutive_breaches
+                )
+            )
+
         # Start Memory Control Panel web server (M7)
         web_port = self.config.get("web", {}).get("port", 7799)
         web_task = asyncio.create_task(
@@ -510,6 +532,106 @@ class BrainDaemon:
         )
         self.shutdown()
 
+    async def _periodic_footprint_watchdog(
+        self, check_interval_seconds: float, growth_threshold_mb: float,
+        consecutive_breaches_required: int,
+    ):
+        """
+        B354: footprint/swap-aware safety net, additive alongside
+        _periodic_restart (never a replacement for it).
+
+        Samples `vmmap -summary`'s physical footprint -- not RSS, not
+        `psutil`, not `ru_maxrss` -- on an interval, and restarts if it has
+        grown by more than `growth_threshold_mb` above this process's own
+        startup baseline for `consecutive_breaches_required` consecutive
+        checks in a row. Both design choices are load-bearing, not
+        arbitrary:
+
+        - Physical footprint, not RSS: B342's investigation spent five-plus
+          PRs establishing that RSS is actively misleading on this platform
+          -- after an `asyncio.to_thread`-triggered macOS compression event,
+          RSS can drop to looking completely healthy while the *real*
+          footprint (resident + swapped) keeps climbing. A watchdog gated on
+          RSS would systematically fail to trigger exactly when it matters
+          most. `vmmap`'s physical footprint reading doesn't have that blind
+          spot -- see `_vmmap_parsed`/`_vmmap_swap_summary` above, reused
+          directly here rather than re-parsed.
+        - Relative to this process's own startup baseline, not a hardcoded
+          absolute threshold: an external plan reviewed during B353 proposed
+          a fixed 350MB threshold, which would have tripped almost
+          immediately under the pre-B355 ~1.9-2.1GB baseline -- an ordering
+          landmine. Measuring growth relative to whatever baseline is
+          actually in effect (B355's ~228MB, or any future baseline) makes
+          this correct regardless of which embedding backend or config is
+          live, without needing to keep a hardcoded number in sync by hand.
+
+        Debounced (multiple consecutive breaches, not a single sample) so a
+        real but transient write burst doesn't trigger a restart on its own.
+        Degrades gracefully: if `vmmap` is ever unavailable, unreadable, or
+        its output format changes, this task logs and skips that check
+        rather than crashing the daemon or disabling `_periodic_restart`,
+        which keeps running regardless.
+
+        Defaults (90s interval, 500MB growth, 3 consecutive breaches) are a
+        reasonable starting point given B342's observed growth rate
+        (~1MB/synthetic-cycle, no plateau over a 2-hour stress test), not
+        independently re-tuned against B355's new, much lower baseline --
+        see backlog/B354.md if these ever need adjusting based on real data.
+        Set `[watchdog] enabled = false` to disable.
+        """
+        baseline = _vmmap_parsed()
+        if baseline["footprint_mb"] is None:
+            _logger.warning(
+                "[FootprintWatchdog] Could not establish a startup baseline (%s) -- "
+                "watchdog disabled for this process's lifetime; _periodic_restart is "
+                "still active regardless",
+                baseline["error"] or "vmmap output not recognized",
+            )
+            return
+
+        baseline_mb = baseline["footprint_mb"]
+        _logger.info(
+            "[FootprintWatchdog] Startup baseline: %.1f MB. Will restart after %d "
+            "consecutive checks (every %.0fs) showing footprint growth > %.1f MB "
+            "above baseline.",
+            baseline_mb, consecutive_breaches_required, check_interval_seconds,
+            growth_threshold_mb,
+        )
+
+        breach_count = 0
+        while True:
+            await asyncio.sleep(check_interval_seconds)
+            current = _vmmap_parsed()
+            if current["footprint_mb"] is None:
+                _logger.warning(
+                    "[FootprintWatchdog] vmmap check failed (%s) -- skipping this check",
+                    current["error"] or "output not recognized",
+                )
+                continue
+
+            growth_mb = current["footprint_mb"] - baseline_mb
+            if growth_mb > growth_threshold_mb:
+                breach_count += 1
+                _logger.info(
+                    "[FootprintWatchdog] Breach %d/%d: footprint %.1f MB, +%.1f MB "
+                    "above baseline (threshold %.1f MB)",
+                    breach_count, consecutive_breaches_required, current["footprint_mb"],
+                    growth_mb, growth_threshold_mb,
+                )
+            else:
+                breach_count = 0
+
+            if breach_count >= consecutive_breaches_required:
+                _logger.warning(
+                    "[FootprintWatchdog] Footprint growth confirmed over %d consecutive "
+                    "checks (current %.1f MB, +%.1f MB above %.1f MB baseline) -- "
+                    "initiating restart",
+                    consecutive_breaches_required, current["footprint_mb"], growth_mb,
+                    baseline_mb,
+                )
+                self.shutdown()
+                return
+
     # ------------------------------------------------------------------
     # Durable passive capture
     # ------------------------------------------------------------------
@@ -633,45 +755,77 @@ _MEMORY_DEBUG_LOG = Path.home() / ".campy" / "memory_debug.log"
 _last_type_counts = None
 
 
+_VMMAP_UNIT_MB = {"K": 1 / 1024, "M": 1.0, "G": 1024.0}
+
+
+def _vmmap_size_to_mb(token: str) -> float | None:
+    """Convert a vmmap-style size token ('1.9G', '640.2M', '512K') to MB."""
+    m = re.match(r"([\d.]+)([KMG])", token)
+    if not m:
+        return None
+    val, unit = m.groups()
+    return float(val) * _VMMAP_UNIT_MB[unit]
+
+
+def _vmmap_parsed(pid: int | None = None) -> dict:
+    """B342/B354: single source of truth for parsing `vmmap -summary`.
+
+    `vmmap -summary` on your own PID needs no elevated privileges. Returns
+    a dict with `footprint_mb` (float, or None on any failure) plus the
+    original display strings for `_vmmap_swap_summary`'s human-readable
+    output. Never raises -- best-effort, so callers (a signal handler, a
+    background watchdog task) can degrade gracefully (skip this check, log
+    and move on) instead of crashing over a diagnostic read.
+    """
+    result = {
+        "footprint_mb": None, "footprint_raw": None,
+        "small_resident": None, "small_swapped": None, "error": None,
+    }
+    try:
+        out = subprocess.run(
+            ["vmmap", "-summary", str(pid if pid is not None else os.getpid())],
+            capture_output=True, text=True, timeout=10,
+        )
+    except Exception as e:
+        result["error"] = str(e)
+        return result
+
+    for line in out.stdout.splitlines():
+        if "Physical footprint:" in line and "peak" not in line:
+            m = re.search(r"Physical footprint:\s+(\S+)", line)
+            if m:
+                result["footprint_raw"] = m.group(1)
+                result["footprint_mb"] = _vmmap_size_to_mb(m.group(1))
+        elif line.strip().startswith("MALLOC_SMALL") and "(empty)" not in line:
+            tokens = [c for c in line.split() if re.match(r"^[\d.]+[KMG]$", c)]
+            if len(tokens) >= 4:
+                result["small_resident"] = tokens[1]
+                result["small_swapped"] = tokens[3]
+    return result
+
+
 def _vmmap_swap_summary() -> str:
     """B342: gc object counts and RSS both miss OS-level page compression/
     swap. B342's investigation found `ps`/`ru_maxrss`-style RSS readings can
     swing by hundreds of MB purely from macOS compressing pages, with no
     change in what the process actually holds -- the original B342 incident
     (5.4GB RSS, 99GB physical footprint) had 94.5GB of one malloc zone
-    sitting swapped, which RSS alone never showed. `vmmap -summary` on your
-    own PID needs no elevated privileges. Best-effort: if vmmap is
+    sitting swapped, which RSS alone never showed. Best-effort: if vmmap is
     unavailable or its output format changes, report that plainly rather
-    than raising out of a signal handler.
+    than raising out of a signal handler. Formats `_vmmap_parsed()`'s
+    result -- see that function for the actual parsing (B354 reuses it
+    directly for its footprint-based watchdog, so there is one parser, not
+    two different ones reading the same `vmmap` output).
     """
-    try:
-        out = subprocess.run(
-            ["vmmap", "-summary", str(os.getpid())],
-            capture_output=True, text=True, timeout=10,
-        )
-    except Exception as e:
-        return f"(vmmap unavailable: {e})"
-
-    footprint = None
-    small_resident = None
-    small_swapped = None
-    for line in out.stdout.splitlines():
-        if "Physical footprint:" in line and "peak" not in line:
-            m = re.search(r"Physical footprint:\s+(\S+)", line)
-            if m:
-                footprint = m.group(1)
-        elif line.strip().startswith("MALLOC_SMALL") and "(empty)" not in line:
-            tokens = [c for c in line.split() if re.match(r"^[\d.]+[KMG]$", c)]
-            if len(tokens) >= 4:
-                small_resident = tokens[1]
-                small_swapped = tokens[3]
-
-    if footprint is None:
+    parsed = _vmmap_parsed()
+    if parsed["error"]:
+        return f"(vmmap unavailable: {parsed['error']})"
+    if parsed["footprint_raw"] is None:
         return "(vmmap output format not recognized -- see memory_debug.log history or run vmmap manually)"
     return (
-        f"physical_footprint={footprint} "
-        f"malloc_small_resident={small_resident or 'n/a'} "
-        f"malloc_small_swapped={small_swapped or 'n/a'}"
+        f"physical_footprint={parsed['footprint_raw']} "
+        f"malloc_small_resident={parsed['small_resident'] or 'n/a'} "
+        f"malloc_small_swapped={parsed['small_swapped'] or 'n/a'}"
     )
 
 
