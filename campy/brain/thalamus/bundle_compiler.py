@@ -47,6 +47,22 @@ def _table_has_authority(db, table: str) -> bool:
     return False
 
 
+def _table_has_flagged_for_review(db, table: str) -> bool:
+    """Same tolerance as `_table_has_authority`, for `flagged_for_review`
+    (B339's anomaly flag, now consulted at recall time). Reduced fixture
+    tables built directly by tests don't always carry every column the
+    real schema.py-generated tables do."""
+    try:
+        r = db.execute(f"CALL table_info('{table}') RETURN *")
+        while r.has_next():
+            row = r.get_next()
+            if str(row[1]).lower() == "flagged_for_review":
+                return True
+    except Exception:
+        pass
+    return False
+
+
 @dataclass
 class BundleSection:
     """One section of a ContextBundle."""
@@ -325,9 +341,14 @@ async def _stage_exact_facts(db, query: str, config: dict, tier_config: dict) ->
             # than assumed).
             has_authority = _table_has_authority(db, label)
             authority_select = ", n.authority as authority" if has_authority else ""
+            flagged_filter = (
+                " AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false)"
+                if _table_has_flagged_for_review(db, label) else ""
+            )
             cypher = f"""
                 MATCH (n:{label})
                 WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
+                  {flagged_filter}
                 RETURN n.text_raw as text, label(n) as node_type, n.confidence as confidence{authority_select}
                 LIMIT $limit
             """
@@ -399,9 +420,14 @@ async def _stage_semantic_context(db, query: str, config: dict, tier_config: dic
             # _table_has_authority docstring.
             has_authority = _table_has_authority(db, label)
             authority_select = ", n.authority as authority" if has_authority else ""
+            flagged_filter = (
+                " AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false)"
+                if _table_has_flagged_for_review(db, label) else ""
+            )
             cypher = f"""
                 MATCH (n:{label})
                 WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
+                  {flagged_filter}
                 RETURN n.text_raw as text, label(n) as node_type,
                        n.pathway_strength as pathway_strength, n.confidence as confidence,
                        (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist{authority_select}
@@ -545,9 +571,14 @@ async def _stage_graph_structure(
         )
         query_embedding = emb.embed(query, model_name=embedding_model)
 
-        anchor_cypher = """
+        has_flagged = _table_has_flagged_for_review(db, "Concept")
+        anchor_flagged_filter = (
+            " AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false)" if has_flagged else ""
+        )
+        anchor_cypher = f"""
             MATCH (n:Concept)
             WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
+              {anchor_flagged_filter}
             RETURN n.concept_id as id, n.text_raw as text,
                    (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist
             ORDER BY dist ASC
@@ -567,9 +598,13 @@ async def _stage_graph_structure(
         node_ids = []
         seen_edges: set[tuple] = set()
         for anchor_id, anchor_text, _dist in anchors:
+            one_hop_flagged_filter = (
+                " AND (b.flagged_for_review IS NULL OR b.flagged_for_review = false)" if has_flagged else ""
+            )
             one_hop_cypher = f"""
                 MATCH (a:Concept)-[r:{_GRAPH_REL_TYPES}]-(b:Concept)
                 WHERE a.concept_id = $aid
+                  {one_hop_flagged_filter}
                 RETURN label(r), b.concept_id, b.text_raw
                 LIMIT 10
             """
@@ -587,10 +622,16 @@ async def _stage_graph_structure(
                     node_ids.append(b_id)
 
             if max_hops >= 2:
+                two_hop_flagged_filter = (
+                    " AND (mid.flagged_for_review IS NULL OR mid.flagged_for_review = false)"
+                    " AND (c.flagged_for_review IS NULL OR c.flagged_for_review = false)"
+                    if has_flagged else ""
+                )
                 two_hop_cypher = f"""
                     MATCH (a:Concept)-[r1:{_GRAPH_REL_TYPES}]-(mid:Concept)
                           -[r2:{_GRAPH_REL_TYPES}]-(c:Concept)
                     WHERE a.concept_id = $aid AND c.concept_id <> a.concept_id
+                      {two_hop_flagged_filter}
                     RETURN label(r1), mid.text_raw, label(r2), c.concept_id, c.text_raw
                     LIMIT 10
                 """
