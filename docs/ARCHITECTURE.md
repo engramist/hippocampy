@@ -2700,16 +2700,23 @@ unchanged or still climbing. B342 spent several investigation rounds confirming 
 noise: it is the dominant behavior of this process's memory profile. **Any future memory diagnostic,
 watchdog, or investigation for this daemon must use `vmmap`'s physical footprint, never RSS.**
 
-**The growth mechanism (B342):** isolated, controlled testing found the footprint grows slowly with no
-observed plateau over a 2-hour, 1200-cycle stress run — consistent with small-object allocator
-fragmentation (macOS `libmalloc` not returning partially-used memory regions to the OS as the process
-churns through many small allocate/free cycles), not a Python-level object leak (`gc.get_objects()`
-counts stay flat throughout). The trigger was narrowed to work routed through `asyncio.to_thread` (the
-executor handoff itself — real traffic does this constantly via embedding calls and KuzuDB writes/
-checkpoints), not KuzuDB checkpointing specifically (an earlier hypothesis, ruled out by a controlled
-2x2) and not CPU load in general (ruled out by a matched in-event-loop control). The exact allocator-level
-mechanism (why the executor handoff specifically triggers this) remains unconfirmed — profiling further
-would need `dtrace`-level system access this project's investigation sessions have not had.
+**The growth mechanism (B342) — two separable findings, not one.** Isolated, controlled testing found the
+footprint grows slowly with no observed plateau over a 2-hour, 1200-cycle stress run — real, but its
+*severity* dropped substantially (roughly halved total growth) once B355's embedding swap and the
+KuzuClient prepared-statement caching fix landed, without either change targeting this specifically. This
+is a Python-level-leak-shaped question with a non-leak answer: `gc.get_objects()` counts stay flat
+throughout, ruling out an object leak. Separately, and initially conflated with the growth question
+itself: **the specific "swap accumulates and never comes back down" symptom driving most of the alarming
+footprint numbers throughout this investigation is macOS's memory compressor reacting to genuine
+system-wide memory pressure, confirmed directly** — instrumenting for system-wide free memory
+(`vm_stat`/`top`'s `PhysMem` line) alongside the daemon's own `vmmap` readings caught system-wide
+compressor usage jumping in the *exact same cycles* the daemon's own swapped bytes appeared, then both
+freezing together even as system memory kept fluctuating afterward — the compressor's actual designed
+behavior (compress once under a pressure spike, stay compressed until the app touches that memory again),
+not a leak. **This is not a Campy code defect** — there is no code fix for an OS compressor doing its job
+correctly. The one real lever is the one already being pulled: shrink the daemon's own resident footprint
+so there is less of it for any OS to ever consider reclaiming. Full trail: `backlog/B342.md`'s dated
+rounds from 2026-08-24/25, especially the final "Root Cause Found" section.
 
 **Two independent mitigations now run in production, addressing two different aspects of this
 finding — see `brain_daemon.py` for both:**
@@ -2739,7 +2746,71 @@ before B355 (extrapolated, not directly re-measured) is ~2.2GB, putting the real
 around 45-50% — real, but not the dramatic number first reported. See `backlog/B355.md`'s own correction
 note for the full measurement trail.
 
-**What this does not claim:** the allocator-level root cause is not fully understood (see above), and
-neither mitigation eliminates the underlying growth mechanism — they bound its consequences. If the
-daemon's memory behavior is ever revisited, start from `backlog/B342.md` and `backlog/B353.md` rather
-than re-deriving the RSS-vs-footprint distinction from scratch.
+**What this does not claim:** the swap-symptom's cause is now understood (macOS's compressor under system
+pressure, above), but the underlying *resident* growth's exact allocator-level mechanism (why the
+`asyncio.to_thread` executor handoff specifically correlates with it) is not — and neither mitigation
+eliminates that underlying growth, they bound its consequences. If the daemon's memory behavior is ever
+revisited, start from `backlog/B342.md` and `backlog/B353.md` rather than re-deriving the RSS-vs-footprint
+distinction from scratch.
+
+### Cross-Platform Memory Diagnosis (macOS Findings vs. What Generalizes)
+
+All of the above was investigated and confirmed on macOS. Anyone diagnosing this daemon's memory behavior
+on Windows, Linux, or in a cloud/container deployment needs to know which parts of the finding travel and
+which don't — conflating them wastes time chasing a macOS-specific mechanism that doesn't exist elsewhere,
+or worse, misses a platform-specific failure mode that's *more* severe than anything seen on macOS.
+
+**What generalizes (platform-independent):**
+- The underlying claim that matters most: **`brain_daemon.py` has real, non-zero, slow resident-memory
+  growth under sustained use, not fully root-caused, currently mitigated (not eliminated) by periodic
+  restart + a footprint-aware watchdog.** This is a property of the daemon's own allocation behavior and
+  is not macOS-specific — expect it on every platform until the underlying mechanism is actually found.
+- **Never trust the platform's "simple" resident-memory number in isolation** — macOS's RSS specifically
+  is proven unreliable here (see above), and the general principle — *a process's naively-reported
+  resident memory can look fine while the OS is quietly reclaiming/compressing/paging its less-active
+  pages under system pressure* — is a real category of behavior on every OS, not a macOS quirk. What
+  differs is which metric plays the "RSS lied" role and which plays the "physical footprint told the
+  truth" role on each platform (below).
+- **Restart-based mitigation (`_periodic_restart`) and the footprint-relative-to-baseline watchdog design
+  are platform-agnostic by construction** — both already avoid the mistake of hardcoding a macOS-specific
+  absolute threshold or relying on a macOS-specific metric name. No changes needed for other platforms,
+  but the watchdog's `[watchdog]` thresholds were calibrated against macOS `vmmap` readings and have not
+  been validated against any other platform's equivalent metric — re-derive them per platform rather than
+  assuming the same numbers apply.
+
+**What is macOS-specific and will NOT exist on other platforms:**
+- The exact mechanism found here — macOS's *memory compressor* (WKdm/lz4-based, introduced OS X
+  Mavericks) transparently compressing a process's inactive pages in RAM under system-wide pressure — is
+  a macOS subsystem. It has *analogs* elsewhere (below) but not an identical implementation, and the
+  specific "sticky ratchet" behavior documented in `backlog/B342.md` (compress once under a pressure
+  spike, stay compressed until the app re-touches that memory, independent of whether pressure later
+  eases) is a macOS compressor design detail, not guaranteed to hold for Linux's zswap or Windows' memory
+  compression.
+- Every diagnostic tool used throughout this investigation is macOS-only: `vmmap`, `footprint`,
+  `malloc_history`, `heap`, `MallocStackLogging`. **None of these exist on Linux or Windows.** An agent
+  reaching for these on another platform will get a command-not-found, not a wrong answer — a useful
+  tell that macOS-specific tooling has leaked into a cross-platform debugging session.
+
+**Platform-specific equivalents, for whoever picks this up on another OS:**
+
+| Concern | macOS (used here) | Linux | Windows |
+|---|---|---|---|
+| "Real" memory footprint (not naive RSS) | `vmmap -summary` Physical footprint | `/proc/[pid]/status` `VmRSS` + `VmSwap` combined; `smem -P`; for containers, the cgroup's `memory.current`/`memory.stat` (`docker stats`, `kubectl top pod`) is more authoritative than any in-container process view | Sysinternals **VMMap** or **RAMMap**; Task Manager's "Memory (active private working set)" column, not bare "Memory" |
+| Per-category allocation breakdown | `footprint --sample` (dirty/swapped/clean/regions) | `pmap -x <pid>`; `/proc/[pid]/smaps_rollup`; `valgrind --tool=massif` for allocation-site attribution | Sysinternals **VMMap**'s category view; ETW heap-tracing for allocation-site attribution |
+| Native allocation call-stack tracing | `MallocStackLogging` + `malloc_history`/`heap` | `valgrind --tool=massif`, `heaptrack`, or `perf record` + `perf report` (no sudo/root needed for the process-owner case, unlike macOS's `task_for_pid` gate) | Sysinternals **VMMap** (heap snapshots) or Visual Studio's native memory profiler |
+| OS-level compression/paging signal | `footprint`'s per-category `swapped` column; `vm_stat`'s compressor pages | `zswap`/`zram` stats under `/sys/kernel/debug/zswap/` if enabled (**not enabled by default on most distros** — plain swap-to-disk or no swap at all is more common, especially in containers); `vmstat` for swap activity | Task Manager's "Compressed" memory figure (Windows 10+ has its own memory compression, conceptually similar to macOS's); `RAMMap`'s "Standby"/"Modified" breakdown |
+| System-wide memory pressure (the actual driver found here) | `top -l 1` `PhysMem:` line; `vm_stat`'s free/compressor pages | `free -h`; `/proc/meminfo`'s `MemAvailable`; **for containers, the container's own cgroup limit, not host-wide free memory, is what matters** — check `memory.max`/`memory.current` under the container's cgroup, not `free -h` on the host | Task Manager's overall memory graph; `Get-Counter '\Memory\Available MBytes'` |
+
+**The one asymmetry that matters most for a cloud/container deployment, stated plainly: macOS's
+compressor is a *graceful* response to pressure — it degrades performance, it does not kill the process.
+Many container runtimes and Kubernetes are configured with a hard memory limit and no swap at all, so the
+exact same underlying resident-memory growth this section describes can manifest as a sudden, hard
+`OOMKilled` event instead of a gentle compression curve.** This makes the underlying resident-footprint-
+reduction work (B355, the prepared-statement cache, and whatever eventually root-causes the growth itself)
+*more* consequential in a constrained cloud deployment than it was on this macOS development machine, not
+less — there is no graceful degradation to fall back on if a container's memory limit is set tight and
+swap is disabled. Anyone deploying via the AWS/multi-tenant topology (`docs/ARCHITECTURE.md`'s Deployment
+Model / B312-B326) should set container memory limits with real headroom above the observed baseline
+(currently ~1.2GB fresh-start, see B355 above) and monitor for `OOMKilled` restarts specifically, not just
+CPU/latency metrics — an OOM-killed container looks like a crash, not a slow leak, and would not surface
+the same way `vmmap`-based diagnosis did here.
