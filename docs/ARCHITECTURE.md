@@ -152,6 +152,18 @@ All LLM calls use an OpenAI-SDK-compatible interface so Ollama and cloud provide
 - All file read/write strictly confined to the project directory — paths must be canonicalized via `realpath()`
 - Block `..` escapes and symlink traversal; only allowlisted extensions (`.db`, `.log`) may be written
 - Memory Control Panel web server binds to `127.0.0.1` only, never `0.0.0.0`
+- **No encryption at rest for the primary KuzuDB store.** The graph database on disk
+  (`~/.campy/db/` or the configured path) is not encrypted by Campy itself — this is a
+  deliberate scope decision, not an oversight. Campy is a local single-user tool
+  (`LocalSingleUserResolver`, see `campy/brain/auth.py`); its threat model assumes the
+  filesystem itself is the trust boundary, the same assumption most local-first single-user
+  tools make (browsers, local SQLite-backed apps, etc.). Protection against data-at-rest
+  exposure (lost/stolen device, disk imaging) is expected to come from OS-level full-disk
+  encryption — FileVault (macOS), BitLocker (Windows), or LUKS (Linux) — which every mainstream
+  OS enables easily and which this project does not attempt to duplicate. Users running Campy
+  in a regulated or otherwise high-security environment should confirm disk encryption is
+  enabled on the host, the same way they would for any other local data store. (Backup
+  snapshots inherit the same posture — see B319's "What this card does not do" below.)
 
 ## IP Protection
 
