@@ -403,12 +403,28 @@ The same principle should guide retrieval and prompting:
 | Plan sense | "we will", "next step", "plan to", future-tense action language |
 | Entity sense | Known graph entity mentioned by name or near-match embedding |
 | Contradiction sense | Step 5 retrieval finds 0.75–0.92 similarity to existing confirmed node |
-| Anomaly / Security sense | Content contradicts a high-confidence GlobalConstraint (pathway_strength > 0.8) — flags potential prompt injection or goal hijacking |
+| Anomaly / Security sense | Content contradicts a high-confidence GlobalConstraint (pathway_strength > 0.8) — flags an internal *consistency* conflict (candidate goal hijacking), sets `flagged_for_review` |
 | Success sense (B69) | "perfect", "great job", "approved", "all tests pass" — Dopamine signal |
 | Failure sense (B69) | "that's wrong", "revert", "that broke", "start over" — Pain signal |
 | Emotion / Salience sense | Frustration ("I told you", "stop doing"), excitement ("love it", "brilliant"), urgency ("ASAP", "critical") — boosts pathway_strength via multiplier [1.0–1.6], rescues borderline content (0.45–0.60) above noise floor |
 
 No human confirmation required. Uncertain nodes enter as tentative knowledge, re-scored continuously.
+
+**Prompt injection — what's actually mitigated and what isn't.** The Anomaly/Security sense above is a
+*contradiction* detector, not an injection detector: it flags new content that conflicts with an existing
+high-confidence constraint. A novel injected instruction with nothing pre-existing to contradict is not
+caught by it. The real mitigation is B339 (`campy/brain/thalamus/memory_formatter.py`): recalled memory
+content fed into `ask`'s LLM prompt is HTML-escaped and wrapped in `<retrieved_memory source="..."
+trust="stored_data">` boundary tags, with an explicit system instruction that tagged content is data, not
+directives — the same data/instruction boundary this document's own consuming agents are expected to
+apply to tool results generally. `flagged_for_review` (set by the Anomaly/Security sense above) is now
+also consulted at recall time — `bundle_compiler.py`'s exact-fact, semantic, and graph-traversal stages
+exclude flagged nodes from what gets surfaced back into a prompt. This reduces but does not eliminate
+injection risk; it has not been evaluated against a dedicated adversarial-prompt test suite. Threat model:
+Campy runs as a local single-user tool (`LocalSingleUserResolver`, see `campy/brain/auth.py`) with no live
+multi-tenant ingestion path, so the realistic exposure is self-poisoning from content the user's own
+sessions or document ingestion pull in (a scraped page, a malicious doc) — not third-party attack. See
+`backlog/B339.md`.
 
 **Step 4b — Associative Pattern Check (Anticipatory Engine — Phase 3):**
 When a message contains error/failure signals or significant action patterns (docker, kubectl, deploy, etc.), Step 4b checks the entity's embedding against stored Lessons and Procedures via HNSW vector search. If similarity exceeds 0.65 and the matched node has no trigger metadata, Step 4b auto-binds trigger columns (`trigger_pattern`, `trigger_hook_type`, `trigger_tool`, `trigger_project_scope`). The manifest compiler picks these up on the next sweep cycle, and hook scripts start injecting the Lesson/Procedure text into agent context. Near-zero cost — runs only when signals are present, uses existing entity vectors, no LLM calls.
