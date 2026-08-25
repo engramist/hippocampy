@@ -55,12 +55,12 @@ class TestStageExactFacts:
     def _create_tables(self, db: KuzuClient) -> None:
         db.execute(
             "CREATE NODE TABLE GlobalConstraint("
-            "id STRING, text_raw STRING, confidence DOUBLE, "
+            "id STRING, text_raw STRING, confidence DOUBLE, flagged_for_review BOOLEAN, "
             f"embedding FLOAT[{FAKE_DIM}], PRIMARY KEY (id))"
         )
         db.execute(
             "CREATE NODE TABLE GlobalPreference("
-            "id STRING, text_raw STRING, confidence DOUBLE, "
+            "id STRING, text_raw STRING, confidence DOUBLE, flagged_for_review BOOLEAN, "
             f"embedding FLOAT[{FAKE_DIM}], PRIMARY KEY (id))"
         )
 
@@ -105,6 +105,30 @@ class TestStageExactFacts:
 
         assert section is None
 
+    async def test_excludes_nodes_flagged_for_review(self, real_db):
+        """B339 follow-up: anomaly_detection.py flags nodes as
+        flagged_for_review but nothing previously consulted that flag at
+        recall time — a flagged node still matched into the prompt fed to
+        an LLM via ask.py. Verify flagged nodes are now excluded."""
+        db = real_db
+        self._create_tables(db)
+        db.execute(
+            "CREATE (n:GlobalConstraint {id: 'gc1', text_raw: 'flagged content', "
+            "confidence: 0.9, flagged_for_review: true, embedding: $emb})",
+            {"emb": [0.99, 0.01, 0.0, 0.0]},
+        )
+        db.execute(
+            "CREATE (n:GlobalPreference {id: 'gp1', text_raw: 'clean content', "
+            "confidence: 0.8, flagged_for_review: false, embedding: $emb})",
+            {"emb": [0.98, 0.02, 0.0, 0.0]},
+        )
+
+        section = await _stage_exact_facts(db, "query", CONFIG, TIER_CONFIG)
+
+        assert section is not None
+        texts = {c["text"] for c in section.content}
+        assert texts == {"clean content"}
+
     async def test_limit_applies_across_both_labels_combined(self, real_db):
         """Regression guard: a naive `UNION ... LIMIT 10` in Kuzu 0.11.3 only
         limits the last branch, not the combined result across both labels."""
@@ -134,7 +158,7 @@ class TestStageSemanticContext:
         for table in ("Concept", "Decision", "Constraint", "Requirement"):
             db.execute(
                 f"CREATE NODE TABLE {table}("
-                "id STRING, text_raw STRING, confidence DOUBLE, "
+                "id STRING, text_raw STRING, confidence DOUBLE, flagged_for_review BOOLEAN, "
                 f"pathway_strength DOUBLE, embedding FLOAT[{FAKE_DIM}], PRIMARY KEY (id))"
             )
 
@@ -224,7 +248,7 @@ class TestStageGraphStructure:
         # Cypher references this column name explicitly.
         db.execute(
             "CREATE NODE TABLE Concept("
-            "concept_id STRING, text_raw STRING, "
+            "concept_id STRING, text_raw STRING, flagged_for_review BOOLEAN, "
             f"embedding FLOAT[{FAKE_DIM}], PRIMARY KEY (concept_id))"
         )
         # All rel types in _GRAPH_REL_TYPES must exist as tables - Kuzu's

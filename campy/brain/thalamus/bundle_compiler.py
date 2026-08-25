@@ -328,6 +328,7 @@ async def _stage_exact_facts(db, query: str, config: dict, tier_config: dict) ->
             cypher = f"""
                 MATCH (n:{label})
                 WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
+                  AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false)
                 RETURN n.text_raw as text, label(n) as node_type, n.confidence as confidence{authority_select}
                 LIMIT $limit
             """
@@ -402,6 +403,7 @@ async def _stage_semantic_context(db, query: str, config: dict, tier_config: dic
             cypher = f"""
                 MATCH (n:{label})
                 WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
+                  AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false)
                 RETURN n.text_raw as text, label(n) as node_type,
                        n.pathway_strength as pathway_strength, n.confidence as confidence,
                        (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist{authority_select}
@@ -548,6 +550,7 @@ async def _stage_graph_structure(
         anchor_cypher = """
             MATCH (n:Concept)
             WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
+              AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false)
             RETURN n.concept_id as id, n.text_raw as text,
                    (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist
             ORDER BY dist ASC
@@ -570,6 +573,7 @@ async def _stage_graph_structure(
             one_hop_cypher = f"""
                 MATCH (a:Concept)-[r:{_GRAPH_REL_TYPES}]-(b:Concept)
                 WHERE a.concept_id = $aid
+                  AND (b.flagged_for_review IS NULL OR b.flagged_for_review = false)
                 RETURN label(r), b.concept_id, b.text_raw
                 LIMIT 10
             """
@@ -591,6 +595,8 @@ async def _stage_graph_structure(
                     MATCH (a:Concept)-[r1:{_GRAPH_REL_TYPES}]-(mid:Concept)
                           -[r2:{_GRAPH_REL_TYPES}]-(c:Concept)
                     WHERE a.concept_id = $aid AND c.concept_id <> a.concept_id
+                      AND (mid.flagged_for_review IS NULL OR mid.flagged_for_review = false)
+                      AND (c.flagged_for_review IS NULL OR c.flagged_for_review = false)
                     RETURN label(r1), mid.text_raw, label(r2), c.concept_id, c.text_raw
                     LIMIT 10
                 """
