@@ -219,6 +219,65 @@ async def test_handle_connection_valid_request_dispatched():
     assert response["id"] == 7
 
 
+@pytest.mark.asyncio
+async def test_handle_connection_survives_reset_on_drain():
+    """B362: a client that disconnects while a response is in flight must not
+    produce an unhandled exception -- writer.drain() raising ConnectionResetError
+    should end the connection cleanly, not propagate."""
+    daemon = _make_daemon()
+
+    class FakeWriter:
+        def write(self, data): pass
+        async def drain(self): raise ConnectionResetError("Connection lost")
+        def close(self): pass
+        async def wait_closed(self): pass
+
+    request_line = json.dumps({
+        "jsonrpc": "2.0", "id": 1, "method": "context_status", "params": {}
+    }).encode() + b"\n"
+
+    reads = [request_line, b""]
+
+    class FakeReader:
+        _idx = 0
+        async def readline(self):
+            line = reads[FakeReader._idx]
+            FakeReader._idx += 1
+            return line
+
+    # Must return normally -- no exception should escape.
+    await daemon._handle_connection(FakeReader(), FakeWriter())
+
+
+@pytest.mark.asyncio
+async def test_handle_connection_survives_broken_pipe_on_close():
+    """B362: the cleanup path's writer.close()/wait_closed() can also raise on
+    an already-broken socket -- that must not propagate either."""
+    daemon = _make_daemon()
+
+    class FakeWriter:
+        def write(self, data): pass
+        async def drain(self): pass
+        def close(self): pass
+        async def wait_closed(self): raise BrokenPipeError("Broken pipe")
+
+    request_line = json.dumps({
+        "jsonrpc": "2.0", "id": 1, "method": "context_status", "params": {}
+    }).encode() + b"\n"
+
+    reads = [request_line, b""]
+
+    class FakeReader:
+        _idx = 0
+        async def readline(self):
+            line = reads[FakeReader._idx]
+            FakeReader._idx += 1
+            return line
+
+    # Must return normally -- no exception should escape.
+    await daemon._handle_connection(FakeReader(), FakeWriter())
+
+
 # ---------------------------------------------------------------------------
 # _loop_worker — error isolation
 # ---------------------------------------------------------------------------
