@@ -179,11 +179,14 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
     embedding_model = config.get("embeddings", {}).get(
         "model", "sentence-transformers/all-MiniLM-L6-v2"
     )
-    vector     = emb.embed(content, model_name=embedding_model)
-    message_id = str(uuid.uuid4())
-    now        = datetime.now(timezone.utc).isoformat()
 
-    # B338: Scrub secrets from content before persisting as text_raw
+    # B338/B365-verification-round3: scrub BEFORE embedding, not after. The
+    # embedding vector is queryable via semantic recall -- if it were derived
+    # from unscrubbed content, a secret redacted out of text_raw could still
+    # be retrieved by (near-variants of) that same secret, defeating part of
+    # the scrubber's purpose. Order matters here: content must be fully
+    # scrubbed before anything derived from it (the vector) is computed or
+    # persisted.
     content, scrub_metadata = await scrub_before_ingest(content)
     if scrub_metadata.get("was_scrubbed"):
         _logger.warning(
@@ -193,6 +196,10 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
             ", ".join(scrub_metadata["secret_types"]),
             session_id,
         )
+
+    vector     = emb.embed(content, model_name=embedding_model)
+    message_id = str(uuid.uuid4())
+    now        = datetime.now(timezone.utc).isoformat()
 
     # Route session via Hippocampus (all sessions, not just git)
     quest_id = ""
