@@ -43,7 +43,7 @@ auto-run-vs-explicit-invocation boundary npm itself expects installers to respec
 authoritative: a header that mismatches the operator's mapping raises `IAMConfigError` (hard
 rejection) instead of being used as a fallback ranking, and an unmapped caller can no longer widen
 its own scopes via a header. Default runtime scopes were also narrowed from "all scopes" to
-`{memory:read, memory:write}` unless explicitly granted — only `LocalSingleUserResolver` (genuinely
+`{memory.read, memory.write}` unless explicitly granted — only `LocalSingleUserResolver` (genuinely
 local, single-user) gets the full scope set by default.
 
 **PR:** [#55](https://github.com/engramist/hippocampy/pull/55) — B328/B330 (same PR as #1; both are
