@@ -636,6 +636,49 @@ async def test_footprint_watchdog_transient_check_failure_is_skipped_not_fatal(m
 
 
 # ---------------------------------------------------------------------------
+# _dump_memory_snapshot — B343/B344, ported from the root brain_daemon.py
+# (which never shipped) as part of B365's reconciliation.
+# ---------------------------------------------------------------------------
+
+
+def test_dump_memory_snapshot_writes_expected_structure(tmp_path, monkeypatch):
+    """First-ever snapshot: no prior counts to diff against, so the log
+    says so explicitly rather than fabricating a delta section."""
+    import campy.brain_daemon as bd
+
+    log_path = tmp_path / "memory_debug.log"
+    monkeypatch.setattr(bd, "_MEMORY_DEBUG_LOG", log_path)
+    monkeypatch.setattr(bd, "_last_type_counts", None)
+
+    bd._dump_memory_snapshot()
+
+    text = log_path.read_text()
+    assert "=== memory snapshot" in text
+    assert "ru_maxrss=" in text
+    assert "vmmap:" in text
+    assert "gc object count=" in text
+    assert "top 15 object types by count" in text
+    assert "no prior snapshot" in text
+
+
+def test_dump_memory_snapshot_diffs_against_previous_call(tmp_path, monkeypatch):
+    """A second trigger reports type-count deltas against the first,
+    instead of the "no prior snapshot" fallback."""
+    import campy.brain_daemon as bd
+
+    log_path = tmp_path / "memory_debug.log"
+    monkeypatch.setattr(bd, "_MEMORY_DEBUG_LOG", log_path)
+    monkeypatch.setattr(bd, "_last_type_counts", None)
+
+    bd._dump_memory_snapshot()
+    bd._dump_memory_snapshot()
+
+    text = log_path.read_text()
+    assert text.count("=== memory snapshot") == 2
+    assert "top 15 type-count growth since last snapshot" in text
+
+
+# ---------------------------------------------------------------------------
 # Real-Kùzu integration: upsert_lesson attributes source to a non-local
 # principal. Same pattern as tests/test_idempotent_writes.py.
 # ---------------------------------------------------------------------------

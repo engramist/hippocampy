@@ -16,15 +16,19 @@ Concurrency: single asyncio event loop, asyncio.Lock for all Kùzu writes.
 """
 
 import asyncio
+import collections
+import gc
 import inspect
 import json
 import logging
 import os
 import random
 import re
+import resource
 import signal
 import socket
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 _logger = logging.getLogger(__name__)
@@ -271,6 +275,132 @@ def _vmmap_parsed(pid: int | None = None) -> dict:
                 result["small_resident"] = tokens[1]
                 result["small_swapped"] = tokens[3]
     return result
+
+
+def _vmmap_swap_summary() -> str:
+    """B342: gc object counts and RSS both miss OS-level page compression/
+    swap. B342's investigation found `ps`/`ru_maxrss`-style RSS readings can
+    swing by hundreds of MB purely from macOS compressing pages, with no
+    change in what the process actually holds -- the original B342 incident
+    (5.4GB RSS, 99GB physical footprint) had 94.5GB of one malloc zone
+    sitting swapped, which RSS alone never showed. Best-effort: if vmmap is
+    unavailable or its output format changes, report that plainly rather
+    than raising out of a signal handler. Formats `_vmmap_parsed()`'s
+    result -- see that function for the actual parsing (B354 reuses it
+    directly for its footprint-based watchdog, so there is one parser, not
+    two different ones reading the same `vmmap` output).
+    """
+    parsed = _vmmap_parsed()
+    if parsed["error"]:
+        return f"(vmmap unavailable: {parsed['error']})"
+    if parsed["footprint_raw"] is None:
+        return "(vmmap output format not recognized -- see memory_debug.log history or run vmmap manually)"
+    return (
+        f"physical_footprint={parsed['footprint_raw']} "
+        f"malloc_small_resident={parsed['small_resident'] or 'n/a'} "
+        f"malloc_small_swapped={parsed['small_swapped'] or 'n/a'}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# B343/B344/B365: on-demand, in-process memory diagnostic (no external attach
+# needed -- a process can always introspect itself; this sidesteps macOS's
+# task_for_pid/sudo requirement for external profilers like py-spy). Ported
+# from the root brain_daemon.py, which never shipped -- see B365.
+# Trigger with: kill -USR1 <pid>
+# Output: ~/.campy/memory_debug.log (created on first trigger)
+#
+# Deliberately does NOT use tracemalloc. It was tried and reverted, twice,
+# on this exact daemon, 2026-08-21 -- kept here so it isn't tried a third
+# time:
+#   1. tracemalloc.start() unconditionally at process launch made a live
+#      restart hang at ~98% CPU, unhealthy, for over a minute. Root cause:
+#      it's expensive during the startup phase's allocation-heavy schema
+#      init + embedding model load -- measured in isolation afterward,
+#      tracemalloc.start(10) made schema init alone take 96s instead of 2s
+#      (43x slower).
+#   2. Fixed by starting tracemalloc lazily on first SIGUSR1 instead, well
+#      after startup -- this looked safe (verified via a careful restart)
+#      but left tracemalloc running continuously afterward, since nothing
+#      ever called tracemalloc.stop(). ~24 minutes later the same daemon
+#      was found pegged at 100%+ CPU and unresponsive again. Confirmed by
+#      isolated test that lower depth doesn't fix it either: even
+#      tracemalloc.start(1), the minimum, was ~8x slower on the same
+#      schema-init benchmark (17.9s vs 2.2s) -- the overhead comes from
+#      instrumenting every allocation, not primarily from traceback depth.
+#      tracemalloc is not compatible with this daemon's allocation-heavy
+#      workload (embedding model, KuzuDB's C++ extension) at any depth,
+#      for continuous use.
+#
+# What this diagnostic does instead: gc.get_objects(), grouped by type
+# name. Far coarser than a real allocation-site profile (it can show "N
+# more dict objects than last time", not which line created them), but it
+# is a single pass over already-live objects -- no per-allocation
+# instrumentation, no ongoing cost after the call returns. Safe to leave
+# wired up permanently. If a real allocation-site profile is ever needed,
+# that requires a deliberate, supervised session against a disposable
+# instance (not this shared daemon) with tracemalloc enabled for a known,
+# bounded, consented window -- not something to wire into a signal handler
+# on the production process again.
+# ---------------------------------------------------------------------------
+
+_MEMORY_DEBUG_LOG = Path.home() / ".campy" / "memory_debug.log"
+_last_type_counts = None
+
+
+def _dump_memory_snapshot():
+    """B343/B344: on-demand snapshot, triggered by `kill -USR1 <pid>`.
+
+    Cheap by construction (see the module comment above for why tracemalloc
+    is deliberately not used here): RSS high-water mark, total gc object
+    count, top object-type counts (diffed against the previous trigger if
+    there was one), and a `vmmap` physical-footprint/swap summary (B342 --
+    see `_vmmap_swap_summary` for why RSS/gc counts alone are misleading).
+    """
+    global _last_type_counts
+
+    now = datetime.now(timezone.utc).isoformat()
+    rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss  # bytes on macOS, KB on Linux
+    vmmap_summary = _vmmap_swap_summary()
+
+    objects = gc.get_objects()
+    obj_count = len(objects)
+    type_counts = collections.Counter(type(o).__name__ for o in objects)
+    del objects  # don't hold the whole live-object list any longer than needed
+
+    lines = [
+        f"=== memory snapshot {now} ===",
+        f"ru_maxrss={rss_kb} (bytes on macOS, KB on Linux -- high-water mark, not current RSS)",
+        f"vmmap: {vmmap_summary}",
+        f"gc object count={obj_count}",
+        "",
+        "-- top 15 object types by count --",
+    ]
+    for type_name, count in type_counts.most_common(15):
+        lines.append(f"{type_name}: {count}")
+
+    if _last_type_counts is not None:
+        lines.append("")
+        lines.append("-- top 15 type-count growth since last snapshot --")
+        deltas = collections.Counter()
+        for type_name, count in type_counts.items():
+            delta = count - _last_type_counts.get(type_name, 0)
+            if delta != 0:
+                deltas[type_name] = delta
+        for type_name, delta in deltas.most_common(15):
+            lines.append(f"{type_name}: {'+' if delta > 0 else ''}{delta}")
+    else:
+        lines.append("")
+        lines.append("(no prior snapshot -- this is the first dump, nothing to diff against yet)")
+
+    lines.append("")
+    _last_type_counts = type_counts
+
+    _MEMORY_DEBUG_LOG.parent.mkdir(parents=True, exist_ok=True)
+    with open(_MEMORY_DEBUG_LOG, "a") as f:
+        f.write("\n".join(lines) + "\n")
+
+    print(f"[MemoryDebug] Snapshot written to {_MEMORY_DEBUG_LOG}", flush=True)
 
 
 class BrainDaemon:
@@ -995,6 +1125,11 @@ async def main():
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, daemon.shutdown)
+    # B343/B344/B365: SIGUSR1 triggers an in-process memory snapshot -- a
+    # plain gc.get_objects() type-count pass, negligible cost, safe to leave
+    # wired up permanently. See the comment above _dump_memory_snapshot for
+    # why this deliberately does NOT use tracemalloc.
+    loop.add_signal_handler(signal.SIGUSR1, _dump_memory_snapshot)
 
     await daemon.start()
 
