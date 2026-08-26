@@ -14,6 +14,7 @@ here, at import time — see `gateway.NamedQuery.__post_init__` /
 from __future__ import annotations
 
 from campy.brain.hippocampus.graph.gateway import QueryRegistry
+from campy.brain.hippocampus.graph.queries.arc import ARC_QUERIES
 from campy.brain.hippocampus.graph.queries.backup import BACKUP_QUERIES
 from campy.brain.hippocampus.graph.queries.capability import CAPABILITY_QUERIES
 from campy.brain.hippocampus.graph.queries.continuity import CONTINUITY_QUERIES
@@ -24,5 +25,6 @@ REGISTRY.register_all(LESSONS_QUERIES)
 REGISTRY.register_all(BACKUP_QUERIES)
 REGISTRY.register_all(CAPABILITY_QUERIES)
 REGISTRY.register_all(CONTINUITY_QUERIES)
+REGISTRY.register_all(ARC_QUERIES)
 
 __all__ = ["REGISTRY"]

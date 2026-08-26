@@ -183,7 +183,19 @@ async def test_arc_update_goal_confidence_is_gated_by_progress():
     )
 
     assert result["gated_confidence"] == 0.4
+    assert result["created"] is False
     assert db.writes[-1][1]["conf"] == 0.4
+
+
+@pytest.mark.asyncio
+async def test_arc_update_goal_confidence_requires_task_id():
+    db = MockDB()
+    handler = TOOL_HANDLERS["arc_update_goal_confidence"]
+
+    result = await handler({"goal_id": "G-1", "new_confidence": 0.5}, db, {})
+
+    assert result.get("ok") is False
+    assert not db.writes
 
 
 @pytest.mark.asyncio
@@ -786,3 +798,62 @@ async def test_b359_record_rule_without_entity_ref_does_not_link(b309_db):
     assert result["results"][0]["status"] == "created"
     # No GridEntity exists for this task_id at all -- confirms the write
     # path degrades to a no-op rather than erroring when entity_ref is absent.
+
+
+@pytest.mark.asyncio
+async def test_b363_update_goal_confidence_creates_victory_condition(b309_db):
+    """Regression test for B363 (ARC_AGI handoff, docs/handoff/
+    B278-victory-condition-node-creation.md in that repo): before this fix,
+    arc_update_goal_confidence's write query was a bare MATCH, so calling it
+    against a condition_id with no prior VictoryCondition node silently
+    matched zero rows -- gated_confidence still computed and "status": "ok"
+    still returned, but nothing was ever persisted. Verified with a real
+    KuzuDB (production schema via init_schema), not a mock."""
+    update_confidence = TOOL_HANDLERS["arc_update_goal_confidence"]
+    get_evidence = TOOL_HANDLERS["arc_get_goal_evidence"]
+    task_id = "b363-victory"
+
+    # No VictoryCondition node exists yet for this task/condition.
+    before = await get_evidence({"task_id": task_id}, b309_db, {})
+    assert before["goals"] == []
+
+    result = await update_confidence(
+        {"task_id": task_id, "goal_id": "b363-goal-1", "new_confidence": 0.7,
+         "has_meaningful_progress": True},
+        b309_db, {},
+    )
+
+    assert result["status"] == "ok"
+    assert result["created"] is True
+    assert result["gated_confidence"] == pytest.approx(0.7)
+
+    after = await get_evidence({"task_id": task_id}, b309_db, {})
+    assert len(after["goals"]) == 1
+    assert after["goals"][0]["id"] == "b363-goal-1"
+    assert after["goals"][0]["confidence"] == pytest.approx(0.7)
+
+
+@pytest.mark.asyncio
+async def test_b363_update_goal_confidence_second_call_matches_not_creates(b309_db):
+    """A second call against the same condition_id must MATCH the existing
+    node (created: False) and correctly gate against the persisted value,
+    not silently create a duplicate or reset created_at."""
+    update_confidence = TOOL_HANDLERS["arc_update_goal_confidence"]
+    task_id = "b363-victory-2"
+
+    first = await update_confidence(
+        {"task_id": task_id, "goal_id": "b363-goal-2", "new_confidence": 0.5,
+         "has_meaningful_progress": True},
+        b309_db, {},
+    )
+    assert first["created"] is True
+
+    # Confidence can't rise without meaningful progress -- gated back down to
+    # the persisted 0.5, exercising the read-after-first-write path.
+    second = await update_confidence(
+        {"task_id": task_id, "goal_id": "b363-goal-2", "new_confidence": 0.9,
+         "has_meaningful_progress": False},
+        b309_db, {},
+    )
+    assert second["created"] is False
+    assert second["gated_confidence"] == pytest.approx(0.5)
