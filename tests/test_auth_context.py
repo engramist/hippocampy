@@ -20,6 +20,7 @@ Three layers, matching the card's acceptance criteria:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import pytest
@@ -355,6 +356,177 @@ async def test_handle_connection_survives_broken_pipe_on_close():
 
     # Must return normally -- no exception should escape.
     await daemon._handle_connection(FakeReader(), FakeWriter())
+
+
+# ---------------------------------------------------------------------------
+# BrainDaemon._periodic_footprint_watchdog — B354, ported from the root
+# brain_daemon.py (which never shipped) as part of B365's reconciliation.
+# ---------------------------------------------------------------------------
+
+
+def _vmmap_ok(footprint_mb):
+    return {
+        "footprint_mb": footprint_mb, "footprint_raw": f"{footprint_mb}M",
+        "small_resident": None, "small_swapped": None, "error": None,
+    }
+
+
+def _vmmap_fail(error="vmmap unavailable"):
+    return {
+        "footprint_mb": None, "footprint_raw": None,
+        "small_resident": None, "small_swapped": None, "error": error,
+    }
+
+
+def _fake_vmmap_sequence(values):
+    """Yields each dict in `values` in order, then keeps repeating the last
+    one -- so a test doesn't need to size the sequence exactly to how many
+    checks the loop performs before it returns or is cancelled."""
+    it = iter(values)
+    state = {"last": values[0] if values else _vmmap_fail("sequence exhausted")}
+
+    def _fake(pid=None):
+        try:
+            state["last"] = next(it)
+        except StopIteration:
+            pass
+        return state["last"]
+
+    return _fake
+
+
+@pytest.mark.asyncio
+async def test_footprint_watchdog_no_breach_never_restarts(monkeypatch):
+    """B354: footprint staying within threshold of baseline never triggers
+    a restart."""
+    import campy.brain_daemon as bd
+
+    daemon = _make_daemon()
+    shutdown_calls = []
+    monkeypatch.setattr(daemon, "shutdown", lambda: shutdown_calls.append(True))
+
+    fake = _fake_vmmap_sequence([_vmmap_ok(200), _vmmap_ok(210), _vmmap_ok(220), _vmmap_ok(215)])
+    monkeypatch.setattr(bd, "_vmmap_parsed", fake)
+
+    task = asyncio.create_task(
+        daemon._periodic_footprint_watchdog(
+            check_interval_seconds=0.01, growth_threshold_mb=500, consecutive_breaches_required=3
+        )
+    )
+    await asyncio.sleep(0.1)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    assert shutdown_calls == []
+
+
+@pytest.mark.asyncio
+async def test_footprint_watchdog_single_breach_resets_and_does_not_trigger(monkeypatch):
+    """B354: a breach that doesn't repeat on the next check does not
+    trigger a restart -- debounce must reset on a non-breaching check."""
+    import campy.brain_daemon as bd
+
+    daemon = _make_daemon()
+    shutdown_calls = []
+    monkeypatch.setattr(daemon, "shutdown", lambda: shutdown_calls.append(True))
+
+    # baseline=100; one breach at 700 (+600 > 500 threshold), then back
+    # under (150, +50) for the rest of the run.
+    fake = _fake_vmmap_sequence([_vmmap_ok(100), _vmmap_ok(700), _vmmap_ok(150), _vmmap_ok(150)])
+    monkeypatch.setattr(bd, "_vmmap_parsed", fake)
+
+    task = asyncio.create_task(
+        daemon._periodic_footprint_watchdog(
+            check_interval_seconds=0.01, growth_threshold_mb=500, consecutive_breaches_required=3
+        )
+    )
+    await asyncio.sleep(0.1)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    assert shutdown_calls == []
+
+
+@pytest.mark.asyncio
+async def test_footprint_watchdog_consecutive_breaches_trigger_restart(monkeypatch):
+    """B354: N consecutive breaches (not just one) call shutdown exactly
+    once, and the task returns on its own without needing cancellation."""
+    import campy.brain_daemon as bd
+
+    daemon = _make_daemon()
+    shutdown_calls = []
+    monkeypatch.setattr(daemon, "shutdown", lambda: shutdown_calls.append(True))
+
+    # baseline=100; three consecutive breaches, all well above the threshold.
+    fake = _fake_vmmap_sequence([_vmmap_ok(100), _vmmap_ok(700), _vmmap_ok(710), _vmmap_ok(720)])
+    monkeypatch.setattr(bd, "_vmmap_parsed", fake)
+
+    await asyncio.wait_for(
+        daemon._periodic_footprint_watchdog(
+            check_interval_seconds=0.01, growth_threshold_mb=500, consecutive_breaches_required=3
+        ),
+        timeout=2.0,
+    )
+
+    assert shutdown_calls == [True]
+
+
+@pytest.mark.asyncio
+async def test_footprint_watchdog_baseline_failure_disables_watchdog(monkeypatch):
+    """B354: if a startup baseline can't be established, the watchdog
+    returns quietly instead of looping or crashing."""
+    import campy.brain_daemon as bd
+
+    daemon = _make_daemon()
+    shutdown_calls = []
+    monkeypatch.setattr(daemon, "shutdown", lambda: shutdown_calls.append(True))
+
+    fake = _fake_vmmap_sequence([_vmmap_fail("vmmap not found")])
+    monkeypatch.setattr(bd, "_vmmap_parsed", fake)
+
+    await asyncio.wait_for(
+        daemon._periodic_footprint_watchdog(
+            check_interval_seconds=0.01, growth_threshold_mb=500, consecutive_breaches_required=3
+        ),
+        timeout=1.0,
+    )
+
+    assert shutdown_calls == []
+
+
+@pytest.mark.asyncio
+async def test_footprint_watchdog_transient_check_failure_is_skipped_not_fatal(monkeypatch):
+    """B354: a single failed vmmap check mid-run is skipped -- neither
+    counted as a breach nor allowed to reset an in-progress breach streak
+    -- and breach counting resumes normally on the next successful check."""
+    import campy.brain_daemon as bd
+
+    daemon = _make_daemon()
+    shutdown_calls = []
+    monkeypatch.setattr(daemon, "shutdown", lambda: shutdown_calls.append(True))
+
+    # baseline=100; breach, a transient vmmap failure in between, then two
+    # more breaches -> 3 real breaches recorded, restart fires despite the
+    # failure sitting in the middle of the streak.
+    fake = _fake_vmmap_sequence([
+        _vmmap_ok(100), _vmmap_ok(700), _vmmap_fail("transient"), _vmmap_ok(710), _vmmap_ok(720),
+    ])
+    monkeypatch.setattr(bd, "_vmmap_parsed", fake)
+
+    await asyncio.wait_for(
+        daemon._periodic_footprint_watchdog(
+            check_interval_seconds=0.01, growth_threshold_mb=500, consecutive_breaches_required=3
+        ),
+        timeout=2.0,
+    )
+
+    assert shutdown_calls == [True]
 
 
 # ---------------------------------------------------------------------------
