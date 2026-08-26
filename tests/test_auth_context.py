@@ -21,6 +21,7 @@ Three layers, matching the card's acceptance criteria:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 
 import pytest
@@ -283,6 +284,159 @@ async def test_dispatch_unknown_method_still_returns_error_with_principal():
         principal,
     )
     assert response["error"]["code"] == -32601
+
+
+@pytest.mark.asyncio
+async def test_dispatch_handler_exception_returns_error(monkeypatch):
+    """B365: ported from tests/test_daemon.py (the legacy root
+    brain_daemon.py's own suite) -- _dispatch wraps handler exceptions in a
+    -32000 JSON-RPC error rather than letting them propagate."""
+    import campy.brain_daemon as bd
+
+    daemon = _make_daemon()
+    principal = await daemon._principal_resolver.resolve(TransportContext(transport="unix-socket"))
+
+    async def exploding_handler(params, db, config):
+        raise ValueError("something went wrong")
+
+    monkeypatch.setitem(bd.TOOL_HANDLERS, "boom_test_method", exploding_handler)
+
+    response = await daemon._dispatch(
+        {"jsonrpc": "2.0", "id": 9, "method": "boom_test_method", "params": {}},
+        principal,
+    )
+    assert "error" in response
+    assert response["error"]["code"] == -32000
+    assert "something went wrong" in response["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_preserves_request_id():
+    """B365: ported from tests/test_daemon.py -- _dispatch echoes back the
+    request id in every response, including falsy/non-int ids."""
+    daemon = _make_daemon()
+    principal = await daemon._principal_resolver.resolve(TransportContext(transport="unix-socket"))
+    for req_id in [1, "abc", None, 42]:
+        response = await daemon._dispatch(
+            {"jsonrpc": "2.0", "id": req_id, "method": "nonexistent", "params": {}},
+            principal,
+        )
+        assert response["id"] == req_id
+
+
+@pytest.mark.asyncio
+async def test_handle_connection_parse_error():
+    """B365: ported from tests/test_daemon.py -- malformed JSON returns a
+    parse error (-32700) without crashing the connection."""
+    daemon = _make_daemon()
+
+    written = []
+
+    class FakeWriter:
+        def write(self, data): written.append(data)
+        async def drain(self): pass
+        def close(self): pass
+        async def wait_closed(self): pass
+        def get_extra_info(self, name): return None
+
+    reads = [b"not valid json\n", b""]
+
+    class FakeReader:
+        _idx = 0
+        async def readline(self):
+            line = reads[FakeReader._idx]
+            FakeReader._idx += 1
+            return line
+
+    await daemon._handle_connection(FakeReader(), FakeWriter())
+
+    assert len(written) >= 1
+    response = json.loads(written[0].decode())
+    assert "error" in response
+    assert response["error"]["code"] == -32700
+
+
+@pytest.mark.asyncio
+async def test_handle_connection_valid_request_dispatched(monkeypatch):
+    """B365: ported from tests/test_daemon.py -- a valid JSON-RPC request
+    over the connection is dispatched and the response written back."""
+    import campy.brain_daemon as bd
+    import json as _json
+
+    daemon = _make_daemon()
+
+    async def echo_handler(params, db, config):
+        return {"echo": params.get("msg")}
+
+    monkeypatch.setitem(bd.TOOL_HANDLERS, "echo_test_method", echo_handler)
+
+    written = []
+
+    class FakeWriter:
+        def write(self, data): written.append(data)
+        async def drain(self): pass
+        def close(self): pass
+        async def wait_closed(self): pass
+        def get_extra_info(self, name): return None
+
+    request_line = _json.dumps({
+        "jsonrpc": "2.0", "id": 7, "method": "echo_test_method",
+        "params": {"msg": "hello"}
+    }).encode() + b"\n"
+    reads = [request_line, b""]
+
+    class FakeReader:
+        _idx = 0
+        async def readline(self):
+            line = reads[FakeReader._idx]
+            FakeReader._idx += 1
+            return line
+
+    await daemon._handle_connection(FakeReader(), FakeWriter())
+
+    assert len(written) >= 1
+    response = json.loads(written[0].decode())
+    assert response["result"]["echo"] == "hello"
+    assert response["id"] == 7
+
+
+@pytest.mark.asyncio
+async def test_loop_worker_continues_after_error(monkeypatch):
+    """B365: ported from tests/test_daemon.py -- one bad message does not
+    kill the loop worker; the next message is still processed."""
+    daemon = _make_daemon()
+    daemon._loop_queue = asyncio.Queue()
+
+    processed = []
+
+    async def mock_run_loop(message_id, text, db, llm_client, config, centroids,
+                             role="user", session_id="unknown"):
+        if text == "bad":
+            raise RuntimeError("simulated loop failure")
+        processed.append(message_id)
+        return {
+            "entities_found": 0, "relations_found": 0,
+            "concepts_stored": 0, "noise_count": 0,
+        }
+
+    import campy.brain.temporal_lobe.loop.orchestrator as orch_module
+    monkeypatch.setattr(orch_module, "run_loop", mock_run_loop)
+
+    import campy.brain_daemon as bd
+    monkeypatch.setattr(bd, "run_loop", mock_run_loop)
+
+    await daemon._loop_queue.put(("msg-bad", "bad", "user", "s1"))
+    await daemon._loop_queue.put(("msg-good", "good text", "user", "s1"))
+
+    task = asyncio.create_task(daemon._loop_worker())
+    await asyncio.sleep(0.3)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    assert "msg-good" in processed
 
 
 # ---------------------------------------------------------------------------
