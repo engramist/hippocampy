@@ -633,9 +633,16 @@ async def arc_contradict_hypothesis(params: dict, db: KuzuClient, config: dict) 
 
 
 async def arc_update_goal_confidence(params: dict, db: KuzuClient, config: dict) -> dict:
+    """B363: previously a bare MATCH on both the read and write queries, so a
+    condition_id with no existing VictoryCondition node silently no-op'd while
+    still returning {"status": "ok"} -- arc_get_goal_evidence's own MATCH then
+    always saw zero rows for that task. Now MERGEs the node into existence."""
     goal_id = params.get("goal_id")
     if not goal_id:
         return _error("goal_id is required")
+    task_id = params.get("task_id")
+    if not task_id:
+        return _error("task_id is required")
 
     new_confidence = _safe_float(params.get("new_confidence"), 0.0)
     has_progress = bool(params.get("has_meaningful_progress", False))
@@ -644,17 +651,26 @@ async def arc_update_goal_confidence(params: dict, db: KuzuClient, config: dict)
         {"gid": goal_id},
     )
     current_row = _first_row(current_result)
+    created = current_row is None
     current = _safe_float(_row_get(current_row, "vc.confidence", 0, 0.0))
     gated_confidence = new_confidence
     if gated_confidence > current and not has_progress:
         gated_confidence = current
 
     await db.execute_write(
-        "MATCH (vc:VictoryCondition {condition_id: $gid}) SET vc.confidence = $conf",
-        {"gid": goal_id, "conf": gated_confidence},
+        "MERGE (vc:VictoryCondition {condition_id: $gid}) "
+        "SET vc.task_id = $tid, vc.confidence = $conf, "
+        "    vc.created_at = coalesce(vc.created_at, current_timestamp()), "
+        "    vc.last_updated = current_timestamp()",
+        {"gid": goal_id, "tid": task_id, "conf": gated_confidence},
     )
 
-    return {"status": "ok", "goal_id": goal_id, "gated_confidence": gated_confidence}
+    return {
+        "status": "ok",
+        "goal_id": goal_id,
+        "gated_confidence": gated_confidence,
+        "created": created,
+    }
 
 
 async def arc_get_mechanic_priors(params: dict, db: KuzuClient, config: dict) -> dict:
