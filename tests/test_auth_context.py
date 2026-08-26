@@ -20,6 +20,7 @@ Three layers, matching the card's acceptance criteria:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import pytest
@@ -355,6 +356,65 @@ async def test_handle_connection_survives_broken_pipe_on_close():
 
     # Must return normally -- no exception should escape.
     await daemon._handle_connection(FakeReader(), FakeWriter())
+
+
+# ---------------------------------------------------------------------------
+# BrainDaemon._periodic_checkpoint — B337, ported from the root
+# brain_daemon.py (which never shipped) as part of B365's reconciliation.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_periodic_checkpoint_calls_db_checkpoint(monkeypatch):
+    """The task calls db.checkpoint() once per interval and keeps looping
+    (not a one-shot) -- cancel after two intervals' worth of sleep and
+    confirm it fired at least twice."""
+    daemon = _make_daemon()
+
+    calls = []
+
+    async def fake_checkpoint():
+        calls.append(True)
+        return True
+
+    daemon.db.checkpoint = fake_checkpoint
+
+    task = asyncio.create_task(daemon._periodic_checkpoint(0.01))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    assert len(calls) >= 2
+
+
+@pytest.mark.asyncio
+async def test_periodic_checkpoint_survives_exception(monkeypatch):
+    """One failed checkpoint must not kill the loop -- the next interval
+    still tries again."""
+    daemon = _make_daemon()
+
+    calls = []
+
+    async def flaky_checkpoint():
+        calls.append(True)
+        if len(calls) == 1:
+            raise RuntimeError("simulated checkpoint failure")
+        return True
+
+    daemon.db.checkpoint = flaky_checkpoint
+
+    task = asyncio.create_task(daemon._periodic_checkpoint(0.01))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    assert len(calls) >= 2, "loop must not die after the first failure"
 
 
 # ---------------------------------------------------------------------------

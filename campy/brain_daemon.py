@@ -347,6 +347,19 @@ class BrainDaemon:
             lambda t: _restart_on_failure(t, self._background_sweep, sweep_interval)
         )
 
+        # B337/B365: Start periodic checkpoint task (memory spike mitigation).
+        # Decouples checkpoint cadence from transaction commit boundaries,
+        # allowing tuned checkpoints independent of write load. Ported from
+        # the root brain_daemon.py, which never shipped -- see B365.
+        checkpoint_interval = self.config.get("checkpoint", {}).get("interval_seconds", 60)
+        if checkpoint_interval > 0:
+            checkpoint_task = asyncio.create_task(
+                self._periodic_checkpoint(checkpoint_interval), name="periodic_checkpoint"
+            )
+            checkpoint_task.add_done_callback(
+                lambda t: _restart_on_failure(t, self._periodic_checkpoint, checkpoint_interval)
+            )
+
         # Start Memory Control Panel web server (M7)
         web_port = self.config.get("web", {}).get("port", 7799)
         web_task = asyncio.create_task(
@@ -656,6 +669,25 @@ class BrainDaemon:
 
             # Associative Hooks: recompile trigger manifest
             await self._compile_trigger_manifest()
+
+    async def _periodic_checkpoint(self, interval_seconds: int):
+        """
+        B337: Periodic manual checkpoint to decouple checkpoint cadence from
+        transaction commit boundaries. Mitigates memory spikes during write-heavy phases
+        by forcing checkpoints independent of WAL threshold triggers.
+
+        First run is deferred by one full interval to let the daemon warm up.
+        """
+        while True:
+            await asyncio.sleep(interval_seconds)
+            try:
+                success = await self.db.checkpoint()
+                if success:
+                    _logger.info("[Checkpoint] Manual checkpoint completed")
+                else:
+                    _logger.warning("[Checkpoint] Manual checkpoint failed")
+            except Exception as e:
+                _logger.exception("[Checkpoint] Unexpected error during checkpoint: %s", e)
 
     async def _compile_trigger_manifest(self):
         """Recompile the trigger manifest from graph state."""
