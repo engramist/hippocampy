@@ -11,6 +11,8 @@ Verifies that:
 7. Non-secret text passes through unchanged
 """
 
+import tempfile
+
 import pytest
 from campy.brain.brainstem.secret_scrubber import (
     detect_secrets, scrub_secrets, scrub_before_ingest,
@@ -247,9 +249,60 @@ def test_bearer_token_variations():
     """B338: Detect Bearer token in various formats."""
     text1 = 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test'
     text2 = 'bearer: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test"'
-    
+
     scrubbed1, count1 = scrub_secrets(text1)
     scrubbed2, count2 = scrub_secrets(text2)
-    
+
     # At least one should detect the bearer token
     assert count1 >= 1 or count2 >= 1
+
+
+# ---------------------------------------------------------------------------
+# VibeGuide round-3 verification, Finding 2: the embedding was previously
+# computed from unscrubbed content in capture.py's notify_turn, *before* the
+# scrub -- so a memory whose text_raw no longer contains a secret could still
+# be retrieved BY that secret through semantic recall, since the vector was
+# derived from the raw (unscrubbed) text. Fixed by reordering scrub-then-embed
+# in campy/brain/thalamus/tools/capture.py. This test proves the embedding
+# provider is called with the scrubbed text, not the raw text, end to end
+# through the real notify_turn handler and a real KuzuDB.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_notify_turn_embeds_scrubbed_content_not_raw():
+    from campy.brain.hippocampus.graph import embeddings as emb
+    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.schema import init_schema
+    from campy.brain.thalamus.tools.capture import notify_turn
+
+    seed_path = "campy/data/GistSeedExamples.md"
+    embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
+    config = {"embeddings": {"model": embedding_model}}
+
+    tmp = tempfile.mkdtemp(prefix="kuzu_scrub_embed_")
+    db = KuzuClient(f"{tmp}/db")
+    init_schema(db, seed_path, embedding_model)
+
+    embedded_texts: list[str] = []
+    real_embed = emb.embed
+
+    def spy_embed(text, model_name=None):
+        embedded_texts.append(text)
+        return real_embed(text, model_name=model_name)
+
+    import unittest.mock
+    with unittest.mock.patch.object(emb, "embed", side_effect=spy_embed):
+        secret_bearing = "here is my key AKIAIOSFODNN7EXAMPLE for the deploy"
+        result = await notify_turn(
+            {"role": "user", "content": secret_bearing, "session_id": "sess-scrub-embed"},
+            db,
+            config,
+        )
+
+    assert result.get("message_id"), result
+    assert len(embedded_texts) >= 1, "embedding provider was never called"
+    for text in embedded_texts:
+        assert "AKIAIOSFODNN7EXAMPLE" not in text, (
+            "embedding was computed from unscrubbed content: %r" % text
+        )
+    db.close()
