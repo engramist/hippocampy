@@ -224,10 +224,22 @@ _EMBED_BATCH_FN = {
 
 
 def _embed_with_fallback(text: str, model_name: str) -> list[float]:
-    """Try primary provider, then fallback chain."""
+    """Try primary provider, then fallback chain.
+
+    VibeGuide round-3 verification, Finding 3: collecting only `last_err`
+    silently discarded the actionable offline-cache-miss RuntimeError
+    (`_get_fe_model` above) whenever a later fallback provider also failed —
+    exactly the common case in an egress-locked environment, where Ollama is
+    unreachable too. The pre-bake-the-cache instruction never reached the
+    operator; they saw only the final, unhelpful Ollama connection error.
+    Every provider's failure reason is now included verbatim in the
+    aggregate message, chained from the last exception for traceback
+    continuity, so the actionable message always survives.
+    """
     primary = _provider
     chain = [primary] + _FALLBACK_ORDER.get(primary, [])
-    last_err = None
+    errors: list[str] = []
+    last_exc: Exception | None = None
     for provider in chain:
         fn = _EMBED_FN.get(provider)
         if fn is None:
@@ -236,17 +248,21 @@ def _embed_with_fallback(text: str, model_name: str) -> list[float]:
             return fn(text, model_name)
         except Exception as e:
             _logger.warning("Embedding provider '%s' failed: %s", provider, e)
-            last_err = e
+            errors.append(f"{provider}: {e}")
+            last_exc = e
     raise RuntimeError(
-        f"All embedding providers failed. Last error: {last_err}"
-    )
+        f"All embedding providers failed: {'; '.join(errors)}"
+    ) from last_exc
 
 
 def _embed_batch_with_fallback(texts: list[str], model_name: str) -> list[list[float]]:
-    """Try primary provider, then fallback chain (batch)."""
+    """Try primary provider, then fallback chain (batch). See
+    `_embed_with_fallback`'s docstring for why every provider's error is
+    collected rather than just the last one."""
     primary = _provider
     chain = [primary] + _FALLBACK_ORDER.get(primary, [])
-    last_err = None
+    errors: list[str] = []
+    last_exc: Exception | None = None
     for provider in chain:
         fn = _EMBED_BATCH_FN.get(provider)
         if fn is None:
@@ -255,10 +271,11 @@ def _embed_batch_with_fallback(texts: list[str], model_name: str) -> list[list[f
             return fn(texts, model_name)
         except Exception as e:
             _logger.warning("Batch embedding provider '%s' failed: %s", provider, e)
-            last_err = e
+            errors.append(f"{provider}: {e}")
+            last_exc = e
     raise RuntimeError(
-        f"All batch embedding providers failed. Last error: {last_err}"
-    )
+        f"All batch embedding providers failed: {'; '.join(errors)}"
+    ) from last_exc
 
 
 # ---------------------------------------------------------------------------
