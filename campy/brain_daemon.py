@@ -20,6 +20,7 @@ import inspect
 import json
 import logging
 import os
+import random
 import re
 import signal
 import socket
@@ -404,6 +405,18 @@ class BrainDaemon:
             lambda t: _restart_on_failure(t, self._background_sweep, sweep_interval)
         )
 
+        # B342/B365: Start periodic self-restart task (allocator fragmentation
+        # mitigation). See _periodic_restart for why this exists. Ported from
+        # the root brain_daemon.py, which never shipped -- see B365.
+        restart_interval_hours = self.config.get("daemon", {}).get("restart_interval_hours", 24)
+        if restart_interval_hours > 0:
+            restart_task = asyncio.create_task(
+                self._periodic_restart(restart_interval_hours), name="periodic_restart"
+            )
+            restart_task.add_done_callback(
+                lambda t: _restart_on_failure(t, self._periodic_restart, restart_interval_hours)
+            )
+
         # B354/B365: Start footprint/swap-aware watchdog (additive safety net
         # alongside a self-restart task, when one is configured -- see
         # _periodic_footprint_watchdog for why growth is measured relative
@@ -736,6 +749,44 @@ class BrainDaemon:
 
             # Associative Hooks: recompile trigger manifest
             await self._compile_trigger_manifest()
+
+    async def _periodic_restart(self, interval_hours: float):
+        """
+        B342: periodic self-restart to bound allocator fragmentation.
+
+        B342's investigation found the daemon's physical memory footprint
+        (resident + swapped, not just RSS) grows slowly but with no observed
+        plateau across a 2-hour, 1200-cycle stress run -- consistent with
+        small-object allocator fragmentation (macOS libmalloc not returning
+        partially-used regions to the OS) rather than a Python-level leak
+        (gc object counts stay flat). Extrapolating the observed rate, the
+        original incident (5.4GB RSS / 99GB physical footprint, 94.5GB
+        swapped, on a near-empty graph) would need on the order of a week
+        of continuous uptime to develop.
+
+        Same pattern gunicorn/uWSGI use for exactly this failure mode
+        (`max_requests` worker recycling) -- a time-based version here since
+        this daemon's load isn't request-counted the same way. KuzuDB is the
+        durable source of truth (see CLAUDE.md's "No Shadow Stores" rule),
+        so a clean restart loses no real state; `self.shutdown()` closes the
+        db (final checkpoint) and stops the socket before exiting, and
+        launchd's KeepAlive brings up a fresh process immediately.
+
+        24h default is roughly an order of magnitude inside the observed
+        danger zone. Small random jitter (+/-10%) avoids the restart always
+        landing at the same wall-clock offset relative to other periodic
+        maintenance (background sweep, checkpoint). Set
+        `[daemon] restart_interval_hours = 0` to disable.
+        """
+        jitter = random.uniform(0.9, 1.1)
+        delay_seconds = interval_hours * 3600 * jitter
+        await asyncio.sleep(delay_seconds)
+        _logger.info(
+            "[Restart] Scheduled self-restart after %.1fh uptime (B342 fragmentation "
+            "mitigation) -- launchd KeepAlive will bring up a fresh process",
+            interval_hours * jitter,
+        )
+        self.shutdown()
 
     async def _periodic_footprint_watchdog(
         self, check_interval_seconds: float, growth_threshold_mb: float,
