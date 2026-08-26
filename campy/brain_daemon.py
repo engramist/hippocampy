@@ -418,7 +418,14 @@ class BrainDaemon:
 
     async def _handle_connection(self, reader: asyncio.StreamReader,
                                   writer: asyncio.StreamWriter):
-        """Handle a single adapter connection. Reads newline-delimited JSON-RPC 2.0."""
+        """Handle a single adapter connection. Reads newline-delimited JSON-RPC 2.0.
+
+        B362: an abrupt client disconnect (the adapter's own call-level
+        timeout expiring, then it gives up and closes its socket) is an
+        ordinary occurrence, not a daemon fault -- ConnectionResetError/
+        BrokenPipeError from writing into that closed socket must not
+        propagate as an unhandled exception in client_connected_cb.
+        """
         # B315: TransportContext is built from what this connection itself
         # knows — BEFORE any request line is read, let alone parsed — and
         # the Principal resolved from it is reused for every JSON-RPC
@@ -442,18 +449,23 @@ class BrainDaemon:
                 try:
                     request = json.loads(line)
                     response = await self._dispatch(request, principal)
-                    writer.write((json.dumps(response) + "\n").encode())
-                    await writer.drain()
                 except json.JSONDecodeError:
-                    error_response = {
+                    response = {
                         "jsonrpc": "2.0", "id": None,
                         "error": {"code": -32700, "message": "Parse error"}
                     }
-                    writer.write((json.dumps(error_response) + "\n").encode())
+                try:
+                    writer.write((json.dumps(response) + "\n").encode())
                     await writer.drain()
+                except (ConnectionResetError, BrokenPipeError, ConnectionError):
+                    _logger.debug("Client disconnected before response could be written")
+                    break
         finally:
-            writer.close()
-            await writer.wait_closed()
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except (ConnectionResetError, BrokenPipeError, ConnectionError):
+                pass
 
     async def _dispatch(self, request: dict, principal: Principal) -> dict:
         """Route JSON-RPC method calls to tool handlers in campy/brain/thalamus/tools.py.
