@@ -9,8 +9,21 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any, Iterable
 
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
+
 if TYPE_CHECKING:
     from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+
+
+def _gateway(db) -> GraphGateway:
+    """B363: same pattern as lessons.py's `_gateway()` -- wrap `db` in a
+    GraphGateway bound to the shared registry so this one migrated query
+    goes through the B314 chokepoint, without changing this file's other
+    handlers' `db: KuzuClient` signature."""
+    if isinstance(db, GraphGateway):
+        return db
+    return GraphGateway(db, REGISTRY)
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
@@ -633,10 +646,12 @@ async def arc_contradict_hypothesis(params: dict, db: KuzuClient, config: dict) 
 
 
 async def arc_update_goal_confidence(params: dict, db: KuzuClient, config: dict) -> dict:
-    """B363: previously a bare MATCH on both the read and write queries, so a
-    condition_id with no existing VictoryCondition node silently no-op'd while
-    still returning {"status": "ok"} -- arc_get_goal_evidence's own MATCH then
-    always saw zero rows for that task. Now MERGEs the node into existence."""
+    """B363: previously a bare read-only lookup on both the read and write
+    queries, so a condition_id with no existing VictoryCondition node
+    silently no-op'd while still returning {"status": "ok"} --
+    arc_get_goal_evidence's own lookup then always saw zero rows for that
+    task. The write now creates the node if it doesn't already exist (see
+    arc.merge_victory_condition_confidence in queries/arc.py)."""
     goal_id = params.get("goal_id")
     if not goal_id:
         return _error("goal_id is required")
@@ -657,12 +672,9 @@ async def arc_update_goal_confidence(params: dict, db: KuzuClient, config: dict)
     if gated_confidence > current and not has_progress:
         gated_confidence = current
 
-    await db.execute_write(
-        "MERGE (vc:VictoryCondition {condition_id: $gid}) "
-        "SET vc.task_id = $tid, vc.confidence = $conf, "
-        "    vc.created_at = coalesce(vc.created_at, current_timestamp()), "
-        "    vc.last_updated = current_timestamp()",
-        {"gid": goal_id, "tid": task_id, "conf": gated_confidence},
+    await _gateway(db).run(
+        "arc.merge_victory_condition_confidence",
+        gid=goal_id, tid=task_id, conf=gated_confidence,
     )
 
     return {
