@@ -228,6 +228,33 @@ class TestStageSemanticContext:
 
         assert section is None
 
+    async def test_excludes_nodes_flagged_for_review(self, real_db):
+        """VibeGuide round-3 verification, Finding 4: the exact-fact stage
+        had this exclusion tested (test_excludes_nodes_flagged_for_review in
+        TestStageExactFacts) but semantic and graph stages only had the
+        flagged_for_review column added to their fixtures, never a
+        flagged=true node actually created -- two of the three exclusions
+        were implemented but unproven, the same gap-shape ("the flag
+        existed; nothing consulted it") this whole review round was about."""
+        db = real_db
+        self._create_tables(db)
+        db.execute(
+            "CREATE (n:Concept {id: 'c1', text_raw: 'flagged concept', confidence: 0.9, "
+            "flagged_for_review: true, pathway_strength: 0.6, embedding: $emb})",
+            {"emb": [0.99, 0.01, 0.0, 0.0]},
+        )
+        db.execute(
+            "CREATE (n:Decision {id: 'd1', text_raw: 'clean decision', confidence: 0.9, "
+            "flagged_for_review: false, pathway_strength: 0.6, embedding: $emb})",
+            {"emb": [0.97, 0.03, 0.0, 0.0]},
+        )
+
+        section = await _stage_semantic_context(db, "query", CONFIG, TIER_CONFIG)
+
+        assert section is not None
+        texts = {c["text"] for c in section.content}
+        assert texts == {"clean decision"}
+
 
 class TestStageGraphStructure:
     """B252: _stage_graph_structure was a literal placeholder (`content=[]`
@@ -326,6 +353,29 @@ class TestStageGraphStructure:
         two_hop_targets = {e["to"] for e in two_hop.content}
         assert one_hop_targets == {"concept b"}
         assert "concept c" in two_hop_targets
+
+    async def test_excludes_flagged_neighbor_from_one_hop(self, real_db):
+        """VibeGuide round-3 verification, Finding 4: same exclusion gap as
+        TestStageSemanticContext.test_excludes_nodes_flagged_for_review,
+        for the graph-traversal stage specifically -- a flagged one-hop
+        neighbor must not be surfaced, matching the `b.flagged_for_review`
+        filter bundle_compiler.py's one_hop_cypher actually applies."""
+        db = real_db
+        self._create_tables(db)
+        self._concept(db, "a", "concept a", [0.99, 0.01, 0.0, 0.0])
+        self._concept(db, "b", "flagged concept b", [0.0, 0.0, 1.0, 0.0])
+        self._concept(db, "c", "clean concept c", [0.0, 1.0, 0.0, 0.0])
+        db.execute(
+            "MATCH (n:Concept {concept_id: 'b'}) SET n.flagged_for_review = true"
+        )
+        self._edge(db, "REQUIRES", "a", "b")
+        self._edge(db, "ENABLES", "a", "c")
+
+        section = await _stage_graph_structure(db, "query", CONFIG, {"max_graph_hops": 1}, [])
+
+        assert section is not None
+        targets = {e["to"] for e in section.content}
+        assert targets == {"clean concept c"}
 
 
 class TestStageTabularData:
