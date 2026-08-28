@@ -229,11 +229,32 @@ def start():
     """
     system = platform.system()
     if system == "Darwin":
-        from campy.cli.launchd import load_plist
+        from campy.cli.launchd import load_plist, write_plist, _daemon_script
         if load_plist():
             console.print("[green]Brain Daemon started via launchd.[/green]")
+            return
+        # B364: load_plist() fails outright if no plist has ever been
+        # generated for this install (a realistic first-run/recovery
+        # scenario -- observed live when a daemon that had been started
+        # some other way, bypassing campy start/launchd entirely, was later
+        # stopped and had no plist to reload from). Generate one and retry
+        # once before giving up on launchd.
+        write_plist()
+        if load_plist():
+            console.print("[green]Brain Daemon started via launchd.[/green]")
+            return
+        # launchd itself is unusable in this environment -- fall back to a
+        # raw subprocess (matching the non-Darwin path below) so `campy
+        # start` actually starts something rather than leaving the daemon
+        # offline with no recovery short of a manual invocation.
+        console.print("[yellow]launchd unavailable — starting Brain Daemon directly.[/yellow]")
+        daemon_path = _daemon_script()
+        import sys
+        if daemon_path.endswith(".py"):
+            subprocess.Popen([sys.executable, daemon_path], start_new_session=True)
         else:
-            console.print("[red]Failed to start Brain Daemon via launchd.[/red]")
+            subprocess.Popen([daemon_path], start_new_session=True)
+        console.print("[green]Brain Daemon started.[/green]")
     else:
         # Fallback for other systems
         repo_root = Path(__file__).parent.parent.parent
