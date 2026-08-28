@@ -162,3 +162,41 @@ async def test_checkpoint_zero_interval_disabled():
     checkpoint_interval = config.get("checkpoint", {}).get("interval_seconds", 60)
     assert checkpoint_interval == 0
     # In BrainDaemon, task creation is gated: if checkpoint_interval > 0: create_task(...)
+
+
+# ---------------------------------------------------------------------------
+# B347 acceptance criterion: "graceful shutdown confirmed not to drop
+# in-flight writes." A literal in-flight (started-but-uncommitted) write
+# doesn't exist in this architecture to test -- every execute_write() call
+# is already a fully-committed, independent transaction by the time it
+# returns (see backlog/B311.md's own finding on this). What actually matters
+# for BrainDaemon.shutdown()'s data-safety claim is narrower and testable:
+# does KuzuClient.close() (del self.conn; del self.db -- no explicit
+# CHECKPOINT call) lose a write that already committed? This proves it
+# doesn't, by reopening a fresh client on the same path afterward.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_committed_write_survives_close_without_explicit_checkpoint(temp_db_path):
+    """A write committed before close() (BrainDaemon.shutdown()'s call, no
+    explicit CHECKPOINT) must still be visible to a fresh client opened on
+    the same path afterward -- proves shutdown doesn't need a checkpoint to
+    avoid losing already-committed data."""
+    client = KuzuClient(str(temp_db_path))
+    client.execute(
+        "CREATE NODE TABLE Durability(id STRING, note STRING, PRIMARY KEY (id))"
+    )
+    await client.execute_write(
+        "CREATE (n:Durability {id: $id, note: $note})",
+        {"id": "b347-durability-check", "note": "written before close"},
+    )
+    client.close()
+
+    reopened = KuzuClient(str(temp_db_path))
+    result = reopened.execute(
+        "MATCH (n:Durability {id: $id}) RETURN n.note", {"id": "b347-durability-check"}
+    )
+    assert result.has_next()
+    row = result.get_next()
+    assert row[0] == "written before close"
+    reopened.close()
