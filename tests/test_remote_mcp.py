@@ -28,6 +28,7 @@ for equality.
 from __future__ import annotations
 
 import json
+import tempfile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -54,7 +55,11 @@ def _make_daemon(db=None):
     from campy.brain_daemon import BrainDaemon
 
     daemon = BrainDaemon.__new__(BrainDaemon)
-    daemon.config = {}
+    # B367: _dispatch now calls emit_activity() -- point it at an isolated
+    # path so this test doesn't write into the developer's real activity log.
+    daemon.config = {
+        "activity": {"log_path": tempfile.mkstemp(suffix=".activity.log")[1]}
+    }
     daemon.db = db or EmptyDB()
     daemon.running = False
     daemon._llm_client = None

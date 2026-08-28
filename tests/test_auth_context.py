@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import tempfile
 
 import pytest
 
@@ -162,7 +163,13 @@ def _make_daemon():
             pass
 
     daemon = BrainDaemon.__new__(BrainDaemon)
-    daemon.config = {}
+    # B367: emit_activity() now fires from several BrainDaemon code paths
+    # (_dispatch, start, shutdown, the periodic tasks) -- point it at an
+    # isolated temp file instead of the real ~/.campy/activity.log so test
+    # runs don't pollute the developer's actual activity feed.
+    daemon.config = {
+        "activity": {"log_path": tempfile.mkstemp(suffix=".activity.log")[1]}
+    }
     daemon.db = MockDB()
     daemon.running = False
     daemon._llm_client = None
@@ -787,6 +794,157 @@ async def test_footprint_watchdog_transient_check_failure_is_skipped_not_fatal(m
     )
 
     assert shutdown_calls == [True]
+
+
+# ---------------------------------------------------------------------------
+# BrainDaemon activity-log wiring — B367. campy/brain_daemon.py had zero
+# emit_activity() calls anywhere despite being the sole live implementation
+# since B365 -- ported from root's pre-shim history plus new call sites for
+# the memory-safety background tasks B365 also ported (checkpoint/restart/
+# watchdog), satisfying B348's own "visible via the activity-indicator
+# convention" acceptance criterion.
+# ---------------------------------------------------------------------------
+
+
+def _daemon_with_activity_log(tmp_path):
+    daemon = _make_daemon()
+    log_path = tmp_path / "activity.log"
+    daemon.config = {"activity": {"log_path": str(log_path)}}
+    return daemon, log_path
+
+
+@pytest.mark.asyncio
+async def test_dispatch_emits_tool_ok_activity_event(monkeypatch, tmp_path):
+    import campy.brain_daemon as bd
+    from campy.brain.brainstem.activity_log import read_recent
+
+    daemon, log_path = _daemon_with_activity_log(tmp_path)
+    principal = await daemon._principal_resolver.resolve(TransportContext(transport="unix-socket"))
+
+    async def handler(params, db, config):
+        return {"ok": True}
+
+    monkeypatch.setitem(bd.TOOL_HANDLERS, "activity_ok_test_method", handler)
+
+    await daemon._dispatch(
+        {"jsonrpc": "2.0", "id": 1, "method": "activity_ok_test_method", "params": {}},
+        principal,
+    )
+
+    records = read_recent(log_path)
+    assert any(
+        r["event"] == "tool" and r.get("method") == "activity_ok_test_method"
+        and r.get("status") == "ok"
+        for r in records
+    )
+
+
+@pytest.mark.asyncio
+async def test_dispatch_emits_tool_error_activity_event(monkeypatch, tmp_path):
+    import campy.brain_daemon as bd
+    from campy.brain.brainstem.activity_log import read_recent
+
+    daemon, log_path = _daemon_with_activity_log(tmp_path)
+    principal = await daemon._principal_resolver.resolve(TransportContext(transport="unix-socket"))
+
+    async def exploding_handler(params, db, config):
+        raise ValueError("simulated failure")
+
+    monkeypatch.setitem(bd.TOOL_HANDLERS, "activity_error_test_method", exploding_handler)
+
+    await daemon._dispatch(
+        {"jsonrpc": "2.0", "id": 1, "method": "activity_error_test_method", "params": {}},
+        principal,
+    )
+
+    records = read_recent(log_path)
+    assert any(
+        r["event"] == "tool" and r.get("method") == "activity_error_test_method"
+        and r.get("status") == "error" and "simulated failure" in r.get("details", {}).get("error", "")
+        for r in records
+    )
+
+
+@pytest.mark.asyncio
+async def test_periodic_checkpoint_failure_emits_activity_event(tmp_path):
+    from campy.brain.brainstem.activity_log import read_recent
+
+    daemon, log_path = _daemon_with_activity_log(tmp_path)
+
+    async def failing_checkpoint():
+        raise RuntimeError("simulated checkpoint failure")
+
+    daemon.db.checkpoint = failing_checkpoint
+
+    task = asyncio.create_task(daemon._periodic_checkpoint(0.01))
+    await asyncio.sleep(0.03)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    records = read_recent(log_path)
+    assert any(
+        r["event"] == "daemon" and r.get("details", {}).get("task") == "checkpoint"
+        and r.get("status") == "error"
+        for r in records
+    )
+
+
+@pytest.mark.asyncio
+async def test_periodic_restart_emits_activity_event(monkeypatch, tmp_path):
+    from campy.brain.brainstem.activity_log import read_recent
+
+    daemon, log_path = _daemon_with_activity_log(tmp_path)
+    monkeypatch.setattr(daemon, "shutdown", lambda: None)
+
+    await daemon._periodic_restart(0.0001)
+
+    records = read_recent(log_path)
+    assert any(
+        r["event"] == "daemon" and r.get("details", {}).get("task") == "scheduled_restart"
+        for r in records
+    )
+
+
+@pytest.mark.asyncio
+async def test_footprint_watchdog_trigger_emits_activity_event(monkeypatch, tmp_path):
+    import campy.brain_daemon as bd
+    from campy.brain.brainstem.activity_log import read_recent
+
+    daemon, log_path = _daemon_with_activity_log(tmp_path)
+    monkeypatch.setattr(daemon, "shutdown", lambda: None)
+
+    fake = _fake_vmmap_sequence([_vmmap_ok(100), _vmmap_ok(700), _vmmap_ok(710), _vmmap_ok(720)])
+    monkeypatch.setattr(bd, "_vmmap_parsed", fake)
+
+    await asyncio.wait_for(
+        daemon._periodic_footprint_watchdog(
+            check_interval_seconds=0.01, growth_threshold_mb=500, consecutive_breaches_required=3
+        ),
+        timeout=2.0,
+    )
+
+    records = read_recent(log_path)
+    assert any(
+        r["event"] == "daemon" and r.get("details", {}).get("task") == "footprint_watchdog"
+        for r in records
+    )
+
+
+def test_shutdown_emits_daemon_stopped_activity_event(tmp_path, monkeypatch):
+    import campy.brain_daemon as bd
+    from campy.brain.brainstem.activity_log import read_recent
+
+    daemon, log_path = _daemon_with_activity_log(tmp_path)
+    daemon._router = None
+    monkeypatch.setattr(bd, "_socket_path", lambda: tmp_path / "nonexistent.sock")
+
+    daemon.shutdown()
+
+    records = read_recent(log_path)
+    assert any(r["event"] == "daemon" and r.get("status") == "stopped" for r in records)
 
 
 # ---------------------------------------------------------------------------
