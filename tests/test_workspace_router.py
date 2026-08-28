@@ -465,11 +465,16 @@ async def test_http_dispatch_mcp_resolves_db_from_router(tmp_path, monkeypatch):
 
     monkeypatch.setitem(bd.TOOL_HANDLERS, "router_spy_http_method", spy_handler)
 
+    # B368: _dispatch_mcp's tools/call success path calls emit_activity() --
+    # point it at an isolated temp file so this test doesn't write a real
+    # event into the developer's own ~/.campy/activity.log.
+    activity_config = {"activity": {"log_path": str(tmp_path / "activity.log")}}
+
     principal = _FakePrincipal("ws-http-router-test")
     response = await _dispatch_mcp(
         {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
          "params": {"name": "router_spy_http_method", "arguments": {}}},
-        None, {}, principal, router,
+        None, activity_config, principal, router,
     )
     assert "error" not in response
     assert seen["db"] is not None

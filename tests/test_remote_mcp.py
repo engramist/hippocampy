@@ -73,7 +73,12 @@ def _make_daemon(db=None):
 def _make_client(db=None, principal_resolver=None) -> TestClient:
     from web.server import create_app
 
-    return TestClient(create_app(db or EmptyDB(), principal_resolver=principal_resolver))
+    # B368: web/server.py's tools/call dispatch calls emit_activity() --
+    # point it at an isolated temp file so these tests don't write real
+    # events into the developer's own ~/.campy/activity.log (the same fix
+    # B367 applied to the socket-transport tests).
+    config = {"activity": {"log_path": tempfile.mkstemp(suffix=".activity.log")[1]}}
+    return TestClient(create_app(db or EmptyDB(), config=config, principal_resolver=principal_resolver))
 
 
 # ---------------------------------------------------------------------------

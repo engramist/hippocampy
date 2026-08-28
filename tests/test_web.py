@@ -7,6 +7,7 @@ Run with: python3 -m pytest tests/test_web.py -v
 from __future__ import annotations
 import sys
 import os
+import tempfile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -53,9 +54,17 @@ class EmptyDB:
     async def execute_write(self, q, p=None): pass
 
 
+def _isolated_activity_config() -> dict:
+    """B368: web/server.py's tools/call dispatch calls emit_activity() --
+    point it at an isolated temp file so these tests don't write real
+    events into the developer's own ~/.campy/activity.log (the same fix
+    B367 applied to the socket-transport tests)."""
+    return {"activity": {"log_path": tempfile.mkstemp(suffix=".activity.log")[1]}}
+
+
 def make_client(db=None) -> TestClient:
     from web.server import create_app
-    return TestClient(create_app(db or EmptyDB()))
+    return TestClient(create_app(db or EmptyDB(), config=_isolated_activity_config()))
 
 
 async def _local_principal():
@@ -693,6 +702,7 @@ async def test_sse_context_injection_direct():
     """Test that _dispatch_mcp injects context for tools/call."""
     from web.server import _dispatch_mcp
 
+    activity_config = _isolated_activity_config()
     received_params = {}
 
     async def spy_handler(params, db, config):
@@ -719,7 +729,7 @@ async def test_sse_context_injection_direct():
         await _dispatch_mcp(
             {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
              "params": {"name": "get_open_loops", "arguments": {}}},
-            EmptyDB(), {}, await _local_principal(),
+            EmptyDB(), activity_config, await _local_principal(),
         )
         assert "workspace_path" in received_params
         assert "token_limit" in received_params
