@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 import shutil
+import time
 from pathlib import Path
 
 from campy.branding import LEGACY_LAUNCHD_LABEL, LEGACY_LAUNCHD_LABELS, PRIMARY_LAUNCHD_LABEL
@@ -111,6 +112,20 @@ def is_loaded(label: str = LABEL) -> bool:
     return _launchctl_list(label).returncode == 0
 
 
+def _wait_until_unloaded(label: str, attempts: int = 5, delay: float = 0.2) -> bool:
+    """B364: `launchctl`'s own state update can lag slightly behind
+    `unload`/`remove` returning -- polling briefly instead of checking
+    `is_loaded()` exactly once avoids a false-negative "failed to stop"
+    report on a daemon that did, in fact, shut down cleanly (observed live:
+    `unload_plist()` returned False while `daemon.log` showed a normal
+    "Brain Daemon stopped." sequence)."""
+    for _ in range(attempts):
+        if not is_loaded(label):
+            return True
+        time.sleep(delay)
+    return not is_loaded(label)
+
+
 def unload_plist(label: str = LABEL, plist_path: Path | None = None) -> bool:
     """Unload the plist from launchctl."""
     path = plist_path or (LEGACY_PLIST_PATH if label == LEGACY_LABEL else PLIST_PATH)
@@ -118,11 +133,13 @@ def unload_plist(label: str = LABEL, plist_path: Path | None = None) -> bool:
         if not is_loaded(label):
             return True
         subprocess.run(["launchctl", "remove", label], capture_output=True, text=True)
-        return not is_loaded(label)
+        return _wait_until_unloaded(label)
     result = subprocess.run(["launchctl", "unload", str(path)], capture_output=True, text=True)
-    if result.returncode != 0 and is_loaded(label):
+    if result.returncode == 0:
+        return True
+    if is_loaded(label):
         subprocess.run(["launchctl", "remove", label], capture_output=True, text=True)
-    return result.returncode == 0 or not is_loaded(label)
+    return _wait_until_unloaded(label)
 
 
 def load_plist(label: str = LABEL, plist_path: Path | None = None) -> bool:
