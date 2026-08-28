@@ -35,13 +35,34 @@ def test_tool_handlers_has_expected_tools():
     assert not missing, f"Missing tools from TOOL_HANDLERS: {missing}"
 
 
-import json
-import requests
+class _EmptyDB:
+    """B360: tools/list never touches the db -- a minimal stub is enough."""
+    def execute(self, q, p=None):
+        raise NotImplementedError
 
-DAEMON_URL = "http://127.0.0.1:7799"
+    async def execute_write(self, q, p=None):
+        raise NotImplementedError
+
 
 def _send_mcp(method: str, params: dict = None) -> dict:
-    """Send an MCP JSON-RPC request to the daemon."""
+    """Send an MCP JSON-RPC request to an in-process app built from the
+    *current* checkout's code.
+
+    B360: this used to POST to a real http://127.0.0.1:7799 -- whatever
+    ambient `campy-daemon` process happened to be running on the developer's
+    machine, possibly started from an older checkout and not yet restarted
+    to pick up the very code these tests are meant to check. That's why
+    these tests passed reliably in isolation (a moment where the live
+    daemon happened to agree with the checkout) but flaked intermittently
+    under a full suite run (a longer wall-clock window, more chances for
+    that agreement to not hold) -- not the state-leak-between-tests
+    hypothesis this card originally suspected. An in-process TestClient
+    against a freshly-built app is deterministic and requires no ambient
+    process at all.
+    """
+    from fastapi.testclient import TestClient
+    from web.server import create_app
+
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -49,14 +70,11 @@ def _send_mcp(method: str, params: dict = None) -> dict:
     }
     if params:
         payload["params"] = params
-    try:
-        resp = requests.post(f"{DAEMON_URL}/mcp", json=payload, timeout=5)
-        return resp.json()
-    except requests.ConnectionError:
-        pytest.skip("Daemon not running at http://127.0.0.1:7799")
+    client = TestClient(create_app(_EmptyDB()))
+    resp = client.post("/mcp", json=payload)
+    return resp.json()
 
 
-@pytest.mark.integration
 @pytest.mark.skipif(not KUZU_AVAILABLE, reason="kuzu not installed")
 def test_sse_exposes_all_tool_handlers():
     """Every key in TOOL_HANDLERS should appear in the SSE tools/list response."""
@@ -75,7 +93,6 @@ def test_sse_exposes_all_tool_handlers():
         print(f"Note: SSE has extra tools not in TOOL_HANDLERS: {extra}")
 
 
-@pytest.mark.integration
 @pytest.mark.skipif(not KUZU_AVAILABLE, reason="kuzu not installed")
 def test_memory_os_tools_reachable():
     """Specifically verify the Memory OS tools (B249-B254) are reachable."""
