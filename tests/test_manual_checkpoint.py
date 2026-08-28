@@ -86,57 +86,83 @@ async def test_checkpoint_configuration_from_config_dict():
 
 @pytest.mark.asyncio
 async def test_checkpoint_configuration_defaults():
-    """B337: Checkpoint configuration uses sensible defaults."""
+    """B337: Checkpoint configuration uses sensible defaults.
+
+    B349: default tuned from 60s to 15s (backlog/B311.md round 8) -- keep
+    this in sync with campy/brain_daemon.py's own fallback and campy.toml's
+    shipped value, all three should always agree.
+    """
     config = {}
-    
+
     # Extract checkpoint config with defaults
     checkpoint_cfg = config.get("checkpoint", {})
     auto_checkpoint = checkpoint_cfg.get("auto_checkpoint", True)
     checkpoint_threshold_bytes = checkpoint_cfg.get("threshold_bytes", -1)
-    interval_seconds = checkpoint_cfg.get("interval_seconds", 60)
-    
+    interval_seconds = checkpoint_cfg.get("interval_seconds", 15)
+
     assert auto_checkpoint is True  # Default enabled
     assert checkpoint_threshold_bytes == -1  # Kuzu default
-    assert interval_seconds == 60  # 1 minute default
+    assert interval_seconds == 15  # B349-tuned default
 
 
 @pytest.mark.asyncio
 async def test_periodic_checkpoint_task_interval(temp_db_path):
-    """B337: Periodic checkpoint task respects interval configuration."""
+    """B337: Periodic checkpoint task respects interval configuration.
+
+    B352/B361: the original version of this test wrapped the *real*
+    `client.checkpoint()` (actual KuzuDB disk I/O) and asserted every
+    individual consecutive spacing fell within a tight +/-50% band around
+    the 100ms interval. On a shared/loaded CI runner, real checkpoint I/O
+    latency plus event-loop scheduling jitter regularly pushed a single
+    iteration past that band (observed: 172ms, 234ms, 161ms on three
+    separate unrelated PRs) -- a flake in the test's own tolerance, not a
+    real regression in checkpoint cadence (the "checkpoints happen at all"
+    assertion below never failed, only the tight per-interval spacing
+    check). Fixed at the root by not calling the real checkpoint() at all
+    here -- this test's purpose is cadence, not I/O correctness (that's
+    covered separately by test_manual_checkpoint_succeeds) -- which removes
+    the dominant source of jitter, plus asserting on the *average* spacing
+    rather than every individual one, since averaging is what the test
+    actually cares about (roughly the configured cadence) without being
+    sensitive to one occasional slow tick. Do not tighten this back to a
+    per-interval assertion or reintroduce real I/O without re-reading
+    backlog/B352.md and backlog/B361.md first.
+    """
     client = KuzuClient(str(temp_db_path))
-    
+
     checkpoint_calls = []
-    original_checkpoint = client.checkpoint
-    
+
     async def mock_checkpoint():
         checkpoint_calls.append(asyncio.get_event_loop().time())
-        return await original_checkpoint()
-    
+        return True
+
     client.checkpoint = mock_checkpoint
-    
+
     # Simulate periodic checkpoint task
     interval = 0.1  # 100ms for testing
     task = asyncio.create_task(_test_periodic_checkpoint(client, interval))
-    
+
     # Let it run for ~300ms (should trigger 3+ times)
     await asyncio.sleep(0.35)
     task.cancel()
-    
+
     try:
         await task
     except asyncio.CancelledError:
         pass
-    
+
     # Verify multiple checkpoints occurred
     assert len(checkpoint_calls) >= 2
-    
-    # Verify spacing is approximately interval
-    if len(checkpoint_calls) > 1:
-        for i in range(1, len(checkpoint_calls)):
-            spacing = checkpoint_calls[i] - checkpoint_calls[i - 1]
-            # Allow ±50% tolerance
-            assert 0.05 < spacing < 0.15, f"Spacing {spacing} not near {interval}"
-    
+
+    # Verify the average spacing is approximately the configured interval --
+    # not every individual spacing, see the docstring above.
+    spacings = [
+        checkpoint_calls[i] - checkpoint_calls[i - 1]
+        for i in range(1, len(checkpoint_calls))
+    ]
+    avg_spacing = sum(spacings) / len(spacings)
+    assert 0.05 < avg_spacing < 0.15, f"Average spacing {avg_spacing} not near {interval}"
+
     client.close()
 
 

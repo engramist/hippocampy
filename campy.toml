@@ -131,10 +131,21 @@ max_total_candidates = 10
 # interval_seconds: period for manual checkpoint task (0 = disabled).
 #   Runs independent of commit count, mitigating the "commit-boundary
 #   starvation" effect where batched writes suppress checkpoints.
-#   Recommended: 60-300 seconds depending on write load.
+#   B349: tuned from the untuned 60s default to 15s. backlog/B311.md's
+#   round 5 swept 0/60/30/15/5s on a synthetic write-heavy workload and
+#   found a clear, non-monotonic optimum at 15s (best of both peak RSS and
+#   post-close release; 5s was worse on both, not just diminishing
+#   returns). Round 7 confirmed the qualitative spike-and-release pattern
+#   live at 15s under real ARC traffic. Round 8 extended the sweep across
+#   two more synthetic workload shapes and found no case where 60s beat
+#   15s, though the size of the benefit varies by workload shape (one
+#   shape showed a real peak improvement but no post-close release
+#   advantage over 60s -- noted honestly in round 8, not fully explained).
+#   A fixed interval (not adaptive/write-count-triggered) was kept
+#   deliberately -- see round 8's "fixed vs. adaptive" section for why.
 auto_checkpoint = true
 threshold_bytes = -1
-interval_seconds = 60
+interval_seconds = 15
 
 [daemon]
 # B342: periodic self-restart to bound allocator fragmentation. The
