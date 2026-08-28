@@ -545,7 +545,9 @@ class BrainDaemon:
         # Decouples checkpoint cadence from transaction commit boundaries,
         # allowing tuned checkpoints independent of write load. Ported from
         # the root brain_daemon.py, which never shipped -- see B365.
-        checkpoint_interval = self.config.get("checkpoint", {}).get("interval_seconds", 60)
+        # B349: fallback matches campy.toml's tuned shipped default (15s),
+        # not the original untuned 60s -- see backlog/B311.md's round 8.
+        checkpoint_interval = self.config.get("checkpoint", {}).get("interval_seconds", 15)
         if checkpoint_interval > 0:
             checkpoint_task = asyncio.create_task(
                 self._periodic_checkpoint(checkpoint_interval), name="periodic_checkpoint"
