@@ -42,6 +42,7 @@ from campy.brain.auth import (
     Principal,
     TransportContext,
 )
+from campy.brain.brainstem.activity_log import compact_details, emit_activity
 from campy.brain.brainstem.config import load_config
 from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 from campy.brain.hippocampus.graph import embeddings as emb
@@ -505,6 +506,11 @@ class BrainDaemon:
         # Wire loop queue into tools module
         init_loop_queue(self._loop_queue)
 
+        # B367: campy/brain_daemon.py had zero emit_activity() calls anywhere
+        # despite being the sole live implementation since B365 -- restored
+        # from root's pre-shim history (git show 27e765e:brain_daemon.py).
+        emit_activity("daemon", config=self.config, lane="status", status="started")
+
         # D2 fix: attach done callbacks so task crashes are logged and the task
         # is restarted rather than silently dying.
         def _restart_on_failure(task: asyncio.Task, coro_factory, *args):
@@ -743,14 +749,30 @@ class BrainDaemon:
 
         try:
             result = await route_tool_call(method, params, db, self.config, principal)
+            emit_activity(
+                "tool", config=self.config, method=method, status="ok",
+                details=compact_details(method, params),
+            )
             return {"jsonrpc": "2.0", "id": req_id, "result": result}
         except ForbiddenParamError as e:
+            emit_activity(
+                "tool", config=self.config, method=method, status="error",
+                details={**compact_details(method, params), "error": str(e)[:160]},
+            )
             return {"jsonrpc": "2.0", "id": req_id,
                     "error": {"code": -32602, "message": str(e)}}
         except UnknownMethodError as e:
+            emit_activity(
+                "tool", config=self.config, method=method, status="error",
+                details={**compact_details(method, params), "error": str(e)[:160]},
+            )
             return {"jsonrpc": "2.0", "id": req_id,
                     "error": {"code": -32601, "message": str(e)}}
         except Exception as e:
+            emit_activity(
+                "tool", config=self.config, method=method, status="error",
+                details={**compact_details(method, params), "error": str(e)[:160]},
+            )
             return {
                 "jsonrpc": "2.0", "id": req_id,
                 "error": {"code": -32000, "message": str(e)}
@@ -909,8 +931,16 @@ class BrainDaemon:
                     _logger.info("[Checkpoint] Manual checkpoint completed")
                 else:
                     _logger.warning("[Checkpoint] Manual checkpoint failed")
+                    emit_activity(
+                        "daemon", config=self.config, lane="maintenance", status="error",
+                        details={"task": "checkpoint", "error": "checkpoint returned false"},
+                    )
             except Exception as e:
                 _logger.exception("[Checkpoint] Unexpected error during checkpoint: %s", e)
+                emit_activity(
+                    "daemon", config=self.config, lane="maintenance", status="error",
+                    details={"task": "checkpoint", "error": str(e)[:160]},
+                )
 
     async def _periodic_restart(self, interval_hours: float):
         """
@@ -947,6 +977,10 @@ class BrainDaemon:
             "[Restart] Scheduled self-restart after %.1fh uptime (B342 fragmentation "
             "mitigation) -- launchd KeepAlive will bring up a fresh process",
             interval_hours * jitter,
+        )
+        emit_activity(
+            "daemon", config=self.config, lane="maintenance", status="ok",
+            details={"task": "scheduled_restart", "uptime_hours": round(interval_hours * jitter, 2)},
         )
         self.shutdown()
 
@@ -1044,6 +1078,15 @@ class BrainDaemon:
                     consecutive_breaches_required, current["footprint_mb"], growth_mb,
                     baseline_mb,
                 )
+                emit_activity(
+                    "daemon", config=self.config, lane="maintenance", status="warning",
+                    details={
+                        "task": "footprint_watchdog",
+                        "footprint_mb": round(current["footprint_mb"], 1),
+                        "growth_mb": round(growth_mb, 1),
+                        "baseline_mb": round(baseline_mb, 1),
+                    },
+                )
                 self.shutdown()
                 return
 
@@ -1106,6 +1149,7 @@ class BrainDaemon:
         socket_path = _socket_path()
         if socket_path.exists():
             socket_path.unlink()
+        emit_activity("daemon", config=self.config, lane="status", status="stopped")
         print("Brain Daemon stopped.")
         # D1 fix: stop the event loop so the process exits cleanly.
         try:

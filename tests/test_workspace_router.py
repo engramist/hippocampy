@@ -418,7 +418,9 @@ async def test_brain_daemon_dispatch_resolves_db_from_router(tmp_path, monkeypat
             pass
 
     daemon = bd.BrainDaemon.__new__(bd.BrainDaemon)
-    daemon.config = {}
+    # B367: _dispatch now calls emit_activity() -- point it at an isolated
+    # path so this test doesn't write into the developer's real activity log.
+    daemon.config = {"activity": {"log_path": str(tmp_path / "activity.log")}}
     daemon.db = MockDB()
     daemon.running = False
     daemon._llm_client = None
