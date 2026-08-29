@@ -668,9 +668,10 @@ async def test_dispatch_mcp_tools_list_direct():
     # Core memory tools must always surface.
     assert {"notify_turn", "current_truth", "memory_decision"} <= tool_names
     # B278: the ARC v2 tools surface through the same MCP list (15 originally,
-    # +1 for B359's arc_get_entity_neighborhood).
+    # +1 for B359's arc_get_entity_neighborhood, +1 for B369's
+    # arc_start_or_resume_thread).
     arc_tools = {n for n in tool_names if n.startswith("arc_")}
-    assert len(arc_tools) == 16, f"expected 16 ARC tools, got {sorted(arc_tools)}"
+    assert len(arc_tools) == 17, f"expected 17 ARC tools, got {sorted(arc_tools)}"
     # Lower bound rather than an exact count — adding a tool shouldn't break
     # this test (the exact-count form silently went stale at 34 vs 36 before
     # B278 pushed the surface to 51).

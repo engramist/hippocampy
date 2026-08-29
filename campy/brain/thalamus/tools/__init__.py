@@ -67,6 +67,7 @@ from .arc_tools import (
     arc_perceive_state,
     arc_record_action_effect,
     arc_record_reward_prediction_error,
+    arc_start_or_resume_thread,
     record_rule,
     record_transition,
     arc_update_goal_confidence,
@@ -187,4 +188,8 @@ TOOL_HANDLERS = {
     "record_rule": record_rule,
     "get_rules_for_action": get_rules_for_action,
     "get_transferred_rules": get_transferred_rules,
+    # B369/A201: investigation-thread durability for ARC_AGI's trajectory
+    # Annatar. Only the read/create tool is implemented so far -- see
+    # backlog/B369.md.
+    "arc_start_or_resume_thread": arc_start_or_resume_thread,
 }
