@@ -1215,6 +1215,29 @@ NODE_TABLES = {
         PRIMARY KEY (rule_id)
     """,
 
+    # B369 — Investigation-thread durability for ARC_AGI's trajectory
+    # Annatar (docs/handoff/B278-investigation-thread-schema.md, ARC_AGI's
+    # docs/superpowers/specs/2026-08-23-trajectory-reasoner-design.md).
+    # Pure runtime/orchestration bookkeeping, not a learned/inferred fact --
+    # deliberately NOT in PROVENANCE_TABLES, same as TaskGraph/TaskNode
+    # above. thread_id is a deterministic composite key
+    # (f"{task_id}::{anchor_type}::{anchor_ref}"), giving the O(1)
+    # primary-key lookup the design spec's resume path requires without a
+    # separate index. Only arc_start_or_resume_thread (read/create) is
+    # implemented so far -- arc_write_thread_state/arc_write_cycle/
+    # arc_confirm_cycle and the Attempt/Cycle nodes from the full spec are
+    # deliberately out of scope for B369, left for follow-up cards.
+    "InvestigationThread": """
+        thread_id         STRING,
+        task_id           STRING,
+        anchor_ref        STRING,
+        anchor_type       STRING,
+        state             STRING,
+        state_updated_at  TIMESTAMP,
+        created_at        TIMESTAMP,
+        PRIMARY KEY (thread_id)
+    """,
+
     # B323 — traversable agent-as-node provenance. worker_id follows the same
     # "agent:<id>" convention as B312's `source` column (see SOLVED_BY_TABLES
     # comment above); model_name/provider are best-effort and may be NULL.
@@ -1423,6 +1446,12 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS REQUIRES_ENTITY (FROM VictoryCondition TO GridEntity, requirement STRING)",
     # B309 — A176: Transition -> the GridEntity it was attributed to (entity_ref)
     "CREATE REL TABLE IF NOT EXISTS TRANSITION_OF (FROM Transition TO GridEntity)",
+    # B369 — InvestigationThread -> its anchor. Two separate rel tables, not
+    # one polymorphic "ANCHORED_ON" as the design spec's diagram shows --
+    # Kuzu rel tables are typed to a fixed FROM/TO node pair (same
+    # constraint ENTITY_HYPOTHESIS/ENTITY_RULE already worked around above).
+    "CREATE REL TABLE IF NOT EXISTS ANCHORED_ON_ENTITY (FROM InvestigationThread TO GridEntity)",
+    "CREATE REL TABLE IF NOT EXISTS ANCHORED_ON_GOAL (FROM InvestigationThread TO Hypothesis)",
     # B225 — ARC Artifact Ingestion relationships
     "CREATE REL TABLE IF NOT EXISTS ARC_RUN_HAS_TASK (FROM ArcRun TO ArcTaskResult)",
     "CREATE REL TABLE IF NOT EXISTS ARC_RUN_HAS_ARTIFACT (FROM ArcRun TO ArcArtifact)",

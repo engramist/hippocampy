@@ -43,6 +43,7 @@ EXPECTED_ARC_TOOLS = {
     "record_rule",
     "get_rules_for_action",
     "get_transferred_rules",
+    "arc_start_or_resume_thread",
 }
 
 
@@ -857,3 +858,155 @@ async def test_b363_update_goal_confidence_second_call_matches_not_creates(b309_
     )
     assert second["created"] is False
     assert second["gated_confidence"] == pytest.approx(0.5)
+
+
+# ---------------------------------------------------------------------------
+# B369/A201 — arc_start_or_resume_thread, investigation-thread durability
+# for ARC_AGI's trajectory Annatar (docs/handoff/B278-investigation-thread-
+# schema.md). Real KuzuDB per the design spec's own testing section
+# ("Fixture-graph tests against real Kuzu... for arc_start_or_resume_
+# thread's resume lookup").
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_start_thread_creates_new_when_none_exists(b309_db):
+    start_thread = TOOL_HANDLERS["arc_start_or_resume_thread"]
+
+    result = await start_thread(
+        {"task_id": "b369-fresh", "anchor_ref": "goal-1", "anchor_type": "goal"},
+        b309_db, {},
+    )
+
+    assert result["resumed"] is False
+    assert result["state"] == "exploring"
+    assert result["last_cycle"] is None
+    assert result["thread_id"] == "b369-fresh::goal::goal-1"
+
+
+@pytest.mark.asyncio
+async def test_start_thread_resumes_existing_non_terminal(b309_db):
+    start_thread = TOOL_HANDLERS["arc_start_or_resume_thread"]
+    task_id = "b369-resume"
+
+    first = await start_thread(
+        {"task_id": task_id, "anchor_ref": "goal-1", "anchor_type": "goal"},
+        b309_db, {},
+    )
+    assert first["resumed"] is False
+
+    # A real caller would get here via arc_write_thread_state (not yet
+    # implemented -- see backlog/B369.md); write the state transition
+    # directly to isolate this test to the resume-lookup behavior alone.
+    await b309_db.execute_write(
+        "MATCH (t:InvestigationThread {thread_id: $tid}) SET t.state = 'deepening'",
+        {"tid": first["thread_id"]},
+    )
+
+    second = await start_thread(
+        {"task_id": task_id, "anchor_ref": "goal-1", "anchor_type": "goal"},
+        b309_db, {},
+    )
+    assert second["thread_id"] == first["thread_id"]
+    assert second["resumed"] is True
+    assert second["state"] == "deepening"
+    assert second["last_cycle"] is None  # arc_write_cycle not implemented yet
+
+
+@pytest.mark.asyncio
+async def test_start_thread_reopens_terminal_thread(b309_db):
+    """A thread found in a terminal state (satisfied/exhausted) must not be
+    resumed as-is -- it's reopened fresh on the same anchor, not stuck."""
+    start_thread = TOOL_HANDLERS["arc_start_or_resume_thread"]
+    task_id = "b369-reopen"
+
+    first = await start_thread(
+        {"task_id": task_id, "anchor_ref": 42, "anchor_type": "entity"},
+        b309_db, {},
+    )
+    await b309_db.execute_write(
+        "MATCH (t:InvestigationThread {thread_id: $tid}) SET t.state = 'satisfied'",
+        {"tid": first["thread_id"]},
+    )
+
+    second = await start_thread(
+        {"task_id": task_id, "anchor_ref": 42, "anchor_type": "entity"},
+        b309_db, {},
+    )
+    assert second["thread_id"] == first["thread_id"], "reuses the same deterministic thread_id"
+    assert second["resumed"] is False, "a terminal thread is a fresh start, not a resume"
+    assert second["state"] == "exploring"
+
+
+@pytest.mark.asyncio
+async def test_start_thread_rejects_invalid_anchor_type(b309_db):
+    start_thread = TOOL_HANDLERS["arc_start_or_resume_thread"]
+
+    result = await start_thread(
+        {"task_id": "b369-bad", "anchor_ref": "x", "anchor_type": "bogus"},
+        b309_db, {},
+    )
+    assert "error" in result
+
+
+@pytest.mark.asyncio
+async def test_start_thread_links_entity_anchor_when_entity_exists(b309_db):
+    perceive = TOOL_HANDLERS["arc_perceive_state"]
+    start_thread = TOOL_HANDLERS["arc_start_or_resume_thread"]
+    task_id = "b369-entity-link"
+
+    await perceive(
+        {"task_id": task_id, "step": 0, "grid_hash": "h0",
+         "entities": [{"color_id": 3, "region_index": 7,
+                       "centroid_row": 1.0, "centroid_col": 1.0, "pixel_count": 1}]},
+        b309_db, {},
+    )
+
+    result = await start_thread(
+        {"task_id": task_id, "anchor_ref": 7, "anchor_type": "entity"},
+        b309_db, {},
+    )
+
+    linked = b309_db.execute(
+        "MATCH (t:InvestigationThread {thread_id: $tid})-[:ANCHORED_ON_ENTITY]->(e:GridEntity) "
+        "RETURN e.region_index",
+        {"tid": result["thread_id"]},
+    )
+    row = linked.get_next() if linked.has_next() else None
+    assert row is not None, "ANCHORED_ON_ENTITY edge must exist once the GridEntity is real"
+    assert row[0] == 7
+
+
+@pytest.mark.asyncio
+async def test_start_thread_missing_entity_anchor_does_not_error(b309_db):
+    """anchor_type='entity' referencing a region_index with no matching
+    GridEntity yet must not fail the call -- the edge is best-effort."""
+    start_thread = TOOL_HANDLERS["arc_start_or_resume_thread"]
+
+    result = await start_thread(
+        {"task_id": "b369-no-entity-yet", "anchor_ref": 999, "anchor_type": "entity"},
+        b309_db, {},
+    )
+    assert "error" not in result
+    assert result["state"] == "exploring"
+
+
+@pytest.mark.asyncio
+async def test_start_thread_links_goal_anchor_when_hypothesis_exists(b309_db):
+    start_thread = TOOL_HANDLERS["arc_start_or_resume_thread"]
+    task_id = "b369-goal-link"
+    await _create_hypothesis(b309_db, "b369-hyp-1", task_id, "test hypothesis")
+
+    result = await start_thread(
+        {"task_id": task_id, "anchor_ref": "b369-hyp-1", "anchor_type": "goal"},
+        b309_db, {},
+    )
+
+    linked = b309_db.execute(
+        "MATCH (t:InvestigationThread {thread_id: $tid})-[:ANCHORED_ON_GOAL]->(h:Hypothesis) "
+        "RETURN h.id",
+        {"tid": result["thread_id"]},
+    )
+    row = linked.get_next() if linked.has_next() else None
+    assert row is not None
+    assert row[0] == "b369-hyp-1"

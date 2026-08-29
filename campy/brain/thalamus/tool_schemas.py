@@ -949,6 +949,24 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "arc_start_or_resume_thread",
+        "description": (
+            "Read or create an investigation thread for ARC_AGI's trajectory Annatar, keyed by "
+            "(task_id, anchor_type, anchor_ref). Returns the existing non-terminal thread (resumed) "
+            "or creates a new one in state 'exploring'. A terminal thread (satisfied/exhausted) is "
+            "reopened as a fresh, non-resumed start on the same anchor."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "anchor_ref": {"type": ["string", "integer"]},
+                "anchor_type": {"type": "string", "enum": ["goal", "entity"]},
+            },
+            "required": ["task_id", "anchor_ref", "anchor_type"],
+        },
+    },
+    {
         "name": "memory_decision",
         "description": (
             "Recommend whether and how to recall SideQuests memory for the current user prompt. "

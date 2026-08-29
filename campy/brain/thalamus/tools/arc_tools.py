@@ -26,6 +26,7 @@ from campy.brain.thalamus.tools.arc_queries import (
     arc_perceive_state,
     arc_record_action_effect,
     arc_record_reward_prediction_error,
+    arc_start_or_resume_thread,
     record_rule,
     record_transition,
     arc_update_goal_confidence,
