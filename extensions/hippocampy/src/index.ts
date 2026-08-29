@@ -906,6 +906,12 @@ export default {
       fingerprint: Type.Optional(Type.String({ description: "Structural fingerprint, e.g. ACTION6:small" })),
     }, { additionalProperties: true });
 
+    const investigationThreadParams = Type.Object({
+      task_id: Type.String({ description: "ARC task identifier" }),
+      anchor_ref: Type.Union([Type.String(), Type.Number()], { description: "Goal id or entity_ref this thread is anchored on" }),
+      anchor_type: Type.Union([Type.Literal("goal"), Type.Literal("entity")]),
+    }, { additionalProperties: true });
+
     const arcQueryToolDefinitions: BrainToolDefinition[] = [
       { name: "arc_perceive_state", label: "ARC Perceive State", description: "Ingest an ARC grid observation and update the graph-backed state.", parameters: arcPerceiveStateParams },
       { name: "arc_get_game_context", label: "ARC Game Context", description: "Return a compact episodic summary of the current ARC game state.", parameters: arcTaskParams },
@@ -928,6 +934,7 @@ export default {
       { name: "record_rule", label: "Record Rule", description: "Confirm, falsify, or create causal Rule nodes from candidate signatures.", parameters: recordRuleParams },
       { name: "get_rules_for_action", label: "Rules For Action", description: "Retrieve live (unfalsified) causal rules for an action.", parameters: arcTaskActionParams },
       { name: "get_transferred_rules", label: "Transferred Rules", description: "Retrieve live rules recorded under other task_ids matching a structural fingerprint (cross-context transfer).", parameters: transferredRulesParams },
+      { name: "arc_start_or_resume_thread", label: "ARC Start Or Resume Thread", description: "Read or create an investigation thread for the trajectory Annatar, keyed by (task_id, anchor_type, anchor_ref).", parameters: investigationThreadParams },
     ];
 
     const memoryDecisionParams = Type.Object({
