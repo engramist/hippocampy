@@ -1062,6 +1062,113 @@ async def get_transferred_rules(params: dict, db: KuzuClient, config: dict) -> d
     return {"rules": rules}
 
 
+_TERMINAL_THREAD_STATES = {"satisfied", "exhausted"}
+
+
+async def _link_thread_anchor(
+    db: KuzuClient, task_id: Any, thread_id: str, anchor_ref: Any, anchor_type: str
+) -> None:
+    """B369: best-effort ANCHORED_ON edge, mirroring `_link_entity_hypothesis`
+    above -- silently no-ops if the target node doesn't exist yet (e.g. a
+    "goal" anchor referencing a Hypothesis not yet created). Two separate
+    rel tables (ANCHORED_ON_ENTITY / ANCHORED_ON_GOAL), not one polymorphic
+    edge -- see schema.py's comment on why."""
+    if anchor_type == "entity":
+        try:
+            entity_ref_int = int(anchor_ref)
+        except (TypeError, ValueError):
+            return
+        await db.execute_write(
+            "MATCH (t:InvestigationThread {thread_id: $tid}), "
+            "(ge:GridEntity {task_id: $task, region_index: $eref}) "
+            "WITH t, ge LIMIT 1 "
+            "MERGE (t)-[:ANCHORED_ON_ENTITY]->(ge)",
+            {"tid": thread_id, "task": task_id, "eref": entity_ref_int},
+        )
+    elif anchor_type == "goal":
+        await db.execute_write(
+            "MATCH (t:InvestigationThread {thread_id: $tid}), (h:Hypothesis {id: $hid}) "
+            "WITH t, h LIMIT 1 "
+            "MERGE (t)-[:ANCHORED_ON_GOAL]->(h)",
+            {"tid": thread_id, "hid": str(anchor_ref)},
+        )
+
+
+async def arc_start_or_resume_thread(params: dict, db: KuzuClient, config: dict) -> dict:
+    """B369/A201: read-or-create an InvestigationThread for ARC_AGI's
+    trajectory Annatar (docs/handoff/B278-investigation-thread-schema.md).
+
+    Only this one tool is implemented -- arc_write_thread_state/
+    arc_write_cycle/arc_confirm_cycle and the Attempt/Cycle nodes from the
+    full design spec are deliberately out of scope here (see backlog/B369.md).
+    Without them, `last_cycle` is always null and a resumed thread's state
+    can only ever be whatever it was created with -- an honest, documented
+    interim gap, not a bug.
+
+    thread_id is a deterministic composite key
+    (f"{task_id}::{anchor_type}::{anchor_ref}"), giving the spec's required
+    O(1) primary-key resume lookup without a separate index.
+
+    A thread found in a terminal state (satisfied/exhausted) is reopened
+    -- reset to "exploring" and returned as a fresh (non-resumed) start on
+    the same anchor, rather than either resuming a dead thread or minting
+    a new thread_id that would break the deterministic-key invariant for
+    future lookups on this same anchor. This is a judgment call the spec
+    doesn't spell out explicitly; documented here and in backlog/B369.md.
+    """
+    task_id = params.get("task_id")
+    anchor_ref = params.get("anchor_ref")
+    anchor_type = params.get("anchor_type")
+    if not task_id:
+        return _error("task_id is required")
+    if anchor_ref is None:
+        return _error("anchor_ref is required")
+    if anchor_type not in ("goal", "entity"):
+        return _error("anchor_type must be 'goal' or 'entity'")
+
+    thread_id = f"{task_id}::{anchor_type}::{anchor_ref}"
+
+    existing = db.execute(
+        "MATCH (t:InvestigationThread {thread_id: $tid}) RETURN t.state",
+        {"tid": thread_id},
+    )
+    row = _first_row(existing)
+
+    if row is not None:
+        current_state = _row_get(row, "t.state", 0, "exploring") or "exploring"
+        if current_state not in _TERMINAL_THREAD_STATES:
+            await _link_thread_anchor(db, task_id, thread_id, anchor_ref, anchor_type)
+            return {
+                "thread_id": thread_id, "state": current_state,
+                "resumed": True, "last_cycle": None,
+            }
+        # Terminal -- reopen as a fresh investigation on the same anchor
+        # rather than minting a new thread_id (see docstring above).
+        await db.execute_write(
+            "MATCH (t:InvestigationThread {thread_id: $tid}) "
+            "SET t.state = 'exploring', t.state_updated_at = current_timestamp()",
+            {"tid": thread_id},
+        )
+        await _link_thread_anchor(db, task_id, thread_id, anchor_ref, anchor_type)
+        return {
+            "thread_id": thread_id, "state": "exploring",
+            "resumed": False, "last_cycle": None,
+        }
+
+    await db.execute_write(
+        "MERGE (t:InvestigationThread {thread_id: $tid}) "
+        "SET t.task_id = $task, t.anchor_ref = $aref, t.anchor_type = $atype, "
+        "    t.state = 'exploring', t.state_updated_at = current_timestamp(), "
+        "    t.created_at = current_timestamp()",
+        {"tid": thread_id, "task": task_id, "aref": str(anchor_ref), "atype": anchor_type},
+    )
+    await _link_thread_anchor(db, task_id, thread_id, anchor_ref, anchor_type)
+    return {
+        "thread_id": thread_id, "state": "exploring",
+        "resumed": False, "last_cycle": None,
+    }
+
+
 __all__ = [
     "arc_perceive_state",
     "arc_get_game_context",
@@ -1084,4 +1191,5 @@ __all__ = [
     "record_rule",
     "get_rules_for_action",
     "get_transferred_rules",
+    "arc_start_or_resume_thread",
 ]
