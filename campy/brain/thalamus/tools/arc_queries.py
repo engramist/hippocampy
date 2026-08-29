@@ -1078,19 +1078,14 @@ async def _link_thread_anchor(
             entity_ref_int = int(anchor_ref)
         except (TypeError, ValueError):
             return
-        await db.execute_write(
-            "MATCH (t:InvestigationThread {thread_id: $tid}), "
-            "(ge:GridEntity {task_id: $task, region_index: $eref}) "
-            "WITH t, ge LIMIT 1 "
-            "MERGE (t)-[:ANCHORED_ON_ENTITY]->(ge)",
-            {"tid": thread_id, "task": task_id, "eref": entity_ref_int},
+        await _gateway(db).run(
+            "arc.link_thread_to_entity_anchor",
+            tid=thread_id, task=task_id, eref=entity_ref_int,
         )
     elif anchor_type == "goal":
-        await db.execute_write(
-            "MATCH (t:InvestigationThread {thread_id: $tid}), (h:Hypothesis {id: $hid}) "
-            "WITH t, h LIMIT 1 "
-            "MERGE (t)-[:ANCHORED_ON_GOAL]->(h)",
-            {"tid": thread_id, "hid": str(anchor_ref)},
+        await _gateway(db).run(
+            "arc.link_thread_to_goal_anchor",
+            tid=thread_id, hid=str(anchor_ref),
         )
 
 
@@ -1128,14 +1123,10 @@ async def arc_start_or_resume_thread(params: dict, db: KuzuClient, config: dict)
 
     thread_id = f"{task_id}::{anchor_type}::{anchor_ref}"
 
-    existing = db.execute(
-        "MATCH (t:InvestigationThread {thread_id: $tid}) RETURN t.state",
-        {"tid": thread_id},
-    )
-    row = _first_row(existing)
+    rows = await _gateway(db).run("arc.fetch_investigation_thread_state", tid=thread_id)
 
-    if row is not None:
-        current_state = _row_get(row, "t.state", 0, "exploring") or "exploring"
+    if rows:
+        current_state = rows[0].get("t.state") or "exploring"
         if current_state not in _TERMINAL_THREAD_STATES:
             await _link_thread_anchor(db, task_id, thread_id, anchor_ref, anchor_type)
             return {
@@ -1144,23 +1135,16 @@ async def arc_start_or_resume_thread(params: dict, db: KuzuClient, config: dict)
             }
         # Terminal -- reopen as a fresh investigation on the same anchor
         # rather than minting a new thread_id (see docstring above).
-        await db.execute_write(
-            "MATCH (t:InvestigationThread {thread_id: $tid}) "
-            "SET t.state = 'exploring', t.state_updated_at = current_timestamp()",
-            {"tid": thread_id},
-        )
+        await _gateway(db).run("arc.reopen_investigation_thread", tid=thread_id)
         await _link_thread_anchor(db, task_id, thread_id, anchor_ref, anchor_type)
         return {
             "thread_id": thread_id, "state": "exploring",
             "resumed": False, "last_cycle": None,
         }
 
-    await db.execute_write(
-        "MERGE (t:InvestigationThread {thread_id: $tid}) "
-        "SET t.task_id = $task, t.anchor_ref = $aref, t.anchor_type = $atype, "
-        "    t.state = 'exploring', t.state_updated_at = current_timestamp(), "
-        "    t.created_at = current_timestamp()",
-        {"tid": thread_id, "task": task_id, "aref": str(anchor_ref), "atype": anchor_type},
+    await _gateway(db).run(
+        "arc.create_investigation_thread",
+        tid=thread_id, task=task_id, aref=str(anchor_ref), atype=anchor_type,
     )
     await _link_thread_anchor(db, task_id, thread_id, anchor_ref, anchor_type)
     return {
