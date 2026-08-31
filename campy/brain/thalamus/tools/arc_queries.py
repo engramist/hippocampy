@@ -91,6 +91,7 @@ async def arc_perceive_state(params: dict, db: KuzuClient, config: dict) -> dict
         return _error("step is required")
 
     entities = params.get("entities") or []
+    disappeared_entities = params.get("disappeared_entities") or []
     snapshot_id = f"{task_id}_step{step}"
 
     await db.execute_write(
@@ -187,10 +188,30 @@ async def arc_perceive_state(params: dict, db: KuzuClient, config: dict) -> dict
             {"eid": entity_id, "aeid": effect_id, "dr": delta_row, "dc": delta_col},
         )
 
+    # B372: ARC_AGI's A221 Finding 2 -- entities present last frame, absent
+    # this frame. One EntityDisappearance row per (task_id, entity, step),
+    # never merged/updated per-entity -- see schema.py's comment on why a
+    # later reappearance doesn't touch or supersede this record. Naturally
+    # does no write work when the list is empty (the common case).
+    for ent in disappeared_entities:
+        entity_id = f"{task_id}_e{ent.get('color_id', 0)}_{ent.get('region_index', 0)}"
+        disappearance_id = f"{entity_id}_disappear_step{step}"
+        await _gateway(db).run(
+            "arc.record_entity_disappearance",
+            did=disappearance_id, task=task_id, eid=entity_id,
+            ridx=ent.get("region_index", 0), cid=ent.get("color_id"), step=step,
+            cr=ent.get("centroid_row"), cc=ent.get("centroid_col"),
+            pc=ent.get("pixel_count"),
+        )
+        await _gateway(db).run(
+            "arc.link_entity_disappearance", eid=entity_id, did=disappearance_id,
+        )
+
     return {
         "ok": True,
         "snapshot_id": snapshot_id,
         "entity_count": len(entities),
+        "disappeared_count": len(disappeared_entities),
         "delta_from_previous": None,
         "action_taken": params.get("action_taken"),
         "effect_id": effect_id if effect_written else None,

@@ -94,4 +94,40 @@ ARC_QUERIES: tuple[NamedQuery, ...] = (
             "doesn't exist yet."
         ),
     ),
+    # B372 — arc_perceive_state's new disappeared_entities handling (ARC_AGI's
+    # A221 Finding 2). Written as NamedQuery from the start to stay under the
+    # Cypher ratchet.
+    NamedQuery(
+        name="arc.record_entity_disappearance",
+        cypher="""
+            MERGE (d:EntityDisappearance {disappearance_id: $did})
+            SET d.task_id = $task, d.entity_id = $eid, d.region_index = $ridx,
+                d.color_id = $cid, d.step = $step, d.centroid_row = $cr,
+                d.centroid_col = $cc, d.pixel_count = $pc,
+                d.created_at = current_timestamp()
+            """,
+        params=("did", "task", "eid", "ridx", "cid", "step", "cr", "cc", "pc"),
+        mutating=True,
+        description=(
+            "B372: one row per observed disappearance (task_id, entity, step) -- "
+            "deliberately event-style, never merged/updated per-entity, so a later "
+            "reappearance doesn't overwrite an earlier disappearance's history."
+        ),
+    ),
+    NamedQuery(
+        name="arc.link_entity_disappearance",
+        cypher="""
+            MATCH (e:GridEntity {entity_id: $eid}), (d:EntityDisappearance {disappearance_id: $did})
+            WITH e, d LIMIT 1
+            MERGE (e)-[:DISAPPEARED]->(d)
+            """,
+        params=("eid", "did"),
+        mutating=True,
+        description=(
+            "B372: best-effort DISAPPEARED edge -- in practice the GridEntity should "
+            "always already exist (disappearance implies a prior frame observed it), "
+            "but no-ops rather than errors if it somehow doesn't, matching this file's "
+            "existing best-effort-edge convention."
+        ),
+    ),
 )

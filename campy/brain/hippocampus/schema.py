@@ -48,7 +48,7 @@ PROVENANCE_TABLES = (
     "DocumentExtract", "WorkSummary", "WorkArtifact",
     "ArcMechanic", "ArcActionPattern", "ArcEffectPattern",
     "ArcPrecondition", "ArcFailureMode", "ArcRecoveryPolicy",
-    "ArcWorldModelStep",
+    "ArcWorldModelStep", "EntityDisappearance",
 )
 
 # ---------------------------------------------------------------------------
@@ -839,6 +839,43 @@ NODE_TABLES = {
         PRIMARY KEY (effect_id)
     """,
 
+    # B372 — ARC_AGI's A221 Finding 2: disappearance is the one genuinely new
+    # causal fact worth a graph write (A175's correspondence tracking had no
+    # disappearance detection before A219). One row per OBSERVED disappearance
+    # (task_id, entity, step) -- deliberately event-style like Transition/
+    # ActionEffect above, not a mutable GridEntity property, so an entity that
+    # disappears and later reappears (a real possibility in some ARC-AGI-3
+    # game mechanics, e.g. blinking/toggled objects -- not assumed impossible)
+    # keeps every disappearance as its own historical fact rather than one
+    # being overwritten by the next. A reappearance does NOT supersede an
+    # earlier disappearance record -- "this entity was absent at step N" and
+    # "this entity is present again at step M" are both true, not
+    # contradictory; supersession is reserved for a disappearance later found
+    # to be wrong (e.g. a perception glitch), not for the entity's own
+    # legitimate comeback.
+    "EntityDisappearance": """
+        disappearance_id  STRING,
+        task_id           STRING,
+        entity_id         STRING,
+        region_index      INT32,
+        color_id          INT32,
+        step              INT32,
+        centroid_row      DOUBLE,
+        centroid_col      DOUBLE,
+        pixel_count       INT32,
+        created_at        TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
+        authority            STRING,
+        content_hash         STRING,
+        PRIMARY KEY (disappearance_id)
+    """,
+
     "ChunkExecution": """
         execution_id     STRING,
         task_id          STRING,
@@ -1428,6 +1465,8 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS CONTAINS_ENTITY (FROM GridEntity TO GridEntity, step INT32)",
     "CREATE REL TABLE IF NOT EXISTS MOVED_BY (FROM GridEntity TO ActionEffect, delta_row DOUBLE, delta_col DOUBLE)",
     "CREATE REL TABLE IF NOT EXISTS RESPONDS_TO (FROM GridEntity TO ActionEffect, effect_type STRING)",
+    # B372 — GridEntity -> each disappearance it was ever observed to have.
+    "CREATE REL TABLE IF NOT EXISTS DISAPPEARED (FROM GridEntity TO EntityDisappearance)",
     "CREATE REL TABLE IF NOT EXISTS DERIVED_FROM_FACT (FROM ActionFact TO ActionEffect, step INT32)",
     "CREATE REL TABLE IF NOT EXISTS BLOCKS (FROM GridEntity TO GridEntity, action_id STRING, step INT32)",
     "CREATE REL TABLE IF NOT EXISTS ENTITY_HYPOTHESIS (FROM GridEntity TO Hypothesis, weight FLOAT, step INT32)",

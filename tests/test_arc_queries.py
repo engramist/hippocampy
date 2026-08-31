@@ -1010,3 +1010,149 @@ async def test_start_thread_links_goal_anchor_when_hypothesis_exists(b309_db):
     row = linked.get_next() if linked.has_next() else None
     assert row is not None
     assert row[0] == "b369-hyp-1"
+
+
+# ---------------------------------------------------------------------------
+# B372 — arc_perceive_state's disappeared_entities handling (ARC_AGI's A221
+# Finding 2). Real KuzuDB, same b309_db fixture as the rest of this file's
+# production-schema coverage.
+# ---------------------------------------------------------------------------
+
+
+def _disappearance_rows(db, task_id: str, entity_id: str) -> list:
+    result = db.execute(
+        "MATCH (d:EntityDisappearance {task_id: $tid, entity_id: $eid}) "
+        "RETURN d.step, d.centroid_row, d.centroid_col ORDER BY d.step",
+        {"tid": task_id, "eid": entity_id},
+    )
+    rows = []
+    while result.has_next():
+        rows.append(result.get_next())
+    return rows
+
+
+@pytest.mark.asyncio
+async def test_perceive_state_records_disappearance(b309_db):
+    perceive = TOOL_HANDLERS["arc_perceive_state"]
+    task_id = "b372-disappear"
+    entity_id = f"{task_id}_e5_9"
+
+    # Step 0: entity present.
+    await perceive(
+        {"task_id": task_id, "step": 0, "grid_hash": "h0",
+         "entities": [{"color_id": 5, "region_index": 9,
+                       "centroid_row": 3.0, "centroid_col": 4.0, "pixel_count": 6}]},
+        b309_db, {},
+    )
+
+    # Step 1: entity absent from `entities`, reported in `disappeared_entities`.
+    result = await perceive(
+        {"task_id": task_id, "step": 1, "grid_hash": "h1", "entities": [],
+         "disappeared_entities": [{"color_id": 5, "region_index": 9,
+                                    "centroid_row": 3.0, "centroid_col": 4.0, "pixel_count": 6}]},
+        b309_db, {},
+    )
+
+    assert result["ok"] is True
+    assert result["disappeared_count"] == 1
+
+    rows = _disappearance_rows(b309_db, task_id, entity_id)
+    assert rows == [[1, 3.0, 4.0]]
+
+    linked = b309_db.execute(
+        "MATCH (e:GridEntity {entity_id: $eid})-[:DISAPPEARED]->(d:EntityDisappearance) "
+        "RETURN d.step",
+        {"eid": entity_id},
+    )
+    assert linked.has_next()
+    assert linked.get_next()[0] == 1
+
+
+@pytest.mark.asyncio
+async def test_perceive_state_empty_disappeared_entities_writes_nothing(b309_db):
+    perceive = TOOL_HANDLERS["arc_perceive_state"]
+    task_id = "b372-no-disappear"
+
+    result = await perceive(
+        {"task_id": task_id, "step": 0, "grid_hash": "h0",
+         "entities": [{"color_id": 1, "region_index": 1,
+                       "centroid_row": 1.0, "centroid_col": 1.0, "pixel_count": 2}]},
+        b309_db, {},
+    )
+
+    assert result["disappeared_count"] == 0
+    count_result = b309_db.execute(
+        "MATCH (d:EntityDisappearance {task_id: $tid}) RETURN count(d)", {"tid": task_id},
+    )
+    assert count_result.get_next()[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_perceive_state_reappearance_does_not_touch_earlier_disappearance(b309_db):
+    """A disappearance is a historical fact, not a mutable status -- a later
+    reappearance must not correct, supersede, or delete it."""
+    perceive = TOOL_HANDLERS["arc_perceive_state"]
+    task_id = "b372-reappear"
+    entity_id = f"{task_id}_e2_3"
+    entity_payload = {"color_id": 2, "region_index": 3,
+                       "centroid_row": 5.0, "centroid_col": 6.0, "pixel_count": 4}
+
+    await perceive(
+        {"task_id": task_id, "step": 0, "grid_hash": "h0", "entities": [entity_payload]},
+        b309_db, {},
+    )
+    await perceive(
+        {"task_id": task_id, "step": 1, "grid_hash": "h1", "entities": [],
+         "disappeared_entities": [entity_payload]},
+        b309_db, {},
+    )
+
+    # Step 2: the same entity_ref reappears.
+    reappear_payload = {**entity_payload, "centroid_row": 7.0}
+    result = await perceive(
+        {"task_id": task_id, "step": 2, "grid_hash": "h2", "entities": [reappear_payload]},
+        b309_db, {},
+    )
+    assert result["ok"] is True
+
+    # The step-1 disappearance record is untouched.
+    rows = _disappearance_rows(b309_db, task_id, entity_id)
+    assert rows == [[1, 5.0, 6.0]]
+
+    # The GridEntity itself reflects the reappearance's new position, via the
+    # same existing entity-loop every other perceive_state call already uses.
+    ge = b309_db.execute(
+        "MATCH (e:GridEntity {entity_id: $eid}) RETURN e.centroid_row, e.last_updated_step",
+        {"eid": entity_id},
+    )
+    row = ge.get_next()
+    assert row[0] == 7.0
+    assert row[1] == 2
+
+
+@pytest.mark.asyncio
+async def test_perceive_state_repeated_disappearance_keeps_full_history(b309_db):
+    """An entity that disappears, reappears, then disappears again gets TWO
+    distinct EntityDisappearance rows, not one overwritten record -- proves
+    the event-log design, not just that a single disappearance survives."""
+    perceive = TOOL_HANDLERS["arc_perceive_state"]
+    task_id = "b372-blink"
+    entity_id = f"{task_id}_e0_1"
+    entity_payload = {"color_id": 0, "region_index": 1,
+                       "centroid_row": 1.0, "centroid_col": 1.0, "pixel_count": 3}
+
+    await perceive({"task_id": task_id, "step": 0, "entities": [entity_payload]}, b309_db, {})
+    await perceive(
+        {"task_id": task_id, "step": 1, "entities": [],
+         "disappeared_entities": [entity_payload]},
+        b309_db, {},
+    )
+    await perceive({"task_id": task_id, "step": 2, "entities": [entity_payload]}, b309_db, {})
+    await perceive(
+        {"task_id": task_id, "step": 3, "entities": [],
+         "disappeared_entities": [entity_payload]},
+        b309_db, {},
+    )
+
+    rows = _disappearance_rows(b309_db, task_id, entity_id)
+    assert [r[0] for r in rows] == [1, 3]
