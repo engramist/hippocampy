@@ -283,6 +283,98 @@ async def test_resurrect_no_archived_nodes_no_error():
     assert e == 0
 
 
+@pytest.mark.asyncio
+async def test_resurrect_applies_candidate_limit_to_the_query():
+    """B373: the per-table scan is capped -- previously unbounded, which on
+    a table with tens of thousands of archived rows meant that many
+    synchronous vector_search calls in one sweep."""
+    from campy.brain.brainstem.sweep import _resurrect_archived
+
+    seen_queries = []
+
+    class LimitCheckingDB:
+        def execute(self, q, p=None):
+            seen_queries.append(q)
+            class Empty:
+                def has_next(self): return False
+            return Empty()
+        async def execute_write(self, q, p=None):
+            pass
+        def vector_search(self, *a, **kw):
+            return []
+
+    await _resurrect_archived(LimitCheckingDB(), resurrection_threshold=0.85, candidate_limit=7)
+    assert any("LIMIT 7" in q for q in seen_queries)
+
+
+@pytest.mark.asyncio
+async def test_resurrect_does_not_block_the_event_loop():
+    """B373: this is the actual incident's regression test. Before this
+    fix, _resurrect_archived's per-node vector_search loop ran directly on
+    the calling (event loop) thread -- a slow scan meant nothing else in
+    the daemon's asyncio loop could run for the entire duration. Confirmed
+    live via sample(1) during a real occurrence: the main thread was
+    synchronously inside a single Kuzu call the whole time, and an
+    independent 15s-interval task (the periodic checkpoint) went
+    completely silent for 80+ seconds. Simulates the same shape here: a
+    slow synchronous scan running concurrently with an independent
+    "heartbeat" task, and asserts the heartbeat kept ticking throughout --
+    proof the scan is off the event loop thread, not just "usually fast
+    enough in practice."
+    """
+    import asyncio as _asyncio
+    from campy.brain.brainstem.sweep import _resurrect_archived
+
+    class SlowDB:
+        def execute(self, q, p=None):
+            import time
+            time.sleep(0.05)  # simulates the real Kuzu scan cost
+            class OneRow:
+                def __init__(self):
+                    self._done = False
+                def has_next(self):
+                    if self._done:
+                        return False
+                    self._done = True
+                    return True
+                def get_next(self):
+                    return ["id1", [0.1] * 384]
+            return OneRow()
+        async def execute_write(self, q, p=None):
+            pass
+        def vector_search(self, *a, **kw):
+            import time
+            time.sleep(0.05)
+            return []
+
+    heartbeat_ticks = []
+
+    async def heartbeat():
+        while True:
+            heartbeat_ticks.append(True)
+            await _asyncio.sleep(0.01)
+
+    hb_task = _asyncio.create_task(heartbeat())
+    try:
+        await _resurrect_archived(SlowDB(), resurrection_threshold=0.85)
+    finally:
+        hb_task.cancel()
+        try:
+            await hb_task
+        except _asyncio.CancelledError:
+            pass
+
+    # SWEEP_TABLES has 9 tables; SlowDB blocks ~0.1s (execute + one
+    # vector_search) per table, so the whole call takes ~0.9s. If the
+    # event loop were blocked the whole time, the heartbeat (10ms period)
+    # would tick only once or twice; if it's genuinely concurrent, it
+    # should tick dozens of times.
+    assert len(heartbeat_ticks) >= 20, (
+        f"only {len(heartbeat_ticks)} heartbeat ticks -- resurrection scan "
+        "appears to be blocking the event loop"
+    )
+
+
 # ---------------------------------------------------------------------------
 # _hebbian_promote
 # ---------------------------------------------------------------------------

@@ -118,6 +118,9 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
         sweep_interval      = pruning_cfg.get("sweep_interval_seconds", 300)
         archive_threshold   = float(pruning_cfg.get("archive_threshold", 0.10))
         resurrection_thresh = float(pruning_cfg.get("resurrection_threshold", 0.85))
+        resurrection_candidates_per_sweep = int(
+            pruning_cfg.get("resurrection_candidates_per_sweep", _DEFAULT_RESURRECTION_CANDIDATES_PER_SWEEP)
+        )
         # B279: vector_search now returns true cosine similarity, so this
         # config value is interpreted directly as a cosine threshold.
         decay_rates         = pruning_cfg.get("decay_rate", {})
@@ -165,7 +168,7 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
         summary["errors"] += e
 
         # Step 2: Resurrect archived nodes with active graph similarity
-        r, e = await _resurrect_archived(db, resurrection_thresh)
+        r, e = await _resurrect_archived(db, resurrection_thresh, resurrection_candidates_per_sweep)
         summary["resurrected"] += r
         summary["errors"]      += e
 
@@ -864,67 +867,107 @@ async def _apply_valence_decay(db) -> tuple[int, int]:
 # Step 2: Resurrection
 # ---------------------------------------------------------------------------
 
+_DEFAULT_RESURRECTION_CANDIDATES_PER_SWEEP = 200
+
+
+def _resurrect_candidates_sync(
+    db, table: str, pk_col: str, index_name: str,
+    resurrection_threshold: float, candidate_limit: int,
+) -> tuple[list, int]:
+    """B373: the synchronous, per-table resurrection scan -- one HNSW
+    `vector_search` call per archived+embedded node, previously run
+    directly on the asyncio event loop thread with no cap and no thread
+    offload. Confirmed via a live stack trace (sample(1) during a real
+    incident, cross-checked independently by two sessions) that this was
+    genuinely blocking the daemon's entire event loop -- a table with
+    tens of thousands of archived rows (this project's own Message table
+    has ~18k) means tens of thousands of synchronous Kuzu calls in one
+    unbroken Python loop, which grows without bound as more nodes get
+    archived over the graph's lifetime. `candidate_limit` bounds the
+    worst case per sweep per table; this whole function additionally runs
+    off the event loop thread via `asyncio.to_thread` in the caller below,
+    so even the bounded amount of work here can't block anything else.
+    Not a smart "most-worth-checking-first" ordering -- just Kuzu's
+    natural scan order, capped. A future improvement, not attempted here
+    under time pressure: round-robin/random sampling so the whole archive
+    gets covered across many sweeps instead of always re-checking the
+    same first N rows.
+    """
+    try:
+        result = db.execute(
+            f"MATCH (n:{table}) "
+            f"WHERE n.archived = true AND n.embedding IS NOT NULL "
+            f"RETURN n.{pk_col}, n.embedding "
+            f"LIMIT {int(candidate_limit)}",
+        )
+
+        archived_nodes = []
+        while result.has_next():
+            row = result.get_next()
+            if row[0] and row[1]:
+                archived_nodes.append((row[0], row[1]))
+
+    except Exception:
+        return [], 1
+
+    to_resurrect = []
+    errors = 0
+    for node_id, embedding in archived_nodes:
+        try:
+            # SW2 fix: fetch more results since we'll filter out archived
+            # neighbors. HNSW doesn't support prefiltering in 0.11.3, so
+            # we over-fetch and postfilter to active nodes only.
+            neighbors = db.vector_search(table, index_name, embedding, 20)
+            for neighbor in neighbors:
+                node  = neighbor["node"]
+                score = neighbor["score"]
+
+                # Skip self-match and archived neighbors.
+                # SW2: explicitly check archived=false to ensure we only
+                # compare against active (confirmed) nodes per spec.
+                if node.get(pk_col) == node_id:
+                    continue
+                if node.get("archived", True):
+                    continue
+
+                if score >= resurrection_threshold:
+                    to_resurrect.append(node_id)
+                    break  # one match is enough
+
+        except Exception:
+            errors += 1
+
+    return to_resurrect, errors
+
+
 async def _resurrect_archived(
     db,
     resurrection_threshold: float,
+    candidate_limit: int = _DEFAULT_RESURRECTION_CANDIDATES_PER_SWEEP,
 ) -> tuple[int, int]:
     """
-    For each archived node, search for similar active nodes in the same table
-    using the HNSW vector index. If any neighbor scores above
-    resurrection_threshold, un-archive the node and reset its strength.
+    For each archived node (up to `candidate_limit` per table per sweep),
+    search for similar active nodes in the same table using the HNSW vector
+    index. If any neighbor scores above resurrection_threshold, un-archive
+    the node and reset its strength.
 
     Strength reset to resurrection_threshold (not 1.0 — node was dormant and
     must earn full strength back through access per the Hebbian model).
 
     B279: resurrection_threshold is a true cosine similarity threshold.
+    B373: the actual scan runs off the event loop thread; see
+    _resurrect_candidates_sync's docstring for why.
 
     Returns (resurrected_count, error_count).
     """
     resurrected = errors = 0
 
     for table, pk_col, _, index_name in SWEEP_TABLES:
-        try:
-            result = db.execute(
-                f"MATCH (n:{table}) "
-                f"WHERE n.archived = true AND n.embedding IS NOT NULL "
-                f"RETURN n.{pk_col}, n.embedding",
-            )
-
-            archived_nodes = []
-            while result.has_next():
-                row = result.get_next()
-                if row[0] and row[1]:
-                    archived_nodes.append((row[0], row[1]))
-
-        except Exception:
-            errors += 1
-            continue
-
-        to_resurrect = []
-        for node_id, embedding in archived_nodes:
-            try:
-                # SW2 fix: fetch more results since we'll filter out archived
-                # neighbors. HNSW doesn't support prefiltering in 0.11.3, so
-                # we over-fetch and postfilter to active nodes only.
-                neighbors = db.vector_search(table, index_name, embedding, 20)
-                for neighbor in neighbors:
-                    node  = neighbor["node"]
-                    score = neighbor["score"]
-
-                    # Skip self-match and archived neighbors.
-                    # SW2: explicitly check archived=false to ensure we only
-                    # compare against active (confirmed) nodes per spec.
-                    if node.get(pk_col) == node_id:
-                        continue
-                    if node.get("archived", True):
-                        continue
-
-                    if score >= resurrection_threshold:
-                        to_resurrect.append(node_id)
-                        break  # one match is enough
-
-            except Exception:
-                errors += 1
+        to_resurrect, table_errors = await asyncio.to_thread(
+            _resurrect_candidates_sync, db, table, pk_col, index_name,
+            resurrection_threshold, candidate_limit,
+        )
+        errors += table_errors
 
         # B282: batch the resurrection updates (strength is a constant reset,
         # so a plain id list suffices).

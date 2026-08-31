@@ -88,6 +88,14 @@ decay_rate.document_extract   = 0.970
 archive_threshold       = 0.10   # archive node when pathway_strength falls below this
 resurrection_threshold  = 0.85   # un-archive if similarity to active node exceeds this
 sweep_interval_seconds  = 300    # background sweep: pruning + confidence re-scoring + resurrection
+# B373: cap on archived+embedded nodes checked per table per sweep during
+# resurrection. Each check is a real HNSW vector_search call; uncapped, a
+# table with tens of thousands of archived rows (this project's own Message
+# table reaches ~18k) turned this into tens of thousands of synchronous
+# Kuzu calls in one sweep, confirmed via a live stack trace to block the
+# daemon's entire event loop for 80+ seconds. 200 is a starting point, not
+# a tuned value.
+resurrection_candidates_per_sweep = 200
 
 [sweep.dreaming]
 # Dreaming / consolidation step - cluster Lessons and synthesize meta-lessons
