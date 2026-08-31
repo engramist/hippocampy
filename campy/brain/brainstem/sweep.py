@@ -1027,11 +1027,16 @@ async def _hebbian_promote(
                 text_a=pair["a_text"],
                 text_b=pair["b_text"],
             )
-            # S1 fix: use achat() to avoid blocking the event loop
-            if hasattr(llm_client, 'achat'):
-                raw = await llm_client.achat([{"role": "user", "content": prompt}])
-            else:
-                raw = llm_client.chat([{"role": "user", "content": prompt}])
+            # B371: the achat-or-else-plain-chat() branching used to be
+            # duplicated inline here, with the else branch calling
+            # llm_client.chat() synchronously with no await and no thread
+            # offload -- a real event-loop-blocking bug for any LLM client
+            # lacking achat (dead in this deployment's real Ollama-backed
+            # client, which always has achat, but a genuine latent bug).
+            # _call_llm() already implements this branching correctly and
+            # is used elsewhere in this file -- reuse it instead of a third
+            # copy of the same logic.
+            raw = await _call_llm(llm_client, prompt)
 
             parsed     = json.loads(raw.strip())
             rel_type   = parsed.get("relation_type")
@@ -1253,10 +1258,12 @@ async def _dream_consolidation(db, config: dict, llm_client: Optional[object]) -
                     f"Excerpts:\n{excerpts}\n\n"
                     "Return a short, stand-alone lesson text (title + 1-2-sentence summary + 1 actionable recommendation)."
                 )
-                if hasattr(llm_client, 'achat'):
-                    raw = await llm_client.achat([{"role": "user", "content": prompt}])
-                else:
-                    raw = await llm_client.chat([{"role": "user", "content": prompt}])
+                # B371: the else branch used to `await llm_client.chat(...)`
+                # -- chat() returns a plain str synchronously, so awaiting
+                # it would raise TypeError for any LLM client lacking achat.
+                # Reuse _call_llm() (already used elsewhere in this file)
+                # instead of a third copy of the achat-or-else branching.
+                raw = await _call_llm(llm_client, prompt)
                 synth_text = (raw or "").strip()
                 if not synth_text:
                     continue

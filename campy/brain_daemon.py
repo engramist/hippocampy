@@ -1165,6 +1165,19 @@ class BrainDaemon:
 # ---------------------------------------------------------------------------
 
 async def main():
+    # B371: daemon.log had no timestamps on any _logger.* line (only
+    # bare "%(levelname)s:%(name)s:%(message)s" via logging's last-resort
+    # handler, since nothing here ever called logging.basicConfig) --
+    # confirmed as the reason a real incident investigation couldn't tell
+    # whether ~4,900 repeated [IndexHygiene] warnings were a tight busy
+    # loop or (as directly verified) the cumulative total across this
+    # log's entire multi-month, never-rotated history. Does not add
+    # timestamps to the plain print() lines ([Sweep]/[Loop]/etc.) --
+    # a separate, smaller residual gap, not fixed here.
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     config = load_config()
     daemon = BrainDaemon(config)
 
