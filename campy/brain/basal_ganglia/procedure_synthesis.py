@@ -1,9 +1,18 @@
+from __future__ import annotations
 """Procedure synthesis — Basal Ganglia automation learning.
 
 Synthesize Procedure nodes from clusters of similar successful Plans.
 Uses LLM-assisted clustering.
 """
 import json
+from campy.brain.hippocampus.graph.gateway import get_gateway
+
+def _row_val(row, idx: int, key: str):
+    if isinstance(row, dict):
+        return row.get(key)
+    if isinstance(row, (list, tuple)) and idx < len(row):
+        return row[idx]
+    return getattr(row, key, None)
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -32,18 +41,14 @@ async def synthesize_procedures(db, config: dict, llm_client: Optional[object]) 
     )
 
     try:
-        q = (
-            "MATCH (p:Plan) WHERE p.valence > $min_valence AND p.status = 'completed' "
-            "AND p.strategy IS NOT NULL RETURN DISTINCT p.strategy"
-        )
-        r = db.execute(q, {"min_valence": min_valence})
+        gw = get_gateway(db)
+        rows = gw.run_sync("basal_ganglia.synthesis_get_distinct_strategies", min_valence=min_valence)
     except Exception:
         return 0, 1
 
     strategies = []
-    while r.has_next():
-        row = r.get_next()
-        s = row[0] or ""
+    for row in rows:
+        s = _row_val(row, 0, "p.strategy") or _row_val(row, 0, "strategy") or ""
         if s:
             strategies.append(s)
 
@@ -52,23 +57,22 @@ async def synthesize_procedures(db, config: dict, llm_client: Optional[object]) 
             break
 
         try:
-            pr = db.execute(
-                "MATCH (p:Plan) WHERE p.strategy = $strategy AND p.valence > $min_valence "
-                "AND p.status = 'completed' RETURN p.plan_id, p.goal, p.embedding, p.pathway_strength, p.confidence LIMIT 20",
-                {"strategy": strategy, "min_valence": min_valence},
+            p_rows = gw.run_sync(
+                "basal_ganglia.synthesis_get_plans_for_strategy",
+                strategy=strategy,
+                min_valence=min_valence,
             )
         except Exception:
             errors += 1
             continue
 
         plans = []
-        while pr.has_next():
-            row = pr.get_next()
-            pid = row[0]
-            goal = row[1] or ""
-            emb_vec = row[2]
-            pathway = float(row[3] or 0.0)
-            conf = float(row[4] or 0.0)
+        for row in p_rows:
+            pid = _row_val(row, 0, "p.plan_id") or _row_val(row, 0, "plan_id")
+            goal = _row_val(row, 1, "p.goal") or _row_val(row, 1, "goal") or ""
+            emb_vec = _row_val(row, 2, "p.embedding") or _row_val(row, 2, "embedding")
+            pathway = float(_row_val(row, 3, "p.pathway_strength") or _row_val(row, 3, "pathway_strength") or 0.0)
+            conf = float(_row_val(row, 4, "p.confidence") or _row_val(row, 4, "confidence") or 0.0)
             plans.append({"plan_id": pid, "goal": goal, "emb": emb_vec, "pathway": pathway, "confidence": conf})
 
         if len(plans) < min_cluster:
@@ -76,12 +80,11 @@ async def synthesize_procedures(db, config: dict, llm_client: Optional[object]) 
 
         # Basal Ganglia: skip if an automation Procedure already exists for this strategy
         try:
-            dup_check = db.execute(
-                "MATCH (p:Procedure) WHERE p.archetype = $strategy AND p.archived = false "
-                "RETURN count(p) > 0",
-                {"strategy": strategy},
+            dup_rows = gw.run_sync(
+                "basal_ganglia.synthesis_check_existing_procedure",
+                strategy=strategy,
             )
-            if dup_check.has_next() and dup_check.get_next()[0]:
+            if dup_rows and (_row_val(dup_rows[0], 0, "count(p) > 0") or False):
                 continue
         except Exception:
             pass
@@ -126,67 +129,48 @@ async def synthesize_procedures(db, config: dict, llm_client: Optional[object]) 
         pathway_strength = min(1.0, max_path * 1.1)
 
         try:
-            await db.execute_write(
-                """
-                CREATE (pr:Procedure {
-                    procedure_id: $pid,
-                    name: $name,
-                    domain: $domain,
-                    archetype: $archetype,
-                    description: $description,
-                    steps_json: $steps_json,
-                    embedding: $embedding,
-                    embedding_model: $embedding_model,
-                    embedding_dim: $embedding_dim,
-                    success_count: $success_count,
-                    application_count: 0,
-                    success_rate: 0.0,
-                    confidence: $confidence,
-                    pathway_strength: $pathway_strength,
-                    archived: false,
-                    created_at: timestamp($now)
-                })
-                """,
-                {
-                    "pid": proc_id,
-                    "name": proc_obj.get("name", strategy),
-                    "domain": proc_obj.get("domain", "planning"),
-                    "archetype": "automation",
-                    "description": proc_obj.get("description", ""),
-                    "steps_json": steps_json,
-                    "embedding": proc_emb,
-                    "embedding_model": embedding_model,
-                    "embedding_dim": len(proc_emb),
-                    "success_count": success_count,
-                    "confidence": avg_conf,
-                    "pathway_strength": pathway_strength,
-                    "now": now,
-                },
+            await gw.run(
+                "basal_ganglia.synthesis_create_procedure",
+                pid=proc_id,
+                name=proc_obj.get("name", strategy),
+                domain=proc_obj.get("domain", "planning"),
+                archetype="automation",
+                description=proc_obj.get("description", ""),
+                steps_json=steps_json,
+                embedding=proc_emb,
+                embedding_model=embedding_model,
+                embedding_dim=len(proc_emb),
+                success_count=success_count,
+                confidence=avg_conf,
+                pathway_strength=pathway_strength,
+                now=now,
             )
 
             # Link Procedure -> Plan (DISTILLED_FROM)
             for p in plans:
                 try:
-                    await db.execute_write(
-                        "MATCH (pr:Procedure {procedure_id: $pid}), (pl:Plan {plan_id: $plan_id}) "
-                        "MERGE (pr)-[r:DISTILLED_FROM]->(pl) "
-                        "ON CREATE SET r.synthesized_at = timestamp($now)",
-                        {"pid": proc_id, "plan_id": p["plan_id"], "now": now},
+                    await gw.run(
+                        "basal_ganglia.synthesis_link_distilled_from",
+                        pid=proc_id,
+                        plan_id=p["plan_id"],
+                        now=now,
                     )
                 except Exception:
                     pass
 
-            # Create or MERGE archetype Concept and link
+            # Upsert archetype Concept and link
             try:
                 concept_id = f"procedure_archetype:{uuid.uuid5(uuid.NAMESPACE_URL, strategy)}"
-                await db.execute_write(
-                    "MERGE (c:Concept {concept_id: $cid}) "
-                    "ON CREATE SET c.text_raw = $text, c.pathway_strength = 0.6, c.archived = false, c.created_at = timestamp($now)",
-                    {"cid": concept_id, "text": strategy, "now": now},
+                await gw.run(
+                    "basal_ganglia.synthesis_merge_archetype_concept",
+                    cid=concept_id,
+                    text=strategy,
+                    now=now,
                 )
-                await db.execute_write(
-                    "MATCH (pr:Procedure {procedure_id: $pid}), (c:Concept {concept_id: $cid}) MERGE (pr)-[:APPLIES_TO_ARCHETYPE]->(c)",
-                    {"pid": proc_id, "cid": concept_id},
+                await gw.run(
+                    "basal_ganglia.synthesis_link_applies_to_archetype",
+                    pid=proc_id,
+                    cid=concept_id,
                 )
             except Exception:
                 pass

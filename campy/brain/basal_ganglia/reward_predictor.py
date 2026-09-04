@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Reward prediction error tracking.
 
 Brain analogy: Dopamine neurons fire when reward exceeds prediction
@@ -8,6 +9,7 @@ Stores predicted vs actual outcomes on Plan/Procedure nodes to compute
 prediction error signals that feed back into action selection.
 """
 import logging
+from campy.brain.hippocampus.graph.gateway import get_gateway
 
 _logger = logging.getLogger(__name__)
 
@@ -34,17 +36,13 @@ async def record_reward_prediction_error(
     direction = "positive" if error > 0.1 else "negative" if error < -0.1 else "neutral"
     
     try:
-        await db.execute_write(
-            "MATCH (p:Plan {plan_id: $plan_id}) "
-            "SET p.predicted_valence = $predicted, "
-            "    p.actual_valence = $actual, "
-            "    p.prediction_error = $error",
-            {
-                "plan_id": plan_id,
-                "predicted": predicted_valence,
-                "actual": actual_valence,
-                "error": error,
-            },
+        gw = get_gateway(db)
+        await gw.run(
+            "basal_ganglia.record_prediction_error",
+            plan_id=plan_id,
+            predicted=predicted_valence,
+            actual=actual_valence,
+            error=error,
         )
         _logger.info(
             "[BasalGanglia] RPE for plan %s: predicted=%.2f actual=%.2f error=%.2f (%s)",

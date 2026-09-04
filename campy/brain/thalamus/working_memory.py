@@ -35,6 +35,16 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
+
+
+def _gateway(db) -> GraphGateway:
+    if isinstance(db, GraphGateway):
+        return db
+    return GraphGateway(db, REGISTRY)
+
+
 # Node type → primary key column mapping (shared across the module).
 # Only consolidated artifact nodes participate in LOADED working-memory handoff.
 # Raw Message / DocumentExtract recall is token-counted by current_truth but is
@@ -152,31 +162,28 @@ async def track_loaded(
         tokens = estimate_tokens(text_raw)
 
         try:
-            check = db.execute(
-                f"MATCH (s:Session {{session_id: $sid}})-[l:LOADED]->(n:{node_type} {{{pk_col}: $nid}}) "
-                f"RETURN l.load_hits",
-                {"sid": session_id, "nid": node_id}
+            gw = _gateway(db)
+            key = node_type.lower()
+            check = gw.run_sync(
+                f"working_memory.check_loaded_{key}",
+                sid=session_id, nid=node_id,
             )
-            if check.has_next():
-                row = check.get_next()
-                prev_hits = int(row[0]) if row[0] else 1
+            if check:
+                row = check[0]
+                val = row.get("l.load_hits") if hasattr(row, "get") else row[0]
+                prev_hits = int(val) if val else 1
                 new_hits = prev_hits + 1
                 dedup_saved += tokens
-                await db.execute_write(
-                    f"MATCH (s:Session {{session_id: $sid}})-[l:LOADED]->(n:{node_type} {{{pk_col}: $nid}}) "
-                    f"SET l.injected_at = timestamp($now), "
-                    f"    l.load_hits = $hits, "
-                    f"    l.token_estimate = $tokens",
-                    {"sid": session_id, "nid": node_id, "now": now,
-                     "hits": new_hits, "tokens": tokens}
+                await gw.run(
+                    f"working_memory.update_loaded_hit_{key}",
+                    sid=session_id, nid=node_id, now=now,
+                    hits=new_hits, tokens=tokens,
                 )
             else:
-                await db.execute_write(
-                    f"MATCH (s:Session {{session_id: $sid}}), (n:{node_type} {{{pk_col}: $nid}}) "
-                    f"CREATE (s)-[:LOADED {{injected_at: timestamp($now), "
-                    f"token_estimate: $tokens, source: $source, load_hits: 1}}]->(n)",
-                    {"sid": session_id, "nid": node_id, "now": now,
-                     "tokens": tokens, "source": source}
+                await gw.run(
+                    f"working_memory.create_loaded_edge_{key}",
+                    sid=session_id, nid=node_id, now=now,
+                    tokens=tokens, source=source,
                 )
             count += 1
         except Exception:
@@ -185,14 +192,11 @@ async def track_loaded(
     if processed > 0:
         try:
             loaded_count = _count_loaded(db, session_id)
-            await db.execute_write(
-                "MATCH (s:Session {session_id: $sid}) "
-                "SET s.loaded_node_count = $count, "
-                "    s.last_injection_at = timestamp($now), "
-                "    s.injection_count = coalesce(s.injection_count, 0) + $processed, "
-                "    s.dedup_tokens_saved = coalesce(s.dedup_tokens_saved, 0) + $dedup",
-                {"sid": session_id, "count": loaded_count, "now": now,
-                 "processed": processed, "dedup": dedup_saved}
+            gw = _gateway(db)
+            await gw.run(
+                "working_memory.update_session_loaded_stats",
+                sid=session_id, count=loaded_count, now=now,
+                processed=processed, dedup=dedup_saved,
             )
         except Exception:
             pass
@@ -207,17 +211,15 @@ def get_loaded_node_ids(db: KuzuClient, session_id: str) -> set[str]:
     """
     loaded = set()
 
+    gw = _gateway(db)
     for node_type, pk_col in NODE_PK_MAP.items():
         try:
-            r = db.execute(
-                f"MATCH (s:Session {{session_id: $sid}})-[:LOADED]->(n:{node_type}) "
-                f"RETURN n.{pk_col}",
-                {"sid": session_id}
-            )
-            while r.has_next():
-                row = r.get_next()
-                if row[0]:
-                    loaded.add(row[0])
+            key = node_type.lower()
+            rows = gw.run_sync(f"working_memory.get_loaded_ids_{key}", sid=session_id)
+            for row in rows:
+                nid = row.get(f"n.{pk_col}") if hasattr(row, "get") else row[0]
+                if nid:
+                    loaded.add(nid)
         except Exception:
             pass
 
@@ -269,21 +271,15 @@ async def update_token_estimate(
     Increment the session's cumulative token estimate.
     """
     try:
-        r = db.execute(
-            "MATCH (s:Session {session_id: $sid}) "
-            "RETURN s.token_estimate",
-            {"sid": session_id}
-        )
+        gw = _gateway(db)
+        r = gw.run_sync("working_memory.get_token_estimate", sid=session_id)
         current = 0
-        if r.has_next():
-            val = r.get_next()[0]
+        if r:
+            row = r[0]
+            val = row.get("s.token_estimate") if hasattr(row, "get") else row[0]
             current = int(val) if val else 0
 
-        await db.execute_write(
-            "MATCH (s:Session {session_id: $sid}) "
-            "SET s.token_estimate = $est",
-            {"sid": session_id, "est": current + new_tokens}
-        )
+        await gw.run("working_memory.set_token_estimate", sid=session_id, est=current + new_tokens)
     except Exception:
         pass
 
@@ -293,34 +289,32 @@ def get_session_token_state(db: KuzuClient, session_id: str) -> dict:
     Returns current token usage vs. limit for a session.
     """
     try:
-        r = db.execute(
-            "MATCH (s:Session {session_id: $sid}) "
-            "RETURN s.token_estimate, s.token_limit, s.loaded_node_count, "
-            "       s.dedup_tokens_saved, s.injection_count",
-            {"sid": session_id}
-        )
-        if r.has_next():
-            row = r.get_next()
-            est = int(row[0]) if len(row) > 0 and row[0] else 0
-            limit = int(row[1]) if len(row) > 1 and row[1] else DEFAULT_TOKEN_LIMIT
-            loaded = int(row[2]) if len(row) > 2 and row[2] else 0
-            dedup_saved = int(row[3]) if len(row) > 3 and row[3] else 0
-            injection_total = int(row[4]) if len(row) > 4 and row[4] else 0
+        gw = _gateway(db)
+        r = gw.run_sync("working_memory.get_session_token_state", sid=session_id)
+        if r:
+            row = r[0]
+            est_val = row.get("s.token_estimate") if hasattr(row, "get") else row[0]
+            lim_val = row.get("s.token_limit") if hasattr(row, "get") else row[1]
+            load_val = row.get("s.loaded_node_count") if hasattr(row, "get") else row[2]
+            dedup_val = row.get("s.dedup_tokens_saved") if hasattr(row, "get") else row[3]
+            inj_val = row.get("s.injection_count") if hasattr(row, "get") else row[4]
+
+            est = int(est_val) if est_val else 0
+            limit = int(lim_val) if lim_val else DEFAULT_TOKEN_LIMIT
+            loaded = int(load_val) if load_val else 0
+            dedup_saved = int(dedup_val) if dedup_val else 0
+            injection_total = int(inj_val) if inj_val else 0
 
             # B64: Message count for session stats (Session -> count SENT_IN edges)
             msg_count = 0
             try:
-                # Trace: Session node -> count SENT_IN edges -> return count
-                # Filter for archived=false to avoid over-counting deprecated turns.
-                # B64: Include NULL archived values to handle older databases robustly.
-                mr = db.execute(
-                    "MATCH (m:Message)-[:SENT_IN]->(s:Session {session_id: $sid}) "
-                    "WHERE m.archived IS NULL OR m.archived = false "
-                    "RETURN count(m)",
-                    {"sid": session_id}
-                )
-                if mr.has_next():
-                    msg_count = int(mr.get_next()[0] or 0)
+                mr = gw.run_sync("working_memory.count_session_messages", sid=session_id)
+                if mr:
+                    mrow = mr[0]
+                    # count(m) is an unaliased aggregate — Kuzu does not name
+                    # its column "count(m)" literally, so read positionally.
+                    mval = next(iter(mrow.values())) if isinstance(mrow, dict) else mrow[0]
+                    msg_count = int(mval or 0)
             except Exception:
                 pass
 
@@ -402,17 +396,16 @@ def get_handoff_context(
     """
     # Find prior session
     prev_session_id = ""
+    gw = _gateway(db)
     try:
-        r = db.execute(
-            "MATCH (s:Session)-[:WORKING_ON]->(q:MainQuest {quest_id: $qid}) "
-            "WHERE s.session_id <> $new_sid "
-            "RETURN s.session_id "
-            "ORDER BY s.last_active_at DESC "
-            "LIMIT 1",
-            {"qid": quest_id, "new_sid": new_session_id}
+        r = gw.run_sync(
+            "working_memory.find_prior_session_on_quest",
+            qid=quest_id, new_sid=new_session_id,
         )
-        if r.has_next():
-            prev_session_id = r.get_next()[0] or ""
+        if r:
+            row = r[0]
+            sid_val = row.get("s.session_id") if hasattr(row, "get") else row[0]
+            prev_session_id = sid_val or ""
     except Exception:
         pass
 
@@ -424,21 +417,17 @@ def get_handoff_context(
 
     for node_type, pk_col in NODE_PK_MAP.items():
         try:
-            r = db.execute(
-                f"MATCH (s:Session {{session_id: $sid}})-[:LOADED]->(n:{node_type}) "
-                f"WHERE n.archived = false "
-                f"RETURN n.{pk_col}, n.text_raw, n.pathway_strength "
-                f"ORDER BY n.pathway_strength DESC "
-                f"LIMIT $limit",
-                {"sid": prev_session_id, "limit": limit}
-            )
-            while r.has_next():
-                row = r.get_next()
+            key = node_type.lower()
+            rows = gw.run_sync(f"working_memory.get_handoff_{key}", sid=prev_session_id, limit=limit)
+            for row in rows:
+                nid = row.get(f"n.{pk_col}") if hasattr(row, "get") else row[0]
+                text = row.get("n.text_raw") if hasattr(row, "get") else row[1]
+                ps = row.get("n.pathway_strength") if hasattr(row, "get") else row[2]
                 handoff.append({
-                    "node_id": row[0],
+                    "node_id": nid,
                     "node_type": node_type,
-                    "text_raw": row[1] or "",
-                    "pathway_strength": float(row[2]) if row[2] else 0.0,
+                    "text_raw": text or "",
+                    "pathway_strength": float(ps) if ps else 0.0,
                 })
         except Exception:
             pass
@@ -451,15 +440,17 @@ def get_handoff_context(
 def _count_loaded(db: KuzuClient, session_id: str) -> int:
     """Count total LOADED edges from this session."""
     total = 0
+    gw = _gateway(db)
     for node_type in NODE_PK_MAP:
         try:
-            r = db.execute(
-                f"MATCH (s:Session {{session_id: $sid}})-[:LOADED]->(n:{node_type}) "
-                f"RETURN count(*)",
-                {"sid": session_id}
-            )
-            if r.has_next():
-                total += int(r.get_next()[0] or 0)
+            key = node_type.lower()
+            r = gw.run_sync(f"working_memory.count_loaded_{key}", sid=session_id)
+            if r:
+                row = r[0]
+                # count(*) is an unaliased aggregate — Kuzu does not name its
+                # column "count(*)" literally, so read positionally.
+                cval = next(iter(row.values())) if isinstance(row, dict) else row[0]
+                total += int(cval or 0)
         except Exception:
             pass
     return total
@@ -476,23 +467,23 @@ def get_session_token_timeline(
     """
     events: list[dict] = []
 
+    gw = _gateway(db)
     for node_type, pk_col in NODE_PK_MAP.items():
         try:
-            r = db.execute(
-                f"MATCH (s:Session {{session_id: $sid}})-[l:LOADED]->(n:{node_type}) "
-                f"RETURN n.{pk_col}, l.injected_at, l.token_estimate, l.load_hits "
-                f"ORDER BY l.injected_at ASC",
-                {"sid": session_id},
-            )
-            while r.has_next():
-                row = r.get_next()
-                tokens = int(row[2] or 0)
-                load_hits = int(row[3] or 1)
+            key = node_type.lower()
+            rows = gw.run_sync(f"working_memory.get_timeline_{key}", sid=session_id)
+            for row in rows:
+                nid = row.get(f"n.{pk_col}") if hasattr(row, "get") else row[0]
+                inj = row.get("l.injected_at") if hasattr(row, "get") else row[1]
+                tok = row.get("l.token_estimate") if hasattr(row, "get") else row[2]
+                hits = row.get("l.load_hits") if hasattr(row, "get") else row[3]
+                tokens = int(tok or 0)
+                load_hits = int(hits or 1)
                 events.append({
-                    "node_id": row[0],
+                    "node_id": nid,
                     "node_type": node_type,
                     "tokens": tokens,
-                    "injected_at": str(row[1]) if row[1] else None,
+                    "injected_at": str(inj) if inj else None,
                     "load_hits": load_hits,
                     "dedup_savings": tokens * (load_hits - 1),
                 })

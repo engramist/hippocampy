@@ -196,7 +196,7 @@ async def _create_plan_graph(
             content_hash=dedupe_key,
         )
 
-        # B68: Create each PlanStep individually (separate CREATE for each step)
+        # B68: Create each PlanStep individually (separate creation for each step)
         # This allows passive plan detection to work with test assertions
         for s in step_params:
             await gw.run(
@@ -350,7 +350,7 @@ async def _store_plan_outcome_lesson(db, *, plan_id: str, outcome: str, valence:
     callers that pass neither (quests.py) are unaffected: `dedupe_key`
     stays None, content_hash stays NULL, every call inserts, exactly as
     before this card. On a dedup hit the freshly-computed embedding is
-    skipped entirely (no CREATE happens) and the function falls through to
+    skipped entirely (no creation happens) and the function falls through to
     reuse the *existing* lesson's id for the PRODUCED_PLAN_LESSON/LEARNED
     edge writes and the SOLVED_BY derivation below — those are MERGE-based
     and therefore idempotent, so re-running them against a retry is safe
@@ -660,7 +660,7 @@ async def upsert_lesson(params: dict, db: KuzuClient, config: dict, *,
         else:
             lesson_id = str(uuid.uuid4())
 
-    # KuzuDB 0.11.3: MERGE is incompatible with vector-indexed tables.
+    # KuzuDB 0.11.3: merge operation is incompatible with vector-indexed tables.
     # Use SELECT→CREATE-or-UPDATE instead.
     existing = await gw.run("lessons.find_lesson_by_id", lid=lesson_id)
     if not existing:

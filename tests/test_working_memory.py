@@ -170,8 +170,12 @@ class TestContextHealth:
         from campy.brain.thalamus.working_memory import check_context_health
 
         class MockResult:
-            def has_next(self): return True
-            def get_next(self): return [100000, 128000, 12, 0, 0]  # ~78% utilization
+            def __init__(self): self._done = False
+            def has_next(self):
+                return not self._done
+            def get_next(self):
+                self._done = True
+                return [100000, 128000, 12, 0, 0]  # ~78% utilization
 
         class MockDB:
             def execute(self, query, params=None): return MockResult()
@@ -185,8 +189,12 @@ class TestContextHealth:
         from campy.brain.thalamus.working_memory import check_context_health
 
         class MockResult:
-            def has_next(self): return True
-            def get_next(self): return [30000, 128000, 5, 0, 0]  # ~23% utilization
+            def __init__(self): self._done = False
+            def has_next(self):
+                return not self._done
+            def get_next(self):
+                self._done = True
+                return [30000, 128000, 5, 0, 0]  # ~23% utilization
 
         class MockDB:
             def execute(self, query, params=None): return MockResult()
@@ -252,8 +260,12 @@ class TestTokenState:
         from campy.brain.thalamus.working_memory import get_session_token_state
 
         class MockResult:
-            def has_next(self): return True
-            def get_next(self): return [None, None, None]
+            def __init__(self): self._done = False
+            def has_next(self):
+                return not self._done
+            def get_next(self):
+                self._done = True
+                return [None, None, None]
 
         class MockDB:
             def execute(self, query, params=None): return MockResult()

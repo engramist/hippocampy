@@ -33,8 +33,12 @@ def test_get_quest_for_artifact_returns_quest_when_chain_exists():
     from campy.brain.thalamus.analogical import _get_quest_for_artifact
 
     class ChainResult:
-        def has_next(self): return True
-        def get_next(self): return ["quest-abc", "myapp [main]"]
+        def __init__(self): self._done = False
+        def has_next(self):
+            return not self._done
+        def get_next(self):
+            self._done = True
+            return ["quest-abc", "myapp [main]"]
 
     class MockDB:
         def execute(self, q, p=None): return ChainResult()
@@ -158,8 +162,12 @@ async def test_analogical_search_excludes_current_quest():
     from campy.brain.thalamus.analogical import analogical_search
 
     class SameQuestResult:
-        def has_next(self): return True
-        def get_next(self): return ["quest-current", "current project"]
+        def __init__(self): self._done = False
+        def has_next(self):
+            return not self._done
+        def get_next(self):
+            self._done = True
+            return ["quest-current", "current project"]
 
     class MockDB:
         def vector_search(self, table_name, index_name, vec, limit):
@@ -187,8 +195,12 @@ async def test_analogical_search_includes_cross_quest_results():
     from campy.brain.thalamus.analogical import analogical_search
 
     class OtherQuestResult:
-        def has_next(self): return True
-        def get_next(self): return ["quest-other", "other project"]
+        def __init__(self): self._done = False
+        def has_next(self):
+            return not self._done
+        def get_next(self):
+            self._done = True
+            return ["quest-other", "other project"]
 
     class MockDB:
         def vector_search(self, table_name, index_name, vec, limit):
@@ -317,8 +329,12 @@ def test_find_similar_quests_skips_current_quest():
     from campy.brain.thalamus.analogical import find_similar_quests
 
     class EmbResult:
-        def has_next(self): return True
-        def get_next(self): return [[0.1]*384, "Current Project"]
+        def __init__(self): self._done = False
+        def has_next(self):
+            return not self._done
+        def get_next(self):
+            self._done = True
+            return [[0.1]*384, "Current Project"]
 
     class MockDB:
         def execute(self, q, p=None): return EmbResult()
@@ -355,8 +371,12 @@ def test_find_similar_quests_returns_empty_when_no_embedding():
     from campy.brain.thalamus.analogical import find_similar_quests
 
     class NoEmbResult:
-        def has_next(self): return True
-        def get_next(self): return [None, "Project With No Embedding"]
+        def __init__(self): self._done = False
+        def has_next(self):
+            return not self._done
+        def get_next(self):
+            self._done = True
+            return [None, "Project With No Embedding"]
 
     class MockDB:
         def execute(self, q, p=None): return NoEmbResult()

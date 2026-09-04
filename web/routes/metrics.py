@@ -5,10 +5,25 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from campy.brain.hippocampus.graph.gateway import GraphGateway, get_gateway
 from campy.brain.thalamus.working_memory import (
     DEFAULT_TOKEN_LIMIT,
     get_session_token_timeline,
 )
+
+
+def _gateway(db: Any) -> GraphGateway:
+    if isinstance(db, GraphGateway):
+        return db
+    return get_gateway(db)
+
+
+def _row_val(row: Any, idx: int, key: str) -> Any:
+    if isinstance(row, dict):
+        return row.get(key)
+    if isinstance(row, (list, tuple)) and idx < len(row):
+        return row[idx]
+    return getattr(row, key, None)
 
 
 def register_token_metrics_routes(app: FastAPI, db: Any) -> None:
@@ -19,31 +34,23 @@ def register_token_metrics_routes(app: FastAPI, db: Any) -> None:
         """Return recent session token usage plus dedup savings."""
         sessions: list[dict[str, Any]] = []
         try:
-            cursor = db.execute(
-                """
-                MATCH (s:Session)
-                RETURN s.session_id, s.started_at, s.last_active_at,
-                       s.token_estimate, s.token_limit,
-                       s.loaded_node_count, s.injection_count,
-                       s.dedup_tokens_saved
-                ORDER BY s.last_active_at DESC
-                LIMIT $limit
-                """,
-                {"limit": recent},
-            )
-            while cursor.has_next():
-                row = cursor.get_next()
-                session_id = row[0]
-                token_estimate = int(row[3] or 0)
-                token_limit = int(row[4]) if row[4] else DEFAULT_TOKEN_LIMIT
-                loaded_nodes = int(row[5] or 0)
-                injection_count = int(row[6] or 0)
-                dedup_saved = int(row[7] or 0)
+            gw = _gateway(db)
+            rows = gw.run_sync("web.recent_sessions_token_metrics", limit=recent)
+            for row in rows:
+                session_id = _row_val(row, 0, "s.session_id") or _row_val(row, 0, "session_id")
+                started_at = _row_val(row, 1, "s.started_at") or _row_val(row, 1, "started_at")
+                last_active_at = _row_val(row, 2, "s.last_active_at") or _row_val(row, 2, "last_active_at")
+                token_estimate = int(_row_val(row, 3, "s.token_estimate") or _row_val(row, 3, "token_estimate") or 0)
+                raw_limit = _row_val(row, 4, "s.token_limit") or _row_val(row, 4, "token_limit")
+                token_limit = int(raw_limit) if raw_limit else DEFAULT_TOKEN_LIMIT
+                loaded_nodes = int(_row_val(row, 5, "s.loaded_node_count") or _row_val(row, 5, "loaded_node_count") or 0)
+                injection_count = int(_row_val(row, 6, "s.injection_count") or _row_val(row, 6, "injection_count") or 0)
+                dedup_saved = int(_row_val(row, 7, "s.dedup_tokens_saved") or _row_val(row, 7, "dedup_tokens_saved") or 0)
 
                 session = {
                     "session_id": session_id,
-                    "started_at": str(row[1]) if row[1] else None,
-                    "last_active_at": str(row[2]) if row[2] else None,
+                    "started_at": str(started_at) if started_at else None,
+                    "last_active_at": str(last_active_at) if last_active_at else None,
                     "token_limit": token_limit,
                     "token_estimate": token_estimate,
                     "loaded_node_count": loaded_nodes,

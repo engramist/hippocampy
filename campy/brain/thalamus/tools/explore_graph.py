@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING, List, Dict, Any, Tuple
 
 if TYPE_CHECKING:
     from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from campy.brain.hippocampus.graph.gateway import get_gateway
+from campy.brain.hippocampus.graph.queries.explore import build_frontier_query as _build_frontier_query, internal_id_literal as _internal_id_literal
 
 from campy.brain.hippocampus.schema import get_relationship_types
 from campy.brain.hippocampus.table_registry import pk_for, tables_with
@@ -57,49 +59,7 @@ def _edge_payload(src_id: str, dst_id: str, rel_type: str, rel_conf: Any) -> Dic
     }
 
 
-def _internal_id_literal(internal_ids: List[Dict[str, int]]) -> str:
-    """Build a Cypher list literal of INTERNAL_ID(table, offset) constructors.
-
-    B280: Kuzu 0.11.3's Python client serializes an internal node id as a
-    {"table": int, "offset": int} STRUCT, and the binder rejects comparing
-    that STRUCT against the engine's actual INTERNAL_ID type ("Cannot
-    compare types INTERNAL_ID and STRUCT(offset INT8, table INT8)" -
-    confirmed empirically). INTERNAL_ID(table, offset) is a real Kuzu
-    constructor function, so building the literal directly in the query
-    text sidesteps the mismatch entirely (there is no working parameterized
-    form). table/offset are small non-negative ints minted by Kuzu itself
-    via id(n) - never user-controlled strings - so interpolating them is
-    not a string-injection risk.
-    """
-    parts = [f"INTERNAL_ID({int(iid['table'])}, {int(iid['offset'])})" for iid in internal_ids]
-    return "[" + ", ".join(parts) + "]"
-
-
-def _build_frontier_query(edge_types: List[str], direction: str, internal_ids: List[Dict[str, int]]) -> str:
-    """One query per direction per depth level, unlabeled on both ends.
-
-    B280: the previous implementation built one MATCH branch PER NODE TABLE
-    and UNION ALL'd them together (`MATCH (a:Concept)...UNION ALL MATCH
-    (a:Decision)...`). Kuzu 0.11.3's binder rejects that once enough
-    differently-typed tables are unioned - "Binder exception: a has data
-    type NODE but NODE was expected" - confirmed against the real 12-table/
-    92-rel-type production schema, where every real explore_graph() call
-    hit this and silently returned zero neighbors. Leaving `a`/`b`
-    unlabeled and filtering by internal id instead avoids the union
-    entirely: Kuzu scans every node table in one query, matching only the
-    frontier's actual ids (see _internal_id_literal for why internal ids
-    rather than primary keys - a single query can't otherwise express "the
-    right pk column" across heterogeneous node tables).
-    """
-    rel_pattern = "|".join(edge_types)
-    id_literal = _internal_id_literal(internal_ids)
-    if direction == "outgoing":
-        match_clause = f"MATCH (a)-[r:{rel_pattern}]->(b)"
-    elif direction == "incoming":
-        match_clause = f"MATCH (a)<-[r:{rel_pattern}]-(b)"
-    else:
-        match_clause = f"MATCH (a)-[r:{rel_pattern}]-(b)"
-    return f"{match_clause} WHERE id(a) IN {id_literal} RETURN a, b, label(r), coalesce(r.confidence, 1.0)"
+# _internal_id_literal and _build_frontier_query are centralized in queries.explore
 
 
 def _execute_frontier_query(db: KuzuClient, frontier_internal_ids: List[Dict[str, int]],
@@ -277,11 +237,12 @@ async def explore_graph(params: Dict[str, Any], db: KuzuClient, config: Dict[str
     start_table = None
     start_node_data = None
     start_internal_id = None
+    gw = get_gateway(db)
     for table, pk in _NODE_TABLES:
         try:
-            r = db.execute(f"MATCH (n:{table}) WHERE n.{pk} = $id RETURN n, id(n) LIMIT 1", {"id": start_id})
-            if r.has_next():
-                row = r.get_next()
+            rows = gw.run_sync(f"explore.start_node_{table.lower()}", id=start_id)
+            if rows:
+                row = rows[0]
                 node_dict = row[0] if len(row) > 0 else {}
                 start_internal_id = row[1] if len(row) > 1 else None
                 start_node_data = _node_payload(node_dict, start_id)

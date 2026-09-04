@@ -21,6 +21,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional
 
+from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.hippocampus.provenance import authority_of
 
 _logger = logging.getLogger(__name__)
@@ -324,7 +325,7 @@ async def _stage_exact_facts(db, query: str, config: dict, tier_config: dict) ->
         )
         query_embedding = emb.embed(query, model_name=embedding_model)
 
-        # Kuzu/openCypher does not allow `OR` between labels inside a single MATCH
+        # Kuzu/openCypher does not allow `OR` between labels inside a single query
         # pattern, so each label needs its own query. These are issued separately
         # (not joined with UNION) because Kuzu 0.11.3's ORDER BY/LIMIT after a
         # chained UNION binds only to the last branch, not the combined result set
@@ -333,29 +334,28 @@ async def _stage_exact_facts(db, query: str, config: dict, tier_config: dict) ->
         # (1 - cosine similarity), matching the metric the HNSW indexes are pinned
         # to elsewhere (see kuzu_client.py's _INDEX_METRIC); Kuzu has no
         # `vector_distance` function.
+        gw = get_gateway(db)
         limit = 10
         rows: list[tuple] = []
         for label in ("GlobalConstraint", "GlobalPreference"):
-            # B313: include authority when the table has the column (see
-            # _table_has_authority docstring for why this is checked rather
-            # than assumed).
             has_authority = _table_has_authority(db, label)
-            authority_select = ", n.authority as authority" if has_authority else ""
-            flagged_filter = (
-                " AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false)"
-                if _table_has_flagged_for_review(db, label) else ""
-            )
-            cypher = f"""
-                MATCH (n:{label})
-                WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
-                  {flagged_filter}
-                RETURN n.text_raw as text, label(n) as node_type, n.confidence as confidence{authority_select}
-                LIMIT $limit
-            """
-            result = db.execute(cypher, {"query_embedding": query_embedding, "limit": limit})
-            while result.has_next():
-                row = result.get_next()
-                rows.append(row if has_authority else (*row, None))
+            has_flagged = _table_has_flagged_for_review(db, label)
+            lbl_lower = label.lower()
+            if has_flagged and has_authority:
+                qname = f"thalamus.bundle_exact_{lbl_lower}_flagged_auth"
+            elif has_flagged:
+                qname = f"thalamus.bundle_exact_{lbl_lower}_flagged"
+            elif has_authority:
+                qname = f"thalamus.bundle_exact_{lbl_lower}_auth"
+            else:
+                qname = f"thalamus.bundle_exact_{lbl_lower}"
+            result = await gw.run(qname, query_embedding=query_embedding, limit=limit)
+            for r in (result or []):
+                text = r.get("text") if isinstance(r, dict) else r[0]
+                node_type = r.get("node_type") if isinstance(r, dict) else r[1]
+                confidence = r.get("confidence") if isinstance(r, dict) else r[2]
+                authority = r.get("authority") if isinstance(r, dict) else (r[3] if len(r) > 3 else None)
+                rows.append((text, node_type, confidence, authority if has_authority else None))
 
         rows = rows[:limit]
 
@@ -413,31 +413,30 @@ async def _stage_semantic_context(db, query: str, config: dict, tier_config: dic
         # ORDER BY/LIMIT is unaffected by the UNION issue), then the per-label
         # results are merged and re-sorted by distance in Python for a global
         # top-N cut.
+        gw = get_gateway(db)
         limit = tier_config.get("max_semantic", 10)
         rows: list[tuple] = []
         for label in ("Concept", "Decision", "Constraint", "Requirement"):
-            # B313: include authority when the table has the column — see
-            # _table_has_authority docstring.
             has_authority = _table_has_authority(db, label)
-            authority_select = ", n.authority as authority" if has_authority else ""
-            flagged_filter = (
-                " AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false)"
-                if _table_has_flagged_for_review(db, label) else ""
-            )
-            cypher = f"""
-                MATCH (n:{label})
-                WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
-                  {flagged_filter}
-                RETURN n.text_raw as text, label(n) as node_type,
-                       n.pathway_strength as pathway_strength, n.confidence as confidence,
-                       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist{authority_select}
-                ORDER BY dist ASC
-                LIMIT $limit
-            """
-            result = db.execute(cypher, {"query_embedding": query_embedding, "limit": limit})
-            while result.has_next():
-                row = result.get_next()
-                rows.append(row if has_authority else (*row, None))
+            has_flagged = _table_has_flagged_for_review(db, label)
+            lbl_lower = label.lower()
+            if has_flagged and has_authority:
+                qname = f"thalamus.bundle_semantic_{lbl_lower}_flagged_auth"
+            elif has_flagged:
+                qname = f"thalamus.bundle_semantic_{lbl_lower}_flagged"
+            elif has_authority:
+                qname = f"thalamus.bundle_semantic_{lbl_lower}_auth"
+            else:
+                qname = f"thalamus.bundle_semantic_{lbl_lower}"
+            result = await gw.run(qname, query_embedding=query_embedding, limit=limit)
+            for r in (result or []):
+                text = r.get("text") if isinstance(r, dict) else r[0]
+                node_type = r.get("node_type") if isinstance(r, dict) else r[1]
+                pathway_strength = r.get("pathway_strength") if isinstance(r, dict) else r[2]
+                confidence = r.get("confidence") if isinstance(r, dict) else r[3]
+                dist = r.get("dist") if isinstance(r, dict) else r[4]
+                authority = r.get("authority") if isinstance(r, dict) else (r[5] if len(r) > 5 else None)
+                rows.append((text, node_type, pathway_strength, confidence, dist, authority if has_authority else None))
 
         rows.sort(key=lambda row: row[4])
         rows = rows[:limit]
@@ -554,7 +553,7 @@ async def _stage_graph_structure(
 
     Finds Concept nodes closest to the query (same 0.30 distance convention as
     _stage_exact_facts/_stage_semantic_context), then traverses 1-2 hops of
-    Concept<->Concept relationships from each anchor. Hop depth is one MATCH
+    Concept<->Concept relationships from each anchor. Hop depth is one query
     per depth level (not Kuzu variable-length syntax) chained in a single
     query per depth, since both ends stay within the Concept table - this
     deliberately avoids UNION ALL across differently-typed node tables, which
@@ -571,23 +570,16 @@ async def _stage_graph_structure(
         )
         query_embedding = emb.embed(query, model_name=embedding_model)
 
+        gw = get_gateway(db)
         has_flagged = _table_has_flagged_for_review(db, "Concept")
-        anchor_flagged_filter = (
-            " AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false)" if has_flagged else ""
-        )
-        anchor_cypher = f"""
-            MATCH (n:Concept)
-            WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
-              {anchor_flagged_filter}
-            RETURN n.concept_id as id, n.text_raw as text,
-                   (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist
-            ORDER BY dist ASC
-            LIMIT 5
-        """
-        result = db.execute(anchor_cypher, {"query_embedding": query_embedding})
+        anchor_q = "thalamus.bundle_graph_anchors_flagged" if has_flagged else "thalamus.bundle_graph_anchors"
+        result = await gw.run(anchor_q, query_embedding=query_embedding)
         anchors: list[tuple] = []
-        while result.has_next():
-            anchors.append(result.get_next())
+        for r in (result or []):
+            aid = r.get("id") if isinstance(r, dict) else r[0]
+            text = r.get("text") if isinstance(r, dict) else r[1]
+            dist = r.get("dist") if isinstance(r, dict) else r[2]
+            anchors.append((aid, text, dist))
 
         if not anchors:
             return None
@@ -597,20 +589,17 @@ async def _stage_graph_structure(
         content = []
         node_ids = []
         seen_edges: set[tuple] = set()
+        one_hop_q = "thalamus.bundle_graph_one_hop_flagged" if has_flagged else "thalamus.bundle_graph_one_hop"
+        two_hop_q = "thalamus.bundle_graph_two_hop_flagged" if has_flagged else "thalamus.bundle_graph_two_hop"
         for anchor_id, anchor_text, _dist in anchors:
-            one_hop_flagged_filter = (
-                " AND (b.flagged_for_review IS NULL OR b.flagged_for_review = false)" if has_flagged else ""
-            )
-            one_hop_cypher = f"""
-                MATCH (a:Concept)-[r:{_GRAPH_REL_TYPES}]-(b:Concept)
-                WHERE a.concept_id = $aid
-                  {one_hop_flagged_filter}
-                RETURN label(r), b.concept_id, b.text_raw
-                LIMIT 10
-            """
-            result = db.execute(one_hop_cypher, {"aid": anchor_id})
-            while result.has_next():
-                rel_type, b_id, b_text = result.get_next()
+            result = await gw.run(one_hop_q, aid=anchor_id)
+            for r in (result or []):
+                # label(r) is a computed expression — Kuzu does not name its
+                # column "label(r)" (for a multi-type pattern it names it
+                # something like "LABEL(r._ID,[,REQUIRES,,ENABLES])"), so a
+                # dict row must be read positionally, not by a guessed key.
+                vals = list(r.values()) if isinstance(r, dict) else r
+                rel_type, b_id, b_text = vals[0], vals[1], vals[2]
                 key = (anchor_id, rel_type, b_id)
                 if key not in seen_edges:
                     seen_edges.add(key)
@@ -622,22 +611,10 @@ async def _stage_graph_structure(
                     node_ids.append(b_id)
 
             if max_hops >= 2:
-                two_hop_flagged_filter = (
-                    " AND (mid.flagged_for_review IS NULL OR mid.flagged_for_review = false)"
-                    " AND (c.flagged_for_review IS NULL OR c.flagged_for_review = false)"
-                    if has_flagged else ""
-                )
-                two_hop_cypher = f"""
-                    MATCH (a:Concept)-[r1:{_GRAPH_REL_TYPES}]-(mid:Concept)
-                          -[r2:{_GRAPH_REL_TYPES}]-(c:Concept)
-                    WHERE a.concept_id = $aid AND c.concept_id <> a.concept_id
-                      {two_hop_flagged_filter}
-                    RETURN label(r1), mid.text_raw, label(r2), c.concept_id, c.text_raw
-                    LIMIT 10
-                """
-                result = db.execute(two_hop_cypher, {"aid": anchor_id})
-                while result.has_next():
-                    r1_type, mid_text, r2_type, c_id, c_text = result.get_next()
+                result = await gw.run(two_hop_q, aid=anchor_id)
+                for r in (result or []):
+                    vals = list(r.values()) if isinstance(r, dict) else r
+                    r1_type, mid_text, r2_type, c_id, c_text = vals[0], vals[1], vals[2], vals[3], vals[4]
                     key = (anchor_id, r1_type, mid_text, r2_type, c_id)
                     if key not in seen_edges:
                         seen_edges.add(key)
@@ -690,18 +667,14 @@ async def _stage_tabular_data(
         )
         query_embedding = emb.embed(query, model_name=embedding_model)
 
-        cypher = """
-            MATCH (n:Concept)-[:DESCRIBED_BY_DATASET]->(d:Dataset)
-            WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
-                  AND d.archived = false
-            RETURN DISTINCT d.dataset_id as dataset_id, d.name as name,
-                   d.description as description
-            LIMIT 5
-        """
-        result = db.execute(cypher, {"query_embedding": query_embedding})
+        gw = get_gateway(db)
+        result = await gw.run("thalamus.bundle_tabular_described_by_dataset", query_embedding=query_embedding)
         datasets: list[tuple] = []
-        while result.has_next():
-            datasets.append(result.get_next())
+        for r in (result or []):
+            did = r.get("dataset_id") if isinstance(r, dict) else r[0]
+            name = r.get("name") if isinstance(r, dict) else r[1]
+            desc = r.get("description") if isinstance(r, dict) else r[2]
+            datasets.append((did, name, desc))
 
         if not datasets:
             return None
@@ -779,31 +752,22 @@ async def _stage_summaries(
         limit = 5
         rows: list[tuple] = []
 
-        lesson_cypher = """
-            MATCH (n:Lesson)
-            WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
-                  AND n.archived = false AND n.lesson_type = 'synthesis'
-            RETURN n.lesson_id as id, n.text_raw as text, 'Lesson' as node_type,
-                   (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist
-            ORDER BY dist ASC
-            LIMIT $limit
-        """
-        result = db.execute(lesson_cypher, {"query_embedding": query_embedding, "limit": limit})
-        while result.has_next():
-            rows.append(result.get_next())
+        gw = get_gateway(db)
+        l_res = await gw.run("thalamus.bundle_wiki_lessons", query_embedding=query_embedding, limit=limit)
+        for r in (l_res or []):
+            nid = r.get("id") if isinstance(r, dict) else r[0]
+            text = r.get("text") if isinstance(r, dict) else r[1]
+            ntype = r.get("node_type") if isinstance(r, dict) else r[2]
+            dist = r.get("dist") if isinstance(r, dict) else r[3]
+            rows.append((nid, text, ntype, dist))
 
-        procedure_cypher = """
-            MATCH (n:Procedure)
-            WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
-                  AND n.archived = false
-            RETURN n.procedure_id as id, n.description as text, 'Procedure' as node_type,
-                   (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist
-            ORDER BY dist ASC
-            LIMIT $limit
-        """
-        result = db.execute(procedure_cypher, {"query_embedding": query_embedding, "limit": limit})
-        while result.has_next():
-            rows.append(result.get_next())
+        p_res = await gw.run("thalamus.bundle_wiki_procedures", query_embedding=query_embedding, limit=limit)
+        for r in (p_res or []):
+            nid = r.get("id") if isinstance(r, dict) else r[0]
+            text = r.get("text") if isinstance(r, dict) else r[1]
+            ntype = r.get("node_type") if isinstance(r, dict) else r[2]
+            dist = r.get("dist") if isinstance(r, dict) else r[3]
+            rows.append((nid, text, ntype, dist))
 
         rows.sort(key=lambda row: row[3])
         rows = rows[:limit]

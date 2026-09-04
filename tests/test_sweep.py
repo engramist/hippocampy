@@ -292,9 +292,12 @@ async def test_resurrect_applies_candidate_limit_to_the_query():
 
     seen_queries = []
 
+    seen_params = []
+
     class LimitCheckingDB:
         def execute(self, q, p=None):
             seen_queries.append(q)
+            seen_params.append(p)
             class Empty:
                 def has_next(self): return False
             return Empty()
@@ -304,7 +307,7 @@ async def test_resurrect_applies_candidate_limit_to_the_query():
             return []
 
     await _resurrect_archived(LimitCheckingDB(), resurrection_threshold=0.85, candidate_limit=7)
-    assert any("LIMIT 7" in q for q in seen_queries)
+    assert any("LIMIT 7" in q or ("LIMIT $limit" in q and p and p.get("limit") == 7) for q, p in zip(seen_queries, seen_params))
 
 
 @pytest.mark.asyncio

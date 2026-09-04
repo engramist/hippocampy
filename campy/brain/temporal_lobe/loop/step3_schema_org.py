@@ -25,9 +25,13 @@ _FALLBACK_ROUTING = {
 }
 
 # Read-through cache over KuzuDB: populated at daemon startup from the graph in
-# load_routing_table() (MATCH (g:GistClass)-[:ROUTES_TO]->(s:SchemaOrgType)). The
+# load_routing_table() (lookup (g:GistClass)-[:ROUTES_TO]->(s:SchemaOrgType)). The
 # graph remains the source of truth; this is a cache, not a shadow store.
 _routing_cache: dict[str, dict] = {}  # nosemgrep: campy-shadow-store-dict
+
+
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
 
 
 def load_routing_table(db) -> None:
@@ -38,13 +42,12 @@ def load_routing_table(db) -> None:
     """
     global _routing_cache
     _routing_cache.clear()
-    result = db.execute(
-        "MATCH (g:GistClass)-[:ROUTES_TO]->(s:SchemaOrgType) "
-        "RETURN g.name, s.name, s.properties"
-    )
-    while result.has_next():
-        row = result.get_next()
-        gist_name, schema_name, properties = row[0], row[1], row[2]
+    gw = GraphGateway(db, REGISTRY) if not isinstance(db, GraphGateway) else db
+    rows = gw.run_sync("orchestrator.get_schema_org_routing", {})
+    for row in rows:
+        gist_name = row.get("g.name") if hasattr(row, "get") else row[0]
+        schema_name = row.get("s.name") if hasattr(row, "get") else row[1]
+        properties = row.get("s.properties") if hasattr(row, "get") else row[2]
         entry = {"schema_org_type": schema_name, "properties": properties or []}
         if gist_name not in _routing_cache:
             _routing_cache[gist_name] = []

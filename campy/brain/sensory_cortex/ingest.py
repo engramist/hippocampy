@@ -1,3 +1,18 @@
+from __future__ import annotations
+
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
+
+
+def _gateway(db) -> GraphGateway:
+    if isinstance(db, GraphGateway):
+        return db
+    return GraphGateway(db, REGISTRY)
+
+
+
+
+
 """
 mcp_engine/ingest.py — Open Brain Document Ingestion Pipeline
 
@@ -22,7 +37,6 @@ Change detection:
   - Hash change → all old DocumentExtract nodes archived, new ones created
 """
 
-from __future__ import annotations
 import hashlib
 import os
 import re
@@ -297,11 +311,11 @@ async def ingest_document(db, file_path: str, config: dict,
     Steps:
       1. Validate + canonicalize path
       2. Hash file for change detection
-      3. MERGE Document node (idempotent)
+      3. Upsert Document node (idempotent)
       4. If hash unchanged → return already_current=True
       5. Archive old DocumentExtract nodes for this document
       6. Read + chunk file text
-      7. For each chunk: embed → CREATE DocumentExtract → DERIVED_FROM
+      7. For each chunk: embed → generate DocumentExtract → DERIVED_FROM
       8. Queue each extract for Gated Consolidation Loop
     """
     embedding_model = config.get("embeddings", {}).get(
@@ -331,7 +345,7 @@ async def ingest_document(db, file_path: str, config: dict,
     # Step 2 — Hash
     content_hash = hash_file(resolved)
 
-    # Step 3 — MERGE Document node
+    # Step 3 — Upsert Document node
     document_id = _stable_doc_id(location_uri)
     existing_hash = _get_existing_hash(db, document_id)
 
@@ -378,47 +392,26 @@ async def ingest_document(db, file_path: str, config: dict,
     for chunk, vector in zip(chunks, vectors):
         extract_id = str(uuid.uuid4())
         try:
-            await db.execute_write(
-                """
-                CREATE (e:DocumentExtract {
-                    extract_id:      $extract_id,
-                    text_raw:        $text_raw,
-                    embedding:       $embedding,
-                    embedding_model: $embedding_model,
-                    embedding_dim:   $embedding_dim,
-                    byte_start:      $byte_start,
-                    byte_end:        $byte_end,
-                    line_start:      $line_start,
-                    line_end:        $line_end,
-                    confidence:      1.0,
-                    confidence_low:  false,
-                    pathway_strength: 1.0,
-                    archived:        false,
-                    created_at:      timestamp($created_at)
-                })
-                """,
-                {
-                    "extract_id":      extract_id,
-                    "text_raw":        chunk["text"],
-                    "embedding":       vector,
-                    "embedding_model": embedding_model,
-                    "embedding_dim":   len(vector),
-                    "byte_start":      chunk["byte_start"],
-                    "byte_end":        chunk["byte_end"],
-                    "line_start":      chunk["line_start"],
-                    "line_end":        chunk["line_end"],
-                    "created_at":      now,
-                }
+            gw = _gateway(db)
+            await gw.run(
+                "ingest.create_document_extract",
+                extract_id=extract_id,
+                text_raw=chunk["text"],
+                embedding=vector,
+                embedding_model=embedding_model,
+                embedding_dim=len(vector),
+                byte_start=chunk["byte_start"],
+                byte_end=chunk["byte_end"],
+                line_start=chunk["line_start"],
+                line_end=chunk["line_end"],
+                created_at=now,
             )
 
             # DERIVED_FROM: extract → document
-            await db.execute_write(
-                """
-                MATCH (e:DocumentExtract {extract_id: $eid}),
-                      (d:Document {document_id: $did})
-                CREATE (e)-[:DERIVED_FROM]->(d)
-                """,
-                {"eid": extract_id, "did": document_id}
+            await gw.run(
+                "ingest.link_extract_derived_from_document",
+                eid=extract_id,
+                did=document_id,
             )
             chunks_created += 1
 
@@ -454,12 +447,11 @@ def _stable_doc_id(location_uri: str) -> str:
 def _get_existing_hash(db, document_id: str) -> str | None:
     """Return existing content_hash for a Document node, or None if not found."""
     try:
-        result = db.execute(
-            "MATCH (d:Document {document_id: $did}) RETURN d.content_hash",
-            {"did": document_id}
-        )
-        if result.has_next():
-            return result.get_next()[0]
+        gw = _gateway(db)
+        result = gw.run_sync("ingest.get_document_content_hash", did=document_id)
+        if result:
+            row = result[0]
+            return row.get("d.content_hash") if hasattr(row, "get") else row[0]
     except Exception:
         pass
     return None
@@ -469,23 +461,14 @@ async def _upsert_document(db, document_id: str, location_uri: str, title: str,
                             content_hash: str, mime_type: str, now: str) -> None:
     """Create or update a Document node."""
     try:
-        await db.execute_write(
-            """
-            MERGE (d:Document {document_id: $document_id})
-            ON CREATE SET d.location_uri     = $location_uri,
-                          d.content_hash     = $content_hash,
-                          d.last_modified_at = timestamp($now),
-                          d.mime_type        = $mime_type
-            ON MATCH SET  d.content_hash     = $content_hash,
-                          d.last_modified_at = timestamp($now)
-            """,
-            {
-                "document_id":  document_id,
-                "location_uri": location_uri,
-                "content_hash": content_hash,
-                "now":          now,
-                "mime_type":    mime_type,
-            }
+        gw = _gateway(db)
+        await gw.run(
+            "ingest.upsert_document",
+            document_id=document_id,
+            location_uri=location_uri,
+            content_hash=content_hash,
+            now=now,
+            mime_type=mime_type,
         )
     except Exception:
         pass
@@ -494,12 +477,7 @@ async def _upsert_document(db, document_id: str, location_uri: str, title: str,
 async def _archive_old_extracts(db, document_id: str) -> None:
     """Archive all DocumentExtract nodes for a document before re-ingesting."""
     try:
-        await db.execute_write(
-            """
-            MATCH (e:DocumentExtract)-[:DERIVED_FROM]->(d:Document {document_id: $did})
-            SET e.archived = true
-            """,
-            {"did": document_id}
-        )
+        gw = _gateway(db)
+        await gw.run("ingest.archive_old_extracts_for_document", did=document_id)
     except Exception:
         pass

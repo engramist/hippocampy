@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import shutil
 import tempfile
@@ -8,6 +10,10 @@ import re
 from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
+
+from campy.brain.hippocampus.graph.gateway import get_gateway
+
 
 logger = logging.getLogger(__name__)
 
@@ -152,16 +158,33 @@ async def _export_single_persona(db, persona_cfg: dict, timestamp: str, vault_di
 
     return summary
 
+def _row_val(row: Any, idx: int, *keys: str) -> Any:
+    if isinstance(row, dict):
+        for k in keys:
+            if k in row:
+                return row[k]
+        return None
+    if isinstance(row, (list, tuple)) and idx < len(row):
+        return row[idx]
+    for k in keys:
+        if hasattr(row, k):
+            return getattr(row, k)
+    return None
+
 async def _select_pages_for_persona(db, persona_cfg: dict, limit: int) -> list[WikiPage]:
-    """
-    Select nodes from KuzuDB for a specific persona.
-    """
+    """Select nodes from KuzuDB for a specific persona."""
+    gw = get_gateway(db)
     pages = []
     include_domains = persona_cfg.get("include_domains")
     include_node_types = persona_cfg.get("include_node_types")
     persona_name = persona_cfg["name"]
 
     def _rows(result):
+        if result is None:
+            return
+        if isinstance(result, list):
+            yield from result
+            return
         if result.__class__.__module__.startswith("kuzu") and hasattr(result, "has_next") and hasattr(result, "get_next"):
             while result.has_next():
                 yield result.get_next()
@@ -171,26 +194,19 @@ async def _select_pages_for_persona(db, persona_cfg: dict, limit: int) -> list[W
     # 1. Lessons
     if not include_node_types or "Lesson" in include_node_types:
         try:
-            params = {"lim": limit}
-            where_clauses = ["l.archived = false", "l.lesson_type = 'synthesis'"]
             if include_domains:
-                where_clauses.append("l.domain IN $domains")
-                params["domains"] = include_domains
-            
-            where_str = " AND ".join(where_clauses)
-            
-            res = db.execute(
-                f"MATCH (l:Lesson) WHERE {where_str} "
-                "RETURN l.lesson_id, l.text_raw, l.domain, l.pathway_strength "
-                "ORDER BY l.pathway_strength DESC LIMIT $lim",
-                params
-            )
+                res = await gw.run("thalamus.wiki_lessons_by_domain", domains=include_domains, lim=limit)
+            else:
+                res = await gw.run("thalamus.wiki_lessons", lim=limit)
             for row in _rows(res):
+                lid = _row_val(row, 0, "l.lesson_id", "lesson_id")
+                text = _row_val(row, 1, "l.text_raw", "text_raw") or ""
+                domain = _row_val(row, 2, "l.domain", "domain")
                 pages.append(WikiPage(
-                    title=f"Lesson: {row[1][:40]}...",
+                    title=f"Lesson: {text[:40]}...",
                     persona=persona_name,
-                    source_node_ids=[row[0]],
-                    body_sections=[("Summary", row[1]), ("Domain", row[2] or "unknown")]
+                    source_node_ids=[lid],
+                    body_sections=[("Summary", text), ("Domain", domain or "unknown")]
                 ))
         except Exception:
             logger.debug(f"Failed to query lessons for persona {persona_name}")
@@ -198,26 +214,21 @@ async def _select_pages_for_persona(db, persona_cfg: dict, limit: int) -> list[W
     # 2. Procedures
     if (not include_node_types or "Procedure" in include_node_types) and len(pages) < limit:
         try:
-            params = {"lim": limit - len(pages)}
-            where_clauses = ["p.archived = false"]
+            lim = limit - len(pages)
             if include_domains:
-                where_clauses.append("p.domain IN $domains")
-                params["domains"] = include_domains
-                
-            where_str = " AND ".join(where_clauses)
-            
-            res = db.execute(
-                f"MATCH (p:Procedure) WHERE {where_str} "
-                "RETURN p.procedure_id, p.name, p.description, p.archetype "
-                "ORDER BY p.name LIMIT $lim",
-                params
-            )
+                res = await gw.run("thalamus.wiki_procedures_by_domain", domains=include_domains, lim=lim)
+            else:
+                res = await gw.run("thalamus.wiki_procedures", lim=lim)
             for row in _rows(res):
+                pid = _row_val(row, 0, "p.procedure_id", "procedure_id")
+                name = _row_val(row, 1, "p.name", "name")
+                desc = _row_val(row, 2, "p.description", "description")
+                arch = _row_val(row, 3, "p.archetype", "archetype")
                 pages.append(WikiPage(
-                    title=f"Procedure: {row[1]}",
+                    title=f"Procedure: {name}",
                     persona=persona_name,
-                    source_node_ids=[row[0]],
-                    body_sections=[("Description", row[2]), ("Archetype", row[3] or "generic")]
+                    source_node_ids=[pid],
+                    body_sections=[("Description", desc), ("Archetype", arch or "generic")]
                 ))
         except Exception:
             logger.debug(f"Failed to query procedures for persona {persona_name}")
@@ -225,48 +236,53 @@ async def _select_pages_for_persona(db, persona_cfg: dict, limit: int) -> list[W
     # 3. ARC Runs (B225)
     if (not include_node_types or "ArcRun" in include_node_types) and len(pages) < limit:
         try:
-            params = {"lim": limit - len(pages)}
-            res = db.execute(
-                "MATCH (r:ArcRun) "
-                "RETURN r.run_id, r.summary, r.domain, r.status, r.task_count, "
-                "r.solved_count, r.failed_count, r.step_count, r.source_files "
-                "ORDER BY r.created_at DESC LIMIT $lim",
-                params
-            )
+            lim = limit - len(pages)
+            res = await gw.run("thalamus.wiki_arc_runs", lim=lim)
             for row in _rows(res):
-                # B229 — World Model Health section
+                run_id = _row_val(row, 0, "r.run_id", "run_id")
+                summary_val = _row_val(row, 1, "r.summary", "summary")
+                domain = _row_val(row, 2, "r.domain", "domain")
+                status = _row_val(row, 3, "r.status", "status")
+                task_count = _row_val(row, 4, "r.task_count", "task_count")
+                solved_count = _row_val(row, 5, "r.solved_count", "solved_count")
+                failed_count = _row_val(row, 6, "r.failed_count", "failed_count")
+                step_count = _row_val(row, 7, "r.step_count", "step_count")
+                source_files = _row_val(row, 8, "r.source_files", "source_files")
+
                 wm_section = ""
                 try:
-                    wm_res = db.execute(
-                        "MATCH (r:ArcRun {run_id: $run_id})-[:ARC_RUN_HAS_WORLD_MODEL_SUMMARY]->(s:ArcWorldModelSummary) "
-                        "RETURN s.graph_bounded, s.compiler_active, s.falsification_active, "
-                        "s.reasoning_gated, s.planner_grounded, s.memory_transfer_active, "
-                        "s.single_action_stall_detected, s.full_reasoning_cycles_avoided "
-                        "ORDER BY s.created_at DESC LIMIT 1",
-                        {"run_id": row[0]}
-                    )
-                    if wm_res.has_next():
-                        wm_row = wm_res.get_next()
+                    wm_res = await gw.run("thalamus.wiki_arc_run_wm_summary", run_id=run_id)
+                    wm_rows = list(_rows(wm_res))
+                    if wm_rows:
+                        wm_row = wm_rows[0]
+                        s_bounded = _row_val(wm_row, 0, "s.graph_bounded", "graph_bounded")
+                        s_compiler = _row_val(wm_row, 1, "s.compiler_active", "compiler_active")
+                        s_falsification = _row_val(wm_row, 2, "s.falsification_active", "falsification_active")
+                        s_reasoning = _row_val(wm_row, 3, "s.reasoning_gated", "reasoning_gated")
+                        s_planner = _row_val(wm_row, 4, "s.planner_grounded", "planner_grounded")
+                        s_transfer = _row_val(wm_row, 5, "s.memory_transfer_active", "memory_transfer_active")
+                        s_stall = _row_val(wm_row, 6, "s.single_action_stall_detected", "single_action_stall_detected")
+                        s_cycles = _row_val(wm_row, 7, "s.full_reasoning_cycles_avoided", "full_reasoning_cycles_avoided")
                         wm_section = (
-                            f"bounded={bool(wm_row[0])}, compiler={bool(wm_row[1])}, "
-                            f"falsification={bool(wm_row[2])}, reasoning_gated={bool(wm_row[3])}, "
-                            f"planner={bool(wm_row[4])}, memory_transfer={bool(wm_row[5])}\n\n"
-                            f"stall_detected={bool(wm_row[6])}, cycles_avoided={wm_row[7] or 0}"
+                            f"bounded={bool(s_bounded)}, compiler={bool(s_compiler)}, "
+                            f"falsification={bool(s_falsification)}, reasoning_gated={bool(s_reasoning)}, "
+                            f"planner={bool(s_planner)}, memory_transfer={bool(s_transfer)}\n\n"
+                            f"stall_detected={bool(s_stall)}, cycles_avoided={s_cycles or 0}"
                         )
                 except Exception:
                     pass
 
                 pages.append(WikiPage(
-                    title=f"ARC Run: {row[0]}",
+                    title=f"ARC Run: {run_id}",
                     persona=persona_name,
-                    source_node_ids=[row[0]],
+                    source_node_ids=[run_id],
                     body_sections=[
-                        ("Summary", row[1] or ""),
-                        ("Status", row[3] or "unknown"),
-                        ("Run Metrics", f"tasks={row[4] or 0}, solved={row[5] or 0}, failed={row[6] or 0}, steps={row[7] or 0}"),
+                        ("Summary", summary_val or ""),
+                        ("Status", status or "unknown"),
+                        ("Run Metrics", f"tasks={task_count or 0}, solved={solved_count or 0}, failed={failed_count or 0}, steps={step_count or 0}"),
                         ("World Model Health", wm_section or "No world-model evaluation data found for this run."),
-                        ("Domain", row[2] or ""),
-                        ("Provenance", f"Graph source: {row[0]}\n\nArtifact paths: {row[8] or '[]'}"),
+                        ("Domain", domain or ""),
+                        ("Provenance", f"Graph source: {run_id}\n\nArtifact paths: {source_files or '[]'}"),
                     ]
                 ))
         except Exception:
@@ -275,25 +291,28 @@ async def _select_pages_for_persona(db, persona_cfg: dict, limit: int) -> list[W
     # 4. ARC Task Results (B225)
     if (not include_node_types or "ArcTaskResult" in include_node_types) and len(pages) < limit:
         try:
-            params = {"lim": limit - len(pages)}
-            res = db.execute(
-                "MATCH (t:ArcTaskResult) "
-                "RETURN t.task_result_id, t.summary, t.domain, t.status, t.task_id, "
-                "t.puzzle_id, t.correct, t.steps, t.failure_class "
-                "ORDER BY t.created_at DESC LIMIT $lim",
-                params
-            )
+            lim = limit - len(pages)
+            res = await gw.run("thalamus.wiki_arc_task_results", lim=lim)
             for row in _rows(res):
+                task_res_id = _row_val(row, 0, "t.task_result_id", "task_result_id")
+                summary_val = _row_val(row, 1, "t.summary", "summary")
+                domain = _row_val(row, 2, "t.domain", "domain")
+                status = _row_val(row, 3, "t.status", "status")
+                task_id = _row_val(row, 4, "t.task_id", "task_id")
+                puzzle_id = _row_val(row, 5, "t.puzzle_id", "puzzle_id")
+                correct = _row_val(row, 6, "t.correct", "correct")
+                steps = _row_val(row, 7, "t.steps", "steps")
+                failure_class = _row_val(row, 8, "t.failure_class", "failure_class")
                 pages.append(WikiPage(
-                    title=f"ARC Task: {row[4] or row[5] or row[0]}",
+                    title=f"ARC Task: {task_id or puzzle_id or task_res_id}",
                     persona=persona_name,
-                    source_node_ids=[row[0]],
+                    source_node_ids=[task_res_id],
                     body_sections=[
-                        ("Summary", row[1] or ""),
-                        ("Status", row[3] or "unknown"),
-                        ("Task Metrics", f"task_id={row[4] or ''}, puzzle_id={row[5] or ''}, correct={bool(row[6])}, steps={row[7] or 0}"),
-                        ("Failure Class", row[8] or ""),
-                        ("Domain", row[2] or ""),
+                        ("Summary", summary_val or ""),
+                        ("Status", status or "unknown"),
+                        ("Task Metrics", f"task_id={task_id or ''}, puzzle_id={puzzle_id or ''}, correct={bool(correct)}, steps={steps or 0}"),
+                        ("Failure Class", failure_class or ""),
+                        ("Domain", domain or ""),
                     ]
                 ))
         except Exception:
@@ -302,27 +321,30 @@ async def _select_pages_for_persona(db, persona_cfg: dict, limit: int) -> list[W
     # 5. ARC Artifacts (B225)
     if (not include_node_types or "ArcArtifact" in include_node_types) and len(pages) < limit:
         try:
-            params = {"lim": limit - len(pages)}
-            res = db.execute(
-                "MATCH (a:ArcArtifact) "
-                "RETURN a.artifact_id, a.artifact_kind, a.path, a.content_hash, "
-                "a.record_count, a.captured_at, a.ingested_at, a.domain, a.summary "
-                "ORDER BY a.ingested_at DESC LIMIT $lim",
-                params
-            )
+            lim = limit - len(pages)
+            res = await gw.run("thalamus.wiki_arc_artifacts", lim=lim)
             for row in _rows(res):
+                aid = _row_val(row, 0, "a.artifact_id", "artifact_id")
+                kind = _row_val(row, 1, "a.artifact_kind", "artifact_kind")
+                path = _row_val(row, 2, "a.path", "path")
+                chash = _row_val(row, 3, "a.content_hash", "content_hash")
+                rcount = _row_val(row, 4, "a.record_count", "record_count")
+                captured_at = _row_val(row, 5, "a.captured_at", "captured_at")
+                ingested_at = _row_val(row, 6, "a.ingested_at", "ingested_at")
+                domain = _row_val(row, 7, "a.domain", "domain")
+                summary_val = _row_val(row, 8, "a.summary", "summary")
                 pages.append(WikiPage(
-                    title=f"ARC Artifact: {row[1] or row[0]}",
+                    title=f"ARC Artifact: {kind or aid}",
                     persona=persona_name,
-                    source_node_ids=[row[0]],
+                    source_node_ids=[aid],
                     body_sections=[
-                        ("Summary", row[8] or ""),
-                        ("Artifact", f"kind={row[1] or ''}, records={row[4] or 0}"),
-                        ("Path", row[2] or ""),
-                        ("Content Hash", row[3] or ""),
-                        ("Captured", str(row[5] or "")),
-                        ("Ingested", str(row[6] or "")),
-                        ("Domain", row[7] or ""),
+                        ("Summary", summary_val or ""),
+                        ("Artifact", f"kind={kind or ''}, records={rcount or 0}"),
+                        ("Path", path or ""),
+                        ("Content Hash", chash or ""),
+                        ("Captured", str(captured_at or "")),
+                        ("Ingested", str(ingested_at or "")),
+                        ("Domain", domain or ""),
                     ]
                 ))
         except Exception:
@@ -331,30 +353,35 @@ async def _select_pages_for_persona(db, persona_cfg: dict, limit: int) -> list[W
     # 6. ARC Events (B225)
     if (not include_node_types or "ArcEvent" in include_node_types) and len(pages) < limit:
         try:
-            params = {"lim": limit - len(pages)}
-            res = db.execute(
-                "MATCH (e:ArcEvent) "
-                "RETURN e.event_id, e.run_id, e.task_id, e.event_type, e.timestamp, "
-                "e.step_index, e.actor, e.tool_name, e.action_name, e.outcome, "
-                "e.domain, e.summary "
-                "ORDER BY e.timestamp DESC, e.step_index DESC LIMIT $lim",
-                params
-            )
+            lim = limit - len(pages)
+            res = await gw.run("thalamus.wiki_arc_events", lim=lim)
             for row in _rows(res):
-                step = row[5] if row[5] is not None else "unknown"
-                label = row[3] or row[8] or row[7] or row[0]
+                eid = _row_val(row, 0, "e.event_id", "event_id")
+                run_id = _row_val(row, 1, "e.run_id", "run_id")
+                task_id = _row_val(row, 2, "e.task_id", "task_id")
+                etype = _row_val(row, 3, "e.event_type", "event_type")
+                timestamp_val = _row_val(row, 4, "e.timestamp", "timestamp")
+                step_idx = _row_val(row, 5, "e.step_index", "step_index")
+                actor = _row_val(row, 6, "e.actor", "actor")
+                tool_name = _row_val(row, 7, "e.tool_name", "tool_name")
+                action_name = _row_val(row, 8, "e.action_name", "action_name")
+                outcome = _row_val(row, 9, "e.outcome", "outcome")
+                domain = _row_val(row, 10, "e.domain", "domain")
+                summary_val = _row_val(row, 11, "e.summary", "summary")
+                step = step_idx if step_idx is not None else "unknown"
+                label = etype or action_name or tool_name or eid
                 pages.append(WikiPage(
                     title=f"ARC Event: step {step} {label}",
                     persona=persona_name,
-                    source_node_ids=[row[0]],
+                    source_node_ids=[eid],
                     body_sections=[
-                        ("Summary", row[11] or ""),
-                        ("Event", f"type={row[3] or ''}, step={step}, timestamp={row[4] or ''}"),
-                        ("Run", row[1] or ""),
-                        ("Task", row[2] or ""),
-                        ("Actor And Tool", f"actor={row[6] or ''}, tool={row[7] or ''}, action={row[8] or ''}"),
-                        ("Outcome", row[9] or ""),
-                        ("Domain", row[10] or ""),
+                        ("Summary", summary_val or ""),
+                        ("Event", f"type={etype or ''}, step={step}, timestamp={timestamp_val or ''}"),
+                        ("Run", run_id or ""),
+                        ("Task", task_id or ""),
+                        ("Actor And Tool", f"actor={actor or ''}, tool={tool_name or ''}, action={action_name or ''}"),
+                        ("Outcome", outcome or ""),
+                        ("Domain", domain or ""),
                     ]
                 ))
         except Exception:
@@ -363,24 +390,28 @@ async def _select_pages_for_persona(db, persona_cfg: dict, limit: int) -> list[W
     # 7. ARC World Model Steps (B229)
     if (not include_node_types or "ArcWorldModelStep" in include_node_types) and len(pages) < limit:
         try:
-            params = {"lim": limit - len(pages)}
-            res = db.execute(
-                "MATCH (s:ArcWorldModelStep) "
-                "RETURN s.world_model_step_id, s.task_id, s.step_index, s.node_count, "
-                "s.edge_count, s.compiled_claim_count, s.action_effect_class, s.reasoning_mode, "
-                "s.planner_candidate_count, s.single_action_stall_detected, s.summary "
-                "ORDER BY s.created_at DESC LIMIT $lim",
-                params
-            )
+            lim = limit - len(pages)
+            res = await gw.run("thalamus.wiki_arc_wm_steps", lim=lim)
             for row in _rows(res):
+                step_id = _row_val(row, 0, "s.world_model_step_id", "world_model_step_id")
+                task_id = _row_val(row, 1, "s.task_id", "task_id")
+                step_idx = _row_val(row, 2, "s.step_index", "step_index")
+                ncount = _row_val(row, 3, "s.node_count", "node_count")
+                ecount = _row_val(row, 4, "s.edge_count", "edge_count")
+                ccount = _row_val(row, 5, "s.compiled_claim_count", "compiled_claim_count")
+                effect_class = _row_val(row, 6, "s.action_effect_class", "action_effect_class")
+                rmode = _row_val(row, 7, "s.reasoning_mode", "reasoning_mode")
+                pcand = _row_val(row, 8, "s.planner_candidate_count", "planner_candidate_count")
+                stall = _row_val(row, 9, "s.single_action_stall_detected", "single_action_stall_detected")
+                summary_val = _row_val(row, 10, "s.summary", "summary")
                 pages.append(WikiPage(
-                    title=f"ARC WM Step: task {row[1]} step {row[2]}",
+                    title=f"ARC WM Step: task {task_id} step {step_idx}",
                     persona=persona_name,
-                    source_node_ids=[row[0]],
+                    source_node_ids=[step_id],
                     body_sections=[
-                        ("Summary", row[10] or ""),
-                        ("Graph Metrics", f"nodes={row[3] or 0}, edges={row[4] or 0}, claims={row[5] or 0}"),
-                        ("Execution", f"action_effect={row[6] or ''}, reasoning={row[7] or ''}, candidates={row[8] or 0}, stall_detected={bool(row[9])}"),
+                        ("Summary", summary_val or ""),
+                        ("Graph Metrics", f"nodes={ncount or 0}, edges={ecount or 0}, claims={ccount or 0}"),
+                        ("Execution", f"action_effect={effect_class or ''}, reasoning={rmode or ''}, candidates={pcand or 0}, stall_detected={bool(stall)}"),
                     ]
                 ))
         except Exception:
@@ -389,24 +420,28 @@ async def _select_pages_for_persona(db, persona_cfg: dict, limit: int) -> list[W
     # 8. ARC World Model Summaries (B229)
     if (not include_node_types or "ArcWorldModelSummary" in include_node_types) and len(pages) < limit:
         try:
-            params = {"lim": limit - len(pages)}
-            res = db.execute(
-                "MATCH (s:ArcWorldModelSummary) "
-                "RETURN s.world_model_summary_id, s.task_id, s.graph_bounded, s.compiler_active, "
-                "s.falsification_active, s.reasoning_gated, s.planner_grounded, s.memory_transfer_active, "
-                "s.single_action_stall_detected, s.full_reasoning_cycles_avoided, s.summary "
-                "ORDER BY s.created_at DESC LIMIT $lim",
-                params
-            )
+            lim = limit - len(pages)
+            res = await gw.run("thalamus.wiki_arc_wm_summaries", lim=lim)
             for row in _rows(res):
+                wm_id = _row_val(row, 0, "s.world_model_summary_id", "world_model_summary_id")
+                task_id = _row_val(row, 1, "s.task_id", "task_id")
+                s_bounded = _row_val(row, 2, "s.graph_bounded", "graph_bounded")
+                s_compiler = _row_val(row, 3, "s.compiler_active", "compiler_active")
+                s_falsification = _row_val(row, 4, "s.falsification_active", "falsification_active")
+                s_reasoning = _row_val(row, 5, "s.reasoning_gated", "reasoning_gated")
+                s_planner = _row_val(row, 6, "s.planner_grounded", "planner_grounded")
+                s_transfer = _row_val(row, 7, "s.memory_transfer_active", "memory_transfer_active")
+                s_stall = _row_val(row, 8, "s.single_action_stall_detected", "single_action_stall_detected")
+                s_cycles = _row_val(row, 9, "s.full_reasoning_cycles_avoided", "full_reasoning_cycles_avoided")
+                summary_val = _row_val(row, 10, "s.summary", "summary")
                 pages.append(WikiPage(
-                    title=f"ARC WM Summary: task {row[1]}",
+                    title=f"ARC WM Summary: task {task_id}",
                     persona=persona_name,
-                    source_node_ids=[row[0]],
+                    source_node_ids=[wm_id],
                     body_sections=[
-                        ("Summary", row[10] or ""),
-                        ("Flags", f"bounded={bool(row[2])}, compiler={bool(row[3])}, falsification={bool(row[4])}, reasoning_gated={bool(row[5])}, planner_grounded={bool(row[6])}, memory_transfer={bool(row[7])}"),
-                        ("Stalls and Savings", f"stall_detected={bool(row[8])}, reasoning_cycles_avoided={row[9] or 0}"),
+                        ("Summary", summary_val or ""),
+                        ("Flags", f"bounded={bool(s_bounded)}, compiler={bool(s_compiler)}, falsification={bool(s_falsification)}, reasoning_gated={bool(s_reasoning)}, planner_grounded={bool(s_planner)}, memory_transfer={bool(s_transfer)}"),
+                        ("Stalls and Savings", f"stall_detected={bool(s_stall)}, reasoning_cycles_avoided={s_cycles or 0}"),
                     ]
                 ))
         except Exception:
@@ -415,30 +450,33 @@ async def _select_pages_for_persona(db, persona_cfg: dict, limit: int) -> list[W
     # 9. ARC Mechanics (B226)
     if (not include_node_types or "ArcMechanic" in include_node_types) and len(pages) < limit:
         try:
-            params = {"lim": limit - len(pages)}
-            res = db.execute(
-                "MATCH (m:ArcMechanic) "
-                "RETURN m.mechanic_id, m.name, m.signature, m.confidence, "
-                "m.terminal_relevance, m.coordinate_relevance, m.evidence_count, m.summary "
-                "ORDER BY m.confidence DESC LIMIT $lim",
-                params
-            )
+            lim = limit - len(pages)
+            res = await gw.run("thalamus.wiki_arc_mechanics", lim=lim)
             for row in _rows(res):
+                mid = _row_val(row, 0, "m.mechanic_id", "mechanic_id")
+                name = _row_val(row, 1, "m.name", "name")
+                sig = _row_val(row, 2, "m.signature", "signature")
+                conf = _row_val(row, 3, "m.confidence", "confidence")
+                trev = _row_val(row, 4, "m.terminal_relevance", "terminal_relevance")
+                crev = _row_val(row, 5, "m.coordinate_relevance", "coordinate_relevance")
+                ecount = _row_val(row, 6, "m.evidence_count", "evidence_count")
+                summary_val = _row_val(row, 7, "m.summary", "summary")
                 pages.append(WikiPage(
-                    title=f"ARC Mechanic: {row[1] or row[0]}",
+                    title=f"ARC Mechanic: {name or mid}",
                     persona=persona_name,
-                    source_node_ids=[row[0]],
+                    source_node_ids=[mid],
                     body_sections=[
-                        ("Summary", row[7] or ""),
-                        ("Signature", row[2] or "unknown"),
-                        ("Stats", f"confidence={row[3] or 0.0}, evidence_count={row[6] or 0}"),
-                        ("Relevance", f"terminal={row[4] or 0.0}, coordinate={row[5] or 0.0}"),
+                        ("Summary", summary_val or ""),
+                        ("Signature", sig or "unknown"),
+                        ("Stats", f"confidence={conf or 0.0}, evidence_count={ecount or 0}"),
+                        ("Relevance", f"terminal={trev or 0.0}, coordinate={crev or 0.0}"),
                     ]
                 ))
         except Exception:
             logger.debug(f"Failed to query ArcMechanic for persona {persona_name}")
 
     return pages
+
 
 def _compute_hash(content: str) -> str:
     """Compute a stable hash of the page body content."""

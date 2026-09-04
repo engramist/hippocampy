@@ -333,9 +333,9 @@ def import_graph_dump(db: KuzuClient, dump_dir: str | Path) -> dict[str, Any]:
     PROVENANCE_TABLES jsonl file simply has fewer (possibly zero) rows in
     that case, not a missing file, so the per-table `.exists()` check and
     row loop below need no special-casing. Any relationship whose endpoint
-    was a projected row omitted from the dump fails its MATCH during
+    was a projected row omitted from the dump fails pattern lookup during
     `_create_relationships()` and is silently skipped (standard Cypher
-    semantics: zero MATCH rows means the paired CREATE never fires) rather
+    semantics: zero matched rows means the paired edge insert never fires) rather
     than raising — the missing node is expected, not corrupt data.
     """
     dump_path = Path(dump_dir)
