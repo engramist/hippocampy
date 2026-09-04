@@ -261,8 +261,12 @@ def test_get_existing_hash_returns_hash_when_found():
     from campy.brain.sensory_cortex.ingest import _get_existing_hash
 
     class MockResult:
-        def has_next(self): return True
-        def get_next(self): return ["abc123hash"]
+        def __init__(self): self._done = False
+        def has_next(self):
+            return not self._done
+        def get_next(self):
+            self._done = True
+            return ["abc123hash"]
 
     class MockDB:
         def execute(self, q, p=None): return MockResult()
@@ -310,8 +314,12 @@ async def test_ingest_document_skips_if_hash_unchanged(tmp_path):
     existing_hash = hash_file(f)
 
     class MockResult:
-        def has_next(self): return True
-        def get_next(self): return [existing_hash]  # same hash
+        def __init__(self): self._done = False
+        def has_next(self):
+            return not self._done
+        def get_next(self):
+            self._done = True
+            return [existing_hash]  # same hash
 
     class MockDB:
         def execute(self, q, p=None): return MockResult()
@@ -332,8 +340,12 @@ async def test_ingest_document_archives_old_on_rehash(tmp_path):
     writes = []
 
     class MockResult:
-        def has_next(self): return True
-        def get_next(self): return ["old-different-hash"]  # different hash → re-ingest
+        def __init__(self): self._done = False
+        def has_next(self):
+            return not self._done
+        def get_next(self):
+            self._done = True
+            return ["old-different-hash"]  # different hash → re-ingest
 
     class MockDB:
         def execute(self, q, p=None): return MockResult()

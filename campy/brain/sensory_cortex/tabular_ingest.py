@@ -1,3 +1,14 @@
+from __future__ import annotations
+
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
+
+
+def _gateway(db) -> GraphGateway:
+    if isinstance(db, GraphGateway):
+        return db
+    return GraphGateway(db, REGISTRY)
+
 """
 mcp_engine/tabular_ingest.py — Tabular Data (CSV/XLSX/TSV) Ingestion Pipeline
 
@@ -11,7 +22,6 @@ Ingests spreadsheets and CSV files:
 7. Storage: SQLite (full data) + Kuzu (metadata + facts)
 """
 
-from __future__ import annotations
 
 import hashlib
 import json
@@ -203,22 +213,17 @@ def _find_active_dataset(db: KuzuClient, source_key: str) -> Optional[dict]:
     None if none exists - including on any query error, treated the same
     as "not found" (matches ingest.py's _get_existing_hash convention)."""
     try:
-        result = db.execute(
-            "MATCH (d:Dataset {source_key: $sk}) WHERE d.archived = false "
-            "RETURN d.dataset_id, d.content_hash, d.storage_uri, d.row_count, "
-            "       d.column_count, d.description "
-            "ORDER BY d.created_at DESC LIMIT 1",
-            {"sk": source_key},
-        )
-        if result.has_next():
-            row = result.get_next()
+        gw = _gateway(db)
+        result = gw.run_sync("ingest.find_active_dataset", sk=source_key)
+        if result:
+            row = result[0]
             return {
-                "dataset_id": row[0],
-                "content_hash": row[1],
-                "storage_uri": row[2],
-                "row_count": row[3],
-                "column_count": row[4],
-                "description": row[5],
+                "dataset_id": row.get("d.dataset_id") if hasattr(row, "get") else row[0],
+                "content_hash": row.get("d.content_hash") if hasattr(row, "get") else row[1],
+                "storage_uri": row.get("d.storage_uri") if hasattr(row, "get") else row[2],
+                "row_count": row.get("d.row_count") if hasattr(row, "get") else row[3],
+                "column_count": row.get("d.column_count") if hasattr(row, "get") else row[4],
+                "description": row.get("d.description") if hasattr(row, "get") else row[5],
             }
     except Exception:
         pass
@@ -230,10 +235,8 @@ async def _archive_dataset(db: KuzuClient, dataset_id: str) -> None:
     fact Concepts it produced are left alone (same "archive, don't
     destroy" convention as ingest.py's _archive_old_extracts)."""
     try:
-        await db.execute_write(
-            "MATCH (d:Dataset {dataset_id: $did}) SET d.archived = true",
-            {"did": dataset_id},
-        )
+        gw = _gateway(db)
+        await gw.run("ingest.archive_dataset", did=dataset_id)
     except Exception:
         _logger.debug("Failed to archive superseded Dataset %s", dataset_id)
 
@@ -313,37 +316,21 @@ async def _extract_and_link_key_facts(db: KuzuClient, df, dataset_id: str, confi
             from campy.brain.hippocampus.graph import embeddings as emb
             vector = emb.embed(text, model_name=embedding_model)
             concept_id = str(uuid.uuid4())
-            await db.execute_write(
-                """
-                CREATE (c:Concept {
-                    concept_id:       $concept_id,
-                    text_raw:         $text_raw,
-                    embedding:        $embedding,
-                    embedding_model:  $embedding_model,
-                    embedding_dim:    $embedding_dim,
-                    gist_class:       '',
-                    schema_org_type:  '',
-                    confidence:       0.75,
-                    confidence_low:   false,
-                    pathway_strength: 0.55,
-                    archived:         false,
-                    created_at:       timestamp($now),
-                    last_accessed_at: timestamp($now)
-                })
-                """,
-                {
-                    "concept_id": concept_id,
-                    "text_raw": text,
-                    "embedding": vector,
-                    "embedding_model": embedding_model,
-                    "embedding_dim": len(vector),
-                    "now": now,
-                },
+            gw = _gateway(db)
+            await gw.run(
+                "ingest.create_fact_concept",
+                concept_id=concept_id,
+                text_raw=text,
+                embedding=vector,
+                embedding_model=embedding_model,
+                embedding_dim=len(vector),
+                now=now,
             )
-            await db.execute_write(
-                "MATCH (c:Concept {concept_id: $cid}), (d:Dataset {dataset_id: $did}) "
-                "CREATE (c)-[:DESCRIBED_BY_DATASET {extraction_method: 'llm', created_at: timestamp($now)}]->(d)",
-                {"cid": concept_id, "did": dataset_id, "now": now},
+            await gw.run(
+                "ingest.link_concept_dataset",
+                cid=concept_id,
+                did=dataset_id,
+                now=now,
             )
             created += 1
         except Exception:
@@ -451,31 +438,19 @@ async def _ingest_single_dataset(
         "last_accessed_at": now,
     }
 
-    # Prepare Cypher for Dataset node creation.
-    # created_at/last_accessed_at are TIMESTAMP columns; Kuzu does not
-    # implicitly cast a STRING parameter to TIMESTAMP, so those two
-    # properties must be wrapped in timestamp(), matching the pattern
-    # already used in ingest.py's Document node creation (B250 bugfix).
-    _timestamp_props = {"created_at", "last_accessed_at"}
-    properties = ", ".join(
-        f"{k}: timestamp(${k})" if k in _timestamp_props else f"{k}: ${k}"
-        for k in dataset_dict.keys()
-    )
-    cypher = f"CREATE (d:Dataset {{{properties}}})"
-
+    gw = _gateway(db)
     try:
-        db.execute(cypher, dataset_dict)
+        await gw.run("ingest.create_dataset_node", **dataset_dict)
     except Exception as e:
         return {"error": f"Failed to create Dataset node: {str(e)}"}
 
     # Create DATASET_DERIVED_FROM edge to Document (if document tracked)
     # Create DATASET_BELONGS_TO_QUEST edge if quest_id provided
     if quest_id:
-        db.execute(
-            "MATCH (d:Dataset {dataset_id: $did}) "
-            "MATCH (q:MainQuest {quest_id: $qid}) "
-            "CREATE (d)-[:DATASET_BELONGS_TO_QUEST]->(q)",
-            {"did": dataset_id, "qid": quest_id}
+        await gw.run(
+            "ingest.link_dataset_belongs_to_quest",
+            did=dataset_id,
+            qid=quest_id,
         )
 
     facts_extracted = await _extract_and_link_key_facts(db, df, dataset_id, config, now)

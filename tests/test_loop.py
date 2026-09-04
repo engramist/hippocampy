@@ -790,8 +790,12 @@ async def test_step7_apply_contradiction_archives_old():
     writes = []
 
     class MockQueryResult:
-        def has_next(self): return True
-        def get_next(self): return [0.7]
+        def __init__(self): self._done = False
+        def has_next(self):
+            return not self._done
+        def get_next(self):
+            self._done = True
+            return [0.7]
 
     class MockDB:
         def execute(self, query, params=None):

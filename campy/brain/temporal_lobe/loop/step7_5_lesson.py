@@ -7,6 +7,8 @@ Named IP Claims:
 """
 
 from __future__ import annotations
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
 import re
 import uuid
 import logging
@@ -86,23 +88,9 @@ async def extract_lessons(message_id: str, text: str, db, llm_client,
             vector = await asyncio.to_thread(emb.embed, lesson_text, embedding_model)
             lesson_id = str(uuid.uuid4())
             
-            await db.execute_write(
-                """
-                CREATE (l:Lesson {
-                    lesson_id:        $lesson_id,
-                    text_raw:         $text_raw,
-                    embedding:        $embedding,
-                    embedding_model:  $embedding_model,
-                    embedding_dim:    $embedding_dim,
-                    domain:           $domain,
-                    lesson_type:      $lesson_type,
-                    confidence:       0.70,
-                    confidence_low:   true,
-                    pathway_strength: 0.70,
-                    archived:         false,
-                    created_at:       timestamp($created_at)
-                })
-                """,
+            gw = GraphGateway(db, REGISTRY) if not isinstance(db, GraphGateway) else db
+            await gw.run(
+                "orchestrator.create_lesson",
                 {
                     "lesson_id":       lesson_id,
                     "text_raw":        lesson_text,
@@ -112,23 +100,21 @@ async def extract_lessons(message_id: str, text: str, db, llm_client,
                     "domain":          domain,
                     "lesson_type":     lesson_type,
                     "created_at":      now,
-                }
+                },
             )
             
             # Links
             # (Message)-[CONTAINS_LESSON]->(Lesson)
-            await db.execute_write(
-                "MATCH (m:Message {message_id: $mid}), (l:Lesson {lesson_id: $lid}) "
-                "MERGE (m)-[:CONTAINS_LESSON]->(l)",
-                {"mid": message_id, "lid": lesson_id}
+            await gw.run(
+                "orchestrator.link_message_contains_lesson",
+                {"mid": message_id, "lid": lesson_id},
             )
             
             # (Session)-[LEARNED]->(Lesson)
             if session_id != "unknown":
-                await db.execute_write(
-                    "MATCH (s:Session {session_id: $sid}), (l:Lesson {lesson_id: $lid}) "
-                    "MERGE (s)-[:LEARNED]->(l)",
-                    {"sid": session_id, "lid": lesson_id}
+                await gw.run(
+                    "orchestrator.link_session_learned_lesson",
+                    {"sid": session_id, "lid": lesson_id},
                 )
             
             stored_ids.append(lesson_id)

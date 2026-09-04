@@ -31,8 +31,17 @@ _logger = logging.getLogger(__name__)
 
 from typing import TYPE_CHECKING, Optional
 
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
+
+
+def _gateway(db) -> GraphGateway:
+    if isinstance(db, GraphGateway):
+        return db
+    return GraphGateway(db, REGISTRY)
+
+
 if TYPE_CHECKING:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
     from campy.brain.llm.provider import LLMClient
 
 from campy.brain.temporal_lobe.loop.step7_pathway import pathway_strength_decay
@@ -71,10 +80,10 @@ SWEEP_TABLES = [
 _BATCH_SIZE = 500
 
 
-async def _batch_write(db, query: str, items: list, param_key: str = "ids") -> tuple[int, int]:
-    """Execute an UNWIND-based write in chunks of _BATCH_SIZE.
+async def _batch_write(db, query_name: str, items: list, param_key: str = "ids") -> tuple[int, int]:
+    """Execute an UNWIND-based write in chunks of _BATCH_SIZE via GraphGateway named query.
 
-    `query` must consume the parameter named `param_key` via UNWIND.
+    `query_name` must consume the parameter named `param_key` via UNWIND.
     Returns (submitted_count, errored_chunk_item_count). Errors are counted
     per chunk — a failed chunk counts all its items as errored.
     """
@@ -82,7 +91,7 @@ async def _batch_write(db, query: str, items: list, param_key: str = "ids") -> t
     for i in range(0, len(items), _BATCH_SIZE):
         chunk = items[i:i + _BATCH_SIZE]
         try:
-            await db.execute_write(query, {param_key: chunk})
+            await _gateway(db).run(query_name, **{param_key: chunk})
             submitted += len(chunk)
         except Exception:
             _logger.exception("[Sweep] batch write failed (%d items)", len(chunk))
@@ -259,21 +268,20 @@ async def _infer_retrospective_plans(db, config: dict) -> tuple[int, int]:
     )
 
     try:
-        result = db.execute(
-            "MATCH (a:ActionItem)-[:ESTABLISHED_IN]->(s:Session) "
-            "WHERE a.archived = false AND a.text_raw IS NOT NULL "
-            "RETURN s.session_id, a.action_item_id, a.text_raw, a.created_at "
-            "ORDER BY s.session_id, a.created_at ASC"
-        )
+        rows = _gateway(db).run_sync("sweep.get_retrospective_action_items")
     except Exception:
         return 0, 1
 
     by_session: dict[str, list[tuple[str, str]]] = {}
-    while result.has_next():
-        row = result.get_next()
-        sid = row[0] or ""
-        aid = row[1] or ""
-        txt = (row[2] or "").strip()
+    for row in rows:
+        if isinstance(row, dict):
+            sid = row.get("s.session_id") or ""
+            aid = row.get("a.action_item_id") or ""
+            txt = (row.get("a.text_raw") or "").strip()
+        else:
+            sid = row[0] or ""
+            aid = row[1] or ""
+            txt = (row[2] or "").strip()
         if not sid or not aid or not txt:
             continue
         by_session.setdefault(sid, []).append((aid, txt))
@@ -306,44 +314,22 @@ async def _infer_retrospective_plans(db, config: dict) -> tuple[int, int]:
 
         try:
             plan_id = str(uuid.uuid4())
-            await db.execute_write(
-                """
-                CREATE (p:Plan {
-                    plan_id: $plan_id,
-                    goal: $goal,
-                    strategy: NULL,
-                    source: 'retrospective',
-                    embedding: $embedding,
-                    embedding_model: $embedding_model,
-                    embedding_dim: $embedding_dim,
-                    step_count: $step_count,
-                    valence: NULL,
-                    valence_source: NULL,
-                    status: 'completed',
-                    confidence: 0.65,
-                    confidence_low: true,
-                    pathway_strength: 0.65,
-                    archived: false,
-                    created_at: timestamp($created_at),
-                    completed_at: timestamp($completed_at)
-                })
-                """,
-                {
-                    "plan_id": plan_id,
-                    "goal": goal,
-                    "embedding": goal_vec,
-                    "embedding_model": embedding_model,
-                    "embedding_dim": len(goal_vec),
-                    "step_count": len(steps),
-                    "created_at": now,
-                    "completed_at": now,
-                },
+            await _gateway(db).run(
+                "sweep.create_retrospective_plan",
+                plan_id=plan_id,
+                goal=goal,
+                embedding=goal_vec,
+                embedding_model=embedding_model,
+                embedding_dim=len(goal_vec),
+                step_count=len(steps),
+                created_at=now,
+                completed_at=now,
             )
 
-            await db.execute_write(
-                "MATCH (p:Plan {plan_id: $pid}), (s:Session {session_id: $sid}) "
-                "MERGE (p)-[:PLANNED_IN]->(s)",
-                {"pid": plan_id, "sid": session_id},
+            await _gateway(db).run(
+                "sweep.link_plan_session",
+                pid=plan_id,
+                sid=session_id,
             )
 
             step_ids: list[str] = []
@@ -351,45 +337,28 @@ async def _infer_retrospective_plans(db, config: dict) -> tuple[int, int]:
                 step_id = str(uuid.uuid4())
                 step_ids.append(step_id)
                 step_vec = emb.embed(text_raw, model_name=embedding_model)
-                await db.execute_write(
-                    """
-                    CREATE (ps:PlanStep {
-                        step_id: $step_id,
-                        step_number: $step_number,
-                        description: $description,
-                        embedding: $embedding,
-                        embedding_model: $embedding_model,
-                        embedding_dim: $embedding_dim,
-                        expected_outcome: NULL,
-                        actual_outcome: NULL,
-                        valence: NULL,
-                        status: 'succeeded',
-                        created_at: timestamp($created_at),
-                        completed_at: timestamp($completed_at)
-                    })
-                    """,
-                    {
-                        "step_id": step_id,
-                        "step_number": idx,
-                        "description": text_raw,
-                        "embedding": step_vec,
-                        "embedding_model": embedding_model,
-                        "embedding_dim": len(step_vec),
-                        "created_at": now,
-                        "completed_at": now,
-                    },
+                await _gateway(db).run(
+                    "sweep.create_plan_step",
+                    step_id=step_id,
+                    step_number=idx,
+                    description=text_raw,
+                    embedding=step_vec,
+                    embedding_model=embedding_model,
+                    embedding_dim=len(step_vec),
+                    created_at=now,
+                    completed_at=now,
                 )
-                await db.execute_write(
-                    "MATCH (ps:PlanStep {step_id: $sid}), (p:Plan {plan_id: $pid}) "
-                    "MERGE (ps)-[:STEP_OF]->(p)",
-                    {"sid": step_id, "pid": plan_id},
+                await _gateway(db).run(
+                    "sweep.link_step_of_plan",
+                    sid=step_id,
+                    pid=plan_id,
                 )
 
             for a, b in zip(step_ids, step_ids[1:]):
-                await db.execute_write(
-                    "MATCH (x:PlanStep {step_id: $a}), (y:PlanStep {step_id: $b}) "
-                    "MERGE (x)-[:NEXT_STEP]->(y)",
-                    {"a": a, "b": b},
+                await _gateway(db).run(
+                    "sweep.link_next_step",
+                    a=a,
+                    b=b,
                 )
 
             inferred += 1
@@ -418,29 +387,24 @@ async def _detect_knowledge_gaps(db, config: dict) -> tuple[int, int]:
     lesson_map: dict[str, int] = {}
     avg_conf_map: dict[str, float] = {}
     try:
-        r = db.execute(
-            "MATCH (l:Lesson) WHERE l.archived = false AND l.domain IS NOT NULL "
-            "RETURN l.domain, count(l) AS lesson_count, avg(l.confidence) AS avg_conf"
-        )
-        while r.has_next():
-            row = r.get_next()
-            dom = row[0] or ""
-            lesson_map[dom] = int(row[1] or 0)
-            avg_conf_map[dom] = float(row[2] or 0.0)
+        rows = _gateway(db).run_sync("sweep.count_lessons_by_domain")
+        for row in rows:
+            dom = (row.get("l.domain") if isinstance(row, dict) else row[0]) or ""
+            lcount = (row.get("lesson_count") if isinstance(row, dict) else row[1]) or 0
+            avg_c = (row.get("avg_conf") if isinstance(row, dict) else row[2]) or 0.0
+            lesson_map[dom] = int(lcount)
+            avg_conf_map[dom] = float(avg_c)
     except Exception:
         return 0, 1
 
     # 2) Count messages that reference Concepts by gist_class
     msg_map: dict[str, int] = {}
     try:
-        rm = db.execute(
-            "MATCH (m:Message)-[:ESTABLISHED]->(c:Concept) "
-            "WHERE c.gist_class IS NOT NULL RETURN c.gist_class, count(m) AS msg_count"
-        )
-        while rm.has_next():
-            row = rm.get_next()
-            gist = row[0] or ""
-            msg_map[gist] = int(row[1] or 0)
+        rows_m = _gateway(db).run_sync("sweep.count_messages_by_domain")
+        for row in rows_m:
+            gist = (row.get("c.gist_class") if isinstance(row, dict) else row[0]) or ""
+            mcount = (row.get("msg_count") if isinstance(row, dict) else row[1]) or 0
+            msg_map[gist] = int(mcount)
     except Exception:
         # Non-fatal: continue with empty msg_map
         msg_map = {}
@@ -448,13 +412,11 @@ async def _detect_knowledge_gaps(db, config: dict) -> tuple[int, int]:
     # 3) Completed plan strategies (archetype proxy)
     plan_map: dict[str, int] = {}
     try:
-        rp = db.execute(
-            "MATCH (p:Plan) WHERE p.status = 'completed' AND p.strategy IS NOT NULL RETURN p.strategy, count(p) AS solved_count"
-        )
-        while rp.has_next():
-            row = rp.get_next()
-            strat = row[0] or ""
-            plan_map[strat] = int(row[1] or 0)
+        rows_p = _gateway(db).run_sync("sweep.count_solved_plans")
+        for row in rows_p:
+            strat = (row.get("p.strategy") if isinstance(row, dict) else row[0]) or ""
+            scount = (row.get("solved_count") if isinstance(row, dict) else row[1]) or 0
+            plan_map[strat] = int(scount)
     except Exception:
         plan_map = {}
 
@@ -478,19 +440,13 @@ async def _detect_knowledge_gaps(db, config: dict) -> tuple[int, int]:
         # If no gap detected, consider resolving existing unresolved gap
         if not gap_type:
             try:
-                rr = db.execute(
-                    "MATCH (g:KnowledgeGap {domain: $d, resolved: false}) RETURN g.gap_id LIMIT 1",
-                    {"d": dom},
-                )
-                if rr.has_next():
-                    gid = rr.get_next()[0]
+                rr = _gateway(db).run_sync("sweep.find_unresolved_gap", d=dom)
+                if rr:
+                    gid = rr[0].get("g.gap_id") if isinstance(rr[0], dict) else rr[0][0]
                     # Resolve if criteria now satisfied
                     if lesson_count >= 2 or (lesson_count > 0 and avg_conf >= 0.5):
                         try:
-                            await db.execute_write(
-                                "MATCH (g:KnowledgeGap {gap_id: $gid}) SET g.resolved = true, g.resolved_at = timestamp($now)",
-                                {"gid": gid, "now": now},
-                            )
+                            await _gateway(db).run("sweep.resolve_gap", gid=gid, now=now)
                             detected += 1
                         except Exception:
                             errors += 1
@@ -512,48 +468,33 @@ async def _detect_knowledge_gaps(db, config: dict) -> tuple[int, int]:
             desc = f"Detected knowledge gap ({gap_type}) for domain '{dom}': {msg_count} messages, {lesson_count} lessons"
 
             # Create or update KnowledgeGap node
-            ex = db.execute(
-                "MATCH (g:KnowledgeGap {domain: $d, resolved: false}) RETURN g.gap_id LIMIT 1",
-                {"d": dom},
-            )
-            if ex.has_next():
-                gid = ex.get_next()[0]
-                await db.execute_write(
-                    "MATCH (g:KnowledgeGap {gap_id: $gid}) "
-                    "SET g.gap_type = $gap_type, g.description = $desc, g.severity = $severity, "
-                    "g.message_count = $msg_count, g.lesson_count = $lesson_count",
-                    {"gid": gid, "gap_type": gap_type, "desc": desc, "severity": severity, "msg_count": msg_count, "lesson_count": lesson_count},
+            ex = _gateway(db).run_sync("sweep.find_unresolved_gap", d=dom)
+            if ex:
+                gid = ex[0].get("g.gap_id") if isinstance(ex[0], dict) else ex[0][0]
+                await _gateway(db).run(
+                    "sweep.update_gap_severity",
+                    gid=gid, gap_type=gap_type, desc=desc, severity=severity,
+                    msg_count=msg_count, lesson_count=lesson_count,
                 )
             else:
                 gid = str(uuid.uuid4())
-                await db.execute_write(
-                    "CREATE (g:KnowledgeGap {gap_id: $gid, domain: $domain, gap_type: $gap_type, description: $desc, severity: $severity, message_count: $msg_count, lesson_count: $lesson_count, resolved: false, created_at: timestamp($now)})",
-                    {"gid": gid, "domain": dom, "gap_type": gap_type, "desc": desc, "severity": severity, "msg_count": msg_count, "lesson_count": lesson_count, "now": now},
+                await _gateway(db).run(
+                    "sweep.create_knowledge_gap",
+                    gid=gid, domain=dom, gap_type=gap_type, desc=desc, severity=severity,
+                    msg_count=msg_count, lesson_count=lesson_count, now=now,
                 )
 
             # Try to link to a Concept (gist_class) or a MainQuest
             try:
-                cr = db.execute(
-                    "MATCH (c:Concept {gist_class: $domain}) RETURN c.concept_id LIMIT 1",
-                    {"domain": dom},
-                )
-                if cr.has_next():
-                    cid = cr.get_next()[0]
-                    await db.execute_write(
-                        "MATCH (g:KnowledgeGap {gap_id: $gid}), (c:Concept {concept_id: $cid}) MERGE (g)-[:IDENTIFIED_GAP_IN]->(c)",
-                        {"gid": gid, "cid": cid},
-                    )
+                cr = _gateway(db).run_sync("sweep.find_concept_by_domain", domain=dom)
+                if cr:
+                    cid = cr[0].get("c.concept_id") if isinstance(cr[0], dict) else cr[0][0]
+                    await _gateway(db).run("sweep.link_gap_concept", gid=gid, cid=cid)
                 else:
-                    qr = db.execute(
-                        "MATCH (q:MainQuest) WHERE lower(q.name) CONTAINS lower($domain) RETURN q.quest_id LIMIT 1",
-                        {"domain": dom},
-                    )
-                    if qr.has_next():
-                        qid = qr.get_next()[0]
-                        await db.execute_write(
-                            "MATCH (g:KnowledgeGap {gap_id: $gid}), (q:MainQuest {quest_id: $qid}) MERGE (g)-[:IDENTIFIED_GAP_IN]->(q)",
-                            {"gid": gid, "qid": qid},
-                        )
+                    qr = _gateway(db).run_sync("sweep.find_quest_by_domain", domain=dom)
+                    if qr:
+                        qid = qr[0].get("q.quest_id") if isinstance(qr[0], dict) else qr[0][0]
+                        await _gateway(db).run("sweep.link_gap_quest", gid=gid, qid=qid)
             except Exception:
                 pass
 
@@ -591,35 +532,26 @@ async def _decay_and_archive(
 
         try:
             # Atomic decay: multiply in-place to avoid TOCTOU race (SW1 fix).
-            # If the loop worker strengthened a node between sweep read and write,
-            # the old read-modify-write pattern would overwrite the loop's update.
-            # This atomic SET preserves any concurrent modifications.
-            await db.execute_write(
-                f"MATCH (n:{table}) WHERE n.archived = false "
-                f"SET n.pathway_strength = n.pathway_strength * $factor",
-                {"factor": decay_factor},
-            )
+            await _gateway(db).run(f"sweep.decay_pathway_{table.lower()}", factor=decay_factor)
 
-            # B282: one read serves both the decayed count and the archive
-            # candidate list (previously two scans + one write per candidate).
-            result = db.execute(
-                f"MATCH (n:{table}) WHERE n.archived = false "
-                f"RETURN n.{pk_col}, n.pathway_strength",
-            )
+            # B282: one read serves both the decayed count and the archive candidate list
+            rows = _gateway(db).run_sync(f"sweep.get_active_pathway_{table.lower()}")
 
             to_archive = []
-            while result.has_next():
-                row = result.get_next()
+            for row in rows:
+                if isinstance(row, dict):
+                    vals = list(row.values())
+                    nid, pstrength = vals[0], vals[1]
+                else:
+                    nid, pstrength = row[0], row[1]
                 decayed += 1
-                if row[1] is not None and row[1] < archive_threshold:
-                    to_archive.append(row[0])
+                if pstrength is not None and pstrength < archive_threshold:
+                    to_archive.append(nid)
 
             if to_archive:
                 ok, bad = await _batch_write(
                     db,
-                    f"UNWIND $ids AS nid "
-                    f"MATCH (n:{table}) WHERE n.{pk_col} = nid "
-                    f"SET n.archived = true",
+                    f"sweep.unwind_archive_{table.lower()}",
                     to_archive,
                 )
                 archived += ok
@@ -635,7 +567,7 @@ async def _index_hygiene(db, config: dict) -> dict:
     """Compute per-table archived ratios for HNSW-indexed sweep tables.
 
     Rebuild is intentionally disabled in this downgraded B285 path. The Step 0
-    probe confirmed DROP/CREATE support, but also confirmed indexed embedding
+    probe confirmed drop/create table support, but also confirmed indexed embedding
     updates are disallowed; effective archived-vector removal requires row
     movement that is deferred to a dedicated architecture decision.
     """
@@ -647,12 +579,13 @@ async def _index_hygiene(db, config: dict) -> dict:
         counts = {True: 0, False: 0}
         total = 0
         try:
-            rows = db.execute(
-                f"MATCH (n:{table}) "
-                f"RETURN n.archived AS archived, count(n) AS c"
-            )
-            while rows.has_next():
-                archived, count = rows.get_next()
+            res_rows = _gateway(db).run_sync(f"sweep.index_hygiene_{table.lower()}")
+            for row in res_rows:
+                if isinstance(row, dict):
+                    archived = row.get("archived")
+                    count = row.get("c")
+                else:
+                    archived, count = row[0], row[1]
                 c = int(count or 0)
                 total += c
                 counts[bool(archived)] = counts.get(bool(archived), 0) + c
@@ -735,18 +668,20 @@ async def _report_degree_hotspots(db, config: dict) -> list[dict]:
     for rel, side in _DEGREE_REPORT_RELS:
         directions = []
         if side in ("from", "both"):
-            directions.append(("out", f"MATCH (a)-[r:{rel}]->() "
-                                      f"RETURN a, count(r) AS deg ORDER BY deg DESC LIMIT {top_k}"))
+            directions.append(("out", f"sweep.degree_out_{rel.lower()}"))
         if side in ("to", "both"):
-            directions.append(("in", f"MATCH ()-[r:{rel}]->(b) "
-                                     f"RETURN b, count(r) AS deg ORDER BY deg DESC LIMIT {top_k}"))
-        for direction, query in directions:
+            directions.append(("in", f"sweep.degree_in_{rel.lower()}"))
+        for direction, qname in directions:
             try:
-                result = db.execute(query)
-                while result.has_next():
-                    row = result.get_next()
-                    table, node_id = _node_identity(row[0] or {})
-                    degree = int(row[1] or 0)
+                rows = _gateway(db).run_sync(qname, limit=top_k)
+                for row in rows:
+                    if isinstance(row, dict):
+                        vals = list(row.values())
+                        node_val, degree_val = vals[0], vals[1]
+                    else:
+                        node_val, degree_val = row[0], row[1]
+                    table, node_id = _node_identity(node_val or {})
+                    degree = int(degree_val or 0)
                     hotspots.append({
                         "node_id": node_id, "table": table,
                         "rel_table": rel, "degree": degree,
@@ -779,17 +714,12 @@ async def _prune_session_edges(db, config: dict) -> tuple[int, int]:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=ttl_days)).isoformat()
 
     try:
-        result = db.execute(
-            "MATCH (s:Session) "
-            "WHERE coalesce(s.last_active_at, s.started_at) < timestamp($cutoff) "
-            "RETURN s.session_id",
-            {"cutoff": cutoff},
-        )
+        rows = _gateway(db).run_sync("sweep.find_stale_sessions", cutoff=cutoff)
         stale = []
-        while result.has_next():
-            row = result.get_next()
-            if row[0]:
-                stale.append(row[0])
+        for row in rows:
+            sid = (row.get("s.session_id") if isinstance(row, dict) else row[0])
+            if sid:
+                stale.append(sid)
     except Exception:
         _logger.exception("[Supernode] stale session query failed")
         return 0, 1
@@ -801,9 +731,7 @@ async def _prune_session_edges(db, config: dict) -> tuple[int, int]:
     for rel in _SESSION_CACHE_RELS:
         _, bad = await _batch_write(
             db,
-            f"UNWIND $ids AS sid "
-            f"MATCH (s:Session)-[r:{rel}]->() WHERE s.session_id = sid "
-            f"DELETE r",
+            f"sweep.unwind_delete_session_{rel.lower()}",
             stale,
         )
         errors += 1 if bad else 0
@@ -825,17 +753,15 @@ async def _apply_valence_decay(db) -> tuple[int, int]:
     adjusted = errors = 0
     try:
         # 1. Query all Concepts with signals
-        ro = db.execute(
-            "MATCH (ps:PlanStep)-[o:OUTCOME_SIGNAL]->(c:Concept) "
-            "WHERE c.archived = false "
-            "RETURN c.concept_id, avg(o.valence) AS avg_v"
-        )
+        rows = _gateway(db).run_sync("sweep.get_outcome_signals")
         
         updates = []
-        while ro.has_next():
-            row = ro.get_next()
-            cid = row[0]
-            avg_v = row[1]
+        for row in rows:
+            if isinstance(row, dict):
+                cid = row.get("c.concept_id")
+                avg_v = row.get("avg_v")
+            else:
+                cid, avg_v = row[0], row[1]
             if cid and avg_v is not None:
                 # valence_factor in [0.7, 1.3] for valence in [-1, 1]
                 factor = 1.0 + (float(avg_v) * 0.3)
@@ -844,15 +770,7 @@ async def _apply_valence_decay(db) -> tuple[int, int]:
         # 2. Apply atomic updates
         for cid, factor in updates:
             try:
-                # Atomic multiply + clamp to [0, 1]
-                await db.execute_write(
-                    "MATCH (c:Concept {concept_id: $cid}) "
-                    "SET c.pathway_strength = CASE "
-                    "  WHEN c.pathway_strength * $factor > 1.0 THEN 1.0 "
-                    "  WHEN c.pathway_strength * $factor < 0.0 THEN 0.0 "
-                    "  ELSE c.pathway_strength * $factor END",
-                    {"cid": cid, "factor": factor}
-                )
+                await _gateway(db).run("sweep.strengthen_concept_pathway", cid=cid, factor=factor)
                 adjusted += 1
             except Exception:
                 errors += 1
@@ -894,18 +812,17 @@ def _resurrect_candidates_sync(
     same first N rows.
     """
     try:
-        result = db.execute(
-            f"MATCH (n:{table}) "
-            f"WHERE n.archived = true AND n.embedding IS NOT NULL "
-            f"RETURN n.{pk_col}, n.embedding "
-            f"LIMIT {int(candidate_limit)}",
-        )
+        rows = _gateway(db).run_sync(f"sweep.resurrect_active_embeddings_{table.lower()}", limit=int(candidate_limit))
 
         archived_nodes = []
-        while result.has_next():
-            row = result.get_next()
-            if row[0] and row[1]:
-                archived_nodes.append((row[0], row[1]))
+        for row in rows:
+            if isinstance(row, dict):
+                vals = list(row.values())
+                nid, emb_val = vals[0], vals[1]
+            else:
+                nid, emb_val = row[0], row[1]
+            if nid and emb_val:
+                archived_nodes.append((nid, emb_val))
 
     except Exception:
         return [], 1
@@ -973,12 +890,10 @@ async def _resurrect_archived(
         # so a plain id list suffices).
         if to_resurrect:
             try:
-                await db.execute_write(
-                    f"UNWIND $ids AS nid "
-                    f"MATCH (n:{table}) WHERE n.{pk_col} = nid "
-                    f"SET n.archived = false, "
-                    f"    n.pathway_strength = $strength",
-                    {"ids": to_resurrect, "strength": float(resurrection_threshold)},
+                await _gateway(db).run(
+                    f"sweep.resurrect_node_{table.lower()}",
+                    ids=to_resurrect,
+                    strength=float(resurrection_threshold),
                 )
                 resurrected += len(to_resurrect)
             except Exception:
@@ -1028,7 +943,7 @@ async def _hebbian_promote(
     """
     Find CO_OCCURS_WITH edges at or above co_occurrence_threshold and ask
     the LLM to name the semantic relationship. Writes the named edge with
-    inferred_by="LLM". Uses MERGE — idempotent if edge already exists.
+    inferred_by="LLM". Uses upsert — idempotent if edge already exists.
 
     Returns (promoted_count, error_count).
     """
@@ -1038,25 +953,28 @@ async def _hebbian_promote(
     # Fetch high-count co-occurrence pairs that don't already have a named edge.
     # SW3 fix: exclude pairs where any named semantic relationship already exists
     # to avoid re-prompting the LLM for already-promoted pairs.
-    named_rels = "|".join(_NAMED_REL_TYPES)
     try:
-        result = db.execute(
-            f"MATCH (a:Concept)-[r:CO_OCCURS_WITH]->(b:Concept) "
-            f"WHERE r.count >= $threshold "
-            f"  AND NOT (a)-[:{named_rels}]->(b) "
-            f"  AND NOT (b)-[:{named_rels}]->(a) "
-            f"RETURN a.concept_id, a.text_raw, b.concept_id, b.text_raw, r.count",
-            {"threshold": co_occurrence_threshold},
-        )
+        rows = _gateway(db).run_sync("sweep.get_co_occurring_concepts", threshold=co_occurrence_threshold)
         pairs = []
-        while result.has_next():
-            row = result.get_next()
+        for row in rows:
+            if isinstance(row, dict):
+                a_id = row.get("a.concept_id")
+                a_text = row.get("a.text_raw") or ""
+                b_id = row.get("b.concept_id")
+                b_text = row.get("b.text_raw") or ""
+                count_v = row.get("r.count")
+            else:
+                a_id = row[0]
+                a_text = row[1] or ""
+                b_id = row[2]
+                b_text = row[3] or ""
+                count_v = row[4]
             pairs.append({
-                "a_id":   row[0],
-                "a_text": row[1] or "",
-                "b_id":   row[2],
-                "b_text": row[3] or "",
-                "count":  row[4],
+                "a_id":   a_id,
+                "a_text": a_text,
+                "b_id":   b_id,
+                "b_text": b_text,
+                "count":  count_v,
             })
     except Exception:
         return 0, 1
@@ -1090,21 +1008,13 @@ async def _hebbian_promote(
             if confidence < 0.60:
                 continue
 
-            # Write named relationship — MERGE is idempotent
-            await db.execute_write(
-                f"MATCH (a:Concept {{concept_id: $a_id}}), "
-                f"      (b:Concept {{concept_id: $b_id}}) "
-                f"MERGE (a)-[r:{rel_type}]->(b) "
-                f"ON CREATE SET r.confidence  = $conf, "
-                f"              r.inferred_by = 'LLM', "
-                f"              r.inferred_at = timestamp($now) "
-                f"ON MATCH SET  r.confidence  = $conf",
-                {
-                    "a_id": pair["a_id"],
-                    "b_id": pair["b_id"],
-                    "conf": confidence,
-                    "now":  now,
-                },
+            # Write named relationship — upsert is idempotent
+            await _gateway(db).run(
+                f"sweep.merge_concept_rel_{rel_type.lower()}",
+                a_id=pair["a_id"],
+                b_id=pair["b_id"],
+                conf=confidence,
+                now=now,
             )
             promoted += 1
 
@@ -1135,30 +1045,23 @@ async def _recompute_centroids(db) -> tuple[int, int]:
 
     # Fetch distinct gist classes that have examples
     try:
-        result = db.execute(
-            "MATCH (e:GistExample) RETURN DISTINCT e.gist_class"
-        )
+        rows = _gateway(db).run_sync("sweep.get_distinct_gist_classes")
         classes_with_examples = []
-        while result.has_next():
-            row = result.get_next()
-            if row[0]:
-                classes_with_examples.append(row[0])
+        for row in rows:
+            c = (row.get("e.gist_class") if isinstance(row, dict) else row[0])
+            if c:
+                classes_with_examples.append(c)
     except Exception:
         return 0, 1
 
     for class_name in classes_with_examples:
         try:
-            result = db.execute(
-                "MATCH (e:GistExample {gist_class: $cls}) "
-                "WHERE e.embedding IS NOT NULL "
-                "RETURN e.embedding",
-                {"cls": class_name},
-            )
+            rows_e = _gateway(db).run_sync("sweep.get_gist_examples_by_class", cls=class_name)
             embeddings = []
-            while result.has_next():
-                row = result.get_next()
-                if row[0]:
-                    embeddings.append(row[0])
+            for row in rows_e:
+                e_val = (row.get("e.embedding") if isinstance(row, dict) else row[0])
+                if e_val:
+                    embeddings.append(e_val)
 
             if not embeddings:
                 continue
@@ -1177,10 +1080,7 @@ async def _recompute_centroids(db) -> tuple[int, int]:
             if norm > 0:
                 centroid = [v / norm for v in centroid]
 
-            await db.execute_write(
-                "MATCH (g:GistClass {name: $name}) SET g.centroid = $centroid",
-                {"name": class_name, "centroid": centroid},
-            )
+            await _gateway(db).run("sweep.update_gist_class_centroid", name=class_name, centroid=centroid)
             updated += 1
 
         except Exception:
@@ -1220,40 +1120,37 @@ async def _dream_consolidation(db, config: dict, llm_client: Optional[object]) -
 
     # 1) Discover candidate domains
     try:
-        res = db.execute(
-            "MATCH (l:Lesson) WHERE l.archived = false AND (l.lesson_type IS NULL OR l.lesson_type != 'synthesis') RETURN DISTINCT l.domain"
-        )
+        rows_d = _gateway(db).run_sync("sweep.get_dream_lesson_domains")
     except Exception:
         return 0, 1
 
     domains = []
-    while res.has_next():
-        row = res.get_next()
-        dom = row[0] or ""
+    for row in rows_d:
+        dom = (row.get("l.domain") if isinstance(row, dict) else row[0]) or ""
         if dom:
             domains.append(dom)
 
     for domain in domains:
         try:
-            result = db.execute(
-                "MATCH (l:Lesson) WHERE l.archived = false AND l.domain = $domain "
-                "AND (l.lesson_type IS NULL OR l.lesson_type != 'synthesis') "
-                "AND NOT EXISTS { MATCH (l)<-[:GENERALIZES_LESSON]-(:Lesson) } "
-                "RETURN l.lesson_id, l.embedding, l.text_raw, l.pathway_strength, l.confidence",
-                {"domain": domain},
-            )
+            rows_c = _gateway(db).run_sync("sweep.get_lessons_for_synthesis", domain=domain)
         except Exception:
             errors += 1
             continue
 
         candidates = []
-        while result.has_next():
-            row = result.get_next()
-            lid = row[0]
-            embedding = row[1]
-            text = row[2] or ""
-            pathway = float(row[3] or 0.0)
-            conf = float(row[4] or 0.0)
+        for row in rows_c:
+            if isinstance(row, dict):
+                lid = row.get("l.lesson_id")
+                embedding = row.get("l.embedding")
+                text = row.get("l.text_raw") or ""
+                pathway = float(row.get("l.pathway_strength") or 0.0)
+                conf = float(row.get("l.confidence") or 0.0)
+            else:
+                lid = row[0]
+                embedding = row[1]
+                text = row[2] or ""
+                pathway = float(row[3] or 0.0)
+                conf = float(row[4] or 0.0)
             if lid and embedding:
                 candidates.append({"id": lid, "emb": embedding, "text": text, "pathway": pathway, "confidence": conf})
 
@@ -1319,49 +1216,34 @@ async def _dream_consolidation(db, config: dict, llm_client: Optional[object]) -
                 meta_conf = min(0.99, avg_conf + 0.05)
 
                 # Create synthesized Lesson node
-                await db.execute_write(
-                    """
-                    CREATE (m:Lesson {
-                        lesson_id: $lid,
-                        text_raw: $text_raw,
-                        embedding: $embedding,
-                        embedding_model: $embedding_model,
-                        embedding_dim: $embedding_dim,
-                        domain: $domain,
-                        lesson_type: 'synthesis',
-                        confidence: $confidence,
-                        confidence_low: false,
-                        pathway_strength: $pathway_strength,
-                        archived: false,
-                        created_at: timestamp($now)
-                    })
-                    """,
-                    {
-                        "lid": meta_id,
-                        "text_raw": synth_text,
-                        "embedding": meta_emb,
-                        "embedding_model": embedding_model,
-                        "embedding_dim": len(meta_emb),
-                        "domain": domain,
-                        "confidence": meta_conf,
-                        "pathway_strength": meta_strength,
-                        "now": now,
-                    },
+                await _gateway(db).run(
+                    "sweep.create_synthesized_lesson",
+                    lid=meta_id,
+                    text_raw=synth_text,
+                    embedding=meta_emb,
+                    embedding_model=embedding_model,
+                    embedding_dim=len(meta_emb),
+                    domain=domain,
+                    confidence=meta_conf,
+                    pathway_strength=meta_strength,
+                    now=now,
                 )
 
                 # Link meta-lesson -> constituents and accelerate constituent decay
                 for c in cluster:
-                    await db.execute_write(
-                        "MATCH (m:Lesson {lesson_id: $mid}), (c:Lesson {lesson_id: $cid}) "
-                        "MERGE (m)-[r:GENERALIZES_LESSON]->(c) "
-                        "ON CREATE SET r.synthesized_at = timestamp($now), r.cluster_size = $cluster_size "
-                        "ON MATCH SET r.cluster_size = $cluster_size",
-                        {"mid": meta_id, "cid": c["id"], "now": now, "cluster_size": len(cluster)},
+                    await _gateway(db).run(
+                        "sweep.link_generalizes_lesson",
+                        mid=meta_id,
+                        cid=c["id"],
+                        now=now,
+                        cluster_size=len(cluster),
                     )
-                    await db.execute_write(
-                        "MATCH (c:Lesson {lesson_id: $cid}) "
-                        "SET c.synthesized_at = timestamp($now), c.synthesis_cluster_size = $cluster_size, c.pathway_strength = c.pathway_strength / $decay_boost",
-                        {"cid": c["id"], "now": now, "cluster_size": len(cluster), "decay_boost": decay_boost},
+                    await _gateway(db).run(
+                        "sweep.touch_subsumed_lesson",
+                        cid=c["id"],
+                        now=now,
+                        cluster_size=len(cluster),
+                        decay_boost=decay_boost,
                     )
 
                 synthesized += 1
@@ -1406,19 +1288,8 @@ async def _update_procedure_maturity(db, config: dict) -> dict:
     result = {"updated": 0, "degraded": 0, "archived": 0, "errors": 0}
 
     # 1) Promote: nascent -> developing -> mature
-    # B277: Kuzu's Cypher dialect does not support `!=` (only `<>`) - every
-    # real invocation of this and the degrade query below raised a Parser
-    # exception, silently swallowed with no logging, so the entire
-    # Procedure maturity lifecycle never worked against a real database.
     try:
-        await db.execute_write(
-            "MATCH (p:Procedure) WHERE p.archived = false "
-            "AND coalesce(p.maturity_stage, 'nascent') <> 'degraded' "
-            "SET p.maturity_stage = CASE "
-            "  WHEN p.application_count >= 5 AND p.success_rate >= 0.75 THEN 'mature' "
-            "  WHEN p.application_count >= 3 AND p.success_rate >= 0.50 THEN 'developing' "
-            "  ELSE 'nascent' END"
-        )
+        await _gateway(db).run("sweep.promote_procedure_maturity")
         result["updated"] += 1
     except Exception:
         _logger.exception("[BasalGanglia] Procedure maturity promotion query failed")
@@ -1426,13 +1297,7 @@ async def _update_procedure_maturity(db, config: dict) -> dict:
 
     # 2) Degrade: application_count >= 3 AND success_rate < 0.30
     try:
-        await db.execute_write(
-            "MATCH (p:Procedure) WHERE p.archived = false "
-            "AND p.application_count >= 3 AND p.success_rate < 0.30 "
-            "AND coalesce(p.maturity_stage, 'nascent') <> 'degraded' "
-            "SET p.maturity_stage = 'degraded', "
-            "    p.pathway_strength = p.pathway_strength * 0.5"
-        )
+        await _gateway(db).run("sweep.degrade_procedure_maturity")
         result["degraded"] += 1
     except Exception:
         _logger.exception("[BasalGanglia] Procedure maturity degrade query failed")
@@ -1440,12 +1305,7 @@ async def _update_procedure_maturity(db, config: dict) -> dict:
 
     # 3) Archive: already degraded AND still failing
     try:
-        await db.execute_write(
-            "MATCH (p:Procedure) WHERE p.archived = false "
-            "AND p.maturity_stage = 'degraded' "
-            "AND p.success_rate < 0.20 "
-            "SET p.archived = true"
-        )
+        await _gateway(db).run("sweep.archive_degraded_procedure")
         result["archived"] += 1
     except Exception:
         _logger.exception("[BasalGanglia] Procedure archive query failed")
@@ -1506,9 +1366,9 @@ async def _audit_consistency(db, config: dict, llm_client: Optional[object]) -> 
     # 1) Get all domains with lessons
     domains = []
     try:
-        r = db.execute("MATCH (l:Lesson) WHERE l.archived = false RETURN DISTINCT l.domain")
-        while r.has_next():
-            d = r.get_next()[0]
+        rows_d = _gateway(db).run_sync("sweep.get_all_lesson_domains")
+        for row in rows_d:
+            d = (row.get("l.domain") if isinstance(row, dict) else row[0])
             if d:
                 domains.append(d)
     except Exception:
@@ -1518,25 +1378,27 @@ async def _audit_consistency(db, config: dict, llm_client: Optional[object]) -> 
 
     for domain in domains:
         try:
-            q = (
-                "MATCH (l:Lesson) WHERE l.domain = $domain AND l.archived = false "
-                "AND l.pathway_strength > $min_path ORDER BY l.pathway_strength DESC LIMIT $limit "
-                "RETURN l.lesson_id, l.embedding, l.text_raw, l.confidence, l.pathway_strength, l.created_at, l.last_audited_at"
-            )
-            res = db.execute(q, {"domain": domain, "min_path": min_path, "limit": top_k})
+            res_rows = _gateway(db).run_sync("sweep.get_lessons_in_domain_embeddings", domain=domain, min_path=min_path, limit=top_k)
         except Exception:
             errors += 1
             continue
 
         lessons = []
-        while res.has_next():
-            row = res.get_next()
-            lid = row[0]
-            emb_vec = row[1]
-            text = row[2] or ""
-            conf = float(row[3] or 0.0)
-            pathway = float(row[4] or 0.0)
-            last_aud = row[6] if len(row) > 6 else None
+        for row in res_rows:
+            if isinstance(row, dict):
+                lid = row.get("l.lesson_id")
+                emb_vec = row.get("l.embedding")
+                text = row.get("l.text_raw") or ""
+                conf = float(row.get("l.confidence") or 0.0)
+                pathway = float(row.get("l.pathway_strength") or 0.0)
+                last_aud = row.get("l.last_audited_at")
+            else:
+                lid = row[0]
+                emb_vec = row[1]
+                text = row[2] or ""
+                conf = float(row[3] or 0.0)
+                pathway = float(row[4] or 0.0)
+                last_aud = row[6] if len(row) > 6 else None
             if lid and emb_vec:
                 lessons.append({"id": lid, "emb": emb_vec, "text": text, "conf": conf, "pathway": pathway, "last_audited_at": last_aud})
 
@@ -1613,20 +1475,9 @@ async def _audit_consistency(db, config: dict, llm_client: Optional[object]) -> 
                 # Create DisambiguationEvent for human review
                 try:
                     eid = str(uuid.uuid4())
-                    await db.execute_write(
-                        """
-                        CREATE (e:DisambiguationEvent {
-                            event_id: $eid,
-                            concept_id_a: $a,
-                            concept_id_b: $b,
-                            similarity: $sim,
-                            status: 'pending',
-                            resolved_at: NULL,
-                            resolved_by: NULL,
-                            created_at: timestamp($now)
-                        })
-                        """,
-                        {"eid": eid, "a": a["id"], "b": b["id"], "sim": float(sim), "now": now},
+                    await _gateway(db).run(
+                        "sweep.create_disambiguation_event",
+                        eid=eid, a=a["id"], b=b["id"], sim=float(sim), now=now,
                     )
                     audited += 1
                 except Exception:
@@ -1637,14 +1488,8 @@ async def _audit_consistency(db, config: dict, llm_client: Optional[object]) -> 
                 try:
                     loser = b["id"] if winner == "a" else a["id"]
                     win = a["id"] if winner == "a" else b["id"]
-                    await db.execute_write(
-                        "MATCH (l:Lesson {lesson_id: $lid}) SET l.archived = true",
-                        {"lid": loser},
-                    )
-                    await db.execute_write(
-                        "MATCH (old:Lesson {lesson_id: $old}), (new:Lesson {lesson_id: $new}) MERGE (old)-[:DEPRECATED_BY]->(new)",
-                        {"old": loser, "new": win},
-                    )
+                    await _gateway(db).run("sweep.archive_lesson", lid=loser)
+                    await _gateway(db).run("sweep.link_lesson_deprecated_by", old=loser, new=win)
                     audited += 1
                 except Exception:
                     errors += 1
@@ -1653,9 +1498,9 @@ async def _audit_consistency(db, config: dict, llm_client: Optional[object]) -> 
                 # Create DisambiguationEvent for human review (nuanced)
                 try:
                     eid = str(uuid.uuid4())
-                    await db.execute_write(
-                        "CREATE (e:DisambiguationEvent {event_id: $eid, concept_id_a: $a, concept_id_b: $b, similarity: $sim, status: 'pending', resolved_at: NULL, resolved_by: NULL, created_at: timestamp($now)})",
-                        {"eid": eid, "a": a["id"], "b": b["id"], "sim": float(sim), "now": now},
+                    await _gateway(db).run(
+                        "sweep.create_disambiguation_event",
+                        eid=eid, a=a["id"], b=b["id"], sim=float(sim), now=now,
                     )
                     audited += 1
                 except Exception:
@@ -1671,10 +1516,7 @@ async def _audit_consistency(db, config: dict, llm_client: Optional[object]) -> 
     try:
         for lid in processed_lessons:
             try:
-                await db.execute_write(
-                    "MATCH (l:Lesson {lesson_id: $lid}) SET l.last_audited_at = timestamp($now)",
-                    {"lid": lid, "now": now},
-                )
+                await _gateway(db).run("sweep.touch_audited_lesson", lid=lid, now=now)
             except Exception:
                 pass
     except Exception:
@@ -1683,20 +1525,12 @@ async def _audit_consistency(db, config: dict, llm_client: Optional[object]) -> 
     # Stale detection: older than stale_days with no outgoing APPLIES_TO|RELATED_TO|GENERALIZES_LESSON
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=stale_days)).isoformat()
-        sr = db.execute(
-            "MATCH (l:Lesson) WHERE l.archived = false AND l.lesson_type <> 'synthesis' AND l.created_at < timestamp($cutoff) "
-            "AND NOT EXISTS { MATCH (l)-[:APPLIES_TO|RELATED_TO|GENERALIZES_LESSON]->() } RETURN l.lesson_id, l.text_raw",
-            {"cutoff": cutoff},
-        )
+        rows_sr = _gateway(db).run_sync("sweep.get_stale_lessons", cutoff=cutoff)
         stale_count = 0
-        while sr.has_next():
-            row = sr.get_next()
-            lid = row[0]
+        for row in rows_sr:
+            lid = (row.get("l.lesson_id") if isinstance(row, dict) else row[0])
             try:
-                await db.execute_write(
-                    "MATCH (l:Lesson {lesson_id: $lid}) SET l.stale_flagged = true, l.stale_flagged_at = timestamp($now)",
-                    {"lid": lid, "now": now},
-                )
+                await _gateway(db).run("sweep.flag_stale_lesson", lid=lid, now=now)
                 stale_count += 1
             except Exception:
                 errors += 1
@@ -1706,19 +1540,12 @@ async def _audit_consistency(db, config: dict, llm_client: Optional[object]) -> 
 
     # Orphan detection: no inbound CONTAINS_LESSON|PRODUCED_LESSON|PRODUCED_PLAN_LESSON|LEARNED
     try:
-        orr = db.execute(
-            "MATCH (l:Lesson) WHERE l.archived = false AND NOT EXISTS { MATCH ()-[:CONTAINS_LESSON|PRODUCED_LESSON|PRODUCED_PLAN_LESSON|LEARNED]->(l) } RETURN l.lesson_id, l.text_raw",
-            {},
-        )
+        rows_orr = _gateway(db).run_sync("sweep.get_orphan_lessons")
         orphan_count = 0
-        while orr.has_next():
-            row = orr.get_next()
-            lid = row[0]
+        for row in rows_orr:
+            lid = (row.get("l.lesson_id") if isinstance(row, dict) else row[0])
             try:
-                await db.execute_write(
-                    "MATCH (l:Lesson {lesson_id: $lid}) SET l.orphan_flagged = true, l.orphan_flagged_at = timestamp($now)",
-                    {"lid": lid, "now": now},
-                )
+                await _gateway(db).run("sweep.flag_orphan_lesson", lid=lid, now=now)
                 orphan_count += 1
             except Exception:
                 errors += 1

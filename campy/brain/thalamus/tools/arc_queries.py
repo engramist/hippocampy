@@ -20,7 +20,7 @@ def _gateway(db) -> GraphGateway:
     """B363: same pattern as lessons.py's `_gateway()` -- wrap `db` in a
     GraphGateway bound to the shared registry so this one migrated query
     goes through the B314 chokepoint, without changing this file's other
-    handlers' `db: KuzuClient` signature."""
+    handlers' `db` signature."""
     if isinstance(db, GraphGateway):
         return db
     return GraphGateway(db, REGISTRY)
@@ -47,6 +47,8 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
 def _first_row(result: Any) -> Any:
     if result is None:
         return None
+    if isinstance(result, list):
+        return result[0] if result else None
     try:
         if result.has_next():
             return result.get_next()
@@ -57,7 +59,11 @@ def _first_row(result: Any) -> Any:
 
 def _iter_rows(result: Any) -> Iterable[Any]:
     if result is None:
-        return []
+        return
+    if isinstance(result, list):
+        for item in result:
+            yield item
+        return
     while True:
         try:
             if not result.has_next():
@@ -71,7 +77,24 @@ def _row_get(row: Any, key: str, index: int, default: Any = None) -> Any:
     if row is None:
         return default
     if isinstance(row, dict):
-        return row.get(key, default)
+        if key in row:
+            return row[key]
+        k_nospace = key.replace(", ", ",")
+        if k_nospace in row:
+            return row[k_nospace]
+        k_space = key.replace(",", ", ")
+        if k_space in row:
+            return row[k_space]
+        if "." in key:
+            short_key = key.split(".", 1)[1]
+            if short_key in row:
+                return row[short_key]
+        for k, v in row.items():
+            if k.endswith(f".{key}"):
+                return v
+        if 0 <= index < len(row):
+            return list(row.values())[index]
+        return default
     try:
         return row[index]
     except Exception:
@@ -82,7 +105,7 @@ def _error(message: str) -> dict:
     return {"ok": False, "error": message}
 
 
-async def arc_perceive_state(params: dict, db: KuzuClient, config: dict) -> dict:
+async def arc_perceive_state(params: dict, db, config: dict) -> dict:
     task_id = params.get("task_id")
     step = params.get("step")
     if not task_id:
@@ -94,17 +117,13 @@ async def arc_perceive_state(params: dict, db: KuzuClient, config: dict) -> dict
     disappeared_entities = params.get("disappeared_entities") or []
     snapshot_id = f"{task_id}_step{step}"
 
-    await db.execute_write(
-        "MERGE (s:GridSnapshot {snapshot_id: $sid}) "
-        "SET s.task_id = $tid, s.step = $step, s.grid_hash = $hash, "
-        "    s.n_entities = $n, s.created_at = current_timestamp()",
-        {
-            "sid": snapshot_id,
-            "tid": task_id,
-            "step": step,
-            "hash": params.get("grid_hash", ""),
-            "n": len(entities),
-        },
+    await _gateway(db).run(
+        "arc.merge_snapshot",
+        sid=snapshot_id,
+        tid=task_id,
+        step=step,
+        hash=params.get("grid_hash", ""),
+        n=len(entities),
     )
 
     # A175: entity_id is stable across steps for the same physical object
@@ -118,9 +137,9 @@ async def arc_perceive_state(params: dict, db: KuzuClient, config: dict) -> dict
         new_cr = ent.get("centroid_row")
         new_cc = ent.get("centroid_col")
 
-        existing_result = db.execute(
-            "MATCH (e:GridEntity {entity_id: $eid}) RETURN e.centroid_row, e.centroid_col",
-            {"eid": entity_id},
+        existing_result = await _gateway(db).run(
+            "arc.get_entity_centroid",
+            eid=entity_id,
         )
         existing_row = _first_row(existing_result)
         if existing_row is not None:
@@ -133,59 +152,51 @@ async def arc_perceive_state(params: dict, db: KuzuClient, config: dict) -> dict
             ):
                 moved.append((entity_id, new_cr - old_cr, new_cc - old_cc))
 
-        await db.execute_write(
-            "MERGE (e:GridEntity {entity_id: $eid}) "
-            "SET e.task_id = $tid, e.color_id = $cid, e.region_index = $ridx, "
-            "    e.centroid_row = $cr, e.centroid_col = $cc, "
-            "    e.pixel_count = $pc, e.inferred_role = $role, "
-            "    e.last_updated_step = $step",
-            {
-                "eid": entity_id,
-                "tid": task_id,
-                "cid": ent.get("color_id"),
-                "ridx": ent.get("region_index", 0),
-                "cr": new_cr,
-                "cc": new_cc,
-                "pc": ent.get("pixel_count"),
-                "role": ent.get("role", "unknown"),
-                "step": step,
-            },
+        await _gateway(db).run(
+            "arc.merge_entity",
+            eid=entity_id,
+            tid=task_id,
+            cid=ent.get("color_id"),
+            ridx=ent.get("region_index", 0),
+            cr=new_cr,
+            cc=new_cc,
+            pc=ent.get("pixel_count"),
+            role=ent.get("role", "unknown"),
+            step=step,
         )
 
     effect_id = f"{task_id}_step{step}_effect"
     effect_written = False
     if params.get("action_taken"):
         effect = params.get("effect") or {}
-        await db.execute_write(
-            "MERGE (ae:ActionEffect {effect_id: $eid}) "
-            "SET ae.task_id = $tid, ae.action_id = $aid, ae.step = $step, "
-            "    ae.n_cells_changed = $ncc, ae.apparent_effect = $eff",
-            {
-                "eid": effect_id,
-                "tid": task_id,
-                "aid": params["action_taken"],
-                "step": step,
-                "ncc": effect.get("n_cells_changed", 0),
-                "eff": effect.get("apparent_effect", "unknown"),
-            },
+        await _gateway(db).run(
+            "arc.merge_action_effect_action",
+            eid=effect_id,
+            tid=task_id,
+            aid=params["action_taken"],
+            step=step,
+            ncc=effect.get("n_cells_changed", 0),
+            eff=effect.get("apparent_effect", "unknown"),
         )
         effect_written = True
     elif moved:
         # A175: no explicit action_taken, but an entity genuinely moved this
         # call — still need an ActionEffect node to anchor MOVED_BY to.
-        await db.execute_write(
-            "MERGE (ae:ActionEffect {effect_id: $eid}) "
-            "SET ae.task_id = $tid, ae.step = $step",
-            {"eid": effect_id, "tid": task_id, "step": step},
+        await _gateway(db).run(
+            "arc.merge_action_effect_moved",
+            eid=effect_id,
+            tid=task_id,
+            step=step,
         )
         effect_written = True
 
     for entity_id, delta_row, delta_col in moved:
-        await db.execute_write(
-            "MATCH (e:GridEntity {entity_id: $eid}), (ae:ActionEffect {effect_id: $aeid}) "
-            "MERGE (e)-[m:MOVED_BY]->(ae) "
-            "SET m.delta_row = $dr, m.delta_col = $dc",
-            {"eid": entity_id, "aeid": effect_id, "dr": delta_row, "dc": delta_col},
+        await _gateway(db).run(
+            "arc.link_entity_moved_by",
+            eid=entity_id,
+            aeid=effect_id,
+            dr=delta_row,
+            dc=delta_col,
         )
 
     # B372: ARC_AGI's A221 Finding 2 -- entities present last frame, absent
@@ -218,29 +229,20 @@ async def arc_perceive_state(params: dict, db: KuzuClient, config: dict) -> dict
     }
 
 
-async def arc_get_game_context(params: dict, db: KuzuClient, config: dict) -> dict:
+async def arc_get_game_context(params: dict, db, config: dict) -> dict:
     task_id = params.get("task_id")
     if not task_id:
         return _error("task_id is required")
 
-    hyp_result = db.execute(
-        "MATCH (h:Hypothesis {task_id: $tid}) WHERE h.status = 'active' RETURN count(h)",
-        {"tid": task_id},
-    )
+    hyp_result = await _gateway(db).run("arc.count_active_hypotheses", tid=task_id)
     hyp_row = _first_row(hyp_result)
     hyp_count = _safe_int(_row_get(hyp_row, "count(h)", 0, 0))
 
-    step_result = db.execute(
-        "MATCH (s:GridSnapshot {task_id: $tid}) RETURN max(s.step)",
-        {"tid": task_id},
-    )
+    step_result = await _gateway(db).run("arc.get_max_snapshot_step", tid=task_id)
     step_row = _first_row(step_result)
     latest_step = _safe_int(_row_get(step_row, "max(s.step)", 0, 0))
 
-    action_result = db.execute(
-        "MATCH (af:ActionFact {task_id: $tid}) RETURN af.action_id, af.value_status, af.confidence",
-        {"tid": task_id},
-    )
+    action_result = await _gateway(db).run("arc.get_action_facts_summary", tid=task_id)
     actions: dict[str, dict] = {}
     for row in _iter_rows(action_result):
         action_id = _row_get(row, "af.action_id", 0, "") or ""
@@ -260,7 +262,7 @@ async def arc_get_game_context(params: dict, db: KuzuClient, config: dict) -> di
     }
 
 
-async def arc_get_action_evidence(params: dict, db: KuzuClient, config: dict) -> dict:
+async def arc_get_action_evidence(params: dict, db, config: dict) -> dict:
     task_id = params.get("task_id")
     action_id = params.get("action_id")
     if not task_id:
@@ -268,12 +270,7 @@ async def arc_get_action_evidence(params: dict, db: KuzuClient, config: dict) ->
     if not action_id:
         return _error("action_id is required")
 
-    result = db.execute(
-        "MATCH (af:ActionFact {task_id: $tid, action_id: $aid}) "
-        "RETURN af.fact_type, af.confidence, af.value_status, af.evidence_count, "
-        "af.observation_count, COALESCE(af.falsified_count, 0)",
-        {"tid": task_id, "aid": action_id},
-    )
+    result = await _gateway(db).run("arc.get_action_evidence", tid=task_id, aid=action_id)
 
     row = _first_row(result)
     if row is None:
@@ -307,16 +304,13 @@ async def arc_get_action_evidence(params: dict, db: KuzuClient, config: dict) ->
     }
 
 
-async def arc_get_untested_actions(params: dict, db: KuzuClient, config: dict) -> dict:
+async def arc_get_untested_actions(params: dict, db, config: dict) -> dict:
     task_id = params.get("task_id")
     if not task_id:
         return _error("task_id is required")
 
     available = params.get("available_actions") or []
-    result = db.execute(
-        "MATCH (af:ActionFact {task_id: $tid}) RETURN DISTINCT af.action_id",
-        {"tid": task_id},
-    )
+    result = await _gateway(db).run("arc.get_distinct_action_ids", tid=task_id)
     tested: list[str] = []
     tested_set: set[str] = set()
     for row in _iter_rows(result):
@@ -329,7 +323,7 @@ async def arc_get_untested_actions(params: dict, db: KuzuClient, config: dict) -
     return {"untested": untested, "tested": tested}
 
 
-async def arc_get_causal_path(params: dict, db: KuzuClient, config: dict) -> dict:
+async def arc_get_causal_path(params: dict, db, config: dict) -> dict:
     task_id = params.get("task_id")
     action_id = params.get("action_id")
     goal_id = params.get("goal_id")
@@ -343,21 +337,18 @@ async def arc_get_causal_path(params: dict, db: KuzuClient, config: dict) -> dic
     # and predictable. count(af) avoids `count(*)` (which would read as a
     # wildcard) while counting matched paths identically.
     if goal_id:
-        query = (
-            "MATCH (af:ActionFact {task_id: $tid, action_id: $aid})-[:DERIVED_FROM_FACT]->(ae:ActionEffect)"
-            "<-[:MOVED_BY]-(ge:GridEntity)-[:REQUIRES_ENTITY]-(vc:VictoryCondition {task_id: $tid, condition_id: $gid}) "
-            "RETURN count(af) as path_count, min(vc.confidence) as min_conf"
+        result = await _gateway(db).run(
+            "arc.query_causal_chain_with_goal",
+            tid=task_id,
+            aid=action_id,
+            gid=goal_id,
         )
-        params_map = {"tid": task_id, "aid": action_id, "gid": goal_id}
     else:
-        query = (
-            "MATCH (af:ActionFact {task_id: $tid, action_id: $aid})-[:DERIVED_FROM_FACT]->(ae:ActionEffect)"
-            "<-[:MOVED_BY]-(ge:GridEntity)-[:REQUIRES_ENTITY]-(vc:VictoryCondition {task_id: $tid}) "
-            "RETURN count(af) as path_count, min(vc.confidence) as min_conf"
+        result = await _gateway(db).run(
+            "arc.query_causal_chain",
+            tid=task_id,
+            aid=action_id,
         )
-        params_map = {"tid": task_id, "aid": action_id}
-
-    result = db.execute(query, params_map)
     row = _first_row(result)
     path_count = _safe_int(_row_get(row, "path_count", 0, 0))
     return {
@@ -367,7 +358,7 @@ async def arc_get_causal_path(params: dict, db: KuzuClient, config: dict) -> dic
     }
 
 
-async def arc_record_action_effect(params: dict, db: KuzuClient, config: dict) -> dict:
+async def arc_record_action_effect(params: dict, db, config: dict) -> dict:
     task_id = params.get("task_id")
     action_id = params.get("action_id")
     step = params.get("step")
@@ -380,33 +371,28 @@ async def arc_record_action_effect(params: dict, db: KuzuClient, config: dict) -
 
     effect = params.get("effect") or {}
     effect_id = f"{task_id}_{action_id}_step{step}"
-    await db.execute_write(
-        "MERGE (ae:ActionEffect {effect_id: $eid}) "
-        "SET ae.task_id = $tid, ae.action_id = $aid, ae.step = $step, "
-        "    ae.n_cells_changed = $ncc, ae.apparent_effect = $eff, ae.created_at = current_timestamp()",
-        {
-            "eid": effect_id,
-            "tid": task_id,
-            "aid": action_id,
-            "step": step,
-            "ncc": effect.get("n_cells_changed", 0),
-            "eff": effect.get("apparent_effect", "unknown"),
-        },
+    await _gateway(db).run(
+        "arc.record_action_effect_simple",
+        eid=effect_id,
+        tid=task_id,
+        aid=action_id,
+        step=step,
+        ncc=effect.get("n_cells_changed", 0),
+        eff=effect.get("apparent_effect", "unknown"),
     )
 
     fact_id = f"{task_id}_{action_id}"
-    await db.execute_write(
-        "MERGE (af:ActionFact {fact_id: $fid}) "
-        "SET af.task_id = $tid, af.action_id = $aid, "
-        "    af.observation_count = coalesce(af.observation_count, 0) + 1, "
-        "    af.last_updated = current_timestamp()",
-        {"fid": fact_id, "tid": task_id, "aid": action_id},
+    await _gateway(db).run(
+        "arc.increment_action_fact_observation",
+        fid=fact_id,
+        tid=task_id,
+        aid=action_id,
     )
 
     return {"ok": True, "status": "ok", "fact_id": fact_id, "effect_id": effect_id}
 
 
-async def arc_get_entity_movement(params: dict, db: KuzuClient, config: dict) -> dict:
+async def arc_get_entity_movement(params: dict, db, config: dict) -> dict:
     task_id = params.get("task_id")
     step = params.get("step")
     if not task_id:
@@ -414,11 +400,7 @@ async def arc_get_entity_movement(params: dict, db: KuzuClient, config: dict) ->
     if step is None:
         return _error("step is required")
 
-    result = db.execute(
-        "MATCH (ge:GridEntity {task_id: $tid})-[m:MOVED_BY]->(ae:ActionEffect {step: $step}) "
-        "RETURN ge.entity_id, m.delta_row, m.delta_col",
-        {"tid": task_id, "step": step},
-    )
+    result = await _gateway(db).run("arc.get_entity_movement", tid=task_id, step=step)
 
     entities = []
     for row in _iter_rows(result):
@@ -440,7 +422,7 @@ async def arc_get_entity_movement(params: dict, db: KuzuClient, config: dict) ->
     return {"entities": entities}
 
 
-async def arc_get_entity_neighborhood(params: dict, db: KuzuClient, config: dict) -> dict:
+async def arc_get_entity_neighborhood(params: dict, db, config: dict) -> dict:
     """B359: what does the graph already know about this specific entity,
     via A175's entity_ref/region_index correspondence.
 
@@ -474,12 +456,7 @@ async def arc_get_entity_neighborhood(params: dict, db: KuzuClient, config: dict
     if entity_ref is None:
         return _error("entity_ref is required")
 
-    hyp_result = db.execute(
-        "MATCH (ge:GridEntity {task_id: $tid, region_index: $eref})-[:ENTITY_HYPOTHESIS]->(h:Hypothesis) "
-        "WHERE h.status IS NULL OR h.status <> 'demoted' "
-        "RETURN h.id, h.description, h.confidence, h.status",
-        {"tid": task_id, "eref": entity_ref},
-    )
+    hyp_result = await _gateway(db).run("arc.get_entity_hypotheses", tid=task_id, eref=entity_ref)
     hypotheses = []
     for row in _iter_rows(hyp_result):
         hypotheses.append(
@@ -491,12 +468,7 @@ async def arc_get_entity_neighborhood(params: dict, db: KuzuClient, config: dict
             }
         )
 
-    mech_result = db.execute(
-        "MATCH (m:ArcMechanic) WHERE m.source_task_ids CONTAINS $tid "
-        "RETURN m.name, m.confidence "
-        "ORDER BY m.confidence DESC",
-        {"tid": task_id},
-    )
+    mech_result = await _gateway(db).run("arc.get_entity_mechanics", tid=task_id)
     mechanics = []
     for row in _iter_rows(mech_result):
         mechanics.append(
@@ -506,12 +478,7 @@ async def arc_get_entity_neighborhood(params: dict, db: KuzuClient, config: dict
             }
         )
 
-    rule_result = db.execute(
-        "MATCH (ge:GridEntity {task_id: $tid, region_index: $eref})-[:ENTITY_RULE]->(r:Rule) "
-        "WHERE r.falsified = false "
-        "RETURN r.rule_id, r.action_family, r.from_color, r.to_color, r.confidence",
-        {"tid": task_id, "eref": entity_ref},
-    )
+    rule_result = await _gateway(db).run("arc.get_entity_rules", tid=task_id, eref=entity_ref)
     rules = []
     for row in _iter_rows(rule_result):
         rules.append(
@@ -528,19 +495,12 @@ async def arc_get_entity_neighborhood(params: dict, db: KuzuClient, config: dict
     return {"hypotheses": hypotheses, "rules": rules, "mechanics": mechanics}
 
 
-async def arc_get_goal_evidence(params: dict, db: KuzuClient, config: dict) -> dict:
+async def arc_get_goal_evidence(params: dict, db, config: dict) -> dict:
     task_id = params.get("task_id")
     if not task_id:
         return _error("task_id is required")
 
-    result = db.execute(
-        "MATCH (vc:VictoryCondition {task_id: $tid}) "
-        "OPTIONAL MATCH (vc)<-[s:INFERRED_FROM]-(h:Hypothesis) "
-        "RETURN vc.condition_id, vc.condition_type, vc.confidence, "
-        "       count(CASE WHEN h.status = 'active' THEN 1 END) as supports, "
-        "       count(CASE WHEN h.status = 'demoted' THEN 1 END) as contradicts",
-        {"tid": task_id},
-    )
+    result = await _gateway(db).run("arc.get_goal_evidence", tid=task_id)
 
     goals = []
     for row in _iter_rows(result):
@@ -557,7 +517,7 @@ async def arc_get_goal_evidence(params: dict, db: KuzuClient, config: dict) -> d
     return {"goals": goals}
 
 
-async def arc_classify_game_archetype(params: dict, db: KuzuClient, config: dict) -> dict:
+async def arc_classify_game_archetype(params: dict, db, config: dict) -> dict:
     features = params.get("grid_features") or {}
     query_text = f"grid game {features.get('n_colors', 0)} colors {features.get('symmetry', 'none')} symmetry"
     try:
@@ -580,7 +540,7 @@ async def arc_classify_game_archetype(params: dict, db: KuzuClient, config: dict
 
 
 async def _link_entity_hypothesis(
-    db: KuzuClient, task_id: Any, entity_ref: Any, hypothesis_id: str, weight: float, step: Any
+    db, task_id: Any, entity_ref: Any, hypothesis_id: str, weight: float, step: Any
 ) -> None:
     """B359: record (or refresh) the ENTITY_HYPOTHESIS edge so
     arc_get_entity_neighborhood has something real to traverse. Only
@@ -591,34 +551,26 @@ async def _link_entity_hypothesis(
     time of call, not a separate per-edge score; step is nullable."""
     if not task_id or entity_ref is None:
         return
-    await db.execute_write(
-        "MATCH (ge:GridEntity {task_id: $tid, region_index: $eref}), (h:Hypothesis {id: $hid}) "
-        "WITH ge, h LIMIT 1 "
-        "MERGE (ge)-[eh:ENTITY_HYPOTHESIS]->(h) "
-        "SET eh.weight = $weight, eh.step = $step",
-        {"tid": task_id, "eref": entity_ref, "hid": hypothesis_id, "weight": weight, "step": step},
+    await _gateway(db).run(
+        "arc.link_entity_hypothesis",
+        tid=task_id,
+        eref=entity_ref,
+        hid=hypothesis_id,
+        weight=weight,
+        step=step,
     )
 
 
-async def arc_confirm_hypothesis(params: dict, db: KuzuClient, config: dict) -> dict:
+async def arc_confirm_hypothesis(params: dict, db, config: dict) -> dict:
     hypothesis_id = params.get("hypothesis_id")
     if not hypothesis_id:
         return _error("hypothesis_id is required")
 
     evidence = params.get("evidence") or {}
     boost = min(0.1, _safe_float(evidence.get("weight"), 1.0) * 0.05)
-    await db.execute_write(
-        "MATCH (h:Hypothesis) WHERE h.id = $hid "
-        "SET h.evidence_count = coalesce(h.evidence_count, 0) + 1, "
-        "    h.confidence = CASE WHEN coalesce(h.confidence, 0.5) + $boost > 1.0 THEN 1.0 "
-        "                        ELSE coalesce(h.confidence, 0.5) + $boost END",
-        {"hid": hypothesis_id, "boost": boost},
-    )
+    await _gateway(db).run("arc.boost_hypothesis_confidence", hid=hypothesis_id, boost=boost)
 
-    result = db.execute(
-        "MATCH (h:Hypothesis) WHERE h.id = $hid RETURN h.confidence",
-        {"hid": hypothesis_id},
-    )
+    result = await _gateway(db).run("arc.get_hypothesis_confidence", hid=hypothesis_id)
     row = _first_row(result)
     new_confidence = _safe_float(_row_get(row, "h.confidence", 0, 0.0))
 
@@ -630,33 +582,21 @@ async def arc_confirm_hypothesis(params: dict, db: KuzuClient, config: dict) -> 
     return {"status": "ok", "hypothesis_id": hypothesis_id, "new_confidence": new_confidence, "falsified": False}
 
 
-async def arc_contradict_hypothesis(params: dict, db: KuzuClient, config: dict) -> dict:
+async def arc_contradict_hypothesis(params: dict, db, config: dict) -> dict:
     hypothesis_id = params.get("hypothesis_id")
     if not hypothesis_id:
         return _error("hypothesis_id is required")
 
     evidence = params.get("evidence") or {}
     penalty = min(0.15, _safe_float(evidence.get("weight"), 1.0) * 0.1)
-    await db.execute_write(
-        "MATCH (h:Hypothesis) WHERE h.id = $hid "
-        "SET h.evidence_count = coalesce(h.evidence_count, 0) + 1, "
-        "    h.confidence = CASE WHEN coalesce(h.confidence, 0.5) - $penalty < 0.0 THEN 0.0 "
-        "                        ELSE coalesce(h.confidence, 0.5) - $penalty END",
-        {"hid": hypothesis_id, "penalty": penalty},
-    )
+    await _gateway(db).run("arc.penalize_hypothesis_confidence", hid=hypothesis_id, penalty=penalty)
 
-    result = db.execute(
-        "MATCH (h:Hypothesis) WHERE h.id = $hid RETURN h.confidence, h.status",
-        {"hid": hypothesis_id},
-    )
+    result = await _gateway(db).run("arc.get_hypothesis_confidence_and_status", hid=hypothesis_id)
     row = _first_row(result)
     new_confidence = _safe_float(_row_get(row, "h.confidence", 0, 0.0))
     falsified = new_confidence < 0.1
     if falsified:
-        await db.execute_write(
-            "MATCH (h:Hypothesis) WHERE h.id = $hid SET h.status = 'demoted'",
-            {"hid": hypothesis_id},
-        )
+        await _gateway(db).run("arc.demote_hypothesis", hid=hypothesis_id)
 
     await _link_entity_hypothesis(
         db, params.get("task_id"), params.get("entity_ref"), hypothesis_id,
@@ -666,7 +606,7 @@ async def arc_contradict_hypothesis(params: dict, db: KuzuClient, config: dict) 
     return {"status": "ok", "hypothesis_id": hypothesis_id, "new_confidence": new_confidence, "falsified": falsified}
 
 
-async def arc_update_goal_confidence(params: dict, db: KuzuClient, config: dict) -> dict:
+async def arc_update_goal_confidence(params: dict, db, config: dict) -> dict:
     """B363: previously a bare read-only lookup on both the read and write
     queries, so a condition_id with no existing VictoryCondition node
     silently no-op'd while still returning {"status": "ok"} --
@@ -682,10 +622,7 @@ async def arc_update_goal_confidence(params: dict, db: KuzuClient, config: dict)
 
     new_confidence = _safe_float(params.get("new_confidence"), 0.0)
     has_progress = bool(params.get("has_meaningful_progress", False))
-    current_result = db.execute(
-        "MATCH (vc:VictoryCondition {condition_id: $gid}) RETURN vc.confidence",
-        {"gid": goal_id},
-    )
+    current_result = await _gateway(db).run("arc.get_victory_condition_confidence", gid=goal_id)
     current_row = _first_row(current_result)
     created = current_row is None
     current = _safe_float(_row_get(current_row, "vc.confidence", 0, 0.0))
@@ -706,14 +643,8 @@ async def arc_update_goal_confidence(params: dict, db: KuzuClient, config: dict)
     }
 
 
-async def arc_get_mechanic_priors(params: dict, db: KuzuClient, config: dict) -> dict:
-    result = db.execute(
-        "MATCH (m:ArcMechanic)-[:ARC_MECHANIC_HAS_ACTION_PATTERN]->(ap:ArcActionPattern) "
-        "WHERE m.confidence > 0.3 "
-        "RETURN m.mechanic_id, m.name, m.confidence, ap.signature, ap.action_set "
-        "ORDER BY m.confidence DESC LIMIT 5",
-        {},
-    )
+async def arc_get_mechanic_priors(params: dict, db, config: dict) -> dict:
+    result = await _gateway(db).run("arc.get_mechanic_priors")
 
     mechanics = []
     for row in _iter_rows(result):
@@ -730,7 +661,7 @@ async def arc_get_mechanic_priors(params: dict, db: KuzuClient, config: dict) ->
     return {"mechanics": mechanics}
 
 
-async def arc_check_action_gate(params: dict, db: KuzuClient, config: dict) -> dict:
+async def arc_check_action_gate(params: dict, db, config: dict) -> dict:
     task_id = params.get("task_id")
     action_id = params.get("action_id")
     available = params.get("available_actions") or []
@@ -739,12 +670,7 @@ async def arc_check_action_gate(params: dict, db: KuzuClient, config: dict) -> d
     if not action_id:
         return _error("action_id is required")
 
-    result = db.execute(
-        "MATCH (af:ActionFact {task_id: $tid, action_id: $aid}) "
-        "RETURN af.confidence, af.value_status, COALESCE(af.falsified_count, 0), "
-        "af.observation_count",
-        {"tid": task_id, "aid": action_id},
-    )
+    result = await _gateway(db).run("arc.get_action_gate_fact", tid=task_id, aid=action_id)
     row = _first_row(result)
     falsification_count = 0
     if row is not None:
@@ -779,7 +705,7 @@ async def arc_check_action_gate(params: dict, db: KuzuClient, config: dict) -> d
     }
 
 
-async def arc_record_reward_prediction_error(params: dict, db: KuzuClient, config: dict) -> dict:
+async def arc_record_reward_prediction_error(params: dict, db, config: dict) -> dict:
     task_id = params.get("task_id")
     action_id = params.get("action_id")
     if not task_id:
@@ -799,20 +725,10 @@ async def arc_record_reward_prediction_error(params: dict, db: KuzuClient, confi
         # explicit falsification counter (B278). This is what closes the
         # evidence loop: a falsified action's count climbs here and is read
         # back by arc_check_action_gate / arc_get_action_evidence.
-        await db.execute_write(
-            "MATCH (af:ActionFact {fact_id: $fid}) "
-            "SET af.confidence = CASE WHEN af.confidence > 0.1 THEN af.confidence - 0.1 ELSE 0.0 END, "
-            "    af.falsified_count = COALESCE(af.falsified_count, 0) + 1, "
-            "    af.value_status = CASE WHEN af.value_status = 'valuable' THEN 'uncertain' ELSE af.value_status END",
-            {"fid": fact_id},
-        )
+        await _gateway(db).run("arc.penalize_action_fact_rpe", fid=fact_id)
     elif error > 0.3:
         # Large positive RPE → boost confidence
-        await db.execute_write(
-            "MATCH (af:ActionFact {fact_id: $fid}) "
-            "SET af.confidence = CASE WHEN af.confidence < 0.9 THEN af.confidence + 0.1 ELSE 1.0 END",
-            {"fid": fact_id},
-        )
+        await _gateway(db).run("arc.boost_action_fact_rpe", fid=fact_id)
 
     # Also record via B277 general RPE tracker (writes to Plan nodes which have RPE columns)
     try:
@@ -832,7 +748,7 @@ async def arc_record_reward_prediction_error(params: dict, db: KuzuClient, confi
     }
 
 
-async def record_transition(params: dict, db: KuzuClient, config: dict) -> dict:
+async def record_transition(params: dict, db, config: dict) -> dict:
     """A176: persist one observed color-transition histogram as a Transition
     node, linked to the GridEntity identified by entity_ref (A175's stable
     correspondence id) when non-null. One node per call, keyed by
@@ -857,38 +773,32 @@ async def record_transition(params: dict, db: KuzuClient, config: dict) -> dict:
     eref_key = entity_ref if entity_ref is not None else "none"
     transition_id = f"{task_id}_{action_id}_step{step}_{eref_key}"
 
-    await db.execute_write(
-        "MERGE (t:Transition {transition_id: $tid}) "
-        "SET t.task_id = $task_id, t.step = $step, t.action_id = $aid, "
-        "    t.entity_ref = $eref, t.changed_count = $cc, "
-        "    t.color_transitions = $ct, t.created_at = current_timestamp()",
-        {
-            "tid": transition_id,
-            "task_id": task_id,
-            "step": step,
-            "aid": action_id,
-            "eref": entity_ref,
-            "cc": changed_count,
-            "ct": json.dumps(color_transitions, sort_keys=True, default=str),
-        },
+    await _gateway(db).run(
+        "arc.merge_transition",
+        tid=transition_id,
+        task_id=task_id,
+        step=step,
+        aid=action_id,
+        eref=entity_ref,
+        cc=changed_count,
+        ct=json.dumps(color_transitions, sort_keys=True, default=str),
     )
 
     if entity_ref is not None:
         # A175's region_index is the stable per-task correspondence id — at
         # most one GridEntity should match; LIMIT 1 keeps this bounded and
         # deterministic if an edge case ever produces more than one.
-        await db.execute_write(
-            "MATCH (t:Transition {transition_id: $tid}), "
-            "      (ge:GridEntity {task_id: $task_id, region_index: $eref}) "
-            "WITH t, ge LIMIT 1 "
-            "MERGE (t)-[:TRANSITION_OF]->(ge)",
-            {"tid": transition_id, "task_id": task_id, "eref": entity_ref},
+        await _gateway(db).run(
+            "arc.link_transition_to_entity",
+            tid=transition_id,
+            task_id=task_id,
+            eref=entity_ref,
         )
 
     return {"ok": True, "transition_id": transition_id}
 
 
-async def get_entity_history(params: dict, db: KuzuClient, config: dict) -> dict:
+async def get_entity_history(params: dict, db, config: dict) -> dict:
     """A176: what has happened to this entity across the game so far."""
     task_id = params.get("task_id")
     if not task_id:
@@ -897,12 +807,7 @@ async def get_entity_history(params: dict, db: KuzuClient, config: dict) -> dict
     if entity_ref is None:
         return _error("entity_ref is required")
 
-    result = db.execute(
-        "MATCH (t:Transition {task_id: $tid, entity_ref: $eref}) "
-        "RETURN t.action_id, t.step, t.color_transitions, t.changed_count "
-        "ORDER BY t.step",
-        {"tid": task_id, "eref": entity_ref},
-    )
+    result = await _gateway(db).run("arc.get_entity_history", tid=task_id, eref=entity_ref)
 
     transitions = []
     total = 0
@@ -925,7 +830,7 @@ async def get_entity_history(params: dict, db: KuzuClient, config: dict) -> dict
 
 
 async def _link_entity_rule(
-    db: KuzuClient, task_id: Any, entity_ref: Any, rule_id: str, weight: float, step: Any
+    db, task_id: Any, entity_ref: Any, rule_id: str, weight: float, step: Any
 ) -> None:
     """B359 follow-up: analog of _link_entity_hypothesis for Rule -- a
     genuinely different node type (a confirmed/falsified causal claim, not
@@ -934,16 +839,17 @@ async def _link_entity_rule(
     supplied entity context; optional, not required."""
     if not task_id or entity_ref is None:
         return
-    await db.execute_write(
-        "MATCH (ge:GridEntity {task_id: $tid, region_index: $eref}), (r:Rule {rule_id: $rid}) "
-        "WITH ge, r LIMIT 1 "
-        "MERGE (ge)-[er:ENTITY_RULE]->(r) "
-        "SET er.weight = $weight, er.step = $step",
-        {"tid": task_id, "eref": entity_ref, "rid": rule_id, "weight": weight, "step": step},
+    await _gateway(db).run(
+        "arc.link_entity_rule",
+        tid=task_id,
+        eref=entity_ref,
+        rid=rule_id,
+        weight=weight,
+        step=step,
     )
 
 
-async def record_rule(params: dict, db: KuzuClient, config: dict) -> dict:
+async def record_rule(params: dict, db, config: dict) -> dict:
     """A177 (+ A179's fingerprint field): bookkeeping over deterministic
     candidate signatures already extracted client-side. For each signature,
     find a live (unfalsified) Rule for this task_id + action_family +
@@ -972,25 +878,25 @@ async def record_rule(params: dict, db: KuzuClient, config: dict) -> dict:
         if not action_family or from_color is None or to_color is None:
             continue
 
-        existing_result = db.execute(
-            "MATCH (r:Rule {task_id: $tid, action_family: $af, from_color: $fc}) "
-            "WHERE r.falsified = false "
-            "RETURN r.rule_id, r.to_color, r.confidence",
-            {"tid": task_id, "af": action_family, "fc": from_color},
+        existing_result = await _gateway(db).run(
+            "arc.find_live_rule",
+            tid=task_id,
+            af=action_family,
+            fc=from_color,
         )
         existing_row = _first_row(existing_result)
 
         if existing_row is None:
             rule_id = f"{task_id}_{action_family}_{from_color}_{to_color}_{step}"
-            await db.execute_write(
-                "MERGE (r:Rule {rule_id: $rid}) "
-                "SET r.task_id = $tid, r.action_family = $af, r.from_color = $fc, "
-                "    r.to_color = $tc, r.fingerprint = $fp, r.confidence = 0.5, "
-                "    r.falsified = false, r.created_step = $step",
-                {
-                    "rid": rule_id, "tid": task_id, "af": action_family, "fc": from_color,
-                    "tc": to_color, "fp": fingerprint, "step": step,
-                },
+            await _gateway(db).run(
+                "arc.create_rule",
+                rid=rule_id,
+                tid=task_id,
+                af=action_family,
+                fc=from_color,
+                tc=to_color,
+                fp=fingerprint,
+                step=step,
             )
             results.append({"rule_id": rule_id, "status": "created"})
             await _link_entity_rule(db, task_id, entity_ref, rule_id, 0.5, step)
@@ -1002,25 +908,23 @@ async def record_rule(params: dict, db: KuzuClient, config: dict) -> dict:
 
         if existing_to_color == to_color:
             new_confidence = min(1.0, existing_confidence + 0.1)
-            await db.execute_write(
-                "MATCH (r:Rule {rule_id: $rid}) "
-                "SET r.confidence = $conf, r.fingerprint = coalesce(r.fingerprint, $fp)",
-                {"rid": existing_rule_id, "conf": new_confidence, "fp": fingerprint},
+            await _gateway(db).run(
+                "arc.confirm_rule",
+                rid=existing_rule_id,
+                conf=new_confidence,
+                fp=fingerprint,
             )
             results.append({"rule_id": existing_rule_id, "status": "confirmed"})
             await _link_entity_rule(db, task_id, entity_ref, existing_rule_id, new_confidence, step)
         else:
-            await db.execute_write(
-                "MATCH (r:Rule {rule_id: $rid}) SET r.falsified = true",
-                {"rid": existing_rule_id},
-            )
+            await _gateway(db).run("arc.falsify_rule", rid=existing_rule_id)
             results.append({"rule_id": existing_rule_id, "status": "falsified"})
             await _link_entity_rule(db, task_id, entity_ref, existing_rule_id, existing_confidence, step)
 
     return {"ok": True, "results": results}
 
 
-async def get_rules_for_action(params: dict, db: KuzuClient, config: dict) -> dict:
+async def get_rules_for_action(params: dict, db, config: dict) -> dict:
     """A177: live (unfalsified) rules relevant to this action."""
     task_id = params.get("task_id")
     action_id = params.get("action_id")
@@ -1029,12 +933,7 @@ async def get_rules_for_action(params: dict, db: KuzuClient, config: dict) -> di
     if not action_id:
         return _error("action_id is required")
 
-    result = db.execute(
-        "MATCH (r:Rule {task_id: $tid, action_family: $af}) "
-        "WHERE r.falsified = false "
-        "RETURN r.rule_id, r.from_color, r.to_color, r.confidence, r.falsified",
-        {"tid": task_id, "af": action_id},
-    )
+    result = await _gateway(db).run("arc.get_rules_for_action", tid=task_id, af=action_id)
 
     rules = []
     for row in _iter_rows(result):
@@ -1051,7 +950,7 @@ async def get_rules_for_action(params: dict, db: KuzuClient, config: dict) -> di
     return {"rules": rules}
 
 
-async def get_transferred_rules(params: dict, db: KuzuClient, config: dict) -> dict:
+async def get_transferred_rules(params: dict, db, config: dict) -> dict:
     """A179: live rules from OTHER task_ids whose recorded fingerprint
     matches — deliberately cross-game only, not self-referential (A164's
     existing per-game scoping via get_rules_for_action already covers
@@ -1063,12 +962,7 @@ async def get_transferred_rules(params: dict, db: KuzuClient, config: dict) -> d
     if not fingerprint:
         return _error("fingerprint is required")
 
-    result = db.execute(
-        "MATCH (r:Rule {fingerprint: $fp}) "
-        "WHERE r.task_id <> $tid AND r.falsified = false "
-        "RETURN r.rule_id, r.confidence, r.task_id",
-        {"fp": fingerprint, "tid": task_id},
-    )
+    result = await _gateway(db).run("arc.get_transferred_rules", fp=fingerprint, tid=task_id)
 
     rules = []
     for row in _iter_rows(result):
@@ -1087,7 +981,7 @@ _TERMINAL_THREAD_STATES = {"satisfied", "exhausted"}
 
 
 async def _link_thread_anchor(
-    db: KuzuClient, task_id: Any, thread_id: str, anchor_ref: Any, anchor_type: str
+    db, task_id: Any, thread_id: str, anchor_ref: Any, anchor_type: str
 ) -> None:
     """B369: best-effort ANCHORED_ON edge, mirroring `_link_entity_hypothesis`
     above -- silently no-ops if the target node doesn't exist yet (e.g. a
@@ -1110,7 +1004,7 @@ async def _link_thread_anchor(
         )
 
 
-async def arc_start_or_resume_thread(params: dict, db: KuzuClient, config: dict) -> dict:
+async def arc_start_or_resume_thread(params: dict, db, config: dict) -> dict:
     """B369/A201: read-or-create an InvestigationThread for ARC_AGI's
     trajectory Annatar (docs/handoff/B278-investigation-thread-schema.md).
 

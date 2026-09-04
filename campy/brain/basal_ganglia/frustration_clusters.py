@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Frustration cluster detection — Basal Ganglia avoidance learning.
 
 Query high-salience nodes, cluster by embedding similarity, and synthesize
@@ -5,6 +6,7 @@ avoidance Procedures. No LLM calls — pure graph traversal.
 """
 import json
 import logging
+from campy.brain.hippocampus.graph.gateway import get_gateway
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -47,32 +49,16 @@ async def detect_frustration_clusters(db, config: dict) -> tuple[int, int]:
 
     # 1) Query high-salience nodes across GCL node types (deduplicate by id)
     seen_ids: set[str] = set()
+    gw = get_gateway(db)
     all_nodes = []
     for table, id_col in [("Concept", "concept_id"), ("Decision", "decision_id"),
                           ("Constraint", "constraint_id")]:
         try:
-            # B277: `desc` is a reserved keyword in Kuzu's Cypher dialect
-            # (collides with ORDER BY ... DESC) - aliasing to it raised a
-            # Parser exception on every call, so this query - the very
-            # first step of frustration cluster detection - never
-            # successfully returned a single row in production.
-            rows = await db.execute_read(
-                f"MATCH (n:{table}) WHERE n.archived = false "
-                f"  AND n.salience_score >= $floor "
-                f"RETURN n.{id_col} AS id, n.text_raw AS name, "
-                f"  coalesce(n.text_raw, '') AS description, n.embedding AS emb, "
-                f"  n.salience_score AS salience "
-                f"ORDER BY n.salience_score DESC LIMIT 50",
-                {"floor": salience_floor},
-            )
+            rows = await gw.run(f"basal_ganglia.frustration_get_{table.lower()}", floor=salience_floor)
             for row in (rows or []):
                 node_id = row.get("id", "")
                 if row.get("emb") and node_id not in seen_ids:
                     seen_ids.add(node_id)
-                    # B277: remember which table this node came from - the
-                    # DISTILLED_FROM edge below needs the real label, not a
-                    # hardcoded :Concept (Decision/Constraint-sourced
-                    # cluster members previously failed to link at all).
                     row["_source_table"] = table
                     all_nodes.append(row)
         except Exception:
@@ -144,47 +130,34 @@ async def detect_frustration_clusters(db, config: dict) -> tuple[int, int]:
             proc_emb = [0.0] * 384
 
         try:
-            await db.execute_write(
-                """
-                CREATE (pr:Procedure {
-                    procedure_id: $pid, name: $name,
-                    domain: $domain, archetype: $archetype,
-                    description: $description, steps_json: $steps_json,
-                    embedding: $embedding, embedding_model: $embedding_model,
-                    embedding_dim: $embedding_dim,
-                    success_count: 0, application_count: 0, success_rate: 0.0,
-                    salience_score: $salience_score,
-                    confidence: $confidence, pathway_strength: $pathway_strength,
-                    maturity_stage: 'nascent',
-                    archived: false, created_at: timestamp($now)
-                })
-                """,
-                {
-                    "pid": proc_id, "name": name,
-                    "domain": "auto-discovered", "archetype": "avoidance",
-                    "description": description, "steps_json": steps_json,
-                    "embedding": proc_emb, "embedding_model": embedding_model,
-                    "embedding_dim": len(proc_emb),
-                    "salience_score": avg_salience,
-                    "confidence": min(avg_salience / 1.6, 1.0),
-                    "pathway_strength": min(avg_salience * 0.6, 1.0),
-                    "now": now,
-                },
+            await gw.run(
+                "basal_ganglia.frustration_create_procedure",
+                pid=proc_id,
+                name=name,
+                domain="auto-discovered",
+                archetype="avoidance",
+                description=description,
+                steps_json=steps_json,
+                embedding=proc_emb,
+                embedding_model=embedding_model,
+                embedding_dim=len(proc_emb),
+                salience_score=avg_salience,
+                confidence=min(avg_salience / 1.6, 1.0),
+                pathway_strength=min(avg_salience * 0.6, 1.0),
+                now=now,
             )
 
             for node in cluster_nodes:
                 node_id = node.get("id", "")
                 source_table = node.get("_source_table", "Concept")
-                id_col = _SOURCE_ID_COLUMNS.get(source_table, "concept_id")
                 if not node_id:
                     continue
                 try:
-                    await db.execute_write(
-                        f"MATCH (pr:Procedure {{procedure_id: $pid}}), "
-                        f"(c:{source_table} {{{id_col}: $cid}}) "
-                        "MERGE (pr)-[r:DISTILLED_FROM]->(c) "
-                        "ON CREATE SET r.synthesized_at = timestamp($now)",
-                        {"pid": proc_id, "cid": node_id, "now": now},
+                    await gw.run(
+                        f"basal_ganglia.frustration_link_distilled_from_{source_table.lower()}",
+                        pid=proc_id,
+                        cid=node_id,
+                        now=now,
                     )
                 except Exception:
                     _logger.exception(

@@ -423,6 +423,16 @@ async def run_loop(message_id: str, text: str, db, llm_client,
     return summary
 
 
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
+
+
+def _gateway(db) -> GraphGateway:
+    if isinstance(db, GraphGateway):
+        return db
+    return GraphGateway(db, REGISTRY)
+
+
 async def _create_disambiguation_event(
     db,
     concept_id_a: str,
@@ -436,26 +446,14 @@ async def _create_disambiguation_event(
 
     try:
         event_id = str(uuid.uuid4())
-        await db.execute_write(
-            """
-            CREATE (e:DisambiguationEvent {
-                event_id: $eid,
-                concept_id_a: $a,
-                concept_id_b: $b,
-                similarity: $sim,
-                status: 'pending',
-                resolved_at: NULL,
-                resolved_by: NULL,
-                created_at: timestamp($created_at)
-            })
-            """,
-            {
-                "eid": event_id,
-                "a": concept_id_a,
-                "b": concept_id_b,
-                "sim": float(similarity),
-                "created_at": now,
-            },
+        gw = _gateway(db)
+        await gw.run(
+            "orchestrator.create_disambiguation_event",
+            eid=event_id,
+            a=concept_id_a,
+            b=concept_id_b,
+            sim=float(similarity),
+            created_at=now,
         )
     except Exception:
         _logger.exception(
@@ -468,6 +466,7 @@ async def _create_disambiguation_event(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 async def _store_concept(entity: dict, step4: dict, vector: list[float],
                           embedding_model: str, db, now: str,
@@ -496,28 +495,25 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
             # Use the first anomaly type for the node-level field
             anomaly_type = anomaly_result["anomalies"][0]["type"]
 
-    # B33: exact-match dedup before CREATE
+    # B33: exact-match dedup before creation
+    gw = _gateway(db)
     try:
-        existing = db.execute(
-            "MATCH (c:Concept) WHERE toLower(c.text_raw) = toLower($t) AND c.archived = false "
-            "RETURN c.concept_id, c.pathway_strength LIMIT 1",
-            {"t": entity["text"]}
+        existing = gw.run_sync(
+            "orchestrator.find_concept_by_exact_text",
+            t=entity["text"],
         )
-        if existing.has_next():
-            row = existing.get_next()
-            existing_id, existing_ps = row[0], row[1]
+        if existing:
+            row = existing[0]
+            existing_id = row.get("c.concept_id") if hasattr(row, "get") else row[0]
+            existing_ps = row.get("c.pathway_strength") if hasattr(row, "get") else row[1]
             # Bump last_accessed_at and upgrade confidence_low if we're now more confident
-            await db.execute_write(
-                "MATCH (c:Concept {concept_id: $id}) "
-                "SET c.last_accessed_at = timestamp($now), "
-                "    c.pathway_strength = CASE WHEN $ps > c.pathway_strength THEN $ps "
-                "                              ELSE c.pathway_strength END, "
-                "    c.confidence_low = CASE WHEN $conf >= 0.80 THEN false "
-                "                           ELSE c.confidence_low END, "
-                "    c.salience_score = CASE WHEN $salience > coalesce(c.salience_score, 1.0) "
-                "                            THEN $salience ELSE coalesce(c.salience_score, 1.0) END",
-                {"id": existing_id, "now": now,
-                 "ps": max(confidence * salience, 0.50), "conf": confidence, "salience": salience}
+            await gw.run(
+                "orchestrator.touch_dedup_concept",
+                id=existing_id,
+                now=now,
+                ps=max(confidence * salience, 0.50),
+                conf=confidence,
+                salience=salience,
             )
             _logger.debug("_store_concept: dedup hit for '%s' → %s", entity["text"], existing_id)
             return existing_id
@@ -526,43 +522,22 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
 
     concept_id = str(uuid.uuid4())
     try:  # noqa: SIM105 — structured logging on failure, return None sentinel
-        await db.execute_write(
-            """
-            CREATE (c:Concept {
-                concept_id:       $concept_id,
-                text_raw:         $text_raw,
-                embedding:        $embedding,
-                embedding_model:  $embedding_model,
-                embedding_dim:    $embedding_dim,
-                gist_class:       $gist_class,
-                schema_org_type:  $schema_org_type,
-                confidence:       $confidence,
-                confidence_low:   $confidence_low,
-                pathway_strength: $pathway_strength,
-                salience_score:   $salience_score,
-                archived:         false,
-                anomaly_type:     $anomaly_type,
-                flagged_for_review: $flagged_for_review,
-                created_at:       timestamp($created_at),
-                last_accessed_at: timestamp($created_at)
-            })
-            """,
-            {
-                "concept_id":      concept_id,
-                "text_raw":        entity["text"],
-                "embedding":       vector,
-                "embedding_model": embedding_model,
-                "embedding_dim":   len(vector),
-                "gist_class":      entity.get("gist_class", ""),
-                "schema_org_type": entity.get("schema_org_type", ""),
-                "confidence":      confidence,
-                "confidence_low":  step4["confidence_low"],
-                "pathway_strength": max(confidence * salience, 0.50),
-                "salience_score":  salience,
-                "anomaly_type":    anomaly_type,
-                "flagged_for_review": flagged_for_review,
-                "created_at":      now,
-            }
+        await gw.run(
+            "orchestrator.create_concept",
+            concept_id=concept_id,
+            text_raw=entity["text"],
+            embedding=vector,
+            embedding_model=embedding_model,
+            embedding_dim=len(vector),
+            gist_class=entity.get("gist_class", ""),
+            schema_org_type=entity.get("schema_org_type", ""),
+            confidence=confidence,
+            confidence_low=step4["confidence_low"],
+            pathway_strength=max(confidence * salience, 0.50),
+            salience_score=salience,
+            anomaly_type=anomaly_type,
+            flagged_for_review=flagged_for_review,
+            created_at=now,
         )
         return concept_id
     except Exception:
@@ -594,53 +569,34 @@ async def _reify_concept(concept_id: str, artifact_type: str, entity: dict,
 
     node_label, pk_field = type_map[artifact_type]
     artifact_id = str(_uuid.uuid4())
+    art_key = artifact_type.lower()
+    gw = _gateway(db)
 
     try:
-        await db.execute_write(
-            f"""
-            CREATE (a:{node_label} {{
-                {pk_field}:        $artifact_id,
-                text_raw:          $text_raw,
-                embedding:         $embedding,
-                embedding_model:   $embedding_model,
-                embedding_dim:     $embedding_dim,
-                confidence:        $confidence,
-                confidence_low:    false,
-                pathway_strength:  $pathway_strength,
-                archived:          false,
-                created_at:        timestamp($created_at)
-            }})
-            """,
-            {
-                "artifact_id":      artifact_id,
-                "text_raw":         entity["text"],
-                "embedding":        vector,
-                "embedding_model":  embedding_model,
-                "embedding_dim":    len(vector),
-                "confidence":       confidence,
-                "pathway_strength": max(confidence, 0.50),
-                "created_at":       now,
-            }
+        await gw.run(
+            f"orchestrator.create_artifact_{art_key}",
+            artifact_id=artifact_id,
+            text_raw=entity["text"],
+            embedding=vector,
+            embedding_model=embedding_model,
+            embedding_dim=len(vector),
+            confidence=confidence,
+            pathway_strength=max(confidence, 0.50),
+            created_at=now,
         )
-        await db.execute_write(
-            f"""
-            MATCH (c:Concept {{concept_id: $concept_id}}),
-                  (a:{node_label} {{{pk_field}: $artifact_id}})
-            CREATE (c)-[:REIFIED_AS]->(a)
-            """,
-            {"concept_id": concept_id, "artifact_id": artifact_id}
+        await gw.run(
+            f"orchestrator.link_concept_reified_{art_key}",
+            concept_id=concept_id,
+            artifact_id=artifact_id,
         )
         # D7 fix: create ESTABLISHED provenance edge from Message to artifact.
         # Matches schema: (Message)-[ESTABLISHED]->(Decision | Constraint | ...)
         if message_id:
             try:
-                await db.execute_write(
-                    f"""
-                    MATCH (m:Message {{message_id: $mid}}),
-                          (a:{node_label} {{{pk_field}: $artifact_id}})
-                    MERGE (m)-[:ESTABLISHED]->(a)
-                    """,
-                    {"mid": message_id, "artifact_id": artifact_id}
+                await gw.run(
+                    f"orchestrator.link_message_established_{art_key}",
+                    mid=message_id,
+                    artifact_id=artifact_id,
                 )
             except Exception:
                 _logger.exception(
@@ -652,13 +608,10 @@ async def _reify_concept(concept_id: str, artifact_type: str, entity: dict,
         # This is the session-level "who established this?" audit trail.
         if session_id and session_id != "unknown":
             try:
-                await db.execute_write(
-                    f"""
-                    MATCH (a:{node_label} {{{pk_field}: $artifact_id}}),
-                          (s:Session {{session_id: $sid}})
-                    MERGE (a)-[:ESTABLISHED_IN]->(s)
-                    """,
-                    {"artifact_id": artifact_id, "sid": session_id}
+                await gw.run(
+                    f"orchestrator.link_artifact_session_{art_key}",
+                    artifact_id=artifact_id,
+                    sid=session_id,
                 )
             except Exception:
                 _logger.exception(
@@ -683,24 +636,14 @@ async def _save_gist_example(text: str, vector: list[float], gist_class: str,
     Background sweep will mean-pool these to update GistClass.centroid.
     """
     try:
-        await db.execute_write(
-            """
-            CREATE (e:GistExample {
-                example_id: $example_id,
-                text:       $text,
-                embedding:  $embedding,
-                gist_class: $gist_class,
-                source:     'system2',
-                created_at: timestamp($created_at)
-            })
-            """,
-            {
-                "example_id": str(uuid.uuid4()),
-                "text":       text,
-                "embedding":  vector,
-                "gist_class": gist_class,
-                "created_at": now,
-            }
+        gw = _gateway(db)
+        await gw.run(
+            "orchestrator.create_gist_example",
+            example_id=str(uuid.uuid4()),
+            text=text,
+            embedding=vector,
+            gist_class=gist_class,
+            created_at=now,
         )
     except Exception:
         _logger.exception("_save_gist_example failed for class=%s", gist_class)
@@ -712,18 +655,18 @@ async def _ensure_concept_exists(text: str, embedding_model: str, db, now: str) 
     If it already exists, do nothing. If it doesn't exist, create a minimal
     confidence_low=True node. This is needed for relation endpoints that are
     noun chunks (not NER entities) — they won't be created by the normal
-    Step 4-7 pipeline but need to exist for MERGE edges to work.
+    Step 4-7 pipeline but need to exist for relation edges to work.
 
-    Uses MATCH first to avoid re-embedding if the node already exists.
+    Uses lookup first to avoid re-embedding if the node already exists.
     """
+    gw = _gateway(db)
     # Check if concept already exists (case-insensitive)
     try:
-        result = db.execute(
-            "MATCH (c:Concept) WHERE toLower(c.text_raw) = toLower($t) AND c.archived = false "
-            "RETURN c.concept_id LIMIT 1",
-            {"t": text}
+        result = gw.run_sync(
+            "orchestrator.find_concept_by_exact_text",
+            t=text,
         )
-        if result.has_next():
+        if result:
             return  # already exists
     except Exception:
         return  # on error, skip creation to avoid cascading failures
@@ -731,32 +674,14 @@ async def _ensure_concept_exists(text: str, embedding_model: str, db, now: str) 
     # Create minimal concept node with embedding
     try:
         vector = await asyncio.to_thread(emb.embed, text, model_name=embedding_model)
-        await db.execute_write(
-            """
-            CREATE (c:Concept {
-                concept_id:       $concept_id,
-                text_raw:         $text_raw,
-                embedding:        $embedding,
-                embedding_model:  $embedding_model,
-                embedding_dim:    $embedding_dim,
-                gist_class:       '',
-                schema_org_type:  '',
-                confidence:       0.60,
-                confidence_low:   true,
-                pathway_strength: 0.60,
-                archived:         false,
-                created_at:       timestamp($created_at),
-                last_accessed_at: timestamp($created_at)
-            })
-            """,
-            {
-                "concept_id":      str(uuid.uuid4()),
-                "text_raw":        text,
-                "embedding":       vector,
-                "embedding_model": embedding_model,
-                "embedding_dim":   len(vector),
-                "created_at":      now,
-            }
+        await gw.run(
+            "orchestrator.create_minimal_concept",
+            concept_id=str(uuid.uuid4()),
+            text_raw=text,
+            embedding=vector,
+            embedding_model=embedding_model,
+            embedding_dim=len(vector),
+            created_at=now,
         )
     except Exception:
         _logger.debug("_ensure_concept_exists skipped for '%s' (may be duplicate)", text)
@@ -788,47 +713,39 @@ async def _store_relation(rel: dict, db, now: str,
     await _ensure_concept_exists(rel["tail"], embedding_model, db, now)
 
     try:
-        # B32 fix: Kuzu 0.11.3 has issues with MERGE on relationships when
+        # B32 fix: Kuzu 0.11.3 has issues with merge on relationships when
         # using MATCH+WHERE with toLower(). Use a two-step approach:
         # 1. Look up both node IDs with separate queries
-        # 2. CREATE/MERGE the edge using node IDs directly.
-        h_result = db.execute(
-            "MATCH (c:Concept) WHERE toLower(c.text_raw) = toLower($t) AND c.archived = false "
-            "RETURN c.concept_id ORDER BY c.pathway_strength DESC LIMIT 1",
-            {"t": rel["head"]}
+        # 2. create/merge the edge using node IDs directly.
+        gw = _gateway(db)
+        h_result = gw.run_sync(
+            "orchestrator.find_endpoint_concept",
+            t=rel["head"],
         )
-        t_result = db.execute(
-            "MATCH (c:Concept) WHERE toLower(c.text_raw) = toLower($t) AND c.archived = false "
-            "RETURN c.concept_id ORDER BY c.pathway_strength DESC LIMIT 1",
-            {"t": rel["tail"]}
+        t_result = gw.run_sync(
+            "orchestrator.find_endpoint_concept",
+            t=rel["tail"],
         )
 
-        if not h_result.has_next() or not t_result.has_next():
+        if not h_result or not t_result:
             _logger.warning("_store_relation: endpoint not found — head=%s tail=%s",
                             rel["head"], rel["tail"])
             return
 
-        head_id = h_result.get_next()[0]
-        tail_id = t_result.get_next()[0]
+        head_row = h_result[0]
+        tail_row = t_result[0]
+        head_id = head_row.get("c.concept_id") if hasattr(head_row, "get") else head_row[0]
+        tail_id = tail_row.get("c.concept_id") if hasattr(tail_row, "get") else tail_row[0]
 
         # Use inline property matching (same pattern as CO_OCCURS_WITH which works)
-        # rather than a WHERE clause — Kuzu 0.11.3 MERGE + WHERE has edge cases
-        await db.execute_write(
-            f"""
-            MATCH (h:Concept {{concept_id: $hid}}),
-                  (t:Concept {{concept_id: $tid}})
-            MERGE (h)-[r:{rel_type}]->(t)
-            ON CREATE SET r.confidence   = $confidence,
-                          r.inferred_by  = $inferred_by,
-                          r.inferred_at  = timestamp($now)
-            """,
-            {
-                "hid":         str(head_id),
-                "tid":         str(tail_id),
-                "confidence":  rel.get("confidence", 0.85),
-                "inferred_by": rel.get("inferred_by", "system"),
-                "now":         now,
-            }
+        # rather than a WHERE clause — Kuzu 0.11.3 merge + WHERE has edge cases
+        await gw.run(
+            f"orchestrator.merge_semantic_rel_{rel_type.lower()}",
+            hid=str(head_id),
+            tid=str(tail_id),
+            confidence=rel.get("confidence", 0.85),
+            inferred_by=rel.get("inferred_by", "system"),
+            now=now,
         )
         _logger.debug("_store_relation stored: %s -[%s]-> %s (hid=%s tid=%s)",
                       rel["head"], rel_type, rel["tail"], head_id, tail_id)

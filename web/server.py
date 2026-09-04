@@ -39,6 +39,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from campy.brain.auth import LocalSingleUserResolver, Principal, TransportContext
+from campy.brain.hippocampus.graph.gateway import get_gateway
 from web.routes.metrics import register_token_metrics_routes
 
 _logger = logging.getLogger(__name__)
@@ -53,6 +54,20 @@ _SSE_KEEPALIVE_SECONDS = 30.0
 
 STATIC_DIR = Path(__file__).parent / "static"
 WEB_VERSION = "0.1.0"
+
+def _row_val(row, idx: int, key: str):
+    if isinstance(row, dict):
+        # `key` matches Kuzu's real column name for a simple property
+        # RETURN (e.g. "n.text_raw"), but Kuzu does not name computed
+        # expression columns after their literal text (e.g. RETURN label(r)
+        # is not a "label(r)" column) — fall back to position for those.
+        if key in row:
+            return row[key]
+        vals = list(row.values())
+        return vals[idx] if idx < len(vals) else None
+    if isinstance(row, (list, tuple)) and idx < len(row):
+        return row[idx]
+    return getattr(row, key, None)
 
 # ---------------------------------------------------------------------------
 # Artifact table registry (table_name → primary_key_column)
@@ -105,6 +120,7 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
     }
     _principal_resolver = principal_resolver or LocalSingleUserResolver()
     _router = router
+    gw = get_gateway(db)
     app = FastAPI(
         title="SideQuest Memory Control Panel",
         version=WEB_VERSION,
@@ -187,9 +203,9 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
             ("Lesson",      "lesson_id"),
         ]:
             try:
-                r = db.execute(f"MATCH (n:{table}) WHERE n.{pk} = $id RETURN n", {"id": node_id})
-                if r.has_next():
-                    node_data = r.get_next()[0]
+                rows = gw.run_sync(f"web.get_node_{table.lower()}", id=node_id)
+                if rows:
+                    node_data = _row_val(rows[0], 0, "n")
                     node_table = table
                     pk_col = pk
                     break
@@ -209,29 +225,28 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
 
         # Fetch 1-hop neighbors
         try:
-            r = db.execute(
-                f"MATCH (n:{node_table})-[r]-(m) WHERE n.{pk_col} = $id "
-                "RETURN m, label(m), label(r) LIMIT 20",
-                {"id": node_id}
-            )
-            while r.has_next():
-                row = r.get_next()
-                neighbor_node = row[0]
-                neighbor_label = row[1]
-                rel_label = row[2]
-                
+            rows = gw.run_sync(f"web.get_neighbors_{node_table.lower()}", id=node_id)
+            for row in rows:
+                neighbor_node = _row_val(row, 0, "m")
+                neighbor_label = _row_val(row, 1, "label(m)")
+                rel_label = _row_val(row, 2, "label(r)")
+
                 # Get neighbor's ID (might be different PK columns)
                 nid = "unknown"
-                for _, pk in ARTIFACT_TABLES + [("Message", "message_id"), ("Document", "document_id"), ("MainQuest", "quest_id"), ("SideQuest", "quest_id"), ("Lesson", "lesson_id")]:
-                    if pk in neighbor_node:
-                        nid = neighbor_node[pk]
-                        break
+                if isinstance(neighbor_node, dict):
+                    for _, pk in ARTIFACT_TABLES + [("Message", "message_id"), ("Document", "document_id"), ("MainQuest", "quest_id"), ("SideQuest", "quest_id"), ("Lesson", "lesson_id")]:
+                        if pk in neighbor_node:
+                            nid = neighbor_node[pk]
+                            break
+                    text_val = neighbor_node.get("text_raw", neighbor_node.get("name", ""))[:100]
+                else:
+                    text_val = ""
 
                 result["neighbors"].append({
                     "id": nid,
                     "type": neighbor_label,
                     "relation": rel_label,
-                    "text": neighbor_node.get("text_raw", neighbor_node.get("name", ""))[:100]
+                    "text": text_val
                 })
         except Exception:
             pass
@@ -239,8 +254,8 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
         return result
 
     @app.get("/api/stats")
-    def get_stats():
-        """Node counts per artifact table (archived=false only)."""
+    def get_stats():  # W1: sync → FastAPI runs in threadpool
+        """Return node counts for all artifact tables."""
         counts = {}
         for table, pk in ARTIFACT_TABLES + [
             ("Message",     "message_id"),
@@ -251,12 +266,13 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
         ]:
             key = table.lower()
             try:
-                r = db.execute(
-                    f"MATCH (n:{table}) WHERE n.archived = false RETURN count(n)"
-                    if table not in ("Document", "MergeEvent")
-                    else f"MATCH (n:{table}) RETURN count(n)"
+                query_name = (
+                    f"web.count_total_{key}"
+                    if table in ("Document", "MergeEvent")
+                    else f"web.count_active_{key}"
                 )
-                counts[key] = r.get_next()[0] if r.has_next() else 0
+                rows = gw.run_sync(query_name)
+                counts[key] = _row_val(rows[0], 0, "count(n)") if rows else 0
             except Exception:
                 counts[key] = 0
         return counts
@@ -280,78 +296,68 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
         def _add_node(nid, label, node_type, **extra):
             if nid and nid not in seen_ids:
                 seen_ids.add(nid)
-                nodes.append({"id": nid, "label": label[:60],
+                nodes.append({"id": nid, "label": (label or "")[:60],
                                "type": node_type, **extra})
 
         # Concept nodes (top 30 by strength)
         try:
-            r = db.execute(
-                "MATCH (c:Concept) WHERE c.archived = false "
-                "RETURN c.concept_id, c.text_raw, c.gist_class, "
-                "       c.confidence, c.pathway_strength, c.confidence_low "
-                "ORDER BY c.pathway_strength DESC LIMIT 30"
-            )
-            while r.has_next():
-                row = r.get_next()
-                _add_node(row[0], row[1], "Concept",
-                          gist_class=row[2], confidence=row[3],
-                          pathway_strength=row[4], soft_lock=bool(row[5]))
+            rows = gw.run_sync("web.graph_concepts")
+            for row in rows:
+                _add_node(_row_val(row, 0, "c.concept_id") or _row_val(row, 0, "concept_id"),
+                          _row_val(row, 1, "c.text_raw") or _row_val(row, 1, "text_raw") or "",
+                          "Concept",
+                          gist_class=_row_val(row, 2, "c.gist_class") or _row_val(row, 2, "gist_class"),
+                          confidence=_row_val(row, 3, "c.confidence") or _row_val(row, 3, "confidence"),
+                          pathway_strength=_row_val(row, 4, "c.pathway_strength") or _row_val(row, 4, "pathway_strength"),
+                          soft_lock=bool(_row_val(row, 5, "c.confidence_low") or _row_val(row, 5, "confidence_low")))
         except Exception:
             pass
 
         # Decision nodes
         try:
-            r = db.execute(
-                "MATCH (d:Decision) WHERE d.archived = false "
-                "RETURN d.decision_id, d.text_raw, d.confidence, "
-                "       d.pathway_strength, d.confidence_low "
-                "ORDER BY d.pathway_strength DESC LIMIT 20"
-            )
-            while r.has_next():
-                row = r.get_next()
-                _add_node(row[0], row[1], "Decision",
-                          confidence=row[2], pathway_strength=row[3],
-                          soft_lock=bool(row[4]))
+            rows = gw.run_sync("web.graph_decisions")
+            for row in rows:
+                _add_node(_row_val(row, 0, "d.decision_id") or _row_val(row, 0, "decision_id"),
+                          _row_val(row, 1, "d.text_raw") or _row_val(row, 1, "text_raw") or "",
+                          "Decision",
+                          confidence=_row_val(row, 2, "d.confidence") or _row_val(row, 2, "confidence"),
+                          pathway_strength=_row_val(row, 3, "d.pathway_strength") or _row_val(row, 3, "pathway_strength"),
+                          soft_lock=bool(_row_val(row, 4, "d.confidence_low") or _row_val(row, 4, "confidence_low")))
         except Exception:
             pass
 
         # Constraint nodes
         try:
-            r = db.execute(
-                "MATCH (c:Constraint) WHERE c.archived = false "
-                "RETURN c.constraint_id, c.text_raw, c.confidence, "
-                "       c.pathway_strength, c.confidence_low "
-                "ORDER BY c.pathway_strength DESC LIMIT 20"
-            )
-            while r.has_next():
-                row = r.get_next()
-                _add_node(row[0], row[1], "Constraint",
-                          confidence=row[2], pathway_strength=row[3],
-                          soft_lock=bool(row[4]))
+            rows = gw.run_sync("web.graph_constraints")
+            for row in rows:
+                _add_node(_row_val(row, 0, "c.constraint_id") or _row_val(row, 0, "constraint_id"),
+                          _row_val(row, 1, "c.text_raw") or _row_val(row, 1, "text_raw") or "",
+                          "Constraint",
+                          confidence=_row_val(row, 2, "c.confidence") or _row_val(row, 2, "confidence"),
+                          pathway_strength=_row_val(row, 3, "c.pathway_strength") or _row_val(row, 3, "pathway_strength"),
+                          soft_lock=bool(_row_val(row, 4, "c.confidence_low") or _row_val(row, 4, "confidence_low")))
         except Exception:
             pass
 
         # MainQuest nodes
         try:
-            r = db.execute(
-                "MATCH (q:MainQuest) WHERE q.archived = false "
-                "RETURN q.quest_id, q.name, q.status LIMIT 10"
-            )
-            while r.has_next():
-                row = r.get_next()
-                _add_node(row[0], row[1], "MainQuest", status=row[2])
+            rows = gw.run_sync("web.graph_main_quests")
+            for row in rows:
+                _add_node(_row_val(row, 0, "q.quest_id") or _row_val(row, 0, "quest_id"),
+                          _row_val(row, 1, "q.name") or _row_val(row, 1, "name") or "",
+                          "MainQuest",
+                          status=_row_val(row, 2, "q.status") or _row_val(row, 2, "status"))
         except Exception:
             pass
 
         # SideQuest nodes
         try:
-            r = db.execute(
-                "MATCH (q:SideQuest) WHERE q.archived = false "
-                "RETURN q.quest_id, q.name, q.status LIMIT 10"
-            )
-            while r.has_next():
-                row = r.get_next()
-                _add_node(row[0], row[1], "SideQuest", status=row[2])
+            rows = gw.run_sync("web.graph_side_quests")
+            for row in rows:
+                _add_node(_row_val(row, 0, "q.quest_id") or _row_val(row, 0, "quest_id"),
+                          _row_val(row, 1, "q.name") or _row_val(row, 1, "name") or "",
+                          "SideQuest",
+                          status=_row_val(row, 2, "q.status") or _row_val(row, 2, "status"))
         except Exception:
             pass
 
@@ -359,31 +365,25 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
 
         # CO_OCCURS_WITH (Concept ↔ Concept)
         try:
-            r = db.execute(
-                "MATCH (a:Concept)-[r:CO_OCCURS_WITH]->(b:Concept) "
-                "WHERE a.archived = false AND b.archived = false "
-                "RETURN a.concept_id, b.concept_id, r.strength, r.count "
-                "ORDER BY r.strength DESC LIMIT 60"
-            )
-            while r.has_next():
-                row = r.get_next()
-                src, tgt = row[0], row[1]
+            rows = gw.run_sync("web.graph_co_occurs_with")
+            for row in rows:
+                src = _row_val(row, 0, "a.concept_id") or _row_val(row, 0, "concept_id")
+                tgt = _row_val(row, 1, "b.concept_id") or _row_val(row, 1, "concept_id")
+                strength = _row_val(row, 2, "r.strength") or _row_val(row, 2, "strength")
+                count = _row_val(row, 3, "r.count") or _row_val(row, 3, "count")
                 if src in seen_ids and tgt in seen_ids:
                     edges.append({"source": src, "target": tgt,
                                   "type": "CO_OCCURS_WITH",
-                                  "strength": row[2], "count": row[3]})
+                                  "strength": strength, "count": count})
         except Exception:
             pass
 
         # DEPRECATED_BY (Concept → Concept)
         try:
-            r = db.execute(
-                "MATCH (old:Concept)-[:DEPRECATED_BY]->(new:Concept) "
-                "RETURN old.concept_id, new.concept_id LIMIT 30"
-            )
-            while r.has_next():
-                row = r.get_next()
-                src, tgt = row[0], row[1]
+            rows = gw.run_sync("web.graph_deprecated_by")
+            for row in rows:
+                src = _row_val(row, 0, "old.concept_id") or _row_val(row, 0, "concept_id")
+                tgt = _row_val(row, 1, "new.concept_id") or _row_val(row, 1, "concept_id")
                 if src in seen_ids and tgt in seen_ids:
                     edges.append({"source": src, "target": tgt,
                                   "type": "DEPRECATED_BY"})
@@ -392,13 +392,10 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
 
         # BELONGS_TO (SideQuest → MainQuest)
         try:
-            r = db.execute(
-                "MATCH (sq:SideQuest)-[:BELONGS_TO]->(mq:MainQuest) "
-                "RETURN sq.quest_id, mq.quest_id"
-            )
-            while r.has_next():
-                row = r.get_next()
-                edges.append({"source": row[0], "target": row[1],
+            rows = gw.run_sync("web.graph_belongs_to")
+            for row in rows:
+                edges.append({"source": _row_val(row, 0, "sq.quest_id") or _row_val(row, 0, "quest_id"),
+                              "target": _row_val(row, 1, "mq.quest_id") or _row_val(row, 1, "quest_id"),
                               "type": "BELONGS_TO"})
         except Exception:
             pass
@@ -420,20 +417,14 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
 
         for table, id_col in ARTIFACT_TABLES:
             try:
-                r = db.execute(
-                    f"MATCH (n:{table}) "
-                    f"WHERE n.confidence_low = true AND n.archived = false "
-                    f"RETURN n.{id_col}, n.text_raw, n.confidence, n.created_at "
-                    f"ORDER BY n.created_at DESC LIMIT 50"
-                )
-                while r.has_next():
-                    row = r.get_next()
+                rows = gw.run_sync(f"web.open_loops_{table.lower()}")
+                for row in rows:
                     items.append({
-                        "node_id":    row[0],
+                        "node_id":    _row_val(row, 0, f"n.{id_col}") or _row_val(row, 0, id_col),
                         "node_type":  table,
-                        "text_raw":   row[1],
-                        "confidence": row[2],
-                        "created_at": str(row[3]),
+                        "text_raw":   _row_val(row, 1, "n.text_raw") or _row_val(row, 1, "text_raw"),
+                        "confidence": _row_val(row, 2, "n.confidence") or _row_val(row, 2, "confidence"),
+                        "created_at": str(_row_val(row, 3, "n.created_at") or _row_val(row, 3, "created_at")),
                     })
             except Exception:
                 pass
@@ -449,18 +440,9 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
         """
         for table, id_col in ARTIFACT_TABLES:
             try:
-                # W1 fix: run blocking db.execute() in threadpool
-                r = await asyncio.to_thread(
-                    db.execute,
-                    f"MATCH (n:{table} {{{id_col}: $nid}}) RETURN n.{id_col}",
-                    {"nid": node_id}
-                )
-                if r.has_next():
-                    await db.execute_write(
-                        f"MATCH (n:{table} {{{id_col}: $nid}}) "
-                        "SET n.confidence_low = false, n.confidence = 0.95",
-                        {"nid": node_id}
-                    )
+                rows = await gw.run(f"web.find_soft_lock_{table.lower()}", nid=node_id)
+                if rows:
+                    await gw.run(f"web.confirm_soft_lock_{table.lower()}", nid=node_id)
                     return {"confirmed": True, "node_id": node_id,
                             "node_type": table}
             except Exception:
@@ -473,18 +455,9 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
         """Archive a soft-lock node (user rejects the extraction)."""
         for table, id_col in ARTIFACT_TABLES:
             try:
-                # W1 fix: run blocking db.execute() in threadpool
-                r = await asyncio.to_thread(
-                    db.execute,
-                    f"MATCH (n:{table} {{{id_col}: $nid}}) RETURN n.{id_col}",
-                    {"nid": node_id}
-                )
-                if r.has_next():
-                    await db.execute_write(
-                        f"MATCH (n:{table} {{{id_col}: $nid}}) "
-                        "SET n.archived = true",
-                        {"nid": node_id}
-                    )
+                rows = await gw.run(f"web.find_soft_lock_{table.lower()}", nid=node_id)
+                if rows:
+                    await gw.run(f"web.reject_soft_lock_{table.lower()}", nid=node_id)
                     return {"rejected": True, "node_id": node_id,
                             "node_type": table}
             except Exception:
@@ -501,26 +474,20 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
         """List recent MergeEvents with rollback metadata."""
         events = []
         try:
-            r = db.execute(
-                "MATCH (me:MergeEvent) "
-                "RETURN me.merge_event_id, me.pre_pathway_strength, "
-                "       me.delta_pathway_strength, me.metadata_patch, me.created_at "
-                "ORDER BY me.created_at DESC LIMIT 50"
-            )
-            while r.has_next():
-                row = r.get_next()
-                meta = row[3] or ""
+            rows = gw.run_sync("web.list_merge_events")
+            for row in rows:
+                meta = _row_val(row, 3, "me.metadata_patch") or ""
                 already_rolled_back = "rolled_back=true" in meta
                 merge_type = ("contradiction" if "contradiction" in meta
                               else "additive")
                 events.append({
-                    "merge_event_id":        row[0],
-                    "pre_pathway_strength":  row[1],
-                    "delta_pathway_strength": row[2],
-                    "merge_type":            merge_type,
-                    "metadata_patch":        meta,
-                    "already_rolled_back":   already_rolled_back,
-                    "created_at":            str(row[4]),
+                    "merge_event_id":         _row_val(row, 0, "me.merge_event_id"),
+                    "pre_pathway_strength":   _row_val(row, 1, "me.pre_pathway_strength"),
+                    "delta_pathway_strength": _row_val(row, 2, "me.delta_pathway_strength"),
+                    "merge_type":             merge_type,
+                    "metadata_patch":         meta,
+                    "already_rolled_back":    already_rolled_back,
+                    "created_at":             str(_row_val(row, 4, "me.created_at")),
                 })
         except Exception:
             pass
@@ -535,22 +502,16 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
           3. Mark MergeEvent metadata as rolled_back=true
         Additive MergeEvents: only restore strength on linked Concept.
         """
-        # Fetch MergeEvent — W1 fix: use to_thread for blocking read
         try:
-            r = await asyncio.to_thread(
-                db.execute,
-                "MATCH (me:MergeEvent {merge_event_id: $meid}) "
-                "RETURN me.metadata_patch, me.pre_pathway_strength",
-                {"meid": merge_event_id}
-            )
-            if not r.has_next():
+            rows = await gw.run("web.get_merge_event", meid=merge_event_id)
+            if not rows:
                 raise HTTPException(
                     status_code=404,
                     detail=f"MergeEvent '{merge_event_id}' not found"
                 )
-            row = r.get_next()
-            metadata     = row[0] or ""
-            pre_strength = float(row[1] or 0.5)
+            row = rows[0]
+            metadata     = _row_val(row, 0, "me.metadata_patch") or ""
+            pre_strength = float(_row_val(row, 1, "me.pre_pathway_strength") or 0.5)
         except HTTPException:
             raise
         except Exception as e:
@@ -574,24 +535,9 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
 
             if old_id and new_id:
                 try:
-                    await db.execute_write(
-                        "MATCH (c:Concept {concept_id: $id}) "
-                        "SET c.archived = false, c.pathway_strength = $strength",
-                        {"id": old_id, "strength": pre_strength}
-                    )
-                    await db.execute_write(
-                        "MATCH (c:Concept {concept_id: $id}) "
-                        "SET c.archived = true",
-                        {"id": new_id}
-                    )
-                    # W2 fix: remove DEPRECATED_BY edge to restore clean graph state
-                    await db.execute_write(
-                        "MATCH (old:Concept {concept_id: $old_id})"
-                        "-[d:DEPRECATED_BY]->"
-                        "(new:Concept {concept_id: $new_id}) "
-                        "DELETE d",
-                        {"old_id": old_id, "new_id": new_id}
-                    )
+                    await gw.run("web.rollback_restore_old_concept", id=old_id, strength=pre_strength)
+                    await gw.run("web.rollback_archive_new_concept", id=new_id)
+                    await gw.run("web.rollback_delete_deprecated_by", old_id=old_id, new_id=new_id)
                     result.update({"old_concept_restored": old_id,
                                    "new_concept_archived": new_id})
                 except Exception as e:
@@ -600,12 +546,7 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
 
         # Mark as rolled back
         try:
-            await db.execute_write(
-                "MATCH (me:MergeEvent {merge_event_id: $meid}) "
-                "SET me.metadata_patch = $meta",
-                {"meid": merge_event_id,
-                 "meta": metadata + ";rolled_back=true"}
-            )
+            await gw.run("web.rollback_mark_merge_event", meid=merge_event_id, meta=metadata + ";rolled_back=true")
         except Exception:
             pass
 
@@ -618,27 +559,21 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
     def _collect_ledger() -> list[dict]:
         """Fetch all active Constraints + GlobalConstraints sorted by strength."""
         rows = []
-        for table, id_col in [
-            ("Constraint",       "constraint_id"),
-            ("GlobalConstraint", "global_constraint_id"),
+        for table, query_name in [
+            ("Constraint",       "web.ledger_constraint"),
+            ("GlobalConstraint", "web.ledger_global_constraint"),
         ]:
             try:
-                r = db.execute(
-                    f"MATCH (c:{table}) WHERE c.archived = false "
-                    f"RETURN c.{id_col}, c.text_raw, c.confidence, "
-                    f"       c.confidence_low, c.pathway_strength, c.created_at "
-                    f"ORDER BY c.pathway_strength DESC"
-                )
-                while r.has_next():
-                    row = r.get_next()
+                res_rows = gw.run_sync(query_name)
+                for row in res_rows:
                     rows.append({
-                        "constraint_id":    row[0],
+                        "constraint_id":    _row_val(row, 0, "c.constraint_id") or _row_val(row, 0, "c.global_constraint_id"),
                         "table":            table,
-                        "text_raw":         row[1],
-                        "confidence":       row[2],
-                        "confidence_low":   bool(row[3]),
-                        "pathway_strength": row[4],
-                        "created_at":       str(row[5]),
+                        "text_raw":         _row_val(row, 1, "c.text_raw"),
+                        "confidence":       _row_val(row, 2, "c.confidence"),
+                        "confidence_low":   bool(_row_val(row, 3, "c.confidence_low")),
+                        "pathway_strength": _row_val(row, 4, "c.pathway_strength"),
+                        "created_at":       str(_row_val(row, 5, "c.created_at")),
                     })
             except Exception:
                 pass
@@ -702,45 +637,34 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
         quest_map: dict[str, dict] = {}
 
         try:
-            r = db.execute(
-                "MATCH (q:MainQuest) WHERE q.archived = false "
-                "RETURN q.quest_id, q.name, q.status, q.purpose, q.created_at "
-                "ORDER BY q.created_at DESC"
-            )
-            while r.has_next():
-                row = r.get_next()
+            rows = gw.run_sync("web.quests_main")
+            for row in rows:
                 quest = {
-                    "quest_id":   row[0],
-                    "name":       row[1],
-                    "status":     row[2],
-                    "purpose":    row[3],
-                    "created_at": str(row[4]),
+                    "quest_id":   _row_val(row, 0, "q.quest_id"),
+                    "name":       _row_val(row, 1, "q.name"),
+                    "status":     _row_val(row, 2, "q.status"),
+                    "purpose":    _row_val(row, 3, "q.purpose"),
+                    "created_at": str(_row_val(row, 4, "q.created_at")),
                     "type":       "MainQuest",
                     "side_quests": [],
                 }
                 quests.append(quest)
-                quest_map[row[0]] = quest
+                quest_map[quest["quest_id"]] = quest
         except Exception:
             pass
 
         try:
-            r = db.execute(
-                "MATCH (sq:SideQuest)-[:BELONGS_TO]->(mq:MainQuest) "
-                "WHERE sq.archived = false "
-                "RETURN sq.quest_id, sq.name, sq.status, sq.purpose, "
-                "       sq.created_at, mq.quest_id"
-            )
-            while r.has_next():
-                row = r.get_next()
+            rows = gw.run_sync("web.quests_side_belongs_to")
+            for row in rows:
                 sq = {
-                    "quest_id":   row[0],
-                    "name":       row[1],
-                    "status":     row[2],
-                    "purpose":    row[3],
-                    "created_at": str(row[4]),
+                    "quest_id":   _row_val(row, 0, "sq.quest_id"),
+                    "name":       _row_val(row, 1, "sq.name"),
+                    "status":     _row_val(row, 2, "sq.status"),
+                    "purpose":    _row_val(row, 3, "sq.purpose"),
+                    "created_at": str(_row_val(row, 4, "sq.created_at")),
                     "type":       "SideQuest",
                 }
-                parent_id = row[5]
+                parent_id = _row_val(row, 5, "mq.quest_id")
                 if parent_id in quest_map:
                     quest_map[parent_id]["side_quests"].append(sq)
                 else:
@@ -770,61 +694,43 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
 
         # Top decisions (by pathway_strength)
         try:
-            r = db.execute(
-                "MATCH (d:Decision) WHERE d.archived = false "
-                "RETURN d.decision_id, d.text_raw, d.confidence, "
-                "       d.pathway_strength, d.confidence_low, d.created_at "
-                "ORDER BY d.pathway_strength DESC LIMIT 10"
-            )
-            while r.has_next():
-                row = r.get_next()
+            rows = gw.run_sync("web.thinking_decisions")
+            for row in rows:
                 result["decisions"].append({
-                    "id": row[0],
-                    "text": row[1],
-                    "confidence": round(float(row[2] or 0), 3),
-                    "strength": round(float(row[3] or 0), 3),
-                    "soft_lock": bool(row[4]),
-                    "created_at": str(row[5]),
+                    "id": _row_val(row, 0, "d.decision_id"),
+                    "text": _row_val(row, 1, "d.text_raw"),
+                    "confidence": round(float(_row_val(row, 2, "d.confidence") or 0), 3),
+                    "strength": round(float(_row_val(row, 3, "d.pathway_strength") or 0), 3),
+                    "soft_lock": bool(_row_val(row, 4, "d.confidence_low")),
+                    "created_at": str(_row_val(row, 5, "d.created_at")),
                 })
         except Exception:
             pass
 
         # Top concepts (by pathway_strength, for tag cloud)
         try:
-            r = db.execute(
-                "MATCH (c:Concept) WHERE c.archived = false "
-                "RETURN c.concept_id, c.text_raw, c.gist_class, "
-                "       c.pathway_strength, c.confidence_low "
-                "ORDER BY c.pathway_strength DESC LIMIT 25"
-            )
-            while r.has_next():
-                row = r.get_next()
+            rows = gw.run_sync("web.thinking_concepts")
+            for row in rows:
                 result["concepts"].append({
-                    "id": row[0],
-                    "text": row[1],
-                    "gist_class": row[2],
-                    "strength": round(float(row[3] or 0), 3),
-                    "soft_lock": bool(row[4]),
+                    "id": _row_val(row, 0, "c.concept_id"),
+                    "text": _row_val(row, 1, "c.text_raw"),
+                    "gist_class": _row_val(row, 2, "c.gist_class"),
+                    "strength": round(float(_row_val(row, 3, "c.pathway_strength") or 0), 3),
+                    "soft_lock": bool(_row_val(row, 4, "c.confidence_low")),
                 })
         except Exception:
             pass
 
         # Active constraints
         try:
-            r = db.execute(
-                "MATCH (c:Constraint) WHERE c.archived = false "
-                "RETURN c.constraint_id, c.text_raw, c.confidence, "
-                "       c.pathway_strength, c.confidence_low "
-                "ORDER BY c.pathway_strength DESC LIMIT 10"
-            )
-            while r.has_next():
-                row = r.get_next()
+            rows = gw.run_sync("web.thinking_constraints")
+            for row in rows:
                 result["constraints"].append({
-                    "id": row[0],
-                    "text": row[1],
-                    "confidence": round(float(row[2] or 0), 3),
-                    "strength": round(float(row[3] or 0), 3),
-                    "soft_lock": bool(row[4]),
+                    "id": _row_val(row, 0, "c.constraint_id"),
+                    "text": _row_val(row, 1, "c.text_raw"),
+                    "confidence": round(float(_row_val(row, 2, "c.confidence") or 0), 3),
+                    "strength": round(float(_row_val(row, 3, "c.pathway_strength") or 0), 3),
+                    "soft_lock": bool(_row_val(row, 4, "c.confidence_low")),
                 })
         except Exception:
             pass
@@ -832,14 +738,10 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
         # Open loops count (confidence_low nodes not yet confirmed)
         try:
             total = 0
-            for table, _ in [("Concept", "concept_id"), ("Decision", "decision_id"),
-                              ("Constraint", "constraint_id")]:
-                r = db.execute(
-                    f"MATCH (n:{table}) WHERE n.confidence_low = true "
-                    f"AND n.archived = false RETURN count(n)"
-                )
-                if r.has_next():
-                    total += r.get_next()[0] or 0
+            for table in ["Concept", "Decision", "Constraint"]:
+                rows = gw.run_sync(f"web.count_open_loops_{table.lower()}")
+                if rows:
+                    total += _row_val(rows[0], 0, "count(n)") or 0
             result["open_loops_count"] = total
         except Exception:
             pass
@@ -853,26 +755,12 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
                 ("MainQuest", "quests"),
                 ("Message", "messages"),
             ]:
-                r = db.execute(
-                    f"MATCH (n:{table}) WHERE n.archived = false RETURN count(n)"
-                )
-                result["stats"][key] = r.get_next()[0] if r.has_next() else 0
+                rows = gw.run_sync(f"web.count_active_{table.lower()}")
+                result["stats"][key] = _row_val(rows[0], 0, "count(n)") if rows else 0
         except Exception:
             pass
 
         return result
-
-    # ------------------------------------------------------------------
-    # B3 — MCP-over-SSE transport (ChatGPT Desktop / any SSE-capable client)
-    #
-    # Usage:
-    #   1. Legacy clients connect to GET /sse → receive "event: endpoint" with POST URL
-    #   2. Client POSTs JSON-RPC requests to /mcp?connection_id=<id>
-    #   3. Server dispatches to tool handlers, streams response back via SSE
-    #
-    # Security: in remote mode ([server].auth != "none"), auth is enforced by
-    # _global_http_auth_middleware for all routes except /health.
-    # ------------------------------------------------------------------
 
     @app.get("/sse")
     async def mcp_sse(request: Request):

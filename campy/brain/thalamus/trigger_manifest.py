@@ -1,3 +1,5 @@
+from __future__ import annotations
+from campy.brain.hippocampus.graph.gateway import get_gateway
 """
 mcp_engine/trigger_manifest.py — Trigger Manifest Compiler (Phase 2)
 
@@ -9,7 +11,6 @@ Generated artefact:
   ~/.campy/triggers/manifest.json
 """
 
-from __future__ import annotations
 
 import json
 import logging
@@ -80,18 +81,8 @@ async def compile_manifest(db: "KuzuClient", config: dict) -> dict:
 
     # --- Procedures with triggers ---
     try:
-        proc_rows = await db.execute_read(
-            "MATCH (p:Procedure) "
-            "WHERE p.archived = false "
-            "  AND p.trigger_pattern IS NOT NULL "
-            "  AND p.trigger_pattern <> '' "
-            "RETURN p.procedure_id AS id, p.name AS name, "
-            "       p.description AS description, p.steps_json AS steps_json, "
-            "       p.trigger_pattern AS pattern, p.trigger_hook_type AS hook_type, "
-            "       p.trigger_tool AS tool, p.trigger_project_scope AS project_scope, "
-            "       p.pathway_strength AS strength, p.domain AS domain "
-            "ORDER BY p.pathway_strength DESC"
-        )
+        gw = get_gateway(db)
+        proc_rows = await gw.run("thalamus.trigger_manifest_procedures")
     except Exception as e:
         _logger.warning("Failed to query Procedure triggers: %s", e)
         proc_rows = []
@@ -119,18 +110,8 @@ async def compile_manifest(db: "KuzuClient", config: dict) -> dict:
 
     # --- Lessons with triggers ---
     try:
-        lesson_rows = await db.execute_read(
-            "MATCH (l:Lesson) "
-            "WHERE l.archived = false "
-            "  AND l.trigger_pattern IS NOT NULL "
-            "  AND l.trigger_pattern <> '' "
-            "RETURN l.lesson_id AS id, l.text_raw AS text, "
-            "       l.lesson_type AS lesson_type, "
-            "       l.trigger_pattern AS pattern, l.trigger_hook_type AS hook_type, "
-            "       l.trigger_tool AS tool, l.trigger_project_scope AS project_scope, "
-            "       l.pathway_strength AS strength, l.domain AS domain "
-            "ORDER BY l.pathway_strength DESC"
-        )
+        gw = get_gateway(db)
+        lesson_rows = await gw.run("thalamus.trigger_manifest_lessons")
     except Exception as e:
         _logger.warning("Failed to query Lesson triggers: %s", e)
         lesson_rows = []

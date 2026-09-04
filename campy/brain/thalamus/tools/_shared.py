@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 """Shared helpers and state for thalamus tool handlers."""
 
-from __future__ import annotations
+from campy.brain.hippocampus.graph.gateway import get_gateway
 
 import asyncio
 import logging
@@ -254,15 +256,12 @@ def _apply_fusion_adjustments(
 
 def _session_active_plan_id(db, session_id: str) -> str:
     try:
-        r = db.execute(
-            "MATCH (p:Plan)-[:PLANNED_IN]->(s:Session {session_id: $sid}) "
-            "WHERE p.status = 'active' "
-            "RETURN p.plan_id "
-            "ORDER BY p.created_at DESC LIMIT 1",
-            {"sid": session_id},
-        )
-        if r.has_next():
-            return r.get_next()[0] or ""
+        gw = get_gateway(db)
+        rows = gw.run_sync("thalamus.session_active_plan_id", sid=session_id)
+        if rows:
+            row = rows[0]
+            val = row.get("p.plan_id") if isinstance(row, dict) else (row[0] if len(row) > 0 else "")
+            return val or ""
     except Exception:
         pass
     return ""

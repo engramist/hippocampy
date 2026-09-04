@@ -36,14 +36,20 @@ def _cosine_sim(a: list[float], b: list[float]) -> float:
     return sum(x * y for x, y in zip(a, b))
 
 
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
+
+
 def load_centroids(db) -> dict[str, list[float]]:
     """Load all GistClass centroids from Kùzu. Call at daemon startup and cache."""
-    result = db.execute("MATCH (g:GistClass) RETURN g.name, g.centroid")
+    gw = GraphGateway(db, REGISTRY) if not isinstance(db, GraphGateway) else db
+    rows = gw.run_sync("orchestrator.get_gist_centroids", {})
     centroids = {}
-    while result.has_next():
-        row = result.get_next()
-        if row[1]:  # centroid may be None before bootstrap
-            centroids[row[0]] = row[1]
+    for row in rows:
+        name = row.get("g.name") if hasattr(row, "get") else row[0]
+        centroid = row.get("g.centroid") if hasattr(row, "get") else row[1]
+        if centroid:  # centroid may be None before bootstrap
+            centroids[name] = centroid
     return centroids
 
 

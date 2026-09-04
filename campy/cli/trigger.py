@@ -1,5 +1,9 @@
 """Campy trigger management — add, list, remove, and compile associative triggers."""
 
+from __future__ import annotations
+
+from campy.brain.hippocampus.graph.gateway import get_gateway
+
 import typer
 import asyncio
 from typing import Optional
@@ -63,45 +67,34 @@ def add(
 
 async def _bind_procedure_trigger(db, name: str, pattern: str, hook_type: str, tool: str, scope: str) -> dict:
     """Find a Procedure by name and set its trigger columns."""
-    rows = await db.execute_read(
-        "MATCH (p:Procedure) WHERE p.name = $name AND p.archived = false "
-        "RETURN p.procedure_id AS id, p.name AS name",
-        {"name": name},
-    )
+    gw = get_gateway(db)
+    rows = await gw.run("cli.trigger_find_procedure", name=name)
     if not rows:
         return {"error": f"No active Procedure found with name: {name!r}"}
 
-    proc_id = rows[0]["id"]
-    await db.execute_write(
-        "MATCH (p:Procedure {procedure_id: $pid}) "
-        "SET p.trigger_pattern = $pattern, "
-        "    p.trigger_hook_type = $hook_type, "
-        "    p.trigger_tool = $tool, "
-        "    p.trigger_project_scope = $scope",
-        {"pid": proc_id, "pattern": pattern, "hook_type": hook_type, "tool": tool, "scope": scope},
+    first = rows[0]
+    proc_id = first["id"] if isinstance(first, dict) else first[0]
+    proc_name = first["name"] if isinstance(first, dict) else first[1]
+    await gw.run(
+        "cli.trigger_update_procedure",
+        pid=proc_id, pattern=pattern, hook_type=hook_type, tool=tool, scope=scope,
     )
-    return {"name": rows[0]["name"]}
+    return {"name": proc_name}
 
 
 async def _bind_lesson_trigger(db, lesson_id: str, pattern: str, hook_type: str, tool: str, scope: str) -> dict:
     """Find a Lesson by ID and set its trigger columns."""
-    rows = await db.execute_read(
-        "MATCH (l:Lesson {lesson_id: $lid}) WHERE l.archived = false "
-        "RETURN l.lesson_id AS id, l.text_raw AS text",
-        {"lid": lesson_id},
-    )
+    gw = get_gateway(db)
+    rows = await gw.run("cli.trigger_find_lesson", lid=lesson_id)
     if not rows:
         return {"error": f"No active Lesson found with ID: {lesson_id!r}"}
 
-    await db.execute_write(
-        "MATCH (l:Lesson {lesson_id: $lid}) "
-        "SET l.trigger_pattern = $pattern, "
-        "    l.trigger_hook_type = $hook_type, "
-        "    l.trigger_tool = $tool, "
-        "    l.trigger_project_scope = $scope",
-        {"lid": lesson_id, "pattern": pattern, "hook_type": hook_type, "tool": tool, "scope": scope},
+    await gw.run(
+        "cli.trigger_update_lesson",
+        lid=lesson_id, pattern=pattern, hook_type=hook_type, tool=tool, scope=scope,
     )
-    text = rows[0].get("text", "")
+    first = rows[0]
+    text = first.get("text", "") if isinstance(first, dict) else (first[1] or "")
     name = text[:60] + "..." if len(text) > 60 else text
     return {"name": name}
 
@@ -153,52 +146,33 @@ def list_triggers():
 
 async def _fetch_all_triggers(db) -> list[dict]:
     """Query all Procedure and Lesson nodes with trigger patterns."""
+    gw = get_gateway(db)
     triggers = []
 
-    proc_rows = await db.execute_read(
-        "MATCH (p:Procedure) "
-        "WHERE p.archived = false "
-        "  AND p.trigger_pattern IS NOT NULL "
-        "  AND p.trigger_pattern <> '' "
-        "RETURN p.procedure_id AS id, p.name AS name, "
-        "       p.trigger_pattern AS pattern, p.trigger_hook_type AS hook_type, "
-        "       p.trigger_tool AS tool, p.trigger_project_scope AS scope, "
-        "       p.pathway_strength AS strength "
-        "ORDER BY p.pathway_strength DESC"
-    )
+    proc_rows = await gw.run("cli.trigger_list_procedures")
     for row in proc_rows:
         triggers.append({
             "source_type": "Procedure",
-            "name": row.get("name", ""),
-            "pattern": row.get("pattern", ""),
-            "hook_type": row.get("hook_type", ""),
-            "tool": row.get("tool", ""),
-            "scope": row.get("scope", ""),
-            "strength": row.get("strength", 0),
+            "name": row.get("name", "") if isinstance(row, dict) else row[1],
+            "pattern": row.get("pattern", "") if isinstance(row, dict) else row[2],
+            "hook_type": row.get("hook_type", "") if isinstance(row, dict) else row[3],
+            "tool": row.get("tool", "") if isinstance(row, dict) else row[4],
+            "scope": row.get("scope", "") if isinstance(row, dict) else row[5],
+            "strength": row.get("strength", 0) if isinstance(row, dict) else row[6],
         })
 
-    lesson_rows = await db.execute_read(
-        "MATCH (l:Lesson) "
-        "WHERE l.archived = false "
-        "  AND l.trigger_pattern IS NOT NULL "
-        "  AND l.trigger_pattern <> '' "
-        "RETURN l.lesson_id AS id, l.text_raw AS text, "
-        "       l.trigger_pattern AS pattern, l.trigger_hook_type AS hook_type, "
-        "       l.trigger_tool AS tool, l.trigger_project_scope AS scope, "
-        "       l.pathway_strength AS strength "
-        "ORDER BY l.pathway_strength DESC"
-    )
+    lesson_rows = await gw.run("cli.trigger_list_lessons")
     for row in lesson_rows:
-        text = row.get("text", "")
+        text = row.get("text", "") if isinstance(row, dict) else (row[1] or "")
         name = text[:40] + "..." if len(text) > 40 else text
         triggers.append({
             "source_type": "Lesson",
             "name": name,
-            "pattern": row.get("pattern", ""),
-            "hook_type": row.get("hook_type", ""),
-            "tool": row.get("tool", ""),
-            "scope": row.get("scope", ""),
-            "strength": row.get("strength", 0),
+            "pattern": row.get("pattern", "") if isinstance(row, dict) else row[2],
+            "hook_type": row.get("hook_type", "") if isinstance(row, dict) else row[3],
+            "tool": row.get("tool", "") if isinstance(row, dict) else row[4],
+            "scope": row.get("scope", "") if isinstance(row, dict) else row[5],
+            "strength": row.get("strength", 0) if isinstance(row, dict) else row[6],
         })
 
     return triggers
@@ -224,25 +198,18 @@ def remove(
 
     db = KuzuClient(str(db_path))
 
+    gw = get_gateway(db)
     try:
         if procedure:
-            asyncio.run(db.execute_write(
-                "MATCH (p:Procedure) WHERE p.name = $name "
-                "SET p.trigger_pattern = '', "
-                "    p.trigger_hook_type = '', "
-                "    p.trigger_tool = '', "
-                "    p.trigger_project_scope = ''",
-                {"name": procedure},
+            asyncio.run(gw.run(
+                "cli.trigger_remove_procedure",
+                name=procedure,
             ))
             console.print(f"[green]✓[/green] Trigger removed from Procedure: {procedure}")
         else:
-            asyncio.run(db.execute_write(
-                "MATCH (l:Lesson {lesson_id: $lid}) "
-                "SET l.trigger_pattern = '', "
-                "    l.trigger_hook_type = '', "
-                "    l.trigger_tool = '', "
-                "    l.trigger_project_scope = ''",
-                {"lid": lesson},
+            asyncio.run(gw.run(
+                "cli.trigger_remove_lesson",
+                lid=lesson,
             ))
             console.print(f"[green]✓[/green] Trigger removed from Lesson: {lesson}")
     finally:
