@@ -1,0 +1,46 @@
+{
+  "timestamp": "2026-09-04T16:44:48.822071+00:00",
+  "mode": "standard",
+  "tier1_resource_footprint": {
+    "current_process_rss_mb": 20.22,
+    "daemon_idle_rss_baseline_mb": 245.6,
+    "live_steady_state_rss_baseline_mb": 1200.0,
+    "target_rss_mb": 80.0,
+    "allocation_delta_per_100_turns_mb": 1.2,
+    "write_burst_peak_spike_baseline_mb": 1100.0
+  },
+  "tier2_speed_economics_graph": {
+    "retrieval_compilation_latency_ms": 28.5,
+    "target_retrieval_latency_ms": 10.0,
+    "llm_generation_latency_s": 1.54,
+    "target_llm_generation_latency_s": 1.0,
+    "b289_compression_active_in_ask": true,
+    "compression_ratio_over_budget_pct": 48.0,
+    "compression_bypass_sub_budget_pct": 100.0,
+    "graph_hop_latency_2hops_ms": 3.44,
+    "target_graph_hop_latency_ms": "<5.0ms",
+    "dense_supernode_edges_scanned": 10,
+    "dense_supernode_degree_cap": 15,
+    "dense_supernode_top5_incident_cap": 5,
+    "query_plan_bounded": true,
+    "query_plan_regression_detected": false
+  },
+  "tier3_cognitive_retention": {
+    "ask_eval_overall": 0.69,
+    "target_ask_eval_overall": 0.9,
+    "identifier_accuracy": 1.0,
+    "paraphrase_accuracy": 0.25,
+    "target_paraphrase_accuracy": 0.8,
+    "cross_lane_accuracy": 0.5,
+    "continuation_accuracy": 0.5,
+    "negative_control_score": 1.0,
+    "negative_control_compliance": "100% (Zero hallucination on empty context)"
+  },
+  "tier4_model_handoff": {
+    "handoff_constraint_violations": 0,
+    "target_constraint_violations": 0,
+    "handoff_overhead_ms": 480.0,
+    "target_handoff_overhead_ms": "<500ms (B383)",
+    "zero_amnesia_status": "Verified (Hard constraints preserved across handoffs)"
+  }
+}
