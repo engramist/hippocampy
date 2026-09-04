@@ -5,8 +5,8 @@
 - **Statutory Non-Provisional Deadline:** March 25, 2027
 - **Card:** B380 | **Pre-Migration Evidence Freeze** (Prior to B384 Storage Re-Platforming)
 - **Git Branch:** `feat/b380-patent-claim-verification`
-- **Git Commit SHA:** `420cc991263fdfea2835db677eb643c2ef5f6f7b`
-- **Verification Timestamp:** `2026-09-04T17:35:18.757167+00:00`
+- **Git Commit SHA:** `a8d69959bd9e28802aa064d03d5daa7914838abc`
+- **Verification Timestamp:** `2026-09-04T20:26:32.244957+00:00`
 - **Environment:** `Darwin arm64` | Python `3.12.13`
 - **Core Storage Engine:** Kùzu Embedded Graph Database (`v0.11.3`) + FastEmbed ONNX (`all-MiniLM-L6-v2`)
 
@@ -147,11 +147,11 @@ To preserve legal priority and defensibility across future architectural refacto
 
 ```text
 ============================= test session starts ==============================
-platform darwin -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0 -- /Users/djshelton/Desktop/GitProjects/hippocampy/.venv/bin/python
+platform darwin -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0 -- /Users/djshelton/Desktop/GitProjects/hippocampy/.venv/bin/python3
 cachedir: .pytest_cache
 rootdir: /Users/djshelton/.gemini/antigravity/brain/ebf82ed9-5db0-4225-84c7-87067f75b117/.system_generated/worktrees/subagent-Patent-Verification-Lead--B380--self-98c1f0b1
 configfile: pytest.ini
-plugins: mock-3.15.1, asyncio-1.4.0, anyio-4.13.0
+plugins: mock-3.15.1, timeout-2.4.0, asyncio-1.4.0, anyio-4.13.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
 collecting ... collected 17 items
 
@@ -173,7 +173,7 @@ tests/patent_claims/test_claim_8_bloat_detection.py::test_claim_8_bloat_warning_
 tests/patent_claims/test_claim_9_valence_weighted_retrieval.py::test_claim_9_amygdala_reflex_proactive_warnings_and_suggestions PASSED [ 94%]
 tests/patent_claims/test_claim_9_valence_weighted_retrieval.py::test_claim_9_valence_weighted_query_retrieval PASSED [100%]
 
-======================== 17 passed in 65.17s (0:01:05) =========================
+======================== 17 passed in 82.98s (0:01:22) =========================
 ```
 
 ---
