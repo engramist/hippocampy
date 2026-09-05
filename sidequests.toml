@@ -35,8 +35,10 @@ model = "sentence-transformers/all-MiniLM-L6-v2"   # 384-dim — matches FLOAT[3
 # Run: sidequests reembed --confirm
 
 [nlp]
-spacy_model = "en_core_web_md"   # requires trained dependency parser for Step 1b verb patterns
-# en_core_web_sm will NOT work — no trained dep parser
+# B387: vestigial — NER now runs on a fixed ONNX model (see
+# campy/brain/temporal_lobe/loop/onnx_ner_engine.py); this key is read only
+# for backward compatibility with older configs and has no effect.
+spacy_model = "en_core_web_md"
 
 [ingestion]
 max_ingest_chars = 4000   # passive ingestion (conversational turns only)

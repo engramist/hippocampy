@@ -334,7 +334,7 @@ This ensures consumers spend more time on the current task and less time re-lear
 
 ## Gated Consolidation Loop (9 Steps — Write Flow)
 
-**Step 1 — Zoning / NER:** spaCy extracts raw concepts (people, objects, places, actions, quantities). Zero LLM cost.
+**Step 1 — Zoning / NER:** an ONNX Runtime NER model (B387; replaced spaCy/`en_core_web_md`, which pulled in torch/thinc) extracts raw concepts (people, objects, places, actions, quantities), with a shallow-parse candidate-phrase chunker as the noun-chunk-equivalent fallback. Zero LLM cost. See `campy/brain/temporal_lobe/loop/onnx_ner_engine.py` and `shallow_parse.py`.
 
 **Step 1b — Relation Extraction: Fast Path (Universal Verb Patterns):**
 Extracts syntactic relations using universal verb pattern matching. Runs on every message — zero LLM cost, no extra dependencies.

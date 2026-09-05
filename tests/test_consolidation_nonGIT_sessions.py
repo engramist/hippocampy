@@ -7,11 +7,6 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 sys.path.insert(0, os.path.dirname(__file__))
 
-try:
-    from conftest import SPACY_AVAILABLE
-except ImportError:
-    SPACY_AVAILABLE = False
-
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.temporal_lobe.loop.orchestrator import run_loop
 from campy.brain.thalamus.tools import init_loop_queue, notify_turn
@@ -79,10 +74,6 @@ async def test_notify_turn_non_git_session_ingests_message():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    not SPACY_AVAILABLE,
-    reason="spaCy must be available to run the full Consolidation Loop",
-)
 async def test_non_git_session_loop_creates_concepts_and_links_session():
     """A non-git session should feed the loop, store concepts, and link to Session."""
     db = MockDB()

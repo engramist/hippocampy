@@ -41,8 +41,8 @@ def _patch_run_install_happy_path(monkeypatch, call_log: list[str], *, daemon_ok
             call_log.append("step2_install_deps")
             return True
 
-        def install_spacy_model(self):
-            call_log.append("step2_spacy")
+        def install_ner_model(self):
+            call_log.append("step2_ner_model")
             return True
 
         def prewarm_embeddings(self):
@@ -221,7 +221,7 @@ def test_run_install_executes_all_7_steps_in_order(monkeypatch):
         "step1_ollama",
         "step2_venv_create",
         "step2_install_deps",
-        "step2_spacy",
+        "step2_ner_model",
         "step2_prewarm",
         "step3_config",
         "step4_schema",

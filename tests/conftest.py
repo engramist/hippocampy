@@ -1,6 +1,3 @@
-import sys
-import types
-import importlib.machinery
 import pytest
 
 # Required for pytest-asyncio < 0.21 compatibility
@@ -9,44 +6,10 @@ def pytest_configure(config):
         "markers", "asyncio: mark test as async"
     )
 
-# ---------------------------------------------------------------------------
-# spaCy compatibility shim
-#
-# spaCy 3.x uses pydantic.v1 compatibility which is broken on Python 3.14.
-# Pre-stub `spacy` in sys.modules so that modules which `import spacy` at
-# module-level don't corrupt sys.modules and cascade-fail unrelated tests.
-#
-# Tests that need a *real* working spaCy (i.e. actual NER output) must check
-# `SPACY_AVAILABLE` and skip when False.
-# ---------------------------------------------------------------------------
+# B387: spaCy (and the pydantic.v1/Python-3.14 compatibility shim that used
+# to live here to keep it importable) has been removed entirely — NER now
+# runs on campy/brain/temporal_lobe/loop/onnx_ner_engine.py. SPACY_AVAILABLE
+# is kept as a permanently-False alias only so any straggling
+# `@pytest.mark.skipif(not SPACY_AVAILABLE, ...)` elsewhere fails closed
+# (skips) instead of raising ImportError; new tests should not use it.
 SPACY_AVAILABLE = False
-try:
-    import spacy as _real_spacy
-    # Import alone isn't enough — spaCy 3.x loads on Python 3.14 but
-    # pydantic v1 compat is broken, so spacy.load() fails at runtime.
-    _real_spacy.load("en_core_web_md")
-    SPACY_AVAILABLE = True
-except Exception:
-    # Build a minimal stub that satisfies `import spacy` without side-effects.
-    _stub = types.ModuleType("spacy")
-    _stub.__version__ = "0.0.0+stub"
-    _stub.__spec__ = importlib.machinery.ModuleSpec("spacy", loader=None)
-
-    def _load_unavailable(model_name="en_core_web_md"):
-        raise RuntimeError(
-            f"spaCy is not available on this Python version "
-            f"(Python {sys.version_info.major}.{sys.version_info.minor}). "
-            "Skip this test with: @pytest.mark.skipif(not SPACY_AVAILABLE, ...)"
-        )
-
-    _stub.load = _load_unavailable
-    # Register the stub and common sub-modules before any test imports them.
-    sys.modules.setdefault("spacy", _stub)
-    for _sub in [
-        "spacy.language", "spacy.pipeline", "spacy.tokens",
-        "spacy.vocab", "spacy.schemas", "spacy.errors",
-        "spacy.util", "spacy.attrs", "spacy.matcher",
-    ]:
-        _submod = types.ModuleType(_sub)
-        _submod.__spec__ = importlib.machinery.ModuleSpec(_sub, loader=None)
-        sys.modules.setdefault(_sub, _submod)

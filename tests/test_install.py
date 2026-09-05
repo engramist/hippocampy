@@ -252,8 +252,8 @@ class TestVenvManager:
             vm = VenvManager(venv_dir=tmp_path)
             assert vm.install_deps() is False
 
-    def test_install_spacy_already_present(self, tmp_path):
-        """Skips download when model already installed."""
+    def test_install_ner_model_already_present(self, tmp_path):
+        """Skips download when the ONNX NER model is already installed (B387)."""
         (tmp_path / "bin").mkdir()
         (tmp_path / "bin" / "python3").touch()
         mock_result = MagicMock(returncode=0)
@@ -261,7 +261,7 @@ class TestVenvManager:
         with patch("subprocess.run", return_value=mock_result):
             from campy.cli.install import VenvManager
             vm = VenvManager(venv_dir=tmp_path)
-            assert vm.install_spacy_model() is True
+            assert vm.install_ner_model() is True
 
     def test_prewarm_embeddings_success(self, tmp_path):
         """Returns True when embedding pre-warm succeeds."""

@@ -1,71 +1,84 @@
 """
 Step 1b — Relation Extraction: Fast Path (Universal Verb Patterns)
 
-Zero LLM cost. Reuses spaCy doc from Step 1 — no double parse.
-Extracts nsubj → verb → dobj triples, matches verb lemma to named relation types.
+Zero LLM cost. B387: reuses the engine-neutral `shallow_parse.ParsedText`
+from Step 1 (no double parse) instead of a spaCy `Doc` — `extract_relations()`
+no longer accepts a spaCy `Doc`.
+
+Extracts head -> verb -> tail triples using the nearest shallow_chunk before
+and after each tagged governance verb, matches the verb lemma to a named
+relation type. This is an approximation of the old nsubj/dobj dependency-tree
+walk (see shallow_parse.py's header for why: no ONNX dependency parser cleared
+the B387 Gate 0 license+portability bar). It does not cross a sentence
+boundary (. ! ? ;) when looking for the nearest chunk, so it can't wire two
+unrelated clauses together.
 """
 
-VALID_RELATION_TYPES = {
-    "REQUIRES", "ENABLES", "REPLACES", "CONTRADICTS", "PART_OF",
-}
+from __future__ import annotations
 
-VERB_PATTERNS: dict[str, str] = {
-    "require":     "REQUIRES",
-    "need":        "REQUIRES",
-    "depend":      "REQUIRES",
-    "necessitate": "REQUIRES",
-    "enable":      "ENABLES",
-    "allow":       "ENABLES",
-    "support":     "ENABLES",
-    "facilitate":  "ENABLES",
-    "permit":      "ENABLES",
-    "replace":     "REPLACES",
-    "supersede":   "REPLACES",
-    "deprecate":   "REPLACES",
-    "override":    "REPLACES",
-    "contradict":  "CONTRADICTS",
-    "conflict":    "CONTRADICTS",
-    "violate":     "CONTRADICTS",
-    "negate":      "CONTRADICTS",
-    "undermine":   "CONTRADICTS",
-    "contain":     "PART_OF",
-    "include":     "PART_OF",
-}
+from campy.brain.temporal_lobe.loop.shallow_parse import (
+    VALID_RELATION_TYPES,
+    VERB_PATTERNS,
+    ParsedText,
+    shallow_chunks,
+)
+
+__all__ = ["VALID_RELATION_TYPES", "VERB_PATTERNS", "extract_relations"]
+
+_SENTENCE_ENDERS = {".", "!", "?", ";"}
 
 
-def extract_relations(doc, entities: list[dict]) -> list[dict]:
+def _crosses_sentence_boundary(parsed: ParsedText, lo: int, hi: int) -> bool:
+    """True if any sentence-ending punctuation token falls in [lo, hi)."""
+    if lo >= hi:
+        return False
+    return any(
+        tok.text in _SENTENCE_ENDERS and lo <= tok.start < hi
+        for tok in parsed.tokens
+    )
+
+
+def extract_relations(parsed: ParsedText, entities: list[dict]) -> list[dict]:
     """
-    Walk the dep tree looking for: nsubj → VERB → dobj patterns.
+    For each governance-verb occurrence, take the nearest shallow chunk
+    ending before it as `head` and the nearest shallow chunk starting after
+    it as `tail`, provided neither crosses a sentence boundary.
     Returns list of {head, relation_type, tail, confidence, inferred_by}.
     Empty list = Step 3b eligibility check will fire.
-    """
-    relations = []
-    entity_texts = {e["text"].lower() for e in entities}
 
-    for token in doc:
-        if token.pos_ != "VERB":
+    `entities` is accepted for interface parity with the old spaCy-backed
+    version (which also never used it — the relation walk was independent
+    of the Step 1 entity list there too) and for future use.
+    """
+    chunks = shallow_chunks(parsed)
+    relations = []
+
+    for tok in parsed.tokens:
+        if not tok.is_verb:
             continue
 
-        relation_type = VERB_PATTERNS.get(token.lemma_.lower())
+        relation_type = VERB_PATTERNS.get(tok.lemma)
         if not relation_type:
             continue
 
-        # Find nsubj (head) and dobj or attr (tail)
-        head_tok = next((c for c in token.children if c.dep_ in ("nsubj", "nsubjpass")), None)
-        tail_tok = next((c for c in token.children if c.dep_ in ("dobj", "attr", "pobj")), None)
+        head_text = None
+        for c_start, c_end, c_text in reversed(chunks):
+            if c_end <= tok.start:
+                if _crosses_sentence_boundary(parsed, c_end, tok.start):
+                    break
+                head_text = c_text
+                break
 
-        if not head_tok or not tail_tok:
+        tail_text = None
+        for c_start, c_end, c_text in chunks:
+            if c_start >= tok.end:
+                if _crosses_sentence_boundary(parsed, tok.end, c_start):
+                    break
+                tail_text = c_text
+                break
+
+        if not head_text or not tail_text:
             continue
-
-        head_text = head_tok.text
-        tail_text = tail_tok.text
-
-        # Expand to full noun chunk if possible
-        for chunk in doc.noun_chunks:
-            if head_tok in chunk:
-                head_text = chunk.text
-            if tail_tok in chunk:
-                tail_text = chunk.text
 
         relations.append({
             "head":          head_text,

@@ -18,9 +18,18 @@ kuzu==0.11.3
 # backlog/B355.md for the full investigation and verification.
 fastembed==0.8.0
 
-# NLP / NER / dependency parsing (en_core_web_md required — sm has no dep parser)
-spacy==3.8.3
-# After pip install, run: python -m spacy download en_core_web_md
+# NLP / NER (B387) — ONNX Runtime token classification replaced spaCy
+# (en_core_web_md, which pulled in ~225MB of torch/thinc). Model choice +
+# license rationale: campy/brain/temporal_lobe/loop/onnx_ner_engine.py;
+# investigation: backlog/B387.md. onnxruntime is already pulled in
+# transitively by fastembed above; tokenizers and huggingface_hub are
+# declared explicitly since onnx_ner_engine.py imports them directly.
+onnxruntime>=1.20.0
+tokenizers>=0.20.0
+huggingface_hub>=0.25.0
+# Model weights are fetched once at install time (VenvManager.install_ner_model())
+# and cached under HF_HOME/~/.cache/huggingface — see onnx_ner_engine.py's
+# download_model()/get_engine() for the offline-runtime contract.
 
 # LLM provider abstraction (OpenAI-SDK-compatible for Ollama + cloud providers)
 openai==1.58.1

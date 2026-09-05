@@ -10,15 +10,9 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 sys.path.insert(0, os.path.dirname(__file__))  # make conftest importable
 
-try:
-    from conftest import SPACY_AVAILABLE
-except ImportError:
-    SPACY_AVAILABLE = False
-
-pytestmark = pytest.mark.skipif(
-    not SPACY_AVAILABLE,
-    reason="orchestrator uses step1_ner which requires spaCy"
-)
+# B387: step1_ner now runs on the ONNX NER engine (no spaCy dependency, no
+# runtime skip condition) — the module-wide skip that used to gate this
+# whole file on spaCy availability has been removed.
 
 
 # ---------------------------------------------------------------------------

@@ -101,6 +101,9 @@ base_url = "http://localhost:11434/v1"
 model = "sentence-transformers/all-MiniLM-L6-v2"
 
 [nlp]
+# B387: vestigial — NER now runs on a fixed ONNX model (see
+# campy/brain/temporal_lobe/loop/onnx_ner_engine.py); this key is read only
+# for backward compatibility with older configs and has no effect.
 spacy_model = "en_core_web_md"
 
 [ingestion]
@@ -520,28 +523,39 @@ class VenvManager:
         click.echo("  [ok] Dependencies installed")
         return True
 
-    def install_spacy_model(self) -> bool:
-        """Download spaCy en_core_web_md model."""
-        click.echo("  Checking spaCy model...")
+    def install_ner_model(self) -> bool:
+        """Download the ONNX NER model (B387 — replaces spaCy en_core_web_md).
+
+        Caches to the huggingface_hub on-disk cache (HF_HOME, defaulting to
+        ~/.cache/huggingface/hub) so campy/brain/temporal_lobe/loop/
+        onnx_ner_engine.py's get_engine() can resolve it fully offline
+        (local_files_only=True) at daemon runtime -- no network access at
+        first inference, matching the old spaCy-download-at-install-time
+        contract this replaces.
+        """
+        click.echo("  Checking ONNX NER model...")
         check = subprocess.run(
             [str(self.python), "-c",
-             "import spacy; spacy.load('en_core_web_md')"],
+             "from campy.brain.temporal_lobe.loop.onnx_ner_engine import get_engine; "
+             "get_engine()"],
             capture_output=True, text=True, timeout=30
         )
         if check.returncode == 0:
-            click.echo("  [=] spaCy en_core_web_md already installed")
+            click.echo("  [=] ONNX NER model already installed")
             return True
 
-        click.echo("  Downloading spaCy en_core_web_md (~40 MB)...")
+        click.echo("  Downloading ONNX NER model (~66 MB)...")
         result = subprocess.run(
-            [str(self.python), "-m", "spacy", "download", "en_core_web_md"],
+            [str(self.python), "-c",
+             "from campy.brain.temporal_lobe.loop.onnx_ner_engine import download_model; "
+             "download_model()"],
             capture_output=True, text=True, timeout=300
         )
         if result.returncode != 0:
-            click.echo(f"  [!] spaCy model download failed: {result.stderr.strip()[-300:]}")
+            click.echo(f"  [!] ONNX NER model download failed: {result.stderr.strip()[-300:]}")
             return False
 
-        click.echo("  [ok] spaCy model installed")
+        click.echo("  [ok] ONNX NER model installed")
         return True
 
     def prewarm_embeddings(self) -> bool:
@@ -1313,7 +1327,7 @@ def run_install() -> None:
         if venv_ok:
             deps_ok = venv.install_deps()
             if deps_ok:
-                venv.install_spacy_model()
+                venv.install_ner_model()
                 venv.prewarm_embeddings()
                 results.append(InstallStepResult("Python Environment", True, "Venv and dependencies ok"))
             else:

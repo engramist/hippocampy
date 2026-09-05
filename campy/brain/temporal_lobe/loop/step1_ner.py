@@ -1,21 +1,29 @@
-"""Step 1 — Zoning / NER (spaCy). Zero LLM cost."""
+"""Step 1 — Zoning / NER (ONNX, B387). Zero LLM cost.
+
+B387 replaced spaCy (`en_core_web_md`, which pulls in ~225 MB of torch/thinc)
+with `onnx_ner_engine.OnnxNerEngine` for named-entity recognition and
+`shallow_parse` for the noun-chunk-equivalent fallback. See those two
+modules' headers for the model choice / license rationale and the
+noun-chunk-replacement design.
+
+`extract_entities()` keeps its historical (doc, entities) return contract —
+`doc` is now a `shallow_parse.ParsedText` instead of a spaCy `Doc`, consumed
+by `step1b_relations.extract_relations()`.
+"""
 
 import re
-import spacy
 
-_nlp = None
+from campy.brain.temporal_lobe.loop.onnx_ner_engine import get_engine
+from campy.brain.temporal_lobe.loop.shallow_parse import (
+    SKIP_CHUNKS,
+    ParsedText,
+    parse,
+    shallow_chunks,
+)
 
-
-def get_nlp(model_name: str = "en_core_web_md"):
-    global _nlp
-    if _nlp is None:
-        _nlp = spacy.load(model_name)
-    return _nlp
-
-
-# Pronouns and stopwords to filter from noun chunk fallback
-_SKIP_CHUNKS = {"we", "i", "you", "they", "he", "she", "it", "us", "them",
-                "this", "that", "these", "those", "one", "ones"}
+# Pronouns and stopwords to filter from noun chunk fallback — kept as a
+# module-level alias for anything still importing it from here.
+_SKIP_CHUNKS = SKIP_CHUNKS
 
 # UUID pattern: 32+ hex chars optionally separated by hyphens
 _UUID_RE = re.compile(
@@ -99,7 +107,7 @@ def _is_junk_entity(text: str) -> bool:
         return True
 
     # Contains box-drawing or block element Unicode characters (terminal UI noise)
-    if any('\u2500' <= c <= '\u257f' or '\u2580' <= c <= '\u259f' for c in stripped):
+    if any('─' <= c <= '╿' or '▀' <= c <= '▟' for c in stripped):
         return True
 
     # Mostly non-alphanumeric (less than 50% alnum)
@@ -148,61 +156,65 @@ def _is_junk_entity(text: str) -> bool:
     return False
 
 
-def extract_entities(text: str, model_name: str = "en_core_web_md") -> tuple:
+def extract_entities(text: str, model_name: str | None = None) -> tuple[ParsedText, list]:
     """
-    Run spaCy NER + dependency parse on text.
-    Returns (doc, entities) where entities is a list of dicts.
-    doc is kept for Step 1b (dep parser reuses it — no double parse).
+    Run ONNX NER + shallow parse on text.
+    Returns (parsed, entities) where entities is a list of dicts and `parsed`
+    is a `shallow_parse.ParsedText` (B387 — replaces the spaCy `Doc` that
+    used to be returned here; kept for Step 1b, which reuses it for
+    governance-verb relation extraction — no double parse).
 
-    Falls back to noun chunk extraction when NER finds few entities.
-    spaCy NER misses most software/tech terms (PostgreSQL, MySQL, React, etc.)
-    since they aren't people, places, or organizations. Noun chunks catch them.
+    `model_name` is accepted for backward compatibility with callers that
+    still pass the (now-retired) spaCy model config value; it is ignored —
+    the ONNX NER model is a single fixed choice (see onnx_ner_engine.py).
+
+    Falls back to shallow-chunk extraction when NER finds few entities.
+    The CoNLL-2003 tag set (PER/ORG/LOC/MISC) misses most software/tech
+    terms (PostgreSQL, MySQL, React, etc.) since they aren't people, places,
+    or organizations — shallow_chunks() catches them the same way spaCy's
+    noun_chunks used to.
     """
-    nlp = get_nlp(model_name)
-    doc = nlp(text)
+    if not text.strip():
+        return parse(text), []
+
+    engine = get_engine()
+    ner_spans = engine.predict(text)
 
     entities = [
         {
-            "text":  ent.text,
-            "label": ent.label_,   # PERSON, ORG, PRODUCT, GPE, DATE, CARDINAL, etc.
-            "start": ent.start_char,
-            "end":   ent.end_char,
+            "text":  span["text"],
+            "label": span["label"],   # PERSON, ORG, GPE, MISC
+            "start": span["start"],
+            "end":   span["end"],
         }
-        for ent in doc.ents
-        if not _is_junk_entity(ent.text)
+        for span in ner_spans
+        if not _is_junk_entity(span["text"])
     ]
 
-    # Noun chunk fallback: if NER found <=1 entity, supplement with noun chunks.
-    # Technical conversations mention tools/frameworks/concepts that spaCy NER
-    # doesn't recognize but noun chunking captures reliably.
+    parsed = parse(text)
+
+    # Chunk fallback: if NER found <=1 entity, supplement with shallow chunks.
+    # Technical conversations mention tools/frameworks/concepts that the
+    # CoNLL-2003 tag set doesn't recognize but candidate-phrase chunking
+    # captures reliably.
     if len(entities) <= 1:
-        ner_spans = {(e["start"], e["end"]) for e in entities}
-        for chunk in doc.noun_chunks:
+        ner_spans_set = {(e["start"], e["end"]) for e in entities}
+        for start, end, chunk_text in shallow_chunks(parsed):
             # Skip pronouns and trivial stopwords
-            if chunk.text.lower().strip() in _SKIP_CHUNKS:
+            if chunk_text.lower().strip() in _SKIP_CHUNKS:
                 continue
             # Skip chunks already covered by NER
-            if (chunk.start_char, chunk.end_char) in ner_spans:
+            if (start, end) in ner_spans_set:
                 continue
             # Skip junk (terminal artifacts, UUIDs, formatting noise)
-            if _is_junk_entity(chunk.text):
-                continue
-
-            # Skip noun chunks that start with determiners/quantifiers —
-            # "all endpoints", "the only exception", "a global dependency"
-            # are too generic to be concepts. Named entities from NER don't
-            # have this problem because spaCy already filtered them.
-            if chunk.root.dep_ in ("det", "nummod") or chunk.text.split()[0].lower() in (
-                "a", "an", "the", "all", "some", "any", "no", "every",
-                "this", "that", "these", "those", "each",
-            ):
+            if _is_junk_entity(chunk_text):
                 continue
 
             entities.append({
-                "text":  chunk.text,
+                "text":  chunk_text,
                 "label": "NOUN_CHUNK",
-                "start": chunk.start_char,
-                "end":   chunk.end_char,
+                "start": start,
+                "end":   end,
             })
 
-    return doc, entities
+    return parsed, entities

@@ -3,13 +3,29 @@ ONNX NER engine (B387) — replaces spaCy's `en_core_web_md` NER component.
 
 Model: onnx-community/distilbert-base-cased-finetuned-conll03-english-ONNX
   - Mechanical ONNX/int8 conversion (HF `onnx-community` org, via Optimum)
-    of `elastic/distilbert-base-cased-finetuned-conll03-english`, which is
-    Apache-2.0 licensed (HF API cardData.license == "apache-2.0", verified
-    at Gate 0 -- see backlog/B387.md). A pure format/quantization conversion
-    carries no new copyrightable expression, so it inherits the base
-    model's license -- the same judgment call already made for fastembed's
-    embedding model in B355 (sentence-transformers/all-MiniLM-L6-v2 via its
-    "ONNX conversion, qdrant/all-MiniLM-L6-v2-onnx").
+    of `elastic/distilbert-base-cased-finetuned-conll03-english`. The base
+    model's own cardData declares `license: apache-2.0` (verified directly
+    via `GET https://huggingface.co/api/models/elastic/distilbert-base-
+    cased-finetuned-conll03-english` -- the `onnx-community` conversion
+    repo itself carries no license tag at all, so the base model's card is
+    the authority here, not the mirror). A pure format/quantization
+    conversion carries no new copyrightable expression, so it inherits the
+    base model's license -- the same judgment call already made for
+    fastembed's embedding model in B355 (sentence-transformers/all-MiniLM-
+    L6-v2 via its "ONNX conversion, qdrant/all-MiniLM-L6-v2-onnx").
+  - Training-data provenance (CoNLL-2003 / Reuters RCV1) was investigated
+    separately at Gate 0 -- see backlog/B387.md and the PR description for
+    the full writeup. Summary: the Reuters/NIST agreement gates
+    redistribution of the raw news-article text, not use of statistical
+    models fine-tuned on it; `elastic` (the fine-tuner) made an explicit,
+    unchanged-since-2022 Apache-2.0 grant on the weights, and the same
+    provenance pattern (CoNLL-2003-trained, permissively licensed) is
+    industry-standard practice -- e.g. `dslim/bert-base-NER` (MIT,
+    ~2.1M downloads/month). Residual risk is the same class of "is a
+    trained model a derivative work of its training corpus" ambiguity that
+    applies to virtually every pretrained NLP model, not something specific
+    to this one; flagged for counsel review given the active patent filing,
+    not blocked on it.
   - int8 quantized weights: ~65.7 MB on disk (onnx/model_quantized.onnx).
   - 4 entity types: PER, ORG, LOC, MISC (CoNLL-2003 tag set) -- narrower
     than spaCy's 18-type OntoNotes scheme, mapped onto the same label
@@ -21,12 +37,32 @@ Distribution / offline runtime:
   - `download_model()` (network allowed) is called once at install time
     (campy/cli/install.py's install_ner_model(), mirroring the old spaCy
     model download and the existing prewarm_embeddings() step) and caches
-    the two files via huggingface_hub's normal on-disk cache
-    (~/.cache/huggingface/hub by default).
+    the two files via huggingface_hub's normal on-disk cache -- respects
+    `HF_HOME` (falls back to ~/.cache/huggingface/hub) exactly like
+    fastembed's embedding model does in campy/brain/hippocampus/graph/
+    embeddings.py's _get_fe_model().
   - `get_engine()` (used at daemon runtime) always resolves with
-    `local_files_only=True` -- zero egress at first inference. A cache miss
-    raises a clear RuntimeError instead of silently reaching out to the
-    network, which is what a zero-egress container (B385) requires.
+    `local_files_only=True` -- zero egress at first inference,
+    unconditionally (stricter than embeddings.py's HF_HUB_OFFLINE-gated
+    `local_files_only=offline`; there is no local-dev reason for NER to
+    ever reach the network at inference time, so this card didn't add an
+    `[nlp].offline` config toggle to match -- `download_model()` at
+    install/build time is the only network path). A cache miss raises a
+    clear RuntimeError instead of silently reaching out to the network.
+
+  Container build-time fetch (B385, zero-egress AWS Fargate target): set
+  `HF_HOME` to a directory baked into the image (matching whatever
+  fastembed's ONNX model pre-bake step already does there) and call
+  `download_model()` once during the image build, *before* `ENV
+  HF_HOME=...` is relied on at runtime -- huggingface_hub resolves the
+  cache from `HF_HOME` automatically, no code change needed here. As of
+  this writing `deploy/Dockerfile` (named in backlog/B385.md as already
+  built) is not present in this repository -- see backlog/B387.md's PR
+  description for that discrepancy. This module's contract (HF_HOME-
+  driven cache, local_files_only=True at runtime, clear failure on a
+  cache miss) is ready for whatever Dockerfile bakes it in; wiring an
+  actual `RUN python -c "...download_model()"` build step is tracked as
+  follow-up work, not blocking this card.
 """
 
 from __future__ import annotations
@@ -72,7 +108,11 @@ def _resolve_local(local_files_only: bool) -> tuple[str, str]:
         raise RuntimeError(
             "ONNX NER model not found in the local cache. Run the install "
             "step (`campy install` / VenvManager.install_ner_model()) once "
-            "with network access before starting the daemon."
+            "with network access before starting the daemon, or -- in a "
+            "container build -- pre-bake it into the image cache (set "
+            "HF_HOME to a directory baked into the image and call "
+            "onnx_ner_engine.download_model() during the build, the same "
+            "way fastembed's embedding model is pre-baked)."
         ) from exc
     return model_path, tokenizer_path
 

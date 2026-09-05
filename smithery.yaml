@@ -18,7 +18,6 @@ homepage: https://github.com/yourusername/sidequests-brain
 install:
   pip: sidequests-brain
   post_install:
-    - python -m spacy download en_core_web_md
     - sidequests setup
 
 server:

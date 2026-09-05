@@ -11,44 +11,30 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 sys.path.insert(0, os.path.dirname(__file__))  # make conftest importable
 
-# Import the SPACY_AVAILABLE flag installed by conftest.py
-try:
-    from conftest import SPACY_AVAILABLE
-except ImportError:
-    SPACY_AVAILABLE = False
-
-_needs_spacy = pytest.mark.skipif(
-    not SPACY_AVAILABLE,
-    reason="spaCy not compatible with this Python version"
-)
-
-
 # ---------------------------------------------------------------------------
-# Step 1 — NER
+# Step 1 — NER (B387: ONNX, not spaCy)
 # ---------------------------------------------------------------------------
 
-@_needs_spacy
 def test_step1_ner_extracts_entities():
     from campy.brain.temporal_lobe.loop.step1_ner import extract_entities
     doc, entities = extract_entities("Apple released the iPhone 16 in California.")
     assert len(entities) > 0
     texts = [e["text"] for e in entities]
-    # spaCy en_core_web_md should catch ORG and GPE
+    # The ONNX CoNLL-2003 model should catch ORG and GPE
     assert any("Apple" in t or "iPhone" in t or "California" in t for t in texts)
 
 
-@_needs_spacy
 def test_step1_ner_returns_doc_and_list():
     from campy.brain.temporal_lobe.loop.step1_ner import extract_entities
+    from campy.brain.temporal_lobe.loop.shallow_parse import ParsedText
     doc, entities = extract_entities("Google is based in Mountain View.")
-    assert hasattr(doc, "ents")         # spaCy Doc
+    assert isinstance(doc, ParsedText)   # B387: engine-neutral, not a spaCy Doc
     assert isinstance(entities, list)
     for e in entities:
         assert "text" in e
         assert "label" in e
 
 
-@_needs_spacy
 def test_step1_ner_empty_text():
     from campy.brain.temporal_lobe.loop.step1_ner import extract_entities
     doc, entities = extract_entities("")
@@ -123,7 +109,6 @@ def test_step1_junk_filter_keeps_real_entities():
 # Step 1b — Verb patterns
 # ---------------------------------------------------------------------------
 
-@_needs_spacy
 def test_step1b_requires_relation():
     from campy.brain.temporal_lobe.loop.step1_ner import extract_entities
     from campy.brain.temporal_lobe.loop.step1b_relations import extract_relations
@@ -131,8 +116,9 @@ def test_step1b_requires_relation():
     rels = extract_relations(doc, entities)
     # Should extract at least one REQUIRES relation
     rel_types = [r["relation_type"] for r in rels]
-    # T9 fix: assert >= 0 was a tautology and never fails. spaCy's dep parser
-    # on this sentence reliably extracts "Authentication"-REQUIRES-"token".
+    # T9 fix: assert >= 0 was a tautology and never fails. The shallow-parse
+    # chunker (B387) on this sentence reliably extracts
+    # "Authentication"-REQUIRES-"valid token".
     assert len(rels) >= 1, f"Expected at least one REQUIRES relation, got: {rels}"
     for r in rels:
         assert "head" in r
@@ -142,7 +128,6 @@ def test_step1b_requires_relation():
         assert r["inferred_by"] == "system"
 
 
-@_needs_spacy
 def test_step1b_relation_types_are_valid():
     from campy.brain.temporal_lobe.loop.step1b_relations import extract_relations, VALID_RELATION_TYPES
     from campy.brain.temporal_lobe.loop.step1_ner import extract_entities

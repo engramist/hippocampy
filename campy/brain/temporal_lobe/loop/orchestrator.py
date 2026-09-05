@@ -5,7 +5,7 @@ Runs the 9-step loop on a single message.
 Called from the background worker in brain_daemon.py (never blocks notify_turn).
 
 Loop:
-  Step 1   → NER (spaCy)
+  Step 1   → NER (ONNX, B387)
   Step 1b  → Verb pattern relation extraction
   Step 2   → gist hybrid classification (System 1/2)
   Step 3   → schema.org routing
@@ -71,6 +71,10 @@ async def run_loop(message_id: str, text: str, db, llm_client,
     embedding_model = config.get("embeddings", {}).get(
         "model", "sentence-transformers/all-MiniLM-L6-v2"
     )
+    # B387: "spacy_model" config key kept for backward compatibility with
+    # existing campy.toml/sidequests.toml files -- extract_entities() no
+    # longer uses it (the ONNX NER model is a single fixed choice), but a
+    # stale config key here must not become a KeyError for anyone upgrading.
     spacy_model = config.get("nlp", {}).get("spacy_model", "en_core_web_md")
     co_threshold = config.get("hebbian", {}).get("co_occurrence_threshold", 10)
     now = datetime.now(timezone.utc).isoformat()
@@ -135,7 +139,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
 
     else:
         # Standard Loop Flow
-        # Step 1 — NER (spaCy)
+        # Step 1 — NER (ONNX, B387)
         doc, entities = extract_entities(text, model_name=spacy_model)
         summary["entities_found"] = len(entities)
 

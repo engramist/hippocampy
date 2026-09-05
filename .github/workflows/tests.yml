@@ -25,10 +25,13 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
 
-      # en_core_web_md is required (en_core_web_sm has no trained dependency
-      # parser, needed for Step 1b verb patterns) — see requirements.txt.
-      - name: Download spaCy model
-        run: python -m spacy download en_core_web_md
+      # B387: spaCy (en_core_web_md, ~225MB of torch/thinc) replaced with a
+      # small (~66MB) ONNX NER model — see
+      # campy/brain/temporal_lobe/loop/onnx_ner_engine.py. Tests run the real
+      # model (zero-mock; tests/patent_claims/ requires it), so it still
+      # needs fetching once per run, just a much smaller download.
+      - name: Download ONNX NER model
+        run: python -c "from campy.brain.temporal_lobe.loop.onnx_ner_engine import download_model; download_model()"
 
       # B293: fail if generated extension tool definitions have drifted from
       # tool_schemas.TOOLS. Lives here (not security-gate.yml) because the
