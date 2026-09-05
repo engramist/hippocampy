@@ -1,6 +1,6 @@
 # HippoCampy Daemon — Makefile
 
-.PHONY: help install test mcpb clean check-cypher
+.PHONY: help install test mcpb clean check-cypher check-principal check-plan-pointers
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -22,6 +22,9 @@ check-cypher: ## B314 ratchet: fail if inline Cypher outside the allowlist incre
 
 check-principal: ## B315 ratchet: fail if handlers not declaring `principal` increases
 	python3 scripts/check_principal_ratchet.py
+
+check-plan-pointers: ## Fail if a backlog card's Plan: header names a missing plans/*.md file
+	python3 scripts/check_backlog_plan_pointers.py
 
 mcpb: ## Build .mcpb bundle for Claude Desktop
 	@echo "Building hippocampy.mcpb..."
