@@ -234,14 +234,28 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B374 | Two-Lane Thalamic Compressor & Augmented Inference Pipeline (`campy ask`) | P0 | complete (2026-09-04, PR #155) | TBD | TBD | backlog/plans/B-374-two-lane-thalamic-compressor.md | backlog/B374.md |
 | B380 | Non-Provisional Patent Claim Verification & Audit Evidence Pack | P0 | complete (2026-09-04, PR #153) | TBD | TBD | backlog/plans/B-380-patent-evidence-pack.md | backlog/B380.md |
 | B381 | Decision-Grade Multi-Model Ask-Eval Benchmark Suite | P1 | complete (2026-09-04, PR #152) | TBD | TBD | backlog/plans/B-381-decision-grade-ask-eval.md | backlog/B381.md |
+| B384 | PARENT: Featherweight Engine Foundation | P0 | superseded by B387-B398 | TBD | TBD | - | backlog/B384.md |
 | B386 | GraphGateway Chokepoint Completion & Raw-Cypher Ratchet to Zero | P0 | complete (2026-09-04, PR #154) | TBD | TBD | backlog/plans/B-386-gateway-chokepoint-completion.md | backlog/B386.md |
+
+| B387 | Torch-Free Ingestion Plane: Replace spaCy NER/Parse with ONNX | P0 | in-progress | TBD | TBD | - | backlog/B387.md |
+| B388 | RDF Schema Mapping Specification | P0 | complete (2026-09-05) | TBD | TBD | - | backlog/B388.md |
+| B389 | OxigraphClient: RDF-star Store & Edge Reification Classification | P0 | blocked (needs B390) | TBD | TBD | - | backlog/B389.md |
+| B390 | sqlite-vec Vector Store & FTS5 Lexical Index | P0 | in-progress | TBD | TBD | - | backlog/B390.md |
+| B391 | SPARQL Translation Batch: provenance (196 queries) | P0 | blocked (needs B389) | TBD | TBD | - | backlog/B391.md |
+| B392 | SPARQL Translation Batch: sweep (127 queries) | P0 | blocked (needs B389) | TBD | TBD | - | backlog/B392.md |
+| B393 | SPARQL Translation Batch: thalamus (144 queries) | P0 | blocked (needs B389) | TBD | TBD | - | backlog/B393.md |
+| B394 | SPARQL Translation Batch: arc+quests (149 queries) | P0 | blocked (needs B389) | TBD | TBD | - | backlog/B394.md |
+| B395 | SPARQL Translation Batch: web+cli (115 queries) | P0 | blocked (needs B389) | TBD | TBD | - | backlog/B395.md |
+| B396 | SPARQL Translation Batch: core tail (132 queries) | P0 | blocked (needs B389) | TBD | TBD | - | backlog/B396.md |
+| B397 | Engine Cutover, Data Migration & Dual-Engine Patent Re-Certification | P0 | blocked (needs B389-B396) | TBD | TBD | - | backlog/B397.md |
+| B398 | Patent Evidence Re-Certification After Ingestion-Plane Swap | P0 | blocked (needs B387) | TBD | TBD | - | backlog/B398.md |
 
 ## Summary
 
-- Total cards: 231
+- Total cards: 243
 - Ready: 9
 - Needs work: 0
-- Complete: 204
-- In progress: 0
+- Complete: 205
+- In progress: 2
 - In review: 0
-- Blocked: 0
+- Blocked: 10
