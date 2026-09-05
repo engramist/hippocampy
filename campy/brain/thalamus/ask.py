@@ -9,11 +9,14 @@ This module is the single implementation shared by:
 
 Both front doors call run_ask(). Neither duplicates logic.
 
-COMPRESSION IS ALWAYS-ON (Option B):
-  - Structured data (exact_fact, tabular): always compressed via TOON
-  - Graph/semantic nodes: always scored + pruned via GraphBundleCompressor
-  - Prose (summary): compressed via LLMCompressor only when prose is present
-  - Code (code): compressed via ASTCodeCompressor only when code is present
+TWO-LANE THALAMIC COMPRESSION & BUDGET-GATED PRESSURE-RELIEF VALVE (B374):
+  - Sub-budget bypass: When total estimated bundle tokens <= budget_tokens,
+    bypass compression completely (0s latency overhead, 100% bypass rate).
+  - Over-budget pressure relief:
+      * Protected Lane (0% loss): Decisions, active Constraints, Negative Controls,
+        and exact facts bypass compression entirely and are emitted verbatim.
+      * Bulk Lane (lossy-tolerant): Summaries, concepts, code extracts, and tabular data
+        are compressed to fit within budget.
 """
 
 from __future__ import annotations
@@ -286,6 +289,7 @@ async def run_ask(
     token_budget: int = 32000,
     capture: bool = True,
     meta: Optional[dict] = None,
+    budget_tokens: Optional[int] = None,
 ) -> str:
     """
     Full ask pipeline: augment → compress → send → capture.
@@ -296,8 +300,22 @@ async def run_ask(
     throwaway queries.
 
     meta: optional dict the caller can pass to receive harness-variant
-    bookkeeping (e.g. meta["retried"] from H2). Unused by production callers.
+    bookkeeping (e.g. meta["retried"] from H2, meta["compression_bypassed"]).
+    Unused by production callers.
+
+    budget_tokens: optional override for compression budget threshold. If omitted,
+    defaults to token_budget (or config["compression"]["budget_tokens"] if configured).
     """
+    # Resolve effective budget for pressure-relief gating
+    if budget_tokens is not None:
+        effective_budget = budget_tokens
+    elif token_budget != 32000:
+        effective_budget = token_budget
+    elif (config.get("compression") or {}).get("budget_tokens") is not None:
+        effective_budget = config["compression"]["budget_tokens"]
+    else:
+        effective_budget = token_budget
+
     # 1. Augment
     bundle = await compile_bundle(
         query=query,
@@ -306,14 +324,53 @@ async def run_ask(
         token_budget=token_budget,
     )
 
-    # 2. Compress (always-on, Option B)
-    from campy.brain.thalamus.compression import build_default_registry
-    _, router = build_default_registry(config)
-    compressed_sections = [
-        router.compress_section(section, query, config)
-        for section in bundle.sections
-    ]
-    bundle.sections = compressed_sections
+    # 2. Budget-Gated Pressure-Relief Valve (B374)
+    total_tokens = sum(
+        getattr(s, "token_estimate", getattr(s, "estimated_tokens", 0))
+        for s in (bundle.sections or [])
+    )
+
+    if total_tokens <= effective_budget:
+        _logger.info(
+            "Bundle size within budget (%d <= %d). Bypassing compression stage.",
+            total_tokens,
+            effective_budget,
+        )
+        if meta is not None:
+            meta["compression_bypassed"] = True
+            meta["total_tokens"] = total_tokens
+            meta["budget_tokens"] = effective_budget
+    else:
+        _logger.info(
+            "Bundle size exceeds budget (%d > %d). Triggering two-lane compression.",
+            total_tokens,
+            effective_budget,
+        )
+        if meta is not None:
+            meta["compression_bypassed"] = False
+            meta["total_tokens"] = total_tokens
+            meta["budget_tokens"] = effective_budget
+
+        from campy.brain.thalamus.compression import build_default_registry
+        _, router = build_default_registry(config)
+        compressed_sections = [
+            router.compress_section(section, query, config)
+            for section in bundle.sections
+        ]
+        bundle.sections = compressed_sections
+        post_tokens = sum(
+            getattr(s, "token_estimate", getattr(s, "estimated_tokens", 0))
+            for s in bundle.sections
+        )
+        bundle.total_token_estimate = post_tokens
+        if meta is not None:
+            meta["post_compression_tokens"] = post_tokens
+        _logger.info(
+            "Compression complete: %d -> %d tokens (ratio: %.2f)",
+            total_tokens,
+            post_tokens,
+            (post_tokens / total_tokens) if total_tokens > 0 else 1.0,
+        )
 
     # 3. Build prompt and send
     prompt = _bundle_to_prompt(bundle, query)

@@ -64,6 +64,19 @@ def _table_has_flagged_for_review(db, table: str) -> bool:
     return False
 
 
+def _table_has_column(db, table: str, column: str) -> bool:
+    """B374: best-effort check for whether `table` has `column`."""
+    try:
+        r = db.execute(f"CALL table_info('{table}') RETURN *")
+        while r.has_next():
+            row = r.get_next()
+            if str(row[1]).lower() == column.lower():
+                return True
+    except Exception:
+        pass
+    return False
+
+
 @dataclass
 class BundleSection:
     """One section of a ContextBundle."""
@@ -419,15 +432,19 @@ async def _stage_semantic_context(db, query: str, config: dict, tier_config: dic
         for label in ("Concept", "Decision", "Constraint", "Requirement"):
             has_authority = _table_has_authority(db, label)
             has_flagged = _table_has_flagged_for_review(db, label)
+            has_archived = _table_has_column(db, label, "archived")
+            has_superseded = _table_has_column(db, label, "superseded_by")
             lbl_lower = label.lower()
-            if has_flagged and has_authority:
-                qname = f"thalamus.bundle_semantic_{lbl_lower}_flagged_auth"
-            elif has_flagged:
-                qname = f"thalamus.bundle_semantic_{lbl_lower}_flagged"
-            elif has_authority:
-                qname = f"thalamus.bundle_semantic_{lbl_lower}_auth"
-            else:
-                qname = f"thalamus.bundle_semantic_{lbl_lower}"
+            suffix_parts = []
+            if has_flagged:
+                suffix_parts.append("flagged")
+            if has_archived:
+                suffix_parts.append("archived")
+            if has_superseded:
+                suffix_parts.append("superseded")
+            if has_authority:
+                suffix_parts.append("auth")
+            qname = f"thalamus.bundle_semantic_{lbl_lower}" + "".join(f"_{p}" for p in suffix_parts)
             result = await gw.run(qname, query_embedding=query_embedding, limit=limit)
             for r in (result or []):
                 text = r.get("text") if isinstance(r, dict) else r[0]
@@ -572,7 +589,16 @@ async def _stage_graph_structure(
 
         gw = get_gateway(db)
         has_flagged = _table_has_flagged_for_review(db, "Concept")
-        anchor_q = "thalamus.bundle_graph_anchors_flagged" if has_flagged else "thalamus.bundle_graph_anchors"
+        has_archived = _table_has_column(db, "Concept", "archived")
+        has_superseded = _table_has_column(db, "Concept", "superseded_by")
+        anchor_suffix_parts = []
+        if has_flagged:
+            anchor_suffix_parts.append("flagged")
+        if has_archived:
+            anchor_suffix_parts.append("archived")
+        if has_superseded:
+            anchor_suffix_parts.append("superseded")
+        anchor_q = "thalamus.bundle_graph_anchors" + "".join(f"_{p}" for p in anchor_suffix_parts)
         result = await gw.run(anchor_q, query_embedding=query_embedding)
         anchors: list[tuple] = []
         for r in (result or []):

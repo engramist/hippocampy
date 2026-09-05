@@ -922,6 +922,36 @@ can be called from a UI button or via an adapter command.
 **Output:** Array of ranked `ArcMechanic` objects with 1-hop expanded patterns and failure modes.
 
 
+### 29. `ask` — Augmented Inference (B289, B374)
+
+**Purpose:** Synthesize a memory-grounded answer in a single call via augmented inference with Two-Lane Thalamic Routing and Budget-Gated Pressure Relief.
+
+**When to call:** When you need a synthesized answer combining decisions, constraints, plans, and lessons without orchestrating multiple retrieval and compression calls manually.
+
+**Input:**
+```json
+{
+  "query": "What architectural decisions and constraints apply to authentication?",
+  "session_id": "sess-1",
+  "budget_tokens": 4000,
+  "token_budget": 32000,
+  "capture": true
+}
+```
+
+**Output:**
+```json
+{
+  "answer": "We decided to use JWT tokens with 1-hour expiration. Constraints require storing secrets in environment variables."
+}
+```
+
+**Two-Lane Routing & Budget-Gated Guarantees (B374):**
+1. **Sub-Budget Bypass (0s Latency Overhead):** If total estimated tokens in the assembled `ContextBundle` $\le$ `budget_tokens`, the compression stage is completely bypassed (100% bypass rate, 0 LLM compression latency).
+2. **Protected Lane (Zero Loss):** Ground-truth architectural decisions (`Decision`), active constraints (`Constraint`, `GlobalConstraint`), negative controls, and exact facts (`exact_fact`) bypass compression entirely and are emitted verbatim.
+3. **Bulk Lane (Lossy-Tolerant Compression):** Narrative summaries (`summary`), conceptual graphs (`semantic`, `graph`), code extracts (`code`), and dataset rows (`tabular`) undergo specialized graph pruning, AST folding, and prose compression only when exceeding the token budget.
+
+
 ## Adapter Compatibility Matrix
 
 | Tool | claude_code | claude_desktop | codex | chatgpt_desktop | gemini_cli | OpenClaw TS |

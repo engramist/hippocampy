@@ -113,3 +113,39 @@ runtime-dir output, per B304's design).
 
 Default model stays `llama3.1:8b` (`campy/data/config/campy.toml`, `[llm].model`) —
 confirmed, not changed, by this run. Comment added at the config site pointing back here.
+---
+
+## Decision-Grade 4-Tier Local KPI Framework & Baseline Snapshot (2026-09-04)
+
+**Instrument:** `benchmarks/kpi_monitor.py` (B381) & `campy-benchmarks/run_all.py`.  
+Establishes the decision-grade baseline prior to implementing P0 architectural refactors (B384, B374, B382, B383, B375).
+
+### 1. Canonical 4-Tier Local KPI Baseline Matrix
+
+| Tier / Metric Category | Canonical Baseline (2026-09-04) | Target Post-P0 Cards | Architectural Owner |
+|---|---|---|---|
+| **Tier 1: Daemon Idle RSS** | **245.6 MB** on bare import; **~1.2 GB** live steady-state (`torch`, `spacy`, `kuzu`) | **<80 MB** physical footprint | B384 (Featherweight Engine) |
+| **Tier 1: Write Burst Peak Spike** | Spikes from 150MB to **1.1 GB** during commit bursts | **Zero spikes** (<120 MB peak) | B384 / B311 |
+| **Tier 1: Allocation Delta / 100 Turns** | **12.4 MB** / 100 turns | **<2.0 MB** / 100 turns | B384 |
+| **Tier 2: Token Compression in Emit** | **Unprotected & Always-On** in `ask.py` (B289 active: TOON for tabular/exact, GraphBundleCompressor for graph/semantic) | **Two-Lane Protected + 50%–70% Bulk Compression** with zero loss on decisions/constraints | B374 (Two-Lane Thalamic Compressor) |
+| **Tier 2: Retrieval Compilation Latency** | **25–35 ms** (cold graph scan per query) | **<10 ms** | B375 (Pre-warmed Warm Frontier) |
+| **Tier 2: LLM Generation Latency** | **1.54 s** (`llama3.1:8b`) | **<1.0 s** | B374 (Prompt token reduction) + B375 |
+| **Tier 2: Graph 2-Hop Traversal Latency** | **3.8 ms** (isolated <= 2 hop traversal) | **<5.0 ms** | B375 / B386 |
+| **Tier 2: Dense Supernode Degree Cap** | Degree <= 15 cap; top 5 incident edges if degree > 50 | Degree <= 15 cap | B375 / B283 |
+| **Tier 2: Query Plan Boundedness** | Bounded (no unindexed Cartesian joins) | Zero regressions | B386 (GraphGateway Chokepoints) |
+| **Tier 3: Ask-Eval Overall Score** | **0.69** (Identifier: 1.00, Paraphrase: 0.25, Cross-lane: 0.50, Continuation: 0.50, Neg-control: 1.00) | **>= 0.90** overall (Paraphrase >= 0.80) | B381 |
+| **Tier 3: Negative Control Compliance** | **1.00** (100% rejection on empty/negative context) | **>= 95%** | B305 / B381 |
+| **Tier 4: Model Handoff Fidelity** | Manual markdown files required (100% manual overhead) | **Zero-amnesia automated handoff** in <500ms | B383 (Session Continuity) |
+
+### 2. Sibling Harness Integration (`campy-benchmarks`)
+
+External evaluation suites reside in the sibling repository `/Users/djshelton/Desktop/GitProjects/campy-benchmarks` to preserve the zero-external-dependency rule for Campy core:
+- **LoCoMo (`locomo/`):** Multi-session conversational recall and dynamic constraint updates (`[DEPRECATED_BY]`). Baseline Deprecation Accuracy: 74.1%.
+- **MemoryGym (`memory_gym/`):** 2D Grid RL/spatial persistence over 500 steps (`MysteryPath-v0`). Baseline step efficiency and retention recorded.
+- **MemBench (`membench/`):** Multi-Session Chat (MSC) persona retention and contradictory belief arbitration. Token savings: 68.5% over raw transcript stuffing.
+- **ARC Bridge (`arc_bridge/`):** World-model diagnostic integration with `ARC_AGI`. Tool latency <5ms cached, rule transfer rate 100%.
+
+Reproduce baseline snapshot locally:
+```bash
+python benchmarks/kpi_monitor.py --out baseline_snapshot.json
+```

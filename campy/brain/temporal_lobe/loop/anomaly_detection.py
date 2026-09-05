@@ -94,13 +94,11 @@ async def _get_high_confidence_constraints(db) -> list[dict]:
     constraints = []
     if result:
         for row in result:
-            cid = row.get("gc.global_constraint_id") if hasattr(row, "get") else row[0]
-            text = row.get("gc.text_raw") if hasattr(row, "get") else row[1]
-            emb = row.get("gc.embedding") if hasattr(row, "get") else row[2]
+            vals = list(row.values()) if isinstance(row, dict) else list(row)
             constraints.append({
-                "global_constraint_id": cid,
-                "text_raw": text,
-                "embedding": emb,
+                "global_constraint_id": vals[0],
+                "text_raw": vals[1],
+                "embedding": vals[2],
             })
     return constraints
 
@@ -118,13 +116,11 @@ async def _get_high_confidence_preferences(db) -> list[dict]:
     preferences = []
     if result:
         for row in result:
-            pid = row.get("gp.global_preference_id") if hasattr(row, "get") else row[0]
-            text = row.get("gp.text_raw") if hasattr(row, "get") else row[1]
-            emb = row.get("gp.embedding") if hasattr(row, "get") else row[2]
+            vals = list(row.values()) if isinstance(row, dict) else list(row)
             preferences.append({
-                "global_preference_id": pid,
-                "text_raw": text,
-                "embedding": emb,
+                "global_preference_id": vals[0],
+                "text_raw": vals[1],
+                "embedding": vals[2],
             })
     return preferences
 

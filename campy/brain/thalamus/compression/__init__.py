@@ -48,32 +48,85 @@ class PluggableCompressorRegistry:
 
 class ContentRouter:
     """
-    Routes BundleSections to the correct compressor by section_type.
+    Routes BundleSections to the correct compressor by section_type using
+    Two-Lane Thalamic Routing (B374).
+
+    Two lanes:
+      - Protected Lane (zero loss): Decisions, active Constraints, Negative Controls,
+        and exact facts bypass compression entirely (routed to NoOpCompressor).
+      - Bulk Lane (lossy-tolerant): Summaries, concepts, code extracts, and tabular
+        data compressed only when exceeding budget.
 
     section_type → compressor name:
-      "graph"      → "graph_bundle"   (graph-native pruning — do not substitute)
-      "semantic"   → "graph_bundle"   (semantic nodes carry graph signals)
-      "tabular"    → "structured_data"
-      "exact_fact" → "structured_data"
-      "summary"    → "llm_prose"      (only fires when prose is present)
-      "code"       → "ast_code"       (Phase B: fires when code extracts present)
+      Protected Lane (0% loss, emitted verbatim):
+        "decision"         → "noop"
+        "constraint"       → "noop"
+        "negative_control" → "noop"
+        "exact_fact"       → "noop"
+      Bulk Lane:
+        "graph"            → "graph_bundle"   (graph-native pruning — do not substitute)
+        "semantic"         → "graph_bundle"   (semantic nodes carry graph signals)
+        "tabular"          → "structured_data"
+        "summary"          → "llm_prose"      (only fires when prose is present)
+        "code"             → "ast_code"       (Phase B: fires when code extracts present)
     """
 
+    PROTECTED_SECTION_TYPES: frozenset[str] = frozenset({
+        "decision",
+        "constraint",
+        "negative_control",
+        "exact_fact",
+    })
+
+    BULK_SECTION_TYPES: frozenset[str] = frozenset({
+        "summary",
+        "semantic",
+        "graph",
+        "code",
+        "tabular",
+    })
+
     _ROUTE: dict[str, str] = {
-        "graph":      "graph_bundle",
-        "semantic":   "graph_bundle",
-        "tabular":    "structured_data",
-        "exact_fact": "structured_data",
-        "summary":    "llm_prose",
-        "code":       "ast_code",
+        "graph":            "graph_bundle",
+        "semantic":         "graph_bundle",
+        "tabular":          "structured_data",
+        "summary":          "llm_prose",
+        "code":             "ast_code",
+        "decision":         "noop",
+        "constraint":       "noop",
+        "negative_control": "noop",
+        "exact_fact":       "noop",
     }
 
     def __init__(self, registry: PluggableCompressorRegistry) -> None:
         self._registry = registry
 
+    def route(self, section: "BundleSection" | str) -> Compressor:
+        """
+        Return the Compressor instance for this section according to two-lane routing.
+        Protected lane -> NoOpCompressor (zero loss).
+        Bulk lane -> specialized compressor from registry.
+        """
+        sec_type = section if isinstance(section, str) else getattr(section, "section_type", "")
+        sec_type = str(sec_type).lower()
+
+        if sec_type in self.PROTECTED_SECTION_TYPES:
+            return self._registry.get("noop")
+
+        if sec_type in self.BULK_SECTION_TYPES:
+            name = self._ROUTE.get(sec_type, "noop")
+            return self._registry.get(name)
+
+        name = self._ROUTE.get(sec_type, "noop")
+        return self._registry.get(name)
+
+    def is_protected(self, section: "BundleSection" | str) -> bool:
+        """Return True if section belongs to Protected Lane."""
+        sec_type = section if isinstance(section, str) else getattr(section, "section_type", "")
+        return str(sec_type).lower() in self.PROTECTED_SECTION_TYPES
+
     def compress_section(self, section: "BundleSection", query: str, config: dict) -> "BundleSection":
-        name = self._ROUTE.get(section.section_type, "noop")
-        compressor = self._registry.get(name)
+        compressor = self.route(section)
         return compressor.compress(section, query, config)
 
 
