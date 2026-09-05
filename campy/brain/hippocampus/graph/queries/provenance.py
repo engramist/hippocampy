@@ -2133,4 +2133,48 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         mutating=True,
         description="Update last_accessed_at for live ArcWorldModelStep.",
     ),
+
+    # B399: FactEntity (schema.py's B317 capability-graph subgraph) carries
+    # the same source/authority/superseded_* columns as every table above
+    # (see the "DELIBERATELY SEPARATE subgraph" comment on its DDL in
+    # schema.py — separate from PROVENANCE_TABLES, not from this contract)
+    # and drop_projections() is written generically enough to already
+    # accept it via an explicit `tables=["FactEntity"]` argument. But
+    # provenance.py's pre-B386 drop_projections() built
+    # `f"MATCH (n:{table}) WHERE n.source = $source ..."` dynamically per
+    # call, so it worked for any table name without prior registration;
+    # this migration's per-table NamedQuery registration only ever
+    # enumerated provenance.py's _PK_COLUMN keys, which never included
+    # FactEntity (it doesn't need a pk column for drop_projections's own
+    # count/delete queries), so `provenance.counts_factentity` /
+    # `provenance.drop_projected_factentity` were simply never generated —
+    # a silent capability loss (KeyError from QueryRegistry.get(), not a
+    # wrong-answer bug) caught by
+    # tests/test_fact_ingest.py::test_drop_projections_removes_fact_graph_leaves_earned_memory_untouched.
+    # Scoped to only these two queries because they're the only
+    # FactEntity-provenance operation actually reachable today
+    # (mark_superseded()/find_live_by_dedupe_key() index _PK_COLUMN
+    # first and raise before ever reaching the registry for a table not
+    # listed there — no caller passes "FactEntity" to those).
+    NamedQuery(
+        name="provenance.counts_factentity",
+        cypher="""
+            MATCH (n:FactEntity) WHERE n.source = $source
+            RETURN n.authority AS authority, count(*) AS c
+            """,
+        params=("source",),
+        mutating=False,
+        description="Count projected vs earned FactEntity nodes for a source.",
+    ),
+    NamedQuery(
+        name="provenance.drop_projected_factentity",
+        cypher="""
+            MATCH (n:FactEntity)
+            WHERE n.authority = 'projected' AND n.source = $source
+            DETACH DELETE n
+            """,
+        params=("source",),
+        mutating=True,
+        description="Drop projected FactEntity nodes for a source.",
+    ),
 )

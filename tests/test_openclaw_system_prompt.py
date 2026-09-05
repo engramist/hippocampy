@@ -77,8 +77,12 @@ async def test_get_openclaw_prompt_onboarded(mock_db):
     """Verify it skips onboarding if already marked in DB."""
     session_id = "oc-session-456"
     
-    # Mock DB response for an already onboarded session
-    mock_db.execute.return_value.has_next.return_value = True
+    # Mock DB response for an already onboarded session.
+    # B399: must be a bounded cursor (has_next True once, then False), same
+    # as test_get_openclaw_prompt_tool above — an unbounded `return_value =
+    # True` makes GraphGateway._materialize_rows()'s full-drain `while
+    # res.has_next(): ...` loop (added in B386) spin forever.
+    mock_db.execute.return_value.has_next.side_effect = [True, False]
     mock_db.execute.return_value.get_next.return_value = [True, "MainQuestName", "main"]
     
     params = {"session_id": session_id}

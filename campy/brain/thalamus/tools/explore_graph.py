@@ -243,8 +243,17 @@ async def explore_graph(params: Dict[str, Any], db: KuzuClient, config: Dict[str
             rows = gw.run_sync(f"explore.start_node_{table.lower()}", id=start_id)
             if rows:
                 row = rows[0]
-                node_dict = row[0] if len(row) > 0 else {}
-                start_internal_id = row[1] if len(row) > 1 else None
+                # B399: GraphGateway.run_sync() materializes rows into
+                # dicts keyed by the query's (now explicitly aliased,
+                # see queries/explore.py) column names, not positional
+                # lists — handle both shapes defensively, matching the
+                # pattern used elsewhere in the B386 migration.
+                if isinstance(row, dict):
+                    node_dict = row.get("node") or {}
+                    start_internal_id = row.get("internal_id")
+                else:
+                    node_dict = row[0] if len(row) > 0 else {}
+                    start_internal_id = row[1] if len(row) > 1 else None
                 start_node_data = _node_payload(node_dict, start_id)
                 start_table = table
                 break

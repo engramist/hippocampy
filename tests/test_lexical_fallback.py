@@ -75,6 +75,10 @@ def _query_text(db: LexicalCaptureDB) -> str:
     return next(q for q, _ in db.queries if "MATCH (m:Message)" in q)
 
 
+def _query_params(db: LexicalCaptureDB) -> dict:
+    return next(p for q, p in db.queries if "MATCH (m:Message)" in q)
+
+
 @pytest.mark.asyncio
 async def test_lexical_query_has_window_and_limit():
     db = LexicalCaptureDB()
@@ -87,7 +91,14 @@ async def test_lexical_query_has_window_and_limit():
 
     q = _query_text(db)
     assert "timestamp($cutoff)" in q
-    assert "LIMIT 10" in q
+    # B399: retrieval.lexical_message_fallback (queries/retrieval.py) binds
+    # LIMIT as a real query parameter (`LIMIT $limit`) rather than the old
+    # `f"... LIMIT {lexical_limit}"` raw string interpolation — a
+    # deliberate improvement made as part of the B386 migration (every
+    # other value in this same query, e.g. $cutoff above, was already
+    # parameterized). Assert the bound value instead of literal query text.
+    assert "LIMIT $limit" in q
+    assert _query_params(db)["limit"] == 10
 
 
 @pytest.mark.asyncio

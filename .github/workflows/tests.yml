@@ -6,10 +6,20 @@ on:
   push:
     branches: [main]
 
+# B399: cancel superseded runs on the same branch/PR instead of letting them
+# pile up as red X's once a newer push has already made them moot.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pytest:
     name: pytest
     runs-on: ubuntu-latest
+    # B399: backstop for a future hang — the per-test --timeout below should
+    # fail fast and name the test, but this bounds worst case if that ever
+    # fails to fire (e.g. a hang outside pytest's own test-call machinery).
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,5 +56,14 @@ jobs:
       - name: Check dependency floor drift
         run: python scripts/check_dependency_pin_drift.py
 
+      # B399: --timeout bounds any single test so a hang fails fast and
+      # names the offending test (with a full stack dump) in the log,
+      # instead of silently consuming the whole job until the outer
+      # timeout-minutes backstop kills it. --timeout-method=thread runs the
+      # watchdog on its own thread and dumps every thread's stack on
+      # expiry (then hard-exits the process) rather than relying on
+      # SIGALRM delivery to the main thread, which is the more robust
+      # choice in an asyncio test suite where the main thread may be
+      # parked in the event loop.
       - name: Run test suite
-        run: pytest tests/ -q
+        run: pytest tests/ -q --timeout=60 --timeout-method=thread

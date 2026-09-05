@@ -231,13 +231,13 @@ async def update_work_summary(
                 "thalamus.work_summary_update",
                 sid=summary_id, rl=resume_line, tc=turn_count,
                 ts=now_iso, br=branch, co=commit,
-                as=agent_source, card=card,
+                agent_source=agent_source, card=card,
                 has_snap=bool(should_snapshot), snap=snapshot_text,
             )
         else:
             await gw.run(
                 "thalamus.work_summary_create",
-                sid=summary_id, sess=session_id, as=agent_source,
+                sid=summary_id, sess=session_id, agent_source=agent_source,
                 br=branch, co=commit, card=card,
                 rl=resume_line, snap=snapshot_text, tc=turn_count,
                 ts=now_iso,

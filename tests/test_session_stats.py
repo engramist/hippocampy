@@ -23,8 +23,17 @@ class RecordingDB:
         self.results[query_substring] = rows
 
     def execute(self, query, params=None):
+        # B399: match on whitespace-normalized text. The named-query
+        # registry (campy/brain/hippocampus/graph/queries/) writes each
+        # Cypher string as a multi-line, indented literal for readability;
+        # the substrings this test seeds were written against the old
+        # single-line inline-Cypher formatting. The query text is
+        # functionally identical (Cypher doesn't care about whitespace) —
+        # only the literal layout changed — so normalize before comparing,
+        # same as LexicalCaptureDB in tests/test_lexical_fallback.py.
+        normalized = " ".join(query.split())
         for sub, rows in self.results.items():
-            if sub in query:
+            if " ".join(sub.split()) in normalized:
                 return self._MockResult(rows)
         return self._MockResult()
 
