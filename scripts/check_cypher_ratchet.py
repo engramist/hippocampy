@@ -44,6 +44,14 @@ ALLOWLIST_FILES = {
     # table-variable stream queries. Lives next to the engine adapter under
     # hippocampus/graph/, not behind application query seams.
     "campy/brain/hippocampus/graph/export.py",
+    # B390: sqlite-vec + FTS5 store. Contains no Cypher and imports no
+    # graph engine at all (not kuzu, not pyoxigraph) — CYPHER_LINE_RE's
+    # keyword regex false-positives on plain SQLite DDL/DML syntax that
+    # happens to share keywords with Cypher. This is SQLite plumbing for a
+    # standalone component the graph engine never touches (per docs/rdf-
+    # schema-mapping.md §5), the same category as kuzu_client.py/export.py
+    # above, not application Cypher that belongs behind GraphGateway.
+    "campy/brain/hippocampus/graph/vector_store.py",
 }
 
 # Directory prefixes allowlisted wholesale:
