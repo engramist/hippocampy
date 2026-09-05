@@ -231,17 +231,17 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B196 | # B196: Internal Consistency Audit — Graph-Wide Contradiction Detection | P99 | **Status**: complete (2026-04-09) | TBD | TBD | backlog/plans/B-196-consistency-audit.md | backlog/B196.md |
 | B292-HANDOFF-2026-07-13 | # B292 Handoff - 2026-07-13 | P99 | ## Provenance | TBD | TBD | - | backlog/B292-HANDOFF-2026-07-13.md |
 | B322 | Learned Change Coupling and Conflict Forecast | P99 | deferred | TBD | TBD | - | backlog/B322.md |
-| B374 | Two-Lane Thalamic Compressor & Augmented Inference Pipeline (`campy ask`) | P0 | in-review (PR #155) | TBD | TBD | backlog/plans/B-374-two-lane-thalamic-compressor.md | backlog/B374.md |
-| B380 | Non-Provisional Patent Claim Verification & Audit Evidence Pack | P0 | in-review (PR #153) | TBD | TBD | backlog/plans/B-380-patent-evidence-pack.md | backlog/B380.md |
-| B381 | Decision-Grade Multi-Model Ask-Eval Benchmark Suite | P1 | in-review (PR #152) | TBD | TBD | backlog/plans/B-381-decision-grade-ask-eval.md | backlog/B381.md |
-| B386 | GraphGateway Chokepoint Completion & Raw-Cypher Ratchet to Zero | P0 | in-review (PR #154) | TBD | TBD | backlog/plans/B-386-gateway-chokepoint-completion.md | backlog/B386.md |
+| B374 | Two-Lane Thalamic Compressor & Augmented Inference Pipeline (`campy ask`) | P0 | complete (2026-09-04, PR #155) | TBD | TBD | backlog/plans/B-374-two-lane-thalamic-compressor.md | backlog/B374.md |
+| B380 | Non-Provisional Patent Claim Verification & Audit Evidence Pack | P0 | complete (2026-09-04, PR #153) | TBD | TBD | backlog/plans/B-380-patent-evidence-pack.md | backlog/B380.md |
+| B381 | Decision-Grade Multi-Model Ask-Eval Benchmark Suite | P1 | complete (2026-09-04, PR #152) | TBD | TBD | backlog/plans/B-381-decision-grade-ask-eval.md | backlog/B381.md |
+| B386 | GraphGateway Chokepoint Completion & Raw-Cypher Ratchet to Zero | P0 | complete (2026-09-04, PR #154) | TBD | TBD | backlog/plans/B-386-gateway-chokepoint-completion.md | backlog/B386.md |
 
 ## Summary
 
 - Total cards: 231
 - Ready: 9
 - Needs work: 0
-- Complete: 200
+- Complete: 204
 - In progress: 0
-- In review: 4
+- In review: 0
 - Blocked: 0
