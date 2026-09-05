@@ -14,6 +14,8 @@ Cost model: near-zero — vector search queries only, no LLM calls.
 """
 
 from __future__ import annotations
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
 
 import logging
 import re
@@ -156,12 +158,9 @@ async def check_associative_triggers(
             hook_type = "PostToolUse" if signal_type == "error" else "PreToolUse"
 
             try:
-                await db.execute_write(
-                    "MATCH (l:Lesson {lesson_id: $lid}) "
-                    "SET l.trigger_pattern = $pattern, "
-                    "    l.trigger_hook_type = $hook_type, "
-                    "    l.trigger_tool = $tool, "
-                    "    l.trigger_project_scope = $scope",
+                gw = GraphGateway(db, REGISTRY) if not isinstance(db, GraphGateway) else db
+                await gw.run(
+                    "orchestrator.bind_lesson_trigger",
                     {
                         "lid": lesson_id,
                         "pattern": trigger_pattern,
@@ -213,12 +212,9 @@ async def check_associative_triggers(
             hook_type = "PreToolUse"
 
             try:
-                await db.execute_write(
-                    "MATCH (p:Procedure {procedure_id: $pid}) "
-                    "SET p.trigger_pattern = $pattern, "
-                    "    p.trigger_hook_type = $hook_type, "
-                    "    p.trigger_tool = $tool, "
-                    "    p.trigger_project_scope = $scope",
+                gw = GraphGateway(db, REGISTRY) if not isinstance(db, GraphGateway) else db
+                await gw.run(
+                    "orchestrator.bind_procedure_trigger",
                     {
                         "pid": procedure_id,
                         "pattern": trigger_pattern,

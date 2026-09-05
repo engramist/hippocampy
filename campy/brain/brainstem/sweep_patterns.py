@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 
 from campy.brain.hippocampus.graph import embeddings as emb
+from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.temporal_lobe.loop.step4b_associative import _build_trigger_pattern
 
 _logger = logging.getLogger(__name__)
@@ -55,6 +56,16 @@ MAX_CANDIDATES_PER_TYPE = 5
 # Maximum total candidates sent to LLM per sweep cycle
 MAX_TOTAL_CANDIDATES = 10
 
+
+
+def _iter_rows(result):
+    if hasattr(result, "has_next"):
+        while result.has_next():
+            row = result.get_next()
+            yield tuple(row.values()) if isinstance(row, dict) else row
+    elif isinstance(result, (list, tuple)):
+        for row in result:
+            yield tuple(row.values()) if isinstance(row, dict) else row
 
 async def discover_patterns(
     db: "KuzuClient",
@@ -156,22 +167,15 @@ async def _discover_temporal_patterns(db, pat_cfg: dict) -> list[dict]:
 
     candidates: list[dict] = []
 
+    gw = get_gateway(db)
     try:
-        result = db.execute(
-            "MATCH (m:Message)-[:CONTAINS_LESSON]->(l:Lesson) "
-            "WHERE l.archived = false "
-            "  AND l.trigger_pattern IS NULL "
-            "  AND m.created_at IS NOT NULL "
-            "RETURN l.lesson_id, l.text_raw, m.created_at "
-            "ORDER BY l.lesson_id, m.created_at ASC"
-        )
+        result = await gw.run("sweep.patterns_temporal_lessons")
     except Exception:
         return []
 
     lesson_timestamps: dict[str, list] = defaultdict(list)
     lesson_text: dict[str, str] = {}
-    while result.has_next():
-        row = result.get_next()
+    for row in _iter_rows(result):
         lid, text, ts = row[0], row[1] or "", row[2]
         if lid and ts is not None:
             lesson_timestamps[lid].append(ts)
@@ -245,21 +249,14 @@ async def _discover_sequence_patterns(db, pat_cfg: dict) -> list[dict]:
 
     candidates: list[dict] = []
 
+    gw = get_gateway(db)
     try:
-        result = db.execute(
-            "MATCH (ps1:PlanStep)-[:NEXT_STEP]->(ps2:PlanStep)-[:NEXT_STEP]->(ps_fail:PlanStep) "
-            "WHERE ps_fail.valence IS NOT NULL AND ps_fail.valence < 0 "
-            "  AND ps_fail.status = 'failed' "
-            "RETURN ps1.description, ps2.description, ps_fail.description, "
-            "       ps_fail.step_id, ps_fail.valence "
-            "ORDER BY ps_fail.valence ASC"
-        )
+        result = await gw.run("sweep.patterns_sequence_failures")
     except Exception:
         return []
 
     chains: list[dict] = []
-    while result.has_next():
-        row = result.get_next()
+    for row in _iter_rows(result):
         step1_desc = (row[0] or "").strip()
         step2_desc = (row[1] or "").strip()
         fail_desc = (row[2] or "").strip()
@@ -348,16 +345,9 @@ async def _discover_frequency_patterns(db, pat_cfg: dict) -> list[dict]:
 
     candidates: list[dict] = []
 
+    gw = get_gateway(db)
     try:
-        result = db.execute(
-            "MATCH (m:Message)-[:CONTAINS_LESSON]->(l:Lesson), "
-            "      (m)-[:SENT_IN]->(s:Session) "
-            "WHERE l.archived = false "
-            "  AND l.trigger_pattern IS NULL "
-            "  AND s.started_at IS NOT NULL "
-            "RETURN l.lesson_id, l.text_raw, s.session_id, s.started_at, count(m) AS msg_count "
-            "ORDER BY l.lesson_id, s.started_at ASC"
-        )
+        result = await gw.run("sweep.patterns_frequency_lessons")
     except Exception:
         return []
 
@@ -365,8 +355,7 @@ async def _discover_frequency_patterns(db, pat_cfg: dict) -> list[dict]:
     lesson_text: dict[str, str] = {}
     lesson_session_order: dict[str, int] = defaultdict(int)
 
-    while result.has_next():
-        row = result.get_next()
+    for row in _iter_rows(result):
         lid, text, sid, started_at, count = row[0], row[1] or "", row[2], row[3], int(row[4] or 0)
 
         if not lid or count == 0:
@@ -435,27 +424,18 @@ async def _deduplicate_candidates(db, candidates: list[dict]) -> list[dict]:
     """Remove candidates whose trigger pattern already exists in the graph."""
     existing_patterns: set[str] = set()
 
+    gw = get_gateway(db)
     try:
-        r = db.execute(
-            "MATCH (l:Lesson) WHERE l.archived = false "
-            "AND l.trigger_pattern IS NOT NULL AND l.trigger_pattern <> '' "
-            "RETURN l.trigger_pattern"
-        )
-        while r.has_next():
-            row = r.get_next()
+        r = await gw.run("sweep.patterns_existing_lesson_triggers")
+        for row in _iter_rows(r):
             if row[0]:
                 existing_patterns.add(row[0].strip())
     except Exception:
         pass
 
     try:
-        r = db.execute(
-            "MATCH (p:Procedure) WHERE p.archived = false "
-            "AND p.trigger_pattern IS NOT NULL AND p.trigger_pattern <> '' "
-            "RETURN p.trigger_pattern"
-        )
-        while r.has_next():
-            row = r.get_next()
+        r = await gw.run("sweep.patterns_existing_procedure_triggers")
+        for row in _iter_rows(r):
             if row[0]:
                 existing_patterns.add(row[0].strip())
     except Exception:
@@ -596,15 +576,15 @@ async def _write_trigger_metadata(
             if not pattern:
                 continue
 
+            gw = get_gateway(db)
             if node_type == "Lesson" and node_id:
-                await db.execute_write(
-                    "MATCH (l:Lesson {lesson_id: $lid}) "
-                    "SET l.trigger_pattern = $pattern, "
-                    "    l.trigger_hook_type = $hook_type, "
-                    "    l.trigger_tool = $tool, "
-                    "    l.trigger_project_scope = $scope",
-                    {"lid": node_id, "pattern": pattern,
-                     "hook_type": hook_type, "tool": tool, "scope": ""},
+                await gw.run(
+                    "sweep.patterns_update_lesson_trigger",
+                    lid=node_id,
+                    pattern=pattern,
+                    hook_type=hook_type,
+                    tool=tool,
+                    scope="",
                 )
                 _logger.info(
                     "[SweepPatterns] wrote trigger to Lesson %s: pattern=%r type=%s",
@@ -632,47 +612,34 @@ async def _write_trigger_metadata(
                 except Exception:
                     proc_emb = [0.0] * 384
 
-                await db.execute_write(
-                    """
-                    CREATE (pr:Procedure {
-                        procedure_id: $pid, name: $name,
-                        domain: 'auto-discovered', archetype: 'failure-sequence',
-                        description: $description, steps_json: $steps_json,
-                        embedding: $embedding, embedding_model: $embedding_model,
-                        embedding_dim: $embedding_dim,
-                        success_count: 0, application_count: 0, success_rate: 0.0,
-                        confidence: $confidence, pathway_strength: $pathway_strength,
-                        archived: false, created_at: timestamp($now),
-                        trigger_pattern: $trigger_pattern,
-                        trigger_hook_type: $trigger_hook_type,
-                        trigger_tool: $trigger_tool,
-                        trigger_project_scope: $trigger_scope
-                    })
-                    """,
-                    {
-                        "pid": proc_id, "name": name,
-                        "description": description, "steps_json": steps_json,
-                        "embedding": proc_emb, "embedding_model": embedding_model,
-                        "embedding_dim": len(proc_emb),
-                        "confidence": candidate.get("validation_confidence", 0.5),
-                        "pathway_strength": 0.6 if not confidence_low else 0.4,
-                        "now": now, "trigger_pattern": pattern,
-                        "trigger_hook_type": hook_type, "trigger_tool": tool,
-                        "trigger_scope": "",
-                    },
+                await gw.run(
+                    "sweep.patterns_create_procedure",
+                    pid=proc_id,
+                    name=name,
+                    description=description,
+                    steps_json=steps_json,
+                    embedding=proc_emb,
+                    embedding_model=embedding_model,
+                    embedding_dim=len(proc_emb),
+                    confidence=candidate.get("validation_confidence", 0.5),
+                    pathway_strength=0.6 if not confidence_low else 0.4,
+                    now=now,
+                    trigger_pattern=pattern,
+                    trigger_hook_type=hook_type,
+                    trigger_tool=tool,
+                    trigger_scope="",
                 )
                 _logger.info("[SweepPatterns] created Procedure %s for sequence: %r", proc_id[:8], pattern)
                 written += 1
 
             elif node_type == "Procedure" and node_id:
-                await db.execute_write(
-                    "MATCH (p:Procedure {procedure_id: $pid}) "
-                    "SET p.trigger_pattern = $pattern, "
-                    "    p.trigger_hook_type = $hook_type, "
-                    "    p.trigger_tool = $tool, "
-                    "    p.trigger_project_scope = $scope",
-                    {"pid": node_id, "pattern": pattern,
-                     "hook_type": hook_type, "tool": tool, "scope": ""},
+                await gw.run(
+                    "sweep.patterns_update_procedure_trigger",
+                    pid=node_id,
+                    pattern=pattern,
+                    hook_type=hook_type,
+                    tool=tool,
+                    scope="",
                 )
                 written += 1
 

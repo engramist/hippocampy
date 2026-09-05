@@ -1,3 +1,5 @@
+from __future__ import annotations
+from campy.brain.hippocampus.graph.gateway import get_gateway
 """
 campy/brain/thalamus/tools/work_summary.py
 
@@ -8,7 +10,6 @@ via a non-blocking background task fired from notify_turn. Also writes
 the ## Current Work section of CONTEXT.md so any agent reading the
 project directory gets the resume line without querying the daemon.
 """
-from __future__ import annotations
 
 import logging
 import re
@@ -51,13 +52,8 @@ async def _get_active_plan_info(session_id: str, db: "KuzuClient") -> tuple[str,
     """Return (active_card, plan_goal) for the session's most recent plan."""
     try:
         # Plan.archived (BOOLEAN) and PLANNED_IN edge both confirmed in schema.py
-        rows = await db.execute_read(
-            "MATCH (p:Plan)-[:PLANNED_IN]->(s:Session {session_id: $sid}) "
-            "WHERE p.archived = false "
-            "RETURN p.plan_id, p.goal "
-            "ORDER BY p.created_at DESC LIMIT 1",
-            {"sid": session_id},
-        )
+        gw = get_gateway(db)
+        rows = await gw.run("thalamus.work_summary_active_plan", sid=session_id)
         if rows:
             row = rows[0]
             goal = row.get("p.goal") or row.get("goal") or ""
@@ -105,13 +101,8 @@ async def _build_snapshot(session_id: str, db: "KuzuClient", turn_count: int) ->
 
     # Recent decisions
     try:
-        dec_rows = await db.execute_read(
-            "MATCH (d:Decision)-[:ESTABLISHED_IN]->(s:Session {session_id: $sid}) "
-            "WHERE d.archived = false "
-            "RETURN d.text_raw "
-            "ORDER BY d.created_at DESC LIMIT 5",
-            {"sid": session_id},
-        )
+        gw = get_gateway(db)
+        dec_rows = await gw.run("thalamus.work_summary_recent_decisions", sid=session_id)
         if dec_rows:
             lines.append("**Recent decisions:**")
             for r in dec_rows:
@@ -123,12 +114,8 @@ async def _build_snapshot(session_id: str, db: "KuzuClient", turn_count: int) ->
 
     # Files in flight via WorkArtifact
     try:
-        art_rows = await db.execute_read(
-            "MATCH (wa:WorkArtifact)-[:CREATED_IN]->(s:Session {session_id: $sid}) "
-            "RETURN wa.file_path, wa.title "
-            "ORDER BY wa.last_modified_at DESC LIMIT 10",
-            {"sid": session_id},
-        )
+        gw = get_gateway(db)
+        art_rows = await gw.run("thalamus.work_summary_files_in_flight", sid=session_id)
         if art_rows:
             lines.append("**Files in flight:**")
             for r in art_rows:
@@ -222,10 +209,8 @@ async def update_work_summary(
         now_iso = datetime.now(timezone.utc).isoformat()
 
         # Get current turn_count from existing node
-        existing = await db.execute_read(
-            "MATCH (ws:WorkSummary {summary_id: $sid}) RETURN ws.turn_count",
-            {"sid": summary_id},
-        )
+        gw = get_gateway(db)
+        existing = await gw.run("thalamus.work_summary_get_existing", sid=summary_id)
         if existing:
             tc = existing[0].get("ws.turn_count") or existing[0].get("turn_count")
             turn_count = int(tc or 0) + 1
@@ -242,37 +227,20 @@ async def update_work_summary(
 
         # Upsert WorkSummary node
         if existing:
-            set_clause = (
-                "ws.resume_line = $rl, ws.turn_count = $tc, "
-                "ws.last_updated_at = timestamp($ts), ws.git_branch = $br, "
-                "ws.git_commit = $co, ws.agent_source = $as, ws.active_card = $card"
-            )
-            params: dict = {
-                "sid": summary_id, "rl": resume_line, "tc": turn_count,
-                "ts": now_iso, "br": branch, "co": commit,
-                "as": agent_source, "card": card,
-            }
-            if should_snapshot:
-                set_clause += ", ws.snapshot_text = $snap"
-                params["snap"] = snapshot_text
-            await db.execute_write(
-                f"MATCH (ws:WorkSummary {{summary_id: $sid}}) SET {set_clause}",
-                params,
+            await gw.run(
+                "thalamus.work_summary_update",
+                sid=summary_id, rl=resume_line, tc=turn_count,
+                ts=now_iso, br=branch, co=commit,
+                as=agent_source, card=card,
+                has_snap=bool(should_snapshot), snap=snapshot_text,
             )
         else:
-            await db.execute_write(
-                "CREATE (ws:WorkSummary {"
-                "  summary_id: $sid, session_id: $sess, agent_source: $as, "
-                "  git_branch: $br, git_commit: $co, active_card: $card, "
-                "  resume_line: $rl, snapshot_text: $snap, turn_count: $tc, "
-                "  last_updated_at: timestamp($ts)"
-                "})",
-                {
-                    "sid": summary_id, "sess": session_id, "as": agent_source,
-                    "br": branch, "co": commit, "card": card,
-                    "rl": resume_line, "snap": snapshot_text,
-                    "tc": turn_count, "ts": now_iso,
-                },
+            await gw.run(
+                "thalamus.work_summary_create",
+                sid=summary_id, sess=session_id, as=agent_source,
+                br=branch, co=commit, card=card,
+                rl=resume_line, snap=snapshot_text, tc=turn_count,
+                ts=now_iso,
             )
 
         _write_context_md_section(

@@ -24,6 +24,9 @@ import logging
 import math
 
 from campy.brain.hippocampus.table_registry import get_table
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
+
 
 _logger = logging.getLogger(__name__)
 
@@ -188,16 +191,13 @@ def _get_distinct_pairs(db, concept_ids: list[str]) -> set:
     if not concept_ids:
         return set()
     try:
-        rows = db.execute(
-            "MATCH (a:Concept)-[:DISTINCT_FROM]-(b:Concept) "
-            "WHERE a.concept_id IN $ids "
-            "RETURN b.concept_id",
-            {"ids": concept_ids}
-        )
+        gw = GraphGateway(db, REGISTRY) if not isinstance(db, GraphGateway) else db
+        rows = gw.run_sync("retrieval.get_distinct_pairs", ids=concept_ids)
         out = set()
-        while rows.has_next():
-            row = rows.get_next()
-            out.add(row[0])
+        for row in rows:
+            cid = row.get("b.concept_id") if hasattr(row, "get") else row[0]
+            if cid:
+                out.add(cid)
         return out
     except Exception:
         _logger.exception("_get_distinct_pairs query failed")
@@ -215,32 +215,20 @@ def _get_neighbor_set(db, concept_ids: list[str]) -> set:
 
     out = set()
     try:
+        gw = GraphGateway(db, REGISTRY) if not isinstance(db, GraphGateway) else db
         # Named edges (any relationship to neighbor)
-        rows = db.execute(
-            "MATCH (c:Concept)-[r]->(n:Concept) "
-            "WHERE c.concept_id IN $ids "
-            "  AND n.archived = false "
-            "  AND NOT n.concept_id IN $ids "
-            "RETURN DISTINCT n.concept_id",
-            {"ids": concept_ids}
-        )
-        while rows.has_next():
-            row = rows.get_next()
-            out.add(row[0])
+        rows = gw.run_sync("retrieval.get_neighbor_concepts", ids=concept_ids)
+        for row in rows:
+            cid = row.get("n.concept_id") if hasattr(row, "get") else row[0]
+            if cid:
+                out.add(cid)
 
         # Strong CO_OCCURS_WITH neighbors (count >= 3)
-        co_rows = db.execute(
-            "MATCH (c:Concept)-[r:CO_OCCURS_WITH]->(n:Concept) "
-            "WHERE c.concept_id IN $ids "
-            "  AND r.count >= 3 "
-            "  AND n.archived = false "
-            "  AND NOT n.concept_id IN $ids "
-            "RETURN DISTINCT n.concept_id",
-            {"ids": concept_ids}
-        )
-        while co_rows.has_next():
-            crow = co_rows.get_next()
-            out.add(crow[0])
+        co_rows = gw.run_sync("retrieval.get_co_occurring_neighbors", ids=concept_ids)
+        for crow in co_rows:
+            cid = crow.get("n.concept_id") if hasattr(crow, "get") else crow[0]
+            if cid:
+                out.add(cid)
     except Exception:
         _logger.exception("_get_neighbor_set query failed")
 

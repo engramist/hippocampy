@@ -16,9 +16,15 @@ from dataclasses import dataclass
 from typing import Optional, TYPE_CHECKING
 
 from campy.brain.hippocampus.graph import embeddings as emb
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
 
-if TYPE_CHECKING:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+
+def _gateway(db) -> GraphGateway:
+    if isinstance(db, GraphGateway):
+        return db
+    return GraphGateway(db, REGISTRY)
+
 
 _logger = logging.getLogger(__name__)
 
@@ -53,7 +59,7 @@ class RoutingResult:
 
 
 async def route_session(
-    db: KuzuClient,
+    db: Any,
     session_id: str,
     content: str,
     embedding_model: str,
@@ -151,32 +157,32 @@ async def route_session(
     return RoutingResult(quest_id, 0.95, "semantic_s1", True, "tentative")
 
 
-def _check_existing_binding(db: KuzuClient, session_id: str) -> Optional[RoutingResult]:
+def _check_existing_binding(db: Any, session_id: str) -> Optional[RoutingResult]:
     """
     Check if session already has a WORKING_ON edge.
     Returns RoutingResult if bound, None otherwise.
     """
     try:
-        r = db.execute(
-            "MATCH (s:Session {session_id: $sid})-[:WORKING_ON]->(q:MainQuest) "
-            "RETURN q.quest_id, s.routing_confidence, s.routing_method, s.routing_state",
-            {"sid": session_id}
-        )
-        if r.has_next():
-            row = r.get_next()
+        rows = _gateway(db).run_sync("quests.check_session_binding", sid=session_id)
+        if rows:
+            row = rows[0]
+            qid = (row.get("q.quest_id") if isinstance(row, dict) else row[0]) or ""
+            conf = float((row.get("s.routing_confidence") if isinstance(row, dict) else row[1]) or 0.0)
+            method = (row.get("s.routing_method") if isinstance(row, dict) else row[2]) or "unknown"
+            rstate = (row.get("s.routing_state") if isinstance(row, dict) else row[3]) or "tentative"
             return RoutingResult(
-                quest_id=row[0] or "",
-                confidence=float(row[1] or 0.0),
-                method=row[2] or "unknown",
+                quest_id=qid,
+                confidence=conf,
+                method=method,
                 is_new_quest=False,
-                routing_state=row[3] or "tentative",
+                routing_state=rstate,
             )
     except Exception:
         _logger.exception("_check_existing_binding failed for %s", session_id)
     return None
 
 
-def _system1_git_match(db: KuzuClient, git_repo_root: str) -> Optional[str]:
+def _system1_git_match(db: Any, git_repo_root: str) -> Optional[str]:
     """
     Check if a MainQuest exists with matching git_repo_root.
     Also checks legacy hash match for backward compatibility.
@@ -184,14 +190,9 @@ def _system1_git_match(db: KuzuClient, git_repo_root: str) -> Optional[str]:
     """
     # Check 1: git_repo_root property
     try:
-        r = db.execute(
-            "MATCH (q:MainQuest) "
-            "WHERE q.git_repo_root = $root AND q.status = 'active' "
-            "RETURN q.quest_id LIMIT 1",
-            {"root": git_repo_root}
-        )
-        if r.has_next():
-            return r.get_next()[0]
+        rows = _gateway(db).run_sync("quests.find_active_by_git_root", root=git_repo_root)
+        if rows:
+            return (rows[0].get("q.quest_id") if isinstance(rows[0], dict) else rows[0][0])
     except Exception:
         pass
 
@@ -199,41 +200,35 @@ def _system1_git_match(db: KuzuClient, git_repo_root: str) -> Optional[str]:
     from campy.brain.hippocampus.quest import compute_quest_id
     legacy_id = compute_quest_id(git_repo_root, "")
     try:
-        r = db.execute(
-            "MATCH (q:MainQuest {quest_id: $qid}) "
-            "WHERE q.status = 'active' "
-            "RETURN q.quest_id LIMIT 1",
-            {"qid": legacy_id}
-        )
-        if r.has_next():
-            return r.get_next()[0]
+        rows = _gateway(db).run_sync("quests.find_active_by_id", qid=legacy_id)
+        if rows:
+            return (rows[0].get("q.quest_id") if isinstance(rows[0], dict) else rows[0][0])
     except Exception:
         pass
 
     return None
 
 
-def get_active_quests_with_embeddings(db: KuzuClient) -> list[dict]:
+def get_active_quests_with_embeddings(db: Any) -> list[dict]:
     """
     Return all active MainQuests with their purpose_embedding.
     """
     quests = []
     try:
-        r = db.execute(
-            "MATCH (q:MainQuest) "
-            "WHERE q.status = 'active' AND q.archived = false "
-            "RETURN q.quest_id, q.purpose_embedding, q.name, q.purpose, q.embedding "
-            "LIMIT 100"
-        )
-        while r.has_next():
-            row = r.get_next()
-            purpose_emb = row[1] or row[4]  # fallback to embedding if purpose_embedding null
+        rows = _gateway(db).run_sync("quests.get_active_with_embeddings", limit=100)
+        for row in rows:
+            qid = row.get("q.quest_id") if isinstance(row, dict) else row[0]
+            pemb = row.get("q.purpose_embedding") if isinstance(row, dict) else row[1]
+            name = row.get("q.name") if isinstance(row, dict) else row[2]
+            purp = row.get("q.purpose") if isinstance(row, dict) else row[3]
+            emb = row.get("q.embedding") if isinstance(row, dict) else row[4]
+            purpose_emb = pemb or emb
             if purpose_emb:
                 quests.append({
-                    "quest_id": row[0],
+                    "quest_id": qid,
                     "purpose_embedding": list(purpose_emb),
-                    "name": row[2] or "",
-                    "purpose": row[3] or "",
+                    "name": name or "",
+                    "purpose": purp or "",
                 })
     except Exception:
         _logger.exception("get_active_quests_with_embeddings failed")
@@ -259,7 +254,7 @@ def _system1_semantic_match(
 
 
 def _apply_workspace_boost(
-    db: KuzuClient,
+    db: Any,
     candidates: list[tuple[str, float]],
     workspace_path: str,
 ) -> list[tuple[str, float]]:
@@ -269,14 +264,9 @@ def _apply_workspace_boost(
     """
     boosted_ids = set()
     try:
-        r = db.execute(
-            "MATCH (q:MainQuest)-[:ANCHORED_TO]->(w:Workspace {path: $path}) "
-            "WHERE q.status = 'active' "
-            "RETURN q.quest_id",
-            {"path": workspace_path}
-        )
-        while r.has_next():
-            boosted_ids.add(r.get_next()[0])
+        rows = _gateway(db).run_sync("quests.find_active_by_workspace_path", path=workspace_path)
+        for row in rows:
+            boosted_ids.add(row.get("q.quest_id") if isinstance(row, dict) else row[0])
     except Exception:
         pass
 
@@ -294,7 +284,7 @@ async def _system2_disambiguate(
     llm_client,
     candidates: list[tuple[str, float]],
     content: str,
-    db: KuzuClient,
+    db: Any,
 ) -> tuple[Optional[str], float]:
     """
     LLM picks the right quest or says "new".
@@ -304,13 +294,12 @@ async def _system2_disambiguate(
     for i, (qid, score) in enumerate(candidates):
         desc = f"Candidate {i+1} (score={score:.2f}): "
         try:
-            r = db.execute(
-                "MATCH (q:MainQuest {quest_id: $qid}) RETURN q.name, q.purpose",
-                {"qid": qid}
-            )
-            if r.has_next():
-                row = r.get_next()
-                desc += f"Name: {row[0]}, Purpose: {row[1]}"
+            rows = _gateway(db).run_sync("quests.get_quest_name_purpose", qid=qid)
+            if rows:
+                row = rows[0]
+                name = row.get("q.name") if isinstance(row, dict) else row[0]
+                purp = row.get("q.purpose") if isinstance(row, dict) else row[1]
+                desc += f"Name: {name}, Purpose: {purp}"
         except Exception:
             desc += f"quest_id={qid}"
         candidate_descs.append(desc)
@@ -363,7 +352,7 @@ async def _system2_disambiguate(
 
 
 async def create_new_quest(
-    db: KuzuClient,
+    db: Any,
     content: str,
     content_embedding: list[float],
     embedding_model: str,
@@ -380,47 +369,26 @@ async def create_new_quest(
     now = datetime.now(timezone.utc).isoformat()
     routing_method = "git" if git_repo_root else "semantic_s1"
 
-    await db.execute_write(
-        """
-        CREATE (q:MainQuest {
-            quest_id:           $quest_id,
-            name:               $name,
-            status:             'active',
-            completed_at:       null,
-            purpose:            $purpose,
-            text_raw:           $name,
-            embedding:          $embedding,
-            embedding_model:    $embedding_model,
-            embedding_dim:      $embedding_dim,
-            confidence:         1.0,
-            confidence_low:     false,
-            pathway_strength:   1.0,
-            archived:           false,
-            created_at:         timestamp($now),
-            last_active_at:     timestamp($now),
-            git_repo_root:      $git_repo_root,
-            purpose_embedding:  $purpose_embedding,
-            routing_method:     $routing_method
-        })
-        """,
-        {
-            "quest_id":          quest_id,
-            "name":              name,
-            "purpose":           purpose,
-            "embedding":         content_embedding,
-            "embedding_model":   embedding_model,
-            "embedding_dim":     len(content_embedding),
-            "now":               now,
-            "git_repo_root":     git_repo_root or "",
-            "purpose_embedding": content_embedding,
-            "routing_method":    routing_method,
-        }
+    await _gateway(db).run(
+        "quests.create_main_quest",
+        quest_id=quest_id,
+        name=name,
+        status="active",
+        purpose=purpose,
+        embedding=content_embedding,
+        embedding_model=embedding_model,
+        embedding_dim=len(content_embedding),
+        created_at=now,
+        last_active_at=now,
+        git_repo_root=git_repo_root or "",
+        purpose_embedding=content_embedding,
+        routing_method=routing_method,
     )
     return quest_id
 
 
 async def _bind_session(
-    db: KuzuClient,
+    db: Any,
     session_id: str,
     quest_id: str,
     confidence: float,
@@ -433,59 +401,33 @@ async def _bind_session(
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
 
-    session_params = {
-        "sid": session_id,
-        "now": now,
-        "routing_state": state,
-        "routing_confidence": confidence,
-        "routing_method": method,
-    }
-
-    set_clause = (
-        "s.routing_state = $routing_state, "
-        "s.routing_confidence = $routing_confidence, "
-        "s.routing_method = $routing_method"
+    await _gateway(db).run(
+        "quests.merge_session",
+        sid=session_id,
+        now=now,
+        routing_state=state,
+        routing_confidence=confidence,
+        routing_method=method,
     )
-
-    await db.execute_write(
-        f"""
-        MERGE (s:Session {{session_id: $sid}})
-        ON CREATE SET s.started_at     = timestamp($now),
-                      s.last_active_at = timestamp($now),
-                      s.onboarded      = false,
-                      s.purpose        = '',
-                      {set_clause}
-        ON MATCH SET  s.last_active_at = timestamp($now),
-                      {set_clause}
-        """,
-        session_params,
-    )
-
-    # B35 fix: separate params dict — Kuzu 0.11.3 rejects unused parameters
-    await db.execute_write(
-        "MATCH (s:Session {session_id: $sid}), (q:MainQuest {quest_id: $qid}) "
-        "MERGE (s)-[:WORKING_ON]->(q)",
-        {"sid": session_id, "qid": quest_id},
+    await _gateway(db).run(
+        "quests.link_session_quest",
+        sid=session_id,
+        qid=quest_id,
     )
 
 
-async def _ensure_git_repo_root(db: KuzuClient, quest_id: str, git_repo_root: str) -> None:
+async def _ensure_git_repo_root(db: Any, quest_id: str, git_repo_root: str) -> None:
     """
     Populate git_repo_root on existing quest if not already set.
     """
     try:
-        await db.execute_write(
-            "MATCH (q:MainQuest {quest_id: $qid}) "
-            "WHERE q.git_repo_root IS NULL OR q.git_repo_root = '' "
-            "SET q.git_repo_root = $root",
-            {"qid": quest_id, "root": git_repo_root},
-        )
+        await _gateway(db).run("quests.set_git_repo_root", qid=quest_id, root=git_repo_root)
     except Exception:
         pass
 
 
 async def update_routing_strength(
-    db: KuzuClient,
+    db: Any,
     session_id: str,
     message_embedding: list[float],
     quest_purpose_embedding: list[float],
@@ -496,16 +438,12 @@ async def update_routing_strength(
     sim = sum(a * b for a, b in zip(message_embedding, quest_purpose_embedding))
 
     try:
-        r = db.execute(
-            "MATCH (s:Session {session_id: $sid}) "
-            "RETURN s.routing_confidence, s.routing_state",
-            {"sid": session_id},
-        )
-        if not r.has_next():
+        rows = _gateway(db).run_sync("quests.get_session_routing", sid=session_id)
+        if not rows:
             return 0.0
-        row = r.get_next()
-        current_conf = float(row[0] or 0.0)
-        current_state = row[1] or "tentative"
+        row = rows[0]
+        current_conf = float((row.get("s.routing_confidence") if isinstance(row, dict) else row[0]) or 0.0)
+        current_state = (row.get("s.routing_state") if isinstance(row, dict) else row[1]) or "tentative"
     except Exception:
         return 0.0
 
@@ -520,11 +458,7 @@ async def update_routing_strength(
         new_state = "consolidated"
 
     try:
-        await db.execute_write(
-            "MATCH (s:Session {session_id: $sid}) "
-            "SET s.routing_confidence = $conf, s.routing_state = $state",
-            {"sid": session_id, "conf": new_conf, "state": new_state},
-        )
+        await _gateway(db).run("quests.update_session_routing", sid=session_id, conf=new_conf, state=new_state)
     except Exception:
         pass
 
@@ -532,7 +466,7 @@ async def update_routing_strength(
 
 
 async def reconsolidate(
-    db: KuzuClient,
+    db: Any,
     session_id: str,
     new_content: str,
     embedding_model: str,
@@ -548,34 +482,27 @@ async def reconsolidate(
     # Get current binding
     old_quest_id = ""
     try:
-        r = db.execute(
-            "MATCH (s:Session {session_id: $sid})-[:WORKING_ON]->(q:MainQuest) "
-            "RETURN q.quest_id",
-            {"sid": session_id},
-        )
-        if r.has_next():
-            old_quest_id = r.get_next()[0]
+        rows = _gateway(db).run_sync("quests.get_session_working_quest_id", sid=session_id)
+        if rows:
+            old_quest_id = rows[0].get("q.quest_id") if isinstance(rows[0], dict) else rows[0][0]
     except Exception:
         pass
 
     if old_quest_id:
         # Remove WORKING_ON edge
         try:
-            await db.execute_write(
-                "MATCH (s:Session {session_id: $sid})-[w:WORKING_ON]->(q:MainQuest {quest_id: $qid}) "
-                "DELETE w",
-                {"sid": session_id, "qid": old_quest_id},
-            )
+            await _gateway(db).run("quests.delete_session_working_on", sid=session_id, qid=old_quest_id)
         except Exception:
             pass
 
         # Create REROUTED_FROM audit edge
         try:
-            await db.execute_write(
-                "MATCH (s:Session {session_id: $sid}), (q:MainQuest {quest_id: $qid}) "
-                "CREATE (s)-[:REROUTED_FROM {rerouted_at: timestamp($now), reason: $reason}]->(q)",
-                {"sid": session_id, "qid": old_quest_id, "now": now,
-                 "reason": "prediction_error"},
+            await _gateway(db).run(
+                "quests.create_rerouted_from",
+                sid=session_id,
+                qid=old_quest_id,
+                now=now,
+                reason="prediction_error",
             )
         except Exception:
             pass

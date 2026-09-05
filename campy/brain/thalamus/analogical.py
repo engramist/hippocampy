@@ -1,3 +1,5 @@
+from __future__ import annotations
+from campy.brain.hippocampus.graph.gateway import get_gateway
 """
 mcp_engine/analogical.py — Cross-Quest Analogical Reasoning (M8)
 
@@ -26,7 +28,6 @@ relationship chain. Degrades gracefully to {quest_id: "", quest_name: ""}
 if the chain is not present (e.g. artifacts created before attribution was wired).
 """
 
-from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
@@ -67,20 +68,13 @@ def _get_quest_for_artifact(db, table: str, pk_col: str, node_id: str) -> dict:
     Fails gracefully on any DB error.
     """
     try:
-        result = db.execute(
-            f"""
-            MATCH (art:{table} {{{pk_col}: $nid}})
-            MATCH (msg:Message)-[:ESTABLISHED]->(art)
-            MATCH (msg)-[:SENT_IN]->(sess:Session)
-            MATCH (sess)-[:WORKING_ON]->(q:MainQuest)
-            RETURN q.quest_id, q.name
-            LIMIT 1
-            """,
-            {"nid": node_id}
-        )
-        if result.has_next():
-            row = result.get_next()
-            return {"quest_id": row[0] or "", "quest_name": row[1] or ""}
+        gw = get_gateway(db)
+        rows = gw.run_sync(f"thalamus.analogical_resolve_quest_{table.lower()}", nid=node_id)
+        if rows:
+            row = rows[0]
+            qid = row.get("q.quest_id") if isinstance(row, dict) else row[0]
+            name = row.get("q.name") if isinstance(row, dict) else row[1]
+            return {"quest_id": qid or "", "quest_name": name or ""}
     except Exception:
         pass
     return {"quest_id": "", "quest_name": ""}
@@ -199,23 +193,20 @@ def find_similar_quests(current_quest_id: str, db, config: dict,
     excluding the current quest. Empty list on any error.
 
     Note: Uses db.vector_search on the mainquest_emb_idx (if available).
-    Falls back to a Cypher MATCH if vector search is unavailable.
+    Falls back to a Cypher query if vector search is unavailable.
     """
     if not current_quest_id:
         return []
 
     try:
         # Get current quest embedding
-        result = db.execute(
-            "MATCH (q:MainQuest {quest_id: $qid}) "
-            "RETURN q.embedding, q.name",
-            {"qid": current_quest_id}
-        )
-        if not result.has_next():
+        gw = get_gateway(db)
+        rows = gw.run_sync("thalamus.analogical_get_quest_embedding", qid=current_quest_id)
+        if not rows:
             return []
 
-        row = result.get_next()
-        current_embedding = row[0]
+        row = rows[0]
+        current_embedding = row.get("q.embedding") if isinstance(row, dict) else row[0]
         if not current_embedding:
             return []
 

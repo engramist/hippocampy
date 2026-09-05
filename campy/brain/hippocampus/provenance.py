@@ -5,7 +5,7 @@ B313 authority (projected vs earned memory), B320 idempotent writes.
 Write-side helpers for the provenance/supersession contract defined in
 schema.py (PROVENANCE_TABLES, SUPERSESSION_REASONS, AUTHORITY_VALUES):
 
-    provenance_fields()     — build the provenance kwargs for a CREATE
+    provenance_fields()     — build the provenance kwargs for a node creation
                                (source, source_version, observed_at,
                                evidence_ref, and — when passed — authority).
     mark_superseded()       — flip a node to "superseded" AND record the
@@ -44,6 +44,7 @@ import unicodedata
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
+from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.hippocampus.schema import AUTHORITY_VALUES, SUPERSESSION_REASONS
 
 if TYPE_CHECKING:
@@ -183,22 +184,19 @@ async def mark_superseded(
     pk = _PK_COLUMN[table]
     at_iso = (at or datetime.now(timezone.utc)).isoformat()
 
-    await db.execute_write(
-        f"MATCH (n:{table} {{{pk}: $node_id}}) "
-        f"SET n.superseded_by = $superseded_by, "
-        f"n.superseded_at = timestamp($at), "
-        f"n.supersession_reason = $reason",
-        {
-            "node_id": node_id,
-            "superseded_by": superseded_by,
-            "at": at_iso,
-            "reason": reason,
-        },
+    gw = get_gateway(db)
+    t_lower = table.lower()
+    await gw.run(
+        f"provenance.mark_superseded_{t_lower}",
+        node_id=node_id,
+        superseded_by=superseded_by,
+        at=at_iso,
+        reason=reason,
     )
-    await db.execute_write(
-        f"MATCH (old:{table} {{{pk}: $node_id}}), (new:{table} {{{pk}: $superseded_by}}) "
-        f"MERGE (old)-[:DEPRECATED_BY]->(new)",
-        {"superseded_by": superseded_by, "node_id": node_id},
+    await gw.run(
+        f"provenance.deprecated_by_{t_lower}",
+        node_id=node_id,
+        superseded_by=superseded_by,
     )
 
 
@@ -287,12 +285,12 @@ async def find_stale_projections(
         pk = _PK_COLUMN.get(table)
         if not pk:
             continue
-        rows = await db.execute_read(
-            f"MATCH (n:{table}) "
-            f"WHERE n.authority = 'projected' AND n.source = $source "
-            f"AND n.source_version IS NOT NULL AND n.source_version <> $current_version "
-            f"RETURN n.{pk} AS node_id, n.source AS source, n.source_version AS source_version",
-            {"source": source, "current_version": current_version},
+        gw = get_gateway(db)
+        t_lower = table.lower()
+        rows = await gw.run(
+            f"provenance.find_stale_{t_lower}",
+            source=source,
+            current_version=current_version,
         )
         for row in rows:
             stale.append({"table": table, **row})
@@ -328,10 +326,11 @@ async def drop_projections(
     deleted = 0
     skipped_earned = 0
     for table in target_tables:
-        counts = await db.execute_read(
-            f"MATCH (n:{table}) WHERE n.source = $source "
-            f"RETURN n.authority AS authority, count(*) AS c",
-            {"source": source},
+        gw = get_gateway(db)
+        t_lower = table.lower()
+        counts = await gw.run(
+            f"provenance.counts_{t_lower}",
+            source=source,
         )
         for row in counts:
             count = int(row.get("c") or 0)
@@ -341,11 +340,9 @@ async def drop_projections(
                 skipped_earned += count
 
         if not dry_run:
-            await db.execute_write(
-                f"MATCH (n:{table}) "
-                f"WHERE n.authority = 'projected' AND n.source = $source "
-                f"DETACH DELETE n",
-                {"source": source},
+            await gw.run(
+                f"provenance.drop_projected_{t_lower}",
+                source=source,
             )
 
     return {"deleted": deleted, "skipped_earned": skipped_earned}
@@ -522,19 +519,19 @@ async def find_live_by_dedupe_key(
     `touch_last_accessed=True` for a table without it would raise from
     Kùzu, so the caller must know its own table's schema.
     """
-    rows = await db.execute_read(
-        f"MATCH (n:{table}) "
-        f"WHERE n.content_hash = $key AND n.superseded_by IS NULL "
-        f"RETURN n.{pk_column} AS id LIMIT 1",
-        {"key": dedupe_key},
+    gw = get_gateway(db)
+    t_lower = table.lower()
+    rows = await gw.run(
+        f"provenance.find_live_{t_lower}",
+        key=dedupe_key,
     )
     if not rows:
         return None
-    existing_id = rows[0].get("id")
+    existing_id = rows[0].get("id") if isinstance(rows[0], dict) else rows[0][0]
     if touch_last_accessed and existing_id:
-        await db.execute_write(
-            f"MATCH (n:{table} {{{pk_column}: $id}}) "
-            f"SET n.last_accessed_at = timestamp($now)",
-            {"id": existing_id, "now": now_iso or datetime.now(timezone.utc).isoformat()},
+        await gw.run(
+            f"provenance.touch_last_accessed_{t_lower}",
+            id=existing_id,
+            now=now_iso or datetime.now(timezone.utc).isoformat(),
         )
     return existing_id

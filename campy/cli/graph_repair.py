@@ -11,6 +11,8 @@ to match.
 
 from __future__ import annotations
 
+from campy.brain.hippocampus.graph.gateway import get_gateway
+
 import asyncio
 import re
 from dataclasses import dataclass
@@ -79,19 +81,13 @@ async def find_candidates(db) -> list[PolarityCandidate]:
     (already repaired by this sweep) marker are never candidates, nor are
     already-archived Lessons.
     """
-    rows = await db.execute_read(
-        "MATCH (l:Lesson) "
-        "WHERE l.text_raw STARTS WITH 'Plan outcome (' "
-        "AND NOT l.text_raw CONTAINS '[valence_trigger:' "
-        "AND NOT l.text_raw CONTAINS '[valence_relabel:' "
-        "AND (l.archived IS NULL OR l.archived = false) "
-        "RETURN l.lesson_id AS lesson_id, l.text_raw AS text_raw"
-    )
+    gw = get_gateway(db)
+    rows = await gw.run("cli.graph_repair_find_outcome_candidates")
 
     candidates: list[PolarityCandidate] = []
     for row in rows:
-        lesson_id = row["lesson_id"]
-        text_raw = row["text_raw"]
+        lesson_id = row["lesson_id"] if isinstance(row, dict) else row[0]
+        text_raw = row["text_raw"] if isinstance(row, dict) else row[1]
         match = _PREFIX_RE.match(text_raw)
         if not match:
             continue
@@ -138,26 +134,23 @@ async def _repair_linked_plan(db, lesson_id: str, old_polarity: str, new_valence
     """Correct a linked Plan's valence when it was system-sourced and shares
     the old (wrong) polarity's sign. Explicit valences are never touched.
     """
-    sign_clause = "p.valence < 0" if old_polarity == "failure" else "p.valence > 0"
-    await db.execute_write(
-        "MATCH (p:Plan)-[:PRODUCED_PLAN_LESSON]->(l:Lesson {lesson_id: $lid}) "
-        f"WHERE p.valence_source = 'system' AND {sign_clause} "
-        "SET p.valence = $valence",
-        {"lid": lesson_id, "valence": new_valence},
-    )
+    gw = get_gateway(db)
+    qname = "cli.graph_repair_linked_plan_failure" if old_polarity == "failure" else "cli.graph_repair_linked_plan_success"
+    await gw.run(qname, lid=lesson_id, valence=new_valence)
 
 
 async def apply_candidates(db, candidates: list[PolarityCandidate]) -> None:
+    gw = get_gateway(db)
     for candidate in candidates:
         if candidate.action == "flip":
-            await db.execute_write(
-                "MATCH (l:Lesson {lesson_id: $lid}) SET l.text_raw = $text, l.valence = $valence",
-                {"lid": candidate.lesson_id, "text": candidate.new_text, "valence": candidate.new_valence},
+            await gw.run(
+                "cli.graph_repair_flip_lesson",
+                lid=candidate.lesson_id, text=candidate.new_text, valence=candidate.new_valence,
             )
         else:  # archive
-            await db.execute_write(
-                "MATCH (l:Lesson {lesson_id: $lid}) SET l.archived = true",
-                {"lid": candidate.lesson_id},
+            await gw.run(
+                "cli.graph_repair_archive_lesson",
+                lid=candidate.lesson_id,
             )
         await _repair_linked_plan(db, candidate.lesson_id, candidate.old_polarity, candidate.new_valence)
 
@@ -216,26 +209,24 @@ async def find_plan_valence_candidates(db) -> list[PlanValenceCandidate]:
     nulling on that would erase legitimate valences (recall_plans skips
     valence-None plans entirely).
     """
-    rows = await db.execute_read(
-        "MATCH (p:Plan) "
-        "WHERE (p.valence_source IS NULL OR p.valence_source = 'system') "
-        "AND p.valence IS NOT NULL "
-        "AND (p.archived IS NULL OR p.archived = false) "
-        "RETURN p.plan_id AS plan_id, p.goal AS goal, p.valence AS valence"
-    )
+    gw = get_gateway(db)
+    rows = await gw.run("cli.graph_repair_find_plan_candidates")
 
     candidates: list[PlanValenceCandidate] = []
     for row in rows:
-        plan_id = row["plan_id"]
-        goal = row["goal"] or ""
-        old_valence = row["valence"]
+        plan_id = row["plan_id"] if isinstance(row, dict) else row[0]
+        goal = (row["goal"] if isinstance(row, dict) else row[1]) or ""
+        old_valence = row["valence"] if isinstance(row, dict) else row[2]
 
-        step_rows = await db.execute_read(
-            "MATCH (ps:PlanStep)-[:STEP_OF]->(p:Plan {plan_id: $pid}) "
-            "RETURN ps.actual_outcome AS actual_outcome ORDER BY ps.step_number ASC",
-            {"pid": plan_id},
+        step_rows = await gw.run(
+            "cli.graph_repair_plan_steps",
+            pid=plan_id,
         )
-        step_texts = [r["actual_outcome"] for r in step_rows if r.get("actual_outcome")]
+        step_texts = [
+            (r["actual_outcome"] if isinstance(r, dict) else r[0])
+            for r in step_rows
+            if (r.get("actual_outcome") if isinstance(r, dict) else r[0])
+        ]
         body = "\n".join([goal, *step_texts]) if step_texts else goal
 
         new_verdict = infer_outcome_valence(body)
@@ -256,14 +247,13 @@ async def find_plan_valence_candidates(db) -> list[PlanValenceCandidate]:
 
 
 async def apply_plan_valence_candidates(db, candidates: list[PlanValenceCandidate]) -> None:
+    gw = get_gateway(db)
     for candidate in candidates:
-        await db.execute_write(
-            "MATCH (p:Plan {plan_id: $pid}) SET p.valence = $valence, p.valence_source = $source",
-            {
-                "pid": candidate.plan_id,
-                "valence": candidate.new_valence,
-                "source": _PLAN_VALENCE_AUDIT_SOURCE,
-            },
+        await gw.run(
+            "cli.graph_repair_set_plan_valence",
+            pid=candidate.plan_id,
+            valence=candidate.new_valence,
+            source=_PLAN_VALENCE_AUDIT_SOURCE,
         )
 
 

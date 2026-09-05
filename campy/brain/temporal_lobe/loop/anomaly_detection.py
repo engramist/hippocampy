@@ -12,6 +12,8 @@ Anomaly types:
 """
 
 from __future__ import annotations
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
 from datetime import datetime, timezone
 import logging
 
@@ -83,14 +85,10 @@ async def _get_high_confidence_constraints(db) -> list[dict]:
     """
     Retrieve all GlobalConstraint nodes with pathway_strength > HIGH_CONFIDENCE_THRESHOLD.
     """
-    query = """
-        MATCH (gc:GlobalConstraint)
-        WHERE gc.pathway_strength > $threshold AND NOT gc.archived
-        RETURN gc.global_constraint_id, gc.text_raw, gc.embedding
-    """
-    result = await db.execute_read(
-        query,
-        {"threshold": HIGH_CONFIDENCE_THRESHOLD}
+    gw = GraphGateway(db, REGISTRY) if not isinstance(db, GraphGateway) else db
+    result = await gw.run(
+        "orchestrator.get_global_constraints",
+        {"threshold": HIGH_CONFIDENCE_THRESHOLD},
     )
 
     constraints = []
@@ -109,14 +107,10 @@ async def _get_high_confidence_preferences(db) -> list[dict]:
     """
     Retrieve all GlobalPreference nodes with pathway_strength > HIGH_CONFIDENCE_THRESHOLD.
     """
-    query = """
-        MATCH (gp:GlobalPreference)
-        WHERE gp.pathway_strength > $threshold AND NOT gp.archived
-        RETURN gp.global_preference_id, gp.text_raw, gp.embedding
-    """
-    result = await db.execute_read(
-        query,
-        {"threshold": HIGH_CONFIDENCE_THRESHOLD}
+    gw = GraphGateway(db, REGISTRY) if not isinstance(db, GraphGateway) else db
+    result = await gw.run(
+        "orchestrator.get_global_preferences",
+        {"threshold": HIGH_CONFIDENCE_THRESHOLD},
     )
 
     preferences = []
@@ -163,31 +157,23 @@ async def store_anomaly_flag(
     now = datetime.now(timezone.utc).isoformat()
 
     # Set anomaly flags on the node
-    update_query = f"""
-        MATCH (n:{node_type} {{{node_type.lower()}_id: $node_id}})
-        SET n.anomaly_type = $anomaly_type,
-            n.flagged_for_review = true
-    """
+    gw = GraphGateway(db, REGISTRY) if not isinstance(db, GraphGateway) else db
+    node_key = node_type.lower()
+    set_flag_query = f"orchestrator.set_anomaly_flags_{node_key}"
+    edge_query = f"orchestrator.link_anomaly_detected_{node_key}"
+
     try:
-        await db.execute_write(
-            update_query,
-            {"node_id": node_id, "anomaly_type": anomaly_type}
+        await gw.run(
+            set_flag_query,
+            {"node_id": node_id, "anomaly_type": anomaly_type},
         )
     except Exception as e:
         _logger.error(f"Failed to set anomaly flags on {node_type} {node_id}: {e}")
         return
 
     # Create ANOMALY_DETECTED edge
-    edge_query = f"""
-        MATCH (n:{node_type} {{{node_type.lower()}_id: $node_id}})
-        MATCH (gc:GlobalConstraint {{global_constraint_id: $constraint_id}})
-        MERGE (n)-[r:ANOMALY_DETECTED]->(gc)
-        SET r.type = $type,
-            r.confidence = $confidence,
-            r.detected_at = $detected_at
-    """
     try:
-        await db.execute_write(
+        await gw.run(
             edge_query,
             {
                 "node_id": node_id,
@@ -195,7 +181,7 @@ async def store_anomaly_flag(
                 "type": anomaly_type,
                 "confidence": confidence,
                 "detected_at": now,
-            }
+            },
         )
     except Exception as e:
         _logger.error(f"Failed to create ANOMALY_DETECTED edge: {e}")

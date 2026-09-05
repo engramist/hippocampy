@@ -36,6 +36,16 @@ if TYPE_CHECKING:
 
 
 
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
+
+
+def _gateway(db) -> GraphGateway:
+    if isinstance(db, GraphGateway):
+        return db
+    return GraphGateway(db, REGISTRY)
+
+
 async def reconstruct_timeline(params: dict, db: KuzuClient, config: dict) -> dict:
     """
     Reconstruct the temporal sequence of Messages (and Decisions) for a given topic.
@@ -60,37 +70,34 @@ async def reconstruct_timeline(params: dict, db: KuzuClient, config: dict) -> di
     try:
         starts = []
         # 1) Messages whose text contains the topic
+        gw = _gateway(db)
         if session_id:
-            r = db.execute(
-                "MATCH (m:Message)-[:SENT_IN]->(s:Session {session_id: $sid}) "
-                "WHERE lower(m.text_raw) CONTAINS lower($topic) "
-                "RETURN m.message_id, m.text_raw, m.created_at "
-                f"ORDER BY m.created_at ASC LIMIT {timeline_limit}",
-                {"sid": session_id, "topic": topic}
+            rows = gw.run_sync(
+                "retrieval.timeline_starts_by_session",
+                sid=session_id, topic=topic, limit=timeline_limit,
             )
         else:
-            r = db.execute(
-                "MATCH (m:Message) WHERE lower(m.text_raw) CONTAINS lower($topic) "
-                "RETURN m.message_id, m.text_raw, m.created_at "
-                f"ORDER BY m.created_at ASC LIMIT {timeline_limit}",
-                {"topic": topic}
+            rows = gw.run_sync(
+                "retrieval.timeline_starts_all",
+                topic=topic, limit=timeline_limit,
             )
-        while r.has_next():
-            row = r.get_next()
-            starts.append({"message_id": row[0], "text": row[1], "created_at": row[2]})
+        for row in rows:
+            mid = row.get("m.message_id") if hasattr(row, "get") else row[0]
+            text = row.get("m.text_raw") if hasattr(row, "get") else row[1]
+            created_at = row.get("m.created_at") if hasattr(row, "get") else row[2]
+            starts.append({"message_id": mid, "text": text, "created_at": created_at})
 
         # 2) Messages that established Decisions containing the topic
-        r2 = db.execute(
-            "MATCH (m:Message)-[:ESTABLISHED]->(d:Decision) "
-            "WHERE lower(d.text_raw) CONTAINS lower($topic) "
-            "RETURN m.message_id, m.text_raw, m.created_at "
-            f"ORDER BY m.created_at ASC LIMIT {timeline_limit}",
-            {"topic": topic}
+        r2_rows = gw.run_sync(
+            "retrieval.timeline_starts_from_decisions",
+            topic=topic, limit=timeline_limit,
         )
-        while r2.has_next():
-            row = r2.get_next()
-            if not any(s["message_id"] == row[0] for s in starts):
-                starts.append({"message_id": row[0], "text": row[1], "created_at": row[2]})
+        for row in r2_rows:
+            mid = row.get("m.message_id") if hasattr(row, "get") else row[0]
+            text = row.get("m.text_raw") if hasattr(row, "get") else row[1]
+            created_at = row.get("m.created_at") if hasattr(row, "get") else row[2]
+            if not any(s["message_id"] == mid for s in starts):
+                starts.append({"message_id": mid, "text": text, "created_at": created_at})
 
         if not starts:
             return {"timeline": [], "found_starts": 0}
@@ -102,13 +109,13 @@ async def reconstruct_timeline(params: dict, db: KuzuClient, config: dict) -> di
 
         def _fetch_message(mid: str):
             try:
-                rr = db.execute(
-                    "MATCH (m:Message {message_id: $mid}) RETURN m.message_id, m.text_raw, m.created_at",
-                    {"mid": mid}
-                )
-                if rr.has_next():
-                    rrow = rr.get_next()
-                    return {"message_id": rrow[0], "text": rrow[1], "created_at": str(rrow[2])}
+                rr = gw.run_sync("retrieval.get_message_by_id", mid=mid)
+                if rr:
+                    rrow = rr[0]
+                    mid_val = rrow.get("m.message_id") if hasattr(rrow, "get") else rrow[0]
+                    text = rrow.get("m.text_raw") if hasattr(rrow, "get") else rrow[1]
+                    created_at = rrow.get("m.created_at") if hasattr(rrow, "get") else rrow[2]
+                    return {"message_id": mid_val, "text": text, "created_at": str(created_at)}
             except Exception:
                 pass
             return None
@@ -116,14 +123,11 @@ async def reconstruct_timeline(params: dict, db: KuzuClient, config: dict) -> di
         def _fetch_decisions_for_message(mid: str):
             out = []
             try:
-                rd = db.execute(
-                    "MATCH (m:Message {message_id: $mid})-[:ESTABLISHED]->(d:Decision) "
-                    "RETURN d.decision_id, d.text_raw ORDER BY d.created_at ASC",
-                    {"mid": mid}
-                )
-                while rd.has_next():
-                    rdd = rd.get_next()
-                    out.append({"decision_id": rdd[0], "text": rdd[1]})
+                rd = gw.run_sync("retrieval.get_decisions_for_message", mid=mid)
+                for rdd in rd:
+                    did = rdd.get("d.decision_id") if hasattr(rdd, "get") else rdd[0]
+                    text = rdd.get("d.text_raw") if hasattr(rdd, "get") else rdd[1]
+                    out.append({"decision_id": did, "text": text})
             except Exception:
                 pass
             return out
@@ -136,15 +140,11 @@ async def reconstruct_timeline(params: dict, db: KuzuClient, config: dict) -> di
         # Walk FOLLOWED_BY chain up to max_hops
         for _ in range(max_hops):
             try:
-                nr = db.execute(
-                    "MATCH (m:Message {message_id: $mid})-[:FOLLOWED_BY]->(n:Message) "
-                    "RETURN n.message_id, n.text_raw, n.created_at LIMIT 1",
-                    {"mid": curr_id}
-                )
-                if not nr.has_next():
+                nr = gw.run_sync("retrieval.get_followed_by_message", mid=curr_id)
+                if not nr:
                     break
-                nrow = nr.get_next()
-                next_id = nrow[0]
+                nrow = nr[0]
+                next_id = nrow.get("n.message_id") if hasattr(nrow, "get") else nrow[0]
                 msg = _fetch_message(next_id)
                 if not msg:
                     break
@@ -194,13 +194,11 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
     if not quest_id and session_id != "unknown":
         # Resolve via Session → WORKING_ON → MainQuest
         try:
-            r = db.execute(
-                "MATCH (s:Session {session_id: $sid})-[:WORKING_ON]->(q:MainQuest) "
-                "RETURN q.quest_id",
-                {"sid": session_id}
-            )
-            if r.has_next():
-                quest_id = r.get_next()[0] or ""
+            gw = _gateway(db)
+            r = gw.run_sync("retrieval.get_main_quest_for_session", sid=session_id)
+            if r:
+                row = r[0]
+                quest_id = (row.get("q.quest_id") if hasattr(row, "get") else row[0]) or ""
         except Exception:
             pass
 
@@ -286,18 +284,19 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
                     continue
                 _append_lexical_message(node, score=float(row.get("score", 0.0) or 0.0))
         else:
-            rr = db.execute(
-                "MATCH (m:Message) "
-                "WHERE lower(m.text_raw) CONTAINS lower($query) "
-                "  AND m.archived = false "
-                "  AND m.created_at > timestamp($cutoff) "
-                "RETURN m.message_id, m.text_raw, m.role, m.confidence, "
-                "m.confidence_low, m.pathway_strength, m.created_at "
-                f"ORDER BY m.created_at DESC LIMIT {lexical_limit}",
-                {"query": query, "cutoff": cutoff},
+            gw = _gateway(db)
+            rr = gw.run_sync(
+                "retrieval.lexical_message_fallback",
+                query=query, cutoff=cutoff, limit=lexical_limit,
             )
-            while rr.has_next():
-                mid, text, role, conf, conf_low, ps, created_at = rr.get_next()
+            for row in rr:
+                mid = row.get("m.message_id") if hasattr(row, "get") else row[0]
+                text = row.get("m.text_raw") if hasattr(row, "get") else row[1]
+                role = row.get("m.role") if hasattr(row, "get") else row[2]
+                conf = row.get("m.confidence") if hasattr(row, "get") else row[3]
+                conf_low = row.get("m.confidence_low") if hasattr(row, "get") else row[4]
+                ps = row.get("m.pathway_strength") if hasattr(row, "get") else row[5]
+                created_at = row.get("m.created_at") if hasattr(row, "get") else row[6]
                 _append_lexical_message({
                     "message_id": mid,
                     "text_raw": text,
@@ -325,21 +324,14 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
         try:
             # Query for signals linked directly to a Concept OR to a Concept 
             # that was REIFIED_AS the artifact.
-            ro = db.execute(
-                """
-                UNWIND $ids AS nid
-                OPTIONAL MATCH (ps:PlanStep)-[o:OUTCOME_SIGNAL]->(c:Concept {concept_id: nid})
-                OPTIONAL MATCH (ps2:PlanStep)-[o2:OUTCOME_SIGNAL]->(c2:Concept)-[:REIFIED_AS]->(a) 
-                WHERE (a.decision_id = nid OR a.constraint_id = nid OR a.requirement_id = nid OR a.action_item_id = nid)
-                WITH nid, 
-                     CASE WHEN o IS NOT NULL THEN o.valence ELSE o2.valence END AS v
-                WHERE v IS NOT NULL
-                RETURN nid, avg(v), count(v)
-                """,
-                {"ids": node_ids},
-            )
-            while ro.has_next():
-                nid, avg_v, count = ro.get_next()
+            gw = _gateway(db)
+            ro = gw.run_sync("retrieval.batch_outcome_signals", ids=node_ids)
+            for row in ro:
+                # avg(v)/count(v) are unaliased aggregate expressions — Kuzu
+                # does not name their columns "avg(v)"/"count(v)" literally,
+                # so read them positionally rather than guessing the key.
+                vals = list(row.values()) if isinstance(row, dict) else row
+                nid, avg_v, count = vals[0], vals[1], vals[2]
                 outcome_map[nid] = (avg_v, count)
         except Exception:
             _logger.exception("current_truth batch outcome lookup failed")
@@ -526,11 +518,13 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
                 node_type = result.get("node_type", "")
                 if node_id and node_type:
                     # Simple 1-hop traversal to find originating message
-                    query = f"MATCH (n:{node_type})-[r:ESTABLISHED_IN]->(m:Message) WHERE n.{_get_pk_for_node_type(node_type)} = $id RETURN m.content LIMIT 1"
+                    gw = _gateway(db)
+                    qname = f"retrieval.get_originating_message_{node_type.lower()}"
                     try:
-                        r = db.execute(query, {"id": node_id})
-                        if r.has_next():
-                            message_content = r.get_next()[0]
+                        r = gw.run_sync(qname, id=node_id)
+                        if r:
+                            row = r[0]
+                            message_content = row.get("m.content") if hasattr(row, "get") else row[0]
                             if message_content:
                                 # Truncate to 200 chars as per B125 spec
                                 result["originating_rationale"] = str(message_content)[:200]
@@ -622,26 +616,23 @@ async def diff_since(params: dict, db: KuzuClient, config: dict) -> dict:
 
     for label, pk, key in table_map:
         try:
-            r = db.execute(
-                f"""
-                MATCH (a:{label})
-                WHERE a.archived = false AND a.created_at > $since
-                RETURN a.{pk}, a.text_raw, a.confidence, a.confidence_low,
-                       a.pathway_strength, a.created_at
-                ORDER BY a.created_at DESC
-                LIMIT $limit
-                """,
-                {"since": since_iso, "limit": limit}
-            )
-            while r.has_next():
-                row = r.get_next()
+            gw = _gateway(db)
+            qname = f"retrieval.diff_since_{key}"
+            rows = gw.run_sync(qname, since=since_iso, limit=limit)
+            for row in rows:
+                nid = row.get(f"a.{pk}") if hasattr(row, "get") else row[0]
+                text = row.get("a.text_raw") if hasattr(row, "get") else row[1]
+                conf = row.get("a.confidence") if hasattr(row, "get") else row[2]
+                clow = row.get("a.confidence_low") if hasattr(row, "get") else row[3]
+                ps = row.get("a.pathway_strength") if hasattr(row, "get") else row[4]
+                created_at = row.get("a.created_at") if hasattr(row, "get") else row[5]
                 result[key].append({
-                    "node_id":          row[0],
-                    "text_raw":         row[1],
-                    "confidence":       row[2],
-                    "confidence_low":   row[3],
-                    "pathway_strength": row[4],
-                    "created_at":       str(row[5]),
+                    "node_id":          nid,
+                    "text_raw":         text,
+                    "confidence":       conf,
+                    "confidence_low":   clow,
+                    "pathway_strength": ps,
+                    "created_at":       str(created_at),
                 })
         except Exception:
             pass
@@ -657,32 +648,30 @@ async def get_knowledge_gaps(params: dict, db: KuzuClient, config: dict) -> dict
 
     gaps: list[dict] = []
     try:
+        gw = _gateway(db)
         if unresolved_only:
-            r = db.execute(
-                "MATCH (g:KnowledgeGap) WHERE g.resolved = false AND g.severity >= $min "
-                "RETURN g.gap_id, g.domain, g.gap_type, g.description, g.severity, g.message_count, g.lesson_count, g.created_at "
-                "ORDER BY g.severity DESC LIMIT $lim",
-                {"min": min_severity, "lim": limit},
-            )
+            rows = gw.run_sync("retrieval.get_knowledge_gaps_unresolved", min=min_severity, lim=limit)
         else:
-            r = db.execute(
-                "MATCH (g:KnowledgeGap) WHERE g.severity >= $min "
-                "RETURN g.gap_id, g.domain, g.gap_type, g.description, g.severity, g.message_count, g.lesson_count, g.created_at "
-                "ORDER BY g.severity DESC LIMIT $lim",
-                {"min": min_severity, "lim": limit},
-            )
+            rows = gw.run_sync("retrieval.get_knowledge_gaps_all", min=min_severity, lim=limit)
 
-        while r.has_next():
-            row = r.get_next()
+        for row in rows:
+            gid = row.get("g.gap_id") if hasattr(row, "get") else row[0]
+            domain = row.get("g.domain") if hasattr(row, "get") else row[1]
+            gap_type = row.get("g.gap_type") if hasattr(row, "get") else row[2]
+            description = row.get("g.description") if hasattr(row, "get") else row[3]
+            severity = row.get("g.severity") if hasattr(row, "get") else row[4]
+            msg_count = row.get("g.message_count") if hasattr(row, "get") else row[5]
+            lesson_count = row.get("g.lesson_count") if hasattr(row, "get") else row[6]
+            created_at = row.get("g.created_at") if hasattr(row, "get") else row[7]
             gaps.append({
-                "gap_id": row[0],
-                "domain": row[1],
-                "gap_type": row[2],
-                "description": row[3],
-                "severity": float(row[4] or 0.0),
-                "message_count": int(row[5] or 0),
-                "lesson_count": int(row[6] or 0),
-                "created_at": str(row[7]) if row[7] is not None else None,
+                "gap_id": gid,
+                "domain": domain,
+                "gap_type": gap_type,
+                "description": description,
+                "severity": float(severity or 0.0),
+                "message_count": int(msg_count or 0),
+                "lesson_count": int(lesson_count or 0),
+                "created_at": str(created_at) if created_at is not None else None,
             })
     except Exception:
         _logger.exception("get_knowledge_gaps failed")
@@ -702,26 +691,24 @@ async def get_open_loops(params: dict, db: KuzuClient, config: dict) -> dict:
     loops    = []
 
     try:
-        r = db.execute(
-            """
-            MATCH (c:Concept {confidence_low: true, archived: false})
-            RETURN c.concept_id, c.text_raw, c.gist_class, c.schema_org_type,
-                   c.confidence, c.pathway_strength, c.created_at
-            ORDER BY c.created_at DESC
-            LIMIT $limit
-            """,
-            {"limit": limit}
-        )
-        while r.has_next():
-            row = r.get_next()
+        gw = _gateway(db)
+        rows = gw.run_sync("retrieval.get_open_loops", limit=limit)
+        for row in rows:
+            cid = row.get("c.concept_id") if hasattr(row, "get") else row[0]
+            text = row.get("c.text_raw") if hasattr(row, "get") else row[1]
+            gclass = row.get("c.gist_class") if hasattr(row, "get") else row[2]
+            stype = row.get("c.schema_org_type") if hasattr(row, "get") else row[3]
+            conf = row.get("c.confidence") if hasattr(row, "get") else row[4]
+            ps = row.get("c.pathway_strength") if hasattr(row, "get") else row[5]
+            created_at = row.get("c.created_at") if hasattr(row, "get") else row[6]
             loops.append({
-                "concept_id":       row[0],
-                "text_raw":         row[1],
-                "gist_class":       row[2],
-                "schema_org_type":  row[3],
-                "confidence":       row[4],
-                "pathway_strength": row[5],
-                "created_at":       str(row[6]),
+                "concept_id":       cid,
+                "text_raw":         text,
+                "gist_class":       gclass,
+                "schema_org_type":  stype,
+                "confidence":       conf,
+                "pathway_strength": ps,
+                "created_at":       str(created_at),
             })
     except Exception:
         pass
@@ -788,13 +775,11 @@ async def context_status(params: dict, db: KuzuClient, config: dict) -> dict:
     # Check for handoff availability
     quest_id = ""
     try:
-        r = db.execute(
-            "MATCH (s:Session {session_id: $sid})-[:WORKING_ON]->(q:MainQuest) "
-            "RETURN q.quest_id",
-            {"sid": session_id}
-        )
-        if r.has_next():
-            quest_id = r.get_next()[0] or ""
+        gw = _gateway(db)
+        r = gw.run_sync("retrieval.get_main_quest_for_session", sid=session_id)
+        if r:
+            row = r[0]
+            quest_id = (row.get("q.quest_id") if hasattr(row, "get") else row[0]) or ""
     except Exception:
         pass
 

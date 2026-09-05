@@ -96,6 +96,16 @@ async def _maybe_create_passive_plan_from_turn(
     return {"plan_id": plan_id, "step_ids": step_ids, "quest_id": quest_id}
 
 
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
+
+
+def _gateway(db) -> GraphGateway:
+    if isinstance(db, GraphGateway):
+        return db
+    return GraphGateway(db, REGISTRY)
+
+
 async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
                        principal: "Principal | None" = None) -> dict:
     """
@@ -224,12 +234,8 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
     token_limit = params.get("token_limit", 0)
     if token_limit and session_id != "unknown":
         try:
-            await db.execute_write(
-                "MATCH (s:Session {session_id: $sid}) "
-                "WHERE s.token_limit IS NULL OR s.token_limit = 0 "
-                "SET s.token_limit = $limit",
-                {"sid": session_id, "limit": int(token_limit)}
-            )
+            gw = _gateway(db)
+            await gw.run("capture.set_session_token_limit", sid=session_id, limit=int(token_limit))
         except Exception:
             pass
 
@@ -239,9 +245,8 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
     # Cypher here, per the card.
     if (external_app_id or external_session_id) and session_id != "unknown":
         try:
-            from .context_tools import _gateway
-
-            await _gateway(db).run(
+            gw = _gateway(db)
+            await gw.run(
                 "app_continuity.set_session_external_ids",
                 session_id=session_id,
                 external_app_id=external_app_id,
@@ -263,44 +268,23 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
     source_memory_key = (params.get("source_memory_key") or "").strip()
     if source_memory_key:
         try:
-            await db.execute_write(
-                "MATCH (m:Message) "
-                "WHERE m.text_raw CONTAINS $marker AND m.archived = false "
-                "SET m.archived = true",
-                {"marker": f"memory_key: {source_memory_key}"},
-            )
+            gw = _gateway(db)
+            await gw.run("capture.archive_earlier_message_version", marker=f"memory_key: {source_memory_key}")
         except Exception:
             _logger.exception("B298 auto-memory supersede failed for key %s", source_memory_key)
 
     # Write Message node
-    await db.execute_write(
-        """
-        CREATE (m:Message {
-            message_id:      $message_id,
-            text_raw:        $text_raw,
-            embedding:       $embedding,
-            embedding_model: $embedding_model,
-            embedding_dim:   $embedding_dim,
-            role:            $role,
-            byte_start:      0,
-            byte_end:        $byte_end,
-            confidence:      0.0,
-            confidence_low:  true,
-            pathway_strength: 0.0,
-            archived:        false,
-            created_at:      timestamp($created_at)
-        })
-        """,
-        {
-            "message_id":      message_id,
-            "text_raw":        content,
-            "embedding":       vector,
-            "embedding_model": embedding_model,
-            "embedding_dim":   len(vector),
-            "role":            role,
-            "byte_end":        len(content.encode()),
-            "created_at":      now,
-        }
+    gw = _gateway(db)
+    await gw.run(
+        "capture.create_message",
+        message_id=message_id,
+        text_raw=content,
+        embedding=vector,
+        embedding_model=embedding_model,
+        embedding_dim=len(vector),
+        role=role,
+        byte_end=len(content.encode()),
+        created_at=now,
     )
 
     # B18: Update token estimate for this message
@@ -322,29 +306,26 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
 
     # Link Message → Session
     if session_id != "unknown":
-        await db.execute_write(
-            """
-            MATCH (s:Session {session_id: $session_id}),
-                  (m:Message {message_id: $message_id})
-            MERGE (m)-[:SENT_IN]->(s)
-            """,
-            {"session_id": session_id, "message_id": message_id}
+        gw = _gateway(db)
+        await gw.run(
+            "capture.link_message_sent_in_session",
+            session_id=session_id,
+            message_id=message_id,
         )
 
     # B192: Create FOLLOWED_BY edge from the previous message in the same session
     if session_id != "unknown":
         try:
-            prev_r = db.execute(
-                "MATCH (m:Message)-[:SENT_IN]->(s:Session {session_id: $sid}) "
-                "WHERE m.message_id <> $mid "
-                "RETURN m.message_id, m.created_at "
-                "ORDER BY m.created_at DESC LIMIT 1",
-                {"sid": session_id, "mid": message_id},
+            gw = _gateway(db)
+            prev_r = gw.run_sync(
+                "capture.find_previous_message_in_session",
+                sid=session_id,
+                mid=message_id,
             )
-            if prev_r.has_next():
-                prow = prev_r.get_next()
-                prev_id = prow[0]
-                prev_created = prow[1]
+            if prev_r:
+                prow = prev_r[0]
+                prev_id = prow.get("m.message_id") if hasattr(prow, "get") else prow[0]
+                prev_created = prow.get("m.created_at") if hasattr(prow, "get") else prow[1]
                 gap_seconds = 0.0
                 try:
                     prev_dt = datetime.fromisoformat(str(prev_created))
@@ -353,12 +334,11 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
                 except Exception:
                     gap_seconds = 0.0
 
-                await db.execute_write(
-                    "MATCH (p:Message {message_id: $prev}), (c:Message {message_id: $curr}) "
-                    "MERGE (p)-[r:FOLLOWED_BY]->(c) "
-                    "ON CREATE SET r.gap_seconds = $gap "
-                    "ON MATCH SET r.gap_seconds = $gap",
-                    {"prev": prev_id, "curr": message_id, "gap": gap_seconds},
+                await gw.run(
+                    "capture.merge_followed_by",
+                    prev=prev_id,
+                    curr=message_id,
+                    gap=gap_seconds,
                 )
         except Exception:
             _logger.exception("Failed to write FOLLOWED_BY for message %s", message_id)
@@ -387,13 +367,11 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
     if session_id != "unknown":
         import json as _json
         try:
-            r = db.execute(
-                "MATCH (s:Session {session_id: $sid}) "
-                "RETURN s.last_loop_summary",
-                {"sid": session_id}
-            )
-            if r.has_next():
-                raw = r.get_next()[0]
+            gw = _gateway(db)
+            r = gw.run_sync("capture.get_last_loop_summary", sid=session_id)
+            if r:
+                row = r[0]
+                raw = row.get("s.last_loop_summary") if hasattr(row, "get") else row[0]
                 if raw:
                     insights = _json.loads(raw)
                     # B15: Inject memory links into insights for easy auditing
@@ -501,12 +479,11 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
             # Read last push count from Session node
             last_push_count = None
             try:
-                lr = db.execute(
-                    "MATCH (s:Session {session_id: $sid}) RETURN s.last_proactive_push_msg_count",
-                    {"sid": session_id},
-                )
-                if lr.has_next():
-                    val = lr.get_next()[0]
+                gw = _gateway(db)
+                lr = gw.run_sync("capture.get_last_proactive_push_count", sid=session_id)
+                if lr:
+                    row = lr[0]
+                    val = row.get("s.last_proactive_push_msg_count") if hasattr(row, "get") else row[0]
                     if val is not None:
                         try:
                             last_push_count = int(val)
@@ -576,20 +553,20 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
                 # 3) KnowledgeGaps by simple text-match on description/domain
                 try:
                     snippet = (content or "")[:120]
-                    kgq = db.execute(
-                        "MATCH (g:KnowledgeGap) WHERE (g.resolved IS NULL OR g.resolved = false) "
-                        "AND (lower(g.description) CONTAINS lower($snippet) OR lower(g.domain) CONTAINS lower($snippet)) "
-                        "RETURN g.gap_id, g.description, g.severity ORDER BY g.severity DESC LIMIT $lim",
-                        {"snippet": snippet, "lim": 3},
+                    gw = _gateway(db)
+                    kgq = gw.run_sync(
+                        "capture.find_knowledge_gaps_for_content",
+                        snippet=snippet,
+                        lim=3,
                     )
-                    while kgq.has_next():
-                        row = kgq.get_next()
-                        text = row[1] or ""
+                    for row in kgq:
+                        gid = row.get("g.gap_id") if hasattr(row, "get") else row[0]
+                        text = (row.get("g.description") if hasattr(row, "get") else row[1]) or ""
                         candidates.append({
-                            "node_id": row[0],
+                            "node_id": gid,
                             "node_type": "KnowledgeGap",
                             "text_raw": text,
-                            "gap_id": row[0],
+                            "gap_id": gid,
                             "text": text,
                             "type": "knowledge_gap",
                             "domain": "generic",
@@ -603,9 +580,11 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
                         await track_loaded(db, session_id, candidates, source="proactive_push")
                         # Persist last push marker on Session
                         try:
-                            await db.execute_write(
-                                "MATCH (s:Session {session_id: $sid}) SET s.last_proactive_push_msg_count = $count",
-                                {"sid": session_id, "count": current_msg_count},
+                            gw = _gateway(db)
+                            await gw.run(
+                                "capture.set_last_proactive_push_count",
+                                sid=session_id,
+                                count=current_msg_count,
                             )
                         except Exception:
                             _logger.debug("proactive: failed to persist last_proactive_push_msg_count")

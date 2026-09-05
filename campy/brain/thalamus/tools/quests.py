@@ -1,6 +1,16 @@
+from __future__ import annotations
+
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
+
+
+def _gateway(db) -> GraphGateway:
+    if isinstance(db, GraphGateway):
+        return db
+    return GraphGateway(db, REGISTRY)
+
 """Quest, planning lifecycle, and review/ops handlers."""
 
-from __future__ import annotations
 
 import asyncio
 import re
@@ -105,25 +115,21 @@ async def set_quest(params: dict, db: KuzuClient, config: dict) -> dict:
 
     # Find existing quest by name or ID
     found_id = ""
+    gw = _gateway(db)
     if quest_id:
         try:
-            r = db.execute(
-                "MATCH (q:MainQuest {quest_id: $qid}) RETURN q.quest_id",
-                {"qid": quest_id}
-            )
-            if r.has_next():
-                found_id = r.get_next()[0]
+            r = gw.run_sync("quests.get_main_quest_by_id", qid=quest_id)
+            if r:
+                row = r[0]
+                found_id = row.get("q.quest_id") if hasattr(row, "get") else row[0]
         except Exception:
             pass
     elif quest_name:
         try:
-            r = db.execute(
-                "MATCH (q:MainQuest) WHERE q.name = $name AND q.status = 'active' "
-                "RETURN q.quest_id LIMIT 1",
-                {"name": quest_name}
-            )
-            if r.has_next():
-                found_id = r.get_next()[0]
+            r = gw.run_sync("quests.find_active_main_quest_by_name", name=quest_name)
+            if r:
+                row = r[0]
+                found_id = row.get("q.quest_id") if hasattr(row, "get") else row[0]
         except Exception:
             pass
 
@@ -155,21 +161,14 @@ async def complete_quest(params: dict, db, config: dict) -> dict:
 
     now = datetime.now(timezone.utc).isoformat()
 
+    gw = _gateway(db)
     # Mark MainQuest as completed
     try:
-        await db.execute_write(
-            "MATCH (q:MainQuest {quest_id: $qid}) "
-            "SET q.status = 'completed', q.completed_at = timestamp($now)",
-            {"qid": quest_id, "now": now}
-        )
+        await gw.run("quests.complete_main_quest", qid=quest_id, now=now)
     except Exception:
         # Try SideQuest
         try:
-            await db.execute_write(
-                "MATCH (q:SideQuest {quest_id: $qid}) "
-                "SET q.status = 'completed', q.completed_at = timestamp($now)",
-                {"qid": quest_id, "now": now}
-            )
+            await gw.run("quests.complete_side_quest", qid=quest_id, now=now)
         except Exception as e:
             _logger.error("complete_quest: could not mark %s completed: %s", quest_id, e)
             return {"error": str(e)}
@@ -258,58 +257,40 @@ async def report_outcome(params: dict, db: KuzuClient, config: dict) -> dict:
         "model", "sentence-transformers/all-MiniLM-L6-v2"
     )
 
+    gw = _gateway(db)
     if step_number is not None:
         try:
             step_number = int(step_number)
         except Exception:
             return {"error": "step_number must be an integer when provided"}
 
-        await db.execute_write(
-            "MATCH (ps:PlanStep)-[:STEP_OF]->(p:Plan {plan_id: $pid}) "
-            "WHERE ps.step_number = $step_number "
-            "SET ps.actual_outcome = $outcome, "
-            "    ps.valence = $valence, "
-            "    ps.status = $status, "
-            "    ps.completed_at = timestamp($now)",
-            {
-                "pid": plan_id,
-                "step_number": step_number,
-                "outcome": outcome,
-                "valence": valence,
-                "status": "succeeded" if valence >= 0 else "failed",
-                "now": now,
-            },
+        await gw.run(
+            "quests.set_plan_step_outcome",
+            pid=plan_id,
+            step_number=step_number,
+            outcome=outcome,
+            valence=valence,
+            status="succeeded" if valence >= 0 else "failed",
+            now=now,
         )
 
         if valence < 0:
-            await db.execute_write(
-                "MATCH (ps:PlanStep)-[:STEP_OF]->(p:Plan {plan_id: $pid}) "
-                "WHERE ps.step_number = $step_number "
-                "MATCH (ps)-[:ACTS_ON]->(c:Concept) "
-                "MERGE (ps)-[o:OUTCOME_SIGNAL]->(c) "
-                "SET o.valence = $valence, o.plan_id = $pid, o.observed_at = timestamp($now)",
-                {
-                    "pid": plan_id,
-                    "step_number": step_number,
-                    "valence": valence,
-                    "now": now,
-                },
+            await gw.run(
+                "quests.link_plan_step_outcome_signal",
+                pid=plan_id,
+                step_number=step_number,
+                valence=valence,
+                now=now,
             )
 
         return {"updated": True, "plan_status": "active"}
 
-    await db.execute_write(
-        "MATCH (p:Plan {plan_id: $pid}) "
-        "SET p.valence = $valence, "
-        "    p.valence_source = $valence_source, "
-        "    p.status = 'completed', "
-        "    p.completed_at = timestamp($now)",
-        {
-            "pid": plan_id,
-            "valence": valence,
-            "valence_source": valence_source,
-            "now": now,
-        },
+    await gw.run(
+        "quests.set_plan_valence",
+        pid=plan_id,
+        valence=valence,
+        valence_source=valence_source,
+        now=now,
     )
 
     lesson_id = await _store_plan_outcome_lesson(
@@ -334,26 +315,24 @@ async def report_outcome(params: dict, db: KuzuClient, config: dict) -> dict:
                 success = valence >= 0
 
             # Create APPLIED_PROCEDURE edge and update counters
-            await db.execute_write(
-                "MATCH (p:Plan {plan_id: $pid}), (pr:Procedure {procedure_id: $proc_id}) "
-                "MERGE (p)-[r:APPLIED_PROCEDURE]->(pr) "
-                "SET r.success = $success, r.applied_at = timestamp($now)",
-                {"pid": plan_id, "proc_id": procedure_id, "success": success, "now": now},
+            await gw.run(
+                "quests.link_plan_applied_procedure",
+                pid=plan_id,
+                proc_id=procedure_id,
+                success=success,
+                now=now,
             )
 
-            await db.execute_write(
-                "MATCH (pr:Procedure {procedure_id: $proc_id}) "
-                "SET pr.application_count = coalesce(pr.application_count, 0) + 1, "
-                "    pr.success_count = coalesce(pr.success_count, 0) + CASE WHEN $success THEN 1 ELSE 0 END, "
-                "    pr.last_applied_at = timestamp($now)",
-                {"proc_id": procedure_id, "success": success, "now": now},
+            await gw.run(
+                "quests.increment_procedure_counts",
+                proc_id=procedure_id,
+                success=success,
+                now=now,
             )
 
-            await db.execute_write(
-                "MATCH (pr:Procedure {procedure_id: $proc_id}) "
-                "SET pr.success_rate = CASE WHEN coalesce(pr.application_count,0) > 0 "
-                "THEN toFloat(coalesce(pr.success_count,0)) / toFloat(pr.application_count) ELSE 0.0 END",
-                {"proc_id": procedure_id},
+            await gw.run(
+                "quests.update_procedure_success_rate",
+                proc_id=procedure_id,
             )
         except Exception:
             _logger.exception("Failed to update Procedure stats for %s", procedure_id)
@@ -385,20 +364,19 @@ async def recall_plans(params: dict, db: KuzuClient, config: dict) -> dict:
 def _fetch_plan_steps(db, plan_id: str) -> list[dict]:
     steps: list[dict] = []
     try:
-        rs = db.execute(
-            "MATCH (ps:PlanStep)-[:STEP_OF]->(p:Plan {plan_id: $pid}) "
-            "RETURN ps.step_number, ps.description, ps.valence, ps.status "
-            "ORDER BY ps.step_number ASC",
-            {"pid": plan_id},
-        )
-        while rs.has_next():
-            sr = rs.get_next()
+        gw = _gateway(db)
+        rows = gw.run_sync("quests.get_plan_steps_by_plan_id", pid=plan_id)
+        for row in rows:
+            step_num = row.get("ps.step_number") if hasattr(row, "get") else row[0]
+            desc = row.get("ps.description") if hasattr(row, "get") else row[1]
+            val = row.get("ps.valence") if hasattr(row, "get") else row[2]
+            stat = row.get("ps.status") if hasattr(row, "get") else row[3]
             steps.append(
                 {
-                    "step_number": int(sr[0]),
-                    "description": sr[1] or "",
-                    "valence": sr[2],
-                    "status": sr[3] or "pending",
+                    "step_number": int(step_num),
+                    "description": desc or "",
+                    "valence": val,
+                    "status": stat or "pending",
                 }
             )
     except Exception:
@@ -471,17 +449,17 @@ def _fetch_plan_goal_rows(db) -> list[tuple]:
     rows for every non-archived Plan — shared scan backing both lexical-bypass
     paths below (identifier/quoted-phrase and keyword-overlap)."""
     try:
-        rs = db.execute(
-            "MATCH (p:Plan) WHERE p.archived = false "
-            "RETURN p.plan_id, p.goal, p.status, p.valence, p.pathway_strength, p.confidence"
-        )
+        gw = _gateway(db)
+        rows = gw.run_sync("quests.get_all_plans_summary")
+        out = []
+        for r in rows:
+            if hasattr(r, "values"):
+                out.append(tuple(r.values()))
+            else:
+                out.append(tuple(r))
+        return out
     except Exception:
         return []
-
-    rows: list[tuple] = []
-    while rs.has_next():
-        rows.append(tuple(rs.get_next()))
-    return rows
 
 
 def _lexical_plan_rows(db, terms: set[str]) -> list[dict]:
@@ -719,21 +697,22 @@ async def recall_procedures(params: dict, db: KuzuClient, config: dict) -> dict:
     results: list[dict] = []
     try:
         if archetype:
-            r = db.execute(
-                "MATCH (p:Procedure) WHERE p.archived = false AND p.archetype = $arch "
-                "RETURN p.procedure_id, p.name, p.description, p.steps_json, p.success_count, p.success_rate "
-                "ORDER BY p.success_rate DESC, p.success_count DESC LIMIT $lim",
-                {"arch": archetype, "lim": limit},
-            )
-            while r.has_next():
-                row = r.get_next()
+            gw = _gateway(db)
+            rows = gw.run_sync("quests.get_procedures_by_archetype", arch=archetype, lim=limit)
+            for row in rows:
+                pid = row.get("p.procedure_id") if hasattr(row, "get") else row[0]
+                name = row.get("p.name") if hasattr(row, "get") else row[1]
+                desc = row.get("p.description") if hasattr(row, "get") else row[2]
+                steps = row.get("p.steps_json") if hasattr(row, "get") else row[3]
+                sc = row.get("p.success_count") if hasattr(row, "get") else row[4]
+                sr = row.get("p.success_rate") if hasattr(row, "get") else row[5]
                 results.append({
-                    "procedure_id": row[0],
-                    "name": row[1],
-                    "description": row[2],
-                    "steps_json": row[3],
-                    "success_count": row[4],
-                    "success_rate": row[5],
+                    "procedure_id": pid,
+                    "name": name,
+                    "description": desc,
+                    "steps_json": steps,
+                    "success_count": sc,
+                    "success_rate": sr,
                 })
             return {"procedures": results}
 
@@ -767,36 +746,28 @@ async def get_disambiguation_queue(params: dict, db: KuzuClient, config: dict) -
     limit = int(params.get("limit", 10))
     pairs: list[dict] = []
     try:
-        r = db.execute(
-            "MATCH (e:DisambiguationEvent) "
-            "WHERE e.status = 'pending' "
-            "RETURN e.event_id, e.concept_id_a, e.concept_id_b, e.similarity, e.created_at "
-            "ORDER BY e.created_at DESC LIMIT $lim",
-            {"lim": limit}
-        )
-        while r.has_next():
-            row = r.get_next()
-            eid, a_id, b_id, sim, created_at = row[0], row[1], row[2], row[3], row[4]
+        gw = _gateway(db)
+        rows = gw.run_sync("quests.get_pending_disambiguation_events", lim=limit)
+        for row in rows:
+            eid = row.get("e.event_id") if hasattr(row, "get") else row[0]
+            a_id = row.get("e.concept_id_a") if hasattr(row, "get") else row[1]
+            b_id = row.get("e.concept_id_b") if hasattr(row, "get") else row[2]
+            sim = row.get("e.similarity") if hasattr(row, "get") else row[3]
+            created_at = row.get("e.created_at") if hasattr(row, "get") else row[4]
 
             def _get_concept_with_context(cid: str):
                 try:
-                    rr = db.execute(
-                        "MATCH (c:Concept {concept_id: $cid}) "
-                        "OPTIONAL MATCH (c)-[:HAS_ALT_LABEL]->(l:Label) "
-                        "RETURN c.concept_id, c.text_raw, c.gist_class, c.confidence, "
-                        "       c.pathway_strength, c.confidence_low, collect(l.text) AS alt_labels",
-                        {"cid": cid}
-                    )
-                    if rr.has_next():
-                        rrow = rr.get_next()
+                    rr = gw.run_sync("quests.get_concept_with_alt_labels", cid=cid)
+                    if rr:
+                        rrow = rr[0]
                         return {
-                            "concept_id": rrow[0],
-                            "text_raw": rrow[1],
-                            "gist_class": rrow[2],
-                            "confidence": rrow[3],
-                            "pathway_strength": rrow[4],
-                            "confidence_low": rrow[5],
-                            "alt_labels": rrow[6] or [],
+                            "concept_id": rrow.get("c.concept_id") if hasattr(rrow, "get") else rrow[0],
+                            "text_raw": rrow.get("c.text_raw") if hasattr(rrow, "get") else rrow[1],
+                            "gist_class": rrow.get("c.gist_class") if hasattr(rrow, "get") else rrow[2],
+                            "confidence": rrow.get("c.confidence") if hasattr(rrow, "get") else rrow[3],
+                            "pathway_strength": rrow.get("c.pathway_strength") if hasattr(rrow, "get") else rrow[4],
+                            "confidence_low": rrow.get("c.confidence_low") if hasattr(rrow, "get") else rrow[5],
+                            "alt_labels": (rrow.get("alt_labels") if hasattr(rrow, "get") else rrow[6]) or [],
                         }
                 except Exception:
                     pass
@@ -804,16 +775,12 @@ async def get_disambiguation_queue(params: dict, db: KuzuClient, config: dict) -
 
             def _shared_neighbors(cid_a: str, cid_b: str) -> list:
                 try:
-                    rr = db.execute(
-                        "MATCH (a:Concept {concept_id: $a})-[]->(n:Concept)<-[]-(b:Concept {concept_id: $b}) "
-                        "WHERE n.archived = false "
-                        "RETURN DISTINCT n.concept_id, n.text_raw LIMIT 10",
-                        {"a": a_id, "b": b_id}
-                    )
+                    rr = gw.run_sync("quests.get_common_neighbors_concepts", a=a_id, b=b_id)
                     out = []
-                    while rr.has_next():
-                        nr = rr.get_next()
-                        out.append({"concept_id": nr[0], "text_raw": nr[1]})
+                    for nr in rr:
+                        nid = nr.get("n.concept_id") if hasattr(nr, "get") else nr[0]
+                        ntxt = nr.get("n.text_raw") if hasattr(nr, "get") else nr[1]
+                        out.append({"concept_id": nid, "text_raw": ntxt})
                     return out
                 except Exception:
                     return []
@@ -847,15 +814,14 @@ async def resolve_disambiguation(params: dict, db: KuzuClient, config: dict) -> 
         return {"error": f"Invalid resolution: {resolution}. Use merge, separate, or skip."}
 
     try:
-        r = db.execute(
-            "MATCH (e:DisambiguationEvent {event_id: $eid}) "
-            "RETURN e.concept_id_a, e.concept_id_b, e.status",
-            {"eid": event_id}
-        )
-        if not r.has_next():
+        gw = _gateway(db)
+        r = gw.run_sync("quests.get_disambiguation_event_by_id", eid=event_id)
+        if not r:
             return {"error": f"Event {event_id} not found"}
-        ev = r.get_next()
-        cid_a, cid_b, status = ev[0], ev[1], ev[2]
+        ev = r[0]
+        cid_a = ev.get("e.concept_id_a") if hasattr(ev, "get") else ev[0]
+        cid_b = ev.get("e.concept_id_b") if hasattr(ev, "get") else ev[1]
+        status = ev.get("e.status") if hasattr(ev, "get") else ev[2]
         if status != "pending":
             return {"error": f"Event already resolved: {status}"}
 
@@ -863,47 +829,40 @@ async def resolve_disambiguation(params: dict, db: KuzuClient, config: dict) -> 
 
         if resolution == "merge":
             # Determine canonical (older) vs duplicate (newer)
-            cr = db.execute(
-                "MATCH (a:Concept {concept_id: $a}), (b:Concept {concept_id: $b}) "
-                "RETURN a.concept_id, a.created_at, a.text_raw, b.concept_id, b.created_at, b.text_raw",
-                {"a": cid_a, "b": cid_b}
-            )
-            if not cr.has_next():
+            cr = gw.run_sync("quests.get_two_concepts_details", a=cid_a, b=cid_b)
+            if not cr:
                 return {"error": "One or both concepts not found"}
-            crow = cr.get_next()
-            a_created, b_created = crow[1], crow[4]
+            crow = cr[0]
+            a_created = crow.get("a.created_at") if hasattr(crow, "get") else crow[1]
+            b_created = crow.get("b.created_at") if hasattr(crow, "get") else crow[4]
             # Compare safely as strings or timestamps — fallback to cid_a
             try:
                 canonical_id = cid_a if a_created <= b_created else cid_b
             except Exception:
                 canonical_id = cid_a
             duplicate_id = cid_b if canonical_id == cid_a else cid_a
-            duplicate_text = crow[5] if canonical_id == cid_a else crow[2]
+            duplicate_text = (crow.get("b.text_raw") if hasattr(crow, "get") else crow[5]) if canonical_id == cid_a else (crow.get("a.text_raw") if hasattr(crow, "get") else crow[2])
 
             # Create altLabel from duplicate's text
             label_id = str(uuid.uuid4())
-            await db.execute_write(
-                "CREATE (l:Label {"
-                "  label_id: $lid, text: $txt, label_type: 'alternative',"
-                "  confidence: 0.95, source: 'user', language: 'en', created_at: timestamp($now)"
-                "})",
-                {"lid": label_id, "txt": duplicate_text, "now": now}
+            await gw.run(
+                "quests.create_alt_label",
+                lid=label_id, txt=duplicate_text, now=now
             )
             # Embed the label
             try:
                 emb_vec = emb.embed(duplicate_text)
-                await db.execute_write(
-                    "MATCH (l:Label {label_id: $lid}) SET l.embedding = $emb",
-                    {"lid": label_id, "emb": emb_vec}
+                await gw.run(
+                    "quests.set_label_embedding",
+                    lid=label_id, emb=emb_vec
                 )
             except Exception:
                 _logger.exception("Label embed failed")
 
             # Wire canonical -> altLabel
-            await db.execute_write(
-                "MATCH (c:Concept {concept_id: $cid}), (l:Label {label_id: $lid}) "
-                "CREATE (c)-[:HAS_ALT_LABEL {created_at: timestamp($now)}]->(l)",
-                {"cid": canonical_id, "lid": label_id, "now": now}
+            await gw.run(
+                "quests.link_concept_has_alt_label",
+                cid=canonical_id, lid=label_id, now=now
             )
 
             # Redirect common edges from duplicate to canonical
@@ -912,50 +871,35 @@ async def resolve_disambiguation(params: dict, db: KuzuClient, config: dict) -> 
                          "ALTERNATIVE_TO", "CO_OCCURS_WITH"]
             for rel in rel_types:
                 try:
-                    await db.execute_write(
-                        f"MATCH (dup:Concept {{concept_id: $dup}})-[r:{rel}]->(t:Concept) "
-                        f"WHERE t.concept_id <> $can "
-                        f"MATCH (can:Concept {{concept_id: $can}}) "
-                        f"MERGE (can)-[:{rel}]->(t)",
-                        {"dup": duplicate_id, "can": canonical_id}
+                    await gw.run(
+                        f"quests.redirect_edge_{rel.lower()}",
+                        dup=duplicate_id, can=canonical_id
                     )
                 except Exception:
                     _logger.exception("Edge redirect failed for %s", rel)
 
             # Archive duplicate
-            await db.execute_write(
-                "MATCH (c:Concept {concept_id: $cid}) SET c.archived = true",
-                {"cid": duplicate_id}
-            )
+            await gw.run("quests.archive_concept", cid=duplicate_id)
 
             # Boost canonical
-            await db.execute_write(
-                "MATCH (c:Concept {concept_id: $cid}) "
-                "SET c.pathway_strength = c.pathway_strength + 0.15, "
-                "    c.confidence_low = false, "
-                "    c.last_accessed_at = timestamp($now)",
-                {"cid": canonical_id, "now": now}
+            await gw.run(
+                "quests.boost_canonical_concept",
+                cid=canonical_id, now=now
             )
 
             result_msg = f"Merged: '{duplicate_text}' → altLabel of canonical concept"
 
         elif resolution == "separate":
-            await db.execute_write(
-                "MATCH (a:Concept {concept_id: $a}), (b:Concept {concept_id: $b}) "
-                "SET a.confidence_low = false, b.confidence_low = false "
-                "CREATE (a)-[:DISTINCT_FROM {created_at: timestamp($now), source: 'user'}]->(b)",
-                {"a": cid_a, "b": cid_b, "now": now}
-            )
+            await gw.run("quests.link_distinct_from", a=cid_a, b=cid_b, now=now)
             result_msg = "Separated: both concepts confirmed as distinct entities"
 
         else:  # skip
             result_msg = "Skipped: pair re-queued for later review"
 
         final_status = resolution if resolution != "skip" else "pending"
-        await db.execute_write(
-            "MATCH (e:DisambiguationEvent {event_id: $eid}) "
-            "SET e.status = $status, e.resolved_at = timestamp($now), e.resolved_by = 'user'",
-            {"eid": event_id, "status": final_status if final_status != "pending" else "pending", "now": now}
+        await gw.run(
+            "quests.update_disambiguation_event_status",
+            eid=event_id, status=final_status if final_status != "pending" else "pending", now=now
         )
 
         return {"result": result_msg, "resolution": resolution}
@@ -980,52 +924,23 @@ async def get_anomalies(params: dict, db: KuzuClient, config: dict) -> dict:
     limit = int(params.get("limit", 20))
     quest_id = params.get("quest_id", "")
 
-    # Determine scope: branch-scoped anomalies are linked to the active MainQuest
-    scope_filter = ""
-    if scope == "branch" and quest_id:
-        scope_filter = (
-            "MATCH (q:MainQuest {quest_id: $quest_id}) "
-            "MATCH (n:Concept)-[:REIFIED_AS]-(a:Decision)-[:ESTABLISHED_IN]->(s:Session) "
-            "MATCH (s)-[:WORKING_ON]->(q) "
-            "WHERE n.flagged_for_review = true "
-        )
-    else:
-        # Global scope: all flagged nodes, no quest filter
-        scope_filter = (
-            "MATCH (n) "
-            "WHERE n.flagged_for_review = true AND (n:Concept OR n:Decision OR n:Constraint OR "
-            "      n:Requirement OR n:ActionItem OR n:Message OR n:DocumentExtract) "
-        )
-
-    query = f"""
-        {scope_filter}
-        MATCH (n)-[r:ANOMALY_DETECTED]->(gc:GlobalConstraint)
-        RETURN n, r, gc
-        LIMIT $limit
-    """
-
+    gw = _gateway(db)
     try:
-        # Only bind quest_id if it's actually used in the query
-        params = {"limit": limit}
         if scope == "branch" and quest_id:
-            params["quest_id"] = quest_id
-        
-        result = db.execute(
-            query,
-            params
-        )
+            rows = gw.run_sync("quests.get_anomalies_branch_scope", quest_id=quest_id, limit=limit)
+        else:
+            rows = gw.run_sync("quests.get_anomalies_global_scope", limit=limit)
     except Exception as e:
         _logger.exception("get_anomalies query failed")
         return {"anomalies": [], "error": str(e)}
 
     anomalies = []
-    if result:
-        while result.has_next():
-            row = result.get_next()
+    if rows:
+        for row in rows:
             try:
-                node = row[0]
-                edge = row[1]
-                constraint = row[2]
+                node = row.get("n") if hasattr(row, "get") else row[0]
+                edge = row.get("r") if hasattr(row, "get") else row[1]
+                constraint = row.get("gc") if hasattr(row, "get") else row[2]
 
                 # Determine node type and ID
                 node_type = node.get_label_name() if hasattr(node, "get_label_name") else ""
@@ -1082,17 +997,15 @@ async def get_openclaw_prompt(params: dict, db: KuzuClient, config: dict) -> dic
     onboarded = False
     quest_info = None
     try:
-        r = db.execute(
-            "MATCH (s:Session {session_id: $sid}) "
-            "OPTIONAL MATCH (s)-[:WORKING_ON]->(q:MainQuest) "
-            "RETURN s.onboarded, q.name, q.git_branch",
-            {"sid": session_id}
-        )
-        if r.has_next():
-            row = r.get_next()
-            onboarded = bool(row[0])
-            if row[1]:
-                quest_info = {"name": row[1], "branch": row[2] or "main"}
+        gw = _gateway(db)
+        r = gw.run_sync("quests.get_session_onboarding_status", sid=session_id)
+        if r:
+            row = r[0]
+            onboarded = bool(row.get("s.onboarded") if hasattr(row, "get") else row[0])
+            name = row.get("q.name") if hasattr(row, "get") else row[1]
+            branch = row.get("q.git_branch") if hasattr(row, "get") else row[2]
+            if name:
+                quest_info = {"name": name, "branch": branch or "main"}
     except Exception:
         pass
         
@@ -1102,10 +1015,8 @@ async def get_openclaw_prompt(params: dict, db: KuzuClient, config: dict) -> dic
     # Mark as onboarded if it was not
     if not onboarded and session_id != "unknown":
         try:
-            await db.execute_write(
-                "MATCH (s:Session {session_id: $sid}) SET s.onboarded = true",
-                {"sid": session_id}
-            )
+            gw = _gateway(db)
+            await gw.run("quests.set_session_onboarded", sid=session_id)
         except Exception:
             pass
             

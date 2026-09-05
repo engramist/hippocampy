@@ -87,8 +87,12 @@ async def test_get_or_create_main_quest_returns_existing():
     class MockDB:
         def execute(self, query, params=None):
             class R:
-                def has_next(self): return True
-                def get_next(self): return [compute_quest_id("/repo/myapp", "main")]
+                def __init__(self): self._done = False
+                def has_next(self):
+                    return not self._done
+                def get_next(self):
+                    self._done = True
+                    return [compute_quest_id("/repo/myapp", "main")]
             return R()
         async def execute_write(self, query, params=None):
             writes.append(params)
@@ -584,8 +588,12 @@ async def test_maybe_synthesize_purpose_skips_when_already_set():
     call_count = [0]
 
     class MockResult:
-        def has_next(self): return True
-        def get_next(self): return ["sess-1", "Already synthesized purpose."]
+        def __init__(self): self._done = False
+        def has_next(self):
+            return not self._done
+        def get_next(self):
+            self._done = True
+            return ["sess-1", "Already synthesized purpose."]
 
     class MockDB:
         def execute(self, q, p=None): return MockResult()
@@ -618,22 +626,19 @@ async def test_maybe_synthesize_purpose_writes_on_empty_session():
         class R:
             _row = None
             def has_next(self): return self._row is not None
-            def get_next(self): return self._row
+            def get_next(self):
+                row = self._row
+                self._row = None
+                return row
 
         r = R()
         if idx == 0:
             # First query: look up session — found, purpose empty
             r._row = ["sess-1", ""]
-            r.has_next = lambda: True
-            r.get_next = lambda: ["sess-1", ""]
         elif idx == 1:
             # Second query: look up MainQuest for session
             r._row = ["quest-1", "myapp [main]"]
-            r.has_next = lambda: True
-            r.get_next = lambda: ["quest-1", "myapp [main]"]
-        else:
-            # Third query: context messages
-            r.has_next = lambda: False
+        # else: third query (context messages) — no rows, r._row stays None
         return r
 
     class MockDB:
@@ -676,12 +681,20 @@ async def test_maybe_synthesize_purpose_uses_achat_when_available():
 
         if idx == 0:
             class R:  # noqa: F811
-                def has_next(self): return True
-                def get_next(self): return ["sess-x", ""]
+                def __init__(self): self._done = False
+                def has_next(self):
+                    return not self._done
+                def get_next(self):
+                    self._done = True
+                    return ["sess-x", ""]
         elif idx == 1:
             class R:  # noqa: F811
-                def has_next(self): return True
-                def get_next(self): return ["q-x", "project"]
+                def __init__(self): self._done = False
+                def has_next(self):
+                    return not self._done
+                def get_next(self):
+                    self._done = True
+                    return ["q-x", "project"]
         return R()
 
     class MockDB:
