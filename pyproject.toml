@@ -32,6 +32,14 @@ dependencies = [
     # any change) -- a floating floor could silently pull a newer fastembed
     # with different ONNX conversion behavior. Matches requirements.txt.
     "fastembed==0.8.0",
+    # B390: embedded ANN + FTS5 store that will replace Kùzu's
+    # QUERY_VECTOR_INDEX / QUERY_FTS_INDEX once neither the graph nor the
+    # vector/lexical planes have a SPARQL equivalent (docs/rdf-schema-
+    # mapping.md §5). Dual-licensed MIT / Apache-2.0 (confirmed via
+    # installed package METADATA, License field: "MIT License, Apache
+    # License, Version 2.0" -- both compatible with this project's
+    # Apache-2.0 license).
+    "sqlite-vec>=0.1.6",
     "spacy>=3.8.3",
     "typer>=0.9.0",
     "j2toon>=0.1.0",
