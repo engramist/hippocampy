@@ -65,7 +65,7 @@ def test_bare_turtle_number_would_have_parsed_as_decimal_not_double():
     # numeric literal parsed from Turtle text is xsd:decimal, not
     # xsd:double — which is exactly why literal_for() always supplies an
     # explicit datatype instead of ever emitting bare Turtle text.
-    parsed = list(ox.parse(data="<http://a> <http://b> 0.8 .", format=ox.RdfFormat.TURTLE))
+    parsed = list(ox.parse(input="<http://a> <http://b> 0.8 .", format=ox.RdfFormat.TURTLE))
     assert str(parsed[0].object.datatype) == "<http://www.w3.org/2001/XMLSchema#decimal>"
 
 
@@ -76,7 +76,9 @@ def test_double_survives_round_trip_through_the_store(client):
     ))
     assert len(rows) == 1
     assert str(rows[0]["o"].datatype) == "<http://www.w3.org/2001/XMLSchema#double>"
-    assert str(rows[0]["o"]) == "0.8"
+    # str() on a Literal renders full N-Triples form ('"0.8"^^<...#double>');
+    # .value is the bare lexical form.
+    assert rows[0]["o"].value == "0.8"
 
 
 def test_float_datatype_preserved(client):
@@ -225,7 +227,7 @@ def test_star_edge_asserts_both_plain_triple_and_quoted_annotation(client):
         f"<< <{s}> campy:ENABLES <{o}> >> campy:confidence ?conf }}"
     ))
     assert len(annotation) == 1
-    assert str(annotation[0]["conf"]) == "0.8"
+    assert annotation[0]["conf"].value == "0.8"
     assert str(annotation[0]["conf"].datatype) == "<http://www.w3.org/2001/XMLSchema#double>"
 
 
@@ -254,6 +256,35 @@ def test_star_edge_second_write_overwrites_not_accumulates(client):
         f"PREFIX campy: <{CAMPY_NS}> SELECT ?o WHERE {{ <{s}> campy:ENABLES ?o }}"
     ))
     assert [str(r["o"]) for r in plain] == [f"<{o}>"]
+
+
+def test_spec_4_2c_reclassified_tables_write_as_star(client):
+    # Spec §4.2c (2026-09-05): ANOMALY_DETECTED, CO_OCCURS_WITH, and
+    # OUTCOME_SIGNAL all write via MERGE + SET at their sole Cypher call
+    # site, so they are "star" (not "occurrence", despite an earlier spec
+    # draft naming them by shape) — this proves the reclassification
+    # actually behaves like every other star table: both the plain triple
+    # and the quoted annotation are queryable, and a second write overwrites
+    # rather than accumulating a second reifier.
+    s = mint_uri("Concept", "c_x")
+    o = mint_uri("Concept", "c_y")
+    client.write_edge("CO_OCCURS_WITH", s, o, {"count": 1, "strength": 0.5})
+    client.write_edge("CO_OCCURS_WITH", s, o, {"count": 2, "strength": 0.75})
+
+    plain = list(client.store.query(
+        f"PREFIX campy: <{CAMPY_NS}> SELECT ?o WHERE {{ <{s}> campy:CO_OCCURS_WITH ?o }}"
+    ))
+    assert [str(r["o"]) for r in plain] == [f"<{o}>"]
+
+    rows = list(client.store.query(
+        f"PREFIX campy: <{CAMPY_NS}> SELECT ?p ?v WHERE {{ "
+        f"<< <{s}> campy:CO_OCCURS_WITH <{o}> >> ?p ?v }}"
+    ))
+    by_pred = {str(r["p"]): str(r["v"]) for r in rows if "reifies" not in str(r["p"])}
+    assert by_pred == {
+        f"<{CAMPY_NS}count>": '"2"^^<http://www.w3.org/2001/XMLSchema#integer>',
+        f"<{CAMPY_NS}strength>": '"0.75"^^<http://www.w3.org/2001/XMLSchema#double>',
+    }
 
 
 def test_star_edge_repeated_identical_write_is_idempotent(client):
@@ -338,8 +369,13 @@ def test_missing_edge_reification_entry_raises_at_write_time(client):
 
 
 def test_escalated_table_raises_with_explanation_at_write_time(client):
+    # ANOMALY_DETECTED/CO_OCCURS_WITH/OUTCOME_SIGNAL were resolved by spec
+    # §4.2c and reclassified "star" (see test_star_edge_* above and
+    # test_oxigraph_client.py's test_classify_edge_returns_star_for_spec_
+    # 4_2c_reclassified_tables). ADJACENT_TO remains escalated per spec
+    # §4.2d: no write call site exists anywhere in the repo.
     with pytest.raises(ValueError, match="deliberately unclassified"):
-        client.write_edge("ANOMALY_DETECTED", "urn:a", "urn:b")
+        client.write_edge("ADJACENT_TO", "urn:a", "urn:b")
 
 
 # --- §7.2 — NamedQuery.sparql static-string validation ----------------------

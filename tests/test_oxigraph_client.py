@@ -64,11 +64,28 @@ def test_classify_edge_returns_declared_class_for_known_tables():
     assert classify_edge("LOADED") == "occurrence"
 
 
+def test_classify_edge_returns_star_for_spec_4_2c_reclassified_tables():
+    # Spec §4.2c (2026-09-05): class follows the observed write call site,
+    # never the name. All three write via MERGE + SET (CO_OCCURS_WITH via
+    # ON CREATE/ON MATCH SET, an accumulator over one merged edge), so all
+    # three are "star" despite an earlier spec draft naming them by an
+    # "occurrence"-shaped name.
+    assert classify_edge("ANOMALY_DETECTED") == "star"
+    assert classify_edge("CO_OCCURS_WITH") == "star"
+    assert classify_edge("OUTCOME_SIGNAL") == "star"
+
+
 def test_classify_edge_raises_for_escalated_table_with_reason_in_message():
+    # ANOMALY_DETECTED/CO_OCCURS_WITH/OUTCOME_SIGNAL were resolved by spec
+    # §4.2c (2026-09-05, "classify from the write call site, not the name")
+    # and moved into EDGE_REIFICATION as "star" — see
+    # test_classify_edge_returns_declared_class_for_known_tables below.
+    # ADJACENT_TO remains escalated per spec §4.2d: no write call site
+    # exists anywhere in the repo, so there is no evidence to classify it.
     with pytest.raises(ValueError) as excinfo:
-        classify_edge("OUTCOME_SIGNAL")
+        classify_edge("ADJACENT_TO")
     assert "deliberately unclassified" in str(excinfo.value)
-    assert "MERGE" in str(excinfo.value)
+    assert "no write call site" in str(excinfo.value)
 
 
 def test_classify_edge_raises_for_totally_unknown_table():
@@ -91,9 +108,9 @@ def test_edge_reification_counts():
     from collections import Counter
     counts = Counter(EDGE_REIFICATION.values())
     assert counts["plain"] == 52
-    assert counts["star"] == 25
+    assert counts["star"] == 28
     assert counts["occurrence"] == 15
-    assert len(UNCLASSIFIED_ESCALATED_TABLES) == 18
+    assert len(UNCLASSIFIED_ESCALATED_TABLES) == 15
 
 
 # --- ULID minting -------------------------------------------------------------
@@ -229,9 +246,15 @@ def test_execute_read_binds_params_via_substitutions_not_string_interpolation():
         )
 
         async def _run():
+            # pyoxigraph 0.5.11's substitutions= (RDF-dev SEP-0007) requires
+            # every substituted variable to also appear in the SELECT
+            # projection -- confirmed empirically: substituting an
+            # unprojected ?s raises "The SPARQL query does not contains
+            # variable ?s in its SELECT projection". ?s is projected here
+            # (and dropped from the assertion below) to satisfy that.
             return await client.execute_read(
                 "PREFIX campy: <https://campy.dev/ns#> "
-                "SELECT ?name WHERE { ?s campy:name ?name }",
+                "SELECT ?s ?name WHERE { ?s campy:name ?name }",
                 {"s": "https://campy.dev/id/Concept/c1"},
             )
 

@@ -222,7 +222,13 @@ NODE_COLUMNS, NODE_PRIMARY_KEYS = _parse_node_schema()
 #                behavior exactly — not a data-loss regression relative to
 #                today's Kùzu behavior, because Kùzu itself already
 #                discards the prior property values on every MERGE+SET.
-#                25 tables.
+#                28 tables — includes ANOMALY_DETECTED, CO_OCCURS_WITH, and
+#                OUTCOME_SIGNAL, reclassified here per spec §4.2c (2026-09-05):
+#                the governing rule is "class follows the observed write
+#                call site, never the name" — all three write via MERGE+SET
+#                (CO_OCCURS_WITH via ON CREATE/ON MATCH SET, an accumulator
+#                over a single merged edge), so all three are star despite
+#                an earlier spec draft naming them "occurrence" by shape.
 # "occurrence" — can legitimately repeat for the same (s,p,o). Confirmed
 #                via call sites using a bare `CREATE` (no MERGE, no
 #                existence check) for every write, so multiple edges with
@@ -230,12 +236,13 @@ NODE_COLUMNS, NODE_PRIMARY_KEYS = _parse_node_schema()
 #                behavior. 15 tables.
 #
 # Every classification below cites its evidence in an inline comment:
-# either the call site (file:line) or "spec §4.2" for the tables the spec
+# either the call site (file:line) or "spec §4.2c" for the tables the spec
 # names directly. A table with NO entry here is a hard error at write time
-# (see `classify_edge()` below) — this is deliberate for the 18 tables in
-# `UNCLASSIFIED_ESCALATED_TABLES`, documented there with the reason each
-# could not be confidently classified. Do not add a table here without
-# equally solid evidence; when in doubt, escalate instead (see that dict).
+# (see `classify_edge()` below) — this is deliberate for the 15 tables in
+# `UNCLASSIFIED_ESCALATED_TABLES` (spec §4.2d: no writer anywhere in the
+# repo), documented there with the reason each could not be confidently
+# classified. Do not add a table here without equally solid evidence; when
+# in doubt, escalate instead (see that dict).
 # ---------------------------------------------------------------------------
 
 EdgeReification = TypingLiteral["plain", "star", "occurrence"]
@@ -362,6 +369,16 @@ EDGE_REIFICATION: dict[str, EdgeReification] = {
     "GENERALIZES_LESSON": "star",   # queries/sweep.py:378 MERGE
     "MOVED_BY": "star",             # queries/arc.py:190 MERGE
     "SOLVED_BY": "star",            # schema.py upsert_agent_worker_and_link(): MERGE...ON CREATE/ON MATCH SET
+    # Spec §4.2c-resolved (2026-09-05): named/shaped like "occurrence" family
+    # in an earlier spec draft, but their sole confirmed write call site is a
+    # MERGE + SET singleton overwrite (or MERGE...ON CREATE/ON MATCH SET
+    # accumulator), the same shape as every other "star" table above. Per
+    # §4.2c, class follows the observed write call site, never the name —
+    # resolved architect decision, not a guess. Was in
+    # UNCLASSIFIED_ESCALATED_TABLES prior to this resolution.
+    "ANOMALY_DETECTED": "star",  # queries/orchestrator.py: MERGE (n)-[r:ANOMALY_DETECTED]->(gc) SET r.type=..., r.confidence=..., r.detected_at=...
+    "CO_OCCURS_WITH": "star",    # queries/pathways.py 'unwind_co_occurs_with': MERGE (a)-[r:CO_OCCURS_WITH]->(b) ON CREATE SET r.count=1, r.strength=$strength ON MATCH SET r.count=r.count+1, r.strength=(r.strength+$strength)/2.0 — singleton carrying an accumulator, not an event history
+    "OUTCOME_SIGNAL": "star",    # queries/quests.py 'link_plan_step_outcome_signal': MERGE (ps)-[o:OUTCOME_SIGNAL]->(c) SET o.valence=..., o.plan_id=..., o.observed_at=...
 
     # -- occurrence (15): bare CREATE (no MERGE, no existence check) at
     #    every write call site, so multiple edges already coexist today --
@@ -397,54 +414,25 @@ EDGE_REIFICATION: dict[str, EdgeReification] = {
 # ---------------------------------------------------------------------------
 # Escalated: property-bearing rel tables this card could NOT confidently
 # classify. Deliberately excluded from EDGE_REIFICATION so a write attempt
-# raises (see `classify_edge()`) rather than silently defaulting. Each
-# entry's value is the reason — either "no write call site exists anywhere
-# in the repo" (schema declared ahead of any implementation — a known
-# pattern in this codebase; see e.g. the ANCHORED_TO comment in schema.py
-# itself) or a direct conflict between the normative spec's classification
-# and the observed call-site behavior. See the B389 PR/report for the full
-# writeup of each; do not resolve these by guessing.
+# raises (see `classify_edge()`) rather than silently defaulting. Per spec
+# §4.2d, every remaining entry's reason is the same shape: no write call
+# site exists anywhere in the repo (schema declared ahead of any
+# implementation — a known pattern in this codebase; see e.g. the
+# ANCHORED_TO comment in schema.py itself). There is no evidence to
+# classify these from; whoever writes the first writer makes the call with
+# that call site in front of them — a raise here is the correct outcome,
+# not a defect. (The three tables previously escalated for a *conflicting*
+# reason — spec text vs. observed MERGE+SET call sites — were resolved by
+# spec §4.2c and moved into EDGE_REIFICATION as "star"; see that dict.)
 # ---------------------------------------------------------------------------
 
 UNCLASSIFIED_ESCALATED_TABLES: dict[str, str] = {
-    # --- spec §4.2b names these as "occurrence" family, but their sole
-    # confirmed Kùzu write call site uses `MERGE ... SET` (singleton
-    # overwrite), the same shape as every confirmed "star" table above —
-    # directly conflicting with the spec text. Resolving this either way
-    # unilaterally risks being wrong in the direction the card explicitly
-    # warns about (silent data loss) or unilaterally overriding a
-    # "normative" doc. Escalated for a human decision: replicate today's
-    # overwrite behavior (star) or use the RDF migration to start
-    # preserving full history (occurrence, per spec's stated intent).
-    "ANOMALY_DETECTED": (
-        "spec names this 'occurrence' (§4.2b) but its only write call site "
-        "(queries/orchestrator.py: MERGE (n)-[r:ANOMALY_DETECTED]->(gc) "
-        "SET r.type=..., r.confidence=..., r.detected_at=...) is a MERGE+SET "
-        "singleton overwrite, the same shape as every confirmed star table — "
-        "conflicts with the spec text; needs a human call, not a guess."
-    ),
-    "CO_OCCURS_WITH": (
-        "spec names this 'occurrence' (§4.2b) but its write call site "
-        "(queries/pathways.py:'pathways.unwind_co_occurs_with': "
-        "MERGE (a)-[r:CO_OCCURS_WITH]->(b) ON CREATE SET r.count=1, "
-        "r.strength=$strength ON MATCH SET r.count=r.count+1, "
-        "r.strength=(r.strength+$strength)/2.0) is an accumulator pattern "
-        "over a SINGLE merged edge, not a repeating one — conflicts with "
-        "the spec text; needs a human call, not a guess."
-    ),
-    "OUTCOME_SIGNAL": (
-        "spec names this 'occurrence' (§4.2b) but its write call site "
-        "(queries/quests.py:'quests.link_plan_step_outcome_signal': "
-        "MERGE (ps)-[o:OUTCOME_SIGNAL]->(c) SET o.valence=..., "
-        "o.plan_id=..., o.observed_at=...) is a MERGE+SET singleton "
-        "overwrite — conflicts with the spec text; needs a human call, "
-        "not a guess."
-    ),
-    # --- no write call site exists anywhere in the repo (grepped campy/,
-    # web/, benchmarks/, tests/ for the literal table name outside
-    # schema.py's own DDL) — schema declared ahead of any implementation.
-    # Cannot determine star-vs-occurrence from callers that don't exist yet;
-    # classify when the first writer is implemented.
+    # --- spec §4.2d: no write call site exists anywhere in the repo
+    # (grepped campy/, web/, benchmarks/, tests/ for the literal table name
+    # outside schema.py's own DDL) — schema declared ahead of any
+    # implementation. Cannot determine star-vs-occurrence from callers that
+    # don't exist yet, and per §4.2d this must NOT be guessed: classify only
+    # when the first writer is implemented, with its call site in hand.
     "ADJACENT_TO": "no write call site anywhere in the repo (schema-only; B168 ARC exploration graph, never wired to a writer)",
     "BLOCKS": "no write call site anywhere in the repo for the GridEntity->GridEntity BLOCKS table (distinct from TASK_BLOCKS, which IS classified above)",
     "CAUSES_CHANGE_IN": "no write call site anywhere in the repo (schema-only; B168 ARC exploration graph, never wired to a writer)",
@@ -792,6 +780,16 @@ class OxigraphClient:
         for parameterized writes, which build their ground terms through
         `ox.Literal`/`ox.NamedNode`'s own escaping, never via raw string
         interpolation of a caller-supplied value into SPARQL text.
+
+        **Empirically discovered pyoxigraph 0.5.11 constraint (B389):** a
+        substituted variable must also appear in the query's SELECT
+        projection — `substitutions={Variable("s"): ...}` against
+        `SELECT ?name WHERE { ?s campy:name ?name }` (where `?s` is bound
+        only in the WHERE clause, not projected) raises `RuntimeError: The
+        SPARQL query does not contains variable ?s in its SELECT
+        projection`. Callers binding a param that is not itself part of the
+        desired result columns must still project it (e.g. `SELECT ?s
+        ?name WHERE {...}`) for the substitution to be accepted.
         """
         stripped = sparql.lstrip().upper()
         if stripped.startswith(("INSERT", "DELETE", "WITH", "CLEAR", "DROP", "CREATE", "LOAD", "MOVE", "COPY", "ADD")):
@@ -812,18 +810,46 @@ class OxigraphClient:
         async with self._lock:
             return await asyncio.to_thread(self.execute, sparql, params)
 
-    async def execute_read(self, sparql: str, params: dict[str, Any] | None = None):
-        result = await asyncio.to_thread(self.execute, sparql, params)
+    def _execute_and_collect(self, sparql: str, params: dict[str, Any] | None = None):
+        """Run `execute()` and fully materialize its result into plain
+        Python data, in the SAME thread the query ran in.
+
+        This is not a style choice: pyoxigraph's `QuerySolutions` (SELECT)
+        and `QueryTriples` (CONSTRUCT/DESCRIBE) result iterators are PyO3
+        `unsendable` types, bound to the OS thread that created them.
+        Returning the raw iterator out of an `asyncio.to_thread()` worker
+        and iterating it from the event-loop thread does not raise a
+        catchable Python exception — it panics the underlying Rust
+        extension and hard-aborts the whole process (confirmed empirically:
+        `thread '<unnamed>' panicked ... PyQuerySolutions is unsendable,
+        but sent to another thread`, `Fatal Python error: Aborted`). So the
+        query AND its full consumption into plain dict/bool/Triple values
+        must happen inside the same `to_thread()` call — see
+        `execute_read()` below, which does no iteration itself, only calls
+        this method via `to_thread`.
+        """
+        result = self.execute(sparql, params)
         if result is None:
             return []
-        rows = []
-        for solution in result:
-            try:
-                rows.append({str(var): solution[var] for var in solution.variables})
-            except AttributeError:
-                # ASK -> QueryBoolean, CONSTRUCT/DESCRIBE -> QueryTriples
-                rows.append(solution)
-        return rows
+        if isinstance(result, ox.QueryBoolean):
+            return bool(result)
+        if isinstance(result, ox.QuerySolutions):
+            # `.variables` lives on the QuerySolutions iterator itself, not
+            # on each QuerySolution row (a QuerySolution supports only
+            # __getitem__/__iter__/__len__ over its bound terms). Keys are
+            # the bare variable name (`var.value`, e.g. "o"), matching
+            # KuzuClient's column-name convention — not `str(var)`, which
+            # would render the SPARQL-syntax form ("?o").
+            variables = result.variables
+            return [
+                {var.value: solution[var] for var in variables}
+                for solution in result
+            ]
+        # CONSTRUCT/DESCRIBE -> QueryTriples of Triple terms
+        return list(result)
+
+    async def execute_read(self, sparql: str, params: dict[str, Any] | None = None):
+        return await asyncio.to_thread(self._execute_and_collect, sparql, params)
 
     def close(self) -> None:
         del self.store
