@@ -96,10 +96,11 @@ async def _get_high_confidence_constraints(db) -> list[dict]:
     constraints = []
     if result:
         for row in result:
+            vals = list(row.values()) if isinstance(row, dict) else list(row)
             constraints.append({
-                "global_constraint_id": row[0],
-                "text_raw": row[1],
-                "embedding": row[2],
+                "global_constraint_id": vals[0],
+                "text_raw": vals[1],
+                "embedding": vals[2],
             })
     return constraints
 
@@ -121,10 +122,11 @@ async def _get_high_confidence_preferences(db) -> list[dict]:
     preferences = []
     if result:
         for row in result:
+            vals = list(row.values()) if isinstance(row, dict) else list(row)
             preferences.append({
-                "global_preference_id": row[0],
-                "text_raw": row[1],
-                "embedding": row[2],
+                "global_preference_id": vals[0],
+                "text_raw": vals[1],
+                "embedding": vals[2],
             })
     return preferences
 
