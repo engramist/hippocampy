@@ -79,7 +79,11 @@ async def test_degree_report_survives_query_failure():
 async def test_degree_report_respects_top_k():
     db = _MockDB()
     await _report_degree_hotspots(db, {"sweep": {"degree_report_top_k": 3}})
-    assert any("LIMIT 3" in q for q, _ in db.read_queries)
+    # B399: sweep.degree_out_*/degree_in_* (queries/sweep.py) bind LIMIT as
+    # a real query parameter (`LIMIT $limit`) rather than a raw
+    # f-string-interpolated literal — assert the bound value, not literal
+    # query text.
+    assert any("LIMIT $limit" in q and p.get("limit") == 3 for q, p in db.read_queries)
 
 
 # ---------------------------------------------------------------------------
