@@ -14,10 +14,67 @@
 - ARC extraction boundary audit: [docs/arc-extraction-cleanup-audit.md](arc-extraction-cleanup-audit.md)
 - Backlog card authoring and execution rules: [backlog/BacklogRules.md](../backlog/BacklogRules.md)
 - Backlog planning/tracking status source: [backlog/masterBacklogTracker.md](../backlog/masterBacklogTracker.md)
+- Open architectural questions (measured-but-unresolved, deferred, or awaiting counsel): [Open Research Questions](#open-research-questions), below
 
 ## Patent Notice
 
 **Patent Pending:** This system includes patent-pending memory architecture. U.S. Provisional Application #64/017,066 was filed March 25, 2026. Non-provisional filing deadline: March 25, 2027. No patent has been granted. See [PATENTS.md](../PATENTS.md) for filing facts.
+
+## Open Research Questions
+
+This section is not settled design. It records architectural questions that are **open**
+(unresolved, awaiting input), **measuring** (an in-flight card is producing the answer),
+**resolved** (answered, kept here so the answer and its methodology stay attached to the
+question), or **deferred** (deliberately postponed, with the condition that would reopen
+it). Everything else in this document describes what Campy *does*; this section describes
+what is still uncertain about why it does it that way. Every number below states how it
+was measured (warm/invoked vs. cold/import-time RSS, and sample size where relevant) — a
+bare figure with no methodology is exactly the defect this section exists to prevent.
+
+Each entry: **Question** / **Status** / **Why it matters** / **Evidence so far** /
+**Where the detail lives** / **Decision rule** (where one was fixed in advance, before the
+evidence came in).
+
+### Does the spaCy ingestion step earn its place?
+
+| Field | Detail |
+|---|---|
+| Status | `measuring` — [B401](../backlog/B401.md), currently blocked on B400 merging |
+| Why it matters | spaCy's only load-bearing output is candidate entity **spans** — `if not entities: return summary` gates the entire Gated Consolidation Loop. Its NER labels are discarded (`classify_concept()` recomputes `gist_class` independently) and its Step 1b dependency-parse relations are backstopped by Step 3b's LLM `extract_semantic_relations()`. The graph's schema already carries a SKOS-style `Label` gazetteer (`HAS_PREF_LABEL`/`HAS_ALT_LABEL`/`HAS_HIDDEN_LABEL`) that Step 1 (`step1_ner.py`) never queries — zero `db`/`gateway`/`MATCH` access. |
+| Evidence so far | Warm RSS (model loaded **and invoked**, matching a running daemon), measured on the design-doc author's machine: baseline Python 14.5 MB; + spaCy loaded and invoked 541.0 MB; + fastembed loaded and invoked 818.6 MB; spaCy with the `torch` import blocked 386.9 MB. `torch` accounts for ~154 MB resident / 436 MB on disk and is never used for computation (`thinc`'s backend is `NumpyOps`). `step1_ner.py`'s own docstring states spaCy NER "misses most software/tech terms... noun chunks catch them." B387's separate ONNX-replacement measurement (entity-span F1 0.534 vs. spaCy, 46 sentences) cannot settle this question — it measures agreement between two candidate generators, not correctness against ground truth. |
+| Where the detail lives | [docs/superpowers/specs/2026-09-05-entity-candidate-generation-design.md](superpowers/specs/2026-09-05-entity-candidate-generation-design.md) (full analysis, §1–§4); [backlog/B401.md](../backlog/B401.md) (the three measurements this status depends on) |
+| Decision rule | Fixed in advance, per the design doc and B401: gazetteer coverage **high** and Step 1b relation survival **low** → delete the spaCy step, link against the graph. Coverage high, survival high → keep a parser but demote NER behind the gazetteer. Coverage **low** → gazetteer not yet dense enough, keep spaCy, revisit after more ingestion. A result that does not cleanly fit is to be escalated, not forced onto the nearest branch. |
+
+### What is the real warm memory floor?
+
+| Field | Detail |
+|---|---|
+| Status | `resolved` |
+| Why it matters | B384's `<80 MB` daemon-memory target propagated into four downstream cards and review commentary before anyone re-derived it. It was **import-time-only RSS** — never a running daemon's footprint — because `fastembed`'s model is lazily loaded and is not actually resident until `.embed()` is called. |
+| Evidence so far | Warm (model loaded **and invoked**) RSS, same measurement run as above: baseline Python 14.5 MB → + spaCy loaded and invoked 541.0 MB → + fastembed loaded and invoked **818.6 MB**. Contrast with the import-time-only figures that produced the original target: B387's table (`bare Python` 14.8 MB, `+ kuzu` 24.3 MB, `+ kuzu + fastembed` 76.1 MB) and B389's table (same shape) measure imports only, before any model is invoked — calling `.embed()` alone reaches ~266–277 MB per the design doc. `<80 MB` warm is not achievable while ONNX embeddings run in-process; the design doc recommends restating any future target against the measured 818.6 MB warm baseline rather than carrying `<80 MB` forward. |
+| Where the detail lives | [docs/superpowers/specs/2026-09-05-entity-candidate-generation-design.md](superpowers/specs/2026-09-05-entity-candidate-generation-design.md) §5, "Measurement methodology" — states the going-forward rule that all future memory figures must be reported warm, per component, with the stage at which they were taken recorded alongside the number |
+| Decision rule | N/A — resolved. Standing methodology rule for all future memory claims: report cold-import and warm-invoked RSS separately, per component. |
+
+### Kùzu exit rationale
+
+| Field | Detail |
+|---|---|
+| Status | `resolved` |
+| Why it matters | B384 originally justified the Kùzu → RDF-star (Oxigraph) migration primarily on memory savings. [B389](../backlog/B389.md) states plainly that this justification was wrong and must not be repeated in that migration's PR. Getting the *actual* driver right matters because a memory-based justification would be trivially refuted (see evidence) and would undermine the real, non-memory case for the migration. |
+| Evidence so far | Kùzu's own memory cost is small: bare Python 14.8 MB, `+ kuzu` 24.3 MB, `+ kuzu + fastembed` 76.1 MB (B389's table). These are import-time RSS figures — the table is headed "Imports \| RSS," the same shape as B387's original table that §5 above found to understate a running daemon's footprint — not warm/invoked numbers, so they should not be read as the daemon's real resident cost. Read only as Kùzu's marginal cost over fastembed alone (fastembed-only import RSS is 75.1 MB per B387's table), Kùzu adds roughly 1 MB — consistent with B389's own framing ("Kùzu costs ~1 MB on top of fastembed"). The actual drivers B389 gives, in order: (1) Kùzu has been archived/EOL since October 2025 — an unmaintained embedded database holding the sole source of truth is the real risk, and the primary driver; (2) B311 commit-checkpoint memory spikes (150 MB → 1.1 GB transient); (3) B285 — no in-place HNSW index updates, and rebuilding requires an archive-move Kùzu 0.11.3 cannot do cheaply; (4) native RDF-star edge annotation for the provenance model. |
+| Where the detail lives | [backlog/B389.md](../backlog/B389.md) |
+| Decision rule | N/A — resolved. |
+| Contradiction flagged, not reconciled | This document's own `Technology Stack` and `Kùzu Implementation Notes` sections (above) still name **RyuGraph** as the migration fork to watch. B389's actual in-flight target is an **Oxigraph**/RDF-star client (`campy/brain/hippocampus/graph/oxigraph_client.py`), not RyuGraph. Per this section's own rule (record, do not decide), that mismatch is recorded here rather than silently edited into the existing `Technology Stack` / `Kùzu Implementation Notes` text. |
+
+### CoNLL-2003 licence for commercial use
+
+| Field | Detail |
+|---|---|
+| Status | `open`, flagged for patent counsel |
+| Why it matters | HippoCampy has an active patent filing (see Patent Notice above). The ONNX NER model built for B387 is fine-tuned on CoNLL-2003 (via Reuters RCV1 news text); whether a model trained on that corpus is a "derivative work" for licensing purposes is unsettled for pretrained NLP models generally, and has not had a formal counsel review here. |
+| Evidence so far | Per the completion notes for B387 (commit `1de6a1c`, branch `feat/b387-torch-free-ingestion` — **not yet merged to `main`**; `backlog/B387.md` on `main` does not yet contain this writeup): the shipped base model is `elastic/distilbert-base-cased-finetuned-conll03-english`, whose Hugging Face `cardData.license` is Apache-2.0, verified directly via the HF API. Training-data provenance was investigated separately: the Reuters/NIST agreement gates redistribution of the raw corpus text, not downstream model weights; `elastic`'s explicit, unchanged-since-2022 Apache-2.0 grant plus industry precedent (`dslim/bert-base-NER`, MIT license, ~2.1M downloads/month, same CoNLL-2003 provenance) were judged to support proceeding — but this was an engineering judgment call, explicitly flagged for counsel review given the active patent filing, and was not blocked on that review. |
+| Where the detail lives | [backlog/B387.md](../backlog/B387.md) (card, on `main`); full Gate-0 licence writeup is in the commit message and PR description for "feat(B387): finish torch-free NER" — commit `1de6a1c` on branch `feat/b387-torch-free-ingestion`, not yet on `main` as of this writing |
+| Decision rule | Not formally fixed. If counsel review finds the CoNLL-2003/Reuters training-data provenance disqualifying, the NER model choice (or its training-data lineage) needs replacement before the non-provisional filing deadline (March 25, 2027); no such finding has been reported. |
 
 ## Project Mission
 
