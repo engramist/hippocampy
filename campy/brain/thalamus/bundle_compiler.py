@@ -63,6 +63,19 @@ def _table_has_flagged_for_review(db, table: str) -> bool:
     return False
 
 
+def _table_has_column(db, table: str, column: str) -> bool:
+    """B374: best-effort check for whether `table` has `column`."""
+    try:
+        r = db.execute(f"CALL table_info('{table}') RETURN *")
+        while r.has_next():
+            row = r.get_next()
+            if str(row[1]).lower() == column.lower():
+                return True
+    except Exception:
+        pass
+    return False
+
+
 @dataclass
 class BundleSection:
     """One section of a ContextBundle."""
@@ -424,10 +437,20 @@ async def _stage_semantic_context(db, query: str, config: dict, tier_config: dic
                 " AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false)"
                 if _table_has_flagged_for_review(db, label) else ""
             )
+            archived_filter = (
+                " AND (n.archived IS NULL OR n.archived = false)"
+                if _table_has_column(db, label, "archived") else ""
+            )
+            superseded_filter = (
+                " AND (n.superseded_by IS NULL OR n.superseded_by = '')"
+                if _table_has_column(db, label, "superseded_by") else ""
+            )
             cypher = f"""
                 MATCH (n:{label})
                 WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
                   {flagged_filter}
+                  {archived_filter}
+                  {superseded_filter}
                 RETURN n.text_raw as text, label(n) as node_type,
                        n.pathway_strength as pathway_strength, n.confidence as confidence,
                        (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist{authority_select}
@@ -572,13 +595,23 @@ async def _stage_graph_structure(
         query_embedding = emb.embed(query, model_name=embedding_model)
 
         has_flagged = _table_has_flagged_for_review(db, "Concept")
+        has_archived = _table_has_column(db, "Concept", "archived")
+        has_superseded = _table_has_column(db, "Concept", "superseded_by")
         anchor_flagged_filter = (
             " AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false)" if has_flagged else ""
+        )
+        anchor_archived_filter = (
+            " AND (n.archived IS NULL OR n.archived = false)" if has_archived else ""
+        )
+        anchor_superseded_filter = (
+            " AND (n.superseded_by IS NULL OR n.superseded_by = '')" if has_superseded else ""
         )
         anchor_cypher = f"""
             MATCH (n:Concept)
             WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30
               {anchor_flagged_filter}
+              {anchor_archived_filter}
+              {anchor_superseded_filter}
             RETURN n.concept_id as id, n.text_raw as text,
                    (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist
             ORDER BY dist ASC

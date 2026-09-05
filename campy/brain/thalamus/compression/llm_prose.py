@@ -2,7 +2,6 @@
 campy/brain/thalamus/compression/llm_prose.py
 
 LLMCompressor — compresses prose sections using Campy's existing LLMClient.
-
 Fires only when the section contains prose (summary, semantic text). Uses
 the configured compression_model (defaults to the main LLM to avoid loading
 a second model). Set compression_model = "claude-3-5-haiku" or an Ollama
@@ -17,11 +16,14 @@ if TYPE_CHECKING:
     from campy.brain.thalamus.bundle_compiler import BundleSection
 
 _COMPRESSION_PROMPT = (
-    "Compress the following text. Rules:\n"
-    "1. Preserve every entity name, decision, file path, number, and negation verbatim.\n"
-    "2. Eliminate filler phrases, connective tissue, and redundant transitions.\n"
-    "3. Do not alter semantic intent. Do not invent new facts.\n"
-    "4. Return only the compressed text, no preamble.\n\n"
+    "You are a high-fidelity information compressor.\n"
+    "Your task: Compress the provided text to fit within {target_tokens} tokens.\n\n"
+    "STRICT CONSTRAINTS:\n"
+    "1. Preserve every entity name, decision identifier, requirement, numeric parameter, and negation verbatim.\n"
+    "2. Eliminate only prose filler, conversational fluff, pleasantries, restatements, and syntactic redundancy.\n"
+    "3. Never alter or summarize a negative assertion (\"do NOT\", \"must never\").\n"
+    "4. Do not alter semantic intent. Do not invent new facts.\n"
+    "5. Return only the compressed text, no preamble.\n\n"
     "Text:\n{text}"
 )
 
@@ -41,9 +43,9 @@ class LLMCompressor(Compressor):
         cfg = dict(self._config)
         if compression_model:
             cfg = dict(cfg)
-            cfg.setdefault("llm", {})
-            cfg["llm"] = dict(cfg.get("llm", {}))
-            cfg["llm"]["model"] = compression_model
+            cfg_llm = dict(cfg.get("llm", {}))
+            cfg_llm["model"] = compression_model
+            cfg["llm"] = cfg_llm
         return create_llm_client(cfg)
 
     def compress(self, section: "BundleSection", query: str, config: dict) -> "BundleSection":
@@ -62,8 +64,17 @@ class LLMCompressor(Compressor):
             llm = self._get_llm()
             if llm is None:
                 return section
+            target_tokens = (
+                config.get("compression", {}).get("target_tokens")
+                or max(50, (len(prose) // 4) // 2)
+            )
             messages = [
-                {"role": "user", "content": _COMPRESSION_PROMPT.format(text=prose)}
+                {
+                    "role": "user",
+                    "content": _COMPRESSION_PROMPT.format(
+                        text=prose, target_tokens=target_tokens
+                    ),
+                }
             ]
             compressed = llm.chat(messages)
             token_estimate = len(compressed) // 4

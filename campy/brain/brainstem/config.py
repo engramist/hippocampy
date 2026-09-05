@@ -30,6 +30,8 @@ _DEFAULT_CONFIG = {
         "max_co_occurrence_pairs": 45,
     },
     "compression": {
+        "strategy": "two_lane",       # two_lane (Protected Lane zero loss + Bulk Lane lossy)
+        "budget_tokens": 4000,        # threshold above which pressure-relief compression triggers
         "compression_model": "",      # empty = inherit from [llm]
         "graph_prune_threshold": 0.30,
         "structured_format": "toon",
