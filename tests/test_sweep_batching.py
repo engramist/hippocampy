@@ -57,9 +57,7 @@ class _RecordingDB:
 async def test_batch_write_chunks_at_500():
     db = _RecordingDB({})
     ids = [f"c{i}" for i in range(1200)]
-    ok, bad = await _batch_write(
-        db, "UNWIND $ids AS nid MATCH (n:Concept) WHERE n.concept_id = nid SET n.archived = true", ids
-    )
+    ok, bad = await _batch_write(db, "sweep.unwind_archive_concept", ids)
     assert ok == 1200
     assert bad == 0
     assert len(db.write_calls) == 3  # ceil(1200/500)
@@ -80,7 +78,7 @@ async def test_batch_write_counts_failed_chunks():
 
     db = FailingDB()
     ids = [f"c{i}" for i in range(1100)]
-    ok, bad = await _batch_write(db, "UNWIND $ids AS nid RETURN nid", ids)
+    ok, bad = await _batch_write(db, "sweep.unwind_archive_concept", ids)
     assert ok == 600   # chunks 1 (500) + 3 (100)
     assert bad == 500  # chunk 2 failed wholesale
 

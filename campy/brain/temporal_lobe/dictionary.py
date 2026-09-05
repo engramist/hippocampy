@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 B160: Domain Dictionary Pre-Seed
 
@@ -14,6 +16,7 @@ from typing import Any
 import yaml
 
 from campy.brain.hippocampus.graph.embeddings import embed
+from campy.brain.hippocampus.graph.gateway import get_gateway
 
 _logger = logging.getLogger(__name__)
 
@@ -100,6 +103,7 @@ def load_dictionary(path: Path) -> list[dict[str, Any]]:
 
 async def ingest_dictionary(entities: list[dict], db, now) -> dict:
     """Ingest dictionary entities into the graph. Idempotent."""
+    gw = get_gateway(db)
     created = 0
     labels_added = 0
     skipped = 0
@@ -108,86 +112,70 @@ async def ingest_dictionary(entities: list[dict], db, now) -> dict:
         term = entry["term"]
 
         # Check for existing concept (exact match, case-insensitive)
-        existing = db.execute(
-            "MATCH (c:Concept) WHERE toLower(c.text_raw) = toLower($t) "
-            "AND c.archived = false "
-            "RETURN c.concept_id LIMIT 1",
-            {"t": term}
-        )
+        existing = await gw.run("temporal_lobe.dict_find_concept", t=term)
 
         if existing:
-            concept_id = existing[0]["c.concept_id"]
+            row = existing[0]
+            concept_id = row.get("c.concept_id", row.get("concept_id")) if isinstance(row, dict) else row[0]
             skipped += 1
         else:
             # Create new concept
             concept_id = str(uuid.uuid4())
             embedding = embed(term)
 
-            db.execute(
-                "CREATE (c:Concept {"
-                "  concept_id: $cid, text_raw: $text, embedding: $emb,"
-                "  embedding_model: 'sentence-transformers/all-MiniLM-L6-v2',"
-                "  embedding_dim: 384,"
-                "  gist_class: $gist, schema_org_type: $stype,"
-                "  confidence: 0.95, confidence_low: false,"
-                "  pathway_strength: 0.80, archived: false,"
-                "  anomaly_type: null, flagged_for_review: false,"
-                "  created_at: $now, last_accessed_at: $now"
-                "})",
-                {
-                    "cid": concept_id, "text": term, "emb": embedding,
-                    "gist": entry.get("gist_class"),
-                    "stype": entry.get("schema_org_type"),
-                    "now": now,
-                }
+            await gw.run(
+                "temporal_lobe.dict_create_concept",
+                cid=concept_id,
+                text=term,
+                emb=embedding,
+                gist=entry.get("gist_class"),
+                stype=entry.get("schema_org_type"),
+                now=now,
             )
 
             # Create prefLabel
             pref_label_id = str(uuid.uuid4())
             pref_emb = embedding  # Same embedding as concept
-            db.execute(
-                "CREATE (l:Label {"
-                "  label_id: $lid, text: $txt, embedding: $emb,"
-                "  language: 'en', label_type: 'preferred',"
-                "  confidence: 0.95, source: 'domain_dictionary',"
-                "  created_at: $now"
-                "})",
-                {"lid": pref_label_id, "txt": term, "emb": pref_emb, "now": now}
+            await gw.run(
+                "temporal_lobe.dict_create_pref_label",
+                lid=pref_label_id,
+                txt=term,
+                emb=pref_emb,
+                now=now,
             )
-            db.execute(
-                "MATCH (c:Concept {concept_id: $cid}), (l:Label {label_id: $lid}) "
-                "CREATE (c)-[:HAS_PREF_LABEL {created_at: $now}]->(l)",
-                {"cid": concept_id, "lid": pref_label_id, "now": now}
+            await gw.run(
+                "temporal_lobe.dict_link_pref_label",
+                cid=concept_id,
+                lid=pref_label_id,
+                now=now,
             )
             created += 1
 
         # Add altLabels (even for existing concepts — may have new synonyms)
         for alt_text in entry["alt_labels"]:
             # Check if this altLabel already exists for this concept
-            existing_label = db.execute(
-                "MATCH (c:Concept {concept_id: $cid})-[:HAS_ALT_LABEL]->(l:Label) "
-                "WHERE toLower(l.text) = toLower($txt) "
-                "RETURN l.label_id LIMIT 1",
-                {"cid": concept_id, "txt": alt_text}
+            existing_label = await gw.run(
+                "temporal_lobe.dict_find_alt_label",
+                cid=concept_id,
+                txt=alt_text,
             )
             if existing_label:
                 continue
 
             alt_label_id = str(uuid.uuid4())
             alt_emb = embed(alt_text)
-            db.execute(
-                "CREATE (l:Label {"
-                "  label_id: $lid, text: $txt, embedding: $emb,"
-                "  language: 'en', label_type: 'alternative',"
-                "  confidence: 0.90, source: 'domain_dictionary',"
-                "  created_at: $now"
-                "})",
-                {"lid": alt_label_id, "txt": alt_text, "emb": alt_emb, "now": now}
+            await gw.run(
+                "temporal_lobe.dict_create_alt_label",
+                lid=alt_label_id,
+                txt=alt_text,
+                emb=alt_emb,
+                now=now,
             )
-            db.execute(
-                "MATCH (c:Concept {concept_id: $cid}), (l:Label {label_id: $lid}) "
-                "CREATE (c)-[:HAS_ALT_LABEL {created_at: $now}]->(l)",
-                {"cid": concept_id, "lid": alt_label_id, "now": now}
+            await gw.run(
+                "temporal_lobe.dict_link_alt_label",
+                cid=concept_id,
+                lid=alt_label_id,
+                now=now,
             )
             labels_added += 1
 

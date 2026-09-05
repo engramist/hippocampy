@@ -7,6 +7,7 @@ from typing import Optional, TYPE_CHECKING
 
 from ._shared import get_loop_queue
 from .capture import notify_turn
+from campy.brain.hippocampus.graph.gateway import get_gateway
 
 if TYPE_CHECKING:
     from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
@@ -251,20 +252,18 @@ _CARD_CONTEXT_MAX_HOPS = 5
 _CARD_CONTEXT_HOP_LIMIT = 25  # per (node, rel, direction) — bounds fan-out, not depth
 
 
-def _resolve_card_context_target(db, target_id: str) -> Optional[dict]:
+async def _resolve_card_context_target(gw, target_id: str) -> Optional[dict]:
     """Resolve target_id against a card (MainQuest/SideQuest/ActionItem) or
     a Workspace.branch_name. Cards take priority on ambiguity, and exact
     text matches take priority over a lexical CONTAINS match (mirrors the
     B303 card-identifier convention in quests.py)."""
     for table, pk in _CARD_NODE_TABLES.items():
-        col = _CARD_TEXT_COLUMNS[table]
+        qname = f"thalamus.context_resolve_exact_{table.lower()}"
         try:
-            r = db.execute(
-                f"MATCH (n:{table}) WHERE n.{col} = $tid RETURN n.{pk} LIMIT 1",
-                {"tid": target_id},
-            )
-            if r.has_next():
-                node_id = r.get_next()[0]
+            r = await gw.run(qname, tid=target_id)
+            if r:
+                row = r[0]
+                node_id = row.get(f"n.{pk}", row.get(pk)) if isinstance(row, dict) else (row[0] if isinstance(row, (list, tuple)) else getattr(row, pk, None))
                 if node_id:
                     return {
                         "table": table, "pk": pk, "node_id": node_id,
@@ -274,14 +273,12 @@ def _resolve_card_context_target(db, target_id: str) -> Optional[dict]:
             continue
 
     for table, pk in _CARD_NODE_TABLES.items():
-        col = _CARD_TEXT_COLUMNS[table]
+        qname = f"thalamus.context_resolve_contains_{table.lower()}"
         try:
-            r = db.execute(
-                f"MATCH (n:{table}) WHERE n.{col} CONTAINS $tid RETURN n.{pk} LIMIT 1",
-                {"tid": target_id},
-            )
-            if r.has_next():
-                node_id = r.get_next()[0]
+            r = await gw.run(qname, tid=target_id)
+            if r:
+                row = r[0]
+                node_id = row.get(f"n.{pk}", row.get(pk)) if isinstance(row, dict) else (row[0] if isinstance(row, (list, tuple)) else getattr(row, pk, None))
                 if node_id:
                     return {
                         "table": table, "pk": pk, "node_id": node_id,
@@ -291,12 +288,10 @@ def _resolve_card_context_target(db, target_id: str) -> Optional[dict]:
             continue
 
     try:
-        r = db.execute(
-            "MATCH (w:Workspace) WHERE w.branch_name = $tid RETURN w.workspace_id LIMIT 1",
-            {"tid": target_id},
-        )
-        if r.has_next():
-            node_id = r.get_next()[0]
+        r = await gw.run("thalamus.context_resolve_workspace", tid=target_id)
+        if r:
+            row = r[0]
+            node_id = row.get("w.workspace_id", row.get("workspace_id")) if isinstance(row, dict) else (row[0] if isinstance(row, (list, tuple)) else getattr(row, "workspace_id", None))
             if node_id:
                 return {
                     "table": "Workspace", "pk": "workspace_id", "node_id": node_id,
@@ -308,7 +303,7 @@ def _resolve_card_context_target(db, target_id: str) -> Optional[dict]:
     return None
 
 
-def _card_context_dependency_hop(db, frontier: list[tuple[str, str]]) -> list[dict]:
+async def _card_context_dependency_hop(gw, frontier: list[tuple[str, str]]) -> list[dict]:
     """One hop of TASK_BLOCKS/TASK_ENABLES/ANCHORED_TO, both directions,
     from every (table, node_id) pair in `frontier`.
 
@@ -316,7 +311,7 @@ def _card_context_dependency_hop(db, frontier: list[tuple[str, str]]) -> list[di
     frontier by exactly one hop — there is no Cypher `*` anywhere in these
     queries. compile_card_context drives how many times this is called
     (clamped to _CARD_CONTEXT_MAX_HOPS), and stops early once the frontier
-    is empty. A MATCH against a (table, rel) pair the schema doesn't define
+    is empty. A query against a (table, rel) pair the schema doesn't define
     (e.g. SideQuest against ANCHORED_TO) returns zero rows rather than
     raising — confirmed against Kùzu 0.11.3 — so no per-pair type guard is
     needed here. Left un-guarded against real query errors so a genuine
@@ -329,22 +324,19 @@ def _card_context_dependency_hop(db, frontier: list[tuple[str, str]]) -> list[di
             continue
         for rel in _DEP_REL_TYPES:
             props = _DEP_REL_PROPS.get(rel, ())
-            prop_select = "".join(f", r.{p} AS {p}" for p in props)
-            for direction, pattern in (
-                ("out", f"(a:{table} {{{pk}: $id}})-[r:{rel}]->(b)"),
-                ("in", f"(a:{table} {{{pk}: $id}})<-[r:{rel}]-(b)"),
-            ):
-                query = f"MATCH {pattern} RETURN label(b) AS b_label, b{prop_select} LIMIT {_CARD_CONTEXT_HOP_LIMIT}"
-                res = db.execute(query, {"id": node_id})
-                while res.has_next():
-                    row = res.get_next()
-                    b_label = row[0]
-                    b_node = row[1] or {}
+            for direction in ("out", "in"):
+                qname = f"thalamus.card_hop_{table.lower()}_{rel.lower()}_{direction}"
+                res = await gw.run(qname, id=node_id)
+                for row in (res or []):
+                    b_label = row.get("b_label") if isinstance(row, dict) else (row[0] if isinstance(row, (list, tuple)) else getattr(row, "b_label", None))
+                    b_node = row.get("b") if isinstance(row, dict) else (row[1] if isinstance(row, (list, tuple)) else getattr(row, "b", None))
+                    if not b_node:
+                        b_node = row
                     b_pk = _DEP_NODE_PK.get(b_label)
                     if not b_pk:
                         continue
-                    b_dict = b_node if isinstance(b_node, dict) else dict(b_node)
-                    b_id = b_dict.get(b_pk)
+                    b_dict = b_node if isinstance(b_node, dict) else (dict(b_node) if hasattr(b_node, "__iter__") and hasattr(b_node, "items") else {})
+                    b_id = b_dict.get(b_pk) or getattr(b_node, b_pk, None)
                     if not b_id:
                         continue
                     edge = {
@@ -356,7 +348,8 @@ def _card_context_dependency_hop(db, frontier: list[tuple[str, str]]) -> list[di
                         "to_id": b_id,
                     }
                     for i, prop in enumerate(props, start=2):
-                        edge[prop] = row[i]
+                        val = row.get(prop) if isinstance(row, dict) else (row[i] if isinstance(row, (list, tuple)) and i < len(row) else getattr(row, prop, None))
+                        edge[prop] = val
                     edges.append(edge)
     return edges
 
@@ -373,27 +366,26 @@ def _card_context_edge_identity(edge: dict) -> tuple:
     return (edge["rel_type"], edge["to_table"], edge["to_id"], edge["from_table"], edge["from_id"])
 
 
-def _card_context_lessons_for_quest(db, quest_id: str) -> list[dict]:
+async def _card_context_lessons_for_quest(gw, quest_id: str) -> list[dict]:
     """PRODUCED_LESSON only exists FROM MainQuest TO Lesson."""
     try:
-        r = db.execute(
-            "MATCH (q:MainQuest {quest_id: $qid})-[:PRODUCED_LESSON]->(l:Lesson) "
-            "RETURN l.lesson_id, l.text_raw, l.confidence, l.archived LIMIT 20",
-            {"qid": quest_id},
-        )
+        r = await gw.run("thalamus.context_lessons_for_quest", qid=quest_id)
     except Exception:
         _logger.exception("compile_card_context: PRODUCED_LESSON lookup failed for %s", quest_id)
         return []
     out = []
-    while r.has_next():
-        row = r.get_next()
+    for row in (r or []):
+        lid = row.get("l.lesson_id", row.get("lesson_id")) if isinstance(row, dict) else row[0]
+        text = row.get("l.text_raw", row.get("text_raw")) if isinstance(row, dict) else row[1]
+        conf = row.get("l.confidence", row.get("confidence")) if isinstance(row, dict) else row[2]
+        arch = row.get("l.archived", row.get("archived")) if isinstance(row, dict) else row[3]
         out.append({
-            "lesson_id": row[0], "text": row[1], "confidence": row[2], "archived": row[3],
+            "lesson_id": lid, "text": text, "confidence": conf, "archived": arch,
         })
     return out
 
 
-def _card_context_deprecated_by(db, table: str, node_id: str, pk: str) -> list[dict]:
+async def _card_context_deprecated_by(gw, table: str, node_id: str, pk: str) -> list[dict]:
     """DEPRECATED_BY only covers Concept/Decision/Constraint/Lesson
     self-pairs (direction: (older)-[:DEPRECATED_BY]->(newer)). Checked in
     both directions so callers see both "this is stale, replaced by X" and
@@ -401,30 +393,26 @@ def _card_context_deprecated_by(db, table: str, node_id: str, pk: str) -> list[d
     if table not in _DEPRECATED_BY_TABLES:
         return []
     out: list[dict] = []
+    out_q = f"thalamus.context_deprecated_by_out_{table.lower()}"
+    in_q = f"thalamus.context_deprecated_by_in_{table.lower()}"
     try:
-        r = db.execute(
-            f"MATCH (a:{table} {{{pk}: $id}})-[:DEPRECATED_BY]->(b:{table}) "
-            f"RETURN b.{pk} LIMIT 10",
-            {"id": node_id},
-        )
-        while r.has_next():
-            out.append({"related_node_id": r.get_next()[0], "relation": "deprecated_by"})
+        r = await gw.run(out_q, id=node_id)
+        for row in (r or []):
+            rel_id = row.get(f"b.{pk}", row.get(pk)) if isinstance(row, dict) else row[0]
+            out.append({"related_node_id": rel_id, "relation": "deprecated_by"})
     except Exception:
         _logger.exception("compile_card_context: DEPRECATED_BY (outgoing) lookup failed for %s:%s", table, node_id)
     try:
-        r = db.execute(
-            f"MATCH (a:{table})-[:DEPRECATED_BY]->(b:{table} {{{pk}: $id}}) "
-            f"RETURN a.{pk} LIMIT 10",
-            {"id": node_id},
-        )
-        while r.has_next():
-            out.append({"related_node_id": r.get_next()[0], "relation": "deprecates"})
+        r = await gw.run(in_q, id=node_id)
+        for row in (r or []):
+            rel_id = row.get(f"a.{pk}", row.get(pk)) if isinstance(row, dict) else row[0]
+            out.append({"related_node_id": rel_id, "relation": "deprecates"})
     except Exception:
         _logger.exception("compile_card_context: DEPRECATED_BY (incoming) lookup failed for %s:%s", table, node_id)
     return out
 
 
-def _card_context_solved_by(db, table: str, node_id: str, pk: str) -> list[dict]:
+async def _card_context_solved_by(gw, table: str, node_id: str, pk: str) -> list[dict]:
     """SOLVED_BY attribution — only defined FROM Decision/ActionItem/Lesson
     TO AgentWorker (schema.SOLVED_BY_TABLES)."""
     from campy.brain.hippocampus.schema import SOLVED_BY_TABLES
@@ -432,18 +420,17 @@ def _card_context_solved_by(db, table: str, node_id: str, pk: str) -> list[dict]
     if table not in SOLVED_BY_TABLES:
         return []
     out: list[dict] = []
+    qname = f"thalamus.context_solved_by_{table.lower()}"
     try:
-        r = db.execute(
-            f"MATCH (n:{table} {{{pk}: $id}})-[r:SOLVED_BY]->(w:AgentWorker) "
-            f"RETURN w.worker_id, r.confidence, r.observed_at LIMIT 10",
-            {"id": node_id},
-        )
-        while r.has_next():
-            row = r.get_next()
+        r = await gw.run(qname, id=node_id)
+        for row in (r or []):
+            wid = row.get("w.worker_id", row.get("worker_id")) if isinstance(row, dict) else row[0]
+            conf = row.get("r.confidence", row.get("confidence")) if isinstance(row, dict) else row[1]
+            obs = row.get("r.observed_at", row.get("observed_at")) if isinstance(row, dict) else row[2]
             out.append({
-                "worker_id": row[0],
-                "confidence": row[1],
-                "observed_at": str(row[2]) if row[2] is not None else None,
+                "worker_id": wid,
+                "confidence": conf,
+                "observed_at": str(obs) if obs is not None else None,
             })
     except Exception:
         _logger.exception("compile_card_context: SOLVED_BY lookup failed for %s:%s", table, node_id)
@@ -545,8 +532,9 @@ async def compile_card_context(params: dict, db, config: dict) -> dict:
     max_hops = max(1, min(max_hops, _CARD_CONTEXT_MAX_HOPS))
 
     start_time = time.time()
+    gw = get_gateway(db)
 
-    resolution = _resolve_card_context_target(db, target_id)
+    resolution = await _resolve_card_context_target(gw, target_id)
     if resolution is None:
         return {
             "error": (
@@ -582,7 +570,7 @@ async def compile_card_context(params: dict, db, config: dict) -> dict:
         for hop in range(1, max_hops + 1):
             if not frontier:
                 break
-            hop_edges = _card_context_dependency_hop(db, frontier)
+            hop_edges = await _card_context_dependency_hop(gw, frontier)
             next_frontier: list[tuple[str, str]] = []
             for edge in hop_edges:
                 eid = _card_context_edge_identity(edge)
@@ -613,18 +601,18 @@ async def compile_card_context(params: dict, db, config: dict) -> dict:
         attribution_content: list[dict] = []
         for (r_table, r_id), _hop in reached.items():
             if r_table == "MainQuest":
-                for lesson in _card_context_lessons_for_quest(db, r_id):
+                for lesson in await _card_context_lessons_for_quest(gw, r_id):
                     lesson_content.append({**lesson, "quest_table": r_table, "quest_id": r_id})
                     lesson_id = lesson.get("lesson_id")
                     if lesson_id:
-                        for dep in _card_context_deprecated_by(db, "Lesson", lesson_id, "lesson_id"):
+                        for dep in await _card_context_deprecated_by(gw, "Lesson", lesson_id, "lesson_id"):
                             superseded_content.append({"table": "Lesson", "node_id": lesson_id, **dep})
-                        for sb in _card_context_solved_by(db, "Lesson", lesson_id, "lesson_id"):
+                        for sb in await _card_context_solved_by(gw, "Lesson", lesson_id, "lesson_id"):
                             attribution_content.append({"table": "Lesson", "node_id": lesson_id, **sb})
 
             r_pk = _DEP_NODE_PK.get(r_table)
             if r_pk:
-                for sb in _card_context_solved_by(db, r_table, r_id, r_pk):
+                for sb in await _card_context_solved_by(gw, r_table, r_id, r_pk):
                     attribution_content.append({"table": r_table, "node_id": r_id, **sb})
 
         if lesson_content:

@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
 
 from campy.brain.hippocampus.table_registry import tables_with
+from campy.brain.hippocampus.graph.gateway import get_gateway
 
 _logger = logging.getLogger(__name__)
 
@@ -102,12 +103,10 @@ async def compute_warm_frontier(
         return 0
 
     # Phase 4: Persistence (WARM_NODE edges)
+    gw = get_gateway(db)
     # Clear old warm frontier for this session first
     try:
-        await db.execute_write(
-            "MATCH (s:Session {session_id: $sid})-[w:WARM_NODE]->() DELETE w",
-            {"sid": session_id}
-        )
+        await gw.run("temporal_lobe.warm_clear_session", sid=session_id)
     except Exception:
         pass
 
@@ -117,31 +116,26 @@ async def compute_warm_frontier(
         if not pk: continue
         
         try:
-            await db.execute_write(
-                f"MATCH (s:Session {{session_id: $sid}}), (n:{table} {{{pk}: $nid}}) "
-                f"CREATE (s)-[:WARM_NODE {{activation_score: $score, activated_at: timestamp($now)}}]->(n)",
-                {"sid": session_id, "nid": nid, "score": score, "now": now}
-            )
+            qname = f"temporal_lobe.warm_link_{table.lower()}"
+            await gw.run(qname, sid=session_id, nid=nid, score=score, now=now)
             count += 1
         except Exception:
             _logger.debug("Phase 4 activation write failed for %s", nid)
 
     # Update Session.last_warm_frontier_at
     try:
-        await db.execute_write(
-            "MATCH (s:Session {session_id: $sid}) SET s.last_warm_frontier_at = timestamp($now)",
-            {"sid": session_id, "now": now}
-        )
+        await gw.run("temporal_lobe.warm_set_session_time", sid=session_id, now=now)
     except Exception:
         pass
 
     return count
 
-async def _get_artifact_neighbors(db: KuzuClient, node_id: str, table: str) -> List[Tuple[str, str]]:
+async def _get_artifact_neighbors(db: Any, node_id: str, table: str) -> List[Tuple[str, str]]:
     """Helper to find related artifacts in the graph."""
     neighbors = []
     pk = NODE_PK_MAP.get(table)
     if not pk: return []
+    gw = get_gateway(db)
 
     # Relationships to follow for spread activation
     # Concept -> Decision/Constraint/etc (REIFIED_AS)
@@ -154,23 +148,23 @@ async def _get_artifact_neighbors(db: KuzuClient, node_id: str, table: str) -> L
         for target_table, target_pk in NODE_PK_MAP.items():
             try:
                 # Check both directions
-                q_out = (f"MATCH (a:{table} {{{pk}: $id}})-[:{rel}]->(b:{target_table}) "
-                         f"RETURN b.{target_pk}")
-                r = db.execute(q_out, {"id": node_id})
-                while r.has_next():
-                    neighbors.append((str(r.get_next()[0]), target_table))
+                q_out_name = f"temporal_lobe.warm_neighbor_out_{table.lower()}_{rel.lower()}_{target_table.lower()}"
+                r_out = await gw.run(q_out_name, id=node_id)
+                for row in (r_out or []):
+                    val = row.get(f"b.{target_pk}", row.get(target_pk)) if isinstance(row, dict) else row[0]
+                    neighbors.append((str(val), target_table))
 
-                q_in = (f"MATCH (a:{table} {{{pk}: $id}})<-[:{rel}]-(b:{target_table}) "
-                        f"RETURN b.{target_pk}")
-                r = db.execute(q_in, {"id": node_id})
-                while r.has_next():
-                    neighbors.append((str(r.get_next()[0]), target_table))
+                q_in_name = f"temporal_lobe.warm_neighbor_in_{table.lower()}_{rel.lower()}_{target_table.lower()}"
+                r_in = await gw.run(q_in_name, id=node_id)
+                for row in (r_in or []):
+                    val = row.get(f"b.{target_pk}", row.get(target_pk)) if isinstance(row, dict) else row[0]
+                    neighbors.append((str(val), target_table))
             except Exception:
                 pass
                 
     return list(set(neighbors)) # Dedup
 
-def get_warm_nodes(db: KuzuClient, session_id: str) -> Dict[str, float]:
+def get_warm_nodes(db: Any, session_id: str) -> Dict[str, float]:
     """
     Retrieve warm frontier for a session.
     Returns node_id -> activation_score map.
@@ -178,18 +172,17 @@ def get_warm_nodes(db: KuzuClient, session_id: str) -> Dict[str, float]:
     warm = {}
     if session_id == "unknown":
         return warm
+    gw = get_gateway(db)
 
     for table, pk in NODE_PK_MAP.items():
         try:
-            r = db.execute(
-                f"MATCH (s:Session {{session_id: $sid}})-[w:WARM_NODE]->(n:{table}) "
-                f"RETURN n.{pk}, w.activation_score",
-                {"sid": session_id}
-            )
-            while r.has_next():
-                row = r.get_next()
-                if row[0]:
-                    warm[str(row[0])] = float(row[1] or 0.0)
+            qname = f"temporal_lobe.warm_get_{table.lower()}"
+            rows = gw.run_sync(qname, sid=session_id)
+            for row in (rows or []):
+                nid = row.get(f"n.{pk}", row.get(pk)) if isinstance(row, dict) else row[0]
+                score = row.get("w.activation_score", row.get("activation_score")) if isinstance(row, dict) else (row[1] if len(row) > 1 else 0.0)
+                if nid:
+                    warm[str(nid)] = float(score or 0.0)
         except Exception:
             pass
             

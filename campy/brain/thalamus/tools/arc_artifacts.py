@@ -8,6 +8,15 @@ nodes and the wiki projects from those nodes.
 from __future__ import annotations
 
 import hashlib
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
+
+
+def _gateway(db) -> GraphGateway:
+    if isinstance(db, GraphGateway):
+        return db
+    return GraphGateway(db, REGISTRY)
+
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -322,199 +331,167 @@ def _build_run(root: Path, artifacts: list[dict], task_results: list[dict], even
 
 
 async def _upsert_artifact(db, artifact: dict, now: str) -> None:
-    await db.execute_write(
-        """
-        MERGE (a:ArcArtifact {artifact_id: $artifact_id})
-        SET a.artifact_kind = $artifact_kind,
-            a.path = $path,
-            a.content_hash = $content_hash,
-            a.record_count = $record_count,
-            a.captured_at = $captured_at,
-            a.ingested_at = timestamp($now),
-            a.domain = $domain,
-            a.summary = $summary
-        """,
-        {**artifact, "now": now},
+    await _gateway(db).run(
+        "arc.upsert_artifact",
+        artifact_id=artifact["artifact_id"],
+        artifact_kind=artifact["artifact_kind"],
+        path=artifact["path"],
+        content_hash=artifact["content_hash"],
+        record_count=artifact["record_count"],
+        captured_at=artifact["captured_at"],
+        now=now,
+        domain=artifact["domain"],
+        summary=artifact["summary"],
     )
 
 
 async def _upsert_run(db, run: dict, now: str) -> None:
-    await db.execute_write(
-        """
-        MERGE (r:ArcRun {run_id: $run_id})
-        SET r.artifact_hash = $artifact_hash,
-            r.source_root = $source_root,
-            r.source_files = $source_files,
-            r.started_at = $started_at,
-            r.completed_at = $completed_at,
-            r.status = $status,
-            r.variant = $variant,
-            r.task_count = $task_count,
-            r.solved_count = $solved_count,
-            r.failed_count = $failed_count,
-            r.step_count = $step_count,
-            r.domain = $domain,
-            r.summary = $summary,
-            r.created_at = timestamp($now),
-            r.updated_at = timestamp($now)
-        """,
-        {**run, "now": now},
+    await _gateway(db).run(
+        "arc.upsert_run",
+        run_id=run["run_id"],
+        artifact_hash=run["artifact_hash"],
+        source_root=run["source_root"],
+        source_files=run["source_files"],
+        started_at=run["started_at"],
+        completed_at=run["completed_at"],
+        status=run["status"],
+        variant=run["variant"],
+        task_count=run["task_count"],
+        solved_count=run["solved_count"],
+        failed_count=run["failed_count"],
+        step_count=run["step_count"],
+        domain=run["domain"],
+        summary=run["summary"],
+        now=now,
     )
 
 
 async def _upsert_task(db, run_id: str, task: dict, now: str) -> None:
-    await db.execute_write(
-        """
-        MERGE (t:ArcTaskResult {task_result_id: $task_result_id})
-        SET t.run_id = $run_id,
-            t.task_id = $task_id,
-            t.puzzle_id = $puzzle_id,
-            t.status = $status,
-            t.correct = $correct,
-            t.steps = $steps,
-            t.tokens_input = $tokens_input,
-            t.tokens_output = $tokens_output,
-            t.failure_class = $failure_class,
-            t.trajectory_score = $trajectory_score,
-            t.domain = $domain,
-            t.summary = $summary,
-            t.created_at = timestamp($now),
-            t.updated_at = timestamp($now)
-        """,
-        {**task, "run_id": run_id, "domain": ARC_DOMAINS, "now": now},
+    await _gateway(db).run(
+        "arc.upsert_task",
+        task_result_id=task["task_result_id"],
+        run_id=run_id,
+        task_id=task["task_id"],
+        puzzle_id=task["puzzle_id"],
+        status=task["status"],
+        correct=task["correct"],
+        steps=task["steps"],
+        tokens_input=task["tokens_input"],
+        tokens_output=task["tokens_output"],
+        failure_class=task["failure_class"],
+        trajectory_score=task["trajectory_score"],
+        domain=ARC_DOMAINS,
+        summary=task["summary"],
+        now=now,
     )
-    await db.execute_write(
-        """
-        MATCH (r:ArcRun {run_id: $run_id})
-        MATCH (t:ArcTaskResult {task_result_id: $task_result_id})
-        MERGE (r)-[:ARC_RUN_HAS_TASK]->(t)
-        """,
-        {"run_id": run_id, "task_result_id": task["task_result_id"]},
+    await _gateway(db).run(
+        "arc.link_run_task",
+        run_id=run_id,
+        task_result_id=task["task_result_id"],
     )
 
 
 async def _upsert_event(db, run_id: str, event: dict, now: str) -> None:
-    event_params = {k: v for k, v in event.items() if k != "artifact_kind"}
-    await db.execute_write(
-        """
-        MERGE (e:ArcEvent {event_id: $event_id})
-        SET e.run_id = $run_id,
-            e.task_id = $task_id,
-            e.event_type = $event_type,
-            e.timestamp = $timestamp,
-            e.step_index = $step_index,
-            e.actor = $actor,
-            e.tool_name = $tool_name,
-            e.action_name = $action_name,
-            e.outcome = $outcome,
-            e.domain = $domain,
-            e.summary = $summary
-        """,
-        {**event_params, "run_id": run_id, "domain": ARC_DOMAINS},
+    await _gateway(db).run(
+        "arc.upsert_event",
+        event_id=event["event_id"],
+        run_id=run_id,
+        task_id=event["task_id"],
+        event_type=event["event_type"],
+        timestamp=event["timestamp"],
+        step_index=event["step_index"],
+        actor=event["actor"],
+        tool_name=event["tool_name"],
+        action_name=event["action_name"],
+        outcome=event["outcome"],
+        domain=ARC_DOMAINS,
+        summary=event["summary"],
     )
     if event.get("task_id"):
-        await db.execute_write(
-            """
-            MATCH (t:ArcTaskResult {task_id: $task_id})
-            MATCH (e:ArcEvent {event_id: $event_id})
-            MERGE (t)-[:ARC_TASK_HAS_EVENT]->(e)
-            """,
-            {"task_id": event["task_id"], "event_id": event["event_id"]},
+        await _gateway(db).run(
+            "arc.link_task_event",
+            task_id=event["task_id"],
+            event_id=event["event_id"],
         )
 
 
 async def _link_run_artifact(db, run_id: str, artifact_id: str) -> None:
-    await db.execute_write(
-        """
-        MATCH (r:ArcRun {run_id: $run_id})
-        MATCH (a:ArcArtifact {artifact_id: $artifact_id})
-        MERGE (r)-[:ARC_RUN_HAS_ARTIFACT]->(a)
-        """,
-        {"run_id": run_id, "artifact_id": artifact_id},
+    await _gateway(db).run(
+        "arc.link_run_artifact",
+        run_id=run_id,
+        artifact_id=artifact_id,
     )
 
 
 async def _link_event_artifact(db, event_id: str, artifact_id: str) -> None:
-    await db.execute_write(
-        """
-        MATCH (e:ArcEvent {event_id: $event_id})
-        MATCH (a:ArcArtifact {artifact_id: $artifact_id})
-        MERGE (e)-[:ARC_EVENT_FROM_ARTIFACT]->(a)
-        """,
-        {"event_id": event_id, "artifact_id": artifact_id},
+    await _gateway(db).run(
+        "arc.link_event_artifact",
+        event_id=event_id,
+        artifact_id=artifact_id,
     )
 
 
 async def _upsert_wm_step(db, run_id: str, step: dict) -> None:
-    await db.execute_write(
-        """
-        MERGE (s:ArcWorldModelStep {world_model_step_id: $world_model_step_id})
-        SET s.run_id = $run_id,
-            s.task_id = $task_id,
-            s.step_index = $step_index,
-            s.node_count = $node_count,
-            s.edge_count = $edge_count,
-            s.compiled_claim_count = $compiled_claim_count,
-            s.action_effect_class = $action_effect_class,
-            s.reasoning_mode = $reasoning_mode,
-            s.planner_candidate_count = $planner_candidate_count,
-            s.single_action_stall_detected = $single_action_stall_detected,
-            s.summary = $summary,
-            s.created_at = $created_at
-        """,
-        {**step, "run_id": run_id},
+    await _gateway(db).run(
+        "arc.upsert_wm_step",
+        world_model_step_id=step["world_model_step_id"],
+        run_id=run_id,
+        task_id=step["task_id"],
+        step_index=step["step_index"],
+        node_count=step["node_count"],
+        edge_count=step["edge_count"],
+        compiled_claim_count=step["compiled_claim_count"],
+        action_effect_class=step["action_effect_class"],
+        reasoning_mode=step["reasoning_mode"],
+        planner_candidate_count=step["planner_candidate_count"],
+        single_action_stall_detected=step["single_action_stall_detected"],
+        summary=step["summary"],
+        created_at=step["created_at"],
     )
-    await db.execute_write(
-        """
-        MATCH (r:ArcRun {run_id: $run_id})
-        MATCH (s:ArcWorldModelStep {world_model_step_id: $world_model_step_id})
-        MERGE (r)-[:ARC_RUN_HAS_WORLD_MODEL_STEP]->(s)
-        """,
-        {"run_id": run_id, "world_model_step_id": step["world_model_step_id"]},
+    await _gateway(db).run(
+        "arc.link_run_wm_step",
+        run_id=run_id,
+        world_model_step_id=step["world_model_step_id"],
     )
 
 
 async def _upsert_wm_summary(db, run_id: str, summary: dict) -> None:
-    await db.execute_write(
-        """
-        MERGE (s:ArcWorldModelSummary {world_model_summary_id: $world_model_summary_id})
-        SET s.run_id = $run_id,
-            s.task_id = $task_id,
-            s.graph_bounded = $graph_bounded,
-            s.compiler_active = $compiler_active,
-            s.falsification_active = $falsification_active,
-            s.reasoning_gated = $reasoning_gated,
-            s.planner_grounded = $planner_grounded,
-            s.memory_transfer_active = $memory_transfer_active,
-            s.single_action_stall_detected = $single_action_stall_detected,
-            s.full_reasoning_cycles_avoided = $full_reasoning_cycles_avoided,
-            s.summary = $summary,
-            s.created_at = $created_at
-        """,
-        {**summary, "run_id": run_id},
+    await _gateway(db).run(
+        "arc.upsert_wm_summary",
+        world_model_summary_id=summary["world_model_summary_id"],
+        run_id=run_id,
+        task_id=summary["task_id"],
+        graph_bounded=summary["graph_bounded"],
+        compiler_active=summary["compiler_active"],
+        falsification_active=summary["falsification_active"],
+        reasoning_gated=summary["reasoning_gated"],
+        planner_grounded=summary["planner_grounded"],
+        memory_transfer_active=summary["memory_transfer_active"],
+        single_action_stall_detected=summary["single_action_stall_detected"],
+        full_reasoning_cycles_avoided=summary["full_reasoning_cycles_avoided"],
+        summary=summary["summary"],
+        created_at=summary["created_at"],
     )
-    await db.execute_write(
-        """
-        MATCH (r:ArcRun {run_id: $run_id})
-        MATCH (s:ArcWorldModelSummary {world_model_summary_id: $world_model_summary_id})
-        MERGE (r)-[:ARC_RUN_HAS_WORLD_MODEL_SUMMARY]->(s)
-        """,
-        {"run_id": run_id, "world_model_summary_id": summary["world_model_summary_id"]},
+    await _gateway(db).run(
+        "arc.link_run_wm_summary",
+        run_id=run_id,
+        world_model_summary_id=summary["world_model_summary_id"],
     )
 
 
 async def _link_wm_artifact(db, step_id: str, artifact_id: str, kind: str) -> None:
-    table = "ArcWorldModelStep" if kind == "step" else "ArcWorldModelSummary"
-    id_field = "world_model_step_id" if kind == "step" else "world_model_summary_id"
-    rel = "ARC_WORLD_MODEL_FROM_ARTIFACT" if kind == "step" else "ARC_WORLD_MODEL_SUMMARY_FROM_ARTIFACT"
-    await db.execute_write(
-        f"""
-        MATCH (s:{table} {{{id_field}: $step_id}})
-        MATCH (a:ArcArtifact {{artifact_id: $artifact_id}})
-        MERGE (s)-[:{rel}]->(a)
-        """,
-        {"step_id": step_id, "artifact_id": artifact_id},
-    )
+    if kind == "step":
+        await _gateway(db).run(
+            "arc.link_wm_step_artifact",
+            step_id=step_id,
+            artifact_id=artifact_id,
+        )
+    else:
+        await _gateway(db).run(
+            "arc.link_wm_summary_artifact",
+            step_id=step_id,
+            artifact_id=artifact_id,
+        )
 
 
 async def ingest_arc_artifacts(params: dict, db, config: dict) -> dict:

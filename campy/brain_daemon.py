@@ -34,6 +34,7 @@ from pathlib import Path
 _logger = logging.getLogger(__name__)
 
 import uvicorn
+from campy.brain.hippocampus.graph.gateway import get_gateway
 
 from campy.brain.auth import (
     FORBIDDEN_PARAM_KEYS,
@@ -832,10 +833,11 @@ class BrainDaemon:
                 # B14: Persist loop summary to Session node
                 if summary and session_id != "unknown":
                     try:
-                        await self.db.execute_write(
-                            "MATCH (s:Session {session_id: $sid}) "
-                            "SET s.last_loop_summary = $summary",
-                            {"sid": session_id, "summary": json.dumps(summary)}
+                        gw = get_gateway(self.db)
+                        await gw.run(
+                            "temporal_lobe.daemon_session_set_loop_summary",
+                            sid=session_id,
+                            summary=json.dumps(summary),
                         )
                     except Exception:
                         pass  # Non-critical

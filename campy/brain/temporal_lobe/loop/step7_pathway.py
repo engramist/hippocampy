@@ -24,9 +24,10 @@ After both paths:
   CO_OCCURS_WITH: write (or increment) edges between all concept pairs
   from the same message that cleared the noise floor.
 
-  MERGE (a)-[r:CO_OCCURS_WITH]->(b)
-  ON CREATE SET r.count = 1, r.strength = $min_conf
-  ON MATCH  SET r.count = r.count + 1, r.strength = (r.strength + $new_conf) / 2
+  Edge schema:
+  (a)-[r:CO_OCCURS_WITH]->(b)
+  Initial: r.count = 1, r.strength = $min_conf
+  Subsequent: r.count = r.count + 1, r.strength = (r.strength + $new_conf) / 2
 
   co_occurrence_threshold (default 10): crossing triggers Hebbian Trigger 2 (M5+).
 
@@ -37,6 +38,15 @@ Background sweep (M4 stub — M5 implements):
 import math
 import uuid
 from datetime import datetime, timezone
+
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
+
+
+def _gateway(db) -> GraphGateway:
+    if isinstance(db, GraphGateway):
+        return db
+    return GraphGateway(db, REGISTRY)
 
 
 # ---------------------------------------------------------------------------
@@ -97,18 +107,17 @@ async def apply_additive(existing_concept_id: str, db, now: str) -> dict:
     """
     # Read current state to compute increment
     try:
-        result = db.execute(
-            "MATCH (c:Concept {concept_id: $id}) "
-            "RETURN c.pathway_strength, c.last_accessed_at, c.created_at",
-            {"id": existing_concept_id}
-        )
-        if not result.has_next():
+        rows = _gateway(db).run_sync("pathways.get_concept_pathway_state", id=existing_concept_id)
+        if not rows:
             return {"action": "additive_skip", "reason": "concept not found"}
 
-        row = result.get_next()
-        current_strength = row[0] or 0.5
-        # Use last_accessed_at if available, fall back to created_at (L14 fix)
-        access_time_iso  = row[1] or row[2] or now
+        row = rows[0]
+        if isinstance(row, dict):
+            current_strength = row.get("c.pathway_strength") or 0.5
+            access_time_iso = row.get("c.last_accessed_at") or row.get("c.created_at") or now
+        else:
+            current_strength = row[0] or 0.5
+            access_time_iso = row[1] or row[2] or now
 
     except Exception:
         return {"action": "additive_skip", "reason": "db read error"}
@@ -119,11 +128,11 @@ async def apply_additive(existing_concept_id: str, db, now: str) -> dict:
     # Atomic update: use increment addition to avoid TOCTOU race (L13 fix)
     # Also update last_accessed_at (L15 fix)
     try:
-        await db.execute_write(
-            "MATCH (c:Concept {concept_id: $id}) "
-            "SET c.pathway_strength = c.pathway_strength + $increment, "
-            "    c.last_accessed_at = timestamp($now)",
-            {"id": existing_concept_id, "increment": increment, "now": now}
+        await _gateway(db).run(
+            "pathways.update_concept_pathway_additive",
+            id=existing_concept_id,
+            increment=increment,
+            now=now,
         )
     except Exception:
         return {"action": "additive_skip", "reason": "db write error"}
@@ -151,51 +160,34 @@ async def apply_contradiction(new_concept_id: str, old_concept_id: str,
     """
     # Read old concept's pathway_strength for MergeEvent delta record
     try:
-        result = db.execute(
-            "MATCH (c:Concept {concept_id: $id}) RETURN c.pathway_strength",
-            {"id": old_concept_id}
-        )
-        old_strength = result.get_next()[0] if result.has_next() else 0.5
+        rows = _gateway(db).run_sync("pathways.get_concept_strength", id=old_concept_id)
+        if rows:
+            row = rows[0]
+            old_strength = (row.get("c.pathway_strength") if isinstance(row, dict) else row[0]) or 0.5
+        else:
+            old_strength = 0.5
     except Exception:
         old_strength = 0.5
 
     merge_event_id = str(uuid.uuid4())
 
     # Batched into a single write to avoid partial application (L16 fix).
-    # If any part fails, no changes are committed.
     try:
-        await db.execute_write(
-            """
-            MATCH (old:Concept {concept_id: $old_id}),
-                  (new:Concept {concept_id: $new_id})
-            SET old.archived = true
-            MERGE (old)-[:DEPRECATED_BY]->(new)
-            CREATE (me:MergeEvent {
-                merge_event_id:        $merge_event_id,
-                pre_pathway_strength:  $pre_strength,
-                delta_pathway_strength: 0.0,
-                alias_added:           [],
-                metadata_patch:        $patch,
-                created_at:            timestamp($now)
-            })
-            MERGE (me)-[:UPDATES_PATHWAY]->(new)
-            """,
-            {
-                "old_id":         old_concept_id,
-                "new_id":         new_concept_id,
-                "merge_event_id": merge_event_id,
-                "pre_strength":   old_strength,
-                "patch":          f"contradiction:old={old_concept_id},new={new_concept_id}",
-                "now":            now,
-            }
+        await _gateway(db).run(
+            "pathways.apply_contradiction",
+            old_id=old_concept_id,
+            new_id=new_concept_id,
+            merge_event_id=merge_event_id,
+            pre_strength=old_strength,
+            patch=f"contradiction:old={old_concept_id},new={new_concept_id}",
+            now=now,
         )
 
         # TRIGGERED edge requires Message node — only create if Message exists (O5)
-        await db.execute_write(
-            "MATCH (m:Message {message_id: $mid}), "
-            "      (me:MergeEvent {merge_event_id: $meid}) "
-            "MERGE (m)-[:TRIGGERED]->(me)",
-            {"mid": message_id, "meid": merge_event_id}
+        await _gateway(db).run(
+            "pathways.link_message_merge_event",
+            mid=message_id,
+            meid=merge_event_id,
         )
 
     except Exception as e:
@@ -218,7 +210,7 @@ async def write_co_occurs_with(concept_ids: list[str], min_confidence: float,
                                max_pairs: int = 45) -> int:
     """
     Write CO_OCCURS_WITH edges for all pairs of concept_ids from the same message.
-    Uses MERGE for idempotent upsert: increments count, updates rolling mean strength.
+    Uses upsert: increments count, updates rolling mean strength.
     Edges are stored as A→B where A.concept_id < B.concept_id (lexicographic)
     to avoid duplicate bidirectional pairs.
 
@@ -250,18 +242,10 @@ async def write_co_occurs_with(concept_ids: list[str], min_confidence: float,
     # n*(n-1)/2 individual write-locked DB calls.
     pairs_params = [{"a_id": a, "b_id": b} for a, b in pairs]
     try:
-        await db.execute_write(
-            """
-            UNWIND $pairs AS pair
-            MATCH (a:Concept {concept_id: pair.a_id}),
-                  (b:Concept {concept_id: pair.b_id})
-            MERGE (a)-[r:CO_OCCURS_WITH]->(b)
-            ON CREATE SET r.count     = 1,
-                          r.strength  = $strength
-            ON MATCH SET  r.count    = r.count + 1,
-                          r.strength = (r.strength + $strength) / 2.0
-            """,
-            {"pairs": pairs_params, "strength": min_confidence}
+        await _gateway(db).run(
+            "pathways.unwind_co_occurs_with",
+            pairs=pairs_params,
+            strength=min_confidence,
         )
         written = len(pairs)
     except Exception:
@@ -292,27 +276,22 @@ async def rescore_nearby_low_confidence(concept_id: str, db) -> int:
 
     try:
         # Find confidence_low nodes within 1-2 hops of the updated concept
-        result = db.execute(
-            """
-            MATCH (anchor:Concept {concept_id: $id})
-            MATCH (anchor)-[*1..2]-(neighbor:Concept)
-            WHERE neighbor.confidence_low = true
-              AND neighbor.archived = false
-              AND neighbor.concept_id <> $id
-            RETURN DISTINCT neighbor.concept_id,
-                   neighbor.confidence,
-                   neighbor.pathway_strength
-            """,
-            {"id": concept_id}
-        )
+        rows = _gateway(db).run_sync("pathways.find_low_confidence_hops", id=concept_id)
 
         candidates = []
-        while result.has_next():
-            row = result.get_next()
+        for row in rows:
+            if isinstance(row, dict):
+                cid = row.get("neighbor.concept_id")
+                conf = row.get("neighbor.confidence") or 0.5
+                pstr = row.get("neighbor.pathway_strength") or 0.5
+            else:
+                cid = row[0]
+                conf = row[1] or 0.5
+                pstr = row[2] or 0.5
             candidates.append({
-                "concept_id":       row[0],
-                "confidence":       row[1] or 0.5,
-                "pathway_strength": row[2] or 0.5,
+                "concept_id":       cid,
+                "confidence":       conf,
+                "pathway_strength": pstr,
             })
     except Exception:
         return 0
@@ -321,27 +300,19 @@ async def rescore_nearby_low_confidence(concept_id: str, db) -> int:
         cid = candidate["concept_id"]
         try:
             # Count high-confidence neighbors (relationship density signal)
-            nbr_result = db.execute(
-                """
-                MATCH (c:Concept {concept_id: $cid})-[]-(n:Concept)
-                WHERE n.archived = false AND n.confidence >= 0.60
-                RETURN count(n) AS neighbor_count,
-                       avg(n.pathway_strength) AS avg_strength
-                """,
-                {"cid": cid}
-            )
-
-            if not nbr_result.has_next():
+            nbr_rows = _gateway(db).run_sync("pathways.count_high_confidence_neighbors", cid=cid)
+            if not nbr_rows:
                 continue
 
-            row = nbr_result.get_next()
-            neighbor_count = row[0] or 0
-            avg_neighbor_strength = row[1] or 0.0
+            row = nbr_rows[0]
+            if isinstance(row, dict):
+                neighbor_count = row.get("neighbor_count") or 0
+                avg_neighbor_strength = row.get("avg_strength") or 0.0
+            else:
+                neighbor_count = row[0] or 0
+                avg_neighbor_strength = row[1] or 0.0
 
             # Compute new confidence based on graph context
-            # Base: existing confidence
-            # Boost: +0.05 per high-confidence neighbor (max +0.30)
-            # Boost: +0.10 if avg neighbor strength > 0.70
             old_conf = candidate["confidence"]
             density_boost = min(neighbor_count * 0.05, 0.30)
             strength_boost = 0.10 if avg_neighbor_strength > 0.70 else 0.0
@@ -352,15 +323,11 @@ async def rescore_nearby_low_confidence(concept_id: str, db) -> int:
                 continue
 
             promote = new_conf >= 0.90
-            await db.execute_write(
-                "MATCH (c:Concept {concept_id: $cid}) "
-                "SET c.confidence = $conf, "
-                "    c.confidence_low = $low",
-                {
-                    "cid":  cid,
-                    "conf": new_conf,
-                    "low":  not promote,
-                }
+            await _gateway(db).run(
+                "pathways.update_concept_confidence",
+                cid=cid,
+                conf=new_conf,
+                low=not promote,
             )
             rescored += 1
 
@@ -382,35 +349,28 @@ async def create_decision_chain(decision_id: str, session_id: str, db) -> None:
 
     try:
         # Find the most recent previous Decision in this session (exclude current)
-        prev_r = db.execute(
-            "MATCH (d:Decision)-[:ESTABLISHED_IN]->(s:Session {session_id: $sid}) "
-            "WHERE d.decision_id <> $did "
-            "RETURN d.decision_id, d.created_at "
-            "ORDER BY d.created_at DESC LIMIT 1",
-            {"sid": session_id, "did": decision_id},
-        )
-        if not prev_r.has_next():
+        prev_rows = _gateway(db).run_sync("pathways.get_previous_decision", sid=session_id, did=decision_id)
+        if not prev_rows:
             return
 
-        prev_row = prev_r.get_next()
-        prev_id = prev_row[0]
+        prev_row = prev_rows[0]
+        prev_id = prev_row.get("d.decision_id") if isinstance(prev_row, dict) else prev_row[0]
 
         # Count prior decisions (exclude current) to compute a step_number
-        cnt_r = db.execute(
-            "MATCH (d:Decision)-[:ESTABLISHED_IN]->(s:Session {session_id: $sid}) "
-            "WHERE d.decision_id <> $did RETURN count(d)",
-            {"sid": session_id, "did": decision_id},
-        )
-        prior_count = int(cnt_r.get_next()[0]) if cnt_r.has_next() else 0
+        cnt_rows = _gateway(db).run_sync("pathways.count_prior_decisions", sid=session_id, did=decision_id)
+        prior_count = 0
+        if cnt_rows:
+            r = cnt_rows[0]
+            prior_count = int(list(r.values())[0] if isinstance(r, dict) else r[0])
         step_number = prior_count + 1
 
         # Create/merge the DECISION_CHAIN edge
-        await db.execute_write(
-            "MATCH (p:Decision {decision_id: $prev}), (c:Decision {decision_id: $curr}) "
-            "MERGE (p)-[r:DECISION_CHAIN]->(c) "
-            "ON CREATE SET r.session_id = $sid, r.step_number = $step "
-            "ON MATCH SET r.step_number = $step",
-            {"prev": prev_id, "curr": decision_id, "sid": session_id, "step": step_number},
+        await _gateway(db).run(
+            "pathways.merge_decision_chain",
+            prev=prev_id,
+            curr=decision_id,
+            sid=session_id,
+            step=step_number,
         )
     except Exception:
         # Non-fatal — decision chaining is a convenience feature

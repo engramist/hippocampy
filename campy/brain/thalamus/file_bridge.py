@@ -1,3 +1,5 @@
+from __future__ import annotations
+from campy.brain.hippocampus.graph.gateway import get_gateway
 """
 mcp_engine/file_bridge.py — File Bridge: graph-to-file projection
 
@@ -11,7 +13,6 @@ Generated artefacts:
   - Agent config file pointers (CLAUDE.md, AGENTS.md, GEMINI.md)
 """
 
-from __future__ import annotations
 
 import hashlib
 import json
@@ -81,31 +82,14 @@ async def generate_context_md(project_path: Path, db: "KuzuClient") -> Path:
     """Query Concept nodes and render a CONTEXT.md glossary file."""
 
     # --- fetch concepts ---
-    rows = await db.execute_read(
-        "MATCH (c:Concept) "
-        "WHERE c.archived = false AND c.confidence >= 0.6 "
-        "RETURN c.concept_id AS id, c.prefLabel AS name, "
-        "       c.text_raw AS definition, c.gist_class AS gist_class, "
-        "       c.altLabel AS alt_labels, c.pathway_strength AS strength "
-        "ORDER BY c.pathway_strength DESC"
-    )
+    gw = get_gateway(db)
+    rows = await gw.run("thalamus.file_bridge_concepts")
 
     # --- fetch relationships ---
-    rel_rows = await db.execute_read(
-        "MATCH (a:Concept)-[r]->(b:Concept) "
-        "WHERE a.archived = false AND b.archived = false "
-        "RETURN a.prefLabel AS from_name, type(r) AS rel_type, "
-        "       b.prefLabel AS to_name "
-        "ORDER BY a.pathway_strength DESC"
-    )
+    rel_rows = await gw.run("thalamus.file_bridge_concept_relationships")
 
     # --- fetch project description ---
-    desc_rows = await db.execute_read(
-        "MATCH (g:GlobalConstraint) "
-        "WHERE g.archived = false "
-        "RETURN g.text_raw AS text "
-        "ORDER BY g.pathway_strength DESC LIMIT 3"
-    )
+    desc_rows = await gw.run("thalamus.file_bridge_global_constraints")
 
     project_name = project_path.name
 
@@ -192,13 +176,8 @@ async def generate_context_md(project_path: Path, db: "KuzuClient") -> Path:
 async def generate_adrs(project_path: Path, db: "KuzuClient") -> list[Path]:
     """Query Decision nodes and render Architecture Decision Record files."""
 
-    rows = await db.execute_read(
-        "MATCH (d:Decision) "
-        "WHERE d.archived = false AND d.confidence >= 0.8 "
-        "RETURN d.decision_id AS id, d.prefLabel AS title, "
-        "       d.text_raw AS context, d.created_at AS created_at "
-        "ORDER BY d.created_at ASC"
-    )
+    gw = get_gateway(db)
+    rows = await gw.run("thalamus.file_bridge_decisions")
 
     adr_dir = _resolve_project_child(project_path, "docs", "adr")
     adr_dir.mkdir(parents=True, exist_ok=True)

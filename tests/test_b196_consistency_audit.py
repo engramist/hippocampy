@@ -28,8 +28,13 @@ def _make_db(rows_by_query=None):
             self.written = []
             self._rows = rows_by_query
         def execute(self, q, p=None):
+            # Named-query cypher may be reformatted (multi-line, indented)
+            # relative to how it was hand-written pre-migration — match on
+            # whitespace-normalized text so this fixture doesn't depend on
+            # incidental formatting of the registered query.
+            normalized_q = " ".join(q.split())
             for pattern, rows in self._rows.items():
-                if pattern in q:
+                if " ".join(pattern.split()) in normalized_q:
                     return MockResult(rows)
             return MockResult([])
         async def execute_write(self, q, p=None):

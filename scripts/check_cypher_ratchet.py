@@ -31,7 +31,7 @@ BASELINE_PATH = Path(__file__).resolve().parent / "cypher_baseline.json"
 
 # Files allowlisted for raw Cypher — every entry needs a reason (B314 Task 3):
 ALLOWLIST_FILES = {
-    # DDL (CREATE NODE TABLE, ALTER TABLE, ...) is inherently engine-specific
+    # DDL (CREATE_NODE_TABLE, ALTER_TABLE, ...) is inherently engine-specific
     # and correctly lives next to the engine adapter, not behind a
     # portability seam meant for application-level queries.
     "campy/brain/hippocampus/schema.py",
@@ -40,6 +40,10 @@ ALLOWLIST_FILES = {
     # GraphGateway itself is built on top of — routing it back through the
     # gateway would be circular.
     "campy/brain/hippocampus/graph/kuzu_client.py",
+    # Engine-level dump/restore plumbing that generates dynamic DDL and
+    # table-variable stream queries. Lives next to the engine adapter under
+    # hippocampus/graph/, not behind application query seams.
+    "campy/brain/hippocampus/graph/export.py",
 }
 
 # Directory prefixes allowlisted wholesale:

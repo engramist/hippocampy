@@ -7,6 +7,15 @@ B227 adds recall_mechanic_priors for bounded graph retrieval.
 from __future__ import annotations
 
 import hashlib
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
+
+
+def _gateway(db) -> GraphGateway:
+    if isinstance(db, GraphGateway):
+        return db
+    return GraphGateway(db, REGISTRY)
+
 import json
 import logging
 from datetime import datetime, timezone
@@ -100,39 +109,18 @@ async def publish_mechanic_summary(params: dict, db, config: dict) -> dict:
     source_task_id = summary_data.get("task_id", "")
     
     # 2. Upsert ArcMechanic
-    await db.execute_write(
-        """
-        MERGE (m:ArcMechanic {mechanic_id: $mechanic_id})
-        ON CREATE SET m.created_at = $now,
-                      m.evidence_count = 0,
-                      m.contradiction_count = 0
-        SET m.name = $name,
-            m.signature = $signature,
-            m.confidence = $confidence,
-            m.terminal_relevance = $terminal_relevance,
-            m.coordinate_relevance = $coordinate_relevance,
-            m.source_task_ids = CASE 
-                WHEN m.source_task_ids IS NULL OR m.source_task_ids = '' THEN $task_id
-                WHEN m.source_task_ids CONTAINS $task_id THEN m.source_task_ids
-                ELSE m.source_task_ids + ',' + $task_id
-            END,
-            m.evidence_count = m.evidence_count + 1,
-            m.domain = $domain,
-            m.summary = $summary,
-            m.updated_at = $now
-        """,
-        {
-            "mechanic_id": mech_id,
-            "name": summary_data.get("name", "Unnamed Mechanic"),
-            "signature": action_set,
-            "confidence": _safe_float(summary_data.get("confidence"), 0.5),
-            "terminal_relevance": _safe_float(summary_data.get("terminal_relevance")),
-            "coordinate_relevance": _safe_float(summary_data.get("coordinate_relevance")),
-            "task_id": source_task_id,
-            "domain": ARC_DOMAINS,
-            "summary": _compact(summary_data, 1000),
-            "now": now,
-        },
+    await _gateway(db).run(
+        "arc.merge_mechanic",
+        mechanic_id=mech_id,
+        name=summary_data.get("name", "Unnamed Mechanic"),
+        signature=action_set,
+        confidence=_safe_float(summary_data.get("confidence"), 0.5),
+        terminal_relevance=_safe_float(summary_data.get("terminal_relevance")),
+        coordinate_relevance=_safe_float(summary_data.get("coordinate_relevance")),
+        task_id=source_task_id,
+        domain=ARC_DOMAINS,
+        summary=_compact(summary_data, 1000),
+        now=now,
     )
 
     # 3. Action Patterns
@@ -149,36 +137,19 @@ async def publish_mechanic_summary(params: dict, db, config: dict) -> dict:
         hyp_sig = hyp.get("signature") or _record_hash(hyp)[:16]
         pattern_id = f"act-pat-{hyp_sig}"
         
-        await db.execute_write(
-            """
-            MERGE (p:ArcActionPattern {pattern_id: $pattern_id})
-            SET p.signature = $signature,
-                p.action_set = $action_set,
-                p.action_count = $action_count,
-                p.summary = $summary
-            """,
-            {
-                "pattern_id": pattern_id,
-                "signature": hyp_sig,
-                "action_set": action_set,
-                "action_count": _safe_int(hyp.get("action_count")),
-                "summary": _compact(hyp, 500),
-            }
+        await _gateway(db).run(
+            "arc.merge_action_pattern",
+            pattern_id=pattern_id,
+            signature=hyp_sig,
+            action_set=action_set,
+            action_count=_safe_int(hyp.get("action_count")),
+            summary=_compact(hyp, 500),
         )
-        
-        await db.execute_write(
-            """
-            MATCH (m:ArcMechanic {mechanic_id: $mechanic_id})
-            MATCH (p:ArcActionPattern {pattern_id: $pattern_id})
-            MERGE (m)-[r:ARC_MECHANIC_HAS_ACTION_PATTERN]->(p)
-            SET r.confidence = $confidence,
-                r.evidence_count = COALESCE(r.evidence_count, 0) + 1
-            """,
-            {
-                "mechanic_id": mech_id,
-                "pattern_id": pattern_id,
-                "confidence": _safe_float(hyp.get("confidence"), 0.5),
-            }
+        await _gateway(db).run(
+            "arc.link_mechanic_action_pattern",
+            mechanic_id=mech_id,
+            pattern_id=pattern_id,
+            confidence=_safe_float(hyp.get("confidence"), 0.5),
         )
 
     # 4. Effect Patterns
@@ -193,38 +164,20 @@ async def publish_mechanic_summary(params: dict, db, config: dict) -> dict:
         eff_sig = eff.get("signature") or _record_hash(eff)[:16]
         pattern_id = f"eff-pat-{eff_sig}"
         
-        await db.execute_write(
-            """
-            MERGE (p:ArcEffectPattern {pattern_id: $pattern_id})
-            SET p.signature = $signature,
-                p.effect_class = $effect_class,
-                p.terminal_trend = $terminal_trend,
-                p.object_progress = $object_progress,
-                p.summary = $summary
-            """,
-            {
-                "pattern_id": pattern_id,
-                "signature": eff_sig,
-                "effect_class": str(eff.get("effect_class", "unknown")),
-                "terminal_trend": str(eff.get("terminal_trend", "unknown")),
-                "object_progress": _safe_float(eff.get("object_progress")),
-                "summary": _compact(eff, 500),
-            }
+        await _gateway(db).run(
+            "arc.merge_effect_pattern",
+            pattern_id=pattern_id,
+            signature=eff_sig,
+            effect_class=str(eff.get("effect_class", "unknown")),
+            terminal_trend=str(eff.get("terminal_trend", "unknown")),
+            object_progress=_safe_float(eff.get("object_progress")),
+            summary=_compact(eff, 500),
         )
-        
-        await db.execute_write(
-            """
-            MATCH (m:ArcMechanic {mechanic_id: $mechanic_id})
-            MATCH (p:ArcEffectPattern {pattern_id: $pattern_id})
-            MERGE (m)-[r:ARC_MECHANIC_CAUSES_EFFECT_PATTERN]->(p)
-            SET r.confidence = $confidence,
-                r.evidence_count = COALESCE(r.evidence_count, 0) + 1
-            """,
-            {
-                "mechanic_id": mech_id,
-                "pattern_id": pattern_id,
-                "confidence": _safe_float(eff.get("confidence"), 0.5),
-            }
+        await _gateway(db).run(
+            "arc.link_mechanic_effect_pattern",
+            mechanic_id=mech_id,
+            pattern_id=pattern_id,
+            confidence=_safe_float(eff.get("confidence"), 0.5),
         )
 
     # 5. Preconditions
@@ -234,21 +187,18 @@ async def publish_mechanic_summary(params: dict, db, config: dict) -> dict:
             continue
         pre_sig = pre.get("signature") or _record_hash(pre)[:16]
         pre_id = f"pre-{pre_sig}"
-        await db.execute_write(
-            """
-            MERGE (p:ArcPrecondition {precondition_id: $pre_id})
-            SET p.kind = $kind, p.signature = $signature, p.summary = $summary
-            """,
-            {"pre_id": pre_id, "kind": str(pre.get("kind", "")), "signature": pre_sig, "summary": _compact(pre, 400)}
+        await _gateway(db).run(
+            "arc.merge_precondition",
+            pre_id=pre_id,
+            kind=str(pre.get("kind", "")),
+            signature=pre_sig,
+            summary=_compact(pre, 400),
         )
-        await db.execute_write(
-            """
-            MATCH (m:ArcMechanic {mechanic_id: $mech_id})
-            MATCH (p:ArcPrecondition {precondition_id: $pre_id})
-            MERGE (m)-[r:ARC_MECHANIC_REQUIRES]->(p)
-            SET r.confidence = $confidence
-            """,
-            {"mech_id": mech_id, "pre_id": pre_id, "confidence": _safe_float(pre.get("confidence"), 1.0)}
+        await _gateway(db).run(
+            "arc.link_mechanic_precondition",
+            mech_id=mech_id,
+            pre_id=pre_id,
+            confidence=_safe_float(pre.get("confidence"), 1.0),
         )
 
     # 6. Failure Modes and Recovery Policies
@@ -259,21 +209,17 @@ async def publish_mechanic_summary(params: dict, db, config: dict) -> dict:
         fail_sig = fail_data.get("signature") or _record_hash(fail_data)[:16]
         fail_id = f"fail-{fail_sig}"
         
-        await db.execute_write(
-            """
-            MERGE (f:ArcFailureMode {failure_mode_id: $fail_id})
-            SET f.name = $name, f.signature = $signature, f.summary = $summary
-            """,
-            {"fail_id": fail_id, "name": str(fail_data.get("name", "")), "signature": fail_sig, "summary": _compact(fail_data, 400)}
+        await _gateway(db).run(
+            "arc.merge_failure_mode",
+            fail_id=fail_id,
+            name=str(fail_data.get("name", "")),
+            signature=fail_sig,
+            summary=_compact(fail_data, 400),
         )
-        await db.execute_write(
-            """
-            MATCH (m:ArcMechanic {mechanic_id: $mech_id})
-            MATCH (f:ArcFailureMode {failure_mode_id: $fail_id})
-            MERGE (m)-[r:ARC_MECHANIC_FAILS_AS]->(f)
-            SET r.evidence_count = COALESCE(r.evidence_count, 0) + 1
-            """,
-            {"mech_id": mech_id, "fail_id": fail_id}
+        await _gateway(db).run(
+            "arc.link_mechanic_failure_mode",
+            mech_id=mech_id,
+            fail_id=fail_id,
         )
         
         # Recovery policies for this failure
@@ -281,21 +227,18 @@ async def publish_mechanic_summary(params: dict, db, config: dict) -> dict:
         for pol in policies:
             pol_data = pol if isinstance(pol, dict) else {"name": str(pol)}
             pol_id = f"pol-{_record_hash(pol_data)[:24]}"
-            await db.execute_write(
-                """
-                MERGE (p:ArcRecoveryPolicy {recovery_policy_id: $pol_id})
-                SET p.name = $name, p.summary = $summary, p.confidence = $confidence
-                """,
-                {"pol_id": pol_id, "name": str(pol_data.get("name", "")), "summary": _compact(pol_data, 400), "confidence": _safe_float(pol_data.get("confidence"), 0.5)}
+            await _gateway(db).run(
+                "arc.merge_recovery_policy",
+                pol_id=pol_id,
+                name=str(pol_data.get("name", "")),
+                summary=_compact(pol_data, 400),
+                confidence=_safe_float(pol_data.get("confidence"), 0.5),
             )
-            await db.execute_write(
-                """
-                MATCH (f:ArcFailureMode {failure_mode_id: $fail_id})
-                MATCH (p:ArcRecoveryPolicy {recovery_policy_id: $pol_id})
-                MERGE (f)-[r:ARC_FAILURE_RECOVERED_BY]->(p)
-                SET r.confidence = $confidence
-                """,
-                {"fail_id": fail_id, "pol_id": pol_id, "confidence": _safe_float(pol_data.get("confidence"), 0.5)}
+            await _gateway(db).run(
+                "arc.link_failure_recovery_policy",
+                fail_id=fail_id,
+                pol_id=pol_id,
+                confidence=_safe_float(pol_data.get("confidence"), 0.5),
             )
 
     return {
@@ -326,26 +269,21 @@ async def recall_mechanic_priors(params: dict, db, config: dict) -> dict:
     limit = _safe_int(params.get("limit"), 5)
     min_confidence = _safe_float(params.get("min_confidence"), 0.0)
 
-    # 1. Base query: Filter mechanics by confidence and action_set if present
-    where_clauses = ["m.confidence >= $min_confidence"]
-    query_params = {"min_confidence": min_confidence, "limit": limit}
-
     if sig.get("action_set"):
-        where_clauses.append("m.signature = $action_set")
-        query_params["action_set"] = str(sig["action_set"])
-
-    where_str = " AND ".join(where_clauses)
-
-    query = f"""
-    MATCH (m:ArcMechanic)
-    WHERE {where_str}
-    RETURN m.mechanic_id, m.name, m.confidence, m.signature, m.summary, m.source_task_ids, m.updated_at
-    ORDER BY m.confidence DESC, m.updated_at DESC
-    LIMIT $limit
-    """
+        rows = await _gateway(db).run(
+            "arc.recall_mechanics_with_action_set",
+            min_confidence=min_confidence,
+            action_set=str(sig["action_set"]),
+            limit=limit,
+        )
+    else:
+        rows = await _gateway(db).run(
+            "arc.recall_mechanics",
+            min_confidence=min_confidence,
+            limit=limit,
+        )
 
     results = []
-    rows = await db.execute_read(query, query_params)
     for row in rows:
         # row is a dict when using execute_read
         mech = {
@@ -369,12 +307,9 @@ async def recall_mechanic_priors(params: dict, db, config: dict) -> dict:
     # 2. For each result, expand 1-hop patterns
     for mech in results:
         # Action patterns
-        ap_rows = await db.execute_read(
-            """
-            MATCH (m:ArcMechanic {mechanic_id: $mech_id})-[:ARC_MECHANIC_HAS_ACTION_PATTERN]->(p:ArcActionPattern)
-            RETURN p.signature, p.action_set, p.action_count, p.summary
-            """,
-            {"mech_id": mech["id"]}
+        ap_rows = await _gateway(db).run(
+            "arc.get_mechanic_action_patterns",
+            mech_id=mech["id"],
         )
         for ap_row in ap_rows:
             mech["action_patterns"].append({
@@ -385,12 +320,9 @@ async def recall_mechanic_priors(params: dict, db, config: dict) -> dict:
             })
 
         # Effect patterns
-        ep_rows = await db.execute_read(
-            """
-            MATCH (m:ArcMechanic {mechanic_id: $mech_id})-[:ARC_MECHANIC_CAUSES_EFFECT_PATTERN]->(p:ArcEffectPattern)
-            RETURN p.signature, p.effect_class, p.terminal_trend, p.object_progress, p.summary
-            """,
-            {"mech_id": mech["id"]}
+        ep_rows = await _gateway(db).run(
+            "arc.get_mechanic_effect_patterns",
+            mech_id=mech["id"],
         )
         for ep_row in ep_rows:
             mech["effect_patterns"].append({
@@ -402,13 +334,9 @@ async def recall_mechanic_priors(params: dict, db, config: dict) -> dict:
             })
 
         # Failures and Recoveries
-        fail_rows = await db.execute_read(
-            """
-            MATCH (m:ArcMechanic {mechanic_id: $mech_id})-[:ARC_MECHANIC_FAILS_AS]->(f:ArcFailureMode)
-            OPTIONAL MATCH (f)-[:ARC_FAILURE_RECOVERED_BY]->(pol:ArcRecoveryPolicy)
-            RETURN f.name, f.signature, f.summary, pol.name, pol.summary, pol.confidence
-            """,
-            {"mech_id": mech["id"]}
+        fail_rows = await _gateway(db).run(
+            "arc.get_mechanic_failure_modes",
+            mech_id=mech["id"],
         )
         fail_map = {}
         for f_row in fail_rows:

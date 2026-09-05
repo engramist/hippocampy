@@ -1,3 +1,14 @@
+from __future__ import annotations
+
+from campy.brain.hippocampus.graph.gateway import GraphGateway
+from campy.brain.hippocampus.graph.queries import REGISTRY
+
+
+def _gateway(db) -> GraphGateway:
+    if isinstance(db, GraphGateway):
+        return db
+    return GraphGateway(db, REGISTRY)
+
 """
 mcp_engine/tools/task_graph.py — DAG Task Graph Schema Helpers (B127/B128)
 
@@ -14,7 +25,6 @@ bounded-cycle-check pattern (see _dag_has_cycle above vs.
 _task_dependency_cycle_path below).
 """
 
-from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -63,16 +73,13 @@ async def _task_dependency_cycle_path(
     transitive closure. Mirrors _dag_has_cycle's direction convention above
     (probe from the target back to the source).
     """
-    q = (
-        f"MATCH p = (b:{table} {{{pk}: $to_id}})"
-        f"-[:{rel_type}*1..{_CYCLE_CHECK_BOUND}]->(a:{table} {{{pk}: $from_id}}) "
-        f"RETURN nodes(p) LIMIT 1"
-    )
+    gw = _gateway(db)
+    qname = f"task_graph.cycle_check_{rel_type.lower()}_{table.lower()}"
     try:
-        r = db.execute(q, {"to_id": to_id, "from_id": from_id})
-        if r.has_next():
-            row = r.get_next()
-            path_nodes = row[0] if row else None
+        rows = gw.run_sync(qname, to_id=to_id, from_id=from_id)
+        if rows:
+            row = rows[0]
+            path_nodes = row.get("path_nodes") or row.get("NODES(p)") or (row[0] if isinstance(row, (list, tuple)) else next(iter(row.values()), None))
             if path_nodes:
                 return [str(dict(n).get(pk)) for n in path_nodes]
     except Exception:
@@ -133,22 +140,18 @@ async def add_task_dependency_edge(
         )
 
     now_iso = observed_at or datetime.now(timezone.utc).isoformat()
-    await db.execute_write(
-        f"MATCH (a:{table} {{{pk}: $from_id}}), (b:{table} {{{pk}: $to_id}}) "
-        f"MERGE (a)-[r:{rel_type}]->(b) "
-        f"SET r.declared_by = $declared_by, r.confidence = $confidence, "
-        f"r.observed_at = timestamp($now), r.source = $source, "
-        f"r.source_version = $source_version, r.authority = $authority",
-        {
-            "from_id": from_id,
-            "to_id": to_id,
-            "declared_by": declared_by,
-            "confidence": confidence,
-            "now": now_iso,
-            "source": source,
-            "source_version": source_version,
-            "authority": authority,
-        },
+    gw = _gateway(db)
+    qname = f"task_graph.merge_dependency_edge_{rel_type.lower()}_{table.lower()}"
+    await gw.run(
+        qname,
+        from_id=from_id,
+        to_id=to_id,
+        declared_by=declared_by,
+        confidence=confidence,
+        now=now_iso,
+        source=source,
+        source_version=source_version,
+        authority=authority,
     )
     return {
         "rel_type": rel_type,
@@ -163,20 +166,8 @@ async def create_task_graph(db: KuzuClient, name: str, description: str = "") ->
     """Backward-compatible helper for creating a TaskGraph node."""
     graph_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
-    await db.execute_write(
-        """
-        CREATE (g:TaskGraph {
-            graph_id: $id,
-            name: $name,
-            description: $description,
-            label: $name,
-            status: 'active',
-            version: 1,
-            created_at: timestamp($now)
-        })
-        """,
-        {"id": graph_id, "name": name, "description": description, "now": now},
-    )
+    gw = _gateway(db)
+    await gw.run("task_graph.create_task_graph", id=graph_id, name=name, description=description, now=now)
     return graph_id
 
 
@@ -184,29 +175,8 @@ async def add_task_node(db: KuzuClient, graph_id: str, name: str, description: s
     """Backward-compatible helper for adding a task node to a graph."""
     task_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
-    await db.execute_write(
-        """
-        CREATE (t:TaskNode {
-            task_id: $tid,
-            graph_id: $gid,
-            name: $name,
-            label: $name,
-            description: $description,
-            status: 'pending',
-            created_at: timestamp($now)
-        })
-        WITH t
-        MATCH (g:TaskGraph {graph_id: $gid})
-        CREATE (t)-[:TASK_OF]->(g)
-        """,
-        {
-            "tid": task_id,
-            "gid": graph_id,
-            "name": name,
-            "description": description,
-            "now": now,
-        },
-    )
+    gw = _gateway(db)
+    await gw.run("task_graph.create_task_node_with_graph", tid=task_id, gid=graph_id, name=name, description=description, now=now)
     return task_id
 
 
@@ -215,13 +185,8 @@ async def add_task_dependency(db: KuzuClient, task_id: str, depends_on_task_id: 
     if await _dag_has_cycle(db, depends_on_task_id, task_id):
         return False
 
-    await db.execute_write(
-        """
-        MATCH (t:TaskNode {task_id: $tid}), (dep:TaskNode {task_id: $did})
-        CREATE (t)-[:DEPENDS_ON]->(dep)
-        """,
-        {"tid": task_id, "did": depends_on_task_id},
-    )
+    gw = _gateway(db)
+    await gw.run("task_graph.create_task_dependency", tid=task_id, did=depends_on_task_id)
     return True
 
 async def _dag_has_cycle(db: KuzuClient, from_task_id: str, to_task_id: str) -> bool:
@@ -230,14 +195,14 @@ async def _dag_has_cycle(db: KuzuClient, from_task_id: str, to_task_id: str) -> 
     A cycle exists if there is already a path from to_task_id to from_task_id.
     """
     try:
-        q = """
-        MATCH (a:TaskNode {task_id: $to_id}), (b:TaskNode {task_id: $from_id})
-        MATCH p = (a)-[:DEPENDS_ON*]->(b)
-        RETURN count(p)
-        """
-        r = db.execute(q, {"to_id": to_task_id, "from_id": from_task_id})
-        if r.has_next():
-            count = r.get_next()[0]
+        gw = _gateway(db)
+        r = gw.run_sync("task_graph.check_dag_cycle", to_id=to_task_id, from_id=from_task_id)
+        if r:
+            row = r[0]
+            if isinstance(row, dict):
+                count = row.get("cnt") or row.get("COUNT(p)") or next(iter(row.values()), 0)
+            else:
+                count = row[0]
             return count > 0
     except Exception as e:
         _logger.error("Error in _dag_has_cycle: %s", e)
@@ -250,24 +215,15 @@ async def _get_ready_tasks_query(db: KuzuClient, graph_id: str) -> List[Dict[str
     """
     tasks = []
     try:
-        q = """
-        MATCH (t:TaskNode)-[:TASK_OF]->(g:TaskGraph {graph_id: $graph_id})
-        WHERE t.status = 'pending'
-        AND NOT EXISTS {
-            MATCH (t)-[:DEPENDS_ON]->(dep:TaskNode)
-            WHERE NOT (dep.status IN ['complete', 'skipped'])
-        }
-        RETURN t.task_id, t.name, t.description, t.status, t.owner
-        """
-        r = db.execute(q, {"graph_id": graph_id})
-        while r.has_next():
-            row = r.get_next()
+        gw = _gateway(db)
+        rows = gw.run_sync("task_graph.get_ready_tasks", graph_id=graph_id)
+        for row in rows:
             tasks.append({
-                "task_id": row[0],
-                "label": row[1],
-                "description": row[2],
-                "status": row[3],
-                "owner": row[4]
+                "task_id": row.get("t.task_id") if hasattr(row, "get") else row[0],
+                "label": row.get("t.name") if hasattr(row, "get") else row[1],
+                "description": row.get("t.description") if hasattr(row, "get") else row[2],
+                "status": row.get("t.status") if hasattr(row, "get") else row[3],
+                "owner": row.get("t.owner") if hasattr(row, "get") else row[4],
             })
     except Exception as e:
         _logger.error("Error in _get_ready_tasks_query: %s", e)
@@ -283,21 +239,11 @@ async def register_task_graph(params: dict, db: KuzuClient, config: dict) -> dic
     graph_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     
+    gw = _gateway(db)
     # 1. Create TaskGraph node
-    await db.execute_write(
-        """
-        CREATE (g:TaskGraph {
-            graph_id: $id,
-            name: $label,
-            label: $label,
-            version: 1,
-            session_id: $sid,
-            owner: $owner,
-            status: 'active',
-            created_at: timestamp($now)
-        })
-        """,
-        {"id": graph_id, "label": label, "sid": session_id, "owner": owner, "now": now}
+    await gw.run(
+        "task_graph.init_task_graph",
+        id=graph_id, label=label, sid=session_id, owner=owner, now=now
     )
     
     # 2. Create TaskNode nodes
@@ -305,29 +251,14 @@ async def register_task_graph(params: dict, db: KuzuClient, config: dict) -> dic
     for t in tasks_input:
         tid = t["task_id"]
         task_ids.append(tid)
-        await db.execute_write(
-            """
-            MERGE (t:TaskNode {task_id: $tid})
-            ON CREATE SET
-                t.graph_id = $gid,
-                t.name = $label,
-                t.label = $label,
-                t.description = $description,
-                t.status = 'pending',
-                t.owner = $owner,
-                t.created_at = timestamp($now)
-            WITH t
-            MATCH (g:TaskGraph {graph_id: $gid})
-            MERGE (t)-[:TASK_OF]->(g)
-            """,
-            {
-                "tid": tid, 
-                "gid": graph_id, 
-                "label": t["label"], 
-                "description": t.get("description", ""), 
-                "owner": owner,
-                "now": now
-            }
+        await gw.run(
+            "task_graph.merge_task_node_with_graph",
+            tid=tid, 
+            gid=graph_id, 
+            label=t["label"], 
+            description=t.get("description", ""), 
+            owner=owner,
+            now=now,
         )
         
     # 3. Create DEPENDS_ON edges with cycle detection
@@ -340,12 +271,9 @@ async def register_task_graph(params: dict, db: KuzuClient, config: dict) -> dic
                 cycle_errors.append(f"Cycle detected: {tid} cannot depend on {dep_id}")
                 continue
                 
-            await db.execute_write(
-                """
-                MATCH (t:TaskNode {task_id: $tid}), (dep:TaskNode {task_id: $did})
-                MERGE (t)-[:DEPENDS_ON]->(dep)
-                """,
-                {"tid": tid, "did": dep_id}
+            await gw.run(
+                "task_graph.merge_task_dependency",
+                tid=tid, did=dep_id
             )
             
     # 4. Get initial ready tasks
@@ -370,19 +298,15 @@ async def advance_task(params: dict, db: KuzuClient, config: dict) -> dict:
     result = params.get("result")
     
     now = datetime.now(timezone.utc).isoformat()
-    
-    update_fields = "SET t.status = $status"
-    if status == 'active':
-        update_fields += ", t.started_at = timestamp($now)"
-    elif status in ('complete', 'skipped'):
-        update_fields += ", t.completed_at = timestamp($now)"
-        
-    if result:
-        update_fields += ", t.result = $result"
-        
-    await db.execute_write(
-        f"MATCH (t:TaskNode {{task_id: $tid}}) {update_fields}",
-        {"tid": task_id, "status": status, "now": now, "result": result}
+    now = datetime.now(timezone.utc).isoformat()
+    gw = _gateway(db)
+    await gw.run(
+        "task_graph.update_task_node",
+        tid=task_id,
+        status=status,
+        now=now,
+        has_result=bool(result),
+        result=result or "",
     )
     
     newly_unblocked = []
@@ -406,27 +330,17 @@ async def fail_task(params: dict, db: KuzuClient, config: dict) -> dict:
     
     now = datetime.now(timezone.utc).isoformat()
     
-    await db.execute_write(
-        """
-        MATCH (t:TaskNode {task_id: $tid})
-        SET t.status = 'failed', t.result = $reason, t.completed_at = timestamp($now)
-        """,
-        {"tid": task_id, "reason": reason, "now": now}
-    )
+    gw = _gateway(db)
+    await gw.run("task_graph.fail_task", tid=task_id, reason=reason, now=now)
     
     # Find blocked dependents
     blocked = []
     try:
         # A dependent is blocked if it depends on this failed task (directly or indirectly)
         # and its status is still 'pending'
-        q = """
-        MATCH (t:TaskNode {task_id: $tid})<-[:DEPENDS_ON*]-(dep:TaskNode)
-        WHERE dep.status = 'pending'
-        RETURN DISTINCT dep.task_id
-        """
-        r = db.execute(q, {"tid": task_id})
-        while r.has_next():
-            blocked.append(r.get_next()[0])
+        rows = gw.run_sync("task_graph.get_blocked_dependents", tid=task_id)
+        for row in rows:
+            blocked.append(row.get("dep.task_id") if hasattr(row, "get") else row[0])
     except Exception:
         pass
         
@@ -439,40 +353,33 @@ async def fail_task(params: dict, db: KuzuClient, config: dict) -> dict:
 async def get_task_graph(params: dict, db: KuzuClient, config: dict) -> dict:
     graph_id = params["graph_id"]
     
+    gw = _gateway(db)
     # Get graph metadata
     label = ""
     status = ""
     version = 1
     try:
-        r = db.execute(
-            "MATCH (g:TaskGraph {graph_id: $gid}) RETURN g.label, g.status, g.version",
-            {"gid": graph_id}
-        )
-        if r.has_next():
-            row = r.get_next()
-            label, status, version = row[0], row[1], row[2]
+        rows = gw.run_sync("task_graph.get_graph_metadata", gid=graph_id)
+        if rows:
+            row = rows[0]
+            label = row.get("g.label") if hasattr(row, "get") else row[0]
+            status = row.get("g.status") if hasattr(row, "get") else row[1]
+            version = row.get("g.version") if hasattr(row, "get") else row[2]
     except Exception:
         pass
         
     # Get tasks
     tasks = []
     try:
-        r = db.execute(
-            """
-            MATCH (t:TaskNode)-[:TASK_OF]->(g:TaskGraph {graph_id: $gid})
-            RETURN t.task_id, t.label, t.description, t.status, t.owner, t.result
-            """,
-            {"gid": graph_id}
-        )
-        while r.has_next():
-            row = r.get_next()
+        rows = gw.run_sync("task_graph.get_graph_tasks", gid=graph_id)
+        for row in rows:
             tasks.append({
-                "task_id": row[0],
-                "label": row[1],
-                "description": row[2],
-                "status": row[3],
-                "owner": row[4],
-                "result": row[5]
+                "task_id": row.get("t.task_id") if hasattr(row, "get") else row[0],
+                "label": row.get("t.label") if hasattr(row, "get") else row[1],
+                "description": row.get("t.description") if hasattr(row, "get") else row[2],
+                "status": row.get("t.status") if hasattr(row, "get") else row[3],
+                "owner": row.get("t.owner") if hasattr(row, "get") else row[4],
+                "result": row.get("t.result") if hasattr(row, "get") else row[5],
             })
     except Exception:
         pass
@@ -480,17 +387,12 @@ async def get_task_graph(params: dict, db: KuzuClient, config: dict) -> dict:
     # Get edges
     edges = []
     try:
-        r = db.execute(
-            """
-            MATCH (t1:TaskNode)-[:DEPENDS_ON]->(t2:TaskNode)
-            MATCH (t1)-[:TASK_OF]->(g:TaskGraph {graph_id: $gid})
-            RETURN t1.task_id, t2.task_id
-            """,
-            {"gid": graph_id}
-        )
-        while r.has_next():
-            row = r.get_next()
-            edges.append({"from": row[0], "to": row[1]})
+        rows = gw.run_sync("task_graph.get_graph_edges", gid=graph_id)
+        for row in rows:
+            edges.append({
+                "from": row.get("t1.task_id") if hasattr(row, "get") else row[0],
+                "to": row.get("t2.task_id") if hasattr(row, "get") else row[1],
+            })
     except Exception:
         pass
         
