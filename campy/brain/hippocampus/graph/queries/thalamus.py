@@ -1093,3 +1093,98 @@ BUNDLE_EXTRA_QUERIES.extend([
 ])
 
 THALAMUS_QUERIES = list(THALAMUS_QUERIES) + BUNDLE_EXTRA_QUERIES
+
+
+# B374: bundle_semantic_*/bundle_graph_anchors* variants for archived and
+# superseded_by filtering. archived/superseded_by are base columns on every
+# real schema.py-created table, but a handful of reduced test fixtures build
+# these tables directly without them (see _table_has_column's docstring), so
+# — same as flagged/authority above — a missing column needs its own query
+# text rather than a runtime-toggled WHERE clause (Kuzu's binder validates
+# every referenced column regardless of runtime branching). The base
+# (archived=False, superseded=False) slice is exactly the 16 bundle_semantic_*
+# and 2 bundle_graph_anchors* queries registered above; this generates the
+# remaining combinations rather than hand-duplicating them.
+ARCHIVED_SUPERSEDED_QUERIES: list[NamedQuery] = []
+
+for _label in ("Concept", "Decision", "Constraint", "Requirement"):
+    _lbl_lower = _label.lower()
+    for _flagged in (False, True):
+        for _archived in (False, True):
+            for _superseded in (False, True):
+                for _auth in (False, True):
+                    if not _archived and not _superseded:
+                        continue  # already registered above
+                    _suffix_parts = []
+                    _filters = []
+                    if _flagged:
+                        _suffix_parts.append("flagged")
+                        _filters.append(
+                            "AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false)"
+                        )
+                    if _archived:
+                        _suffix_parts.append("archived")
+                        _filters.append("AND (n.archived IS NULL OR n.archived = false)")
+                    if _superseded:
+                        _suffix_parts.append("superseded")
+                        _filters.append(
+                            "AND (n.superseded_by IS NULL OR n.superseded_by = '')"
+                        )
+                    if _auth:
+                        _suffix_parts.append("auth")
+                    _suffix = "".join(f"_{p}" for p in _suffix_parts)
+                    _filter_text = " ".join(_filters)
+                    _auth_select = ", n.authority as authority" if _auth else ""
+                    ARCHIVED_SUPERSEDED_QUERIES.append(
+                        NamedQuery(
+                            name=f"thalamus.bundle_semantic_{_lbl_lower}{_suffix}",
+                            cypher=f"MATCH (n:{_label}) "
+                                   f"WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
+                                   f"{_filter_text} "
+                                   f"RETURN n.text_raw as text, label(n) as node_type, "
+                                   f"       n.pathway_strength as pathway_strength, n.confidence as confidence, "
+                                   f"       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist{_auth_select} "
+                                   f"ORDER BY dist ASC LIMIT $limit",
+                            params=("query_embedding", "limit"),
+                            mutating=False,
+                            description=f"Semantic context for {_label}"
+                                        + (f" ({', '.join(_suffix_parts)})" if _suffix_parts else ""),
+                        )
+                    )
+
+for _flagged in (False, True):
+    for _archived in (False, True):
+        for _superseded in (False, True):
+            if not _archived and not _superseded:
+                continue  # already registered above
+            _suffix_parts = []
+            _filters = []
+            if _flagged:
+                _suffix_parts.append("flagged")
+                _filters.append(
+                    "AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false)"
+                )
+            if _archived:
+                _suffix_parts.append("archived")
+                _filters.append("AND (n.archived IS NULL OR n.archived = false)")
+            if _superseded:
+                _suffix_parts.append("superseded")
+                _filters.append("AND (n.superseded_by IS NULL OR n.superseded_by = '')")
+            _suffix = "".join(f"_{p}" for p in _suffix_parts)
+            _filter_text = " ".join(_filters)
+            ARCHIVED_SUPERSEDED_QUERIES.append(
+                NamedQuery(
+                    name=f"thalamus.bundle_graph_anchors{_suffix}",
+                    cypher="MATCH (n:Concept) "
+                           "WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
+                           f"{_filter_text} "
+                           "RETURN n.concept_id as id, n.text_raw as text, "
+                           "       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist "
+                           "ORDER BY dist ASC LIMIT 5",
+                    params=("query_embedding",),
+                    mutating=False,
+                    description=f"Fetch anchor concepts for bundle graph structure ({', '.join(_suffix_parts)})",
+                )
+            )
+
+THALAMUS_QUERIES = list(THALAMUS_QUERIES) + ARCHIVED_SUPERSEDED_QUERIES

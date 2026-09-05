@@ -43,6 +43,14 @@ spacy_model = "en_core_web_md"   # requires trained dependency parser for Step 1
 max_ingest_chars = 4000   # passive ingestion (conversational turns only)
 # truncates at last sentence boundary — long docs use Open Brain pipeline (M6)
 
+[compression]
+strategy = "two_lane"         # two_lane (Protected Lane zero loss + Bulk Lane lossy)
+budget_tokens = 4000          # threshold above which pressure-relief compression triggers
+compression_model = ""        # empty = inherit from [llm]
+graph_prune_threshold = 0.30  # percentile cutoff for pruning prunable graph nodes
+structured_format = "toon"    # toon format for tabular / structured data
+ast_compression = true        # enable AST code folding
+
 [capture]
 enabled = true
 
