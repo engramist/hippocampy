@@ -46,5 +46,10 @@ jobs:
       - name: Check dependency floor drift
         run: python scripts/check_dependency_pin_drift.py
 
+      # Fail if a backlog card's `Plan:` header names a backlog/plans/*.md
+      # file that does not exist. Pure file-tree check, no imports needed.
+      - name: Check backlog plan pointers
+        run: python scripts/check_backlog_plan_pointers.py
+
       - name: Run test suite
         run: pytest tests/ -q
