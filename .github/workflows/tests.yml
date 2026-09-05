@@ -25,6 +25,11 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
 
+      # en_core_web_md is required (en_core_web_sm has no trained dependency
+      # parser, needed for Step 1b verb patterns) — see requirements.txt.
+      - name: Download spaCy model
+        run: python -m spacy download en_core_web_md
+
       # B293: fail if generated extension tool definitions have drifted from
       # tool_schemas.TOOLS. Lives here (not security-gate.yml) because the
       # generator imports campy, which requires the project to be installed.
