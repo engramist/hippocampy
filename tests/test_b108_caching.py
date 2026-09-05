@@ -8,10 +8,28 @@ from campy.brain.temporal_lobe.loop.orchestrator import run_loop
 async def test_run_loop_with_precomputed_data():
     # Mock dependencies
     db = MagicMock()
-    # Mock db.execute for the Message node check
-    mock_result = MagicMock()
-    mock_result.has_next.return_value = True
-    db.execute.return_value = mock_result
+    # Mock db.execute for the various sync GraphGateway.run_sync() lookups
+    # run_loop makes along the way (e.g. maybe_synthesize_purpose's session
+    # lookup). Each call must return a *fresh*, bounded one-row cursor: a
+    # `has_next` that stays `True` forever (the old idiom here, a plain
+    # `mock_result.has_next.return_value = True` shared across every call)
+    # made GraphGateway._materialize_rows()'s `while res.has_next(): ...`
+    # drain loop (added in B386) spin forever on the first call, hanging
+    # the test — see backlog/B399.md. tests/test_quest.py and
+    # tests/test_working_memory.py already carry this same bounded-cursor
+    # fix elsewhere in the B386 PR; this file predates B386 and was missed.
+    # Assigned as a plain function (not `db.execute.side_effect = ...`) so
+    # `db.execute` itself carries no `.side_effect` attribute: GraphGateway
+    # .run()'s own Mock-detection (`exec_mocked`) treats a configured
+    # `execute.side_effect` as a signal to prefer the sync `execute()` path
+    # over `execute_read()` for *every* non-mutating query in this test —
+    # which would silently reroute calls that are meant to keep going
+    # through the `execute_read` AsyncMock below.
+    def _mock_execute(*_args, **_kwargs):
+        cursor = MagicMock()
+        cursor.has_next.side_effect = [True, False]
+        return cursor
+    db.execute = _mock_execute
     
     # Use AsyncMock for methods that are awaited
     db.execute_read = AsyncMock(return_value=[])
@@ -72,9 +90,14 @@ async def test_run_loop_with_precomputed_data():
 async def test_run_loop_without_precomputed_data():
     # Mock dependencies
     db = MagicMock()
-    mock_result = MagicMock()
-    mock_result.has_next.return_value = True
-    db.execute.return_value = mock_result
+    # See test_run_loop_with_precomputed_data above for why this must be a
+    # bounded, fresh-per-call cursor assigned as a plain function rather
+    # than an always-True has_next or a `db.execute.side_effect`.
+    def _mock_execute(*_args, **_kwargs):
+        cursor = MagicMock()
+        cursor.has_next.side_effect = [True, False]
+        return cursor
+    db.execute = _mock_execute
     
     db.execute_read = AsyncMock(return_value=[])
     db.execute_write = AsyncMock()
