@@ -182,24 +182,30 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
     ),
     NamedQuery(
         name="thalamus.work_summary_update",
+        # B399: param was `$as` (matching the `agent_source` field name too
+        # loosely abbreviated); `as` is a reserved Python keyword, so the
+        # `gw.run(..., as=agent_source)` call site was a SyntaxError and the
+        # module could not even be imported. Renamed to `$agent_source`.
         cypher="MATCH (ws:WorkSummary {summary_id: $sid}) "
                "SET ws.resume_line = $rl, ws.turn_count = $tc, "
                "    ws.last_updated_at = timestamp($ts), ws.git_branch = $br, "
-               "    ws.git_commit = $co, ws.agent_source = $as, ws.active_card = $card, "
+               "    ws.git_commit = $co, ws.agent_source = $agent_source, ws.active_card = $card, "
                "    ws.snapshot_text = CASE WHEN $has_snap = true THEN $snap ELSE ws.snapshot_text END",
-        params=("sid", "rl", "tc", "ts", "br", "co", "as", "card", "has_snap", "snap"),
+        params=("sid", "rl", "tc", "ts", "br", "co", "agent_source", "card", "has_snap", "snap"),
         mutating=True,
         description="Update WorkSummary node",
     ),
     NamedQuery(
         name="thalamus.work_summary_create",
+        # B399: see work_summary_update above — `$as` renamed to
+        # `$agent_source` (was a Python SyntaxError at the call site).
         cypher="CREATE (ws:WorkSummary {\n"
-               "  summary_id: $sid, session_id: $sess, agent_source: $as,\n"
+               "  summary_id: $sid, session_id: $sess, agent_source: $agent_source,\n"
                "  git_branch: $br, git_commit: $co, active_card: $card,\n"
                "  resume_line: $rl, snapshot_text: $snap, turn_count: $tc,\n"
                "  last_updated_at: timestamp($ts)\n"
                "})",
-        params=("sid", "sess", "as", "br", "co", "card", "rl", "snap", "tc", "ts"),
+        params=("sid", "sess", "agent_source", "br", "co", "card", "rl", "snap", "tc", "ts"),
         mutating=True,
         description="Create WorkSummary node",
     ),

@@ -64,6 +64,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-mock>=3.14",
+    "pytest-timeout>=2.4.0",  # B399: per-test timeout, see requirements.txt
     "build>=1.0",
     "twine>=5.0",
     "black>=24.1.0",    # B340: Code formatter with version floor
