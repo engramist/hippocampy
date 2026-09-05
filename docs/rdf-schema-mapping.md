@@ -219,8 +219,51 @@ mapping of an existing key. Use `cid:Occurrence/{ulid}`. ULIDs sort
 lexicographically by time, so `ORDER BY ?occ` gives chronological order without a
 separate index.
 
-**Event edges (use 4.2b):** `LOADED`, `WARM_NODE`, `ANOMALY_DETECTED`,
-`OUTCOME_SIGNAL`, `CO_OCCURS_WITH`, `UPDATES_PATHWAY`, `TRIGGERED`, `OBSERVED_IN`.
+#### 4.2c Governing rule: classify from the write call site, not the name
+
+> **Added 2026-09-05, resolving an escalation from B389.** The first draft of this
+> section classified edges by name and schema shape. That was wrong for three
+> tables, and the rule below is what actually decides.
+
+**An edge's class is determined by what its write call sites observably do — not
+by its name, and not by intuition about what the edge "means".**
+
+Concretely: `CO_OCCURS_WITH` sounds like an event, and was listed as one below.
+Its actual writer is
+
+```cypher
+MERGE (a)-[r:CO_OCCURS_WITH]->(b)
+  ON CREATE SET r.count = 1, r.strength = $strength
+  ON MATCH  SET r.count = r.count + 1
+```
+
+That is a **singleton carrying an accumulator**, not a history of events. There is
+exactly one edge per pair and the code deliberately folds repeats into `count`.
+Classifying it `occurrence` would preserve every co-occurrence as a separate node —
+strictly more information, but **different semantics** and an unbounded store on a
+high-frequency edge.
+
+**The migration preserves current semantics. It is not the moment to upgrade a
+counter into an event log.** If full co-occurrence history is wanted, that is a
+product decision and a separate card — made deliberately, with the storage cost
+understood, not as a side effect of changing databases.
+
+Reclassified accordingly: **`ANOMALY_DETECTED`, `CO_OCCURS_WITH`, and
+`OUTCOME_SIGNAL` are `star`**, because all three write via `MERGE` + `SET`.
+
+**Event edges (use 4.2b):** `LOADED`, `WARM_NODE`, `UPDATES_PATHWAY`, `TRIGGERED`,
+`OBSERVED_IN` — each of which appends rather than merging.
+
+#### 4.2d Tables with no writer
+
+Some rel tables are declared in `schema.py` ahead of any implementation and have no
+write call site anywhere in the repo. **These must not be classified.** There is no
+evidence to classify them from, and a guess here is indistinguishable from a
+decision.
+
+Leave them out of `EDGE_REIFICATION` so `classify_edge()` raises. Whoever writes
+the first writer makes the call, with the call site in front of them. A loud raise
+at that moment is the correct outcome, not a defect.
 
 **Classification is per-table and must be recorded** in a single
 `EDGE_REIFICATION: dict[str, Literal["plain","star","occurrence"]]` table in
