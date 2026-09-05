@@ -239,8 +239,8 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 
 | B387 | Torch-Free Ingestion Plane: Replace spaCy NER/Parse with ONNX | P0 | in-progress | TBD | TBD | - | backlog/B387.md |
 | B388 | RDF Schema Mapping Specification | P0 | complete (2026-09-05) | TBD | TBD | - | backlog/B388.md |
-| B389 | OxigraphClient: RDF-star Store & Edge Reification Classification | P0 | blocked (needs B390) | TBD | TBD | - | backlog/B389.md |
-| B390 | sqlite-vec Vector Store & FTS5 Lexical Index | P0 | in-progress | TBD | TBD | - | backlog/B390.md |
+| B389 | OxigraphClient: RDF-star Store & Edge Reification Classification | P0 | in-progress | TBD | TBD | - | backlog/B389.md |
+| B390 | sqlite-vec Vector Store & FTS5 Lexical Index | P0 | complete (2026-09-05, PR #161) | TBD | TBD | - | backlog/B390.md |
 | B391 | SPARQL Translation Batch: provenance (196 queries) | P0 | blocked (needs B389) | TBD | TBD | - | backlog/B391.md |
 | B392 | SPARQL Translation Batch: sweep (127 queries) | P0 | blocked (needs B389) | TBD | TBD | - | backlog/B392.md |
 | B393 | SPARQL Translation Batch: thalamus (144 queries) | P0 | blocked (needs B389) | TBD | TBD | - | backlog/B393.md |
@@ -255,7 +255,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 - Total cards: 243
 - Ready: 9
 - Needs work: 0
-- Complete: 205
+- Complete: 206
 - In progress: 2
 - In review: 0
-- Blocked: 10
+- Blocked: 9
