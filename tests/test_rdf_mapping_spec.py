@@ -407,3 +407,233 @@ def test_named_query_sparql_field_accepts_bound_variable_form():
         sparql="SELECT ?o WHERE { VALUES ?s { ?id } ?s <https://campy.dev/ns#p> ?o }",
     )
     assert q.sparql is not None
+
+
+# --- §4.2e — delete cascade for RDF-star annotations (B403) -----------------
+#
+# `DETACH DELETE n` takes the node's edges with it. Its SPARQL translation
+# takes the node's property triples and the PLAIN edge triples — an
+# annotation is a statement about a *reifier*, so no pattern over `?n`
+# reaches it. These tests prove the cascade closes that gap for each of the
+# three EDGE_REIFICATION classes, and that it touches nothing else.
+
+
+def _quads(client) -> set[str]:
+    return {str(q) for q in client.store}
+
+
+def _drop_projected_concepts(client) -> None:
+    """Run the REAL shipped `provenance.drop_projected_concept` SPARQL.
+
+    Not a hand-written copy: the string comes straight off the NamedQuery, so
+    a regression in provenance.py fails here. Two accommodations, both
+    pre-existing and neither this card's:
+
+    * a `PREFIX campy:` prologue is prepended — the 198 provenance strings
+      carry no prologue of their own (B397's executor supplies it);
+    * `?source` is left unbound, so the query drops every projected Concept
+      regardless of source. `OxigraphClient.execute()` rejects params on
+      Update text today, so there is no way to bind it. Every fixture below
+      therefore uses a single source, which makes bound and unbound
+      identical; source scoping is B391/B397's contract, not the cascade's.
+    """
+    from campy.brain.hippocampus.graph.queries.provenance import PROVENANCE_QUERIES
+
+    query = next(q for q in PROVENANCE_QUERIES if q.name == "provenance.drop_projected_concept")
+    assert query.sparql is not None
+    client.store.update(f"PREFIX campy: <{CAMPY_NS}>\n" + query.sparql)
+
+
+def _projected(client, concept_id: str) -> str:
+    return client.write_node("Concept", {
+        "concept_id": concept_id, "authority": "projected", "source": "spacy",
+    })
+
+
+def _earned(client, concept_id: str) -> str:
+    return client.write_node("Concept", {
+        "concept_id": concept_id, "authority": "earned", "source": "spacy",
+    })
+
+
+def test_cascade_removes_star_annotation_when_edge_subject_is_deleted(client):
+    dropped = _projected(client, "c_drop")
+    kept = _earned(client, "c_keep")
+    client.write_edge("ENABLES", dropped, kept, {"confidence": 0.8, "inferred_by": "step3b"})
+
+    _drop_projected_concepts(client)
+
+    residue = [q for q in _quads(client) if "c_drop" in q or "confidence" in q]
+    assert residue == [], f"orphaned star annotation survived: {residue}"
+
+
+def test_cascade_removes_star_annotation_when_edge_object_is_deleted(client):
+    # The annotation hangs off << kept ENABLES dropped >>, so nothing about
+    # it mentions the deleted node in subject position — the pattern that
+    # DETACH DELETE's translation uses cannot see it at all.
+    dropped = _projected(client, "c_drop")
+    kept = _earned(client, "c_keep")
+    client.write_edge("ENABLES", kept, dropped, {"confidence": 0.8, "inferred_by": "step3b"})
+
+    _drop_projected_concepts(client)
+
+    residue = [q for q in _quads(client) if "c_drop" in q or "confidence" in q]
+    assert residue == [], f"orphaned star annotation survived: {residue}"
+
+
+def test_cascade_removes_occurrence_reifiers_and_their_occurrence_nodes(client):
+    # The occurrence class is the subtle one: each write hangs a freshly
+    # ULID-minted node off the quoted triple (§4.2b). Sweeping only the
+    # annotation statement would leave those nodes behind — and an
+    # occurrence edge mints one per write, so that is the larger half of
+    # the leak.
+    dropped = _projected(client, "c_drop")
+    session = client.write_node("Session", {"session_id": "s1"})
+    client.write_edge("LOADED", session, dropped, {"token_estimate": 120, "source": "bundle_compiler"})
+    client.write_edge("LOADED", session, dropped, {"token_estimate": 9, "source": "bundle_compiler"})
+
+    occurrences = list(client.store.query(
+        f"PREFIX campy: <{CAMPY_NS}> SELECT ?occ WHERE {{ "
+        f"?r campy:occurrence ?occ }}"
+    ))
+    assert len(occurrences) == 2, "fixture must mint one occurrence node per write"
+
+    _drop_projected_concepts(client)
+
+    assert [q for q in _quads(client) if "Occurrence/" in q] == [], "occurrence node survived"
+    assert [q for q in _quads(client) if "token_estimate" in q] == [], "occurrence property survived"
+    assert [q for q in _quads(client) if "c_drop" in q] == []
+
+
+def test_plain_edge_needs_no_cascade_and_leaves_no_residue(client):
+    # The `plain` class's cascade semantics are "nothing to do": the edge is
+    # a single triple, already removed by the `?s ?p2 ?n` pattern. Asserted
+    # rather than assumed, so a future reclassification of DEPRECATED_BY
+    # fails here loudly.
+    dropped = _projected(client, "c_drop")
+    kept = _earned(client, "c_keep")
+    client.write_edge("DEPRECATED_BY", dropped, kept)
+
+    _drop_projected_concepts(client)
+
+    assert [q for q in _quads(client) if "c_drop" in q] == []
+
+
+def test_cascade_leaves_annotations_of_surviving_edges_intact(client):
+    # The sweep's precision test. If it deleted by "is a reifier" rather
+    # than "is an ORPHANED reifier", this is what it would destroy.
+    dropped = _projected(client, "c_drop")
+    kept_a = _earned(client, "c_keep_a")
+    kept_b = _earned(client, "c_keep_b")
+    session = client.write_node("Session", {"session_id": "s1"})
+
+    client.write_edge("ENABLES", dropped, kept_a, {"confidence": 0.8})
+    client.write_edge("LOADED", session, dropped, {"token_estimate": 120})
+    client.write_edge("ENABLES", kept_a, kept_b, {"confidence": 0.5, "inferred_by": "step3b"})
+    client.write_edge("LOADED", session, kept_a, {"token_estimate": 33})
+
+    _drop_projected_concepts(client)
+
+    surviving_star = list(client.store.query(
+        f"PREFIX campy: <{CAMPY_NS}> SELECT ?conf WHERE {{ "
+        f"<< <{kept_a}> campy:ENABLES <{kept_b}> >> campy:confidence ?conf }}"
+    ))
+    assert [r["conf"].value for r in surviving_star] == ["0.5"]
+
+    surviving_occurrence = list(client.store.query(
+        f"PREFIX campy: <{CAMPY_NS}> SELECT ?tok WHERE {{ "
+        f"<< <{session}> campy:LOADED <{kept_a}> >> "
+        f"campy:occurrence/campy:token_estimate ?tok }}"
+    ))
+    assert [r["tok"].value for r in surviving_occurrence] == ["33"]
+
+    assert [q for q in _quads(client) if "c_drop" in q] == []
+
+
+def test_cascade_is_a_noop_when_there_are_no_orphans(client):
+    # Soundness of the "orphaned" test itself: a live annotation must never
+    # look like an orphan, so a second run must change nothing.
+    a = _earned(client, "c_a")
+    b = _earned(client, "c_b")
+    session = client.write_node("Session", {"session_id": "s1"})
+    client.write_edge("ENABLES", a, b, {"confidence": 0.8})
+    client.write_edge("LOADED", session, a, {"token_estimate": 120})
+
+    before = _quads(client)
+    assert client.cascade_orphaned_annotations() == 0
+    assert client.cascade_orphaned_annotations() == 0
+    assert _quads(client) == before
+
+
+def test_cascade_reports_the_number_of_quads_it_removed(client):
+    a = _earned(client, "c_a")
+    b = _earned(client, "c_b")
+    client.write_edge("ENABLES", a, b, {"confidence": 0.8, "inferred_by": "step3b"})
+    # Orphan it by removing only the base triple, the way a delete path that
+    # predates the cascade would have.
+    client.store.update(
+        f"DELETE DATA {{ <{a}> <{CAMPY_NS}ENABLES> <{b}> }}"
+    )
+    # reifier: rdf:reifies + confidence + inferred_by
+    assert client.cascade_orphaned_annotations() == 3
+    assert [q for q in _quads(client) if "confidence" in q] == []
+
+
+def test_write_edge_always_asserts_the_base_triple_the_cascade_relies_on(client):
+    # The cascade is sound only because §4.2a's "always assert the plain
+    # triple as well as the quoted annotation" holds for every annotated
+    # write. If a future writer ever annotates an unasserted triple, the
+    # sweep would collect a live annotation — so pin the invariant here.
+    a = mint_uri("Concept", "c_a")
+    b = mint_uri("Concept", "c_b")
+    session = mint_uri("Session", "s1")
+
+    client.write_edge("ENABLES", a, b, {"confidence": 0.8})
+    client.write_edge("LOADED", session, a, {"token_estimate": 120})
+
+    reified = list(client.store.query(
+        "SELECT ?s ?p ?o WHERE { "
+        "?r <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( ?s ?p ?o )>> }"
+    ))
+    assert reified, "fixture wrote no annotations"
+    for row in reified:
+        asserted = client.store.query(
+            f"ASK {{ {row['s']} {row['p']} {row['o']} }}"
+        )
+        assert bool(asserted), f"annotation on unasserted triple: {row}"
+
+
+# --- §4.2e — the helper is applied once, everywhere it is needed ------------
+
+
+def test_every_drop_projected_query_carries_the_cascade():
+    from campy.brain.hippocampus.graph.oxigraph_client import ANNOTATION_CASCADE_SPARQL
+    from campy.brain.hippocampus.graph.queries.provenance import PROVENANCE_QUERIES
+
+    drops = [q for q in PROVENANCE_QUERIES if q.name.startswith("provenance.drop_projected_")]
+    assert len(drops) == 29
+    for query in drops:
+        assert query.sparql is not None, query.name
+        assert query.sparql.count(ANNOTATION_CASCADE_SPARQL) == 1, query.name
+        # cascade LAST — "orphaned" is only true once the node delete has run
+        assert query.sparql.rstrip().endswith(ANNOTATION_CASCADE_SPARQL.rstrip()), query.name
+
+
+def test_queries_that_only_update_properties_do_not_get_the_cascade():
+    from campy.brain.hippocampus.graph.oxigraph_client import ANNOTATION_CASCADE_SPARQL
+    from campy.brain.hippocampus.graph.queries.provenance import PROVENANCE_QUERIES
+
+    # mark_superseded_* / touch_last_accessed_* use DELETE to replace a
+    # property value. They remove no edge, so they can orphan no annotation.
+    for query in PROVENANCE_QUERIES:
+        if query.name.startswith("provenance.drop_projected_"):
+            continue
+        assert ANNOTATION_CASCADE_SPARQL not in (query.sparql or ""), query.name
+
+
+def test_with_annotation_cascade_refuses_double_application():
+    from campy.brain.hippocampus.graph.oxigraph_client import with_annotation_cascade
+
+    once = with_annotation_cascade("DELETE { ?n ?p ?o } WHERE { ?n ?p ?o }")
+    with pytest.raises(ValueError, match="already contains"):
+        with_annotation_cascade(once)
