@@ -61,6 +61,30 @@ def _find_unsafe_brace(cypher: str) -> int | None:
     return None
 
 
+# B389: `sparql` field static-string validation (spec §7.2 — "$param becomes
+# a SPARQL ?param bound via VALUES/BIND injected by oxigraph_client.py.
+# Never string-interpolate a parameter into SPARQL text."). SPARQL uses `{`
+# for graph-pattern blocks (`WHERE { ... }`, `OPTIONAL { ... }`, `GRAPH ?g {
+# ... }`) in shapes `_SAFE_BRACE_TAIL_RE` above was never designed to
+# recognize (it exists for Kùzu's literal-map syntax specifically), so this
+# is a separate, narrower check: it catches the one unambiguous defect
+# shape both languages share — a bare `{identifier}` with nothing else
+# inside, which is not valid syntax in either Cypher or SPARQL and is
+# unambiguously a leftover Python f-string/.format() placeholder that never
+# got filled in (the exact interpolation-at-the-call-site defect this
+# registry exists to catch at import time). A legitimate SPARQL block
+# always has more inside it than a single bare word (a variable, an IRI, a
+# keyword, or nothing at all) immediately followed by `}`.
+_SPARQL_FORMAT_PLACEHOLDER_RE = re.compile(r"\{\s*[A-Za-z_][A-Za-z0-9_]*\s*\}")
+
+
+def _find_sparql_format_placeholder(sparql: str) -> re.Match[str] | None:
+    """Return the first `{identifier}`-shaped match in `sparql` that looks
+    like an unresolved Python format placeholder, or None if there isn't
+    one."""
+    return _SPARQL_FORMAT_PLACEHOLDER_RE.search(sparql)
+
+
 @dataclass(frozen=True)
 class NamedQuery:
     """A single named, parameterized, static Cypher query.
@@ -128,6 +152,19 @@ class NamedQuery:
                 f"placeholder — near: ...{snippet!r}...). All variable input must go through "
                 f"$param placeholders, not string interpolation."
             )
+
+        if self.sparql is not None:
+            bad_placeholder = _find_sparql_format_placeholder(self.sparql)
+            if bad_placeholder is not None:
+                snippet = self.sparql[max(0, bad_placeholder.start() - 20):bad_placeholder.end() + 20]
+                raise ValueError(
+                    f"NamedQuery {self.name!r}: sparql contains what looks like an "
+                    f"unresolved Python format placeholder ({bad_placeholder.group(0)!r} "
+                    f"near: ...{snippet!r}...). All variable input must go through SPARQL "
+                    f"?param placeholders bound via VALUES/BIND "
+                    f"(docs/rdf-schema-mapping.md §7.2), never f-string/.format() "
+                    f"interpolation of a caller-supplied value into the query text."
+                )
 
 
 class QueryRegistry:

@@ -52,6 +52,19 @@ ALLOWLIST_FILES = {
     # schema-mapping.md §5), the same category as kuzu_client.py/export.py
     # above, not application Cypher that belongs behind GraphGateway.
     "campy/brain/hippocampus/graph/vector_store.py",
+    # B389: pyoxigraph SPARQL client — imports pyoxigraph, not kuzu, and
+    # executes only SPARQL (never Cypher) at runtime. CYPHER_LINE_RE's
+    # keyword regex false-positives on two unrelated things this file
+    # legitimately contains: (1) EDGE_REIFICATION/UNCLASSIFIED_ESCALATED_
+    # TABLES doc comments that cite the *existing Kùzu* call-site evidence
+    # each classification is based on (e.g. "queries/orchestrator.py: MERGE
+    # (n)-[r:ANOMALY_DETECTED]->(gc) SET ...") — this is documentation
+    # about kuzu_client.py's call sites, not Cypher this module runs; (2)
+    # `_REL_HEADER_RE`, a regex literal matching schema.py's own rel-table
+    # DDL header text, needed to introspect REL_TABLES for property types
+    # — DDL-parsing plumbing, the same category schema.py itself is
+    # allowlisted for above, not an application query.
+    "campy/brain/hippocampus/graph/oxigraph_client.py",
 }
 
 # Directory prefixes allowlisted wholesale:
