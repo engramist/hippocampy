@@ -16,6 +16,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a Concept node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:Concept ;
+                   campy:concept_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_concept",
@@ -26,6 +45,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old Concept to new Concept with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:Concept ;
+                     campy:concept_id ?node_id .
+                ?new a campy:Concept ;
+                     campy:concept_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_concept",
@@ -38,6 +68,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected Concept nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:Concept ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:concept_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_concept",
@@ -48,6 +88,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned Concept nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:Concept ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_concept",
@@ -59,6 +107,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Concept nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:Concept ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_concept",
@@ -70,6 +130,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live Concept by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:Concept ;
+                   campy:content_hash ?key ;
+                   campy:concept_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_concept",
@@ -80,6 +150,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live Concept.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:Concept ;
+                   campy:concept_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_decision",
@@ -92,6 +171,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a Decision node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:Decision ;
+                   campy:decision_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_decision",
@@ -102,6 +200,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old Decision to new Decision with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:Decision ;
+                     campy:decision_id ?node_id .
+                ?new a campy:Decision ;
+                     campy:decision_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_decision",
@@ -114,6 +223,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected Decision nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:Decision ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:decision_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_decision",
@@ -124,6 +243,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned Decision nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:Decision ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_decision",
@@ -135,6 +262,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Decision nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:Decision ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_decision",
@@ -146,6 +285,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live Decision by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:Decision ;
+                   campy:content_hash ?key ;
+                   campy:decision_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_decision",
@@ -156,6 +305,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live Decision.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:Decision ;
+                   campy:decision_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_constraint",
@@ -168,6 +326,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a Constraint node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:Constraint ;
+                   campy:constraint_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_constraint",
@@ -178,6 +355,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old Constraint to new Constraint with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:Constraint ;
+                     campy:constraint_id ?node_id .
+                ?new a campy:Constraint ;
+                     campy:constraint_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_constraint",
@@ -190,6 +378,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected Constraint nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:Constraint ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:constraint_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_constraint",
@@ -200,6 +398,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned Constraint nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:Constraint ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_constraint",
@@ -211,6 +417,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Constraint nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:Constraint ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_constraint",
@@ -222,6 +440,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live Constraint by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:Constraint ;
+                   campy:content_hash ?key ;
+                   campy:constraint_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_constraint",
@@ -232,6 +460,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live Constraint.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:Constraint ;
+                   campy:constraint_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_requirement",
@@ -244,6 +481,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a Requirement node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:Requirement ;
+                   campy:requirement_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_requirement",
@@ -254,6 +510,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old Requirement to new Requirement with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:Requirement ;
+                     campy:requirement_id ?node_id .
+                ?new a campy:Requirement ;
+                     campy:requirement_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_requirement",
@@ -266,6 +533,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected Requirement nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:Requirement ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:requirement_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_requirement",
@@ -276,6 +553,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned Requirement nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:Requirement ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_requirement",
@@ -287,6 +572,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Requirement nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:Requirement ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_requirement",
@@ -298,6 +595,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live Requirement by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:Requirement ;
+                   campy:content_hash ?key ;
+                   campy:requirement_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_requirement",
@@ -308,6 +615,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live Requirement.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:Requirement ;
+                   campy:requirement_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_actionitem",
@@ -320,6 +636,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a ActionItem node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:ActionItem ;
+                   campy:action_item_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_actionitem",
@@ -330,6 +665,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old ActionItem to new ActionItem with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:ActionItem ;
+                     campy:action_item_id ?node_id .
+                ?new a campy:ActionItem ;
+                     campy:action_item_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_actionitem",
@@ -342,6 +688,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected ActionItem nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:ActionItem ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:action_item_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_actionitem",
@@ -352,6 +708,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned ActionItem nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:ActionItem ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_actionitem",
@@ -363,6 +727,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ActionItem nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:ActionItem ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_actionitem",
@@ -374,6 +750,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live ActionItem by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:ActionItem ;
+                   campy:content_hash ?key ;
+                   campy:action_item_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_actionitem",
@@ -384,6 +770,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live ActionItem.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:ActionItem ;
+                   campy:action_item_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_globalconstraint",
@@ -396,6 +791,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a GlobalConstraint node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:GlobalConstraint ;
+                   campy:global_constraint_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_globalconstraint",
@@ -406,6 +820,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old GlobalConstraint to new GlobalConstraint with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:GlobalConstraint ;
+                     campy:global_constraint_id ?node_id .
+                ?new a campy:GlobalConstraint ;
+                     campy:global_constraint_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_globalconstraint",
@@ -418,6 +843,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected GlobalConstraint nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:GlobalConstraint ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:global_constraint_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_globalconstraint",
@@ -428,6 +863,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned GlobalConstraint nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:GlobalConstraint ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_globalconstraint",
@@ -439,6 +882,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected GlobalConstraint nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:GlobalConstraint ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_globalconstraint",
@@ -450,6 +905,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live GlobalConstraint by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:GlobalConstraint ;
+                   campy:content_hash ?key ;
+                   campy:global_constraint_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_globalconstraint",
@@ -460,6 +925,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live GlobalConstraint.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:GlobalConstraint ;
+                   campy:global_constraint_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_globalpreference",
@@ -472,6 +946,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a GlobalPreference node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:GlobalPreference ;
+                   campy:global_preference_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_globalpreference",
@@ -482,6 +975,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old GlobalPreference to new GlobalPreference with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:GlobalPreference ;
+                     campy:global_preference_id ?node_id .
+                ?new a campy:GlobalPreference ;
+                     campy:global_preference_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_globalpreference",
@@ -494,6 +998,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected GlobalPreference nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:GlobalPreference ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:global_preference_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_globalpreference",
@@ -504,6 +1018,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned GlobalPreference nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:GlobalPreference ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_globalpreference",
@@ -515,6 +1037,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected GlobalPreference nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:GlobalPreference ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_globalpreference",
@@ -526,6 +1060,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live GlobalPreference by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:GlobalPreference ;
+                   campy:content_hash ?key ;
+                   campy:global_preference_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_globalpreference",
@@ -536,6 +1080,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live GlobalPreference.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:GlobalPreference ;
+                   campy:global_preference_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_lesson",
@@ -548,6 +1101,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a Lesson node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:Lesson ;
+                   campy:lesson_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_lesson",
@@ -558,6 +1130,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old Lesson to new Lesson with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:Lesson ;
+                     campy:lesson_id ?node_id .
+                ?new a campy:Lesson ;
+                     campy:lesson_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_lesson",
@@ -570,6 +1153,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected Lesson nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:Lesson ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:lesson_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_lesson",
@@ -580,6 +1173,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned Lesson nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:Lesson ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_lesson",
@@ -591,6 +1192,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Lesson nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:Lesson ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_lesson",
@@ -602,6 +1215,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live Lesson by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:Lesson ;
+                   campy:content_hash ?key ;
+                   campy:lesson_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_lesson",
@@ -612,6 +1235,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live Lesson.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:Lesson ;
+                   campy:lesson_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_procedure",
@@ -624,6 +1256,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a Procedure node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:Procedure ;
+                   campy:procedure_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_procedure",
@@ -634,6 +1285,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old Procedure to new Procedure with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:Procedure ;
+                     campy:procedure_id ?node_id .
+                ?new a campy:Procedure ;
+                     campy:procedure_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_procedure",
@@ -646,6 +1308,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected Procedure nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:Procedure ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:procedure_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_procedure",
@@ -656,6 +1328,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned Procedure nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:Procedure ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_procedure",
@@ -667,6 +1347,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Procedure nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:Procedure ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_procedure",
@@ -678,6 +1370,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live Procedure by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:Procedure ;
+                   campy:content_hash ?key ;
+                   campy:procedure_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_procedure",
@@ -688,6 +1390,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live Procedure.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:Procedure ;
+                   campy:procedure_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_knowledgegap",
@@ -700,6 +1411,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a KnowledgeGap node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:KnowledgeGap ;
+                   campy:gap_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_knowledgegap",
@@ -710,6 +1440,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old KnowledgeGap to new KnowledgeGap with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:KnowledgeGap ;
+                     campy:gap_id ?node_id .
+                ?new a campy:KnowledgeGap ;
+                     campy:gap_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_knowledgegap",
@@ -722,6 +1463,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected KnowledgeGap nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:KnowledgeGap ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:gap_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_knowledgegap",
@@ -732,6 +1483,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned KnowledgeGap nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:KnowledgeGap ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_knowledgegap",
@@ -743,6 +1502,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected KnowledgeGap nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:KnowledgeGap ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_knowledgegap",
@@ -754,6 +1525,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live KnowledgeGap by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:KnowledgeGap ;
+                   campy:content_hash ?key ;
+                   campy:gap_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_knowledgegap",
@@ -764,6 +1545,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live KnowledgeGap.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:KnowledgeGap ;
+                   campy:gap_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_plan",
@@ -776,6 +1566,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a Plan node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:Plan ;
+                   campy:plan_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_plan",
@@ -786,6 +1595,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old Plan to new Plan with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:Plan ;
+                     campy:plan_id ?node_id .
+                ?new a campy:Plan ;
+                     campy:plan_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_plan",
@@ -798,6 +1618,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected Plan nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:Plan ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:plan_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_plan",
@@ -808,6 +1638,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned Plan nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:Plan ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_plan",
@@ -819,6 +1657,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Plan nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:Plan ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_plan",
@@ -830,6 +1680,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live Plan by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:Plan ;
+                   campy:content_hash ?key ;
+                   campy:plan_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_plan",
@@ -840,6 +1700,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live Plan.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:Plan ;
+                   campy:plan_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_planstep",
@@ -852,6 +1721,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a PlanStep node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:PlanStep ;
+                   campy:step_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_planstep",
@@ -862,6 +1750,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old PlanStep to new PlanStep with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:PlanStep ;
+                     campy:step_id ?node_id .
+                ?new a campy:PlanStep ;
+                     campy:step_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_planstep",
@@ -874,6 +1773,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected PlanStep nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:PlanStep ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:step_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_planstep",
@@ -884,6 +1793,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned PlanStep nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:PlanStep ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_planstep",
@@ -895,6 +1812,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected PlanStep nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:PlanStep ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_planstep",
@@ -906,6 +1835,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live PlanStep by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:PlanStep ;
+                   campy:content_hash ?key ;
+                   campy:step_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_planstep",
@@ -916,6 +1855,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live PlanStep.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:PlanStep ;
+                   campy:step_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_hypothesis",
@@ -928,6 +1876,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a Hypothesis node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:Hypothesis ;
+                   campy:id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_hypothesis",
@@ -938,6 +1905,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old Hypothesis to new Hypothesis with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:Hypothesis ;
+                     campy:id ?node_id .
+                ?new a campy:Hypothesis ;
+                     campy:id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_hypothesis",
@@ -950,6 +1928,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected Hypothesis nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:Hypothesis ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_hypothesis",
@@ -960,6 +1948,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned Hypothesis nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:Hypothesis ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_hypothesis",
@@ -971,6 +1967,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Hypothesis nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:Hypothesis ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_hypothesis",
@@ -982,6 +1990,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live Hypothesis by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:Hypothesis ;
+                   campy:content_hash ?key ;
+                   campy:id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_hypothesis",
@@ -992,6 +2010,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live Hypothesis.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:Hypothesis ;
+                   campy:id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_actionfact",
@@ -1004,6 +2031,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a ActionFact node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:ActionFact ;
+                   campy:fact_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_actionfact",
@@ -1014,6 +2060,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old ActionFact to new ActionFact with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:ActionFact ;
+                     campy:fact_id ?node_id .
+                ?new a campy:ActionFact ;
+                     campy:fact_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_actionfact",
@@ -1026,6 +2083,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected ActionFact nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:ActionFact ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:fact_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_actionfact",
@@ -1036,6 +2103,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned ActionFact nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:ActionFact ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_actionfact",
@@ -1047,6 +2122,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ActionFact nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:ActionFact ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_actionfact",
@@ -1058,6 +2145,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live ActionFact by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:ActionFact ;
+                   campy:content_hash ?key ;
+                   campy:fact_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_actionfact",
@@ -1068,6 +2165,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live ActionFact.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:ActionFact ;
+                   campy:fact_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_actioneffect",
@@ -1080,6 +2186,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a ActionEffect node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:ActionEffect ;
+                   campy:effect_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_actioneffect",
@@ -1090,6 +2215,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old ActionEffect to new ActionEffect with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:ActionEffect ;
+                     campy:effect_id ?node_id .
+                ?new a campy:ActionEffect ;
+                     campy:effect_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_actioneffect",
@@ -1102,6 +2238,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected ActionEffect nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:ActionEffect ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:effect_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_actioneffect",
@@ -1112,6 +2258,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned ActionEffect nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:ActionEffect ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_actioneffect",
@@ -1123,6 +2277,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ActionEffect nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:ActionEffect ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_actioneffect",
@@ -1134,6 +2300,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live ActionEffect by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:ActionEffect ;
+                   campy:content_hash ?key ;
+                   campy:effect_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_actioneffect",
@@ -1144,6 +2320,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live ActionEffect.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:ActionEffect ;
+                   campy:effect_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_victorycondition",
@@ -1156,6 +2341,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a VictoryCondition node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:VictoryCondition ;
+                   campy:condition_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_victorycondition",
@@ -1166,6 +2370,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old VictoryCondition to new VictoryCondition with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:VictoryCondition ;
+                     campy:condition_id ?node_id .
+                ?new a campy:VictoryCondition ;
+                     campy:condition_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_victorycondition",
@@ -1178,6 +2393,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected VictoryCondition nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:VictoryCondition ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:condition_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_victorycondition",
@@ -1188,6 +2413,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned VictoryCondition nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:VictoryCondition ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_victorycondition",
@@ -1199,6 +2432,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected VictoryCondition nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:VictoryCondition ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_victorycondition",
@@ -1210,6 +2455,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live VictoryCondition by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:VictoryCondition ;
+                   campy:content_hash ?key ;
+                   campy:condition_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_victorycondition",
@@ -1220,6 +2475,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live VictoryCondition.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:VictoryCondition ;
+                   campy:condition_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_rule",
@@ -1232,6 +2496,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a Rule node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:Rule ;
+                   campy:rule_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_rule",
@@ -1242,6 +2525,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old Rule to new Rule with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:Rule ;
+                     campy:rule_id ?node_id .
+                ?new a campy:Rule ;
+                     campy:rule_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_rule",
@@ -1254,6 +2548,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected Rule nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:Rule ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:rule_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_rule",
@@ -1264,6 +2568,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned Rule nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:Rule ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_rule",
@@ -1275,6 +2587,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Rule nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:Rule ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_rule",
@@ -1286,6 +2610,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live Rule by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:Rule ;
+                   campy:content_hash ?key ;
+                   campy:rule_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_rule",
@@ -1296,6 +2630,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live Rule.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:Rule ;
+                   campy:rule_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_transition",
@@ -1308,6 +2651,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a Transition node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:Transition ;
+                   campy:transition_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_transition",
@@ -1318,6 +2680,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old Transition to new Transition with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:Transition ;
+                     campy:transition_id ?node_id .
+                ?new a campy:Transition ;
+                     campy:transition_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_transition",
@@ -1330,6 +2703,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected Transition nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:Transition ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:transition_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_transition",
@@ -1340,6 +2723,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned Transition nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:Transition ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_transition",
@@ -1351,6 +2742,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Transition nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:Transition ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_transition",
@@ -1362,6 +2765,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live Transition by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:Transition ;
+                   campy:content_hash ?key ;
+                   campy:transition_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_transition",
@@ -1372,6 +2785,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live Transition.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:Transition ;
+                   campy:transition_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_documentextract",
@@ -1384,6 +2806,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a DocumentExtract node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:DocumentExtract ;
+                   campy:extract_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_documentextract",
@@ -1394,6 +2835,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old DocumentExtract to new DocumentExtract with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:DocumentExtract ;
+                     campy:extract_id ?node_id .
+                ?new a campy:DocumentExtract ;
+                     campy:extract_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_documentextract",
@@ -1406,6 +2858,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected DocumentExtract nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:DocumentExtract ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:extract_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_documentextract",
@@ -1416,6 +2878,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned DocumentExtract nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:DocumentExtract ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_documentextract",
@@ -1427,6 +2897,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected DocumentExtract nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:DocumentExtract ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_documentextract",
@@ -1438,6 +2920,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live DocumentExtract by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:DocumentExtract ;
+                   campy:content_hash ?key ;
+                   campy:extract_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_documentextract",
@@ -1448,6 +2940,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live DocumentExtract.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:DocumentExtract ;
+                   campy:extract_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_worksummary",
@@ -1460,6 +2961,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a WorkSummary node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:WorkSummary ;
+                   campy:summary_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_worksummary",
@@ -1470,6 +2990,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old WorkSummary to new WorkSummary with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:WorkSummary ;
+                     campy:summary_id ?node_id .
+                ?new a campy:WorkSummary ;
+                     campy:summary_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_worksummary",
@@ -1482,6 +3013,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected WorkSummary nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:WorkSummary ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:summary_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_worksummary",
@@ -1492,6 +3033,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned WorkSummary nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:WorkSummary ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_worksummary",
@@ -1503,6 +3052,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected WorkSummary nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:WorkSummary ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_worksummary",
@@ -1514,6 +3075,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live WorkSummary by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:WorkSummary ;
+                   campy:content_hash ?key ;
+                   campy:summary_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_worksummary",
@@ -1524,6 +3095,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live WorkSummary.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:WorkSummary ;
+                   campy:summary_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_workartifact",
@@ -1536,6 +3116,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a WorkArtifact node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:WorkArtifact ;
+                   campy:artifact_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_workartifact",
@@ -1546,6 +3145,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old WorkArtifact to new WorkArtifact with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:WorkArtifact ;
+                     campy:artifact_id ?node_id .
+                ?new a campy:WorkArtifact ;
+                     campy:artifact_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_workartifact",
@@ -1558,6 +3168,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected WorkArtifact nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:WorkArtifact ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:artifact_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_workartifact",
@@ -1568,6 +3188,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned WorkArtifact nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:WorkArtifact ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_workartifact",
@@ -1579,6 +3207,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected WorkArtifact nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:WorkArtifact ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_workartifact",
@@ -1590,6 +3230,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live WorkArtifact by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:WorkArtifact ;
+                   campy:content_hash ?key ;
+                   campy:artifact_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_workartifact",
@@ -1600,6 +3250,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live WorkArtifact.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:WorkArtifact ;
+                   campy:artifact_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_arcmechanic",
@@ -1612,6 +3271,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a ArcMechanic node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:ArcMechanic ;
+                   campy:mechanic_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_arcmechanic",
@@ -1622,6 +3300,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old ArcMechanic to new ArcMechanic with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:ArcMechanic ;
+                     campy:mechanic_id ?node_id .
+                ?new a campy:ArcMechanic ;
+                     campy:mechanic_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_arcmechanic",
@@ -1634,6 +3323,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected ArcMechanic nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:ArcMechanic ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:mechanic_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_arcmechanic",
@@ -1644,6 +3343,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned ArcMechanic nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:ArcMechanic ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_arcmechanic",
@@ -1655,6 +3362,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ArcMechanic nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:ArcMechanic ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_arcmechanic",
@@ -1666,6 +3385,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live ArcMechanic by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:ArcMechanic ;
+                   campy:content_hash ?key ;
+                   campy:mechanic_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_arcmechanic",
@@ -1676,6 +3405,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live ArcMechanic.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:ArcMechanic ;
+                   campy:mechanic_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_arcactionpattern",
@@ -1688,6 +3426,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a ArcActionPattern node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:ArcActionPattern ;
+                   campy:pattern_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_arcactionpattern",
@@ -1698,6 +3455,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old ArcActionPattern to new ArcActionPattern with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:ArcActionPattern ;
+                     campy:pattern_id ?node_id .
+                ?new a campy:ArcActionPattern ;
+                     campy:pattern_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_arcactionpattern",
@@ -1710,6 +3478,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected ArcActionPattern nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:ArcActionPattern ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:pattern_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_arcactionpattern",
@@ -1720,6 +3498,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned ArcActionPattern nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:ArcActionPattern ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_arcactionpattern",
@@ -1731,6 +3517,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ArcActionPattern nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:ArcActionPattern ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_arcactionpattern",
@@ -1742,6 +3540,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live ArcActionPattern by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:ArcActionPattern ;
+                   campy:content_hash ?key ;
+                   campy:pattern_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_arcactionpattern",
@@ -1752,6 +3560,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live ArcActionPattern.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:ArcActionPattern ;
+                   campy:pattern_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_arceffectpattern",
@@ -1764,6 +3581,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a ArcEffectPattern node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:ArcEffectPattern ;
+                   campy:pattern_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_arceffectpattern",
@@ -1774,6 +3610,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old ArcEffectPattern to new ArcEffectPattern with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:ArcEffectPattern ;
+                     campy:pattern_id ?node_id .
+                ?new a campy:ArcEffectPattern ;
+                     campy:pattern_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_arceffectpattern",
@@ -1786,6 +3633,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected ArcEffectPattern nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:ArcEffectPattern ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:pattern_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_arceffectpattern",
@@ -1796,6 +3653,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned ArcEffectPattern nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:ArcEffectPattern ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_arceffectpattern",
@@ -1807,6 +3672,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ArcEffectPattern nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:ArcEffectPattern ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_arceffectpattern",
@@ -1818,6 +3695,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live ArcEffectPattern by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:ArcEffectPattern ;
+                   campy:content_hash ?key ;
+                   campy:pattern_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_arceffectpattern",
@@ -1828,6 +3715,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live ArcEffectPattern.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:ArcEffectPattern ;
+                   campy:pattern_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_arcprecondition",
@@ -1840,6 +3736,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a ArcPrecondition node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:ArcPrecondition ;
+                   campy:precondition_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_arcprecondition",
@@ -1850,6 +3765,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old ArcPrecondition to new ArcPrecondition with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:ArcPrecondition ;
+                     campy:precondition_id ?node_id .
+                ?new a campy:ArcPrecondition ;
+                     campy:precondition_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_arcprecondition",
@@ -1862,6 +3788,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected ArcPrecondition nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:ArcPrecondition ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:precondition_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_arcprecondition",
@@ -1872,6 +3808,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned ArcPrecondition nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:ArcPrecondition ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_arcprecondition",
@@ -1883,6 +3827,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ArcPrecondition nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:ArcPrecondition ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_arcprecondition",
@@ -1894,6 +3850,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live ArcPrecondition by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:ArcPrecondition ;
+                   campy:content_hash ?key ;
+                   campy:precondition_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_arcprecondition",
@@ -1904,6 +3870,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live ArcPrecondition.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:ArcPrecondition ;
+                   campy:precondition_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_arcfailuremode",
@@ -1916,6 +3891,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a ArcFailureMode node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:ArcFailureMode ;
+                   campy:failure_mode_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_arcfailuremode",
@@ -1926,6 +3920,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old ArcFailureMode to new ArcFailureMode with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:ArcFailureMode ;
+                     campy:failure_mode_id ?node_id .
+                ?new a campy:ArcFailureMode ;
+                     campy:failure_mode_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_arcfailuremode",
@@ -1938,6 +3943,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected ArcFailureMode nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:ArcFailureMode ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:failure_mode_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_arcfailuremode",
@@ -1948,6 +3963,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned ArcFailureMode nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:ArcFailureMode ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_arcfailuremode",
@@ -1959,6 +3982,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ArcFailureMode nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:ArcFailureMode ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_arcfailuremode",
@@ -1970,6 +4005,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live ArcFailureMode by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:ArcFailureMode ;
+                   campy:content_hash ?key ;
+                   campy:failure_mode_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_arcfailuremode",
@@ -1980,6 +4025,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live ArcFailureMode.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:ArcFailureMode ;
+                   campy:failure_mode_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_arcrecoverypolicy",
@@ -1992,6 +4046,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a ArcRecoveryPolicy node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:ArcRecoveryPolicy ;
+                   campy:recovery_policy_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_arcrecoverypolicy",
@@ -2002,6 +4075,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old ArcRecoveryPolicy to new ArcRecoveryPolicy with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:ArcRecoveryPolicy ;
+                     campy:recovery_policy_id ?node_id .
+                ?new a campy:ArcRecoveryPolicy ;
+                     campy:recovery_policy_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_arcrecoverypolicy",
@@ -2014,6 +4098,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected ArcRecoveryPolicy nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:ArcRecoveryPolicy ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:recovery_policy_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_arcrecoverypolicy",
@@ -2024,6 +4118,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned ArcRecoveryPolicy nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:ArcRecoveryPolicy ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_arcrecoverypolicy",
@@ -2035,6 +4137,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ArcRecoveryPolicy nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:ArcRecoveryPolicy ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_arcrecoverypolicy",
@@ -2046,6 +4160,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live ArcRecoveryPolicy by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:ArcRecoveryPolicy ;
+                   campy:content_hash ?key ;
+                   campy:recovery_policy_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_arcrecoverypolicy",
@@ -2056,6 +4180,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live ArcRecoveryPolicy.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:ArcRecoveryPolicy ;
+                   campy:recovery_policy_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_arcworldmodelstep",
@@ -2068,6 +4201,25 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by", "at", "reason"),
         mutating=True,
         description="Mark a ArcWorldModelStep node as superseded.",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?old_superseded_by .
+                ?n campy:superseded_at ?old_superseded_at .
+                ?n campy:supersession_reason ?old_supersession_reason .
+            }
+            INSERT {
+                ?n campy:superseded_by ?superseded_by .
+                ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?n a campy:ArcWorldModelStep ;
+                   campy:world_model_step_id ?node_id .
+                OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
+                OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
+                OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.deprecated_by_arcworldmodelstep",
@@ -2078,6 +4230,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("node_id", "superseded_by"),
         mutating=True,
         description="Link old ArcWorldModelStep to new ArcWorldModelStep with DEPRECATED_BY.",
+        sparql="""
+            INSERT {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:ArcWorldModelStep ;
+                     campy:world_model_step_id ?node_id .
+                ?new a campy:ArcWorldModelStep ;
+                     campy:world_model_step_id ?superseded_by .
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_stale_arcworldmodelstep",
@@ -2090,6 +4253,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source", "current_version"),
         mutating=False,
         description="Find stale projected ArcWorldModelStep nodes.",
+        sparql="""
+            SELECT ?node_id ?source ?source_version WHERE {
+                ?n a campy:ArcWorldModelStep ;
+                   campy:authority "projected" ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:world_model_step_id ?node_id .
+                FILTER(?source_version != ?current_version)
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.counts_arcworldmodelstep",
@@ -2100,6 +4273,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned ArcWorldModelStep nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:ArcWorldModelStep ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_arcworldmodelstep",
@@ -2111,6 +4292,18 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ArcWorldModelStep nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:ArcWorldModelStep ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
     NamedQuery(
         name="provenance.find_live_arcworldmodelstep",
@@ -2122,6 +4315,16 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("key",),
         mutating=False,
         description="Find live ArcWorldModelStep by dedupe key (content hash).",
+        sparql="""
+            SELECT ?id WHERE {
+                ?n a campy:ArcWorldModelStep ;
+                   campy:content_hash ?key ;
+                   campy:world_model_step_id ?id .
+                OPTIONAL { ?n campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            LIMIT 1
+            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_arcworldmodelstep",
@@ -2132,6 +4335,15 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "now"),
         mutating=True,
         description="Update last_accessed_at for live ArcWorldModelStep.",
+        sparql="""
+            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
+            INSERT { ?n campy:last_accessed_at ?now }
+            WHERE {
+                ?n a campy:ArcWorldModelStep ;
+                   campy:world_model_step_id ?id .
+                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
+            }
+            """,
     ),
 
     # B399: FactEntity (schema.py's B317 capability-graph subgraph) carries
@@ -2165,6 +4377,14 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=False,
         description="Count projected vs earned FactEntity nodes for a source.",
+        sparql="""
+            SELECT ?authority (COUNT(?n) AS ?c) WHERE {
+                ?n a campy:FactEntity ;
+                   campy:source ?source .
+                OPTIONAL { ?n campy:authority ?authority }
+            }
+            GROUP BY ?authority
+            """,
     ),
     NamedQuery(
         name="provenance.drop_projected_factentity",
@@ -2176,5 +4396,17 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected FactEntity nodes for a source.",
+        sparql="""
+            DELETE {
+                ?n ?p ?o .
+                ?s ?p2 ?n .
+            }
+            WHERE {
+                ?n a campy:FactEntity ;
+                   campy:authority "projected" ;
+                   campy:source ?source .
+                { ?n ?p ?o } UNION { ?s ?p2 ?n }
+            }
+            """,
     ),
 )
