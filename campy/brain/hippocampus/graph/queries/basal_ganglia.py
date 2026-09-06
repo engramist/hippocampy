@@ -13,6 +13,18 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         params=("min_valence",),
         mutating=False,
         description="Get distinct strategies from completed plans with valence > min_valence",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT DISTINCT ?strategy
+            WHERE {
+              ?p a campy:Plan ;
+                 campy:status "completed" ;
+                 campy:valence ?valence ;
+                 campy:strategy ?strategy .
+              FILTER(?valence > ?min_valence)
+            }
+        """,
     ),
     NamedQuery(
         name="basal_ganglia.synthesis_get_plans_for_strategy",
@@ -21,6 +33,24 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         params=("strategy", "min_valence"),
         mutating=False,
         description="Get completed plans for strategy",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?plan_id ?goal ?embedding ?pathway_strength ?confidence
+            WHERE {
+              ?p a campy:Plan ;
+                 campy:plan_id ?plan_id ;
+                 campy:strategy ?strategy ;
+                 campy:status "completed" ;
+                 campy:valence ?valence ;
+                 campy:goal ?goal ;
+                 campy:pathway_strength ?pathway_strength ;
+                 campy:confidence ?confidence .
+              FILTER(?valence > ?min_valence)
+              OPTIONAL { ?p campy:embedding ?embedding }
+            }
+            LIMIT 20
+        """,
     ),
     NamedQuery(
         name="basal_ganglia.synthesis_check_existing_procedure",
@@ -29,6 +59,17 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         params=("strategy",),
         mutating=False,
         description="Check if procedure exists for archetype strategy",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT (COUNT(?p) > 0 AS ?exists)
+            WHERE {
+              ?p a campy:Procedure ;
+                 campy:archetype ?strategy .
+              OPTIONAL { ?p campy:archived ?archived }
+              FILTER(!BOUND(?archived) || ?archived = false)
+            }
+        """,
     ),
     NamedQuery(
         name="basal_ganglia.synthesis_create_procedure",
@@ -57,6 +98,33 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         ),
         mutating=True,
         description="Create synthesized Procedure node from plans",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+            INSERT {
+              ?pr a campy:Procedure ;
+                  campy:procedure_id ?pid ;
+                  campy:name ?name ;
+                  campy:domain ?domain ;
+                  campy:archetype ?archetype ;
+                  campy:description ?description ;
+                  campy:steps_json ?steps_json ;
+                  campy:embedding ?embedding ;
+                  campy:embedding_model ?embedding_model ;
+                  campy:embedding_dim ?embedding_dim ;
+                  campy:success_count ?success_count ;
+                  campy:application_count "0"^^xsd:integer ;
+                  campy:success_rate "0.0"^^xsd:double ;
+                  campy:confidence ?confidence ;
+                  campy:pathway_strength ?pathway_strength ;
+                  campy:archived false ;
+                  campy:created_at ?now .
+            }
+            WHERE {
+              BIND(IRI(CONCAT("https://campy.dev/data/Procedure/", ENCODE_FOR_URI(STR(?pid)))) AS ?pr)
+            }
+        """,
     ),
     NamedQuery(
         name="basal_ganglia.synthesis_link_distilled_from",
@@ -66,6 +134,22 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         params=("pid", "plan_id", "now"),
         mutating=True,
         description="Link Procedure DISTILLED_FROM Plan",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            INSERT {
+              ?pr campy:DISTILLED_FROM ?pl .
+              << ?pr campy:DISTILLED_FROM ?pl >> campy:synthesized_at ?target_now .
+            }
+            WHERE {
+              ?pr a campy:Procedure ; campy:procedure_id ?pid .
+              ?pl a campy:Plan ; campy:plan_id ?plan_id .
+              OPTIONAL {
+                << ?pr campy:DISTILLED_FROM ?pl >> campy:synthesized_at ?old_syn .
+              }
+              BIND(COALESCE(?old_syn, ?now) AS ?target_now)
+            }
+        """,
     ),
     NamedQuery(
         name="basal_ganglia.synthesis_merge_archetype_concept",
@@ -74,6 +158,24 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         params=("cid", "text", "now"),
         mutating=True,
         description="Merge archetype Concept node",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+            INSERT {
+              ?target_c a campy:Concept ;
+                        campy:concept_id ?cid ;
+                        campy:text_raw ?text ;
+                        campy:pathway_strength "0.6"^^xsd:double ;
+                        campy:archived false ;
+                        campy:created_at ?now .
+            }
+            WHERE {
+              OPTIONAL { ?c a campy:Concept ; campy:concept_id ?cid }
+              FILTER(!BOUND(?c))
+              BIND(IRI(CONCAT("https://campy.dev/data/Concept/", ENCODE_FOR_URI(STR(?cid)))) AS ?target_c)
+            }
+        """,
     ),
     NamedQuery(
         name="basal_ganglia.synthesis_link_applies_to_archetype",
@@ -82,6 +184,17 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         params=("pid", "cid"),
         mutating=True,
         description="Link Procedure APPLIES_TO_ARCHETYPE Concept",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            INSERT {
+              ?pr campy:APPLIES_TO_ARCHETYPE ?c .
+            }
+            WHERE {
+              ?pr a campy:Procedure ; campy:procedure_id ?pid .
+              ?c a campy:Concept ; campy:concept_id ?cid .
+            }
+        """,
     ),
 
     # frustration_clusters.py
@@ -96,6 +209,25 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         params=("floor",),
         mutating=False,
         description="Get Concept nodes for frustration cluster detection",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?id ?name ?description ?emb ?salience
+            WHERE {
+              ?n a campy:Concept ;
+                 campy:concept_id ?id ;
+                 campy:salience_score ?salience .
+              OPTIONAL { ?n campy:archived ?archived }
+              FILTER(!BOUND(?archived) || ?archived = false)
+              FILTER(?salience >= ?floor)
+              OPTIONAL { ?n campy:text_raw ?raw_text }
+              BIND(COALESCE(?raw_text, "") AS ?name)
+              BIND(COALESCE(?raw_text, "") AS ?description)
+              OPTIONAL { ?n campy:embedding ?emb }
+            }
+            ORDER BY DESC(?salience)
+            LIMIT 50
+        """,
     ),
     NamedQuery(
         name="basal_ganglia.frustration_get_decision",
@@ -108,6 +240,25 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         params=("floor",),
         mutating=False,
         description="Get Decision nodes for frustration cluster detection",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?id ?name ?description ?emb ?salience
+            WHERE {
+              ?n a campy:Decision ;
+                 campy:decision_id ?id ;
+                 campy:salience_score ?salience .
+              OPTIONAL { ?n campy:archived ?archived }
+              FILTER(!BOUND(?archived) || ?archived = false)
+              FILTER(?salience >= ?floor)
+              OPTIONAL { ?n campy:text_raw ?raw_text }
+              BIND(COALESCE(?raw_text, "") AS ?name)
+              BIND(COALESCE(?raw_text, "") AS ?description)
+              OPTIONAL { ?n campy:embedding ?emb }
+            }
+            ORDER BY DESC(?salience)
+            LIMIT 50
+        """,
     ),
     NamedQuery(
         name="basal_ganglia.frustration_get_constraint",
@@ -120,6 +271,25 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         params=("floor",),
         mutating=False,
         description="Get Constraint nodes for frustration cluster detection",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?id ?name ?description ?emb ?salience
+            WHERE {
+              ?n a campy:Constraint ;
+                 campy:constraint_id ?id ;
+                 campy:salience_score ?salience .
+              OPTIONAL { ?n campy:archived ?archived }
+              FILTER(!BOUND(?archived) || ?archived = false)
+              FILTER(?salience >= ?floor)
+              OPTIONAL { ?n campy:text_raw ?raw_text }
+              BIND(COALESCE(?raw_text, "") AS ?name)
+              BIND(COALESCE(?raw_text, "") AS ?description)
+              OPTIONAL { ?n campy:embedding ?emb }
+            }
+            ORDER BY DESC(?salience)
+            LIMIT 50
+        """,
     ),
     NamedQuery(
         name="basal_ganglia.frustration_create_procedure",
@@ -142,6 +312,35 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         ),
         mutating=True,
         description="Create avoidance Procedure node from frustration cluster",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+            INSERT {
+              ?pr a campy:Procedure ;
+                  campy:procedure_id ?pid ;
+                  campy:name ?name ;
+                  campy:domain ?domain ;
+                  campy:archetype ?archetype ;
+                  campy:description ?description ;
+                  campy:steps_json ?steps_json ;
+                  campy:embedding ?embedding ;
+                  campy:embedding_model ?embedding_model ;
+                  campy:embedding_dim ?embedding_dim ;
+                  campy:success_count "0"^^xsd:integer ;
+                  campy:application_count "0"^^xsd:integer ;
+                  campy:success_rate "0.0"^^xsd:double ;
+                  campy:salience_score ?salience_score ;
+                  campy:confidence ?confidence ;
+                  campy:pathway_strength ?pathway_strength ;
+                  campy:maturity_stage "nascent" ;
+                  campy:archived false ;
+                  campy:created_at ?now .
+            }
+            WHERE {
+              BIND(IRI(CONCAT("https://campy.dev/data/Procedure/", ENCODE_FOR_URI(STR(?pid)))) AS ?pr)
+            }
+        """,
     ),
     NamedQuery(
         name="basal_ganglia.frustration_link_distilled_from_concept",
@@ -151,6 +350,22 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         params=("pid", "cid", "now"),
         mutating=True,
         description="Link Procedure DISTILLED_FROM Concept",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            INSERT {
+              ?pr campy:DISTILLED_FROM ?c .
+              << ?pr campy:DISTILLED_FROM ?c >> campy:synthesized_at ?target_now .
+            }
+            WHERE {
+              ?pr a campy:Procedure ; campy:procedure_id ?pid .
+              ?c a campy:Concept ; campy:concept_id ?cid .
+              OPTIONAL {
+                << ?pr campy:DISTILLED_FROM ?c >> campy:synthesized_at ?old_syn .
+              }
+              BIND(COALESCE(?old_syn, ?now) AS ?target_now)
+            }
+        """,
     ),
     NamedQuery(
         name="basal_ganglia.frustration_link_distilled_from_decision",
@@ -160,6 +375,22 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         params=("pid", "cid", "now"),
         mutating=True,
         description="Link Procedure DISTILLED_FROM Decision",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            INSERT {
+              ?pr campy:DISTILLED_FROM ?c .
+              << ?pr campy:DISTILLED_FROM ?c >> campy:synthesized_at ?target_now .
+            }
+            WHERE {
+              ?pr a campy:Procedure ; campy:procedure_id ?pid .
+              ?c a campy:Decision ; campy:decision_id ?cid .
+              OPTIONAL {
+                << ?pr campy:DISTILLED_FROM ?c >> campy:synthesized_at ?old_syn .
+              }
+              BIND(COALESCE(?old_syn, ?now) AS ?target_now)
+            }
+        """,
     ),
     NamedQuery(
         name="basal_ganglia.frustration_link_distilled_from_constraint",
@@ -169,6 +400,22 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         params=("pid", "cid", "now"),
         mutating=True,
         description="Link Procedure DISTILLED_FROM Constraint",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            INSERT {
+              ?pr campy:DISTILLED_FROM ?c .
+              << ?pr campy:DISTILLED_FROM ?c >> campy:synthesized_at ?target_now .
+            }
+            WHERE {
+              ?pr a campy:Procedure ; campy:procedure_id ?pid .
+              ?c a campy:Constraint ; campy:constraint_id ?cid .
+              OPTIONAL {
+                << ?pr campy:DISTILLED_FROM ?c >> campy:synthesized_at ?old_syn .
+              }
+              BIND(COALESCE(?old_syn, ?now) AS ?target_now)
+            }
+        """,
     ),
 
     # procedure_maturity.py
@@ -179,6 +426,20 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Get active procedures for maturity update",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?procedure_id ?application_count ?success_rate ?maturity_stage
+            WHERE {
+              ?p a campy:Procedure ;
+                 campy:procedure_id ?procedure_id ;
+                 campy:application_count ?application_count ;
+                 campy:success_rate ?success_rate .
+              OPTIONAL { ?p campy:archived ?archived }
+              FILTER(!BOUND(?archived) || ?archived = false)
+              OPTIONAL { ?p campy:maturity_stage ?maturity_stage }
+            }
+        """,
     ),
     NamedQuery(
         name="basal_ganglia.maturity_update_stage",
@@ -186,6 +447,21 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         params=("pid", "stage"),
         mutating=True,
         description="Update procedure maturity stage",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            DELETE {
+              ?p campy:maturity_stage ?old_stage .
+            }
+            INSERT {
+              ?p campy:maturity_stage ?stage .
+            }
+            WHERE {
+              ?p a campy:Procedure ;
+                 campy:procedure_id ?pid .
+              OPTIONAL { ?p campy:maturity_stage ?old_stage }
+            }
+        """,
     ),
 
     # reward_predictor.py
@@ -198,5 +474,26 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         params=("plan_id", "predicted", "actual", "error"),
         mutating=True,
         description="Record reward prediction error on Plan node",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            DELETE {
+              ?p campy:predicted_valence ?old_pred .
+              ?p campy:actual_valence ?old_act .
+              ?p campy:prediction_error ?old_err .
+            }
+            INSERT {
+              ?p campy:predicted_valence ?predicted .
+              ?p campy:actual_valence ?actual .
+              ?p campy:prediction_error ?error .
+            }
+            WHERE {
+              ?p a campy:Plan ;
+                 campy:plan_id ?plan_id .
+              OPTIONAL { ?p campy:predicted_valence ?old_pred }
+              OPTIONAL { ?p campy:actual_valence ?old_act }
+              OPTIONAL { ?p campy:prediction_error ?old_err }
+            }
+        """,
     ),
 )
