@@ -581,6 +581,124 @@ REL_COLUMNS: dict[str, dict[str, str]] = _parse_rel_schema()
 
 
 # ---------------------------------------------------------------------------
+# §4.2e — RDF-star annotation delete cascade (B403)
+#
+# Cypher's `DETACH DELETE n` removes a node and every edge incident to it in
+# one step. Its SPARQL translation (see `provenance.drop_projected_*`)
+# removes the node's property triples and its plain incoming/outgoing edge
+# triples — but an RDF-star ANNOTATION is not a triple about the node, it is
+# a triple about a *reifier* that points at the edge triple, so no pattern
+# over `?n` reaches it. Without the cascade below those annotations, and the
+# occurrence nodes hanging off them, survive their edge forever.
+#
+# Cascade semantics per `EDGE_REIFICATION` class:
+#
+#   plain       nothing to cascade — a `plain` edge is one triple, already
+#               removed by the `?s ?p2 ?n` / `?n ?p ?o` patterns.
+#   star        one reifier per (s,p,o) (`write_edge` enforces this via
+#               `_remove_existing_reifiers`). Remove the reifier's
+#               `rdf:reifies` quad AND every annotation property quad on it.
+#   occurrence  N reifiers per (s,p,o), each carrying
+#               `campy:occurrence <cid:Occurrence/{ulid}>`. Remove each
+#               reifier as above AND the occurrence node's own property
+#               triples. The occurrence URI is minted fresh per write
+#               (`mint_occurrence_uri()`), is never reused, and is referenced
+#               only from its one reifier — so once the reifier goes, the
+#               occurrence node is unreachable garbage, not shared state.
+#               Leaving it behind is the larger half of the leak: an
+#               occurrence edge accumulates a node per write.
+#
+# WHY AN ORPHAN SWEEP RATHER THAN A PER-QUERY TARGETED DELETE:
+#
+# The sweep's soundness rests on one invariant the spec states and
+# `write_edge()` enforces (§4.2a: "Always assert the plain triple as well as
+# the quoted annotation"): **every annotation this system writes has its base
+# triple asserted**. So `?r rdf:reifies <<( ?s ?p ?o )>>` with
+# `FILTER NOT EXISTS { ?s ?p ?o }` matches orphans and nothing else. That
+# makes one static statement correct for all 29 `drop_projected_*` queries —
+# no per-query node selector to duplicate, mis-copy, or drift — and it also
+# collects annotations orphaned by any *other* delete path, including query
+# batches B392-B396 have not translated yet.
+#
+# Measured cost (real pyoxigraph 0.5.11, 20 000 star annotations / 120 000
+# quads): ~22 ms, flat whether it finds 0 orphans or 100. It is O(reifiers)
+# with a point lookup per reifier, and it runs on projection refresh, not in
+# any read path.
+#
+# ORDERING IS LOAD-BEARING: the cascade must run AFTER the statement that
+# deletes the node, because "orphaned" is defined by the base triple already
+# being gone. `with_annotation_cascade()` appends, never prepends.
+#
+# pyoxigraph 0.5.11 notes (empirically verified, extending the module
+# docstring's points 1-5):
+#
+#   6. A triple term in OBJECT position IS matchable from SPARQL text using
+#      the RDF 1.2 `<<( ?s ?p ?o )>>` syntax, with variables in all three
+#      positions, in both `query()` and `update()` — this is what makes a
+#      SPARQL-text cascade possible at all despite docstring point 3
+#      (quoted triple as a DELETE quad SUBJECT is still rejected; we never
+#      need one, because the reifier is an ordinary blank node subject).
+#      The legacy `<< ?s ?p ?o >>` spelling parses in a WHERE clause but
+#      matches nothing — it desugars to annotation syntax, not a term
+#      pattern. Use `<<( ... )>>`.
+#   7. `Store.update()` accepts several `;`-separated statements in one
+#      request and applies them in order, with a single leading `PREFIX`
+#      prologue applying to all of them.
+# ---------------------------------------------------------------------------
+
+ANNOTATION_CASCADE_SPARQL = """
+DELETE {
+    ?cascade_reifier ?cascade_reifier_p ?cascade_reifier_o .
+    ?cascade_occurrence ?cascade_occurrence_p ?cascade_occurrence_o .
+}
+WHERE {
+    ?cascade_reifier <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies>
+        <<( ?cascade_s ?cascade_p ?cascade_o )>> .
+    FILTER NOT EXISTS { ?cascade_s ?cascade_p ?cascade_o }
+    ?cascade_reifier ?cascade_reifier_p ?cascade_reifier_o .
+    OPTIONAL {
+        ?cascade_reifier <https://campy.dev/ns#occurrence> ?cascade_occurrence .
+        ?cascade_occurrence ?cascade_occurrence_p ?cascade_occurrence_o .
+    }
+}
+"""
+"""One complete SPARQL Update statement that deletes every orphaned RDF-star
+annotation and the occurrence nodes hanging off it.
+
+Deliberately written with absolute IRIs, not `campy:`/`rdf:` prefixed names,
+so it is self-contained: it stays valid appended to a `NamedQuery.sparql`
+string whether or not that string's own prologue is present (the 198
+provenance strings currently carry no `PREFIX` line — B397's executor
+supplies it). Do not "tidy" these into prefixed names.
+"""
+
+_CASCADE_MARKER = "?cascade_reifier"
+
+
+def with_annotation_cascade(sparql: str) -> str:
+    """Append `ANNOTATION_CASCADE_SPARQL` to a node-deleting SPARQL Update.
+
+    This is the single definition of the cascade for every `DETACH DELETE`
+    translation — call it instead of pasting the pattern into another query
+    (`provenance.py` has 29 such queries). The result is one Update request of
+    two `;`-separated statements: the caller's node/edge delete first, then the
+    cascade, which is what makes the "orphaned" test meaningful (see the
+    section comment above on ordering).
+
+    Raises `ValueError` if `sparql` already carries the cascade — applying it
+    twice is a copy/paste mistake, never intentional.
+    """
+    if not isinstance(sparql, str) or not sparql.strip():
+        raise ValueError("with_annotation_cascade() needs a non-empty SPARQL Update string")
+    if _CASCADE_MARKER in sparql:
+        raise ValueError(
+            "with_annotation_cascade() applied to a string that already contains "
+            "the cascade — apply it exactly once, at the NamedQuery definition."
+        )
+    return sparql.rstrip() + "\n            ;\n" + ANNOTATION_CASCADE_SPARQL
+
+
+# ---------------------------------------------------------------------------
 # Node / edge writers
 # ---------------------------------------------------------------------------
 
@@ -769,6 +887,24 @@ class OxigraphClient:
             for quad in list(self.store.quads_for_pattern(reifier, None, None, ox.DefaultGraph())):
                 self.store.remove(quad)
 
+    # -- annotation cascade (§4.2e) -----------------------------------------
+
+    def cascade_orphaned_annotations(self) -> int:
+        """Run `ANNOTATION_CASCADE_SPARQL` against this store and return the
+        number of quads it removed.
+
+        The `drop_projected_*` queries carry the cascade in their own SPARQL
+        text (via `with_annotation_cascade()`), so this method is not on that
+        path. It exists for delete paths that do not go through a
+        `NamedQuery` — ad-hoc repair, an importer that removed edges
+        directly, or a maintenance sweep after a query batch that has not been
+        translated yet. Safe to run at any time: with no orphans present it is
+        a no-op (measured ~22 ms against a 120 000-quad store).
+        """
+        before = len(self.store)
+        self.store.update(ANNOTATION_CASCADE_SPARQL)
+        return before - len(self.store)
+
     # -- generic read/write, mirroring KuzuClient's async surface -----------
 
     def execute(self, sparql: str, params: dict[str, Any] | None = None):
@@ -880,6 +1016,8 @@ def _term_for_param(value: Any) -> ox.NamedNode | ox.Literal:
 
 __all__ = [
     "OxigraphClient",
+    "ANNOTATION_CASCADE_SPARQL",
+    "with_annotation_cascade",
     "EDGE_REIFICATION",
     "UNCLASSIFIED_ESCALATED_TABLES",
     "classify_edge",
