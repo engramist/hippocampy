@@ -19,6 +19,13 @@ kuzu==0.11.3
 fastembed==0.8.0
 
 # NLP / NER / dependency parsing (en_core_web_md required — sm has no dep parser)
+# B400: verified spacy/thinc does NOT transitively pull in torch/torchvision.
+# thinc only lists torch behind an opt-in extra (thinc[torch]) that nothing
+# here requests; a clean install of this file installs zero torch package
+# and the real ingestion path never puts torch in sys.modules (regression
+# guard: tests/test_no_torch_dependency.py). torch only ever reappears if
+# something else hard-depends on it (sentence-transformers did, pre-B355).
+# See backlog/B400.md for the full investigation.
 spacy==3.8.3
 # After pip install, run: python -m spacy download en_core_web_md
 
