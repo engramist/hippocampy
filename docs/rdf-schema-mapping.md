@@ -272,6 +272,74 @@ a hard error at write time, never a silent default. Any table not listed above m
 be classified explicitly before its queries are translated; if the correct class is
 unclear from the schema and call sites, escalate — do not guess.
 
+#### 4.2e Deleting a node cascades to its annotations (B403)
+
+> **Added 2026-09-05.** §4.2a/§4.2b specify how an annotated edge is *written*.
+> This subsection specifies what happens when one end of it is deleted, which
+> B391 deferred rather than guessed.
+
+Cypher's `DETACH DELETE n` removes the node and every edge incident to it. Its
+SPARQL translation removes the node's property triples and its plain
+incoming/outgoing edge triples:
+
+```sparql
+DELETE { ?n ?p ?o . ?s ?p2 ?n . }
+WHERE  { ?n a campy:Concept ; ... { ?n ?p ?o } UNION { ?s ?p2 ?n } }
+```
+
+That is **not** equivalent to `DETACH DELETE` for a `star` or `occurrence` edge.
+An annotation is not a statement about the node — it is a statement about a
+*reifier* that points at the edge triple — so no pattern over `?n` reaches it.
+
+**Normative cascade semantics, by `EDGE_REIFICATION` class:**
+
+| class | what a node delete must additionally remove |
+|---|---|
+| `plain` | nothing — the edge is one triple, already covered |
+| `star` | the reifier's `rdf:reifies` quad and every annotation property on it |
+| `occurrence` | the same for each of the N reifiers, **plus each occurrence node's own property triples** |
+
+`occurrence` is the case that is easy to get half-right. The occurrence node is
+a real URI hanging off the quoted triple, minted fresh per write and referenced
+only from its one reifier; deleting the reifier alone leaves it as unreachable
+garbage, and an occurrence edge mints one per write. That is the larger half of
+the leak.
+
+**The cascade is specified as an orphan sweep, not a per-query targeted delete.**
+It rests on the invariant §4.2a already states — *always assert the plain triple
+as well as the quoted annotation* — which makes "the reified triple is not
+asserted" a sound and complete test for orphanhood:
+
+```sparql
+DELETE { ?r ?rp ?ro . ?occ ?op ?ov . }
+WHERE {
+  ?r rdf:reifies <<( ?s ?p ?o )>> .
+  FILTER NOT EXISTS { ?s ?p ?o }
+  ?r ?rp ?ro .
+  OPTIONAL { ?r campy:occurrence ?occ . ?occ ?op ?ov . }
+}
+```
+
+One static statement is therefore correct for every node-deleting query, with no
+per-query selector to duplicate or drift, and it also collects annotations
+orphaned by delete paths outside the translated set. **It must run after the node
+delete**, in the same Update request — "orphaned" is only true once the base
+triple is gone.
+
+Canonical implementation: `oxigraph_client.ANNOTATION_CASCADE_SPARQL`, applied
+via `with_annotation_cascade()`. Do not re-paste the pattern into a query.
+
+Measured against real `pyoxigraph 0.5.11`: ~22 ms over 20 000 annotations /
+120 000 quads, flat whether it finds 0 orphans or 100 — `O(reifiers)` with a
+point lookup each, on a projection-refresh path rather than a read path.
+
+Two pyoxigraph 0.5.11 facts this depends on, both verified: a triple term in
+**object** position is matchable from SPARQL text as `<<( ?s ?p ?o )>>` with
+variables in all three positions (the legacy `<< ?s ?p ?o >>` spelling parses in
+a `WHERE` clause but matches nothing — it is annotation sugar, not a term
+pattern); and `Store.update()` applies several `;`-separated statements in order
+under one `PREFIX` prologue.
+
 ---
 
 ## 5. Vectors leave the graph
@@ -336,6 +404,11 @@ Applies to all six SPARQL sub-batches.
    `DELETE WHERE { ?s ?p ?o }` scoped to the affected predicates, followed by
    `INSERT DATA`. This is not atomic in the Cypher sense; it must run inside a
    single Oxigraph transaction.
+8. **Deletes:** a `DETACH DELETE` translation must carry the §4.2e annotation
+   cascade, appended as a second statement in the same Update request. Removing
+   a node's plain triples without it leaks the RDF-star annotations on its edges
+   and, for `occurrence` edges, an occurrence node per write. Apply
+   `oxigraph_client.with_annotation_cascade()`; never re-paste the pattern.
 
 ---
 
