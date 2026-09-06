@@ -337,6 +337,25 @@ Applies to all six SPARQL sub-batches.
    `INSERT DATA`. This is not atomic in the Cypher sense; it must run inside a
    single Oxigraph transaction.
 
+   **Exception — `star` edges must NOT use this pattern (added 2026-09-06,
+   from B392).** For a reified edge, preserving `ON MATCH`'s untouched
+   properties requires a `WHERE` clause that yields multiple solution rows for
+   one reifier, and the templated `<< ?s ?p ?o >> ?pred ?obj` insert **mints a
+   fresh blank-node reifier per row**, silently duplicating annotations rather
+   than updating them. Verified empirically against `pyoxigraph 0.5.11`.
+
+   `star`-edge upserts are therefore **Python handlers** (`write_edge()`), not
+   `sparql=` strings — the same handler-dispatch boundary §5 establishes for
+   vector search, and which `gateway.py`'s `NamedQuery` docstring already
+   anticipates. Do not attempt a pure-SPARQL `MERGE` on a reified edge.
+
+8. **`INSERT DATA` forbids variables.** A node-creating query whose values come
+   from parameters uses `INSERT { ... } WHERE { }`, not `INSERT DATA { ... }`.
+
+9. **`LIMIT` cannot bind a variable in SPARQL.** A Cypher `LIMIT $limit` has no
+   direct translation; either inline a constant or apply the limit in the
+   Python handler. Do not silently drop the bound without recording it.
+
 ---
 
 ## 8. Migration and verification
