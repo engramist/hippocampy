@@ -139,8 +139,9 @@ base_url = "http://localhost:11434"   # ollama only
 provider = "sentence-transformers"   # config label kept for backward compat; backed by fastembed/ONNX
                                       # since B355, not PyTorch -- same model, ~6.5x smaller footprint
                                       # contribution from the embedding backend itself (1.22GB -> 186MB,
-                                      # see B355's correction note; the daemon's own torch floor from
-                                      # spaCy is unrelated and unaffected by this)
+                                      # see B355's correction note). B355 believed spaCy/thinc carried its
+                                      # own unavoidable torch floor independent of this; B400 found that
+                                      # claim wrong -- see this file's B400 note below.
 model = "sentence-transformers/all-MiniLM-L6-v2"   # produces 384-dim vectors — matches FLOAT[384] schema
 # WARNING: changing this model requires full re-embedding of all nodes in the graph.
 # Run: campy reembed --confirm before switching models.
@@ -2822,14 +2823,34 @@ moved from PyTorch/`sentence-transformers` to `fastembed`/ONNX Runtime, same mod
 output parity (cosine similarity 1.000000 across 200 real test sentences, 100% top-10 retrieval
 agreement). This was the highest-leverage single change for the daemon's *perceived* weight, but be
 precise about the number: an initial measurement (the embedding module tested in complete isolation)
-reported 228MB and was wrong as a whole-daemon claim — it never loaded `spacy`, whose own ML backend
-(`thinc`) imports `torch` unconditionally at Python import time, independent of the embedding backend.
-The real, live daemon's fresh-start baseline is **~1.2GB**. A fair comparison (spaCy loaded first, then
-each embedding backend layered on top of that same starting point) confirms the embedding backend's own
-contribution genuinely dropped ~6.5x (1.22GB -> 186MB); the best estimate for the full daemon's baseline
-before B355 (extrapolated, not directly re-measured) is ~2.2GB, putting the real whole-daemon improvement
-around 45-50% — real, but not the dramatic number first reported. See `backlog/B355.md`'s own correction
-note for the full measurement trail.
+reported 228MB and was wrong as a whole-daemon claim — it never loaded `spacy`, and at the time this card
+was written, `torch` was still installed in the live dev `.venv` (a leftover from before this migration),
+so `import spacy` was observed pulling `torch` into the process. The real, live daemon's fresh-start
+baseline at that time was **~1.2GB**. A fair comparison (spaCy loaded first, then each embedding backend
+layered on top of that same starting point) confirms the embedding backend's own contribution genuinely
+dropped ~6.5x (1.22GB -> 186MB); the best estimate for the full daemon's baseline before B355
+(extrapolated, not directly re-measured) is ~2.2GB, putting the real whole-daemon improvement around
+45-50% at that time — real, but not the dramatic number first reported. See `backlog/B355.md`'s own
+correction note for the full measurement trail.
+
+**Correction (B400):** the claim above — that `thinc` imports `torch` "unconditionally... independent of
+the embedding backend" — is wrong, and B400 is the card that found this. `thinc` does not declare `torch`
+as a required dependency at all; PyPI metadata shows it is listed only behind an opt-in extra
+(`thinc[torch]`, `torch>=1.6.0; extra == "torch"`), never installed unless something else in the
+environment requests it. What actually happened: `thinc.compat` unconditionally *attempts*
+`import torch` for its own backend auto-detection (`has_torch`), and that attempt only succeeds — costing
+~150-160MB RSS even though `en_core_web_md`'s pipeline never uses it (`NumpyOps` backend, entirely
+CNN-based: no transformer component) — if `torch` is *already importable* for some other reason. That
+reason, on this project, was always `sentence-transformers` (hard-depends on `torch`), which B355 removed
+from `pyproject.toml`/`requirements.txt` but never actually uninstalled from the live dev `.venv` (per
+B355's own correction note above) — so every measurement taken against that machine's dev environment,
+including B355's and the one two paragraphs above, observed `torch` regardless of what the *declared*
+dependencies said. A genuinely clean install (`pip install -r requirements.txt && pip install -e .`, the
+exact CI sequence) installs zero `torch` package, and running the real ingestion path
+(`step1_ner.extract_entities` + `step1b_relations.extract_relations`) against the loaded model never
+imports it — verified directly, with byte-identical entity/relation/dependency-parse output either way.
+See `backlog/B400.md` for the full before/after measurements and `tests/test_no_torch_dependency.py` for
+the regression guard.
 
 **What this does not claim:** the swap-symptom's cause is now understood (macOS's compressor under system
 pressure, above), but the underlying *resident* growth's exact allocator-level mechanism (why the

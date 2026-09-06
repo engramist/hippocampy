@@ -51,6 +51,19 @@ dependencies = [
     # the installed 0.5.11 wheel: "License: MIT OR Apache-2.0" — both
     # compatible with this project's Apache-2.0 license).
     "pyoxigraph==0.5.11",
+    # B400: verified this does NOT transitively pull in torch/torchvision.
+    # thinc (spacy's ML backend) lists torch only behind an opt-in extra
+    # (`thinc[torch]`) that neither spacy nor this list requests -- a clean
+    # `pip install -r requirements.txt && pip install -e .` installs zero
+    # torch package, and running the real ingestion path never puts torch
+    # in sys.modules (tests/test_no_torch_dependency.py is the regression
+    # guard). If you ever add a dependency that hard-requires torch again
+    # (sentence-transformers is the historical offender -- see B355), that
+    # test will start failing: thinc.compat unconditionally *attempts*
+    # `import torch` for backend auto-detection, and if it's importable
+    # for any reason it succeeds and costs ~150-160MB RSS even though
+    # en_core_web_md's pipeline (NumpyOps backend, no transformer
+    # component) never uses it. See backlog/B400.md.
     "spacy>=3.8.3",
     "typer>=0.9.0",
     "j2toon>=0.1.0",
