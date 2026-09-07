@@ -62,6 +62,12 @@ def test_capability_queries_sparql(store, query):
         assert query.sparql is None
         return
 
+    if query.name.startswith("capability.create_edge_"):
+        # Spec §4.2b: occurrence class writes mint brand-new ULID identities on every call,
+        # which cannot be expressed in static SPARQL text. Handled via OxigraphClient.write_edge.
+        assert query.sparql is None
+        return
+
     assert query.sparql is not None, f"{query.name} must have a sparql representation"
     if query.mutating:
         store.update(query.sparql)

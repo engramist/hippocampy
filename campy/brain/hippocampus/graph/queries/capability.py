@@ -320,28 +320,15 @@ def _edge_queries_for(predicate: str, table: str) -> tuple[NamedQuery, ...]:
             ),
             mutating=True,
             description=f"Create a live {table} edge (B317 fact-envelope ingest).",
-            sparql=f"""
-                PREFIX campy: <https://campy.dev/ns#>
-                INSERT {{
-                    ?s campy:{table} ?o .
-                    << ?s campy:{table} ?o >> campy:occurrence ?occ .
-                    ?occ a campy:Occurrence ;
-                         campy:version ?version ;
-                         campy:access_mode ?access_mode ;
-                         campy:confidence ?confidence ;
-                         campy:run_id ?run_id ;
-                         campy:evidence_ref ?evidence_ref ;
-                         campy:source ?source ;
-                         campy:source_version ?source_version ;
-                         campy:observed_at ?observed_at ;
-                         campy:authority ?authority .
-                }}
-                WHERE {{
-                    ?s a campy:FactEntity ; campy:entity_id ?subject_id .
-                    ?o a campy:FactEntity ; campy:entity_id ?object_id .
-                    BIND(IRI(CONCAT("https://campy.dev/id/Occurrence/", STRUUID())) AS ?occ)
-                }}
-                """,
+            # No sparql=: this CREATEs a brand-new occurrence node with a
+            # freshly minted ULID identity (spec §4.2b) on every call — that
+            # identity cannot be expressed in static parameterized SPARQL
+            # text (no call-site param carries a pre-generated id). Python
+            # handler: OxigraphClient.write_edge(table=f"{table}",
+            # reification="occurrence"), which calls mint_occurrence_uri()
+            # and asserts the plain triple + a fresh occurrence node per
+            # spec §4.2b, mirroring working_memory.create_loaded_edge_*
+            # and the NamedQuery handler-dispatch boundary.
         ),
     )
 
