@@ -44,14 +44,40 @@ def load_routing_table(db) -> None:
     _routing_cache.clear()
     gw = GraphGateway(db, REGISTRY) if not isinstance(db, GraphGateway) else db
     rows = gw.run_sync("orchestrator.get_schema_org_routing", {})
+    grouped: dict[tuple[str, str], list[str]] = {}
     for row in rows:
-        gist_name = row.get("g.name") if hasattr(row, "get") else row[0]
-        schema_name = row.get("s.name") if hasattr(row, "get") else row[1]
-        properties = row.get("s.properties") if hasattr(row, "get") else row[2]
-        entry = {"schema_org_type": schema_name, "properties": properties or []}
+        gist_name = (
+            (row.get("name") or row.get("g.name"))
+            if hasattr(row, "get")
+            else row[0]
+        )
+        schema_name = (
+            (row.get("schema_name") or row.get("s.name"))
+            if hasattr(row, "get")
+            else row[1]
+        )
+        raw_props = (
+            (row.get("properties") or row.get("s.properties"))
+            if hasattr(row, "get")
+            else row[2]
+        )
+        if not gist_name or not schema_name:
+            continue
+        key = (gist_name, schema_name)
+        if key not in grouped:
+            grouped[key] = []
+        if isinstance(raw_props, list):
+            for p in raw_props:
+                if p and p not in grouped[key]:
+                    grouped[key].append(p)
+        elif isinstance(raw_props, str):
+            if raw_props and raw_props not in grouped[key]:
+                grouped[key].append(raw_props)
+
+    for (gist_name, schema_name), props in grouped.items():
         if gist_name not in _routing_cache:
             _routing_cache[gist_name] = []
-        _routing_cache[gist_name].append(entry)
+        _routing_cache[gist_name].append({"schema_org_type": schema_name, "properties": props})
 
 
 def route_to_schema_org(gist_class: str, spacy_label: str = None) -> dict:

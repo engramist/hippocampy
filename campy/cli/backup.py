@@ -325,10 +325,10 @@ def _reexport_counts(db_path: Path) -> dict:
     hand-writing new counting queries (which would grow the B314 inline-
     Cypher ratchet for no reason — the counting Cypher already exists and
     is already counted)."""
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 
     with tempfile.TemporaryDirectory(prefix="campy-backup-count-") as scratch:
-        db = KuzuClient(str(db_path), read_only=True)
+        db = OxigraphClient(str(db_path), read_only=True)
         try:
             from campy.brain.hippocampus.graph.export import export_graph_dump
 
@@ -407,10 +407,10 @@ def _counts_match(expected_manifest: dict, actual_manifest: dict) -> tuple[bool,
 
 async def _run_recall_sample(db_path: Path) -> list[dict]:
     from campy.brain.hippocampus.graph.gateway import GraphGateway
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
     from campy.brain.hippocampus.graph.queries import REGISTRY
 
-    db = KuzuClient(str(db_path), read_only=True)
+    db = OxigraphClient(str(db_path), read_only=True)
     try:
         gateway = GraphGateway(db, REGISTRY)
         return await gateway.run("backup.recall_sample")
@@ -507,8 +507,14 @@ def verify_snapshot(snapshot_dir: Path) -> dict:
 
 
 def _wipe_db_file(db_path: Path) -> None:
-    db_path.unlink(missing_ok=True)
+    if db_path.is_dir():
+        shutil.rmtree(db_path, ignore_errors=True)
+    else:
+        db_path.unlink(missing_ok=True)
     Path(str(db_path) + ".wal").unlink(missing_ok=True)
+    vs_path = db_path.parent / "vectors.db"
+    if vs_path.exists():
+        vs_path.unlink(missing_ok=True)
 
 
 def restore_snapshot(
@@ -558,7 +564,10 @@ def restore_snapshot(
             f"upgrade Campy before restoring this snapshot."
         )
 
-    non_empty = target_db_path.exists() and target_db_path.stat().st_size > 0
+    non_empty = target_db_path.exists() and (
+        (target_db_path.is_dir() and any(target_db_path.iterdir()))
+        or (target_db_path.is_file() and target_db_path.stat().st_size > 0)
+    )
     if non_empty and not force:
         raise BackupError(
             f"{target_db_path} already exists and is not empty. Pass --force to overwrite "
@@ -583,11 +592,11 @@ def restore_snapshot(
 
     import_result = import_graph(target_db_path, snapshot_dir)
 
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
     from campy.brain.hippocampus.schema import init_schema
 
     embedding_model = manifest.get("embedding_model") or _configured_embedding_model()
-    db = KuzuClient(str(target_db_path))
+    db = OxigraphClient(str(target_db_path))
     try:
         seed_path = _resolve_seed_examples_path()
         init_schema(db, seed_path, embedding_model)

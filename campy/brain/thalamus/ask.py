@@ -27,7 +27,7 @@ from typing import Optional, TYPE_CHECKING
 from campy.brain.thalamus.bundle_compiler import compile_bundle  # noqa: F401 — kept at module level for patch targets
 
 if TYPE_CHECKING:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 
 _logger = logging.getLogger(__name__)
 

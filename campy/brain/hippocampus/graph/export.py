@@ -9,9 +9,29 @@ from datetime import date, datetime, time, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+try:
+    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+except ImportError:
+    KuzuClient = Any  # type: ignore
+
+import pyoxigraph as ox
+
+from campy.brain.hippocampus.graph.oxigraph_client import (
+    CAMPY_NS,
+    NODE_COLUMNS,
+    NODE_PRIMARY_KEYS,
+    REL_COLUMNS,
+    OxigraphClient,
+    _term_to_python,
+    classify_edge,
+    mint_uri,
+    parse_uri,
+)
 from campy.brain.hippocampus.schema import NODE_TABLES, PROVENANCE_TABLES, REL_TABLES
 from campy.brain.hippocampus.table_registry import get_registry, pk_for
+
+def _is_oxigraph(db: Any) -> bool:
+    return type(db).__name__ == "OxigraphClient" or (hasattr(db, "store") and not hasattr(db, "conn"))
 
 _FORMAT_VERSION = 1
 _ENGINE = "kuzu-0.11.3"
@@ -226,7 +246,11 @@ def _create_relationships(
 
 
 def export_graph_dump(
-    db: KuzuClient, out_dir: str | Path, *, include_projected: bool = False
+    db: Any,
+    out_dir: str | Path,
+    *,
+    include_projected: bool = False,
+    vector_store: Any | None = None,
 ) -> dict[str, Any]:
     """Stream the full graph to JSONL files plus a manifest.
 
@@ -247,7 +271,180 @@ def export_graph_dump(
     nodes_dir.mkdir(parents=True, exist_ok=True)
     rels_dir.mkdir(parents=True, exist_ok=True)
 
-    manifest: dict[str, Any] = {
+    if _is_oxigraph(db):
+        vs = vector_store or getattr(db, "vector_store", None)
+        if vs is None and getattr(db, "db_path", None):
+            try:
+                from campy.brain.hippocampus.graph.vector_store import VectorStore
+                vs = VectorStore(Path(db.db_path).parent / "vectors.db")
+            except Exception:
+                vs = None
+
+        manifest: dict[str, Any] = {
+            "format_version": _FORMAT_VERSION,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "engine": "oxigraph-0.5.11",
+            "embedding_dim": _EMBEDDING_DIM,
+            "include_projected": include_projected,
+            "node_tables": {},
+            "rel_tables": {},
+        }
+
+        rdf_type = ox.NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+
+        for table_name in NODE_TABLES:
+            pk_name = pk_for(table_name)
+            if not pk_name:
+                raise ValueError(f"Missing primary key metadata for node table {table_name!r}")
+            cols = NODE_COLUMNS.get(table_name, {})
+            emb_cols = [c for c, t in cols.items() if t == "FLOAT[384]"]
+            row_count = 0
+            with (nodes_dir / f"{table_name}.jsonl").open("w", encoding="utf-8") as handle:
+                if not include_projected and table_name in _ALWAYS_PROJECTED_NODE_TABLES:
+                    pass
+                else:
+                    type_node = ox.NamedNode(f"{CAMPY_NS}{table_name}")
+                    subjects = [q.subject for q in db.store.quads_for_pattern(None, rdf_type, type_node, None)]
+                    rows_to_export = []
+                    for subj in subjects:
+                        node_props = {col: None for col in cols}
+                        if pk_name:
+                            _, pk_val = parse_uri(subj.value)
+                            node_props[pk_name] = pk_val
+                        for q in db.store.quads_for_pattern(subj, None, None, None):
+                            pred_val = q.predicate.value
+                            if pred_val.startswith(CAMPY_NS):
+                                col = pred_val[len(CAMPY_NS):]
+                                if col in cols:
+                                    val = _term_to_python(q.object)
+                                    if cols[col] == "STRING[]":
+                                        if node_props[col] is None:
+                                            node_props[col] = []
+                                        node_props[col].append(val)
+                                    else:
+                                        node_props[col] = val
+                        for ec in emb_cols:
+                            if vs and node_props.get(ec) is None:
+                                v_uri = subj.value if ec == "embedding" else f"{subj.value}#{ec}"
+                                node_props[ec] = vs.get_vector(v_uri)
+                        if not include_projected and table_name in PROVENANCE_TABLES:
+                            if node_props.get("authority") == "projected":
+                                continue
+                        rows_to_export.append(node_props)
+                    rows_to_export.sort(key=lambda x: str(x.get(pk_name, "")))
+                    for r in rows_to_export:
+                        _serialize_row(handle, r)
+                        row_count += 1
+            manifest["node_tables"][table_name] = {"pk": pk_name, "rows": row_count}
+
+        for ddl in REL_TABLES:
+            rel_table = _parse_relationship_name(ddl)
+            row_count = 0
+            with (rels_dir / f"{rel_table}.jsonl").open("w", encoding="utf-8") as handle:
+                if not include_projected and rel_table.startswith(_ALWAYS_PROJECTED_REL_PREFIX):
+                    pass
+                else:
+                    try:
+                        reification = classify_edge(rel_table)
+                    except ValueError:
+                        pred = ox.NamedNode(f"{CAMPY_NS}{rel_table}")
+                        quads = list(db.store.quads_for_pattern(None, pred, None, None))
+                        if quads:
+                            raise
+                        reification = None
+                    rel_cols = REL_COLUMNS.get(rel_table, {})
+                    payloads = []
+                    if reification == "plain":
+                        pred = ox.NamedNode(f"{CAMPY_NS}{rel_table}")
+                        for q in db.store.quads_for_pattern(None, pred, None, None):
+                            from_t, from_p = parse_uri(q.subject.value)
+                            to_t, to_p = parse_uri(q.object.value)
+                            payloads.append({
+                                "_from_table": from_t,
+                                "_from_pk": from_p,
+                                "_to_table": to_t,
+                                "_to_pk": to_p,
+                            })
+                    elif reification == "star":
+                        sparql = f"""
+                            PREFIX campy: <{CAMPY_NS}>
+                            SELECT ?s ?o ?p ?v WHERE {{
+                                ?s campy:{rel_table} ?o .
+                                OPTIONAL {{
+                                    << ?s campy:{rel_table} ?o >> ?p ?v .
+                                }}
+                            }}
+                        """
+                        by_edge = {}
+                        for row in db.store.query(sparql):
+                            s_val, o_val = row["s"].value, row["o"].value
+                            key = (s_val, o_val)
+                            if key not in by_edge:
+                                by_edge[key] = {c: None for c in rel_cols}
+                            p_term = row["p"]
+                            if p_term is not None and str(p_term.value).startswith(CAMPY_NS):
+                                col = p_term.value[len(CAMPY_NS):]
+                                if col in rel_cols:
+                                    by_edge[key][col] = _term_to_python(row["v"])
+                        for (s_val, o_val), props in by_edge.items():
+                            from_t, from_p = parse_uri(s_val)
+                            to_t, to_p = parse_uri(o_val)
+                            payload = {
+                                "_from_table": from_t,
+                                "_from_pk": from_p,
+                                "_to_table": to_t,
+                                "_to_pk": to_p,
+                            }
+                            payload.update(props)
+                            payloads.append(payload)
+                    elif reification == "occurrence":
+                        sparql = f"""
+                            PREFIX campy: <{CAMPY_NS}>
+                            SELECT ?s ?o ?occ ?p ?v WHERE {{
+                                ?s campy:{rel_table} ?o .
+                                OPTIONAL {{
+                                    << ?s campy:{rel_table} ?o >> campy:occurrence ?occ .
+                                    OPTIONAL {{ ?occ ?p ?v }}
+                                }}
+                            }}
+                        """
+                        by_occ = {}
+                        for row in db.store.query(sparql):
+                            s_val, o_val = row["s"].value, row["o"].value
+                            occ_term = row["occ"]
+                            occ_val = occ_term.value if occ_term is not None else None
+                            key = (s_val, o_val, occ_val)
+                            if key not in by_occ:
+                                by_occ[key] = {c: None for c in rel_cols}
+                            p_term = row["p"]
+                            if p_term is not None and str(p_term.value).startswith(CAMPY_NS):
+                                col = p_term.value[len(CAMPY_NS):]
+                                if col in rel_cols:
+                                    by_occ[key][col] = _term_to_python(row["v"])
+                        for (s_val, o_val, _), props in by_occ.items():
+                            from_t, from_p = parse_uri(s_val)
+                            to_t, to_p = parse_uri(o_val)
+                            payload = {
+                                "_from_table": from_t,
+                                "_from_pk": from_p,
+                                "_to_table": to_t,
+                                "_to_pk": to_p,
+                            }
+                            payload.update(props)
+                            payloads.append(payload)
+                    payloads.sort(key=lambda x: (x["_from_table"], str(x["_from_pk"]), x["_to_table"], str(x["_to_pk"]), json.dumps(x, sort_keys=True, default=str)))
+                    for p in payloads:
+                        _serialize_row(handle, p)
+                        row_count += 1
+            manifest["rel_tables"][rel_table] = {"rows": row_count}
+
+        with (out_path / "manifest.json").open("w", encoding="utf-8") as handle:
+            json.dump(manifest, handle, indent=2, sort_keys=True, ensure_ascii=False)
+            handle.write("\n")
+
+        return manifest
+
+    manifest = {
         "format_version": _FORMAT_VERSION,
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "engine": _ENGINE,
@@ -292,15 +489,12 @@ def export_graph_dump(
             if not include_projected and rel_table.startswith(_ALWAYS_PROJECTED_REL_PREFIX):
                 # FACT_* edges are unconditionally 'projected' (B317) —
                 # nothing to export; see _ALWAYS_PROJECTED_NODE_TABLES above.
-                result = None
+                pass
             else:
-                query = f"MATCH (a)-[r:{rel_table}]->(b) RETURN a, r, b"
-                result = _try_execute(db, query)
-            if result is not None:
-                while result.has_next():
-                    source, rel, target = result.get_next()
-                    source_label = source["_label"]
-                    target_label = target["_label"]
+                endpoints = _parse_relationship_endpoints(ddl)
+                for ep in endpoints:
+                    source_label = ep.from_table
+                    target_label = ep.to_table
                     source_pk = pk_for(source_label)
                     target_pk = pk_for(target_label)
                     if not source_pk or not target_pk:
@@ -308,15 +502,20 @@ def export_graph_dump(
                             f"Missing primary key metadata for relationship {rel_table!r}: "
                             f"{source_label!r} -> {target_label!r}"
                         )
-                    payload = _clean_rel_row(rel)
-                    payload.update({
-                        "_from_table": source_label,
-                        "_from_pk": source[source_pk],
-                        "_to_table": target_label,
-                        "_to_pk": target[target_pk],
-                    })
-                    _serialize_row(handle, payload)
-                    row_count += 1
+                    query = f"MATCH (a:{source_label})-[r:{rel_table}]->(b:{target_label}) RETURN a, r, b"
+                    result = _try_execute(db, query)
+                    if result is not None:
+                        while result.has_next():
+                            source, rel, target = result.get_next()
+                            payload = _clean_rel_row(rel)
+                            payload.update({
+                                "_from_table": source_label,
+                                "_from_pk": source[source_pk],
+                                "_to_table": target_label,
+                                "_to_pk": target[target_pk],
+                            })
+                            _serialize_row(handle, payload)
+                            row_count += 1
         manifest["rel_tables"][rel_table] = {"rows": row_count}
 
     with (out_path / "manifest.json").open("w", encoding="utf-8") as handle:
@@ -326,7 +525,11 @@ def export_graph_dump(
     return manifest
 
 
-def import_graph_dump(db: KuzuClient, dump_dir: str | Path) -> dict[str, Any]:
+def import_graph_dump(
+    db: Any,
+    dump_dir: str | Path,
+    vector_store: Any | None = None,
+) -> dict[str, Any]:
     """Restore a graph dump into an empty database.
 
     B313: tolerates a dump produced with `include_projected=False`. A
@@ -342,6 +545,61 @@ def import_graph_dump(db: KuzuClient, dump_dir: str | Path) -> dict[str, Any]:
     manifest = json.loads((dump_path / "manifest.json").read_text(encoding="utf-8"))
     if int(manifest.get("format_version", 0)) != _FORMAT_VERSION:
         raise ValueError(f"Unsupported export format version: {manifest.get('format_version')!r}")
+
+    if _is_oxigraph(db):
+        vs = vector_store or getattr(db, "vector_store", None)
+        if vs is None and getattr(db, "db_path", None):
+            try:
+                from campy.brain.hippocampus.graph.vector_store import VectorStore
+                vs = VectorStore(Path(db.db_path).parent / "vectors.db")
+            except Exception:
+                vs = None
+
+        node_rows_loaded = 0
+        for table_name in NODE_TABLES:
+            node_file = dump_path / "nodes" / f"{table_name}.jsonl"
+            if not node_file.exists():
+                continue
+            cols = NODE_COLUMNS.get(table_name, {})
+            pk_col = NODE_PRIMARY_KEYS.get(table_name)
+            emb_cols = [c for c, t in cols.items() if t == "FLOAT[384]"]
+            timestamp_fields = _parse_timestamp_fields(NODE_TABLES[table_name])
+            for raw_row in _read_jsonl(node_file):
+                coerced = _coerce_types(raw_row, timestamp_fields)
+                if vs is not None:
+                    uri = mint_uri(table_name, coerced[pk_col])
+                    for ec in emb_cols:
+                        if coerced.get(ec) is not None:
+                            v_uri = uri if ec == "embedding" else f"{uri}#{ec}"
+                            vs.upsert_vector(v_uri, coerced[ec])
+                db.write_node(table_name, coerced)
+                node_rows_loaded += 1
+
+        rel_rows_loaded = 0
+        for ddl in REL_TABLES:
+            rel_table = _parse_relationship_name(ddl)
+            rel_file = dump_path / "rels" / f"{rel_table}.jsonl"
+            if not rel_file.exists():
+                continue
+            timestamp_fields = _parse_timestamp_fields(ddl)
+            for raw_row in _read_jsonl(rel_file):
+                coerced = _coerce_types(raw_row, timestamp_fields)
+                from_table = coerced["_from_table"]
+                from_pk = coerced["_from_pk"]
+                to_table = coerced["_to_table"]
+                to_pk = coerced["_to_pk"]
+                s_uri = mint_uri(from_table, from_pk)
+                o_uri = mint_uri(to_table, to_pk)
+                props = {k: v for k, v in coerced.items() if not k.startswith("_") and v is not None}
+                db.write_edge(rel_table, s_uri, o_uri, props or None)
+                rel_rows_loaded += 1
+
+        return {
+            "ok": True,
+            "manifest": manifest,
+            "node_rows_loaded": node_rows_loaded,
+            "rel_rows_loaded": rel_rows_loaded,
+        }
 
     _ensure_graph_schema(db)
 
@@ -404,17 +662,33 @@ def export_graph(
     function's docstring. Default (False) exports earned memory only, the
     scope that actually matters for disaster recovery.
     """
-    db = KuzuClient(str(db_path), read_only=True)
-    try:
-        return export_graph_dump(db, out_dir, include_projected=include_projected)
-    finally:
-        db.close()
+    path_obj = Path(db_path)
+    if (path_obj.is_dir() and (path_obj / "CURRENT").exists()) or not hasattr(KuzuClient, "execute"):
+        db = OxigraphClient(str(db_path), read_only=True)
+        try:
+            return export_graph_dump(db, out_dir, include_projected=include_projected)
+        finally:
+            db.close()
+    else:
+        db = KuzuClient(str(db_path), read_only=True)
+        try:
+            return export_graph_dump(db, out_dir, include_projected=include_projected)
+        finally:
+            db.close()
 
 
 def import_graph(db_path: str | Path, dump_dir: str | Path) -> dict[str, Any]:
     """Convenience wrapper that opens a database and restores a dump."""
-    db = KuzuClient(str(db_path))
-    try:
-        return import_graph_dump(db, dump_dir)
-    finally:
-        db.close()
+    path_obj = Path(db_path)
+    if str(db_path).endswith(".oxdb") or not hasattr(KuzuClient, "execute"):
+        db = OxigraphClient(str(db_path))
+        try:
+            return import_graph_dump(db, dump_dir)
+        finally:
+            db.close()
+    else:
+        db = KuzuClient(str(db_path))
+        try:
+            return import_graph_dump(db, dump_dir)
+        finally:
+            db.close()

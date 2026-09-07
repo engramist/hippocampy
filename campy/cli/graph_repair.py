@@ -22,7 +22,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 from campy.brain.temporal_lobe.loop.step4_pattern import infer_outcome_valence
 from campy.paths import get_database_path
 
@@ -39,12 +39,12 @@ _LOCK_HELP_MESSAGE = (
 )
 
 
-def _open_repair_client(db_path: Path, apply: bool) -> KuzuClient:
-    """Open the graph for a repair sweep, turning a raw Kuzu lock exception
+def _open_repair_client(db_path: Path, apply: bool) -> OxigraphClient:
+    """Open the graph for a repair sweep, turning a raw lock exception
     into an actionable message instead of a traceback.
     """
     try:
-        return KuzuClient(str(db_path), read_only=not apply)
+        return OxigraphClient(str(db_path), read_only=not apply)
     except Exception as exc:
         if "lock" in str(exc).lower():
             console.print(f"[red]Error:[/red] {_LOCK_HELP_MESSAGE}")

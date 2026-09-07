@@ -9,8 +9,10 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+if TYPE_CHECKING:
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 from campy.brain.hippocampus.graph import embeddings as emb
 
 # ---------------------------------------------------------------------------
@@ -1640,7 +1642,7 @@ def _parse_seed_examples(seed_path: str) -> dict[str, list[str]]:
     return sections
 
 
-def _bootstrap_centroids(db: KuzuClient, seed_path: str,
+def _bootstrap_centroids(db: OxigraphClient, seed_path: str,
                           embedding_model: str) -> None:
     """
     Embed all seed examples, compute mean per class, store as GistClass.centroid.
@@ -1651,6 +1653,29 @@ def _bootstrap_centroids(db: KuzuClient, seed_path: str,
     """
     print("Bootstrapping gist class centroids from seed examples...")
     examples = _parse_seed_examples(seed_path)
+
+    is_oxigraph = type(db).__name__ == "OxigraphClient" or (hasattr(db, "store") and not hasattr(db, "conn"))
+    if is_oxigraph:
+        from campy.brain.hippocampus.graph.oxigraph_client import mint_uri
+        for class_name, sentences in examples.items():
+            if not sentences:
+                print(f"  WARNING: No seed examples found for gist:{class_name}")
+                continue
+            vectors = emb.embed_batch(sentences, model_name=embedding_model)
+            centroid = emb.mean_pool(vectors)
+            norm = sum(v * v for v in centroid) ** 0.5
+            if norm > 0:
+                centroid = [v / norm for v in centroid]
+            c_uri = mint_uri("GistClass", class_name)
+            db.write_node("GistClass", {"name": class_name})
+            if getattr(db, "vector_store", None) is not None:
+                db.vector_store.upsert_vector(c_uri, centroid)
+            for g_name, s_name, _props in ROUTING_TABLE:
+                if g_name == class_name:
+                    db.write_edge("ROUTES_TO", c_uri, mint_uri("SchemaOrgType", s_name))
+            print(f"  gist:{class_name} — {len(sentences)} examples, centroid computed")
+        print("Centroid bootstrap complete.")
+        return
 
     for class_name, sentences in examples.items():
         if not sentences:
@@ -1930,7 +1955,7 @@ def get_all_table_properties() -> dict[str, set[str]]:
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def init_schema(db: KuzuClient, seed_examples_path: str,
+def init_schema(db: OxigraphClient, seed_examples_path: str,
                 embedding_model: str) -> None:
     """
     Initialize Kùzu schema. Idempotent — safe to call on every daemon startup.
@@ -1962,6 +1987,23 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
             f"Check config embedding_model setting."
         )
     print(f"  Embedding validation: {expected_dim} dimensions verified.")
+
+    is_oxigraph = type(db).__name__ == "OxigraphClient" or (hasattr(db, "store") and not hasattr(db, "conn"))
+    if is_oxigraph:
+        from campy.brain.hippocampus.graph.oxigraph_client import mint_uri
+        gist_classes_seen = set()
+        schema_types_seen = set()
+        for gist_name, schema_name, properties in ROUTING_TABLE:
+            if gist_name not in gist_classes_seen:
+                db.write_node("GistClass", {"name": gist_name})
+                gist_classes_seen.add(gist_name)
+            if schema_name not in schema_types_seen:
+                db.write_node("SchemaOrgType", {"name": schema_name, "properties": properties})
+                schema_types_seen.add(schema_name)
+            db.write_edge("ROUTES_TO", mint_uri("GistClass", gist_name), mint_uri("SchemaOrgType", schema_name))
+        _bootstrap_centroids(db, seed_examples_path, embedding_model)
+        print("Schema initialization complete (Oxigraph).")
+        return
 
     # 1. Node tables
     for table_name, fields in NODE_TABLES.items():
@@ -2215,7 +2257,7 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
 
 
 async def upsert_agent_worker_and_link(
-    db: KuzuClient,
+    db: OxigraphClient,
     *,
     worker_id: str | None,
     node_table: str,

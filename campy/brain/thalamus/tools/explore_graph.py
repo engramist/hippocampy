@@ -3,7 +3,7 @@ import logging
 from typing import TYPE_CHECKING, List, Dict, Any, Tuple
 
 if TYPE_CHECKING:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.hippocampus.graph.queries.explore import build_frontier_query as _build_frontier_query, internal_id_literal as _internal_id_literal
 

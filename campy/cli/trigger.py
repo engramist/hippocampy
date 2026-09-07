@@ -24,7 +24,7 @@ def add(
     lesson: Optional[str] = typer.Option(None, "--lesson", help="Lesson ID to bind trigger to"),
 ):
     """Bind a trigger pattern to a Procedure or Lesson node."""
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
     from campy.paths import get_database_path
 
     if not procedure and not lesson:
@@ -44,7 +44,7 @@ def add(
         console.print("[red]Error:[/red] Campy database not found. Is the daemon running?")
         raise typer.Exit(1)
 
-    db = KuzuClient(str(db_path))
+    db = OxigraphClient(str(db_path))
 
     try:
         if procedure:
@@ -102,7 +102,7 @@ async def _bind_lesson_trigger(db, lesson_id: str, pattern: str, hook_type: str,
 @app.command("list")
 def list_triggers():
     """Show all active triggers across Procedures and Lessons."""
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
     from campy.paths import get_database_path
 
     db_path = get_database_path()
@@ -110,7 +110,7 @@ def list_triggers():
         console.print("[red]Error:[/red] Campy database not found. Is the daemon running?")
         raise typer.Exit(1)
 
-    db = KuzuClient(str(db_path), read_only=True)
+    db = OxigraphClient(str(db_path), read_only=True)
 
     try:
         results = asyncio.run(_fetch_all_triggers(db))
@@ -184,7 +184,7 @@ def remove(
     lesson: Optional[str] = typer.Option(None, "--lesson", help="Lesson ID to unbind"),
 ):
     """Remove trigger binding from a Procedure or Lesson."""
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
     from campy.paths import get_database_path
 
     if not procedure and not lesson:
@@ -196,7 +196,7 @@ def remove(
         console.print("[red]Error:[/red] Campy database not found.")
         raise typer.Exit(1)
 
-    db = KuzuClient(str(db_path))
+    db = OxigraphClient(str(db_path))
 
     gw = get_gateway(db)
     try:
@@ -220,7 +220,7 @@ def remove(
 def compile_cmd():
     """Force-compile the trigger manifest from graph state."""
     from campy.brain.thalamus.trigger_manifest import compile_manifest
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
     from campy.brain.brainstem.config import load_config
     from campy.paths import get_database_path
 
@@ -229,7 +229,7 @@ def compile_cmd():
         console.print("[red]Error:[/red] Campy database not found.")
         raise typer.Exit(1)
 
-    db = KuzuClient(str(db_path), read_only=True)
+    db = OxigraphClient(str(db_path), read_only=True)
     config = load_config()
 
     try:

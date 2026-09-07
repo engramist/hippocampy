@@ -46,7 +46,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 
 from campy.brain.hippocampus.graph import embeddings as emb
 

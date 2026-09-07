@@ -15,7 +15,18 @@ from typing import Any, Iterable
 import pytest
 
 from campy.brain.hippocampus.graph.gateway import GraphGateway
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+try:
+    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+except ImportError:
+    KuzuClient = None  # type: ignore
+
+from campy.brain.hippocampus.graph.oxigraph_client import (
+    OxigraphClient,
+    mint_uri,
+    NODE_COLUMNS,
+    REL_COLUMNS,
+)
+from campy.brain.hippocampus.graph.vector_store import VectorStore
 from campy.brain.hippocampus.graph.queries import REGISTRY
 from campy.brain.hippocampus.graph.export import _parse_column_types
 from campy.brain.hippocampus.schema import NODE_TABLES, REL_TABLES, init_schema
@@ -44,7 +55,7 @@ def _parse_datetime(value: Any) -> Any:
 
 
 def load_patent_conformance_graph(
-    db: KuzuClient, fixture_path: Path | str = FIXTURE_PATH
+    db: Any, fixture_path: Path | str = FIXTURE_PATH
 ) -> dict[str, int]:
     """Load canonical patent conformance graph fixture into the database."""
     path = Path(fixture_path)
@@ -73,6 +84,39 @@ def load_patent_conformance_graph(
                 rels_by_table.setdefault(table, []).append(item)
             else:
                 nodes_by_table.setdefault(table, []).append(item)
+
+    rels_by_group: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for table, rows in rels_by_table.items():
+        for r in rows:
+            rels_by_group.setdefault((table, r["_from_table"], r["_to_table"]), []).append(r)
+
+    if hasattr(db, "write_node"):
+        node_count = 0
+        for table_name, rows in nodes_by_table.items():
+            valid_cols = set(NODE_COLUMNS.get(table_name, {}).keys())
+            for r in rows:
+                props = {k: v for k, v in r.items() if not k.startswith("_") and k in valid_cols}
+                for k, val in list(props.items()):
+                    if isinstance(val, str) and ("T" in val or ("-" in val and len(val) >= 10)):
+                        props[k] = _parse_datetime(val)
+                db.write_node(table_name, props)
+                node_count += 1
+
+        rel_count = 0
+        for (rel_table, from_table, to_table), rows in rels_by_group.items():
+            valid_props = set(REL_COLUMNS.get(rel_table, {}).keys())
+            for r in rows:
+                from_pk = r["_from_pk"]
+                to_pk = r["_to_pk"]
+                s_uri = mint_uri(from_table, from_pk)
+                o_uri = mint_uri(to_table, to_pk)
+                props = {k: v for k, v in r.items() if not k.startswith("_") and v is not None and k in valid_props}
+                for k, val in list(props.items()):
+                    if isinstance(val, str) and ("T" in val or ("-" in val and len(val) >= 10)):
+                        props[k] = _parse_datetime(val)
+                db.write_edge(rel_table, s_uri, o_uri, props or None)
+                rel_count += 1
+        return {"nodes_loaded": node_count, "rels_loaded": rel_count}
 
     node_count = 0
     for table_name, rows in nodes_by_table.items():
@@ -103,11 +147,6 @@ def load_patent_conformance_graph(
         if m:
             rname = m.group(1)
             rel_valid_cols[rname] = set(_parse_column_types(ddl).keys())
-
-    rels_by_group: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
-    for table, rows in rels_by_table.items():
-        for r in rows:
-            rels_by_group.setdefault((table, r["_from_table"], r["_to_table"]), []).append(r)
 
     for (rel_table, from_table, to_table), rows in rels_by_group.items():
         if not rows:
@@ -176,26 +215,39 @@ def patent_config() -> dict[str, Any]:
     }
 
 
-@pytest.fixture
-def patent_db(tmp_path: Path) -> Iterable[KuzuClient]:
-    """Provide a Kùzu client pre-seeded with the patent conformance graph."""
-    db_path = tmp_path / "patent_claims.db"
-    db = KuzuClient(str(db_path))
-    try:
-        init_schema(db, str(SEED_PATH), EMBEDDING_MODEL)
-        load_patent_conformance_graph(db, FIXTURE_PATH)
-        yield db
-    finally:
-        db.close()
+@pytest.fixture(params=["oxigraph", "kuzu"] if KuzuClient is not None else ["oxigraph"])
+def patent_db(request, tmp_path: Path):
+    """Provide an isolated graph engine client pre-seeded with the patent conformance graph."""
+    engine = request.param
+    if engine == "oxigraph":
+        db_path = tmp_path / "patent_claims.oxdb"
+        vs_path = tmp_path / "vectors.db"
+        vs = VectorStore(vs_path)
+        db = OxigraphClient(str(db_path), vector_store=vs)
+        try:
+            init_schema(db, str(SEED_PATH), EMBEDDING_MODEL)
+            load_patent_conformance_graph(db, FIXTURE_PATH)
+            yield db
+        finally:
+            db.close()
+    else:
+        db_path = tmp_path / "patent_claims.db"
+        db = KuzuClient(str(db_path))
+        try:
+            init_schema(db, str(SEED_PATH), EMBEDDING_MODEL)
+            load_patent_conformance_graph(db, FIXTURE_PATH)
+            yield db
+        finally:
+            db.close()
 
 
 @pytest.fixture
-def gateway(patent_db: KuzuClient) -> GraphGateway:
+def gateway(patent_db: Any) -> GraphGateway:
     """Provide GraphGateway connected to patent_db."""
     return GraphGateway(patent_db, REGISTRY)
 
 
 @pytest.fixture
-def patent_centroids(patent_db: KuzuClient) -> dict[str, list[float]]:
+def patent_centroids(patent_db: Any) -> dict[str, list[float]]:
     """Load centroids from the pre-initialized patent_db."""
     return load_centroids(patent_db)

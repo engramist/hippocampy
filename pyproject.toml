@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hippocampy"
 version = "0.1.0"
-description = "Local AI memory system with gated consolidation loop and graph-native Kùzu database"
+description = "Local AI memory system with gated consolidation loop and graph-native RDF-star database"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [{ name = "HippoCampy", email = "hello@hippocampy.dev" }]
-keywords = ["ai", "memory", "graph-database", "mcp", "knowledge-graph", "kuzu"]
+keywords = ["ai", "memory", "graph-database", "mcp", "knowledge-graph", "oxigraph", "rdf-star"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -20,7 +20,6 @@ classifiers = [
 
 requires-python = ">=3.12,<3.14"
 dependencies = [
-    "kuzu==0.11.3",
     # B355: fastembed/ONNX Runtime replaced sentence-transformers/PyTorch as
     # the local embedding backend -- same model (sentence-transformers/all-
     # MiniLM-L6-v2, via its ONNX conversion), ~60-80MB instead of ~1.2GB.

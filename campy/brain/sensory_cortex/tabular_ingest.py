@@ -38,7 +38,7 @@ from campy.brain.llm.provider import create_llm_client_for_step
 from campy.brain.sensory_cortex.tabular_store import create_table_from_dataframe
 
 if TYPE_CHECKING:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 
 _logger = logging.getLogger(__name__)
 

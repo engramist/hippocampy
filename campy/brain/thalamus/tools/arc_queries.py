@@ -13,7 +13,7 @@ from campy.brain.hippocampus.graph.gateway import GraphGateway
 from campy.brain.hippocampus.graph.queries import REGISTRY
 
 if TYPE_CHECKING:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 
 
 def _gateway(db) -> GraphGateway:

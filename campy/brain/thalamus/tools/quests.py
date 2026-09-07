@@ -44,11 +44,11 @@ from .lessons import (
 )
 
 if TYPE_CHECKING:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 
 
 
-async def branch_quest(params: dict, db: KuzuClient, config: dict) -> dict:
+async def branch_quest(params: dict, db: OxigraphClient, config: dict) -> dict:
     """
     Manually declare a SideQuest branching from the current MainQuest.
 

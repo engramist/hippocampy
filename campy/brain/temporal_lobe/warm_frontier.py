@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Any, Set, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 
 from campy.brain.hippocampus.table_registry import tables_with
 from campy.brain.hippocampus.graph.gateway import get_gateway

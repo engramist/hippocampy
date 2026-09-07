@@ -50,3 +50,18 @@ except Exception:
         _submod = types.ModuleType(_sub)
         _submod.__spec__ = importlib.machinery.ModuleSpec(_sub, loader=None)
         sys.modules.setdefault(_sub, _submod)
+
+# ---------------------------------------------------------------------------
+# Kùzu test client compatibility shim (B397)
+#
+# Production code has removed KuzuClient (B397 cutover to Oxigraph + sqlite-vec).
+# When kuzu is installed in the test environment, tests that explicitly verify
+# backward compatibility (e.g. migration roundtrip, vector parity) can resolve
+# KuzuClient via tests.kuzu_test_client.
+# ---------------------------------------------------------------------------
+try:
+    import tests.kuzu_test_client as _kuzu_test_mod
+    if _kuzu_test_mod.KUZU_AVAILABLE:
+        sys.modules.setdefault("campy.brain.hippocampus.graph.kuzu_client", _kuzu_test_mod)
+except Exception:
+    pass
