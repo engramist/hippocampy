@@ -52,6 +52,34 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         ),
         mutating=True,
         description="Create a Plan node (B75 active/passive plan declaration).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            INSERT {
+              ?p a campy:Plan ;
+                 campy:plan_id ?plan_id ;
+                 campy:goal ?goal ;
+                 campy:strategy ?strategy ;
+                 campy:source ?source ;
+                 campy:embedding ?embedding ;
+                 campy:embedding_model ?embedding_model ;
+                 campy:embedding_dim ?embedding_dim ;
+                 campy:step_count ?step_count ;
+                 campy:status "active" ;
+                 campy:confidence ?confidence ;
+                 campy:confidence_low ?confidence_low ;
+                 campy:pathway_strength ?pathway_strength ;
+                 campy:archived false ;
+                 campy:created_at ?created_at ;
+                 campy:source_version ?prov_source_version ;
+                 campy:observed_at ?prov_observed_at ;
+                 campy:evidence_ref ?prov_evidence_ref ;
+                 campy:content_hash ?content_hash .
+            }
+            WHERE {
+              BIND(IRI(CONCAT("https://campy.dev/data/Plan/", ENCODE_FOR_URI(STR(?plan_id)))) AS ?p)
+            }
+        """,
     ),
     NamedQuery(
         name="lessons.create_plan_step",
@@ -82,6 +110,28 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         ),
         mutating=True,
         description="Create one PlanStep node, one CREATE per step (B68).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            INSERT {
+              ?ps a campy:PlanStep ;
+                  campy:step_id ?step_id ;
+                  campy:step_number ?step_number ;
+                  campy:description ?description ;
+                  campy:embedding ?embedding ;
+                  campy:embedding_model ?embedding_model ;
+                  campy:embedding_dim ?embedding_dim ;
+                  campy:status "pending" ;
+                  campy:created_at ?created_at ;
+                  campy:source ?prov_source ;
+                  campy:source_version ?prov_source_version ;
+                  campy:observed_at ?prov_observed_at ;
+                  campy:evidence_ref ?prov_evidence_ref .
+            }
+            WHERE {
+              BIND(IRI(CONCAT("https://campy.dev/data/PlanStep/", ENCODE_FOR_URI(STR(?step_id)))) AS ?ps)
+            }
+        """,
     ),
     NamedQuery(
         name="lessons.link_step_to_plan",
@@ -93,6 +143,17 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("plan_id", "step_id"),
         mutating=True,
         description="Link a PlanStep to its parent Plan via STEP_OF.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            INSERT {
+              ?ps campy:STEP_OF ?p .
+            }
+            WHERE {
+              ?ps a campy:PlanStep ; campy:step_id ?step_id .
+              ?p a campy:Plan ; campy:plan_id ?plan_id .
+            }
+        """,
     ),
     NamedQuery(
         name="lessons.link_step_acts_on_concepts",
@@ -105,6 +166,18 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("sid", "cids"),
         mutating=True,
         description="Link a PlanStep to the Concepts it acts on (B75 vector-search precalc).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            INSERT {
+              ?ps campy:ACTS_ON ?c .
+            }
+            WHERE {
+              VALUES ?cid { }
+              ?ps a campy:PlanStep ; campy:step_id ?sid .
+              ?c a campy:Concept ; campy:concept_id ?cid .
+            }
+        """,
     ),
     NamedQuery(
         name="lessons.link_plan_to_session",
@@ -116,6 +189,17 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("plan_id", "session_id"),
         mutating=True,
         description="Link a Plan to the Session it was planned in.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            INSERT {
+              ?p campy:PLANNED_IN ?s .
+            }
+            WHERE {
+              ?p a campy:Plan ; campy:plan_id ?plan_id .
+              ?s a campy:Session ; campy:session_id ?session_id .
+            }
+        """,
     ),
     NamedQuery(
         name="lessons.link_plan_to_main_quest",
@@ -127,6 +211,17 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("plan_id", "quest_id"),
         mutating=True,
         description="Link a Plan to the MainQuest it targets.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            INSERT {
+              ?p campy:TARGETS ?q .
+            }
+            WHERE {
+              ?p a campy:Plan ; campy:plan_id ?plan_id .
+              ?q a campy:MainQuest ; campy:quest_id ?quest_id .
+            }
+        """,
     ),
     NamedQuery(
         name="lessons.link_plan_to_side_quest",
@@ -138,6 +233,17 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("plan_id", "quest_id"),
         mutating=True,
         description="Link a Plan to the SideQuest it targets (fallback when MainQuest match fails).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            INSERT {
+              ?p campy:TARGETS ?q .
+            }
+            WHERE {
+              ?p a campy:Plan ; campy:plan_id ?plan_id .
+              ?q a campy:SideQuest ; campy:quest_id ?quest_id .
+            }
+        """,
     ),
     NamedQuery(
         name="lessons.chain_plan_steps",
@@ -149,6 +255,18 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("pairs",),
         mutating=True,
         description="Chain consecutive PlanSteps with NEXT_STEP (B75 call 2).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            INSERT {
+              ?x campy:NEXT_STEP ?y .
+            }
+            WHERE {
+              VALUES (?pair_a ?pair_b) { }
+              ?x a campy:PlanStep ; campy:step_id ?pair_a .
+              ?y a campy:PlanStep ; campy:step_id ?pair_b .
+            }
+        """,
     ),
     NamedQuery(
         name="lessons.delete_plan_steps",
@@ -156,6 +274,20 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("ids",),
         mutating=True,
         description="Compensating delete of PlanStep nodes when a Plan write fails partway through.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            DELETE {
+              ?ps ?p ?o .
+              ?s ?p2 ?ps .
+            }
+            WHERE {
+              VALUES ?sid { }
+              ?ps a campy:PlanStep ; campy:step_id ?sid .
+              OPTIONAL { ?ps ?p ?o }
+              OPTIONAL { ?s ?p2 ?ps }
+            }
+        """,
     ),
     NamedQuery(
         name="lessons.delete_plan",
@@ -163,6 +295,19 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("pid",),
         mutating=True,
         description="Compensating delete of a Plan node when its write fails partway through.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            DELETE {
+              ?p ?prop ?o .
+              ?s ?prop2 ?p .
+            }
+            WHERE {
+              ?p a campy:Plan ; campy:plan_id ?pid .
+              OPTIONAL { ?p ?prop ?o }
+              OPTIONAL { ?s ?prop2 ?p }
+            }
+        """,
     ),
     # -- Plan / PlanStep reads ------------------------------------------------
     NamedQuery(
@@ -174,6 +319,17 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("sid",),
         mutating=False,
         description="Resolve the quest a Session is currently working on, if any.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?quest_id
+            WHERE {
+              ?s a campy:Session ; campy:session_id ?sid ;
+                 campy:WORKING_ON ?q .
+              ?q campy:quest_id ?quest_id .
+            }
+            LIMIT 1
+        """,
     ),
     NamedQuery(
         name="lessons.list_plan_step_ids",
@@ -184,6 +340,19 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("pid",),
         mutating=False,
         description="List the step_ids of a Plan's PlanSteps, in order (B320 dedup-hit branch).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?step_id
+            WHERE {
+              ?p a campy:Plan ; campy:plan_id ?pid .
+              ?ps a campy:PlanStep ;
+                  campy:STEP_OF ?p ;
+                  campy:step_id ?step_id ;
+                  campy:step_number ?step_number .
+            }
+            ORDER BY ASC(?step_number)
+        """,
     ),
     NamedQuery(
         name="lessons.find_quest_for_plan",
@@ -194,6 +363,17 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("pid",),
         mutating=False,
         description="Resolve the quest a Plan targets, if any (B320 dedup-hit branch).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?quest_id
+            WHERE {
+              ?p a campy:Plan ; campy:plan_id ?pid ;
+                 campy:TARGETS ?q .
+              ?q campy:quest_id ?quest_id .
+            }
+            LIMIT 1
+        """,
     ),
     NamedQuery(
         name="lessons.list_plan_steps_for_feedback",
@@ -206,6 +386,21 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("pid",),
         mutating=False,
         description="List a similar Plan's steps for the amygdala-reflex warning/suggestion payload.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?step_number ?description ?valence ?status
+            WHERE {
+              ?p a campy:Plan ; campy:plan_id ?pid .
+              ?ps a campy:PlanStep ;
+                  campy:STEP_OF ?p ;
+                  campy:step_number ?step_number ;
+                  campy:description ?description ;
+                  campy:status ?status .
+              OPTIONAL { ?ps campy:valence ?valence }
+            }
+            ORDER BY ASC(?step_number)
+        """,
     ),
     # -- Plan-outcome Lesson (writes) ------------------------------------------
     NamedQuery(
@@ -238,6 +433,34 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         ),
         mutating=True,
         description="Create a Lesson synthesized from a strong-valence Plan outcome.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+            INSERT {
+              ?l a campy:Lesson ;
+                 campy:lesson_id ?lesson_id ;
+                 campy:text_raw ?text_raw ;
+                 campy:embedding ?embedding ;
+                 campy:embedding_model ?embedding_model ;
+                 campy:embedding_dim ?embedding_dim ;
+                 campy:domain "planning" ;
+                 campy:lesson_type "optimization" ;
+                 campy:confidence "0.85"^^xsd:double ;
+                 campy:confidence_low false ;
+                 campy:pathway_strength "0.85"^^xsd:double ;
+                 campy:archived false ;
+                 campy:created_at ?created_at ;
+                 campy:source ?prov_source ;
+                 campy:source_version ?prov_source_version ;
+                 campy:observed_at ?prov_observed_at ;
+                 campy:evidence_ref ?prov_evidence_ref ;
+                 campy:content_hash ?content_hash .
+            }
+            WHERE {
+              BIND(IRI(CONCAT("https://campy.dev/data/Lesson/", ENCODE_FOR_URI(STR(?lesson_id)))) AS ?l)
+            }
+        """,
     ),
     NamedQuery(
         name="lessons.link_plan_to_lesson",
@@ -248,6 +471,17 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("pid", "lid"),
         mutating=True,
         description="Link a Plan to the Lesson its outcome produced.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            INSERT {
+              ?p campy:PRODUCED_PLAN_LESSON ?l .
+            }
+            WHERE {
+              ?p a campy:Plan ; campy:plan_id ?pid .
+              ?l a campy:Lesson ; campy:lesson_id ?lid .
+            }
+        """,
     ),
     NamedQuery(
         name="lessons.link_session_learned_lesson",
@@ -258,6 +492,17 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("sid", "lid"),
         mutating=True,
         description="Link a Session to a Lesson it learned (shared by outcome-lesson and upsert_lesson paths).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            INSERT {
+              ?s campy:LEARNED ?l .
+            }
+            WHERE {
+              ?s a campy:Session ; campy:session_id ?sid .
+              ?l a campy:Lesson ; campy:lesson_id ?lid .
+            }
+        """,
     ),
     # -- Quest-synthesis Lesson (writes + per-table artifact reads) -----------
     NamedQuery(
@@ -270,6 +515,23 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Top confirmed Decision artifacts for quest-completion lesson synthesis.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?text_raw ?confidence
+            WHERE {
+              ?a a campy:Decision ;
+                 campy:text_raw ?text_raw ;
+                 campy:confidence ?confidence ;
+                 campy:pathway_strength ?pathway_strength .
+              OPTIONAL { ?a campy:archived ?archived }
+              FILTER(!BOUND(?archived) || ?archived = false)
+              OPTIONAL { ?a campy:confidence_low ?confidence_low }
+              FILTER(!BOUND(?confidence_low) || ?confidence_low = false)
+            }
+            ORDER BY DESC(?pathway_strength)
+            LIMIT 5
+        """,
     ),
     NamedQuery(
         name="lessons.list_confirmed_constraints",
@@ -281,6 +543,23 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Top confirmed Constraint artifacts for quest-completion lesson synthesis.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?text_raw ?confidence
+            WHERE {
+              ?a a campy:Constraint ;
+                 campy:text_raw ?text_raw ;
+                 campy:confidence ?confidence ;
+                 campy:pathway_strength ?pathway_strength .
+              OPTIONAL { ?a campy:archived ?archived }
+              FILTER(!BOUND(?archived) || ?archived = false)
+              OPTIONAL { ?a campy:confidence_low ?confidence_low }
+              FILTER(!BOUND(?confidence_low) || ?confidence_low = false)
+            }
+            ORDER BY DESC(?pathway_strength)
+            LIMIT 5
+        """,
     ),
     NamedQuery(
         name="lessons.list_confirmed_requirements",
@@ -292,6 +571,23 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Top confirmed Requirement artifacts for quest-completion lesson synthesis.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?text_raw ?confidence
+            WHERE {
+              ?a a campy:Requirement ;
+                 campy:text_raw ?text_raw ;
+                 campy:confidence ?confidence ;
+                 campy:pathway_strength ?pathway_strength .
+              OPTIONAL { ?a campy:archived ?archived }
+              FILTER(!BOUND(?archived) || ?archived = false)
+              OPTIONAL { ?a campy:confidence_low ?confidence_low }
+              FILTER(!BOUND(?confidence_low) || ?confidence_low = false)
+            }
+            ORDER BY DESC(?pathway_strength)
+            LIMIT 5
+        """,
     ),
     NamedQuery(
         name="lessons.create_quest_synthesis_lesson",
@@ -314,6 +610,29 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("lesson_id", "text_raw", "embedding", "embedding_model", "embedding_dim", "created_at"),
         mutating=True,
         description="Create the LLM-synthesized Lesson for a completed quest (B11).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+            INSERT {
+              ?l a campy:Lesson ;
+                 campy:lesson_id ?lesson_id ;
+                 campy:text_raw ?text_raw ;
+                 campy:embedding ?embedding ;
+                 campy:embedding_model ?embedding_model ;
+                 campy:embedding_dim ?embedding_dim ;
+                 campy:domain "generic" ;
+                 campy:lesson_type "optimization" ;
+                 campy:confidence "0.70"^^xsd:double ;
+                 campy:confidence_low true ;
+                 campy:pathway_strength "0.70"^^xsd:double ;
+                 campy:archived false ;
+                 campy:created_at ?created_at .
+            }
+            WHERE {
+              BIND(IRI(CONCAT("https://campy.dev/data/Lesson/", ENCODE_FOR_URI(STR(?lesson_id)))) AS ?l)
+            }
+        """,
     ),
     NamedQuery(
         name="lessons.link_quest_to_lesson",
@@ -324,6 +643,17 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("qid", "lid"),
         mutating=True,
         description="Link a completed MainQuest to its synthesized Lesson.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            INSERT {
+              ?q campy:PRODUCED_LESSON ?l .
+            }
+            WHERE {
+              ?q a campy:MainQuest ; campy:quest_id ?qid .
+              ?l a campy:Lesson ; campy:lesson_id ?lid .
+            }
+        """,
     ),
     # -- upsert_lesson (writes + read) -----------------------------------------
     NamedQuery(
@@ -332,6 +662,15 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("lid",),
         mutating=False,
         description="Check whether a Lesson with this id already exists (KuzuDB 0.11.3: MERGE incompatible with vector-indexed tables).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?lesson_id
+            WHERE {
+              ?l a campy:Lesson ; campy:lesson_id ?lid .
+              BIND(?lid AS ?lesson_id)
+            }
+        """,
     ),
     NamedQuery(
         name="lessons.create_lesson",
@@ -373,6 +712,43 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         ),
         mutating=True,
         description="Create a Lesson node via the explicit upsert_lesson tool.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+            INSERT {
+              ?l a campy:Lesson ;
+                 campy:lesson_id ?lid ;
+                 campy:text_raw ?text ;
+                 campy:embedding ?emb ;
+                 campy:embedding_model ?model ;
+                 campy:embedding_dim ?dim ;
+                 campy:domain ?domain ;
+                 campy:lesson_type ?type ;
+                 campy:scene_wl_hash ?scene_wl_hash ;
+                 campy:scene_graph_vector ?scene_graph_vector ;
+                 campy:archetype ?archetype ;
+                 campy:progress_score ?progress_score ;
+                 campy:valence ?valence ;
+                 campy:confidence "0.90"^^xsd:double ;
+                 campy:confidence_low false ;
+                 campy:pathway_strength "1.0"^^xsd:double ;
+                 campy:archived false ;
+                 campy:created_at ?now ;
+                 campy:trigger_pattern ?trig_pattern ;
+                 campy:trigger_hook_type ?trig_hook_type ;
+                 campy:trigger_tool ?trig_tool ;
+                 campy:trigger_project_scope ?trig_scope ;
+                 campy:source ?prov_source ;
+                 campy:source_version ?prov_source_version ;
+                 campy:observed_at ?prov_observed_at ;
+                 campy:evidence_ref ?prov_evidence_ref ;
+                 campy:content_hash ?content_hash .
+            }
+            WHERE {
+              BIND(IRI(CONCAT("https://campy.dev/data/Lesson/", ENCODE_FOR_URI(STR(?lid)))) AS ?l)
+            }
+        """,
     ),
     NamedQuery(
         name="lessons.update_lesson",
@@ -405,6 +781,73 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         ),
         mutating=True,
         description="Update a Lesson's non-embedding fields on a caller-supplied-id re-upsert (bumps pathway_strength).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+            DELETE {
+              ?l campy:text_raw ?old_text .
+              ?l campy:domain ?old_dom .
+              ?l campy:lesson_type ?old_type .
+              ?l campy:scene_wl_hash ?old_wl .
+              ?l campy:scene_graph_vector ?old_sgv .
+              ?l campy:archetype ?old_arch .
+              ?l campy:progress_score ?old_prog .
+              ?l campy:valence ?old_val .
+              ?l campy:pathway_strength ?old_ps .
+              ?l campy:trigger_pattern ?old_tp .
+              ?l campy:trigger_hook_type ?old_tht .
+              ?l campy:trigger_tool ?old_tt .
+              ?l campy:trigger_project_scope ?old_tps .
+              ?l campy:source ?old_src .
+              ?l campy:source_version ?old_sv .
+              ?l campy:observed_at ?old_oa .
+              ?l campy:evidence_ref ?old_er .
+              ?l campy:content_hash ?old_ch .
+            }
+            INSERT {
+              ?l campy:text_raw ?text .
+              ?l campy:domain ?domain .
+              ?l campy:lesson_type ?type .
+              ?l campy:scene_wl_hash ?scene_wl_hash .
+              ?l campy:scene_graph_vector ?scene_graph_vector .
+              ?l campy:archetype ?archetype .
+              ?l campy:progress_score ?progress_score .
+              ?l campy:valence ?valence .
+              ?l campy:pathway_strength ?new_ps .
+              ?l campy:trigger_pattern ?trig_pattern .
+              ?l campy:trigger_hook_type ?trig_hook_type .
+              ?l campy:trigger_tool ?trig_tool .
+              ?l campy:trigger_project_scope ?trig_scope .
+              ?l campy:source ?prov_source .
+              ?l campy:source_version ?prov_source_version .
+              ?l campy:observed_at ?prov_observed_at .
+              ?l campy:evidence_ref ?prov_evidence_ref .
+              ?l campy:content_hash ?content_hash .
+            }
+            WHERE {
+              ?l a campy:Lesson ; campy:lesson_id ?lid .
+              OPTIONAL { ?l campy:text_raw ?old_text }
+              OPTIONAL { ?l campy:domain ?old_dom }
+              OPTIONAL { ?l campy:lesson_type ?old_type }
+              OPTIONAL { ?l campy:scene_wl_hash ?old_wl }
+              OPTIONAL { ?l campy:scene_graph_vector ?old_sgv }
+              OPTIONAL { ?l campy:archetype ?old_arch }
+              OPTIONAL { ?l campy:progress_score ?old_prog }
+              OPTIONAL { ?l campy:valence ?old_val }
+              OPTIONAL { ?l campy:pathway_strength ?old_ps }
+              OPTIONAL { ?l campy:trigger_pattern ?old_tp }
+              OPTIONAL { ?l campy:trigger_hook_type ?old_tht }
+              OPTIONAL { ?l campy:trigger_tool ?old_tt }
+              OPTIONAL { ?l campy:trigger_project_scope ?old_tps }
+              OPTIONAL { ?l campy:source ?old_src }
+              OPTIONAL { ?l campy:source_version ?old_sv }
+              OPTIONAL { ?l campy:observed_at ?old_oa }
+              OPTIONAL { ?l campy:evidence_ref ?old_er }
+              OPTIONAL { ?l campy:content_hash ?old_ch }
+              BIND(COALESCE(?old_ps + "0.1"^^xsd:double, "0.1"^^xsd:double) AS ?new_ps)
+            }
+        """,
     ),
     # -- recall_relevant_lessons -----------------------------------------------
     NamedQuery(
@@ -417,6 +860,20 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("domain", "limit"),
         mutating=False,
         description="List Lessons by domain (recall_relevant_lessons' non-similarity path).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?lesson_id ?text_raw ?lesson_type
+            WHERE {
+              ?l a campy:Lesson ;
+                 campy:domain ?domain ;
+                 campy:lesson_id ?lesson_id ;
+                 campy:text_raw ?text_raw ;
+                 campy:lesson_type ?lesson_type .
+              OPTIONAL { ?l campy:archived ?archived }
+              FILTER(!BOUND(?archived) || ?archived = false)
+            }
+        """,
     ),
     # -- recall_scene_graph_priors -----------------------------------------------
     NamedQuery(
@@ -434,5 +891,25 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         params=("wl_hash", "min_valence", "archetype", "limit"),
         mutating=False,
         description="Evidence-weighted priors for a scene-graph WL-hash signature.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?lesson_id ?progress_score ?valence ?archetype ?text
+            WHERE {
+              ?l a campy:Lesson ;
+                 campy:lesson_id ?lesson_id ;
+                 campy:scene_wl_hash ?wl_hash ;
+                 campy:progress_score ?progress_score ;
+                 campy:created_at ?created_at .
+              OPTIONAL { ?l campy:archived ?archived }
+              FILTER(!BOUND(?archived) || ?archived = false)
+              OPTIONAL { ?l campy:valence ?valence }
+              FILTER(!BOUND(?valence) || ?valence >= ?min_valence)
+              OPTIONAL { ?l campy:archetype ?archetype }
+              FILTER(?archetype_filter = "" || ?archetype = ?archetype_filter)
+              OPTIONAL { ?l campy:text_raw ?text }
+            }
+            ORDER BY DESC(?created_at)
+        """,
     ),
 )
