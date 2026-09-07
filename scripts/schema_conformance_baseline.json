@@ -1,5 +1,5 @@
 {
-  "total_violations": 68,
+  "total_violations": 56,
   "violations": [
     {
       "query": "arc.get_action_fact_detail",
@@ -338,69 +338,6 @@
       "detail": "m.content on Message"
     },
     {
-      "query": "sweep.get_active_pathway_globalconstraint",
-      "table": "GlobalConstraint",
-      "property": "constraint_id",
-      "kind": "dot_property",
-      "detail": "n.constraint_id on GlobalConstraint"
-    },
-    {
-      "query": "sweep.get_active_pathway_globalpreference",
-      "table": "GlobalPreference",
-      "property": "pref_id",
-      "kind": "dot_property",
-      "detail": "n.pref_id on GlobalPreference"
-    },
-    {
-      "query": "sweep.get_active_pathway_requirement",
-      "table": "Requirement",
-      "property": "req_id",
-      "kind": "dot_property",
-      "detail": "n.req_id on Requirement"
-    },
-    {
-      "query": "sweep.resurrect_active_embeddings_globalconstraint",
-      "table": "GlobalConstraint",
-      "property": "constraint_id",
-      "kind": "dot_property",
-      "detail": "n.constraint_id on GlobalConstraint"
-    },
-    {
-      "query": "sweep.resurrect_active_embeddings_globalpreference",
-      "table": "GlobalPreference",
-      "property": "pref_id",
-      "kind": "dot_property",
-      "detail": "n.pref_id on GlobalPreference"
-    },
-    {
-      "query": "sweep.resurrect_active_embeddings_requirement",
-      "table": "Requirement",
-      "property": "req_id",
-      "kind": "dot_property",
-      "detail": "n.req_id on Requirement"
-    },
-    {
-      "query": "sweep.resurrect_node_globalconstraint",
-      "table": "GlobalConstraint",
-      "property": "constraint_id",
-      "kind": "dot_property",
-      "detail": "n.constraint_id on GlobalConstraint"
-    },
-    {
-      "query": "sweep.resurrect_node_globalpreference",
-      "table": "GlobalPreference",
-      "property": "pref_id",
-      "kind": "dot_property",
-      "detail": "n.pref_id on GlobalPreference"
-    },
-    {
-      "query": "sweep.resurrect_node_requirement",
-      "table": "Requirement",
-      "property": "req_id",
-      "kind": "dot_property",
-      "detail": "n.req_id on Requirement"
-    },
-    {
       "query": "sweep.touch_subsumed_lesson",
       "table": "Lesson",
       "property": "synthesized_at",
@@ -413,27 +350,6 @@
       "property": "synthesis_cluster_size",
       "kind": "dot_property",
       "detail": "c.synthesis_cluster_size on Lesson"
-    },
-    {
-      "query": "sweep.unwind_archive_globalconstraint",
-      "table": "GlobalConstraint",
-      "property": "constraint_id",
-      "kind": "dot_property",
-      "detail": "n.constraint_id on GlobalConstraint"
-    },
-    {
-      "query": "sweep.unwind_archive_globalpreference",
-      "table": "GlobalPreference",
-      "property": "pref_id",
-      "kind": "dot_property",
-      "detail": "n.pref_id on GlobalPreference"
-    },
-    {
-      "query": "sweep.unwind_archive_requirement",
-      "table": "Requirement",
-      "property": "req_id",
-      "kind": "dot_property",
-      "detail": "n.req_id on Requirement"
     },
     {
       "query": "temporal_lobe.dict_link_alt_label",
