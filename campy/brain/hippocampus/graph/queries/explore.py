@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Dict, List
 from campy.brain.hippocampus.graph.gateway import NamedQuery
 
 EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
@@ -26,6 +26,14 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in Concept table",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?node ?internal_id WHERE {
+                ?node a campy:Concept ;
+                      campy:concept_id ?id .
+                BIND(STR(?node) AS ?internal_id)
+            } LIMIT 1
+            """,
     ),
     NamedQuery(
         name="explore.start_node_decision",
@@ -33,6 +41,14 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in Decision table",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?node ?internal_id WHERE {
+                ?node a campy:Decision ;
+                      campy:decision_id ?id .
+                BIND(STR(?node) AS ?internal_id)
+            } LIMIT 1
+            """,
     ),
     NamedQuery(
         name="explore.start_node_constraint",
@@ -40,6 +56,14 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in Constraint table",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?node ?internal_id WHERE {
+                ?node a campy:Constraint ;
+                      campy:constraint_id ?id .
+                BIND(STR(?node) AS ?internal_id)
+            } LIMIT 1
+            """,
     ),
     NamedQuery(
         name="explore.start_node_requirement",
@@ -47,6 +71,14 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in Requirement table",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?node ?internal_id WHERE {
+                ?node a campy:Requirement ;
+                      campy:requirement_id ?id .
+                BIND(STR(?node) AS ?internal_id)
+            } LIMIT 1
+            """,
     ),
     NamedQuery(
         name="explore.start_node_actionitem",
@@ -54,6 +86,14 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in ActionItem table",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?node ?internal_id WHERE {
+                ?node a campy:ActionItem ;
+                      campy:action_item_id ?id .
+                BIND(STR(?node) AS ?internal_id)
+            } LIMIT 1
+            """,
     ),
     NamedQuery(
         name="explore.start_node_lesson",
@@ -61,6 +101,14 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in Lesson table",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?node ?internal_id WHERE {
+                ?node a campy:Lesson ;
+                      campy:lesson_id ?id .
+                BIND(STR(?node) AS ?internal_id)
+            } LIMIT 1
+            """,
     ),
     NamedQuery(
         name="explore.start_node_procedure",
@@ -68,6 +116,14 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in Procedure table",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?node ?internal_id WHERE {
+                ?node a campy:Procedure ;
+                      campy:procedure_id ?id .
+                BIND(STR(?node) AS ?internal_id)
+            } LIMIT 1
+            """,
     ),
     NamedQuery(
         name="explore.start_node_plan",
@@ -75,6 +131,14 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in Plan table",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?node ?internal_id WHERE {
+                ?node a campy:Plan ;
+                      campy:plan_id ?id .
+                BIND(STR(?node) AS ?internal_id)
+            } LIMIT 1
+            """,
     ),
     NamedQuery(
         name="explore.start_node_mainquest",
@@ -82,6 +146,14 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in MainQuest table",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?node ?internal_id WHERE {
+                ?node a campy:MainQuest ;
+                      campy:quest_id ?id .
+                BIND(STR(?node) AS ?internal_id)
+            } LIMIT 1
+            """,
     ),
     NamedQuery(
         name="explore.start_node_sidequest",
@@ -89,6 +161,14 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in SideQuest table",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?node ?internal_id WHERE {
+                ?node a campy:SideQuest ;
+                      campy:quest_id ?id .
+                BIND(STR(?node) AS ?internal_id)
+            } LIMIT 1
+            """,
     ),
     NamedQuery(
         name="explore.start_node_document",
@@ -96,6 +176,14 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in Document table",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?node ?internal_id WHERE {
+                ?node a campy:Document ;
+                      campy:document_id ?id .
+                BIND(STR(?node) AS ?internal_id)
+            } LIMIT 1
+            """,
     ),
     NamedQuery(
         name="explore.start_node_message",
@@ -103,6 +191,14 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in Message table",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?node ?internal_id WHERE {
+                ?node a campy:Message ;
+                      campy:message_id ?id .
+                BIND(STR(?node) AS ?internal_id)
+            } LIMIT 1
+            """,
     ),
 )
 

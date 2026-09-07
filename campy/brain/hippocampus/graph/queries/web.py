@@ -13,6 +13,13 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch Concept node by concept_id",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?n WHERE {
+                ?n a campy:Concept ;
+                   campy:concept_id ?id .
+            }
+        """,
     ),
     NamedQuery(
         name="web.get_neighbors_concept",
@@ -20,6 +27,25 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch 1-hop neighbors for Concept",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            SELECT ?m ?m_label ?r_label WHERE {
+                ?n a campy:Concept ;
+                   campy:concept_id ?id .
+                {
+                    ?n ?r ?m .
+                    FILTER(isIRI(?m) && ?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                } UNION {
+                    ?m ?r ?n .
+                    FILTER(?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                }
+                ?m a ?m_class .
+                FILTER(STRSTARTS(STR(?m_class), "https://campy.dev/ns#"))
+                BIND(STRAFTER(STR(?m_class), "https://campy.dev/ns#") AS ?m_label)
+                BIND(STRAFTER(STR(?r), "https://campy.dev/ns#") AS ?r_label)
+            } LIMIT 20
+        """,
     ),
     # Decision
     NamedQuery(
@@ -28,6 +54,13 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch Decision node by decision_id",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?n WHERE {
+                ?n a campy:Decision ;
+                   campy:decision_id ?id .
+            }
+        """,
     ),
     NamedQuery(
         name="web.get_neighbors_decision",
@@ -35,6 +68,25 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch 1-hop neighbors for Decision",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            SELECT ?m ?m_label ?r_label WHERE {
+                ?n a campy:Decision ;
+                   campy:decision_id ?id .
+                {
+                    ?n ?r ?m .
+                    FILTER(isIRI(?m) && ?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                } UNION {
+                    ?m ?r ?n .
+                    FILTER(?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                }
+                ?m a ?m_class .
+                FILTER(STRSTARTS(STR(?m_class), "https://campy.dev/ns#"))
+                BIND(STRAFTER(STR(?m_class), "https://campy.dev/ns#") AS ?m_label)
+                BIND(STRAFTER(STR(?r), "https://campy.dev/ns#") AS ?r_label)
+            } LIMIT 20
+        """,
     ),
     # Constraint
     NamedQuery(
@@ -43,6 +95,13 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch Constraint node by constraint_id",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?n WHERE {
+                ?n a campy:Constraint ;
+                   campy:constraint_id ?id .
+            }
+        """,
     ),
     NamedQuery(
         name="web.get_neighbors_constraint",
@@ -50,6 +109,25 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch 1-hop neighbors for Constraint",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            SELECT ?m ?m_label ?r_label WHERE {
+                ?n a campy:Constraint ;
+                   campy:constraint_id ?id .
+                {
+                    ?n ?r ?m .
+                    FILTER(isIRI(?m) && ?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                } UNION {
+                    ?m ?r ?n .
+                    FILTER(?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                }
+                ?m a ?m_class .
+                FILTER(STRSTARTS(STR(?m_class), "https://campy.dev/ns#"))
+                BIND(STRAFTER(STR(?m_class), "https://campy.dev/ns#") AS ?m_label)
+                BIND(STRAFTER(STR(?r), "https://campy.dev/ns#") AS ?r_label)
+            } LIMIT 20
+        """,
     ),
     # Requirement
     NamedQuery(
@@ -58,6 +136,13 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch Requirement node by requirement_id",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?n WHERE {
+                ?n a campy:Requirement ;
+                   campy:requirement_id ?id .
+            }
+        """,
     ),
     NamedQuery(
         name="web.get_neighbors_requirement",
@@ -65,6 +150,25 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch 1-hop neighbors for Requirement",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            SELECT ?m ?m_label ?r_label WHERE {
+                ?n a campy:Requirement ;
+                   campy:requirement_id ?id .
+                {
+                    ?n ?r ?m .
+                    FILTER(isIRI(?m) && ?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                } UNION {
+                    ?m ?r ?n .
+                    FILTER(?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                }
+                ?m a ?m_class .
+                FILTER(STRSTARTS(STR(?m_class), "https://campy.dev/ns#"))
+                BIND(STRAFTER(STR(?m_class), "https://campy.dev/ns#") AS ?m_label)
+                BIND(STRAFTER(STR(?r), "https://campy.dev/ns#") AS ?r_label)
+            } LIMIT 20
+        """,
     ),
     # ActionItem
     NamedQuery(
@@ -73,6 +177,13 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch ActionItem node by action_item_id",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?n WHERE {
+                ?n a campy:ActionItem ;
+                   campy:action_item_id ?id .
+            }
+        """,
     ),
     NamedQuery(
         name="web.get_neighbors_actionitem",
@@ -80,6 +191,25 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch 1-hop neighbors for ActionItem",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            SELECT ?m ?m_label ?r_label WHERE {
+                ?n a campy:ActionItem ;
+                   campy:action_item_id ?id .
+                {
+                    ?n ?r ?m .
+                    FILTER(isIRI(?m) && ?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                } UNION {
+                    ?m ?r ?n .
+                    FILTER(?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                }
+                ?m a ?m_class .
+                FILTER(STRSTARTS(STR(?m_class), "https://campy.dev/ns#"))
+                BIND(STRAFTER(STR(?m_class), "https://campy.dev/ns#") AS ?m_label)
+                BIND(STRAFTER(STR(?r), "https://campy.dev/ns#") AS ?r_label)
+            } LIMIT 20
+        """,
     ),
     # Message
     NamedQuery(
@@ -88,6 +218,13 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch Message node by message_id",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?n WHERE {
+                ?n a campy:Message ;
+                   campy:message_id ?id .
+            }
+        """,
     ),
     NamedQuery(
         name="web.get_neighbors_message",
@@ -95,6 +232,25 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch 1-hop neighbors for Message",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            SELECT ?m ?m_label ?r_label WHERE {
+                ?n a campy:Message ;
+                   campy:message_id ?id .
+                {
+                    ?n ?r ?m .
+                    FILTER(isIRI(?m) && ?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                } UNION {
+                    ?m ?r ?n .
+                    FILTER(?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                }
+                ?m a ?m_class .
+                FILTER(STRSTARTS(STR(?m_class), "https://campy.dev/ns#"))
+                BIND(STRAFTER(STR(?m_class), "https://campy.dev/ns#") AS ?m_label)
+                BIND(STRAFTER(STR(?r), "https://campy.dev/ns#") AS ?r_label)
+            } LIMIT 20
+        """,
     ),
     # Document
     NamedQuery(
@@ -103,6 +259,13 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch Document node by document_id",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?n WHERE {
+                ?n a campy:Document ;
+                   campy:document_id ?id .
+            }
+        """,
     ),
     NamedQuery(
         name="web.get_neighbors_document",
@@ -110,6 +273,25 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch 1-hop neighbors for Document",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            SELECT ?m ?m_label ?r_label WHERE {
+                ?n a campy:Document ;
+                   campy:document_id ?id .
+                {
+                    ?n ?r ?m .
+                    FILTER(isIRI(?m) && ?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                } UNION {
+                    ?m ?r ?n .
+                    FILTER(?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                }
+                ?m a ?m_class .
+                FILTER(STRSTARTS(STR(?m_class), "https://campy.dev/ns#"))
+                BIND(STRAFTER(STR(?m_class), "https://campy.dev/ns#") AS ?m_label)
+                BIND(STRAFTER(STR(?r), "https://campy.dev/ns#") AS ?r_label)
+            } LIMIT 20
+        """,
     ),
     # MainQuest
     NamedQuery(
@@ -118,6 +300,13 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch MainQuest node by quest_id",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?n WHERE {
+                ?n a campy:MainQuest ;
+                   campy:quest_id ?id .
+            }
+        """,
     ),
     NamedQuery(
         name="web.get_neighbors_mainquest",
@@ -125,6 +314,25 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch 1-hop neighbors for MainQuest",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            SELECT ?m ?m_label ?r_label WHERE {
+                ?n a campy:MainQuest ;
+                   campy:quest_id ?id .
+                {
+                    ?n ?r ?m .
+                    FILTER(isIRI(?m) && ?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                } UNION {
+                    ?m ?r ?n .
+                    FILTER(?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                }
+                ?m a ?m_class .
+                FILTER(STRSTARTS(STR(?m_class), "https://campy.dev/ns#"))
+                BIND(STRAFTER(STR(?m_class), "https://campy.dev/ns#") AS ?m_label)
+                BIND(STRAFTER(STR(?r), "https://campy.dev/ns#") AS ?r_label)
+            } LIMIT 20
+        """,
     ),
     # SideQuest
     NamedQuery(
@@ -133,6 +341,13 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch SideQuest node by quest_id",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?n WHERE {
+                ?n a campy:SideQuest ;
+                   campy:quest_id ?id .
+            }
+        """,
     ),
     NamedQuery(
         name="web.get_neighbors_sidequest",
@@ -140,6 +355,25 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch 1-hop neighbors for SideQuest",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            SELECT ?m ?m_label ?r_label WHERE {
+                ?n a campy:SideQuest ;
+                   campy:quest_id ?id .
+                {
+                    ?n ?r ?m .
+                    FILTER(isIRI(?m) && ?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                } UNION {
+                    ?m ?r ?n .
+                    FILTER(?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                }
+                ?m a ?m_class .
+                FILTER(STRSTARTS(STR(?m_class), "https://campy.dev/ns#"))
+                BIND(STRAFTER(STR(?m_class), "https://campy.dev/ns#") AS ?m_label)
+                BIND(STRAFTER(STR(?r), "https://campy.dev/ns#") AS ?r_label)
+            } LIMIT 20
+        """,
     ),
     # Lesson
     NamedQuery(
@@ -148,6 +382,13 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch Lesson node by lesson_id",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?n WHERE {
+                ?n a campy:Lesson ;
+                   campy:lesson_id ?id .
+            }
+        """,
     ),
     NamedQuery(
         name="web.get_neighbors_lesson",
@@ -155,6 +396,25 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Fetch 1-hop neighbors for Lesson",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            SELECT ?m ?m_label ?r_label WHERE {
+                ?n a campy:Lesson ;
+                   campy:lesson_id ?id .
+                {
+                    ?n ?r ?m .
+                    FILTER(isIRI(?m) && ?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                } UNION {
+                    ?m ?r ?n .
+                    FILTER(?r != rdf:type && STRSTARTS(STR(?r), "https://campy.dev/ns#"))
+                }
+                ?m a ?m_class .
+                FILTER(STRSTARTS(STR(?m_class), "https://campy.dev/ns#"))
+                BIND(STRAFTER(STR(?m_class), "https://campy.dev/ns#") AS ?m_label)
+                BIND(STRAFTER(STR(?r), "https://campy.dev/ns#") AS ?r_label)
+            } LIMIT 20
+        """,
     ),
     # Stats counts
     NamedQuery(
@@ -163,6 +423,14 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Count active Concept nodes",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT (COUNT(?n) AS ?count) WHERE {
+                ?n a campy:Concept .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+            }
+        """,
     ),
     NamedQuery(
         name="web.count_active_decision",
@@ -170,6 +438,14 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Count active Decision nodes",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT (COUNT(?n) AS ?count) WHERE {
+                ?n a campy:Decision .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+            }
+        """,
     ),
     NamedQuery(
         name="web.count_active_constraint",
@@ -177,6 +453,14 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Count active Constraint nodes",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT (COUNT(?n) AS ?count) WHERE {
+                ?n a campy:Constraint .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+            }
+        """,
     ),
     NamedQuery(
         name="web.count_active_requirement",
@@ -184,6 +468,14 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Count active Requirement nodes",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT (COUNT(?n) AS ?count) WHERE {
+                ?n a campy:Requirement .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+            }
+        """,
     ),
     NamedQuery(
         name="web.count_active_actionitem",
@@ -191,6 +483,14 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Count active ActionItem nodes",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT (COUNT(?n) AS ?count) WHERE {
+                ?n a campy:ActionItem .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+            }
+        """,
     ),
     NamedQuery(
         name="web.count_active_message",
@@ -198,6 +498,14 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Count active Message nodes",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT (COUNT(?n) AS ?count) WHERE {
+                ?n a campy:Message .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+            }
+        """,
     ),
     NamedQuery(
         name="web.count_total_document",
@@ -205,6 +513,12 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Count total Document nodes",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT (COUNT(?n) AS ?count) WHERE {
+                ?n a campy:Document .
+            }
+        """,
     ),
     NamedQuery(
         name="web.count_total_mergeevent",
@@ -212,6 +526,12 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Count total MergeEvent nodes",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT (COUNT(?n) AS ?count) WHERE {
+                ?n a campy:MergeEvent .
+            }
+        """,
     ),
     NamedQuery(
         name="web.count_active_mainquest",
@@ -219,6 +539,14 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Count active MainQuest nodes",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT (COUNT(?n) AS ?count) WHERE {
+                ?n a campy:MainQuest .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+            }
+        """,
     ),
     NamedQuery(
         name="web.count_active_sidequest",
@@ -226,6 +554,14 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Count active SideQuest nodes",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT (COUNT(?n) AS ?count) WHERE {
+                ?n a campy:SideQuest .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+            }
+        """,
     ),
     # Graph visualization
     NamedQuery(
@@ -237,6 +573,21 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch top active concepts for graph visualization",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?concept_id ?text_raw ?gist_class ?confidence ?pathway_strength ?confidence_low WHERE {
+                ?c a campy:Concept .
+                OPTIONAL { ?c campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+                OPTIONAL { ?c campy:concept_id ?concept_id }
+                OPTIONAL { ?c campy:text_raw ?text_raw }
+                OPTIONAL { ?c campy:gist_class ?gist_class }
+                OPTIONAL { ?c campy:confidence ?confidence }
+                OPTIONAL { ?c campy:pathway_strength ?pathway_strength }
+                OPTIONAL { ?c campy:confidence_low ?confidence_low }
+            }
+            ORDER BY DESC(?pathway_strength) LIMIT 30
+        """,
     ),
     NamedQuery(
         name="web.graph_decisions",
@@ -247,6 +598,20 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch top active decisions for graph visualization",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?decision_id ?text_raw ?confidence ?pathway_strength ?confidence_low WHERE {
+                ?d a campy:Decision .
+                OPTIONAL { ?d campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+                OPTIONAL { ?d campy:decision_id ?decision_id }
+                OPTIONAL { ?d campy:text_raw ?text_raw }
+                OPTIONAL { ?d campy:confidence ?confidence }
+                OPTIONAL { ?d campy:pathway_strength ?pathway_strength }
+                OPTIONAL { ?d campy:confidence_low ?confidence_low }
+            }
+            ORDER BY DESC(?pathway_strength) LIMIT 20
+        """,
     ),
     NamedQuery(
         name="web.graph_constraints",
@@ -257,6 +622,20 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch top active constraints for graph visualization",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?constraint_id ?text_raw ?confidence ?pathway_strength ?confidence_low WHERE {
+                ?c a campy:Constraint .
+                OPTIONAL { ?c campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+                OPTIONAL { ?c campy:constraint_id ?constraint_id }
+                OPTIONAL { ?c campy:text_raw ?text_raw }
+                OPTIONAL { ?c campy:confidence ?confidence }
+                OPTIONAL { ?c campy:pathway_strength ?pathway_strength }
+                OPTIONAL { ?c campy:confidence_low ?confidence_low }
+            }
+            ORDER BY DESC(?pathway_strength) LIMIT 20
+        """,
     ),
     NamedQuery(
         name="web.graph_main_quests",
@@ -265,6 +644,17 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch active main quests for graph visualization",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?quest_id ?name ?status WHERE {
+                ?q a campy:MainQuest .
+                OPTIONAL { ?q campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+                OPTIONAL { ?q campy:quest_id ?quest_id }
+                OPTIONAL { ?q campy:name ?name }
+                OPTIONAL { ?q campy:status ?status }
+            } LIMIT 10
+        """,
     ),
     NamedQuery(
         name="web.graph_side_quests",
@@ -273,6 +663,17 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch active side quests for graph visualization",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?quest_id ?name ?status WHERE {
+                ?q a campy:SideQuest .
+                OPTIONAL { ?q campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+                OPTIONAL { ?q campy:quest_id ?quest_id }
+                OPTIONAL { ?q campy:name ?name }
+                OPTIONAL { ?q campy:status ?status }
+            } LIMIT 10
+        """,
     ),
     NamedQuery(
         name="web.graph_co_occurs_with",
@@ -283,6 +684,21 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch CO_OCCURS_WITH edges for graph visualization",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?a_concept_id ?b_concept_id ?strength ?count WHERE {
+                ?a a campy:Concept ; campy:concept_id ?a_concept_id .
+                ?b a campy:Concept ; campy:concept_id ?b_concept_id .
+                OPTIONAL { ?a campy:archived ?a_archived }
+                FILTER(!BOUND(?a_archived) || ?a_archived = false)
+                OPTIONAL { ?b campy:archived ?b_archived }
+                FILTER(!BOUND(?b_archived) || ?b_archived = false)
+                ?a campy:CO_OCCURS_WITH ?b .
+                << ?a campy:CO_OCCURS_WITH ?b >> campy:strength ?strength ;
+                                                 campy:count ?count .
+            }
+            ORDER BY DESC(?strength) LIMIT 60
+        """,
     ),
     NamedQuery(
         name="web.graph_deprecated_by",
@@ -291,6 +707,13 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch DEPRECATED_BY edges for graph visualization",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?old_concept_id ?new_concept_id WHERE {
+                ?old a campy:Concept ; campy:concept_id ?old_concept_id ; campy:DEPRECATED_BY ?new .
+                ?new a campy:Concept ; campy:concept_id ?new_concept_id .
+            } LIMIT 30
+        """,
     ),
     NamedQuery(
         name="web.graph_belongs_to",
@@ -299,6 +722,13 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch BELONGS_TO edges for graph visualization",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?sq_quest_id ?mq_quest_id WHERE {
+                ?sq a campy:SideQuest ; campy:quest_id ?sq_quest_id ; campy:BELONGS_TO ?mq .
+                ?mq a campy:MainQuest ; campy:quest_id ?mq_quest_id .
+            }
+        """,
     ),
     # Open loops
     NamedQuery(
@@ -310,6 +740,20 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch open loop Concepts",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?id ?text_raw ?confidence ?created_at WHERE {
+                ?n a campy:Concept ;
+                   campy:confidence_low true .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+                OPTIONAL { ?n campy:concept_id ?id }
+                OPTIONAL { ?n campy:text_raw ?text_raw }
+                OPTIONAL { ?n campy:confidence ?confidence }
+                OPTIONAL { ?n campy:created_at ?created_at }
+            }
+            ORDER BY DESC(?created_at) LIMIT 50
+        """,
     ),
     NamedQuery(
         name="web.open_loops_decision",
@@ -320,6 +764,20 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch open loop Decisions",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?id ?text_raw ?confidence ?created_at WHERE {
+                ?n a campy:Decision ;
+                   campy:confidence_low true .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+                OPTIONAL { ?n campy:decision_id ?id }
+                OPTIONAL { ?n campy:text_raw ?text_raw }
+                OPTIONAL { ?n campy:confidence ?confidence }
+                OPTIONAL { ?n campy:created_at ?created_at }
+            }
+            ORDER BY DESC(?created_at) LIMIT 50
+        """,
     ),
     NamedQuery(
         name="web.open_loops_constraint",
@@ -330,6 +788,20 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch open loop Constraints",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?id ?text_raw ?confidence ?created_at WHERE {
+                ?n a campy:Constraint ;
+                   campy:confidence_low true .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+                OPTIONAL { ?n campy:constraint_id ?id }
+                OPTIONAL { ?n campy:text_raw ?text_raw }
+                OPTIONAL { ?n campy:confidence ?confidence }
+                OPTIONAL { ?n campy:created_at ?created_at }
+            }
+            ORDER BY DESC(?created_at) LIMIT 50
+        """,
     ),
     NamedQuery(
         name="web.open_loops_requirement",
@@ -340,6 +812,20 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch open loop Requirements",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?id ?text_raw ?confidence ?created_at WHERE {
+                ?n a campy:Requirement ;
+                   campy:confidence_low true .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+                OPTIONAL { ?n campy:requirement_id ?id }
+                OPTIONAL { ?n campy:text_raw ?text_raw }
+                OPTIONAL { ?n campy:confidence ?confidence }
+                OPTIONAL { ?n campy:created_at ?created_at }
+            }
+            ORDER BY DESC(?created_at) LIMIT 50
+        """,
     ),
     NamedQuery(
         name="web.open_loops_actionitem",
@@ -350,6 +836,20 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch open loop ActionItems",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?id ?text_raw ?confidence ?created_at WHERE {
+                ?n a campy:ActionItem ;
+                   campy:confidence_low true .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+                OPTIONAL { ?n campy:action_item_id ?id }
+                OPTIONAL { ?n campy:text_raw ?text_raw }
+                OPTIONAL { ?n campy:confidence ?confidence }
+                OPTIONAL { ?n campy:created_at ?created_at }
+            }
+            ORDER BY DESC(?created_at) LIMIT 50
+        """,
     ),
     # Soft-lock confirm / reject
     # Concept
@@ -359,6 +859,13 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("nid",),
         mutating=False,
         description="Find soft-lock Concept by concept_id",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?nid WHERE {
+                ?n a campy:Concept ;
+                   campy:concept_id ?nid .
+            }
+        """,
     ),
     NamedQuery(
         name="web.confirm_soft_lock_concept",
@@ -367,6 +874,24 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("nid",),
         mutating=True,
         description="Confirm soft-lock Concept",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+            DELETE {
+                ?n campy:confidence_low ?old_low .
+                ?n campy:confidence ?old_conf .
+            }
+            INSERT {
+                ?n campy:confidence_low false .
+                ?n campy:confidence "0.95"^^xsd:double .
+            }
+            WHERE {
+                ?n a campy:Concept ;
+                   campy:concept_id ?nid .
+                OPTIONAL { ?n campy:confidence_low ?old_low }
+                OPTIONAL { ?n campy:confidence ?old_conf }
+            }
+        """,
     ),
     NamedQuery(
         name="web.reject_soft_lock_concept",
@@ -375,6 +900,20 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("nid",),
         mutating=True,
         description="Reject soft-lock Concept",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            DELETE {
+                ?n campy:archived ?old_archived .
+            }
+            INSERT {
+                ?n campy:archived true .
+            }
+            WHERE {
+                ?n a campy:Concept ;
+                   campy:concept_id ?nid .
+                OPTIONAL { ?n campy:archived ?old_archived }
+            }
+        """,
     ),
     # Decision
     NamedQuery(
@@ -383,6 +922,13 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("nid",),
         mutating=False,
         description="Find soft-lock Decision by decision_id",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?nid WHERE {
+                ?n a campy:Decision ;
+                   campy:decision_id ?nid .
+            }
+        """,
     ),
     NamedQuery(
         name="web.confirm_soft_lock_decision",
@@ -391,6 +937,24 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("nid",),
         mutating=True,
         description="Confirm soft-lock Decision",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+            DELETE {
+                ?n campy:confidence_low ?old_low .
+                ?n campy:confidence ?old_conf .
+            }
+            INSERT {
+                ?n campy:confidence_low false .
+                ?n campy:confidence "0.95"^^xsd:double .
+            }
+            WHERE {
+                ?n a campy:Decision ;
+                   campy:decision_id ?nid .
+                OPTIONAL { ?n campy:confidence_low ?old_low }
+                OPTIONAL { ?n campy:confidence ?old_conf }
+            }
+        """,
     ),
     NamedQuery(
         name="web.reject_soft_lock_decision",
@@ -399,6 +963,20 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("nid",),
         mutating=True,
         description="Reject soft-lock Decision",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            DELETE {
+                ?n campy:archived ?old_archived .
+            }
+            INSERT {
+                ?n campy:archived true .
+            }
+            WHERE {
+                ?n a campy:Decision ;
+                   campy:decision_id ?nid .
+                OPTIONAL { ?n campy:archived ?old_archived }
+            }
+        """,
     ),
     # Constraint
     NamedQuery(
@@ -407,6 +985,13 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("nid",),
         mutating=False,
         description="Find soft-lock Constraint by constraint_id",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?nid WHERE {
+                ?n a campy:Constraint ;
+                   campy:constraint_id ?nid .
+            }
+        """,
     ),
     NamedQuery(
         name="web.confirm_soft_lock_constraint",
@@ -415,6 +1000,24 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("nid",),
         mutating=True,
         description="Confirm soft-lock Constraint",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+            DELETE {
+                ?n campy:confidence_low ?old_low .
+                ?n campy:confidence ?old_conf .
+            }
+            INSERT {
+                ?n campy:confidence_low false .
+                ?n campy:confidence "0.95"^^xsd:double .
+            }
+            WHERE {
+                ?n a campy:Constraint ;
+                   campy:constraint_id ?nid .
+                OPTIONAL { ?n campy:confidence_low ?old_low }
+                OPTIONAL { ?n campy:confidence ?old_conf }
+            }
+        """,
     ),
     NamedQuery(
         name="web.reject_soft_lock_constraint",
@@ -423,6 +1026,20 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("nid",),
         mutating=True,
         description="Reject soft-lock Constraint",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            DELETE {
+                ?n campy:archived ?old_archived .
+            }
+            INSERT {
+                ?n campy:archived true .
+            }
+            WHERE {
+                ?n a campy:Constraint ;
+                   campy:constraint_id ?nid .
+                OPTIONAL { ?n campy:archived ?old_archived }
+            }
+        """,
     ),
     # Requirement
     NamedQuery(
@@ -431,6 +1048,13 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("nid",),
         mutating=False,
         description="Find soft-lock Requirement by requirement_id",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?nid WHERE {
+                ?n a campy:Requirement ;
+                   campy:requirement_id ?nid .
+            }
+        """,
     ),
     NamedQuery(
         name="web.confirm_soft_lock_requirement",
@@ -439,6 +1063,24 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("nid",),
         mutating=True,
         description="Confirm soft-lock Requirement",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+            DELETE {
+                ?n campy:confidence_low ?old_low .
+                ?n campy:confidence ?old_conf .
+            }
+            INSERT {
+                ?n campy:confidence_low false .
+                ?n campy:confidence "0.95"^^xsd:double .
+            }
+            WHERE {
+                ?n a campy:Requirement ;
+                   campy:requirement_id ?nid .
+                OPTIONAL { ?n campy:confidence_low ?old_low }
+                OPTIONAL { ?n campy:confidence ?old_conf }
+            }
+        """,
     ),
     NamedQuery(
         name="web.reject_soft_lock_requirement",
@@ -447,6 +1089,20 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("nid",),
         mutating=True,
         description="Reject soft-lock Requirement",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            DELETE {
+                ?n campy:archived ?old_archived .
+            }
+            INSERT {
+                ?n campy:archived true .
+            }
+            WHERE {
+                ?n a campy:Requirement ;
+                   campy:requirement_id ?nid .
+                OPTIONAL { ?n campy:archived ?old_archived }
+            }
+        """,
     ),
     # ActionItem
     NamedQuery(
@@ -455,6 +1111,13 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("nid",),
         mutating=False,
         description="Find soft-lock ActionItem by action_item_id",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?nid WHERE {
+                ?n a campy:ActionItem ;
+                   campy:action_item_id ?nid .
+            }
+        """,
     ),
     NamedQuery(
         name="web.confirm_soft_lock_actionitem",
@@ -463,6 +1126,24 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("nid",),
         mutating=True,
         description="Confirm soft-lock ActionItem",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+            DELETE {
+                ?n campy:confidence_low ?old_low .
+                ?n campy:confidence ?old_conf .
+            }
+            INSERT {
+                ?n campy:confidence_low false .
+                ?n campy:confidence "0.95"^^xsd:double .
+            }
+            WHERE {
+                ?n a campy:ActionItem ;
+                   campy:action_item_id ?nid .
+                OPTIONAL { ?n campy:confidence_low ?old_low }
+                OPTIONAL { ?n campy:confidence ?old_conf }
+            }
+        """,
     ),
     NamedQuery(
         name="web.reject_soft_lock_actionitem",
@@ -471,6 +1152,20 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("nid",),
         mutating=True,
         description="Reject soft-lock ActionItem",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            DELETE {
+                ?n campy:archived ?old_archived .
+            }
+            INSERT {
+                ?n campy:archived true .
+            }
+            WHERE {
+                ?n a campy:ActionItem ;
+                   campy:action_item_id ?nid .
+                OPTIONAL { ?n campy:archived ?old_archived }
+            }
+        """,
     ),
     # Merge events
     NamedQuery(
@@ -482,6 +1177,18 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="List recent MergeEvents with rollback metadata",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?merge_event_id ?pre_pathway_strength ?delta_pathway_strength ?metadata_patch ?created_at WHERE {
+                ?me a campy:MergeEvent .
+                OPTIONAL { ?me campy:merge_event_id ?merge_event_id }
+                OPTIONAL { ?me campy:pre_pathway_strength ?pre_pathway_strength }
+                OPTIONAL { ?me campy:delta_pathway_strength ?delta_pathway_strength }
+                OPTIONAL { ?me campy:metadata_patch ?metadata_patch }
+                OPTIONAL { ?me campy:created_at ?created_at }
+            }
+            ORDER BY DESC(?created_at) LIMIT 50
+        """,
     ),
     NamedQuery(
         name="web.get_merge_event",
@@ -490,6 +1197,15 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("meid",),
         mutating=False,
         description="Fetch MergeEvent by merge_event_id",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?metadata_patch ?pre_pathway_strength WHERE {
+                ?me a campy:MergeEvent ;
+                    campy:merge_event_id ?meid .
+                OPTIONAL { ?me campy:metadata_patch ?metadata_patch }
+                OPTIONAL { ?me campy:pre_pathway_strength ?pre_pathway_strength }
+            }
+        """,
     ),
     NamedQuery(
         name="web.rollback_restore_old_concept",
@@ -498,6 +1214,23 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id", "strength"),
         mutating=True,
         description="Restore old concept during contradiction rollback",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            DELETE {
+                ?c campy:archived ?old_archived .
+                ?c campy:pathway_strength ?old_strength .
+            }
+            INSERT {
+                ?c campy:archived false .
+                ?c campy:pathway_strength ?strength .
+            }
+            WHERE {
+                ?c a campy:Concept ;
+                   campy:concept_id ?id .
+                OPTIONAL { ?c campy:archived ?old_archived }
+                OPTIONAL { ?c campy:pathway_strength ?old_strength }
+            }
+        """,
     ),
     NamedQuery(
         name="web.rollback_archive_new_concept",
@@ -506,6 +1239,20 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=True,
         description="Archive new concept during contradiction rollback",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            DELETE {
+                ?c campy:archived ?old_archived .
+            }
+            INSERT {
+                ?c campy:archived true .
+            }
+            WHERE {
+                ?c a campy:Concept ;
+                   campy:concept_id ?id .
+                OPTIONAL { ?c campy:archived ?old_archived }
+            }
+        """,
     ),
     NamedQuery(
         name="web.rollback_delete_deprecated_by",
@@ -515,6 +1262,17 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("old_id", "new_id"),
         mutating=True,
         description="Delete DEPRECATED_BY edge during contradiction rollback",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            DELETE {
+                ?old campy:DEPRECATED_BY ?new .
+            }
+            WHERE {
+                ?old a campy:Concept ; campy:concept_id ?old_id .
+                ?new a campy:Concept ; campy:concept_id ?new_id .
+                ?old campy:DEPRECATED_BY ?new .
+            }
+        """,
     ),
     NamedQuery(
         name="web.rollback_mark_merge_event",
@@ -523,6 +1281,20 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("meid", "meta"),
         mutating=True,
         description="Mark MergeEvent metadata as rolled back",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            DELETE {
+                ?me campy:metadata_patch ?old_meta .
+            }
+            INSERT {
+                ?me campy:metadata_patch ?meta .
+            }
+            WHERE {
+                ?me a campy:MergeEvent ;
+                    campy:merge_event_id ?meid .
+                OPTIONAL { ?me campy:metadata_patch ?old_meta }
+            }
+        """,
     ),
     # Ledger export
     NamedQuery(
@@ -534,6 +1306,21 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch active constraints for ledger",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?constraint_id ?text_raw ?confidence ?confidence_low ?pathway_strength ?created_at WHERE {
+                ?c a campy:Constraint .
+                OPTIONAL { ?c campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+                OPTIONAL { ?c campy:constraint_id ?constraint_id }
+                OPTIONAL { ?c campy:text_raw ?text_raw }
+                OPTIONAL { ?c campy:confidence ?confidence }
+                OPTIONAL { ?c campy:confidence_low ?confidence_low }
+                OPTIONAL { ?c campy:pathway_strength ?pathway_strength }
+                OPTIONAL { ?c campy:created_at ?created_at }
+            }
+            ORDER BY DESC(?pathway_strength)
+        """,
     ),
     NamedQuery(
         name="web.ledger_global_constraint",
@@ -544,6 +1331,21 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch active global constraints for ledger",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?global_constraint_id ?text_raw ?confidence ?confidence_low ?pathway_strength ?created_at WHERE {
+                ?c a campy:GlobalConstraint .
+                OPTIONAL { ?c campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+                OPTIONAL { ?c campy:global_constraint_id ?global_constraint_id }
+                OPTIONAL { ?c campy:text_raw ?text_raw }
+                OPTIONAL { ?c campy:confidence ?confidence }
+                OPTIONAL { ?c campy:confidence_low ?confidence_low }
+                OPTIONAL { ?c campy:pathway_strength ?pathway_strength }
+                OPTIONAL { ?c campy:created_at ?created_at }
+            }
+            ORDER BY DESC(?pathway_strength)
+        """,
     ),
     # Quests
     NamedQuery(
@@ -554,6 +1356,20 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch active main quests",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?quest_id ?name ?status ?purpose ?created_at WHERE {
+                ?q a campy:MainQuest .
+                OPTIONAL { ?q campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+                OPTIONAL { ?q campy:quest_id ?quest_id }
+                OPTIONAL { ?q campy:name ?name }
+                OPTIONAL { ?q campy:status ?status }
+                OPTIONAL { ?q campy:purpose ?purpose }
+                OPTIONAL { ?q campy:created_at ?created_at }
+            }
+            ORDER BY DESC(?created_at)
+        """,
     ),
     NamedQuery(
         name="web.quests_side_belongs_to",
@@ -564,6 +1380,22 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch active side quests with parent quest_id",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?quest_id ?name ?status ?purpose ?created_at ?mq_quest_id WHERE {
+                ?sq a campy:SideQuest ;
+                    campy:BELONGS_TO ?mq .
+                ?mq a campy:MainQuest ;
+                    campy:quest_id ?mq_quest_id .
+                OPTIONAL { ?sq campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+                OPTIONAL { ?sq campy:quest_id ?quest_id }
+                OPTIONAL { ?sq campy:name ?name }
+                OPTIONAL { ?sq campy:status ?status }
+                OPTIONAL { ?sq campy:purpose ?purpose }
+                OPTIONAL { ?sq campy:created_at ?created_at }
+            }
+        """,
     ),
     # Thinking tab
     NamedQuery(
@@ -575,6 +1407,21 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch top decisions for thinking tab",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?decision_id ?text_raw ?confidence ?pathway_strength ?confidence_low ?created_at WHERE {
+                ?d a campy:Decision .
+                OPTIONAL { ?d campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+                OPTIONAL { ?d campy:decision_id ?decision_id }
+                OPTIONAL { ?d campy:text_raw ?text_raw }
+                OPTIONAL { ?d campy:confidence ?confidence }
+                OPTIONAL { ?d campy:pathway_strength ?pathway_strength }
+                OPTIONAL { ?d campy:confidence_low ?confidence_low }
+                OPTIONAL { ?d campy:created_at ?created_at }
+            }
+            ORDER BY DESC(?pathway_strength) LIMIT 10
+        """,
     ),
     NamedQuery(
         name="web.thinking_concepts",
@@ -585,6 +1432,20 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch top concepts for thinking tab",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?concept_id ?text_raw ?gist_class ?pathway_strength ?confidence_low WHERE {
+                ?c a campy:Concept .
+                OPTIONAL { ?c campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+                OPTIONAL { ?c campy:concept_id ?concept_id }
+                OPTIONAL { ?c campy:text_raw ?text_raw }
+                OPTIONAL { ?c campy:gist_class ?gist_class }
+                OPTIONAL { ?c campy:pathway_strength ?pathway_strength }
+                OPTIONAL { ?c campy:confidence_low ?confidence_low }
+            }
+            ORDER BY DESC(?pathway_strength) LIMIT 25
+        """,
     ),
     NamedQuery(
         name="web.thinking_constraints",
@@ -595,6 +1456,20 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Fetch top constraints for thinking tab",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?constraint_id ?text_raw ?confidence ?pathway_strength ?confidence_low WHERE {
+                ?c a campy:Constraint .
+                OPTIONAL { ?c campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+                OPTIONAL { ?c campy:constraint_id ?constraint_id }
+                OPTIONAL { ?c campy:text_raw ?text_raw }
+                OPTIONAL { ?c campy:confidence ?confidence }
+                OPTIONAL { ?c campy:pathway_strength ?pathway_strength }
+                OPTIONAL { ?c campy:confidence_low ?confidence_low }
+            }
+            ORDER BY DESC(?pathway_strength) LIMIT 10
+        """,
     ),
     NamedQuery(
         name="web.count_open_loops_concept",
@@ -603,6 +1478,15 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Count open loops in Concept table",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT (COUNT(?n) AS ?count) WHERE {
+                ?n a campy:Concept ;
+                   campy:confidence_low true .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+            }
+        """,
     ),
     NamedQuery(
         name="web.count_open_loops_decision",
@@ -611,6 +1495,15 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Count open loops in Decision table",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT (COUNT(?n) AS ?count) WHERE {
+                ?n a campy:Decision ;
+                   campy:confidence_low true .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+            }
+        """,
     ),
     NamedQuery(
         name="web.count_open_loops_constraint",
@@ -619,6 +1512,15 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description="Count open loops in Constraint table",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT (COUNT(?n) AS ?count) WHERE {
+                ?n a campy:Constraint ;
+                   campy:confidence_low true .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+            }
+        """,
     ),
     # Metrics
     NamedQuery(
@@ -633,5 +1535,20 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
         params=("limit",),
         mutating=False,
         description="Fetch recent sessions token metrics",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?session_id ?started_at ?last_active_at ?token_estimate ?token_limit ?loaded_node_count ?injection_count ?dedup_tokens_saved WHERE {
+                ?s a campy:Session .
+                OPTIONAL { ?s campy:session_id ?session_id }
+                OPTIONAL { ?s campy:started_at ?started_at }
+                OPTIONAL { ?s campy:last_active_at ?last_active_at }
+                OPTIONAL { ?s campy:token_estimate ?token_estimate }
+                OPTIONAL { ?s campy:token_limit ?token_limit }
+                OPTIONAL { ?s campy:loaded_node_count ?loaded_node_count }
+                OPTIONAL { ?s campy:injection_count ?injection_count }
+                OPTIONAL { ?s campy:dedup_tokens_saved ?dedup_tokens_saved }
+            }
+            ORDER BY DESC(?last_active_at)
+        """,
     ),
 )
