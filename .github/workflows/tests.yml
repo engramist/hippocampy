@@ -23,6 +23,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -57,6 +60,11 @@ jobs:
       # scripts/schema_conformance_baseline.json.
       - name: Check schema conformance
         run: python scripts/check_schema_conformance.py
+
+      # B408: fail if PR branch is stale relative to main's HEAD (to prevent
+      # silent deletion or reversion of concurrently merged work).
+      - name: Check branch is current with main
+        run: python scripts/check_branch_current.py
 
       - name: Check dependency floor drift
         run: python scripts/check_dependency_pin_drift.py
