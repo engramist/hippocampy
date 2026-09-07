@@ -1,0 +1,488 @@
+{
+  "total_violations": 69,
+  "violations": [
+    {
+      "query": "arc.get_action_fact_detail",
+      "table": "ActionFact",
+      "property": "evidence_summary",
+      "kind": "dot_property",
+      "detail": "af.evidence_summary on ActionFact"
+    },
+    {
+      "query": "arc.get_action_fact_detail",
+      "table": "ActionFact",
+      "property": "sample_count",
+      "kind": "dot_property",
+      "detail": "af.sample_count on ActionFact"
+    },
+    {
+      "query": "arc.get_action_fact_detail",
+      "table": "ActionFact",
+      "property": "last_tested_step",
+      "kind": "dot_property",
+      "detail": "af.last_tested_step on ActionFact"
+    },
+    {
+      "query": "arc.get_action_fact_detail",
+      "table": "ActionFact",
+      "property": "recommended_next",
+      "kind": "dot_property",
+      "detail": "af.recommended_next on ActionFact"
+    },
+    {
+      "query": "capture.get_last_proactive_push_count",
+      "table": "Session",
+      "property": "last_proactive_push_msg_count",
+      "kind": "dot_property",
+      "detail": "s.last_proactive_push_msg_count on Session"
+    },
+    {
+      "query": "capture.set_last_proactive_push_count",
+      "table": "Session",
+      "property": "last_proactive_push_msg_count",
+      "kind": "dot_property",
+      "detail": "s.last_proactive_push_msg_count on Session"
+    },
+    {
+      "query": "provenance.find_live_arcactionpattern",
+      "table": "ArcActionPattern",
+      "property": "content_hash",
+      "kind": "dot_property",
+      "detail": "n.content_hash on ArcActionPattern"
+    },
+    {
+      "query": "provenance.find_live_arceffectpattern",
+      "table": "ArcEffectPattern",
+      "property": "content_hash",
+      "kind": "dot_property",
+      "detail": "n.content_hash on ArcEffectPattern"
+    },
+    {
+      "query": "provenance.find_live_arcfailuremode",
+      "table": "ArcFailureMode",
+      "property": "content_hash",
+      "kind": "dot_property",
+      "detail": "n.content_hash on ArcFailureMode"
+    },
+    {
+      "query": "provenance.find_live_arcmechanic",
+      "table": "ArcMechanic",
+      "property": "content_hash",
+      "kind": "dot_property",
+      "detail": "n.content_hash on ArcMechanic"
+    },
+    {
+      "query": "provenance.find_live_arcprecondition",
+      "table": "ArcPrecondition",
+      "property": "content_hash",
+      "kind": "dot_property",
+      "detail": "n.content_hash on ArcPrecondition"
+    },
+    {
+      "query": "provenance.find_live_arcrecoverypolicy",
+      "table": "ArcRecoveryPolicy",
+      "property": "content_hash",
+      "kind": "dot_property",
+      "detail": "n.content_hash on ArcRecoveryPolicy"
+    },
+    {
+      "query": "provenance.find_live_arcworldmodelstep",
+      "table": "ArcWorldModelStep",
+      "property": "content_hash",
+      "kind": "dot_property",
+      "detail": "n.content_hash on ArcWorldModelStep"
+    },
+    {
+      "query": "provenance.touch_last_accessed_actioneffect",
+      "table": "ActionEffect",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on ActionEffect"
+    },
+    {
+      "query": "provenance.touch_last_accessed_actionfact",
+      "table": "ActionFact",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on ActionFact"
+    },
+    {
+      "query": "provenance.touch_last_accessed_actionitem",
+      "table": "ActionItem",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on ActionItem"
+    },
+    {
+      "query": "provenance.touch_last_accessed_arcactionpattern",
+      "table": "ArcActionPattern",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on ArcActionPattern"
+    },
+    {
+      "query": "provenance.touch_last_accessed_arceffectpattern",
+      "table": "ArcEffectPattern",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on ArcEffectPattern"
+    },
+    {
+      "query": "provenance.touch_last_accessed_arcfailuremode",
+      "table": "ArcFailureMode",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on ArcFailureMode"
+    },
+    {
+      "query": "provenance.touch_last_accessed_arcmechanic",
+      "table": "ArcMechanic",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on ArcMechanic"
+    },
+    {
+      "query": "provenance.touch_last_accessed_arcprecondition",
+      "table": "ArcPrecondition",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on ArcPrecondition"
+    },
+    {
+      "query": "provenance.touch_last_accessed_arcrecoverypolicy",
+      "table": "ArcRecoveryPolicy",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on ArcRecoveryPolicy"
+    },
+    {
+      "query": "provenance.touch_last_accessed_arcworldmodelstep",
+      "table": "ArcWorldModelStep",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on ArcWorldModelStep"
+    },
+    {
+      "query": "provenance.touch_last_accessed_constraint",
+      "table": "Constraint",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on Constraint"
+    },
+    {
+      "query": "provenance.touch_last_accessed_decision",
+      "table": "Decision",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on Decision"
+    },
+    {
+      "query": "provenance.touch_last_accessed_documentextract",
+      "table": "DocumentExtract",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on DocumentExtract"
+    },
+    {
+      "query": "provenance.touch_last_accessed_globalconstraint",
+      "table": "GlobalConstraint",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on GlobalConstraint"
+    },
+    {
+      "query": "provenance.touch_last_accessed_globalpreference",
+      "table": "GlobalPreference",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on GlobalPreference"
+    },
+    {
+      "query": "provenance.touch_last_accessed_hypothesis",
+      "table": "Hypothesis",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on Hypothesis"
+    },
+    {
+      "query": "provenance.touch_last_accessed_knowledgegap",
+      "table": "KnowledgeGap",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on KnowledgeGap"
+    },
+    {
+      "query": "provenance.touch_last_accessed_lesson",
+      "table": "Lesson",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on Lesson"
+    },
+    {
+      "query": "provenance.touch_last_accessed_plan",
+      "table": "Plan",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on Plan"
+    },
+    {
+      "query": "provenance.touch_last_accessed_planstep",
+      "table": "PlanStep",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on PlanStep"
+    },
+    {
+      "query": "provenance.touch_last_accessed_procedure",
+      "table": "Procedure",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on Procedure"
+    },
+    {
+      "query": "provenance.touch_last_accessed_requirement",
+      "table": "Requirement",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on Requirement"
+    },
+    {
+      "query": "provenance.touch_last_accessed_rule",
+      "table": "Rule",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on Rule"
+    },
+    {
+      "query": "provenance.touch_last_accessed_transition",
+      "table": "Transition",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on Transition"
+    },
+    {
+      "query": "provenance.touch_last_accessed_victorycondition",
+      "table": "VictoryCondition",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on VictoryCondition"
+    },
+    {
+      "query": "provenance.touch_last_accessed_workartifact",
+      "table": "WorkArtifact",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on WorkArtifact"
+    },
+    {
+      "query": "provenance.touch_last_accessed_worksummary",
+      "table": "WorkSummary",
+      "property": "last_accessed_at",
+      "kind": "dot_property",
+      "detail": "n.last_accessed_at on WorkSummary"
+    },
+    {
+      "query": "quests.get_session_onboarding_status",
+      "table": "MainQuest",
+      "property": "git_branch",
+      "kind": "dot_property",
+      "detail": "q.git_branch on MainQuest"
+    },
+    {
+      "query": "quests.link_concept_has_alt_label",
+      "table": "HAS_ALT_LABEL",
+      "property": "created_at",
+      "kind": "inline_rel",
+      "detail": "inline rel HAS_ALT_LABEL.created_at"
+    },
+    {
+      "query": "retrieval.get_originating_message_actionitem",
+      "table": "Message",
+      "property": "content",
+      "kind": "dot_property",
+      "detail": "m.content on Message"
+    },
+    {
+      "query": "retrieval.get_originating_message_concept",
+      "table": "Message",
+      "property": "content",
+      "kind": "dot_property",
+      "detail": "m.content on Message"
+    },
+    {
+      "query": "retrieval.get_originating_message_constraint",
+      "table": "Message",
+      "property": "content",
+      "kind": "dot_property",
+      "detail": "m.content on Message"
+    },
+    {
+      "query": "retrieval.get_originating_message_decision",
+      "table": "Message",
+      "property": "content",
+      "kind": "dot_property",
+      "detail": "m.content on Message"
+    },
+    {
+      "query": "retrieval.get_originating_message_documentextract",
+      "table": "Message",
+      "property": "content",
+      "kind": "dot_property",
+      "detail": "m.content on Message"
+    },
+    {
+      "query": "retrieval.get_originating_message_message",
+      "table": "Message",
+      "property": "content",
+      "kind": "dot_property",
+      "detail": "m.content on Message"
+    },
+    {
+      "query": "retrieval.get_originating_message_requirement",
+      "table": "Message",
+      "property": "content",
+      "kind": "dot_property",
+      "detail": "m.content on Message"
+    },
+    {
+      "query": "sweep.get_active_pathway_globalconstraint",
+      "table": "GlobalConstraint",
+      "property": "constraint_id",
+      "kind": "dot_property",
+      "detail": "n.constraint_id on GlobalConstraint"
+    },
+    {
+      "query": "sweep.get_active_pathway_globalpreference",
+      "table": "GlobalPreference",
+      "property": "pref_id",
+      "kind": "dot_property",
+      "detail": "n.pref_id on GlobalPreference"
+    },
+    {
+      "query": "sweep.get_active_pathway_requirement",
+      "table": "Requirement",
+      "property": "req_id",
+      "kind": "dot_property",
+      "detail": "n.req_id on Requirement"
+    },
+    {
+      "query": "sweep.resurrect_active_embeddings_globalconstraint",
+      "table": "GlobalConstraint",
+      "property": "constraint_id",
+      "kind": "dot_property",
+      "detail": "n.constraint_id on GlobalConstraint"
+    },
+    {
+      "query": "sweep.resurrect_active_embeddings_globalpreference",
+      "table": "GlobalPreference",
+      "property": "pref_id",
+      "kind": "dot_property",
+      "detail": "n.pref_id on GlobalPreference"
+    },
+    {
+      "query": "sweep.resurrect_active_embeddings_requirement",
+      "table": "Requirement",
+      "property": "req_id",
+      "kind": "dot_property",
+      "detail": "n.req_id on Requirement"
+    },
+    {
+      "query": "sweep.resurrect_node_globalconstraint",
+      "table": "GlobalConstraint",
+      "property": "constraint_id",
+      "kind": "dot_property",
+      "detail": "n.constraint_id on GlobalConstraint"
+    },
+    {
+      "query": "sweep.resurrect_node_globalpreference",
+      "table": "GlobalPreference",
+      "property": "pref_id",
+      "kind": "dot_property",
+      "detail": "n.pref_id on GlobalPreference"
+    },
+    {
+      "query": "sweep.resurrect_node_requirement",
+      "table": "Requirement",
+      "property": "req_id",
+      "kind": "dot_property",
+      "detail": "n.req_id on Requirement"
+    },
+    {
+      "query": "sweep.touch_subsumed_lesson",
+      "table": "Lesson",
+      "property": "synthesized_at",
+      "kind": "dot_property",
+      "detail": "c.synthesized_at on Lesson"
+    },
+    {
+      "query": "sweep.touch_subsumed_lesson",
+      "table": "Lesson",
+      "property": "synthesis_cluster_size",
+      "kind": "dot_property",
+      "detail": "c.synthesis_cluster_size on Lesson"
+    },
+    {
+      "query": "sweep.unwind_archive_globalconstraint",
+      "table": "GlobalConstraint",
+      "property": "constraint_id",
+      "kind": "dot_property",
+      "detail": "n.constraint_id on GlobalConstraint"
+    },
+    {
+      "query": "sweep.unwind_archive_globalpreference",
+      "table": "GlobalPreference",
+      "property": "pref_id",
+      "kind": "dot_property",
+      "detail": "n.pref_id on GlobalPreference"
+    },
+    {
+      "query": "sweep.unwind_archive_requirement",
+      "table": "Requirement",
+      "property": "req_id",
+      "kind": "dot_property",
+      "detail": "n.req_id on Requirement"
+    },
+    {
+      "query": "temporal_lobe.dict_link_alt_label",
+      "table": "HAS_ALT_LABEL",
+      "property": "created_at",
+      "kind": "inline_rel",
+      "detail": "inline rel HAS_ALT_LABEL.created_at"
+    },
+    {
+      "query": "temporal_lobe.dict_link_pref_label",
+      "table": "HAS_PREF_LABEL",
+      "property": "created_at",
+      "kind": "inline_rel",
+      "detail": "inline rel HAS_PREF_LABEL.created_at"
+    },
+    {
+      "query": "thalamus.file_bridge_concept_relationships",
+      "table": "Concept",
+      "property": "prefLabel",
+      "kind": "dot_property",
+      "detail": "a.prefLabel on Concept"
+    },
+    {
+      "query": "thalamus.file_bridge_concepts",
+      "table": "Concept",
+      "property": "prefLabel",
+      "kind": "dot_property",
+      "detail": "c.prefLabel on Concept"
+    },
+    {
+      "query": "thalamus.file_bridge_concepts",
+      "table": "Concept",
+      "property": "altLabel",
+      "kind": "dot_property",
+      "detail": "c.altLabel on Concept"
+    },
+    {
+      "query": "thalamus.file_bridge_decisions",
+      "table": "Decision",
+      "property": "prefLabel",
+      "kind": "dot_property",
+      "detail": "d.prefLabel on Decision"
+    }
+  ]
+}
