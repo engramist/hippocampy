@@ -1,8 +1,20 @@
-"""campy/brain/hippocampus/graph/queries/provenance.py — Named queries for provenance & supersession."""
+"""campy/brain/hippocampus/graph/queries/provenance.py — Named queries for provenance & supersession.
+
+The 29 `drop_projected_*` queries wrap their SPARQL in
+`with_annotation_cascade()` (oxigraph_client.py §4.2e). Cypher's
+`DETACH DELETE` takes the node's edges with it; the SPARQL translation's
+`?n ?p ?o` / `?s ?p2 ?n` patterns take the *plain* edge triples but cannot
+reach an RDF-star annotation, which is a statement about a reifier rather
+than about the node. The helper appends one cascade statement that collects
+those orphaned annotations and the occurrence nodes hanging off them. It is
+defined once, in the client, rather than pasted into 29 query strings — do
+not inline it here.
+"""
 
 from __future__ import annotations
 
 from campy.brain.hippocampus.graph.gateway import NamedQuery
+from campy.brain.hippocampus.graph.oxigraph_client import with_annotation_cascade
 
 PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
     NamedQuery(
@@ -107,7 +119,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Concept nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -118,7 +130,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_concept",
@@ -262,7 +274,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Decision nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -273,7 +285,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_decision",
@@ -417,7 +429,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Constraint nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -428,7 +440,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_constraint",
@@ -572,7 +584,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Requirement nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -583,7 +595,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_requirement",
@@ -727,7 +739,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ActionItem nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -738,7 +750,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_actionitem",
@@ -882,7 +894,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected GlobalConstraint nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -893,7 +905,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_globalconstraint",
@@ -1037,7 +1049,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected GlobalPreference nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -1048,7 +1060,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_globalpreference",
@@ -1192,7 +1204,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Lesson nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -1203,7 +1215,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_lesson",
@@ -1347,7 +1359,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Procedure nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -1358,7 +1370,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_procedure",
@@ -1502,7 +1514,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected KnowledgeGap nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -1513,7 +1525,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_knowledgegap",
@@ -1657,7 +1669,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Plan nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -1668,7 +1680,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_plan",
@@ -1812,7 +1824,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected PlanStep nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -1823,7 +1835,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_planstep",
@@ -1967,7 +1979,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Hypothesis nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -1978,7 +1990,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_hypothesis",
@@ -2122,7 +2134,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ActionFact nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -2133,7 +2145,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_actionfact",
@@ -2277,7 +2289,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ActionEffect nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -2288,7 +2300,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_actioneffect",
@@ -2432,7 +2444,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected VictoryCondition nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -2443,7 +2455,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_victorycondition",
@@ -2587,7 +2599,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Rule nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -2598,7 +2610,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_rule",
@@ -2742,7 +2754,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected Transition nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -2753,7 +2765,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_transition",
@@ -2897,7 +2909,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected DocumentExtract nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -2908,7 +2920,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_documentextract",
@@ -3052,7 +3064,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected WorkSummary nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -3063,7 +3075,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_worksummary",
@@ -3207,7 +3219,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected WorkArtifact nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -3218,7 +3230,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_workartifact",
@@ -3362,7 +3374,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ArcMechanic nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -3373,7 +3385,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_arcmechanic",
@@ -3517,7 +3529,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ArcActionPattern nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -3528,7 +3540,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_arcactionpattern",
@@ -3672,7 +3684,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ArcEffectPattern nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -3683,7 +3695,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_arceffectpattern",
@@ -3827,7 +3839,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ArcPrecondition nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -3838,7 +3850,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_arcprecondition",
@@ -3982,7 +3994,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ArcFailureMode nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -3993,7 +4005,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_arcfailuremode",
@@ -4137,7 +4149,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ArcRecoveryPolicy nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -4148,7 +4160,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_arcrecoverypolicy",
@@ -4292,7 +4304,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected ArcWorldModelStep nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -4303,7 +4315,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
     NamedQuery(
         name="provenance.find_live_arcworldmodelstep",
@@ -4396,7 +4408,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         params=("source",),
         mutating=True,
         description="Drop projected FactEntity nodes for a source.",
-        sparql="""
+        sparql=with_annotation_cascade("""
             DELETE {
                 ?n ?p ?o .
                 ?s ?p2 ?n .
@@ -4407,6 +4419,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                    campy:source ?source .
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
-            """,
+            """),
     ),
 )
