@@ -37,17 +37,34 @@ spaCy's semantic output already distrusts it enough to recompute it.
 Measured on this machine, warm (model loaded *and invoked*, which is what a running
 daemon actually holds — see §5 on methodology):
 
-| | RSS |
+| | RSS (clean install) |
 |---|---|
-| baseline Python | 14.5 MB |
-| + spaCy loaded and invoked | **541.0 MB** |
-| + fastembed loaded and invoked | **818.6 MB** |
-| spaCy with `torch` import blocked | **386.9 MB** |
+| baseline Python | 18.0 MB |
+| + spaCy loaded and invoked | **388.1 MB** (+370.2) |
+| + fastembed loaded and invoked | **595.3 MB** (+207.1) |
 
-`torch` accounts for ~154 MB of resident memory and 436 MB on disk, and is **never
-used for computation** — `thinc`'s backend is `NumpyOps` and the `en_core_web_md`
-pipeline is entirely CNN-based (`tok2vec`, `tagger`, `parser`, `attribute_ruler`,
-`lemmatizer`, `ner`). It is an unused optional backend.
+> **CORRECTION (2026-09-05, same day).** An earlier revision of this table reported
+> 14.5 / 541.0 / 818.6 MB. Those figures were measured in a development venv holding a
+> **stale `torch` install** left behind by `sentence-transformers`, which B355 replaced
+> with fastembed. `torch` is **not** a declared dependency in `pyproject.toml` or
+> `requirements.txt`, and `thinc` does not require it — `thinc.compat` merely attempts
+> `import torch` opportunistically and succeeds if something else put it there. A clean
+> install has never contained torch, so the original numbers overstated production RSS
+> by ~223 MB. The table above is re-measured with torch blocked, which is how a clean
+> install actually behaves.
+>
+> This is exactly the failure mode §5 warns about, committed by this document's own
+> author. The methodology rule stands; the discipline has to be applied, not just
+> written down.
+
+`torch` is **never used for computation**: `thinc`'s backend is `NumpyOps` and the
+`en_core_web_md` pipeline is entirely CNN-based (`tok2vec`, `tagger`, `parser`,
+`attribute_ruler`, `lemmatizer`, `ner`). It is an unused optional backend.
+
+When present it costs ~150–160 MB resident and 436 MB on disk. But it is **absent from
+a clean install** — so this is a development-environment hazard, not a production cost.
+`thinc.compat` attempts `import torch` opportunistically and succeeds whenever some
+other package has installed it, which is what happened here.
 
 ### The semantic mismatch, admitted in the source
 
@@ -185,7 +202,7 @@ figures separately, per component, so a future reader can tell which part of the
 a number belongs to and re-evaluate one piece as tooling changes.
 
 `<80 MB` warm is not achievable while ONNX embeddings run in-process. That target
-should be restated against the measured 818.6 MB warm baseline rather than carried
+should be restated against the measured 595.3 MB clean-install warm baseline rather than carried
 forward.
 
 ---
