@@ -43,5 +43,39 @@ BACKUP_QUERIES: tuple[NamedQuery, ...] = (
             "backup verify's post-restore smoke test: any live Concept/Decision/Lesson "
             "row, proving the restored database is queryable and holds real content."
         ),
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?table_name ?node_id ?text_raw
+            WHERE {
+              {
+                BIND("Concept" AS ?table_name)
+                ?n a campy:Concept ;
+                   campy:concept_id ?node_id ;
+                   campy:text_raw ?text_raw .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+              }
+              UNION
+              {
+                BIND("Decision" AS ?table_name)
+                ?n a campy:Decision ;
+                   campy:decision_id ?node_id ;
+                   campy:text_raw ?text_raw .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+              }
+              UNION
+              {
+                BIND("Lesson" AS ?table_name)
+                ?n a campy:Lesson ;
+                   campy:lesson_id ?node_id ;
+                   campy:text_raw ?text_raw .
+                OPTIONAL { ?n campy:archived ?archived }
+                FILTER(!BOUND(?archived) || ?archived = false)
+              }
+            }
+            LIMIT 5
+        """,
     ),
 )

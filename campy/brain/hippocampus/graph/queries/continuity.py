@@ -59,6 +59,20 @@ CONTINUITY_QUERIES: tuple[NamedQuery, ...] = (
         mutating=False,
         description="B321: prior sessions of an App (excluding the calling session), "
                     "newest first, bounded by limit_sessions and a since_iso floor.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?session_id ?started_at ?external_session_id
+            WHERE {
+              ?s a campy:Session ;
+                 campy:session_id ?session_id ;
+                 campy:external_app_id ?external_app_id ;
+                 campy:started_at ?started_at .
+              FILTER(?session_id != ?exclude_session && ?started_at >= ?since_iso)
+              OPTIONAL { ?s campy:external_session_id ?external_session_id }
+            }
+            ORDER BY DESC(?started_at)
+        """,
     ),
     NamedQuery(
         name="app_continuity.decisions_for_sessions",
@@ -76,6 +90,31 @@ CONTINUITY_QUERIES: tuple[NamedQuery, ...] = (
         mutating=False,
         description="B321: live (non-superseded, non-archived) Decisions established in a "
                     "batch of prior sessions, with B312 provenance + B313 authority.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?session_id ?id ?text ?source ?source_version ?observed_at ?evidence_ref ?authority ?created_at
+            WHERE {
+              VALUES ?session_id { }
+              ?s a campy:Session ;
+                 campy:session_id ?session_id .
+              ?d a campy:Decision ;
+                 campy:decision_id ?id ;
+                 campy:text_raw ?text ;
+                 campy:ESTABLISHED_IN ?s ;
+                 campy:created_at ?created_at .
+              OPTIONAL { ?d campy:superseded_by ?superseded_by }
+              FILTER(!BOUND(?superseded_by))
+              OPTIONAL { ?d campy:archived ?archived }
+              FILTER(!BOUND(?archived) || ?archived = false)
+              OPTIONAL { ?d campy:source ?source }
+              OPTIONAL { ?d campy:source_version ?source_version }
+              OPTIONAL { ?d campy:observed_at ?observed_at }
+              OPTIONAL { ?d campy:evidence_ref ?evidence_ref }
+              OPTIONAL { ?d campy:authority ?authority }
+            }
+            ORDER BY DESC(?created_at)
+        """,
     ),
     NamedQuery(
         name="app_continuity.constraints_for_sessions",
@@ -93,6 +132,31 @@ CONTINUITY_QUERIES: tuple[NamedQuery, ...] = (
         mutating=False,
         description="B321: live Constraints established in a batch of prior sessions, "
                     "with B312 provenance + B313 authority.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?session_id ?id ?text ?source ?source_version ?observed_at ?evidence_ref ?authority ?created_at
+            WHERE {
+              VALUES ?session_id { }
+              ?s a campy:Session ;
+                 campy:session_id ?session_id .
+              ?c a campy:Constraint ;
+                 campy:constraint_id ?id ;
+                 campy:text_raw ?text ;
+                 campy:ESTABLISHED_IN ?s ;
+                 campy:created_at ?created_at .
+              OPTIONAL { ?c campy:superseded_by ?superseded_by }
+              FILTER(!BOUND(?superseded_by))
+              OPTIONAL { ?c campy:archived ?archived }
+              FILTER(!BOUND(?archived) || ?archived = false)
+              OPTIONAL { ?c campy:source ?source }
+              OPTIONAL { ?c campy:source_version ?source_version }
+              OPTIONAL { ?c campy:observed_at ?observed_at }
+              OPTIONAL { ?c campy:evidence_ref ?evidence_ref }
+              OPTIONAL { ?c campy:authority ?authority }
+            }
+            ORDER BY DESC(?created_at)
+        """,
     ),
     NamedQuery(
         name="app_continuity.lessons_for_sessions",
@@ -110,6 +174,31 @@ CONTINUITY_QUERIES: tuple[NamedQuery, ...] = (
         mutating=False,
         description="B321: live Lessons learned in a batch of prior sessions, "
                     "with B312 provenance + B313 authority.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?session_id ?id ?text ?source ?source_version ?observed_at ?evidence_ref ?authority ?created_at
+            WHERE {
+              VALUES ?session_id { }
+              ?s a campy:Session ;
+                 campy:session_id ?session_id ;
+                 campy:LEARNED ?l .
+              ?l a campy:Lesson ;
+                 campy:lesson_id ?id ;
+                 campy:text_raw ?text ;
+                 campy:created_at ?created_at .
+              OPTIONAL { ?l campy:superseded_by ?superseded_by }
+              FILTER(!BOUND(?superseded_by))
+              OPTIONAL { ?l campy:archived ?archived }
+              FILTER(!BOUND(?archived) || ?archived = false)
+              OPTIONAL { ?l campy:source ?source }
+              OPTIONAL { ?l campy:source_version ?source_version }
+              OPTIONAL { ?l campy:observed_at ?observed_at }
+              OPTIONAL { ?l campy:evidence_ref ?evidence_ref }
+              OPTIONAL { ?l campy:authority ?authority }
+            }
+            ORDER BY DESC(?created_at)
+        """,
     ),
     NamedQuery(
         name="app_continuity.plans_for_sessions",
@@ -128,6 +217,33 @@ CONTINUITY_QUERIES: tuple[NamedQuery, ...] = (
         mutating=False,
         description="B321: live Plan outcomes (goal/status/valence) planned in a batch "
                     "of prior sessions, with B312 provenance + B313 authority.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?session_id ?id ?text ?status ?valence ?source ?source_version ?observed_at ?evidence_ref ?authority ?created_at
+            WHERE {
+              VALUES ?session_id { }
+              ?s a campy:Session ;
+                 campy:session_id ?session_id .
+              ?p a campy:Plan ;
+                 campy:plan_id ?id ;
+                 campy:goal ?text ;
+                 campy:status ?status ;
+                 campy:PLANNED_IN ?s ;
+                 campy:created_at ?created_at .
+              OPTIONAL { ?p campy:superseded_by ?superseded_by }
+              FILTER(!BOUND(?superseded_by))
+              OPTIONAL { ?p campy:archived ?archived }
+              FILTER(!BOUND(?archived) || ?archived = false)
+              OPTIONAL { ?p campy:valence ?valence }
+              OPTIONAL { ?p campy:source ?source }
+              OPTIONAL { ?p campy:source_version ?source_version }
+              OPTIONAL { ?p campy:observed_at ?observed_at }
+              OPTIONAL { ?p campy:evidence_ref ?evidence_ref }
+              OPTIONAL { ?p campy:authority ?authority }
+            }
+            ORDER BY DESC(?created_at)
+        """,
     ),
     NamedQuery(
         name="app_continuity.session_external_app_id",
@@ -140,6 +256,16 @@ CONTINUITY_QUERIES: tuple[NamedQuery, ...] = (
         description="B321: one-row lookup so _stage_app_continuity can skip straight to "
                     "'no section' for the common local-Campy case (external_app_id NULL) "
                     "without running the full continuity query.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?external_app_id
+            WHERE {
+              ?s a campy:Session ;
+                 campy:session_id ?session_id .
+              OPTIONAL { ?s campy:external_app_id ?external_app_id }
+            }
+        """,
     ),
     NamedQuery(
         name="app_continuity.set_session_external_ids",
@@ -153,5 +279,26 @@ CONTINUITY_QUERIES: tuple[NamedQuery, ...] = (
         description="B321: best-effort populate Session.external_app_id/external_session_id "
                     "from capture.py's notify_turn params, without overwriting a value "
                     "already stored from an earlier turn.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            DELETE {
+              ?s campy:external_app_id ?old_app_id .
+              ?s campy:external_session_id ?old_session_id .
+            }
+            INSERT {
+              ?s campy:external_app_id ?new_app_id .
+              ?s campy:external_session_id ?new_session_id .
+            }
+            WHERE {
+              ?s a campy:Session ;
+                 campy:session_id ?session_id .
+              OPTIONAL { ?s campy:external_app_id ?old_app_id }
+              OPTIONAL { ?s campy:external_session_id ?old_session_id }
+              BIND(COALESCE(?old_app_id, ?external_app_id) AS ?new_app_id)
+              BIND(COALESCE(?old_session_id, ?external_session_id) AS ?new_session_id)
+              FILTER(BOUND(?new_app_id) || BOUND(?new_session_id))
+            }
+        """,
     ),
 )
