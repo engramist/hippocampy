@@ -53,6 +53,11 @@ jobs:
       - name: Check Cypher ratchet
         run: python scripts/check_cypher_ratchet.py
 
+      # B406: fail if queries reference non-existent properties relative to
+      # scripts/schema_conformance_baseline.json.
+      - name: Check schema conformance
+        run: python scripts/check_schema_conformance.py
+
       - name: Check dependency floor drift
         run: python scripts/check_dependency_pin_drift.py
 
