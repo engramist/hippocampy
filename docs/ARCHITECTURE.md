@@ -66,6 +66,18 @@ evidence came in).
 | Decision rule | N/A — resolved. |
 | Contradiction flagged, not reconciled | This document's own `Technology Stack` and `Kùzu Implementation Notes` sections (above) still name **RyuGraph** as the migration fork to watch. B389's actual in-flight target is an **Oxigraph**/RDF-star client (`campy/brain/hippocampus/graph/oxigraph_client.py`), not RyuGraph. Per this section's own rule (record, do not decide), that mismatch is recorded here rather than silently edited into the existing `Technology Stack` / `Kùzu Implementation Notes` text. |
 
+### Is RDF-native inference and declarative validation viable in the embedded daemon?
+
+| Field | Detail |
+|---|---|
+| Status | `resolved` — [B407](../backlog/B407.md), empirically evaluated in `benchmarks/b407_inference_pilot.py` |
+| Why it matters | Standards-based ontology reuse (GIST, PROV-O, SKOS), declarative validation (SHACL), and native inference (OWL/RDFS) form the surviving product thesis for the Oxigraph migration after the memory justifications collapsed. However, `pyoxigraph 0.5.11` is a pure triple store with zero native inference (`rdfs:subClassOf` and `owl:TransitiveProperty` evaluate empty) and zero SHACL support. The pilot tested whether OWL materialization (`owlrl`) or SHACL engines (`pySHACL`) are viable during continuous turn ingestion, or whether SPARQL property paths suffice without a reasoner. |
+| Evidence so far | Empirically measured across all 3 routes (SPARQL, OWL/SHACL materialization, Kùzu incumbent) on Apple Silicon Python 3.12 (`benchmarks/results/b407_inference_pilot.json`):<br>1. **Inference (Transitive Deprecation Chain `c0 -> ... -> c5`)**: **SPARQL Property Paths (`campy:DEPRECATED_BY+`)** achieved **0.026 ms** latency (p99 0.033 ms), **28x faster than Kùzu (0.775 ms)** and 72x faster than OWL RL read (1.920 ms), with 100% correctness and **0.000 ms write penalty** (no re-materialization). In contrast, **OWL 2 RL Materialization (`owlrl`)** suffered massive write amplification: adding 1 turn to a 500-entity graph took 499 ms re-materialization (10,589x amplification); at 5,000 entities it took **5.09s** (86,576x amplification, breaching the daemon's 500ms write budget by 10x); and at 50,000 entities it took **>60.0s**, completely starving the 10–30s interactive turn arrival rate.<br>2. **Validation (Decision attribution & created_at SHACL shape)**: **Plain SPARQL `FILTER NOT EXISTS`** validation took **0.079 ms** (42x faster than pySHACL's 3.194 ms, and 2.3x faster than Kùzu's 0.179 ms) with 100% precision/recall and zero external dependencies.<br>3. **§1a Intake**: Top motivating queries are transitive deprecation chains, PROV-O attribution/derivation chains, and taxonomy class subsumption. Write rate is continuous (`notify_turn` every 10–30s). Target ontologies are PROV-O (provenance), SKOS (lexical gazetteer), and GIST (concept hierarchy). |
+| Where the detail lives | [backlog/B407.md](../backlog/B407.md), `benchmarks/b407_inference_pilot.py`, `benchmarks/results/b407_inference_pilot.json`, `tests/test_b407_inference_pilot.py` |
+| Decision rule outcome | **Branch 1: Property paths sufficient.** Proceed with B397 (cutover). Justification is standards alignment + ontology interop, honestly stated, with **NO reasoner in the runtime stack**. OWL 2 RL runtime materialization is permanently rejected for the daemon path due to prohibitive write amplification (>10,000x) that cannot keep up with continuous turn ingestion. |
+
+
+
 ### CoNLL-2003 licence for commercial use
 
 | Field | Detail |
