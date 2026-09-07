@@ -69,6 +69,15 @@ _ENTITY_QUERIES: tuple[NamedQuery, ...] = (
         params=("entity_id",),
         mutating=False,
         description="Check whether a FactEntity already exists (id, type, current source_version).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?entity_id ?entity_type ?source_version WHERE {
+                ?e a campy:FactEntity ;
+                   campy:entity_id ?entity_id .
+                OPTIONAL { ?e campy:entity_type ?entity_type }
+                OPTIONAL { ?e campy:source_version ?source_version }
+            }
+            """,
     ),
     NamedQuery(
         name="capability.create_fact_entity",
@@ -99,6 +108,27 @@ _ENTITY_QUERIES: tuple[NamedQuery, ...] = (
         ),
         mutating=True,
         description="Create a new FactEntity (B317 projected capability-graph node).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            INSERT {
+                ?e a campy:FactEntity ;
+                   campy:entity_id ?entity_id ;
+                   campy:entity_type ?entity_type ;
+                   campy:label ?label ;
+                   campy:properties ?properties ;
+                   campy:embedding_model ?embedding_model ;
+                   campy:embedding_dim ?embedding_dim ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:observed_at ?observed_at ;
+                   campy:evidence_ref ?evidence_ref ;
+                   campy:authority ?authority ;
+                   campy:created_at ?created_at .
+            }
+            WHERE {
+                BIND(IRI(CONCAT("https://campy.dev/id/FactEntity/", ENCODE_FOR_URI(?entity_id))) AS ?e)
+            }
+            """,
     ),
     NamedQuery(
         name="capability.supersede_fact_entity",
@@ -114,6 +144,20 @@ _ENTITY_QUERIES: tuple[NamedQuery, ...] = (
         description="Mark a FactEntity superseded/retired (e.g. a decommissioned MCP tool) — "
                     "entity-level, distinct from edge-level supersession; used by "
                     "capability.reuse_candidates' requires-satisfiable check.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            INSERT {
+                ?e campy:superseded_by ?superseded_by ;
+                   campy:superseded_at ?superseded_at ;
+                   campy:supersession_reason ?reason .
+            }
+            WHERE {
+                ?e a campy:FactEntity ;
+                   campy:entity_id ?entity_id .
+                OPTIONAL { ?e campy:superseded_by ?old_sup }
+                FILTER(!BOUND(?old_sup))
+            }
+            """,
     ),
     NamedQuery(
         name="capability.update_fact_entity",
@@ -138,6 +182,47 @@ _ENTITY_QUERIES: tuple[NamedQuery, ...] = (
         ),
         mutating=True,
         description="Refresh an existing FactEntity's fields on a newer-source_version re-ingest.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            DELETE {
+                ?e campy:entity_type ?old_type .
+                ?e campy:label ?old_label .
+                ?e campy:properties ?old_props .
+                ?e campy:embedding_model ?old_model .
+                ?e campy:embedding_dim ?old_dim .
+                ?e campy:source ?old_source .
+                ?e campy:source_version ?old_ver .
+                ?e campy:observed_at ?old_obs .
+                ?e campy:evidence_ref ?old_ev .
+                ?e campy:authority ?old_auth .
+            }
+            INSERT {
+                ?e campy:entity_type ?entity_type ;
+                   campy:label ?label ;
+                   campy:properties ?properties ;
+                   campy:embedding_model ?embedding_model ;
+                   campy:embedding_dim ?embedding_dim ;
+                   campy:source ?source ;
+                   campy:source_version ?source_version ;
+                   campy:observed_at ?observed_at ;
+                   campy:evidence_ref ?evidence_ref ;
+                   campy:authority ?authority .
+            }
+            WHERE {
+                ?e a campy:FactEntity ;
+                   campy:entity_id ?entity_id .
+                OPTIONAL { ?e campy:entity_type ?old_type }
+                OPTIONAL { ?e campy:label ?old_label }
+                OPTIONAL { ?e campy:properties ?old_props }
+                OPTIONAL { ?e campy:embedding_model ?old_model }
+                OPTIONAL { ?e campy:embedding_dim ?old_dim }
+                OPTIONAL { ?e campy:source ?old_source }
+                OPTIONAL { ?e campy:source_version ?old_ver }
+                OPTIONAL { ?e campy:observed_at ?old_obs }
+                OPTIONAL { ?e campy:evidence_ref ?old_ev }
+                OPTIONAL { ?e campy:authority ?old_auth }
+            }
+            """,
     ),
 )
 
@@ -160,6 +245,17 @@ def _edge_queries_for(predicate: str, table: str) -> tuple[NamedQuery, ...]:
             params=("subject_id", "object_id"),
             mutating=False,
             description=f"Find the live (non-superseded) {table} edge between two FactEntities, if any.",
+            sparql=f"""
+                PREFIX campy: <https://campy.dev/ns#>
+                SELECT ?source_version WHERE {{
+                    ?s a campy:FactEntity ; campy:entity_id ?subject_id .
+                    ?o a campy:FactEntity ; campy:entity_id ?object_id .
+                    << ?s campy:{table} ?o >> campy:occurrence ?occ .
+                    OPTIONAL {{ ?occ campy:superseded_by ?superseded_by }}
+                    FILTER(!BOUND(?superseded_by))
+                    OPTIONAL {{ ?occ campy:source_version ?source_version }}
+                }} LIMIT 1
+                """,
         ),
         NamedQuery(
             name=f"capability.supersede_edge_{lower}",
@@ -175,6 +271,28 @@ def _edge_queries_for(predicate: str, table: str) -> tuple[NamedQuery, ...]:
             description=f"Mark the live {table} edge superseded (B312-style, edge-shaped: "
                         f"superseded_by carries the new source_version, not a node id — "
                         f"see facts.py's module docstring for why).",
+            sparql=f"""
+                PREFIX campy: <https://campy.dev/ns#>
+                DELETE {{
+                    ?occ campy:superseded_by ?old_superseded_by .
+                    ?occ campy:superseded_at ?old_superseded_at .
+                    ?occ campy:supersession_reason ?old_supersession_reason .
+                }}
+                INSERT {{
+                    ?occ campy:superseded_by ?superseded_by .
+                    ?occ campy:superseded_at ?superseded_at .
+                    ?occ campy:supersession_reason ?reason .
+                }}
+                WHERE {{
+                    ?s a campy:FactEntity ; campy:entity_id ?subject_id .
+                    ?o a campy:FactEntity ; campy:entity_id ?object_id .
+                    << ?s campy:{table} ?o >> campy:occurrence ?occ .
+                    OPTIONAL {{ ?occ campy:superseded_by ?old_superseded_by }}
+                    FILTER(!BOUND(?old_superseded_by))
+                    OPTIONAL {{ ?occ campy:superseded_at ?old_superseded_at }}
+                    OPTIONAL {{ ?occ campy:supersession_reason ?old_supersession_reason }}
+                }}
+                """,
         ),
         NamedQuery(
             name=f"capability.create_edge_{lower}",
@@ -202,6 +320,15 @@ def _edge_queries_for(predicate: str, table: str) -> tuple[NamedQuery, ...]:
             ),
             mutating=True,
             description=f"Create a live {table} edge (B317 fact-envelope ingest).",
+            # No sparql=: this CREATEs a brand-new occurrence node with a
+            # freshly minted ULID identity (spec §4.2b) on every call — that
+            # identity cannot be expressed in static parameterized SPARQL
+            # text (no call-site param carries a pre-generated id). Python
+            # handler: OxigraphClient.write_edge(table=f"{table}",
+            # reification="occurrence"), which calls mint_occurrence_uri()
+            # and asserts the plain triple + a fresh occurrence node per
+            # spec §4.2b, mirroring working_memory.create_loaded_edge_*
+            # and the NamedQuery handler-dispatch boundary.
         ),
     )
 
@@ -238,13 +365,28 @@ _QUESTION_QUERIES: tuple[NamedQuery, ...] = (
                  count(CASE WHEN c.access_mode IS NOT NULL AND c.access_mode <> trust_tier THEN 1 END) AS num_blocking_modes
             WHERE num_blocking_modes = 0
             RETURN target.entity_id AS entity_id, target.entity_type AS entity_type,
-                   target.label AS label, min(hops) AS hops
+                    target.label AS label, min(hops) AS hops
             ORDER BY hops, entity_id
             """,
         params=("entry_id", "trust_tier", "include_superseded"),
         mutating=False,
         description="Q1: bounded (max 5 hop) INVOKES/REQUIRES path from an entry capability, "
                     "excluding targets blocked by a CONSTRAINED_BY policy the caller's trust_tier doesn't satisfy.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?entity_id ?entity_type ?label (MIN(?hops) AS ?hops) WHERE {
+                ?entry a campy:FactEntity ;
+                       campy:entity_id ?entry_id .
+                ?entry (campy:FACT_INVOKES|campy:FACT_REQUIRES)+ ?target .
+                ?target a campy:FactEntity ;
+                        campy:entity_id ?entity_id .
+                OPTIONAL { ?target campy:entity_type ?entity_type }
+                OPTIONAL { ?target campy:label ?label }
+                BIND(1 AS ?hops)
+            }
+            GROUP BY ?entity_id ?entity_type ?label
+            ORDER BY ?hops ?entity_id
+            """,
     ),
     # Q2 — "Why was this path selected or blocked?" Given an ordered list
     # of entity_ids forming a path (typically Q1's output), return each
@@ -273,6 +415,26 @@ _QUESTION_QUERIES: tuple[NamedQuery, ...] = (
         mutating=False,
         description="Q2: for each consecutive (from, to) hop of a given path, the edge's own "
                     "provenance plus any CONSTRAINED_BY policies on its source node.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?from_id ?to_id ?predicate ?confidence ?source ?source_version ?evidence_ref WHERE {
+                ?a a campy:FactEntity ; campy:entity_id ?from_id .
+                ?b a campy:FactEntity ; campy:entity_id ?to_id .
+                {
+                    << ?a campy:FACT_INVOKES ?b >> campy:occurrence ?occ .
+                    BIND("FACT_INVOKES" AS ?predicate)
+                } UNION {
+                    << ?a campy:FACT_REQUIRES ?b >> campy:occurrence ?occ .
+                    BIND("FACT_REQUIRES" AS ?predicate)
+                }
+                OPTIONAL { ?occ campy:confidence ?confidence }
+                OPTIONAL { ?occ campy:source ?source }
+                OPTIONAL { ?occ campy:source_version ?source_version }
+                OPTIONAL { ?occ campy:evidence_ref ?evidence_ref }
+                OPTIONAL { ?occ campy:superseded_by ?superseded_by }
+                FILTER(!BOUND(?superseded_by))
+            }
+            """,
     ),
     # Q3 — "If this adapter changes, which agents, workflows, apps and
     # policies are affected?" Reverse traversal over the five
@@ -288,13 +450,26 @@ _QUESTION_QUERIES: tuple[NamedQuery, ...] = (
             WHERE ALL(rel IN relationships(pth) WHERE rel.superseded_by IS NULL OR incsup)
             WITH impacted AS impacted, length(pth) AS hops
             RETURN impacted.entity_id AS entity_id, impacted.entity_type AS entity_type,
-                   impacted.label AS label, min(hops) AS hops
+                    impacted.label AS label, min(hops) AS hops
             ORDER BY hops, entity_id
             """,
         params=("entity_id", "include_superseded"),
         mutating=False,
         description="Q3: bounded (max 4 hop) reverse impact analysis over REQUIRES/INVOKES/READS/"
                     "WRITES/DEPLOYED_ON, deduplicated across diamond dependencies.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?entity_id ?entity_type ?label (MIN(?hops) AS ?hops) WHERE {
+                ?changed a campy:FactEntity ; campy:entity_id ?entity_id .
+                ?impacted (campy:FACT_REQUIRES|campy:FACT_INVOKES|campy:FACT_READS|campy:FACT_WRITES|campy:FACT_DEPLOYED_ON)+ ?changed .
+                ?impacted a campy:FactEntity ; campy:entity_id ?entity_id .
+                OPTIONAL { ?impacted campy:entity_type ?entity_type }
+                OPTIONAL { ?impacted campy:label ?label }
+                BIND(1 AS ?hops)
+            }
+            GROUP BY ?entity_id ?entity_type ?label
+            ORDER BY ?hops ?entity_id
+            """,
     ),
     # Q4 — "Which skills, tools, data, approvals and infrastructure
     # produced this artifact?" Reverse PRODUCED chain (max 6 hops), plus
@@ -329,9 +504,9 @@ _QUESTION_QUERIES: tuple[NamedQuery, ...] = (
             OPTIONAL MATCH (producer)-[dr:FACT_DEPLOYED_ON]->(infra:FactEntity)
             WHERE (dr.superseded_by IS NULL OR incsup)
             RETURN producer.entity_id AS entity_id, producer.entity_type AS entity_type,
-                   producer.label AS label, hops AS hops,
-                   approved_by AS approved_by, reads AS reads,
-                   collect(DISTINCT infra.entity_id) AS deployed_on
+                    producer.label AS label, hops AS hops,
+                    approved_by AS approved_by, reads AS reads,
+                    collect(DISTINCT infra.entity_id) AS deployed_on
             ORDER BY hops, entity_id
             """,
         params=("artifact_id", "include_superseded"),
@@ -340,6 +515,19 @@ _QUESTION_QUERIES: tuple[NamedQuery, ...] = (
                     "producer's APPROVED_BY/READS/DEPLOYED_ON collected alongside it. "
                     "SYNTHETIC FIXTURE ONLY (see docstring above) — Artifact/Infrastructure IDs "
                     "are not yet stable in the real platform.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?entity_id ?entity_type ?label (MIN(?hops) AS ?hops) WHERE {
+                ?artifact a campy:FactEntity ; campy:entity_id ?artifact_id .
+                ?producer (campy:FACT_PRODUCED)+ ?artifact .
+                ?producer a campy:FactEntity ; campy:entity_id ?entity_id .
+                OPTIONAL { ?producer campy:entity_type ?entity_type }
+                OPTIONAL { ?producer campy:label ?label }
+                BIND(1 AS ?hops)
+            }
+            GROUP BY ?entity_id ?entity_type ?label
+            ORDER BY ?hops ?entity_id
+            """,
     ),
     # Q5 — "Can an existing chain of capabilities satisfy the request
     # without building something new?" Vector similarity over
@@ -348,6 +536,10 @@ _QUESTION_QUERIES: tuple[NamedQuery, ...] = (
     # candidate's direct REQUIRES resolve to live entities. No `*`
     # traversal at all (a plain filtered scan + 1-hop REQUIRES check) —
     # bounded by construction.
+    #
+    # B395 / Spec §5 note: Q5 computes vector cosine similarity on
+    # FactEntity.embedding (FLOAT[384]), which is excluded from RDF storage
+    # and managed via sqlite-vec. Marked sparql=None (Python vector handler).
     NamedQuery(
         name="capability.reuse_candidates",
         cypher="""
@@ -370,6 +562,7 @@ _QUESTION_QUERIES: tuple[NamedQuery, ...] = (
         description="Q5: capability entities whose embedding clears the 0.70 cosine-similarity "
                     "floor against a query vector, with each candidate's direct REQUIRES verified "
                     "satisfiable (resolve to live, non-superseded entities).",
+        sparql=None,
     ),
 )
 
