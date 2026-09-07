@@ -1687,6 +1687,246 @@ def _bootstrap_centroids(db: KuzuClient, seed_path: str,
 
 
 # ---------------------------------------------------------------------------
+# Schema migrations & property introspection
+# ---------------------------------------------------------------------------
+
+SCHEMA_MIGRATIONS: list[tuple[str, str, str]] = [
+    # (table, column, type) — ALTER TABLE ADD COLUMN IF NOT EXISTS
+    # B278: explicit falsification counter for the ARC evidence loop.
+    # Derived-from-value_status was a silent-zero bug — a 'valuable' action
+    # contradicted repeatedly read as 0 falsifications, so A135's penalty
+    # never fired.
+    ("ActionFact", "falsified_count",  "INT32"),
+    ("MainQuest", "git_repo_root",     "STRING"),
+    ("MainQuest", "purpose_embedding", "FLOAT[384]"),
+    ("MainQuest", "routing_method",    "STRING"),
+    ("MainQuest", "last_active_at",    "TIMESTAMP"),
+    ("Session",   "routing_state",     "STRING"),
+    ("Session",   "routing_confidence", "DOUBLE"),
+    ("Session",   "routing_method",    "STRING"),
+    ("Session",   "token_estimate",    "INT64"),
+    ("Session",   "token_limit",       "INT64"),
+    ("Session",   "loaded_node_count", "INT64"),
+    # last_injection_at and last_loop_summary added in B18 working_memory
+    ("Session",   "last_injection_at", "TIMESTAMP"),
+    ("Session",   "last_loop_summary", "STRING"),
+    ("Session",   "last_warm_frontier_at", "TIMESTAMP"),
+    # B127/B128 — DAG task graph back-compat for older DBs
+    ("TaskGraph", "label", "STRING"),
+    ("TaskGraph", "session_id", "STRING"),
+    ("TaskGraph", "owner", "STRING"),
+    ("TaskGraph", "version", "INT64"),
+    ("TaskNode",  "graph_id", "STRING"),
+    ("TaskNode",  "label", "STRING"),
+    ("TaskNode",  "owner", "STRING"),
+    ("TaskNode",  "result", "STRING"),
+    # B12 — anomaly detection columns
+    ("Concept",   "anomaly_type",      "STRING"),
+    ("Concept",   "flagged_for_review", "BOOLEAN"),
+    ("Decision",  "anomaly_type",      "STRING"),
+    ("Decision",  "flagged_for_review", "BOOLEAN"),
+    ("Constraint", "anomaly_type",     "STRING"),
+    ("Constraint", "flagged_for_review", "BOOLEAN"),
+    ("Requirement", "anomaly_type",    "STRING"),
+    ("Requirement", "flagged_for_review", "BOOLEAN"),
+    ("ActionItem", "anomaly_type",     "STRING"),
+    ("ActionItem", "flagged_for_review", "BOOLEAN"),
+    ("GlobalConstraint", "anomaly_type", "STRING"),
+    ("GlobalConstraint", "flagged_for_review", "BOOLEAN"),
+    ("GlobalPreference", "anomaly_type", "STRING"),
+    ("GlobalPreference", "flagged_for_review", "BOOLEAN"),
+    ("Message",   "anomaly_type",      "STRING"),
+    ("Message",   "flagged_for_review", "BOOLEAN"),
+    ("DocumentExtract", "anomaly_type", "STRING"),
+    ("DocumentExtract", "flagged_for_review", "BOOLEAN"),
+
+    # B64: Ensure 'archived' column exists for all relevant tables
+    ("Concept",         "archived", "BOOLEAN"),
+    ("Decision",        "archived", "BOOLEAN"),
+    ("Constraint",      "archived", "BOOLEAN"),
+    ("Requirement",     "archived", "BOOLEAN"),
+    ("ActionItem",      "archived", "BOOLEAN"),
+    ("GlobalConstraint", "archived", "BOOLEAN"),
+    ("GlobalPreference", "archived", "BOOLEAN"),
+    ("MainQuest",       "archived", "BOOLEAN"),
+    ("SideQuest",       "archived", "BOOLEAN"),
+    ("Message",         "archived", "BOOLEAN"),
+    ("DocumentExtract", "archived", "BOOLEAN"),
+    ("Label",           "archived", "BOOLEAN"),
+    ("Plan",            "source", "STRING"),
+    # Back-compat for older DBs created before expanded Lesson schema
+    ("Lesson",          "domain", "STRING"),
+    ("Lesson",          "lesson_type", "STRING"),
+    ("Lesson",          "scene_wl_hash", "STRING"),
+    ("Lesson",          "scene_graph_vector", "STRING"),
+    ("Lesson",          "archetype", "STRING"),
+    ("Lesson",          "progress_score", "DOUBLE"),
+    ("Lesson",          "valence", "DOUBLE"),
+    ("Lesson",          "confidence", "DOUBLE"),
+    ("Lesson",          "confidence_low", "BOOLEAN"),
+    ("Lesson",          "pathway_strength", "DOUBLE"),
+    ("Lesson",          "archived", "BOOLEAN"),
+
+    # Phase 2: Associative Hooks — trigger metadata
+    ("Procedure",      "trigger_pattern",       "STRING"),
+    ("Procedure",      "trigger_hook_type",     "STRING"),
+    ("Procedure",      "trigger_tool",          "STRING"),
+    ("Procedure",      "trigger_project_scope", "STRING"),
+    ("Lesson",         "trigger_pattern",       "STRING"),
+    ("Lesson",         "trigger_hook_type",     "STRING"),
+    ("Lesson",         "trigger_tool",          "STRING"),
+    ("Lesson",         "trigger_project_scope", "STRING"),
+
+    # Basal Ganglia: salience_score — encoding-time emotional intensity
+    ("Concept",        "salience_score",        "DOUBLE"),
+    ("Decision",       "salience_score",        "DOUBLE"),
+    ("Constraint",     "salience_score",        "DOUBLE"),
+    # B277: frustration_clusters.py writes salience_score onto the
+    # avoidance Procedures it synthesizes (provenance for how salient
+    # the source cluster was) - was missing, so every CREATE failed.
+    ("Procedure",      "salience_score",        "DOUBLE"),
+
+    # Basal Ganglia: maturity_stage — Procedure lifecycle tracking
+    ("Procedure",      "maturity_stage",        "STRING"),
+
+    # B277: reward_predictor.py writes these on every call (live-reachable
+    # from campy/brain/thalamus/tools/arc_queries.py) - were missing
+    # entirely, so every write silently failed and exploration_policy.py's
+    # read of prediction_error could never fire in production.
+    ("Plan",           "predicted_valence",     "DOUBLE"),
+    ("Plan",           "actual_valence",        "DOUBLE"),
+    ("Plan",           "prediction_error",      "DOUBLE"),
+
+    # B250: source_key — deterministic (file_path, sheet) identity for
+    # tabular re-upload change detection / archive-on-change, mirroring
+    # Document's location_uri-derived identity.
+    ("Dataset",        "source_key",             "STRING"),
+
+    # B312: provenance (source, source_version, observed_at, evidence_ref)
+    # + explicit supersession (superseded_by, superseded_at,
+    # supersession_reason) on every Tier 1 fact-bearing table and the
+    # Tier 2 Arc* learned-pattern tables. Plan and VictoryCondition
+    # already had a "source" column (plan origin / VC origin — a
+    # different, narrower meaning than the provenance "source" defined
+    # here); we do not overwrite or duplicate it, so those two tables
+    # only pick up the other six columns.
+    *[
+        (table, col, col_type)
+        for table in PROVENANCE_TABLES
+        if table not in ("Plan", "VictoryCondition")
+        for col, col_type in (
+            ("source", "STRING"),
+            ("source_version", "STRING"),
+            ("observed_at", "TIMESTAMP"),
+            ("evidence_ref", "STRING"),
+            ("superseded_by", "STRING"),
+            ("superseded_at", "TIMESTAMP"),
+            ("supersession_reason", "STRING"),
+        )
+    ],
+    # Plan / VictoryCondition: skip "source" (pre-existing column, kept as-is).
+    *[
+        (table, col, col_type)
+        for table in ("Plan", "VictoryCondition")
+        for col, col_type in (
+            ("source_version", "STRING"),
+            ("observed_at", "TIMESTAMP"),
+            ("evidence_ref", "STRING"),
+            ("superseded_by", "STRING"),
+            ("superseded_at", "TIMESTAMP"),
+            ("supersession_reason", "STRING"),
+        )
+    ],
+
+    # B313: authority — projected vs earned memory. Same PROVENANCE_TABLES
+    # set as B312's migration above (Plan/VictoryCondition included here
+    # too — unlike "source", "authority" has no pre-existing column on
+    # either table to collide with).
+    *[
+        (table, "authority", "STRING")
+        for table in PROVENANCE_TABLES
+    ],
+
+    # B323: Workspace gains branch_name (for compile_card_context's
+    # branch-name resolution) and active (whether this workspace is
+    # currently in use). Extends the existing table via the additive
+    # migration path — never redefines Workspace's DDL.
+    ("Workspace", "branch_name", "STRING"),
+    ("Workspace", "active", "BOOLEAN"),
+
+    # B320: content_hash — dedup-on-write identity for retried captures.
+    # CONTENT_HASH_TABLES (Tier 1 fact-bearing tables only — see the
+    # comment above that constant) is a narrower set than B312/B313's
+    # PROVENANCE_TABLES. NULL on every pre-B320 row; provenance.py's
+    # dedup helper treats NULL as "never matches" by construction (an
+    # equality comparison against NULL is never true in Cypher/Kùzu).
+    *[
+        (table, "content_hash", "STRING")
+        for table in CONTENT_HASH_TABLES
+    ],
+
+    # B321: cross-session continuity for an App. Both nullable — local
+    # Campy (no App concept) writes neither column and every existing
+    # NULL-valued row is unaffected; only sessions whose capture path
+    # supplies an external App id (e.g. the VibeGuide platform's
+    # `VG_<kebab-name>`) ever populate them. See app_continuity() in
+    # campy/brain/thalamus/tools/context_tools.py and
+    # docs/ARCHITECTURE.md's B321 section for the full contract.
+    ("Session", "external_app_id", "STRING"),
+    ("Session", "external_session_id", "STRING"),
+]
+
+# Alias for backwards compatibility with module-level references
+_MIGRATIONS = SCHEMA_MIGRATIONS
+
+
+def get_all_table_properties() -> dict[str, set[str]]:
+    """Return a mapping of table name (nodes and rels) to set of declared property names.
+
+    Derives the authoritative schema property set from:
+    1. NODE_TABLES base DDL
+    2. REL_TABLES base DDL
+    3. SCHEMA_MIGRATIONS (literal and comprehension-generated migrations)
+    """
+    props_by_table: dict[str, set[str]] = {}
+
+    # 1. Node tables
+    for table_name, fields in NODE_TABLES.items():
+        props: set[str] = set()
+        for line in fields.splitlines():
+            line = line.strip().rstrip(",")
+            if not line or line.upper().startswith("PRIMARY KEY"):
+                continue
+            col = line.split()[0]
+            props.add(col)
+        props_by_table[table_name] = props
+
+    # 2. Rel tables
+    for ddl in REL_TABLES:
+        match = re.search(r"CREATE REL TABLE (?:IF NOT EXISTS )?(\w+)\s*\((.*)\)", ddl, re.DOTALL)
+        if not match:
+            continue
+        rel_name, body = match.group(1), match.group(2)
+        if rel_name not in props_by_table:
+            props_by_table[rel_name] = set()
+        for part in body.split(","):
+            part = part.strip()
+            if not part or part.upper().startswith("FROM "):
+                continue
+            col = part.split()[0]
+            props_by_table[rel_name].add(col)
+
+    # 3. Schema migrations (literal + comprehension)
+    for table, col, _col_type in SCHEMA_MIGRATIONS:
+        if table in props_by_table:
+            props_by_table[table].add(col)
+        else:
+            props_by_table[table] = {col}
+
+    return props_by_table
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -1729,191 +1969,8 @@ def init_schema(db: KuzuClient, seed_examples_path: str,
         print(f"  Node table: {table_name}")
 
     # 1b. Schema migrations — add columns that may be missing from older DBs
-    _MIGRATIONS = [
-        # (table, column, type) — ALTER TABLE ADD COLUMN IF NOT EXISTS
-        # B278: explicit falsification counter for the ARC evidence loop.
-        # Derived-from-value_status was a silent-zero bug — a 'valuable' action
-        # contradicted repeatedly read as 0 falsifications, so A135's penalty
-        # never fired.
-        ("ActionFact", "falsified_count",  "INT32"),
-        ("MainQuest", "git_repo_root",     "STRING"),
-        ("MainQuest", "purpose_embedding", "FLOAT[384]"),
-        ("MainQuest", "routing_method",    "STRING"),
-        ("MainQuest", "last_active_at",    "TIMESTAMP"),
-        ("Session",   "routing_state",     "STRING"),
-        ("Session",   "routing_confidence", "DOUBLE"),
-        ("Session",   "routing_method",    "STRING"),
-        ("Session",   "token_estimate",    "INT64"),
-        ("Session",   "token_limit",       "INT64"),
-        ("Session",   "loaded_node_count", "INT64"),
-        # last_injection_at and last_loop_summary added in B18 working_memory
-        ("Session",   "last_injection_at", "TIMESTAMP"),
-        ("Session",   "last_loop_summary", "STRING"),
-        ("Session",   "last_warm_frontier_at", "TIMESTAMP"),
-        # B127/B128 — DAG task graph back-compat for older DBs
-        ("TaskGraph", "label", "STRING"),
-        ("TaskGraph", "session_id", "STRING"),
-        ("TaskGraph", "owner", "STRING"),
-        ("TaskGraph", "version", "INT64"),
-        ("TaskNode",  "graph_id", "STRING"),
-        ("TaskNode",  "label", "STRING"),
-        ("TaskNode",  "owner", "STRING"),
-        ("TaskNode",  "result", "STRING"),
-        # B12 — anomaly detection columns
-        ("Concept",   "anomaly_type",      "STRING"),
-        ("Concept",   "flagged_for_review", "BOOLEAN"),
-        ("Decision",  "anomaly_type",      "STRING"),
-        ("Decision",  "flagged_for_review", "BOOLEAN"),
-        ("Constraint", "anomaly_type",     "STRING"),
-        ("Constraint", "flagged_for_review", "BOOLEAN"),
-        ("Requirement", "anomaly_type",    "STRING"),
-        ("Requirement", "flagged_for_review", "BOOLEAN"),
-        ("ActionItem", "anomaly_type",     "STRING"),
-        ("ActionItem", "flagged_for_review", "BOOLEAN"),
-        ("GlobalConstraint", "anomaly_type", "STRING"),
-        ("GlobalConstraint", "flagged_for_review", "BOOLEAN"),
-        ("GlobalPreference", "anomaly_type", "STRING"),
-        ("GlobalPreference", "flagged_for_review", "BOOLEAN"),
-        ("Message",   "anomaly_type",      "STRING"),
-        ("Message",   "flagged_for_review", "BOOLEAN"),
-        ("DocumentExtract", "anomaly_type", "STRING"),
-        ("DocumentExtract", "flagged_for_review", "BOOLEAN"),
+    _MIGRATIONS = SCHEMA_MIGRATIONS
 
-        # B64: Ensure 'archived' column exists for all relevant tables
-        ("Concept",         "archived", "BOOLEAN"),
-        ("Decision",        "archived", "BOOLEAN"),
-        ("Constraint",      "archived", "BOOLEAN"),
-        ("Requirement",     "archived", "BOOLEAN"),
-        ("ActionItem",      "archived", "BOOLEAN"),
-        ("GlobalConstraint", "archived", "BOOLEAN"),
-        ("GlobalPreference", "archived", "BOOLEAN"),
-        ("MainQuest",       "archived", "BOOLEAN"),
-        ("SideQuest",       "archived", "BOOLEAN"),
-        ("Message",         "archived", "BOOLEAN"),
-        ("DocumentExtract", "archived", "BOOLEAN"),
-        ("Label",           "archived", "BOOLEAN"),
-        ("Plan",            "source", "STRING"),
-        # Back-compat for older DBs created before expanded Lesson schema
-        ("Lesson",          "domain", "STRING"),
-        ("Lesson",          "lesson_type", "STRING"),
-        ("Lesson",          "scene_wl_hash", "STRING"),
-        ("Lesson",          "scene_graph_vector", "STRING"),
-        ("Lesson",          "archetype", "STRING"),
-        ("Lesson",          "progress_score", "DOUBLE"),
-        ("Lesson",          "valence", "DOUBLE"),
-        ("Lesson",          "confidence", "DOUBLE"),
-        ("Lesson",          "confidence_low", "BOOLEAN"),
-        ("Lesson",          "pathway_strength", "DOUBLE"),
-        ("Lesson",          "archived", "BOOLEAN"),
-
-        # Phase 2: Associative Hooks — trigger metadata
-        ("Procedure",      "trigger_pattern",       "STRING"),
-        ("Procedure",      "trigger_hook_type",     "STRING"),
-        ("Procedure",      "trigger_tool",          "STRING"),
-        ("Procedure",      "trigger_project_scope", "STRING"),
-        ("Lesson",         "trigger_pattern",       "STRING"),
-        ("Lesson",         "trigger_hook_type",     "STRING"),
-        ("Lesson",         "trigger_tool",          "STRING"),
-        ("Lesson",         "trigger_project_scope", "STRING"),
-
-        # Basal Ganglia: salience_score — encoding-time emotional intensity
-        ("Concept",        "salience_score",        "DOUBLE"),
-        ("Decision",       "salience_score",        "DOUBLE"),
-        ("Constraint",     "salience_score",        "DOUBLE"),
-        # B277: frustration_clusters.py writes salience_score onto the
-        # avoidance Procedures it synthesizes (provenance for how salient
-        # the source cluster was) - was missing, so every CREATE failed.
-        ("Procedure",      "salience_score",        "DOUBLE"),
-
-        # Basal Ganglia: maturity_stage — Procedure lifecycle tracking
-        ("Procedure",      "maturity_stage",        "STRING"),
-
-        # B277: reward_predictor.py writes these on every call (live-reachable
-        # from campy/brain/thalamus/tools/arc_queries.py) - were missing
-        # entirely, so every write silently failed and exploration_policy.py's
-        # read of prediction_error could never fire in production.
-        ("Plan",           "predicted_valence",     "DOUBLE"),
-        ("Plan",           "actual_valence",        "DOUBLE"),
-        ("Plan",           "prediction_error",      "DOUBLE"),
-
-        # B250: source_key — deterministic (file_path, sheet) identity for
-        # tabular re-upload change detection / archive-on-change, mirroring
-        # Document's location_uri-derived identity.
-        ("Dataset",        "source_key",             "STRING"),
-
-        # B312: provenance (source, source_version, observed_at, evidence_ref)
-        # + explicit supersession (superseded_by, superseded_at,
-        # supersession_reason) on every Tier 1 fact-bearing table and the
-        # Tier 2 Arc* learned-pattern tables. Plan and VictoryCondition
-        # already had a "source" column (plan origin / VC origin — a
-        # different, narrower meaning than the provenance "source" defined
-        # here); we do not overwrite or duplicate it, so those two tables
-        # only pick up the other six columns.
-        *[
-            (table, col, col_type)
-            for table in PROVENANCE_TABLES
-            if table not in ("Plan", "VictoryCondition")
-            for col, col_type in (
-                ("source", "STRING"),
-                ("source_version", "STRING"),
-                ("observed_at", "TIMESTAMP"),
-                ("evidence_ref", "STRING"),
-                ("superseded_by", "STRING"),
-                ("superseded_at", "TIMESTAMP"),
-                ("supersession_reason", "STRING"),
-            )
-        ],
-        # Plan / VictoryCondition: skip "source" (pre-existing column, kept as-is).
-        *[
-            (table, col, col_type)
-            for table in ("Plan", "VictoryCondition")
-            for col, col_type in (
-                ("source_version", "STRING"),
-                ("observed_at", "TIMESTAMP"),
-                ("evidence_ref", "STRING"),
-                ("superseded_by", "STRING"),
-                ("superseded_at", "TIMESTAMP"),
-                ("supersession_reason", "STRING"),
-            )
-        ],
-
-        # B313: authority — projected vs earned memory. Same PROVENANCE_TABLES
-        # set as B312's migration above (Plan/VictoryCondition included here
-        # too — unlike "source", "authority" has no pre-existing column on
-        # either table to collide with).
-        *[
-            (table, "authority", "STRING")
-            for table in PROVENANCE_TABLES
-        ],
-
-        # B323: Workspace gains branch_name (for compile_card_context's
-        # branch-name resolution) and active (whether this workspace is
-        # currently in use). Extends the existing table via the additive
-        # migration path — never redefines Workspace's DDL.
-        ("Workspace", "branch_name", "STRING"),
-        ("Workspace", "active", "BOOLEAN"),
-
-        # B320: content_hash — dedup-on-write identity for retried captures.
-        # CONTENT_HASH_TABLES (Tier 1 fact-bearing tables only — see the
-        # comment above that constant) is a narrower set than B312/B313's
-        # PROVENANCE_TABLES. NULL on every pre-B320 row; provenance.py's
-        # dedup helper treats NULL as "never matches" by construction (an
-        # equality comparison against NULL is never true in Cypher/Kùzu).
-        *[
-            (table, "content_hash", "STRING")
-            for table in CONTENT_HASH_TABLES
-        ],
-
-        # B321: cross-session continuity for an App. Both nullable — local
-        # Campy (no App concept) writes neither column and every existing
-        # NULL-valued row is unaffected; only sessions whose capture path
-        # supplies an external App id (e.g. the VibeGuide platform's
-        # `VG_<kebab-name>`) ever populate them. See app_continuity() in
-        # campy/brain/thalamus/tools/context_tools.py and
-        # docs/ARCHITECTURE.md's B321 section for the full contract.
-        ("Session", "external_app_id", "STRING"),
-        ("Session", "external_session_id", "STRING"),
-    ]
     def _column_exists(table: str, col: str) -> bool:
         """Check whether a column already exists via table_info, avoiding
         ambiguous exception-based detection (B35 fix)."""
