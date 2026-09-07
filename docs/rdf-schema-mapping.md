@@ -136,12 +136,45 @@ FILTER(!BOUND(?archived) || ?archived = false)
 
 This affects `archived`, `superseded_by`, and every optional filter — including the
 `archived`/`superseded_by` filters B374 added and B386 folded into the named-query
-registry. **Every translated query with a filter on a nullable column must use the
-`!BOUND(...) ||` form.** Translation batches must treat a bare equality filter on a
-nullable column as a defect.
+registry.
 
 Writers must **not** emit a triple for a NULL value. Writing `campy:archived ""`
 or a sentinel is forbidden.
+
+#### 3.4a Which form to use — measured, not assumed (revised 2026-09-07)
+
+The `OPTIONAL + !BOUND` form is **not free**. Measured against `pyoxigraph 0.5.11`
+on a 148k-triple store:
+
+| Query | Rows | Time |
+|---|---|---|
+| no status filter | 39,999 | 36.9 ms |
+| `?n campy:archived false` (plain BGP) | 20,000 | **36.9 ms** |
+| `OPTIONAL {…} FILTER(!BOUND(…) ‖ …=false)` | 32,000 | **52.7 ms** |
+
+The penalty is a consistent **~2x** across 1–3 hop traversals. Note also that at 3
+hops the plain filter (61.4 ms) beats *no filter at all* (69.3 ms) — filtering shrinks
+the intermediate result set and pays for itself. That is "filter early, expand late"
+working as intended: **constraining a hop is free-to-negative in cost.**
+
+`performance-and-debugging.md` lists *"wide OPTIONAL sections"* as a SPARQL red flag.
+An earlier revision of this section mandated the OPTIONAL form unconditionally, which
+wrote that red flag into ~600 translated queries. **Corrected — the rule is now
+conditional:**
+
+> **Use the plain BGP filter (`?n campy:archived false`) when the writer guarantees
+> the property is always written.**
+>
+> **Use `OPTIONAL + !BOUND` only where absence is genuinely possible** — a property
+> added by a later migration and not backfilled, or one written conditionally.
+
+A bare equality filter is a defect **only** on a genuinely-absence-capable property.
+On a guaranteed-written one it is both correct and roughly twice as fast.
+
+**Migration hazard.** Converting an existing query to the plain form *before* the data
+is backfilled **silently drops every row where the property was never written** — no
+error, no failing test, just missing results. That is the B404 failure mode exactly.
+**Backfill → verify → convert**, never the other order. See B410.
 
 ---
 
@@ -339,6 +372,52 @@ variables in all three positions (the legacy `<< ?s ?p ?o >>` spelling parses in
 a `WHERE` clause but matches nothing — it is annotation sugar, not a term
 pattern); and `Store.update()` applies several `;`-separated statements in order
 under one `PREFIX` prologue.
+
+#### 4.2f Timeless facts vs. status (added 2026-09-07)
+
+**Correcting an earlier claim in this document.** A prior revision asserted that
+Campy's decay sweep is "a removal engine by design." Audited, that is wrong about the
+fact layer: the only deletes are `sweep.unwind_delete_session_loaded` and
+`sweep.unwind_delete_session_warm_node` (ephemeral session state) and
+`provenance.drop_projected_*` (recomputable projections). Concepts, Decisions and
+Constraints are marked via `archived` / `superseded_by` / `superseded_at` /
+`supersession_reason` — **never deleted.** Campy is already append-only where it
+matters.
+
+**Normative rule — separate two layers:**
+
+| Layer | Content | Treatment |
+|---|---|---|
+| **Timeless** | `:c1 a :Constraint`, its text, its author, when it was observed | Permanent. It never stops being true that this Constraint existed. |
+| **Status** | is it currently in force? | **Query-time filter. Never class membership.** |
+
+Never assert `:c1 a :ActiveConstraint`, or any class whose membership can change.
+Mutable state belongs in a filter, not in a type.
+
+**Express supersession in PROV-O** rather than inventing predicates:
+
+```turtle
+:c2  prov:wasRevisionOf     :c1 .
+:c1  prov:invalidatedAtTime "2026-09-07T12:00:00Z"^^xsd:dateTime ;
+     prov:wasAttributedTo   :agent_claude .
+```
+
+**Why this matters, given B407.** B407 measured OWL 2 RL materialization at
+10,589x–86,576x write amplification and **permanently rejected a runtime reasoner**;
+SPARQL property paths answer the same questions at 0.026 ms with zero write penalty.
+So this rule is **not** an argument for enabling OWL. Its value is independent of that
+decision:
+
+1. **A standards-based audit trail** of superseded beliefs — useful for provenance,
+   for debugging *"why did the agent believe X?"*, and for the patent record.
+2. **It satisfies the ontology-reuse goal** (PROV-O, SKOS, GIST as vocabulary) with no
+   reasoner in the stack — which is exactly the branch B407 selected.
+3. **It makes the cheap filter form correct** (§3.4a): if status is always explicitly
+   written, absence cannot occur, and the plain BGP filter replaces the ~2x
+   `OPTIONAL` pattern.
+
+**One cost to hold honestly:** the fact layer grows without bound. Mitigate by moving
+cold facts to a separate named graph — retained, but outside the working set.
 
 ---
 
