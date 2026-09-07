@@ -1164,9 +1164,9 @@ QUEST_QUERIES: tuple[NamedQuery, ...] = (
         name="quests.link_concept_has_alt_label",
         cypher="""
         MATCH (c:Concept {concept_id: $cid}), (l:Label {label_id: $lid})
-        CREATE (c)-[:HAS_ALT_LABEL {created_at: timestamp($now)}]->(l)
+        CREATE (c)-[:HAS_ALT_LABEL]->(l)
         """,
-        params=("cid", "lid", "now"),
+        params=("cid", "lid"),
         mutating=True,
         description="Link Concept to Label via HAS_ALT_LABEL",
         sparql="""
@@ -1174,6 +1174,27 @@ QUEST_QUERIES: tuple[NamedQuery, ...] = (
             WHERE {
                 ?c a campy:Concept ; campy:concept_id ?cid .
                 ?l a campy:Label ; campy:label_id ?lid .
+            }
+            """,
+    ),
+    NamedQuery(
+        name="quests.delete_label",
+        cypher="""
+        MATCH (l:Label {label_id: $lid})
+        DETACH DELETE l
+        """,
+        params=("lid",),
+        mutating=True,
+        description="Delete a Label node by id (rollback cleanup)",
+        sparql="""
+            DELETE {
+                ?l ?p ?o .
+                ?s ?p2 ?l .
+            }
+            WHERE {
+                ?l a campy:Label ; campy:label_id ?lid .
+                OPTIONAL { ?l ?p ?o }
+                OPTIONAL { ?s ?p2 ?l }
             }
             """,
     ),

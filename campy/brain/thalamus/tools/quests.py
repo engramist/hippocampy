@@ -845,47 +845,55 @@ async def resolve_disambiguation(params: dict, db: KuzuClient, config: dict) -> 
 
             # Create altLabel from duplicate's text
             label_id = str(uuid.uuid4())
-            await gw.run(
-                "quests.create_alt_label",
-                lid=label_id, txt=duplicate_text, now=now
-            )
-            # Embed the label
             try:
-                emb_vec = emb.embed(duplicate_text)
                 await gw.run(
-                    "quests.set_label_embedding",
-                    lid=label_id, emb=emb_vec
+                    "quests.create_alt_label",
+                    lid=label_id, txt=duplicate_text, now=now
                 )
-            except Exception:
-                _logger.exception("Label embed failed")
-
-            # Wire canonical -> altLabel
-            await gw.run(
-                "quests.link_concept_has_alt_label",
-                cid=canonical_id, lid=label_id, now=now
-            )
-
-            # Redirect common edges from duplicate to canonical
-            rel_types = ["REQUIRES", "ENABLES", "REPLACES", "CONTRADICTS",
-                         "PART_OF", "CHOSEN_OVER", "IMPLEMENTS", "EXTENDS",
-                         "ALTERNATIVE_TO", "CO_OCCURS_WITH"]
-            for rel in rel_types:
+                # Embed the label
                 try:
+                    emb_vec = emb.embed(duplicate_text)
                     await gw.run(
-                        f"quests.redirect_edge_{rel.lower()}",
-                        dup=duplicate_id, can=canonical_id
+                        "quests.set_label_embedding",
+                        lid=label_id, emb=emb_vec
                     )
                 except Exception:
-                    _logger.exception("Edge redirect failed for %s", rel)
+                    _logger.exception("Label embed failed")
 
-            # Archive duplicate
-            await gw.run("quests.archive_concept", cid=duplicate_id)
+                # Wire canonical -> altLabel
+                await gw.run(
+                    "quests.link_concept_has_alt_label",
+                    cid=canonical_id, lid=label_id
+                )
 
-            # Boost canonical
-            await gw.run(
-                "quests.boost_canonical_concept",
-                cid=canonical_id, now=now
-            )
+                # Redirect common edges from duplicate to canonical
+                rel_types = ["REQUIRES", "ENABLES", "REPLACES", "CONTRADICTS",
+                             "PART_OF", "CHOSEN_OVER", "IMPLEMENTS", "EXTENDS",
+                             "ALTERNATIVE_TO", "CO_OCCURS_WITH"]
+                for rel in rel_types:
+                    try:
+                        await gw.run(
+                            f"quests.redirect_edge_{rel.lower()}",
+                            dup=duplicate_id, can=canonical_id
+                        )
+                    except Exception:
+                        _logger.exception("Edge redirect failed for %s", rel)
+
+                # Archive duplicate
+                await gw.run("quests.archive_concept", cid=duplicate_id)
+
+                # Boost canonical
+                await gw.run(
+                    "quests.boost_canonical_concept",
+                    cid=canonical_id, now=now
+                )
+            except Exception:
+                # Cleanup orphan label on partial failure so nothing leaks
+                try:
+                    await gw.run("quests.delete_label", lid=label_id)
+                except Exception:
+                    _logger.exception("Failed to clean up orphan label %s after merge error", label_id)
+                raise
 
             result_msg = f"Merged: '{duplicate_text}' → altLabel of canonical concept"
 
