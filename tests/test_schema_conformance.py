@@ -90,12 +90,19 @@ def test_six_confirmed_bugs_detected() -> None:
         "req_id",
     ) in v_map, "Failed to detect Requirement.req_id in sweep.get_active_pathway_requirement"
 
-    # 4. quests.py: HAS_ALT_LABEL.created_at (valid: edge has no properties)
+    # 4. HAS_ALT_LABEL.created_at (rel table has no properties; fixed in quests.py by B405)
+    # Verified via synthetic query and temporal_lobe.dict_link_alt_label
+    synthetic_v = scan_query_violations(
+        "synthetic.link_concept_has_alt_label",
+        "MATCH (c:Concept), (l:Label) CREATE (c)-[:HAS_ALT_LABEL {created_at: timestamp($now)}]->(l)",
+        schema_props,
+    )
+    assert any(v.property == "created_at" and v.table == "HAS_ALT_LABEL" for v in synthetic_v)
     assert (
-        "quests.link_concept_has_alt_label",
+        "temporal_lobe.dict_link_alt_label",
         "HAS_ALT_LABEL",
         "created_at",
-    ) in v_map, "Failed to detect HAS_ALT_LABEL.created_at in quests.link_concept_has_alt_label"
+    ) in v_map
 
     # 5. retrieval.py: Message.content (valid: text_raw)
     assert (
