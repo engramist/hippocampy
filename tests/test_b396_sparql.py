@@ -71,6 +71,12 @@ def test_continuity_queries_sparql(store, query):
 
 @pytest.mark.parametrize("query", INGEST_QUERIES, ids=lambda q: q.name)
 def test_ingest_queries_sparql(store, query):
+    if query.name == "ingest.link_concept_dataset":
+        # Spec §4.2b: occurrence class write mints a fresh ULID identity,
+        # which cannot be expressed in static SPARQL text. Handled via OxigraphClient.write_edge.
+        assert query.sparql is None
+        return
+
     assert query.sparql is not None, f"{query.name} must have a sparql representation"
     if query.mutating:
         store.update(query.sparql)
@@ -125,6 +131,12 @@ def test_lessons_queries_sparql(store, query):
 
 def test_temporal_lobe_queries_sparql(store):
     for query in TEMPORAL_LOBE_QUERIES:
+        if query.name.startswith("temporal_lobe.warm_link_"):
+            # Spec §4.2b: occurrence class write mints a fresh ULID identity,
+            # which cannot be expressed in static SPARQL text. Handled via OxigraphClient.write_edge.
+            assert query.sparql is None
+            continue
+
         assert query.sparql is not None, f"{query.name} must have a sparql representation"
         if query.mutating:
             store.update(query.sparql)

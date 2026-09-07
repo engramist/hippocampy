@@ -281,22 +281,15 @@ INGEST_QUERIES = [
         params=("cid", "did", "now"),
         mutating=True,
         description="Link concept to dataset via DESCRIBED_BY_DATASET",
-        sparql="""
-            PREFIX campy: <https://campy.dev/ns#>
-
-            INSERT {
-                ?c campy:DESCRIBED_BY_DATASET ?d .
-                << ?c campy:DESCRIBED_BY_DATASET ?d >> campy:occurrence ?occ .
-                ?occ a campy:Occurrence ;
-                     campy:extraction_method "llm" ;
-                     campy:created_at ?now .
-            }
-            WHERE {
-                ?c a campy:Concept ; campy:concept_id ?cid .
-                ?d a campy:Dataset ; campy:dataset_id ?did .
-                BIND(IRI(CONCAT("https://campy.dev/data/occurrence/", ENCODE_FOR_URI(STR(?cid)), "_described_by_", ENCODE_FOR_URI(STR(?did)), "_", ENCODE_FOR_URI(STR(?now)))) AS ?occ)
-            }
-        """,
+        # No sparql=: this CREATEs a brand-new occurrence node with a
+        # freshly minted ULID identity (spec §4.2b) on every call — that
+        # identity cannot be expressed in static parameterized SPARQL
+        # text (no call-site param carries a pre-generated id). Python
+        # handler: OxigraphClient.write_edge(table="DESCRIBED_BY_DATASET",
+        # reification="occurrence"), which calls mint_occurrence_uri()
+        # and asserts the plain triple + a fresh occurrence node per
+        # spec §4.2b, mirroring working_memory.create_loaded_edge_*
+        # and the NamedQuery handler-dispatch boundary.
     ),
     NamedQuery(
         name="ingest.create_dataset_node",

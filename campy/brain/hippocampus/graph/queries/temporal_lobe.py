@@ -267,22 +267,15 @@ for _table, _pk in NODE_PK_MAP.items():
             params=("sid", "nid", "score", "now"),
             mutating=True,
             description=f"Create WARM_NODE link to {_table}",
-            sparql=f"""
-                PREFIX campy: <https://campy.dev/ns#>
-
-                INSERT {{
-                  ?s campy:WARM_NODE ?n .
-                  << ?s campy:WARM_NODE ?n >> campy:occurrence ?occ .
-                  ?occ a campy:Occurrence ;
-                       campy:activation_score ?score ;
-                       campy:activated_at ?now .
-                }}
-                WHERE {{
-                  ?s a campy:Session ; campy:session_id ?sid .
-                  ?n a campy:{_table} ; campy:{_pk} ?nid .
-                  BIND(IRI(CONCAT("https://campy.dev/data/occurrence/", ENCODE_FOR_URI(STR(?sid)), "_warm_", ENCODE_FOR_URI(STR(?nid)), "_", ENCODE_FOR_URI(STR(?now)))) AS ?occ)
-                }}
-            """,
+            # No sparql=: this CREATEs a brand-new occurrence node with a
+            # freshly minted ULID identity (spec §4.2b) on every call — that
+            # identity cannot be expressed in static parameterized SPARQL
+            # text (no call-site param carries a pre-generated id). Python
+            # handler: OxigraphClient.write_edge(table="WARM_NODE",
+            # reification="occurrence"), which calls mint_occurrence_uri()
+            # and asserts the plain triple + a fresh occurrence node per
+            # spec §4.2b, mirroring working_memory.create_loaded_edge_*
+            # and the NamedQuery handler-dispatch boundary.
         ),
         NamedQuery(
             name=f"temporal_lobe.warm_get_{_tbl_lower}",
