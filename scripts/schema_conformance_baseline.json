@@ -1,5 +1,5 @@
 {
-  "total_violations": 69,
+  "total_violations": 68,
   "violations": [
     {
       "query": "arc.get_action_fact_detail",
@@ -287,13 +287,6 @@
       "property": "git_branch",
       "kind": "dot_property",
       "detail": "q.git_branch on MainQuest"
-    },
-    {
-      "query": "quests.link_concept_has_alt_label",
-      "table": "HAS_ALT_LABEL",
-      "property": "created_at",
-      "kind": "inline_rel",
-      "detail": "inline rel HAS_ALT_LABEL.created_at"
     },
     {
       "query": "retrieval.get_originating_message_actionitem",
