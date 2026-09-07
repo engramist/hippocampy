@@ -1,0 +1,121 @@
+{
+  "timestamp": "2026-09-07T04:41:52Z",
+  "need1_deprecation": {
+    "sparql_property_path": {
+      "route": "SPARQL Property Paths (Oxigraph)",
+      "correct": true,
+      "terminal_found": "https://campy.ai/entity/Constraint/c5",
+      "chain_length": 5,
+      "latencies": {
+        "mean_ms": 0.027,
+        "p50_ms": 0.026,
+        "p95_ms": 0.034,
+        "p99_ms": 0.042
+      },
+      "reasoner_required": false
+    },
+    "owlrl_materialization": {
+      "route": "OWL 2 RL Materialization (owlrl)",
+      "correct": true,
+      "direct_transitive_asserted": true,
+      "triples_before": 13,
+      "triples_after_closure": 143,
+      "initial_closure_ms": 21.25,
+      "rematerialize_single_write_ms": 13.78,
+      "latencies": {
+        "mean_ms": 2.069,
+        "p50_ms": 1.92,
+        "p95_ms": 2.295,
+        "p99_ms": 7.074
+      },
+      "reasoner_required": true
+    },
+    "kuzu_incumbent": {
+      "route": "K\u00f9zu VarLen Traversal (Incumbent)",
+      "correct": true,
+      "terminal_found": "c5",
+      "chain_length": 5,
+      "latencies": {
+        "mean_ms": 0.777,
+        "p50_ms": 0.775,
+        "p95_ms": 0.907,
+        "p99_ms": 1.025
+      },
+      "reasoner_required": false
+    }
+  },
+  "need2_validation": {
+    "plain_sparql": {
+      "route": "Plain SPARQL Validation (Oxigraph)",
+      "correct": true,
+      "invalid_detected": 10,
+      "expected_invalid": 10,
+      "latencies": {
+        "mean_ms": 0.079,
+        "p50_ms": 0.079,
+        "p95_ms": 0.085,
+        "p99_ms": 0.11
+      }
+    },
+    "pyshacl": {
+      "route": "pySHACL Engine",
+      "correct": true,
+      "conforms": false,
+      "expected_conforms": false,
+      "latencies": {
+        "mean_ms": 3.222,
+        "p50_ms": 3.194,
+        "p95_ms": 3.702,
+        "p99_ms": 3.702
+      }
+    },
+    "kuzu_incumbent": {
+      "route": "K\u00f9zu Incumbent Check",
+      "correct": true,
+      "invalid_detected": 10,
+      "expected_invalid": 10,
+      "latencies": {
+        "mean_ms": 0.19,
+        "p50_ms": 0.179,
+        "p95_ms": 0.314,
+        "p99_ms": 0.391
+      }
+    }
+  },
+  "write_amplification_scaling": [
+    {
+      "graph_entities": 500,
+      "base_triples": 2452,
+      "triples_after_closure": 5371,
+      "initial_closure_time_s": 0.956,
+      "single_turn_raw_write_ms": 0.047,
+      "owl_rematerialization_time_s": 0.499,
+      "owl_write_amplification_factor": 10588.9,
+      "sparql_property_path_rematerialize_ms": 0.0,
+      "viable_at_turn_rate_10s": true
+    },
+    {
+      "graph_entities": 5000,
+      "base_triples": 24502,
+      "triples_after_closure": 52621,
+      "initial_closure_time_s": 9.661,
+      "single_turn_raw_write_ms": 0.059,
+      "owl_rematerialization_time_s": 5.09,
+      "owl_write_amplification_factor": 86576.4,
+      "sparql_property_path_rematerialize_ms": 0.0,
+      "viable_at_turn_rate_10s": true
+    },
+    {
+      "graph_entities": 50000,
+      "base_triples": 245002,
+      "triples_after_closure": "N/A",
+      "initial_closure_time_s": ">60.0s (prohibitive)",
+      "single_turn_raw_write_ms": 0.039,
+      "owl_rematerialization_time_s": ">60.0s",
+      "owl_write_amplification_factor": ">10000x",
+      "sparql_property_path_rematerialize_ms": 0.0,
+      "viable_at_turn_rate_10s": false
+    }
+  ],
+  "decision": "BRANCH 1: Property paths sufficient.\nProceed with B397 (cutover). Justification is standards alignment + ontology\ninterop, honestly stated, with NO reasoner in the runtime stack.\nOWL 2 RL materialization suffers prohibitive write amplification (>1000x at scale)\nand cannot keep up with continuous turn ingestion (exceeds 500ms daemon write budget\nby 10x at 5k entities and exceeds 10-30s turn interval at 50k entities)."
+}
