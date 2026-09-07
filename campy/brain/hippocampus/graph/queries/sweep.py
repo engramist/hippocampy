@@ -1243,16 +1243,16 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.get_active_pathway_globalconstraint",
         cypher="""
             MATCH (n:GlobalConstraint) WHERE n.archived = false
-            RETURN n.constraint_id, n.pathway_strength
+            RETURN n.global_constraint_id, n.pathway_strength
             """,
         params=(),
         mutating=False,
         description="Fetch active GlobalConstraint nodes with pathway_strength.",
         sparql="""
             PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?constraint_id ?pathway_strength WHERE {
+            SELECT ?global_constraint_id ?pathway_strength WHERE {
                 ?n a campy:GlobalConstraint ;
-                   campy:constraint_id ?constraint_id ;
+                   campy:global_constraint_id ?global_constraint_id ;
                    campy:pathway_strength ?pathway_strength .
                 OPTIONAL { ?n campy:archived ?archived }
                 FILTER(!BOUND(?archived) || ?archived = false)
@@ -1263,7 +1263,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.unwind_archive_globalconstraint",
         cypher="""
             UNWIND $ids AS nid
-            MATCH (n:GlobalConstraint) WHERE n.constraint_id = nid
+            MATCH (n:GlobalConstraint) WHERE n.global_constraint_id = nid
             SET n.archived = true
             """,
         params=("ids",),
@@ -1274,7 +1274,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             DELETE { ?n campy:archived ?old_archived . }
             INSERT { ?n campy:archived true . }
             WHERE {
-                ?n a campy:GlobalConstraint ; campy:constraint_id ?ids .
+                ?n a campy:GlobalConstraint ; campy:global_constraint_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
             }
             """,
@@ -1303,7 +1303,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         cypher="""
             MATCH (n:GlobalConstraint)
             WHERE n.archived = true AND n.embedding IS NOT NULL
-            RETURN n.constraint_id, n.embedding
+            RETURN n.global_constraint_id, n.embedding
             LIMIT $limit
             """,
         params=("limit",),
@@ -1318,7 +1318,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.resurrect_node_globalconstraint",
         cypher="""
             UNWIND $ids AS nid
-            MATCH (n:GlobalConstraint) WHERE n.constraint_id = nid
+            MATCH (n:GlobalConstraint) WHERE n.global_constraint_id = nid
             SET n.archived = false,
                 n.pathway_strength = $strength
             """,
@@ -1336,7 +1336,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:pathway_strength ?strength .
             }
             WHERE {
-                ?n a campy:GlobalConstraint ; campy:constraint_id ?ids .
+                ?n a campy:GlobalConstraint ; campy:global_constraint_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
                 OPTIONAL { ?n campy:pathway_strength ?old_strength }
             }
@@ -1369,16 +1369,16 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.get_active_pathway_globalpreference",
         cypher="""
             MATCH (n:GlobalPreference) WHERE n.archived = false
-            RETURN n.pref_id, n.pathway_strength
+            RETURN n.global_preference_id, n.pathway_strength
             """,
         params=(),
         mutating=False,
         description="Fetch active GlobalPreference nodes with pathway_strength.",
         sparql="""
             PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?pref_id ?pathway_strength WHERE {
+            SELECT ?global_preference_id ?pathway_strength WHERE {
                 ?n a campy:GlobalPreference ;
-                   campy:pref_id ?pref_id ;
+                   campy:global_preference_id ?global_preference_id ;
                    campy:pathway_strength ?pathway_strength .
                 OPTIONAL { ?n campy:archived ?archived }
                 FILTER(!BOUND(?archived) || ?archived = false)
@@ -1389,7 +1389,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.unwind_archive_globalpreference",
         cypher="""
             UNWIND $ids AS nid
-            MATCH (n:GlobalPreference) WHERE n.pref_id = nid
+            MATCH (n:GlobalPreference) WHERE n.global_preference_id = nid
             SET n.archived = true
             """,
         params=("ids",),
@@ -1400,7 +1400,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             DELETE { ?n campy:archived ?old_archived . }
             INSERT { ?n campy:archived true . }
             WHERE {
-                ?n a campy:GlobalPreference ; campy:pref_id ?ids .
+                ?n a campy:GlobalPreference ; campy:global_preference_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
             }
             """,
@@ -1429,7 +1429,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         cypher="""
             MATCH (n:GlobalPreference)
             WHERE n.archived = true AND n.embedding IS NOT NULL
-            RETURN n.pref_id, n.embedding
+            RETURN n.global_preference_id, n.embedding
             LIMIT $limit
             """,
         params=("limit",),
@@ -1444,7 +1444,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.resurrect_node_globalpreference",
         cypher="""
             UNWIND $ids AS nid
-            MATCH (n:GlobalPreference) WHERE n.pref_id = nid
+            MATCH (n:GlobalPreference) WHERE n.global_preference_id = nid
             SET n.archived = false,
                 n.pathway_strength = $strength
             """,
@@ -1462,7 +1462,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:pathway_strength ?strength .
             }
             WHERE {
-                ?n a campy:GlobalPreference ; campy:pref_id ?ids .
+                ?n a campy:GlobalPreference ; campy:global_preference_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
                 OPTIONAL { ?n campy:pathway_strength ?old_strength }
             }
@@ -1747,16 +1747,16 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.get_active_pathway_requirement",
         cypher="""
             MATCH (n:Requirement) WHERE n.archived = false
-            RETURN n.req_id, n.pathway_strength
+            RETURN n.requirement_id, n.pathway_strength
             """,
         params=(),
         mutating=False,
         description="Fetch active Requirement nodes with pathway_strength.",
         sparql="""
             PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?req_id ?pathway_strength WHERE {
+            SELECT ?requirement_id ?pathway_strength WHERE {
                 ?n a campy:Requirement ;
-                   campy:req_id ?req_id ;
+                   campy:requirement_id ?requirement_id ;
                    campy:pathway_strength ?pathway_strength .
                 OPTIONAL { ?n campy:archived ?archived }
                 FILTER(!BOUND(?archived) || ?archived = false)
@@ -1767,7 +1767,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.unwind_archive_requirement",
         cypher="""
             UNWIND $ids AS nid
-            MATCH (n:Requirement) WHERE n.req_id = nid
+            MATCH (n:Requirement) WHERE n.requirement_id = nid
             SET n.archived = true
             """,
         params=("ids",),
@@ -1778,7 +1778,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             DELETE { ?n campy:archived ?old_archived . }
             INSERT { ?n campy:archived true . }
             WHERE {
-                ?n a campy:Requirement ; campy:req_id ?ids .
+                ?n a campy:Requirement ; campy:requirement_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
             }
             """,
@@ -1807,7 +1807,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         cypher="""
             MATCH (n:Requirement)
             WHERE n.archived = true AND n.embedding IS NOT NULL
-            RETURN n.req_id, n.embedding
+            RETURN n.requirement_id, n.embedding
             LIMIT $limit
             """,
         params=("limit",),
@@ -1822,7 +1822,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.resurrect_node_requirement",
         cypher="""
             UNWIND $ids AS nid
-            MATCH (n:Requirement) WHERE n.req_id = nid
+            MATCH (n:Requirement) WHERE n.requirement_id = nid
             SET n.archived = false,
                 n.pathway_strength = $strength
             """,
@@ -1840,7 +1840,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:pathway_strength ?strength .
             }
             WHERE {
-                ?n a campy:Requirement ; campy:req_id ?ids .
+                ?n a campy:Requirement ; campy:requirement_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
                 OPTIONAL { ?n campy:pathway_strength ?old_strength }
             }
