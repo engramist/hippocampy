@@ -69,26 +69,32 @@ def test_six_confirmed_bugs_detected() -> None:
     violations = scan_all_violations(schema_props)
     v_map = {(v.query, v.table, v.property): v for v in violations}
 
-    # 1. sweep.py: GlobalConstraint.constraint_id (valid: global_constraint_id)
-    assert (
-        "sweep.unwind_archive_globalconstraint",
-        "GlobalConstraint",
-        "constraint_id",
-    ) in v_map, "Failed to detect GlobalConstraint.constraint_id in sweep.unwind_archive_globalconstraint"
+    # 1. GlobalConstraint.constraint_id (valid: global_constraint_id, fixed in B404)
+    v_gc = scan_query_violations(
+        "synthetic.global_constraint",
+        "MATCH (n:GlobalConstraint) RETURN n.constraint_id",
+        schema_props,
+    )
+    assert any(v.property == "constraint_id" and v.table == "GlobalConstraint" for v in v_gc)
+    assert ("sweep.unwind_archive_globalconstraint", "GlobalConstraint", "constraint_id") not in v_map
 
-    # 2. sweep.py: GlobalPreference.pref_id (valid: global_preference_id)
-    assert (
-        "sweep.get_active_pathway_globalpreference",
-        "GlobalPreference",
-        "pref_id",
-    ) in v_map, "Failed to detect GlobalPreference.pref_id in sweep.get_active_pathway_globalpreference"
+    # 2. GlobalPreference.pref_id (valid: global_preference_id, fixed in B404)
+    v_gp = scan_query_violations(
+        "synthetic.global_preference",
+        "MATCH (n:GlobalPreference) RETURN n.pref_id",
+        schema_props,
+    )
+    assert any(v.property == "pref_id" and v.table == "GlobalPreference" for v in v_gp)
+    assert ("sweep.get_active_pathway_globalpreference", "GlobalPreference", "pref_id") not in v_map
 
-    # 3. sweep.py: Requirement.req_id (valid: requirement_id)
-    assert (
-        "sweep.get_active_pathway_requirement",
-        "Requirement",
-        "req_id",
-    ) in v_map, "Failed to detect Requirement.req_id in sweep.get_active_pathway_requirement"
+    # 3. Requirement.req_id (valid: requirement_id, fixed in B404)
+    v_req = scan_query_violations(
+        "synthetic.requirement",
+        "MATCH (n:Requirement) RETURN n.req_id",
+        schema_props,
+    )
+    assert any(v.property == "req_id" and v.table == "Requirement" for v in v_req)
+    assert ("sweep.get_active_pathway_requirement", "Requirement", "req_id") not in v_map
 
     # 4. HAS_ALT_LABEL.created_at (rel table has no properties; fixed in quests.py by B405)
     # Verified via synthetic query and temporal_lobe.dict_link_alt_label
