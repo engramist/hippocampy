@@ -23,7 +23,7 @@ from unittest.mock import patch
 import pytest
 
 from campy.brain.hippocampus.graph.gateway import GraphGateway
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.hippocampus.graph.queries import REGISTRY
 from campy.brain.hippocampus.schema import init_schema
 from campy.brain.thalamus.tools.quests import resolve_disambiguation

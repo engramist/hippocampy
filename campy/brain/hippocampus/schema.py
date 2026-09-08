@@ -9,10 +9,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
+from typing import Any
 from campy.brain.hippocampus.graph import embeddings as emb
 
 # ---------------------------------------------------------------------------
@@ -1642,7 +1639,7 @@ def _parse_seed_examples(seed_path: str) -> dict[str, list[str]]:
     return sections
 
 
-def _bootstrap_centroids(db: OxigraphClient, seed_path: str,
+def _bootstrap_centroids(db: Any, seed_path: str,
                           embedding_model: str) -> None:
     """
     Embed all seed examples, compute mean per class, store as GistClass.centroid.
@@ -1955,7 +1952,7 @@ def get_all_table_properties() -> dict[str, set[str]]:
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def init_schema(db: OxigraphClient, seed_examples_path: str,
+def init_schema(db: Any, seed_examples_path: str,
                 embedding_model: str) -> None:
     """
     Initialize Kùzu schema. Idempotent — safe to call on every daemon startup.
@@ -2257,7 +2254,7 @@ def init_schema(db: OxigraphClient, seed_examples_path: str,
 
 
 async def upsert_agent_worker_and_link(
-    db: OxigraphClient,
+    db: Any,
     *,
     worker_id: str | None,
     node_table: str,

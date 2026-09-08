@@ -32,18 +32,12 @@ import logging
 import re
 import unittest.mock
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Iterable
-
-if TYPE_CHECKING:
-    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
-    from campy.brain.hippocampus.graph.vector_store import VectorStore
-
+from typing import Any, Iterable
 from campy.brain.hippocampus.graph.oxigraph_client import (
     CID_BASE,
     NODE_PRIMARY_KEYS,
     RowDict,
     mint_uri,
-    parse_uri,
 )
 
 _logger = logging.getLogger(__name__)

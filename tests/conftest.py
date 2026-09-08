@@ -62,6 +62,6 @@ except Exception:
 try:
     import tests.kuzu_test_client as _kuzu_test_mod
     if _kuzu_test_mod.KUZU_AVAILABLE:
-        sys.modules.setdefault("campy.brain.hippocampus.graph.kuzu_client", _kuzu_test_mod)
+        sys.modules.setdefault("tests.kuzu_test_client", _kuzu_test_mod)
 except Exception:
     pass

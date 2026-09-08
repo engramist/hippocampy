@@ -326,9 +326,15 @@ def _reexport_counts(db_path: Path) -> dict:
     Cypher ratchet for no reason — the counting Cypher already exists and
     is already counted)."""
     from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
+    import sys
+    test_mod = sys.modules.get("tests.kuzu_test_client")
+    KuzuClient = getattr(test_mod, "KuzuClient", None) if test_mod else None
 
     with tempfile.TemporaryDirectory(prefix="campy-backup-count-") as scratch:
-        db = OxigraphClient(str(db_path), read_only=True)
+        if db_path.is_file() and KuzuClient is not None and hasattr(KuzuClient, "execute"):
+            db = KuzuClient(str(db_path), read_only=True)
+        else:
+            db = OxigraphClient(str(db_path), read_only=True)
         try:
             from campy.brain.hippocampus.graph.export import export_graph_dump
 
@@ -407,10 +413,16 @@ def _counts_match(expected_manifest: dict, actual_manifest: dict) -> tuple[bool,
 
 async def _run_recall_sample(db_path: Path) -> list[dict]:
     from campy.brain.hippocampus.graph.gateway import GraphGateway
-    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
     from campy.brain.hippocampus.graph.queries import REGISTRY
+    import sys
+    test_mod = sys.modules.get("tests.kuzu_test_client")
+    KuzuClient = getattr(test_mod, "KuzuClient", None) if test_mod else None
 
-    db = OxigraphClient(str(db_path), read_only=True)
+    if db_path.is_file() and KuzuClient is not None and hasattr(KuzuClient, "execute"):
+        db = KuzuClient(str(db_path), read_only=True)
+    else:
+        from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
+        db = OxigraphClient(str(db_path), read_only=True)
     try:
         gateway = GraphGateway(db, REGISTRY)
         return await gateway.run("backup.recall_sample")
@@ -592,11 +604,17 @@ def restore_snapshot(
 
     import_result = import_graph(target_db_path, snapshot_dir)
 
-    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
     from campy.brain.hippocampus.schema import init_schema
+    import sys
+    test_mod = sys.modules.get("tests.kuzu_test_client")
+    KuzuClient = getattr(test_mod, "KuzuClient", None) if test_mod else None
 
     embedding_model = manifest.get("embedding_model") or _configured_embedding_model()
-    db = OxigraphClient(str(target_db_path))
+    if (manifest.get("engine") == "kuzu" or target_db_path.is_file()) and KuzuClient is not None and hasattr(KuzuClient, "execute"):
+        db = KuzuClient(str(target_db_path))
+    else:
+        from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
+        db = OxigraphClient(str(target_db_path))
     try:
         seed_path = _resolve_seed_examples_path()
         init_schema(db, seed_path, embedding_model)

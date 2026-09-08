@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.hippocampus.schema import NODE_TABLES, REL_TABLES
 from campy.brain.thalamus.tools.arc_artifacts import ingest_arc_artifacts
 

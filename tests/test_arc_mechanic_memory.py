@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.hippocampus.schema import NODE_TABLES, REL_TABLES
 from campy.brain.thalamus.tools.arc_mechanics import publish_mechanic_summary, recall_mechanic_priors
 

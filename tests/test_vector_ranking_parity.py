@@ -23,7 +23,7 @@ from campy.brain.hippocampus.graph.vector_store import (
 )
 
 try:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from tests.kuzu_test_client import KuzuClient
     KUZU_AVAILABLE = True
 except Exception:
     KUZU_AVAILABLE = False

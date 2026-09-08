@@ -87,7 +87,7 @@ import time
 import weakref
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Sequence, Literal as TypingLiteral
+from typing import Any, Iterable, Literal as TypingLiteral
 from urllib.parse import unquote
 
 import pyoxigraph as ox
@@ -210,7 +210,7 @@ def _parse_node_schema() -> tuple[dict[str, dict[str, str]], dict[str, str]]:
             if table in columns and col not in columns[table]:
                 columns[table][col] = col_type
     except Exception:
-        pass
+        pass  # Schema migrations may be absent during early bootstrapping
 
     return columns, primary_keys
 
@@ -1095,7 +1095,7 @@ class OxigraphClient:
                         if c_iso <= cutoff:
                             continue
                     except Exception:
-                        pass
+                        pass  # Ignore datetime parsing or comparison errors
                 if node_props.get("archived"):
                     continue
             rows.append({"node": RowDict(node_props), "score": score})
@@ -1111,7 +1111,7 @@ class OxigraphClient:
             try:
                 self.vector_store.close()
             except Exception:
-                pass
+                pass  # Ignore errors if vector store is already closed
         if hasattr(self, "store"):
             del self.store
 
@@ -1127,6 +1127,11 @@ class RowDict(dict):
     def __init__(self, mapping: Iterable[tuple[str, Any]] | dict[str, Any] = (), **kwargs: Any) -> None:
         super().__init__(mapping, **kwargs)
         self._columns = list(self.keys())
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, dict):
+            return False
+        return super().__eq__(other)
 
     def __getitem__(self, key: Any) -> Any:
         if isinstance(key, int):

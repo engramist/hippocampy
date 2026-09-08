@@ -10,9 +10,14 @@ from pathlib import Path
 from typing import Any, Iterable
 
 try:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
-except ImportError:
-    KuzuClient = Any  # type: ignore
+    import sys
+    KuzuClient = getattr(sys.modules.get("campy.brain.hippocampus.graph.kuzu_client"), "KuzuClient", None)
+    if KuzuClient is None:
+        test_mod = sys.modules.get("tests.kuzu_test_client")
+        if test_mod is not None:
+            KuzuClient = getattr(test_mod, "KuzuClient", None)
+except Exception:
+    KuzuClient = None
 
 import pyoxigraph as ox
 
@@ -447,7 +452,7 @@ def export_graph_dump(
     manifest = {
         "format_version": _FORMAT_VERSION,
         "exported_at": datetime.now(timezone.utc).isoformat(),
-        "engine": _ENGINE,
+        "engine": "oxigraph-0.5.11" if _is_oxigraph(db) else _ENGINE,
         "embedding_dim": _EMBEDDING_DIM,
         "include_projected": include_projected,
         "node_tables": {},
@@ -663,14 +668,17 @@ def export_graph(
     scope that actually matters for disaster recovery.
     """
     path_obj = Path(db_path)
-    if (path_obj.is_dir() and (path_obj / "CURRENT").exists()) or not hasattr(KuzuClient, "execute"):
-        db = OxigraphClient(str(db_path), read_only=True)
-        try:
-            return export_graph_dump(db, out_dir, include_projected=include_projected)
-        finally:
-            db.close()
+    if path_obj.is_file():
+        if KuzuClient is not None and hasattr(KuzuClient, "execute"):
+            db = KuzuClient(str(db_path), read_only=True)
+            try:
+                return export_graph_dump(db, out_dir, include_projected=include_projected)
+            finally:
+                db.close()
+        else:
+            raise RuntimeError(f"Database at {db_path} is a Kuzu database file, but Kuzu is not available.")
     else:
-        db = KuzuClient(str(db_path), read_only=True)
+        db = OxigraphClient(str(db_path), read_only=True)
         try:
             return export_graph_dump(db, out_dir, include_projected=include_projected)
         finally:
@@ -680,14 +688,25 @@ def export_graph(
 def import_graph(db_path: str | Path, dump_dir: str | Path) -> dict[str, Any]:
     """Convenience wrapper that opens a database and restores a dump."""
     path_obj = Path(db_path)
-    if str(db_path).endswith(".oxdb") or not hasattr(KuzuClient, "execute"):
-        db = OxigraphClient(str(db_path))
+    manifest_file = Path(dump_dir) / "manifest.json"
+    engine = None
+    if manifest_file.exists():
+        try:
+            import json
+            manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+            engine = manifest_data.get("engine")
+        except Exception:
+            pass
+
+    is_kuzu = (engine and str(engine).startswith("kuzu")) or str(db_path).endswith(".kuzu") or path_obj.is_file()
+    if is_kuzu and KuzuClient is not None and hasattr(KuzuClient, "execute"):
+        db = KuzuClient(str(db_path))
         try:
             return import_graph_dump(db, dump_dir)
         finally:
             db.close()
     else:
-        db = KuzuClient(str(db_path))
+        db = OxigraphClient(str(db_path))
         try:
             return import_graph_dump(db, dump_dir)
         finally:

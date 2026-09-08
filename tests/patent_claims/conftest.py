@@ -16,7 +16,7 @@ import pytest
 
 from campy.brain.hippocampus.graph.gateway import GraphGateway
 try:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from tests.kuzu_test_client import KuzuClient
 except ImportError:
     KuzuClient = None  # type: ignore
 

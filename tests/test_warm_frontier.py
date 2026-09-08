@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, AsyncMock
 from campy.brain.temporal_lobe.warm_frontier import compute_warm_frontier, get_warm_nodes
 from campy.brain.thalamus.tools import notify_turn, current_truth
 import campy.brain.thalamus.tools as tools_mod
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 
 @pytest.fixture
 def db():

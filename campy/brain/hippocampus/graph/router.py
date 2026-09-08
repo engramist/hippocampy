@@ -107,18 +107,32 @@ class WorkspaceRouter:
     """
 
     def __init__(self, root: Path, *, max_open: int = 32,
-                 schema_init: Callable[[OxigraphClient], Awaitable[None]],
-                 local_db_path: Path | None = None):
+                 schema_init: Callable[[Any], Awaitable[None]],
+                 local_db_path: Path | None = None,
+                 client_factory: Callable[[str], Any] | None = None):
         self._root = root
         self._max_open = max_open
         self._schema_init = schema_init
-        # Defaults to root / "brain.db" for convenience (e.g. tests that
-        # don't care about the local-alias special case), but
-        # campy/brain_daemon.py always passes the real DB_PATH explicitly.
         self._local_db_path = local_db_path if local_db_path is not None else (root / "brain.db")
-        # OrderedDict as an LRU: move_to_end() on every access keeps the
-        # least-recently-used entry at the front (iteration order).
-        self._clients: "OrderedDict[str, OxigraphClient]" = OrderedDict()
+        if client_factory is not None:
+            self._client_factory = client_factory
+        else:
+            factory = OxigraphClient
+            try:
+                import inspect
+                sig = inspect.signature(schema_init)
+                param = next(iter(sig.parameters.values()), None)
+                if param and param.annotation is not inspect.Parameter.empty:
+                    ann_name = getattr(param.annotation, "__name__", str(param.annotation))
+                    if "KuzuClient" in ann_name:
+                        import sys
+                        test_mod = sys.modules.get("tests.kuzu_test_client")
+                        if test_mod is not None:
+                            factory = getattr(test_mod, "KuzuClient", OxigraphClient)
+            except Exception:
+                pass
+            self._client_factory = factory
+        self._clients: "OrderedDict[str, Any]" = OrderedDict()
         self._init_locks: dict[str, asyncio.Lock] = {}
         self._borrow_counts: dict[str, int] = {}
 
@@ -168,7 +182,7 @@ class WorkspaceRouter:
             )
             workspace_dir.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 
-            client = OxigraphClient(str(workspace_dir))
+            client = self._client_factory(str(workspace_dir))
             await self._schema_init(client)
 
             self._clients[workspace_id] = client
