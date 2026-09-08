@@ -52,7 +52,34 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B328 | CRITICAL: Enforce Auth on All HTTP Routes, Not Just /mcp (16 of 18 Routes Unauthenticated) | P0 | complete — merged via PR #55 (2026-08-20) | TBD | TBD | - | backlog/B328.md |
 | B329 | CRITICAL: npm postinstall Runs Unpinned `curl \| sh` From Mutable `main` Branch | P0 | complete — merged via PR #56 (2026-08-20) | TBD | TBD | - | backlog/B329.md |
 | B330 | CRITICAL: Client-Supplied Header Outranks Operator's Workspace Map; No Scope Tiering | P0 | complete — merged via PR #55 (2026-08-20) | TBD | TBD | - | backlog/B330.md |
-| B343 | Root-Cause B342's Leak: Real Heap Profiling on a Grown brain_daemon.py Process | P0 | ready | TBD | TBD | - | backlog/B343.md |
+| B343 | Root-Cause B342's Leak: Real Heap Profiling on a Grown brain_daemon.py Process | P0 | complete — superseded by B342's actual resolution, not this card's proposed method | TBD | TBD | - | backlog/B343.md |
+| B374 | DELTA: Two-Lane Thalamic Routing & Budget-Gated Pressure Relief Valve (`campy ask`) | P0 | ready | TBD | TBD | backlog/plans/B-374-two-lane-thalamic-compressor.md | backlog/B374.md |
+| B376 | Eliminate spaCy/PyTorch Baseline Memory Floor in Brain Daemon | P0 | consolidated into B384 | TBD | TBD | - | backlog/B376.md |
+| B377 | Engine Migration: Kùzu to Embedded Oxigraph (RDF-star) + sqlite-vec Architecture | P0 | consolidated into B384 | TBD | TBD | - | backlog/B377.md |
+| B380 | Non-Provisional Patent Claim Verification & Audit Evidence Pack | P0 | ready | TBD | TBD | backlog/plans/B-380-patent-evidence-pack.md | backlog/B380.md |
+| B384 | PARENT: Featherweight Engine Foundation: Pure ONNX Ingestion + Oxigraph (RDF-star) + sqlite-vec Architecture | P0 | superseded by B387, B389, B390, B391-B396, B397 | TBD | TBD | backlog/plans/B-384-featherweight-engine-foundation.md | backlog/B384.md |
+| B385 | Cloud Deployment Foundation & VibeGuide Multi-Tenant Agent Memory Service (AWS ECS/Fargate) | P0 | complete | TBD | TBD | backlog/plans/B-385-cloud-vibeguide-service.md | backlog/B385.md |
+| B386 | GraphGateway Chokepoint Completion & Raw-Cypher Ratchet to Zero | P0 | ready | TBD | TBD | backlog/plans/B-386-gateway-chokepoint-completion.md | backlog/B386.md |
+| B387 | Torch-Free Ingestion Plane: Replace spaCy NER/Parse with ONNX | P0 | ready | TBD | TBD | - | backlog/B387.md |
+| B389 | OxigraphClient: RDF-star Store & Edge Reification Classification | P0 | complete | TBD | TBD | - | backlog/B389.md |
+| B390 | sqlite-vec Vector Store & FTS5 Lexical Index | P0 | complete | TBD | TBD | - | backlog/B390.md |
+| B391 | SPARQL Translation Batch: provenance (196 queries) | P0 | complete | TBD | TBD | - | backlog/B391.md |
+| B392 | SPARQL Translation Batch: sweep (127 queries) | P0 | complete | TBD | TBD | - | backlog/B392.md |
+| B393 | SPARQL Translation Batch: thalamus (144 queries) | P0 | complete | TBD | TBD | - | backlog/B393.md |
+| B394 | SPARQL Translation Batch: arc_quests (149 queries) | P0 | complete | TBD | TBD | - | backlog/B394.md |
+| B395 | SPARQL Translation Batch: web_cli (115 queries) | P0 | complete | TBD | TBD | - | backlog/B395.md |
+| B396 | SPARQL Translation Batch: core_tail (132 queries) | P0 | complete | TBD | TBD | - | backlog/B396.md |
+| B397 | Engine Cutover, Data Migration & Dual-Engine Patent Re-Certification | P0 | complete | TBD | TBD | - | backlog/B397.md |
+| B398 | Patent Evidence Re-Certification After Ingestion-Plane Swap | P0 | moot | TBD | TBD | - | backlog/B398.md |
+| B399 | Restore Green CI on main: Failing Test + Hang Since B386 | P0 | complete | TBD | TBD | - | backlog/B399.md |
+| B400 | Remove Unused PyTorch Backend (Keep spaCy) | P0 | done | TBD | TBD | - | backlog/B400.md |
+| B403 | RDF-star Annotation Delete Cascade | P0 | complete | TBD | TBD | - | backlog/B403.md |
+| B404 | Decay/Archive Sweep Silently No-Ops for Three Node Types (Wrong PK Column) | P0 | complete | TBD | TBD | - | backlog/B404.md |
+| B405 | Concept Deduplication Aborts Mid-Merge; Alt-Label Gazetteer Never Populates | P0 | complete | TBD | TBD | - | backlog/B405.md |
+| B406 | Schema Conformance Guard: Fail on Queries Referencing Non-Existent Properties | P0 | complete | TBD | TBD | - | backlog/B406.md |
+| B407 | Inference Pilot: Prove the RDF Thesis Before the Engine Cutover | P0 | complete | TBD | TBD | - | backlog/B407.md |
+| B408 | Stale-Base Guard: Make Silent Reverts Unmergeable | P0 | complete | TBD | TBD | - | backlog/B408.md |
+| B411 | Exhaustive Migration Fixture: Round-Trip Every Node and Edge Type | P0 | complete | TBD | TBD | - | backlog/B411.md |
 | B1 | `sidequests setup` CLI | P1 | complete | TBD | TBD | backlog/plans/B-1-setup-cli.md | backlog/B1.md |
 | B2 | `.mcpb` Bundle (One-Click Claude Desktop Install) | P1 | complete | TBD | TBD | backlog/plans/B-2-cowork-plugin.md | backlog/B2.md |
 | B3 | ChatGPT Desktop SSE Endpoint | P1 | complete | TBD | TBD | backlog/plans/B-3-chatgpt-sse.md | backlog/B3.md |
@@ -101,13 +128,22 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B335 | SWE_CI Benchmark Cites a Placeholder arXiv ID and "TBD" Repository, Dataset n=4 | P1 | complete — merged via PR #57 (2026-08-20) | TBD | TBD | - | backlog/B335.md |
 | B336 | Hermes Adapter Calls REST Routes That Don't Exist on the Server (404s Live, CI Can't Catch It) | P1 | complete — merged via PR #58 (2026-08-20) | TBD | TBD | - | backlog/B336.md |
 | B337 | B311 Round 3: Manual Checkpoint Control + Inverse-Batching Experiment for Daemon Memory Spikes | P1 | complete — merged via PR #61 (2026-08-20). Effectiveness measured in backlog/B311.md's "Round | TBD | TBD | - | backlog/B337.md |
-| B342 | Live brain_daemon.py Observed at ~5.4GB RSS (99GB Physical Footprint) with Near-Empty Graph | P1 | open — root cause not fully identified, but the necessary/sufficient behavioral question is | TBD | TBD | - | backlog/B342.md |
-| B344 | Add Lightweight Continuous Memory Instrumentation to brain_daemon.py | P1 | ready | TBD | TBD | - | backlog/B344.md |
-| B345 | Resolve the Two brain_daemon.py Files (Top-Level vs campy/brain_daemon.py) | P1 | ready | TBD | TBD | - | backlog/B345.md |
-| B349 | Tune campy.toml's Shipped Checkpoint Interval Default (Currently 60s, Round 5 Recommends 15-30s) | P1 | ready | TBD | TBD | - | backlog/B349.md |
+| B342 | Live brain_daemon.py Observed at ~5.4GB RSS (99GB Physical Footprint) with Near-Empty Graph | P1 | complete — root cause confirmed 2026-08-25 (see the file's own final entries): swap | TBD | TBD | - | backlog/B342.md |
+| B344 | Add Lightweight Continuous Memory Instrumentation to brain_daemon.py | P1 | complete — satisfied by a different, better-reasoned design than literally specified | TBD | TBD | - | backlog/B344.md |
+| B345 | Resolve the Two brain_daemon.py Files (Top-Level vs campy/brain_daemon.py) | P1 | complete — duplicate of B365, resolved there | TBD | TBD | - | backlog/B345.md |
+| B349 | Tune campy.toml's Shipped Checkpoint Interval Default (Currently 60s, Round 5 Recommends 15-30s) | P1 | complete | TBD | TBD | - | backlog/B349.md |
 | B350 | Longer Live ARC_AGI Episode to Observe a Real Spike-and-Release Under B337's Fix | P1 | complete — see backlog/B311.md's "Round 7" (2026-08-21). Cross-repo collaboration with the | TBD | TBD | - | backlog/B350.md |
 | B353 | PARENT: Campy Memory Footprint Reduction Initiative | P1 | both active child cards done (2026-08-22). **Correction, same day: B355's originally-reported | TBD | TBD | - | backlog/B353.md |
 | B355 | Migrate Embedding Backend to fastembed/ONNX (Same Model, Baseline Reduction) | P1 | done — merged to main via PR #93 (2026-08-22). **Correction, same day, caught while checking the | TBD | TBD | - | backlog/B355.md |
+| B365 | Reconcile the Two Divergent BrainDaemon Implementations | P1 | complete | TBD | TBD | - | backlog/B365.md |
+| B373 | `_resurrect_archived` Blocks the Event Loop for Minutes Under Real Load (B371's Missing Live Stack Trace) | P1 | complete | TBD | TBD | - | backlog/B373.md |
+| B375 | Pre-Warmed Selective Activation for Anticipatory Retrieval (Cocktail Party Engine) | P1 | ready | TBD | TBD | backlog/plans/B-375-prewarmed-selective-activation.md | backlog/B375.md |
+| B381 | Decision-Grade Multi-Model Ask-Eval & Agent Memory Benchmark Suite | P1 | in-review | TBD | TBD | backlog/plans/B-381-decision-grade-ask-eval.md | backlog/B381.md |
+| B382 | Dynamic Phase-Aware Model Router: Graph-Guided Local vs. Cloud Dispatch ("The Missing Middle") | P1 | ready | TBD | TBD | backlog/plans/B-382-phase-aware-model-router.md | backlog/B382.md |
+| B383 | Automated Model Handoff Generator: Zero-Amnesia Model Swapping | P1 | ready | TBD | TBD | backlog/plans/B-383-automated-model-handoff.md | backlog/B383.md |
+| B401 | Measure the Value of the spaCy Step Before Replacing It | P1 | blocked (needs B400 merged) | TBD | TBD | - | backlog/B401.md |
+| B402 | Open Research Questions Section in ARCHITECTURE.md | P1 | complete | TBD | TBD | backlog/plans/B-402-architecture-research-section.md | backlog/B402.md |
+| B410 | Explicit Status Writes: Guaranteed-Written Status and the Cheap Filter Form | P1 | ready | TBD | TBD | - | backlog/B410.md |
 | B4 | Publish to PyPI | P2 | complete | TBD | TBD | backlog/plans/B-4-pypi-publish.md | backlog/B4.md |
 | B5 | Smithery Listing | P2 | complete | TBD | TBD | backlog/plans/B-5-smithery-listing.md | backlog/B5.md |
 | B224 | Wiki Projection Drift Guard and Obsidian Hygiene | P2 | complete | TBD | TBD | backlog/plans/B-224-wiki-projection-drift-guard.md | backlog/B224.md |
@@ -137,9 +173,16 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B340 | `pip install hippocampy` Doesn't Get the Reviewed/Pinned Dependency Versions | P2 | complete — merged via PR #59 (2026-08-20) | TBD | TBD | - | backlog/B340.md |
 | B341 | Support Pre-Baked/Offline Embedding Models for Egress-Locked Deployments | P2 | complete — merged via PR #60 (2026-08-20) | TBD | TBD | - | backlog/B341.md |
 | B346 | Fix Dead Port 7800 in Campy MCP Tool Response Links | P2 | ready | TBD | TBD | - | backlog/B346.md |
-| B347 | Bounded Restart Policy for brain_daemon.py (Interim Mitigation for Unbounded Footprint Growth) | P2 | ready | TBD | TBD | - | backlog/B347.md |
-| B348 | Local Memory-Pressure Watchdog/Alarm for brain_daemon.py | P2 | ready | TBD | TBD | - | backlog/B348.md |
+| B347 | Bounded Restart Policy for brain_daemon.py (Interim Mitigation for Unbounded Footprint Growth) | P2 | complete | TBD | TBD | - | backlog/B347.md |
+| B348 | Local Memory-Pressure Watchdog/Alarm for brain_daemon.py | P2 | mostly complete — one real gap remains, tracked in B367 | TBD | TBD | - | backlog/B348.md |
 | B354 | Footprint/Swap-Aware Memory Watchdog (vmmap-Based, Alongside PR #86) | P2 | shipped (PR #95), then caused a live restart-loop incident the same day — see "Incident: Live | TBD | TBD | - | backlog/B354.md |
+| B359 | Entity-Neighborhood Graph Query for ARC (arc_get_entity_neighborhood) | P2 | done (2026-08-23) — fully closed, including the live end-to-end smoke verification (see final | TBD | TBD | - | backlog/B359.md |
+| B364 | `campy start`/`stop` Have No Fallback When the Daemon Isn't Launchd-Managed (macOS) | P2 | complete | TBD | TBD | - | backlog/B364.md |
+| B367 | campy/brain_daemon.py Never Emits Activity-Log Events (Silent Since B365) | P2 | complete | TBD | TBD | - | backlog/B367.md |
+| B371 | Brain Daemon Briefly Unresponsive During IndexHygiene Warning Loop (B285 Follow-Up) | P2 | investigated — the leading hypothesis (busy loop) is disproven; real fixes landed for what was actually found; the original CPU/socket-timeout symptom's exact cause remains unconfirmed | TBD | TBD | - | backlog/B371.md |
+| B378 | Ambient Operator Presence: Desktop Menu-Bar / Tray Companion | P2 | ready | TBD | TBD | - | backlog/B378.md |
+| B379 | Align Campy Web Landing Page and Marketing Copy with Live Engine Architecture | P2 | ready | TBD | TBD | - | backlog/B379.md |
+| B409 | test_daemon_script_worktree_resolution.py cannot pass from a worktree | P2 | ready | TBD | TBD | - | backlog/B409.md |
 | B6 | Claude Desktop Adapter (Full) | P3 | complete | TBD | TBD | backlog/plans/B-6-claude-desktop-adapter.md | backlog/B6.md |
 | B7 | ChatGPT Desktop Adapter (Stub → Full) | P3 | complete | TBD | TBD | backlog/plans/B-7-chatgpt-desktop-adapter.md | backlog/B7.md |
 | B8 | Gemini CLI Adapter — DONE | P3 | complete | TBD | TBD | - | backlog/B8.md |
@@ -148,8 +191,17 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B308 | Archive-Move HNSW Rebuild Mechanism (B285 Path B) | P3 | not started — filed 2026-08-04 as a follow-up to B285's scope-alignment pass. Requires an architecture decision before implementation, not just a coding pass. | TBD | TBD | - | backlog/B308.md |
 | B310 | Fix `scripts/generate_extension_tools.py` Crash on Multi-Type JSON Schema Fields | P3 | complete -- 2026-08-08: fixed `_schema_to_typebox()` to handle list-typed `"type"` fields (`Type.Union([...])`, with `"null"` mapped to `Type.Null()`). See Implementation section below. | TBD | TBD | - | backlog/B310.md |
 | B351 | AF_UNIX Path-Too-Long Failures in Socket-Stub Tests (Environmental, Pre-Existing) | P3 | closed — fixed, PR pending. Two of the three originally-listed failures were genuinely the | TBD | TBD | - | backlog/B351.md |
-| B352 | Flaky Timing Assertion in test_periodic_checkpoint_task_interval | P3 | ready | TBD | TBD | - | backlog/B352.md |
-| B358 | Flaky test_q5_verifies_requires_satisfiable (requires_satisfiable Returns None, Not True/False) | P3 | ready — a second flaky test in the same file found since this card was opened, see the update | TBD | TBD | - | backlog/B358.md |
+| B352 | Flaky Timing Assertion in test_periodic_checkpoint_task_interval | P3 | complete | TBD | TBD | - | backlog/B352.md |
+| B358 | Flaky test_q5_verifies_requires_satisfiable (requires_satisfiable Returns None, Not True/False) | P3 | done (2026-08-23) — root cause identified, fixed at the query level, verified with a 60-run | TBD | TBD | - | backlog/B358.md |
+| B360 | Flaky test_mcp_tool_surface.py Tests Under Full Suite (Pass in Isolation) | P3 | complete | TBD | TBD | - | backlog/B360.md |
+| B361 | Flaky test_periodic_checkpoint_task_interval Under CI (Wall-Clock Timing Assertion) | P3 | complete — duplicate of B352, resolved there | TBD | TBD | - | backlog/B361.md |
+| B362 | brain_daemon.py's _handle_connection Doesn't Catch Connection-Reset Errors | P3 | complete | TBD | TBD | - | backlog/B362.md |
+| B363 | arc_update_goal_confidence Never Creates VictoryCondition Nodes | P3 | complete | TBD | TBD | - | backlog/B363.md |
+| B366 | Flaky test_research_sim_detects_memory_benefit (Narrow-Margin Statistical Assertion) | P3 | complete | TBD | TBD | - | backlog/B366.md |
+| B368 | tests/test_remote_mcp.py Writes Real tools/call Activity Events into ~/.campy/activity.log | P3 | complete | TBD | TBD | - | backlog/B368.md |
+| B369 | Implement `arc_start_or_resume_thread` Server-Side (ARC_AGI Client Calls It, Degrades Gracefully Today) | P3 | mostly complete — the one tool asked for is done; the other 3 tools from the full design spec are deliberately out of scope | TBD | TBD | - | backlog/B369.md |
+| B370 | tests/test_schema.py Can Poison sys.modules["kuzu"] for the Rest of the Session | P3 | ready | TBD | TBD | - | backlog/B370.md |
+| B372 | Persist Disappeared Entities in `arc_perceive_state` (ARC_AGI Now Sends `disappeared_entities`) | P3 | complete | TBD | TBD | - | backlog/B372.md |
 | B9 | `tests/test_adapters.py` — ✅ DONE (2026-03-24) | P4 | complete | TBD | TBD | - | backlog/B9.md |
 | B356 | KuzuDB Buffer Pool Bounding (Deferred, Future-Proofing Only) | P4 | deferred — not blocking, not scheduled. Revisit only per the trigger condition below. | TBD | TBD | - | backlog/B356.md |
 | B357 | Backlog Tracker Ignores Each Card's Own Priority Line (Shows P99 for Most Recent Cards) | P4 | done — fixed in `scripts/rebuild_backlog_tracker.sh` (2026-08-22). Priority now read directly | TBD | TBD | - | backlog/B357.md |
@@ -234,9 +286,9 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 
 ## Summary
 
-- Total cards: 227
-- Ready: 9
+- Total cards: 279
+- Ready: 13
 - Needs work: 0
-- Complete: 200
+- Complete: 240
 - In progress: 0
-- Blocked: 0
+- Blocked: 1
