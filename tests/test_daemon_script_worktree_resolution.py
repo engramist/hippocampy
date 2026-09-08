@@ -23,7 +23,27 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+def _get_canonical_repo_root() -> Path:
+    fallback = Path(__file__).resolve().parent.parent
+    try:
+        res = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=str(fallback),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            common_dir = Path(res.stdout.strip())
+            root = common_dir.parent if common_dir.name == ".git" else common_dir
+            if (root / "brain_daemon.py").is_file():
+                return root
+    except Exception:
+        pass
+    return fallback
+
+
+REPO_ROOT = _get_canonical_repo_root()
 
 
 @pytest.fixture
@@ -82,8 +102,8 @@ def test_daemon_script_resolves_to_main_checkout_when_run_from_worktree(throwawa
     assert str(throwaway_worktree) not in resolved["daemon_script"]
 
 
-def test_canonical_repo_root_from_main_checkout_is_itself():
-    """Baseline: running from the main checkout should resolve to itself (no worktree involved)."""
+def test_canonical_repo_root_resolves_to_main_checkout():
+    """Verify _canonical_repo_root() resolves to main checkout whether run from main or worktree."""
     import campy.cli.launchd as launchd
 
     assert launchd._canonical_repo_root() == REPO_ROOT
