@@ -467,25 +467,28 @@ for label, pk, key in _DIFF_TABLES:
             cypher=f"""
             MATCH (n:{label})-[r:ESTABLISHED_IN]->(m:Message)
             WHERE n.{pk} = $id
-            RETURN m.content
+            RETURN m.text_raw
             LIMIT 1
             """,
             params=("id",),
             mutating=False,
             description=f"Find originating message for {label}",
-            # NOTE (pre-existing, not introduced by this translation):
-            # `Message` has no `content` column in schema.py (only
-            # `text_raw`) — `m.content` is a latent bug at the Cypher
-            # layer that always returns NULL. Preserved faithfully: the
-            # SPARQL below can never bind campy:content either, since no
-            # writer ever asserts it.
+            # B412: `Message` has no `content` column in schema.py, only
+            # `text_raw` — `m.content` was a latent bug that always
+            # returned NULL on both the Cypher and SPARQL sides. Fixed to
+            # reference the real column. The `?content` SPARQL variable
+            # name is kept (rather than renamed to `?text_raw`) because
+            # `RowDict` strips the `m.` prefix on lookup (see
+            # oxigraph_client.py's `RowDict.__getitem__`), so
+            # `row.get("m.content")` in retrieval.py's caller keys off the
+            # bare variable name, not the property name.
             sparql=f"""
                 SELECT ?content WHERE {{
                     ?n a campy:{label} ;
                        campy:{pk} ?id .
                     ?n campy:ESTABLISHED_IN ?m .
                     ?m a campy:Message .
-                    OPTIONAL {{ ?m campy:content ?content }}
+                    OPTIONAL {{ ?m campy:text_raw ?content }}
                 }}
                 LIMIT 1
                 """,
@@ -499,22 +502,21 @@ RETRIEVAL_QUERIES.append(
         cypher="""
         MATCH (n:DocumentExtract)-[r:ESTABLISHED_IN]->(m:Message)
         WHERE n.extract_id = $id
-        RETURN m.content
+        RETURN m.text_raw
         LIMIT 1
         """,
         params=("id",),
         mutating=False,
         description="Find originating message for DocumentExtract",
-        # See the get_originating_message_{key} note above — m.content is
-        # a pre-existing latent bug (Message has no `content` column),
-        # preserved faithfully rather than fixed.
+        # B412: see the get_originating_message_{key} note above — fixed
+        # from m.content (nonexistent) to m.text_raw.
         sparql="""
             SELECT ?content WHERE {
                 ?n a campy:DocumentExtract ;
                    campy:extract_id ?id .
                 ?n campy:ESTABLISHED_IN ?m .
                 ?m a campy:Message .
-                OPTIONAL { ?m campy:content ?content }
+                OPTIONAL { ?m campy:text_raw ?content }
             }
             LIMIT 1
             """,
@@ -526,7 +528,7 @@ RETRIEVAL_QUERIES.append(
         cypher="""
         MATCH (n:Message)-[r:ESTABLISHED_IN]->(m:Message)
         WHERE n.message_id = $id
-        RETURN m.content
+        RETURN m.text_raw
         LIMIT 1
         """,
         params=("id",),
@@ -538,7 +540,7 @@ RETRIEVAL_QUERIES.append(
                    campy:message_id ?id .
                 ?n campy:ESTABLISHED_IN ?m .
                 ?m a campy:Message .
-                OPTIONAL { ?m campy:content ?content }
+                OPTIONAL { ?m campy:text_raw ?content }
             }
             LIMIT 1
             """,

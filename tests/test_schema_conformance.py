@@ -110,24 +110,33 @@ def test_six_confirmed_bugs_detected() -> None:
         "created_at",
     ) in v_map
 
-    # 5. retrieval.py: Message.content (valid: text_raw)
-    assert (
-        "retrieval.get_originating_message_concept",
-        "Message",
-        "content",
-    ) in v_map, "Failed to detect Message.content in retrieval.get_originating_message_concept"
+    # 5. retrieval.py: Message.content (valid: text_raw) — fixed in B412
+    # (retrieval.get_originating_message_* now reference m.text_raw, so the
+    # live registry no longer contains this violation; the scanner's
+    # detection capability itself is what this test protects, so it's
+    # proven against a synthetic query reproducing the original bug shape,
+    # matching bugs #1-4 above).
+    v_msg = scan_query_violations(
+        "synthetic.get_originating_message",
+        "MATCH (n:Concept)-[r:ESTABLISHED_IN]->(m:Message) RETURN m.content",
+        schema_props,
+    )
+    assert any(v.property == "content" and v.table == "Message" for v in v_msg)
+    assert ("retrieval.get_originating_message_concept", "Message", "content") not in v_map
 
-    # 6. thalamus.py: Concept.prefLabel / Concept.altLabel
-    assert (
-        "thalamus.file_bridge_concepts",
-        "Concept",
-        "prefLabel",
-    ) in v_map, "Failed to detect Concept.prefLabel in thalamus.file_bridge_concepts"
-    assert (
-        "thalamus.file_bridge_concepts",
-        "Concept",
-        "altLabel",
-    ) in v_map, "Failed to detect Concept.altLabel in thalamus.file_bridge_concepts"
+    # 6. thalamus.py: Concept.prefLabel / Concept.altLabel — fixed in B412
+    # (thalamus.file_bridge_concepts now traverses HAS_PREF_LABEL/
+    # HAS_ALT_LABEL to Label.text instead of reading nonexistent Concept
+    # columns; see the synthetic reproduction below).
+    v_concept_labels = scan_query_violations(
+        "synthetic.file_bridge_concepts",
+        "MATCH (c:Concept) RETURN c.prefLabel AS name, c.altLabel AS alt_labels",
+        schema_props,
+    )
+    assert any(v.property == "prefLabel" and v.table == "Concept" for v in v_concept_labels)
+    assert any(v.property == "altLabel" and v.table == "Concept" for v in v_concept_labels)
+    assert ("thalamus.file_bridge_concepts", "Concept", "prefLabel") not in v_map
+    assert ("thalamus.file_bridge_concepts", "Concept", "altLabel") not in v_map
 
 
 def test_zero_false_positives_on_valid_properties() -> None:
