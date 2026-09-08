@@ -105,8 +105,7 @@ CONTINUITY_QUERIES: tuple[NamedQuery, ...] = (
                  campy:created_at ?created_at .
               OPTIONAL { ?d campy:superseded_by ?superseded_by }
               FILTER(!BOUND(?superseded_by))
-              OPTIONAL { ?d campy:archived ?archived }
-              FILTER(!BOUND(?archived) || ?archived = false)
+              ?d campy:archived false .
               OPTIONAL { ?d campy:source ?source }
               OPTIONAL { ?d campy:source_version ?source_version }
               OPTIONAL { ?d campy:observed_at ?observed_at }
@@ -147,8 +146,7 @@ CONTINUITY_QUERIES: tuple[NamedQuery, ...] = (
                  campy:created_at ?created_at .
               OPTIONAL { ?c campy:superseded_by ?superseded_by }
               FILTER(!BOUND(?superseded_by))
-              OPTIONAL { ?c campy:archived ?archived }
-              FILTER(!BOUND(?archived) || ?archived = false)
+              ?c campy:archived false .
               OPTIONAL { ?c campy:source ?source }
               OPTIONAL { ?c campy:source_version ?source_version }
               OPTIONAL { ?c campy:observed_at ?observed_at }
@@ -189,8 +187,7 @@ CONTINUITY_QUERIES: tuple[NamedQuery, ...] = (
                  campy:created_at ?created_at .
               OPTIONAL { ?l campy:superseded_by ?superseded_by }
               FILTER(!BOUND(?superseded_by))
-              OPTIONAL { ?l campy:archived ?archived }
-              FILTER(!BOUND(?archived) || ?archived = false)
+              ?l campy:archived false .
               OPTIONAL { ?l campy:source ?source }
               OPTIONAL { ?l campy:source_version ?source_version }
               OPTIONAL { ?l campy:observed_at ?observed_at }
@@ -233,8 +230,7 @@ CONTINUITY_QUERIES: tuple[NamedQuery, ...] = (
                  campy:created_at ?created_at .
               OPTIONAL { ?p campy:superseded_by ?superseded_by }
               FILTER(!BOUND(?superseded_by))
-              OPTIONAL { ?p campy:archived ?archived }
-              FILTER(!BOUND(?archived) || ?archived = false)
+              ?p campy:archived false .
               OPTIONAL { ?p campy:valence ?valence }
               OPTIONAL { ?p campy:source ?source }
               OPTIONAL { ?p campy:source_version ?source_version }

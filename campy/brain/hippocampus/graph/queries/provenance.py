@@ -33,11 +33,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:Concept ;
@@ -45,6 +47,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -60,6 +63,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:Concept ;
@@ -188,11 +192,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:Decision ;
@@ -200,6 +206,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -215,6 +222,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:Decision ;
@@ -343,11 +351,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:Constraint ;
@@ -355,6 +365,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -370,6 +381,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:Constraint ;
@@ -498,11 +510,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:Requirement ;
@@ -510,6 +524,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -525,6 +540,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:Requirement ;
@@ -653,11 +669,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:ActionItem ;
@@ -665,6 +683,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -680,6 +699,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:ActionItem ;
@@ -808,11 +828,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:GlobalConstraint ;
@@ -820,6 +842,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -835,6 +858,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:GlobalConstraint ;
@@ -963,11 +987,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:GlobalPreference ;
@@ -975,6 +1001,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -990,6 +1017,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:GlobalPreference ;
@@ -1118,11 +1146,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:Lesson ;
@@ -1130,6 +1160,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -1145,6 +1176,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:Lesson ;
@@ -1273,11 +1305,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:Procedure ;
@@ -1285,6 +1319,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -1300,6 +1335,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:Procedure ;
@@ -1428,11 +1464,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:KnowledgeGap ;
@@ -1440,6 +1478,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -1455,6 +1494,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:KnowledgeGap ;
@@ -1583,11 +1623,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:Plan ;
@@ -1595,6 +1637,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -1610,6 +1653,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:Plan ;
@@ -1738,11 +1782,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:PlanStep ;
@@ -1750,6 +1796,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -1765,6 +1812,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:PlanStep ;
@@ -1893,11 +1941,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:Hypothesis ;
@@ -1905,6 +1955,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -1920,6 +1971,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:Hypothesis ;
@@ -2048,11 +2100,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:ActionFact ;
@@ -2060,6 +2114,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -2075,6 +2130,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:ActionFact ;
@@ -2203,11 +2259,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:ActionEffect ;
@@ -2215,6 +2273,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -2230,6 +2289,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:ActionEffect ;
@@ -2358,11 +2418,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:VictoryCondition ;
@@ -2370,6 +2432,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -2385,6 +2448,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:VictoryCondition ;
@@ -2513,11 +2577,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:Rule ;
@@ -2525,6 +2591,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -2540,6 +2607,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:Rule ;
@@ -2668,11 +2736,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:Transition ;
@@ -2680,6 +2750,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -2695,6 +2766,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:Transition ;
@@ -2823,11 +2895,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:DocumentExtract ;
@@ -2835,6 +2909,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -2850,6 +2925,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:DocumentExtract ;
@@ -2978,11 +3054,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:WorkSummary ;
@@ -2990,6 +3068,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -3005,6 +3084,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:WorkSummary ;
@@ -3133,11 +3213,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:WorkArtifact ;
@@ -3145,6 +3227,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -3160,6 +3243,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:WorkArtifact ;
@@ -3288,11 +3372,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:ArcMechanic ;
@@ -3300,6 +3386,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -3315,6 +3402,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:ArcMechanic ;
@@ -3443,11 +3531,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:ArcActionPattern ;
@@ -3455,6 +3545,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -3470,6 +3561,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:ArcActionPattern ;
@@ -3598,11 +3690,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:ArcEffectPattern ;
@@ -3610,6 +3704,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -3625,6 +3720,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:ArcEffectPattern ;
@@ -3753,11 +3849,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:ArcPrecondition ;
@@ -3765,6 +3863,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -3780,6 +3879,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:ArcPrecondition ;
@@ -3908,11 +4008,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:ArcFailureMode ;
@@ -3920,6 +4022,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -3935,6 +4038,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:ArcFailureMode ;
@@ -4063,11 +4167,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:ArcRecoveryPolicy ;
@@ -4075,6 +4181,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -4090,6 +4197,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:ArcRecoveryPolicy ;
@@ -4218,11 +4326,13 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:superseded_by ?old_superseded_by .
                 ?n campy:superseded_at ?old_superseded_at .
                 ?n campy:supersession_reason ?old_supersession_reason .
+                ?n prov:invalidatedAtTime ?old_invalidated .
             }
             INSERT {
                 ?n campy:superseded_by ?superseded_by .
                 ?n campy:superseded_at ?at .
                 ?n campy:supersession_reason ?reason .
+                ?n prov:invalidatedAtTime ?at .
             }
             WHERE {
                 ?n a campy:ArcWorldModelStep ;
@@ -4230,6 +4340,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?n campy:superseded_by ?old_superseded_by }
                 OPTIONAL { ?n campy:superseded_at ?old_superseded_at }
                 OPTIONAL { ?n campy:supersession_reason ?old_supersession_reason }
+                OPTIONAL { ?n prov:invalidatedAtTime ?old_invalidated }
             }
             """,
     ),
@@ -4245,6 +4356,7 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             INSERT {
                 ?old campy:DEPRECATED_BY ?new .
+                ?new prov:wasRevisionOf ?old .
             }
             WHERE {
                 ?old a campy:ArcWorldModelStep ;

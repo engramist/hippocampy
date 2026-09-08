@@ -218,8 +218,8 @@ PATHWAY_QUERIES: tuple[NamedQuery, ...] = (
                         campy:confidence_low true ;
                         campy:confidence ?confidence ;
                         campy:pathway_strength ?pathway_strength .
-              OPTIONAL { ?neighbor campy:archived ?archived }
-              FILTER((!BOUND(?archived) || ?archived = false) && ?concept_id != ?id)
+              ?neighbor campy:archived false .
+              FILTER(?concept_id != ?id)
             }
         """,
     ),
@@ -246,8 +246,8 @@ PATHWAY_QUERIES: tuple[NamedQuery, ...] = (
               ?n a campy:Concept ;
                  campy:confidence ?confidence ;
                  campy:pathway_strength ?pathway_strength .
-              OPTIONAL { ?n campy:archived ?archived }
-              FILTER((!BOUND(?archived) || ?archived = false) && ?confidence >= "0.60"^^xsd:double && ?n != ?c)
+              ?n campy:archived false .
+              FILTER(?confidence >= "0.60"^^xsd:double && ?n != ?c)
             }
         """,
     ),

@@ -66,8 +66,7 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
             WHERE {
               ?p a campy:Procedure ;
                  campy:archetype ?strategy .
-              OPTIONAL { ?p campy:archived ?archived }
-              FILTER(!BOUND(?archived) || ?archived = false)
+              ?p campy:archived false .
             }
         """,
     ),
@@ -217,8 +216,7 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
               ?n a campy:Concept ;
                  campy:concept_id ?id ;
                  campy:salience_score ?salience .
-              OPTIONAL { ?n campy:archived ?archived }
-              FILTER(!BOUND(?archived) || ?archived = false)
+              ?n campy:archived false .
               FILTER(?salience >= ?floor)
               OPTIONAL { ?n campy:text_raw ?raw_text }
               BIND(COALESCE(?raw_text, "") AS ?name)
@@ -248,8 +246,7 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
               ?n a campy:Decision ;
                  campy:decision_id ?id ;
                  campy:salience_score ?salience .
-              OPTIONAL { ?n campy:archived ?archived }
-              FILTER(!BOUND(?archived) || ?archived = false)
+              ?n campy:archived false .
               FILTER(?salience >= ?floor)
               OPTIONAL { ?n campy:text_raw ?raw_text }
               BIND(COALESCE(?raw_text, "") AS ?name)
@@ -279,8 +276,7 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
               ?n a campy:Constraint ;
                  campy:constraint_id ?id ;
                  campy:salience_score ?salience .
-              OPTIONAL { ?n campy:archived ?archived }
-              FILTER(!BOUND(?archived) || ?archived = false)
+              ?n campy:archived false .
               FILTER(?salience >= ?floor)
               OPTIONAL { ?n campy:text_raw ?raw_text }
               BIND(COALESCE(?raw_text, "") AS ?name)
@@ -435,8 +431,7 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
                  campy:procedure_id ?procedure_id ;
                  campy:application_count ?application_count ;
                  campy:success_rate ?success_rate .
-              OPTIONAL { ?p campy:archived ?archived }
-              FILTER(!BOUND(?archived) || ?archived = false)
+              ?p campy:archived false .
               OPTIONAL { ?p campy:maturity_stage ?maturity_stage }
             }
         """,

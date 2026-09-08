@@ -53,8 +53,7 @@ BACKUP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n a campy:Concept ;
                    campy:concept_id ?node_id ;
                    campy:text_raw ?text_raw .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
               }
               UNION
               {
@@ -62,8 +61,7 @@ BACKUP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n a campy:Decision ;
                    campy:decision_id ?node_id ;
                    campy:text_raw ?text_raw .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
               }
               UNION
               {
@@ -71,8 +69,7 @@ BACKUP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n a campy:Lesson ;
                    campy:lesson_id ?node_id ;
                    campy:text_raw ?text_raw .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
               }
             }
             LIMIT 5

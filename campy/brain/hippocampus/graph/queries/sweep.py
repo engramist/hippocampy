@@ -28,8 +28,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                    campy:text_raw ?text_raw ;
                    campy:created_at ?created_at .
                 ?s campy:session_id ?session_id .
-                OPTIONAL { ?a campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?a campy:archived false .
             }
             ORDER BY ?session_id ?created_at
             """,
@@ -204,8 +203,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?l a campy:Lesson ;
                    campy:domain ?domain ;
                    campy:confidence ?confidence .
-                OPTIONAL { ?l campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?l campy:archived false .
             }
             GROUP BY ?domain
             """,
@@ -437,8 +435,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?c a campy:Concept ; campy:concept_id ?concept_id .
                 ?ps campy:OUTCOME_SIGNAL ?c .
                 << ?ps campy:OUTCOME_SIGNAL ?c >> campy:valence ?valence .
-                OPTIONAL { ?c campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?c campy:archived false .
             }
             GROUP BY ?concept_id
             """,
@@ -652,8 +649,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT DISTINCT ?domain WHERE {
                 ?l a campy:Lesson ; campy:domain ?domain .
-                OPTIONAL { ?l campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?l campy:archived false .
                 OPTIONAL { ?l campy:lesson_type ?lesson_type }
                 FILTER(!BOUND(?lesson_type) || ?lesson_type != "synthesis")
             }
@@ -797,8 +793,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             INSERT { ?p campy:maturity_stage ?new_stage . }
             WHERE {
                 ?p a campy:Procedure ; campy:application_count ?application_count ; campy:success_rate ?success_rate .
-                OPTIONAL { ?p campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?p campy:archived false .
                 OPTIONAL { ?p campy:maturity_stage ?old_stage }
                 BIND(COALESCE(?old_stage, "nascent") AS ?effective_stage)
                 FILTER(?effective_stage != "degraded")
@@ -837,8 +832,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                    campy:application_count ?application_count ;
                    campy:success_rate ?success_rate ;
                    campy:pathway_strength ?old_strength .
-                OPTIONAL { ?p campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?p campy:archived false .
                 FILTER(?application_count >= 3 && ?success_rate < 0.30)
                 OPTIONAL { ?p campy:maturity_stage ?old_stage }
                 FILTER(COALESCE(?old_stage, "nascent") != "degraded")
@@ -865,8 +859,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?p a campy:Procedure ;
                    campy:maturity_stage "degraded" ;
                    campy:success_rate ?success_rate .
-                OPTIONAL { ?p campy:archived ?old_archived }
-                FILTER(!BOUND(?old_archived) || ?old_archived = false)
+                ?p campy:archived false .
                 FILTER(?success_rate < 0.20)
             }
             """,
@@ -885,8 +878,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT DISTINCT ?domain WHERE {
                 ?l a campy:Lesson ; campy:domain ?domain .
-                OPTIONAL { ?l campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?l campy:archived false .
             }
             """,
     ),
@@ -1007,8 +999,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                    campy:created_at ?created_at ;
                    campy:lesson_id ?lesson_id ;
                    campy:text_raw ?text_raw .
-                OPTIONAL { ?l campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?l campy:archived false .
                 FILTER(?lesson_type != "synthesis")
                 FILTER(?created_at < ?cutoff)
                 FILTER NOT EXISTS {
@@ -1056,8 +1047,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?lesson_id ?text_raw WHERE {
                 ?l a campy:Lesson ; campy:lesson_id ?lesson_id ; campy:text_raw ?text_raw .
-                OPTIONAL { ?l campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?l campy:archived false .
                 FILTER NOT EXISTS {
                     { ?x campy:CONTAINS_LESSON ?l } UNION
                     { ?x campy:PRODUCED_LESSON ?l } UNION
@@ -1106,8 +1096,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             INSERT { ?n campy:pathway_strength ?new_strength . }
             WHERE {
                 ?n a campy:Concept .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
                 ?n campy:pathway_strength ?old_strength .
                 BIND((?old_strength * ?factor) AS ?new_strength)
             }
@@ -1128,8 +1117,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n a campy:Concept ;
                    campy:concept_id ?concept_id ;
                    campy:pathway_strength ?pathway_strength .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
             """,
     ),
@@ -1166,8 +1154,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?archived (COUNT(?n) AS ?c) WHERE {
                 ?n a campy:Concept .
-                OPTIONAL { ?n campy:archived ?raw_archived }
-                BIND(COALESCE(?raw_archived, false) AS ?archived)
+                ?n campy:archived ?archived .
             }
             GROUP BY ?archived
             """,
@@ -1232,8 +1219,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             INSERT { ?n campy:pathway_strength ?new_strength . }
             WHERE {
                 ?n a campy:GlobalConstraint .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
                 ?n campy:pathway_strength ?old_strength .
                 BIND((?old_strength * ?factor) AS ?new_strength)
             }
@@ -1254,8 +1240,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n a campy:GlobalConstraint ;
                    campy:global_constraint_id ?global_constraint_id ;
                    campy:pathway_strength ?pathway_strength .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
             """,
     ),
@@ -1292,8 +1277,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?archived (COUNT(?n) AS ?c) WHERE {
                 ?n a campy:GlobalConstraint .
-                OPTIONAL { ?n campy:archived ?raw_archived }
-                BIND(COALESCE(?raw_archived, false) AS ?archived)
+                ?n campy:archived ?archived .
             }
             GROUP BY ?archived
             """,
@@ -1358,8 +1342,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             INSERT { ?n campy:pathway_strength ?new_strength . }
             WHERE {
                 ?n a campy:GlobalPreference .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
                 ?n campy:pathway_strength ?old_strength .
                 BIND((?old_strength * ?factor) AS ?new_strength)
             }
@@ -1380,8 +1363,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n a campy:GlobalPreference ;
                    campy:global_preference_id ?global_preference_id ;
                    campy:pathway_strength ?pathway_strength .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
             """,
     ),
@@ -1418,8 +1400,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?archived (COUNT(?n) AS ?c) WHERE {
                 ?n a campy:GlobalPreference .
-                OPTIONAL { ?n campy:archived ?raw_archived }
-                BIND(COALESCE(?raw_archived, false) AS ?archived)
+                ?n campy:archived ?archived .
             }
             GROUP BY ?archived
             """,
@@ -1484,8 +1465,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             INSERT { ?n campy:pathway_strength ?new_strength . }
             WHERE {
                 ?n a campy:Decision .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
                 ?n campy:pathway_strength ?old_strength .
                 BIND((?old_strength * ?factor) AS ?new_strength)
             }
@@ -1506,8 +1486,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n a campy:Decision ;
                    campy:decision_id ?decision_id ;
                    campy:pathway_strength ?pathway_strength .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
             """,
     ),
@@ -1544,8 +1523,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?archived (COUNT(?n) AS ?c) WHERE {
                 ?n a campy:Decision .
-                OPTIONAL { ?n campy:archived ?raw_archived }
-                BIND(COALESCE(?raw_archived, false) AS ?archived)
+                ?n campy:archived ?archived .
             }
             GROUP BY ?archived
             """,
@@ -1610,8 +1588,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             INSERT { ?n campy:pathway_strength ?new_strength . }
             WHERE {
                 ?n a campy:Constraint .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
                 ?n campy:pathway_strength ?old_strength .
                 BIND((?old_strength * ?factor) AS ?new_strength)
             }
@@ -1632,8 +1609,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n a campy:Constraint ;
                    campy:constraint_id ?constraint_id ;
                    campy:pathway_strength ?pathway_strength .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
             """,
     ),
@@ -1670,8 +1646,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?archived (COUNT(?n) AS ?c) WHERE {
                 ?n a campy:Constraint .
-                OPTIONAL { ?n campy:archived ?raw_archived }
-                BIND(COALESCE(?raw_archived, false) AS ?archived)
+                ?n campy:archived ?archived .
             }
             GROUP BY ?archived
             """,
@@ -1736,8 +1711,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             INSERT { ?n campy:pathway_strength ?new_strength . }
             WHERE {
                 ?n a campy:Requirement .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
                 ?n campy:pathway_strength ?old_strength .
                 BIND((?old_strength * ?factor) AS ?new_strength)
             }
@@ -1758,8 +1732,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n a campy:Requirement ;
                    campy:requirement_id ?requirement_id ;
                    campy:pathway_strength ?pathway_strength .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
             """,
     ),
@@ -1796,8 +1769,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?archived (COUNT(?n) AS ?c) WHERE {
                 ?n a campy:Requirement .
-                OPTIONAL { ?n campy:archived ?raw_archived }
-                BIND(COALESCE(?raw_archived, false) AS ?archived)
+                ?n campy:archived ?archived .
             }
             GROUP BY ?archived
             """,
@@ -1862,8 +1834,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             INSERT { ?n campy:pathway_strength ?new_strength . }
             WHERE {
                 ?n a campy:ActionItem .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
                 ?n campy:pathway_strength ?old_strength .
                 BIND((?old_strength * ?factor) AS ?new_strength)
             }
@@ -1884,8 +1855,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n a campy:ActionItem ;
                    campy:action_item_id ?action_item_id ;
                    campy:pathway_strength ?pathway_strength .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
             """,
     ),
@@ -1922,8 +1892,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?archived (COUNT(?n) AS ?c) WHERE {
                 ?n a campy:ActionItem .
-                OPTIONAL { ?n campy:archived ?raw_archived }
-                BIND(COALESCE(?raw_archived, false) AS ?archived)
+                ?n campy:archived ?archived .
             }
             GROUP BY ?archived
             """,
@@ -1988,8 +1957,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             INSERT { ?n campy:pathway_strength ?new_strength . }
             WHERE {
                 ?n a campy:Message .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
                 ?n campy:pathway_strength ?old_strength .
                 BIND((?old_strength * ?factor) AS ?new_strength)
             }
@@ -2010,8 +1978,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n a campy:Message ;
                    campy:message_id ?message_id ;
                    campy:pathway_strength ?pathway_strength .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
             """,
     ),
@@ -2048,8 +2015,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?archived (COUNT(?n) AS ?c) WHERE {
                 ?n a campy:Message .
-                OPTIONAL { ?n campy:archived ?raw_archived }
-                BIND(COALESCE(?raw_archived, false) AS ?archived)
+                ?n campy:archived ?archived .
             }
             GROUP BY ?archived
             """,
@@ -2114,8 +2080,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             INSERT { ?n campy:pathway_strength ?new_strength . }
             WHERE {
                 ?n a campy:DocumentExtract .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
                 ?n campy:pathway_strength ?old_strength .
                 BIND((?old_strength * ?factor) AS ?new_strength)
             }
@@ -2136,8 +2101,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n a campy:DocumentExtract ;
                    campy:extract_id ?extract_id ;
                    campy:pathway_strength ?pathway_strength .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
             """,
     ),
@@ -2174,8 +2138,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?archived (COUNT(?n) AS ?c) WHERE {
                 ?n a campy:DocumentExtract .
-                OPTIONAL { ?n campy:archived ?raw_archived }
-                BIND(COALESCE(?raw_archived, false) AS ?archived)
+                ?n campy:archived ?archived .
             }
             GROUP BY ?archived
             """,
@@ -2720,8 +2683,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             SELECT ?lesson_id ?text_raw ?created_at WHERE {
                 ?m a campy:Message ; campy:CONTAINS_LESSON ?l ; campy:created_at ?created_at .
                 ?l a campy:Lesson ; campy:lesson_id ?lesson_id ; campy:text_raw ?text_raw .
-                OPTIONAL { ?l campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?l campy:archived false .
                 OPTIONAL { ?l campy:trigger_pattern ?trigger_pattern }
                 FILTER(!BOUND(?trigger_pattern))
             }
@@ -2776,8 +2738,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?m a campy:Message ; campy:CONTAINS_LESSON ?l ; campy:SENT_IN ?s .
                 ?l a campy:Lesson ; campy:lesson_id ?lesson_id ; campy:text_raw ?text_raw .
                 ?s a campy:Session ; campy:session_id ?session_id ; campy:started_at ?started_at .
-                OPTIONAL { ?l campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?l campy:archived false .
                 OPTIONAL { ?l campy:trigger_pattern ?trigger_pattern }
                 FILTER(!BOUND(?trigger_pattern))
             }
@@ -2799,8 +2760,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?trigger_pattern WHERE {
                 ?l a campy:Lesson ; campy:trigger_pattern ?trigger_pattern .
-                OPTIONAL { ?l campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?l campy:archived false .
                 FILTER(?trigger_pattern != "")
             }
             """,
@@ -2819,8 +2779,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?trigger_pattern WHERE {
                 ?p a campy:Procedure ; campy:trigger_pattern ?trigger_pattern .
-                OPTIONAL { ?p campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?p campy:archived false .
                 FILTER(?trigger_pattern != "")
             }
             """,

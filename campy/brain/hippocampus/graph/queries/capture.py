@@ -62,8 +62,7 @@ CAPTURE_QUERIES = [
                 ?m a campy:Message ;
                    campy:text_raw ?text_raw .
                 FILTER(CONTAINS(?text_raw, ?marker))
-                OPTIONAL { ?m campy:archived ?old_archived }
-                FILTER(!BOUND(?old_archived) || ?old_archived = false)
+                ?m campy:archived false .
             }
             """,
     ),

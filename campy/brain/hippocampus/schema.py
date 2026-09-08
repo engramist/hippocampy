@@ -1999,6 +1999,8 @@ def init_schema(db: Any, seed_examples_path: str,
                 schema_types_seen.add(schema_name)
             db.write_edge("ROUTES_TO", mint_uri("GistClass", gist_name), mint_uri("SchemaOrgType", schema_name))
         _bootstrap_centroids(db, seed_examples_path, embedding_model)
+        if hasattr(db, "backfill_explicit_status"):
+            db.backfill_explicit_status()
         print("Schema initialization complete (Oxigraph).")
         return
 

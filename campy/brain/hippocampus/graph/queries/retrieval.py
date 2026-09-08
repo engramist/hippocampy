@@ -202,8 +202,7 @@ RETRIEVAL_QUERIES = [
                    campy:created_at ?created_at .
                 FILTER(CONTAINS(LCASE(?text_raw), LCASE(?query)))
                 FILTER(?created_at > ?cutoff)
-                OPTIONAL { ?m campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?m campy:archived false .
             }
             ORDER BY DESC(?created_at)
             """,
@@ -340,8 +339,7 @@ RETRIEVAL_QUERIES = [
                    campy:confidence ?confidence ;
                    campy:pathway_strength ?pathway_strength ;
                    campy:created_at ?created_at .
-                OPTIONAL { ?c campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?c campy:archived false .
             }
             ORDER BY DESC(?created_at)
             """,
@@ -390,8 +388,7 @@ RETRIEVAL_QUERIES = [
                 ?c ?p ?n .
                 ?n a campy:Concept ;
                    campy:concept_id ?concept_id .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
                 FILTER NOT EXISTS { VALUES ?cid2 { } FILTER(?concept_id = ?cid2) }
             }
             """,
@@ -419,8 +416,7 @@ RETRIEVAL_QUERIES = [
                 FILTER(?count >= "3"^^xsd:long)
                 ?n a campy:Concept ;
                    campy:concept_id ?concept_id .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
                 FILTER NOT EXISTS { VALUES ?cid2 { } FILTER(?concept_id = ?cid2) }
             }
             """,
@@ -460,8 +456,7 @@ for label, pk, key in _DIFF_TABLES:
                        campy:confidence_low ?confidence_low ;
                        campy:pathway_strength ?pathway_strength ;
                        campy:created_at ?created_at .
-                    OPTIONAL {{ ?a campy:archived ?archived }}
-                    FILTER(!BOUND(?archived) || ?archived = false)
+                    ?a campy:archived false .
                     FILTER(?created_at > ?since)
                 }}
                 ORDER BY DESC(?created_at)
