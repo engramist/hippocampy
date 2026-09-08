@@ -1,5 +1,5 @@
 {
-  "total_violations": 56,
+  "total_violations": 49,
   "violations": [
     {
       "query": "arc.get_action_fact_detail",
@@ -42,55 +42,6 @@
       "property": "last_proactive_push_msg_count",
       "kind": "dot_property",
       "detail": "s.last_proactive_push_msg_count on Session"
-    },
-    {
-      "query": "provenance.find_live_arcactionpattern",
-      "table": "ArcActionPattern",
-      "property": "content_hash",
-      "kind": "dot_property",
-      "detail": "n.content_hash on ArcActionPattern"
-    },
-    {
-      "query": "provenance.find_live_arceffectpattern",
-      "table": "ArcEffectPattern",
-      "property": "content_hash",
-      "kind": "dot_property",
-      "detail": "n.content_hash on ArcEffectPattern"
-    },
-    {
-      "query": "provenance.find_live_arcfailuremode",
-      "table": "ArcFailureMode",
-      "property": "content_hash",
-      "kind": "dot_property",
-      "detail": "n.content_hash on ArcFailureMode"
-    },
-    {
-      "query": "provenance.find_live_arcmechanic",
-      "table": "ArcMechanic",
-      "property": "content_hash",
-      "kind": "dot_property",
-      "detail": "n.content_hash on ArcMechanic"
-    },
-    {
-      "query": "provenance.find_live_arcprecondition",
-      "table": "ArcPrecondition",
-      "property": "content_hash",
-      "kind": "dot_property",
-      "detail": "n.content_hash on ArcPrecondition"
-    },
-    {
-      "query": "provenance.find_live_arcrecoverypolicy",
-      "table": "ArcRecoveryPolicy",
-      "property": "content_hash",
-      "kind": "dot_property",
-      "detail": "n.content_hash on ArcRecoveryPolicy"
-    },
-    {
-      "query": "provenance.find_live_arcworldmodelstep",
-      "table": "ArcWorldModelStep",
-      "property": "content_hash",
-      "kind": "dot_property",
-      "detail": "n.content_hash on ArcWorldModelStep"
     },
     {
       "query": "provenance.touch_last_accessed_actioneffect",
