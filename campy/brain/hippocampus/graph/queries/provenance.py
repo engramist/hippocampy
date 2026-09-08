@@ -3476,27 +3476,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
             """),
     ),
     NamedQuery(
-        name="provenance.find_live_arcmechanic",
-        cypher="""
-            MATCH (n:ArcMechanic)
-            WHERE n.content_hash = $key AND n.superseded_by IS NULL
-            RETURN n.mechanic_id AS id LIMIT 1
-            """,
-        params=("key",),
-        mutating=False,
-        description="Find live ArcMechanic by dedupe key (content hash).",
-        sparql="""
-            SELECT ?id WHERE {
-                ?n a campy:ArcMechanic ;
-                   campy:content_hash ?key ;
-                   campy:mechanic_id ?id .
-                OPTIONAL { ?n campy:superseded_by ?superseded_by }
-                FILTER(!BOUND(?superseded_by))
-            }
-            LIMIT 1
-            """,
-    ),
-    NamedQuery(
         name="provenance.touch_last_accessed_arcmechanic",
         cypher="""
             MATCH (n:ArcMechanic {mechanic_id: $id})
@@ -3633,27 +3612,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
             """),
-    ),
-    NamedQuery(
-        name="provenance.find_live_arcactionpattern",
-        cypher="""
-            MATCH (n:ArcActionPattern)
-            WHERE n.content_hash = $key AND n.superseded_by IS NULL
-            RETURN n.pattern_id AS id LIMIT 1
-            """,
-        params=("key",),
-        mutating=False,
-        description="Find live ArcActionPattern by dedupe key (content hash).",
-        sparql="""
-            SELECT ?id WHERE {
-                ?n a campy:ArcActionPattern ;
-                   campy:content_hash ?key ;
-                   campy:pattern_id ?id .
-                OPTIONAL { ?n campy:superseded_by ?superseded_by }
-                FILTER(!BOUND(?superseded_by))
-            }
-            LIMIT 1
-            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_arcactionpattern",
@@ -3794,27 +3752,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
             """),
     ),
     NamedQuery(
-        name="provenance.find_live_arceffectpattern",
-        cypher="""
-            MATCH (n:ArcEffectPattern)
-            WHERE n.content_hash = $key AND n.superseded_by IS NULL
-            RETURN n.pattern_id AS id LIMIT 1
-            """,
-        params=("key",),
-        mutating=False,
-        description="Find live ArcEffectPattern by dedupe key (content hash).",
-        sparql="""
-            SELECT ?id WHERE {
-                ?n a campy:ArcEffectPattern ;
-                   campy:content_hash ?key ;
-                   campy:pattern_id ?id .
-                OPTIONAL { ?n campy:superseded_by ?superseded_by }
-                FILTER(!BOUND(?superseded_by))
-            }
-            LIMIT 1
-            """,
-    ),
-    NamedQuery(
         name="provenance.touch_last_accessed_arceffectpattern",
         cypher="""
             MATCH (n:ArcEffectPattern {pattern_id: $id})
@@ -3951,27 +3888,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
             """),
-    ),
-    NamedQuery(
-        name="provenance.find_live_arcprecondition",
-        cypher="""
-            MATCH (n:ArcPrecondition)
-            WHERE n.content_hash = $key AND n.superseded_by IS NULL
-            RETURN n.precondition_id AS id LIMIT 1
-            """,
-        params=("key",),
-        mutating=False,
-        description="Find live ArcPrecondition by dedupe key (content hash).",
-        sparql="""
-            SELECT ?id WHERE {
-                ?n a campy:ArcPrecondition ;
-                   campy:content_hash ?key ;
-                   campy:precondition_id ?id .
-                OPTIONAL { ?n campy:superseded_by ?superseded_by }
-                FILTER(!BOUND(?superseded_by))
-            }
-            LIMIT 1
-            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_arcprecondition",
@@ -4112,27 +4028,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
             """),
     ),
     NamedQuery(
-        name="provenance.find_live_arcfailuremode",
-        cypher="""
-            MATCH (n:ArcFailureMode)
-            WHERE n.content_hash = $key AND n.superseded_by IS NULL
-            RETURN n.failure_mode_id AS id LIMIT 1
-            """,
-        params=("key",),
-        mutating=False,
-        description="Find live ArcFailureMode by dedupe key (content hash).",
-        sparql="""
-            SELECT ?id WHERE {
-                ?n a campy:ArcFailureMode ;
-                   campy:content_hash ?key ;
-                   campy:failure_mode_id ?id .
-                OPTIONAL { ?n campy:superseded_by ?superseded_by }
-                FILTER(!BOUND(?superseded_by))
-            }
-            LIMIT 1
-            """,
-    ),
-    NamedQuery(
         name="provenance.touch_last_accessed_arcfailuremode",
         cypher="""
             MATCH (n:ArcFailureMode {failure_mode_id: $id})
@@ -4271,27 +4166,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
             """),
     ),
     NamedQuery(
-        name="provenance.find_live_arcrecoverypolicy",
-        cypher="""
-            MATCH (n:ArcRecoveryPolicy)
-            WHERE n.content_hash = $key AND n.superseded_by IS NULL
-            RETURN n.recovery_policy_id AS id LIMIT 1
-            """,
-        params=("key",),
-        mutating=False,
-        description="Find live ArcRecoveryPolicy by dedupe key (content hash).",
-        sparql="""
-            SELECT ?id WHERE {
-                ?n a campy:ArcRecoveryPolicy ;
-                   campy:content_hash ?key ;
-                   campy:recovery_policy_id ?id .
-                OPTIONAL { ?n campy:superseded_by ?superseded_by }
-                FILTER(!BOUND(?superseded_by))
-            }
-            LIMIT 1
-            """,
-    ),
-    NamedQuery(
         name="provenance.touch_last_accessed_arcrecoverypolicy",
         cypher="""
             MATCH (n:ArcRecoveryPolicy {recovery_policy_id: $id})
@@ -4428,27 +4302,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
             """),
-    ),
-    NamedQuery(
-        name="provenance.find_live_arcworldmodelstep",
-        cypher="""
-            MATCH (n:ArcWorldModelStep)
-            WHERE n.content_hash = $key AND n.superseded_by IS NULL
-            RETURN n.world_model_step_id AS id LIMIT 1
-            """,
-        params=("key",),
-        mutating=False,
-        description="Find live ArcWorldModelStep by dedupe key (content hash).",
-        sparql="""
-            SELECT ?id WHERE {
-                ?n a campy:ArcWorldModelStep ;
-                   campy:content_hash ?key ;
-                   campy:world_model_step_id ?id .
-                OPTIONAL { ?n campy:superseded_by ?superseded_by }
-                FILTER(!BOUND(?superseded_by))
-            }
-            LIMIT 1
-            """,
     ),
     NamedQuery(
         name="provenance.touch_last_accessed_arcworldmodelstep",
