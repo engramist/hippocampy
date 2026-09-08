@@ -231,18 +231,60 @@ Generated from backlog cards and backlog/plans/*.md.
 - B356: (none)
 - B357: (none)
 - B358: (none)
+- B359: (none)
+- B360: (none)
+- B361: (none)
+- B362: (none)
+- B363: (none)
+- B364: (none)
+- B365: (none)
+- B366: (none)
+- B367: (none)
+- B368: (none)
+- B369: (none)
+- B370: (none)
+- B371: (none)
+- B372: (none)
+- B373: (none)
+- B374: backlog/plans/B-374-two-lane-thalamic-compressor.md
+- B375: backlog/plans/B-375-prewarmed-selective-activation.md
+- B376: (none)
+- B377: (none)
+- B378: (none)
+- B379: (none)
+- B380: backlog/plans/B-380-patent-evidence-pack.md
+- B381: backlog/plans/B-381-decision-grade-ask-eval.md
+- B382: backlog/plans/B-382-phase-aware-model-router.md
+- B383: backlog/plans/B-383-automated-model-handoff.md
+- B384: backlog/plans/B-384-featherweight-engine-foundation.md
+- B385: backlog/plans/B-385-cloud-platform-service.md
+- B386: backlog/plans/B-386-gateway-chokepoint-completion.md
+- B387: (none)
+- B389: (none)
+- B390: (none)
+- B391: (none)
+- B392: (none)
+- B393: (none)
+- B394: (none)
+- B395: (none)
+- B396: (none)
+- B397: (none)
+- B398: (none)
+- B399: (none)
+- B400: (none)
+- B401: (none)
+- B402: backlog/plans/B-402-architecture-research-section.md
+- B403: (none)
+- B404: (none)
+- B405: (none)
+- B406: (none)
+- B407: (none)
+- B408: (none)
+- B409: (none)
+- B410: (none)
+- B411: (none)
 
 ## Unmatched Plan Files
 
 - backlog/plans/B-290-continuous-work-state.md
 - backlog/plans/B-291-oss-release-pr-pipeline.md
-- backlog/plans/B-centroid-diversity.md
-- backlog/plans/B-implementation.md
-- backlog/plans/B-install-plan.md
-- backlog/plans/B-junk-filter-v2.md
-- backlog/plans/B-model-eval.md
-- backlog/plans/B-noise-floor-fix.md
-- backlog/plans/B-notebook-update.md
-- backlog/plans/B-openclaw-extension.md
-- backlog/plans/B-streamable-http.md
-- backlog/plans/B37-token-budget.md
