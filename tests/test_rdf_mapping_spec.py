@@ -147,11 +147,11 @@ def test_string_array_round_trip_is_set_equal_not_order_sensitive(client):
 def test_null_property_emits_no_triple(client):
     uri = client.write_node("Concept", {
         "concept_id": "c1",
-        "archived": None,
+        "source": None,
         "confidence": 0.5,
     })
     rows = list(client.store.query(
-        f"PREFIX campy: <{CAMPY_NS}> SELECT ?o WHERE {{ <{uri}> campy:archived ?o }}"
+        f"PREFIX campy: <{CAMPY_NS}> SELECT ?o WHERE {{ <{uri}> campy:source ?o }}"
     ))
     assert rows == []
     # sibling non-null property on the same node is unaffected
@@ -162,7 +162,7 @@ def test_null_property_emits_no_triple(client):
 
 
 def test_null_never_written_as_sentinel_string(client):
-    uri = client.write_node("Concept", {"concept_id": "c1", "archived": None})
+    uri = client.write_node("Concept", {"concept_id": "c1", "source": None})
     rows = list(client.store.query(
         f"PREFIX campy: <{CAMPY_NS}> SELECT ?p ?o WHERE {{ <{uri}> ?p ?o . "
         f'FILTER(?o = "" || ?o = "null" || ?o = "None") }}'
