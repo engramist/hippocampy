@@ -226,7 +226,7 @@ def test_context_manager_closes_connection(tmp_store_path):
 # reason), never silently passed.
 
 try:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from tests.kuzu_test_client import KuzuClient
 
     KUZU_AVAILABLE = True
 except Exception:

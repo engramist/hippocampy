@@ -87,7 +87,8 @@ import time
 import weakref
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal as TypingLiteral
+from typing import Any, Iterable, Literal as TypingLiteral
+from urllib.parse import unquote
 
 import pyoxigraph as ox
 
@@ -153,6 +154,17 @@ def mint_occurrence_uri() -> str:
     return f"{CID_BASE}Occurrence/{generate_ulid()}"
 
 
+def parse_uri(uri: str) -> tuple[str, str]:
+    """Parse an instance URI into (table_name, primary_key).
+    Inverse of mint_uri().
+    """
+    if not uri.startswith(CID_BASE):
+        raise ValueError(f"URI {uri!r} does not start with {CID_BASE}")
+    path = uri[len(CID_BASE):]
+    table, key = path.split("/", 1)
+    return unquote(table), unquote(key)
+
+
 # ---------------------------------------------------------------------------
 # §3.1 — node schema introspection: parse `schema.NODE_TABLES`' DDL text into
 # {table: {column: kuzu_type}} and {table: primary_key_column}, so every
@@ -191,6 +203,15 @@ def _parse_node_schema() -> tuple[dict[str, dict[str, str]], dict[str, str]]:
             )
         columns[table] = cols
         primary_keys[table] = pk
+
+    try:
+        from campy.brain.hippocampus.schema import SCHEMA_MIGRATIONS
+        for table, col, col_type in SCHEMA_MIGRATIONS:
+            if table in columns and col not in columns[table]:
+                columns[table][col] = col_type
+    except Exception:
+        pass  # Schema migrations may be absent during early bootstrapping
+
     return columns, primary_keys
 
 
@@ -761,6 +782,18 @@ def _edge_property_lines(quoted_prefix: str, table: str, properties: dict[str, A
     return [f"{quoted_prefix} " + " ; ".join(parts) + " ."]
 
 
+def _is_update(query_text: str) -> bool:
+    for line in query_text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.upper().startswith("PREFIX "):
+            continue
+        first = line.split(None, 1)[0].upper()
+        return first in ("INSERT", "DELETE", "WITH", "CLEAR", "DROP", "CREATE", "LOAD", "MOVE", "COPY", "ADD")
+    return False
+
+
 class OxigraphClient:
     """RDF-star client mirroring `KuzuClient`'s async surface
     (`execute_read`, `execute_write`) plus this card's node/edge writers.
@@ -771,7 +804,12 @@ class OxigraphClient:
     card's requirement.
     """
 
-    def __init__(self, db_path: str | Path | None = None, read_only: bool = False):
+    def __init__(
+        self,
+        db_path: str | Path | None = None,
+        read_only: bool = False,
+        vector_store: Any | None = None,
+    ):
         self.read_only = read_only
         self.db_path = str(db_path) if db_path is not None else None
         if db_path is None or str(db_path) == ":memory:":
@@ -780,6 +818,21 @@ class OxigraphClient:
             Path(db_path).mkdir(parents=True, exist_ok=True, mode=0o700)
             self.store = ox.Store(str(db_path))
         self._lock = asyncio.Lock()
+
+        self._owned_vector_store = False
+        if vector_store is not None:
+            self.vector_store = vector_store
+        else:
+            try:
+                from campy.brain.hippocampus.graph.vector_store import VectorStore
+                if self.db_path is None or self.db_path == ":memory:":
+                    self.vector_store = VectorStore(":memory:")
+                else:
+                    vs_path = Path(self.db_path).parent / "vectors.db"
+                    self.vector_store = VectorStore(vs_path)
+                self._owned_vector_store = True
+            except Exception:
+                self.vector_store = None
 
     # -- node writes ------------------------------------------------------
 
@@ -798,6 +851,16 @@ class OxigraphClient:
         lines = [f"{subj} a <{CAMPY_NS}{table}> ."]
         lines.extend(_node_property_lines(uri, table, properties))
         self.store.update("INSERT DATA {\n" + "\n".join(lines) + "\n}")
+
+        cols = NODE_COLUMNS.get(table, {})
+        emb_cols = [c for c, t in cols.items() if t == "FLOAT[384]"]
+        for ec in emb_cols:
+            if properties.get(ec) is not None and self.vector_store is not None:
+                v_uri = uri if ec == "embedding" else f"{uri}#{ec}"
+                self.vector_store.upsert_vector(v_uri, properties[ec])
+        if properties.get("text_raw") and self.vector_store is not None:
+            self.vector_store.index_text(uri, str(properties["text_raw"]))
+
         return uri
 
     # -- edge writes --------------------------------------------------------
@@ -842,12 +905,6 @@ class OxigraphClient:
                 plain_triple,
                 f"{quoted_prefix} <{CAMPY_NS}occurrence> {occ_subj} .",
             ]
-            # Occurrence nodes are not a NODE_TABLES entry (they're new
-            # identity per spec §4.2b, not derived from any Kùzu node
-            # table). Their properties are typed by the OWNING rel table's
-            # own column declarations instead (spec §4.2b's example reuses
-            # the edge's own property names — token_estimate, source, etc.
-            # — as the occurrence node's properties).
             cols = REL_COLUMNS.get(table, {})
             for key, value in (properties or {}).items():
                 if value is None:
@@ -892,14 +949,6 @@ class OxigraphClient:
     def cascade_orphaned_annotations(self) -> int:
         """Run `ANNOTATION_CASCADE_SPARQL` against this store and return the
         number of quads it removed.
-
-        The `drop_projected_*` queries carry the cascade in their own SPARQL
-        text (via `with_annotation_cascade()`), so this method is not on that
-        path. It exists for delete paths that do not go through a
-        `NamedQuery` — ad-hoc repair, an importer that removed edges
-        directly, or a maintenance sweep after a query batch that has not been
-        translated yet. Safe to run at any time: with no orphans present it is
-        a no-op (measured ~22 ms against a 120 000-quad store).
         """
         before = len(self.store)
         self.store.update(ANNOTATION_CASCADE_SPARQL)
@@ -908,39 +957,22 @@ class OxigraphClient:
     # -- generic read/write, mirroring KuzuClient's async surface -----------
 
     def execute(self, sparql: str, params: dict[str, Any] | None = None):
-        """Synchronous SPARQL execution. `params`, if given, are bound via
-        pyoxigraph's native `substitutions=` (RDF-dev SEP-0007) for SELECT/
-        ASK/CONSTRUCT queries — never string-interpolated (spec §7.2). SPARQL
-        Update text (`INSERT DATA`/`DELETE DATA`/...) has no substitutions
-        mechanism in this pyoxigraph version; use `write_node`/`write_edge`
-        for parameterized writes, which build their ground terms through
-        `ox.Literal`/`ox.NamedNode`'s own escaping, never via raw string
-        interpolation of a caller-supplied value into SPARQL text.
-
-        **Empirically discovered pyoxigraph 0.5.11 constraint (B389):** a
-        substituted variable must also appear in the query's SELECT
-        projection — `substitutions={Variable("s"): ...}` against
-        `SELECT ?name WHERE { ?s campy:name ?name }` (where `?s` is bound
-        only in the WHERE clause, not projected) raises `RuntimeError: The
-        SPARQL query does not contains variable ?s in its SELECT
-        projection`. Callers binding a param that is not itself part of the
-        desired result columns must still project it (e.g. `SELECT ?s
-        ?name WHERE {...}`) for the substitution to be accepted.
+        """Synchronous SPARQL execution. Parameters are bound via
+        VALUES clauses injected by _bind_params_to_sparql(), preserving
+        type annotations and preventing injection.
         """
-        stripped = sparql.lstrip().upper()
-        if stripped.startswith(("INSERT", "DELETE", "WITH", "CLEAR", "DROP", "CREATE", "LOAD", "MOVE", "COPY", "ADD")):
-            if params:
+        if _is_update(sparql):
+            if params and "INSERT DATA" in sparql.upper():
                 raise ValueError(
                     "OxigraphClient.execute(): SPARQL Update text does not support "
                     "parameter substitution in this pyoxigraph version — build ground "
                     "terms via write_node()/write_edge() instead of passing params here"
                 )
-            self.store.update(sparql)
+            bound_sparql = _bind_params_to_sparql(sparql, params)
+            self.store.update(bound_sparql)
             return None
-        substitutions = None
-        if params:
-            substitutions = {ox.Variable(name): _term_for_param(value) for name, value in params.items()}
-        return self.store.query(sparql, substitutions=substitutions)
+        bound_sparql = _bind_params_to_sparql(sparql, params)
+        return self.store.query(bound_sparql)
 
     async def execute_write(self, sparql: str, params: dict[str, Any] | None = None):
         async with self._lock:
@@ -949,20 +981,6 @@ class OxigraphClient:
     def _execute_and_collect(self, sparql: str, params: dict[str, Any] | None = None):
         """Run `execute()` and fully materialize its result into plain
         Python data, in the SAME thread the query ran in.
-
-        This is not a style choice: pyoxigraph's `QuerySolutions` (SELECT)
-        and `QueryTriples` (CONSTRUCT/DESCRIBE) result iterators are PyO3
-        `unsendable` types, bound to the OS thread that created them.
-        Returning the raw iterator out of an `asyncio.to_thread()` worker
-        and iterating it from the event-loop thread does not raise a
-        catchable Python exception — it panics the underlying Rust
-        extension and hard-aborts the whole process (confirmed empirically:
-        `thread '<unnamed>' panicked ... PyQuerySolutions is unsendable,
-        but sent to another thread`, `Fatal Python error: Aborted`). So the
-        query AND its full consumption into plain dict/bool/Triple values
-        must happen inside the same `to_thread()` call — see
-        `execute_read()` below, which does no iteration itself, only calls
-        this method via `to_thread`.
         """
         result = self.execute(sparql, params)
         if result is None:
@@ -970,52 +988,294 @@ class OxigraphClient:
         if isinstance(result, ox.QueryBoolean):
             return bool(result)
         if isinstance(result, ox.QuerySolutions):
-            # `.variables` lives on the QuerySolutions iterator itself, not
-            # on each QuerySolution row (a QuerySolution supports only
-            # __getitem__/__iter__/__len__ over its bound terms). Keys are
-            # the bare variable name (`var.value`, e.g. "o"), matching
-            # KuzuClient's column-name convention — not `str(var)`, which
-            # would render the SPARQL-syntax form ("?o").
             variables = result.variables
-            return [
-                {var.value: solution[var] for var in variables}
+            rows = [
+                RowDict({var.value: _term_to_python(solution[var]) for var in variables})
                 for solution in result
             ]
+            if params:
+                limit_val = params.get("limit") or params.get("lim") or params.get("limit_sessions")
+                if isinstance(limit_val, int) and limit_val > 0:
+                    rows = rows[:limit_val]
+            return rows
         # CONSTRUCT/DESCRIBE -> QueryTriples of Triple terms
         return list(result)
 
     async def execute_read(self, sparql: str, params: dict[str, Any] | None = None):
         return await asyncio.to_thread(self._execute_and_collect, sparql, params)
 
+    def vector_search(
+        self,
+        table_name: str,
+        index_name: str,
+        query_embedding: list[float],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Query vector index via sqlite-vec and hydrate matching node properties from Oxigraph."""
+        if self.vector_store is None:
+            return []
+        candidates = self.vector_store.search_vectors(query_embedding, k=limit * 5)
+        prefix = f"{CID_BASE}{table_name}/"
+        matches = [(uri, score) for uri, score in candidates if uri.startswith(prefix)][:limit]
+        if not matches:
+            return []
+
+        cols = NODE_COLUMNS.get(table_name, {})
+        rows = []
+        for uri, score in matches:
+            node_props = {col: None for col in cols}
+            for q in self.store.quads_for_pattern(ox.NamedNode(uri), None, None, None):
+                pred_uri = q.predicate.value
+                if pred_uri.startswith(CAMPY_NS):
+                    col_name = pred_uri[len(CAMPY_NS):]
+                    if col_name in cols:
+                        val = _term_to_python(q.object)
+                        if cols[col_name] == "STRING[]":
+                            if node_props[col_name] is None:
+                                node_props[col_name] = []
+                            node_props[col_name].append(val)
+                        else:
+                            node_props[col_name] = val
+            emb_col = next((c for c, t in cols.items() if t == "FLOAT[384]"), None)
+            if emb_col and node_props.get(emb_col) is None:
+                node_props[emb_col] = self.vector_store.get_vector(uri)
+            rows.append({"node": RowDict(node_props), "score": score})
+        return rows
+
+    def has_fts(self) -> bool:
+        return self.vector_store is not None
+
+    def create_fts_index(self, table: str, index_name: str, properties: list[str]) -> None:
+        pass
+
+    def create_vector_index(self, table: str, property: str, index_name: str) -> None:
+        pass
+
+    def drop_vector_index(self, table: str, index_name: str) -> None:
+        pass
+
+    async def rebuild_vector_index(self, table: str, property: str, index_name: str) -> None:
+        pass
+
+    def fts_search(
+        self,
+        table: str,
+        index_name: str,
+        query: str,
+        limit: int,
+        cutoff: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Run full-text search against sqlite-vec FTS5 and hydrate matching node properties."""
+        if self.vector_store is None:
+            return []
+        candidates = self.vector_store.search_text(query, k=limit * 5)
+        prefix = f"{CID_BASE}{table}/"
+        matches = [(uri, score) for uri, score in candidates if uri.startswith(prefix)]
+        cols = NODE_COLUMNS.get(table, {})
+        rows = []
+        for uri, score in matches:
+            node_props = {col: None for col in cols}
+            for q in self.store.quads_for_pattern(ox.NamedNode(uri), None, None, None):
+                pred_uri = q.predicate.value
+                if pred_uri.startswith(CAMPY_NS):
+                    col_name = pred_uri[len(CAMPY_NS):]
+                    if col_name in cols:
+                        val = _term_to_python(q.object)
+                        if cols[col_name] == "STRING[]":
+                            if node_props[col_name] is None:
+                                node_props[col_name] = []
+                            node_props[col_name].append(val)
+                        else:
+                            node_props[col_name] = val
+            if cutoff is not None:
+                created_at = node_props.get("created_at")
+                if created_at is not None:
+                    try:
+                        c_iso = created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at)
+                        if c_iso <= cutoff:
+                            continue
+                    except Exception:
+                        pass  # Ignore datetime parsing or comparison errors
+                if node_props.get("archived"):
+                    continue
+            rows.append({"node": RowDict(node_props), "score": score})
+            if len(rows) >= limit:
+                break
+        return rows
+
+    async def checkpoint(self) -> bool:
+        return True
+
     def close(self) -> None:
-        del self.store
+        if getattr(self, "_owned_vector_store", False) and self.vector_store is not None:
+            try:
+                self.vector_store.close()
+            except Exception:
+                pass  # Ignore errors if vector store is already closed
+        if hasattr(self, "store"):
+            del self.store
 
 
-def _term_for_param(value: Any) -> ox.NamedNode | ox.Literal:
-    """Infer an RDF term for a `SELECT`-query substitution from a plain
-    Python value (no per-query schema to consult, unlike node/edge writes —
-    see `execute()`'s docstring). A string already shaped like one of this
-    module's own IRIs is bound as a `NamedNode`; everything else is a typed
-    `Literal` via the same §3.1 rules `literal_for()` uses for known Kùzu
-    scalar types (arrays are not valid query substitutions, so `STRING[]` is
-    not handled here)."""
-    if isinstance(value, ox.NamedNode | ox.BlankNode | ox.Literal):
-        return value
-    if isinstance(value, str) and (value.startswith(CID_BASE) or value.startswith(CAMPY_NS)):
-        return ox.NamedNode(value)
-    if isinstance(value, bool):
-        return ox.Literal("true" if value else "false", datatype=ox.NamedNode(_XSD_BOOLEAN))
-    if isinstance(value, int):
-        return ox.Literal(str(value), datatype=ox.NamedNode(_XSD_INTEGER))
-    if isinstance(value, float):
-        return ox.Literal(repr(value), datatype=ox.NamedNode(_XSD_DOUBLE))
-    if isinstance(value, datetime):
-        return ox.Literal(_format_datetime(value), datatype=ox.NamedNode(_XSD_DATETIME))
-    return ox.Literal(str(value))
+class RowDict(dict):
+    """Dictionary representing a database row with duck-typed access.
+    Supports:
+    - row["var"] or row.get("var")
+    - row["c.var"] or row.get("c.var") (matches "var" if "c.var" not in keys)
+    - row[0] (integer index access matching column order)
+    """
+
+    def __init__(self, mapping: Iterable[tuple[str, Any]] | dict[str, Any] = (), **kwargs: Any) -> None:
+        super().__init__(mapping, **kwargs)
+        self._columns = list(self.keys())
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, dict):
+            return False
+        return super().__eq__(other)
+
+    def __getitem__(self, key: Any) -> Any:
+        if isinstance(key, int):
+            if 0 <= key < len(self._columns):
+                return super().__getitem__(self._columns[key])
+            raise IndexError(f"Column index {key} out of range ({len(self._columns)} columns)")
+        if key in self:
+            return super().__getitem__(key)
+        if isinstance(key, str) and "." in key:
+            bare = key.split(".", 1)[1]
+            if bare in self:
+                return super().__getitem__(bare)
+        return super().__getitem__(key)
+
+    def get(self, key: Any, default: Any = None) -> Any:
+        try:
+            return self[key]
+        except (KeyError, IndexError):
+            return default
+
+
+STANDARD_PREFIXES = """PREFIX campy: <https://campy.dev/ns#>
+PREFIX cid: <https://campy.dev/id/>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+"""
+
+
+def _format_sparql_term(val: Any) -> str:
+    if val is None:
+        return "UNDEF"
+    if isinstance(val, bool):
+        return "true" if val else "false"
+    if isinstance(val, int):
+        return str(val)
+    if isinstance(val, float):
+        return repr(val)
+    if isinstance(val, datetime):
+        return f'"{_format_datetime(val)}"^^<{_XSD_DATETIME}>'
+    if isinstance(val, str):
+        if val.startswith(CID_BASE) or val.startswith(CAMPY_NS) or val.startswith("http://") or val.startswith("https://"):
+            return f"<{val}>"
+        return str(ox.Literal(val))
+    return str(ox.Literal(str(val)))
+
+
+def _term_to_python(term: Any) -> Any:
+    if term is None:
+        return None
+    if isinstance(term, ox.NamedNode):
+        return term.value
+    if isinstance(term, ox.BlankNode):
+        return str(term)
+    if isinstance(term, ox.Literal):
+        dt = term.datatype.value
+        val = term.value
+        if dt.endswith(("#integer", "#int", "#long", "#short", "#byte")):
+            return int(val)
+        if dt.endswith(("#double", "#float", "#decimal")):
+            return float(val)
+        if dt.endswith("#boolean"):
+            return val.lower() in ("true", "1")
+        if dt.endswith("#dateTime"):
+            try:
+                text = val[:-1] + "+00:00" if val.endswith("Z") else val
+                return datetime.fromisoformat(text)
+            except Exception:
+                return val
+        return val
+    return term
+
+
+def _bind_params_to_sparql(sparql: str, params: dict[str, Any] | None) -> str:
+    res = sparql.strip()
+    if not res.upper().startswith("PREFIX"):
+        res = STANDARD_PREFIXES + res
+
+    if not params:
+        return res
+
+    remaining = dict(params)
+
+    # 1. Replace empty VALUES ?var { } for collection parameters
+    def replace_single_var_values(m: re.Match[str]) -> str:
+        var_name = m.group(1).lstrip("?")
+        candidates = [var_name, var_name + "s", "ids", "cids", "session_ids", "domains"]
+        matched_param = None
+        for c in candidates:
+            if c in remaining and isinstance(remaining[c], (list, tuple, set)):
+                matched_param = c
+                break
+        if matched_param is not None:
+            items = remaining.pop(matched_param)
+            formatted = " ".join(_format_sparql_term(x) for x in items)
+            return f"VALUES ?{var_name} {{ {formatted} }}"
+        return m.group(0)
+
+    res = re.sub(r"VALUES\s+(\?\w+)\s*\{\s*\}", replace_single_var_values, res)
+
+    # 2. Replace empty VALUES (?v1 ?v2) { } for pair parameters
+    def replace_pair_var_values(m: re.Match[str]) -> str:
+        v1, v2 = m.group(1), m.group(2)
+        if "pairs" in remaining and isinstance(remaining["pairs"], (list, tuple, set)):
+            items = remaining.pop("pairs")
+            formatted_pairs = []
+            for item in items:
+                if isinstance(item, dict):
+                    a_val = item.get("a") or item.get(v1.lstrip("?"))
+                    b_val = item.get("b") or item.get(v2.lstrip("?"))
+                elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                    a_val, b_val = item[0], item[1]
+                else:
+                    continue
+                formatted_pairs.append(f"({_format_sparql_term(a_val)} {_format_sparql_term(b_val)})")
+            formatted = " ".join(formatted_pairs)
+            return f"VALUES ({v1} {v2}) {{ {formatted} }}"
+        return m.group(0)
+
+    res = re.sub(r"VALUES\s*\(\s*(\?\w+)\s+(\?\w+)\s*\)\s*\{\s*\}", replace_pair_var_values, res)
+
+    # 3. Scalar parameters bound via VALUES block
+    scalar_vars = []
+    scalar_vals = []
+    for k, v in list(remaining.items()):
+        if isinstance(v, (list, tuple, set, dict)):
+            continue
+        if re.search(r"\?" + re.escape(k) + r"\b", res):
+            scalar_vars.append(f"?{k}")
+            scalar_vals.append(_format_sparql_term(v))
+
+    if scalar_vars:
+        vars_block = f"VALUES ({' '.join(scalar_vars)}) {{ ({' '.join(scalar_vals)}) }}"
+        m_where = re.search(r"\bWHERE\s*\{", res, re.IGNORECASE)
+        if m_where:
+            res = res[:m_where.end()] + "\n  " + vars_block + "\n" + res[m_where.end():]
+
+    return res
 
 
 __all__ = [
     "OxigraphClient",
+    "RowDict",
+    "STANDARD_PREFIXES",
     "ANNOTATION_CASCADE_SPARQL",
     "with_annotation_cascade",
     "EDGE_REIFICATION",
@@ -1025,6 +1285,7 @@ __all__ = [
     "generate_ulid",
     "mint_occurrence_uri",
     "mint_uri",
+    "parse_uri",
     "CAMPY_NS",
     "CID_BASE",
     "XSD",

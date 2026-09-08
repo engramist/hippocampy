@@ -2,7 +2,7 @@ import os
 import shutil
 import pytest
 import uuid
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.hippocampus.schema import init_schema
 from campy.brain.thalamus.tools.task_graph import register_task_graph
 

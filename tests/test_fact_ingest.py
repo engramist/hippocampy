@@ -21,7 +21,7 @@ from campy.brain.hippocampus.facts import (
 )
 from campy.brain.hippocampus.graph.export import export_graph_dump
 from campy.brain.hippocampus.graph.gateway import GraphGateway
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.hippocampus.graph.queries import REGISTRY
 from campy.brain.hippocampus.provenance import drop_projections
 from campy.brain.hippocampus.schema import init_schema

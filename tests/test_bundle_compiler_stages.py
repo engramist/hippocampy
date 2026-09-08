@@ -19,7 +19,7 @@ import uuid
 import pytest
 
 from campy.paths import tables_dir
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.thalamus.bundle_compiler import (
     _stage_exact_facts,
     _stage_graph_structure,

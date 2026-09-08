@@ -59,12 +59,12 @@ evidence came in).
 
 | Field | Detail |
 |---|---|
-| Status | `resolved` |
+| Status | `resolved` (B397 cutover completed) |
 | Why it matters | B384 originally justified the Kùzu → RDF-star (Oxigraph) migration primarily on memory savings. [B389](../backlog/B389.md) states plainly that this justification was wrong and must not be repeated in that migration's PR. Getting the *actual* driver right matters because a memory-based justification would be trivially refuted (see evidence) and would undermine the real, non-memory case for the migration. |
-| Evidence so far | Kùzu's own memory cost is small: bare Python 14.8 MB, `+ kuzu` 24.3 MB, `+ kuzu + fastembed` 76.1 MB (B389's table). These are import-time RSS figures — the table is headed "Imports \| RSS," the same shape as B387's original table that §5 above found to understate a running daemon's footprint — not warm/invoked numbers, so they should not be read as the daemon's real resident cost. Read only as Kùzu's marginal cost over fastembed alone (fastembed-only import RSS is 75.1 MB per B387's table), Kùzu adds roughly 1 MB — consistent with B389's own framing ("Kùzu costs ~1 MB on top of fastembed"). The actual drivers B389 gives, in order: (1) Kùzu has been archived/EOL since October 2025 — an unmaintained embedded database holding the sole source of truth is the real risk, and the primary driver; (2) B311 commit-checkpoint memory spikes (150 MB → 1.1 GB transient); (3) B285 — no in-place HNSW index updates, and rebuilding requires an archive-move Kùzu 0.11.3 cannot do cheaply; (4) native RDF-star edge annotation for the provenance model. |
-| Where the detail lives | [backlog/B389.md](../backlog/B389.md) |
+| Evidence so far | Kùzu's own memory cost is small: bare Python 14.8 MB, `+ kuzu` 24.3 MB, `+ kuzu + fastembed` 76.1 MB (B389's table). These are import-time RSS figures — not warm/invoked numbers. The actual drivers, in order: (1) Kùzu has been archived/EOL since October 2025 — an unmaintained embedded database holding the sole source of truth is the real risk, and the primary driver; (2) B311 commit-checkpoint memory spikes (150 MB → 1.1 GB transient); (3) B285 — no in-place HNSW index updates; (4) native RDF-star edge annotation for the provenance model.<br><br>**B397 Certified Footprint (macOS ru_maxrss)**: Bare Python 15.38 MB → `+ pyoxigraph` 19.83 MB (+4.45 MB) → `+ pyoxigraph + sqlite_vec` 31.25 MB (+11.42 MB) → `+ pyoxigraph + sqlite_vec + fastembed` 79.08 MB (vs Kùzu + fastembed at 76.91 MB — net delta +2.17 MB cold import over fastembed). Warm queried Oxigraph + sqlite-vec RSS: 48.30 MB. The +2.17 MB delta is reported honestly per the B397 acceptance gate. |
+| Where the detail lives | [backlog/B389.md](../backlog/B389.md), [backlog/B397.md](../backlog/B397.md) |
 | Decision rule | N/A — resolved. |
-| Contradiction flagged, not reconciled | This document's own `Technology Stack` and `Kùzu Implementation Notes` sections (above) still name **RyuGraph** as the migration fork to watch. B389's actual in-flight target is an **Oxigraph**/RDF-star client (`campy/brain/hippocampus/graph/oxigraph_client.py`), not RyuGraph. Per this section's own rule (record, do not decide), that mismatch is recorded here rather than silently edited into the existing `Technology Stack` / `Kùzu Implementation Notes` text. |
+| Cutover Status | Reconciled in B397 (2026-09-07): Kùzu has been completely removed and replaced by Oxigraph (`pyoxigraph==0.5.11`) + `sqlite-vec>=0.1.6`. All patent claim tests certified with zero assertion edits. |
 
 ### Is RDF-native inference and declarative validation viable in the embedded daemon?
 
@@ -130,7 +130,7 @@ Everything else should earn its way into the prompt.
 ## Technology Stack
 
 - **Language:** Python
-- **Database:** Kùzu (`kuzu==0.11.3` — pin this exact version; kuzu-db was archived October 2025, last stable release. Watch **RyuGraph** fork for future migration path.) — embedded graph + vector store. `kuzu_client.py` is an abstraction layer to simplify migration if needed. Never spin up external DB servers. No Neo4j, Postgres, ChromaDB, Pinecone, or LanceDB.
+- **Database:** Oxigraph (`pyoxigraph==0.5.11`) for RDF-star graph store + `sqlite-vec>=0.1.6` for vector similarity and FTS5 search (replacing retired Kùzu engine per B397). Zero external database servers. No Neo4j, Postgres, ChromaDB, Pinecone, or LanceDB.
 - **NER / Zoning:** `spaCy` (local, zero LLM cost for concept extraction)
 - **Embeddings:** `fastembed`/ONNX Runtime (local; `sentence-transformers/all-MiniLM-L6-v2`, same model as before B355 — see B342/B353/B355 below for why the runtime changed)
 - **Ontologies:** gist (Semantic Arts) for upper-level classification → schema.org sub-graphs for domain-specific attributes
@@ -333,26 +333,23 @@ Agent memory-use policy:
 
 **MainQuest ID** is generated deterministically as a hash of `repo_root_path + git_branch` so all local assistants auto-align to the same project context.
 
-### Kùzu Implementation Notes
+### Storage Architecture: Oxigraph & sqlite-vec (B397 Cutover)
 
-- **Pinned version:** `kuzu==0.11.3` — archived project, do not upgrade without testing against RyuGraph migration path
-- **Portability:** All Kùzu-specific syntax (DDL, projected graphs, `QUERY_VECTOR_INDEX`, `kuzu.Database`) lives exclusively in `kuzu_client.py`. Loop steps, tools, and the daemon never import `kuzu` directly. Migration to Neo4j or another provider = rewrite `kuzu_client.py` only. The data model (nodes, relationships, properties) is standard property graph — fully portable.
-- **Concurrency model:** Brain Daemon holds the sole `READ_WRITE` connection; a single `asyncio.Lock` wraps all write operations. MCP adapters open Kùzu with `read_only=True` for any direct reads — no write contention possible.
-- **Embedding type:** HNSW vector indexes require a fixed-dimension type — declare as `FLOAT[384]` (not `FLOAT[]`). One HNSW index created per node table at M1 schema init.
-- **Filtered vector search:** Use projected graphs to prefilter before HNSW search (not postfilter): `CALL project_graph('active_decisions', 'Decision', {'Decision': 'n.archived = false AND n.confidence_low = false'})` — restricts the index scan to active nodes only.
-- **Multi-table search:** No unified cross-table HNSW index exists. `current_truth` uses `UNION ALL` across per-table index calls in a single Cypher query, then sorts by score and applies `LIMIT`.
-- **Archived-node HNSW hygiene (B285):** Kuzu 0.11.3 supports `DROP_VECTOR_INDEX(table, index)`; inserts are immediately visible in index queries; deletes remove rows from index; updating indexed embeddings is disallowed. Because removing archived vectors requires row movement (invasive archive-table design), current B285 scope ships archived-ratio telemetry + adaptive retrieval headroom. Automatic rebuild remains disabled by behavior design until a dedicated archive-move architecture decision lands.
-- **Relationship table typing:** Named semantic relationships defined as `FROM Concept TO Concept` only. `REIFIED_AS` uses Kùzu's multi-FROM/TO syntax: `CREATE REL TABLE REIFIED_AS (FROM Concept TO Decision, FROM Concept TO Constraint, FROM Concept TO Requirement, FROM Concept TO ActionItem)`.
+Per B397, Campy has completed a clean, one-way door cutover from Kùzu to an embedded dual-store architecture:
+- **Graph Engine (Oxigraph):** Pinned `pyoxigraph==0.5.11`. Graph nodes and relationships are stored as RDF-star triples and quoted triples (`<<:s :p :o>>`) with reified property annotations. SPARQL 1.1 Query and Update are executed via `OxigraphClient` (`campy/brain/hippocampus/graph/oxigraph_client.py`).
+- **Vector & Keyword Index (sqlite-vec):** `sqlite-vec>=0.1.6` backed by SQLite with `vec0` virtual tables for 384-dimensional dense vector embeddings and FTS5 for full-text search. Colocated in `vectors.db` inside the database directory.
+- **Portability & Abstraction:** Application code accesses graph storage through `GraphGateway` (`campy/brain/hippocampus/graph/gateway.py`) and registered queries (`campy/brain/hippocampus/graph/queries/`). No application code imports `pyoxigraph` or `sqlite3` directly. All Cypher queries and Kùzu imports have been retired (`tests/test_kuzu_import_isolation.py` enforces 0 direct Kùzu imports across `campy/`).
+- **Concurrency model:** The Brain Daemon holds the sole write connection wrapped by an `asyncio.Lock`. Multi-tenant workspaces are resolved through `WorkspaceRouter` with LRU caching. Read operations benefit from transactional snapshot isolation without writer starvation.
+- **Migration & Round-Trip:** Complete JSONL-based graph serialization/deserialization via `campy/brain/hippocampus/graph/export.py` preserves full set-equality across nodes, relationships, and edge attributes.
 
-### Graph Engine Portability
+### Graph Engine Portability & Migration
 
-Campy now keeps an engine-neutral escape hatch for the graph itself:
+Campy maintains an engine-neutral export and backup model for the graph:
 
 - `campy export-graph --out <dir>` streams every node table to `nodes/<Table>.jsonl`, every relationship table to `rels/<RelTable>.jsonl`, and writes a `manifest.json` with `format_version`, `exported_at`, `engine`, `embedding_dim`, per-table primary keys, and row counts.
-- `campy import-graph --in <dir> --db <fresh.db>` restores a dump into an empty database, recreates the schema, loads nodes first, loads relationships second, and rebuilds vector indexes after bulk load.
-- Export/import must remain streamed. Do not materialize the whole graph in memory just to move between engines.
-- The migration playbook is: export the live graph, implement a new facade behind `campy/brain/hippocampus/graph/kuzu_client.py`, run the facade conformance suite, import into the new engine, then rerun the calibration and round-trip tests.
-- `campy/brain/hippocampus/graph/kuzu_client.py` stays the only module that imports `kuzu` directly. All portability work must route through that facade.
+- `campy import-graph --in <dir> --db <fresh.db>` restores a dump into an empty database directory, recreates the RDF-star schema, bulk-inserts nodes and relationships, and synchronizes vectors into `vectors.db`.
+- Export and import operate in streaming fashion without materializing full graph states in memory.
+- The migration from Kùzu to Oxigraph verified set-equality round-tripping (`tests/test_migration_roundtrip.py`) and top-k embedding rank preservation with Spearman rank correlation $\rho = 1.0$ (`tests/test_vector_ranking_parity.py`).
 
 ### Module Structure
 
@@ -374,7 +371,7 @@ hippocampy/
 │   │   ├── temporal_lobe/       # consolidation loop, routing, anomaly detection
 │   │   │   └── loop/            # Gated Consolidation Loop steps 1–7
 │   │   ├── hippocampus/         # schema, graph client, embeddings, quest identity
-│   │   │   └── graph/           # kuzu_client.py, embeddings.py
+│   │   │   └── graph/           # oxigraph_client.py, vector_store.py, gateway.py, router.py
 │   │   ├── thalamus/            # MCP tools, tool schemas, retrieval, bundle compiler
 │   │   │   ├── tools/           # MCP tool implementations
 │   │   │   ├── compression/     # pluggable thalamic compression registry (B289)

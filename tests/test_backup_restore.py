@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.hippocampus.schema import NODE_TABLES, REL_TABLES, SCHEMA_VERSION, init_schema
 from campy.brain.hippocampus.provenance import provenance_fields
 from campy.cli import backup as b

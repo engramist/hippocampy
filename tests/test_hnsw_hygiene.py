@@ -6,7 +6,7 @@ import tempfile
 import pytest
 
 from campy.brain.brainstem.sweep import _index_hygiene
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.temporal_lobe.loop.step5_retrieval import _headroom
 
 

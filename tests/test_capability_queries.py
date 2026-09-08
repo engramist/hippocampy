@@ -44,7 +44,7 @@ from benchmarks.capability_eval.fixtures import (
     seed_fixture_graph,
 )
 from campy.brain.hippocampus.graph.gateway import GraphGateway
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.hippocampus.graph.queries import REGISTRY
 from campy.brain.hippocampus.graph.queries.capability import _QUESTION_QUERIES
 from campy.brain.hippocampus.schema import init_schema

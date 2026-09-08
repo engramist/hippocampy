@@ -168,6 +168,16 @@ class VectorStore:
             self._conn.execute("DELETE FROM vectors WHERE uri = ?", (uri,))
             self._conn.commit()
 
+    def get_vector(self, uri: str) -> list[float] | None:
+        """Fetch the embedding for ``uri``, or None if not found."""
+        with self._lock:
+            row = self._conn.execute("SELECT embedding FROM vectors WHERE uri = ?", (uri,)).fetchone()
+        if row is None or row[0] is None:
+            return None
+        import struct
+        data = row[0]
+        return list(struct.unpack(f"{len(data) // 4}f", data))
+
     def search_vectors(
         self,
         embedding: Sequence[float],

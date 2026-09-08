@@ -679,9 +679,9 @@ class SchemaInitializer:
         init_script = f"""
 import sys
 sys.path.insert(0, {str(PROJECT_ROOT)!r})
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 from campy.brain.hippocampus.schema import init_schema
-db = KuzuClient({str(DB_PATH)!r})
+db = OxigraphClient({str(DB_PATH)!r})
 seed_path = {seed_path!r}
 init_schema(db, seed_path, 'sentence-transformers/all-MiniLM-L6-v2')
 print('SCHEMA_OK')
@@ -704,7 +704,7 @@ print('SCHEMA_OK')
             click.echo(f"      {result.stderr.strip()[-500:]}")
             return False
 
-        click.echo("  [ok] Kuzu schema initialized")
+        click.echo("  [ok] Oxigraph schema initialized")
         return True
 
 class AdapterRegistrar:

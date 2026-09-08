@@ -14,7 +14,7 @@ import uuid
 import pytest
 
 from campy.brain.hippocampus.graph.export import export_graph_dump, import_graph_dump
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.hippocampus.schema import (
     AUTHORITY_VALUES,
     NODE_TABLES,

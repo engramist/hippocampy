@@ -45,7 +45,7 @@ from campy.brain.auth import (
 )
 from campy.brain.brainstem.activity_log import compact_details, emit_activity
 from campy.brain.brainstem.config import load_config
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.hippocampus.graph.router import WorkspaceRouter
 from campy.brain.hippocampus.schema import init_schema
@@ -409,7 +409,7 @@ class BrainDaemon:
 
     def __init__(self, config: dict):
         self.config      = config
-        self.db          = KuzuClient(str(DB_PATH))
+        self.db          = OxigraphClient(str(DB_PATH))
         self.running     = False
         self._llm_client = None   # set in start()
         self._centroids  = {}     # set in start()
@@ -481,7 +481,7 @@ class BrainDaemon:
         # around the same synchronous init_schema() just called above for
         # self.db, run in a thread so it doesn't block the event loop for
         # a newly-created workspace's first access.
-        async def _schema_init_for_router(client: KuzuClient) -> None:
+        async def _schema_init_for_router(client: OxigraphClient) -> None:
             await asyncio.to_thread(init_schema, client, str(seed_path), embedding_model)
 
         self._router = WorkspaceRouter(
@@ -783,7 +783,7 @@ class BrainDaemon:
         finally:
             self._release_workspace_db(principal.workspace_id)
 
-    async def _resolve_workspace_db(self, workspace_id: str) -> KuzuClient:
+    async def _resolve_workspace_db(self, workspace_id: str) -> OxigraphClient:
         """B316: the router-backed replacement for always using `self.db`.
         Raises ValueError for a workspace_id `WorkspaceRouter._workspace_dir`
         rejects (invalid shape, traversal attempt) — translated to a

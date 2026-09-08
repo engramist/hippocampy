@@ -4,9 +4,9 @@
 - **Priority Date:** March 25, 2026
 - **Statutory Non-Provisional Deadline:** March 25, 2027
 - **Card:** B380 | **Pre-Migration Evidence Freeze** (Prior to B384 Storage Re-Platforming)
-- **Git Branch:** `feat/b380-patent-claim-verification`
-- **Git Commit SHA:** `a8d69959bd9e28802aa064d03d5daa7914838abc`
-- **Verification Timestamp:** `2026-09-04T20:26:32.244957+00:00`
+- **Git Branch:** `feat/b397-oxigraph-cutover`
+- **Git Commit SHA:** `60815ff6e10e822428c320958586375c21dbdb6d`
+- **Verification Timestamp:** `2026-09-07T15:06:13.815245+00:00`
 - **Environment:** `Darwin arm64` | Python `3.12.13`
 - **Core Storage Engine:** Kùzu Embedded Graph Database (`v0.11.3`) + FastEmbed ONNX (`all-MiniLM-L6-v2`)
 
@@ -29,14 +29,14 @@ To preserve legal priority and defensibility across future architectural refacto
 | Claim | Novel IP Mechanism | Verification Status | Implementation Citation | Verification Test Module |
 |---|---|:---:|---|---|
 | **Claim 1** | Gated Consolidation Loop | `PASSED` | [`campy/brain/temporal_lobe/loop/orchestrator.py:48`](file:///campy/brain/temporal_lobe/loop/orchestrator.py) | [`tests/patent_claims/test_claim_1_consolidation_loop.py`](file:///tests/patent_claims/test_claim_1_consolidation_loop.py) |
-| **Claim 2** | Shape-First Principle | `PASSED` | [`campy/brain/temporal_lobe/loop/step3_schema_org.py:54`](file:///campy/brain/temporal_lobe/loop/step3_schema_org.py) | [`tests/patent_claims/test_claim_2_shape_first.py`](file:///tests/patent_claims/test_claim_2_shape_first.py) |
-| **Claim 3** | Kahneman System 1 / System 2 Hybrid Classifier | `PASSED` | [`campy/brain/temporal_lobe/loop/step2_gist.py:50`](file:///campy/brain/temporal_lobe/loop/step2_gist.py) | [`tests/patent_claims/test_claim_3_kahneman_classifier.py`](file:///tests/patent_claims/test_claim_3_kahneman_classifier.py) |
+| **Claim 2** | Shape-First Principle | `PASSED` | [`campy/brain/temporal_lobe/loop/step3_schema_org.py:83`](file:///campy/brain/temporal_lobe/loop/step3_schema_org.py) | [`tests/patent_claims/test_claim_2_shape_first.py`](file:///tests/patent_claims/test_claim_2_shape_first.py) |
+| **Claim 3** | Kahneman System 1 / System 2 Hybrid Classifier | `PASSED` | [`campy/brain/temporal_lobe/loop/step2_gist.py:56`](file:///campy/brain/temporal_lobe/loop/step2_gist.py) | [`tests/patent_claims/test_claim_3_kahneman_classifier.py`](file:///tests/patent_claims/test_claim_3_kahneman_classifier.py) |
 | **Claim 4** | Cocktail Party Attention Filter & Salience Multiplier | `PASSED` | [`campy/brain/temporal_lobe/loop/step4_pattern.py:133`](file:///campy/brain/temporal_lobe/loop/step4_pattern.py) | [`tests/patent_claims/test_claim_4_cocktail_party_filter.py`](file:///tests/patent_claims/test_claim_4_cocktail_party_filter.py) |
-| **Claim 5** | Working Memory Context Window Tracker | `PASSED` | [`campy/brain/thalamus/working_memory.py:100`](file:///campy/brain/thalamus/working_memory.py) | [`tests/patent_claims/test_claim_5_working_memory_tracking.py`](file:///tests/patent_claims/test_claim_5_working_memory_tracking.py) |
-| **Claim 6** | Smart Retrieval Deduplication via Load Tracking | `PASSED` | [`campy/brain/thalamus/working_memory.py:227`](file:///campy/brain/thalamus/working_memory.py) | [`tests/patent_claims/test_claim_6_smart_dedup.py`](file:///tests/patent_claims/test_claim_6_smart_dedup.py) |
-| **Claim 7** | Warm Frontier Session Handoff | `PASSED` | [`campy/brain/thalamus/working_memory.py:378`](file:///campy/brain/thalamus/working_memory.py) | [`tests/patent_claims/test_claim_7_session_handoff.py`](file:///tests/patent_claims/test_claim_7_session_handoff.py) |
-| **Claim 8** | Context Bloat Detection & Boundary Alerts | `PASSED` | [`campy/brain/thalamus/working_memory.py:350`](file:///campy/brain/thalamus/working_memory.py) | [`tests/patent_claims/test_claim_8_bloat_detection.py`](file:///tests/patent_claims/test_claim_8_bloat_detection.py) |
-| **Claim 9** | Valence-Weighted Retrieval & Amygdala Reflex | `PASSED` | [`campy/brain/thalamus/tools/quests.py:183`](file:///campy/brain/thalamus/tools/quests.py) | [`tests/patent_claims/test_claim_9_valence_weighted_retrieval.py`](file:///tests/patent_claims/test_claim_9_valence_weighted_retrieval.py) |
+| **Claim 5** | Working Memory Context Window Tracker | `PASSED` | [`campy/brain/thalamus/working_memory.py:110`](file:///campy/brain/thalamus/working_memory.py) | [`tests/patent_claims/test_claim_5_working_memory_tracking.py`](file:///tests/patent_claims/test_claim_5_working_memory_tracking.py) |
+| **Claim 6** | Smart Retrieval Deduplication via Load Tracking | `PASSED` | [`campy/brain/thalamus/working_memory.py:229`](file:///campy/brain/thalamus/working_memory.py) | [`tests/patent_claims/test_claim_6_smart_dedup.py`](file:///tests/patent_claims/test_claim_6_smart_dedup.py) |
+| **Claim 7** | Warm Frontier Session Handoff | `PASSED` | [`campy/brain/thalamus/working_memory.py:372`](file:///campy/brain/thalamus/working_memory.py) | [`tests/patent_claims/test_claim_7_session_handoff.py`](file:///tests/patent_claims/test_claim_7_session_handoff.py) |
+| **Claim 8** | Context Bloat Detection & Boundary Alerts | `PASSED` | [`campy/brain/thalamus/working_memory.py:344`](file:///campy/brain/thalamus/working_memory.py) | [`tests/patent_claims/test_claim_8_bloat_detection.py`](file:///tests/patent_claims/test_claim_8_bloat_detection.py) |
+| **Claim 9** | Valence-Weighted Retrieval & Amygdala Reflex | `PASSED` | [`campy/brain/thalamus/tools/quests.py:182`](file:///campy/brain/thalamus/tools/quests.py) | [`tests/patent_claims/test_claim_9_valence_weighted_retrieval.py`](file:///tests/patent_claims/test_claim_9_valence_weighted_retrieval.py) |
 
 ---
 
@@ -55,7 +55,7 @@ To preserve legal priority and defensibility across future architectural refacto
 ### Claim 2: Shape-First Principle
 **Patent Specification:** *Ontological grounding before semantic extraction bounding property schema*
 
-- **Implementation Source:** [`campy/brain/temporal_lobe/loop/step3_schema_org.py:54`](file:///campy/brain/temporal_lobe/loop/step3_schema_org.py#L54)
+- **Implementation Source:** [`campy/brain/temporal_lobe/loop/step3_schema_org.py:83`](file:///campy/brain/temporal_lobe/loop/step3_schema_org.py#L83)
 - **Verification Test:** [`tests/patent_claims/test_claim_2_shape_first.py`](file:///tests/patent_claims/test_claim_2_shape_first.py)
 - **Verified Mechanism:** Routes GistClass to schema.org types (e.g. Restriction -> Demand, PlannedEvent -> Action), bounding permissible properties and disambiguating polymorphic Agent instances before semantic extraction.
 - **Key Observable Assertions:**
@@ -66,7 +66,7 @@ To preserve legal priority and defensibility across future architectural refacto
 ### Claim 3: Kahneman System 1 / System 2 Hybrid Classifier
 **Patent Specification:** *Dual-process cognitive classification combining centroid vector matching with bounded deliberative escalation*
 
-- **Implementation Source:** [`campy/brain/temporal_lobe/loop/step2_gist.py:50`](file:///campy/brain/temporal_lobe/loop/step2_gist.py#L50)
+- **Implementation Source:** [`campy/brain/temporal_lobe/loop/step2_gist.py:56`](file:///campy/brain/temporal_lobe/loop/step2_gist.py#L56)
 - **Verification Test:** [`tests/patent_claims/test_claim_3_kahneman_classifier.py`](file:///tests/patent_claims/test_claim_3_kahneman_classifier.py)
 - **Verified Mechanism:** System 1 evaluates cosine similarity vs GistClass centroids (score >= 0.50), intermediate ambiguity (0.18-0.50) routes to System 2, and sub-floor (<0.18) is rejected as noise.
 - **Key Observable Assertions:**
@@ -88,7 +88,7 @@ To preserve legal priority and defensibility across future architectural refacto
 ### Claim 5: Working Memory Context Window Tracker
 **Patent Specification:** *Dynamic context window state tracking via explicit LOADED graph relationships*
 
-- **Implementation Source:** [`campy/brain/thalamus/working_memory.py:100`](file:///campy/brain/thalamus/working_memory.py#L100)
+- **Implementation Source:** [`campy/brain/thalamus/working_memory.py:110`](file:///campy/brain/thalamus/working_memory.py#L110)
 - **Verification Test:** [`tests/patent_claims/test_claim_5_working_memory_tracking.py`](file:///tests/patent_claims/test_claim_5_working_memory_tracking.py)
 - **Verified Mechanism:** Explicitly maintains Session-[LOADED]->Node graph edges and cumulative token usage, strictly excluding raw conversational turns (Message) from working memory tracking.
 - **Key Observable Assertions:**
@@ -100,7 +100,7 @@ To preserve legal priority and defensibility across future architectural refacto
 ### Claim 6: Smart Retrieval Deduplication via Load Tracking
 **Patent Specification:** *Context-aware retrieval deduplication through deterministic soft demotion*
 
-- **Implementation Source:** [`campy/brain/thalamus/working_memory.py:227`](file:///campy/brain/thalamus/working_memory.py#L227)
+- **Implementation Source:** [`campy/brain/thalamus/working_memory.py:229`](file:///campy/brain/thalamus/working_memory.py#L229)
 - **Verification Test:** [`tests/patent_claims/test_claim_6_smart_dedup.py`](file:///tests/patent_claims/test_claim_6_smart_dedup.py)
 - **Verified Mechanism:** Demotes already-loaded context items by 0.3x (DEDUP_DEMOTION_FACTOR) without dropping them from results, tagging with already_in_context flags and promoting fresh context items.
 - **Key Observable Assertions:**
@@ -111,7 +111,7 @@ To preserve legal priority and defensibility across future architectural refacto
 ### Claim 7: Warm Frontier Session Handoff
 **Patent Specification:** *Cross-session continuity transfer of unarchived decisions and constraints ordered by pathway strength*
 
-- **Implementation Source:** [`campy/brain/thalamus/working_memory.py:378`](file:///campy/brain/thalamus/working_memory.py#L378)
+- **Implementation Source:** [`campy/brain/thalamus/working_memory.py:372`](file:///campy/brain/thalamus/working_memory.py#L372)
 - **Verification Test:** [`tests/patent_claims/test_claim_7_session_handoff.py`](file:///tests/patent_claims/test_claim_7_session_handoff.py)
 - **Verified Mechanism:** Seeds fresh session working memory from prior quest session by querying LOADED nodes, filtering out archived/superseded items, and sorting by pathway_strength DESC.
 - **Key Observable Assertions:**
@@ -122,7 +122,7 @@ To preserve legal priority and defensibility across future architectural refacto
 ### Claim 8: Context Bloat Detection & Boundary Alerts
 **Patent Specification:** *Context utilization monitoring and proactive bloat alerts at 75% capacity threshold*
 
-- **Implementation Source:** [`campy/brain/thalamus/working_memory.py:350`](file:///campy/brain/thalamus/working_memory.py#L350)
+- **Implementation Source:** [`campy/brain/thalamus/working_memory.py:344`](file:///campy/brain/thalamus/working_memory.py#L344)
 - **Verification Test:** [`tests/patent_claims/test_claim_8_bloat_detection.py`](file:///tests/patent_claims/test_claim_8_bloat_detection.py)
 - **Verified Mechanism:** Calculates session token utilization against token limit; when utilization > 75% (BLOAT_WARNING_THRESHOLD), generates natural language warning alerting agent to initiate clean session boundary.
 - **Key Observable Assertions:**
@@ -133,7 +133,7 @@ To preserve legal priority and defensibility across future architectural refacto
 ### Claim 9: Valence-Weighted Retrieval & Amygdala Reflex
 **Patent Specification:** *Affective outcome reinforcement and proactive warning/suggestion alerts prior to plan execution*
 
-- **Implementation Source:** [`campy/brain/thalamus/tools/quests.py:183`](file:///campy/brain/thalamus/tools/quests.py#L183)
+- **Implementation Source:** [`campy/brain/thalamus/tools/quests.py:182`](file:///campy/brain/thalamus/tools/quests.py#L182)
 - **Verification Test:** [`tests/patent_claims/test_claim_9_valence_weighted_retrieval.py`](file:///tests/patent_claims/test_claim_9_valence_weighted_retrieval.py)
 - **Verified Mechanism:** Amygdala reflex vector-searches historical plans during register_plan(), emitting proactive warnings for negative plans (valence < -0.5) and suggestions for positive plans (valence > 0.5), and ranks recall queries by valence weighting.
 - **Key Observable Assertions:**
@@ -147,33 +147,46 @@ To preserve legal priority and defensibility across future architectural refacto
 
 ```text
 ============================= test session starts ==============================
-platform darwin -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0 -- /Users/djshelton/Desktop/GitProjects/hippocampy/.venv/bin/python3
+platform darwin -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0 -- /Users/djshelton/Desktop/GitProjects/hippocampy/.venv/bin/python
 cachedir: .pytest_cache
-rootdir: /Users/djshelton/.gemini/antigravity/brain/ebf82ed9-5db0-4225-84c7-87067f75b117/.system_generated/worktrees/subagent-Patent-Verification-Lead--B380--self-98c1f0b1
+rootdir: /Users/djshelton/Desktop/GitProjects/worktrees/b397
 configfile: pytest.ini
 plugins: mock-3.15.1, timeout-2.4.0, asyncio-1.4.0, anyio-4.13.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
-collecting ... collected 17 items
+collecting ... collected 30 items
 
-tests/patent_claims/test_claim_1_consolidation_loop.py::test_claim_1_consolidation_loop_end_to_end PASSED [  5%]
-tests/patent_claims/test_claim_1_consolidation_loop.py::test_claim_1_consolidation_loop_stages_observable PASSED [ 11%]
-tests/patent_claims/test_claim_2_shape_first.py::test_claim_2_shape_first_bounds_schema_properties PASSED [ 17%]
-tests/patent_claims/test_claim_2_shape_first.py::test_claim_2_polymorphic_agent_disambiguation PASSED [ 23%]
-tests/patent_claims/test_claim_3_kahneman_classifier.py::test_claim_3_kahneman_system_1_rapid_path PASSED [ 29%]
-tests/patent_claims/test_claim_3_kahneman_classifier.py::test_claim_3_kahneman_gray_zone_system_2_degradation PASSED [ 35%]
-tests/patent_claims/test_claim_3_kahneman_classifier.py::test_claim_3_kahneman_sub_floor_noise_rejection PASSED [ 41%]
-tests/patent_claims/test_claim_4_cocktail_party_filter.py::test_claim_4_confidence_gate_three_tier_partitioning PASSED [ 47%]
-tests/patent_claims/test_claim_4_cocktail_party_filter.py::test_claim_4_assistant_safety_cap PASSED [ 52%]
-tests/patent_claims/test_claim_4_cocktail_party_filter.py::test_claim_4_amygdala_salience_multiplier PASSED [ 58%]
-tests/patent_claims/test_claim_5_working_memory_tracking.py::test_claim_5_track_loaded_lifecycle PASSED [ 64%]
-tests/patent_claims/test_claim_5_working_memory_tracking.py::test_claim_5_raw_messages_excluded_from_loaded_tracking PASSED [ 70%]
-tests/patent_claims/test_claim_6_smart_dedup.py::test_claim_6_deduplicate_results_demotion_without_omission PASSED [ 76%]
-tests/patent_claims/test_claim_7_session_handoff.py::test_claim_7_session_handoff_prepopulates_fresh_session PASSED [ 82%]
-tests/patent_claims/test_claim_8_bloat_detection.py::test_claim_8_bloat_warning_threshold_trigger PASSED [ 88%]
-tests/patent_claims/test_claim_9_valence_weighted_retrieval.py::test_claim_9_amygdala_reflex_proactive_warnings_and_suggestions PASSED [ 94%]
-tests/patent_claims/test_claim_9_valence_weighted_retrieval.py::test_claim_9_valence_weighted_query_retrieval PASSED [100%]
+tests/patent_claims/test_claim_1_consolidation_loop.py::test_claim_1_consolidation_loop_end_to_end[oxigraph] PASSED [  3%]
+tests/patent_claims/test_claim_1_consolidation_loop.py::test_claim_1_consolidation_loop_end_to_end[kuzu] PASSED [  6%]
+tests/patent_claims/test_claim_1_consolidation_loop.py::test_claim_1_consolidation_loop_stages_observable[oxigraph] PASSED [ 10%]
+tests/patent_claims/test_claim_1_consolidation_loop.py::test_claim_1_consolidation_loop_stages_observable[kuzu] PASSED [ 13%]
+tests/patent_claims/test_claim_2_shape_first.py::test_claim_2_shape_first_bounds_schema_properties[oxigraph] PASSED [ 16%]
+tests/patent_claims/test_claim_2_shape_first.py::test_claim_2_shape_first_bounds_schema_properties[kuzu] PASSED [ 20%]
+tests/patent_claims/test_claim_2_shape_first.py::test_claim_2_polymorphic_agent_disambiguation[oxigraph] PASSED [ 23%]
+tests/patent_claims/test_claim_2_shape_first.py::test_claim_2_polymorphic_agent_disambiguation[kuzu] PASSED [ 26%]
+tests/patent_claims/test_claim_3_kahneman_classifier.py::test_claim_3_kahneman_system_1_rapid_path[oxigraph] PASSED [ 30%]
+tests/patent_claims/test_claim_3_kahneman_classifier.py::test_claim_3_kahneman_system_1_rapid_path[kuzu] PASSED [ 33%]
+tests/patent_claims/test_claim_3_kahneman_classifier.py::test_claim_3_kahneman_gray_zone_system_2_degradation[oxigraph] PASSED [ 36%]
+tests/patent_claims/test_claim_3_kahneman_classifier.py::test_claim_3_kahneman_gray_zone_system_2_degradation[kuzu] PASSED [ 40%]
+tests/patent_claims/test_claim_3_kahneman_classifier.py::test_claim_3_kahneman_sub_floor_noise_rejection[oxigraph] PASSED [ 43%]
+tests/patent_claims/test_claim_3_kahneman_classifier.py::test_claim_3_kahneman_sub_floor_noise_rejection[kuzu] PASSED [ 46%]
+tests/patent_claims/test_claim_4_cocktail_party_filter.py::test_claim_4_confidence_gate_three_tier_partitioning PASSED [ 50%]
+tests/patent_claims/test_claim_4_cocktail_party_filter.py::test_claim_4_assistant_safety_cap PASSED [ 53%]
+tests/patent_claims/test_claim_4_cocktail_party_filter.py::test_claim_4_amygdala_salience_multiplier PASSED [ 56%]
+tests/patent_claims/test_claim_5_working_memory_tracking.py::test_claim_5_track_loaded_lifecycle[oxigraph] PASSED [ 60%]
+tests/patent_claims/test_claim_5_working_memory_tracking.py::test_claim_5_track_loaded_lifecycle[kuzu] PASSED [ 63%]
+tests/patent_claims/test_claim_5_working_memory_tracking.py::test_claim_5_raw_messages_excluded_from_loaded_tracking[oxigraph] PASSED [ 66%]
+tests/patent_claims/test_claim_5_working_memory_tracking.py::test_claim_5_raw_messages_excluded_from_loaded_tracking[kuzu] PASSED [ 70%]
+tests/patent_claims/test_claim_6_smart_dedup.py::test_claim_6_deduplicate_results_demotion_without_omission PASSED [ 73%]
+tests/patent_claims/test_claim_7_session_handoff.py::test_claim_7_session_handoff_prepopulates_fresh_session[oxigraph] PASSED [ 76%]
+tests/patent_claims/test_claim_7_session_handoff.py::test_claim_7_session_handoff_prepopulates_fresh_session[kuzu] PASSED [ 80%]
+tests/patent_claims/test_claim_8_bloat_detection.py::test_claim_8_bloat_warning_threshold_trigger[oxigraph] PASSED [ 83%]
+tests/patent_claims/test_claim_8_bloat_detection.py::test_claim_8_bloat_warning_threshold_trigger[kuzu] PASSED [ 86%]
+tests/patent_claims/test_claim_9_valence_weighted_retrieval.py::test_claim_9_amygdala_reflex_proactive_warnings_and_suggestions[oxigraph] PASSED [ 90%]
+tests/patent_claims/test_claim_9_valence_weighted_retrieval.py::test_claim_9_amygdala_reflex_proactive_warnings_and_suggestions[kuzu] PASSED [ 93%]
+tests/patent_claims/test_claim_9_valence_weighted_retrieval.py::test_claim_9_valence_weighted_query_retrieval[oxigraph] PASSED [ 96%]
+tests/patent_claims/test_claim_9_valence_weighted_retrieval.py::test_claim_9_valence_weighted_query_retrieval[kuzu] PASSED [100%]
 
-======================== 17 passed in 82.98s (0:01:22) =========================
+======================== 30 passed in 92.85s (0:01:32) =========================
 ```
 
 ---

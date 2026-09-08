@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 import campy.brain.thalamus.tools as tools_mod
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 
 _MESSAGE_DDL = """
     message_id STRING,

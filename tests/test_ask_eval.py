@@ -16,7 +16,7 @@ import shutil
 import pytest
 from typer.testing import CliRunner
 
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.hippocampus.schema import init_schema
 from campy.brain.thalamus.ask import (
     _extract_identifier_tokens,

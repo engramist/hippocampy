@@ -28,7 +28,7 @@ import asyncio
 
 import pytest
 
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient, _get_write_lock
+from tests.kuzu_test_client import KuzuClient, _get_write_lock
 from campy.brain.hippocampus.graph.router import (
     LOCAL_WORKSPACE_ID,
     WorkspaceRouter,
@@ -339,7 +339,7 @@ async def test_write_lock_staleness_still_detected_per_db_path():
     db_path: a lock entry whose loop has been garbage-collected must be
     replaced, not reused — exactly as it was pre-B316, just keyed by
     (loop, db_path) instead of (loop,) alone."""
-    import campy.brain.hippocampus.graph.kuzu_client as kc_mod
+    import tests.kuzu_test_client as kc_mod
     import weakref
 
     db_path = "/tmp/fake-staleness.db"

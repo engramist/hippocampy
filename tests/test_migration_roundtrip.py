@@ -22,26 +22,10 @@ from typing import Any
 
 import pytest
 
-try:
-    from campy.brain.hippocampus.graph.export import (
-        _is_oxigraph,
-        export_graph_dump,
-        import_graph_dump,
-    )
-    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
-    from campy.brain.hippocampus.graph.vector_store import VectorStore
-    from tests.kuzu_test_client import KuzuClient
-
-    CUTOVER_AVAILABLE = True
-except ImportError:
-    CUTOVER_AVAILABLE = False
-
-if not CUTOVER_AVAILABLE:
-    pytest.skip(
-        "Round-trip migration requires B397 Oxigraph export/import cutover",
-        allow_module_level=True,
-    )
-
+from campy.brain.hippocampus.graph.export import export_graph_dump, import_graph_dump
+from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
+from campy.brain.hippocampus.graph.vector_store import VectorStore
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.hippocampus.schema import init_schema
 from tests.patent_claims.conftest import (
     EMBEDDING_MODEL,

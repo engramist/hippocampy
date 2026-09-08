@@ -13,10 +13,10 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient, _get_write_lock
+from tests.kuzu_test_client import KuzuClient, _get_write_lock
 
 # Reduce noise during testing
-logging.getLogger("campy.brain.hippocampus.graph.kuzu_client").setLevel(
+logging.getLogger("tests.kuzu_test_client").setLevel(
     logging.WARNING
 )
 

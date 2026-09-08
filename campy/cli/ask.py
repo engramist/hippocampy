@@ -39,7 +39,7 @@ def ask(
     sid = session_id or "cli"
 
     try:
-        from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+        from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
         from campy.brain.brainstem.config import load_config
         from campy.brain.thalamus.ask import run_ask
 
@@ -49,7 +49,7 @@ def ask(
         db_path = config.get("database", {}).get("path", "~/.campy/brain.db")
         import os
         db_path = os.path.expanduser(db_path)
-        db = KuzuClient(db_path, read_only=True)
+        db = OxigraphClient(db_path, read_only=True)
 
         answer = asyncio.run(
             run_ask(

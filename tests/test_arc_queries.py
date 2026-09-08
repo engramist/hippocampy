@@ -6,7 +6,7 @@ import tempfile
 import pytest
 
 try:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from tests.kuzu_test_client import KuzuClient
     from campy.brain.thalamus.tool_schemas import TOOLS
     from campy.brain.thalamus.tools import TOOL_HANDLERS
     KUZU_AVAILABLE = True

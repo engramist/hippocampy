@@ -5,7 +5,7 @@ from campy.brain.thalamus.tools.task_graph import (
     register_task_graph, get_ready_tasks, advance_task, fail_task, get_task_graph,
     _dag_has_cycle, _get_ready_tasks_query
 )
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 
 class _Result:
     def __init__(self, rows=None):

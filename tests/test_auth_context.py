@@ -1030,7 +1030,7 @@ def _patch_embed_for_module():
 
 @pytest.fixture(scope="module")
 def db(tmp_path_factory, _patch_embed_for_module):
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from tests.kuzu_test_client import KuzuClient
     from campy.brain.hippocampus.schema import init_schema
 
     path = tmp_path_factory.mktemp("b315_auth") / "b315.db"

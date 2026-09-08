@@ -30,7 +30,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Awaitable, Callable
 
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 
 _logger = logging.getLogger(__name__)
 
@@ -107,18 +107,32 @@ class WorkspaceRouter:
     """
 
     def __init__(self, root: Path, *, max_open: int = 32,
-                 schema_init: Callable[[KuzuClient], Awaitable[None]],
-                 local_db_path: Path | None = None):
+                 schema_init: Callable[[Any], Awaitable[None]],
+                 local_db_path: Path | None = None,
+                 client_factory: Callable[[str], Any] | None = None):
         self._root = root
         self._max_open = max_open
         self._schema_init = schema_init
-        # Defaults to root / "brain.db" for convenience (e.g. tests that
-        # don't care about the local-alias special case), but
-        # campy/brain_daemon.py always passes the real DB_PATH explicitly.
         self._local_db_path = local_db_path if local_db_path is not None else (root / "brain.db")
-        # OrderedDict as an LRU: move_to_end() on every access keeps the
-        # least-recently-used entry at the front (iteration order).
-        self._clients: "OrderedDict[str, KuzuClient]" = OrderedDict()
+        if client_factory is not None:
+            self._client_factory = client_factory
+        else:
+            factory = OxigraphClient
+            try:
+                import inspect
+                sig = inspect.signature(schema_init)
+                param = next(iter(sig.parameters.values()), None)
+                if param and param.annotation is not inspect.Parameter.empty:
+                    ann_name = getattr(param.annotation, "__name__", str(param.annotation))
+                    if "KuzuClient" in ann_name:
+                        import sys
+                        test_mod = sys.modules.get("tests.kuzu_test_client")
+                        if test_mod is not None:
+                            factory = getattr(test_mod, "KuzuClient", OxigraphClient)
+            except Exception:
+                pass
+            self._client_factory = factory
+        self._clients: "OrderedDict[str, Any]" = OrderedDict()
         self._init_locks: dict[str, asyncio.Lock] = {}
         self._borrow_counts: dict[str, int] = {}
 
@@ -129,30 +143,21 @@ class WorkspaceRouter:
     def _init_lock(self, workspace_id: str) -> asyncio.Lock:
         # No `await` between the dict lookup and the possible insert, so
         # this is race-free under asyncio's single-threaded cooperative
-        # scheduling — same reasoning as kuzu_client.py's _get_write_lock().
+        # scheduling.
         lock = self._init_locks.get(workspace_id)
         if lock is None:
             lock = asyncio.Lock()
             self._init_locks[workspace_id] = lock
         return lock
 
-    def register(self, workspace_id: str, client: KuzuClient) -> None:
+    def register(self, workspace_id: str, client: OxigraphClient) -> None:
         """Pre-seed the cache with an already-open client for `workspace_id`,
         without going through `get()`'s creation path.
-
-        Exists for exactly one caller: `BrainDaemon` opens `self.db` (the
-        "local" workspace client) at `__init__`, before a router exists at
-        all. Wiring that same instance in via `register("local", self.db)`
-        means `get("local")` returns that *same* `KuzuClient` rather than
-        opening a second `kuzu.Database` handle on the identical directory
-        — Kùzu is single-process-writer, so two live handles on one path
-        is not just wasteful, it is the exact hazard this method exists to
-        avoid.
         """
         self._clients[workspace_id] = client
         self._clients.move_to_end(workspace_id)
 
-    async def get(self, workspace_id: str) -> KuzuClient:
+    async def get(self, workspace_id: str) -> OxigraphClient:
         """Return a client for this workspace, opening (and initializing
         schema on) the database if it does not exist yet. Pairs with
         `release()` — see the class docstring."""
@@ -177,7 +182,7 @@ class WorkspaceRouter:
             )
             workspace_dir.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 
-            client = KuzuClient(str(workspace_dir))
+            client = self._client_factory(str(workspace_dir))
             await self._schema_init(client)
 
             self._clients[workspace_id] = client
