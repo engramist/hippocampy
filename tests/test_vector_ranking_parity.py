@@ -15,7 +15,38 @@ from pathlib import Path
 from typing import List, Tuple
 
 import pytest
-from scipy.stats import spearmanr
+try:
+    from scipy.stats import spearmanr
+except ImportError:
+    def _rank(seq: list[float]) -> list[float]:
+        sorted_indices = sorted(range(len(seq)), key=lambda i: seq[i])
+        ranks = [0.0] * len(seq)
+        i = 0
+        n = len(seq)
+        while i < n:
+            j = i
+            while j + 1 < n and seq[sorted_indices[j + 1]] == seq[sorted_indices[i]]:
+                j += 1
+            avg_rank = (i + j + 2) / 2.0
+            for k in range(i, j + 1):
+                ranks[sorted_indices[k]] = avg_rank
+            i = j + 1
+        return ranks
+
+    def spearmanr(a: list[float], b: list[float]) -> tuple[float, float]:
+        if len(a) != len(b) or len(a) < 2:
+            return (float("nan"), 1.0)
+        ra = _rank(a)
+        rb = _rank(b)
+        ma = sum(ra) / len(ra)
+        mb = sum(rb) / len(rb)
+        cov = sum((x - ma) * (y - mb) for x, y in zip(ra, rb))
+        var_a = sum((x - ma) ** 2 for x in ra)
+        var_b = sum((y - mb) ** 2 for y in rb)
+        denom = math.sqrt(var_a * var_b)
+        if denom == 0:
+            return (float("nan"), 1.0)
+        return (cov / denom, 0.0)
 
 from campy.brain.hippocampus.graph.vector_store import (
     VectorStore,
