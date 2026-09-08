@@ -1,8 +1,9 @@
 # SideQuest Brain Daemon — Python Dependencies
 # Pin all versions for reproducibility.
 
-# Graph + vector database (ARCHIVED Oct 2025 — do not upgrade, watch RyuGraph fork)
-kuzu==0.11.3
+# Graph + vector database: Oxigraph (RDF-star) + sqlite-vec (ANN + FTS5) (B397)
+pyoxigraph==0.5.11
+sqlite-vec>=0.1.6
 
 # Embeddings (384-dim — matches FLOAT[384] schema; changing requires full re-embedding)
 # B355: fastembed/ONNX Runtime replaced sentence-transformers/PyTorch as the

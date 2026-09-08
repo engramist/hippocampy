@@ -11,7 +11,7 @@ import pytest
 from typer.testing import CliRunner
 
 from campy.brain.hippocampus.graph.export import export_graph_dump, import_graph_dump
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.hippocampus.schema import NODE_TABLES, REL_TABLES
 from campy.cli.main import cli
 

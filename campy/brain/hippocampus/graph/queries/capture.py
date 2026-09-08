@@ -182,27 +182,13 @@ CAPTURE_QUERIES = [
         params=("prev", "curr", "gap"),
         mutating=True,
         description="Create FOLLOWED_BY edge with turn gap seconds",
-        # FOLLOWED_BY is "star" (singleton edge carrying properties,
-        # confirmed MERGE...SET at this exact call site). Spec §4.2a: assert
-        # the plain triple AND the quoted-triple annotation together;
-        # MERGE has no SPARQL equivalent (spec §7.7) so this is a single
-        # DELETE-old-then-INSERT-new Update, one Oxigraph transaction.
-        sparql="""
-            DELETE {
-                << ?p campy:FOLLOWED_BY ?c >> campy:gap_seconds ?old_gap .
-            }
-            INSERT {
-                ?p campy:FOLLOWED_BY ?c .
-                << ?p campy:FOLLOWED_BY ?c >> campy:gap_seconds ?gap .
-            }
-            WHERE {
-                ?p a campy:Message ;
-                   campy:message_id ?prev .
-                ?c a campy:Message ;
-                   campy:message_id ?curr .
-                OPTIONAL { << ?p campy:FOLLOWED_BY ?c >> campy:gap_seconds ?old_gap }
-            }
-            """,
+        # FOLLOWED_BY is "star" (singleton edge carrying properties).
+        # Per docs/rdf-schema-mapping.md §7.8 (added 2026-09-06, B392):
+        # pyoxigraph rejects DELETE on quoted triple patterns, and templated
+        # quoted-triple INSERT mints duplicate blank-node reifiers.
+        # Star-edge upserts are therefore Python handlers routing to write_edge(),
+        # not sparql= strings.
+        sparql=None,
     ),
     NamedQuery(
         name="capture.get_last_loop_summary",

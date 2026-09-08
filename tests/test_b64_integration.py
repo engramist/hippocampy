@@ -5,7 +5,7 @@ import pytest
 import asyncio
 import uuid
 from datetime import datetime, timezone
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.hippocampus.schema import init_schema
 from campy.brain.thalamus.tools import notify_turn, context_status
 

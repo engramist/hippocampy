@@ -223,7 +223,7 @@ def test_execute_read_returns_list_of_dicts():
 
         rows = asyncio.run(_run())
         assert rows == [{"o": rows[0]["o"]}]
-        assert str(rows[0]["o"]) == '"c"'
+        assert rows[0]["o"] == "c"
     finally:
         client.close()
 
@@ -260,6 +260,6 @@ def test_execute_read_binds_params_via_substitutions_not_string_interpolation():
 
         rows = asyncio.run(_run())
         assert len(rows) == 1
-        assert str(rows[0]["name"]) == '"widget"'
+        assert rows[0]["name"] == "widget"
     finally:
         client.close()

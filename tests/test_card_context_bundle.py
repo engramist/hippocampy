@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.hippocampus.schema import init_schema
 from campy.brain.thalamus.tools import context_tools
 from campy.brain.thalamus.tools.context_tools import compile_card_context

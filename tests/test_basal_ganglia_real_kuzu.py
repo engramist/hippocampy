@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.hippocampus.schema import init_schema
 
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"

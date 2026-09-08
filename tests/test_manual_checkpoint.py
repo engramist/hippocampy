@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch, AsyncMock, MagicMock
 
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 
 
 @pytest.fixture

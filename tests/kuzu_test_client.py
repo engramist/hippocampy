@@ -12,7 +12,12 @@ from __future__ import annotations
 import asyncio
 import warnings
 import weakref
-import kuzu
+try:
+    import kuzu
+    KUZU_AVAILABLE = True
+except ImportError:
+    kuzu = None
+    KUZU_AVAILABLE = False
 
 _INDEX_METRIC = "cosine"
 

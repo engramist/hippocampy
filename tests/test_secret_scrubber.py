@@ -271,7 +271,7 @@ def test_bearer_token_variations():
 @pytest.mark.asyncio
 async def test_notify_turn_embeds_scrubbed_content_not_raw():
     from campy.brain.hippocampus.graph import embeddings as emb
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from tests.kuzu_test_client import KuzuClient
     from campy.brain.hippocampus.schema import init_schema
     from campy.brain.thalamus.tools.capture import notify_turn
 

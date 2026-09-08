@@ -19,7 +19,7 @@ def regen(
 ):
     """Regenerate CONTEXT.md, ADRs, and agent pointers from the knowledge graph."""
     from campy.brain.thalamus.file_bridge import regen_all
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
     from campy.paths import get_database_path
 
     project_path = Path(project) if project else Path.cwd()
@@ -29,7 +29,7 @@ def regen(
         console.print("[red]Error:[/red] Campy database not found. Is the daemon running?")
         raise typer.Exit(1)
 
-    db = KuzuClient(str(db_path), read_only=True)
+    db = OxigraphClient(str(db_path), read_only=True)
 
     try:
         result = asyncio.run(regen_all(project_path, db))

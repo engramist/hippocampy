@@ -35,11 +35,6 @@ ALLOWLIST_FILES = {
     # and correctly lives next to the engine adapter, not behind a
     # portability seam meant for application-level queries.
     "campy/brain/hippocampus/schema.py",
-    # The one file that imports kuzu. Its Cypher is engine plumbing
-    # (vector/FTS index CALL statements, schema introspection) that
-    # GraphGateway itself is built on top of — routing it back through the
-    # gateway would be circular.
-    "campy/brain/hippocampus/graph/kuzu_client.py",
     # Engine-level dump/restore plumbing that generates dynamic DDL and
     # table-variable stream queries. Lives next to the engine adapter under
     # hippocampus/graph/, not behind application query seams.
@@ -49,17 +44,17 @@ ALLOWLIST_FILES = {
     # keyword regex false-positives on plain SQLite DDL/DML syntax that
     # happens to share keywords with Cypher. This is SQLite plumbing for a
     # standalone component the graph engine never touches (per docs/rdf-
-    # schema-mapping.md §5), the same category as kuzu_client.py/export.py
+    # schema-mapping.md §5), the same category as export.py
     # above, not application Cypher that belongs behind GraphGateway.
     "campy/brain/hippocampus/graph/vector_store.py",
     # B389: pyoxigraph SPARQL client — imports pyoxigraph, not kuzu, and
     # executes only SPARQL (never Cypher) at runtime. CYPHER_LINE_RE's
     # keyword regex false-positives on two unrelated things this file
     # legitimately contains: (1) EDGE_REIFICATION/UNCLASSIFIED_ESCALATED_
-    # TABLES doc comments that cite the *existing Kùzu* call-site evidence
+    # TABLES doc comments that cite the call-site evidence
     # each classification is based on (e.g. "queries/orchestrator.py: MERGE
     # (n)-[r:ANOMALY_DETECTED]->(gc) SET ...") — this is documentation
-    # about kuzu_client.py's call sites, not Cypher this module runs; (2)
+    # about call sites, not Cypher this module runs; (2)
     # `_REL_HEADER_RE`, a regex literal matching schema.py's own rel-table
     # DDL header text, needed to introspect REL_TABLES for property types
     # — DDL-parsing plumbing, the same category schema.py itself is
@@ -75,7 +70,7 @@ ALLOWLIST_DIR_PREFIXES = (
 )
 
 # Only these top-level directories are scanned at all. In particular this
-# excludes tests/ — fakes/mocks and real-KuzuClient integration tests
+# excludes tests/ — fakes/mocks and real-client integration tests
 # legitimately contain Cypher text and are not part of the "~500+ call
 # sites to migrate" problem this ratchet tracks.
 SCANNED_PREFIXES = ("campy/", "scripts/", "web/")
@@ -89,7 +84,7 @@ NOT_A_CALL_SITE = {
     "campy/brain/hippocampus/graph/gateway.py",
 }
 
-CYPHER_LINE_RE = re.compile(r"\b(MATCH|CREATE|MERGE)\s")
+CYPHER_LINE_RE = re.compile(r"\b(MATCH|MERGE)\s|\bCREATE\s+(?!(?:SILENT\s+)?GRAPH\b)")
 EXECUTE_RAW_RE = re.compile(r"\bexecute_raw\s*\(")
 
 

@@ -32,12 +32,42 @@ import logging
 import re
 import unittest.mock
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Iterable
-
-if TYPE_CHECKING:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from typing import Any, Iterable
+from campy.brain.hippocampus.graph.oxigraph_client import (
+    CID_BASE,
+    NODE_PRIMARY_KEYS,
+    RowDict,
+    mint_uri,
+)
 
 _logger = logging.getLogger(__name__)
+
+_NODE_TABLE_MAP = {
+    "concept": "Concept",
+    "decision": "Decision",
+    "constraint": "Constraint",
+    "requirement": "Requirement",
+    "actionitem": "ActionItem",
+    "globalconstraint": "GlobalConstraint",
+    "globalpreference": "GlobalPreference",
+    "message": "Message",
+    "documentextract": "DocumentExtract",
+    "session": "Session",
+    "mainquest": "MainQuest",
+    "sidequest": "SideQuest",
+    "label": "Label",
+    "plan": "Plan",
+    "planstep": "PlanStep",
+    "lesson": "Lesson",
+    "procedure": "Procedure",
+    "dataset": "Dataset",
+    "factentity": "FactEntity",
+}
+
+
+def _resolve_node_table(suffix: str) -> str:
+    s = suffix.lower().replace("_", "")
+    return _NODE_TABLE_MAP.get(s, suffix.capitalize())
 
 # Matches a `{` that is NOT immediately (modulo whitespace) followed by
 # either a closing `}` (empty map literal, `{}`) or an identifier + `:`
@@ -239,12 +269,31 @@ def _materialize_rows(res: Any) -> Any:
 
 
 class GraphGateway:
-    """The chokepoint. Wraps a `KuzuClient` + `QueryRegistry`; `run()` is
+    """The chokepoint. Wraps a `KuzuClient` or `OxigraphClient` + `QueryRegistry`; `run()` is
     the only sanctioned way application code should reach the database."""
 
-    def __init__(self, client: "KuzuClient", registry: QueryRegistry) -> None:
+    def __init__(
+        self,
+        client: Any,
+        registry: QueryRegistry,
+        vector_store: Any | None = None,
+    ) -> None:
         self._client = client
         self._registry = registry
+        self._vector_store = vector_store
+        self._is_oxigraph = (
+            type(client).__name__ == "OxigraphClient"
+            or (hasattr(client, "store") and not hasattr(client, "conn"))
+        )
+        if self._is_oxigraph and self._vector_store is None:
+            if hasattr(client, "vector_store") and client.vector_store is not None:
+                self._vector_store = client.vector_store
+            else:
+                try:
+                    from campy.brain.hippocampus.graph.vector_store import VectorStore
+                    self._vector_store = VectorStore()
+                except Exception:
+                    self._vector_store = None
 
     async def run(self, name: str, params: dict[str, Any] | None = None, /, **kwargs: Any) -> Any:
         """Look up `name`, validate `params` against the query's declared
@@ -272,6 +321,10 @@ class GraphGateway:
             raise TypeError(
                 f"GraphGateway.run({name!r}): parameter mismatch — {', '.join(parts)}"
             )
+
+        if self._is_oxigraph:
+            res = await self._dispatch_oxigraph(query, merged_params)
+            return _materialize_rows(res)
 
         exec_mocked = getattr(getattr(self._client, "execute", None), "side_effect", None) is not None
         read_mocked = getattr(getattr(self._client, "execute_read", None), "side_effect", None) is not None
@@ -315,8 +368,556 @@ class GraphGateway:
                 f"GraphGateway.run_sync({name!r}): parameter mismatch — {', '.join(parts)}"
             )
 
+        if self._is_oxigraph:
+            res = self._dispatch_oxigraph_sync(query, merged_params)
+            return _materialize_rows(res)
+
         res = self._client.execute(query.cypher, merged_params)
         return _materialize_rows(res)
+
+    async def _dispatch_oxigraph(self, query: NamedQuery, params: dict[str, Any]) -> Any:
+        if query.name == "orchestrator.get_gist_centroids":
+            return self._handle_oxigraph_handler(query, params)
+        if query.sparql is not None:
+            if query.mutating:
+                return await self._client.execute_write(query.sparql, params)
+            return await self._client.execute_read(query.sparql, params)
+        return self._handle_oxigraph_handler(query, params)
+
+    def _dispatch_oxigraph_sync(self, query: NamedQuery, params: dict[str, Any]) -> Any:
+        if query.name == "orchestrator.get_gist_centroids":
+            return self._handle_oxigraph_handler(query, params)
+        if query.sparql is not None:
+            if query.mutating:
+                self._client.execute(query.sparql, params)
+                return []
+            return self._client._execute_and_collect(query.sparql, params)
+        return self._handle_oxigraph_handler(query, params)
+
+    def _handle_oxigraph_handler(self, query: NamedQuery, params: dict[str, Any]) -> Any:
+        name = query.name
+
+        # 1. Thalamus bundle queries
+        if name.startswith("thalamus.bundle_") or name == "thalamus.analogical_get_quest_embedding":
+            return self._handle_thalamus_bundle(name, params)
+
+        # 2. working_memory loaded edges (occurrence)
+        if name.startswith("working_memory.create_loaded_edge_"):
+            tbl_suffix = name.replace("working_memory.create_loaded_edge_", "")
+            target_table = _resolve_node_table(tbl_suffix)
+            src_uri = mint_uri("Session", params["sid"])
+            dst_uri = mint_uri(target_table, params["nid"])
+            self._client.write_edge("LOADED", src_uri, dst_uri, {
+                "token_estimate": params.get("tokens"),
+                "source": params.get("source"),
+                "injected_at": params.get("now"),
+                "load_hits": 1,
+            })
+            return []
+
+        # 3. temporal_lobe warm nodes (star)
+        if name.startswith("temporal_lobe.warm_link_"):
+            tbl_suffix = name.replace("temporal_lobe.warm_link_", "")
+            target_table = _resolve_node_table(tbl_suffix)
+            src_uri = mint_uri("Session", params["sid"])
+            dst_uri = mint_uri(target_table, params["nid"])
+            self._client.write_edge("WARM_NODE", src_uri, dst_uri, {
+                "activation_score": params.get("score"),
+                "activated_at": params.get("now"),
+            })
+            return []
+
+        # 4. sweep concept relationships (star)
+        if name.startswith("sweep.merge_concept_rel_"):
+            rel_name = name.replace("sweep.merge_concept_rel_", "").upper()
+            src_uri = mint_uri("Concept", params["a_id"])
+            dst_uri = mint_uri("Concept", params["b_id"])
+            self._client.write_edge(rel_name, src_uri, dst_uri, {
+                "confidence": params.get("conf"),
+                "inferred_by": "LLM",
+                "inferred_at": params.get("now"),
+            })
+            return []
+
+        # 5. capability create edges (star)
+        if name.startswith("capability.create_edge_"):
+            rel_name = name.replace("capability.create_edge_", "").upper()
+            src_uri = mint_uri("FactEntity", params["subject_id"])
+            dst_uri = mint_uri("FactEntity", params["object_id"])
+            props = {k: v for k, v in params.items() if k not in ("subject_id", "object_id")}
+            self._client.write_edge(rel_name, src_uri, dst_uri, props)
+            return []
+
+        # 6. capture merge followed_by (star)
+        if name == "capture.merge_followed_by":
+            src_uri = mint_uri("Message", params["prev"])
+            dst_uri = mint_uri("Message", params["curr"])
+            self._client.write_edge("FOLLOWED_BY", src_uri, dst_uri, {"gap_seconds": params.get("gap")})
+            return []
+
+        # 7. ARC link queries
+        if name == "arc.link_entity_moved_by":
+            self._client.write_edge("MOVED_BY", mint_uri("Entity", params["eid"]), mint_uri("ActionEffect", params["aeid"]), {"dr": params.get("dr"), "dc": params.get("dc")})
+            return []
+        if name == "arc.link_entity_hypothesis":
+            self._client.write_edge("ANCHORED_TO", mint_uri("InvestigationThread", params["tid"]), mint_uri("Hypothesis", params["hid"]), {"weight": params.get("weight"), "step": params.get("step")})
+            return []
+        if name == "arc.link_entity_rule":
+            self._client.write_edge("ANCHORED_TO", mint_uri("InvestigationThread", params["tid"]), mint_uri("Rule", params["rid"]), {"weight": params.get("weight"), "step": params.get("step")})
+            return []
+        if name == "arc.link_mechanic_action_pattern":
+            self._client.write_edge("HAS_ACTION_PATTERN", mint_uri("Mechanic", params["mechanic_id"]), mint_uri("Pattern", params["pattern_id"]), {"confidence": params.get("confidence")})
+            return []
+        if name == "arc.link_mechanic_effect_pattern":
+            self._client.write_edge("HAS_EFFECT_PATTERN", mint_uri("Mechanic", params["mechanic_id"]), mint_uri("Pattern", params["pattern_id"]), {"confidence": params.get("confidence")})
+            return []
+        if name == "arc.link_mechanic_precondition":
+            self._client.write_edge("HAS_PRECONDITION", mint_uri("Mechanic", params["mech_id"]), mint_uri("Precondition", params["pre_id"]), {"confidence": params.get("confidence")})
+            return []
+        if name == "arc.link_mechanic_failure_mode":
+            self._client.write_edge("HAS_FAILURE_MODE", mint_uri("Mechanic", params["mech_id"]), mint_uri("FailureMode", params["fail_id"]))
+            return []
+        if name == "arc.link_failure_recovery_policy":
+            self._client.write_edge("HAS_RECOVERY_POLICY", mint_uri("FailureMode", params["fail_id"]), mint_uri("RecoveryPolicy", params["pol_id"]), {"confidence": params.get("confidence")})
+            return []
+
+        # 8. Ingest link dataset
+        if name == "ingest.link_concept_dataset":
+            self._client.write_edge("DESCRIBED_BY_DATASET", mint_uri("Concept", params["cid"]), mint_uri("Dataset", params["did"]), {"extraction_method": "llm", "created_at": params.get("now")})
+            return []
+
+        # 9. Quests link / rerouted
+        if name == "quests.create_rerouted_from":
+            self._client.write_edge("REROUTED_FROM", mint_uri("Session", params["sid"]), mint_uri("MainQuest", params["qid"]), {"rerouted_at": params.get("now"), "reason": params.get("reason")})
+            return []
+        if name == "quests.link_distinct_from":
+            self._client.write_edge("DISTINCT_FROM", mint_uri("Concept", params["a"]), mint_uri("Concept", params["b"]), {"created_at": params.get("now")})
+            return []
+        if name == "quests.link_plan_applied_procedure":
+            self._client.write_edge("APPLIED_PROCEDURE", mint_uri("Plan", params["pid"]), mint_uri("Procedure", params["proc_id"]), {"success": params.get("success"), "applied_at": params.get("now")})
+            return []
+        if name == "quests.link_plan_step_outcome_signal":
+            q_match = f"""
+                SELECT ?ps ?c WHERE {{
+                    ?ps a <https://campy.dev/ns#PlanStep> ;
+                        <https://campy.dev/ns#STEP_OF> ?p ;
+                        <https://campy.dev/ns#step_number> {int(params['step_number'])} ;
+                        <https://campy.dev/ns#ACTS_ON> ?c .
+                    ?p <https://campy.dev/ns#plan_id> {repr(str(params['pid']))} .
+                }}
+            """
+            matches = self._client._execute_and_collect(q_match)
+            for m in matches:
+                self._client.write_edge("OUTCOME_SIGNAL", m["ps"], m["c"], {
+                    "valence": params.get("valence"),
+                    "plan_id": params.get("pid"),
+                    "observed_at": params.get("now"),
+                })
+            return []
+
+        # 10. Vector / Embedding updates and queries
+        if name == "quests.set_label_embedding":
+            if self._vector_store:
+                self._vector_store.upsert_vector(mint_uri("Label", params["lid"]), params["emb"])
+            return []
+
+        if name == "quests.get_active_with_embeddings":
+            q_active = "SELECT ?qid ?name WHERE { ?q a <https://campy.dev/ns#MainQuest> ; <https://campy.dev/ns#status> 'active' ; <https://campy.dev/ns#quest_id> ?qid ; <https://campy.dev/ns#name> ?name . }"
+            rows = self._client._execute_and_collect(q_active)
+            limit = int(params.get("limit", 100))
+            res = []
+            for r in rows[:limit]:
+                emb = self._vector_store.get_vector(mint_uri("MainQuest", r["qid"])) if self._vector_store else None
+                res.append(RowDict({"q.quest_id": r["qid"], "q.name": r["name"], "q.embedding": emb}))
+            return res
+
+        if name in ("quests.get_anomalies_branch_scope", "quests.get_anomalies_global_scope"):
+            limit = int(params.get("limit", 100))
+            q_anom = f"""
+                SELECT ?n ?gc WHERE {{
+                    ?n <https://campy.dev/ns#flagged_for_review> true ;
+                       <https://campy.dev/ns#ANOMALY_DETECTED> ?gc .
+                }}
+                LIMIT {limit}
+            """
+            rows = self._client._execute_and_collect(q_anom)
+            return [RowDict({"n": r["n"], "r": {}, "gc": r["gc"]}) for r in rows]
+
+        if name == "capability.reuse_candidates":
+            eid = params["entity_id"]
+            qemb = params["query_embedding"]
+            floor = float(params.get("floor", 0.70))
+            limit = 10
+            candidates = self._vector_store.search_vectors(qemb, k=limit + 1, min_score=floor) if self._vector_store else []
+            prefix = f"{CID_BASE}FactEntity/"
+            curr_uri = f"{prefix}{eid}"
+            matching = [(uri, score) for uri, score in candidates if uri.startswith(prefix) and uri != curr_uri][:limit]
+            if not matching:
+                return []
+            values_block = " ".join(f"<{u}>" for u, _ in matching)
+            sparql = f"""
+                SELECT ?s ?eid ?etype ?label ?props WHERE {{
+                    VALUES ?s {{ {values_block} }}
+                    ?s <https://campy.dev/ns#entity_id> ?eid .
+                    OPTIONAL {{ ?s <https://campy.dev/ns#entity_type> ?etype }}
+                    OPTIONAL {{ ?s <https://campy.dev/ns#label> ?label }}
+                    OPTIONAL {{ ?s <https://campy.dev/ns#properties> ?props }}
+                }}
+            """
+            hydrated = {row["s"]: row for row in self._client._execute_and_collect(sparql)}
+            res = []
+            for uri, score in matching:
+                if uri in hydrated:
+                    h = hydrated[uri]
+                    res.append(RowDict({
+                        "entity_id": h["eid"],
+                        "entity_type": h.get("etype"),
+                        "label": h.get("label"),
+                        "properties": h.get("props"),
+                        "similarity": score,
+                    }))
+            return res
+
+        # 11. Sweep synthesis and Gist
+        if name == "sweep.get_gist_examples_by_class":
+            q_gist = f"SELECT ?e WHERE {{ ?e a <https://campy.dev/ns#GistExample> ; <https://campy.dev/ns#gist_class> {repr(params['cls'])} . }}"
+            rows = self._client._execute_and_collect(q_gist)
+            res = []
+            for r in rows:
+                emb = self._vector_store.get_vector(r["e"]) if self._vector_store else None
+                if emb is not None:
+                    res.append(RowDict({"e.embedding": emb}))
+            return res
+
+        if name == "sweep.update_gist_class_centroid":
+            if self._vector_store:
+                self._vector_store.upsert_vector(mint_uri("GistClass", params["name"]), params["centroid"])
+            return []
+
+        if name == "sweep.link_generalizes_lesson":
+            self._client.write_edge("GENERALIZES_LESSON", mint_uri("Lesson", params["mid"]), mint_uri("Lesson", params["cid"]), {
+                "synthesized_at": params.get("now"),
+                "cluster_size": params.get("cluster_size"),
+            })
+            return []
+
+        if name == "sweep.get_lessons_for_synthesis":
+            domain = params.get("domain")
+            sparql = f"""
+                SELECT ?s ?id ?text ?ps ?conf WHERE {{
+                    ?s a <https://campy.dev/ns#Lesson> ;
+                       <https://campy.dev/ns#lesson_id> ?id ;
+                       <https://campy.dev/ns#domain> {repr(str(domain))} ;
+                       <https://campy.dev/ns#text_raw> ?text .
+                    OPTIONAL {{ ?s <https://campy.dev/ns#archived> ?arch }}
+                    FILTER(!BOUND(?arch) || ?arch = false)
+                    OPTIONAL {{ ?s <https://campy.dev/ns#lesson_type> ?ltype }}
+                    FILTER(!BOUND(?ltype) || ?ltype != "synthesis")
+                    OPTIONAL {{ ?s <https://campy.dev/ns#pathway_strength> ?ps }}
+                    OPTIONAL {{ ?s <https://campy.dev/ns#confidence> ?conf }}
+                    FILTER NOT EXISTS {{ ?parent <https://campy.dev/ns#GENERALIZES_LESSON> ?s }}
+                }}
+            """
+            rows = self._client._execute_and_collect(sparql)
+            res = []
+            for r in rows:
+                emb = self._vector_store.get_vector(r["s"]) if self._vector_store else None
+                res.append(RowDict({
+                    "l.lesson_id": r["id"],
+                    "l.embedding": emb,
+                    "l.text_raw": r["text"],
+                    "l.pathway_strength": r.get("ps", 0.5),
+                    "l.confidence": r.get("conf", 0.5),
+                }))
+            return res
+
+        if name == "sweep.get_lessons_in_domain_embeddings":
+            domain = params.get("domain")
+            min_path = float(params.get("min_path", 0.0))
+            limit = int(params.get("limit", 100))
+            sparql = f"""
+                SELECT ?s ?id ?text ?conf ?ps ?created ?audited WHERE {{
+                    ?s a <https://campy.dev/ns#Lesson> ;
+                       <https://campy.dev/ns#lesson_id> ?id ;
+                       <https://campy.dev/ns#domain> {repr(str(domain))} ;
+                       <https://campy.dev/ns#text_raw> ?text .
+                    OPTIONAL {{ ?s <https://campy.dev/ns#archived> ?arch }}
+                    FILTER(!BOUND(?arch) || ?arch = false)
+                    OPTIONAL {{ ?s <https://campy.dev/ns#pathway_strength> ?ps }}
+                    FILTER(!BOUND(?ps) || ?ps > {min_path})
+                    OPTIONAL {{ ?s <https://campy.dev/ns#confidence> ?conf }}
+                    OPTIONAL {{ ?s <https://campy.dev/ns#created_at> ?created }}
+                    OPTIONAL {{ ?s <https://campy.dev/ns#last_audited_at> ?audited }}
+                }}
+                ORDER BY DESC(?ps)
+                LIMIT {limit}
+            """
+            rows = self._client._execute_and_collect(sparql)
+            res = []
+            for r in rows:
+                emb = self._vector_store.get_vector(r["s"]) if self._vector_store else None
+                res.append(RowDict({
+                    "l.lesson_id": r["id"],
+                    "l.embedding": emb,
+                    "l.text_raw": r["text"],
+                    "l.confidence": r.get("conf", 0.5),
+                    "l.pathway_strength": r.get("ps", 0.5),
+                    "l.created_at": r.get("created"),
+                    "l.last_audited_at": r.get("audited"),
+                }))
+            return res
+
+        if name.startswith("sweep.resurrect_active_embeddings_"):
+            tbl_suffix = name.replace("sweep.resurrect_active_embeddings_", "")
+            resolved_table = _resolve_node_table(tbl_suffix)
+            pk = NODE_PRIMARY_KEYS.get(resolved_table, tbl_suffix + "_id")
+            limit = int(params.get("limit", 100))
+            sparql = f"""
+                SELECT ?s ?pk WHERE {{
+                    ?s a <https://campy.dev/ns#{resolved_table}> ;
+                       <https://campy.dev/ns#{pk}> ?pk .
+                    OPTIONAL {{ ?s <https://campy.dev/ns#archived> ?arch }}
+                    FILTER(!BOUND(?arch) || ?arch = false)
+                }}
+                LIMIT {limit}
+            """
+            rows = self._client._execute_and_collect(sparql)
+            res = []
+            for r in rows:
+                emb = self._vector_store.get_vector(r["s"]) if self._vector_store else None
+                if emb is not None:
+                    res.append(RowDict({"id": r["pk"], "embedding": emb}))
+            return res
+
+        if name == "orchestrator.get_gist_centroids":
+            sparql = """
+                PREFIX campy: <https://campy.dev/ns#>
+                SELECT ?name WHERE {
+                    ?g a campy:GistClass ;
+                       campy:name ?name .
+                }
+            """
+            rows = self._client._execute_and_collect(sparql)
+            res = []
+            for r in rows:
+                c_name = r["name"]
+                c_uri = mint_uri("GistClass", c_name)
+                centroid = self._vector_store.get_vector(c_uri) if self._vector_store else None
+                res.append(RowDict({
+                    "g.name": c_name,
+                    "g.centroid": centroid,
+                }))
+            return res
+
+        raise NotImplementedError(f"No Python handler or SPARQL translation implemented for NamedQuery {name!r}")
+
+    def _handle_thalamus_bundle(self, name: str, params: dict[str, Any]) -> list[Any]:
+        query_embedding = params.get("query_embedding")
+
+        if name == "thalamus.analogical_get_quest_embedding":
+            qid = params["qid"]
+            rows = self._client._execute_and_collect(
+                f"SELECT ?name WHERE {{ ?q a <https://campy.dev/ns#MainQuest> ; <https://campy.dev/ns#quest_id> {repr(str(qid))} ; <https://campy.dev/ns#name> ?name . }}"
+            )
+            qname = rows[0]["name"] if rows else None
+            emb = self._vector_store.get_vector(mint_uri("MainQuest", qid)) if self._vector_store else None
+            return [RowDict({"q.embedding": emb, "q.name": qname})]
+
+        if query_embedding is None or not self._vector_store:
+            return []
+
+        # Exact facts: thalamus.bundle_exact_facts_{tbl}[_flagged][_auth] or thalamus.bundle_exact_{tbl}[_flagged][_auth]
+        if name.startswith("thalamus.bundle_exact"):
+            sub = name.replace("thalamus.bundle_exact_facts_", "").replace("thalamus.bundle_exact_", "")
+            tbl_key = sub.split("_")[0]
+            target_table = _resolve_node_table(tbl_key)
+            limit = int(params.get("limit", 10))
+            candidates = self._vector_store.search_vectors(query_embedding, k=limit * 5, min_score=0.70)
+            prefix = f"{CID_BASE}{target_table}/"
+            matching_uris = [uri for uri, _ in candidates if uri.startswith(prefix)][:limit]
+            if not matching_uris:
+                return []
+            values_block = " ".join(f"<{u}>" for u in matching_uris)
+            sparql = f"""
+                SELECT ?s ?text ?conf ?auth WHERE {{
+                    VALUES ?s {{ {values_block} }}
+                    ?s <https://campy.dev/ns#text_raw> ?text .
+                    OPTIONAL {{ ?s <https://campy.dev/ns#confidence> ?conf }}
+                    OPTIONAL {{ ?s <https://campy.dev/ns#authority> ?auth }}
+                }}
+            """
+            hydrated = {row["s"]: row for row in self._client._execute_and_collect(sparql)}
+            rows = []
+            for uri in matching_uris:
+                if uri in hydrated:
+                    h = hydrated[uri]
+                    rows.append(RowDict({
+                        "text": h.get("text"),
+                        "node_type": target_table,
+                        "confidence": h.get("conf", 0.5),
+                        "authority": h.get("auth"),
+                    }))
+            return rows
+
+        # Semantic context: thalamus.bundle_semantic_{tbl}[_flags]
+        if name.startswith("thalamus.bundle_semantic_"):
+            sub = name.replace("thalamus.bundle_semantic_", "")
+            tbl_key = sub.split("_")[0]
+            target_table = _resolve_node_table(tbl_key)
+            limit = int(params.get("limit", 10))
+            candidates = self._vector_store.search_vectors(query_embedding, k=limit * 5, min_score=0.70)
+            prefix = f"{CID_BASE}{target_table}/"
+            matching = [(uri, score) for uri, score in candidates if uri.startswith(prefix)][:limit]
+            if not matching:
+                return []
+            values_block = " ".join(f"<{u}>" for u, _ in matching)
+            sparql = f"""
+                SELECT ?s ?text ?ps ?conf ?auth WHERE {{
+                    VALUES ?s {{ {values_block} }}
+                    ?s <https://campy.dev/ns#text_raw> ?text .
+                    OPTIONAL {{ ?s <https://campy.dev/ns#pathway_strength> ?ps }}
+                    OPTIONAL {{ ?s <https://campy.dev/ns#confidence> ?conf }}
+                    OPTIONAL {{ ?s <https://campy.dev/ns#authority> ?auth }}
+                }}
+            """
+            hydrated = {row["s"]: row for row in self._client._execute_and_collect(sparql)}
+            rows = []
+            for uri, score in matching:
+                if uri in hydrated:
+                    h = hydrated[uri]
+                    dist = max(0.0, 1.0 - float(score))
+                    rows.append(RowDict({
+                        "text": h.get("text"),
+                        "node_type": target_table,
+                        "pathway_strength": h.get("ps", 0.5),
+                        "confidence": h.get("conf", 0.5),
+                        "dist": dist,
+                        "authority": h.get("auth"),
+                    }))
+            return rows
+
+        # Graph anchors: thalamus.bundle_graph_anchors[_flags]
+        if name.startswith("thalamus.bundle_graph_anchors"):
+            candidates = self._vector_store.search_vectors(query_embedding, k=15, min_score=0.70)
+            prefix = f"{CID_BASE}Concept/"
+            matching = [(uri, score) for uri, score in candidates if uri.startswith(prefix)][:5]
+            if not matching:
+                return []
+            values_block = " ".join(f"<{u}>" for u, _ in matching)
+            sparql = f"""
+                SELECT ?s ?cid ?text WHERE {{
+                    VALUES ?s {{ {values_block} }}
+                    ?s <https://campy.dev/ns#concept_id> ?cid ;
+                       <https://campy.dev/ns#text_raw> ?text .
+                }}
+            """
+            hydrated = {row["s"]: row for row in self._client._execute_and_collect(sparql)}
+            rows = []
+            for uri, score in matching:
+                if uri in hydrated:
+                    h = hydrated[uri]
+                    dist = max(0.0, 1.0 - float(score))
+                    rows.append(RowDict({
+                        "id": h["cid"],
+                        "text": h["text"],
+                        "dist": dist,
+                    }))
+            return rows
+
+        if name == "thalamus.bundle_tabular_described_by_dataset":
+            candidates = self._vector_store.search_vectors(query_embedding, k=15, min_score=0.70)
+            prefix = f"{CID_BASE}Concept/"
+            concept_uris = [uri for uri, _ in candidates if uri.startswith(prefix)][:5]
+            if not concept_uris:
+                return []
+            values_block = " ".join(f"<{u}>" for u in concept_uris)
+            sparql = f"""
+                SELECT DISTINCT ?dataset_id ?name ?desc WHERE {{
+                    VALUES ?c {{ {values_block} }}
+                    ?c <https://campy.dev/ns#DESCRIBED_BY_DATASET> ?d .
+                    ?d <https://campy.dev/ns#dataset_id> ?dataset_id ;
+                       <https://campy.dev/ns#name> ?name .
+                    OPTIONAL {{ ?d <https://campy.dev/ns#description> ?desc }}
+                    OPTIONAL {{ ?d <https://campy.dev/ns#archived> ?archived }}
+                    FILTER(!BOUND(?archived) || ?archived = false)
+                }}
+                LIMIT 5
+            """
+            res = self._client._execute_and_collect(sparql)
+            return [RowDict({"dataset_id": r["dataset_id"], "name": r["name"], "description": r.get("desc")}) for r in res]
+
+        if name == "thalamus.bundle_wiki_lessons":
+            limit = int(params.get("limit", 5))
+            candidates = self._vector_store.search_vectors(query_embedding, k=limit * 5, min_score=0.70)
+            prefix = f"{CID_BASE}Lesson/"
+            matching = [(uri, score) for uri, score in candidates if uri.startswith(prefix)][:limit * 2]
+            if not matching:
+                return []
+            values_block = " ".join(f"<{u}>" for u, _ in matching)
+            sparql = f"""
+                SELECT ?s ?id ?text ?ltype ?archived WHERE {{
+                    VALUES ?s {{ {values_block} }}
+                    ?s <https://campy.dev/ns#lesson_id> ?id ;
+                       <https://campy.dev/ns#text_raw> ?text .
+                    OPTIONAL {{ ?s <https://campy.dev/ns#lesson_type> ?ltype }}
+                    OPTIONAL {{ ?s <https://campy.dev/ns#archived> ?archived }}
+                }}
+            """
+            hydrated = {row["s"]: row for row in self._client._execute_and_collect(sparql)}
+            rows = []
+            for uri, score in matching:
+                if uri in hydrated:
+                    h = hydrated[uri]
+                    if h.get("archived") is True:
+                        continue
+                    if h.get("ltype") != "synthesis":
+                        continue
+                    dist = max(0.0, 1.0 - float(score))
+                    rows.append(RowDict({
+                        "id": h["id"],
+                        "text": h["text"],
+                        "node_type": "Lesson",
+                        "dist": dist,
+                    }))
+                    if len(rows) >= limit:
+                        break
+            return rows
+
+        if name == "thalamus.bundle_wiki_procedures":
+            limit = int(params.get("limit", 5))
+            candidates = self._vector_store.search_vectors(query_embedding, k=limit * 5, min_score=0.70)
+            prefix = f"{CID_BASE}Procedure/"
+            matching = [(uri, score) for uri, score in candidates if uri.startswith(prefix)][:limit * 2]
+            if not matching:
+                return []
+            values_block = " ".join(f"<{u}>" for u, _ in matching)
+            sparql = f"""
+                SELECT ?s ?id ?desc ?archived WHERE {{
+                    VALUES ?s {{ {values_block} }}
+                    ?s <https://campy.dev/ns#procedure_id> ?id ;
+                       <https://campy.dev/ns#description> ?desc .
+                    OPTIONAL {{ ?s <https://campy.dev/ns#archived> ?archived }}
+                }}
+            """
+            hydrated = {row["s"]: row for row in self._client._execute_and_collect(sparql)}
+            rows = []
+            for uri, score in matching:
+                if uri in hydrated:
+                    h = hydrated[uri]
+                    if h.get("archived") is True:
+                        continue
+                    dist = max(0.0, 1.0 - float(score))
+                    rows.append(RowDict({
+                        "id": h["id"],
+                        "text": h["desc"],
+                        "node_type": "Procedure",
+                        "dist": dist,
+                    }))
+                    if len(rows) >= limit:
+                        break
+            return rows
+
+        return []
 
     async def execute_raw(
         self,

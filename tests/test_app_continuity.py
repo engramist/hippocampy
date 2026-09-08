@@ -30,7 +30,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.hippocampus.schema import init_schema
 from campy.brain.hippocampus import schema as _schema_mod
 from campy.brain.thalamus.bundle_compiler import (

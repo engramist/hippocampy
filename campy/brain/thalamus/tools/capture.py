@@ -30,7 +30,7 @@ from .lessons import _create_plan_graph, _store_plan_outcome_lesson
 from .quests import report_outcome
 
 if TYPE_CHECKING:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
     from campy.brain.auth import Principal
 
 

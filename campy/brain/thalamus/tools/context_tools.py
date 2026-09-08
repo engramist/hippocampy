@@ -10,7 +10,7 @@ from .capture import notify_turn
 from campy.brain.hippocampus.graph.gateway import get_gateway
 
 if TYPE_CHECKING:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 
 _logger = logging.getLogger(__name__)
 

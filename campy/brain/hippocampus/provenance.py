@@ -48,7 +48,7 @@ from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.hippocampus.schema import AUTHORITY_VALUES, SUPERSESSION_REASONS
 
 if TYPE_CHECKING:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 
 # Primary-key column name for every table covered by provenance +
 # supersession (mirrors the PRIMARY KEY declared in schema.py's

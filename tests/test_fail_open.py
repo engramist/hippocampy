@@ -350,13 +350,13 @@ def test_explicit_ask_cli_reports_failure_not_empty_answer(monkeypatch):
     from typer.testing import CliRunner
 
     from campy.cli.main import app
-    import campy.brain.hippocampus.graph.kuzu_client as kuzu_mod
+    import campy.brain.hippocampus.graph.oxigraph_client as oxi_mod
 
     class _BoomClient:
         def __init__(self, *args, **kwargs):
             raise RuntimeError("DAEMON_OFFLINE: no daemon reachable")
 
-    monkeypatch.setattr(kuzu_mod, "KuzuClient", _BoomClient)
+    monkeypatch.setattr(oxi_mod, "OxigraphClient", _BoomClient)
 
     runner = CliRunner()
     result = runner.invoke(app, ["ask", "what did we decide about auth?"])

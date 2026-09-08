@@ -26,7 +26,7 @@ import pytest
 
 from campy.brain.brainstem.sweep import _decay_and_archive
 from campy.brain.hippocampus.graph.gateway import GraphGateway
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.hippocampus.graph.queries import REGISTRY
 from campy.brain.hippocampus.schema import init_schema
 

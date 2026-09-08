@@ -19,7 +19,7 @@ import tempfile
 
 import pytest
 
-from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+from tests.kuzu_test_client import KuzuClient
 from campy.brain.sensory_cortex.tabular_store import get_table_summary
 from campy.brain.thalamus.tools import context_tools
 from campy.paths import tables_dir

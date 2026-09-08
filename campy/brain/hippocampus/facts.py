@@ -62,7 +62,7 @@ from campy.brain.hippocampus.provenance import validate_authority
 from campy.brain.hippocampus.schema import FACT_PREDICATE_TABLES
 
 if TYPE_CHECKING:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 
 _DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 

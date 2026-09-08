@@ -17,7 +17,7 @@ from campy.brain.temporal_lobe.dictionary import (
 )
 
 if TYPE_CHECKING:
-    from campy.brain.hippocampus.graph.kuzu_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.hippocampus.quest import (

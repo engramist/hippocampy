@@ -27,9 +27,7 @@ IGNORED_DIR_NAMES = {
     "env",
     "tests",
 }
-ALLOWED_KUZU_IMPORT_FILES = {
-    "campy/brain/hippocampus/graph/kuzu_client.py",
-}
+ALLOWED_KUZU_IMPORT_FILES: set[str] = set()
 
 
 def _production_python_files() -> list[Path]:
