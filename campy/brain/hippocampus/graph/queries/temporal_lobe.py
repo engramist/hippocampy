@@ -24,8 +24,8 @@ TEMPORAL_LOBE_QUERIES: list[NamedQuery] = [
               ?c a campy:Concept ;
                  campy:concept_id ?concept_id ;
                  campy:text_raw ?text_raw .
-              OPTIONAL { ?c campy:archived ?archived }
-              FILTER((!BOUND(?archived) || ?archived = false) && LCASE(STR(?text_raw)) = LCASE(STR(?t)))
+              ?c campy:archived false .
+              FILTER(LCASE(STR(?text_raw)) = LCASE(STR(?t)))
             }
             LIMIT 1
         """,
@@ -93,6 +93,7 @@ TEMPORAL_LOBE_QUERIES: list[NamedQuery] = [
                  campy:label_type "preferred" ;
                  campy:confidence 0.95 ;
                  campy:source "domain_dictionary" ;
+                 campy:archived false ;
                  campy:created_at ?now .
             }
             WHERE {
@@ -163,6 +164,7 @@ TEMPORAL_LOBE_QUERIES: list[NamedQuery] = [
                  campy:label_type "alternative" ;
                  campy:confidence 0.90 ;
                  campy:source "domain_dictionary" ;
+                 campy:archived false ;
                  campy:created_at ?now .
             }
             WHERE {

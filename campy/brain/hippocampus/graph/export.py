@@ -599,6 +599,9 @@ def import_graph_dump(
                 db.write_edge(rel_table, s_uri, o_uri, props or None)
                 rel_rows_loaded += 1
 
+        if hasattr(db, "backfill_explicit_status"):
+            db.backfill_explicit_status()
+
         return {
             "ok": True,
             "manifest": manifest,

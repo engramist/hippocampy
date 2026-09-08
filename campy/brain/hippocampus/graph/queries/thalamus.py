@@ -109,8 +109,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?p campy:trigger_hook_type ?hook_type }
                 OPTIONAL { ?p campy:trigger_tool ?tool }
                 OPTIONAL { ?p campy:trigger_project_scope ?project_scope }
-                OPTIONAL { ?p campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?p campy:archived false .
                 FILTER(?pattern != "")
             }
             ORDER BY DESC(?strength)
@@ -144,8 +143,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?l campy:trigger_hook_type ?hook_type }
                 OPTIONAL { ?l campy:trigger_tool ?tool }
                 OPTIONAL { ?l campy:trigger_project_scope ?project_scope }
-                OPTIONAL { ?l campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?l campy:archived false .
                 FILTER(?pattern != "")
             }
             ORDER BY DESC(?strength)
@@ -182,8 +180,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?c campy:text_raw ?definition }
                 OPTIONAL { ?c campy:gist_class ?gist_class }
                 OPTIONAL { ?c campy:altLabel ?alt_labels }
-                OPTIONAL { ?c campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?c campy:archived false .
                 FILTER(?confidence >= "0.6"^^xsd:double)
             }
             ORDER BY DESC(?strength)
@@ -211,10 +208,8 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                 BIND(STRAFTER(STR(?p), "https://campy.dev/ns#") AS ?rel_type)
                 OPTIONAL { ?a campy:prefLabel ?from_name }
                 OPTIONAL { ?b campy:prefLabel ?to_name }
-                OPTIONAL { ?a campy:archived ?a_archived }
-                FILTER(!BOUND(?a_archived) || ?a_archived = false)
-                OPTIONAL { ?b campy:archived ?b_archived }
-                FILTER(!BOUND(?b_archived) || ?b_archived = false)
+                ?a campy:archived false .
+                ?b campy:archived false .
             }
             ORDER BY DESC(?a_strength)
             """,
@@ -233,8 +228,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                 ?g a campy:GlobalConstraint ;
                    campy:text_raw ?text ;
                    campy:pathway_strength ?strength .
-                OPTIONAL { ?g campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?g campy:archived false .
             }
             ORDER BY DESC(?strength)
             LIMIT 3
@@ -259,8 +253,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                    campy:confidence ?confidence ;
                    campy:created_at ?created_at .
                 OPTIONAL { ?d campy:prefLabel ?title }
-                OPTIONAL { ?d campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?d campy:archived false .
                 FILTER(?confidence >= "0.8"^^xsd:double)
             }
             ORDER BY ASC(?created_at)
@@ -402,8 +395,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                    campy:plan_id ?plan_id ;
                    campy:goal ?goal ;
                    campy:created_at ?created_at .
-                OPTIONAL { ?p campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?p campy:archived false .
             }
             ORDER BY DESC(?created_at)
             LIMIT 1
@@ -426,8 +418,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                    a campy:Decision ;
                    campy:text_raw ?text_raw ;
                    campy:created_at ?created_at .
-                OPTIONAL { ?d campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?d campy:archived false .
             }
             ORDER BY DESC(?created_at)
             LIMIT 5
@@ -663,8 +654,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                    campy:text_raw ?text_raw ;
                    campy:domain ?domain ;
                    campy:pathway_strength ?pathway_strength .
-                OPTIONAL { ?l campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?l campy:archived false .
             }
             ORDER BY DESC(?pathway_strength)
             """,
@@ -686,8 +676,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                    campy:lesson_id ?lesson_id ;
                    campy:text_raw ?text_raw ;
                    campy:pathway_strength ?pathway_strength .
-                OPTIONAL { ?l campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?l campy:archived false .
             }
             ORDER BY DESC(?pathway_strength)
             """,
@@ -707,8 +696,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                    campy:name ?name ;
                    campy:description ?description ;
                    campy:archetype ?archetype .
-                OPTIONAL { ?p campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?p campy:archived false .
             }
             ORDER BY ASC(?name)
             """,
@@ -730,8 +718,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                    campy:name ?name ;
                    campy:description ?description ;
                    campy:archetype ?archetype .
-                OPTIONAL { ?p campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?p campy:archived false .
             }
             ORDER BY ASC(?name)
             """,
@@ -1193,8 +1180,8 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                 ?l a campy:Lesson ;
                    campy:lesson_id ?lesson_id ;
                    campy:text_raw ?text_raw ;
-                   campy:confidence ?confidence .
-                OPTIONAL { ?l campy:archived ?archived }
+                   campy:confidence ?confidence . ;
+                   campy:archived ?archived .
             }
             LIMIT 20
             """,

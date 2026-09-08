@@ -122,7 +122,7 @@ def load_patent_conformance_graph(
     for table_name, rows in nodes_by_table.items():
         if not rows or table_name not in NODE_TABLES:
             continue
-        valid_cols = set(_parse_column_types(NODE_TABLES[table_name]).keys())
+        valid_cols = set(NODE_COLUMNS.get(table_name, {}).keys())
         first = rows[0]
         prop_cols = [k for k in first.keys() if k in valid_cols]
         assignments = ", ".join(f"{col}: ${col}" for col in prop_cols)
