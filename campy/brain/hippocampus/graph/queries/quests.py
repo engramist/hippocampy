@@ -307,8 +307,7 @@ QUEST_QUERIES: tuple[NamedQuery, ...] = (
                    campy:created_at ?created_at .
                 OPTIONAL { ?c campy:gist_class ?gist_class }
                 OPTIONAL { ?c campy:confidence ?confidence }
-                OPTIONAL { ?c campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?c campy:archived false .
             }
             ORDER BY DESC(?created_at)
             """,
@@ -360,8 +359,7 @@ QUEST_QUERIES: tuple[NamedQuery, ...] = (
                    campy:text_raw ?text_raw ;
                    campy:pathway_strength ?pathway_strength .
                 OPTIONAL { ?a campy:confidence_low ?confidence_low }
-                OPTIONAL { ?a campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?a campy:archived false .
             }
             ORDER BY DESC(?pathway_strength)
             """,
@@ -390,8 +388,7 @@ QUEST_QUERIES: tuple[NamedQuery, ...] = (
                    campy:text_raw ?text_raw ;
                    campy:pathway_strength ?pathway_strength .
                 OPTIONAL { ?a campy:confidence_low ?confidence_low }
-                OPTIONAL { ?a campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?a campy:archived false .
             }
             ORDER BY DESC(?pathway_strength)
             """,
@@ -420,8 +417,7 @@ QUEST_QUERIES: tuple[NamedQuery, ...] = (
                    campy:text_raw ?text_raw ;
                    campy:pathway_strength ?pathway_strength .
                 OPTIONAL { ?a campy:confidence_low ?confidence_low }
-                OPTIONAL { ?a campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?a campy:archived false .
             }
             ORDER BY DESC(?pathway_strength)
             """,
@@ -977,8 +973,7 @@ QUEST_QUERIES: tuple[NamedQuery, ...] = (
                 OPTIONAL { ?p campy:valence ?valence }
                 OPTIONAL { ?p campy:pathway_strength ?pathway_strength }
                 OPTIONAL { ?p campy:confidence ?confidence }
-                OPTIONAL { ?p campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?p campy:archived false .
             }
             """,
     ),
@@ -1002,8 +997,7 @@ QUEST_QUERIES: tuple[NamedQuery, ...] = (
                    campy:steps_json ?steps_json .
                 OPTIONAL { ?p campy:success_count ?success_count }
                 OPTIONAL { ?p campy:success_rate ?success_rate }
-                OPTIONAL { ?p campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?p campy:archived false .
             }
             ORDER BY DESC(?success_rate) DESC(?success_count)
             """,
@@ -1079,8 +1073,7 @@ QUEST_QUERIES: tuple[NamedQuery, ...] = (
                 ?n a campy:Concept ;
                    campy:concept_id ?concept_id ;
                    campy:text_raw ?text_raw .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
             LIMIT 10
             """,
@@ -1144,6 +1137,7 @@ QUEST_QUERIES: tuple[NamedQuery, ...] = (
                    campy:confidence "0.95"^^xsd:double ;
                    campy:source "user" ;
                    campy:language "en" ;
+                   campy:archived false ;
                    campy:created_at ?now .
             }
             WHERE {

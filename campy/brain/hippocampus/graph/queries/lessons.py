@@ -524,8 +524,7 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
                  campy:text_raw ?text_raw ;
                  campy:confidence ?confidence ;
                  campy:pathway_strength ?pathway_strength .
-              OPTIONAL { ?a campy:archived ?archived }
-              FILTER(!BOUND(?archived) || ?archived = false)
+              ?a campy:archived false .
               OPTIONAL { ?a campy:confidence_low ?confidence_low }
               FILTER(!BOUND(?confidence_low) || ?confidence_low = false)
             }
@@ -552,8 +551,7 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
                  campy:text_raw ?text_raw ;
                  campy:confidence ?confidence ;
                  campy:pathway_strength ?pathway_strength .
-              OPTIONAL { ?a campy:archived ?archived }
-              FILTER(!BOUND(?archived) || ?archived = false)
+              ?a campy:archived false .
               OPTIONAL { ?a campy:confidence_low ?confidence_low }
               FILTER(!BOUND(?confidence_low) || ?confidence_low = false)
             }
@@ -580,8 +578,7 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
                  campy:text_raw ?text_raw ;
                  campy:confidence ?confidence ;
                  campy:pathway_strength ?pathway_strength .
-              OPTIONAL { ?a campy:archived ?archived }
-              FILTER(!BOUND(?archived) || ?archived = false)
+              ?a campy:archived false .
               OPTIONAL { ?a campy:confidence_low ?confidence_low }
               FILTER(!BOUND(?confidence_low) || ?confidence_low = false)
             }
@@ -870,8 +867,7 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
                  campy:lesson_id ?lesson_id ;
                  campy:text_raw ?text_raw ;
                  campy:lesson_type ?lesson_type .
-              OPTIONAL { ?l campy:archived ?archived }
-              FILTER(!BOUND(?archived) || ?archived = false)
+              ?l campy:archived false .
             }
         """,
     ),
@@ -901,8 +897,7 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
                  campy:scene_wl_hash ?wl_hash ;
                  campy:progress_score ?progress_score ;
                  campy:created_at ?created_at .
-              OPTIONAL { ?l campy:archived ?archived }
-              FILTER(!BOUND(?archived) || ?archived = false)
+              ?l campy:archived false .
               OPTIONAL { ?l campy:valence ?valence }
               FILTER(!BOUND(?valence) || ?valence >= ?min_valence)
               OPTIONAL { ?l campy:archetype ?archetype }

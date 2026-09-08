@@ -59,8 +59,7 @@ ORCHESTRATOR_QUERIES = [
                  campy:concept_id ?concept_id ;
                  campy:text_raw ?text_raw ;
                  campy:pathway_strength ?pathway_strength .
-              OPTIONAL { ?c campy:archived ?archived }
-              FILTER(!BOUND(?archived) || ?archived = false)
+              ?c campy:archived false .
               FILTER(LCASE(STR(?text_raw)) = LCASE(STR(?t)))
             }
             LIMIT 1
@@ -216,8 +215,7 @@ ORCHESTRATOR_QUERIES = [
                  campy:concept_id ?concept_id ;
                  campy:text_raw ?text_raw ;
                  campy:pathway_strength ?pathway_strength .
-              OPTIONAL { ?c campy:archived ?archived }
-              FILTER(!BOUND(?archived) || ?archived = false)
+              ?c campy:archived false .
               FILTER(LCASE(STR(?text_raw)) = LCASE(STR(?t)))
             }
             ORDER BY DESC(?pathway_strength)
@@ -493,8 +491,7 @@ ORCHESTRATOR_QUERIES = [
                   campy:pathway_strength ?pathway_strength ;
                   campy:text_raw ?text_raw .
               FILTER(?pathway_strength > ?threshold)
-              OPTIONAL { ?gc campy:archived ?archived }
-              FILTER(!BOUND(?archived) || ?archived = false)
+              ?gc campy:archived false .
               OPTIONAL { ?gc campy:embedding ?embedding }
             }
         """,
@@ -519,8 +516,7 @@ ORCHESTRATOR_QUERIES = [
                   campy:pathway_strength ?pathway_strength ;
                   campy:text_raw ?text_raw .
               FILTER(?pathway_strength > ?threshold)
-              OPTIONAL { ?gp campy:archived ?archived }
-              FILTER(!BOUND(?archived) || ?archived = false)
+              ?gp campy:archived false .
               OPTIONAL { ?gp campy:embedding ?embedding }
             }
         """,

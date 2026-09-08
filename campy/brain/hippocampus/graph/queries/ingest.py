@@ -189,8 +189,7 @@ INGEST_QUERIES = [
                    campy:source_key ?sk ;
                    campy:dataset_id ?dataset_id ;
                    campy:created_at ?created_at .
-                OPTIONAL { ?d campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?d campy:archived false .
                 OPTIONAL { ?d campy:content_hash ?content_hash }
                 OPTIONAL { ?d campy:storage_uri ?storage_uri }
                 OPTIONAL { ?d campy:row_count ?row_count }

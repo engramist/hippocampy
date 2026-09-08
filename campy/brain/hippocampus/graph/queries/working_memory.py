@@ -151,8 +151,7 @@ WORKING_MEMORY_QUERIES = [
                    campy:session_id ?sid .
                 ?m campy:SENT_IN ?s ;
                    a campy:Message .
-                OPTIONAL { ?m campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?m campy:archived false .
             }
             """,
     ),
@@ -340,8 +339,7 @@ for node_type, (pk_col, key) in _NODE_PK_MAP.items():
                        campy:{pk_col} ?{pk_col} ;
                        campy:text_raw ?text_raw ;
                        campy:pathway_strength ?pathway_strength .
-                    OPTIONAL {{ ?n campy:archived ?archived }}
-                    FILTER(!BOUND(?archived) || ?archived = false)
+                    ?n campy:archived false .
                 }}
                 ORDER BY DESC(?pathway_strength)
                 """,

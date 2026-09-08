@@ -103,6 +103,7 @@ CAMPY_NS = "https://campy.dev/ns#"      # predicates, classes
 CID_BASE = "https://campy.dev/id/"      # instances (same base as vector_store.CID_BASE)
 XSD = "http://www.w3.org/2001/XMLSchema#"
 RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+PROV_NS = "http://www.w3.org/ns/prov#"
 
 _XSD_INTEGER = XSD + "integer"
 _XSD_DOUBLE = XSD + "double"
@@ -754,6 +755,8 @@ def _node_property_lines(uri: str, table: str, properties: dict[str, Any]) -> li
                 lines.append(f"{subj} {pred} {str(lit)} .")
         else:
             lines.append(f"{subj} {pred} {str(literal)} .")
+        if key == "superseded_at":
+            lines.append(f"{subj} <{PROV_NS}invalidatedAtTime> {str(literal)} .")
     return lines
 
 
@@ -846,20 +849,23 @@ class OxigraphClient:
             raise ValueError(f"unknown node table {table!r} — not in schema.NODE_TABLES")
         if properties.get(pk_col) is None:
             raise ValueError(f"{table} write is missing its primary key column {pk_col!r}")
-        uri = mint_uri(table, properties[pk_col])
+        cols = NODE_COLUMNS.get(table, {})
+        props = dict(properties)
+        if "archived" in cols and props.get("archived") is None:
+            props["archived"] = False
+        uri = mint_uri(table, props[pk_col])
         subj = _iri_text(uri)
         lines = [f"{subj} a <{CAMPY_NS}{table}> ."]
-        lines.extend(_node_property_lines(uri, table, properties))
+        lines.extend(_node_property_lines(uri, table, props))
         self.store.update("INSERT DATA {\n" + "\n".join(lines) + "\n}")
 
-        cols = NODE_COLUMNS.get(table, {})
         emb_cols = [c for c, t in cols.items() if t == "FLOAT[384]"]
         for ec in emb_cols:
-            if properties.get(ec) is not None and self.vector_store is not None:
+            if props.get(ec) is not None and self.vector_store is not None:
                 v_uri = uri if ec == "embedding" else f"{uri}#{ec}"
-                self.vector_store.upsert_vector(v_uri, properties[ec])
-        if properties.get("text_raw") and self.vector_store is not None:
-            self.vector_store.index_text(uri, str(properties["text_raw"]))
+                self.vector_store.upsert_vector(v_uri, props[ec])
+        if props.get("text_raw") and self.vector_store is not None:
+            self.vector_store.index_text(uri, str(props["text_raw"]))
 
         return uri
 
@@ -888,7 +894,10 @@ class OxigraphClient:
                     f"{table} is classified 'plain' (no properties) but properties "
                     f"were passed: {sorted(properties)}"
                 )
-            self.store.update("INSERT DATA {\n" + plain_triple + "\n}")
+            triples = [plain_triple]
+            if table == "DEPRECATED_BY":
+                triples.append(f"{obj} <{PROV_NS}wasRevisionOf> {subj} .")
+            self.store.update("INSERT DATA {\n" + "\n".join(triples) + "\n}")
             return
 
         if reification == "star":
@@ -1003,6 +1012,51 @@ class OxigraphClient:
 
     async def execute_read(self, sparql: str, params: dict[str, Any] | None = None):
         return await asyncio.to_thread(self._execute_and_collect, sparql, params)
+
+    def backfill_explicit_status(self) -> int:
+        """Backfill explicit status on all existing nodes (§3.4a, §4.2f).
+
+        1. Guarantees `campy:archived false` is explicitly written on all nodes of
+           the 16 tables carrying an archived column where archived is currently unset.
+        2. Backfills PROV-O `prov:wasRevisionOf` for all `DEPRECATED_BY` edges.
+        3. Backfills PROV-O `prov:invalidatedAtTime` for all nodes with `campy:superseded_at`.
+
+        Returns the total count of triples added.
+        """
+        initial_size = len(self.store)
+        tables_with_archived = [t for t, cols in NODE_COLUMNS.items() if "archived" in cols]
+        classes_values = " ".join(f"campy:{t}" for t in sorted(tables_with_archived))
+        update_sparql = f"""
+        PREFIX campy: <{CAMPY_NS}>
+        PREFIX prov: <{PROV_NS}>
+
+        INSERT {{
+            ?s campy:archived false .
+        }}
+        WHERE {{
+            VALUES ?table_class {{ {classes_values} }}
+            ?s a ?table_class .
+            FILTER NOT EXISTS {{ ?s campy:archived ?a }}
+        }} ;
+
+        INSERT {{
+            ?new prov:wasRevisionOf ?old .
+        }}
+        WHERE {{
+            ?old campy:DEPRECATED_BY ?new .
+            FILTER NOT EXISTS {{ ?new prov:wasRevisionOf ?old }}
+        }} ;
+
+        INSERT {{
+            ?s prov:invalidatedAtTime ?at .
+        }}
+        WHERE {{
+            ?s campy:superseded_at ?at .
+            FILTER NOT EXISTS {{ ?s prov:invalidatedAtTime ?inv }}
+        }}
+        """
+        self.store.update(update_sparql)
+        return len(self.store) - initial_size
 
     def vector_search(
         self,
@@ -1155,6 +1209,7 @@ class RowDict(dict):
 
 STANDARD_PREFIXES = """PREFIX campy: <https://campy.dev/ns#>
 PREFIX cid: <https://campy.dev/id/>
+PREFIX prov: <http://www.w3.org/ns/prov#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -1288,6 +1343,7 @@ __all__ = [
     "parse_uri",
     "CAMPY_NS",
     "CID_BASE",
+    "PROV_NS",
     "XSD",
     "NODE_COLUMNS",
     "NODE_PRIMARY_KEYS",

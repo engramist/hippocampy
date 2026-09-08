@@ -22,8 +22,7 @@ CLI_QUERIES: tuple[NamedQuery, ...] = (
             SELECT ?id ?name WHERE {
                 ?p a campy:Procedure ;
                    campy:name ?name .
-                OPTIONAL { ?p campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?p campy:archived false .
                 OPTIONAL { ?p campy:procedure_id ?id }
             }
             """,
@@ -78,8 +77,7 @@ CLI_QUERIES: tuple[NamedQuery, ...] = (
             SELECT ?id ?text WHERE {
                 ?l a campy:Lesson ;
                    campy:lesson_id ?lid .
-                OPTIONAL { ?l campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?l campy:archived false .
                 OPTIONAL { ?l campy:lesson_id ?id }
                 OPTIONAL { ?l campy:text_raw ?text }
             }
@@ -143,8 +141,7 @@ CLI_QUERIES: tuple[NamedQuery, ...] = (
                 ?p a campy:Procedure ;
                    campy:trigger_pattern ?pattern .
                 FILTER(?pattern != "")
-                OPTIONAL { ?p campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?p campy:archived false .
                 OPTIONAL { ?p campy:procedure_id ?id }
                 OPTIONAL { ?p campy:name ?name }
                 OPTIONAL { ?p campy:trigger_hook_type ?hook_type }
@@ -177,8 +174,7 @@ CLI_QUERIES: tuple[NamedQuery, ...] = (
                 ?l a campy:Lesson ;
                    campy:trigger_pattern ?pattern .
                 FILTER(?pattern != "")
-                OPTIONAL { ?l campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?l campy:archived false .
                 OPTIONAL { ?l campy:lesson_id ?id }
                 OPTIONAL { ?l campy:text_raw ?text }
                 OPTIONAL { ?l campy:trigger_hook_type ?hook_type }
@@ -286,8 +282,7 @@ CLI_QUERIES: tuple[NamedQuery, ...] = (
                 FILTER(STRSTARTS(?text_raw, "Plan outcome ("))
                 FILTER(!CONTAINS(?text_raw, "[valence_trigger:"))
                 FILTER(!CONTAINS(?text_raw, "[valence_relabel:"))
-                OPTIONAL { ?l campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?l campy:archived false .
                 OPTIONAL { ?l campy:lesson_id ?lesson_id }
             }
             """,
@@ -420,8 +415,7 @@ CLI_QUERIES: tuple[NamedQuery, ...] = (
                    campy:valence ?valence .
                 OPTIONAL { ?p campy:valence_source ?valence_source }
                 FILTER(!BOUND(?valence_source) || ?valence_source = "system")
-                OPTIONAL { ?p campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?p campy:archived false .
                 OPTIONAL { ?p campy:plan_id ?plan_id }
                 OPTIONAL { ?p campy:goal ?goal }
             }

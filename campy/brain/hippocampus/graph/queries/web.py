@@ -427,8 +427,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT (COUNT(?n) AS ?count) WHERE {
                 ?n a campy:Concept .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
         """,
     ),
@@ -442,8 +441,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT (COUNT(?n) AS ?count) WHERE {
                 ?n a campy:Decision .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
         """,
     ),
@@ -457,8 +455,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT (COUNT(?n) AS ?count) WHERE {
                 ?n a campy:Constraint .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
         """,
     ),
@@ -472,8 +469,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT (COUNT(?n) AS ?count) WHERE {
                 ?n a campy:Requirement .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
         """,
     ),
@@ -487,8 +483,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT (COUNT(?n) AS ?count) WHERE {
                 ?n a campy:ActionItem .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
         """,
     ),
@@ -502,8 +497,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT (COUNT(?n) AS ?count) WHERE {
                 ?n a campy:Message .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
         """,
     ),
@@ -543,8 +537,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT (COUNT(?n) AS ?count) WHERE {
                 ?n a campy:MainQuest .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
         """,
     ),
@@ -558,8 +551,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT (COUNT(?n) AS ?count) WHERE {
                 ?n a campy:SideQuest .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
         """,
     ),
@@ -577,8 +569,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?concept_id ?text_raw ?gist_class ?confidence ?pathway_strength ?confidence_low WHERE {
                 ?c a campy:Concept .
-                OPTIONAL { ?c campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?c campy:archived false .
                 OPTIONAL { ?c campy:concept_id ?concept_id }
                 OPTIONAL { ?c campy:text_raw ?text_raw }
                 OPTIONAL { ?c campy:gist_class ?gist_class }
@@ -602,8 +593,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?decision_id ?text_raw ?confidence ?pathway_strength ?confidence_low WHERE {
                 ?d a campy:Decision .
-                OPTIONAL { ?d campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?d campy:archived false .
                 OPTIONAL { ?d campy:decision_id ?decision_id }
                 OPTIONAL { ?d campy:text_raw ?text_raw }
                 OPTIONAL { ?d campy:confidence ?confidence }
@@ -626,8 +616,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?constraint_id ?text_raw ?confidence ?pathway_strength ?confidence_low WHERE {
                 ?c a campy:Constraint .
-                OPTIONAL { ?c campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?c campy:archived false .
                 OPTIONAL { ?c campy:constraint_id ?constraint_id }
                 OPTIONAL { ?c campy:text_raw ?text_raw }
                 OPTIONAL { ?c campy:confidence ?confidence }
@@ -648,8 +637,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?quest_id ?name ?status WHERE {
                 ?q a campy:MainQuest .
-                OPTIONAL { ?q campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?q campy:archived false .
                 OPTIONAL { ?q campy:quest_id ?quest_id }
                 OPTIONAL { ?q campy:name ?name }
                 OPTIONAL { ?q campy:status ?status }
@@ -667,8 +655,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?quest_id ?name ?status WHERE {
                 ?q a campy:SideQuest .
-                OPTIONAL { ?q campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?q campy:archived false .
                 OPTIONAL { ?q campy:quest_id ?quest_id }
                 OPTIONAL { ?q campy:name ?name }
                 OPTIONAL { ?q campy:status ?status }
@@ -689,10 +676,8 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             SELECT ?a_concept_id ?b_concept_id ?strength ?count WHERE {
                 ?a a campy:Concept ; campy:concept_id ?a_concept_id .
                 ?b a campy:Concept ; campy:concept_id ?b_concept_id .
-                OPTIONAL { ?a campy:archived ?a_archived }
-                FILTER(!BOUND(?a_archived) || ?a_archived = false)
-                OPTIONAL { ?b campy:archived ?b_archived }
-                FILTER(!BOUND(?b_archived) || ?b_archived = false)
+                ?a campy:archived false .
+                ?b campy:archived false .
                 ?a campy:CO_OCCURS_WITH ?b .
                 << ?a campy:CO_OCCURS_WITH ?b >> campy:strength ?strength ;
                                                  campy:count ?count .
@@ -745,8 +730,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             SELECT ?id ?text_raw ?confidence ?created_at WHERE {
                 ?n a campy:Concept ;
                    campy:confidence_low true .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
                 OPTIONAL { ?n campy:concept_id ?id }
                 OPTIONAL { ?n campy:text_raw ?text_raw }
                 OPTIONAL { ?n campy:confidence ?confidence }
@@ -769,8 +753,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             SELECT ?id ?text_raw ?confidence ?created_at WHERE {
                 ?n a campy:Decision ;
                    campy:confidence_low true .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
                 OPTIONAL { ?n campy:decision_id ?id }
                 OPTIONAL { ?n campy:text_raw ?text_raw }
                 OPTIONAL { ?n campy:confidence ?confidence }
@@ -793,8 +776,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             SELECT ?id ?text_raw ?confidence ?created_at WHERE {
                 ?n a campy:Constraint ;
                    campy:confidence_low true .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
                 OPTIONAL { ?n campy:constraint_id ?id }
                 OPTIONAL { ?n campy:text_raw ?text_raw }
                 OPTIONAL { ?n campy:confidence ?confidence }
@@ -817,8 +799,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             SELECT ?id ?text_raw ?confidence ?created_at WHERE {
                 ?n a campy:Requirement ;
                    campy:confidence_low true .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
                 OPTIONAL { ?n campy:requirement_id ?id }
                 OPTIONAL { ?n campy:text_raw ?text_raw }
                 OPTIONAL { ?n campy:confidence ?confidence }
@@ -841,8 +822,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             SELECT ?id ?text_raw ?confidence ?created_at WHERE {
                 ?n a campy:ActionItem ;
                    campy:confidence_low true .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
                 OPTIONAL { ?n campy:action_item_id ?id }
                 OPTIONAL { ?n campy:text_raw ?text_raw }
                 OPTIONAL { ?n campy:confidence ?confidence }
@@ -1310,8 +1290,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?constraint_id ?text_raw ?confidence ?confidence_low ?pathway_strength ?created_at WHERE {
                 ?c a campy:Constraint .
-                OPTIONAL { ?c campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?c campy:archived false .
                 OPTIONAL { ?c campy:constraint_id ?constraint_id }
                 OPTIONAL { ?c campy:text_raw ?text_raw }
                 OPTIONAL { ?c campy:confidence ?confidence }
@@ -1335,8 +1314,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?global_constraint_id ?text_raw ?confidence ?confidence_low ?pathway_strength ?created_at WHERE {
                 ?c a campy:GlobalConstraint .
-                OPTIONAL { ?c campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?c campy:archived false .
                 OPTIONAL { ?c campy:global_constraint_id ?global_constraint_id }
                 OPTIONAL { ?c campy:text_raw ?text_raw }
                 OPTIONAL { ?c campy:confidence ?confidence }
@@ -1360,8 +1338,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?quest_id ?name ?status ?purpose ?created_at WHERE {
                 ?q a campy:MainQuest .
-                OPTIONAL { ?q campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?q campy:archived false .
                 OPTIONAL { ?q campy:quest_id ?quest_id }
                 OPTIONAL { ?q campy:name ?name }
                 OPTIONAL { ?q campy:status ?status }
@@ -1387,8 +1364,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
                     campy:BELONGS_TO ?mq .
                 ?mq a campy:MainQuest ;
                     campy:quest_id ?mq_quest_id .
-                OPTIONAL { ?sq campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?sq campy:archived false .
                 OPTIONAL { ?sq campy:quest_id ?quest_id }
                 OPTIONAL { ?sq campy:name ?name }
                 OPTIONAL { ?sq campy:status ?status }
@@ -1411,8 +1387,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?decision_id ?text_raw ?confidence ?pathway_strength ?confidence_low ?created_at WHERE {
                 ?d a campy:Decision .
-                OPTIONAL { ?d campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?d campy:archived false .
                 OPTIONAL { ?d campy:decision_id ?decision_id }
                 OPTIONAL { ?d campy:text_raw ?text_raw }
                 OPTIONAL { ?d campy:confidence ?confidence }
@@ -1436,8 +1411,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?concept_id ?text_raw ?gist_class ?pathway_strength ?confidence_low WHERE {
                 ?c a campy:Concept .
-                OPTIONAL { ?c campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?c campy:archived false .
                 OPTIONAL { ?c campy:concept_id ?concept_id }
                 OPTIONAL { ?c campy:text_raw ?text_raw }
                 OPTIONAL { ?c campy:gist_class ?gist_class }
@@ -1460,8 +1434,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?constraint_id ?text_raw ?confidence ?pathway_strength ?confidence_low WHERE {
                 ?c a campy:Constraint .
-                OPTIONAL { ?c campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?c campy:archived false .
                 OPTIONAL { ?c campy:constraint_id ?constraint_id }
                 OPTIONAL { ?c campy:text_raw ?text_raw }
                 OPTIONAL { ?c campy:confidence ?confidence }
@@ -1483,8 +1456,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             SELECT (COUNT(?n) AS ?count) WHERE {
                 ?n a campy:Concept ;
                    campy:confidence_low true .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
         """,
     ),
@@ -1500,8 +1472,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             SELECT (COUNT(?n) AS ?count) WHERE {
                 ?n a campy:Decision ;
                    campy:confidence_low true .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
         """,
     ),
@@ -1517,8 +1488,7 @@ WEB_QUERIES: tuple[NamedQuery, ...] = (
             SELECT (COUNT(?n) AS ?count) WHERE {
                 ?n a campy:Constraint ;
                    campy:confidence_low true .
-                OPTIONAL { ?n campy:archived ?archived }
-                FILTER(!BOUND(?archived) || ?archived = false)
+                ?n campy:archived false .
             }
         """,
     ),
