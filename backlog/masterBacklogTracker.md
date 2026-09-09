@@ -80,7 +80,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B407 | Inference Pilot: Prove the RDF Thesis Before the Engine Cutover | P0 | complete | TBD | TBD | - | backlog/B407.md |
 | B408 | Stale-Base Guard: Make Silent Reverts Unmergeable | P0 | complete | TBD | TBD | - | backlog/B408.md |
 | B411 | Exhaustive Migration Fixture: Round-Trip Every Node and Edge Type | P0 | complete | TBD | TBD | - | backlog/B411.md |
-| B413 | Re-triage the 31 Write-Path Schema Violations: "Guarded" Was a Kùzu Premise, Oxigraph Doesn't Hold It | P0 | ready | TBD | TBD | - | backlog/B413.md |
+| B413 | Re-triage the Write-Path Schema Violations: "Guarded" Was a Kùzu Premise — but Unguarded ≠ Broken (0 broken / 3 inert / 27 unreachable) | P1 | ready | TBD | TBD | - | backlog/B413.md |
 | B1 | `sidequests setup` CLI | P1 | complete | TBD | TBD | backlog/plans/B-1-setup-cli.md | backlog/B1.md |
 | B2 | `.mcpb` Bundle (One-Click Claude Desktop Install) | P1 | complete | TBD | TBD | backlog/plans/B-2-cowork-plugin.md | backlog/B2.md |
 | B3 | ChatGPT Desktop SSE Endpoint | P1 | complete | TBD | TBD | backlog/plans/B-3-chatgpt-sse.md | backlog/B3.md |
