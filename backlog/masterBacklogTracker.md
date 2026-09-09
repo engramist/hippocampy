@@ -80,7 +80,9 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B407 | Inference Pilot: Prove the RDF Thesis Before the Engine Cutover | P0 | complete | TBD | TBD | - | backlog/B407.md |
 | B408 | Stale-Base Guard: Make Silent Reverts Unmergeable | P0 | complete | TBD | TBD | - | backlog/B408.md |
 | B411 | Exhaustive Migration Fixture: Round-Trip Every Node and Edge Type | P0 | complete | TBD | TBD | - | backlog/B411.md |
-| B413 | Re-triage the Write-Path Schema Violations: "Guarded" Was a Kùzu Premise — but Unguarded ≠ Broken (0 broken / 3 inert / 27 unreachable) | P1 | ready | TBD | TBD | - | backlog/B413.md |
+| B412 | The 24 Read-Path Schema Violations: Queries That Silently Return Nothing | P0 | ready | TBD | TBD | - | backlog/B412.md |
+| B414 | Silent-Duplicate Guard + Mechanical Card-Number Allocation | P0 | proposed | TBD | TBD | - | backlog/B414.md |
+| B415 | Make kpi_monitor.py Actually Measure | P0 | complete | TBD | TBD | - | backlog/B415.md |
 | B1 | `sidequests setup` CLI | P1 | complete | TBD | TBD | backlog/plans/B-1-setup-cli.md | backlog/B1.md |
 | B2 | `.mcpb` Bundle (One-Click Claude Desktop Install) | P1 | complete | TBD | TBD | backlog/plans/B-2-cowork-plugin.md | backlog/B2.md |
 | B3 | ChatGPT Desktop SSE Endpoint | P1 | complete | TBD | TBD | backlog/plans/B-3-chatgpt-sse.md | backlog/B3.md |
@@ -144,7 +146,9 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B383 | Automated Model Handoff Generator: Zero-Amnesia Model Swapping | P1 | ready | TBD | TBD | backlog/plans/B-383-automated-model-handoff.md | backlog/B383.md |
 | B401 | Measure the Value of the spaCy Step Before Replacing It | P1 | blocked (needs B400 merged) | TBD | TBD | - | backlog/B401.md |
 | B402 | Open Research Questions Section in ARCHITECTURE.md | P1 | complete | TBD | TBD | backlog/plans/B-402-architecture-research-section.md | backlog/B402.md |
-| B410 | Explicit Status Writes: Guaranteed-Written Status and the Cheap Filter Form | P1 | ready | TBD | TBD | - | backlog/B410.md |
+| B410 | Explicit Status Writes: Guaranteed-Written Status and the Cheap Filter Form | P1 | complete | TBD | TBD | - | backlog/B410.md |
+| B413 | Re-triage the Write-Path Schema Violations: "Guarded" Was a Kùzu Premise — but Unguarded ≠ Broken (0 broken / 3 inert / 27 unreachable) | P1 | ready | TBD | TBD | - | backlog/B413.md |
+| B416 | Detect Local Environment Drift From Declared Dependencies | P1 | complete | TBD | TBD | - | backlog/B416.md |
 | B4 | Publish to PyPI | P2 | complete | TBD | TBD | backlog/plans/B-4-pypi-publish.md | backlog/B4.md |
 | B5 | Smithery Listing | P2 | complete | TBD | TBD | backlog/plans/B-5-smithery-listing.md | backlog/B5.md |
 | B224 | Wiki Projection Drift Guard and Obsidian Hygiene | P2 | complete | TBD | TBD | backlog/plans/B-224-wiki-projection-drift-guard.md | backlog/B224.md |
@@ -183,7 +187,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B371 | Brain Daemon Briefly Unresponsive During IndexHygiene Warning Loop (B285 Follow-Up) | P2 | investigated — the leading hypothesis (busy loop) is disproven; real fixes landed for what was actually found; the original CPU/socket-timeout symptom's exact cause remains unconfirmed | TBD | TBD | - | backlog/B371.md |
 | B378 | Ambient Operator Presence: Desktop Menu-Bar / Tray Companion | P2 | ready | TBD | TBD | - | backlog/B378.md |
 | B379 | Align Campy Web Landing Page and Marketing Copy with Live Engine Architecture | P2 | ready | TBD | TBD | - | backlog/B379.md |
-| B409 | test_daemon_script_worktree_resolution.py cannot pass from a worktree | P2 | ready | TBD | TBD | - | backlog/B409.md |
+| B409 | test_daemon_script_worktree_resolution.py cannot pass from a worktree | P2 | complete | TBD | TBD | - | backlog/B409.md |
 | B6 | Claude Desktop Adapter (Full) | P3 | complete | TBD | TBD | backlog/plans/B-6-claude-desktop-adapter.md | backlog/B6.md |
 | B7 | ChatGPT Desktop Adapter (Stub → Full) | P3 | complete | TBD | TBD | backlog/plans/B-7-chatgpt-desktop-adapter.md | backlog/B7.md |
 | B8 | Gemini CLI Adapter — DONE | P3 | complete | TBD | TBD | - | backlog/B8.md |
@@ -287,9 +291,9 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 
 ## Summary
 
-- Total cards: 279
+- Total cards: 284
 - Ready: 13
 - Needs work: 0
-- Complete: 240
+- Complete: 244
 - In progress: 0
 - Blocked: 1
