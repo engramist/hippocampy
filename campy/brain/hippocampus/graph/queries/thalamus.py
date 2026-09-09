@@ -155,34 +155,45 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         name="thalamus.file_bridge_concepts",
         cypher="MATCH (c:Concept) "
                "WHERE c.archived = false AND c.confidence >= 0.6 "
-               "RETURN c.concept_id AS id, c.prefLabel AS name, "
+               "OPTIONAL MATCH (c)-[:HAS_PREF_LABEL]->(pl:Label) "
+               "OPTIONAL MATCH (c)-[:HAS_ALT_LABEL]->(al:Label) "
+               "RETURN c.concept_id AS id, pl.text AS name, "
                "       c.text_raw AS definition, c.gist_class AS gist_class, "
-               "       c.altLabel AS alt_labels, c.pathway_strength AS strength "
+               "       collect(DISTINCT al.text) AS alt_labels, c.pathway_strength AS strength "
                "ORDER BY c.pathway_strength DESC",
         params=(),
         mutating=False,
         description="Fetch concepts for CONTEXT.md file bridge",
-        # NOTE (pre-existing, not introduced by this translation):
-        # `c.prefLabel`/`c.altLabel` reference columns schema.py never
-        # declares on Concept (SKOS labels live on separate `Label` nodes
-        # via HAS_PREF_LABEL/HAS_ALT_LABEL) — the same class of latent bug
-        # B389's report flagged elsewhere (e.g. HAS_ALT_LABEL's create-with-
-        # undeclared-property call sites). Preserved faithfully: OPTIONAL
-        # so the row still projects, matching that these always come back
-        # unset rather than raising.
+        # B412: `c.prefLabel`/`c.altLabel` referenced columns schema.py
+        # never declares on Concept — SKOS labels live on separate
+        # `Label` nodes reached via HAS_PREF_LABEL/HAS_ALT_LABEL (both
+        # "plain" in EDGE_REIFICATION, see oxigraph_client.py). Fixed to
+        # traverse those edges. `alt_labels` aggregates with GROUP_CONCAT,
+        # same pattern as quests.get_concept_with_alt_labels. Expect
+        # sparse alt_labels until B405's gazetteer write-path bug (fixed
+        # separately) has had time to populate real data — the traversal
+        # shape here is what B412 is responsible for proving correct.
         sparql="""
-            SELECT ?id ?name ?definition ?gist_class ?alt_labels ?strength WHERE {
+            SELECT ?id ?name ?definition ?gist_class ?strength
+                   (GROUP_CONCAT(DISTINCT ?alt_text; separator=", ") AS ?alt_labels) WHERE {
                 ?c a campy:Concept ;
                    campy:concept_id ?id ;
                    campy:confidence ?confidence ;
                    campy:pathway_strength ?strength .
-                OPTIONAL { ?c campy:prefLabel ?name }
                 OPTIONAL { ?c campy:text_raw ?definition }
                 OPTIONAL { ?c campy:gist_class ?gist_class }
-                OPTIONAL { ?c campy:altLabel ?alt_labels }
+                OPTIONAL {
+                    ?c campy:HAS_PREF_LABEL ?pl .
+                    ?pl a campy:Label ; campy:text ?name .
+                }
+                OPTIONAL {
+                    ?c campy:HAS_ALT_LABEL ?al .
+                    ?al a campy:Label ; campy:text ?alt_text .
+                }
                 ?c campy:archived false .
                 FILTER(?confidence >= "0.6"^^xsd:double)
             }
+            GROUP BY ?id ?name ?definition ?gist_class ?strength
             ORDER BY DESC(?strength)
             """,
     ),
@@ -190,15 +201,18 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         name="thalamus.file_bridge_concept_relationships",
         cypher="MATCH (a:Concept)-[r]->(b:Concept) "
                "WHERE a.archived = false AND b.archived = false "
-               "RETURN a.prefLabel AS from_name, type(r) AS rel_type, "
-               "       b.prefLabel AS to_name "
+               "OPTIONAL MATCH (a)-[:HAS_PREF_LABEL]->(apl:Label) "
+               "OPTIONAL MATCH (b)-[:HAS_PREF_LABEL]->(bpl:Label) "
+               "RETURN apl.text AS from_name, type(r) AS rel_type, "
+               "       bpl.text AS to_name "
                "ORDER BY a.pathway_strength DESC",
         params=(),
         mutating=False,
         description="Fetch concept relationships for CONTEXT.md file bridge",
         # Free predicate (no fixed alternation here, unlike bundle_graph_*
         # below) — any Concept->Concept relationship type qualifies, same
-        # as Cypher's unbound `[r]`. See prefLabel/altLabel note above.
+        # as Cypher's unbound `[r]`. B412: prefLabel fixed to traverse
+        # HAS_PREF_LABEL -> Label.text, see file_bridge_concepts above.
         sparql="""
             SELECT ?from_name ?rel_type ?to_name WHERE {
                 ?a a campy:Concept ;
@@ -206,8 +220,8 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                 ?b a campy:Concept .
                 ?a ?p ?b .
                 BIND(STRAFTER(STR(?p), "https://campy.dev/ns#") AS ?rel_type)
-                OPTIONAL { ?a campy:prefLabel ?from_name }
-                OPTIONAL { ?b campy:prefLabel ?to_name }
+                OPTIONAL { ?a campy:HAS_PREF_LABEL ?apl . ?apl campy:text ?from_name }
+                OPTIONAL { ?b campy:HAS_PREF_LABEL ?bpl . ?bpl campy:text ?to_name }
                 ?a campy:archived false .
                 ?b campy:archived false .
             }
@@ -238,13 +252,16 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         name="thalamus.file_bridge_decisions",
         cypher="MATCH (d:Decision) "
                "WHERE d.archived = false AND d.confidence >= 0.8 "
-               "RETURN d.decision_id AS id, d.prefLabel AS title, "
+               "OPTIONAL MATCH (d)-[:HAS_PREF_LABEL]->(pl:Label) "
+               "RETURN d.decision_id AS id, pl.text AS title, "
                "       d.text_raw AS context, d.created_at AS created_at "
                "ORDER BY d.created_at ASC",
         params=(),
         mutating=False,
         description="Fetch decisions for ADR generation",
-        # See prefLabel note on thalamus.file_bridge_concepts above.
+        # B412: prefLabel fixed to traverse HAS_PREF_LABEL -> Label.text —
+        # see file_bridge_concepts above. Decision is one of HAS_PREF_LABEL's
+        # declared FROM tables in schema.py, same SKOS pattern as Concept.
         sparql="""
             SELECT ?id ?title ?context ?created_at WHERE {
                 ?d a campy:Decision ;
@@ -252,7 +269,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                    campy:text_raw ?context ;
                    campy:confidence ?confidence ;
                    campy:created_at ?created_at .
-                OPTIONAL { ?d campy:prefLabel ?title }
+                OPTIONAL { ?d campy:HAS_PREF_LABEL ?pl . ?pl campy:text ?title }
                 ?d campy:archived false .
                 FILTER(?confidence >= "0.8"^^xsd:double)
             }
