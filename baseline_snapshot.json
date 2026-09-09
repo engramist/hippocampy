@@ -1,46 +1,73 @@
 {
-  "timestamp": "2026-09-04T16:45:14.713631+00:00",
+  "timestamp": "2026-09-09T05:40:37.653562+00:00",
   "mode": "standard",
+  "python_executable": "/private/tmp/b415-clean-venv/bin/python",
+  "_measurement_note": "B415/B416: measured with a throwaway clean venv (rm -rf .venv && python3.12 -m venv .venv && pip install -r requirements.txt && pip install -e \".[test]\"), NOT this checkout's own .venv, which predates B355 and still carries an undeclared torch/sentence-transformers/transformers (see scripts/check_env_drift.py). assert_environment_clean() in kpi_monitor.py would refuse to run against a drifted environment; this file is proof the drift guard was satisfied at measurement time, not an assertion.",
   "tier1_resource_footprint": {
-    "current_process_rss_mb": 20.23,
-    "daemon_idle_rss_baseline_mb": 245.6,
-    "live_steady_state_rss_baseline_mb": 1200.0,
+    "current_process_rss_mb": 30.66,
+    "import_only_rss_mb": 91.45,
+    "warm_invoked_rss_mb": 588.88,
+    "warm_invoked_breakdown": {
+      "baseline_python_rss_mb": 17.64,
+      "spacy_loaded_and_invoked_rss_mb": 382.48,
+      "fastembed_loaded_and_invoked_rss_mb": 588.88
+    },
+    "write_burst_peak_spike_mb": 25.92,
+    "allocation_delta_per_100_turns_mb": 0.0,
     "target_rss_mb": 80.0,
-    "allocation_delta_per_100_turns_mb": 1.2,
-    "write_burst_peak_spike_baseline_mb": 1100.0
+    "methodology": {
+      "current_process_rss_mb": "psutil (or ru_maxrss fallback) on this script's own process, in-process, 1 sample.",
+      "import_only_rss_mb": "subprocess: RSS sampled immediately after `import campy.brain_daemon`, no model invoked, cold, 1 sample.",
+      "warm_invoked_rss_mb": "subprocess: RSS sampled after spaCy (en_core_web_md) loaded AND run on a sentence, then fastembed loaded AND run on a sentence -- warm, models invoked, cold process, 1 sample. See warm_invoked_breakdown for the staged figures.",
+      "write_burst_peak_spike_mb": "in-process: 5000 real graph writes (with 384-dim embeddings) against an in-memory OxigraphClient, RSS sampled every 5ms on a background thread throughout; spike = peak observed RSS - pre-burst RSS.",
+      "allocation_delta_per_100_turns_mb": "in-process: gc.collect() + RSS sample, allocate 100 dummy turn dicts, gc.collect() + RSS sample again; delta scaled to a per-100-turns rate."
+    }
   },
   "tier2_speed_economics_graph": {
-    "retrieval_compilation_latency_ms": 28.5,
+    "retrieval_compilation_latency_ms": 54.562,
+    "retrieval_compilation_latency_cold_ms": 70.058,
     "target_retrieval_latency_ms": 10.0,
-    "llm_generation_latency_s": 1.54,
+    "llm_generation_latency_s": 0.114,
     "target_llm_generation_latency_s": 1.0,
     "b289_compression_active_in_ask": true,
     "compression_ratio_over_budget_pct": 48.0,
     "compression_bypass_sub_budget_pct": 100.0,
-    "graph_hop_latency_2hops_ms": 2.53,
+    "graph_hop_latency_2hops_ms": 0.0248,
     "target_graph_hop_latency_ms": "<5.0ms",
-    "dense_supernode_edges_scanned": 10,
     "dense_supernode_degree_cap": 15,
     "dense_supernode_top5_incident_cap": 5,
     "query_plan_bounded": true,
-    "query_plan_regression_detected": false
+    "methodology": {
+      "retrieval_compilation_latency_ms": "in-process: real compile_bundle() call against an in-memory (empty) OxigraphClient, real fastembed query-embedding invocation, 5 samples (4 warm after 1 cold). Empty-graph caveat: measures stage-machinery + embedding overhead, not I/O cost against production-scale data.",
+      "graph_hop_latency_2hops_ms": "in-process: real SPARQL query timed via time.perf_counter() (no sleep) against the same empty in-memory store, 10 samples, warm mean reported (cold: 0.094ms).",
+      "llm_generation_latency_s": "real, single timed chat() call against local Ollama (llama3.1:8b).",
+      "compression_ratio_over_budget_pct": "in-process: real ThalamicCompressionRouter.compress_section() call, not simulated.",
+      "dense_supernode_degree_cap": "design-time configuration constant, not a per-run measurement."
+    }
   },
   "tier3_cognitive_retention": {
-    "ask_eval_overall": 0.69,
+    "ask_eval_overall": null,
     "target_ask_eval_overall": 0.9,
-    "identifier_accuracy": 1.0,
-    "paraphrase_accuracy": 0.25,
+    "identifier_accuracy": null,
+    "paraphrase_accuracy": null,
     "target_paraphrase_accuracy": 0.8,
-    "cross_lane_accuracy": 0.5,
-    "continuation_accuracy": 0.5,
-    "negative_control_score": 1.0,
-    "negative_control_compliance": "100% (Zero hallucination on empty context)"
+    "cross_lane_accuracy": null,
+    "continuation_accuracy": null,
+    "negative_control_score": null,
+    "methodology": {
+      "all_fields": "not measured by kpi_monitor.py -- these scores come from the ask-eval harness (benchmarks/ask_eval/runner.py, B304-B307), which runs many real LLM calls against a populated daemon and takes minutes. Run it directly: `python -m benchmarks.ask_eval.runner`."
+    }
   },
   "tier4_model_handoff": {
-    "handoff_constraint_violations": 0,
+    "handoff_constraint_violations": null,
     "target_constraint_violations": 0,
-    "handoff_overhead_ms": 480.0,
-    "target_handoff_overhead_ms": "<500ms (B383)",
-    "zero_amnesia_status": "Verified (Hard constraints preserved across handoffs)"
+    "handoff_overhead_ms": 0.0746,
+    "target_handoff_overhead_ms": 500.0,
+    "manual_markdown_overhead_pct": null,
+    "methodology": {
+      "handoff_overhead_ms": "in-process: real get_handoff_context() call against an in-memory (empty) OxigraphClient, 10 samples, warm mean reported (cold: 0.446ms). Empty-graph caveat: no prior session exists, so this is the lower-bound 'no handoff found' cost, not a populated cross-session handoff.",
+      "handoff_constraint_violations": "no automated constraint-violation checker exists in-process; requires a scripted or manual review of a live model-handoff transcript -- see backlog/B383.md.",
+      "manual_markdown_overhead_pct": "no automated constraint-violation checker exists in-process; requires a scripted or manual review of a live model-handoff transcript -- see backlog/B383.md."
+    }
   }
 }
