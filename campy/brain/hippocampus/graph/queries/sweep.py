@@ -619,7 +619,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.get_active_pathway_globalconstraint",
         cypher="""
             MATCH (n:GlobalConstraint) WHERE n.archived = false
-            RETURN n.constraint_id, n.pathway_strength
+            RETURN n.global_constraint_id, n.pathway_strength
             """,
         params=(),
         mutating=False,
@@ -629,7 +629,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.unwind_archive_globalconstraint",
         cypher="""
             UNWIND $ids AS nid
-            MATCH (n:GlobalConstraint) WHERE n.constraint_id = nid
+            MATCH (n:GlobalConstraint) WHERE n.global_constraint_id = nid
             SET n.archived = true
             """,
         params=("ids",),
@@ -651,7 +651,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         cypher="""
             MATCH (n:GlobalConstraint)
             WHERE n.archived = true AND n.embedding IS NOT NULL
-            RETURN n.constraint_id, n.embedding
+            RETURN n.global_constraint_id, n.embedding
             LIMIT $limit
             """,
         params=("limit",),
@@ -662,7 +662,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.resurrect_node_globalconstraint",
         cypher="""
             UNWIND $ids AS nid
-            MATCH (n:GlobalConstraint) WHERE n.constraint_id = nid
+            MATCH (n:GlobalConstraint) WHERE n.global_constraint_id = nid
             SET n.archived = false,
                 n.pathway_strength = $strength
             """,
@@ -685,7 +685,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.get_active_pathway_globalpreference",
         cypher="""
             MATCH (n:GlobalPreference) WHERE n.archived = false
-            RETURN n.pref_id, n.pathway_strength
+            RETURN n.global_preference_id, n.pathway_strength
             """,
         params=(),
         mutating=False,
@@ -695,7 +695,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.unwind_archive_globalpreference",
         cypher="""
             UNWIND $ids AS nid
-            MATCH (n:GlobalPreference) WHERE n.pref_id = nid
+            MATCH (n:GlobalPreference) WHERE n.global_preference_id = nid
             SET n.archived = true
             """,
         params=("ids",),
@@ -717,7 +717,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         cypher="""
             MATCH (n:GlobalPreference)
             WHERE n.archived = true AND n.embedding IS NOT NULL
-            RETURN n.pref_id, n.embedding
+            RETURN n.global_preference_id, n.embedding
             LIMIT $limit
             """,
         params=("limit",),
@@ -728,7 +728,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.resurrect_node_globalpreference",
         cypher="""
             UNWIND $ids AS nid
-            MATCH (n:GlobalPreference) WHERE n.pref_id = nid
+            MATCH (n:GlobalPreference) WHERE n.global_preference_id = nid
             SET n.archived = false,
                 n.pathway_strength = $strength
             """,
@@ -883,7 +883,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.get_active_pathway_requirement",
         cypher="""
             MATCH (n:Requirement) WHERE n.archived = false
-            RETURN n.req_id, n.pathway_strength
+            RETURN n.requirement_id, n.pathway_strength
             """,
         params=(),
         mutating=False,
@@ -893,7 +893,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.unwind_archive_requirement",
         cypher="""
             UNWIND $ids AS nid
-            MATCH (n:Requirement) WHERE n.req_id = nid
+            MATCH (n:Requirement) WHERE n.requirement_id = nid
             SET n.archived = true
             """,
         params=("ids",),
@@ -915,7 +915,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         cypher="""
             MATCH (n:Requirement)
             WHERE n.archived = true AND n.embedding IS NOT NULL
-            RETURN n.req_id, n.embedding
+            RETURN n.requirement_id, n.embedding
             LIMIT $limit
             """,
         params=("limit",),
@@ -926,7 +926,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.resurrect_node_requirement",
         cypher="""
             UNWIND $ids AS nid
-            MATCH (n:Requirement) WHERE n.req_id = nid
+            MATCH (n:Requirement) WHERE n.requirement_id = nid
             SET n.archived = false,
                 n.pathway_strength = $strength
             """,
