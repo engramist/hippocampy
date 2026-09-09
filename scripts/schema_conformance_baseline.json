@@ -1,48 +1,6 @@
 {
-  "total_violations": 49,
+  "total_violations": 32,
   "violations": [
-    {
-      "query": "arc.get_action_fact_detail",
-      "table": "ActionFact",
-      "property": "evidence_summary",
-      "kind": "dot_property",
-      "detail": "af.evidence_summary on ActionFact"
-    },
-    {
-      "query": "arc.get_action_fact_detail",
-      "table": "ActionFact",
-      "property": "sample_count",
-      "kind": "dot_property",
-      "detail": "af.sample_count on ActionFact"
-    },
-    {
-      "query": "arc.get_action_fact_detail",
-      "table": "ActionFact",
-      "property": "last_tested_step",
-      "kind": "dot_property",
-      "detail": "af.last_tested_step on ActionFact"
-    },
-    {
-      "query": "arc.get_action_fact_detail",
-      "table": "ActionFact",
-      "property": "recommended_next",
-      "kind": "dot_property",
-      "detail": "af.recommended_next on ActionFact"
-    },
-    {
-      "query": "capture.get_last_proactive_push_count",
-      "table": "Session",
-      "property": "last_proactive_push_msg_count",
-      "kind": "dot_property",
-      "detail": "s.last_proactive_push_msg_count on Session"
-    },
-    {
-      "query": "capture.set_last_proactive_push_count",
-      "table": "Session",
-      "property": "last_proactive_push_msg_count",
-      "kind": "dot_property",
-      "detail": "s.last_proactive_push_msg_count on Session"
-    },
     {
       "query": "provenance.touch_last_accessed_actioneffect",
       "table": "ActionEffect",
@@ -240,55 +198,6 @@
       "detail": "q.git_branch on MainQuest"
     },
     {
-      "query": "retrieval.get_originating_message_actionitem",
-      "table": "Message",
-      "property": "content",
-      "kind": "dot_property",
-      "detail": "m.content on Message"
-    },
-    {
-      "query": "retrieval.get_originating_message_concept",
-      "table": "Message",
-      "property": "content",
-      "kind": "dot_property",
-      "detail": "m.content on Message"
-    },
-    {
-      "query": "retrieval.get_originating_message_constraint",
-      "table": "Message",
-      "property": "content",
-      "kind": "dot_property",
-      "detail": "m.content on Message"
-    },
-    {
-      "query": "retrieval.get_originating_message_decision",
-      "table": "Message",
-      "property": "content",
-      "kind": "dot_property",
-      "detail": "m.content on Message"
-    },
-    {
-      "query": "retrieval.get_originating_message_documentextract",
-      "table": "Message",
-      "property": "content",
-      "kind": "dot_property",
-      "detail": "m.content on Message"
-    },
-    {
-      "query": "retrieval.get_originating_message_message",
-      "table": "Message",
-      "property": "content",
-      "kind": "dot_property",
-      "detail": "m.content on Message"
-    },
-    {
-      "query": "retrieval.get_originating_message_requirement",
-      "table": "Message",
-      "property": "content",
-      "kind": "dot_property",
-      "detail": "m.content on Message"
-    },
-    {
       "query": "sweep.touch_subsumed_lesson",
       "table": "Lesson",
       "property": "synthesized_at",
@@ -315,34 +224,6 @@
       "property": "created_at",
       "kind": "inline_rel",
       "detail": "inline rel HAS_PREF_LABEL.created_at"
-    },
-    {
-      "query": "thalamus.file_bridge_concept_relationships",
-      "table": "Concept",
-      "property": "prefLabel",
-      "kind": "dot_property",
-      "detail": "a.prefLabel on Concept"
-    },
-    {
-      "query": "thalamus.file_bridge_concepts",
-      "table": "Concept",
-      "property": "prefLabel",
-      "kind": "dot_property",
-      "detail": "c.prefLabel on Concept"
-    },
-    {
-      "query": "thalamus.file_bridge_concepts",
-      "table": "Concept",
-      "property": "altLabel",
-      "kind": "dot_property",
-      "detail": "c.altLabel on Concept"
-    },
-    {
-      "query": "thalamus.file_bridge_decisions",
-      "table": "Decision",
-      "property": "prefLabel",
-      "kind": "dot_property",
-      "detail": "d.prefLabel on Decision"
     }
   ]
 }

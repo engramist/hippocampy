@@ -515,9 +515,21 @@ async def find_live_by_dedupe_key(
     but only when the table actually has that column (`Concept` does; most
     of the Tier 1 tables this card touches — `Lesson`, `Plan`, `PlanStep`
     — do not, so callers for those tables should leave this False). This
-    function does not try to detect the column itself; passing
-    `touch_last_accessed=True` for a table without it would raise from
-    Kùzu, so the caller must know its own table's schema.
+    function does not try to detect the column itself, and — B412 note,
+    correcting this docstring's pre-B397 claim that it "would raise from
+    Kùzu" — nothing else detects it either on the current backend.
+    `OxigraphClient.write_node()`/`write_edge()` validate properties
+    against `schema.NODE_TABLES`/`REL_TABLES`, but the
+    `provenance.touch_last_accessed_{table}` queries this method dispatches
+    to carry their own literal `sparql=` DELETE/INSERT template (see
+    `queries/provenance.py`) and are executed via
+    `OxigraphClient.execute()`/`execute_write()` directly — a path with no
+    property validation at all. Passing `touch_last_accessed=True` for a
+    table without `last_accessed_at` does not raise; it silently persists
+    an undeclared `campy:last_accessed_at` triple (verified directly against
+    a live `GraphGateway`/`OxigraphClient`). So the caller must still know
+    its own table's schema — the cost of getting it wrong is silent bad
+    data, not an exception.
     """
     gw = get_gateway(db)
     t_lower = table.lower()

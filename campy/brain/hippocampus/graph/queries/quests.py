@@ -1317,6 +1317,25 @@ QUEST_QUERIES: tuple[NamedQuery, ...] = (
         params=("sid",),
         mutating=False,
         description="Get Session onboarding status and quest details",
+        # B412: q.git_branch is not a declared MainQuest column (schema.py
+        # has git_repo_root, a filesystem path, not a branch name) — left
+        # UNFIXED, escalated rather than guessed. The one caller
+        # (get_openclaw_prompt, thalamus/tools/quests.py) does
+        # `branch = row.get("q.git_branch"); quest_info = {"name": name,
+        # "branch": branch or "main"}` -- it clearly wants a branch-name
+        # string, which rules out simply returning git_repo_root (a path,
+        # not a branch, would display as nonsense). The schema-correct
+        # alternative -- joining MainQuest -[:ANCHORED_TO]-> Workspace.
+        # branch_name (B323) -- was investigated and rejected for now: grep
+        # across campy/ found zero call sites that ever create a Workspace
+        # node (no write_node("Workspace", ...), no CREATE/MERGE (w:Workspace)
+        # in any NamedQuery). The table is declared but never populated by
+        # any current code path, so the join would always resolve to
+        # nothing -- no better than today's silent NULL, and provably so
+        # (not just sparse like the SKOS Label gazetteer). Needs a product
+        # decision (build a real Workspace-population path, or accept a
+        # repo-path-labeled-as-branch string) before either option should
+        # be implemented.
         sparql="""
             SELECT ?onboarded ?name ?git_branch WHERE {
                 ?s a campy:Session ; campy:session_id ?sid .

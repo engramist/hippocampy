@@ -481,31 +481,17 @@ ARC_QUERIES: tuple[NamedQuery, ...] = (
             }
             """,
     ),
-    NamedQuery(
-        name="arc.get_action_fact_detail",
-        cypher="""
-            MATCH (af:ActionFact {task_id: $tid, action_id: $aid})
-            RETURN af.fact_id, af.value_status, af.confidence, af.evidence_summary,
-                   af.sample_count, af.last_tested_step, af.recommended_next
-            """,
-        params=("tid", "aid"),
-        mutating=False,
-        description="Fetch detailed ActionFact fields.",
-        sparql="""
-            SELECT ?fact_id ?value_status ?confidence ?evidence_summary ?sample_count ?last_tested_step ?recommended_next WHERE {
-                ?af a campy:ActionFact ;
-                    campy:task_id ?tid ;
-                    campy:action_id ?aid ;
-                    campy:fact_id ?fact_id .
-                OPTIONAL { ?af campy:value_status ?value_status }
-                OPTIONAL { ?af campy:confidence ?confidence }
-                OPTIONAL { ?af campy:evidence_summary ?evidence_summary }
-                OPTIONAL { ?af campy:sample_count ?sample_count }
-                OPTIONAL { ?af campy:last_tested_step ?last_tested_step }
-                OPTIONAL { ?af campy:recommended_next ?recommended_next }
-            }
-            """,
-    ),
+    # B412: arc.get_action_fact_detail (formerly here) deleted as unreachable.
+    # It returned af.evidence_summary/sample_count/last_tested_step/
+    # recommended_next, none of which schema.py declares on ActionFact and
+    # none of which any writer ever populated -- and grep across campy/,
+    # tests/, and scripts/ found zero callers (static or via the
+    # f"...{key}"-style dynamic dispatch used elsewhere in this codebase,
+    # e.g. provenance.py's touch_last_accessed dispatch). The live
+    # equivalent, arc.get_action_evidence below, already covers this need
+    # with real schema columns (fact_type, confidence, value_status,
+    # evidence_count, observation_count, falsified_count) and does have a
+    # caller (arc_get_action_evidence in thalamus/tools/arc_queries.py).
     NamedQuery(
         name="arc.get_distinct_action_ids",
         cypher="MATCH (af:ActionFact {task_id: $tid}) RETURN DISTINCT af.action_id",

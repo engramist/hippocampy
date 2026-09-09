@@ -1733,6 +1733,12 @@ SCHEMA_MIGRATIONS: list[tuple[str, str, str]] = [
     ("Session",   "last_injection_at", "TIMESTAMP"),
     ("Session",   "last_loop_summary", "STRING"),
     ("Session",   "last_warm_frontier_at", "TIMESTAMP"),
+    # B412: B195's Active Context Push (thalamus/tools/capture.py) reads and
+    # writes this to rate-limit proactive pushes, but it was never declared
+    # here -- capture.get_last_proactive_push_count / set_last_proactive_
+    # push_count both reference a real, live column that the schema guard
+    # didn't know about.
+    ("Session",   "last_proactive_push_msg_count", "INT64"),
     # B127/B128 — DAG task graph back-compat for older DBs
     ("TaskGraph", "label", "STRING"),
     ("TaskGraph", "session_id", "STRING"),
