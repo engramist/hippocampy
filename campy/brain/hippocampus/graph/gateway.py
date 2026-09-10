@@ -519,11 +519,20 @@ class GraphGateway:
         if name == "arc.link_entity_moved_by":
             self._client.write_edge("MOVED_BY", mint_uri("Entity", params["eid"]), mint_uri("ActionEffect", params["aeid"]), {"dr": params.get("dr"), "dc": params.get("dc")})
             return []
+        # B420: link the GridEntity (resolved by task_id + region_index=eref,
+        # exactly as the query's cypher MATCHes it) to the Rule/Hypothesis via
+        # the ENTITY_RULE / ENTITY_HYPOTHESIS "star" edges these queries declare —
+        # NOT ANCHORED_TO (a "plain" MainQuest→Workspace edge; passing props to it
+        # raises). No-op if the GridEntity doesn't exist yet, mirroring the MATCH.
         if name == "arc.link_entity_hypothesis":
-            self._client.write_edge("ANCHORED_TO", mint_uri("InvestigationThread", params["tid"]), mint_uri("Hypothesis", params["hid"]), {"weight": params.get("weight"), "step": params.get("step")})
+            ge_uri = self._client.find_node_uri("GridEntity", task_id=params["tid"], region_index=params["eref"])
+            if ge_uri is not None:
+                self._client.write_edge("ENTITY_HYPOTHESIS", ge_uri, mint_uri("Hypothesis", params["hid"]), {"weight": params.get("weight"), "step": params.get("step")})
             return []
         if name == "arc.link_entity_rule":
-            self._client.write_edge("ANCHORED_TO", mint_uri("InvestigationThread", params["tid"]), mint_uri("Rule", params["rid"]), {"weight": params.get("weight"), "step": params.get("step")})
+            ge_uri = self._client.find_node_uri("GridEntity", task_id=params["tid"], region_index=params["eref"])
+            if ge_uri is not None:
+                self._client.write_edge("ENTITY_RULE", ge_uri, mint_uri("Rule", params["rid"]), {"weight": params.get("weight"), "step": params.get("step")})
             return []
         if name == "arc.link_mechanic_action_pattern":
             self._client.write_edge("HAS_ACTION_PATTERN", mint_uri("Mechanic", params["mechanic_id"]), mint_uri("Pattern", params["pattern_id"]), {"confidence": params.get("confidence")})
