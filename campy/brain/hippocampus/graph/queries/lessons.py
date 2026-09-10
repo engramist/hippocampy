@@ -13,7 +13,7 @@ Naming convention: `lessons.<verb>_<subject>`.
 
 from __future__ import annotations
 
-from campy.brain.hippocampus.graph.gateway import NamedQuery
+from campy.brain.hippocampus.graph.gateway import NamedQuery, VectorIndexSpec
 
 LESSONS_QUERIES: tuple[NamedQuery, ...] = (
     # -- Plan / PlanStep creation (writes) -----------------------------------
@@ -709,6 +709,12 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
         ),
         mutating=True,
         description="Create a Lesson node via the explicit upsert_lesson tool.",
+        # B418: this sparql= create bypasses write_node(), so index its embedding
+        # + text into sqlite-vec here or recall_relevant_lessons returns [].
+        vector_index=VectorIndexSpec(
+            table="Lesson", pk_col="lesson_id", pk_param="lid",
+            emb_param="emb", text_param="text",
+        ),
         sparql="""
             PREFIX campy: <https://campy.dev/ns#>
             PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>

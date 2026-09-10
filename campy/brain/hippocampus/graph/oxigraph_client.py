@@ -101,6 +101,7 @@ from campy.brain.hippocampus.schema import NODE_TABLES, REL_TABLES
 
 CAMPY_NS = "https://campy.dev/ns#"      # predicates, classes
 CID_BASE = "https://campy.dev/id/"      # instances (same base as vector_store.CID_BASE)
+DATA_BASE = "https://campy.dev/data/"   # B418: drifted instance base used by many sparql= templates
 XSD = "http://www.w3.org/2001/XMLSchema#"
 RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 PROV_NS = "http://www.w3.org/ns/prov#"
@@ -1058,6 +1059,28 @@ class OxigraphClient:
         self.store.update(update_sparql)
         return len(self.store) - initial_size
 
+    def find_subject_uri(
+        self, table: str, pk_col: str, pk_value: Any
+    ) -> str | None:
+        """B418: resolve a node's real subject URI from its `(table, pk)`.
+
+        Base-agnostic on purpose — the `sparql=` create templates mint at either
+        `/id/` or `/data/` (B418b), so callers that need to key a vector to the
+        node it wrote must ask the store rather than re-mint. Returns the first
+        subject typed `campy:{table}` carrying `campy:{pk_col} == pk_value`, or
+        `None`."""
+        target = str(pk_value)
+        pk_pred = ox.NamedNode(CAMPY_NS + pk_col)
+        type_pred = ox.NamedNode(RDF_NS + "type")
+        table_node = ox.NamedNode(CAMPY_NS + table)
+        for q in self.store.quads_for_pattern(None, pk_pred, None, None):
+            obj = q.object
+            if getattr(obj, "value", None) != target:
+                continue
+            for _ in self.store.quads_for_pattern(q.subject, type_pred, table_node, None):
+                return q.subject.value
+        return None
+
     def vector_search(
         self,
         table_name: str,
@@ -1069,8 +1092,14 @@ class OxigraphClient:
         if self.vector_store is None:
             return []
         candidates = self.vector_store.search_vectors(query_embedding, k=limit * 5)
-        prefix = f"{CID_BASE}{table_name}/"
-        matches = [(uri, score) for uri, score in candidates if uri.startswith(prefix)][:limit]
+        # B418: accept either instance base — write_node keys vectors at /id/,
+        # but many sparql= create templates mint nodes at /data/ (see B418b).
+        prefixes = (f"{CID_BASE}{table_name}/", f"{DATA_BASE}{table_name}/")
+        matches = [
+            (uri, score)
+            for uri, score in candidates
+            if uri.startswith(prefixes)
+        ][:limit]
         if not matches:
             return []
 
@@ -1123,8 +1152,9 @@ class OxigraphClient:
         if self.vector_store is None:
             return []
         candidates = self.vector_store.search_text(query, k=limit * 5)
-        prefix = f"{CID_BASE}{table}/"
-        matches = [(uri, score) for uri, score in candidates if uri.startswith(prefix)]
+        # B418: accept either instance base (see vector_search / B418b).
+        prefixes = (f"{CID_BASE}{table}/", f"{DATA_BASE}{table}/")
+        matches = [(uri, score) for uri, score in candidates if uri.startswith(prefixes)]
         cols = NODE_COLUMNS.get(table, {})
         rows = []
         for uri, score in matches:

@@ -116,6 +116,32 @@ def _find_sparql_format_placeholder(sparql: str) -> re.Match[str] | None:
 
 
 @dataclass(frozen=True)
+class VectorIndexSpec:
+    """B418: declares how a `sparql=` node-create query should populate the
+    sqlite-vec vector store.
+
+    `sparql=` creates route straight to `execute_write()` and bypass
+    `OxigraphClient.write_node()` — the only place that calls
+    `vector_store.upsert_vector()` / `index_text()`. A query carrying this spec
+    tells `GraphGateway` to re-attach that indexing after the write, keyed at the
+    node's real subject URI.
+
+    Attributes:
+        table: node table, e.g. "Lesson".
+        pk_col: graph property holding the primary key, e.g. "lesson_id".
+        pk_param: query param carrying the PK value, e.g. "lid".
+        emb_param: query param carrying the embedding list, e.g. "emb".
+        text_param: optional query param carrying text for FTS, e.g. "text".
+    """
+
+    table: str
+    pk_col: str
+    pk_param: str
+    emb_param: str
+    text_param: str | None = None
+
+
+@dataclass(frozen=True)
 class NamedQuery:
     """A single named, parameterized, static Cypher query.
 
@@ -154,6 +180,7 @@ class NamedQuery:
     mutating: bool
     description: str
     sparql: str | None = None
+    vector_index: "VectorIndexSpec | None" = None
 
     @property
     def doc(self) -> str:
@@ -380,7 +407,10 @@ class GraphGateway:
             return self._handle_oxigraph_handler(query, params)
         if query.sparql is not None:
             if query.mutating:
-                return await self._client.execute_write(query.sparql, params)
+                res = await self._client.execute_write(query.sparql, params)
+                if query.vector_index is not None:
+                    self._index_vector_after_write(query.vector_index, params)
+                return res
             return await self._client.execute_read(query.sparql, params)
         return self._handle_oxigraph_handler(query, params)
 
@@ -390,9 +420,39 @@ class GraphGateway:
         if query.sparql is not None:
             if query.mutating:
                 self._client.execute(query.sparql, params)
+                if query.vector_index is not None:
+                    self._index_vector_after_write(query.vector_index, params)
                 return []
             return self._client._execute_and_collect(query.sparql, params)
         return self._handle_oxigraph_handler(query, params)
+
+    def _index_vector_after_write(
+        self, spec: "VectorIndexSpec", params: dict[str, Any]
+    ) -> None:
+        """B418: re-attach sqlite-vec indexing for `sparql=` node-creates, which
+        bypass `OxigraphClient.write_node()` (the only other place that indexes).
+
+        Keyed at the node's REAL subject URI resolved from the store, so it works
+        regardless of whether the create template minted at the canonical `/id/`
+        base or the drifted `/data/` base (see B418b). Best-effort: a missing
+        vector store, embedding, or node is a no-op, never a write failure."""
+        client = self._client
+        vs = getattr(client, "vector_store", None)
+        find = getattr(client, "find_subject_uri", None)
+        if vs is None or find is None:
+            return
+        emb = params.get(spec.emb_param)
+        pk_val = params.get(spec.pk_param)
+        if emb is None or pk_val is None:
+            return
+        uri = find(spec.table, spec.pk_col, pk_val)
+        if uri is None:
+            return
+        vs.upsert_vector(uri, emb)
+        if spec.text_param:
+            text = params.get(spec.text_param)
+            if text:
+                vs.index_text(uri, str(text))
 
     def _handle_oxigraph_handler(self, query: NamedQuery, params: dict[str, Any]) -> Any:
         name = query.name
