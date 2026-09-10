@@ -934,6 +934,40 @@ class OxigraphClient:
 
         raise AssertionError(f"unreachable reification value: {reification!r}")  # pragma: no cover
 
+    def find_node_uri(self, table: str, **filters: Any) -> str | None:
+        """B420: resolve a node's subject URI by matching ALL `filters`
+        (property == value) against `campy:{table}`-typed subjects. Returns the
+        first match or None.
+
+        For callers that hold a natural-key combination rather than the minted
+        primary key — e.g. a GridEntity identified by `(task_id, region_index)`
+        the way `arc.link_entity_rule`'s cypher MATCHes it. Base-agnostic: it
+        finds the node wherever its subject URI was minted. Values compare by the
+        RDF term's lexical form, so ints/strings match without datatype fuss."""
+        if not filters:
+            return None
+        items = list(filters.items())
+        (first_pred, first_val), rest = items[0], items[1:]
+        first_pred_node = ox.NamedNode(CAMPY_NS + first_pred)
+        type_pred = ox.NamedNode(RDF_NS + "type")
+        table_node = ox.NamedNode(CAMPY_NS + table)
+        target = str(first_val)
+        for q in self.store.quads_for_pattern(None, first_pred_node, None, None):
+            if getattr(q.object, "value", None) != target:
+                continue
+            subj = q.subject
+            if not any(True for _ in self.store.quads_for_pattern(subj, type_pred, table_node, None)):
+                continue
+            if all(
+                any(
+                    getattr(qq.object, "value", None) == str(val)
+                    for qq in self.store.quads_for_pattern(subj, ox.NamedNode(CAMPY_NS + pred), None, None)
+                )
+                for pred, val in rest
+            ):
+                return subj.value
+        return None
+
     def _remove_existing_reifiers(self, subject_uri: str, table: str, object_uri: str) -> None:
         """`star`'s upsert step (module docstring point 4): find every
         blank-node reifier currently pointing (via `rdf:reifies`) at this
