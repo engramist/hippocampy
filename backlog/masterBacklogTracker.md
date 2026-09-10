@@ -81,6 +81,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B408 | Stale-Base Guard: Make Silent Reverts Unmergeable | P0 | complete | TBD | TBD | - | backlog/B408.md |
 | B411 | Exhaustive Migration Fixture: Round-Trip Every Node and Edge Type | P0 | complete | TBD | TBD | - | backlog/B411.md |
 | B418 | Gateway sparql= Create Path Bypasses Vector Indexing: All Semantic Recall Over Runtime-Written Nodes Returns Empty Post-Cutover | P0 | ready | TBD | TBD | - | backlog/B418.md |
+| B420 | ARC Entity<->Rule/Hypothesis Link Handlers Write Wrong Edge (ANCHORED_TO plain) With Wrong Endpoints — Entity Mapping Impossible | P1 | ready | TBD | TBD | - | backlog/B420.md |
 | B412 | The 24 Read-Path Schema Violations: Queries That Silently Return Nothing | P0 | ready | TBD | TBD | - | backlog/B412.md |
 | B414 | Silent-Duplicate Guard + Mechanical Card-Number Allocation | P0 | proposed | TBD | TBD | - | backlog/B414.md |
 | B415 | Make kpi_monitor.py Actually Measure | P0 | complete | TBD | TBD | - | backlog/B415.md |
