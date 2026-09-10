@@ -80,6 +80,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B407 | Inference Pilot: Prove the RDF Thesis Before the Engine Cutover | P0 | complete | TBD | TBD | - | backlog/B407.md |
 | B408 | Stale-Base Guard: Make Silent Reverts Unmergeable | P0 | complete | TBD | TBD | - | backlog/B408.md |
 | B411 | Exhaustive Migration Fixture: Round-Trip Every Node and Edge Type | P0 | complete | TBD | TBD | - | backlog/B411.md |
+| B421 | arc.link_entity_moved_by Handler Writes Undeclared Columns (dr/dc) From Non-Existent Node Table (Entity) — MOVED_BY Never Written, perceive_state Degrades | P1 | ready | TBD | TBD | - | backlog/B421.md |
 | B418 | Gateway sparql= Create Path Bypasses Vector Indexing: All Semantic Recall Over Runtime-Written Nodes Returns Empty Post-Cutover | P0 | ready | TBD | TBD | - | backlog/B418.md |
 | B420 | ARC Entity<->Rule/Hypothesis Link Handlers Write Wrong Edge (ANCHORED_TO plain) With Wrong Endpoints — Entity Mapping Impossible | P1 | ready | TBD | TBD | - | backlog/B420.md |
 | B417 | Oxigraph Cutover Strands a Legacy Kùzu brain.db: Daemon Crash-Loops on Cryptic FileExistsError, No In-Place Migration or Guard | P0 | ready | TBD | TBD | - | backlog/B417.md |
