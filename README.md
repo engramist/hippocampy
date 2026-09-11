@@ -26,7 +26,7 @@ Then just use your agent as normal — Campy captures every turn in the backgrou
 
 Every turn is captured, run through a Gated Consolidation Loop (biomimetic
 heuristics that filter noise into durable facts), and stored in an embedded
-Kùzu graph — no server, nothing leaves your machine. Recall tools plus a
+Oxigraph RDF-star graph (with a sqlite-vec vector index) — no server, nothing leaves your machine. Recall tools plus a
 `CONTEXT.md` file bridge and a per-turn resume line mean memory shows up in your
 agent's context without it having to ask. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 for the full design.
@@ -35,7 +35,7 @@ for the full design.
 
 - **Cross-agent continuity.** Switch between Claude Code, Codex, Gemini CLI, and
   VS Code Copilot mid-task — the resume line travels with you, not with the agent.
-- **Local-first and private.** Kùzu runs embedded in-process. No cloud service,
+- **Local-first and private.** The graph engine (Oxigraph) and vector index (sqlite-vec) run embedded in-process. No cloud service,
   no server, your conversations never leave your machine.
 - **Memory arrives, you don't ask for it.** A layered injection system (file
   bridge, associative hooks, anticipatory triggers) surfaces relevant context
@@ -145,7 +145,7 @@ to specific check failures.
 
 ### Where your memory lives
 
-All captured memory — the Kùzu graph database, activity log, and config —
+All captured memory — the Oxigraph graph store, the sqlite-vec index, activity log, and config —
 lives under `~/.campy` (or `~/.sidequests` if you have a pre-existing
 install; Campy won't silently move it). **Installing, repairing, or
 uninstalling never deletes this data by default.** Deleting it is a
@@ -162,7 +162,7 @@ not touch.
 
 ## Requirements
 
-Python 3.12 or 3.13, Kùzu 0.11.3 (installed automatically as a dependency).
+Python 3.12 (3.13 support is in progress — some pinned dependencies do not yet ship 3.13 wheels). Oxigraph (`pyoxigraph`) and `sqlite-vec` are installed automatically as dependencies.
 
 ## Cloud / Multi-Tenant Deployment (AWS)
 
@@ -185,8 +185,8 @@ specifically for that topology:
   to any non-loopback address while auth is off, so a misconfigured deploy
   can't silently expose memory unauthenticated.
 - **Per-workspace database isolation.** `WorkspaceRouter` opens one physical
-  Kùzu database per workspace/tenant rather than sharing a database with
-  row-level filtering — with hundreds of existing Cypher call sites, physical
+  Oxigraph store per workspace/tenant rather than sharing a database with
+  row-level filtering — with hundreds of existing query call sites, physical
   separation is the isolation boundary that doesn't depend on every query
   remembering a predicate.
 - **AWS Bedrock as an LLM provider**, alongside the default local Ollama —
@@ -209,7 +209,7 @@ specifically for that topology:
   than blocking it — every read/write path this topology depends on is
   wrapped to fail open, not raise into the caller.
 
-Because Kùzu is single-process-writer, nothing can open the database file
+Because the Oxigraph store is single-process-writer, nothing can open the database file
 directly from a stateless compute layer (e.g. a Lambda) — callers proxy to
 this long-running daemon process over the HTTP transport above instead of
 opening the database themselves.

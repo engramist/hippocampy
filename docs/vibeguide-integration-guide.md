@@ -1,7 +1,7 @@
 # VibeGuide Integration Guide: Campy Agent Memory Service
 
 **Audience:** VibeGuide Platform Engineering & Agent Architecture Teams  
-**Target Runtime:** AWS ECS/Fargate (0.25 vCPU, 0.5 GB RAM) backed by Amazon EFS  
+**Target Runtime:** AWS ECS/Fargate, **sized from the measured ~595 MB warm footprint** (spaCy + fastembed loaded and invoked; see `docs/ARCHITECTURE.md` "Open Research Questions"). Provision **1–2 GB RAM** (0.25 vCPU is fine) as **its own ECS service** — never co-located with build-service/worker. The earlier "0.5 GB" figure was an import-time-only number and is retired. Backing store on Amazon EFS (RocksDB-on-NFS is **unsoaked** — see §Operability).  
 **Service Ingress:** AWS Application Load Balancer / Bedrock Gateway (`POST /mcp` and `/api/v1/*`)  
 **Security Model:** AWS IAM SigV4 Authentication + Physical Workspace Sharding
 
@@ -17,13 +17,24 @@ In cloud deployment, Campy operates as a managed multi-tenant service running on
 
 ## 2. Authentication & Tenancy Model
 
-### SigV4 Authentication
-All requests to Campy (except `GET /health`) require AWS Signature Version 4 (SigV4) headers:
-- `Authorization`: `AWS4-HMAC-SHA256 Credential=...`
-- `X-Amz-Date`: `YYYYMMDD'T'HHMMSS'Z'`
-- `X-Amz-Security-Token`: (Session token if using temporary STS credentials)
+### SigV4 Authentication (STS `GetCallerIdentity` presign — read carefully)
 
-Campy's `IAMPrincipalResolver` verifies inbound requests against AWS STS `GetCallerIdentity`. Verified caller ARNs are cached for 15 minutes to eliminate latency and avoid STS rate limits.
+Campy uses the **Vault-style STS verification** pattern, **not** a SigV4-signed request to
+Campy itself. Campy is not an AWS service and cannot verify a signature computed over a
+`POST /mcp` request. Instead:
+
+1. The **caller** SigV4-**presigns an `sts:GetCallerIdentity` request** against
+   `https://sts.amazonaws.com` (using its own IAM credentials/role).
+2. The caller sends the **presigned STS request's** headers to Campy — `Authorization:
+   AWS4-HMAC-SHA256 Credential=...`, `X-Amz-Date`, and (for temporary creds)
+   `X-Amz-Security-Token` — alongside the actual `POST /mcp` / `/api/v1/*` call.
+3. Campy's `IAMPrincipalResolver` **replays those exact headers** to STS
+   `GetCallerIdentity` to learn and verify the caller's ARN. The signature belongs to the
+   STS request, not to the Campy request — signing the Campy request itself will not verify.
+
+Verified caller ARNs are cached for **15 minutes**. Note the security implication: a
+captured presigned header set is **replayable for that window**, so this must run **inside
+the VPC over TLS** behind the gateway — it is not safe to expose at a public edge.
 
 ### Workspace Mapping & Isolation
 1. **Operator Policy (Authoritative):**  

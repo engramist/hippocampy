@@ -185,6 +185,18 @@ class UnknownMethodError(Exception):
         super().__init__(f"Unknown method: {method}")
 
 
+def arc_tools_exposed(config: "dict | None") -> bool:
+    """B425: whether the 17 ``arc_*`` puzzle tools are advertised on
+    ``tools/list`` and callable. Defaults to True so the ARC client keeps
+    working; a deployment that does not host ARC (e.g. VibeGuide's remote
+    service) sets ``config["arc"]["expose_tools"] = false`` to drop them from
+    the surface entirely."""
+    try:
+        return bool((config or {}).get("arc", {}).get("expose_tools", True))
+    except (AttributeError, TypeError):
+        return True
+
+
 async def route_tool_call(method: str, params: dict, db, config: dict, principal: Principal):
     """Shared chokepoint for invoking a `TOOL_HANDLERS` entry.
 
@@ -215,6 +227,12 @@ async def route_tool_call(method: str, params: dict, db, config: dict, principal
 
     handler = TOOL_HANDLERS.get(method)
     if not handler:
+        raise UnknownMethodError(method)
+
+    # B425: when arc_* tools are disabled for this deployment, treat them as
+    # unregistered — so disabling them on tools/list also blocks a caller who
+    # knows the name and calls it directly.
+    if method.startswith("arc_") and not arc_tools_exposed(config):
         raise UnknownMethodError(method)
 
     # B424: enforce the principal's scopes at the shared chokepoint. Read-only
@@ -830,7 +848,11 @@ class BrainDaemon:
                                "serverInfo": {"name": "campy-daemon", "version": "0.1.0"},
                                "capabilities": {"tools": {}}}}
         if method == "tools/list":
-            tools = [{"name": name} for name in TOOL_HANDLERS]
+            expose_arc = arc_tools_exposed(self.config)
+            tools = [
+                {"name": name} for name in TOOL_HANDLERS
+                if expose_arc or not name.startswith("arc_")
+            ]
             return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": tools}}
 
         # B316: resolve this request's database from the router, keyed on
