@@ -66,6 +66,26 @@ evidence came in).
 | Decision rule | N/A — resolved. |
 | Cutover Status | Reconciled in B397 (2026-09-07): Kùzu has been completely removed and replaced by Oxigraph (`pyoxigraph==0.5.11`) + `sqlite-vec>=0.1.6`. All patent claim tests certified with zero assertion edits. |
 
+### Migrating an existing user's Kùzu `brain.db` onto Oxigraph
+
+| Field | Detail |
+|---|---|
+| Status | `deferred` — [B417](../backlog/B417.md); reopens the moment any real user needs their pre-cutover graph back |
+| Why it matters | The B397 cutover switched the graph engine but shipped no path to carry an existing user's on-disk data across. A pre-cutover `~/.campy/brain.db` is a Kùzu single-file DB; the Oxigraph client opens that path as a directory store and crash-loops (`FileExistsError`). The documented `export-graph`/`import-graph` round-trip cannot rescue it post-upgrade because both run *through* the Oxigraph client and hit the same crash — so the legacy graph is stranded until a dedicated migrator exists. |
+| Evidence so far | Confirmed on a real 415 MB file (2026-09-11): opens fine read-only via `kuzu==0.11.3` (still a declared dep), 27,023 nodes across 28 populated tables intact. The write half already exists (`import_graph_dump` re-indexes vectors); the missing piece is a Kùzu-reader that produces the engine-neutral JSONL `import_graph_dump` consumes. Estimated ~2 focused days; `kuzu_client.py` was deleted in the cutover so a thin read-only shim over `kuzu.Connection` is needed. Non-destructive workaround in use: rename the legacy file aside, fresh Oxigraph store. |
+| Where the detail lives | [backlog/B417.md](../backlog/B417.md), `docs/troubleshooting-install.md` ("Daemon crash-loops on a legacy Kùzu `brain.db`") |
+| Decision rule | Deferred by explicit user decision (the archived graph is acceptable as-is for now). Build the migrator when a user wants their prior memory restored, or before any migration guarantee is made to external users. |
+
+### Two instance-URI bases (`/id/` vs `/data/`) coexist
+
+| Field | Detail |
+|---|---|
+| Status | `open` — [B418](../backlog/B418.md) (B418b); recall works today via a base-agnostic shim, so this is correctness-hygiene, not a live bug |
+| Why it matters | `docs/rdf-schema-mapping.md` §2 declares `cid: <https://campy.dev/id/>` as the one canonical instance base, and `mint_uri()`/`CID_BASE`/`vector_search()` use it. But 26 `sparql=` template usages across 7 query modules mint instances at `https://campy.dev/data/{Table}/{pk}` instead. Two bases for the same logical node is a latent identity hazard (a node written under one base and read under the other silently fails to join). |
+| Evidence so far | Verified 2026-09-11 while fixing B418a: ARC entity/rule/hypothesis nodes, Concepts, Procedures, etc. live at `/data/`. To keep recall correct meanwhile, `vector_search`/`fts_search` accept both bases and the gateway's post-write vector-index hook resolves the node's real subject URI from the store rather than re-minting. |
+| Where the detail lives | [backlog/B418.md](../backlog/B418.md), `docs/rdf-schema-mapping.md` §2 (drift note) |
+| Decision rule | Unify the `/data/` templates onto the canonical `/id/` base together with their paired touch/read/link queries (they must move as a set, or nodes fork across two subjects). Not yet scheduled. |
+
 ### Is RDF-native inference and declarative validation viable in the embedded daemon?
 
 | Field | Detail |
@@ -339,6 +359,8 @@ Per B397, Campy has completed a clean, one-way door cutover from Kùzu to an emb
 - **Graph Engine (Oxigraph):** Pinned `pyoxigraph==0.5.11`. Graph nodes and relationships are stored as RDF-star triples and quoted triples (`<<:s :p :o>>`) with reified property annotations. SPARQL 1.1 Query and Update are executed via `OxigraphClient` (`campy/brain/hippocampus/graph/oxigraph_client.py`).
 - **Vector & Keyword Index (sqlite-vec):** `sqlite-vec>=0.1.6` backed by SQLite with `vec0` virtual tables for 384-dimensional dense vector embeddings and FTS5 for full-text search. Colocated in `vectors.db` inside the database directory.
 - **Portability & Abstraction:** Application code accesses graph storage through `GraphGateway` (`campy/brain/hippocampus/graph/gateway.py`) and registered queries (`campy/brain/hippocampus/graph/queries/`). No application code imports `pyoxigraph` or `sqlite3` directly. All Cypher queries and Kùzu imports have been retired (`tests/test_kuzu_import_isolation.py` enforces 0 direct Kùzu imports across `campy/`).
+- **Write-path invariant (B418/B420-B423):** a `NamedQuery` reaches Oxigraph one of two ways, and they have *different* side effects — a recurring cutover hazard. A `sparql=` template routes straight to `execute_write()` → `store.update()` and **bypasses `OxigraphClient.write_node()`/`write_edge()`**, which are the only places that (a) validate properties against `schema.py`, (b) index embeddings/text into sqlite-vec, and (c) enforce edge plain/star classification. Consequences and the guardrails now in place: embedding-bearing `sparql=` node-creates must declare a `VectorIndexSpec` (the gateway re-indexes them post-write, else semantic recall is silently empty — B418a); and every gateway `_handle_oxigraph_handler` `write_edge` call must use an edge label / node tables / property set that matches the schema — statically enforced at CI by `tests/test_b422_handler_edge_schema_guard.py` after eight instances of this drift (B413/B418/B420/B421/B422) surfaced from live runs. See `docs/rdf-schema-mapping.md` §4.2e/§4.3.
+- **Operational logging (B423):** the daemon owns `~/.campy/daemon.log` via an in-process size-rotating handler (bounded, ~60 MB across backups; `print()`/stdout/stderr routed through it, timestamped), and `~/.campy/activity.log` (the redacted operator feed) rotates at a configurable cap. launchd's raw stdout/stderr go to a small `~/.campy/daemon.boot.log` for pre-init/startup-crash output.
 - **Concurrency model:** The Brain Daemon holds the sole write connection wrapped by an `asyncio.Lock`. Multi-tenant workspaces are resolved through `WorkspaceRouter` with LRU caching. Read operations benefit from transactional snapshot isolation without writer starvation.
 - **Migration & Round-Trip:** Complete JSONL-based graph serialization/deserialization via `campy/brain/hippocampus/graph/export.py` preserves full set-equality across nodes, relationships, and edge attributes.
 

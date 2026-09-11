@@ -344,3 +344,79 @@ created_at: timestamp($created_at)
 **Fix:** Added ordinal regex, system terms set, and determiner-initial noun chunk filter to `step1_ner.py`.
 
 **Files changed:** `mcp_engine/loop/step1_ner.py`, `tests/test_loop.py`, `runningIssueLog.md`
+
+---
+
+## Session: 2026-09-09..11 — ARC_AGI live-smoke rounds (cross-agent, Oxigraph cutover fallout)
+
+> Found by pairing hippocampy (server/graph side) with the ARC_AGI client over four
+> live-smoke rounds. Common thread: the Kùzu→Oxigraph / GraphGateway cutover
+> (B386/B397) left `sparql=` templates and gateway handlers whose edge label / node
+> table / property set drifted from `schema.py`, with nothing checking it until a
+> live run raised. See `backlog/B417.md`–`B423.md` and `docs/rdf-schema-mapping.md` §4.2e/4.3.
+
+---
+
+### ISSUE-027 · Semantic recall silently empty for everything written post-cutover (B418a)
+**Symptom:** `recall_relevant_lessons` / `current_truth` vector branch returned `[]` for lessons that had just been written and had a real `lesson_id`.
+
+**Root cause:** `sparql=` node-create NamedQueries route to `store.update()` and bypass `OxigraphClient.write_node()` — the only place that calls `vector_store.upsert_vector()`/`index_text()`. So embeddings never reached sqlite-vec. Compounded by a `/id/` vs `/data/` instance-base split (B418b) that also broke hydration.
+
+**Fix:** `VectorIndexSpec` on `NamedQuery` + `_index_vector_after_write()` hook in the gateway `sparql=` dispatch, keyed at the node's real subject URI (base-agnostic `find_subject_uri`); `vector_search`/`fts_search` accept both bases.
+
+**Files changed:** `campy/brain/hippocampus/graph/gateway.py`, `oxigraph_client.py`, `queries/lessons.py`, `tests/test_b418_vector_index_roundtrip.py` (PR #197)
+
+---
+
+### ISSUE-028 · ARC entity mapping stuck at 0 — entity↔rule/hypothesis links never written (B420)
+**Symptom:** ARC `entities_mapped` pinned at `0/N` every cycle; `arc_get_entity_neighborhood` always `{hypotheses:[],rules:[],mechanics:[]}`.
+
+**Root cause:** gateway handlers for `arc.link_entity_rule`/`arc.link_entity_hypothesis` wrote `ANCHORED_TO` (a `plain` edge → props raise) from an `InvestigationThread` minted off `params["tid"]` (which is the task_id), ignoring `eref`. The queries' own cypher declared `ENTITY_RULE`/`ENTITY_HYPOTHESIS` (`star`).
+
+**Fix:** resolve the GridEntity by `(task_id, region_index)` via new `find_node_uri(table, **filters)`; write the correct `star` edge.
+
+**Files changed:** `gateway.py`, `oxigraph_client.py`, `tests/test_b420_entity_link_handlers.py` (PR #199)
+
+---
+
+### ISSUE-029 · `arc_perceive_state` degrades on every entity move (B421)
+**Symptom:** `record_rule`/`arc_perceive_state` raised `MOVED_BY.dr is not a declared column` (208 log hits since the cutover).
+
+**Root cause:** `arc.link_entity_moved_by` handler wrote `MOVED_BY` with props `{dr, dc}` (declared columns are `delta_row`/`delta_col`) from `mint_uri("Entity", eid)` — `Entity` is not a node table; it's `GridEntity`.
+
+**Fix:** `write_edge("MOVED_BY", mint_uri("GridEntity", eid), mint_uri("ActionEffect", aeid), {"delta_row": dr, "delta_col": dc})`.
+
+**Files changed:** `gateway.py`, `tests/test_b421_moved_by_link_handler.py` (PR #200)
+
+---
+
+### ISSUE-030 · Whole mechanic-link handler cluster targets non-existent edges/tables (B422) + CI guard
+**Symptom:** proactive audit after ISSUE-029 found all 5 `arc.link_mechanic_*`/`link_failure_*` handlers wrote unclassified bare edges (`HAS_ACTION_PATTERN`, …) over non-existent tables (`Mechanic`, `Pattern`). Latent — only `publish_mechanic_summary` calls them, never exercised.
+
+**Root cause:** same drift class; schema declares `ARC_MECHANIC_HAS_ACTION_PATTERN` etc. (`star`) over Arc-prefixed nodes.
+
+**Fix:** corrected all 5 handlers **and shipped a guard** — `tests/test_b422_handler_edge_schema_guard.py` statically checks every gateway `write_edge` against the schema, so this whole class (8 instances across B413/B418/B420/B421/B422) now fails at CI. See `docs/rdf-schema-mapping.md` §4.2e.
+
+**Files changed:** `gateway.py`, `tests/test_b422_handler_edge_schema_guard.py` (PR #201)
+
+---
+
+### ISSUE-031 · Unbounded logs: `activity.log` (26 MB) and `daemon.log` (69 MB) (B423)
+**Symptom:** `~/.campy/activity.log` and `daemon.log` grew without bound.
+
+**Root cause:** `activity.log` was append-only with no rotation. `daemon.log` was launchd's `StandardOut/ErrorPath` redirect (raw stdout/stderr), not Python logging — a rotating handler alone couldn't touch it, and launchd + a handler both writing it would fight rotation.
+
+**Fix:** `activity.log` rotates to `.1` at `config["activity"]["max_bytes"]` (PR #202). `daemon.log` is now owned by an in-process `RotatingFileHandler` (~60 MB ceiling); `_StreamToLogger` routes `print()`/stdout/stderr through it (now timestamped, closing the B371 gap); launchd's stdout/stderr moved to a tiny `daemon.boot.log` for pre-init/crash output (PR #203).
+
+**Files changed:** `campy/brain/brainstem/activity_log.py`, `campy/brain_daemon.py`, `campy/cli/launchd.py`, `campy/paths.py`, `tests/test_b423_activity_log_rotation.py`, `tests/test_b423b_daemon_log_rotation.py`
+
+---
+
+### ISSUE-032 · Reported daemon memory leak — NOT substantiated (investigation, no fix)
+**Symptom:** daemon RSS looked high (565–579 MB), reported as a possible leak.
+
+**Root cause / finding:** those were **RSS**, not physical footprint. Physical footprint tracked flat-to-declining vs the ~502 MB startup baseline. Across four live-smoke rounds, growth was proportional to real graph writes; a SIGUSR1 `gc` object-count diff over a heavier round (~378 nodes, +29.8 MB footprint) showed the **Python object count went DOWN** (155,561→155,418) with only single-digit framework/threading/HTTP ephemera growing — the delta lives in native RocksDB/sqlite-vec store (data-at-rest), not the Python heap. A code scan found no unbounded in-memory structures. Not substantiated; residual caveat is only a hypothetical sub-MB/day creep that the ~24 h auto-restart resets.
+
+**Tool note:** `kill -USR1 <brain_daemon pid>` writes an auto-diffing object-count snapshot to `~/.campy/memory_debug.log` — the go-to leak-detection instrument.
+
+**Files changed:** none (investigation; conclusion recorded here and in memory).

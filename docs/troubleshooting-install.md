@@ -47,8 +47,18 @@ campy doctor --repair    # will also attempt to (re)start it as part of repair
 campy status             # confirm it's now responding
 ```
 
-If it starts and immediately dies, check `~/.campy/daemon.log` (not the
-redacted `activity.log`) for a stack trace.
+If it starts and immediately dies, check the logs (not the redacted
+`activity.log`) for a stack trace:
+
+- **`~/.campy/daemon.boot.log`** for **startup / pre-init crashes** — since B423,
+  launchd redirects the daemon's raw stdout/stderr here, so an exception thrown
+  before (or while) the in-process logging is set up lands in this file. A
+  crash-looping daemon (e.g. the B417 legacy-`brain.db` case below) shows its
+  traceback here.
+- **`~/.campy/daemon.log`** for everything after logging initialises. Since B423
+  the daemon owns this file via a size-rotating handler (bounded, ~60 MB across
+  backups), so it no longer grows without limit; older lines roll into
+  `daemon.log.1`, `.2`, … .
 
 ## Launchd plist missing (macOS)
 
@@ -154,6 +164,32 @@ database itself is corrupted, back it up first
 (`cp ~/.campy/brain.db ~/.campy/brain.db.bak`) before attempting anything
 destructive, and treat DB corruption as a bug report, not a routine
 troubleshooting step.
+
+## Daemon crash-loops on a legacy Kùzu `brain.db` (post-Oxigraph cutover)
+
+**Symptom:** after upgrading across the Oxigraph cutover, `campy start` reports
+success but the socket never appears and `campy status` says offline.
+`~/.campy/daemon.boot.log` shows
+`FileExistsError: [Errno 17] File exists: '~/.campy/brain.db'` at
+`oxigraph_client.py`'s `mkdir(...)`.
+
+**Cause (B417):** the Oxigraph backend opens `~/.campy/brain.db` as a
+*directory*-backed store, but a pre-cutover install left it as a **415 MB Kùzu
+single-file DB**. `mkdir(exist_ok=True)` still raises against a regular file, so
+the daemon crash-loops before it can serve.
+
+**Workaround (non-destructive):** rename the legacy file aside so Oxigraph
+creates a fresh store, then restart:
+
+```bash
+mv ~/.campy/brain.db ~/.campy/brain.db.kuzu-bak-$(date +%Y%m%d)
+campy start
+```
+
+The daemon then comes up on a clean graph. **The old graph is preserved in the
+backup but not migrated** — a real Kùzu→Oxigraph migrator is tracked in
+`backlog/B417.md` (`export-graph` can't help post-upgrade because it runs through
+the Oxigraph client). Restore is a manual step until that ships.
 
 ## Ollama / embedding provider unavailable
 
