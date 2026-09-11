@@ -63,4 +63,6 @@ Recommended command:
 .venv/bin/campy activity --follow
 ```
 
-The feed is intentionally redacted: it records operational metadata such as source client, role, session, character counts, recall queries, and status without dumping full prompt or assistant response bodies. Use `~/.campy/daemon.log` only for troubleshooting failures and stack traces.
+The feed is intentionally redacted: it records operational metadata such as source client, role, session, character counts, recall queries, and status without dumping full prompt or assistant response bodies. It is also size-bounded (B423): it rotates to `activity.log.1` at `config["activity"]["max_bytes"]` (default 10 MB), so it never grows without limit.
+
+Use `~/.campy/daemon.log` only for troubleshooting failures and stack traces. Since B423 the daemon owns `daemon.log` via a size-rotating handler (bounded, ~60 MB across backups; `print()` output and tracebacks are routed through it and now carry timestamps). **Startup / pre-init crashes** (anything before in-process logging is up — e.g. the B417 legacy-`brain.db` crash-loop) land in a separate `~/.campy/daemon.boot.log`, not `daemon.log`.
