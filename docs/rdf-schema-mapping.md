@@ -62,6 +62,18 @@ Rules:
 
 **Class assertion:** every node carries `a campy:{TableName}`.
 
+> **Known drift — two instance bases in practice (B418b, open).** The canonical
+> base above is `cid: <https://campy.dev/id/>`, and `mint_uri()` / `CID_BASE` /
+> `vector_search()` all use it. But 26 `sparql=` template usages across 7 query
+> modules currently mint instances at **`https://campy.dev/data/{Table}/{pk}`**
+> instead (ARC entity/rule/hypothesis nodes, Concepts, Procedures, …). To keep
+> recall correct meanwhile, `vector_search()`/`fts_search()` accept **both** bases,
+> and the gateway's post-write vector-index hook resolves the node's *real* subject
+> URI from the store rather than re-minting. Unifying the `/data/` templates onto
+> the canonical `/id/` base (with their paired touch/read queries) is tracked in
+> `backlog/B418.md` (B418b). Until then, do not assume a single base when reading
+> or writing an instance URI.
+
 ---
 
 ## 3. Node properties → triples
@@ -297,6 +309,41 @@ decision.
 Leave them out of `EDGE_REIFICATION` so `classify_edge()` raises. Whoever writes
 the first writer makes the call, with the call site in front of them. A loud raise
 at that moment is the correct outcome, not a defect.
+
+#### 4.2e Mechanized guard (B422): handler `write_edge` calls must match this section
+
+`classify_edge()` raising at runtime (§4.2c/d) is a last line of defence — it only
+fires when the code path is actually exercised, so a wrong edge label / node table /
+property set in a rarely-run handler can sit latent for a long time. Between
+2026-09-09 and -11, **eight** such drifts surfaced one at a time from live ARC runs
+(B413, B418, B420 ×2 edges, B421, B422 ×5): gateway `_handle_oxigraph_handler`
+branches (and `sparql=` templates) that hand-wrote an edge label, `mint_uri()` table,
+or property set that did not match `schema.py`.
+
+`tests/test_b422_handler_edge_schema_guard.py` now enforces this section at CI:
+it statically scans every `self._client.write_edge("EDGE", mint_uri("T1", …),
+mint_uri("T2", …), {props})` in `gateway.py` and asserts
+
+- `EDGE` is classified in `EDGE_REIFICATION` (§4.2c/d),
+- `T1`/`T2` are real node tables in `NODE_PRIMARY_KEYS`, and
+- for `star`/`occurrence` edges, every prop key is a declared column in
+  `REL_COLUMNS[EDGE]` (and a `plain` edge carries no props).
+
+When adding or editing a handler `write_edge`, make it match the query's own cypher
+and this schema; the guard fails the build otherwise.
+
+### 4.3 Write-path side effects are NOT free on the `sparql=` path (B418a)
+
+A `NamedQuery` with a `sparql=` template routes through the gateway straight to
+`OxigraphClient.execute_write()` → `store.update()`, which **bypasses
+`write_node()`** — the only place that indexes a node's embedding/text into the
+sqlite-vec vector store. A node created purely via a `sparql=` INSERT therefore lands
+in the graph but is invisible to `vector_search`/`recall_*` (this silently emptied
+all semantic recall post-cutover). The gateway now re-attaches indexing for such
+creates via a `VectorIndexSpec` on the `NamedQuery` and an `_index_vector_after_write`
+hook keyed at the node's real subject URI. **Any new embedding-bearing `sparql=`
+create must carry a `VectorIndexSpec`**, or its vectors will not be searchable. See
+`backlog/B418.md`.
 
 **Classification is per-table and must be recorded** in a single
 `EDGE_REIFICATION: dict[str, Literal["plain","star","occurrence"]]` table in
