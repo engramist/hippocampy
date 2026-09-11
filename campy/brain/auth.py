@@ -61,6 +61,59 @@ _DEFAULT_RUNTIME_SCOPES: frozenset[str] = frozenset({
     SCOPE_MEMORY_WRITE,
 })
 
+# B424: tool → required scope, consumed by `route_tool_call`. Read-only tools
+# (retrieval/query, no graph mutation) require `memory.read`; EVERYTHING ELSE
+# requires `memory.write`. The write default is deliberate and fail-safe: a new
+# or unclassified tool can only ever over-restrict a read, never silently expose
+# a write to a read-only principal. Keep this list in sync with the tool
+# registry — `tests/test_b424_scope_enforcement.py` asserts every entry here is a
+# real registered tool. (Anything ambiguous — e.g. `ask`, which captures its
+# result, or `arc_classify_game_archetype` — is intentionally left OFF this list
+# so it lands on the write default.)
+READ_ONLY_METHODS: frozenset[str] = frozenset({
+    "analogical_search",
+    "arc_check_action_gate",
+    "arc_get_action_evidence",
+    "arc_get_causal_path",
+    "arc_get_entity_movement",
+    "arc_get_entity_neighborhood",
+    "arc_get_game_context",
+    "arc_get_goal_evidence",
+    "arc_get_mechanic_priors",
+    "arc_get_untested_actions",
+    "compile_card_context",
+    "compile_context",
+    "context_status",
+    "current_truth",
+    "diff_since",
+    "explore_graph",
+    "get_anomalies",
+    "get_disambiguation_queue",
+    "get_entity_history",
+    "get_knowledge_gaps",
+    "get_open_loops",
+    "get_openclaw_prompt",
+    "get_ready_tasks",
+    "get_rules_for_action",
+    "get_task_graph",
+    "get_transferred_rules",
+    "memory_decision",
+    "recall_mechanic_priors",
+    "recall_plans",
+    "recall_procedures",
+    "recall_relevant_lessons",
+    "recall_scene_graph_priors",
+    "reconstruct_timeline",
+})
+
+
+def required_scope_for(method: str) -> str:
+    """The scope a caller must hold to invoke `method`. Read-only tools →
+    `memory.read`; all others → `memory.write` (fail-safe default)."""
+    if method in READ_ONLY_METHODS:
+        return SCOPE_MEMORY_READ
+    return SCOPE_MEMORY_WRITE
+
 
 @dataclass(frozen=True)
 class Principal:
@@ -431,6 +484,8 @@ __all__ = [
     "SCOPE_MEMORY_ADMIN",
     "SCOPE_VISIBILITY_OVERRIDE",
     "KNOWN_SCOPES",
+    "READ_ONLY_METHODS",
+    "required_scope_for",
     "Principal",
     "TransportContext",
     "TRANSPORT_CONTEXT_FIELDS",

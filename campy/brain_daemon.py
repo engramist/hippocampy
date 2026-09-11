@@ -127,6 +127,7 @@ from campy.brain.auth import (
     LocalSingleUserResolver,
     Principal,
     TransportContext,
+    required_scope_for,
 )
 from campy.brain.brainstem.activity_log import compact_details, emit_activity
 from campy.brain.brainstem.config import load_config
@@ -215,6 +216,14 @@ async def route_tool_call(method: str, params: dict, db, config: dict, principal
     handler = TOOL_HANDLERS.get(method)
     if not handler:
         raise UnknownMethodError(method)
+
+    # B424: enforce the principal's scopes at the shared chokepoint. Read-only
+    # tools need `memory.read`; everything else needs `memory.write` (fail-safe
+    # default). Local/default-runtime principals hold both, so single-user
+    # behaviour is unchanged; a restricted (e.g. read-only) remote principal is
+    # rejected here — before any handler runs or the DB is touched. `.require()`
+    # raises PermissionError, which each transport maps to its own error envelope.
+    principal.require(required_scope_for(method))
 
     if method in _WANTS_PRINCIPAL:
         return await handler(params, db, config, principal=principal)
