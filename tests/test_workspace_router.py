@@ -402,6 +402,14 @@ class _FakePrincipal:
         self.client = "test"
         self.session_id = None
         self.derived_from = "test"
+        # B424: dispatch now enforces scopes via principal.require(); this
+        # db-resolution double holds read+write like a normal runtime principal
+        # so it exercises routing, not the scope gate (covered in test_b424).
+        self.scopes = frozenset({"memory.read", "memory.write"})
+
+    def require(self, scope):
+        if scope not in self.scopes:
+            raise PermissionError(scope)
 
 
 @pytest.mark.asyncio
