@@ -12,6 +12,31 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+# B423: activity.log is append-only and was never rotated (found at 26 MB in the
+# field). Cap it by size, keeping a single `.1` backup so the live feed stays
+# bounded (~2x this) without an external logrotate. Overridable via
+# config["activity"]["max_bytes"]; 0 disables rotation.
+_DEFAULT_MAX_ACTIVITY_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+def _rotate_if_needed(path: Path, max_bytes: int) -> None:
+    """If `path` is at/over `max_bytes`, roll it to `path.1` (replacing any
+    previous backup) so the next write starts a fresh file. Best-effort: any
+    OSError is swallowed by the caller — activity logging never breaks memory ops."""
+    if max_bytes <= 0:
+        return
+    try:
+        if path.stat().st_size < max_bytes:
+            return
+    except OSError:
+        return
+    backup = path.with_name(path.name + ".1")
+    try:
+        backup.unlink()
+    except OSError:
+        pass
+    path.replace(backup)
+
 
 def _default_activity_log() -> Path:
     try:
@@ -133,6 +158,13 @@ def emit_activity(
     try:
         path = activity_log_path(config)
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        max_bytes = _DEFAULT_MAX_ACTIVITY_BYTES
+        if config:
+            try:
+                max_bytes = int((config.get("activity", {}) or {}).get("max_bytes", max_bytes))
+            except (TypeError, ValueError, AttributeError):
+                pass
+        _rotate_if_needed(path, max_bytes)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, sort_keys=True) + "\n")
     except OSError:
