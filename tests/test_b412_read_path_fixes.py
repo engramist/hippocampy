@@ -32,6 +32,7 @@ guessing; see the comment on the NamedQuery itself
 from __future__ import annotations
 
 import re
+import subprocess
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -270,18 +271,26 @@ def test_action_fact_detail_removed_from_registry():
 
 
 def test_action_fact_detail_has_no_callers_anywhere_in_repo():
-    """Regression guard for the reachability claim the deletion relies on:
-    grep the whole tree (source, tests, scripts, docs) for the string. The
-    only expected hits are this test file and the backlog card recording
-    the deletion."""
+    """Regression guard for the reachability claim the deletion relies on: no
+    Python code may *call* the deleted `arc.get_action_fact_detail` query.
+
+    B419: scan only git-tracked ``*.py`` files (a caller is code, not prose),
+    via ``git ls-files`` — which lists THIS working tree only, so sibling
+    ``.claude/worktrees/`` checkouts and untracked scratch never trip it, and
+    backlog cards / JSON baselines that mention the name as historical record
+    are out of scope by construction. The earlier whole-tree ``rglob`` made this
+    guard red on every merge once other cards referenced the string."""
     pattern = re.compile(r"get_action_fact_detail")
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z", "*.py"],
+        cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+    ).stdout.split("\0")
+
     hits: list[str] = []
-    skip_dirs = {".git", ".venv", "node_modules", "__pycache__"}
-    for path in REPO_ROOT.rglob("*"):
-        if not path.is_file():
+    for rel in tracked:
+        if not rel:
             continue
-        if any(part in skip_dirs for part in path.parts):
-            continue
+        path = REPO_ROOT / rel
         if path == Path(__file__):
             continue
         try:
@@ -289,17 +298,16 @@ def test_action_fact_detail_has_no_callers_anywhere_in_repo():
         except (UnicodeDecodeError, OSError):
             continue
         if pattern.search(text):
-            hits.append(str(path.relative_to(REPO_ROOT)))
+            hits.append(rel)
 
     allowed = {
-        "backlog/B412.md",
-        "scripts/schema_conformance_baseline.json",
         # The deletion's own explanatory comment, left in place of the
         # removed NamedQuery in arc.py.
         "campy/brain/hippocampus/graph/queries/arc.py",
     }
     unexpected = [h for h in hits if h not in allowed]
     assert not unexpected, (
-        f"arc.get_action_fact_detail is referenced outside the expected historical "
-        f"record: {unexpected} — it may have grown a real caller since B412 deleted it"
+        f"arc.get_action_fact_detail is referenced by Python source outside the "
+        f"expected historical record: {unexpected} — it may have grown a real caller "
+        f"since B412 deleted it"
     )
