@@ -537,20 +537,28 @@ class GraphGateway:
             if ge_uri is not None:
                 self._client.write_edge("ENTITY_RULE", ge_uri, mint_uri("Rule", params["rid"]), {"weight": params.get("weight"), "step": params.get("step")})
             return []
+        # B422: these five must use the schema's real rel-table names + Arc-prefixed
+        # node tables (ArcMechanic/ArcActionPattern/…), matching each query's own cypher.
+        # The prior bare names (HAS_ACTION_PATTERN, Mechanic, Pattern, …) were unclassified
+        # edges over non-existent node tables — write_edge raised on every one. Latent only
+        # because publish_mechanic_summary is the sole caller and hasn't been exercised.
         if name == "arc.link_mechanic_action_pattern":
-            self._client.write_edge("HAS_ACTION_PATTERN", mint_uri("Mechanic", params["mechanic_id"]), mint_uri("Pattern", params["pattern_id"]), {"confidence": params.get("confidence")})
+            self._client.write_edge("ARC_MECHANIC_HAS_ACTION_PATTERN", mint_uri("ArcMechanic", params["mechanic_id"]), mint_uri("ArcActionPattern", params["pattern_id"]), {"confidence": params.get("confidence")})
             return []
         if name == "arc.link_mechanic_effect_pattern":
-            self._client.write_edge("HAS_EFFECT_PATTERN", mint_uri("Mechanic", params["mechanic_id"]), mint_uri("Pattern", params["pattern_id"]), {"confidence": params.get("confidence")})
+            self._client.write_edge("ARC_MECHANIC_CAUSES_EFFECT_PATTERN", mint_uri("ArcMechanic", params["mechanic_id"]), mint_uri("ArcEffectPattern", params["pattern_id"]), {"confidence": params.get("confidence")})
             return []
         if name == "arc.link_mechanic_precondition":
-            self._client.write_edge("HAS_PRECONDITION", mint_uri("Mechanic", params["mech_id"]), mint_uri("Precondition", params["pre_id"]), {"confidence": params.get("confidence")})
+            self._client.write_edge("ARC_MECHANIC_REQUIRES", mint_uri("ArcMechanic", params["mech_id"]), mint_uri("ArcPrecondition", params["pre_id"]), {"confidence": params.get("confidence")})
             return []
         if name == "arc.link_mechanic_failure_mode":
-            self._client.write_edge("HAS_FAILURE_MODE", mint_uri("Mechanic", params["mech_id"]), mint_uri("FailureMode", params["fail_id"]))
+            # ARC_MECHANIC_FAILS_AS carries only evidence_count (the cypher increments it via
+            # COALESCE; a single write_edge cannot increment, so the edge is created without
+            # it — the link itself is what get_mechanic_priors traverses).
+            self._client.write_edge("ARC_MECHANIC_FAILS_AS", mint_uri("ArcMechanic", params["mech_id"]), mint_uri("ArcFailureMode", params["fail_id"]))
             return []
         if name == "arc.link_failure_recovery_policy":
-            self._client.write_edge("HAS_RECOVERY_POLICY", mint_uri("FailureMode", params["fail_id"]), mint_uri("RecoveryPolicy", params["pol_id"]), {"confidence": params.get("confidence")})
+            self._client.write_edge("ARC_FAILURE_RECOVERED_BY", mint_uri("ArcFailureMode", params["fail_id"]), mint_uri("ArcRecoveryPolicy", params["pol_id"]), {"confidence": params.get("confidence")})
             return []
 
         # 8. Ingest link dataset
