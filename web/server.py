@@ -972,7 +972,11 @@ async def _dispatch_mcp(request: dict, _db, _cfg: dict, principal: Principal,
         return None
 
     if method == "tools/list":
-        return ok({"tools": _TOOLS})
+        from campy.brain_daemon import arc_tools_exposed
+        if arc_tools_exposed(_cfg):
+            return ok({"tools": _TOOLS})
+        tools = [t for t in _TOOLS if not t.get("name", "").startswith("arc_")]
+        return ok({"tools": tools})
 
     if method == "tools/call":
         from campy.brain.brainstem.activity_log import emit_activity, compact_details
