@@ -517,7 +517,10 @@ class GraphGateway:
 
         # 7. ARC link queries
         if name == "arc.link_entity_moved_by":
-            self._client.write_edge("MOVED_BY", mint_uri("Entity", params["eid"]), mint_uri("ActionEffect", params["aeid"]), {"dr": params.get("dr"), "dc": params.get("dc")})
+            # B421: source is a GridEntity (not the non-existent "Entity" table), and
+            # MOVED_BY's declared columns are delta_row/delta_col (the query params are
+            # dr/dc) — matching the query's cypher `SET m.delta_row=$dr, m.delta_col=$dc`.
+            self._client.write_edge("MOVED_BY", mint_uri("GridEntity", params["eid"]), mint_uri("ActionEffect", params["aeid"]), {"delta_row": params.get("dr"), "delta_col": params.get("dc")})
             return []
         # B420: link the GridEntity (resolved by task_id + region_index=eref,
         # exactly as the query's cypher MATCHes it) to the Rule/Hypothesis via
