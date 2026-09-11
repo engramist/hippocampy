@@ -21,6 +21,7 @@ import gc
 import inspect
 import json
 import logging
+import logging.handlers
 import os
 import random
 import re
@@ -28,10 +29,94 @@ import resource
 import signal
 import socket
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 _logger = logging.getLogger(__name__)
+
+# --- B423: bounded daemon.log via an in-process rotating handler ------------
+# Before B423, daemon.log was launchd's StandardOut/ErrorPath redirect and grew
+# without bound (found at 69 MB). The launchd redirect now points at a tiny
+# daemon.boot.log (pre-init safety net); the daemon owns daemon.log itself via a
+# RotatingFileHandler, and routes print()/stdout/stderr through it so operational
+# output stays captured and size-capped. Overridable via config["logging"].
+_DEFAULT_DAEMON_LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB per file
+_DEFAULT_DAEMON_LOG_BACKUPS = 5                    # → ~60 MB ceiling total
+
+
+class _StreamToLogger:
+    """Minimal file-like object that forwards writes to a logger, line by line.
+
+    Lets `print(...)` and any residual stdout/stderr from the daemon land in the
+    rotating daemon.log (bounded) instead of an unbounded launchd redirect. Only
+    the methods callers actually use are implemented; `isatty()` is False so no
+    library mistakes this for a terminal."""
+
+    def __init__(self, logger: logging.Logger, level: int) -> None:
+        self._logger = logger
+        self._level = level
+        self._buf = ""
+
+    def write(self, message: str) -> int:
+        if not isinstance(message, str):
+            message = str(message)
+        self._buf += message
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            if line:
+                self._logger.log(self._level, line)
+        return len(message)
+
+    def flush(self) -> None:
+        if self._buf.strip():
+            self._logger.log(self._level, self._buf.rstrip())
+        self._buf = ""
+
+    def isatty(self) -> bool:
+        return False
+
+
+def _build_daemon_log_handler(
+    log_path: "Path | str",
+    max_bytes: int = _DEFAULT_DAEMON_LOG_MAX_BYTES,
+    backup_count: int = _DEFAULT_DAEMON_LOG_BACKUPS,
+) -> logging.handlers.RotatingFileHandler:
+    """Build the size-rotating handler for daemon.log. Pure (no global state) so
+    it is unit-testable; `_setup_daemon_logging` wires it into the process."""
+    log_path = Path(log_path)
+    log_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    handler = logging.handlers.RotatingFileHandler(
+        str(log_path), maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    return handler
+
+
+def _setup_daemon_logging(config: "dict | None" = None) -> None:
+    """Install the rotating daemon.log handler on the root logger and route
+    stdout/stderr through it. Called once at the very top of `main()`, before
+    anything else can log or print. Best-effort: on any failure, fall back to the
+    prior stderr `basicConfig` so the daemon still starts and stays debuggable."""
+    try:
+        from campy.paths import get_daemon_log_path
+
+        cfg = (config or {}).get("logging", {}) if isinstance(config, dict) else {}
+        max_bytes = int(cfg.get("daemon_max_bytes", _DEFAULT_DAEMON_LOG_MAX_BYTES))
+        backups = int(cfg.get("daemon_backup_count", _DEFAULT_DAEMON_LOG_BACKUPS))
+        handler = _build_daemon_log_handler(get_daemon_log_path(), max_bytes, backups)
+        root = logging.getLogger()
+        root.setLevel(logging.INFO)
+        root.handlers[:] = [handler]
+        # Route print()/stray writes into the same bounded, rotating log.
+        sys.stdout = _StreamToLogger(logging.getLogger("campy.stdout"), logging.INFO)
+        sys.stderr = _StreamToLogger(logging.getLogger("campy.stderr"), logging.ERROR)
+    except Exception:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        )
+        logging.getLogger(__name__).exception("B423: daemon-log rotation setup failed; using stderr")
 
 import uvicorn
 from campy.brain.hippocampus.graph.gateway import get_gateway
@@ -1176,11 +1261,13 @@ async def main():
     # log's entire multi-month, never-rotated history. Does not add
     # timestamps to the plain print() lines ([Sweep]/[Loop]/etc.) --
     # a separate, smaller residual gap, not fixed here.
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    # B423: daemon.log is now owned by an in-process RotatingFileHandler (bounded),
+    # not launchd's unbounded stdout/stderr redirect. load_config() runs first so
+    # rotation limits can be tuned via config["logging"]; its own minimal output
+    # lands in the pre-init daemon.boot.log, everything after in the rotating
+    # daemon.log — including any BrainDaemon(config) startup crash (cf. B417).
     config = load_config()
+    _setup_daemon_logging(config)
     daemon = BrainDaemon(config)
 
     loop = asyncio.get_running_loop()

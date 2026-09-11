@@ -6,7 +6,12 @@ import time
 from pathlib import Path
 
 from campy.branding import LEGACY_LAUNCHD_LABEL, LEGACY_LAUNCHD_LABELS, PRIMARY_LAUNCHD_LABEL
-from campy.paths import get_daemon_log_path, get_launchd_plist_path, get_legacy_launchd_plist_path
+from campy.paths import (
+    get_daemon_boot_log_path,
+    get_daemon_log_path,
+    get_launchd_plist_path,
+    get_legacy_launchd_plist_path,
+)
 
 LABEL = PRIMARY_LAUNCHD_LABEL
 LEGACY_LABEL = LEGACY_LAUNCHD_LABEL
@@ -155,7 +160,12 @@ def generate_plist(brain_daemon_path: str, plist_path: str, label: str = LABEL) 
     """Generate the launchd plist file for auto-start on macOS."""
     try:
         python_exe = resolve_system_python()
-        log_path = get_daemon_log_path()
+        # B423: launchd captures only pre-init/crash output to a tiny boot log;
+        # the daemon itself owns the main, size-bounded daemon.log via a
+        # RotatingFileHandler. (Redirecting launchd here at daemon.log would fight
+        # the handler's rotation — launchd's fd keeps writing to the rotated-away
+        # inode after a rename.)
+        boot_log_path = get_daemon_boot_log_path()
 
         # Console scripts (e.g. campy-daemon from pipx) are self-contained;
         # .py files need the Python interpreter as arg[0].
@@ -185,9 +195,9 @@ def generate_plist(brain_daemon_path: str, plist_path: str, label: str = LABEL) 
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>{log_path}</string>
+    <string>{boot_log_path}</string>
     <key>StandardErrorPath</key>
-    <string>{log_path}</string>
+    <string>{boot_log_path}</string>
     <key>WorkingDirectory</key>
     <string>{work_dir}</string>
     <key>EnvironmentVariables</key>
@@ -200,7 +210,7 @@ def generate_plist(brain_daemon_path: str, plist_path: str, label: str = LABEL) 
 """
         p = Path(plist_path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
+        boot_log_path.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(plist_content)
         return True
     except Exception:

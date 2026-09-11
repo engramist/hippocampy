@@ -97,6 +97,14 @@ def get_daemon_log_path() -> Path:
     return runtime_dir() / "daemon.log"
 
 
+def get_daemon_boot_log_path() -> Path:
+    """B423: launchd redirects the daemon's stdout/stderr here — a tiny safety
+    net for output before Python's rotating logging is set up (interpreter
+    startup, import errors, hard crashes). The main, size-bounded log is
+    `daemon.log`, owned by the in-process RotatingFileHandler."""
+    return runtime_dir() / "daemon.boot.log"
+
+
 def get_launchd_plist_path(label: str = PRIMARY_LAUNCHD_LABEL) -> Path:
     launchd_dir = Path.home() / "Library" / "LaunchAgents"
     launchd_dir.mkdir(parents=True, exist_ok=True)
@@ -154,6 +162,7 @@ __all__ = [
     "get_workspace_root",
     "get_activity_log_path",
     "get_daemon_log_path",
+    "get_daemon_boot_log_path",
     "get_launchd_plist_path",
     "get_legacy_launchd_plist_path",
     "get_bin_dir",
