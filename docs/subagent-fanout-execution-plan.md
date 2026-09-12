@@ -241,9 +241,9 @@ This document formalizes the execution plan for implementing HippoCampy's strate
 
 ### Phase 4: Production Deployment & Cloud Delivery (B385)
 
-*B385 cloud foundation is verified on `feat/b385-cloud-platform-service` (116 passing tests).*
+*B385 cloud foundation is verified on `feat/b385-cloud-multi-tenant-service` (116 passing tests).*
 
-- Delivers AWS ECS/Fargate containerization, Amazon EFS volume mounting, multi-tenant workspace isolation, and the platform integration contracts.
+- Delivers AWS ECS/Fargate containerization, Amazon EFS volume mounting, multi-tenant workspace isolation, and cloud integration contracts.
 - **Resource Footprint Milestones:**
   - Initial Cloud Baseline: Runs stably under Kùzu at ~245 MB RSS (well within 512 MB Fargate allocation).
   - Final Featherweight Cutover: Automatically drops to <80 MB RAM once Phase 2C merges.

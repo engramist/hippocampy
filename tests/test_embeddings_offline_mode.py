@@ -64,7 +64,7 @@ def test_offline_env_var_overrides_config_when_true(monkeypatch):
 
 
 def test_offline_cache_miss_message_survives_ollama_fallback_failure(monkeypatch):
-    """the platform round-3 verification, Finding 3: the actionable offline
+    """External round-3 verification, Finding 3: the actionable offline
     error is real and unit-tested at the direct call
     (test_offline_mode_cache_miss_has_actionable_error above), but through
     the public `_embed_with_fallback` path it used to be swallowed --
