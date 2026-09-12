@@ -188,7 +188,7 @@ class UnknownMethodError(Exception):
 def arc_tools_exposed(config: "dict | None") -> bool:
     """B425: whether the 17 ``arc_*`` puzzle tools are advertised on
     ``tools/list`` and callable. Defaults to True so the ARC client keeps
-    working; a deployment that does not host ARC (e.g. VibeGuide's remote
+    working; a deployment that does not host ARC (e.g. the platform's remote
     service) sets ``config["arc"]["expose_tools"] = false`` to drop them from
     the surface entirely."""
     try:

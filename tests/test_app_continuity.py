@@ -572,7 +572,7 @@ class TestCaptureWiring:
         result = await notify_turn(
             {
                 "role": "user",
-                "content": "hello from a VibeGuide session",
+                "content": "hello from a platform session",
                 "session_id": session_id,
                 "external_app_id": app_id,
                 "external_session_id": "vg-external-1",

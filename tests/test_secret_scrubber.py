@@ -258,7 +258,7 @@ def test_bearer_token_variations():
 
 
 # ---------------------------------------------------------------------------
-# VibeGuide round-3 verification, Finding 2: the embedding was previously
+# External round-3 verification, Finding 2: the embedding was previously
 # computed from unscrubbed content in capture.py's notify_turn, *before* the
 # scrub -- so a memory whose text_raw no longer contains a secret could still
 # be retrieved BY that secret through semantic recall, since the vector was

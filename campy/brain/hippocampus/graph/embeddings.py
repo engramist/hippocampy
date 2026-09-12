@@ -226,7 +226,7 @@ _EMBED_BATCH_FN = {
 def _embed_with_fallback(text: str, model_name: str) -> list[float]:
     """Try primary provider, then fallback chain.
 
-    VibeGuide round-3 verification, Finding 3: collecting only `last_err`
+    External round-3 verification, Finding 3: collecting only `last_err`
     silently discarded the actionable offline-cache-miss RuntimeError
     (`_get_fe_model` above) whenever a later fallback provider also failed —
     exactly the common case in an egress-locked environment, where Ollama is

@@ -1896,7 +1896,7 @@ SCHEMA_MIGRATIONS: list[tuple[str, str, str]] = [
     # B321: cross-session continuity for an App. Both nullable — local
     # Campy (no App concept) writes neither column and every existing
     # NULL-valued row is unaffected; only sessions whose capture path
-    # supplies an external App id (e.g. the VibeGuide platform's
+    # supplies an external App id (e.g. the the platform platform's
     # `VG_<kebab-name>`) ever populate them. See app_continuity() in
     # campy/brain/thalamus/tools/context_tools.py and
     # docs/ARCHITECTURE.md's B321 section for the full contract.

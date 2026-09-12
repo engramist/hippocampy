@@ -1,14 +1,14 @@
-# B-385-cloud-vibeguide-service — Cloud Deployment Foundation & VibeGuide Multi-Tenant Agent Memory Service (AWS ECS/Fargate)
+# B-385-cloud-multi-tenant-service — Cloud Deployment Foundation & Multi-Tenant Agent Memory Service (AWS ECS/Fargate)
 
 **Card:** B385 | **Priority:** P0 | **Depends on:** B315, B316, B325, B328, B384  
-**Branch:** `feat/b385-cloud-vibeguide-service` | **PR Target:** `main`  
-**Target Consumer:** VibeGuide (First External Customer & Evaluation Partner)
+**Branch:** `feat/b385-cloud-multi-tenant-service` | **PR Target:** `main`  
+**Target Consumer:** the platform (First External Customer & Evaluation Partner)
 
 ---
 
 ## 1. Summary
 
-Transition Campy from a local-only daemon into an enterprise-ready, containerized, multi-tenant agent memory service running on AWS ECS/Fargate. The primary customer is **VibeGuide**, which requires multi-session memory persistence across build-workers and coding agents without cross-tenant memory leakage or runaway cloud costs.
+Transition Campy from a local-only daemon into an enterprise-ready, containerized, multi-tenant agent memory service running on AWS ECS/Fargate. The primary customer is **the platform**, which requires multi-session memory persistence across build-workers and coding agents without cross-tenant memory leakage or runaway cloud costs.
 
 Leveraging B384's <80 MB engine foundation, Campy runs continuously on AWS Fargate's smallest, most cost-effective tier (0.25 vCPU, 0.5 GB RAM) backed by an Amazon EFS persistent volume for physical workspace isolation via `WorkspaceRouter`.
 
@@ -18,10 +18,10 @@ Leveraging B384's <80 MB engine foundation, Campy runs continuously on AWS Farga
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│ VibeGuide Cloud Environment                                            │
+│ Tenant Cloud Environment                                            │
 │                                                                        │
 │   ┌───────────────────────────┐      ┌─────────────────────────────┐   │
-│   │ VibeGuide AgentCore       │      │ VibeGuide Platform          │   │
+│   │ Platform AgentCore       │      │ the Platform          │   │
 │   │ Lambda Proxy              │      │ Build-Worker Fleet          │   │
 │   └─────────────┬─────────────┘      └──────────────┬──────────────┘   │
 │                 │                                   │                  │
@@ -55,10 +55,10 @@ Leveraging B384's <80 MB engine foundation, Campy runs continuously on AWS Farga
 │ Amazon EFS Multi-AZ Persistent Storage (/data/campy)                   │
 │                                                                        │
 │ ├── workspaces/                                                        │
-│ │   ├── vibeguide-prod-<hash>/                                         │
+│ │   ├── tenant-prod-<hash>/                                         │
 │ │   │   ├── graph/ (Oxigraph RocksDB store)                            │
 │ │   │   └── vectors.db (sqlite-vec 384-dim cosine index)               │
-│ │   ├── vibeguide-buildworker-1-<hash>/                                │
+│ │   ├── tenant-buildworker-1-<hash>/                                │
 │ │   └── tenant-sandbox-b-<hash>/                                       │
 │ └── config/                                                            │
 │     └── campy.toml                                                     │
@@ -88,7 +88,7 @@ Leveraging B384's <80 MB engine foundation, Campy runs continuously on AWS Farga
   - Update `GET /health` to report memory RSS, storage mount health, uptime, and loaded workspace count without requiring authentication.
 - In `campy/brain/brainstem/rest_api.py`:
   - Update `_call_tool()`: If `router` is provided and `request.state.principal` exists, dynamically borrow the database for that principal's workspace via `await router.get(principal.workspace_id)`.
-  - Guarantees that VibeGuide's build-workers calling REST endpoints are isolated to their designated workspace with zero chance of reading or polluting other workspaces.
+  - Guarantees that the platform's build-workers calling REST endpoints are isolated to their designated workspace with zero chance of reading or polluting other workspaces.
 
 ### Task 3: Production Containerization (`deploy/Dockerfile`)
 - Multi-stage build based on `python:3.12-slim`.
@@ -117,11 +117,11 @@ Leveraging B384's <80 MB engine foundation, Campy runs continuously on AWS Farga
   - Local multi-container verification harness with local volume mount emulating EFS.
   - Pre-configured with test IAM SigV4 environment.
 
-### Task 5: VibeGuide Integration Guide (`docs/vibeguide-integration-guide.md`)
-- Complete integration documentation for VibeGuide:
+### Task 5: the platform Integration Guide (`docs/cloud-integration-guide.md`)
+- Complete integration documentation for the platform:
   - SigV4 signing specification and credentials setup.
   - Header contracts: `X-Campy-Workspace-Id`, `Authorization`, `X-Amz-Date`.
-  - Sample Python / TypeScript code snippets for VibeGuide build-workers to ingest and recall memories over REST and MCP.
+  - Sample Python / TypeScript code snippets for an integrator's build-workers to ingest and recall memories over REST and MCP.
   - Privacy, secret scrubbing, and prompt injection defense disclosures.
 
 ---
@@ -138,7 +138,7 @@ Leveraging B384's <80 MB engine foundation, Campy runs continuously on AWS Farga
 - `deploy/Dockerfile`
 - `deploy/docker-compose.yml`
 - `deploy/ecs-task-definition.json`
-- `docs/vibeguide-integration-guide.md`
+- `docs/cloud-integration-guide.md`
 
 ### Testing:
 - `tests/test_cloud_deployment_readiness.py`: Comprehensive automated tests for env vars, path overrides, route filtering, and REST workspace routing.
