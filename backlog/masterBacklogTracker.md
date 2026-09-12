@@ -58,7 +58,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B377 | Engine Migration: Kùzu to Embedded Oxigraph (RDF-star) + sqlite-vec Architecture | P0 | consolidated into B384 | TBD | TBD | - | backlog/B377.md |
 | B380 | Non-Provisional Patent Claim Verification & Audit Evidence Pack | P0 | ready | TBD | TBD | backlog/plans/B-380-patent-evidence-pack.md | backlog/B380.md |
 | B384 | PARENT: Featherweight Engine Foundation: Pure ONNX Ingestion + Oxigraph (RDF-star) + sqlite-vec Architecture | P0 | superseded by B387, B389, B390, B391-B396, B397 | TBD | TBD | backlog/plans/B-384-featherweight-engine-foundation.md | backlog/B384.md |
-| B385 | Cloud Deployment Foundation & the platform Multi-Tenant Agent Memory Service (AWS ECS/Fargate) | P0 | complete | TBD | TBD | backlog/plans/B-385-cloud-platform-service.md | backlog/B385.md |
+| B385 | Cloud Deployment Foundation & Multi-Tenant Agent Memory Service (AWS ECS/Fargate) | P0 | complete | TBD | TBD | backlog/plans/B-385-cloud-multi-tenant-service.md | backlog/B385.md |
 | B386 | GraphGateway Chokepoint Completion & Raw-Cypher Ratchet to Zero | P0 | ready | TBD | TBD | backlog/plans/B-386-gateway-chokepoint-completion.md | backlog/B386.md |
 | B387 | Torch-Free Ingestion Plane: Replace spaCy NER/Parse with ONNX | P0 | ready | TBD | TBD | - | backlog/B387.md |
 | B389 | OxigraphClient: RDF-star Store & Edge Reification Classification | P0 | complete | TBD | TBD | - | backlog/B389.md |
@@ -80,6 +80,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B407 | Inference Pilot: Prove the RDF Thesis Before the Engine Cutover | P0 | complete | TBD | TBD | - | backlog/B407.md |
 | B408 | Stale-Base Guard: Make Silent Reverts Unmergeable | P0 | complete | TBD | TBD | - | backlog/B408.md |
 | B411 | Exhaustive Migration Fixture: Round-Trip Every Node and Edge Type | P0 | complete | TBD | TBD | - | backlog/B411.md |
+| B426 | Remove Customer Name From the Public Repo — Tree + Git History | P1 | in-progress | TBD | TBD | - | backlog/B426.md |
 | B425 | 2026-09-11 Re-vet Remediation: Gate arc_* Tools + integration-guide Doc Fixes + Repo Hygiene | P2 | fixed | TBD | TBD | - | backlog/B425.md |
 | B424 | Enforce principal.scopes in route_tool_call (Authorization Was Decorative) | P0 | fixed | TBD | TBD | - | backlog/B424.md |
 | B423 | Unbounded Campy Logs: Rotate activity.log (done) + Cap launchd-Redirected daemon.log (deferred) | P2 | ready | TBD | TBD | - | backlog/B423.md |

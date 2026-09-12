@@ -229,7 +229,7 @@ class TestStageSemanticContext:
         assert section is None
 
     async def test_excludes_nodes_flagged_for_review(self, real_db):
-        """the platform round-3 verification, Finding 4: the exact-fact stage
+        """External round-3 verification, Finding 4: the exact-fact stage
         had this exclusion tested (test_excludes_nodes_flagged_for_review in
         TestStageExactFacts) but semantic and graph stages only had the
         flagged_for_review column added to their fixtures, never a
@@ -355,7 +355,7 @@ class TestStageGraphStructure:
         assert "concept c" in two_hop_targets
 
     async def test_excludes_flagged_neighbor_from_one_hop(self, real_db):
-        """the platform round-3 verification, Finding 4: same exclusion gap as
+        """External round-3 verification, Finding 4: same exclusion gap as
         TestStageSemanticContext.test_excludes_nodes_flagged_for_review,
         for the graph-traversal stage specifically -- a flagged one-hop
         neighbor must not be surfaced, matching the `b.flagged_for_review`

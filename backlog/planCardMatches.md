@@ -257,7 +257,7 @@ Generated from backlog cards and backlog/plans/*.md.
 - B382: backlog/plans/B-382-phase-aware-model-router.md
 - B383: backlog/plans/B-383-automated-model-handoff.md
 - B384: backlog/plans/B-384-featherweight-engine-foundation.md
-- B385: backlog/plans/B-385-cloud-platform-service.md
+- B385: backlog/plans/B-385-cloud-multi-tenant-service.md
 - B386: backlog/plans/B-386-gateway-chokepoint-completion.md
 - B387: (none)
 - B389: (none)

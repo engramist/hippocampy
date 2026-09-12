@@ -1,7 +1,7 @@
-# B-385-cloud-platform-service — Cloud Deployment Foundation & the platform Multi-Tenant Agent Memory Service (AWS ECS/Fargate)
+# B-385-cloud-multi-tenant-service — Cloud Deployment Foundation & Multi-Tenant Agent Memory Service (AWS ECS/Fargate)
 
 **Card:** B385 | **Priority:** P0 | **Depends on:** B315, B316, B325, B328, B384  
-**Branch:** `feat/b385-cloud-platform-service` | **PR Target:** `main`  
+**Branch:** `feat/b385-cloud-multi-tenant-service` | **PR Target:** `main`  
 **Target Consumer:** the platform (First External Customer & Evaluation Partner)
 
 ---
@@ -18,10 +18,10 @@ Leveraging B384's <80 MB engine foundation, Campy runs continuously on AWS Farga
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│ the platform Cloud Environment                                            │
+│ Tenant Cloud Environment                                            │
 │                                                                        │
 │   ┌───────────────────────────┐      ┌─────────────────────────────┐   │
-│   │ the platform AgentCore       │      │ the platform Platform          │   │
+│   │ Platform AgentCore       │      │ the Platform          │   │
 │   │ Lambda Proxy              │      │ Build-Worker Fleet          │   │
 │   └─────────────┬─────────────┘      └──────────────┬──────────────┘   │
 │                 │                                   │                  │
@@ -55,10 +55,10 @@ Leveraging B384's <80 MB engine foundation, Campy runs continuously on AWS Farga
 │ Amazon EFS Multi-AZ Persistent Storage (/data/campy)                   │
 │                                                                        │
 │ ├── workspaces/                                                        │
-│ │   ├── platform-prod-<hash>/                                         │
+│ │   ├── tenant-prod-<hash>/                                         │
 │ │   │   ├── graph/ (Oxigraph RocksDB store)                            │
 │ │   │   └── vectors.db (sqlite-vec 384-dim cosine index)               │
-│ │   ├── platform-buildworker-1-<hash>/                                │
+│ │   ├── tenant-buildworker-1-<hash>/                                │
 │ │   └── tenant-sandbox-b-<hash>/                                       │
 │ └── config/                                                            │
 │     └── campy.toml                                                     │
@@ -117,11 +117,11 @@ Leveraging B384's <80 MB engine foundation, Campy runs continuously on AWS Farga
   - Local multi-container verification harness with local volume mount emulating EFS.
   - Pre-configured with test IAM SigV4 environment.
 
-### Task 5: the platform Integration Guide (`docs/platform-integration-guide.md`)
+### Task 5: the platform Integration Guide (`docs/cloud-integration-guide.md`)
 - Complete integration documentation for the platform:
   - SigV4 signing specification and credentials setup.
   - Header contracts: `X-Campy-Workspace-Id`, `Authorization`, `X-Amz-Date`.
-  - Sample Python / TypeScript code snippets for the platform build-workers to ingest and recall memories over REST and MCP.
+  - Sample Python / TypeScript code snippets for an integrator's build-workers to ingest and recall memories over REST and MCP.
   - Privacy, secret scrubbing, and prompt injection defense disclosures.
 
 ---
@@ -138,7 +138,7 @@ Leveraging B384's <80 MB engine foundation, Campy runs continuously on AWS Farga
 - `deploy/Dockerfile`
 - `deploy/docker-compose.yml`
 - `deploy/ecs-task-definition.json`
-- `docs/platform-integration-guide.md`
+- `docs/cloud-integration-guide.md`
 
 ### Testing:
 - `tests/test_cloud_deployment_readiness.py`: Comprehensive automated tests for env vars, path overrides, route filtering, and REST workspace routing.
