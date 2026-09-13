@@ -77,7 +77,7 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
                  campy:content_hash ?content_hash .
             }
             WHERE {
-              BIND(IRI(CONCAT("https://campy.dev/data/Plan/", ENCODE_FOR_URI(STR(?plan_id)))) AS ?p)
+              BIND(IRI(CONCAT("https://campy.dev/id/Plan/", ENCODE_FOR_URI(STR(?plan_id)))) AS ?p)
             }
         """,
     ),
@@ -129,7 +129,7 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
                   campy:evidence_ref ?prov_evidence_ref .
             }
             WHERE {
-              BIND(IRI(CONCAT("https://campy.dev/data/PlanStep/", ENCODE_FOR_URI(STR(?step_id)))) AS ?ps)
+              BIND(IRI(CONCAT("https://campy.dev/id/PlanStep/", ENCODE_FOR_URI(STR(?step_id)))) AS ?ps)
             }
         """,
     ),
@@ -458,7 +458,7 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
                  campy:content_hash ?content_hash .
             }
             WHERE {
-              BIND(IRI(CONCAT("https://campy.dev/data/Lesson/", ENCODE_FOR_URI(STR(?lesson_id)))) AS ?l)
+              BIND(IRI(CONCAT("https://campy.dev/id/Lesson/", ENCODE_FOR_URI(STR(?lesson_id)))) AS ?l)
             }
         """,
     ),
@@ -627,7 +627,7 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
                  campy:created_at ?created_at .
             }
             WHERE {
-              BIND(IRI(CONCAT("https://campy.dev/data/Lesson/", ENCODE_FOR_URI(STR(?lesson_id)))) AS ?l)
+              BIND(IRI(CONCAT("https://campy.dev/id/Lesson/", ENCODE_FOR_URI(STR(?lesson_id)))) AS ?l)
             }
         """,
     ),
@@ -749,7 +749,7 @@ LESSONS_QUERIES: tuple[NamedQuery, ...] = (
                  campy:content_hash ?content_hash .
             }
             WHERE {
-              BIND(IRI(CONCAT("https://campy.dev/data/Lesson/", ENCODE_FOR_URI(STR(?lid)))) AS ?l)
+              BIND(IRI(CONCAT("https://campy.dev/id/Lesson/", ENCODE_FOR_URI(STR(?lid)))) AS ?l)
             }
         """,
     ),

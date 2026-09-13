@@ -121,7 +121,7 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
                   campy:created_at ?now .
             }
             WHERE {
-              BIND(IRI(CONCAT("https://campy.dev/data/Procedure/", ENCODE_FOR_URI(STR(?pid)))) AS ?pr)
+              BIND(IRI(CONCAT("https://campy.dev/id/Procedure/", ENCODE_FOR_URI(STR(?pid)))) AS ?pr)
             }
         """,
     ),
@@ -172,7 +172,7 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
             WHERE {
               OPTIONAL { ?c a campy:Concept ; campy:concept_id ?cid }
               FILTER(!BOUND(?c))
-              BIND(IRI(CONCAT("https://campy.dev/data/Concept/", ENCODE_FOR_URI(STR(?cid)))) AS ?target_c)
+              BIND(IRI(CONCAT("https://campy.dev/id/Concept/", ENCODE_FOR_URI(STR(?cid)))) AS ?target_c)
             }
         """,
     ),
@@ -334,7 +334,7 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
                   campy:created_at ?now .
             }
             WHERE {
-              BIND(IRI(CONCAT("https://campy.dev/data/Procedure/", ENCODE_FOR_URI(STR(?pid)))) AS ?pr)
+              BIND(IRI(CONCAT("https://campy.dev/id/Procedure/", ENCODE_FOR_URI(STR(?pid)))) AS ?pr)
             }
         """,
     ),

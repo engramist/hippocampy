@@ -53,7 +53,7 @@ INGEST_QUERIES = [
                 campy:created_at ?created_at .
             }
             WHERE {
-              BIND(IRI(CONCAT("https://campy.dev/data/DocumentExtract/", ENCODE_FOR_URI(STR(?extract_id)))) AS ?e)
+              BIND(IRI(CONCAT("https://campy.dev/id/DocumentExtract/", ENCODE_FOR_URI(STR(?extract_id)))) AS ?e)
             }
         """,
     ),
@@ -136,7 +136,7 @@ INGEST_QUERIES = [
                     OPTIONAL { ?d campy:location_uri ?old_loc }
                     OPTIONAL { ?d campy:mime_type ?old_mime }
                 }
-                BIND(COALESCE(?d, IRI(CONCAT("https://campy.dev/data/Document/", ENCODE_FOR_URI(STR(?document_id))))) AS ?target_d)
+                BIND(COALESCE(?d, IRI(CONCAT("https://campy.dev/id/Document/", ENCODE_FOR_URI(STR(?document_id))))) AS ?target_d)
                 BIND(COALESCE(?old_loc, ?location_uri) AS ?loc)
                 BIND(COALESCE(?old_mime, ?mime_type) AS ?mime)
             }
@@ -267,7 +267,7 @@ INGEST_QUERIES = [
                     campy:last_accessed_at ?now .
             }
             WHERE {
-                BIND(IRI(CONCAT("https://campy.dev/data/Concept/", ENCODE_FOR_URI(STR(?concept_id)))) AS ?c)
+                BIND(IRI(CONCAT("https://campy.dev/id/Concept/", ENCODE_FOR_URI(STR(?concept_id)))) AS ?c)
             }
         """,
     ),
@@ -349,7 +349,7 @@ INGEST_QUERIES = [
                     campy:last_accessed_at ?last_accessed_at .
             }
             WHERE {
-                BIND(IRI(CONCAT("https://campy.dev/data/Dataset/", ENCODE_FOR_URI(STR(?dataset_id)))) AS ?d)
+                BIND(IRI(CONCAT("https://campy.dev/id/Dataset/", ENCODE_FOR_URI(STR(?dataset_id)))) AS ?d)
             }
         """,
     ),

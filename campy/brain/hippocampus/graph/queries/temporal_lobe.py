@@ -66,7 +66,7 @@ TEMPORAL_LOBE_QUERIES: list[NamedQuery] = [
                  campy:last_accessed_at ?now .
             }
             WHERE {
-              BIND(IRI(CONCAT("https://campy.dev/data/Concept/", ENCODE_FOR_URI(STR(?cid)))) AS ?c)
+              BIND(IRI(CONCAT("https://campy.dev/id/Concept/", ENCODE_FOR_URI(STR(?cid)))) AS ?c)
             }
         """,
     ),
@@ -97,7 +97,7 @@ TEMPORAL_LOBE_QUERIES: list[NamedQuery] = [
                  campy:created_at ?now .
             }
             WHERE {
-              BIND(IRI(CONCAT("https://campy.dev/data/Label/", ENCODE_FOR_URI(STR(?lid)))) AS ?l)
+              BIND(IRI(CONCAT("https://campy.dev/id/Label/", ENCODE_FOR_URI(STR(?lid)))) AS ?l)
             }
         """,
     ),
@@ -168,7 +168,7 @@ TEMPORAL_LOBE_QUERIES: list[NamedQuery] = [
                  campy:created_at ?now .
             }
             WHERE {
-              BIND(IRI(CONCAT("https://campy.dev/data/Label/", ENCODE_FOR_URI(STR(?lid)))) AS ?l)
+              BIND(IRI(CONCAT("https://campy.dev/id/Label/", ENCODE_FOR_URI(STR(?lid)))) AS ?l)
             }
         """,
     ),

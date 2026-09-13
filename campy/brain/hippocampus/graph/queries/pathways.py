@@ -116,7 +116,7 @@ PATHWAY_QUERIES: tuple[NamedQuery, ...] = (
               ?old a campy:Concept ; campy:concept_id ?old_id .
               ?new a campy:Concept ; campy:concept_id ?new_id .
               OPTIONAL { ?old campy:archived ?old_archived }
-              BIND(IRI(CONCAT("https://campy.dev/data/MergeEvent/", ENCODE_FOR_URI(STR(?merge_event_id)))) AS ?me)
+              BIND(IRI(CONCAT("https://campy.dev/id/MergeEvent/", ENCODE_FOR_URI(STR(?merge_event_id)))) AS ?me)
             }
         """,
     ),
