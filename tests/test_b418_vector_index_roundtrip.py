@@ -9,12 +9,16 @@ that calls `vector_store.upsert_vector()` / `index_text()`. So the embedding
 never lands in the index and `vector_search("Lesson", ...)` returns [] for
 everything written after the cutover.
 
-Compound issue (B418): the create template mints the node at
-`https://campy.dev/data/Lesson/{pk}` while `vector_search` filters/hydrates at
-`https://campy.dev/id/Lesson/{pk}` (`CID_BASE`). The fix must key the vector at
-the node's REAL subject URI and let `vector_search` match it regardless of base,
-so the round-trip below returns the node with correct properties — exactly what
-ARC's `require_roundtrip_persistence` readiness gate asserts.
+Compound issue (B418): at the time this was written, the create template
+minted the node at `https://campy.dev/data/Lesson/{pk}` while `vector_search`
+filtered/hydrated at `https://campy.dev/id/Lesson/{pk}` (`CID_BASE`). The B418a
+fix keyed the vector at the node's REAL subject URI and made `vector_search`
+match either base, so the round-trip below returns the node with correct
+properties regardless — exactly what ARC's `require_roundtrip_persistence`
+readiness gate asserts. B418b (2026-09-12) then unified the base: all 26
+`sparql=` create templates that used to mint at `/data/`, including this one,
+now mint at the canonical `/id/` — see
+`test_created_lesson_hydrates_at_canonical_id_base` below.
 """
 
 from __future__ import annotations
@@ -90,15 +94,16 @@ async def test_create_lesson_is_vector_indexed_and_recallable(gw, ox_client):
 
 
 @pytest.mark.asyncio
-async def test_created_lesson_hydrates_despite_data_uri_base(gw, ox_client):
-    # The create template mints at .../data/Lesson/{pk}; vector_search must
-    # still hydrate the real node's scalar props, not just fill the embedding.
+async def test_created_lesson_hydrates_at_canonical_id_base(gw, ox_client):
+    # B418b: the create template now mints at the canonical /id/ base (unified
+    # with mint_uri/CID_BASE); vector_search must hydrate the real node's
+    # scalar props, not just fill the embedding.
     lid = str(uuid.uuid4())
     emb = _embedding()
-    await _create_lesson(gw, lid=lid, text="base_agnostic_hydration", emb=emb)
+    await _create_lesson(gw, lid=lid, text="canonical_id_base_hydration", emb=emb)
 
     subject = ox_client.find_subject_uri("Lesson", "lesson_id", lid)
-    assert subject == f"https://campy.dev/data/Lesson/{lid}"
+    assert subject == f"https://campy.dev/id/Lesson/{lid}"
 
     rows = ox_client.vector_search("Lesson", "lesson_embedding_idx", emb, 5)
     node = rows[0]["node"]

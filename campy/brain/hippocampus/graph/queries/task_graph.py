@@ -36,7 +36,7 @@ TASK_GRAPH_QUERIES = [
                  campy:created_at ?now .
             }
             WHERE {
-              BIND(IRI(CONCAT("https://campy.dev/data/TaskGraph/", ENCODE_FOR_URI(STR(?id)))) AS ?g)
+              BIND(IRI(CONCAT("https://campy.dev/id/TaskGraph/", ENCODE_FOR_URI(STR(?id)))) AS ?g)
             }
         """,
     ),
@@ -75,7 +75,7 @@ TASK_GRAPH_QUERIES = [
             }
             WHERE {
               ?g a campy:TaskGraph ; campy:graph_id ?gid .
-              BIND(IRI(CONCAT("https://campy.dev/data/TaskNode/", ENCODE_FOR_URI(STR(?tid)))) AS ?t)
+              BIND(IRI(CONCAT("https://campy.dev/id/TaskNode/", ENCODE_FOR_URI(STR(?tid)))) AS ?t)
             }
         """,
     ),
@@ -191,7 +191,7 @@ TASK_GRAPH_QUERIES = [
                  campy:created_at ?now .
             }
             WHERE {
-              BIND(IRI(CONCAT("https://campy.dev/data/TaskGraph/", ENCODE_FOR_URI(STR(?id)))) AS ?g)
+              BIND(IRI(CONCAT("https://campy.dev/id/TaskGraph/", ENCODE_FOR_URI(STR(?id)))) AS ?g)
             }
         """,
     ),
@@ -232,7 +232,7 @@ TASK_GRAPH_QUERIES = [
             WHERE {
               ?g a campy:TaskGraph ; campy:graph_id ?gid .
               OPTIONAL { ?t a campy:TaskNode ; campy:task_id ?tid }
-              BIND(COALESCE(?t, IRI(CONCAT("https://campy.dev/data/TaskNode/", ENCODE_FOR_URI(STR(?tid))))) AS ?target_t)
+              BIND(COALESCE(?t, IRI(CONCAT("https://campy.dev/id/TaskNode/", ENCODE_FOR_URI(STR(?tid))))) AS ?target_t)
             }
         """,
     ),

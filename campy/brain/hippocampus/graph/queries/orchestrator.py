@@ -35,7 +35,7 @@ ORCHESTRATOR_QUERIES = [
                  campy:created_at ?created_at .
             }
             WHERE {
-              BIND(IRI(CONCAT("https://campy.dev/data/DisambiguationEvent/", ENCODE_FOR_URI(STR(?eid)))) AS ?e)
+              BIND(IRI(CONCAT("https://campy.dev/id/DisambiguationEvent/", ENCODE_FOR_URI(STR(?eid)))) AS ?e)
             }
         """,
     ),
@@ -158,7 +158,7 @@ ORCHESTRATOR_QUERIES = [
                  campy:last_accessed_at ?created_at .
             }
             WHERE {
-              BIND(IRI(CONCAT("https://campy.dev/data/Concept/", ENCODE_FOR_URI(STR(?concept_id)))) AS ?c)
+              BIND(IRI(CONCAT("https://campy.dev/id/Concept/", ENCODE_FOR_URI(STR(?concept_id)))) AS ?c)
             }
         """,
     ),
@@ -190,7 +190,7 @@ ORCHESTRATOR_QUERIES = [
                  campy:created_at ?created_at .
             }
             WHERE {
-              BIND(IRI(CONCAT("https://campy.dev/data/GistExample/", ENCODE_FOR_URI(STR(?example_id)))) AS ?e)
+              BIND(IRI(CONCAT("https://campy.dev/id/GistExample/", ENCODE_FOR_URI(STR(?example_id)))) AS ?e)
             }
         """,
     ),
@@ -265,7 +265,7 @@ ORCHESTRATOR_QUERIES = [
                  campy:last_accessed_at ?created_at .
             }
             WHERE {
-              BIND(IRI(CONCAT("https://campy.dev/data/Concept/", ENCODE_FOR_URI(STR(?concept_id)))) AS ?c)
+              BIND(IRI(CONCAT("https://campy.dev/id/Concept/", ENCODE_FOR_URI(STR(?concept_id)))) AS ?c)
             }
         """,
     ),
@@ -310,7 +310,7 @@ ORCHESTRATOR_QUERIES = [
                  campy:created_at ?created_at .
             }
             WHERE {
-              BIND(IRI(CONCAT("https://campy.dev/data/Lesson/", ENCODE_FOR_URI(STR(?lesson_id)))) AS ?l)
+              BIND(IRI(CONCAT("https://campy.dev/id/Lesson/", ENCODE_FOR_URI(STR(?lesson_id)))) AS ?l)
             }
         """,
     ),
@@ -568,7 +568,7 @@ for label, pk, key in _ARTIFACT_SPECS:
                      campy:created_at ?created_at .
                 }}
                 WHERE {{
-                  BIND(IRI(CONCAT("https://campy.dev/data/{label}/", ENCODE_FOR_URI(STR(?artifact_id)))) AS ?a)
+                  BIND(IRI(CONCAT("https://campy.dev/id/{label}/", ENCODE_FOR_URI(STR(?artifact_id)))) AS ?a)
                 }}
             """,
         ),
