@@ -14,11 +14,17 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
-requires-python = ">=3.12,<3.14"
+# B428: narrowed from ">=3.12,<3.14" (Sep 2026 re-vet finding, confirmed against
+# PyPI's actual wheel listings): `tree-sitter-languages` — used by
+# campy/brain/thalamus/compression/ast_mapper.py — ships no cp313 wheel for any
+# version, and its maintained successor (`tree-sitter-language-pack`) doesn't
+# either as of this writing. `spacy` is NOT the blocker (3.8.16+ ships cp313
+# wheels) — only tree-sitter-languages is. Re-widen once that has a cp313 wheel
+# or is replaced.
+requires-python = ">=3.12,<3.13"
 dependencies = [
     # B355: fastembed/ONNX Runtime replaced sentence-transformers/PyTorch as
     # the local embedding backend -- same model (sentence-transformers/all-
