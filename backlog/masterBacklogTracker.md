@@ -80,6 +80,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B407 | Inference Pilot: Prove the RDF Thesis Before the Engine Cutover | P0 | complete | TBD | TBD | - | backlog/B407.md |
 | B408 | Stale-Base Guard: Make Silent Reverts Unmergeable | P0 | complete | TBD | TBD | - | backlog/B408.md |
 | B411 | Exhaustive Migration Fixture: Round-Trip Every Node and Edge Type | P0 | complete | TBD | TBD | - | backlog/B411.md |
+| B427 | ~41 Test Files Validate Retired Kùzu/Cypher Engine, Not Shipped Oxigraph/SPARQL | P3 | ready | TBD | TBD | - | backlog/B427.md |
 | B426 | Remove Customer Name From the Public Repo — Tree + Git History | P1 | complete | TBD | TBD | - | backlog/B426.md |
 | B425 | 2026-09-11 Re-vet Remediation: Gate arc_* Tools + integration-guide Doc Fixes + Repo Hygiene | P2 | fixed | TBD | TBD | - | backlog/B425.md |
 | B424 | Enforce principal.scopes in route_tool_call (Authorization Was Decorative) | P0 | fixed | TBD | TBD | - | backlog/B424.md |
