@@ -162,7 +162,7 @@ not touch.
 
 ## Requirements
 
-Python 3.12 (3.13 support is in progress — some pinned dependencies do not yet ship 3.13 wheels). Oxigraph (`pyoxigraph`) and `sqlite-vec` are installed automatically as dependencies.
+Python 3.12 (3.13 is not yet supported: `tree-sitter-languages` — used for AST-aware code compression — ships no `cp313` wheel; every other dependency, including spaCy, already supports 3.13). Oxigraph (`pyoxigraph`) and `sqlite-vec` are installed automatically as dependencies.
 
 ## Cloud / Multi-Tenant Deployment (AWS)
 
