@@ -280,6 +280,109 @@ def stop():
         subprocess.run(["pkill", "-f", "brain_daemon.py"])
         console.print("[green]Brain Daemon stopped.[/green]")
 
+
+def _daemon_is_running() -> bool:
+    """B417: best-effort liveness check for the migrate-legacy guard — tries
+    a real connect (a stale leftover socket file must not falsely block a
+    migration forever), short timeout, any connect failure means 'not
+    running'."""
+    import socket as _socket
+    from campy.paths import get_daemon_socket_path
+
+    path = get_daemon_socket_path()
+    if not path.exists():
+        return False
+    try:
+        s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+        s.settimeout(1.0)
+        s.connect(str(path))
+        s.close()
+        return True
+    except OSError:
+        return False
+
+
+@app.command(name="migrate-legacy")
+def migrate_legacy(
+    from_backup: str = typer.Option(
+        None, "--from",
+        help="Path to a specific brain.db.kuzu-bak-* file. Default: the newest one "
+             "found next to the live database.",
+    ),
+    force: bool = typer.Option(
+        False, "--force",
+        help="Proceed even though the daemon appears to be running. DANGEROUS: this "
+             "writes directly to the on-disk store the daemon owns; concurrent writes "
+             "can corrupt it. Always prefer `campy stop` first.",
+    ),
+):
+    """
+    Migrate a legacy (pre-Oxigraph) Kùzu `brain.db` backup into the live Oxigraph
+    store (B417). Reads a `.kuzu-bak-*` file created by the automatic startup
+    guard and writes its nodes/edges into the current graph — non-destructive,
+    idempotent, and safe to re-run.
+
+    Requires the `kuzu` package (`pip install kuzu==0.11.3`) and the daemon
+    stopped first (`campy stop`).
+    """
+    from campy.paths import get_database_path
+    from campy.brain.hippocampus.graph.oxigraph_client import LEGACY_BACKUP_SUFFIX, OxigraphClient
+    from campy.brain.hippocampus.graph.kuzu_migrate import (
+        KuzuNotAvailableError,
+        migrate_kuzu_to_oxigraph,
+    )
+
+    if _daemon_is_running() and not force:
+        console.print(
+            "[red]The Brain Daemon appears to be running.[/red] This command writes "
+            "directly to the on-disk store the daemon owns — run [bold]`campy stop`[/bold] "
+            "first, then retry. (Use --force only if you are certain the daemon is not "
+            "actually running; a stale socket file can cause a false positive here.)"
+        )
+        raise typer.Exit(code=1)
+
+    db_path = get_database_path()
+    if from_backup:
+        backup_path = Path(from_backup)
+        if not backup_path.exists():
+            console.print(f"[red]No such file:[/red] {backup_path}")
+            raise typer.Exit(code=1)
+    else:
+        candidates = sorted(db_path.parent.glob(f"{db_path.name}{LEGACY_BACKUP_SUFFIX}*"))
+        if not candidates:
+            console.print(
+                f"[yellow]No legacy backup found[/yellow] "
+                f"({db_path}{LEGACY_BACKUP_SUFFIX}* does not exist). "
+                "Nothing to migrate — pass --from to point at a specific file."
+            )
+            raise typer.Exit(code=0)
+        backup_path = candidates[-1]  # newest by timestamp suffix, lexicographic == chronological
+        if len(candidates) > 1:
+            console.print(
+                f"[yellow]Found {len(candidates)} legacy backups; using the newest:[/yellow] "
+                f"{backup_path.name}"
+            )
+
+    console.print(f"Migrating [bold]{backup_path}[/bold] into [bold]{db_path}[/bold] ...")
+    try:
+        target = OxigraphClient(db_path)
+        report = migrate_kuzu_to_oxigraph(str(backup_path), target)
+    except KuzuNotAvailableError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+    except Exception as exc:
+        console.print(f"[red]Migration failed:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    console.print(f"[green]{report.summary()}[/green]")
+    console.print(
+        "\nThe legacy backup at "
+        f"[bold]{backup_path}[/bold] was NOT modified or deleted. "
+        "Start the daemon with `campy start` and verify with `campy smoke` "
+        "before considering this complete."
+    )
+
+
 @app.command()
 def status(
     watch: bool = typer.Option(False, "--watch", "-w", help="Live-updating phase display"),

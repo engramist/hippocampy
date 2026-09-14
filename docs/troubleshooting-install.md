@@ -178,18 +178,28 @@ success but the socket never appears and `campy status` says offline.
 single-file DB**. `mkdir(exist_ok=True)` still raises against a regular file, so
 the daemon crash-loops before it can serve.
 
-**Workaround (non-destructive):** rename the legacy file aside so Oxigraph
-creates a fresh store, then restart:
+**As of B417, this now self-heals automatically** — `campy start` moves the legacy file
+aside to a timestamped `brain.db.kuzu-bak-*` backup and creates a fresh store, logging a
+`WARNING` naming the backup. No manual rename is needed; `campy doctor` also flags any
+`.kuzu-bak-*` backup sitting unmigrated next to a healthy store.
+
+**To restore your prior graph** (requires the optional `kuzu` package —
+`pip install kuzu==0.11.3`), stop the daemon first, then:
 
 ```bash
-mv ~/.campy/brain.db ~/.campy/brain.db.kuzu-bak-$(date +%Y%m%d)
+campy stop
+campy migrate-legacy
 campy start
 ```
 
-The daemon then comes up on a clean graph. **The old graph is preserved in the
-backup but not migrated** — a real Kùzu→Oxigraph migrator is tracked in
-`backlog/B417.md` (`export-graph` can't help post-upgrade because it runs through
-the Oxigraph client). Restore is a manual step until that ships.
+This reads the backup directly (never through the Oxigraph client, which is what
+couldn't open it) and writes each node/edge into the live store. Non-destructive (the
+backup file is never modified or deleted) and safe to re-run if interrupted. Pass
+`--from <path>` to target a specific backup file instead of auto-discovering the newest
+one. A node or edge type that no longer has a home in today's schema is skipped and named
+in the summary rather than aborting the migration — see `backlog/B430.md` for the one
+known, pre-existing gap this can surface (a handful of pre-cutover edge types never
+classified in `EDGE_REIFICATION`).
 
 ## Ollama / embedding provider unavailable
 

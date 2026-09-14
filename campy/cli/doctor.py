@@ -123,14 +123,14 @@ class DoctorChecker:
                     "Database", True,
                     f"{path} is a legacy (pre-Oxigraph) Kùzu file, not a directory — "
                     f"will be auto-backed-up and replaced with a fresh store on next "
-                    f"`campy start`. See docs/troubleshooting-install.md to migrate it.",
+                    f"`campy start`. Run `campy migrate-legacy` to restore your prior graph into it.",
                 ))
             elif path.exists():
                 if backups:
                     self.checks.append((
                         "Database", True,
                         f"{path} (exists); {len(backups)} unmigrated legacy backup(s) found "
-                        f"({backups[-1].name}) — see docs/troubleshooting-install.md to migrate.",
+                        f"({backups[-1].name}) — run `campy migrate-legacy` to restore it.",
                     ))
                 else:
                     self.checks.append(("Database", True, f"{path} (exists)"))
