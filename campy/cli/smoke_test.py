@@ -204,7 +204,7 @@ async def run_smoke_tests() -> dict:
         "Daemon Communication": False,
         "MCP Tool Visibility": False,
         "LLM Provider Connectivity": False,
-        "Kùzu Health": False
+        "Graph Store Health": False
     }
 
     # 1. Wait for Daemon (up to 10 seconds)
@@ -216,7 +216,7 @@ async def run_smoke_tests() -> dict:
             tools = res.get("result", {}).get("tools", [])
             if len(tools) >= 5:
                 results["MCP Tool Visibility"] = True
-                results["Kùzu Health"] = True # tools/list confirms Kùzu is at least partially initialized
+                results["Graph Store Health"] = True # tools/list confirms the graph store is at least partially initialized (Oxigraph since B397)
             break
         time.sleep(2)
 

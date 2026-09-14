@@ -107,10 +107,33 @@ class DoctorChecker:
     def _check_database(self) -> None:
         try:
             from campy.paths import get_database_path
+            from campy.brain.hippocampus.graph.oxigraph_client import LEGACY_BACKUP_SUFFIX
 
             path = get_database_path()
-            if path.exists():
-                self.checks.append(("Database", True, f"{path} (exists)"))
+            backups = sorted(path.parent.glob(f"{path.name}{LEGACY_BACKUP_SUFFIX}*")) if path.parent.exists() else []
+
+            if path.exists() and not path.is_dir():
+                # B417: a pre-cutover single-file Kùzu brain.db (or any other
+                # non-directory) sitting where Oxigraph expects a directory
+                # store. OxigraphClient self-heals this on the next daemon
+                # start (moves it aside, creates a fresh store) — not a hard
+                # failure — but the operator should know NOW, not be
+                # surprised by an automatic move on next `campy start`.
+                self.checks.append((
+                    "Database", True,
+                    f"{path} is a legacy (pre-Oxigraph) Kùzu file, not a directory — "
+                    f"will be auto-backed-up and replaced with a fresh store on next "
+                    f"`campy start`. See docs/troubleshooting-install.md to migrate it.",
+                ))
+            elif path.exists():
+                if backups:
+                    self.checks.append((
+                        "Database", True,
+                        f"{path} (exists); {len(backups)} unmigrated legacy backup(s) found "
+                        f"({backups[-1].name}) — see docs/troubleshooting-install.md to migrate.",
+                    ))
+                else:
+                    self.checks.append(("Database", True, f"{path} (exists)"))
             else:
                 self.checks.append(("Database", True, f"{path} (will be created on first use)"))
         except Exception as exc:
