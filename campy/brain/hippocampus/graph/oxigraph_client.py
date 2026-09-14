@@ -836,7 +836,7 @@ def _auto_heal_legacy_store_path(db_path: Path) -> None:
         "B417: found a legacy (pre-Oxigraph) file at %s where a directory-backed "
         "store was expected — moved it aside to %s and creating a fresh store "
         "there. Your prior graph is preserved in that backup but NOT migrated "
-        "into the new store. See docs/troubleshooting-install.md to migrate it.",
+        "into the new store. Run `campy migrate-legacy` to restore it.",
         db_path, backup,
     )
 
