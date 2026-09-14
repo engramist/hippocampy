@@ -195,7 +195,7 @@ def test_setup_command_auto():
                                         "Daemon Communication": True,
                                         "MCP Tool Visibility": True,
                                         "LLM Provider Connectivity": True,
-                                        "Kùzu Health": True
+                                        "Graph Store Health": True
                                     }
                                     with patch("platform.system", return_value="Darwin"):
                                         result = runner.invoke(app, ["setup"])
@@ -253,7 +253,7 @@ async def test_run_smoke_tests_success():
                         results = await run_smoke_tests()
                         assert results["Daemon Communication"] is True
                         assert results["MCP Tool Visibility"] is True
-                        assert results["Kùzu Health"] is True
+                        assert results["Graph Store Health"] is True
                         assert results["LLM Provider Connectivity"] is True
 
 @pytest.mark.asyncio

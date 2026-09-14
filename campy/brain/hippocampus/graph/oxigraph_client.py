@@ -81,6 +81,7 @@ never reimplemented, so the two stores always agree on identity.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 import time
@@ -94,6 +95,8 @@ import pyoxigraph as ox
 
 from campy.brain.hippocampus.graph.vector_store import mint_uri  # noqa: F401 (re-exported)
 from campy.brain.hippocampus.schema import NODE_TABLES, REL_TABLES
+
+_logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # §2 — namespaces (docs/rdf-schema-mapping.md)
@@ -798,6 +801,46 @@ def _is_update(query_text: str) -> bool:
     return False
 
 
+# B417: legacy-backup naming for `_auto_heal_legacy_store_path`. A real
+# Oxigraph store is always a directory (RocksDB); a pre-cutover single-file
+# Kùzu `brain.db` — the default state of every user upgrading across the
+# B397 cutover — sits at that exact path as a regular file, and
+# `Path.mkdir(exist_ok=True)` still raises `FileExistsError` against a
+# non-directory. This suffix is also what `campy doctor` / `migrate-legacy`
+# (see docs/troubleshooting-install.md) look for.
+LEGACY_BACKUP_SUFFIX = ".kuzu-bak-"
+
+
+def _auto_heal_legacy_store_path(db_path: Path) -> None:
+    """If `db_path` exists and is not a directory, move it aside to a
+    timestamped backup so a fresh Oxigraph directory store can be created
+    there instead of crash-looping. Non-destructive (never deletes) and safe
+    to call on every startup: a no-op for the overwhelmingly common cases —
+    a path that doesn't exist yet, or one that is already a real directory
+    store.
+
+    Deliberately generic rather than Kùzu-format-specific: ANY non-directory
+    at a directory-store path is, by construction, not a valid Oxigraph
+    store, so this needs no dependency on the (optional, test-only) `kuzu`
+    package to recognize the condition. See backlog/B417.md.
+    """
+    if not db_path.exists() or db_path.is_dir():
+        return
+    while True:
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+        backup = db_path.with_name(f"{db_path.name}{LEGACY_BACKUP_SUFFIX}{ts}")
+        if not backup.exists():
+            break
+    db_path.rename(backup)
+    _logger.warning(
+        "B417: found a legacy (pre-Oxigraph) file at %s where a directory-backed "
+        "store was expected — moved it aside to %s and creating a fresh store "
+        "there. Your prior graph is preserved in that backup but NOT migrated "
+        "into the new store. See docs/troubleshooting-install.md to migrate it.",
+        db_path, backup,
+    )
+
+
 class OxigraphClient:
     """RDF-star client mirroring `KuzuClient`'s async surface
     (`execute_read`, `execute_write`) plus this card's node/edge writers.
@@ -819,7 +862,9 @@ class OxigraphClient:
         if db_path is None or str(db_path) == ":memory:":
             self.store = ox.Store()
         else:
-            Path(db_path).mkdir(parents=True, exist_ok=True, mode=0o700)
+            p = Path(db_path)
+            _auto_heal_legacy_store_path(p)
+            p.mkdir(parents=True, exist_ok=True, mode=0o700)
             self.store = ox.Store(str(db_path))
         self._lock = asyncio.Lock()
 
