@@ -80,6 +80,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B407 | Inference Pilot: Prove the RDF Thesis Before the Engine Cutover | P0 | complete | TBD | TBD | - | backlog/B407.md |
 | B408 | Stale-Base Guard: Make Silent Reverts Unmergeable | P0 | complete | TBD | TBD | - | backlog/B408.md |
 | B411 | Exhaustive Migration Fixture: Round-Trip Every Node and Edge Type | P0 | complete | TBD | TBD | - | backlog/B411.md |
+| B431 | capability.py's Q1-Q4 SPARQL Bodies Are Non-Functional Stubs (Q1 Is a Live Trust-Tier Access-Control Gap) | P1 | open | TBD | TBD | - | backlog/B431.md |
 | B430 | arc_get_causal_path Was Structurally Broken — DERIVED_FROM_FACT + REQUIRES_ENTITY Never Had a Writer | P1 | fixed | TBD | TBD | - | backlog/B430.md |
 | B429 | Unify Instance-URI Base (/data/ -> /id/) — Fixes Live Phantom-Edge Bug in 4+ Gateway Handlers (B418b) | P1 | fixed | TBD | TBD | - | backlog/B429.md |
 | B428 | Narrow requires-python to 3.12-Only (tree-sitter-languages Has No cp313 Wheel) | P3 | fixed | TBD | TBD | - | backlog/B428.md |

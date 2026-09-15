@@ -181,8 +181,10 @@
 {"_type": "rel", "_label": "SAME_COLOR_AS", "_table": "SAME_COLOR_AS", "_from_table": "GridEntity", "_from_pk": "gridentity-fix-1", "_to_table": "GridEntity", "_to_pk": "gridentity-fix-2"}
 {"_type": "rel", "_label": "MOVED_BY", "_table": "MOVED_BY", "_from_table": "GridEntity", "_from_pk": "gridentity-fix-1", "_to_table": "ActionEffect", "_to_pk": "actioneffect-fix-1", "delta_row": 0.8, "delta_col": 0.8}
 {"_type": "rel", "_label": "DISAPPEARED", "_table": "DISAPPEARED", "_from_table": "GridEntity", "_from_pk": "gridentity-fix-1", "_to_table": "EntityDisappearance", "_to_pk": "entitydisappearance-fix-1"}
+{"_type": "rel", "_label": "DERIVED_FROM_FACT", "_table": "DERIVED_FROM_FACT", "_from_table": "ActionFact", "_from_pk": "actionfact-fix-1", "_to_table": "ActionEffect", "_to_pk": "actioneffect-fix-1", "step": 1}
 {"_type": "rel", "_label": "ENTITY_HYPOTHESIS", "_table": "ENTITY_HYPOTHESIS", "_from_table": "GridEntity", "_from_pk": "gridentity-fix-1", "_to_table": "Hypothesis", "_to_pk": "hypothesis-fix-1", "weight": 0.8, "step": 1}
 {"_type": "rel", "_label": "ENTITY_RULE", "_table": "ENTITY_RULE", "_from_table": "GridEntity", "_from_pk": "gridentity-fix-1", "_to_table": "Rule", "_to_pk": "rule-fix-1", "weight": 0.8, "step": 1}
+{"_type": "rel", "_label": "REQUIRES_ENTITY", "_table": "REQUIRES_ENTITY", "_from_table": "VictoryCondition", "_from_pk": "victorycondition-fix-1", "_to_table": "GridEntity", "_to_pk": "gridentity-fix-1", "requirement": "requires_entity-requirement-1"}
 {"_type": "rel", "_label": "TRANSITION_OF", "_table": "TRANSITION_OF", "_from_table": "Transition", "_from_pk": "transition-fix-1", "_to_table": "GridEntity", "_to_pk": "gridentity-fix-1"}
 {"_type": "rel", "_label": "ANCHORED_ON_ENTITY", "_table": "ANCHORED_ON_ENTITY", "_from_table": "InvestigationThread", "_from_pk": "investigationthread-fix-1", "_to_table": "GridEntity", "_to_pk": "gridentity-fix-1"}
 {"_type": "rel", "_label": "ANCHORED_ON_GOAL", "_table": "ANCHORED_ON_GOAL", "_from_table": "InvestigationThread", "_from_pk": "investigationthread-fix-1", "_to_table": "Hypothesis", "_to_pk": "hypothesis-fix-1"}

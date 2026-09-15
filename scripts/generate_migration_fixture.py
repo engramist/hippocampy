@@ -6,11 +6,14 @@ Derives schema coverage directly by importing `campy/brain/hippocampus/schema.py
 (reusing B406 three-source derivation: NODE_TABLES, REL_TABLES, and SCHEMA_MIGRATIONS).
 Generates an exhaustive JSONL graph fixture covering:
 - All 57 node tables (with every declared property populated)
-- All 110 edge types (95 classified + 15 verified unclassified escalated)
+- All 110 edge types (97 classified + 13 verified unclassified escalated)
 - Multiple occurrences per (s,p,o) for all 15 occurrence types
-- Plain triples and quoted annotations for all 28 star types
+- Plain triples and quoted annotations for all 30 star types
 - All §3.1 datatypes (STRING[], TIMESTAMP, DOUBLE, FLOAT[384])
-- Verified that classify_edge() raises on all 15 UNCLASSIFIED_ESCALATED_TABLES
+- Verified that classify_edge() raises on all 13 UNCLASSIFIED_ESCALATED_TABLES
+
+B430 (2026-09-14): DERIVED_FROM_FACT/REQUIRES_ENTITY reclassified unclassified->star,
+moving these counts from 15/28 to 13/30.
 """
 
 from __future__ import annotations
@@ -272,7 +275,7 @@ def verify_conformance(
 
     # 5. Star edges have properties populated for plain + quoted annotation
     star_tables = {t for t, c in EDGE_REIFICATION.items() if c == "star"}
-    assert len(star_tables) == 28, f"Expected 28 star tables, got {len(star_tables)}"
+    assert len(star_tables) == 30, f"Expected 30 star tables, got {len(star_tables)}"
     for star_t in star_tables:
         t_rows = [r for r in rel_rows if r["_table"] == star_t]
         assert len(t_rows) >= 1, f"Missing star edge table {star_t}"
@@ -337,8 +340,8 @@ def main() -> None:
     print(f"Generated exhaustive migration fixture at {args.out}")
     print(f"  Nodes: {len(node_rows)} rows across {len(node_schemas)} tables")
     print(f"  Edges: {len(rel_rows)} rows across {len(set(r['_table'] for r in rel_rows))} tables")
-    print(f"  Classified reification: 15 occurrence (multiple occurrences), 28 star (plain+quoted), 52 plain")
-    print(f"  Unclassified tables: 15 verified to raise in classify_edge()")
+    print(f"  Classified reification: 15 occurrence (multiple occurrences), 30 star (plain+quoted), 52 plain")
+    print(f"  Unclassified tables: 13 verified to raise in classify_edge()")
 
 
 if __name__ == "__main__":

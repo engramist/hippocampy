@@ -4,11 +4,11 @@ from unittest.mock import MagicMock, AsyncMock
 from campy.brain.temporal_lobe.warm_frontier import compute_warm_frontier, get_warm_nodes
 from campy.brain.thalamus.tools import notify_turn, current_truth
 import campy.brain.thalamus.tools as tools_mod
-from tests.kuzu_test_client import KuzuClient
+from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 
 @pytest.fixture
 def db():
-    mock = MagicMock(spec=KuzuClient)
+    mock = MagicMock(spec=OxigraphClient)
     mock.execute_write = AsyncMock()
     return mock
 
@@ -17,7 +17,7 @@ async def test_warm_frontier_activation_and_retrieval():
     """
     Test that notify_turn activates nodes and current_truth prefers them.
     """
-    db = MagicMock(spec=KuzuClient)
+    db = MagicMock(spec=OxigraphClient)
     db.execute_write = AsyncMock()
     session_id = "test_session_b91"
     
@@ -98,7 +98,7 @@ async def test_warm_frontier_activation_and_retrieval():
 @pytest.mark.asyncio
 async def test_spread_activation():
     """Test that activation spreads to neighbors."""
-    db = MagicMock(spec=KuzuClient)
+    db = MagicMock(spec=OxigraphClient)
     db.execute_write = AsyncMock()
     
     # Seed node c1 with high score

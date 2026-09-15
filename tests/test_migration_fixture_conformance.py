@@ -56,8 +56,8 @@ def test_schema_coverage_derivation():
 
 
 def test_classify_edge_raises_for_unclassified_escalated_tables():
-    """Assert that classify_edge() raises KeyError or ValueError for all 15 UNCLASSIFIED_ESCALATED_TABLES."""
-    assert len(UNCLASSIFIED_ESCALATED_TABLES) == 15
+    """Assert that classify_edge() raises KeyError or ValueError for all 13 UNCLASSIFIED_ESCALATED_TABLES."""
+    assert len(UNCLASSIFIED_ESCALATED_TABLES) == 13
     for table_name in UNCLASSIFIED_ESCALATED_TABLES:
         with pytest.raises((KeyError, ValueError)):
             classify_edge(table_name)
@@ -81,7 +81,7 @@ def test_reification_classification_partition():
     plain_count = sum(1 for c in EDGE_REIFICATION.values() if c == "plain")
 
     assert occ_count == 15, f"Expected 15 occurrence tables, got {occ_count}"
-    assert star_count == 28, f"Expected 28 star tables, got {star_count}"
+    assert star_count == 30, f"Expected 30 star tables, got {star_count}"
     assert plain_count == 52, f"Expected 52 plain tables, got {plain_count}"
 
 
