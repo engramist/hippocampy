@@ -33,6 +33,7 @@ import re
 import unittest.mock
 from dataclasses import dataclass
 from typing import Any, Iterable
+from campy.brain.hippocampus.schema import FACT_PREDICATE_TABLES
 from campy.brain.hippocampus.graph.oxigraph_client import (
     CID_BASE,
     NODE_PRIMARY_KEYS,
@@ -501,7 +502,13 @@ class GraphGateway:
 
         # 5. capability create edges (star)
         if name.startswith("capability.create_edge_"):
-            rel_name = name.replace("capability.create_edge_", "").upper()
+            # B427: the query name carries the bare predicate (e.g. "invokes"),
+            # not the FACT_-prefixed rel table it's actually stored under —
+            # look it up via FACT_PREDICATE_TABLES rather than just
+            # uppercasing, or writes land on a table (e.g. "INVOKES") that
+            # doesn't exist in EDGE_REIFICATION/schema.py at all.
+            predicate = name.replace("capability.create_edge_", "").upper()
+            rel_name = FACT_PREDICATE_TABLES[predicate]
             src_uri = mint_uri("FactEntity", params["subject_id"])
             dst_uri = mint_uri("FactEntity", params["object_id"])
             props = {k: v for k, v in params.items() if k not in ("subject_id", "object_id")}

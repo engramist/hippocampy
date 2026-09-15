@@ -271,7 +271,7 @@ def test_bearer_token_variations():
 @pytest.mark.asyncio
 async def test_notify_turn_embeds_scrubbed_content_not_raw():
     from campy.brain.hippocampus.graph import embeddings as emb
-    from tests.kuzu_test_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
     from campy.brain.hippocampus.schema import init_schema
     from campy.brain.thalamus.tools.capture import notify_turn
 
@@ -280,7 +280,7 @@ async def test_notify_turn_embeds_scrubbed_content_not_raw():
     config = {"embeddings": {"model": embedding_model}}
 
     tmp = tempfile.mkdtemp(prefix="kuzu_scrub_embed_")
-    db = KuzuClient(f"{tmp}/db")
+    db = OxigraphClient(f"{tmp}/db")
     init_schema(db, seed_path, embedding_model)
 
     embedded_texts: list[str] = []

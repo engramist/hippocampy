@@ -27,7 +27,13 @@ IGNORED_DIR_NAMES = {
     "env",
     "tests",
 }
-ALLOWED_KUZU_IMPORT_FILES: set[str] = set()
+ALLOWED_KUZU_IMPORT_FILES: set[str] = {
+    # B417: reads legacy Kùzu backups to migrate them into Oxigraph. Lazily
+    # imports kuzu (optional extra) and is never on the live-store code path
+    # — same standalone-legacy-engine category as scripts/check_cypher_ratchet.py's
+    # ALLOWLIST_FILES entry for this file.
+    "campy/brain/hippocampus/graph/kuzu_migrate.py",
+}
 
 
 def _production_python_files() -> list[Path]:
