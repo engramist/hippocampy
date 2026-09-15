@@ -634,6 +634,45 @@ ARC_QUERIES: tuple[NamedQuery, ...] = (
             """,
     ),
     NamedQuery(
+        name="arc.link_action_fact_derived_from_effect",
+        cypher="""
+            MATCH (af:ActionFact {fact_id: $fid}),
+                  (ae:ActionEffect {effect_id: $eid})
+            WITH af, ae LIMIT 1
+            MERGE (af)-[r:DERIVED_FROM_FACT]->(ae)
+            SET r.step = $step
+            """,
+        params=("fid", "eid", "step"),
+        mutating=True,
+        description=(
+            "B430: every ActionEffect observation is, by construction, one of the "
+            "observations arc_record_action_effect's paired ActionFact aggregates -- "
+            "link them, star (schema.py declares a `step` column on this rel table). "
+            "No sparql= -- routes through GraphGateway's Python handler (see B420/B421 "
+            "precedent) since the GridEntity-adjacent endpoints elsewhere in this file "
+            "need mint_uri/find_node_uri resolution, not a pure property-match INSERT."
+        ),
+    ),
+    NamedQuery(
+        name="arc.link_entity_requires_victory_condition",
+        cypher="""
+            MATCH (vc:VictoryCondition {condition_id: $gid}),
+                  (ge:GridEntity {task_id: $tid, region_index: $eref})
+            WITH vc, ge LIMIT 1
+            MERGE (vc)-[r:REQUIRES_ENTITY]->(ge)
+            SET r.requirement = $requirement
+            """,
+        params=("gid", "tid", "eref", "requirement"),
+        mutating=True,
+        description=(
+            "B430: link the VictoryCondition to the GridEntity a caller says a goal "
+            "update is about (arc_update_goal_confidence's optional entity_ref), "
+            "star (schema.py: FROM VictoryCondition TO GridEntity, `requirement` "
+            "STRING). No sparql= -- the GridEntity endpoint needs find_node_uri "
+            "(task_id+region_index), matching B420's identical resolution."
+        ),
+    ),
+    NamedQuery(
         name="arc.get_entity_movement",
         cypher="""
             MATCH (ge:GridEntity {task_id: $tid})-[m:MOVED_BY]->(ae:ActionEffect {step: $step})

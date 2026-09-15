@@ -537,6 +537,22 @@ class GraphGateway:
             if ge_uri is not None:
                 self._client.write_edge("ENTITY_RULE", ge_uri, mint_uri("Rule", params["rid"]), {"weight": params.get("weight"), "step": params.get("step")})
             return []
+        # B430: ActionFact/ActionEffect endpoints are addressed directly by
+        # their real primary keys (fact_id/effect_id), so mint_uri alone
+        # resolves them — no find_node_uri lookup needed, matching how
+        # mint_uri already works for any node whose PK the caller already has.
+        if name == "arc.link_action_fact_derived_from_effect":
+            self._client.write_edge("DERIVED_FROM_FACT", mint_uri("ActionFact", params["fid"]), mint_uri("ActionEffect", params["eid"]), {"step": params.get("step")})
+            return []
+        # B430: VictoryCondition is addressed by its real PK (condition_id);
+        # GridEntity needs find_node_uri (task_id+region_index), same as
+        # arc.link_entity_rule/arc.link_entity_hypothesis above. No-op if the
+        # GridEntity doesn't exist yet, mirroring the query's own MATCH.
+        if name == "arc.link_entity_requires_victory_condition":
+            ge_uri = self._client.find_node_uri("GridEntity", task_id=params["tid"], region_index=params["eref"])
+            if ge_uri is not None:
+                self._client.write_edge("REQUIRES_ENTITY", mint_uri("VictoryCondition", params["gid"]), ge_uri, {"requirement": params.get("requirement")})
+            return []
         # B422: these five must use the schema's real rel-table names + Arc-prefixed
         # node tables (ArcMechanic/ArcActionPattern/…), matching each query's own cypher.
         # The prior bare names (HAS_ACTION_PATTERN, Mechanic, Pattern, …) were unclassified

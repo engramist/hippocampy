@@ -39,6 +39,15 @@ ALLOWLIST_FILES = {
     # table-variable stream queries. Lives next to the engine adapter under
     # hippocampus/graph/, not behind application query seams.
     "campy/brain/hippocampus/graph/export.py",
+    # B417: the Kùzu->Oxigraph one-shot data migrator. Reads a legacy Kùzu
+    # file via a raw kuzu.Connection it opens itself — a completely
+    # separate, standalone (read-only, non-application) engine connection
+    # that GraphGateway/NamedQuery cannot target (GraphGateway speaks
+    # SPARQL to the live Oxigraph store; this module's whole purpose is
+    # reading the retired Kùzu format that isn't there). Same category as
+    # export.py above: engine-level dump/restore plumbing, not an
+    # application query that belongs behind the portability seam.
+    "campy/brain/hippocampus/graph/kuzu_migrate.py",
     # B390: sqlite-vec + FTS5 store. Contains no Cypher and imports no
     # graph engine at all (not kuzu, not pyoxigraph) — CYPHER_LINE_RE's
     # keyword regex false-positives on plain SQLite DDL/DML syntax that

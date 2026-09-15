@@ -356,6 +356,16 @@ EDGE_REIFICATION: dict[str, EdgeReification] = {
 
     # -- star (25): MERGE ... SET singleton-overwrite confirmed at the call
     #    site (file:line evidence) -------------------------------------
+    # B430 (2026-09-14): schema.py's DDL is the authoritative source —
+    # DERIVED_FROM_FACT (FROM ActionFact TO ActionEffect, step INT32) and
+    # REQUIRES_ENTITY (FROM VictoryCondition TO GridEntity, requirement
+    # STRING) both carry a non-FROM/TO column, so "plain" (an earlier draft
+    # of this classification, based only on how the pre-existing READ query
+    # happened to access them) was wrong — corrected to "star" before either
+    # write call site (queries/arc.py: arc.link_action_fact_derived_from_effect,
+    # arc.link_entity_requires_victory_condition) shipped:
+    "DERIVED_FROM_FACT": "star",
+    "REQUIRES_ENTITY": "star",
     # confidence/inferred_by/inferred_at family, spec §4.2a-named:
     "ENABLES": "star",       # queries/quests.py:714 MERGE, queries/sweep.py:1283 MERGE
     "REQUIRES": "star",      # queries/quests.py:702 MERGE, queries/sweep.py:1267 MERGE
@@ -466,11 +476,11 @@ UNCLASSIFIED_ESCALATED_TABLES: dict[str, str] = {
     "CONTAINS_ENTITY": "no write call site anywhere in the repo (schema-only; B168 ARC exploration graph, never wired to a writer)",
     "CORRELATES_WITH": "no write call site anywhere in the repo (schema-only; B168 ARC exploration graph, never wired to a writer)",
     "CO_MOVES_WITH": "no write call site anywhere in the repo (schema-only; B168 ARC exploration graph, never wired to a writer)",
-    "DERIVED_FROM_FACT": "only OPTIONAL MATCH reads found (queries/arc.py); no writer anywhere in the repo",
     "EXECUTED_AS": "no write call site anywhere in the repo (Plan->ChunkExecution, B66/B69 active planning; never wired to a writer)",
-    "INFERRED_FROM": "only an OPTIONAL MATCH read found (queries/arc.py:328); no writer anywhere in the repo",
+    "INFERRED_FROM": "only an OPTIONAL MATCH read found (queries/arc.py:328); no writer anywhere in the repo — "
+                     "known, cross-repo-tracked gap (ARC_AGI side card A247): arc_confirm/contradict_hypothesis "
+                     "only ever link ENTITY_HYPOTHESIS, never INFERRED_FROM from a VictoryCondition",
     "OBSERVED_IN": "no write call site anywhere in the repo, despite being spec-named occurrence-family (B168 ARC exploration graph, never wired to a writer)",
-    "REQUIRES_ENTITY": "only MATCH reads found (queries/arc.py:240,251); no writer anywhere in the repo",
     "RESPONDS_TO": "no write call site anywhere in the repo (B168 ARC exploration graph, never wired to a writer)",
     "STRUCTURALLY_SIMILAR": "no write call site anywhere in the repo (schema-only; B168 ARC exploration graph, never wired to a writer)",
     "SUPPORTS_HYPOTHESIS": "no write call site anywhere in the repo (B88 hypothesis engine; never wired to a writer)",
