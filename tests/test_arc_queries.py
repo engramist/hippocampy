@@ -257,6 +257,10 @@ def arc_db():
         "value_status STRING, evidence_count INT32, observation_count INT32, "
         "falsified_count INT32, last_updated TIMESTAMP, PRIMARY KEY (fact_id))"
     )
+    # B430: arc_record_action_effect now also links DERIVED_FROM_FACT.
+    db.execute(
+        "CREATE REL TABLE DERIVED_FROM_FACT (FROM ActionFact TO ActionEffect, step INT32)"
+    )
     yield db
     db.close()
     shutil.rmtree(tmp, ignore_errors=True)

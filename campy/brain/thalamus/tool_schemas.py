@@ -835,6 +835,18 @@ TOOLS: list[dict] = [
                 "goal_id": {"type": "string"},
                 "new_confidence": {"type": "number"},
                 "has_meaningful_progress": {"type": "boolean", "default": False},
+                "entity_ref": {
+                    "type": ["integer", "null"],
+                    "description": "B430: optional. The GridEntity this goal update is "
+                                    "about, if known -- links it to the VictoryCondition "
+                                    "via REQUIRES_ENTITY, which arc_get_causal_path's "
+                                    "goal-aware branch needs to find a path.",
+                },
+                "requirement": {
+                    "type": ["string", "null"],
+                    "description": "B430: optional, only meaningful with entity_ref. "
+                                    "What this entity is required for/how, if known.",
+                },
             },
             "required": ["task_id", "goal_id", "new_confidence"],
         },

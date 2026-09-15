@@ -388,6 +388,15 @@ async def arc_record_action_effect(params: dict, db, config: dict) -> dict:
         tid=task_id,
         aid=action_id,
     )
+    # B430: this effect observation is one of the observations `fact_id`
+    # aggregates -- link it so arc_get_causal_path's mandatory DERIVED_FROM_FACT
+    # hop has something to traverse (previously never written anywhere).
+    await _gateway(db).run(
+        "arc.link_action_fact_derived_from_effect",
+        fid=fact_id,
+        eid=effect_id,
+        step=step,
+    )
 
     return {"ok": True, "status": "ok", "fact_id": fact_id, "effect_id": effect_id}
 
@@ -612,7 +621,18 @@ async def arc_update_goal_confidence(params: dict, db, config: dict) -> dict:
     silently no-op'd while still returning {"status": "ok"} --
     arc_get_goal_evidence's own lookup then always saw zero rows for that
     task. The write now creates the node if it doesn't already exist (see
-    arc.merge_victory_condition_confidence in queries/arc.py)."""
+    arc.merge_victory_condition_confidence in queries/arc.py).
+
+    B430: `entity_ref` is optional, additive, and off by default -- mirroring
+    record_rule/arc_confirm_hypothesis's own entity_ref convention. No prior
+    caller supplies it; passing it links the GridEntity this goal update is
+    about to the VictoryCondition via REQUIRES_ENTITY (schema.py: FROM
+    VictoryCondition TO GridEntity), which arc_get_causal_path's goal-aware
+    branch mandatorily traverses (previously never written anywhere -- the
+    tool was structurally incapable of returning path_exists=True for any
+    input). `requirement` is likewise optional -- schema.py declares a
+    `requirement` STRING column on this edge with no existing caller ever
+    having had a value for it; left NULL unless supplied, never guessed."""
     goal_id = params.get("goal_id")
     if not goal_id:
         return _error("goal_id is required")
@@ -634,6 +654,14 @@ async def arc_update_goal_confidence(params: dict, db, config: dict) -> dict:
         "arc.merge_victory_condition_confidence",
         gid=goal_id, tid=task_id, conf=gated_confidence,
     )
+
+    entity_ref = params.get("entity_ref")
+    if entity_ref is not None:
+        await _gateway(db).run(
+            "arc.link_entity_requires_victory_condition",
+            tid=task_id, eref=entity_ref, gid=goal_id,
+            requirement=params.get("requirement"),
+        )
 
     return {
         "status": "ok",
