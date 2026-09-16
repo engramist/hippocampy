@@ -1,4 +1,21 @@
-"""explore.py — named queries and frontier exploration query builder for explore_graph tool."""
+"""explore.py — named queries and frontier exploration query builder for explore_graph tool.
+
+B432 (2026-09-16): the `explore.start_node_*` queries' `sparql=` bodies used
+to `SELECT ?node` where `?node` was the subject variable itself — a bare URI
+string, not hydrated properties. `explore_graph.py`'s `_node_payload()`
+expects a dict (`node.get("_label")`, `.get(pk)`, etc.), so every real call
+crashed with `AttributeError` on a string, silently swallowed by a bare
+`except Exception: continue` — every start-node lookup "failed" and
+`explore_graph()` always reported "not found" against the shipped Oxigraph
+engine. There's no clean static SPARQL that says "select every declared
+column of whatever table this node is" (the column set varies per table),
+so `sparql=None` routes these through `gateway.py`'s
+`_handle_oxigraph_handler` `explore.start_node_*` branch instead, which
+calls `OxigraphClient.get_node(table, uri)` to hydrate the real properties.
+Frontier expansion (the actual multi-hop traversal) has its own, separate
+fix — see `explore_graph.py`'s `_execute_frontier_query` and
+`OxigraphClient.expand_frontier()`.
+"""
 
 from __future__ import annotations
 
@@ -26,14 +43,7 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in Concept table",
-        sparql="""
-            PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?node ?internal_id WHERE {
-                ?node a campy:Concept ;
-                      campy:concept_id ?id .
-                BIND(STR(?node) AS ?internal_id)
-            } LIMIT 1
-            """,
+        sparql=None,  # B432: hydrated by gateway.py's Python handler instead — see module docstring.
     ),
     NamedQuery(
         name="explore.start_node_decision",
@@ -41,14 +51,7 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in Decision table",
-        sparql="""
-            PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?node ?internal_id WHERE {
-                ?node a campy:Decision ;
-                      campy:decision_id ?id .
-                BIND(STR(?node) AS ?internal_id)
-            } LIMIT 1
-            """,
+        sparql=None,  # B432: hydrated by gateway.py's Python handler instead — see module docstring.
     ),
     NamedQuery(
         name="explore.start_node_constraint",
@@ -56,14 +59,7 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in Constraint table",
-        sparql="""
-            PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?node ?internal_id WHERE {
-                ?node a campy:Constraint ;
-                      campy:constraint_id ?id .
-                BIND(STR(?node) AS ?internal_id)
-            } LIMIT 1
-            """,
+        sparql=None,  # B432: hydrated by gateway.py's Python handler instead — see module docstring.
     ),
     NamedQuery(
         name="explore.start_node_requirement",
@@ -71,14 +67,7 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in Requirement table",
-        sparql="""
-            PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?node ?internal_id WHERE {
-                ?node a campy:Requirement ;
-                      campy:requirement_id ?id .
-                BIND(STR(?node) AS ?internal_id)
-            } LIMIT 1
-            """,
+        sparql=None,  # B432: hydrated by gateway.py's Python handler instead — see module docstring.
     ),
     NamedQuery(
         name="explore.start_node_actionitem",
@@ -86,14 +75,7 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in ActionItem table",
-        sparql="""
-            PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?node ?internal_id WHERE {
-                ?node a campy:ActionItem ;
-                      campy:action_item_id ?id .
-                BIND(STR(?node) AS ?internal_id)
-            } LIMIT 1
-            """,
+        sparql=None,  # B432: hydrated by gateway.py's Python handler instead — see module docstring.
     ),
     NamedQuery(
         name="explore.start_node_lesson",
@@ -101,14 +83,7 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in Lesson table",
-        sparql="""
-            PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?node ?internal_id WHERE {
-                ?node a campy:Lesson ;
-                      campy:lesson_id ?id .
-                BIND(STR(?node) AS ?internal_id)
-            } LIMIT 1
-            """,
+        sparql=None,  # B432: hydrated by gateway.py's Python handler instead — see module docstring.
     ),
     NamedQuery(
         name="explore.start_node_procedure",
@@ -116,14 +91,7 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in Procedure table",
-        sparql="""
-            PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?node ?internal_id WHERE {
-                ?node a campy:Procedure ;
-                      campy:procedure_id ?id .
-                BIND(STR(?node) AS ?internal_id)
-            } LIMIT 1
-            """,
+        sparql=None,  # B432: hydrated by gateway.py's Python handler instead — see module docstring.
     ),
     NamedQuery(
         name="explore.start_node_plan",
@@ -131,14 +99,7 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in Plan table",
-        sparql="""
-            PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?node ?internal_id WHERE {
-                ?node a campy:Plan ;
-                      campy:plan_id ?id .
-                BIND(STR(?node) AS ?internal_id)
-            } LIMIT 1
-            """,
+        sparql=None,  # B432: hydrated by gateway.py's Python handler instead — see module docstring.
     ),
     NamedQuery(
         name="explore.start_node_mainquest",
@@ -146,14 +107,7 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in MainQuest table",
-        sparql="""
-            PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?node ?internal_id WHERE {
-                ?node a campy:MainQuest ;
-                      campy:quest_id ?id .
-                BIND(STR(?node) AS ?internal_id)
-            } LIMIT 1
-            """,
+        sparql=None,  # B432: hydrated by gateway.py's Python handler instead — see module docstring.
     ),
     NamedQuery(
         name="explore.start_node_sidequest",
@@ -161,14 +115,7 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in SideQuest table",
-        sparql="""
-            PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?node ?internal_id WHERE {
-                ?node a campy:SideQuest ;
-                      campy:quest_id ?id .
-                BIND(STR(?node) AS ?internal_id)
-            } LIMIT 1
-            """,
+        sparql=None,  # B432: hydrated by gateway.py's Python handler instead — see module docstring.
     ),
     NamedQuery(
         name="explore.start_node_document",
@@ -176,14 +123,7 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in Document table",
-        sparql="""
-            PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?node ?internal_id WHERE {
-                ?node a campy:Document ;
-                      campy:document_id ?id .
-                BIND(STR(?node) AS ?internal_id)
-            } LIMIT 1
-            """,
+        sparql=None,  # B432: hydrated by gateway.py's Python handler instead — see module docstring.
     ),
     NamedQuery(
         name="explore.start_node_message",
@@ -191,14 +131,7 @@ EXPLORE_QUERIES: tuple[NamedQuery, ...] = (
         params=("id",),
         mutating=False,
         description="Lookup start node in Message table",
-        sparql="""
-            PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?node ?internal_id WHERE {
-                ?node a campy:Message ;
-                      campy:message_id ?id .
-                BIND(STR(?node) AS ?internal_id)
-            } LIMIT 1
-            """,
+        sparql=None,  # B432: hydrated by gateway.py's Python handler instead — see module docstring.
     ),
 )
 

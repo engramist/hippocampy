@@ -62,23 +62,41 @@ def _edge_payload(src_id: str, dst_id: str, rel_type: str, rel_conf: Any) -> Dic
 # _internal_id_literal and _build_frontier_query are centralized in queries.explore
 
 
-def _execute_frontier_query(db: KuzuClient, frontier_internal_ids: List[Dict[str, int]],
+def _execute_frontier_query(db: KuzuClient, frontier_internal_ids: List[Any],
                             edge_types: List[str], direction: str) -> List[Dict[str, Any]]:
+    """Kùzu's `internal_id` is a `{table, offset}` dict (its physical
+    row-id addressing); Oxigraph has no such concept, so on that engine
+    `frontier_internal_ids` holds the nodes' own URIs (strings) instead —
+    see `OxigraphClient.expand_frontier()` (B432). Both paths converge on
+    the same `raw_rows` shape below before the shared post-processing."""
     if not frontier_internal_ids:
         return []
 
-    query = _build_frontier_query(edge_types, direction, frontier_internal_ids)
     rows: List[Dict[str, Any]] = []
     try:
-        result = db.execute(query)
-        while result.has_next():
-            row = result.get_next()
-            if not row:
-                continue
-            current_node = row[0] if len(row) > 0 else {}
-            neighbor_node = row[1] if len(row) > 1 else {}
-            rel_type = str(row[2] or "") if len(row) > 2 else ""
-            rel_conf = row[3] if len(row) > 3 else 1.0
+        is_oxigraph = type(db).__name__ == "OxigraphClient" or (hasattr(db, "store") and not hasattr(db, "conn"))
+        if is_oxigraph:
+            raw_rows = db.expand_frontier(frontier_internal_ids, edge_types, direction)
+        else:
+            query = _build_frontier_query(edge_types, direction, frontier_internal_ids)
+            result = db.execute(query)
+            raw_rows = []
+            while result.has_next():
+                row = result.get_next()
+                if not row:
+                    continue
+                raw_rows.append({
+                    "current_node": row[0] if len(row) > 0 else {},
+                    "neighbor_node": row[1] if len(row) > 1 else {},
+                    "rel_type": str(row[2] or "") if len(row) > 2 else "",
+                    "rel_conf": row[3] if len(row) > 3 else 1.0,
+                })
+
+        for raw in raw_rows:
+            current_node = raw["current_node"]
+            neighbor_node = raw["neighbor_node"]
+            rel_type = raw["rel_type"]
+            rel_conf = raw["rel_conf"]
             current_payload = _node_payload(current_node)
             neighbor_payload = _node_payload(neighbor_node)
             if not current_payload["node_id"] or not neighbor_payload["node_id"]:

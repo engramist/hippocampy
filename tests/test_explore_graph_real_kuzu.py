@@ -1,22 +1,28 @@
 """
-tests/test_explore_graph_real_kuzu.py — Real-Kuzu regression tests for B280.
+tests/test_explore_graph_real_kuzu.py — Real-database regression tests for B280/B432.
 
 `_build_frontier_query` used to build one MATCH branch PER NODE TABLE (12
 of them) and UNION ALL them together. Kuzu 0.11.3's binder rejects that
 once enough differently-typed node tables are unioned together in one
 query - "Binder exception: a has data type NODE but NODE was expected" -
 confirmed against the real production schema (12 node tables, 92
-relationship types). The exception was caught by a bare
-`except Exception: _logger.exception(...)` and silently converted into an
-empty result, so every real `explore_graph()` call reported
-`exploration_complete: True` while visiting only the start node.
+relationship types) (B280). `tests/test_explore_graph.py`'s MockDB
+pattern-matches on query substrings and never validates real Cypher/SPARQL,
+so it cannot catch defects like this - the mock and the broken
+implementation produce identical output.
 
-`tests/test_explore_graph.py`'s MockDB pattern-matches on query substrings
-and never validates real Kuzu Cypher, so it could not catch this - the
-mock and the broken implementation produced identical output. These tests
-run the real Cypher against a real Kuzu database built with the full
-production schema (`init_schema`), the only way to reproduce this class of
-binder-level bug.
+B427/B432 (2026-09-16): migrated off KuzuClient onto the shipped
+OxigraphClient. Doing so surfaced a second, independent, more severe bug
+(B432): `explore_graph` was structurally broken against Oxigraph entirely
+- the start-node lookup returned bare URI strings instead of hydrated node
+properties (crashing `_node_payload()`, silently swallowed), and frontier
+expansion bypassed the gateway with Kùzu-only Cypher builtins
+(`INTERNAL_ID`, `id()`, `label()`) that have no SPARQL translation. Every
+real `explore_graph` call reported "start node not found" in production
+until both were fixed (`OxigraphClient.get_node()` / `.expand_frontier()`,
+`gateway.py`'s `explore.start_node_*` handler). These tests now validate
+that fix against the real shipped engine, with full production schema
+(`init_schema`) — the only way to reproduce either class of bug.
 """
 
 from __future__ import annotations
@@ -26,7 +32,8 @@ import tempfile
 
 import pytest
 
-from tests.kuzu_test_client import KuzuClient
+from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
+from campy.brain.hippocampus.graph.vector_store import mint_uri
 from campy.brain.hippocampus.schema import init_schema
 from campy.brain.thalamus.tools.explore_graph import explore_graph
 
@@ -43,7 +50,7 @@ def real_db():
     they can safely share one instance.
     """
     tmp = tempfile.mkdtemp(prefix="explore_graph_real_")
-    db = KuzuClient(f"{tmp}/db")
+    db = OxigraphClient(f"{tmp}/db")
     init_schema(db, _SEED_EXAMPLES_PATH, _EMBEDDING_MODEL)
     yield db
     db.close()
@@ -51,18 +58,11 @@ def real_db():
 
 
 def _concept(db, cid, text="node", confidence=0.9):
-    db.execute(
-        "CREATE (n:Concept {concept_id: $id, text_raw: $t, confidence: $c})",
-        {"id": cid, "t": text, "c": confidence},
-    )
+    db.write_node("Concept", {"concept_id": cid, "text_raw": text, "confidence": confidence})
 
 
 def _edge(db, rel, a, b):
-    db.execute(
-        f"MATCH (a:Concept {{concept_id: $a}}), (b:Concept {{concept_id: $b}}) "
-        f"CREATE (a)-[:{rel} {{confidence: 0.9}}]->(b)",
-        {"a": a, "b": b},
-    )
+    db.write_edge(rel, mint_uri("Concept", a), mint_uri("Concept", b), {"confidence": 0.9})
 
 
 class TestMultiHopTraversal:
@@ -199,21 +199,13 @@ class TestDirectionFiltering:
 
 class TestQueryBudget:
     async def test_depth_three_stays_within_query_budget(self, real_db):
-        """AC: a single explore_graph call at depth 3 issues <=30 Cypher
-        queries."""
-
-        class CountingDB:
-            def __init__(self, inner):
-                self._inner = inner
-                self.count = 0
-
-            def execute(self, query, params=None):
-                self.count += 1
-                return self._inner.execute(query, params)
-
-            def close(self):
-                self._inner.close()
-
+        """AC: a single explore_graph call at depth 3 issues a bounded
+        number of store-traversal calls. Oxigraph has no Cypher-string
+        `db.execute()` call to count (unlike the retired Kùzu path) — the
+        real per-hop cost unit on this engine is
+        `OxigraphClient.expand_frontier()` (one call per direction per
+        depth level, same call-count shape the old Kùzu-Cypher-per-call
+        budget was protecting against), so that's what's counted here."""
         db = real_db
         ids = [f"qb_{i}" for i in range(6)]
         for cid in ids:
@@ -221,11 +213,22 @@ class TestQueryBudget:
         for a, b in [(0, 1), (1, 2), (2, 3), (3, 4), (1, 5)]:
             _edge(db, "REQUIRES", ids[a], ids[b])
 
-        counting_db = CountingDB(db)
-        result = await explore_graph(
-            {"start_node_id": ids[0], "session_id": "t", "depth": 3, "edge_types": ["REQUIRES"]},
-            counting_db, {},
-        )
+        call_count = 0
+        real_expand_frontier = db.expand_frontier
+
+        def counting_expand_frontier(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return real_expand_frontier(*args, **kwargs)
+
+        db.expand_frontier = counting_expand_frontier
+        try:
+            result = await explore_graph(
+                {"start_node_id": ids[0], "session_id": "t", "depth": 3, "edge_types": ["REQUIRES"]},
+                db, {},
+            )
+        finally:
+            del db.expand_frontier
 
         assert result["exploration_complete"] is True
-        assert counting_db.count <= 30, f"explore_graph issued {counting_db.count} queries"
+        assert call_count <= 30, f"explore_graph issued {call_count} expand_frontier calls"

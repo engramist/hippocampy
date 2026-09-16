@@ -812,6 +812,19 @@ class GraphGateway:
                 }))
             return res
 
+        if name.startswith("explore.start_node_"):
+            # B432: the sparql= bodies for these queries used to SELECT the
+            # subject variable itself (a bare URI string) as "node" — real
+            # node property hydration has no clean way to express "give me
+            # every declared column of whatever table this node happens to
+            # be" as static SPARQL text, so this is a Python handler instead.
+            table = _resolve_node_table(name.replace("explore.start_node_", ""))
+            uri = mint_uri(table, params["id"])
+            node = self._client.get_node(table, uri)
+            if node is None:
+                return []
+            return [RowDict({"node": node, "internal_id": uri})]
+
         raise NotImplementedError(f"No Python handler or SPARQL translation implemented for NamedQuery {name!r}")
 
     def _handle_thalamus_bundle(self, name: str, params: dict[str, Any]) -> list[Any]:
