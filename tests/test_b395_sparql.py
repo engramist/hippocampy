@@ -32,6 +32,14 @@ def test_b395_query_counts():
 
 @pytest.mark.parametrize("query", EXPLORE_QUERIES, ids=lambda q: q.name)
 def test_explore_queries_sparql(store, query):
+    if query.name.startswith("explore.start_node_"):
+        # B432: no static SPARQL can hydrate "every declared column of
+        # whatever table this node is" (the column set varies per table) —
+        # handled via OxigraphClient.get_node() through gateway.py's
+        # explore.start_node_* Python handler, sparql=None.
+        assert query.sparql is None
+        return
+
     assert query.sparql is not None, f"{query.name} must have a sparql representation"
     store.query(query.sparql)
 

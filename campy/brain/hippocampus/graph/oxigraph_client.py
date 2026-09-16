@@ -1170,6 +1170,143 @@ class OxigraphClient:
                 return q.subject.value
         return None
 
+    def _hydrate_node_columns(self, uri: str, table: str) -> dict[str, Any]:
+        """Read every declared `table` column's value for `uri` directly off
+        the store (embeddings excluded — see below). Shared by every read
+        path that needs a node's full property dict (vector_search,
+        fts_search, get_node/get_node_generic)."""
+        cols = NODE_COLUMNS.get(table, {})
+        node_props: dict[str, Any] = {col: None for col in cols}
+        for q in self.store.quads_for_pattern(ox.NamedNode(uri), None, None, None):
+            pred_uri = q.predicate.value
+            if pred_uri.startswith(CAMPY_NS):
+                col_name = pred_uri[len(CAMPY_NS):]
+                if col_name in cols:
+                    val = _term_to_python(q.object)
+                    if cols[col_name] == "STRING[]":
+                        if node_props[col_name] is None:
+                            node_props[col_name] = []
+                        node_props[col_name].append(val)
+                    else:
+                        node_props[col_name] = val
+        emb_col = next((c for c, t in cols.items() if t == "FLOAT[384]"), None)
+        if emb_col and node_props.get(emb_col) is None and self.vector_store is not None:
+            node_props[emb_col] = self.vector_store.get_vector(uri)
+        return node_props
+
+    def get_node(self, table: str, uri: str) -> "RowDict | None":
+        """B432: hydrate a `table`-typed node's full properties by URI.
+        Returns None if no `a campy:{table}` triple exists for this URI.
+
+        Kùzu's `RETURN n AS node` returns a dict that also carries `_label`
+        (the node's table) and `_id` (its internal id, used by
+        explore_graph.py to seed the next traversal hop) — this reproduces
+        that same shape for the Oxigraph path, using the URI itself as the
+        `_id` (Oxigraph nodes are already globally addressable by URI; there
+        is no Kùzu-style physical offset to reproduce)."""
+        type_pred = ox.NamedNode(RDF_NS + "type")
+        table_node = ox.NamedNode(CAMPY_NS + table)
+        subj = ox.NamedNode(uri)
+        if not any(True for _ in self.store.quads_for_pattern(subj, type_pred, table_node, None)):
+            return None
+        node_props = self._hydrate_node_columns(uri, table)
+        node_props["_label"] = table
+        node_props["_id"] = uri
+        return RowDict(node_props)
+
+    def get_node_generic(self, uri: str) -> "RowDict | None":
+        """B432: like `get_node()`, but discovers `uri`'s table from its own
+        `a campy:<Table>` triple instead of requiring the caller to already
+        know it — needed when traversing an edge to a neighbor whose table
+        isn't known ahead of time (frontier expansion can hop between any
+        of the traversable node tables)."""
+        type_pred = ox.NamedNode(RDF_NS + "type")
+        subj = ox.NamedNode(uri)
+        table = None
+        for q in self.store.quads_for_pattern(subj, type_pred, None, None):
+            obj_uri = getattr(q.object, "value", None)
+            if obj_uri and obj_uri.startswith(CAMPY_NS):
+                candidate = obj_uri[len(CAMPY_NS):]
+                if candidate in NODE_COLUMNS:
+                    table = candidate
+                    break
+        if table is None:
+            return None
+        return self.get_node(table, uri)
+
+    def _edge_confidence(self, subject_uri: str, table: str, object_uri: str) -> float:
+        """B432: best-effort confidence lookup for a structurally-found edge
+        during frontier expansion. Only `star`-reified edges carry a
+        `confidence` quoted-triple property; `plain` edges never have
+        properties at all (by construction — see `write_edge`), so this
+        always falls back to 1.0 for those, matching the Kùzu path's own
+        `coalesce(r.confidence, 1.0)`."""
+        try:
+            rows = list(self.store.query(
+                f'SELECT ?conf WHERE {{ '
+                f'<< <{subject_uri}> <{CAMPY_NS}{table}> <{object_uri}> >> '
+                f'<{CAMPY_NS}confidence> ?conf . }} LIMIT 1'
+            ))
+            if rows and rows[0]["conf"] is not None:
+                return float(rows[0]["conf"].value)
+        except Exception:
+            pass
+        return 1.0
+
+    def expand_frontier(
+        self, frontier_uris: list[str], edge_types: list[str], direction: str,
+    ) -> list[dict[str, Any]]:
+        """B432: one-hop expansion from `frontier_uris` across all
+        `edge_types`, in a single `direction` ('outgoing' or 'incoming').
+
+        Kùzu's frontier query (`queries/explore.py`'s retired
+        `build_frontier_query`) builds one runtime-parameterized
+        `[:TYPE1|TYPE2|...]` relationship-type union per call — SPARQL has
+        no equivalent for a relationship-type union chosen at call time, so
+        this walks the store directly via `quads_for_pattern`. That's safe
+        structurally because `write_edge` always asserts an edge's *plain*
+        triple regardless of its reification class (plain/star/occurrence,
+        see `write_edge`'s `plain_triple` line, written unconditionally in
+        all three branches) — a bare triple-pattern scan finds every edge
+        of a given type regardless of how (or whether) its properties are
+        stored.
+        """
+        rows: list[dict[str, Any]] = []
+        for uri in frontier_uris:
+            subj = ox.NamedNode(uri)
+            current_node = self.get_node_generic(uri)
+            if current_node is None:
+                continue
+            for edge_type in edge_types:
+                pred = ox.NamedNode(f"{CAMPY_NS}{edge_type}")
+                if direction == "outgoing":
+                    quads = self.store.quads_for_pattern(subj, pred, None, None)
+                    for q in quads:
+                        neighbor_uri = q.object.value
+                        neighbor_node = self.get_node_generic(neighbor_uri)
+                        if neighbor_node is None:
+                            continue
+                        rows.append({
+                            "current_node": current_node,
+                            "neighbor_node": neighbor_node,
+                            "rel_type": edge_type,
+                            "rel_conf": self._edge_confidence(uri, edge_type, neighbor_uri),
+                        })
+                elif direction == "incoming":
+                    quads = self.store.quads_for_pattern(None, pred, subj, None)
+                    for q in quads:
+                        neighbor_uri = q.subject.value
+                        neighbor_node = self.get_node_generic(neighbor_uri)
+                        if neighbor_node is None:
+                            continue
+                        rows.append({
+                            "current_node": current_node,
+                            "neighbor_node": neighbor_node,
+                            "rel_type": edge_type,
+                            "rel_conf": self._edge_confidence(neighbor_uri, edge_type, uri),
+                        })
+        return rows
+
     def vector_search(
         self,
         table_name: str,
@@ -1192,25 +1329,9 @@ class OxigraphClient:
         if not matches:
             return []
 
-        cols = NODE_COLUMNS.get(table_name, {})
         rows = []
         for uri, score in matches:
-            node_props = {col: None for col in cols}
-            for q in self.store.quads_for_pattern(ox.NamedNode(uri), None, None, None):
-                pred_uri = q.predicate.value
-                if pred_uri.startswith(CAMPY_NS):
-                    col_name = pred_uri[len(CAMPY_NS):]
-                    if col_name in cols:
-                        val = _term_to_python(q.object)
-                        if cols[col_name] == "STRING[]":
-                            if node_props[col_name] is None:
-                                node_props[col_name] = []
-                            node_props[col_name].append(val)
-                        else:
-                            node_props[col_name] = val
-            emb_col = next((c for c, t in cols.items() if t == "FLOAT[384]"), None)
-            if emb_col and node_props.get(emb_col) is None:
-                node_props[emb_col] = self.vector_store.get_vector(uri)
+            node_props = self._hydrate_node_columns(uri, table_name)
             rows.append({"node": RowDict(node_props), "score": score})
         return rows
 
