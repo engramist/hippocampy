@@ -1,13 +1,15 @@
 """
-tests/test_lexical_fallback_fts_real_kuzu.py — Real-Kuzu regression tests for B284.
+tests/test_lexical_fallback_fts_real_kuzu.py — Real-database regression tests for B284.
 
-The 2026-08-03 audit found that current_truth's FTS branch (used whenever
-the pinned kuzu==0.11.3 build has the FTS extension loaded - true in this
-environment) has NO recency window at all: only the CONTAINS fallback
-branch filters on created_at, and it never runs when FTS is available.
-tests/test_lexical_fallback.py's LexicalCaptureDB mock has no has_fts
-attribute, so it structurally can never exercise the FTS branch - these
-tests run against a real Kuzu DB with a real FTS index instead.
+The 2026-08-03 audit found that current_truth's FTS branch has NO recency
+window at all: only the CONTAINS fallback branch filters on created_at, and
+it never runs when FTS is available. tests/test_lexical_fallback.py's
+LexicalCaptureDB mock has no has_fts attribute, so it structurally can never
+exercise the FTS branch - these tests run against a real OxigraphClient with
+a real sqlite-vec FTS5 index instead (B427: migrated off KuzuClient — this DB
+now has a genuine has_fts()/create_fts_index()/fts_search() analog implemented
+directly in oxigraph_client.py, and current_truth duck-types both engines
+identically, so this is the same regression test against the shipped path).
 """
 
 from __future__ import annotations
@@ -19,26 +21,13 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 import campy.brain.thalamus.tools as tools_mod
-from tests.kuzu_test_client import KuzuClient
-
-_MESSAGE_DDL = """
-    message_id STRING,
-    text_raw STRING,
-    role STRING,
-    confidence DOUBLE,
-    confidence_low BOOLEAN,
-    pathway_strength DOUBLE,
-    archived BOOLEAN,
-    created_at TIMESTAMP,
-    PRIMARY KEY (message_id)
-"""
+from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 
 
 @pytest.fixture()
 def real_db(monkeypatch):
     tmp = tempfile.mkdtemp(prefix="lexical_fts_real_")
-    db = KuzuClient(f"{tmp}/db")
-    db.execute(f"CREATE NODE TABLE Message({_MESSAGE_DDL})")
+    db = OxigraphClient(f"{tmp}/db")
     monkeypatch.setattr(
         "campy.brain.hippocampus.graph.embeddings.embed",
         lambda text, model_name=None: [0.1] * 384,
@@ -48,14 +37,13 @@ def real_db(monkeypatch):
     shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _create_message(db: KuzuClient, message_id: str, text: str, age_days: float) -> None:
+def _create_message(db: OxigraphClient, message_id: str, text: str, age_days: float, archived: bool = False) -> None:
     created_at = (datetime.now(timezone.utc) - timedelta(days=age_days)).isoformat()
-    db.execute(
-        "CREATE (m:Message {message_id: $id, text_raw: $t, role: 'user', "
-        "confidence: 0.5, confidence_low: true, pathway_strength: 0.5, "
-        "archived: false, created_at: timestamp($c)})",
-        {"id": message_id, "t": text, "c": created_at},
-    )
+    db.write_node("Message", {
+        "message_id": message_id, "text_raw": text, "role": "user",
+        "confidence": 0.5, "confidence_low": True, "pathway_strength": 0.5,
+        "archived": archived, "created_at": created_at,
+    })
 
 
 class TestFtsSearchCutoff:
@@ -93,12 +81,7 @@ class TestFtsSearchCutoff:
         if not db.has_fts():
             pytest.skip("FTS extension not available in this environment")
         _create_message(db, "m-active", "zephyr_token active", age_days=1)
-        db.execute(
-            "CREATE (m:Message {message_id: 'm-archived', text_raw: 'zephyr_token archived', "
-            "role: 'user', confidence: 0.5, confidence_low: true, pathway_strength: 0.5, "
-            "archived: true, created_at: timestamp($c)})",
-            {"c": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()},
-        )
+        _create_message(db, "m-archived", "zephyr_token archived", age_days=1, archived=True)
         db.create_fts_index("Message", "message_fts_idx", ["text_raw"])
         cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
 

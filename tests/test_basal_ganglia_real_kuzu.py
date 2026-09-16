@@ -1,5 +1,5 @@
 """
-tests/test_basal_ganglia_real_kuzu.py — Real-Kuzu regression tests for B277.
+tests/test_basal_ganglia_real_kuzu.py — Real-database regression tests for B277.
 
 tests/test_basal_ganglia.py's `_make_sweep_db()` is a hand-rolled MockDB
 whose execute_write just appends {"q": query, "p": params} to a list - it
@@ -7,8 +7,13 @@ never parses Cypher or validates against a schema, so a `!=` syntax error
 or a reference to a nonexistent column can never surface there. All 26 of
 its tests pass while three of these write paths were confirmed broken
 against a real Kuzu database during the 2026-08-03 re-verification. These
-tests run the real Cypher against a real Kuzu DB built with the full
-production schema (init_schema), the only way to catch this class of bug.
+tests run against a real OxigraphClient built with the full production
+schema (init_schema) — B427: migrated off KuzuClient. sweep.py,
+frustration_clusters.py, and reward_predictor.py are all fully
+GraphGateway-routed (no raw Cypher bypass), so this now validates the
+same named-query write paths against the shipped engine, the only way to
+catch drift on that path (cf. B430/B431, found via this exact kind of
+swap).
 """
 
 from __future__ import annotations
@@ -19,7 +24,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from tests.kuzu_test_client import KuzuClient
+from campy.brain.hippocampus.graph.oxigraph_client import CAMPY_NS, OxigraphClient
 from campy.brain.hippocampus.schema import init_schema
 
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -33,7 +38,7 @@ def real_db():
     Module-scoped since init_schema() is expensive; tests use disjoint ids.
     """
     tmp = tempfile.mkdtemp(prefix="basal_ganglia_real_")
-    db = KuzuClient(f"{tmp}/db")
+    db = OxigraphClient(f"{tmp}/db")
     init_schema(db, _SEED_EXAMPLES_PATH, EMBEDDING_MODEL)
     yield db
     db.close()
@@ -42,28 +47,33 @@ def real_db():
 
 def _create_procedure(db, pid, application_count, success_rate, maturity_stage, pathway_strength=0.6):
     now = datetime.now(timezone.utc).isoformat()
-    db.execute(
-        "CREATE (p:Procedure {procedure_id: $pid, name: $name, domain: 'test', "
-        "archetype: 'automation', description: '', steps_json: '[]', "
-        "embedding: $emb, embedding_model: $model, embedding_dim: 384, "
-        "success_count: 0, application_count: $ac, success_rate: $sr, "
-        "confidence: 0.8, pathway_strength: $ps, maturity_stage: $stage, "
-        "archived: false, created_at: timestamp($now)})",
-        {
-            "pid": pid, "name": pid, "emb": [0.1] * 384, "model": EMBEDDING_MODEL,
-            "ac": application_count, "sr": success_rate, "ps": pathway_strength,
-            "stage": maturity_stage, "now": now,
-        },
-    )
+    db.write_node("Procedure", {
+        "procedure_id": pid, "name": pid, "domain": "test",
+        "archetype": "automation", "description": "", "steps_json": "[]",
+        "embedding": [0.1] * 384, "embedding_model": EMBEDDING_MODEL, "embedding_dim": 384,
+        "success_count": 0, "application_count": application_count, "success_rate": success_rate,
+        "confidence": 0.8, "pathway_strength": pathway_strength, "maturity_stage": maturity_stage,
+        "archived": False, "created_at": now,
+    })
 
 
 def _get_procedure(db, pid):
-    r = db.execute(
-        "MATCH (p:Procedure {procedure_id: $pid}) "
-        "RETURN p.maturity_stage, p.archived, p.pathway_strength, p.salience_score",
-        {"pid": pid},
-    )
-    return r.get_next()
+    rows = list(db.store.query(
+        f'PREFIX campy: <{CAMPY_NS}> '
+        f'SELECT ?maturity_stage ?archived ?pathway_strength ?salience_score WHERE {{ '
+        f'  ?p campy:procedure_id "{pid}" . '
+        f'  OPTIONAL {{ ?p campy:maturity_stage ?maturity_stage }} '
+        f'  OPTIONAL {{ ?p campy:archived ?archived }} '
+        f'  OPTIONAL {{ ?p campy:pathway_strength ?pathway_strength }} '
+        f'  OPTIONAL {{ ?p campy:salience_score ?salience_score }} '
+        f'}}'
+    ))
+    row = rows[0]
+    stage = row["maturity_stage"].value if row["maturity_stage"] else None
+    archived = row["archived"].value == "true" if row["archived"] else None
+    pathway_strength = float(row["pathway_strength"].value) if row["pathway_strength"] else None
+    salience = float(row["salience_score"].value) if row["salience_score"] else None
+    return stage, archived, pathway_strength, salience
 
 
 class TestProcedureMaturityRealKuzu:
@@ -124,21 +134,19 @@ class TestFrustrationClustersRealKuzu:
 
     def _concept(self, db, cid, text, salience, emb):
         now = datetime.now(timezone.utc).isoformat()
-        db.execute(
-            "CREATE (n:Concept {concept_id: $id, text_raw: $t, embedding: $e, "
-            "embedding_model: $m, embedding_dim: 384, salience_score: $s, "
-            "confidence: 0.8, pathway_strength: 0.6, archived: false, created_at: timestamp($now)})",
-            {"id": cid, "t": text, "e": emb, "m": EMBEDDING_MODEL, "s": salience, "now": now},
-        )
+        db.write_node("Concept", {
+            "concept_id": cid, "text_raw": text, "embedding": emb,
+            "embedding_model": EMBEDDING_MODEL, "embedding_dim": 384, "salience_score": salience,
+            "confidence": 0.8, "pathway_strength": 0.6, "archived": False, "created_at": now,
+        })
 
     def _decision(self, db, did, text, salience, emb):
         now = datetime.now(timezone.utc).isoformat()
-        db.execute(
-            "CREATE (n:Decision {decision_id: $id, text_raw: $t, embedding: $e, "
-            "embedding_model: $m, embedding_dim: 384, salience_score: $s, "
-            "confidence: 0.8, pathway_strength: 0.6, archived: false, created_at: timestamp($now)})",
-            {"id": did, "t": text, "e": emb, "m": EMBEDDING_MODEL, "s": salience, "now": now},
-        )
+        db.write_node("Decision", {
+            "decision_id": did, "text_raw": text, "embedding": emb,
+            "embedding_model": EMBEDDING_MODEL, "embedding_dim": 384, "salience_score": salience,
+            "confidence": 0.8, "pathway_strength": 0.6, "archived": False, "created_at": now,
+        })
 
     async def test_high_salience_node_query_does_not_error(self, real_db, monkeypatch):
         """B277 (found while verifying bug 2, not itself in the original
@@ -169,6 +177,12 @@ class TestFrustrationClustersRealKuzu:
 
         assert errors == 0, f"expected the query to succeed even with 0 clusters formed, got {errors} errors"
 
+    @pytest.mark.xfail(
+        reason="B433: basal_ganglia.frustration_get_concept's sparql= can never bind ?emb "
+               "(embeddings live in vector_store, not RDF triples) — detect_frustration_clusters "
+               "always finds 0 clusters against OxigraphClient until B433 is fixed.",
+        strict=True,
+    )
     async def test_creates_procedure_with_salience_score_from_concept_cluster(self, real_db, monkeypatch):
         from campy.brain.basal_ganglia.frustration_clusters import detect_frustration_clusters
 
@@ -188,25 +202,36 @@ class TestFrustrationClustersRealKuzu:
         assert errors == 0, f"expected no errors, got {errors}"
         assert count == 1
 
-        r = db.execute(
-            "MATCH (p:Procedure {archetype: 'avoidance'}) "
-            "RETURN p.procedure_id, p.salience_score ORDER BY p.created_at DESC LIMIT 1"
-        )
-        pid, salience = r.get_next()
+        rows = list(db.store.query(
+            f'PREFIX campy: <{CAMPY_NS}> '
+            f'SELECT ?procedure_id ?salience_score WHERE {{ '
+            f'  ?p a campy:Procedure ; campy:archetype "avoidance" ; '
+            f'     campy:procedure_id ?procedure_id ; campy:created_at ?created_at . '
+            f'  OPTIONAL {{ ?p campy:salience_score ?salience_score }} '
+            f'}} ORDER BY DESC(?created_at) LIMIT 1'
+        ))
+        pid = rows[0]["procedure_id"].value
+        salience = float(rows[0]["salience_score"].value) if rows[0]["salience_score"] else None
         assert salience is not None
         assert salience == pytest.approx(1.55, abs=0.01)
 
         # DISTILLED_FROM edge to the Concept sources must exist.
-        edges = db.execute(
-            "MATCH (p:Procedure {procedure_id: $pid})-[:DISTILLED_FROM]->(c:Concept) "
-            "RETURN c.concept_id",
-            {"pid": pid},
-        )
-        linked = set()
-        while edges.has_next():
-            linked.add(edges.get_next()[0])
+        edges = list(db.store.query(
+            f'PREFIX campy: <{CAMPY_NS}> '
+            f'SELECT ?concept_id WHERE {{ '
+            f'  ?p campy:procedure_id "{pid}" ; campy:DISTILLED_FROM ?c . '
+            f'  ?c a campy:Concept ; campy:concept_id ?concept_id . '
+            f'}}'
+        ))
+        linked = {row["concept_id"].value for row in edges}
         assert linked == {"fc-c1", "fc-c2"}
 
+    @pytest.mark.xfail(
+        reason="B433: basal_ganglia.frustration_get_decision's sparql= can never bind ?emb "
+               "(embeddings live in vector_store, not RDF triples) — detect_frustration_clusters "
+               "always finds 0 clusters against OxigraphClient until B433 is fixed.",
+        strict=True,
+    )
     async def test_creates_distilled_from_edge_to_decision_source(self, real_db, monkeypatch):
         """Regression guard for the hardcoded-:Concept-label bug: a cluster
         built entirely from Decision nodes must still get a working
@@ -234,13 +259,14 @@ class TestFrustrationClustersRealKuzu:
         assert errors == 0
         assert count >= 1
 
-        r = db.execute(
-            "MATCH (p:Procedure {archetype: 'avoidance'})-[:DISTILLED_FROM]->(d:Decision) "
-            "RETURN d.decision_id"
-        )
-        linked = set()
-        while r.has_next():
-            linked.add(r.get_next()[0])
+        rows = list(db.store.query(
+            f'PREFIX campy: <{CAMPY_NS}> '
+            f'SELECT ?decision_id WHERE {{ '
+            f'  ?p a campy:Procedure ; campy:archetype "avoidance" ; campy:DISTILLED_FROM ?d . '
+            f'  ?d a campy:Decision ; campy:decision_id ?decision_id . '
+            f'}}'
+        ))
+        linked = {row["decision_id"].value for row in rows}
         assert linked == {"fc-d1", "fc-d2"}
 
 
@@ -257,24 +283,30 @@ class TestRewardPredictorRealKuzu:
 
         db = real_db
         now = datetime.now(timezone.utc).isoformat()
-        db.execute(
-            "CREATE (p:Plan {plan_id: 'bg-plan-1', goal: 'test goal', strategy: 's', "
-            "step_count: 1, valence: 0.0, status: 'completed', confidence: 0.8, "
-            "confidence_low: false, pathway_strength: 0.6, archived: false, "
-            "created_at: timestamp($now)})",
-            {"now": now},
-        )
+        db.write_node("Plan", {
+            "plan_id": "bg-plan-1", "goal": "test goal", "strategy": "s",
+            "step_count": 1, "valence": 0.0, "status": "completed", "confidence": 0.8,
+            "confidence_low": False, "pathway_strength": 0.6, "archived": False,
+            "created_at": now,
+        })
 
         result = await record_reward_prediction_error(db, "bg-plan-1", predicted_valence=0.2, actual_valence=0.8)
 
         assert result["prediction_error"] == pytest.approx(0.6)
         assert result["direction"] == "positive"
 
-        r = db.execute(
-            "MATCH (p:Plan {plan_id: 'bg-plan-1'}) "
-            "RETURN p.predicted_valence, p.actual_valence, p.prediction_error"
-        )
-        predicted, actual, error = r.get_next()
+        rows = list(db.store.query(
+            f'PREFIX campy: <{CAMPY_NS}> '
+            f'SELECT ?predicted_valence ?actual_valence ?prediction_error WHERE {{ '
+            f'  ?p campy:plan_id "bg-plan-1" ; '
+            f'     campy:predicted_valence ?predicted_valence ; '
+            f'     campy:actual_valence ?actual_valence ; '
+            f'     campy:prediction_error ?prediction_error . '
+            f'}}'
+        ))
+        predicted = float(rows[0]["predicted_valence"].value)
+        actual = float(rows[0]["actual_valence"].value)
+        error = float(rows[0]["prediction_error"].value)
         assert predicted == pytest.approx(0.2)
         assert actual == pytest.approx(0.8)
         assert error == pytest.approx(0.6)

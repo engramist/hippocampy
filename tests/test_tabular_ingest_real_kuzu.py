@@ -1,13 +1,15 @@
 """
-tests/test_tabular_ingest_real_kuzu.py — Real-Kuzu regression tests for B251.
+tests/test_tabular_ingest_real_kuzu.py — Real-database regression tests for B251.
 
 `tests/test_tabular_ingest.py` is 100% mock-based (`db.execute = MagicMock`),
-per B250's own audit finding — it never exercises real Kuzu Cypher or the
+per B250's own audit finding — it never exercises a real database or the
 real SQLite tabular store. These tests run `ingest_tabular()` /
-`ingest_tabular_from_content()` against a real temp Kuzu DB with the real
-`Dataset` node schema, and against the real on-disk tabular store, so a
-column-name or type mismatch (like the TIMESTAMP-cast bug B250 already
-found once via this same style of test) would actually be caught.
+`ingest_tabular_from_content()` against a real temp OxigraphClient (B427:
+migrated off KuzuClient — tabular_ingest.py is fully GraphGateway-routed,
+no raw Cypher, so this validates the same real writes against the shipped
+engine) and against the real on-disk tabular store, so a column-name or
+type mismatch (like the TIMESTAMP-cast bug B250 already found once via
+this same style of test) would actually be caught.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ import tempfile
 
 import pytest
 
-from tests.kuzu_test_client import KuzuClient
+from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 from campy.brain.sensory_cortex import tabular_ingest
 from campy.brain.sensory_cortex.tabular_store import get_table_summary
 from campy.paths import tables_dir
@@ -29,35 +31,11 @@ CONFIG = {
     "tabular": {"multi_sheet_strategy": "per_sheet"},
 }
 
-_DATASET_DDL = """
-    dataset_id STRING,
-    name STRING,
-    description STRING,
-    embedding FLOAT[384],
-    embedding_model STRING,
-    embedding_dim INT32,
-    storage_uri STRING,
-    schema_json STRING,
-    row_count INT64,
-    column_count INT32,
-    source_format STRING,
-    content_hash STRING,
-    source_key STRING,
-    confidence DOUBLE,
-    confidence_low BOOLEAN,
-    pathway_strength DOUBLE,
-    archived BOOLEAN,
-    created_at TIMESTAMP,
-    last_accessed_at TIMESTAMP,
-    PRIMARY KEY (dataset_id)
-"""
-
 
 @pytest.fixture()
 def real_db(monkeypatch):
     tmp = tempfile.mkdtemp(prefix="tabular_ingest_real_")
-    db = KuzuClient(f"{tmp}/db")
-    db.execute(f"CREATE NODE TABLE Dataset({_DATASET_DDL})")
+    db = OxigraphClient(f"{tmp}/db")
     monkeypatch.setattr(
         "campy.brain.hippocampus.graph.embeddings.embed",
         lambda text, model_name=None: [0.0] * 384,
