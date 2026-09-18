@@ -53,14 +53,14 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B329 | CRITICAL: npm postinstall Runs Unpinned `curl \| sh` From Mutable `main` Branch | P0 | complete — merged via PR #56 (2026-08-20) | TBD | TBD | - | backlog/B329.md |
 | B330 | CRITICAL: Client-Supplied Header Outranks Operator's Workspace Map; No Scope Tiering | P0 | complete — merged via PR #55 (2026-08-20) | TBD | TBD | - | backlog/B330.md |
 | B343 | Root-Cause B342's Leak: Real Heap Profiling on a Grown brain_daemon.py Process | P0 | complete — superseded by B342's actual resolution, not this card's proposed method | TBD | TBD | - | backlog/B343.md |
-| B374 | DELTA: Two-Lane Thalamic Routing & Budget-Gated Pressure Relief Valve (`campy ask`) | P0 | ready | TBD | TBD | backlog/plans/B-374-two-lane-thalamic-compressor.md | backlog/B374.md |
+| B374 | DELTA: Two-Lane Thalamic Routing & Budget-Gated Pressure Relief Valve (`campy ask`) | P0 | complete — merged #155, tracker was stale | TBD | TBD | backlog/plans/B-374-two-lane-thalamic-compressor.md | backlog/B374.md |
 | B376 | Eliminate spaCy/PyTorch Baseline Memory Floor in Brain Daemon | P0 | consolidated into B384 | TBD | TBD | - | backlog/B376.md |
 | B377 | Engine Migration: Kùzu to Embedded Oxigraph (RDF-star) + sqlite-vec Architecture | P0 | consolidated into B384 | TBD | TBD | - | backlog/B377.md |
-| B380 | Non-Provisional Patent Claim Verification & Audit Evidence Pack | P0 | ready | TBD | TBD | backlog/plans/B-380-patent-evidence-pack.md | backlog/B380.md |
+| B380 | Non-Provisional Patent Claim Verification & Audit Evidence Pack | P0 | complete — merged #153, tracker was stale | TBD | TBD | backlog/plans/B-380-patent-evidence-pack.md | backlog/B380.md |
 | B384 | PARENT: Featherweight Engine Foundation: Pure ONNX Ingestion + Oxigraph (RDF-star) + sqlite-vec Architecture | P0 | superseded by B387, B389, B390, B391-B396, B397 | TBD | TBD | backlog/plans/B-384-featherweight-engine-foundation.md | backlog/B384.md |
 | B385 | Cloud Deployment Foundation & Multi-Tenant Agent Memory Service (AWS ECS/Fargate) | P0 | complete | TBD | TBD | backlog/plans/B-385-cloud-multi-tenant-service.md | backlog/B385.md |
-| B386 | GraphGateway Chokepoint Completion & Raw-Cypher Ratchet to Zero | P0 | ready | TBD | TBD | backlog/plans/B-386-gateway-chokepoint-completion.md | backlog/B386.md |
-| B387 | Torch-Free Ingestion Plane: Replace spaCy NER/Parse with ONNX | P0 | ready | TBD | TBD | - | backlog/B387.md |
+| B386 | GraphGateway Chokepoint Completion & Raw-Cypher Ratchet to Zero | P0 | complete — subsumed by B389/B397 cutover, tracker was stale | TBD | TBD | backlog/plans/B-386-gateway-chokepoint-completion.md | backlog/B386.md |
+| B387 | Torch-Free Ingestion Plane: Replace spaCy NER/Parse with ONNX | P0 | superseded by B400 (done) | TBD | TBD | - | backlog/B387.md |
 | B389 | OxigraphClient: RDF-star Store & Edge Reification Classification | P0 | complete | TBD | TBD | - | backlog/B389.md |
 | B390 | sqlite-vec Vector Store & FTS5 Lexical Index | P0 | complete | TBD | TBD | - | backlog/B390.md |
 | B391 | SPARQL Translation Batch: provenance (196 queries) | P0 | complete | TBD | TBD | - | backlog/B391.md |
