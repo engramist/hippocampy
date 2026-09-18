@@ -1,33 +1,18 @@
 import pytest
 import json
 from pathlib import Path
-from tests.kuzu_test_client import KuzuClient
-from campy.brain.hippocampus.schema import NODE_TABLES, REL_TABLES
+from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 from campy.brain.thalamus.tools import TOOL_HANDLERS
 
-def _init_arc_schema(db: KuzuClient) -> None:
-    tables = [
-        "ArcMechanic", "ArcActionPattern", "ArcEffectPattern", 
-        "ArcPrecondition", "ArcFailureMode", "ArcRecoveryPolicy"
-    ]
-    for table in tables:
-        db.execute(f"CREATE NODE TABLE IF NOT EXISTS {table} ({NODE_TABLES[table]})")
-    for ddl in REL_TABLES:
-        if any(rel in ddl for rel in (
-            "ARC_MECHANIC_HAS_ACTION_PATTERN",
-            "ARC_MECHANIC_CAUSES_EFFECT_PATTERN",
-            "ARC_MECHANIC_REQUIRES",
-            "ARC_MECHANIC_FAILS_AS",
-            "ARC_FAILURE_RECOVERED_BY"
-        )):
-            db.execute(ddl)
+# B427: migrated off KuzuClient. publish_mechanic_summary/recall_mechanic_priors
+# are fully GraphGateway-routed, and OxigraphClient needs no CREATE TABLE step
+# at all (the manual _init_arc_schema() DDL this test used to run -- kept in
+# sync with schema.py by hand -- is simply unnecessary now).
 
 @pytest.fixture
 def db(tmp_path):
     db_path = str(tmp_path / "brain.db")
-    client = KuzuClient(db_path)
-    _init_arc_schema(client)
-    return client
+    return OxigraphClient(db_path)
 
 @pytest.mark.asyncio
 async def test_mcp_list_includes_arc_tools(db):

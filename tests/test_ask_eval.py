@@ -16,7 +16,7 @@ import shutil
 import pytest
 from typer.testing import CliRunner
 
-from tests.kuzu_test_client import KuzuClient
+from campy.brain.hippocampus.graph.oxigraph_client import CAMPY_NS, OxigraphClient
 from campy.brain.hippocampus.schema import init_schema
 from campy.brain.thalamus.ask import (
     _extract_identifier_tokens,
@@ -199,7 +199,7 @@ async def test_seed_fixture_graph_creates_plans_and_lessons():
     if os.path.exists(db_path):
         shutil.rmtree(db_path) if os.path.isdir(db_path) else os.remove(db_path)
 
-    db = KuzuClient(db_path)
+    db = OxigraphClient(db_path)
     try:
         embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
         init_schema(db, "campy/data/GistSeedExamples.md", embedding_model)
@@ -210,9 +210,15 @@ async def test_seed_fixture_graph_creates_plans_and_lessons():
 
         await seed_fixture_graph(db, config)
 
-        plan_count = db.execute("MATCH (p:Plan) RETURN count(p)").get_next()[0]
-        lesson_count = db.execute("MATCH (l:Lesson) RETURN count(l)").get_next()[0]
-        message_count = db.execute("MATCH (m:Message) RETURN count(m)").get_next()[0]
+        def _count(table: str) -> int:
+            rows = list(db.store.query(
+                f'PREFIX campy: <{CAMPY_NS}> SELECT (COUNT(*) AS ?n) WHERE {{ ?x a campy:{table} . }}'
+            ))
+            return int(rows[0]["n"].value)
+
+        plan_count = _count("Plan")
+        lesson_count = _count("Lesson")
+        message_count = _count("Message")
 
         assert plan_count >= 3
         assert lesson_count >= 2
