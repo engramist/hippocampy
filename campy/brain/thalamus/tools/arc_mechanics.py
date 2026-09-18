@@ -340,21 +340,21 @@ async def recall_mechanic_priors(params: dict, db, config: dict) -> dict:
         )
         fail_map = {}
         for f_row in fail_rows:
-            f_name = f_row.get("f.name")
+            f_name = f_row.get("f_name")
             if not f_name:
                 continue
             if f_name not in fail_map:
                 fail_map[f_name] = {
                     "name": f_name,
-                    "signature": f_row.get("f.signature"),
-                    "summary": f_row.get("f.summary"),
+                    "signature": f_row.get("f_signature"),
+                    "summary": f_row.get("f_summary"),
                     "recovery_policies": []
                 }
-            if f_row.get("pol.name"):  # policy name (from OPTIONAL MATCH)
+            if f_row.get("pol_name"):  # policy name (from OPTIONAL MATCH)
                 fail_map[f_name]["recovery_policies"].append({
-                    "name": f_row.get("pol.name"),
-                    "summary": f_row.get("pol.summary"),
-                    "confidence": f_row.get("pol.confidence")
+                    "name": f_row.get("pol_name"),
+                    "summary": f_row.get("pol_summary"),
+                    "confidence": f_row.get("pol_confidence")
                 })
         mech["failure_modes"] = list(fail_map.values())
 

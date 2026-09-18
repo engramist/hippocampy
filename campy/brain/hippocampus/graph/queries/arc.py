@@ -1839,7 +1839,6 @@ NamedQuery(
             }
             WHERE {
                 BIND(IRI(CONCAT(STR(cid:), "ArcMechanic/", ENCODE_FOR_URI(?mechanic_id))) AS ?m)
-                BIND(NOW() AS ?now)
                 OPTIONAL { ?m campy:name ?o1 }
                 OPTIONAL { ?m campy:signature ?o2 }
                 OPTIONAL { ?m campy:confidence ?o3 }
@@ -2173,21 +2172,32 @@ NamedQuery(
     ),
     NamedQuery(
         name="arc.get_mechanic_failure_modes",
+        # B427: explicit aliases (matching B399's explore.py fix) — a bare
+        # `RETURN f.name, pol.name` gives Kùzu columns literally named
+        # "f.name"/"pol.name", but RowDict's dotted-key lookup falls back
+        # to the part AFTER the dot when the exact key is missing (to
+        # support SPARQL's ?name-style variables, which can't contain
+        # dots) — so both "f.name" and "pol.name" collapsed onto the same
+        # bare "name" key on the Oxigraph path, and every recovery
+        # policy silently returned its OWN failure mode's name instead of
+        # its own. Aliasing to f_name/pol_name etc. makes both engines'
+        # column keys identical and unambiguous.
         cypher="""
             MATCH (m:ArcMechanic {mechanic_id: $mech_id})-[:ARC_MECHANIC_FAILS_AS]->(f:ArcFailureMode)
             OPTIONAL MATCH (f)-[:ARC_FAILURE_RECOVERED_BY]->(pol:ArcRecoveryPolicy)
-            RETURN f.name, f.signature, f.summary, pol.name, pol.summary, pol.confidence
+            RETURN f.name AS f_name, f.signature AS f_signature, f.summary AS f_summary,
+                   pol.name AS pol_name, pol.summary AS pol_summary, pol.confidence AS pol_confidence
             """,
         params=("mech_id",),
         mutating=False,
         description="Fetch failure modes and recovery policies for a mechanic.",
         sparql="""
-            SELECT ?name ?signature ?summary ?pol_name ?pol_summary ?pol_confidence WHERE {
+            SELECT ?f_name ?f_signature ?f_summary ?pol_name ?pol_summary ?pol_confidence WHERE {
                 ?m a campy:ArcMechanic ; campy:mechanic_id ?mech_id ; campy:ARC_MECHANIC_FAILS_AS ?f .
                 ?f a campy:ArcFailureMode ;
-                   campy:name ?name ;
-                   campy:signature ?signature ;
-                   campy:summary ?summary .
+                   campy:name ?f_name ;
+                   campy:signature ?f_signature ;
+                   campy:summary ?f_summary .
                 OPTIONAL {
                     ?f campy:ARC_FAILURE_RECOVERED_BY ?pol .
                     ?pol a campy:ArcRecoveryPolicy ;
