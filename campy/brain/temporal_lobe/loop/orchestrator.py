@@ -253,6 +253,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                 full_message=text,
                 db=db,
                 config=config,
+                session_id=session_id,
             )
             summary["triggers_bound"] += step4b_result["triggers_bound"]
 

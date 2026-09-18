@@ -1,6 +1,7 @@
 import pytest
 import asyncio
 from unittest.mock import MagicMock, AsyncMock
+import campy.brain.temporal_lobe.warm_frontier as warm_frontier
 from campy.brain.temporal_lobe.warm_frontier import compute_warm_frontier, get_warm_nodes
 from campy.brain.thalamus.tools import notify_turn, current_truth
 import campy.brain.thalamus.tools as tools_mod
@@ -127,3 +128,99 @@ async def test_spread_activation():
             
     assert "c1" in activated_ids
     assert "c2" in activated_ids
+
+
+@pytest.mark.asyncio
+async def test_supernode_safeguard_caps_neighbors(monkeypatch):
+    """B375: a hub with >SUPERNODE_DEGREE_THRESHOLD neighbors is capped to
+    the top SUPERNODE_TOP_N by pathway_strength, not spread across all of them."""
+    call_count = {"n": 0}
+
+    class FakeGateway:
+        async def run(self, qname, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                # One giant hub with 60 distinct neighbors, strengths 0..59.
+                return [(f"n{i}", float(i)) for i in range(60)]
+            return []
+
+    monkeypatch.setattr(warm_frontier, "get_gateway", lambda db: FakeGateway())
+
+    neighbors = await warm_frontier._get_artifact_neighbors(
+        db=object(), node_id="hub", table="Concept"
+    )
+
+    assert len(neighbors) == warm_frontier.SUPERNODE_TOP_N
+    kept_ids = {nid for nid, _table in neighbors}
+    assert kept_ids == {f"n{i}" for i in range(55, 60)}
+
+
+@pytest.mark.asyncio
+async def test_supernode_safeguard_config_override(monkeypatch):
+    """B375 gap 3: [retrieval.warm_frontier] config values must actually
+    reach _get_artifact_neighbors via compute_warm_frontier, not just sit
+    in campy.toml/config.py unused."""
+    db = MagicMock(spec=OxigraphClient)
+    db.execute_write = AsyncMock()
+
+    db.vector_search.return_value = [
+        {"node": {"concept_id": "seed", "archived": False}, "score": 1.0}
+    ]
+
+    call_count = {"n": 0}
+
+    class FakeGateway:
+        async def run(self, qname, **kwargs):
+            call_count["n"] += 1
+            if "warm_neighbor" in qname and call_count["n"] == 1:
+                # 10 distinct neighbors - below the default threshold (50)
+                # but above a config-lowered threshold of 5.
+                return [(f"n{i}", float(i)) for i in range(10)]
+            return []
+
+        async def run_sync_placeholder(self):
+            pass
+
+    fake_gw = FakeGateway()
+    monkeypatch.setattr(warm_frontier, "get_gateway", lambda db: fake_gw)
+
+    config = {
+        "retrieval": {
+            "warm_frontier": {
+                "supernode_degree_threshold": 5,
+                "supernode_top_n": 2,
+            }
+        }
+    }
+
+    await warm_frontier.compute_warm_frontier(db, "session-cfg", [0.1] * 384, config)
+
+    # With the config-lowered threshold, only 2 (not 10) neighbors should
+    # have contributed WARM_NODE writes beyond the seed itself.
+    write_calls = db.execute_write.call_args_list
+    written_ids = {
+        call[0][1]["nid"] for call in write_calls if "WARM_NODE" in str(call[0][0])
+    }
+    neighbor_ids_written = written_ids - {"seed"}
+    assert len(neighbor_ids_written) <= 2
+
+
+@pytest.mark.asyncio
+async def test_no_safeguard_below_threshold(monkeypatch):
+    """A node with a normal (small) degree keeps all its neighbors, unmodified."""
+    call_count = {"n": 0}
+
+    class FakeGateway:
+        async def run(self, qname, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return [(f"n{i}", float(i)) for i in range(10)]
+            return []
+
+    monkeypatch.setattr(warm_frontier, "get_gateway", lambda db: FakeGateway())
+
+    neighbors = await warm_frontier._get_artifact_neighbors(
+        db=object(), node_id="normal", table="Concept"
+    )
+
+    assert len(neighbors) == 10

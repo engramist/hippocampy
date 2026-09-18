@@ -153,30 +153,38 @@ class TestStageExactFacts:
         assert len(section.content) == 10
 
 
+_SEMANTIC_PK = {
+    "Concept": "concept_id",
+    "Decision": "decision_id",
+    "Constraint": "constraint_id",
+    "Requirement": "requirement_id",
+}
+
+
 class TestStageSemanticContext:
     def _create_tables(self, db: KuzuClient) -> None:
         for table in ("Concept", "Decision", "Constraint", "Requirement"):
             db.execute(
                 f"CREATE NODE TABLE {table}("
-                "id STRING, text_raw STRING, confidence DOUBLE, flagged_for_review BOOLEAN, "
-                f"pathway_strength DOUBLE, embedding FLOAT[{FAKE_DIM}], PRIMARY KEY (id))"
+                f"{_SEMANTIC_PK[table]} STRING, text_raw STRING, confidence DOUBLE, flagged_for_review BOOLEAN, "
+                f"pathway_strength DOUBLE, embedding FLOAT[{FAKE_DIM}], PRIMARY KEY ({_SEMANTIC_PK[table]}))"
             )
 
     async def test_returns_matching_content_across_labels(self, real_db):
         db = real_db
         self._create_tables(db)
         db.execute(
-            "CREATE (n:Concept {id: 'c1', text_raw: 'concept close', confidence: 0.9, "
+            "CREATE (n:Concept {concept_id: 'c1', text_raw: 'concept close', confidence: 0.9, "
             "pathway_strength: 0.6, embedding: $emb})",
             {"emb": [0.99, 0.01, 0.0, 0.0]},
         )
         db.execute(
-            "CREATE (n:Decision {id: 'd1', text_raw: 'decision close', confidence: 0.9, "
+            "CREATE (n:Decision {decision_id: 'd1', text_raw: 'decision close', confidence: 0.9, "
             "pathway_strength: 0.6, embedding: $emb})",
             {"emb": [0.97, 0.03, 0.0, 0.0]},
         )
         db.execute(
-            "CREATE (n:Requirement {id: 'r1', text_raw: 'requirement far', confidence: 0.9, "
+            "CREATE (n:Requirement {requirement_id: 'r1', text_raw: 'requirement far', confidence: 0.9, "
             "pathway_strength: 0.6, embedding: $emb})",
             {"emb": [0.0, 0.0, 1.0, 0.0]},
         )
@@ -198,13 +206,13 @@ class TestStageSemanticContext:
         # Closest match is in the FIRST branch (Concept), not the last
         # (Requirement) - this only passes if the cap is applied globally.
         db.execute(
-            "CREATE (n:Concept {id: 'c1', text_raw: 'closest match', confidence: 0.9, "
+            "CREATE (n:Concept {concept_id: 'c1', text_raw: 'closest match', confidence: 0.9, "
             "pathway_strength: 0.6, embedding: $emb})",
             {"emb": [1.0, 0.0, 0.0, 0.0]},
         )
         for table in ("Decision", "Constraint", "Requirement"):
             db.execute(
-                f"CREATE (n:{table} {{id: '{table.lower()}1', text_raw: '{table} match', "
+                f"CREATE (n:{table} {{{_SEMANTIC_PK[table]}: '{table.lower()}1', text_raw: '{table} match', "
                 "confidence: 0.9, pathway_strength: 0.6, embedding: $emb})",
                 {"emb": [0.99, 0.01, 0.0, 0.0]},
             )
@@ -219,7 +227,7 @@ class TestStageSemanticContext:
         db = real_db
         self._create_tables(db)
         db.execute(
-            "CREATE (n:Concept {id: 'c1', text_raw: 'unrelated', confidence: 0.9, "
+            "CREATE (n:Concept {concept_id: 'c1', text_raw: 'unrelated', confidence: 0.9, "
             "pathway_strength: 0.6, embedding: $emb})",
             {"emb": [0.0, 0.0, 1.0, 0.0]},
         )
@@ -239,12 +247,12 @@ class TestStageSemanticContext:
         db = real_db
         self._create_tables(db)
         db.execute(
-            "CREATE (n:Concept {id: 'c1', text_raw: 'flagged concept', confidence: 0.9, "
+            "CREATE (n:Concept {concept_id: 'c1', text_raw: 'flagged concept', confidence: 0.9, "
             "flagged_for_review: true, pathway_strength: 0.6, embedding: $emb})",
             {"emb": [0.99, 0.01, 0.0, 0.0]},
         )
         db.execute(
-            "CREATE (n:Decision {id: 'd1', text_raw: 'clean decision', confidence: 0.9, "
+            "CREATE (n:Decision {decision_id: 'd1', text_raw: 'clean decision', confidence: 0.9, "
             "flagged_for_review: false, pathway_strength: 0.6, embedding: $emb})",
             {"emb": [0.97, 0.03, 0.0, 0.0]},
         )
@@ -254,6 +262,88 @@ class TestStageSemanticContext:
         assert section is not None
         texts = {c["text"] for c in section.content}
         assert texts == {"clean decision"}
+
+    async def test_baseline_ranks_by_raw_distance_without_warm_boost(self, real_db):
+        """Sanity baseline for the warm-boost test below: with no session_id
+        (and thus no warm_nodes lookup), the objectively closer node wins."""
+        db = real_db
+        self._create_tables(db)
+        db.execute(
+            "CREATE (n:Concept {concept_id: 'closer', text_raw: 'closer concept', confidence: 0.9, "
+            "pathway_strength: 0.6, embedding: $emb})",
+            {"emb": [0.97, 0.06, 0.0, 0.0]},
+        )
+        db.execute(
+            "CREATE (n:Concept {concept_id: 'farther', text_raw: 'farther concept', confidence: 0.9, "
+            "pathway_strength: 0.6, embedding: $emb})",
+            {"emb": [0.96, 0.065, 0.0, 0.0]},
+        )
+
+        section = await _stage_semantic_context(db, "query", CONFIG, TIER_CONFIG)
+
+        assert section is not None
+        assert section.content[0]["text"] == "closer concept"
+        assert section.content[0]["activation_score"] == 0.0
+
+    async def test_warm_frontier_boost_promotes_activated_node(self, real_db, monkeypatch):
+        """B375: bundle_compiler's semantic stage must consult the warm
+        frontier and let activation shrink a node's effective distance
+        enough to outrank an objectively closer, but cold, node."""
+        db = real_db
+        self._create_tables(db)
+        db.execute(
+            "CREATE (n:Concept {concept_id: 'cold', text_raw: 'cold concept', confidence: 0.9, "
+            "pathway_strength: 0.6, embedding: $emb})",
+            {"emb": [0.97, 0.06, 0.0, 0.0]},
+        )
+        db.execute(
+            "CREATE (n:Concept {concept_id: 'warm', text_raw: 'warm concept', confidence: 0.9, "
+            "pathway_strength: 0.6, embedding: $emb})",
+            {"emb": [0.96, 0.065, 0.0, 0.0]},
+        )
+
+        import campy.brain.temporal_lobe.warm_frontier as wf
+
+        monkeypatch.setattr(wf, "get_warm_nodes", lambda db, sid: {"warm": 1.0})
+
+        section = await _stage_semantic_context(
+            db, "query", CONFIG, TIER_CONFIG, session_id="active-session"
+        )
+
+        assert section is not None
+        assert section.content[0]["text"] == "warm concept"
+        assert section.content[0]["activation_score"] == 1.0
+        assert section.content[0]["type"] == "Concept"
+        # node_id (not a truncated text snippet) drives the warm lookup and
+        # must survive into source_node_ids.
+        assert "warm" in section.source_node_ids
+
+    async def test_warm_frontier_lookup_failure_is_cold_start_safe(self, real_db, monkeypatch):
+        """If get_warm_nodes blows up (e.g. missing warm-frontier schema on
+        a fresh install), the stage must still return ordinary results
+        rather than failing the whole bundle."""
+        db = real_db
+        self._create_tables(db)
+        db.execute(
+            "CREATE (n:Concept {concept_id: 'c1', text_raw: 'concept close', confidence: 0.9, "
+            "pathway_strength: 0.6, embedding: $emb})",
+            {"emb": [0.99, 0.01, 0.0, 0.0]},
+        )
+
+        import campy.brain.temporal_lobe.warm_frontier as wf
+
+        def _boom(db, sid):
+            raise RuntimeError("warm frontier schema missing")
+
+        monkeypatch.setattr(wf, "get_warm_nodes", _boom)
+
+        section = await _stage_semantic_context(
+            db, "query", CONFIG, TIER_CONFIG, session_id="active-session"
+        )
+
+        assert section is not None
+        assert section.content[0]["text"] == "concept close"
+        assert section.content[0]["activation_score"] == 0.0
 
 
 class TestStageGraphStructure:

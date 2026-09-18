@@ -228,7 +228,7 @@ async def compile_bundle(
         return bundle
 
     # Stage 3: Semantic context
-    semantic_section = await _stage_semantic_context(db, query, config, tier_config)
+    semantic_section = await _stage_semantic_context(db, query, config, tier_config, session_id=session_id)
     if semantic_section and semantic_section.content:
         sections.append(semantic_section)
         cumulative_tokens += semantic_section.token_estimate
@@ -400,7 +400,9 @@ async def _stage_exact_facts(db, query: str, config: dict, tier_config: dict) ->
         return None
 
 
-async def _stage_semantic_context(db, query: str, config: dict, tier_config: dict) -> Optional[BundleSection]:
+async def _stage_semantic_context(
+    db, query: str, config: dict, tier_config: dict, session_id: Optional[str] = None,
+) -> Optional[BundleSection]:
     """
     Stage 2: Retrieve semantic context as a lightweight semantic preview.
 
@@ -408,7 +410,20 @@ async def _stage_semantic_context(db, query: str, config: dict, tier_config: dic
 
     B305: distance floor tightened from 0.40 to 0.30 (similarity 0.60 → 0.70)
     to match the convention already enforced in `_stage_exact_facts`.
+
+    B375: warm-frontier activation boost applied to `dist` before the
+    top-N cut, same 0.35-weighted multiplier the card specifies. Cold-start
+    safe — `warm_nodes` stays empty (no boost applied) whenever
+    `session_id` is absent/unknown or the lookup itself fails.
     """
+    warm_nodes: dict = {}
+    if session_id and session_id != "unknown":
+        try:
+            from campy.brain.temporal_lobe.warm_frontier import get_warm_nodes
+            warm_nodes = get_warm_nodes(db, session_id)
+        except Exception:
+            pass
+
     try:
         from campy.brain.hippocampus.graph import embeddings as emb
 
@@ -447,28 +462,40 @@ async def _stage_semantic_context(db, query: str, config: dict, tier_config: dic
             qname = f"thalamus.bundle_semantic_{lbl_lower}" + "".join(f"_{p}" for p in suffix_parts)
             result = await gw.run(qname, query_embedding=query_embedding, limit=limit)
             for r in (result or []):
+                # B375: node_id (index shifted 3rd/positional 2 by its
+                # addition to every RETURN/SELECT) drives the warm-frontier
+                # activation lookup below.
                 text = r.get("text") if isinstance(r, dict) else r[0]
                 node_type = r.get("node_type") if isinstance(r, dict) else r[1]
-                pathway_strength = r.get("pathway_strength") if isinstance(r, dict) else r[2]
-                confidence = r.get("confidence") if isinstance(r, dict) else r[3]
-                dist = r.get("dist") if isinstance(r, dict) else r[4]
-                authority = r.get("authority") if isinstance(r, dict) else (r[5] if len(r) > 5 else None)
-                rows.append((text, node_type, pathway_strength, confidence, dist, authority if has_authority else None))
+                node_id = r.get("node_id") if isinstance(r, dict) else r[2]
+                pathway_strength = r.get("pathway_strength") if isinstance(r, dict) else r[3]
+                confidence = r.get("confidence") if isinstance(r, dict) else r[4]
+                dist = r.get("dist") if isinstance(r, dict) else r[5]
+                authority = r.get("authority") if isinstance(r, dict) else (r[6] if len(r) > 6 else None)
 
-        rows.sort(key=lambda row: row[4])
+                activation_score = warm_nodes.get(str(node_id), 0.0) if node_id is not None else 0.0
+                adjusted_dist = (dist / (1.0 + activation_score * 0.35)) if dist is not None else dist
+
+                rows.append((
+                    text, node_type, node_id, pathway_strength, confidence,
+                    adjusted_dist, authority if has_authority else None, activation_score,
+                ))
+
+        rows.sort(key=lambda row: row[5] if row[5] is not None else float("inf"))
         rows = rows[:limit]
 
         content = []
         node_ids = []
-        for text, node_type, pathway_strength, confidence, _dist, authority in rows:
+        for text, node_type, node_id, pathway_strength, confidence, _dist, authority, activation_score in rows:
             content.append({
                 "text": text if text is not None else "",
                 "type": node_type if node_type is not None else "Unknown",
                 "pathway_strength": pathway_strength if pathway_strength is not None else 0.5,
                 "confidence": confidence if confidence is not None else 0.5,
                 "authority": authority_of(authority),
+                "activation_score": activation_score,  # B375: exposed for debugging/tests
             })
-            node_ids.append((text or "")[:20])
+            node_ids.append(str(node_id) if node_id is not None else (text or "")[:20])
 
         if not content:
             return None

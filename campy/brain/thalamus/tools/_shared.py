@@ -221,12 +221,27 @@ def _rrf_fuse(source_lists: dict[str, list[dict]], limit: int) -> list[dict]:
     return sorted(fused.values(), key=lambda e: e["rrf"], reverse=True)
 
 
+WARM_WEIGHT = 0.35  # B375: matches the card's (1.0 + warm_score * 0.35) boost
+
+
 def _apply_fusion_adjustments(
     fused_entries: list[dict],
     result_by_id: dict[str, dict],
     outcome_map: dict[str, tuple],
+    warm_nodes: dict[str, float] | None = None,
 ) -> list[dict]:
-    """Apply bounded pathway/valence adjustments to fused RRF scores."""
+    """Apply bounded pathway/valence/warm-frontier adjustments to fused RRF scores.
+
+    B375: `warm_nodes` (node_id -> activation_score, from
+    `warm_frontier.get_warm_nodes()`) was previously computed by callers
+    (`current_truth`'s own `warm_boost` local) but never actually threaded
+    into this function — the multiplier existed in a debug-only output
+    field (`activation_score`) but never touched `final`, the value
+    everything actually sorts by. Every call site that omits `warm_nodes`
+    (or passes an empty dict) gets byte-identical behavior to before this
+    fix — the multiplier is exactly 1.0 for every node.
+    """
+    warm_nodes = warm_nodes or {}
     adjusted: list[dict] = []
     for entry in fused_entries:
         nid = entry["cand"].get("node_id", "")
@@ -239,8 +254,14 @@ def _apply_fusion_adjustments(
             if avg_valence is not None:
                 valence = float(avg_valence)
         valence = max(-1.0, min(1.0, valence))
+        activation_score = max(0.0, min(1.0, float(warm_nodes.get(nid, 0.0) or 0.0)))
 
-        final = entry["rrf"] * (1.0 + (ps / (2.0 * PATHWAY_CAP))) * (1.0 + VALENCE_WEIGHT * valence)
+        final = (
+            entry["rrf"]
+            * (1.0 + (ps / (2.0 * PATHWAY_CAP)))
+            * (1.0 + VALENCE_WEIGHT * valence)
+            * (1.0 + WARM_WEIGHT * activation_score)
+        )
         adjusted.append({
             "node_id": nid,
             "result": result,
@@ -250,6 +271,7 @@ def _apply_fusion_adjustments(
             "pathway_multiplier": 1.0 + (ps / (2.0 * PATHWAY_CAP)),
             "valence_multiplier": 1.0 + VALENCE_WEIGHT * valence,
             "valence": valence,
+            "warm_multiplier": 1.0 + WARM_WEIGHT * activation_score,
         })
     return adjusted
 

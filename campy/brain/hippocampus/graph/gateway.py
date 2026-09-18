@@ -33,6 +33,7 @@ import re
 import unittest.mock
 from dataclasses import dataclass
 from typing import Any, Iterable
+from urllib.parse import unquote
 from campy.brain.hippocampus.schema import FACT_PREDICATE_TABLES
 from campy.brain.hippocampus.graph.oxigraph_client import (
     CID_BASE,
@@ -941,9 +942,14 @@ class GraphGateway:
                 if uri in hydrated:
                     h = hydrated[uri]
                     dist = max(0.0, 1.0 - float(score))
+                    # B375: node_id (for warm-frontier lookup in
+                    # bundle_compiler.py) is the URI's own trailing segment
+                    # — no extra triple needed, mint_uri already encodes it.
+                    node_id = unquote(uri[len(prefix):])
                     rows.append(RowDict({
                         "text": h.get("text"),
                         "node_type": target_table,
+                        "node_id": node_id,
                         "pathway_strength": h.get("ps", 0.5),
                         "confidence": h.get("conf", 0.5),
                         "dist": dist,

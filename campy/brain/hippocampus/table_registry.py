@@ -76,6 +76,10 @@ _TAG_ORDER = {
         "ActionItem",
         "GlobalConstraint",
         "GlobalPreference",
+        # B375: Step 4b's associative trigger check pre-activates matched
+        # Lesson/Procedure nodes into the warm frontier (gap 4).
+        "Lesson",
+        "Procedure",
     ),
     "warm_seed": (
         "Concept",

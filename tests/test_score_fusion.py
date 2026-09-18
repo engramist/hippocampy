@@ -147,6 +147,61 @@ def test_negative_valence_demotes():
     assert finals["neg"] < finals["neu"]
 
 
+def test_warm_frontier_promotes_activated_node():
+    """B375: a warm (pre-activated) node should outrank an equal-RRF cold node."""
+    fused = [
+        {"cand": {"node_id": "warm", "score": 0.8}, "rrf": 1.0, "sources": {}},
+        {"cand": {"node_id": "cold", "score": 0.8}, "rrf": 1.0, "sources": {}},
+    ]
+    result_by_id = {
+        "warm": {"node_id": "warm", "pathway_strength": 1.0},
+        "cold": {"node_id": "cold", "pathway_strength": 1.0},
+    }
+    adjusted = _apply_fusion_adjustments(
+        fused, result_by_id, outcome_map={}, warm_nodes={"warm": 1.0}
+    )
+    finals = {row["node_id"]: row["final"] for row in adjusted}
+    assert finals["warm"] > finals["cold"]
+    assert finals["warm"] == pytest.approx(finals["cold"] * 1.35)
+
+
+def test_warm_frontier_absent_is_byte_identical():
+    """Omitting warm_nodes (the default) must not change ranking at all."""
+    fused = [
+        {"cand": {"node_id": "a", "score": 0.8}, "rrf": 1.0, "sources": {}},
+        {"cand": {"node_id": "b", "score": 0.8}, "rrf": 0.9, "sources": {}},
+    ]
+    result_by_id = {
+        "a": {"node_id": "a", "pathway_strength": 2.0},
+        "b": {"node_id": "b", "pathway_strength": 2.0},
+    }
+    with_default = _apply_fusion_adjustments(fused, result_by_id, outcome_map={})
+    with_empty = _apply_fusion_adjustments(fused, result_by_id, outcome_map={}, warm_nodes={})
+    with_none = _apply_fusion_adjustments(fused, result_by_id, outcome_map={}, warm_nodes=None)
+    finals_default = {row["node_id"]: row["final"] for row in with_default}
+    finals_empty = {row["node_id"]: row["final"] for row in with_empty}
+    finals_none = {row["node_id"]: row["final"] for row in with_none}
+    assert finals_default == finals_empty == finals_none
+    assert all(row["warm_multiplier"] == 1.0 for row in with_default)
+
+
+def test_warm_frontier_activation_score_clamped():
+    """activation_score outside [0, 1] (bad/stale data) must be clamped, not blow up ranking."""
+    fused = [
+        {"cand": {"node_id": "over", "score": 0.8}, "rrf": 1.0, "sources": {}},
+        {"cand": {"node_id": "under", "score": 0.8}, "rrf": 1.0, "sources": {}},
+    ]
+    result_by_id = {
+        "over": {"node_id": "over", "pathway_strength": 1.0},
+        "under": {"node_id": "under", "pathway_strength": 1.0},
+    }
+    adjusted = _apply_fusion_adjustments(
+        fused, result_by_id, outcome_map={}, warm_nodes={"over": 5.0, "under": -3.0}
+    )
+    finals = {row["node_id"]: row["final"] for row in adjusted}
+    assert finals["over"] == pytest.approx(finals["under"] * 1.35)
+
+
 def test_rrf_pure_function():
     source_lists = {
         "vector:Concept": [

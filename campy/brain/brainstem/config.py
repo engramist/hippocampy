@@ -16,6 +16,18 @@ _DEFAULT_CONFIG = {
         "lexical_window_days": 14,
         "lexical_limit": 10,
         "timeline_limit": 200,
+        # B375: exposes warm_frontier.py's previously-hardcoded module
+        # constants. Values match those prior hardcoded defaults exactly,
+        # so an absent/partial [retrieval.warm_frontier] section changes
+        # nothing for existing installs.
+        "warm_frontier": {
+            "max_warm_nodes": 20,
+            "similarity_weight": 0.6,
+            "hops_decay": 0.5,
+            "min_activation": 0.3,
+            "supernode_degree_threshold": 50,
+            "supernode_top_n": 5,
+        },
     },
     # B283: supernode monitoring + session cache edge pruning
     "sweep": {
