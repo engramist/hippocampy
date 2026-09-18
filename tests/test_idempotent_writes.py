@@ -9,12 +9,13 @@ Two layers:
      canonicalization contract directly (whitespace/NFC folding, case
      sensitivity, source/workspace sensitivity, the hardcoded-digest
      regression check).
-  2. Integration tests against a real (embedded, file-backed) Kùzu database
-     via KuzuClient — the same pattern as tests/test_provenance.py and
-     tests/test_task_dependency.py — exercising the actual write paths this
-     card modifies: `lessons.upsert_lesson`, `lessons._create_plan_graph`,
-     and `lessons._store_plan_outcome_lesson`. Embeddings are monkeypatched
-     to a fixed vector so nothing here depends on network access to a
+  2. Integration tests against a real (embedded, file-backed) database via
+     OxigraphClient (B427: migrated off KuzuClient) — the same pattern as
+     tests/test_provenance.py and tests/test_task_dependency.py —
+     exercising the actual write paths this card modifies:
+     `lessons.upsert_lesson`, `lessons._create_plan_graph`, and
+     `lessons._store_plan_outcome_lesson`. Embeddings are monkeypatched to
+     a fixed vector so nothing here depends on network access to a
      sentence-transformers / Ollama endpoint.
 
 A single module-scoped database is shared across the integration tests
@@ -28,7 +29,7 @@ import uuid
 
 import pytest
 
-from tests.kuzu_test_client import KuzuClient
+from campy.brain.hippocampus.graph.oxigraph_client import CAMPY_NS, NODE_COLUMNS, OxigraphClient
 from campy.brain.hippocampus.provenance import (
     CONTENT_HASH_VERSION,
     content_hash,
@@ -226,44 +227,52 @@ def db(tmp_path_factory, _patch_embed_for_module):
     # autouse) to guarantee ordering: init_schema() below makes a real
     # emb.embed() call, which must already be patched.
     path = tmp_path_factory.mktemp("b320_idempotent") / "b320.db"
-    client = KuzuClient(str(path))
+    client = OxigraphClient(str(path))
     init_schema(client, SEED_PATH, EMBEDDING_MODEL)
     return client
 
 
-def _count_lessons_with_text(db: KuzuClient, text: str) -> int:
-    r = db.execute(
-        "MATCH (l:Lesson) WHERE l.text_raw = $text RETURN count(*)", {"text": text}
-    )
-    return int(r.get_next()[0]) if r.has_next() else 0
+def _count_lessons_with_text(db: OxigraphClient, text: str) -> int:
+    rows = list(db.store.query(
+        f'PREFIX campy: <{CAMPY_NS}> '
+        f'SELECT (COUNT(*) AS ?n) WHERE {{ ?l a campy:Lesson ; campy:text_raw "{text}" . }}'
+    ))
+    return int(rows[0]["n"].value)
 
 
-def _lesson_pathway_strength(db: KuzuClient, lesson_id: str) -> float:
-    r = db.execute(
-        "MATCH (l:Lesson {lesson_id: $id}) RETURN l.pathway_strength", {"id": lesson_id}
-    )
-    assert r.has_next()
-    return float(r.get_next()[0])
+def _lesson_pathway_strength(db: OxigraphClient, lesson_id: str) -> float:
+    rows = list(db.store.query(
+        f'PREFIX campy: <{CAMPY_NS}> '
+        f'SELECT ?ps WHERE {{ ?l campy:lesson_id "{lesson_id}" ; campy:pathway_strength ?ps . }}'
+    ))
+    assert rows, f"no Lesson found with lesson_id={lesson_id!r}"
+    return float(rows[0]["ps"].value)
 
 
-def _lesson_content_hash(db: KuzuClient, lesson_id: str) -> str | None:
-    r = db.execute(
-        "MATCH (l:Lesson {lesson_id: $id}) RETURN l.content_hash", {"id": lesson_id}
-    )
-    assert r.has_next()
-    return r.get_next()[0]
+def _lesson_content_hash(db: OxigraphClient, lesson_id: str) -> str | None:
+    rows = list(db.store.query(
+        f'PREFIX campy: <{CAMPY_NS}> '
+        f'SELECT ?ch WHERE {{ '
+        f'  ?l campy:lesson_id "{lesson_id}" . '
+        f'  OPTIONAL {{ ?l campy:content_hash ?ch }} '
+        f'}}'
+    ))
+    assert rows, f"no Lesson found with lesson_id={lesson_id!r}"
+    return rows[0]["ch"].value if rows[0]["ch"] else None
 
 
 # --- Schema (Task 1) --------------------------------------------------------
 
 
 def test_content_hash_column_exists_on_tier1_tables(db):
+    # `CALL table_info(...)` is a Kùzu-catalog-specific system procedure
+    # with no SPARQL/Oxigraph equivalent (there is no runtime catalog to
+    # query — RDF triples carry no separate column-declaration metadata).
+    # NODE_COLUMNS is derived from the same schema.py DDL Kùzu's own
+    # catalog would report, so checking it directly is the real Oxigraph
+    # analog, not a weaker substitute.
     for table in CONTENT_HASH_TABLES:
-        r = db.execute(f"CALL table_info('{table}') RETURN *")
-        cols = set()
-        while r.has_next():
-            cols.add(str(r.get_next()[1]))
-        assert "content_hash" in cols, f"{table} is missing content_hash"
+        assert "content_hash" in NODE_COLUMNS.get(table, {}), f"{table} is missing content_hash"
 
 
 def test_content_hash_tables_excludes_arc_tier2_tables():
@@ -392,13 +401,12 @@ async def test_upsert_lesson_null_content_hash_never_matches(db):
     creates a *new* node rather than reusing the NULL row."""
     text = "pre-B320 lesson with no content_hash"
     old_id = str(uuid.uuid4())
-    db.execute(
-        "CREATE (l:Lesson {lesson_id: $id, text_raw: $text, domain: $domain, "
-        "lesson_type: 'optimization', confidence: 0.9, confidence_low: false, "
-        "pathway_strength: 1.0, archived: false, source: $source, "
-        "content_hash: NULL})",
-        {"id": old_id, "text": text, "domain": "b320-null", "source": "agent:claude-code"},
-    )
+    db.write_node("Lesson", {
+        "lesson_id": old_id, "text_raw": text, "domain": "b320-null",
+        "lesson_type": "optimization", "confidence": 0.9, "confidence_low": False,
+        "pathway_strength": 1.0, "archived": False, "source": "agent:claude-code",
+        "content_hash": None,
+    })
 
     result = await upsert_lesson(
         {"text": text, "domain": "b320-null", "agent_source": "claude-code"}, db, CONFIG
@@ -499,15 +507,21 @@ async def test_upsert_lesson_explicit_lesson_id_bypasses_content_dedup(db):
 # --- _create_plan_graph / _store_plan_outcome_lesson (capture.py's paths) --
 
 
-def _count_plans_with_goal(db: KuzuClient, goal: str) -> int:
-    r = db.execute("MATCH (p:Plan) WHERE p.goal = $g RETURN count(*)", {"g": goal})
-    return int(r.get_next()[0]) if r.has_next() else 0
+def _count_plans_with_goal(db: OxigraphClient, goal: str) -> int:
+    rows = list(db.store.query(
+        f'PREFIX campy: <{CAMPY_NS}> '
+        f'SELECT (COUNT(*) AS ?n) WHERE {{ ?p a campy:Plan ; campy:goal "{goal}" . }}'
+    ))
+    return int(rows[0]["n"].value)
 
 
-def _plan_pathway_strength(db: KuzuClient, plan_id: str) -> float:
-    r = db.execute("MATCH (p:Plan {plan_id: $id}) RETURN p.pathway_strength", {"id": plan_id})
-    assert r.has_next()
-    return float(r.get_next()[0])
+def _plan_pathway_strength(db: OxigraphClient, plan_id: str) -> float:
+    rows = list(db.store.query(
+        f'PREFIX campy: <{CAMPY_NS}> '
+        f'SELECT ?ps WHERE {{ ?p campy:plan_id "{plan_id}" ; campy:pathway_strength ?ps . }}'
+    ))
+    assert rows, f"no Plan found with plan_id={plan_id!r}"
+    return float(rows[0]["ps"].value)
 
 
 @pytest.mark.asyncio
