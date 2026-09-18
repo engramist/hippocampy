@@ -158,13 +158,13 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B365 | Reconcile the Two Divergent BrainDaemon Implementations | P1 | complete | TBD | TBD | - | backlog/B365.md |
 | B373 | `_resurrect_archived` Blocks the Event Loop for Minutes Under Real Load (B371's Missing Live Stack Trace) | P1 | complete | TBD | TBD | - | backlog/B373.md |
 | B375 | Pre-Warmed Selective Activation for Anticipatory Retrieval (Cocktail Party Engine) | P1 | ready | TBD | TBD | backlog/plans/B-375-prewarmed-selective-activation.md | backlog/B375.md |
-| B381 | Decision-Grade Multi-Model Ask-Eval & Agent Memory Benchmark Suite | P1 | in-review | TBD | TBD | backlog/plans/B-381-decision-grade-ask-eval.md | backlog/B381.md |
+| B381 | Decision-Grade Multi-Model Ask-Eval & Agent Memory Benchmark Suite | P1 | mostly complete — merged #152/#195, one item (64+ cloud-provider questions) deliberately deferred | TBD | TBD | backlog/plans/B-381-decision-grade-ask-eval.md | backlog/B381.md |
 | B382 | Dynamic Phase-Aware Model Router: Graph-Guided Local vs. Cloud Dispatch ("The Missing Middle") | P1 | ready | TBD | TBD | backlog/plans/B-382-phase-aware-model-router.md | backlog/B382.md |
 | B383 | Automated Model Handoff Generator: Zero-Amnesia Model Swapping | P1 | ready | TBD | TBD | backlog/plans/B-383-automated-model-handoff.md | backlog/B383.md |
 | B401 | Measure the Value of the spaCy Step Before Replacing It | P1 | blocked (needs B400 merged) | TBD | TBD | - | backlog/B401.md |
 | B402 | Open Research Questions Section in ARCHITECTURE.md | P1 | complete | TBD | TBD | backlog/plans/B-402-architecture-research-section.md | backlog/B402.md |
 | B410 | Explicit Status Writes: Guaranteed-Written Status and the Cheap Filter Form | P1 | complete | TBD | TBD | - | backlog/B410.md |
-| B413 | Re-triage the Write-Path Schema Violations: "Guarded" Was a Kùzu Premise — but Unguarded ≠ Broken (0 broken / 3 inert / 27 unreachable) | P1 | ready | TBD | TBD | - | backlog/B413.md |
+| B413 | Re-triage the Write-Path Schema Violations: "Guarded" Was a Kùzu Premise — but Unguarded ≠ Broken (0 broken / 3 inert / 27 unreachable) | P1 | complete — schema conformance ratchet 32 -> 1 | TBD | TBD | - | backlog/B413.md |
 | B416 | Detect Local Environment Drift From Declared Dependencies | P1 | complete | TBD | TBD | - | backlog/B416.md |
 | B4 | Publish to PyPI | P2 | complete | TBD | TBD | backlog/plans/B-4-pypi-publish.md | backlog/B4.md |
 | B5 | Smithery Listing | P2 | complete | TBD | TBD | backlog/plans/B-5-smithery-listing.md | backlog/B5.md |

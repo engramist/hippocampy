@@ -740,33 +740,31 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         # replaces the full property set.
     ),
     NamedQuery(
+        # B413: synthesized_at/synthesis_cluster_size are not declared on Lesson
+        # and nothing ever reads them there — the companion
+        # sweep.link_generalizes_lesson query already stamps this same data on
+        # the declared GENERALIZES_LESSON edge, which is the real carrier
+        # (and what gets read). Dropped here rather than declared, since
+        # nothing reads a node-level copy today.
         name="sweep.touch_subsumed_lesson",
         cypher="""
             MATCH (c:Lesson {lesson_id: $cid})
-            SET c.synthesized_at = timestamp($now),
-                c.synthesis_cluster_size = $cluster_size,
-                c.pathway_strength = c.pathway_strength / $decay_boost
+            SET c.pathway_strength = c.pathway_strength / $decay_boost
             """,
-        params=("cid", "now", "cluster_size", "decay_boost"),
+        params=("cid", "decay_boost"),
         mutating=True,
         description="Accelerate decay on constituent lesson subsumed into synthesis.",
         sparql="""
             PREFIX campy: <https://campy.dev/ns#>
             DELETE {
-                ?c campy:synthesized_at ?old_synthesized_at .
-                ?c campy:synthesis_cluster_size ?old_cluster_size .
                 ?c campy:pathway_strength ?old_strength .
             }
             INSERT {
-                ?c campy:synthesized_at ?now ;
-                   campy:synthesis_cluster_size ?cluster_size ;
-                   campy:pathway_strength ?new_strength .
+                ?c campy:pathway_strength ?new_strength .
             }
             WHERE {
                 ?c a campy:Lesson ; campy:lesson_id ?cid ; campy:pathway_strength ?old_strength .
                 BIND((?old_strength / ?decay_boost) AS ?new_strength)
-                OPTIONAL { ?c campy:synthesized_at ?old_synthesized_at }
-                OPTIONAL { ?c campy:synthesis_cluster_size ?old_cluster_size }
             }
             """,
     ),

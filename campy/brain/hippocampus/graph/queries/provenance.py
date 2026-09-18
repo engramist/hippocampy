@@ -317,25 +317,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
             """,
     ),
     NamedQuery(
-        name="provenance.touch_last_accessed_decision",
-        cypher="""
-            MATCH (n:Decision {decision_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live Decision.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:Decision ;
-                   campy:decision_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
-            """,
-    ),
-    NamedQuery(
         name="provenance.mark_superseded_constraint",
         cypher="""
             MATCH (n:Constraint {constraint_id: $node_id})
@@ -473,25 +454,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 FILTER(!BOUND(?superseded_by))
             }
             LIMIT 1
-            """,
-    ),
-    NamedQuery(
-        name="provenance.touch_last_accessed_constraint",
-        cypher="""
-            MATCH (n:Constraint {constraint_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live Constraint.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:Constraint ;
-                   campy:constraint_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
             """,
     ),
     NamedQuery(
@@ -635,25 +597,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
             """,
     ),
     NamedQuery(
-        name="provenance.touch_last_accessed_requirement",
-        cypher="""
-            MATCH (n:Requirement {requirement_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live Requirement.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:Requirement ;
-                   campy:requirement_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
-            """,
-    ),
-    NamedQuery(
         name="provenance.mark_superseded_actionitem",
         cypher="""
             MATCH (n:ActionItem {action_item_id: $node_id})
@@ -791,25 +734,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 FILTER(!BOUND(?superseded_by))
             }
             LIMIT 1
-            """,
-    ),
-    NamedQuery(
-        name="provenance.touch_last_accessed_actionitem",
-        cypher="""
-            MATCH (n:ActionItem {action_item_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live ActionItem.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:ActionItem ;
-                   campy:action_item_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
             """,
     ),
     NamedQuery(
@@ -953,25 +877,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
             """,
     ),
     NamedQuery(
-        name="provenance.touch_last_accessed_globalconstraint",
-        cypher="""
-            MATCH (n:GlobalConstraint {global_constraint_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live GlobalConstraint.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:GlobalConstraint ;
-                   campy:global_constraint_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
-            """,
-    ),
-    NamedQuery(
         name="provenance.mark_superseded_globalpreference",
         cypher="""
             MATCH (n:GlobalPreference {global_preference_id: $node_id})
@@ -1109,25 +1014,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 FILTER(!BOUND(?superseded_by))
             }
             LIMIT 1
-            """,
-    ),
-    NamedQuery(
-        name="provenance.touch_last_accessed_globalpreference",
-        cypher="""
-            MATCH (n:GlobalPreference {global_preference_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live GlobalPreference.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:GlobalPreference ;
-                   campy:global_preference_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
             """,
     ),
     NamedQuery(
@@ -1271,25 +1157,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
             """,
     ),
     NamedQuery(
-        name="provenance.touch_last_accessed_lesson",
-        cypher="""
-            MATCH (n:Lesson {lesson_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live Lesson.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:Lesson ;
-                   campy:lesson_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
-            """,
-    ),
-    NamedQuery(
         name="provenance.mark_superseded_procedure",
         cypher="""
             MATCH (n:Procedure {procedure_id: $node_id})
@@ -1427,25 +1294,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 FILTER(!BOUND(?superseded_by))
             }
             LIMIT 1
-            """,
-    ),
-    NamedQuery(
-        name="provenance.touch_last_accessed_procedure",
-        cypher="""
-            MATCH (n:Procedure {procedure_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live Procedure.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:Procedure ;
-                   campy:procedure_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
             """,
     ),
     NamedQuery(
@@ -1589,25 +1437,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
             """,
     ),
     NamedQuery(
-        name="provenance.touch_last_accessed_knowledgegap",
-        cypher="""
-            MATCH (n:KnowledgeGap {gap_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live KnowledgeGap.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:KnowledgeGap ;
-                   campy:gap_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
-            """,
-    ),
-    NamedQuery(
         name="provenance.mark_superseded_plan",
         cypher="""
             MATCH (n:Plan {plan_id: $node_id})
@@ -1745,25 +1574,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 FILTER(!BOUND(?superseded_by))
             }
             LIMIT 1
-            """,
-    ),
-    NamedQuery(
-        name="provenance.touch_last_accessed_plan",
-        cypher="""
-            MATCH (n:Plan {plan_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live Plan.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:Plan ;
-                   campy:plan_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
             """,
     ),
     NamedQuery(
@@ -1907,25 +1717,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
             """,
     ),
     NamedQuery(
-        name="provenance.touch_last_accessed_planstep",
-        cypher="""
-            MATCH (n:PlanStep {step_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live PlanStep.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:PlanStep ;
-                   campy:step_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
-            """,
-    ),
-    NamedQuery(
         name="provenance.mark_superseded_hypothesis",
         cypher="""
             MATCH (n:Hypothesis {id: $node_id})
@@ -2063,25 +1854,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 FILTER(!BOUND(?superseded_by))
             }
             LIMIT 1
-            """,
-    ),
-    NamedQuery(
-        name="provenance.touch_last_accessed_hypothesis",
-        cypher="""
-            MATCH (n:Hypothesis {id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live Hypothesis.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:Hypothesis ;
-                   campy:id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
             """,
     ),
     NamedQuery(
@@ -2225,25 +1997,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
             """,
     ),
     NamedQuery(
-        name="provenance.touch_last_accessed_actionfact",
-        cypher="""
-            MATCH (n:ActionFact {fact_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live ActionFact.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:ActionFact ;
-                   campy:fact_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
-            """,
-    ),
-    NamedQuery(
         name="provenance.mark_superseded_actioneffect",
         cypher="""
             MATCH (n:ActionEffect {effect_id: $node_id})
@@ -2381,25 +2134,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 FILTER(!BOUND(?superseded_by))
             }
             LIMIT 1
-            """,
-    ),
-    NamedQuery(
-        name="provenance.touch_last_accessed_actioneffect",
-        cypher="""
-            MATCH (n:ActionEffect {effect_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live ActionEffect.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:ActionEffect ;
-                   campy:effect_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
             """,
     ),
     NamedQuery(
@@ -2543,25 +2277,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
             """,
     ),
     NamedQuery(
-        name="provenance.touch_last_accessed_victorycondition",
-        cypher="""
-            MATCH (n:VictoryCondition {condition_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live VictoryCondition.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:VictoryCondition ;
-                   campy:condition_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
-            """,
-    ),
-    NamedQuery(
         name="provenance.mark_superseded_rule",
         cypher="""
             MATCH (n:Rule {rule_id: $node_id})
@@ -2699,25 +2414,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 FILTER(!BOUND(?superseded_by))
             }
             LIMIT 1
-            """,
-    ),
-    NamedQuery(
-        name="provenance.touch_last_accessed_rule",
-        cypher="""
-            MATCH (n:Rule {rule_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live Rule.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:Rule ;
-                   campy:rule_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
             """,
     ),
     NamedQuery(
@@ -2861,25 +2557,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
             """,
     ),
     NamedQuery(
-        name="provenance.touch_last_accessed_transition",
-        cypher="""
-            MATCH (n:Transition {transition_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live Transition.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:Transition ;
-                   campy:transition_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
-            """,
-    ),
-    NamedQuery(
         name="provenance.mark_superseded_documentextract",
         cypher="""
             MATCH (n:DocumentExtract {extract_id: $node_id})
@@ -3017,25 +2694,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 FILTER(!BOUND(?superseded_by))
             }
             LIMIT 1
-            """,
-    ),
-    NamedQuery(
-        name="provenance.touch_last_accessed_documentextract",
-        cypher="""
-            MATCH (n:DocumentExtract {extract_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live DocumentExtract.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:DocumentExtract ;
-                   campy:extract_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
             """,
     ),
     NamedQuery(
@@ -3179,25 +2837,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
             """,
     ),
     NamedQuery(
-        name="provenance.touch_last_accessed_worksummary",
-        cypher="""
-            MATCH (n:WorkSummary {summary_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live WorkSummary.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:WorkSummary ;
-                   campy:summary_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
-            """,
-    ),
-    NamedQuery(
         name="provenance.mark_superseded_workartifact",
         cypher="""
             MATCH (n:WorkArtifact {artifact_id: $node_id})
@@ -3338,25 +2977,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
             """,
     ),
     NamedQuery(
-        name="provenance.touch_last_accessed_workartifact",
-        cypher="""
-            MATCH (n:WorkArtifact {artifact_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live WorkArtifact.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:WorkArtifact ;
-                   campy:artifact_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
-            """,
-    ),
-    NamedQuery(
         name="provenance.mark_superseded_arcmechanic",
         cypher="""
             MATCH (n:ArcMechanic {mechanic_id: $node_id})
@@ -3474,25 +3094,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
             """),
-    ),
-    NamedQuery(
-        name="provenance.touch_last_accessed_arcmechanic",
-        cypher="""
-            MATCH (n:ArcMechanic {mechanic_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live ArcMechanic.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:ArcMechanic ;
-                   campy:mechanic_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
-            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_arcactionpattern",
@@ -3614,25 +3215,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
             """),
     ),
     NamedQuery(
-        name="provenance.touch_last_accessed_arcactionpattern",
-        cypher="""
-            MATCH (n:ArcActionPattern {pattern_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live ArcActionPattern.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:ArcActionPattern ;
-                   campy:pattern_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
-            """,
-    ),
-    NamedQuery(
         name="provenance.mark_superseded_arceffectpattern",
         cypher="""
             MATCH (n:ArcEffectPattern {pattern_id: $node_id})
@@ -3750,25 +3332,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
             """),
-    ),
-    NamedQuery(
-        name="provenance.touch_last_accessed_arceffectpattern",
-        cypher="""
-            MATCH (n:ArcEffectPattern {pattern_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live ArcEffectPattern.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:ArcEffectPattern ;
-                   campy:pattern_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
-            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_arcprecondition",
@@ -3890,25 +3453,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
             """),
     ),
     NamedQuery(
-        name="provenance.touch_last_accessed_arcprecondition",
-        cypher="""
-            MATCH (n:ArcPrecondition {precondition_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live ArcPrecondition.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:ArcPrecondition ;
-                   campy:precondition_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
-            """,
-    ),
-    NamedQuery(
         name="provenance.mark_superseded_arcfailuremode",
         cypher="""
             MATCH (n:ArcFailureMode {failure_mode_id: $node_id})
@@ -4026,25 +3570,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
             """),
-    ),
-    NamedQuery(
-        name="provenance.touch_last_accessed_arcfailuremode",
-        cypher="""
-            MATCH (n:ArcFailureMode {failure_mode_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live ArcFailureMode.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:ArcFailureMode ;
-                   campy:failure_mode_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
-            """,
     ),
     NamedQuery(
         name="provenance.mark_superseded_arcrecoverypolicy",
@@ -4166,25 +3691,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
             """),
     ),
     NamedQuery(
-        name="provenance.touch_last_accessed_arcrecoverypolicy",
-        cypher="""
-            MATCH (n:ArcRecoveryPolicy {recovery_policy_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live ArcRecoveryPolicy.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:ArcRecoveryPolicy ;
-                   campy:recovery_policy_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
-            """,
-    ),
-    NamedQuery(
         name="provenance.mark_superseded_arcworldmodelstep",
         cypher="""
             MATCH (n:ArcWorldModelStep {world_model_step_id: $node_id})
@@ -4302,25 +3808,6 @@ PROVENANCE_QUERIES: tuple[NamedQuery, ...] = (
                 { ?n ?p ?o } UNION { ?s ?p2 ?n }
             }
             """),
-    ),
-    NamedQuery(
-        name="provenance.touch_last_accessed_arcworldmodelstep",
-        cypher="""
-            MATCH (n:ArcWorldModelStep {world_model_step_id: $id})
-            SET n.last_accessed_at = timestamp($now)
-            """,
-        params=("id", "now"),
-        mutating=True,
-        description="Update last_accessed_at for live ArcWorldModelStep.",
-        sparql="""
-            DELETE { ?n campy:last_accessed_at ?old_last_accessed_at }
-            INSERT { ?n campy:last_accessed_at ?now }
-            WHERE {
-                ?n a campy:ArcWorldModelStep ;
-                   campy:world_model_step_id ?id .
-                OPTIONAL { ?n campy:last_accessed_at ?old_last_accessed_at }
-            }
-            """,
     ),
 
     # B399: FactEntity (schema.py's B317 capability-graph subgraph) carries

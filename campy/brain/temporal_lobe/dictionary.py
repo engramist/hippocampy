@@ -147,7 +147,6 @@ async def ingest_dictionary(entities: list[dict], db, now) -> dict:
                 "temporal_lobe.dict_link_pref_label",
                 cid=concept_id,
                 lid=pref_label_id,
-                now=now,
             )
             created += 1
 
@@ -175,7 +174,6 @@ async def ingest_dictionary(entities: list[dict], db, now) -> dict:
                 "temporal_lobe.dict_link_alt_label",
                 cid=concept_id,
                 lid=alt_label_id,
-                now=now,
             )
             labels_added += 1
 
