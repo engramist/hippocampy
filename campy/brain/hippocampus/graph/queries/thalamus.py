@@ -1575,7 +1575,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         name="thalamus.bundle_semantic_concept",
         cypher="MATCH (n:Concept) "
                "WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
-               "RETURN n.text_raw as text, label(n) as node_type, "
+               "RETURN n.text_raw as text, label(n) as node_type, n.concept_id as node_id, "
                "       n.pathway_strength as pathway_strength, n.confidence as confidence, "
                "       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist "
                "ORDER BY dist ASC LIMIT $limit",
@@ -1588,7 +1588,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         name="thalamus.bundle_semantic_concept_auth",
         cypher="MATCH (n:Concept) "
                "WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
-               "RETURN n.text_raw as text, label(n) as node_type, "
+               "RETURN n.text_raw as text, label(n) as node_type, n.concept_id as node_id, "
                "       n.pathway_strength as pathway_strength, n.confidence as confidence, "
                "       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist, n.authority as authority "
                "ORDER BY dist ASC LIMIT $limit",
@@ -1602,7 +1602,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         cypher="MATCH (n:Concept) "
                "WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
                "  AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false) "
-               "RETURN n.text_raw as text, label(n) as node_type, "
+               "RETURN n.text_raw as text, label(n) as node_type, n.concept_id as node_id, "
                "       n.pathway_strength as pathway_strength, n.confidence as confidence, "
                "       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist "
                "ORDER BY dist ASC LIMIT $limit",
@@ -1616,7 +1616,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         cypher="MATCH (n:Concept) "
                "WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
                "  AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false) "
-               "RETURN n.text_raw as text, label(n) as node_type, "
+               "RETURN n.text_raw as text, label(n) as node_type, n.concept_id as node_id, "
                "       n.pathway_strength as pathway_strength, n.confidence as confidence, "
                "       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist, n.authority as authority "
                "ORDER BY dist ASC LIMIT $limit",
@@ -1631,7 +1631,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         name="thalamus.bundle_semantic_decision",
         cypher="MATCH (n:Decision) "
                "WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
-               "RETURN n.text_raw as text, label(n) as node_type, "
+               "RETURN n.text_raw as text, label(n) as node_type, n.decision_id as node_id, "
                "       n.pathway_strength as pathway_strength, n.confidence as confidence, "
                "       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist "
                "ORDER BY dist ASC LIMIT $limit",
@@ -1644,7 +1644,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         name="thalamus.bundle_semantic_decision_auth",
         cypher="MATCH (n:Decision) "
                "WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
-               "RETURN n.text_raw as text, label(n) as node_type, "
+               "RETURN n.text_raw as text, label(n) as node_type, n.decision_id as node_id, "
                "       n.pathway_strength as pathway_strength, n.confidence as confidence, "
                "       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist, n.authority as authority "
                "ORDER BY dist ASC LIMIT $limit",
@@ -1658,7 +1658,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         cypher="MATCH (n:Decision) "
                "WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
                "  AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false) "
-               "RETURN n.text_raw as text, label(n) as node_type, "
+               "RETURN n.text_raw as text, label(n) as node_type, n.decision_id as node_id, "
                "       n.pathway_strength as pathway_strength, n.confidence as confidence, "
                "       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist "
                "ORDER BY dist ASC LIMIT $limit",
@@ -1672,7 +1672,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         cypher="MATCH (n:Decision) "
                "WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
                "  AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false) "
-               "RETURN n.text_raw as text, label(n) as node_type, "
+               "RETURN n.text_raw as text, label(n) as node_type, n.decision_id as node_id, "
                "       n.pathway_strength as pathway_strength, n.confidence as confidence, "
                "       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist, n.authority as authority "
                "ORDER BY dist ASC LIMIT $limit",
@@ -1687,7 +1687,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         name="thalamus.bundle_semantic_constraint",
         cypher="MATCH (n:Constraint) "
                "WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
-               "RETURN n.text_raw as text, label(n) as node_type, "
+               "RETURN n.text_raw as text, label(n) as node_type, n.constraint_id as node_id, "
                "       n.pathway_strength as pathway_strength, n.confidence as confidence, "
                "       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist "
                "ORDER BY dist ASC LIMIT $limit",
@@ -1700,7 +1700,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         name="thalamus.bundle_semantic_constraint_auth",
         cypher="MATCH (n:Constraint) "
                "WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
-               "RETURN n.text_raw as text, label(n) as node_type, "
+               "RETURN n.text_raw as text, label(n) as node_type, n.constraint_id as node_id, "
                "       n.pathway_strength as pathway_strength, n.confidence as confidence, "
                "       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist, n.authority as authority "
                "ORDER BY dist ASC LIMIT $limit",
@@ -1714,7 +1714,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         cypher="MATCH (n:Constraint) "
                "WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
                "  AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false) "
-               "RETURN n.text_raw as text, label(n) as node_type, "
+               "RETURN n.text_raw as text, label(n) as node_type, n.constraint_id as node_id, "
                "       n.pathway_strength as pathway_strength, n.confidence as confidence, "
                "       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist "
                "ORDER BY dist ASC LIMIT $limit",
@@ -1728,7 +1728,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         cypher="MATCH (n:Constraint) "
                "WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
                "  AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false) "
-               "RETURN n.text_raw as text, label(n) as node_type, "
+               "RETURN n.text_raw as text, label(n) as node_type, n.constraint_id as node_id, "
                "       n.pathway_strength as pathway_strength, n.confidence as confidence, "
                "       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist, n.authority as authority "
                "ORDER BY dist ASC LIMIT $limit",
@@ -2065,7 +2065,7 @@ BUNDLE_EXTRA_QUERIES.extend([
         name="thalamus.bundle_semantic_requirement",
         cypher="MATCH (n:Requirement) "
                "WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
-               "RETURN n.text_raw as text, label(n) as node_type, "
+               "RETURN n.text_raw as text, label(n) as node_type, n.requirement_id as node_id, "
                "       n.pathway_strength as pathway_strength, n.confidence as confidence, "
                "       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist "
                "ORDER BY dist ASC LIMIT $limit",
@@ -2077,7 +2077,7 @@ BUNDLE_EXTRA_QUERIES.extend([
         name="thalamus.bundle_semantic_requirement_auth",
         cypher="MATCH (n:Requirement) "
                "WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
-               "RETURN n.text_raw as text, label(n) as node_type, "
+               "RETURN n.text_raw as text, label(n) as node_type, n.requirement_id as node_id, "
                "       n.pathway_strength as pathway_strength, n.confidence as confidence, "
                "       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist, n.authority as authority "
                "ORDER BY dist ASC LIMIT $limit",
@@ -2090,7 +2090,7 @@ BUNDLE_EXTRA_QUERIES.extend([
         cypher="MATCH (n:Requirement) "
                "WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
                "  AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false) "
-               "RETURN n.text_raw as text, label(n) as node_type, "
+               "RETURN n.text_raw as text, label(n) as node_type, n.requirement_id as node_id, "
                "       n.pathway_strength as pathway_strength, n.confidence as confidence, "
                "       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist "
                "ORDER BY dist ASC LIMIT $limit",
@@ -2103,7 +2103,7 @@ BUNDLE_EXTRA_QUERIES.extend([
         cypher="MATCH (n:Requirement) "
                "WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
                "  AND (n.flagged_for_review IS NULL OR n.flagged_for_review = false) "
-               "RETURN n.text_raw as text, label(n) as node_type, "
+               "RETURN n.text_raw as text, label(n) as node_type, n.requirement_id as node_id, "
                "       n.pathway_strength as pathway_strength, n.confidence as confidence, "
                "       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist, n.authority as authority "
                "ORDER BY dist ASC LIMIT $limit",
@@ -2132,8 +2132,19 @@ THALAMUS_QUERIES = list(THALAMUS_QUERIES) + BUNDLE_EXTRA_QUERIES
 # above (spec §3.1/§5), so none of these get sparql= either.
 ARCHIVED_SUPERSEDED_QUERIES: list[NamedQuery] = []
 
+# B375: label -> primary-key column, so every generated bundle_semantic_*
+# query can also RETURN the node's own id (needed for warm-frontier
+# activation lookup during ranking in bundle_compiler.py).
+_BUNDLE_SEMANTIC_PK = {
+    "Concept": "concept_id",
+    "Decision": "decision_id",
+    "Constraint": "constraint_id",
+    "Requirement": "requirement_id",
+}
+
 for _label in ("Concept", "Decision", "Constraint", "Requirement"):
     _lbl_lower = _label.lower()
+    _pk_col = _BUNDLE_SEMANTIC_PK[_label]
     for _flagged in (False, True):
         for _archived in (False, True):
             for _superseded in (False, True):
@@ -2166,7 +2177,7 @@ for _label in ("Concept", "Decision", "Constraint", "Requirement"):
                             cypher=f"MATCH (n:{_label}) "
                                    f"WHERE (1 - array_cosine_similarity(n.embedding, $query_embedding)) < 0.30 "
                                    f"{_filter_text} "
-                                   f"RETURN n.text_raw as text, label(n) as node_type, "
+                                   f"RETURN n.text_raw as text, label(n) as node_type, n.{_pk_col} as node_id, "
                                    f"       n.pathway_strength as pathway_strength, n.confidence as confidence, "
                                    f"       (1 - array_cosine_similarity(n.embedding, $query_embedding)) as dist{_auth_select} "
                                    f"ORDER BY dist ASC LIMIT $limit",

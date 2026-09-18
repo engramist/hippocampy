@@ -295,3 +295,14 @@ max_pages_per_sweep = 80
 max_chars_per_page = 8000
 max_related_pages = 12
 home_title = "ARC-AGI Memory"
+
+# B375: Warm Frontier (Pre-Warmed Selective Activation) tuning. Every key
+# below matches warm_frontier.py's prior hardcoded default exactly, so
+# leaving this whole section commented out changes nothing.
+# [retrieval.warm_frontier]
+# max_warm_nodes = 20               # bound on frontier size per session
+# similarity_weight = 0.6           # weight applied to true cosine similarity (Phase 1)
+# hops_decay = 0.5                  # multiplier applied to 1-hop spread activation (Phase 2)
+# min_activation = 0.3              # minimum activation score to enter the frontier via spread
+# supernode_degree_threshold = 50   # a node with more neighbors than this is treated as a hub
+# supernode_top_n = 5               # hub neighbors are capped to the top-N by pathway_strength

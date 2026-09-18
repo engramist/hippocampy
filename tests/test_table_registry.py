@@ -69,6 +69,10 @@ def test_warm_pk_map_matches_legacy_literal() -> None:
         "ActionItem": "action_item_id",
         "GlobalConstraint": "global_constraint_id",
         "GlobalPreference": "global_preference_id",
+        # B375 gap 4: Step 4b pre-activates matched Lesson/Procedure nodes
+        # into the warm frontier, so both are now warmable.
+        "Lesson": "lesson_id",
+        "Procedure": "procedure_id",
     }
     actual = {table.name: table.pk for table in tables_with("warmable")}
     assert actual == expected

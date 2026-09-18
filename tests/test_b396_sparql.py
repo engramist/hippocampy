@@ -36,7 +36,11 @@ def test_b396_query_counts():
     assert len(TASK_GRAPH_QUERIES) == 30
     assert len(ORCHESTRATOR_QUERIES) == 55
     assert len(LESSONS_QUERIES) == 27
-    assert len(TEMPORAL_LOBE_QUERIES) == 612
+    # B375 gap 4: Lesson/Procedure joined the "warmable" table set so Step
+    # 4b can pre-activate matched Lessons/Procedures in the warm frontier —
+    # this grows the per-table warm_link/warm_get/warm_neighbor generator
+    # loops from 7 to 9 tables (612 -> 1000).
+    assert len(TEMPORAL_LOBE_QUERIES) == 1000
     total = (
         len(BACKUP_QUERIES)
         + len(CONTINUITY_QUERIES)
@@ -48,7 +52,7 @@ def test_b396_query_counts():
         + len(LESSONS_QUERIES)
         + len(TEMPORAL_LOBE_QUERIES)
     )
-    assert total == 772
+    assert total == 1160
 
 
 @pytest.mark.parametrize("query", BACKUP_QUERIES, ids=lambda q: q.name)

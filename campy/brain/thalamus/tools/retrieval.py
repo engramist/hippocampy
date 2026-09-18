@@ -374,9 +374,10 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
             similarity = row["score"]
             lexical_exact = bool(row.get("lexical_exact"))
 
-            # B91: Warm boost
+            # B91/B375: warm-frontier activation score, actually applied in
+            # _apply_fusion_adjustments (see warm_nodes passed to it below) —
+            # this local only carries it through to the per-node output dict.
             activation_score = warm_nodes.get(node_id, 0.0)
-            warm_boost = activation_score * 0.25 # Up to +0.25 boost for hot nodes
 
             outcome_valence = None
             outcome_warning = None
@@ -457,7 +458,7 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
         if prev is None or float(item.get("similarity", 0.0) or 0.0) > float(prev.get("similarity", 0.0) or 0.0):
             result_by_id[nid] = item
 
-    adjusted_entries = _apply_fusion_adjustments(fused_entries, result_by_id, outcome_map)
+    adjusted_entries = _apply_fusion_adjustments(fused_entries, result_by_id, outcome_map, warm_nodes)
     all_results = [entry["result"] for entry in sorted(adjusted_entries, key=lambda e: e["final"], reverse=True)]
 
     debug_ranking = bool(params.get("debug_ranking"))

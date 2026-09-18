@@ -22,6 +22,7 @@ import re
 from datetime import datetime, timezone
 
 from campy.brain.hippocampus.table_registry import get_table
+from campy.brain.temporal_lobe.warm_frontier import activate_warm_node
 
 _logger = logging.getLogger(__name__)
 
@@ -81,10 +82,17 @@ async def check_associative_triggers(
     full_message: str,
     db,
     config: dict,
+    session_id: str = "unknown",
 ) -> dict:
     """
     Check if incoming entity matches stored Lessons/Procedures that lack
     trigger metadata. If so, auto-bind trigger patterns.
+
+    B375 gap 4: every match above the similarity threshold also
+    pre-activates the matched Lesson/Procedure in `session_id`'s warm
+    frontier (Layer 3, Anticipatory Engine) — independent of whether a new
+    trigger_pattern was bound, since a node can already have a bound
+    trigger yet still be worth pre-warming for the very next retrieval.
 
     Args:
         entity_text: The entity string being processed
@@ -92,6 +100,7 @@ async def check_associative_triggers(
         full_message: Full message text for signal detection
         db: KuzuClient instance
         config: Campy config dict
+        session_id: current session, for warm-frontier pre-activation
 
     Returns:
         {
@@ -99,6 +108,7 @@ async def check_associative_triggers(
             "lessons_matched": int,
             "procedures_matched": int,
             "triggers_bound": int,
+            "warm_activations": int,
         }
     """
     result = {
@@ -106,6 +116,7 @@ async def check_associative_triggers(
         "lessons_matched": 0,
         "procedures_matched": 0,
         "triggers_bound": 0,
+        "warm_activations": 0,
     }
 
     # Gate 1: Does the message contain an error/action signal?
@@ -141,6 +152,13 @@ async def check_associative_triggers(
                 continue
             if node.get("archived"):
                 continue
+
+            lesson_id = node.get("lesson_id")
+            if lesson_id and await activate_warm_node(
+                db, session_id, lesson_id, "Lesson", score
+            ):
+                result["warm_activations"] += 1
+
             # Skip if trigger already bound
             existing_pattern = node.get("trigger_pattern") or ""
             if existing_pattern.strip():
@@ -148,7 +166,6 @@ async def check_associative_triggers(
                 continue
 
             # Auto-bind trigger metadata
-            lesson_id = node.get("lesson_id")
             if not lesson_id:
                 continue
 
@@ -198,12 +215,18 @@ async def check_associative_triggers(
                 continue
             if node.get("archived"):
                 continue
+
+            procedure_id = node.get("procedure_id")
+            if procedure_id and await activate_warm_node(
+                db, session_id, procedure_id, "Procedure", score
+            ):
+                result["warm_activations"] += 1
+
             existing_pattern = node.get("trigger_pattern") or ""
             if existing_pattern.strip():
                 result["procedures_matched"] += 1
                 continue
 
-            procedure_id = node.get("procedure_id")
             if not procedure_id:
                 continue
 

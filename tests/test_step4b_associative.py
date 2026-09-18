@@ -356,3 +356,117 @@ async def test_vector_search_failure_graceful():
     # Should not raise, should return 0 bindings
     assert result["signal_type"] == "error"
     assert result["triggers_bound"] == 0
+
+
+# ---------------------------------------------------------------------------
+# B375 gap 4: warm-frontier pre-activation
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_matched_lesson_pre_activates_warm_frontier(monkeypatch):
+    """A Lesson match above threshold must land in the session's warm
+    frontier via activate_warm_node, not just get a trigger_pattern bound."""
+    import campy.brain.temporal_lobe.loop.step4b_associative as step4b
+
+    lesson_node = {
+        "lesson_id": "lesson-001",
+        "trigger_pattern": "",
+        "archived": False,
+    }
+    db = MagicMock()
+    db.vector_search = MagicMock(side_effect=[
+        [{"node": lesson_node, "score": 0.80}],
+        [],
+    ])
+    db.execute_write = AsyncMock()
+
+    activate_calls = []
+
+    async def fake_activate(db_arg, session_id, node_id, table, score):
+        activate_calls.append((session_id, node_id, table, score))
+        return True
+
+    monkeypatch.setattr(step4b, "activate_warm_node", fake_activate)
+
+    result = await step4b.check_associative_triggers(
+        entity_text="docker error",
+        entity_vector=[0.1] * 384,
+        full_message="Error: docker build failed",
+        db=db,
+        config={},
+        session_id="live-session",
+    )
+
+    assert result["warm_activations"] == 1
+    assert activate_calls == [("live-session", "lesson-001", "Lesson", 0.80)]
+
+
+@pytest.mark.asyncio
+async def test_already_bound_lesson_still_pre_activates(monkeypatch):
+    """A node that already has a trigger_pattern is skipped for binding
+    but must still be pre-activated -- it can still be worth warming for
+    the very next retrieval."""
+    import campy.brain.temporal_lobe.loop.step4b_associative as step4b
+
+    lesson_node = {
+        "lesson_id": "lesson-001",
+        "trigger_pattern": "docker|container",
+        "archived": False,
+    }
+    db = MagicMock()
+    db.vector_search = MagicMock(side_effect=[
+        [{"node": lesson_node, "score": 0.80}],
+        [],
+    ])
+    db.execute_write = AsyncMock()
+
+    monkeypatch.setattr(
+        step4b, "activate_warm_node", AsyncMock(return_value=True)
+    )
+
+    result = await step4b.check_associative_triggers(
+        entity_text="docker error",
+        entity_vector=[0.1] * 384,
+        full_message="Error: docker build failed",
+        db=db,
+        config={},
+        session_id="live-session",
+    )
+
+    assert result["triggers_bound"] == 0  # already bound, no new trigger
+    assert result["warm_activations"] == 1  # but still pre-activated
+    db.execute_write.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_unknown_session_id_skips_activation(monkeypatch):
+    """Default session_id="unknown" (no real session in scope) must not
+    attempt any warm-frontier writes -- cold-start safe."""
+    import campy.brain.temporal_lobe.loop.step4b_associative as step4b
+    import campy.brain.temporal_lobe.warm_frontier as wf
+
+    lesson_node = {
+        "lesson_id": "lesson-001",
+        "trigger_pattern": "",
+        "archived": False,
+    }
+    db = MagicMock()
+    db.vector_search = MagicMock(side_effect=[
+        [{"node": lesson_node, "score": 0.80}],
+        [],
+    ])
+    db.execute_write = AsyncMock()
+
+    gw_run_spy = AsyncMock(return_value=[])
+    monkeypatch.setattr(wf, "get_gateway", lambda db: MagicMock(run=gw_run_spy))
+
+    result = await step4b.check_associative_triggers(
+        entity_text="docker error",
+        entity_vector=[0.1] * 384,
+        full_message="Error: docker build failed",
+        db=db,
+        config={},
+    )
+
+    assert result["warm_activations"] == 0
+    gw_run_spy.assert_not_called()

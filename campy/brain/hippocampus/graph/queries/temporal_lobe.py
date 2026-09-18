@@ -320,36 +320,44 @@ for _table, _pk in NODE_PK_MAP.items():
         for _target_table, _target_pk in NODE_PK_MAP.items():
             TEMPORAL_LOBE_QUERIES.extend([
                 NamedQuery(
+                    # B375: also projects pathway_strength so the caller can
+                    # apply the dense-supernode safeguard (cap to top-5 by
+                    # pathway_strength DESC when a node's degree exceeds 50)
+                    # without a second round-trip per neighbor.
                     name=f"temporal_lobe.warm_neighbor_out_{_table.lower()}_{_rel.lower()}_{_target_table.lower()}",
-                    cypher=f"MATCH (a:{_table} {{{_pk}: $id}})-[:{_rel}]->(b:{_target_table}) RETURN b.{_target_pk}",
+                    cypher=f"MATCH (a:{_table} {{{_pk}: $id}})-[:{_rel}]->(b:{_target_table}) "
+                           f"RETURN b.{_target_pk}, b.pathway_strength",
                     params=("id",),
                     mutating=False,
                     description=f"Warm neighbor out {_table} {_rel} {_target_table}",
                     sparql=f"""
                         PREFIX campy: <https://campy.dev/ns#>
 
-                        SELECT ?{_target_pk}
+                        SELECT ?{_target_pk} ?pathway_strength
                         WHERE {{
                           ?a a campy:{_table} ; campy:{_pk} ?id .
                           ?a campy:{_rel} ?b .
                           ?b a campy:{_target_table} ; campy:{_target_pk} ?{_target_pk} .
+                          OPTIONAL {{ ?b campy:pathway_strength ?pathway_strength }}
                         }}
                     """,
                 ),
                 NamedQuery(
                     name=f"temporal_lobe.warm_neighbor_in_{_table.lower()}_{_rel.lower()}_{_target_table.lower()}",
-                    cypher=f"MATCH (a:{_table} {{{_pk}: $id}})<-[:{_rel}]-(b:{_target_table}) RETURN b.{_target_pk}",
+                    cypher=f"MATCH (a:{_table} {{{_pk}: $id}})<-[:{_rel}]-(b:{_target_table}) "
+                           f"RETURN b.{_target_pk}, b.pathway_strength",
                     params=("id",),
                     mutating=False,
                     description=f"Warm neighbor in {_table} {_rel} {_target_table}",
                     sparql=f"""
                         PREFIX campy: <https://campy.dev/ns#>
 
-                        SELECT ?{_target_pk}
+                        SELECT ?{_target_pk} ?pathway_strength
                         WHERE {{
                           ?a a campy:{_table} ; campy:{_pk} ?id .
                           ?b campy:{_rel} ?a .
                           ?b a campy:{_target_table} ; campy:{_target_pk} ?{_target_pk} .
+                          OPTIONAL {{ ?b campy:pathway_strength ?pathway_strength }}
                         }}
                     """,
                 ),

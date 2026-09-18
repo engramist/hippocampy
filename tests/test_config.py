@@ -32,6 +32,39 @@ def test_load_config_sets_config_path_key(tmp_path):
     assert str(cfg_file) == config["_config_path"]
 
 
+def test_load_config_warm_frontier_defaults_when_absent(tmp_path):
+    """B375: [retrieval.warm_frontier] is optional — an absent section must
+    still merge in the documented defaults (matching warm_frontier.py's
+    prior hardcoded constants) rather than leaving the key missing."""
+    from campy.brain.brainstem.config import load_config
+    cfg_file = tmp_path / "campy.toml"
+    cfg_file.write_text('[llm]\nprovider = "ollama"\n')
+    config = load_config(str(cfg_file))
+    wf = config["retrieval"]["warm_frontier"]
+    assert wf["max_warm_nodes"] == 20
+    assert wf["similarity_weight"] == 0.6
+    assert wf["hops_decay"] == 0.5
+    assert wf["min_activation"] == 0.3
+    assert wf["supernode_degree_threshold"] == 50
+    assert wf["supernode_top_n"] == 5
+
+
+def test_load_config_warm_frontier_partial_override(tmp_path):
+    """A partial [retrieval.warm_frontier] override only replaces the keys
+    it names; unspecified keys still fall back to the defaults."""
+    from campy.brain.brainstem.config import load_config
+    cfg_file = tmp_path / "campy.toml"
+    cfg_file.write_text(
+        "[retrieval.warm_frontier]\nmax_warm_nodes = 50\nsupernode_top_n = 8\n"
+    )
+    config = load_config(str(cfg_file))
+    wf = config["retrieval"]["warm_frontier"]
+    assert wf["max_warm_nodes"] == 50
+    assert wf["supernode_top_n"] == 8
+    assert wf["similarity_weight"] == 0.6
+    assert wf["supernode_degree_threshold"] == 50
+
+
 def test_load_config_parses_nested_sections(tmp_path):
     """Multi-section TOML is fully parsed."""
     from campy.brain.brainstem.config import load_config
