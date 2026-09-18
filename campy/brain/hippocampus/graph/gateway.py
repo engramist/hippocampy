@@ -825,6 +825,45 @@ class GraphGateway:
                 return []
             return [RowDict({"node": node, "internal_id": uri})]
 
+        if name.startswith("basal_ganglia.frustration_get_"):
+            # B433: the sparql= bodies for these queries OPTIONAL-matched
+            # campy:embedding, which is never asserted as an RDF triple
+            # (FLOAT[384] embeddings live exclusively in vector_store, per
+            # spec §5) — ?emb could never bind, so
+            # detect_frustration_clusters() silently dropped every
+            # candidate node for lack of an embedding and always found
+            # zero clusters. Run the same salience-filtered pattern minus
+            # the dead OPTIONAL, then hydrate each row's embedding from
+            # vector_store by its minted URI.
+            table = _resolve_node_table(name.replace("basal_ganglia.frustration_get_", ""))
+            id_col = NODE_PRIMARY_KEYS[table]
+            sparql = """
+                PREFIX campy: <https://campy.dev/ns#>
+                SELECT ?id ?name ?description ?salience
+                WHERE {{
+                  ?n a campy:{table} ;
+                     campy:{id_col} ?id ;
+                     campy:salience_score ?salience .
+                  ?n campy:archived false .
+                  FILTER(?salience >= ?floor)
+                  OPTIONAL {{ ?n campy:text_raw ?raw_text }}
+                  BIND(COALESCE(?raw_text, "") AS ?name)
+                  BIND(COALESCE(?raw_text, "") AS ?description)
+                }}
+                ORDER BY DESC(?salience)
+                LIMIT 50
+            """.format(table=table, id_col=id_col)
+            rows = self._client._execute_and_collect(sparql, params)
+            res = []
+            for r in rows:
+                uri = mint_uri(table, r["id"])
+                emb = self._vector_store.get_vector(uri) if self._vector_store else None
+                res.append(RowDict({
+                    "id": r["id"], "name": r["name"], "description": r["description"],
+                    "emb": emb, "salience": r["salience"],
+                }))
+            return res
+
         raise NotImplementedError(f"No Python handler or SPARQL translation implemented for NamedQuery {name!r}")
 
     def _handle_thalamus_bundle(self, name: str, params: dict[str, Any]) -> list[Any]:

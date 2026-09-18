@@ -208,24 +208,11 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         params=("floor",),
         mutating=False,
         description="Get Concept nodes for frustration cluster detection",
-        sparql="""
-            PREFIX campy: <https://campy.dev/ns#>
-
-            SELECT ?id ?name ?description ?emb ?salience
-            WHERE {
-              ?n a campy:Concept ;
-                 campy:concept_id ?id ;
-                 campy:salience_score ?salience .
-              ?n campy:archived false .
-              FILTER(?salience >= ?floor)
-              OPTIONAL { ?n campy:text_raw ?raw_text }
-              BIND(COALESCE(?raw_text, "") AS ?name)
-              BIND(COALESCE(?raw_text, "") AS ?description)
-              OPTIONAL { ?n campy:embedding ?emb }
-            }
-            ORDER BY DESC(?salience)
-            LIMIT 50
-        """,
+        # B433: no sparql= — campy:embedding is never asserted as an RDF
+        # triple (FLOAT[384] lives in vector_store only), so a static
+        # OPTIONAL match for it can never bind. See gateway.py's
+        # basal_ganglia.frustration_get_* Python handler instead.
+        sparql=None,
     ),
     NamedQuery(
         name="basal_ganglia.frustration_get_decision",
@@ -238,24 +225,8 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         params=("floor",),
         mutating=False,
         description="Get Decision nodes for frustration cluster detection",
-        sparql="""
-            PREFIX campy: <https://campy.dev/ns#>
-
-            SELECT ?id ?name ?description ?emb ?salience
-            WHERE {
-              ?n a campy:Decision ;
-                 campy:decision_id ?id ;
-                 campy:salience_score ?salience .
-              ?n campy:archived false .
-              FILTER(?salience >= ?floor)
-              OPTIONAL { ?n campy:text_raw ?raw_text }
-              BIND(COALESCE(?raw_text, "") AS ?name)
-              BIND(COALESCE(?raw_text, "") AS ?description)
-              OPTIONAL { ?n campy:embedding ?emb }
-            }
-            ORDER BY DESC(?salience)
-            LIMIT 50
-        """,
+        # B433: no sparql= — see frustration_get_concept's comment above.
+        sparql=None,
     ),
     NamedQuery(
         name="basal_ganglia.frustration_get_constraint",
@@ -268,24 +239,8 @@ BASAL_GANGLIA_QUERIES: tuple[NamedQuery, ...] = (
         params=("floor",),
         mutating=False,
         description="Get Constraint nodes for frustration cluster detection",
-        sparql="""
-            PREFIX campy: <https://campy.dev/ns#>
-
-            SELECT ?id ?name ?description ?emb ?salience
-            WHERE {
-              ?n a campy:Constraint ;
-                 campy:constraint_id ?id ;
-                 campy:salience_score ?salience .
-              ?n campy:archived false .
-              FILTER(?salience >= ?floor)
-              OPTIONAL { ?n campy:text_raw ?raw_text }
-              BIND(COALESCE(?raw_text, "") AS ?name)
-              BIND(COALESCE(?raw_text, "") AS ?description)
-              OPTIONAL { ?n campy:embedding ?emb }
-            }
-            ORDER BY DESC(?salience)
-            LIMIT 50
-        """,
+        # B433: no sparql= — see frustration_get_concept's comment above.
+        sparql=None,
     ),
     NamedQuery(
         name="basal_ganglia.frustration_create_procedure",
