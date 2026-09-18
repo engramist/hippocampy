@@ -554,6 +554,47 @@ Applies to all six SPARQL sub-batches.
 9. **`LIMIT` cannot bind a variable in SPARQL.** A Cypher `LIMIT $limit` has no
    direct translation; either inline a constant or apply the limit in the
    Python handler. Do not silently drop the bound without recording it.
+10. **Never `BIND` a variable that is also a declared `params` name (added
+    2026-09-18, from B427 batch 3).** `GraphGateway` auto-injects every
+    declared parameter into a `VALUES` clause before the query body runs —
+    a `BIND(... AS ?paramname)` for that same name is a rebind of a variable
+    already in scope in the same group, which SPARQL forbids and pyoxigraph
+    rejects with a parse error (`"expected [_]"`, reported at the query's
+    closing brace, nowhere near the real cause). Found three live instances
+    this way: `arc.upsert_run`/`arc.upsert_task`/`arc.upsert_artifact` all
+    had a stray `BIND(NOW() AS ?now)` despite `now` already being a
+    parameter the Python call site computes and passes in — the SPARQL was
+    silently discarding the caller's real timestamp even before the parse
+    error made the point moot. If a query needs the *server's* clock rather
+    than a caller-supplied value, do not also declare that name in `params`;
+    if it needs the caller's value, do not `BIND` it. Never both. Grep
+    `BIND(NOW() AS ?x)` across `queries/*.py` and cross-check `?x` against
+    that query's own `params` tuple before trusting either exists safely.
+11. **A row's column names must be unique regardless of which triple they
+    came from (added 2026-09-18, from B427 batch 3).** `RowDict` (the
+    dict `GraphGateway` materializes rows into) supports dotted-key lookup
+    for Kùzu-style columns (`row["f.name"]`) by falling back to whatever is
+    *after* the dot (`row["name"]`) when the exact dotted key is absent —
+    needed because SPARQL variables cannot contain a dot, so the same
+    Python read code has to work against bare names like `?name` too. This
+    silently breaks the moment **two different aliased columns share the
+    same suffix**: `RETURN f.name, pol.name` (no `AS`) gives Kùzu the two
+    real columns `"f.name"`/`"pol.name"`, but a Python reader written
+    generically against `row.get("pol.name")` gets the dot-fallback's
+    `row["name"]` instead — which is `f.name`'s value, not `pol.name`'s,
+    because both keys reduce to the same fallback. Found live in
+    `arc.get_mechanic_failure_modes`: every recovery policy's name silently
+    returned its own failure mode's name instead. There is no way to make
+    this safe by choosing better SPARQL variable names alone — the fix is
+    on the Cypher side too: give every returned column an explicit `AS`
+    alias unique across the whole row (`RETURN f.name AS f_name, pol.name
+    AS pol_name, ...`), matching B399's `explore.py` precedent, and update
+    the Python reader to key off those same alias strings for both engines.
+    A query that chains more than one node/edge alias into a single
+    `RETURN`/`SELECT` and reuses a property name across them (`name`,
+    `id`, `status`, …) is a candidate for this trap even if it works fine
+    today — it only breaks once the *second* aliased occurrence of that
+    property name actually differs from the first in real data.
 
 ---
 
