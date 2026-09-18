@@ -96,8 +96,9 @@ def test_six_confirmed_bugs_detected() -> None:
     assert any(v.property == "req_id" and v.table == "Requirement" for v in v_req)
     assert ("sweep.get_active_pathway_requirement", "Requirement", "req_id") not in v_map
 
-    # 4. HAS_ALT_LABEL.created_at (rel table has no properties; fixed in quests.py by B405)
-    # Verified via synthetic query and temporal_lobe.dict_link_alt_label
+    # 4. HAS_ALT_LABEL.created_at (rel table has no properties; fixed in quests.py by
+    # B405, and in temporal_lobe.dict_link_alt_label/dict_link_pref_label by B413 —
+    # both had a cosmetic {created_at: $now} in .cypher the .sparql never matched).
     synthetic_v = scan_query_violations(
         "synthetic.link_concept_has_alt_label",
         "MATCH (c:Concept), (l:Label) CREATE (c)-[:HAS_ALT_LABEL {created_at: timestamp($now)}]->(l)",
@@ -108,7 +109,7 @@ def test_six_confirmed_bugs_detected() -> None:
         "temporal_lobe.dict_link_alt_label",
         "HAS_ALT_LABEL",
         "created_at",
-    ) in v_map
+    ) not in v_map
 
     # 5. retrieval.py: Message.content (valid: text_raw) — fixed in B412
     # (retrieval.get_originating_message_* now reference m.text_raw, so the

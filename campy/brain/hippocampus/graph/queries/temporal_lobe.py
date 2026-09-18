@@ -102,10 +102,15 @@ TEMPORAL_LOBE_QUERIES: list[NamedQuery] = [
         """,
     ),
     NamedQuery(
+        # B413: HAS_PREF_LABEL is classified "plain" (no properties) in
+        # EDGE_REIFICATION — the .cypher used to carry a cosmetic
+        # {created_at: $now} that the .sparql (correctly) never wrote,
+        # a divergence the schema-conformance guard flags as an undeclared
+        # inline-rel property. Dropped to single-source the intent.
         name="temporal_lobe.dict_link_pref_label",
         cypher="MATCH (c:Concept {concept_id: $cid}), (l:Label {label_id: $lid}) "
-               "CREATE (c)-[:HAS_PREF_LABEL {created_at: $now}]->(l)",
-        params=("cid", "lid", "now"),
+               "CREATE (c)-[:HAS_PREF_LABEL]->(l)",
+        params=("cid", "lid"),
         mutating=True,
         description="Link Concept to preferred Label",
         sparql="""
@@ -173,10 +178,13 @@ TEMPORAL_LOBE_QUERIES: list[NamedQuery] = [
         """,
     ),
     NamedQuery(
+        # B413: same reasoning as dict_link_pref_label above — HAS_ALT_LABEL
+        # is "plain" (no properties); the cosmetic {created_at: $now} in
+        # .cypher never matched the .sparql, which correctly never wrote it.
         name="temporal_lobe.dict_link_alt_label",
         cypher="MATCH (c:Concept {concept_id: $cid}), (l:Label {label_id: $lid}) "
-               "CREATE (c)-[:HAS_ALT_LABEL {created_at: $now}]->(l)",
-        params=("cid", "lid", "now"),
+               "CREATE (c)-[:HAS_ALT_LABEL]->(l)",
+        params=("cid", "lid"),
         mutating=True,
         description="Link Concept to alternative Label",
         sparql="""

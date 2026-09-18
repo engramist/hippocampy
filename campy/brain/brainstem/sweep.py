@@ -1241,8 +1241,6 @@ async def _dream_consolidation(db, config: dict, llm_client: Optional[object]) -
                     await _gateway(db).run(
                         "sweep.touch_subsumed_lesson",
                         cid=c["id"],
-                        now=now,
-                        cluster_size=len(cluster),
                         decay_boost=decay_boost,
                     )
 
