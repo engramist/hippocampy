@@ -1315,7 +1315,6 @@ NamedQuery(
             }
             WHERE {
                 BIND(IRI(CONCAT(STR(cid:), "ArcArtifact/", ENCODE_FOR_URI(?artifact_id))) AS ?a)
-                BIND(NOW() AS ?now)
                 OPTIONAL { ?a campy:artifact_kind ?o1 }
                 OPTIONAL { ?a campy:path ?o2 }
                 OPTIONAL { ?a campy:content_hash ?o3 }
@@ -1379,7 +1378,6 @@ NamedQuery(
             }
             WHERE {
                 BIND(IRI(CONCAT(STR(cid:), "ArcRun/", ENCODE_FOR_URI(?run_id))) AS ?r)
-                BIND(NOW() AS ?now)
                 OPTIONAL { ?r campy:artifact_hash ?o1 }
                 OPTIONAL { ?r campy:source_root ?o2 }
                 OPTIONAL { ?r campy:source_files ?o3 }
@@ -1447,7 +1445,6 @@ NamedQuery(
             }
             WHERE {
                 BIND(IRI(CONCAT(STR(cid:), "ArcTaskResult/", ENCODE_FOR_URI(?task_result_id))) AS ?t)
-                BIND(NOW() AS ?now)
                 OPTIONAL { ?t campy:run_id ?o1 }
                 OPTIONAL { ?t campy:task_id ?o2 }
                 OPTIONAL { ?t campy:puzzle_id ?o3 }

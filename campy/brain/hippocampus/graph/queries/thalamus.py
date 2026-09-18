@@ -778,6 +778,17 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         mutating=False,
         description="Fetch ArcWorldModelSummary for an ArcRun",
         # ARC_RUN_HAS_WORLD_MODEL_SUMMARY is "plain" in EDGE_REIFICATION.
+        # B427: every property below is OPTIONAL, not required -- the write
+        # path (arc.upsert_wm_summary) skips asserting a triple at all for
+        # any param that's None (matching Cypher's `SET x = NULL` no-op),
+        # so on RDF a node missing even ONE of these properties (e.g. a
+        # real-world summary that never reports full_reasoning_cycles_avoided)
+        # has no triple for it at all. A REQUIRED triple pattern for that
+        # property makes the WHOLE row vanish from the match -- Kùzu's LPG
+        # `RETURN s.prop` has no such failure mode (a NULL property value
+        # still returns a row, just with a null column), so this divergence
+        # was invisible until this query was actually exercised against
+        # Oxigraph with real (partially-null) data.
         sparql="""
             SELECT ?graph_bounded ?compiler_active ?falsification_active
                    ?reasoning_gated ?planner_grounded ?memory_transfer_active
@@ -785,16 +796,16 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                 ?r a campy:ArcRun ;
                    campy:run_id ?run_id .
                 ?r campy:ARC_RUN_HAS_WORLD_MODEL_SUMMARY ?s .
-                ?s a campy:ArcWorldModelSummary ;
-                   campy:graph_bounded ?graph_bounded ;
-                   campy:compiler_active ?compiler_active ;
-                   campy:falsification_active ?falsification_active ;
-                   campy:reasoning_gated ?reasoning_gated ;
-                   campy:planner_grounded ?planner_grounded ;
-                   campy:memory_transfer_active ?memory_transfer_active ;
-                   campy:single_action_stall_detected ?single_action_stall_detected ;
-                   campy:full_reasoning_cycles_avoided ?full_reasoning_cycles_avoided ;
-                   campy:created_at ?created_at .
+                ?s a campy:ArcWorldModelSummary .
+                OPTIONAL { ?s campy:graph_bounded ?graph_bounded }
+                OPTIONAL { ?s campy:compiler_active ?compiler_active }
+                OPTIONAL { ?s campy:falsification_active ?falsification_active }
+                OPTIONAL { ?s campy:reasoning_gated ?reasoning_gated }
+                OPTIONAL { ?s campy:planner_grounded ?planner_grounded }
+                OPTIONAL { ?s campy:memory_transfer_active ?memory_transfer_active }
+                OPTIONAL { ?s campy:single_action_stall_detected ?single_action_stall_detected }
+                OPTIONAL { ?s campy:full_reasoning_cycles_avoided ?full_reasoning_cycles_avoided }
+                OPTIONAL { ?s campy:created_at ?created_at }
             }
             ORDER BY DESC(?created_at)
             LIMIT 1
@@ -924,6 +935,10 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         params=("lim",),
         mutating=False,
         description="Fetch ArcWorldModelSummaries for wiki projection",
+        # B427: OPTIONAL for the same reason as thalamus.wiki_arc_run_wm_summary
+        # above — arc.upsert_wm_summary skips asserting a triple entirely for
+        # any None-valued param, so a required triple pattern here drops the
+        # whole row for any real summary missing even one of these fields.
         sparql="""
             SELECT ?world_model_summary_id ?task_id ?graph_bounded ?compiler_active
                    ?falsification_active ?reasoning_gated ?planner_grounded
@@ -931,16 +946,16 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                    ?full_reasoning_cycles_avoided ?summary WHERE {
                 ?s a campy:ArcWorldModelSummary ;
                    campy:world_model_summary_id ?world_model_summary_id ;
-                   campy:task_id ?task_id ;
-                   campy:graph_bounded ?graph_bounded ;
-                   campy:compiler_active ?compiler_active ;
-                   campy:falsification_active ?falsification_active ;
-                   campy:reasoning_gated ?reasoning_gated ;
-                   campy:planner_grounded ?planner_grounded ;
-                   campy:memory_transfer_active ?memory_transfer_active ;
-                   campy:single_action_stall_detected ?single_action_stall_detected ;
-                   campy:full_reasoning_cycles_avoided ?full_reasoning_cycles_avoided ;
-                   campy:created_at ?created_at .
+                   campy:task_id ?task_id .
+                OPTIONAL { ?s campy:graph_bounded ?graph_bounded }
+                OPTIONAL { ?s campy:compiler_active ?compiler_active }
+                OPTIONAL { ?s campy:falsification_active ?falsification_active }
+                OPTIONAL { ?s campy:reasoning_gated ?reasoning_gated }
+                OPTIONAL { ?s campy:planner_grounded ?planner_grounded }
+                OPTIONAL { ?s campy:memory_transfer_active ?memory_transfer_active }
+                OPTIONAL { ?s campy:single_action_stall_detected ?single_action_stall_detected }
+                OPTIONAL { ?s campy:full_reasoning_cycles_avoided ?full_reasoning_cycles_avoided }
+                OPTIONAL { ?s campy:created_at ?created_at }
                 OPTIONAL { ?s campy:summary ?summary }
             }
             ORDER BY DESC(?created_at)

@@ -3,22 +3,15 @@ from pathlib import Path
 
 import pytest
 
-from tests.kuzu_test_client import KuzuClient
-from campy.brain.hippocampus.schema import NODE_TABLES, REL_TABLES
+from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 from campy.brain.thalamus.tools.arc_artifacts import ingest_arc_artifacts
 from campy.brain.thalamus.wiki_projection import export_wiki_projection
 
-
-def _init_arc_schema(db: KuzuClient) -> None:
-    for table in ("ArcRun", "ArcTaskResult", "ArcArtifact", "ArcEvent", "ArcWorldModelStep", "ArcWorldModelSummary", "ArcMechanic"):
-        db.execute(f"CREATE NODE TABLE IF NOT EXISTS {table} ({NODE_TABLES[table]})")
-    for ddl in REL_TABLES:
-        if any(rel in ddl for rel in (
-            "ARC_RUN_HAS_TASK", "ARC_RUN_HAS_ARTIFACT", "ARC_TASK_HAS_EVENT", "ARC_EVENT_FROM_ARTIFACT",
-            "ARC_RUN_HAS_WORLD_MODEL_STEP", "ARC_RUN_HAS_WORLD_MODEL_SUMMARY",
-            "ARC_WORLD_MODEL_FROM_ARTIFACT", "ARC_WORLD_MODEL_SUMMARY_FROM_ARTIFACT"
-        )):
-            db.execute(ddl)
+# B427: migrated off KuzuClient. ingest_arc_artifacts/export_wiki_projection/
+# publish_mechanic_summary are fully GraphGateway-routed, and OxigraphClient
+# needs no CREATE TABLE step at all (the manual _init_arc_schema() DDL this
+# test used to run -- kept in sync with schema.py by hand -- is simply
+# unnecessary now).
 
 
 def _write_fixture_artifacts(root: Path) -> None:
@@ -45,8 +38,7 @@ def _write_fixture_artifacts(root: Path) -> None:
 async def test_wiki_projection_for_ingested_arc_run(tmp_path):
     root = tmp_path / "ARC_AGI"
     _write_fixture_artifacts(root)
-    db = KuzuClient(str(tmp_path / "brain.db"))
-    _init_arc_schema(db)
+    db = OxigraphClient(str(tmp_path / "brain.db"))
     await ingest_arc_artifacts({"artifact_root": str(root)}, db, {})
     
     # Manually add a mechanic

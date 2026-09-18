@@ -2,7 +2,7 @@ import os
 import shutil
 import pytest
 import uuid
-from tests.kuzu_test_client import KuzuClient
+from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 from campy.brain.hippocampus.schema import init_schema
 from campy.brain.thalamus.tools.task_graph import register_task_graph
 
@@ -19,22 +19,15 @@ async def test_b219_register_task_graph_parser_fix():
             shutil.rmtree(db_path)
         else:
             os.remove(db_path)
-            
-    db = KuzuClient(db_path)
-    
-    # Minimal schema init to avoid slow embeddings if possible
-    # but task_graph depends on TaskGraph and TaskNode tables.
-    # We use a mock-like approach for schema if init_schema is too slow, 
-    # but let's try real init first.
-    
-    try:
-        # Actually, let's just create the tables we need to keep it fast
-        # but matching campy/brain/hippocampus/schema.py
-        db.execute("CREATE NODE TABLE TaskGraph (graph_id STRING, name STRING, label STRING, description STRING, session_id STRING, owner STRING, version INT64, status STRING, created_at TIMESTAMP, completed_at TIMESTAMP, PRIMARY KEY (graph_id))")
-        db.execute("CREATE NODE TABLE TaskNode (task_id STRING, graph_id STRING, name STRING, label STRING, description STRING, owner STRING, status STRING, input_data STRING, output_data STRING, error_msg STRING, result STRING, created_at TIMESTAMP, started_at TIMESTAMP, completed_at TIMESTAMP, PRIMARY KEY (task_id))")
-        db.execute("CREATE REL TABLE TASK_OF (FROM TaskNode TO TaskGraph)")
-        db.execute("CREATE REL TABLE DEPENDS_ON (FROM TaskNode TO TaskNode)")
 
+    # B427: migrated off KuzuClient. register_task_graph is fully
+    # GraphGateway-routed, and OxigraphClient needs no CREATE TABLE step
+    # at all (NODE_COLUMNS/REL_COLUMNS come from schema.py globally) --
+    # the hand-rolled TaskGraph/TaskNode DDL this test used to declare
+    # (kept in sync with schema.py by hand) is simply unnecessary now.
+    db = OxigraphClient(db_path)
+
+    try:
         params = {
             "label": "Regression Graph",
             "session_id": "s1",

@@ -6,7 +6,7 @@ import tempfile
 import pytest
 
 from campy.brain.brainstem.sweep import _index_hygiene
-from tests.kuzu_test_client import KuzuClient
+from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 from campy.brain.temporal_lobe.loop.step5_retrieval import _headroom
 
 
@@ -121,30 +121,31 @@ async def test_below_threshold_does_not_log_warning(caplog) -> None:
 
 
 def test_temp_db_search_returns_active_top4() -> None:
+    # B427: migrated off KuzuClient. Real 384-dim Concept table instead of
+    # a synthetic ad-hoc 4-dim one -- OxigraphClient.write_node() is
+    # schema-driven off the real global NODE_COLUMNS and can't accommodate
+    # a custom per-test dimension. Only the first 2 of 384 dims vary
+    # (rest zero-padded) so the near/far cosine-similarity structure the
+    # test actually cares about is preserved exactly.
     tmp = tempfile.mkdtemp(prefix="hnsw_hygiene_")
     try:
-        db = KuzuClient(f"{tmp}/db")
-        db.execute(
-            "CREATE NODE TABLE HygNode("
-            "id STRING, embedding FLOAT[4], archived BOOLEAN, PRIMARY KEY (id))"
-        )
+        db = OxigraphClient(f"{tmp}/db")
 
         for i in range(4):
-            db.execute(
-                "CREATE (n:HygNode {id: $id, embedding: $emb, archived: false})",
-                {"id": f"a{i}", "emb": [1.0, i * 0.01, 0.0, 0.0]},
-            )
+            db.write_node("Concept", {
+                "concept_id": f"a{i}", "embedding": [1.0, i * 0.01] + [0.0] * 382,
+                "archived": False,
+            })
         for i in range(6):
-            db.execute(
-                "CREATE (n:HygNode {id: $id, embedding: $emb, archived: true})",
-                {"id": f"x{i}", "emb": [0.0, 1.0 - i * 0.01, 0.0, 0.0]},
-            )
+            db.write_node("Concept", {
+                "concept_id": f"x{i}", "embedding": [0.0, 1.0 - i * 0.01] + [0.0] * 382,
+                "archived": True,
+            })
 
-        db.create_vector_index("HygNode", "embedding", "hygnode_emb_idx")
-        rows = db.vector_search("HygNode", "hygnode_emb_idx", [1.0, 0.0, 0.0, 0.0], 4)
+        rows = db.vector_search("Concept", "concept_emb_idx", [1.0, 0.0] + [0.0] * 382, 4)
 
         assert len(rows) == 4
-        ids = [row["node"]["id"] for row in rows]
+        ids = [row["node"]["concept_id"] for row in rows]
         assert all(node_id.startswith("a") for node_id in ids)
         assert all(bool(row["node"].get("archived", False)) is False for row in rows)
         db.close()
