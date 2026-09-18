@@ -95,6 +95,14 @@ def test_pathway_queries_sparql(store, query):
 
 @pytest.mark.parametrize("query", BASAL_GANGLIA_QUERIES, ids=lambda q: q.name)
 def test_basal_ganglia_queries_sparql(store, query):
+    if query.name.startswith("basal_ganglia.frustration_get_"):
+        # B433: campy:embedding is never asserted as an RDF triple
+        # (FLOAT[384] lives in vector_store only), so a static OPTIONAL
+        # match for it can never bind. Handled via gateway.py's
+        # basal_ganglia.frustration_get_* Python handler, sparql=None.
+        assert query.sparql is None
+        return
+
     assert query.sparql is not None, f"{query.name} must have a sparql representation"
     if query.mutating:
         store.update(query.sparql)

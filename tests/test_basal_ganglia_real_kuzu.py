@@ -177,12 +177,6 @@ class TestFrustrationClustersRealKuzu:
 
         assert errors == 0, f"expected the query to succeed even with 0 clusters formed, got {errors} errors"
 
-    @pytest.mark.xfail(
-        reason="B433: basal_ganglia.frustration_get_concept's sparql= can never bind ?emb "
-               "(embeddings live in vector_store, not RDF triples) — detect_frustration_clusters "
-               "always finds 0 clusters against OxigraphClient until B433 is fixed.",
-        strict=True,
-    )
     async def test_creates_procedure_with_salience_score_from_concept_cluster(self, real_db, monkeypatch):
         from campy.brain.basal_ganglia.frustration_clusters import detect_frustration_clusters
 
@@ -226,12 +220,6 @@ class TestFrustrationClustersRealKuzu:
         linked = {row["concept_id"].value for row in edges}
         assert linked == {"fc-c1", "fc-c2"}
 
-    @pytest.mark.xfail(
-        reason="B433: basal_ganglia.frustration_get_decision's sparql= can never bind ?emb "
-               "(embeddings live in vector_store, not RDF triples) — detect_frustration_clusters "
-               "always finds 0 clusters against OxigraphClient until B433 is fixed.",
-        strict=True,
-    )
     async def test_creates_distilled_from_edge_to_decision_source(self, real_db, monkeypatch):
         """Regression guard for the hardcoded-:Concept-label bug: a cluster
         built entirely from Decision nodes must still get a working
