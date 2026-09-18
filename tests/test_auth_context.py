@@ -1030,21 +1030,22 @@ def _patch_embed_for_module():
 
 @pytest.fixture(scope="module")
 def db(tmp_path_factory, _patch_embed_for_module):
-    from tests.kuzu_test_client import KuzuClient
+    from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
     from campy.brain.hippocampus.schema import init_schema
 
     path = tmp_path_factory.mktemp("b315_auth") / "b315.db"
-    client = KuzuClient(str(path))
+    client = OxigraphClient(str(path))
     init_schema(client, SEED_PATH, EMBEDDING_MODEL)
     return client
 
 
 def _lesson_source(db, lesson_id: str) -> str | None:
-    r = db.execute(
-        "MATCH (l:Lesson {lesson_id: $id}) RETURN l.source", {"id": lesson_id}
-    )
-    assert r.has_next()
-    return r.get_next()[0]
+    rows = list(db.store.query(
+        f'PREFIX campy: <https://campy.dev/ns#> '
+        f'SELECT ?source WHERE {{ ?l campy:lesson_id "{lesson_id}" ; campy:source ?source . }}'
+    ))
+    assert rows, f"no Lesson found with lesson_id={lesson_id!r}"
+    return rows[0]["source"].value
 
 
 @pytest.mark.asyncio

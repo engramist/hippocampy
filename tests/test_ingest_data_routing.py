@@ -7,9 +7,11 @@ The 2026-08-03 audit found that `ingest_data()`'s content branch called
 so pasting a CSV or JSON array directly (no file_path) silently went
 through the conversational graph path and never reached the tabular
 store, starving B249/B250's tabular pipeline of real input. These tests
-exercise the real dispatch against a real Kuzu DB + real on-disk tabular
-store; `notify_turn` is mocked since its own behavior is covered
-elsewhere and is orthogonal to the routing decision under test here.
+exercise the real dispatch against a real database (B427: migrated off
+KuzuClient — tabular_ingest.py is fully GraphGateway-routed, no raw
+Cypher) + real on-disk tabular store; `notify_turn` is mocked since its
+own behavior is covered elsewhere and is orthogonal to the routing
+decision under test here.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ import tempfile
 
 import pytest
 
-from tests.kuzu_test_client import KuzuClient
+from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 from campy.brain.sensory_cortex.tabular_store import get_table_summary
 from campy.brain.thalamus.tools import context_tools
 from campy.paths import tables_dir
@@ -28,35 +30,11 @@ pytest.importorskip("pandas")
 
 CONFIG = {"embeddings": {"model": "sentence-transformers/all-MiniLM-L6-v2"}}
 
-_DATASET_DDL = """
-    dataset_id STRING,
-    name STRING,
-    description STRING,
-    embedding FLOAT[384],
-    embedding_model STRING,
-    embedding_dim INT32,
-    storage_uri STRING,
-    schema_json STRING,
-    row_count INT64,
-    column_count INT32,
-    source_format STRING,
-    content_hash STRING,
-    source_key STRING,
-    confidence DOUBLE,
-    confidence_low BOOLEAN,
-    pathway_strength DOUBLE,
-    archived BOOLEAN,
-    created_at TIMESTAMP,
-    last_accessed_at TIMESTAMP,
-    PRIMARY KEY (dataset_id)
-"""
-
 
 @pytest.fixture()
 def real_db(monkeypatch):
     tmp = tempfile.mkdtemp(prefix="ingest_data_routing_")
-    db = KuzuClient(f"{tmp}/db")
-    db.execute(f"CREATE NODE TABLE Dataset({_DATASET_DDL})")
+    db = OxigraphClient(f"{tmp}/db")
     monkeypatch.setattr(
         "campy.brain.hippocampus.graph.embeddings.embed",
         lambda text, model_name=None: [0.0] * 384,
