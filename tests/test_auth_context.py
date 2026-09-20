@@ -417,7 +417,7 @@ async def test_loop_worker_continues_after_error(monkeypatch):
     processed = []
 
     async def mock_run_loop(message_id, text, db, llm_client, config, centroids,
-                             role="user", session_id="unknown"):
+                             role="user", session_id="unknown", precomputed=None):
         if text == "bad":
             raise RuntimeError("simulated loop failure")
         processed.append(message_id)
@@ -432,8 +432,10 @@ async def test_loop_worker_continues_after_error(monkeypatch):
     import campy.brain_daemon as bd
     monkeypatch.setattr(bd, "run_loop", mock_run_loop)
 
-    await daemon._loop_queue.put(("msg-bad", "bad", "user", "s1"))
-    await daemon._loop_queue.put(("msg-good", "good text", "user", "s1"))
+    # B434: real queue shape is a 5-tuple -- notify_turn() also puts a
+    # `precomputed` dict/None as the 5th element.
+    await daemon._loop_queue.put(("msg-bad", "bad", "user", "s1", None))
+    await daemon._loop_queue.put(("msg-good", "good text", "user", "s1", None))
 
     task = asyncio.create_task(daemon._loop_worker())
     await asyncio.sleep(0.3)

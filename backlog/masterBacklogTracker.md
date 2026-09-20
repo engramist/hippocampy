@@ -80,6 +80,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B407 | Inference Pilot: Prove the RDF Thesis Before the Engine Cutover | P0 | complete | TBD | TBD | - | backlog/B407.md |
 | B408 | Stale-Base Guard: Make Silent Reverts Unmergeable | P0 | complete | TBD | TBD | - | backlog/B408.md |
 | B411 | Exhaustive Migration Fixture: Round-Trip Every Node and Edge Type | P0 | complete | TBD | TBD | - | backlog/B411.md |
+| B434 | Gated Consolidation Loop Worker Crashes on Every Turn (Queue Tuple Arity Mismatch) | P0 | fixed | TBD | TBD | - | backlog/B434.md |
 | B433 | basal_ganglia.frustration_get_* SPARQL Never Binds ?emb — Avoidance-Cluster Detection Always Finds Zero Clusters | P1 | fixed | TBD | TBD | - | backlog/B433.md |
 | B432 | explore_graph (Live MCP Tool) Is Structurally Broken Against the Shipped Oxigraph Engine | P0 | fixed | TBD | TBD | - | backlog/B432.md |
 | B431 | capability.py's Q1-Q4 SPARQL Bodies Are Non-Functional Stubs (Q1 Is a Live Trust-Tier Access-Control Gap) | P1 | open | TBD | TBD | - | backlog/B431.md |
