@@ -918,13 +918,19 @@ class BrainDaemon:
 
     async def _loop_worker(self):
         """
-        Reads (message_id, text, role, session_id) tuples from the queue and
-        runs the Gated Consolidation Loop on each. Runs as a background task.
+        Reads (message_id, text, role, session_id, precomputed) tuples from
+        the queue and runs the Gated Consolidation Loop on each. Runs as a
+        background task.
         """
         print("Loop worker started.")
         while True:
-            # B14: Added session_id to queue tuple
-            message_id, text, role, session_id = await self._loop_queue.get()
+            # B14: Added session_id to queue tuple.
+            # B434: capture.py's notify_turn puts a 5-tuple (with
+            # `precomputed`, a caller-supplied dict for skipping redundant
+            # re-embedding); this unpack previously declared only 4 names,
+            # so every single .get() raised ValueError before reaching the
+            # try/except below, permanently crash-looping this worker.
+            message_id, text, role, session_id, precomputed = await self._loop_queue.get()
             try:
                 print(f"[Loop] Processing ({role}): {text[:120]!r}")
                 summary = await run_loop(
@@ -936,6 +942,7 @@ class BrainDaemon:
                     config=self.config,
                     centroids=self._centroids,
                     session_id=session_id,
+                    precomputed=precomputed,
                 )
                 print(
                     f"[Loop] msg={message_id[:8]} "
