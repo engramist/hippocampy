@@ -23,49 +23,42 @@ from typing import Optional
 
 from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.hippocampus.provenance import authority_of
+from campy.brain.hippocampus.table_registry import pk_for
 
 _logger = logging.getLogger(__name__)
 
 
-def _table_has_authority(db, table: str) -> bool:
-    """B313: best-effort check for whether `table` already has the
-    `authority` column, so the exact-fact / semantic-context stages below
-    can include it in their RETURN when present without hard-failing (a
-    Kuzu binder exception) against a schema that predates B313 — e.g. the
-    reduced fixture tables some tests build directly rather than going
-    through campy.brain.hippocampus.schema.NODE_TABLES. Mirrors the
-    exception-tolerant `_column_exists()` pattern in schema.py's migration
-    step.
+def _table_has_column(db, table: str, column: str) -> bool:
+    """B374: best-effort check for whether `table` has `column`.
+
+    B437: the original implementation ran `CALL table_info(...)` —
+    Kùzu-only Cypher syntax. Against the real Oxigraph engine (the
+    production client since the B389/B397 cutover), pyoxigraph's SPARQL
+    parser rejects that string, the exception was swallowed by the bare
+    `except Exception: pass` below, and this always returned `False` —
+    even for columns that genuinely exist — silently steering every
+    caller onto the unfiltered base NamedQuery variant.
+
+    Oxigraph deployments are always initialized from `schema.py`'s DDL
+    in full (there's no partial/legacy-schema state the way Kùzu could
+    accumulate via incremental `ALTER TABLE` migrations), so
+    `NODE_COLUMNS` — parsed once from that same DDL — is the correct,
+    engine-independent source of truth for it.
+
+    The Kùzu path below is kept unchanged: some tests intentionally
+    build reduced fixture tables (missing columns the real schema.py DDL
+    has) specifically to exercise the "older schema" fallback branch,
+    which only makes sense against a real per-table runtime check.
     """
     try:
-        r = db.execute(f"CALL table_info('{table}') RETURN *")
-        while r.has_next():
-            row = r.get_next()
-            if str(row[1]).lower() == "authority":
-                return True
+        from campy.brain.hippocampus.graph.oxigraph_client import (
+            NODE_COLUMNS,
+            OxigraphClient,
+        )
+        if isinstance(db, OxigraphClient):
+            return column in NODE_COLUMNS.get(table, {})
     except Exception:
         pass
-    return False
-
-
-def _table_has_flagged_for_review(db, table: str) -> bool:
-    """Same tolerance as `_table_has_authority`, for `flagged_for_review`
-    (B339's anomaly flag, now consulted at recall time). Reduced fixture
-    tables built directly by tests don't always carry every column the
-    real schema.py-generated tables do."""
-    try:
-        r = db.execute(f"CALL table_info('{table}') RETURN *")
-        while r.has_next():
-            row = r.get_next()
-            if str(row[1]).lower() == "flagged_for_review":
-                return True
-    except Exception:
-        pass
-    return False
-
-
-def _table_has_column(db, table: str, column: str) -> bool:
-    """B374: best-effort check for whether `table` has `column`."""
     try:
         r = db.execute(f"CALL table_info('{table}') RETURN *")
         while r.has_next():
@@ -75,6 +68,20 @@ def _table_has_column(db, table: str, column: str) -> bool:
     except Exception:
         pass
     return False
+
+
+def _table_has_authority(db, table: str) -> bool:
+    """B313: whether `table` has the `authority` column, so the
+    exact-fact / semantic-context stages below can include it in their
+    RETURN when present. See `_table_has_column` (B437) for the
+    engine-aware detection this delegates to."""
+    return _table_has_column(db, table, "authority")
+
+
+def _table_has_flagged_for_review(db, table: str) -> bool:
+    """Whether `table` has `flagged_for_review` (B339's anomaly flag,
+    consulted at recall time). See `_table_has_column` (B437)."""
+    return _table_has_column(db, table, "flagged_for_review")
 
 
 @dataclass
@@ -480,6 +487,70 @@ async def _stage_semantic_context(
                     text, node_type, node_id, pathway_strength, confidence,
                     adjusted_dist, authority if has_authority else None, activation_score,
                 ))
+
+        # B435: lexical fallback. A real, relevant fact can sit just
+        # outside the 0.30 cosine-distance floor for terse graph text vs.
+        # a full-sentence paraphrase (e.g. "vegan" vs. "What is Alex's
+        # diet? Are they vegan or pescatarian?" measures ~0.48 with
+        # all-MiniLM-L6-v2 — well past the floor despite being a direct
+        # answer). Mirrors B284's Message-table fallback in
+        # tools/retrieval.py, generalized to these 4 tables via the same
+        # shared FTS index — every node with `text_raw` is auto-indexed
+        # on write regardless of table (see oxigraph_client.py's
+        # write_node), so no new indexing infrastructure is needed.
+        # Runs unconditionally alongside the vector results (not gated on
+        # them being empty), same as B284, and de-dupes against node_ids
+        # already found. A lexical-only hit has no real cosine distance,
+        # so it's assigned a fixed just-under-the-floor value: it competes
+        # for the top-N cut but never outranks a genuinely closer match.
+        LEXICAL_FALLBACK_DIST = 0.299
+        try:
+            has_fts = getattr(db, "has_fts", None)
+            fts_search = getattr(db, "fts_search", None)
+            if callable(has_fts) and callable(fts_search) and has_fts():
+                seen_node_ids = {
+                    str(row[2]) for row in rows if row[2] is not None
+                }
+                for label in ("Concept", "Decision", "Constraint", "Requirement"):
+                    pk = pk_for(label)
+                    if not pk:
+                        continue
+                    try:
+                        lex_rows = fts_search(label, f"{label.lower()}_fts_idx", query, limit)
+                    except Exception:
+                        continue
+                    if not lex_rows:
+                        continue
+                    lex_has_flagged = _table_has_flagged_for_review(db, label)
+                    lex_has_archived = _table_has_column(db, label, "archived")
+                    lex_has_superseded = _table_has_column(db, label, "superseded_by")
+                    lex_has_authority = _table_has_authority(db, label)
+                    for lr in lex_rows:
+                        raw_node = lr.get("node", {}) if isinstance(lr, dict) else {}
+                        try:
+                            node = dict(raw_node)
+                        except Exception:
+                            node = raw_node if isinstance(raw_node, dict) else {}
+                        nid = node.get(pk)
+                        if nid is None or str(nid) in seen_node_ids:
+                            continue
+                        if lex_has_flagged and node.get("flagged_for_review"):
+                            continue
+                        if lex_has_archived and node.get("archived"):
+                            continue
+                        if lex_has_superseded and node.get("superseded_by"):
+                            continue
+                        seen_node_ids.add(str(nid))
+                        activation_score = warm_nodes.get(str(nid), 0.0)
+                        rows.append((
+                            node.get("text_raw"), label, nid,
+                            node.get("pathway_strength"), node.get("confidence"),
+                            LEXICAL_FALLBACK_DIST,
+                            node.get("authority") if lex_has_authority else None,
+                            activation_score,
+                        ))
+        except Exception:
+            _logger.debug("_stage_semantic_context lexical fallback failed", exc_info=True)
 
         rows.sort(key=lambda row: row[5] if row[5] is not None else float("inf"))
         rows = rows[:limit]

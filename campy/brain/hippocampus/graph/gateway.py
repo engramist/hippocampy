@@ -887,32 +887,45 @@ class GraphGateway:
             sub = name.replace("thalamus.bundle_exact_facts_", "").replace("thalamus.bundle_exact_", "")
             tbl_key = sub.split("_")[0]
             target_table = _resolve_node_table(tbl_key)
+            # B437: this handler used to ignore its own qname suffix
+            # entirely — `_flagged` never excluded anything, silently
+            # letting flagged-for-review content into the bundle
+            # regardless of which NamedQuery variant the caller asked
+            # for. Only meaningful for callers that actually reach this
+            # branch with the suffix set; harmless no-op otherwise.
+            exclude_flagged = "_flagged" in sub
             limit = int(params.get("limit", 10))
             candidates = self._vector_store.search_vectors(query_embedding, k=limit * 5, min_score=0.70)
             prefix = f"{CID_BASE}{target_table}/"
-            matching_uris = [uri for uri, _ in candidates if uri.startswith(prefix)][:limit]
+            matching_uris = [uri for uri, _ in candidates if uri.startswith(prefix)]
             if not matching_uris:
                 return []
             values_block = " ".join(f"<{u}>" for u in matching_uris)
             sparql = f"""
-                SELECT ?s ?text ?conf ?auth WHERE {{
+                SELECT ?s ?text ?conf ?auth ?flagged WHERE {{
                     VALUES ?s {{ {values_block} }}
                     ?s <https://campy.dev/ns#text_raw> ?text .
                     OPTIONAL {{ ?s <https://campy.dev/ns#confidence> ?conf }}
                     OPTIONAL {{ ?s <https://campy.dev/ns#authority> ?auth }}
+                    OPTIONAL {{ ?s <https://campy.dev/ns#flagged_for_review> ?flagged }}
                 }}
             """
             hydrated = {row["s"]: row for row in self._client._execute_and_collect(sparql)}
             rows = []
             for uri in matching_uris:
-                if uri in hydrated:
-                    h = hydrated[uri]
-                    rows.append(RowDict({
-                        "text": h.get("text"),
-                        "node_type": target_table,
-                        "confidence": h.get("conf", 0.5),
-                        "authority": h.get("auth"),
-                    }))
+                if uri not in hydrated:
+                    continue
+                h = hydrated[uri]
+                if exclude_flagged and bool(h.get("flagged")):
+                    continue
+                rows.append(RowDict({
+                    "text": h.get("text"),
+                    "node_type": target_table,
+                    "confidence": h.get("conf", 0.5),
+                    "authority": h.get("auth"),
+                }))
+                if len(rows) >= limit:
+                    break
             return rows
 
         # Semantic context: thalamus.bundle_semantic_{tbl}[_flags]
@@ -920,69 +933,108 @@ class GraphGateway:
             sub = name.replace("thalamus.bundle_semantic_", "")
             tbl_key = sub.split("_")[0]
             target_table = _resolve_node_table(tbl_key)
+            # B437: this handler used to ignore its own qname suffix
+            # entirely — flagged/archived/superseded content was never
+            # excluded regardless of which NamedQuery variant
+            # bundle_compiler.py's _stage_semantic_context asked for.
+            exclude_flagged = "_flagged" in sub
+            exclude_archived = "_archived" in sub
+            exclude_superseded = "_superseded" in sub
             limit = int(params.get("limit", 10))
             candidates = self._vector_store.search_vectors(query_embedding, k=limit * 5, min_score=0.70)
             prefix = f"{CID_BASE}{target_table}/"
-            matching = [(uri, score) for uri, score in candidates if uri.startswith(prefix)][:limit]
+            matching = [(uri, score) for uri, score in candidates if uri.startswith(prefix)]
             if not matching:
                 return []
             values_block = " ".join(f"<{u}>" for u, _ in matching)
             sparql = f"""
-                SELECT ?s ?text ?ps ?conf ?auth WHERE {{
+                SELECT ?s ?text ?ps ?conf ?auth ?flagged ?archived ?superseded WHERE {{
                     VALUES ?s {{ {values_block} }}
                     ?s <https://campy.dev/ns#text_raw> ?text .
                     OPTIONAL {{ ?s <https://campy.dev/ns#pathway_strength> ?ps }}
                     OPTIONAL {{ ?s <https://campy.dev/ns#confidence> ?conf }}
                     OPTIONAL {{ ?s <https://campy.dev/ns#authority> ?auth }}
+                    OPTIONAL {{ ?s <https://campy.dev/ns#flagged_for_review> ?flagged }}
+                    OPTIONAL {{ ?s <https://campy.dev/ns#archived> ?archived }}
+                    OPTIONAL {{ ?s <https://campy.dev/ns#superseded_by> ?superseded }}
                 }}
             """
             hydrated = {row["s"]: row for row in self._client._execute_and_collect(sparql)}
             rows = []
             for uri, score in matching:
-                if uri in hydrated:
-                    h = hydrated[uri]
-                    dist = max(0.0, 1.0 - float(score))
-                    # B375: node_id (for warm-frontier lookup in
-                    # bundle_compiler.py) is the URI's own trailing segment
-                    # — no extra triple needed, mint_uri already encodes it.
-                    node_id = unquote(uri[len(prefix):])
-                    rows.append(RowDict({
-                        "text": h.get("text"),
-                        "node_type": target_table,
-                        "node_id": node_id,
-                        "pathway_strength": h.get("ps", 0.5),
-                        "confidence": h.get("conf", 0.5),
-                        "dist": dist,
-                        "authority": h.get("auth"),
-                    }))
+                if uri not in hydrated:
+                    continue
+                h = hydrated[uri]
+                if exclude_flagged and bool(h.get("flagged")):
+                    continue
+                if exclude_archived and bool(h.get("archived")):
+                    continue
+                if exclude_superseded and h.get("superseded"):
+                    continue
+                dist = max(0.0, 1.0 - float(score))
+                # B375: node_id (for warm-frontier lookup in
+                # bundle_compiler.py) is the URI's own trailing segment
+                # — no extra triple needed, mint_uri already encodes it.
+                node_id = unquote(uri[len(prefix):])
+                rows.append(RowDict({
+                    "text": h.get("text"),
+                    "node_type": target_table,
+                    "node_id": node_id,
+                    "pathway_strength": h.get("ps", 0.5),
+                    "confidence": h.get("conf", 0.5),
+                    "dist": dist,
+                    "authority": h.get("auth"),
+                }))
+                if len(rows) >= limit:
+                    break
             return rows
 
         # Graph anchors: thalamus.bundle_graph_anchors[_flags]
         if name.startswith("thalamus.bundle_graph_anchors"):
+            sub = name.replace("thalamus.bundle_graph_anchors", "")
+            # B437: this handler used to ignore its own qname suffix
+            # entirely — flagged/archived/superseded Concepts could be
+            # picked as anchors regardless of which NamedQuery variant
+            # bundle_compiler.py's _stage_graph_structure asked for.
+            exclude_flagged = "_flagged" in sub
+            exclude_archived = "_archived" in sub
+            exclude_superseded = "_superseded" in sub
             candidates = self._vector_store.search_vectors(query_embedding, k=15, min_score=0.70)
             prefix = f"{CID_BASE}Concept/"
-            matching = [(uri, score) for uri, score in candidates if uri.startswith(prefix)][:5]
+            matching = [(uri, score) for uri, score in candidates if uri.startswith(prefix)]
             if not matching:
                 return []
             values_block = " ".join(f"<{u}>" for u, _ in matching)
             sparql = f"""
-                SELECT ?s ?cid ?text WHERE {{
+                SELECT ?s ?cid ?text ?flagged ?archived ?superseded WHERE {{
                     VALUES ?s {{ {values_block} }}
                     ?s <https://campy.dev/ns#concept_id> ?cid ;
                        <https://campy.dev/ns#text_raw> ?text .
+                    OPTIONAL {{ ?s <https://campy.dev/ns#flagged_for_review> ?flagged }}
+                    OPTIONAL {{ ?s <https://campy.dev/ns#archived> ?archived }}
+                    OPTIONAL {{ ?s <https://campy.dev/ns#superseded_by> ?superseded }}
                 }}
             """
             hydrated = {row["s"]: row for row in self._client._execute_and_collect(sparql)}
             rows = []
             for uri, score in matching:
-                if uri in hydrated:
-                    h = hydrated[uri]
-                    dist = max(0.0, 1.0 - float(score))
-                    rows.append(RowDict({
-                        "id": h["cid"],
-                        "text": h["text"],
-                        "dist": dist,
-                    }))
+                if uri not in hydrated:
+                    continue
+                h = hydrated[uri]
+                if exclude_flagged and bool(h.get("flagged")):
+                    continue
+                if exclude_archived and bool(h.get("archived")):
+                    continue
+                if exclude_superseded and h.get("superseded"):
+                    continue
+                dist = max(0.0, 1.0 - float(score))
+                rows.append(RowDict({
+                    "id": h["cid"],
+                    "text": h["text"],
+                    "dist": dist,
+                }))
+                if len(rows) >= 5:
+                    break
             return rows
 
         if name == "thalamus.bundle_tabular_described_by_dataset":
