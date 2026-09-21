@@ -678,6 +678,18 @@ def decide(
     _decide(query=query, format=format, session_id=session_id)
 
 
+@app.command()
+def dispatch(
+    task_description: str = typer.Argument(..., help="Task to route"),
+    format: str = typer.Option("rich", "--format", help="Output format"),
+    session_id: Optional[str] = typer.Option(None, help="Session ID"),
+    quest_id: Optional[str] = typer.Option(None, "--quest-id", help="Explicit quest ID"),
+):
+    """Recommend a model tier (frontier/economy/local_reflex) for a task."""
+    from campy.cli.recall import dispatch as _dispatch
+    _dispatch(task_description=task_description, format=format, session_id=session_id, quest_id=quest_id)
+
+
 @app.command(name="context-health")
 def context_cmd(
     format: str = typer.Option("rich", "--format", help="Output format"),

@@ -9,7 +9,7 @@
 
 ---
 
-## Quick Reference: All 58 MCP Tools
+## Quick Reference: All 59 MCP Tools
 
 | # | Tool Name | Category | Called By | Blocking? | Requires LLM? |
 |---|-----------|----------|-----------|-----------|----------------|
@@ -71,6 +71,7 @@
 | 56 | `record_rule` | World-Model | Agent | Yes | No |
 | 57 | `get_rules_for_action` | World-Model | Agent | Yes | No |
 | 58 | `get_transferred_rules` | World-Model | Agent | Yes | No |
+| 59 | `route_task` | Model Routing (B382) | Agent / CLI (`campy dispatch`) | Yes | No |
 
 ---
 
@@ -181,6 +182,41 @@ These processes run inside the Brain Daemon without explicit tool calls.
 ```
 
 **Policy source:** `plugin/skills/recall/SKILL.md` (ships with plugin; dev-only: `skills/campy-memory/SKILL.md`).
+
+### `route_task` — Dynamic Phase-Aware Model Router (B382)
+
+**Purpose:** Recommend whether a task should go to a frontier or economy/local model, based on the calling session's graph state. **Advisory only** — Campy never calls a cloud model itself; the caller (an agent, harness, or `campy dispatch`) acts on the recommendation.
+
+**When to call:** Before dispatching a task to an LLM, when the caller wants to save cost/quota by routing routine implementation work to a cheap local model and reserving a frontier model for genuinely unsettled architectural decisions.
+
+**Phase heuristic:** An open, unfinalized `Plan` (`status = 'active'`) targeting the active quest → Planning phase (frontier tier). A `TaskGraph` with `pending`/`active` `TaskNode`s and no unfinalized Plan → Implementation phase (economy tier). `task_description` matching a formatting/lint/syntax-check keyword → Reflex (local_reflex tier), checked first without touching the graph at all. No Plan and no TaskGraph → cold start, defaults to Planning.
+
+**Input:**
+```json
+{
+  "task_description": "help me decide on the caching strategy",
+  "session_id": "uuid",
+  "quest_id": "optional-explicit-quest-id",
+  "token_budget": 4000
+}
+```
+
+**Output:**
+```json
+{
+  "tier": "frontier",
+  "provider": "anthropic",
+  "recommended_model": "claude-opus-5",
+  "phase": "planning",
+  "rationale": "1 active (unfinalized) Plan(s) target this quest — routed to frontier tier for architectural/trade-off reasoning.",
+  "context_bundle": { "sections": [...], "total_token_estimate": 40 },
+  "latency_ms": 3.2
+}
+```
+
+**Config:** `[routing]` in `campy.toml` (tiers → provider/model/trigger_phases; see the documented example section). Absent/partial config falls back to `model_router.DEFAULT_ROUTING_CONFIG`.
+
+**CLI:** `campy dispatch "task description" [--session-id ID] [--quest-id ID]`.
 
 **Integration test cases:**
 - T1: Empty query returns error

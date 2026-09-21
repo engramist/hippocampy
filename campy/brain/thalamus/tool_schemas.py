@@ -1014,6 +1014,39 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "route_task",
+        "description": (
+            "B382: recommend whether a task should go to a frontier or economy/local model, "
+            "based on the calling session's graph state (an open, unfinalized Plan vs. a "
+            "locked-in TaskGraph with pending work). Advisory only -- never calls a cloud "
+            "model itself. Returns tier, provider, recommended_model, phase, rationale, a "
+            "scoped context_bundle (the active Plans/TaskGraph status backing the "
+            "recommendation), and latency_ms."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_description": {
+                    "type": "string",
+                    "description": "The task to route. Checked first against a small formatting/lint/syntax-check keyword set for the local_reflex fast path.",
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID used to resolve the active quest, if quest_id is not given directly.",
+                },
+                "quest_id": {
+                    "type": "string",
+                    "description": "Optional explicit quest ID, bypassing session->quest resolution.",
+                },
+                "token_budget": {
+                    "type": "integer",
+                    "description": "Token budget for the returned context_bundle. Default 4000.",
+                },
+            },
+            "required": ["task_description"],
+        },
+    },
+    {
         "name": "ask",
         "description": (
             "Answer a question using project memory. Campy augments the query with "

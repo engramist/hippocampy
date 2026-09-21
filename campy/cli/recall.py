@@ -228,6 +228,36 @@ def decide(
 
 
 @app.command()
+def dispatch(
+    task_description: str = typer.Argument(..., help="Task to route"),
+    format: str = typer.Option("rich", "--format", help="Output format"),
+    session_id: Optional[str] = typer.Option(None, help="Session ID"),
+    quest_id: Optional[str] = typer.Option(None, "--quest-id", help="Explicit quest ID (bypasses session lookup)"),
+):
+    """B382: recommend a model tier (frontier/economy/local_reflex) for a task. Advisory only -- never calls a cloud model itself."""
+    args = {"task_description": task_description}
+    if session_id:
+        args["session_id"] = session_id
+    if quest_id:
+        args["quest_id"] = quest_id
+
+    result = _call_tool("route_task", args)
+    if _handle_error(result):
+        raise typer.Exit(code=1)
+
+    formatted = _format_result(result, format)
+    if formatted:
+        console.print(formatted)
+    else:
+        data = result.get("result", result)
+        console.print(f"[bold cyan]Tier:[/bold cyan] {data.get('tier', '?')}")
+        console.print(f"[bold cyan]Model:[/bold cyan] {data.get('provider', '?')}/{data.get('recommended_model', '?')}")
+        console.print(f"[dim]Phase: {data.get('phase', 'N/A')}[/dim]")
+        console.print(f"[dim]Rationale: {data.get('rationale', 'N/A')}[/dim]")
+        console.print(f"[dim]Latency: {data.get('latency_ms', 'N/A')}ms[/dim]")
+
+
+@app.command()
 def context(
     format: str = typer.Option("rich", "--format", help="Output format"),
     session_id: Optional[str] = typer.Option(None, help="Session ID"),

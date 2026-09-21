@@ -29,6 +29,32 @@ _DEFAULT_CONFIG = {
             "supernode_top_n": 5,
         },
     },
+    # B382: Dynamic Phase-Aware Model Router. Advisory only -- Campy
+    # never calls a cloud model itself; route_task() just recommends a
+    # tier for the caller. Defaults match model_router.py's own
+    # DEFAULT_ROUTING_CONFIG exactly, so an absent/partial [routing]
+    # section changes nothing for existing installs.
+    "routing": {
+        "enabled": True,
+        "default_tier": "economy",
+        "tiers": {
+            "frontier": {
+                "provider": "anthropic",
+                "model": "claude-opus-5",
+                "trigger_phases": ["planning"],
+            },
+            "economy": {
+                "provider": "ollama",
+                "model": "llama3.1:8b",
+                "trigger_phases": ["implementation"],
+            },
+            "local_reflex": {
+                "provider": "ollama",
+                "model": "qwen2.5-coder:7b",
+                "trigger_phases": ["reflex"],
+            },
+        },
+    },
     # B283: supernode monitoring + session cache edge pruning
     "sweep": {
         "degree_report_top_k": 10,

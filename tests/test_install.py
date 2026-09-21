@@ -337,8 +337,16 @@ class TestConfigWriter:
             config_path=config_path
         )
         content = config_path.read_text()
-        # B181: Expect 2 now (one in [llm], one in [judge])
-        assert content.count('provider = "ollama"') == 2
+        # B181: Expect 2 now (one in [llm], one in [judge]). Count only
+        # active (non-comment) lines -- campy.toml's own documented,
+        # commented-out example sections (e.g. B382's [routing.tiers.*])
+        # can legitimately contain this same substring in a `# ...`
+        # example line, which isn't a real config duplication.
+        active_matches = [
+            line for line in content.splitlines()
+            if not line.strip().startswith("#") and 'provider = "ollama"' in line
+        ]
+        assert len(active_matches) == 2
 
 class TestSchemaInitializer:
 

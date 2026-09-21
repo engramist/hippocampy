@@ -306,3 +306,28 @@ home_title = "ARC-AGI Memory"
 # min_activation = 0.3              # minimum activation score to enter the frontier via spread
 # supernode_degree_threshold = 50   # a node with more neighbors than this is treated as a hub
 # supernode_top_n = 5               # hub neighbors are capped to the top-N by pathway_strength
+
+# B382: Dynamic Phase-Aware Model Router (route_task tool / `campy dispatch`).
+# Advisory only -- Campy never calls a cloud model itself, this just
+# recommends a tier for the caller based on graph state (an open,
+# unfinalized Plan vs. a locked-in TaskGraph with pending work). Every
+# key below matches model_router.py's own DEFAULT_ROUTING_CONFIG, so
+# leaving this whole section commented out changes nothing.
+# [routing]
+# enabled = true
+# default_tier = "economy"          # tier used when no phase's trigger_phases matches
+#
+# [routing.tiers.frontier]
+# provider = "anthropic"
+# model = "claude-opus-5"
+# trigger_phases = ["planning"]     # an open, unfinalized Plan targets the quest
+#
+# [routing.tiers.economy]
+# provider = "ollama"
+# model = "llama3.1:8b"
+# trigger_phases = ["implementation"]  # a TaskGraph has pending/active TaskNodes
+#
+# [routing.tiers.local_reflex]
+# provider = "ollama"
+# model = "qwen2.5-coder:7b"
+# trigger_phases = ["reflex"]       # task_description matches a formatting/lint/syntax-check keyword
