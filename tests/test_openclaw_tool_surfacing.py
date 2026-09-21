@@ -24,6 +24,18 @@ CORE_TOOLS = [
 ]
 
 
+def _extension_source() -> str:
+    """index.ts's hand-written tools + generated_tools.ts's auto-generated
+    ones (B382: the first tool -- route_task -- to rely purely on the
+    generator rather than a hand-written index.ts entry; see
+    scripts/generate_extension_tools.py), concatenated so the tests below
+    see the full canonical tool set regardless of which file a given tool
+    is actually defined in."""
+    index_ts = Path("extensions/hippocampy/src/index.ts").read_text()
+    generated_ts = Path("extensions/hippocampy/src/generated_tools.ts").read_text()
+    return index_ts + "\n" + generated_ts
+
+
 def _extract_registered_tool_names(source: str) -> list[str]:
     return re.findall(r'name:\s*"([^\"]+)"', source)
 
@@ -43,7 +55,7 @@ def _extract_tool_definitions(source: str) -> dict[str, dict]:
 
 def test_openclaw_extension_registers_all_tools():
     """Verify all canonical tools are registered in the extension."""
-    source = Path("extensions/hippocampy/src/index.ts").read_text()
+    source = _extension_source()
     registered = set(_extract_registered_tool_names(source))
 
     canonical_names = {tool["name"] for tool in TOOLS}
@@ -67,7 +79,7 @@ def test_openclaw_extension_registers_core_tools():
 
 def test_openclaw_extension_has_proper_descriptions():
     """Verify all registered tools have descriptions."""
-    source = Path("extensions/hippocampy/src/index.ts").read_text()
+    source = _extension_source()
 
     # Check that description field exists for each tool definition
     tool_names = _extract_registered_tool_names(source)
@@ -80,13 +92,17 @@ def test_openclaw_extension_has_proper_descriptions():
 
 def test_openclaw_extension_has_proper_parameters():
     """Verify all registered tools have parameter schemas."""
-    source = Path("extensions/hippocampy/src/index.ts").read_text()
+    source = _extension_source()
 
     # Check that parameters field exists for each tool definition
     tool_names = _extract_registered_tool_names(source)
 
     for tool_name in tool_names:
-        pattern = rf'name:\s*"{re.escape(tool_name)}".*?parameters:\s*\w+Params'
+        # Hand-written index.ts entries reference a named `FooParams`
+        # TypeBox schema; scripts/generate_extension_tools.py's
+        # auto-generated entries (generated_tools.ts) inline a
+        # `Type.Object({...})` literal instead -- both are valid.
+        pattern = rf'name:\s*"{re.escape(tool_name)}".*?parameters:\s*(?:\w+Params\b|Type\.Object\()'
         assert re.search(pattern, source, re.DOTALL), \
             f"Tool '{tool_name}' missing parameters"
 

@@ -78,6 +78,7 @@ from .arc_tools import (
 from .artifacts import _ARTIFACT_TYPE_MAP, _infer_document_type, register_artifact
 from .capture import _maybe_create_passive_plan_from_turn, notify_turn
 from .context_tools import ask, compile_card_context, compile_context, ingest_data, ingest_document, memory_decision
+from .route_task import route_task
 from .lessons import (
     _create_plan_graph,
     _plan_feedback_from_similarity,
@@ -140,6 +141,7 @@ TOOL_HANDLERS = {
     "analogical_search": _with_phase("recalling", analogical_search),
     "explore_graph":    _with_phase("recalling", explore_graph),
     "memory_decision": _with_phase("recalling", memory_decision),
+    "route_task":       _with_phase("recalling", route_task),
 
     # Lightweight metadata ops (no phase wrapping)
     "branch_quest":     branch_quest,

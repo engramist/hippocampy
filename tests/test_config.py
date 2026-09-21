@@ -65,6 +65,38 @@ def test_load_config_warm_frontier_partial_override(tmp_path):
     assert wf["supernode_degree_threshold"] == 50
 
 
+def test_load_config_routing_defaults_when_absent(tmp_path):
+    """B382: [routing] is optional -- an absent section must still merge
+    in the documented tier defaults (matching model_router.py's own
+    DEFAULT_ROUTING_CONFIG)."""
+    from campy.brain.brainstem.config import load_config
+    cfg_file = tmp_path / "campy.toml"
+    cfg_file.write_text('[llm]\nprovider = "ollama"\n')
+    config = load_config(str(cfg_file))
+    routing = config["routing"]
+    assert routing["enabled"] is True
+    assert routing["default_tier"] == "economy"
+    assert routing["tiers"]["frontier"]["model"] == "claude-opus-5"
+    assert routing["tiers"]["economy"]["provider"] == "ollama"
+    assert routing["tiers"]["local_reflex"]["trigger_phases"] == ["reflex"]
+
+
+def test_load_config_routing_partial_override(tmp_path):
+    """A partial [routing.tiers.frontier] override only replaces the
+    keys it names; unspecified keys and other tiers still fall back to
+    the defaults."""
+    from campy.brain.brainstem.config import load_config
+    cfg_file = tmp_path / "campy.toml"
+    cfg_file.write_text(
+        '[routing.tiers.frontier]\nmodel = "claude-sonnet-5"\n'
+    )
+    config = load_config(str(cfg_file))
+    routing = config["routing"]
+    assert routing["tiers"]["frontier"]["model"] == "claude-sonnet-5"
+    assert routing["tiers"]["frontier"]["provider"] == "anthropic"
+    assert routing["tiers"]["economy"]["model"] == "llama3.1:8b"
+
+
 def test_load_config_parses_nested_sections(tmp_path):
     """Multi-section TOML is fully parsed."""
     from campy.brain.brainstem.config import load_config

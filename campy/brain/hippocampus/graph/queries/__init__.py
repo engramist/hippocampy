@@ -35,6 +35,7 @@ from campy.brain.hippocampus.graph.queries.thalamus import THALAMUS_QUERIES
 from campy.brain.hippocampus.graph.queries.temporal_lobe import TEMPORAL_LOBE_QUERIES
 from campy.brain.hippocampus.graph.queries.provenance import PROVENANCE_QUERIES
 from campy.brain.hippocampus.graph.queries.cli import CLI_QUERIES
+from campy.brain.hippocampus.graph.queries.model_router import MODEL_ROUTER_QUERIES
 
 REGISTRY = QueryRegistry()
 REGISTRY.register_all(LESSONS_QUERIES)
@@ -58,5 +59,6 @@ REGISTRY.register_all(THALAMUS_QUERIES)
 REGISTRY.register_all(TEMPORAL_LOBE_QUERIES)
 REGISTRY.register_all(PROVENANCE_QUERIES)
 REGISTRY.register_all(CLI_QUERIES)
+REGISTRY.register_all(MODEL_ROUTER_QUERIES)
 
 __all__ = ["REGISTRY"]
