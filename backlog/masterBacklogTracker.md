@@ -80,6 +80,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B407 | Inference Pilot: Prove the RDF Thesis Before the Engine Cutover | P0 | complete | TBD | TBD | - | backlog/B407.md |
 | B408 | Stale-Base Guard: Make Silent Reverts Unmergeable | P0 | complete | TBD | TBD | - | backlog/B408.md |
 | B411 | Exhaustive Migration Fixture: Round-Trip Every Node and Edge Type | P0 | complete | TBD | TBD | - | backlog/B411.md |
+| B439 | test_traversal_speedup_measurement Is a Flaky Hard Timing Gate (plain <= OPTIONAL * 1.05) That Fails Intermittently on Shared CI Runners | P2 | fixed | TBD | TBD | - | backlog/B439.md |
 | B438 | [campy-benchmarks] Mock Client's _mock_constraints Leaks Across Suites in a Combined run_all.py Run, Inflating MemBench's Token Estimate Past Raw Size | P2 | ready | TBD | TBD | - | backlog/B438.md |
 | B437 | bundle_compiler.py's Schema-Introspection Helpers Always Return False Against the Real Oxigraph Engine — Flagged/Archived/Superseded Content Leaks Into ask()/compile_context() | P0 | fixed | TBD | TBD | - | backlog/B437.md |
 | B436 | [campy-benchmarks] MemBench Reads the Wrong JSON Key for Bundle Token Count — Token Savings % Always 0.0 | P2 | fixed | TBD | TBD | - | backlog/B436.md |
