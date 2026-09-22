@@ -9,7 +9,7 @@
 
 ---
 
-## Quick Reference: All 59 MCP Tools
+## Quick Reference: All 60 MCP Tools
 
 | # | Tool Name | Category | Called By | Blocking? | Requires LLM? |
 |---|-----------|----------|-----------|-----------|----------------|
@@ -72,6 +72,7 @@
 | 57 | `get_rules_for_action` | World-Model | Agent | Yes | No |
 | 58 | `get_transferred_rules` | World-Model | Agent | Yes | No |
 | 59 | `route_task` | Model Routing (B382) | Agent / CLI (`campy dispatch`) | Yes | No |
+| 60 | `generate_handoff` | Model Handoff (B383) | Agent / CLI (`campy handoff`) | Yes | No |
 
 ---
 
@@ -217,6 +218,43 @@ These processes run inside the Brain Daemon without explicit tool calls.
 **Config:** `[routing]` in `campy.toml` (tiers → provider/model/trigger_phases; see the documented example section). Absent/partial config falls back to `model_router.DEFAULT_ROUTING_CONFIG`.
 
 **CLI:** `campy dispatch "task description" [--session-id ID] [--quest-id ID]`.
+
+### `generate_handoff` — Automated Model Handoff Generator (B383)
+
+**Purpose:** Generate a clean, model-agnostic markdown "Handoff Artifact" for switching a task to a different model mid-session, so the new model doesn't start cold or reverse prior work.
+
+**When to call:** Before ending a session with one model and starting a fresh chat with a different one (e.g. Claude → a local model, or vice versa).
+
+**Scope (v1):** Goal (from the quest's active `Plan`), Decisions and Constraints established across *any* session working on the quest (not just the current one — broader than B290's WorkSummary, which is session-scoped), heuristically-flagged "do not" rules extracted from those Constraints (regex match on negative-framed language — not a first-class tracked entity, since nothing in the schema tracks anti-goals directly), execution status (`TaskGraph`/`TaskNode`, not `ActionItem` — same status-field correction as B382), and files touched. Capped at ≤40 total entities. Deprecated facts (an outgoing `DEPRECATED_BY` edge) are always excluded. A second call for the same session marks previously-included Decisions/Constraints as "(already seen)" via the `[LOADED]` edge mechanism (`working_memory.py`, B44).
+
+**Not included in v1:** a "definition of done" section — no signal exists anywhere in the graph to build one from yet. Automated `SessionEnd`-hook delivery is a v2 item; v1 is on-demand only (MCP tool / CLI).
+
+**Input:**
+```json
+{
+  "session_id": "uuid",
+  "quest_id": "optional-explicit-quest-id",
+  "target_model_tier": "optional label, e.g. local-llama"
+}
+```
+
+**Output:**
+```json
+{
+  "quest_id": "q-123",
+  "goal": "migrate the auth system",
+  "decisions": [{"id": "d1", "text": "use PostgreSQL", "confidence": 0.9}],
+  "constraints": [{"id": "c1", "text": "do not delete production data", "confidence": 0.9}],
+  "negative_controls": ["do not delete production data"],
+  "task_graph_status": {"graph_id": "g1", "pending_or_active": 2, "complete": 1, "total": 3},
+  "files": [{"file_path": "campy/brain/thalamus/handoff.py", "title": "handoff module"}],
+  "node_ids": ["d1", "c1"],
+  "markdown": "# Handoff\n...",
+  "latency_ms": 49.7
+}
+```
+
+**CLI:** `campy handoff [--out PATH] [--copy] [--session-id ID] [--quest-id ID] [--target-model-tier TIER]`.
 
 **Integration test cases:**
 - T1: Empty query returns error

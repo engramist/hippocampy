@@ -258,6 +258,51 @@ def dispatch(
 
 
 @app.command()
+def handoff(
+    out: Optional[str] = typer.Option(None, "--out", help="Write the markdown handoff to this file"),
+    copy: bool = typer.Option(False, "--copy", help="Copy the markdown handoff to the clipboard"),
+    session_id: Optional[str] = typer.Option(None, help="Session ID"),
+    quest_id: Optional[str] = typer.Option(None, "--quest-id", help="Explicit quest ID (bypasses session lookup)"),
+    target_model_tier: Optional[str] = typer.Option(None, "--target-model-tier", help="Label the handoff for a specific model/tier"),
+):
+    """B383: generate a model-agnostic markdown handoff for switching this task to a different model."""
+    args = {}
+    if session_id:
+        args["session_id"] = session_id
+    if quest_id:
+        args["quest_id"] = quest_id
+    if target_model_tier:
+        args["target_model_tier"] = target_model_tier
+
+    result = _call_tool("generate_handoff", args)
+    if _handle_error(result):
+        raise typer.Exit(code=1)
+
+    data = result.get("result", result)
+    markdown = data.get("markdown", "")
+
+    if out:
+        from pathlib import Path
+        Path(out).write_text(markdown, encoding="utf-8")
+        console.print(f"[green]Handoff written to {out}[/green]")
+
+    if copy:
+        try:
+            import pyperclip
+            pyperclip.copy(markdown)
+            console.print("[green]Handoff copied to clipboard.[/green]")
+        except ImportError:
+            console.print(
+                "[yellow]pyperclip is not installed -- printing the handoff instead "
+                "(pip install pyperclip for clipboard support).[/yellow]"
+            )
+            console.print(markdown)
+
+    if not out and not copy:
+        console.print(markdown)
+
+
+@app.command()
 def context(
     format: str = typer.Option("rich", "--format", help="Output format"),
     session_id: Optional[str] = typer.Option(None, help="Session ID"),

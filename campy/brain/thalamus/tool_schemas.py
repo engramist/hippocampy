@@ -1047,6 +1047,35 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "generate_handoff",
+        "description": (
+            "B383: generate a Handoff Artifact (clean, model-agnostic markdown) for switching "
+            "a task to a different model mid-session, so the new model doesn't start cold or "
+            "reverse prior work. Covers the quest's goal, active (non-deprecated) Decisions and "
+            "Constraints, heuristically-flagged 'do not' rules extracted from those Constraints, "
+            "execution status (TaskGraph/TaskNode), and files touched -- capped to <=40 total "
+            "entities. Does not include a 'definition of done' section (no signal in the graph "
+            "to build one from yet)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID used to resolve the active quest, if quest_id is not given directly.",
+                },
+                "quest_id": {
+                    "type": "string",
+                    "description": "Optional explicit quest ID, bypassing session->quest resolution.",
+                },
+                "target_model_tier": {
+                    "type": "string",
+                    "description": "Optional label for the target model/tier, annotated in the markdown header.",
+                },
+            },
+        },
+    },
+    {
         "name": "ask",
         "description": (
             "Answer a question using project memory. Campy augments the query with "

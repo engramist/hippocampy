@@ -690,6 +690,19 @@ def dispatch(
     _dispatch(task_description=task_description, format=format, session_id=session_id, quest_id=quest_id)
 
 
+@app.command()
+def handoff(
+    out: Optional[str] = typer.Option(None, "--out", help="Write the markdown handoff to this file"),
+    copy: bool = typer.Option(False, "--copy", help="Copy the markdown handoff to the clipboard"),
+    session_id: Optional[str] = typer.Option(None, help="Session ID"),
+    quest_id: Optional[str] = typer.Option(None, "--quest-id", help="Explicit quest ID"),
+    target_model_tier: Optional[str] = typer.Option(None, "--target-model-tier", help="Label the handoff for a specific model/tier"),
+):
+    """Generate a model-agnostic markdown handoff for switching this task to a different model."""
+    from campy.cli.recall import handoff as _handoff
+    _handoff(out=out, copy=copy, session_id=session_id, quest_id=quest_id, target_model_tier=target_model_tier)
+
+
 @app.command(name="context-health")
 def context_cmd(
     format: str = typer.Option("rich", "--format", help="Output format"),
