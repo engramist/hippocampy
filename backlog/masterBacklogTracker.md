@@ -80,6 +80,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B407 | Inference Pilot: Prove the RDF Thesis Before the Engine Cutover | P0 | complete | TBD | TBD | - | backlog/B407.md |
 | B408 | Stale-Base Guard: Make Silent Reverts Unmergeable | P0 | complete | TBD | TBD | - | backlog/B408.md |
 | B411 | Exhaustive Migration Fixture: Round-Trip Every Node and Edge Type | P0 | complete | TBD | TBD | - | backlog/B411.md |
+| B446 | Re-Run the External Benchmark Suite Post-Cutover — No "After" Numbers Exist Anywhere | P1 | ready | TBD | TBD | - | backlog/B446.md |
 | B445 | Real Cloud Dispatch: Let Campy Actually Call the Model route_task Recommends | P2 | ready | TBD | TBD | - | backlog/B445.md |
 | B444 | Definition-of-Done Tracking for Plans (generate_handoff v2) | P2 | ready | TBD | TBD | - | backlog/B444.md |
 | B443 | Codex SessionEnd Hook Support for generate_handoff (B383/B440 v3) | P2 | ready | TBD | TBD | - | backlog/B443.md |
