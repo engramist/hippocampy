@@ -1,5 +1,5 @@
 {
-  "non_adopting_count": 60,
+  "non_adopting_count": 61,
   "non_adopting_handlers": [
     "advance_task",
     "analogical_search",
@@ -30,6 +30,7 @@
     "diff_since",
     "explore_graph",
     "fail_task",
+    "generate_handoff",
     "get_anomalies",
     "get_disambiguation_queue",
     "get_entity_history",

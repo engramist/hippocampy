@@ -79,7 +79,7 @@ def _is_reflex_task(task_description: str) -> bool:
     return bool(_REFLEX_KEYWORDS.search(task_description or ""))
 
 
-def _row_get(row, key: str, index: int):
+def row_get(row, key: str, index: int):
     """Duck-typed row access -- RowDict-style `.get(key)` or a positional
     tuple/list, matching the access pattern used throughout thalamus
     tools for NamedQuery results."""
@@ -88,7 +88,7 @@ def _row_get(row, key: str, index: int):
     return row[index] if len(row) > index else None
 
 
-async def _resolve_quest_id(gw, session_id: str, quest_id: str | None) -> str:
+async def resolve_quest_id(gw, session_id: str, quest_id: str | None) -> str:
     if quest_id:
         return quest_id
     if not session_id or session_id == "unknown":
@@ -96,13 +96,13 @@ async def _resolve_quest_id(gw, session_id: str, quest_id: str | None) -> str:
     try:
         rows = await gw.run("retrieval.get_main_quest_for_session", sid=session_id)
         if rows:
-            return _row_get(rows[0], "q.quest_id", 0) or ""
+            return row_get(rows[0], "q.quest_id", 0) or ""
     except Exception:
         pass
     return ""
 
 
-async def _get_active_plans(gw, quest_id: str) -> list[dict]:
+async def get_active_plans(gw, quest_id: str) -> list[dict]:
     if not quest_id:
         return []
     try:
@@ -112,14 +112,14 @@ async def _get_active_plans(gw, quest_id: str) -> list[dict]:
     plans = []
     for r in (rows or []):
         plans.append({
-            "plan_id": _row_get(r, "plan_id", 0),
-            "goal": _row_get(r, "goal", 1),
-            "confidence": _row_get(r, "confidence", 2),
+            "plan_id": row_get(r, "plan_id", 0),
+            "goal": row_get(r, "goal", 1),
+            "confidence": row_get(r, "confidence", 2),
         })
     return plans
 
 
-async def _get_active_task_graph_status(gw, session_id: str) -> dict | None:
+async def get_active_task_graph_status(gw, session_id: str) -> dict | None:
     if not session_id or session_id == "unknown":
         return None
     try:
@@ -128,14 +128,14 @@ async def _get_active_task_graph_status(gw, session_id: str) -> dict | None:
         return None
     if not rows:
         return None
-    graph_id = _row_get(rows[0], "graph_id", 0)
+    graph_id = row_get(rows[0], "graph_id", 0)
     if not graph_id:
         return None
     try:
         task_rows = await gw.run("task_graph.get_graph_tasks", gid=graph_id)
     except Exception:
         task_rows = []
-    statuses = [_row_get(t, "status", 3) for t in (task_rows or [])]
+    statuses = [row_get(t, "status", 3) for t in (task_rows or [])]
     return {
         "graph_id": graph_id,
         "pending_or_active": sum(1 for s in statuses if s in ("pending", "active")),
@@ -157,10 +157,10 @@ async def detect_phase(db, session_id: str, quest_id: str | None = None) -> dict
         }
     """
     gw = _gateway(db)
-    resolved_quest_id = await _resolve_quest_id(gw, session_id, quest_id)
+    resolved_quest_id = await resolve_quest_id(gw, session_id, quest_id)
 
-    active_plans = await _get_active_plans(gw, resolved_quest_id)
-    task_graph_status = await _get_active_task_graph_status(gw, session_id)
+    active_plans = await get_active_plans(gw, resolved_quest_id)
+    task_graph_status = await get_active_task_graph_status(gw, session_id)
 
     if active_plans:
         phase = "planning"
