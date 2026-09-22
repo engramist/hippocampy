@@ -35,6 +35,18 @@
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${PLUGIN_ROOT}/hooks/session_end_wrapper.py",
+            "timeout": 15
+          }
+        ]
+      }
     ]
   }
 }

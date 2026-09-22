@@ -15,6 +15,46 @@ console = Console()
 DAEMON_URL = "http://127.0.0.1:7799"
 
 
+def _unwrap_tool_result(response: dict) -> dict:
+    """B440: a raw `tools/call` JSON-RPC response nests the actual tool
+    output as a JSON-encoded string at result.content[0].text (the MCP
+    envelope), not as a flat dict directly under "result" -- every call
+    site in this file (recall/bundle/timeline/diff/decide/dispatch/
+    context/handoff) does `result.get("result", ...)` expecting a flat
+    dict, so without this unwrap every one of those commands silently
+    got an empty/placeholder result against a real daemon (confirmed:
+    `campy decide`/`campy dispatch` both printed "?"/"N/A" placeholders
+    for every field). Discovered while testing B440's SessionEnd hook
+    end-to-end -- this bug predates B440 and B382, not introduced by
+    either.
+
+    Replaces response["result"] with the parsed dict in place so every
+    existing call site keeps working unmodified. Fails open: if the
+    shape doesn't match (e.g. a real JSON-RPC error response, or a
+    tool that isn't a text-content MCP result), the response is
+    returned as-is.
+    """
+    result = response.get("result")
+    if not isinstance(result, dict):
+        return response
+    content = result.get("content")
+    if not isinstance(content, list) or not content:
+        return response
+    first = content[0]
+    if not isinstance(first, dict) or first.get("type") != "text":
+        return response
+    text = first.get("text")
+    if not isinstance(text, str):
+        return response
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return response
+    if isinstance(parsed, dict):
+        response["result"] = parsed
+    return response
+
+
 def _send(method: str, params: dict = None) -> dict:
     """Send MCP JSON-RPC request to daemon."""
     import requests
@@ -27,7 +67,7 @@ def _send(method: str, params: dict = None) -> dict:
         payload["params"] = params
     try:
         resp = requests.post(f"{DAEMON_URL}/mcp", json=payload, timeout=10)
-        return resp.json()
+        return _unwrap_tool_result(resp.json())
     except requests.ConnectionError:
         return {"error": {"message": "Daemon not running. Start with: campy start"}}
     except Exception as e:
