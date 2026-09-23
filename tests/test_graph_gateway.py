@@ -16,6 +16,7 @@ Three layers:
 
 from __future__ import annotations
 
+import asyncio
 import re
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -371,3 +372,87 @@ def test_ratchet_exits_zero_on_the_current_tree(ratchet_module):
     """AC: ratchet script exits 0 on the current tree (real repo, real
     checked-in baseline)."""
     assert ratchet_module.main([]) == 0
+
+
+# ---------------------------------------------------------------------------
+# B447 — per-write timeout on the Oxigraph dispatch path
+# ---------------------------------------------------------------------------
+
+
+class _OxigraphShapedClient:
+    """Deliberately a plain object, not an AsyncMock/Mock subclass: Mock's
+    attribute auto-vivification means `hasattr(mock, "conn")` is True for
+    ANY unconfigured Mock (accessing an unset attribute silently creates
+    one), which would defeat GraphGateway.__init__'s `_is_oxigraph`
+    heuristic (`hasattr(client, "store") and not hasattr(client, "conn")`)
+    and silently route these tests through the wrong (non-Oxigraph, no
+    timeout) dispatch path without erroring — caught by this test's first
+    draft actually doing that."""
+
+    store = object()
+
+    def __init__(self, execute_write):
+        self.execute_write = execute_write
+
+
+@pytest.fixture
+def oxigraph_registry() -> QueryRegistry:
+    reg = QueryRegistry()
+    reg.register(NamedQuery(
+        name="test.slow_write",
+        cypher="MATCH (n) RETURN n",
+        params=("x",),
+        mutating=True,
+        description="deliberately slow write for the B447 timeout test",
+        sparql="INSERT DATA { <urn:x> <urn:p> <urn:o> }",
+    ))
+    return reg
+
+
+@pytest.mark.asyncio
+async def test_oxigraph_write_times_out_instead_of_hanging_forever(monkeypatch, oxigraph_registry):
+    """AC (B447): a write whose native call never returns within
+    WRITE_TIMEOUT_SECONDS raises instead of holding the gateway's caller
+    (and, in production, the global write lock) forever. Proven load-bearing
+    by asserting the call actually returns well before the mock's own (much
+    longer) delay would — if the timeout weren't wired up, this test would
+    hang for 5s instead of failing fast."""
+    from campy.brain.hippocampus.graph import gateway as gateway_module
+
+    monkeypatch.setattr(gateway_module, "WRITE_TIMEOUT_SECONDS", 0.05)
+
+    async def _never_returns_in_time(sparql, params):
+        await asyncio.sleep(5.0)
+        return "should never be reached"
+
+    execute_write = AsyncMock(side_effect=_never_returns_in_time)
+    client = _OxigraphShapedClient(execute_write)
+    gateway = GraphGateway(client, oxigraph_registry)
+
+    t0 = asyncio.get_event_loop().time()
+    with pytest.raises(asyncio.TimeoutError):
+        await gateway.run("test.slow_write", x="1")
+    elapsed = asyncio.get_event_loop().time() - t0
+
+    execute_write.assert_awaited_once()
+    # Would be ~5.0s if the timeout weren't actually wired up.
+    assert elapsed < 1.0
+
+
+@pytest.mark.asyncio
+async def test_oxigraph_fast_write_still_succeeds(monkeypatch, oxigraph_registry):
+    """AC (B447): the timeout only bounds pathologically slow writes — a
+    normal, fast write still completes and returns its real result, proving
+    the fix doesn't break the common case."""
+    from campy.brain.hippocampus.graph import gateway as gateway_module
+
+    monkeypatch.setattr(gateway_module, "WRITE_TIMEOUT_SECONDS", 5.0)
+
+    execute_write = AsyncMock(return_value="ok")
+    client = _OxigraphShapedClient(execute_write)
+    gateway = GraphGateway(client, oxigraph_registry)
+
+    result = await gateway.run("test.slow_write", x="1")
+
+    execute_write.assert_awaited_once()
+    assert result == "ok"
