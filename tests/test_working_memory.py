@@ -313,6 +313,38 @@ class TestContextStatusTool:
         assert "injection_count" in result
 
     @pytest.mark.asyncio
+    async def test_context_status_reports_consolidation_pending(self):
+        """B448: pending = queued + in-flight loop items, so a caller can wait
+        for the Gated Consolidation Loop to drain."""
+        import asyncio
+        from campy.brain.thalamus.tools import context_status
+        from campy.brain.thalamus.tools import _shared
+
+        class MockResult:
+            def has_next(self): return False
+
+        class MockDB:
+            def execute(self, query, params=None):
+                return MockResult()
+
+        prev = _shared._loop_queue
+        try:
+            q = asyncio.Queue()
+            _shared._loop_queue = q
+            assert (await context_status({"session_id": "s"}, MockDB(), {}))["consolidation_pending"] == 0
+            q.put_nowait(("m1", "t", "user", "s", None))
+            q.put_nowait(("m2", "t", "user", "s", None))
+            assert (await context_status({"session_id": "s"}, MockDB(), {}))["consolidation_pending"] == 2
+            await q.get()  # dequeued but not task_done() == still in flight
+            assert (await context_status({"session_id": "s"}, MockDB(), {}))["consolidation_pending"] == 2
+            q.task_done()
+            assert (await context_status({"session_id": "s"}, MockDB(), {}))["consolidation_pending"] == 1
+            _shared._loop_queue = None
+            assert (await context_status({"session_id": "s"}, MockDB(), {}))["consolidation_pending"] is None
+        finally:
+            _shared._loop_queue = prev
+
+    @pytest.mark.asyncio
     async def test_context_status_requires_session_id(self):
         from campy.brain.thalamus.tools import context_status
 
