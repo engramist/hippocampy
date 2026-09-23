@@ -1043,6 +1043,49 @@ class OxigraphClient:
             for quad in list(self.store.quads_for_pattern(reifier, None, None, ox.DefaultGraph())):
                 self.store.remove(quad)
 
+    def upsert_co_occurrence(self, a_uri: str, b_uri: str, strength: float) -> bool:
+        """B451: increment the CO_OCCURS_WITH accumulator for (a, b) in place.
+
+        `CO_OCCURS_WITH` is a `star` edge (one edge per (s,p,o) carrying
+        count/strength), so the write goes through `write_edge`, which removes
+        every existing reifier before asserting exactly one new one. The old
+        pure-SPARQL `INSERT { << ?a p ?b >> count ?n } WHERE { OPTIONAL {
+        << ?a p ?b >> count ?old } }` instead minted a fresh blank-node reifier
+        per SOLUTION (module docstring point 2) while its OPTIONAL matched every
+        existing reifier -- so each re-write of a pair doubled its reifier count
+        (k -> 2k), an unbounded blowup of memory, CPU and store size.
+
+        Returns False (writes nothing) unless both endpoints are existing
+        Concept nodes, matching the original MATCH semantics. If earlier
+        pollution left several reifiers on this edge, the largest count wins.
+        """
+        concept = ox.NamedNode(CAMPY_NS + "Concept")
+        rdf_type = ox.NamedNode(RDF_NS + "type")
+        s, o = ox.NamedNode(a_uri), ox.NamedNode(b_uri)
+        for node in (s, o):
+            if next(self.store.quads_for_pattern(node, rdf_type, concept, ox.DefaultGraph()), None) is None:
+                return False
+        base_triple = ox.Triple(s, ox.NamedNode(CAMPY_NS + "CO_OCCURS_WITH"), o)
+        count_iri, strength_iri = CAMPY_NS + "count", CAMPY_NS + "strength"
+        counts: list[int] = []
+        strengths: list[float] = []
+        for reif in self.store.quads_for_pattern(None, RDF_REIFIES, base_triple, ox.DefaultGraph()):
+            for quad in self.store.quads_for_pattern(reif.subject, None, None, ox.DefaultGraph()):
+                if quad.predicate.value == count_iri:
+                    counts.append(int(quad.object.value))
+                elif quad.predicate.value == strength_iri:
+                    strengths.append(float(quad.object.value))
+        if counts:
+            new_count = max(counts) + 1
+            old_strength = sum(strengths) / len(strengths) if strengths else strength
+            new_strength = (old_strength + strength) / 2.0
+        else:
+            new_count, new_strength = 1, strength
+        self.write_edge(
+            "CO_OCCURS_WITH", a_uri, b_uri, {"count": new_count, "strength": new_strength}
+        )
+        return True
+
     # -- annotation cascade (§4.2e) -----------------------------------------
 
     def cascade_orphaned_annotations(self) -> int:
