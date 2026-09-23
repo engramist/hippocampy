@@ -7,6 +7,20 @@
 **Source Dataset:** `campy-benchmarks/post_cutover_live.json`
 **Compares against:** [`docs/benchmarks/kuzu-baseline-kpis.md`](kuzu-baseline-kpis.md) (the "Before" snapshot, 2026-09-04/06, `d35b28b`)
 
+> **Correction (2026-09-22, later the same day, revised twice):** this
+> report and [B447](../../backlog/B447.md) originally described the
+> Gated Consolidation Loop worker as *permanently* stuck. Continued
+> observation of the same live daemon process over several more hours
+> found: (1) it cleared its first stuck item after 1h36m and processed
+> 406 more messages normally, but then (2) got stuck *again*, on
+> unrelated content, for 2h28m+ and counting. The current
+> understanding is an **intermittent, recurring, multi-hour stall**,
+> not a one-time cold-start tax and not a permanent hang — see B447
+> for full detail and the live investigation history. This does not
+> change §2's numbers or the core conclusion below (every probe in
+> this run ran before any consolidation had completed), only the
+> severity/pattern framing.
+
 ---
 
 ## 1. Purpose and headline result
@@ -20,13 +34,17 @@ does the external benchmark suite actually score better?
 This is not the "before" story repeating for the same reason, though.
 This run used a real, non-mocked, freshly restarted daemon on current
 `main` (`--baseline` mode, not `--smoke`), and it surfaced a **new,
-more severe, currently-reproducing bug**: [B447](../../backlog/B447.md)
-— the Gated Consolidation Loop worker gets permanently stuck on the
-very first real message after every daemon restart and never completes
-another one. B434 fixed a crash in this same worker; it did not fix
-this separate stall. A secondary, always-broken harness-side gap was
-also found and filed as [B448](../../backlog/B448.md). Both are real,
-filed, and need to land before a re-run of this suite means anything.
+currently-reproducing bug**: [B447](../../backlog/B447.md) — the Gated
+Consolidation Loop worker takes roughly 96 minutes to process the very
+first real message after a daemon restart, silently, with every other
+`notify_turn` queued behind it in the meantime. B434 fixed a crash in
+this same worker; it did not fix this separate, still-present latency
+problem. Every probe in this entire benchmark run (all four suites,
+finished well within an hour of the restart) executed before that
+96-minute window closed, so a near-zero score is exactly what that
+predicts. A secondary, always-broken harness-side gap was also found
+and filed as [B448](../../backlog/B448.md). Both are real, filed, and
+need to land before a re-run of this suite means anything.
 
 **The original hypothesis (this run existing at all was motivated by
 "B434's fix should dramatically improve these numbers") did not hold,
@@ -85,19 +103,19 @@ was ever processed, full stop.
 
 Post-B434, the queue no longer crashes. But this run found the worker
 now gets stuck differently: it dequeues its first real message cleanly,
-calls `run_loop()`, and **never returns, never raises, and never
-processes anything else** — confirmed via direct daemon.log inspection
-during this exact run (`grep -c "\[Loop\] msg=" daemon.log` → `0`
-across the entire 11-day, multi-restart log window; only **one**
-`[Loop] Processing` line ever, logged the moment this run's first
-LoCoMo turn was written, still unresolved 48+ minutes later). Full
-detail, evidence, and recommended next steps in
-[B447](../../backlog/B447.md).
+calls `run_loop()`, and takes **1 hour 36 minutes** to return —
+confirmed via direct daemon.log timestamps (dequeued `14:07:48`,
+completed `15:44:13`), with every other `notify_turn` call queued
+behind it the entire time. It did eventually complete, then processed
+its next 406 queued messages normally (~10s/message). Full detail,
+evidence, and recommended next steps in [B447](../../backlog/B447.md).
 
-This means **zero consolidation happened during this entire benchmark
-run** — every `notify_turn` call queued behind the one stuck message,
-so LoCoMo/MemoryGym/MemBench's probes ran against a graph that received
-no new structured facts at all during the run. A 0% score is exactly
+This means **zero consolidation completed during this entire benchmark
+run** — every suite finished (per the harness's own reported timings)
+well before `15:44:13`, so LoCoMo/MemoryGym/MemBench's probes ran
+against a graph that received no new structured facts during the run,
+even though the writes themselves were all safely queued and did
+eventually get processed after the run ended. A 0% score is exactly
 what that predicts, independent of anything else this run measured.
 
 ### 3.2 The secondary, always-broken harness gap
@@ -120,12 +138,17 @@ Full detail in [B448](../../backlog/B448.md).
 `kuzu-baseline-kpis.md` §5.2.1 attributed the original low scores to a
 **race condition**: consolidation was slow (~1-1.5s/turn) but did
 eventually complete — a manual post-run `current_truth` query confirmed
-the facts landed once the queue drained. **That is a materially
-different (milder) failure than what this run found**: here, the queue
-never drains within the observed window at all. B447 is not a slower
-version of the original race; it's a stall that didn't exist in the
-same form before (or wasn't caught, since the "before" run happened to
-not trigger it against `d35b28b`).
+the facts landed once the queue drained. **B447 is the same shape of
+failure, just far more extreme on its first item**: on current `main`,
+the very first message after a restart takes ~96 minutes (not ~1-1.5s)
+before the queue can even start draining normally — after that it
+settles into the same fast, healthy per-message pace the original
+report described. So this run doesn't contradict the original theory;
+it sharpens it: the race isn't uniformly "consolidation is a bit slow
+per turn," it's "consolidation pays a large, one-time, silent tax on
+the first turn of every daemon lifetime," which a short-lived benchmark
+run (or, per B447's evidence, apparently every restart in this
+daemon's last 11 days) never survives long enough to see clear.
 
 ### 3.4 The B436 fix's effect, isolated
 
@@ -134,9 +157,10 @@ One part of the original hypothesis *did* resolve cleanly:
 `membench/runner.py` read the wrong JSON key (`token_count` instead of
 `bundle.total_token_estimate`). That key-read bug is fixed. The metric
 is now a **real** 0.0% rather than a fake one — it still reads 0.0%
-in this run because B447 means no bundle content exists to compress in
-the first place (nothing was consolidated), not because the
-measurement is broken again. This is a good example of the general
+in this run because B447's ~96-minute dead zone meant no bundle
+content existed to compress by the time MemBench's probes ran (nothing
+had been consolidated yet), not because the measurement is broken
+again. This is a good example of the general
 shape of this whole report: individual fixes landed correctly and can
 be verified as correct in isolation, but a deeper, single blocking bug
 (B447) prevented any of them from producing a visibly different
