@@ -1086,6 +1086,36 @@ class OxigraphClient:
         )
         return True
 
+    def upsert_semantic_relation(
+        self, table: str, h_uri: str, t_uri: str,
+        confidence: float, inferred_by: str, inferred_at: str,
+    ) -> bool:
+        """B451: MERGE-style write of a `confidence`/`inferred_by`/`inferred_at`
+        `star` edge (REQUIRES/ENABLES/EXTENDS/...) with ON CREATE-only property
+        semantics: an existing edge keeps its original values (the old query's
+        COALESCE(old, new)), and is re-asserted as exactly one reifier.
+        Returns False unless both endpoints are existing Concepts."""
+        concept = ox.NamedNode(CAMPY_NS + "Concept")
+        rdf_type = ox.NamedNode(RDF_NS + "type")
+        h, t = ox.NamedNode(h_uri), ox.NamedNode(t_uri)
+        for node in (h, t):
+            if next(self.store.quads_for_pattern(node, rdf_type, concept, ox.DefaultGraph()), None) is None:
+                return False
+        base_triple = ox.Triple(h, ox.NamedNode(CAMPY_NS + table), t)
+        keep: dict[str, Any] = {}
+        for reif in self.store.quads_for_pattern(None, RDF_REIFIES, base_triple, ox.DefaultGraph()):
+            for quad in self.store.quads_for_pattern(reif.subject, None, None, ox.DefaultGraph()):
+                key = quad.predicate.value.rsplit("#", 1)[-1]
+                if key in ("confidence", "inferred_by", "inferred_at") and key not in keep:
+                    keep[key] = quad.object.value
+        props = {
+            "confidence": float(keep["confidence"]) if "confidence" in keep else confidence,
+            "inferred_by": keep.get("inferred_by", inferred_by),
+            "inferred_at": keep.get("inferred_at", inferred_at),
+        }
+        self.write_edge(table, h_uri, t_uri, props)
+        return True
+
     # -- annotation cascade (§4.2e) -----------------------------------------
 
     def cascade_orphaned_annotations(self) -> int:

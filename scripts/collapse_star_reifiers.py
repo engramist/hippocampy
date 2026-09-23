@@ -53,11 +53,26 @@ def report(store: "ox.Store", top: int = 10) -> dict[str, dict[str, int]]:
 
 
 def collapse_edge(store: "ox.Store", s: ox.NamedNode, p: ox.NamedNode, o: ox.NamedNode) -> int:
-    """Collapse all reifiers of (s,p,o) into one. Returns reifiers removed."""
+    """Collapse all reifiers of (s,p,o) into one. Returns reifiers removed.
+
+    CO_OCCURS_WITH is an accumulator: survivor = max(count), mean(strength).
+    Every other star edge keeps one reifier intact (the one with the most
+    property quads), so no property is lost."""
     triple = ox.Triple(s, p, o)
     reifiers = [q.subject for q in store.quads_for_pattern(None, RDF_REIFIES, triple, DEFAULT)]
     if len(reifiers) <= 1:
         return 0
+
+    if p.value != CAMPY + "CO_OCCURS_WITH":
+        sizes = {r: sum(1 for _ in store.quads_for_pattern(r, None, None, DEFAULT)) for r in reifiers}
+        survivor = max(reifiers, key=lambda r: (sizes[r], str(r)))
+        for r in reifiers:
+            if r == survivor:
+                continue
+            for q in list(store.quads_for_pattern(r, None, None, DEFAULT)):
+                store.remove(q)
+        return len(reifiers) - 1
+
     count_iri, strength_iri = CAMPY + "count", CAMPY + "strength"
     counts: list[int] = []
     strengths: list[float] = []
@@ -99,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("store_path")
     ap.add_argument("--report", action="store_true")
-    ap.add_argument("--collapse", metavar="TABLE", help="e.g. CO_OCCURS_WITH")
+    ap.add_argument("--collapse", metavar="TABLE", nargs="+", help="e.g. CO_OCCURS_WITH EXTENDS")
     args = ap.parse_args(argv)
     if not (args.report or args.collapse):
         ap.error("pass --report and/or --collapse TABLE")
@@ -108,11 +123,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.report:
         report(store)
     if args.collapse:
-        removed = collapse_predicate(store, args.collapse)
-        print(f"collapsed {args.collapse}: removed {removed:,} duplicate reifiers")
+        for table in args.collapse:
+            removed = collapse_predicate(store, table)
+            print(f"collapsed {table}: removed {removed:,} duplicate reifiers")
         if args.report:
             report(store)
         store.flush()
+        if hasattr(store, "optimize"):
+            print("compacting store (Store.optimize)...")
+            store.optimize()
     return 0
 
 

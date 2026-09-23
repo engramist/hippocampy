@@ -524,6 +524,18 @@ class GraphGateway:
                 )
             return []
 
+        # 0b. B451: same bug class for the semantic-relation star edges.
+        if name.startswith("orchestrator.merge_semantic_rel_"):
+            self._client.upsert_semantic_relation(
+                name.replace("orchestrator.merge_semantic_rel_", "").upper(),
+                mint_uri("Concept", params["hid"]),
+                mint_uri("Concept", params["tid"]),
+                params["confidence"],
+                params["inferred_by"],
+                params["now"],
+            )
+            return []
+
         # 1. Thalamus bundle queries
         if name.startswith("thalamus.bundle_") or name == "thalamus.analogical_get_quest_embedding":
             return self._handle_thalamus_bundle(name, params)

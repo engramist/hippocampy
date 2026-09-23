@@ -660,28 +660,12 @@ for rel_type in _SEMANTIC_RELS:
             params=("hid", "tid", "confidence", "inferred_by", "now"),
             mutating=True,
             description=f"Merge {rel_type} relation between Concepts",
-            sparql=f"""
-                PREFIX campy: <https://campy.dev/ns#>
-
-                INSERT {{
-                  ?h campy:{rel_type} ?t .
-                  << ?h campy:{rel_type} ?t >> campy:confidence ?target_conf ;
-                                              campy:inferred_by ?target_by ;
-                                              campy:inferred_at ?target_at .
-                }}
-                WHERE {{
-                  ?h a campy:Concept ; campy:concept_id ?hid .
-                  ?t a campy:Concept ; campy:concept_id ?tid .
-                  OPTIONAL {{
-                    << ?h campy:{rel_type} ?t >> campy:confidence ?old_conf ;
-                                                campy:inferred_by ?old_by ;
-                                                campy:inferred_at ?old_at .
-                  }}
-                  BIND(COALESCE(?old_conf, ?confidence) AS ?target_conf)
-                  BIND(COALESCE(?old_by, ?inferred_by) AS ?target_by)
-                  BIND(COALESCE(?old_at, ?now) AS ?target_at)
-                }}
-            """,
+            # B451: no sparql= -- dispatched to a Python handler in
+            # GraphGateway._handle_oxigraph_handler (star-edge write via
+            # OxigraphClient.upsert_semantic_relation). The former SPARQL
+            # INSERT { << ?h p ?t >> ... } WHERE { OPTIONAL { << ?h p ?t >> ... } }
+            # minted a fresh blank-node reifier per solution and doubled on
+            # every re-write of the same relation.
         )
     )
 

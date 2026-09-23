@@ -172,3 +172,62 @@ def test_collapse_script_heals_polluted_store(tmp_path):
     assert int(props["count"]) == 9
     assert float(props["strength"]) == pytest.approx(0.6)
     assert mod.collapse_predicate(store, "CO_OCCURS_WITH") == 0
+
+
+@pytest.mark.asyncio
+async def test_semantic_relation_rewrites_keep_one_reifier_and_original_props(gw, ox_client):
+    """merge_semantic_rel_* (same bug class, on the per-message hot path):
+    re-merging an EXTENDS edge leaves one reifier and keeps the FIRST values
+    (the old query's ON CREATE-only COALESCE semantics)."""
+    a, b = _add_concept(ox_client, "h1"), _add_concept(ox_client, "t1")
+    for i in range(8):
+        await gw.run(
+            "orchestrator.merge_semantic_rel_extends",
+            hid="h1", tid="t1", confidence=0.9 - i * 0.05,
+            inferred_by=f"llm{i}", now=f"2026-09-2{i % 9}T00:00:00+00:00",
+        )
+    triple = ox.Triple(ox.NamedNode(a), ox.NamedNode(CAMPY_NS + "EXTENDS"), ox.NamedNode(b))
+    reifs = [q.subject for q in ox_client.store.quads_for_pattern(None, RDF_REIFIES, triple, ox.DefaultGraph())]
+    assert len(reifs) == 1
+    props = _props(ox_client, reifs[0])
+    assert float(props["confidence"]) == pytest.approx(0.9)
+    assert props["inferred_by"] == "llm0"
+
+
+@pytest.mark.asyncio
+async def test_semantic_relation_missing_concept_writes_nothing(gw, ox_client):
+    _add_concept(ox_client, "only_h")
+    before = len(ox_client.store)
+    await gw.run(
+        "orchestrator.merge_semantic_rel_requires",
+        hid="only_h", tid="ghost", confidence=0.5, inferred_by="llm",
+        now="2026-09-23T00:00:00+00:00",
+    )
+    assert len(ox_client.store) == before
+
+
+def test_collapse_script_keeps_all_properties_on_non_accumulator_edges():
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "collapse_star_reifiers",
+        Path(__file__).resolve().parent.parent / "scripts" / "collapse_star_reifiers.py",
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    store = ox.Store()
+    a, b = "https://campy.dev/id/Concept/m", "https://campy.dev/id/Concept/n"
+    for conf in (0.5, 0.7):
+        store.update(
+            f"INSERT DATA {{ <{a}> <{CAMPY_NS}EXTENDS> <{b}> . "
+            f"<< <{a}> <{CAMPY_NS}EXTENDS> <{b}> >> <{CAMPY_NS}confidence> {conf} ; "
+            f"<{CAMPY_NS}inferred_by> \"llm\" ; <{CAMPY_NS}inferred_at> \"2026-09-23\" . }}"
+        )
+    assert mod.collapse_predicate(store, "EXTENDS") == 1
+    triple = ox.Triple(ox.NamedNode(a), ox.NamedNode(CAMPY_NS + "EXTENDS"), ox.NamedNode(b))
+    (r,) = [q.subject for q in store.quads_for_pattern(None, RDF_REIFIES, triple, ox.DefaultGraph())]
+    keys = {q.predicate.value.rsplit("#", 1)[-1]
+            for q in store.quads_for_pattern(r, None, None, ox.DefaultGraph()) if q.predicate != RDF_REIFIES}
+    assert keys == {"confidence", "inferred_by", "inferred_at"}
