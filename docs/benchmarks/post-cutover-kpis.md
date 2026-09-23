@@ -21,6 +21,27 @@
 > this run ran before any consolidation had completed), only the
 > severity/pattern framing.
 
+> **Update (2026-09-23): B447's fix landed, scores are still 0% — but
+> for a third, distinct, now-final reason.** [B447](../../backlog/B447.md)'s
+> per-write timeout was merged and this suite was re-run
+> (`post_cutover_live_v2.json`). The daemon itself now works correctly
+> under load — 400+ real consolidation completions logged during the
+> run, instead of a total freeze. **Scores are still 0% anyway.**
+> Investigating why found a second, completely unrelated bug:
+> [B449](../../backlog/B449.md) — the MCP adapter this harness talks to
+> (`campy.adapters.mcp_server`) gives up on every tool call after ~6-12
+> silent seconds (an "implicit background path" timeout budget applied
+> to what is actually explicit, external tool-call traffic), long
+> before the daemon — genuinely slower than that under real load — can
+> ever answer. Every reported "latency" in every run so far, including
+> both runs summarized in this document, has actually been measuring
+> that timeout firing, not the daemon's real response time. See §2b
+> and B449 for full detail. This is believed to be the last blocker —
+> B434, B436, B438, B447, and B448 were all real, necessary fixes, but
+> none of them, individually or together, could have moved these
+> scores, because the harness was never given long enough to see a
+> real answer.
+
 ---
 
 ## 1. Purpose and headline result
@@ -89,6 +110,59 @@ noise expected from a suite this size (a handful of transfer/recall
 checks) and is not investigated further here — it does not depend on
 consolidation timing the way the other three suites do (see §3), and
 nothing in this run's logs points to an ARC-Bridge-specific bug.
+
+---
+
+## 2b. Run 2 (2026-09-23, post-B447-fix): still 0%, now for a fully diagnosed reason
+
+Same reproduction, run again against a freshly restarted daemon on
+`main` with [B447](../../backlog/B447.md)'s write-lock timeout fix
+included (`80a77a4`). Raw JSON: `campy-benchmarks/post_cutover_live_v2.json`.
+
+| Suite | Metric | Run 1 (pre-fix) | Run 2 (post-B447-fix) |
+|---|---|---|---|
+| LoCoMo | F1 / EM | 0.0 / 0.0 | 0.0 / 0.0 |
+| LoCoMo | Avg Latency | 6006.49 ms | 6006.6 ms |
+| MemoryGym | Success Rate | 0.0% | 0.0% |
+| MemoryGym | Avg Latency | 6006.08 ms | 6006.57 ms |
+| MemBench | Fact Precision | 0.0 | 0.0 |
+| MemBench | Avg Latency | 10011.93 ms | 12011.32 ms |
+| ARC Bridge | Transfer / Recall | 0.85 / 0.9 | 0.85 / 0.9 |
+| ARC Bridge | Avg Latency | 4655.15 ms | 6005.61 ms |
+
+**Identical scores, near-identical latencies.** B447's fix is real and
+confirmed working during this exact run — `daemon.log` shows 400+
+genuine `[Loop] msg=...` consolidation completions across the run's
+duration, versus zero during Run 1 (which froze entirely). So the
+daemon is now doing real, correct background work throughout. The
+scores not moving at all, despite that, is itself the signal that
+something else is fully independent of B447's fix.
+
+**The latency numbers are the tell.** They cluster suspiciously close
+to round multiples of specific numbers: LoCoMo/MemoryGym/ARC-Bridge
+all sit right at ~6006ms; MemBench sits right at ~2× that
+(~10-12s). Tracing this precisely (see [B449](../../backlog/B449.md)
+for the full derivation) found the exact mechanism:
+`campy.adapters.mcp_server` — the MCP server the benchmark harness is
+specifically configured to talk to — routes every tool call through a
+timeout budget (`CONTEXT_TIMEOUT=3.0s` for reads, `CAPTURE_TIMEOUT=2.0s`
+for writes) intended for *implicit background paths* (hooks, context
+injection) that must never block a user's interactive session — not
+for this adapter's actual job, handling explicit external tool calls.
+Worse, the transport tries a socket attempt *and then* an HTTP
+fallback, each at the *full* budget, so a read call's real ceiling is
+`2 × 3.0s = 6.0s` and MemBench's `compile_context` flow (~2 sequential
+calls) hits `~2 × 6.0s ≈ 12.0s`. **Every latency number in this entire
+report, in both runs, has been measuring this timeout firing — not
+the daemon's real response time.**
+
+This means the true story of this whole investigation is: B434
+(crash), B436 (token key), B438 (mock isolation), and B447 (write-lock
+timeout) were all real bugs, all correctly fixed, and **none of them
+could have possibly moved these scores**, individually or together —
+the benchmark harness has never once, in any run across this entire
+investigation, waited long enough to see the daemon's actual answer.
+B449 is believed to be the last blocker.
 
 ---
 
