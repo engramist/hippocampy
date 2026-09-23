@@ -59,3 +59,32 @@ async def test_handle_mcp_request_surfaces_transport_errors(monkeypatch):
 
     assert response["error"]["code"] == -32000
     assert "DAEMON_HTTP_ERROR" in response["error"]["message"]
+
+
+# ---------------------------------------------------------------------------
+# B449 — this adapter is an explicit external tool-call surface, not an
+# implicit background path, so it must not use the short CAPTURE_TIMEOUT/
+# CONTEXT_TIMEOUT budgets meant for hooks/context-injection.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["notify_turn", "ask"])
+async def test_call_brain_uses_mcp_adapter_timeout_for_every_method(monkeypatch, method):
+    """AC (B449): both a WRITE_METHODS member (`notify_turn`) and a
+    non-write method (`ask`) go through call_brain_soft with
+    MCP_ADAPTER_TIMEOUT — proving the old CAPTURE_TIMEOUT/CONTEXT_TIMEOUT
+    split (2.0s / 3.0s) is gone, not just relabeled."""
+    seen = {}
+
+    async def fake_call_brain_soft(method, params, *, timeout, default):
+        seen["timeout"] = timeout
+        return {"ok": True}
+
+    monkeypatch.setattr(mcp_server, "call_brain_soft", fake_call_brain_soft)
+
+    result = await mcp_server._call_brain(method, {})
+
+    assert result == {"ok": True}
+    assert seen["timeout"] == brain_transport.MCP_ADAPTER_TIMEOUT
+    assert seen["timeout"] not in (2.0, 3.0)

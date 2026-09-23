@@ -43,6 +43,16 @@ CAPTURE_TIMEOUT = 2.0
 CLI_TIMEOUT = 30.0
 """Explicit CLI (`campy ask`, `campy recall`) — user asked, user waits."""
 
+MCP_ADAPTER_TIMEOUT = 90.0
+"""B449: campy.adapters.mcp_server — an external-facing MCP server handling
+explicit tool calls from real clients (Smithery and others), not an implicit
+background path. It was wrongly using CONTEXT_TIMEOUT/CAPTURE_TIMEOUT (fire-
+and-forget budgets meant for hooks that must never block a session), so it
+silently gave up on every call after ~6s — long before the daemon, genuinely
+slower than that under real load (directly observed: 30-45s per `ask()` call
+under load, and B447's own write path can legitimately take up to 60s before
+it gives up), could ever answer. 90s gives real margin above both."""
+
 
 def socket_path() -> Path:
     """Return the preferred daemon socket path."""
