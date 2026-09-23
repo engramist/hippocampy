@@ -789,7 +789,18 @@ async def context_status(params: dict, db: KuzuClient, config: dict) -> dict:
         handoff = get_handoff_context(db, quest_id, session_id)
         handoff_nodes = len(handoff)
 
+    # B448: how many notify_turn messages are still queued or in-flight in
+    # the Gated Consolidation Loop. Lets a caller (e.g. an external
+    # benchmark) wait for consolidation to finish before probing, instead of
+    # racing it. None = no loop queue (daemon not running the loop).
+    from campy.brain.thalamus.tools._shared import get_loop_queue
+    _q = get_loop_queue()
+    consolidation_pending = (
+        None if _q is None else getattr(_q, "_unfinished_tasks", _q.qsize())
+    )
+
     return {
+        "consolidation_pending": consolidation_pending,
         "token_estimate": state["estimated_tokens"],
         "token_limit": state["token_limit"],
         "utilization": round(state["utilization"], 3),
