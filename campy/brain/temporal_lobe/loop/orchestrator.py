@@ -19,7 +19,9 @@ Loop:
 from __future__ import annotations
 import asyncio
 import logging
+import time
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from campy.brain.temporal_lobe.loop.step1_ner       import extract_entities
@@ -45,6 +47,28 @@ from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.llm.provider import create_llm_client_for_step  # B16
 
 
+# B447: step-level timing instrumentation. Filed after this loop was caught
+# stalling for 90+ minutes on unpredictable messages with no error and no
+# indication of which step was responsible — every `await` point here is a
+# candidate (plain `def` steps like classify_concept/classify_artifact/
+# retrieve_candidates/arbitrate are synchronous and were ruled out by direct
+# observation: unrelated MCP calls kept completing on the same event loop
+# throughout both stalls, which a blocking sync call inside this coroutine
+# could not have allowed). Deliberately cheap (a monotonic clock read + one
+# log line) so it's safe to leave in permanently, not just for this
+# investigation.
+@asynccontextmanager
+async def _timed(message_id: str, label: str):
+    t0 = time.perf_counter()
+    try:
+        yield
+    finally:
+        _logger.info(
+            "[Loop:Timing] msg=%s step=%s elapsed=%.2fs",
+            message_id[:8], label, time.perf_counter() - t0,
+        )
+
+
 async def run_loop(message_id: str, text: str, db, llm_client,
                    config: dict, centroids: dict,
                    role: str = "user",
@@ -68,6 +92,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         "relations": [{"head": str, "relation_type": str, "tail": str, "confidence": float}]
     }
     """
+    t_loop_start = time.perf_counter()
     embedding_model = config.get("embeddings", {}).get(
         "model", "sentence-transformers/all-MiniLM-L6-v2"
     )
@@ -111,7 +136,8 @@ async def run_loop(message_id: str, text: str, db, llm_client,
             text_raw = ent["text"]
             gist_class = ent["gist_class"]
             # Re-embed locally to ensure compatibility with current model
-            vector = await asyncio.to_thread(emb.embed, text_raw, model_name=embedding_model)
+            async with _timed(message_id, "precomputed:embed"):
+                vector = await asyncio.to_thread(emb.embed, text_raw, model_name=embedding_model)
             typed_entities.append({
                 "text": text_raw,
                 "label": ent.get("label", "PRODUCT"),
@@ -136,17 +162,33 @@ async def run_loop(message_id: str, text: str, db, llm_client,
     else:
         # Standard Loop Flow
         # Step 1 — NER (spaCy)
+        t0 = time.perf_counter()
         doc, entities = extract_entities(text, model_name=spacy_model)
+        _logger.info(
+            "[Loop:Timing] msg=%s step=step1_ner elapsed=%.2fs entities=%d",
+            message_id[:8], time.perf_counter() - t0, len(entities),
+        )
         summary["entities_found"] = len(entities)
 
         if not entities:
             return summary  # nothing to process
 
         # Step 1b — Verb Pattern Relation Extraction
+        t0 = time.perf_counter()
         step1b_relations = extract_relations(doc, entities)
+        _logger.info(
+            "[Loop:Timing] msg=%s step=step1b_relations elapsed=%.2fs relations=%d",
+            message_id[:8], time.perf_counter() - t0, len(step1b_relations),
+        )
 
         # Steps 2, 3 — Per-entity classification + routing
-        for entity in entities:
+        t_step23 = time.perf_counter()
+        for idx, entity in enumerate(entities):
+            _logger.info(
+                "[Loop:Timing] msg=%s step=step2_3_entity entity=%d/%d text=%r elapsed_so_far=%.2fs",
+                message_id[:8], idx, len(entities), entity.get("text", "")[:40],
+                time.perf_counter() - t_step23,
+            )
             gist_result = classify_concept(
                 entity["text"], embedding_model, centroids, llm_step2,
                 context=text,
@@ -161,9 +203,10 @@ async def run_loop(message_id: str, text: str, db, llm_client,
             schema_org_type = schema_result["schema_org_type"]
 
             if gist_result["system"] == "2" and gist_class:
-                await _save_gist_example(
-                    entity["text"], gist_result["vector"], gist_class, db, now
-                )
+                async with _timed(message_id, f"save_gist_example[{idx}]"):
+                    await _save_gist_example(
+                        entity["text"], gist_result["vector"], gist_class, db, now
+                    )
 
             typed_entities.append({
                 **entity,
@@ -172,6 +215,10 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                 "gist_confidence": gist_result["confidence"],
                 "vector":          gist_result.get("vector"),
             })
+        _logger.info(
+            "[Loop:Timing] msg=%s step=step2_3_total elapsed=%.2fs typed_entities=%d",
+            message_id[:8], time.perf_counter() - t_step23, len(typed_entities),
+        )
 
         # Step 1b filtering
         surviving_texts = {e["text"].lower() for e in typed_entities}
@@ -192,12 +239,17 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                 for e2 in typed_entities[i+1:]
             )
             if uncovered_pairs_exist:
+                t0 = time.perf_counter()
                 step3b_relations = extract_semantic_relations(typed_entities, text, llm_step3b)
+                _logger.info(
+                    "[Loop:Timing] msg=%s step=step3b_relations elapsed=%.2fs relations=%d",
+                    message_id[:8], time.perf_counter() - t0, len(step3b_relations),
+                )
                 for rel in step3b_relations:
                     pair = (rel["head"].lower(), rel["tail"].lower())
                     if pair not in step1b_covered_pairs:
                         deferred_relations.append(rel)
-        
+
         summary["relations_found"] = len(deferred_relations)
 
     # ------------------------------------------------------------------
@@ -207,7 +259,9 @@ async def run_loop(message_id: str, text: str, db, llm_client,
     # (both newly stored AND matched via additive) for CO_OCCURS_WITH wiring.
     concept_ids = []
 
-    for entity in typed_entities:
+    t_step47 = time.perf_counter()
+    for idx, entity in enumerate(typed_entities):
+      async with _timed(message_id, f"step4-7_entity[{idx}/{len(typed_entities)}]:{entity.get('text','')[:30]!r}"):
         # Step 4 — Pattern Matching + Confidence Gating
         # L5 fix: pass entity_text so signal matching uses entity sentence context.
         # ISSUE-024 fix: pass role so assistant turns get confidence cap.
@@ -247,115 +301,140 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         # Only runs when message contains error/action signals — near-zero cost otherwise.
         step4b_vector = entity.get("vector")
         if step4b_vector:
-            step4b_result = await check_associative_triggers(
-                entity_text=entity["text"],
-                entity_vector=step4b_vector,
-                full_message=text,
-                db=db,
-                config=config,
-                session_id=session_id,
-            )
+            async with _timed(message_id, f"step4b_associative[{idx}]"):
+                step4b_result = await check_associative_triggers(
+                    entity_text=entity["text"],
+                    entity_vector=step4b_vector,
+                    full_message=text,
+                    db=db,
+                    config=config,
+                    session_id=session_id,
+                )
             summary["triggers_bound"] += step4b_result["triggers_bound"]
 
         # O1 fix: reuse vector from Step 2 (already embedded there).
         vector = entity.get("vector")
         if not vector:
-            vector = await asyncio.to_thread(emb.embed, entity["text"], model_name=embedding_model)
+            async with _timed(message_id, f"embed_fallback[{idx}]"):
+                vector = await asyncio.to_thread(emb.embed, entity["text"], model_name=embedding_model)
 
         # B12 — Anomaly Detection (before candidate retrieval)
-        anomaly_result = await check_anomalies(entity["text"], vector, db, config)
+        async with _timed(message_id, f"check_anomalies[{idx}]"):
+            anomaly_result = await check_anomalies(entity["text"], vector, db, config)
 
         # Step 5 — Candidate Retrieval
         # L8 fix: pass already-created concept_ids from this run as exclusions
         # so entities earlier in the same message don't match each other as
         # "existing" concepts. retrieve_candidates uses the first exclude_id
         # for self-exclusion — pass the full list to skip all same-run concepts.
+        t0 = time.perf_counter()
         candidates = retrieve_candidates(vector, "", db,
                                          exclude_ids=concept_ids)
+        _logger.info(
+            "[Loop:Timing] msg=%s step=step5_retrieval[%d] elapsed=%.2fs candidates=%d",
+            message_id[:8], idx, time.perf_counter() - t0, len(candidates),
+        )
 
         top = candidates[0] if candidates else None
 
         if top and top["similarity"] > GRAY_ZONE_UPPER:
             # Strong match → additive update, no new node
-            result = await apply_additive(top["concept_id"], db, now)
+            async with _timed(message_id, f"apply_additive[{idx}]:strong"):
+                result = await apply_additive(top["concept_id"], db, now)
             if result.get("action") == "additive":
                 concept_ids.append(top["concept_id"])
                 summary["additive_updates"] += 1
                 # O7: re-score nearby confidence_low nodes
-                await rescore_nearby_low_confidence(top["concept_id"], db)
+                async with _timed(message_id, f"rescore_nearby[{idx}]:strong"):
+                    await rescore_nearby_low_confidence(top["concept_id"], db)
 
         elif top and top["similarity"] >= MATCH_THRESHOLD:
             # Gray zone → Step 6 arbitration
+            t0 = time.perf_counter()
             arb = arbitrate(
                 {**entity, "text": entity["text"]},
                 candidates,
                 text,
                 llm_step6,  # B16: per-step client (benefits most from frontier models)
             )
+            _logger.info(
+                "[Loop:Timing] msg=%s step=step6_arbitration[%d] elapsed=%.2fs classification=%s",
+                message_id[:8], idx, time.perf_counter() - t0, arb.get("classification"),
+            )
 
             if arb["classification"] == "additive":
-                result = await apply_additive(top["concept_id"], db, now)
+                async with _timed(message_id, f"apply_additive[{idx}]:gray"):
+                    result = await apply_additive(top["concept_id"], db, now)
                 if result.get("action") == "additive":
                     concept_ids.append(top["concept_id"])
                     summary["additive_updates"] += 1
                     # O7: re-score nearby confidence_low nodes
-                    await rescore_nearby_low_confidence(top["concept_id"], db)
+                    async with _timed(message_id, f"rescore_nearby[{idx}]:gray_additive"):
+                        await rescore_nearby_low_confidence(top["concept_id"], db)
 
             elif arb["classification"] == "contradiction":
                 # Create new concept node, then draw DEPRECATED_BY
-                concept_id = await _store_concept(
-                    entity, step4_result, vector, embedding_model, db, now,
-                    anomaly_result=anomaly_result, salience=salience,
-                )
+                async with _timed(message_id, f"store_concept[{idx}]:contradiction"):
+                    concept_id = await _store_concept(
+                        entity, step4_result, vector, embedding_model, db, now,
+                        anomaly_result=anomaly_result, salience=salience,
+                    )
                 if concept_id:
                     summary["concepts_stored"] += 1
                     concept_ids.append(concept_id)
                     # B12: Store anomaly edges if flagged
                     if anomaly_result and anomaly_result.get("has_anomaly"):
                         for anomaly in anomaly_result["anomalies"]:
-                            await store_anomaly_flag(
-                                db, concept_id, "Concept", anomaly["type"],
-                                anomaly["target_id"], anomaly["confidence"]
-                            )
+                            async with _timed(message_id, f"store_anomaly_flag[{idx}]"):
+                                await store_anomaly_flag(
+                                    db, concept_id, "Concept", anomaly["type"],
+                                    anomaly["target_id"], anomaly["confidence"]
+                                )
                             summary["anomalies_detected"] += 1
-                    await apply_contradiction(
-                        concept_id, top["concept_id"], message_id, db, now
-                    )
+                    async with _timed(message_id, f"apply_contradiction[{idx}]"):
+                        await apply_contradiction(
+                            concept_id, top["concept_id"], message_id, db, now
+                        )
                     summary["contradictions"] += 1
                     # O7: re-score nearby confidence_low nodes
-                    await rescore_nearby_low_confidence(concept_id, db)
+                    async with _timed(message_id, f"rescore_nearby[{idx}]:contradiction"):
+                        await rescore_nearby_low_confidence(concept_id, db)
                     if not step4_result["confidence_low"]:
-                        await _reify_concept(
-                            concept_id, step4_result["artifact_type"],
-                            entity, vector, embedding_model, db, now,
-                            confidence=step4_result["confidence"],
-                            message_id=message_id,
-                            session_id=session_id,
-                        )
+                        async with _timed(message_id, f"reify_concept[{idx}]:contradiction"):
+                            await _reify_concept(
+                                concept_id, step4_result["artifact_type"],
+                                entity, vector, embedding_model, db, now,
+                                confidence=step4_result["confidence"],
+                                message_id=message_id,
+                                session_id=session_id,
+                            )
                         summary["reified"] += 1
                         if summary["reified"] == 1 and llm_client is not None:
                             from campy.brain.hippocampus.quest import maybe_synthesize_purpose
-                            await maybe_synthesize_purpose(
-                                db, message_id, entity["text"],
-                                llm_client, embedding_model, now,
-                            )
+                            async with _timed(message_id, f"synthesize_purpose[{idx}]:contradiction"):
+                                await maybe_synthesize_purpose(
+                                    db, message_id, entity["text"],
+                                    llm_client, embedding_model, now,
+                                )
 
             else:
                 # "uncertain" — store both, both remain confidence_low
-                concept_id = await _store_concept(
-                    entity, step4_result, vector, embedding_model, db, now,
-                    anomaly_result=anomaly_result, salience=salience,
-                )
+                async with _timed(message_id, f"store_concept[{idx}]:uncertain"):
+                    concept_id = await _store_concept(
+                        entity, step4_result, vector, embedding_model, db, now,
+                        anomaly_result=anomaly_result, salience=salience,
+                    )
                 if concept_id:
                     summary["concepts_stored"] += 1
                     concept_ids.append(concept_id)
                     # B12: Store anomaly edges if flagged
                     if anomaly_result and anomaly_result.get("has_anomaly"):
                         for anomaly in anomaly_result["anomalies"]:
-                            await store_anomaly_flag(
-                                db, concept_id, "Concept", anomaly["type"],
-                                anomaly["target_id"], anomaly["confidence"]
-                            )
+                            async with _timed(message_id, f"store_anomaly_flag[{idx}]:uncertain"):
+                                await store_anomaly_flag(
+                                    db, concept_id, "Concept", anomaly["type"],
+                                    anomaly["target_id"], anomaly["confidence"]
+                                )
                             summary["anomalies_detected"] += 1
                     # uncertain does not trigger REIFIED_AS (confidence_low stays true)
                     # B158: create a DisambiguationEvent for human curation
@@ -363,64 +442,80 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                         ref_id = None
                         if arb.get("referenced_node_ids"):
                             ref_id = arb["referenced_node_ids"][0]
-                        await _create_disambiguation_event(db, concept_id, ref_id,
-                                                           top["similarity"] if top else 0.0,
-                                                           now)
+                        async with _timed(message_id, f"disambiguation_event[{idx}]"):
+                            await _create_disambiguation_event(db, concept_id, ref_id,
+                                                               top["similarity"] if top else 0.0,
+                                                               now)
                     except Exception:
                         _logger.exception("Failed to create DisambiguationEvent")
 
         else:
             # No match — store as new concept
-            concept_id = await _store_concept(
-                entity, step4_result, vector, embedding_model, db, now,
-                anomaly_result=anomaly_result, salience=salience,
-            )
+            async with _timed(message_id, f"store_concept[{idx}]:new"):
+                concept_id = await _store_concept(
+                    entity, step4_result, vector, embedding_model, db, now,
+                    anomaly_result=anomaly_result, salience=salience,
+                )
             if concept_id:
                 summary["concepts_stored"] += 1
                 concept_ids.append(concept_id)
                 # B12: Store anomaly edges if flagged
                 if anomaly_result and anomaly_result.get("has_anomaly"):
                     for anomaly in anomaly_result["anomalies"]:
-                        await store_anomaly_flag(
-                            db, concept_id, "Concept", anomaly["type"],
-                            anomaly["target_id"], anomaly["confidence"]
-                        )
+                        async with _timed(message_id, f"store_anomaly_flag[{idx}]:new"):
+                            await store_anomaly_flag(
+                                db, concept_id, "Concept", anomaly["type"],
+                                anomaly["target_id"], anomaly["confidence"]
+                            )
                         summary["anomalies_detected"] += 1
                 if not step4_result["confidence_low"]:
-                    await _reify_concept(
-                        concept_id, step4_result["artifact_type"],
-                        entity, vector, embedding_model, db, now,
-                        confidence=step4_result["confidence"],
-                        message_id=message_id,
-                        session_id=session_id,
-                    )
+                    async with _timed(message_id, f"reify_concept[{idx}]:new"):
+                        await _reify_concept(
+                            concept_id, step4_result["artifact_type"],
+                            entity, vector, embedding_model, db, now,
+                            confidence=step4_result["confidence"],
+                            message_id=message_id,
+                            session_id=session_id,
+                        )
                     summary["reified"] += 1
                     if summary["reified"] == 1 and llm_client is not None:
                         from campy.brain.hippocampus.quest import maybe_synthesize_purpose
-                        await maybe_synthesize_purpose(
-                            db, message_id, entity["text"],
-                            llm_client, embedding_model, now,
-                        )
+                        async with _timed(message_id, f"synthesize_purpose[{idx}]:new"):
+                            await maybe_synthesize_purpose(
+                                db, message_id, entity["text"],
+                                llm_client, embedding_model, now,
+                            )
+    _logger.info(
+        "[Loop:Timing] msg=%s step=step4-7_total elapsed=%.2fs entities=%d",
+        message_id[:8], time.perf_counter() - t_step47, len(typed_entities),
+    )
 
     # Step 7 — CO_OCCURS_WITH for all concepts from this message
     if len(concept_ids) > 1:
         min_conf = 0.60  # noise floor minimum
         max_pairs = int(config.get("loop", {}).get("max_co_occurrence_pairs", 45))
-        await write_co_occurs_with(concept_ids, min_conf, db, now, co_threshold,
-                                   max_pairs=max_pairs)
+        async with _timed(message_id, "step7_co_occurs_with"):
+            await write_co_occurs_with(concept_ids, min_conf, db, now, co_threshold,
+                                       max_pairs=max_pairs)
 
     # Step 7.5 — Lesson extraction (indicator-based)
-    lesson_result = await extract_lessons(
-        message_id, text, db, llm_client, config, session_id=session_id
-    )
+    async with _timed(message_id, "step7_5_lessons"):
+        lesson_result = await extract_lessons(
+            message_id, text, db, llm_client, config, session_id=session_id
+        )
     # Phase 3: extract_lessons now returns list[str] of IDs; handle both old and new
     summary["lessons_found"] = len(lesson_result) if isinstance(lesson_result, list) else lesson_result
 
     # B32 fix: flush deferred relations AFTER all Concept nodes are created.
     # _store_relation will ensure both endpoints exist before creating the edge.
-    for rel in deferred_relations:
-        await _store_relation(rel, db, now, embedding_model=embedding_model)
+    for idx, rel in enumerate(deferred_relations):
+        async with _timed(message_id, f"store_relation[{idx}/{len(deferred_relations)}]"):
+            await _store_relation(rel, db, now, embedding_model=embedding_model)
 
+    _logger.info(
+        "[Loop:Timing] msg=%s step=TOTAL elapsed=%.2fs",
+        message_id[:8], time.perf_counter() - t_loop_start,
+    )
     return summary
 
 
