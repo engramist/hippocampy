@@ -16,8 +16,7 @@ import sys
 import os
 from pathlib import Path
 from datetime import datetime, timezone
-from campy.brain.brainstem.activity_log import WRITE_METHODS
-from campy.brain_transport import CAPTURE_TIMEOUT, CONTEXT_TIMEOUT, call_brain_soft, socket_path
+from campy.brain_transport import MCP_ADAPTER_TIMEOUT, call_brain_soft, socket_path
 from campy.paths import get_daemon_socket_path, runtime_dir
 
 SOCKET_PATH   = get_daemon_socket_path()
@@ -75,14 +74,20 @@ async def _call_brain(method: str, params: dict) -> dict:
     """Send a JSON-RPC call to the Brain Daemon. Returns the result dict.
 
     B318: routed through call_brain_soft() so an unreachable/slow/erroring
-    daemon can never hang or hard-fail this adapter past its timeout budget
-    (CAPTURE_TIMEOUT for write methods, CONTEXT_TIMEOUT for reads — see the
-    table in campy/brain_transport.py). Re-raises RuntimeError("DAEMON_OFFLINE: ...")
-    on soft-failure so this function's external contract — and every
-    existing try/except RuntimeError call site below — is unchanged.
+    daemon can never hang or hard-fail this adapter forever. B449: this
+    module is an external-facing MCP server handling explicit tool calls
+    from real clients (Smithery and others) — NOT an implicit background
+    path like a hook or session-start context injection. It was previously
+    using CAPTURE_TIMEOUT/CONTEXT_TIMEOUT (those fire-and-forget budgets),
+    which silently gave up on every call after ~6s and made every external
+    benchmark/client see a fabricated "DAEMON_OFFLINE" instead of the
+    daemon's real (correct, just slower) answer. Uses MCP_ADAPTER_TIMEOUT
+    instead — see its docstring in campy/brain_transport.py. Re-raises
+    RuntimeError("DAEMON_OFFLINE: ...") on soft-failure so this function's
+    external contract — and every existing try/except RuntimeError call
+    site below — is unchanged.
     """
-    timeout = CAPTURE_TIMEOUT if method in WRITE_METHODS else CONTEXT_TIMEOUT
-    result = await call_brain_soft(method, params, timeout=timeout, default=_SOFT_FAIL)
+    result = await call_brain_soft(method, params, timeout=MCP_ADAPTER_TIMEOUT, default=_SOFT_FAIL)
     if result is _SOFT_FAIL:
         raise RuntimeError(f"DAEMON_OFFLINE: soft-failure calling {method}")
     return result
