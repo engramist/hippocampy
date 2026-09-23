@@ -512,6 +512,30 @@ class GraphGateway:
     def _handle_oxigraph_handler(self, query: NamedQuery, params: dict[str, Any]) -> Any:
         name = query.name
 
+        # 0. B451: CO_OCCURS_WITH is a star edge -- must go through write_edge,
+        # not a pure-SPARQL INSERT (which minted a reifier per solution and grew
+        # exponentially).
+        if name == "pathways.unwind_co_occurs_with":
+            for pair in params["pairs"]:
+                self._client.upsert_co_occurrence(
+                    mint_uri("Concept", pair["a_id"]),
+                    mint_uri("Concept", pair["b_id"]),
+                    float(params["strength"]),
+                )
+            return []
+
+        # 0b. B451: same bug class for the semantic-relation star edges.
+        if name.startswith("orchestrator.merge_semantic_rel_"):
+            self._client.upsert_semantic_relation(
+                name.replace("orchestrator.merge_semantic_rel_", "").upper(),
+                mint_uri("Concept", params["hid"]),
+                mint_uri("Concept", params["tid"]),
+                params["confidence"],
+                params["inferred_by"],
+                params["now"],
+            )
+            return []
+
         # 1. Thalamus bundle queries
         if name.startswith("thalamus.bundle_") or name == "thalamus.analogical_get_quest_embedding":
             return self._handle_thalamus_bundle(name, params)

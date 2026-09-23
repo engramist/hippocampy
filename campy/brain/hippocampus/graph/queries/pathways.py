@@ -157,27 +157,10 @@ PATHWAY_QUERIES: tuple[NamedQuery, ...] = (
         params=("pairs", "strength"),
         mutating=True,
         description="Batch upsert CO_OCCURS_WITH edges for concept pairs.",
-        sparql="""
-            PREFIX campy: <https://campy.dev/ns#>
-            PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-
-            INSERT {
-              ?a campy:CO_OCCURS_WITH ?b .
-              << ?a campy:CO_OCCURS_WITH ?b >> campy:count ?new_count .
-              << ?a campy:CO_OCCURS_WITH ?b >> campy:strength ?new_strength .
-            }
-            WHERE {
-              VALUES (?a_id ?b_id) { }
-              ?a a campy:Concept ; campy:concept_id ?a_id .
-              ?b a campy:Concept ; campy:concept_id ?b_id .
-              OPTIONAL {
-                << ?a campy:CO_OCCURS_WITH ?b >> campy:count ?old_count .
-                << ?a campy:CO_OCCURS_WITH ?b >> campy:strength ?old_strength .
-              }
-              BIND(IF(BOUND(?old_count), ?old_count + 1, 1) AS ?new_count)
-              BIND(IF(BOUND(?old_strength), (?old_strength + ?strength) / 2.0, ?strength) AS ?new_strength)
-            }
-        """,
+        # B451: no sparql= -- dispatched to a Python handler in
+        # GraphGateway._handle_oxigraph_handler (star-edge write via
+        # OxigraphClient.upsert_co_occurrence). The former pure-SPARQL upsert
+        # minted a fresh blank-node reifier per solution and grew exponentially.
     ),
     NamedQuery(
         name="pathways.find_low_confidence_hops",

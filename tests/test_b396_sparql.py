@@ -90,6 +90,14 @@ def test_ingest_queries_sparql(store, query):
 
 @pytest.mark.parametrize("query", PATHWAY_QUERIES, ids=lambda q: q.name)
 def test_pathway_queries_sparql(store, query):
+    if query.name == "pathways.unwind_co_occurs_with":
+        # B451: CO_OCCURS_WITH is a star edge; a static SPARQL INSERT mints a
+        # fresh blank-node reifier per solution (exponential growth). Handled
+        # via OxigraphClient.upsert_co_occurrence / gateway.py Python handler,
+        # sparql=None (tests/test_b451_co_occurs_reifier_explosion.py).
+        assert query.sparql is None
+        return
+
     assert query.sparql is not None, f"{query.name} must have a sparql representation"
     if query.mutating:
         store.update(query.sparql)
@@ -125,6 +133,12 @@ def test_task_graph_queries_sparql(store, query):
 
 @pytest.mark.parametrize("query", ORCHESTRATOR_QUERIES, ids=lambda q: q.name)
 def test_orchestrator_queries_sparql(store, query):
+    if query.name.startswith("orchestrator.merge_semantic_rel_"):
+        # B451: star-edge writes; a static SPARQL INSERT mints a reifier per
+        # solution. Handled via OxigraphClient.upsert_semantic_relation.
+        assert query.sparql is None
+        return
+
     assert query.sparql is not None, f"{query.name} must have a sparql representation"
     if query.mutating:
         store.update(query.sparql)
