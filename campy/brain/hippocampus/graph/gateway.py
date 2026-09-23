@@ -27,9 +27,12 @@ production.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
+import os
 import re
+import time
 import unittest.mock
 from dataclasses import dataclass
 from typing import Any, Iterable
@@ -43,6 +46,17 @@ from campy.brain.hippocampus.graph.oxigraph_client import (
 )
 
 _logger = logging.getLogger(__name__)
+
+# B447: OxigraphClient.execute_write() serializes every write in the daemon
+# through a single global asyncio.Lock held for the full duration of the
+# native store.update() call, with no timeout — a pathologically slow write
+# (observed in production: 96min, then 2h28m+ on a different message) blocks
+# every other write in the system silently and indefinitely. This bounds
+# that: overridable via CAMPY_WRITE_TIMEOUT_SECONDS for operators who need to
+# tune it without a code change. 60s is well above every normal write
+# observed during B447's investigation (sub-10s, typically sub-1s) and far
+# below the multi-hour stalls it's meant to catch.
+WRITE_TIMEOUT_SECONDS = float(os.environ.get("CAMPY_WRITE_TIMEOUT_SECONDS", "60"))
 
 _NODE_TABLE_MAP = {
     "concept": "Concept",
@@ -409,12 +423,51 @@ class GraphGateway:
             return self._handle_oxigraph_handler(query, params)
         if query.sparql is not None:
             if query.mutating:
-                res = await self._client.execute_write(query.sparql, params)
+                res = await self._execute_write_with_timeout(query.name, query.sparql, params)
                 if query.vector_index is not None:
                     self._index_vector_after_write(query.vector_index, params)
                 return res
             return await self._client.execute_read(query.sparql, params)
         return self._handle_oxigraph_handler(query, params)
+
+    async def _execute_write_with_timeout(
+        self, name: str, sparql: str, params: dict[str, Any]
+    ) -> Any:
+        """B447: bounds `OxigraphClient.execute_write()` so a pathologically
+        slow write fails loudly instead of holding the global write lock —
+        and therefore blocking every other write in the daemon — forever.
+
+        Safety note: `asyncio.wait_for` cancels the *awaiting* coroutine, not
+        the underlying OS thread `asyncio.to_thread` runs `execute()` in —
+        Python cannot forcibly kill a running thread. A timed-out write's
+        native `store.update()` call keeps running in that orphaned thread
+        until it finishes on its own; the asyncio-level lock is released
+        immediately so other writers can proceed. This is a deliberate
+        tradeoff, not an oversight: `Store.update()` is documented by
+        pyoxigraph as transactional (all-or-nothing), and its RocksDB-backed
+        storage is designed for concurrent access, so an orphaned write
+        finishing later is expected to land safely rather than corrupt the
+        store — but that has not been proven against this specific
+        pyoxigraph version. Treat a WRITE_TIMEOUT_TRIPPED log line as a
+        signal to investigate (which query, how often), not noise to ignore.
+        The alternative is the status quo this fixes: a proven, reproducing,
+        hours-long total write freeze across the whole daemon — a strictly
+        worse failure mode than a rare, logged, bounded one.
+        """
+        t0 = time.perf_counter()
+        try:
+            return await asyncio.wait_for(
+                self._client.execute_write(sparql, params),
+                timeout=WRITE_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            _logger.error(
+                "WRITE_TIMEOUT_TRIPPED query=%s elapsed=%.1fs timeout=%.1fs "
+                "-- native write abandoned (thread may still be running) to "
+                "unblock other writers; see backlog/B447.md",
+                name, time.perf_counter() - t0, WRITE_TIMEOUT_SECONDS,
+            )
+            raise
 
     def _dispatch_oxigraph_sync(self, query: NamedQuery, params: dict[str, Any]) -> Any:
         if query.name == "orchestrator.get_gist_centroids":
