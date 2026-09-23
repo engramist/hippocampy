@@ -85,7 +85,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B451 | CO_OCCURS_WITH Upsert Minted a Fresh Reifier Per Solution and Doubled on Every Re-Write — the Daemon Memory Blowup | P0 | fixed | TBD | TBD | - | backlog/B451.md |
 | B450 | Benchmark Harness Could Silently Turn a Dead/Offline Daemon Into Fake Scores | P0 | fixed | TBD | TBD | - | backlog/B450.md |
 | B449 | campy.adapters.mcp_server Uses a 2-6s "Implicit Background" Timeout for All External Tool Calls — the Real Reason Every External Benchmark Scores 0% | P0 | fixed | TBD | TBD | - | backlog/B449.md |
-| B448 | campy-benchmarks Harness Calls a `run_sweep` MCP Tool That Has Never Existed | P2 | ready | TBD | TBD | - | backlog/B448.md |
+| B448 | campy-benchmarks Harness Calls a `run_sweep` MCP Tool That Has Never Existed | P2 | fixed | TBD | TBD | - | backlog/B448.md |
 | B447 | Gated Consolidation Loop Intermittently Stalls for 90+ Minutes on Unpredictable Messages | P0 | ready | TBD | TBD | - | backlog/B447.md |
 | B446 | Re-Run the External Benchmark Suite Post-Cutover — No "After" Numbers Exist Anywhere | P1 | blocked | TBD | TBD | - | backlog/B446.md |
 | B445 | Real Cloud Dispatch: Let Campy Actually Call the Model route_task Recommends | P2 | ready | TBD | TBD | - | backlog/B445.md |
