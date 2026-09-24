@@ -251,6 +251,21 @@ class QueryRegistry:
             raise ValueError(f"duplicate NamedQuery name: {query.name!r} (already registered)")
         self._queries[query.name] = query
 
+    def attach_vector_index(self, name: str, spec: "VectorIndexSpec") -> None:
+        """B454: attach (or replace) a VectorIndexSpec on an already-registered
+        query, validating that the spec's params are ones the query declares."""
+        import dataclasses
+
+        query = self.get(name)
+        for label, param in (("pk_param", spec.pk_param), ("emb_param", spec.emb_param),
+                             ("text_param", spec.text_param)):
+            if param is not None and param not in query.params:
+                raise ValueError(
+                    f"VectorIndexSpec for {name!r}: {label}={param!r} is not one of "
+                    f"the query's declared params {query.params}"
+                )
+        self._queries[name] = dataclasses.replace(query, vector_index=spec)
+
     def register_all(self, queries: Iterable[NamedQuery]) -> None:
         for query in queries:
             self.register(query)
