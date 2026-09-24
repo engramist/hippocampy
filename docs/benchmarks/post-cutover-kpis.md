@@ -42,7 +42,9 @@
 > scores, because the harness was never given long enough to see a
 > real answer.
 
-> **Update (2026-09-23, final): first VALID run.** The runs summarized below
+> **Update (2026-09-24): retrieval fixed — see §2d for the first run with working recall (LoCoMo EM 0.75, MemoryGym 100%, MemBench precision 0.83).**
+>
+> **Update (2026-09-23): first VALID run.** The runs summarized below
 > were all invalid measurements. After B449 (adapter timeout), B448 (settle),
 > B450 (strict harness) and **B451 (the daemon memory blowup: a CO_OCCURS_WITH
 > upsert that doubled its reifier count on every re-write, taking the daemon
@@ -210,6 +212,48 @@ are never returned by `current_truth` and id-token/multi-word queries miss the
 just-written Message. Filed as [B454](../../backlog/B454.md). The remaining
 work is retrieval/consolidation quality, which is what this benchmark exists to
 measure — no longer an infrastructure fault masking it.
+
+---
+
+## 2d. Run 5 (2026-09-24): valid, with retrieval working
+
+Full `--baseline` run (`campy-benchmarks/post_cutover_live_v5.json`) after
+[B454](../../backlog/B454.md): 628 tool calls, 0 failures, `all_suites_valid:
+true`. Compared with §2c (same harness, same live store, retrieval broken):
+
+| Suite | Metric | Run 4 (valid, retrieval broken) | Run 5 (valid, B454 fixed) |
+|---|---|---|---|
+| LoCoMo | Exact match | 0.0 | **0.75** |
+| LoCoMo | F1 (token overlap) | 0.011 | **0.192** |
+| LoCoMo | Deprecation accuracy | 0.074 | **0.630** |
+| MemoryGym | Success / efficiency | 0% / 0.0 (0 steps) | **100% / 1.0 (560 steps, 20/20 episodes)** |
+| MemBench | Fact precision / recall | 0.0 / 0.0 | **0.833 / 0.833** |
+| MemBench | Contradiction score | 0.0 | **0.80** |
+| MemBench | Token savings | 100% (artifact: empty bundles) | 0.0% (real: bundle 914 tokens vs 103 raw) |
+| ARC Bridge | Transfer / recall | 0.85 / 0.9 | **1.0 / 1.0** |
+
+The score change came from the write -> index -> retrieve path, not from tuning
+the benchmark: nodes created since the SPARQL cutover were never added to the
+vector/FTS indexes; FTS raised a syntax error on every question; typed vector
+lookups were crowded out by ~20k Messages; the bundle never consulted what the
+user said; and the sweep's unbound id list archived all 19,764 Messages (plus a
+decay bug that wiped strength-0 nodes). See B454's completion notes. Harness-side
+changes were limited to: user-role writes and `text_raw` parsing in MemoryGym,
+`capture=false` on evaluation probes, and the strict client (B450).
+
+Reading the numbers honestly:
+- LoCoMo F1 is token overlap against short gold answers and the LLM answers in
+  full sentences, so it understates correctness; exact-match (gold string contained
+  in the answer) is the fairer headline. Deprecation accuracy is the weakest metric
+  (0.63): "latest statement supersedes earlier ones" is left to the LLM reading the
+  chronological conversation section, not enforced by the graph.
+- MemBench "0% token savings" is the real value: the bundle (conversation
+  evidence + concepts + graph) is larger than the raw persona text in these tiny
+  fixtures. Compression only pays off at scale.
+- ARC Bridge does not exercise the retrieval path much; its 1.0 is not a strong signal.
+- Consolidation still produces entity labels rather than statements; these scores
+  rest on the conversation-evidence stage. Structured Decision/Constraint memory from
+  prose is the next quality lever.
 
 ---
 
