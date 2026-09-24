@@ -53,8 +53,6 @@
 
 ---
 
----
-
 ## 1. Purpose and headline result
 
 [B446](../../backlog/B446.md) asked a direct question: now that B434
