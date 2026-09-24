@@ -87,7 +87,7 @@ def _table_has_flagged_for_review(db, table: str) -> bool:
 @dataclass
 class BundleSection:
     """One section of a ContextBundle."""
-    section_type: str  # "exact_fact", "plans", "semantic", "graph", "tabular", "summary"
+    section_type: str  # "exact_fact", "plans", "semantic", "conversation", "graph", "tabular", "summary"
     content: list[dict]
     token_estimate: int
     source_node_ids: list[str] = field(default_factory=list)
@@ -252,6 +252,15 @@ async def compile_bundle(
             compilation_ms=(time.time() - start_time) * 1000,
         )
         return bundle
+
+    # Stage 3b (B454): what the user actually said about this. Consolidation keeps
+    # entity labels, not statements, so raw user turns are the only place a fact
+    # like "we migrated to PostgreSQL 16" lives.
+    conversation_section = await _stage_conversation(db, query, config)
+    if conversation_section and conversation_section.content:
+        sections.append(conversation_section)
+        cumulative_tokens += conversation_section.token_estimate
+        sources.extend(conversation_section.source_node_ids)
 
     # Stage 4: Graph structure
     graph_section = await _stage_graph_structure(db, query, config, tier_config, sources)
@@ -581,6 +590,48 @@ async def _stage_semantic_context(
         )
     except Exception as e:
         _logger.warning("Error in _stage_semantic_context: %s", e)
+        return None
+
+
+async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSection]:
+    """B454: relevant user statements from the raw conversation (see
+    GraphGateway._bundle_conversation). Disabled with
+    `[retrieval] conversation_limit = 0`. Fail-soft like the other stages."""
+    limit = int((config.get("retrieval", {}) or {}).get("conversation_limit", 6))
+    if limit <= 0:
+        return None
+    try:
+        from campy.brain.hippocampus.graph import embeddings as emb
+
+        embedding_model = config.get("embeddings", {}).get(
+            "model", "sentence-transformers/all-MiniLM-L6-v2"
+        )
+        query_embedding = emb.embed(query, model_name=embedding_model)
+        rows = await get_gateway(db).run(
+            "thalamus.bundle_conversation",
+            query_embedding=query_embedding, query_text=query, limit=limit,
+        )
+        content, node_ids = [], []
+        for r in (rows or []):
+            get = r.get if isinstance(r, dict) else (lambda k, d=None: d)
+            text, created = get("text"), get("created_at") or ""
+            if not text:
+                continue
+            stamp = f"[user, {str(created)[:16].replace('T', ' ')}] " if created else "[user] "
+            content.append({
+                "text": stamp + text, "type": "Message", "role": "user",
+                "created_at": created, "confidence": 0.5, "pathway_strength": 0.5,
+            })
+            node_ids.append(str(get("node_id") or text[:20]))
+        if not content:
+            return None
+        return BundleSection(
+            section_type="conversation", content=content,
+            token_estimate=sum(max(1, len(c["text"]) // 4) for c in content),
+            source_node_ids=node_ids,
+        )
+    except Exception as e:
+        _logger.warning("Error in _stage_conversation: %s", e)
         return None
 
 

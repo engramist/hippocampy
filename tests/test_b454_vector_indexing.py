@@ -189,3 +189,210 @@ def test_backfill_script_indexes_missing_nodes_and_is_idempotent(tmp_path):
     n = len(calls)
     mod.backfill(store, vs, lambda t: calls.append(t) or [0.1] * 384)
     assert len(calls) == n  # idempotent: nothing re-embedded
+
+
+# ---------------------------------------------------------------------------
+# Conversation evidence stage
+# ---------------------------------------------------------------------------
+
+
+async def _add_msg(gw, mid, text, role, created):
+    from campy.brain.hippocampus.graph import embeddings as emb
+
+    await gw.run(
+        "capture.create_message",
+        message_id=mid, text_raw=text, embedding=emb.embed(text), embedding_model="m",
+        embedding_dim=384, role=role, byte_end=len(text), created_at=created,
+    )
+
+
+@pytest.mark.asyncio
+async def test_conversation_evidence_returns_user_assertions_oldest_first(gw, ox_client):
+    from campy.brain.hippocampus.graph import embeddings as emb
+
+    await _add_msg(gw, "m1", "Our service uses PostgreSQL 14 hosted on AWS RDS.", "user", "2026-09-20T10:00:00+00:00")
+    await _add_msg(gw, "m2", "Noted. Primary database is PostgreSQL 14.", "assistant", "2026-09-20T10:00:05+00:00")
+    await _add_msg(gw, "m3", "CRITICAL UPDATE: We migrated the production database from PostgreSQL 14 to PostgreSQL 16.", "user", "2026-09-21T10:00:00+00:00")
+    await _add_msg(gw, "m4", "What is our active production database engine and version?", "user", "2026-09-22T10:00:00+00:00")
+    await _add_msg(gw, "m5", "Cache layer is Memcached on port 11211.", "user", "2026-09-22T11:00:00+00:00")
+    q = "What is our active production database engine and version?"
+    rows = await gw.run("thalamus.bundle_conversation",
+                        query_embedding=emb.embed(q), query_text=q, limit=5)
+    texts = [r["text"] for r in rows]
+    assert texts[0].startswith("Our service uses PostgreSQL 14")
+    assert texts[1].startswith("CRITICAL UPDATE")          # chronological: later supersedes earlier
+    assert not any("Primary database" in t for t in texts)  # assistant echo excluded
+    assert q not in texts                                   # the question itself excluded
+    assert not any("Memcached" in t for t in texts)         # unrelated excluded
+
+
+@pytest.mark.asyncio
+async def test_conversation_evidence_dedupes_repeated_text_keeping_newest(gw, ox_client):
+    from campy.brain.hippocampus.graph import embeddings as emb
+
+    await _add_msg(gw, "d1", "We standardized on Redis for caching.", "user", "2026-09-20T10:00:00+00:00")
+    await _add_msg(gw, "d2", "We standardized on Redis for caching.", "user", "2026-09-22T10:00:00+00:00")
+    q = "What do we use for caching, Redis?"
+    rows = await gw.run("thalamus.bundle_conversation", query_embedding=emb.embed(q), query_text=q, limit=5)
+    assert len(rows) == 1 and rows[0]["created_at"].startswith("2026-09-22")
+
+
+@pytest.mark.asyncio
+async def test_conversation_evidence_empty_for_unrelated_query(gw, ox_client):
+    from campy.brain.hippocampus.graph import embeddings as emb
+
+    await _add_msg(gw, "u1", "Our service uses PostgreSQL 14 hosted on AWS RDS.", "user", "2026-09-20T10:00:00+00:00")
+    q = "What is the airspeed velocity of an unladen swallow?"
+    assert await gw.run("thalamus.bundle_conversation", query_embedding=emb.embed(q), query_text=q, limit=5) == []
+
+
+# ---------------------------------------------------------------------------
+# Sweep id-list binding (archive / resurrect / session-delete touched EVERY node)
+# ---------------------------------------------------------------------------
+
+
+def test_every_list_param_is_bound_into_its_sparql():
+    """A mutating query that takes an id list must actually bind it. The sweep
+    templates used `?n a campy:X ; campy:x_id ?ids .` with no `VALUES ?ids { }`
+    placeholder, so `?ids` stayed unbound and the UPDATE hit every node of the
+    type -- archiving (or un-archiving, or deleting LOADED/WARM edges of) the
+    whole table whenever any one id qualified."""
+    from campy.brain.hippocampus.graph.oxigraph_client import _bind_params_to_sparql
+
+    unbound = []
+    for name, q in REGISTRY._queries.items():
+        if not q.mutating or not q.sparql:
+            continue
+        for p in q.params:
+            if p not in ("ids", "cids", "session_ids"):
+                continue
+            others = {k: "v" for k in q.params if k != p}
+            bound = _bind_params_to_sparql(q.sparql, {p: ["ZZ-1", "ZZ-2"], **others})
+            if "ZZ-1" not in bound or "ZZ-2" not in bound:
+                unbound.append(name)
+    assert not unbound, f"list params never bound into SPARQL (would touch every node): {unbound}"
+
+
+@pytest.mark.asyncio
+async def test_archive_by_id_archives_only_that_node(gw, ox_client):
+    for m in ("a1", "a2", "a3"):
+        u = mint_uri("Message", m)
+        ox_client.store.update(
+            f'INSERT DATA {{ <{u}> a <{CAMPY_NS}Message> ; <{CAMPY_NS}message_id> "{m}" ; '
+            f'<{CAMPY_NS}archived> false . }}'
+        )
+    await gw.run("sweep.unwind_archive_message", ids=["a1"])
+
+    def archived(m):
+        rows = ox_client._execute_and_collect(
+            f'SELECT ?a WHERE {{ <{mint_uri("Message", m)}> <{CAMPY_NS}archived> ?a }}'
+        )
+        return [r["a"] for r in rows]
+
+    assert archived("a1") == [True]
+    assert archived("a2") == [False] and archived("a3") == [False]
+
+
+def test_younger_than_helper():
+    from datetime import datetime, timedelta, timezone
+
+    from campy.brain.brainstem.sweep import _younger_than
+
+    now = datetime.now(timezone.utc)
+    assert _younger_than(now - timedelta(days=2), now, 30)
+    assert not _younger_than(now - timedelta(days=45), now, 30)
+    assert _younger_than((now - timedelta(days=2)).isoformat(), now, 30)
+    assert not _younger_than(None, now, 30)          # unknown -> normal rules
+    assert not _younger_than("garbage", now, 30)
+    assert not _younger_than(now, now, 0)            # grace disabled
+
+
+@pytest.mark.asyncio
+async def test_sweep_does_not_archive_young_messages(gw, ox_client):
+    from campy.brain.brainstem.sweep import _decay_and_archive
+
+    old = "2026-01-01T00:00:00+00:00"
+    from datetime import datetime, timezone
+
+    fresh = datetime.now(timezone.utc).isoformat()
+    for mid, created in (("old1", old), ("new1", fresh)):
+        u = mint_uri("Message", mid)
+        ox_client.store.update(
+            f'INSERT DATA {{ <{u}> a <{CAMPY_NS}Message> ; <{CAMPY_NS}message_id> "{mid}" ; '
+            f'<{CAMPY_NS}pathway_strength> 0.0 ; <{CAMPY_NS}archived> false ; '
+            f'<{CAMPY_NS}created_at> "{created}"^^<http://www.w3.org/2001/XMLSchema#dateTime> . }}'
+        )
+    await _decay_and_archive(ox_client, {}, 0.0035, 0.10, message_grace_days=30.0)
+
+    def archived(m):
+        return [r["a"] for r in ox_client._execute_and_collect(
+            f'SELECT ?a WHERE {{ <{mint_uri("Message", m)}> <{CAMPY_NS}archived> ?a }}')]
+
+    assert archived("old1") == [True]     # old + below threshold -> archived
+    assert archived("new1") == [False]    # young -> kept despite strength 0.0
+
+
+@pytest.mark.asyncio
+async def test_decay_keeps_zero_strength_and_still_decays_others(gw, ox_client):
+    import pyoxigraph as ox
+
+    for mid, ps in (("z0", "0.0"), ("z5", "0.5")):
+        u = mint_uri("Message", mid)
+        ox_client.store.update(
+            f'INSERT DATA {{ <{u}> a <{CAMPY_NS}Message> ; <{CAMPY_NS}message_id> "{mid}" ; '
+            f'<{CAMPY_NS}pathway_strength> {ps} ; <{CAMPY_NS}archived> false . }}'
+        )
+
+    def strength(mid):
+        return [float(q.object.value) for q in ox_client.store.quads_for_pattern(
+            ox.NamedNode(mint_uri("Message", mid)), ox.NamedNode(CAMPY_NS + "pathway_strength"), None, None)]
+
+    await gw.run("sweep.decay_pathway_message", factor=0.9999)
+    assert strength("z0") == [0.0]                 # was wiped: DELETE+INSERT of the same triple
+    assert strength("z5") == [pytest.approx(0.49995)]
+
+
+def test_repair_script_unarchives_wrongly_archived_only():
+    import importlib.util
+    from pathlib import Path
+
+    import pyoxigraph as ox
+
+    spec = importlib.util.spec_from_file_location(
+        "repair_wrongly_archived",
+        Path(__file__).resolve().parent.parent / "scripts" / "repair_wrongly_archived.py",
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    store = ox.Store()
+    def node(table, nid, strength, archived, created=None):
+        u = mint_uri(table, nid)
+        extra = f' ; <{CAMPY_NS}created_at> "{created}"' if created else ""
+        st = f' ; <{CAMPY_NS}pathway_strength> {strength}' if strength is not None else ""
+        store.update(
+            f'INSERT DATA {{ <{u}> a <{CAMPY_NS}{table}> ; <{CAMPY_NS}archived> {archived}{st}{extra} . }}'
+        )
+        return u
+
+    strong = node("Concept", "c-strong", "0.7", "true")                          # bug victim -> unarchive
+    weak = node("Concept", "c-weak", "0.02", "true")                             # legit -> stay archived
+    young = node("Message", "m-young", "0.0", "true", datetime_now_iso())        # grace -> unarchive
+    old = node("Message", "m-old", "0.0", "true", "2026-01-01T00:00:00+00:00")   # old + weak -> stay
+    wiped = node("Message", "m-wiped", None, "true", datetime_now_iso())         # strength restored + unarchived
+
+    rep = mod.repair(store)
+    def arch(u):
+        return [q.object.value for q in store.quads_for_pattern(
+            ox.NamedNode(u), ox.NamedNode(CAMPY_NS + "archived"), None, None)]
+    assert arch(strong) == ["false"] and arch(weak) == ["true"]
+    assert arch(young) == ["false"] and arch(old) == ["true"] and arch(wiped) == ["false"]
+    assert rep["Message"]["strength_restored"] == 1
+    again = mod.repair(store)                                                    # idempotent
+    assert again["Concept"]["unarchived"] == 0 and again["Message"]["unarchived"] == 0
+
+
+def datetime_now_iso():
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()

@@ -93,6 +93,7 @@ _SECTION_DESCRIPTIONS: dict[str, str] = {
     "exact_fact": "hard constraints and preferences that must be honored as ground truth",
     "plans": "documented work plans with per-step outcomes — completed or in-flight work, with recorded results",
     "semantic": "related concepts, decisions, constraints, and requirements",
+    "conversation": "what the user said about this, oldest first — when statements conflict, the most recent one supersedes earlier ones",
     "graph": "graph relationships connecting the entities above",
     "tabular": "structured tabular data",
     "summary": "narrative summaries of prior work",

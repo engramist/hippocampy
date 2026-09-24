@@ -150,7 +150,11 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
         }
 
         # Step 1: Decay pathway_strength + archive below threshold
-        d, a, e = await _decay_and_archive(db, decay_rates, interval_days, archive_threshold)
+        message_grace_days  = float(pruning_cfg.get("message_grace_days", 30.0))
+        d, a, e = await _decay_and_archive(
+            db, decay_rates, interval_days, archive_threshold,
+            message_grace_days=message_grace_days,
+        )
         summary["decayed"]  += d
         summary["archived"] += a
         summary["errors"]   += e
@@ -509,11 +513,27 @@ async def _detect_knowledge_gaps(db, config: dict) -> tuple[int, int]:
 # Step 1: Decay + Archive
 # ---------------------------------------------------------------------------
 
+def _younger_than(created, now, days: float) -> bool:
+    """True if `created` (datetime or ISO string) is less than `days` old.
+    Unparseable/missing timestamps are treated as NOT young (normal rules)."""
+    if created is None or days <= 0:
+        return False
+    try:
+        if isinstance(created, str):
+            created = datetime.fromisoformat(created.replace("Z", "+00:00"))
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        return (now - created).total_seconds() < days * 86400.0
+    except Exception:
+        return False
+
+
 async def _decay_and_archive(
     db,
     decay_rates: dict,
     interval_days: float,
     archive_threshold: float,
+    message_grace_days: float = 30.0,
 ) -> tuple[int, int, int]:
     """
     Apply one sweep interval of pathway_strength decay to every active node
@@ -522,9 +542,17 @@ async def _decay_and_archive(
     Decay formula (Ebbinghaus Forgetting Curve, incremental per sweep run):
         new_strength = current * decay_rate ^ interval_days
 
+    B454: raw Messages are created at pathway_strength 0.0 (below the archive
+    threshold) and consolidation keeps entity labels rather than the statements,
+    so archiving them on the first sweep destroyed the only copy of what the user
+    said. A Message is not archive-eligible until it is `message_grace_days` old
+    (default 30 -- the config documents a ~23-day message half-life and the
+    episodic recall window is 14 days); after that the normal threshold applies.
+
     Returns (decayed_count, archived_count, error_count).
     """
     decayed = archived = errors = 0
+    now = datetime.now(timezone.utc)
 
     for table, pk_col, config_key, _ in SWEEP_TABLES:
         decay_rate = float(decay_rates.get(config_key, 0.99))
@@ -542,9 +570,13 @@ async def _decay_and_archive(
                 if isinstance(row, dict):
                     vals = list(row.values())
                     nid, pstrength = vals[0], vals[1]
+                    created = vals[2] if len(vals) > 2 else None
                 else:
                     nid, pstrength = row[0], row[1]
+                    created = row[2] if len(row) > 2 else None
                 decayed += 1
+                if table == "Message" and _younger_than(created, now, message_grace_days):
+                    continue
                 if pstrength is not None and pstrength < archive_threshold:
                     to_archive.append(nid)
 

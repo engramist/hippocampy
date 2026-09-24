@@ -1094,6 +1094,14 @@ TOOLS: list[dict] = [
                     "default": 32000,
                     "description": "Token budget for the memory bundle before compression.",
                 },
+                "capture": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": (
+                        "Write the question and answer back into memory (default). "
+                        "Set false for read-only probes such as evaluations."
+                    ),
+                },
             },
             "required": ["query", "session_id"],
         },

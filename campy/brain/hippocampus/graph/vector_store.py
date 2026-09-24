@@ -119,6 +119,18 @@ def _fts_match_expression(query: str) -> str | None:
     return " OR ".join(terms) if terms else None
 
 
+def fts_content_terms(query: str) -> list[str]:
+    """Lower-cased alphanumeric content words of `query` (stopwords dropped),
+    de-duplicated in order. Used to sanity-check lexical-only hits."""
+    import re
+
+    seen: dict[str, None] = {}
+    for w in re.findall(r"[^\W_]+", (query or "").lower()):
+        if w not in _FTS_STOPWORDS:
+            seen.setdefault(w, None)
+    return list(seen)
+
+
 class VectorStore:
     """Embedded SQLite store: sqlite-vec ANN + FTS5 lexical search.
 
