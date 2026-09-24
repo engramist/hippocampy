@@ -42,6 +42,17 @@
 > scores, because the harness was never given long enough to see a
 > real answer.
 
+> **Update (2026-09-23, final): first VALID run.** The runs summarized below
+> were all invalid measurements. After B449 (adapter timeout), B448 (settle),
+> B450 (strict harness) and **B451 (the daemon memory blowup: a CO_OCCURS_WITH
+> upsert that doubled its reifier count on every re-write, taking the daemon
+> from 0.9 GB to 43 GB in ~10 minutes until macOS killed it mid-run — which is
+> also why the v3 run "finished" in seconds)**, a full run is valid for the
+> first time: see §2c. The earlier sections are kept as the investigation
+> record; their numbers are not measurements.
+
+---
+
 ---
 
 ## 1. Purpose and headline result
@@ -163,6 +174,44 @@ could have possibly moved these scores**, individually or together —
 the benchmark harness has never once, in any run across this entire
 investigation, waited long enough to see the daemon's actual answer.
 B449 is believed to be the last blocker.
+
+---
+
+## 2c. Run 4 (2026-09-23): the first valid run
+
+Full `--baseline` run (`campy-benchmarks/post_cutover_live_v4.json`) against a
+daemon on `main` with B448-B451 merged and the live store cleaned
+(`scripts/collapse_star_reifiers.py`: 13.06M duplicate reifiers on 270
+CO_OCCURS_WITH edges collapsed, store 7.7 GB -> 1.4 GB). **648 tool calls, 0
+failures, `all_suites_valid: true`, ~26 minutes wall clock** (vs 4 hours and a
+killed daemon for v3), daemon footprint flat at ~860 MB throughout, zero
+`WRITE_TIMEOUT_TRIPPED`.
+
+| Suite | Metric | Run 4 (valid) | Latency (now real) |
+|---|---|---|---|
+| LoCoMo | F1 / EM | 0.011 / 0.0 | 1820 ms |
+| LoCoMo | Deprecation accuracy | 0.074 (2/27) | |
+| MemoryGym | Success rate | 0.0% (0 steps) | 307 ms |
+| MemBench | Fact precision / recall / contradiction | 0.0 / 0.0 / 0.0 | 2517 ms |
+| MemBench | Token savings | 100% (**artifact**: bundles are empty, 0 tokens) | |
+| ARC Bridge | Rule transfer / disappeared-entity recall | 0.85 / 0.9 | 292 ms |
+
+Latencies no longer cluster at multiples of the old adapter timeout, so they
+are real daemon round-trips. The pre-cutover "Before" numbers (F1 0.0407,
+deprecation 0.4) were the same "no relevant context" answer scoring on
+`must_not_match`-only probes, not real recall.
+
+**These are the system's real scores, and they are low for a real reason.**
+Probing directly: the harness's facts are stored (as raw `Message` nodes, found
+by `current_truth` on distinctive tokens), but `ask`/`compile_context` return
+empty bundles ("No relevant context was found in memory") because the
+consolidation loop classifies these turns as noise (`entities=1 concepts=0
+noise=1` for "Constraint for storage_tier: we use S3 Standard.") so no
+structured Concept/Constraint exists to retrieve. Also, `system`-role messages
+are never returned by `current_truth` and id-token/multi-word queries miss the
+just-written Message. Filed as [B454](../../backlog/B454.md). The remaining
+work is retrieval/consolidation quality, which is what this benchmark exists to
+measure — no longer an infrastructure fault masking it.
 
 ---
 
