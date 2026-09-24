@@ -65,3 +65,40 @@ try:
         sys.modules.setdefault("tests.kuzu_test_client", _kuzu_test_mod)
 except Exception:
     pass
+
+
+# ---------------------------------------------------------------------------
+# B455: never let the suite touch the developer's real, running daemon.
+#
+# A full run on a dev machine used to `launchctl unload`/`load` the real
+# ~/Library/LaunchAgents/ai.hippocampy.brain.plist (and could `pkill`), bouncing
+# the live daemon mid-work. CI has no daemon so it never noticed. Any test that
+# needs to observe these calls re-patches `subprocess.run` itself (as
+# tests/test_bringup_priorities.py already does), which overrides this guard.
+# ---------------------------------------------------------------------------
+_DESTRUCTIVE_LAUNCHCTL_VERBS = frozenset(
+    {"unload", "load", "remove", "bootout", "bootstrap", "kickstart", "stop", "start", "kill"}
+)
+
+
+@pytest.fixture(autouse=True)
+def _never_touch_the_live_daemon(monkeypatch):
+    import subprocess
+    from pathlib import Path
+
+    real_run = subprocess.run
+
+    def _argv0(cmd):
+        first = cmd[0] if isinstance(cmd, (list, tuple)) and cmd else cmd
+        return Path(str(first)).name if isinstance(first, (str, Path)) else ""
+
+    def guard(cmd, *args, **kwargs):
+        name = _argv0(cmd)
+        argv = list(cmd) if isinstance(cmd, (list, tuple)) else []
+        if name in ("pkill", "killall") or (
+            name == "launchctl" and len(argv) > 1 and str(argv[1]) in _DESTRUCTIVE_LAUNCHCTL_VERBS
+        ):
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", guard)

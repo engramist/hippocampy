@@ -63,4 +63,10 @@ REGISTRY.register_all(CLI_QUERIES)
 REGISTRY.register_all(MODEL_ROUTER_QUERIES)
 REGISTRY.register_all(HANDOFF_QUERIES)
 
+# B454: re-attach sqlite-vec/FTS indexing for sparql= node-creates (they bypass
+# OxigraphClient.write_node(), the only place that indexes).
+from campy.brain.hippocampus.graph.queries.vector_indexing import apply_vector_index_specs
+
+apply_vector_index_specs(REGISTRY)
+
 __all__ = ["REGISTRY"]

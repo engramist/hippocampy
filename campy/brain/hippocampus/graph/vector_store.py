@@ -86,6 +86,51 @@ def _default_db_path() -> Path:
     return Path(os.path.expanduser("~/.campy")) / "vectors.db"
 
 
+_FTS_STOPWORDS = frozenset(
+    "a an and are as at be but by can could did do does for from had has have how i if in "
+    "into is it its me my of on or our so that the their them then there these they this to "
+    "was we were what when where which who whom why will with would you your".split()
+)
+
+
+def _fts_match_expression(query: str) -> str | None:
+    """Free text -> a safe FTS5 MATCH expression (OR of quoted terms), or None.
+
+    A whitespace chunk that splits into several alphanumeric parts (an id like
+    `memgym_mysterypath_dbg1`, or `e-mail`) becomes one quoted phrase so its
+    parts must appear together; a single-part chunk is a plain term unless it is
+    a stopword. If every chunk is a stopword the stopwords are kept rather than
+    returning nothing."""
+    import re
+
+    def build(drop_stopwords: bool) -> list[str]:
+        terms: list[str] = []
+        for chunk in (query or "").split():
+            parts = re.findall(r"[^\W_]+", chunk)
+            if not parts:
+                continue
+            if len(parts) > 1:
+                terms.append('"' + " ".join(parts) + '"')
+            elif not (drop_stopwords and parts[0].lower() in _FTS_STOPWORDS):
+                terms.append('"' + parts[0] + '"')
+        return terms
+
+    terms = build(True) or build(False)
+    return " OR ".join(terms) if terms else None
+
+
+def fts_content_terms(query: str) -> list[str]:
+    """Lower-cased alphanumeric content words of `query` (stopwords dropped),
+    de-duplicated in order. Used to sanity-check lexical-only hits."""
+    import re
+
+    seen: dict[str, None] = {}
+    for w in re.findall(r"[^\W_]+", (query or "").lower()):
+        if w not in _FTS_STOPWORDS:
+            seen.setdefault(w, None)
+    return list(seen)
+
+
 class VectorStore:
     """Embedded SQLite store: sqlite-vec ANN + FTS5 lexical search.
 
@@ -244,13 +289,27 @@ class VectorStore:
         """FTS5 full-text search. Returns ``[(uri, score)]`` ordered
         best-first, where ``score = -bm25(lexical)`` (higher is better,
         same convention as `search_vectors`).
+
+        B454: `query` is free text (often a full natural-language question),
+        not FTS5 syntax. Passed raw, any `?`, `'`, `(`, `:` etc. raised
+        `fts5: syntax error` -- swallowed by every caller, so every question
+        silently got zero lexical hits -- and bare words were implicitly
+        ANDed, so a question only matched a document containing every one of
+        its words. It is now turned into an OR of quoted content-word terms
+        (stopwords dropped) and ranked by bm25.
         """
+        match = _fts_match_expression(query)
+        if match is None:
+            return []
         sql = (
             "SELECT uri, bm25(lexical) FROM lexical "
             "WHERE lexical MATCH ? ORDER BY bm25(lexical) LIMIT ?"
         )
-        with self._lock:
-            rows = self._conn.execute(sql, (query, k)).fetchall()
+        try:
+            with self._lock:
+                rows = self._conn.execute(sql, (match, k)).fetchall()
+        except sqlite3.OperationalError:
+            return []
         return [(uri, -float(bm25)) for uri, bm25 in rows]
 
     # -- lifecycle ---------------------------------------------------------

@@ -40,6 +40,7 @@ from urllib.parse import unquote
 from campy.brain.hippocampus.schema import FACT_PREDICATE_TABLES
 from campy.brain.hippocampus.graph.oxigraph_client import (
     CID_BASE,
+    DATA_BASE,
     NODE_PRIMARY_KEYS,
     RowDict,
     mint_uri,
@@ -129,6 +130,15 @@ def _find_sparql_format_placeholder(sparql: str) -> re.Match[str] | None:
     like an unresolved Python format placeholder, or None if there isn't
     one."""
     return _SPARQL_FORMAT_PLACEHOLDER_RE.search(sparql)
+
+
+def _typed_search_k(limit: int) -> int:
+    """B454: the vector store is one flat index across every node type. A typed
+    lookup takes the global top-k and only then filters by node type, so a
+    small k lets a large type (~20k Messages) crowd out a small one (hundreds
+    of Concepts/Decisions) entirely. sqlite-vec scans flat regardless of k, so a
+    generous k is nearly free."""
+    return min(max(int(limit) * 5, 1000), 4096)  # sqlite-vec caps k at 4096
 
 
 @dataclass(frozen=True)
@@ -250,6 +260,21 @@ class QueryRegistry:
         if query.name in self._queries:
             raise ValueError(f"duplicate NamedQuery name: {query.name!r} (already registered)")
         self._queries[query.name] = query
+
+    def attach_vector_index(self, name: str, spec: "VectorIndexSpec") -> None:
+        """B454: attach (or replace) a VectorIndexSpec on an already-registered
+        query, validating that the spec's params are ones the query declares."""
+        import dataclasses
+
+        query = self.get(name)
+        for label, param in (("pk_param", spec.pk_param), ("emb_param", spec.emb_param),
+                             ("text_param", spec.text_param)):
+            if param is not None and param not in query.params:
+                raise ValueError(
+                    f"VectorIndexSpec for {name!r}: {label}={param!r} is not one of "
+                    f"the query's declared params {query.params}"
+                )
+        self._queries[name] = dataclasses.replace(query, vector_index=spec)
 
     def register_all(self, queries: Iterable[NamedQuery]) -> None:
         for query in queries:
@@ -944,6 +969,85 @@ class GraphGateway:
 
         raise NotImplementedError(f"No Python handler or SPARQL translation implemented for NamedQuery {name!r}")
 
+    def _bundle_conversation(self, params: dict[str, Any]) -> list[Any]:
+        """B454: relevant things the USER said, as bundle evidence.
+
+        Consolidation keeps entity labels ("PostgreSQL"), not the statements, so
+        raw turns are the only place a fact like "we migrated to PostgreSQL 16"
+        exists. Fuses the vector and FTS planes (reciprocal rank), keeps only
+        user-role assertions (assistant text is capped/untrusted -- ISSUE-024 --
+        and questions are not evidence, which also drops `ask`'s own captured
+        question echoes), de-duplicates repeated text keeping the newest, and
+        returns the top `limit` in chronological order so a later statement
+        visibly supersedes an earlier one."""
+        vs = self._vector_store
+        limit = int(params.get("limit", 6))
+        qtext = (params.get("query_text") or "").strip()
+        if limit <= 0:
+            return []
+        prefixes = (f"{CID_BASE}Message/", f"{DATA_BASE}Message/")
+        ranked: dict[str, float] = {}
+        # A stored message that is (nearly) the query itself is an echo of the
+        # question -- ask's own captured question, or a benchmark re-run -- not
+        # evidence. Drop them BEFORE truncating, or dozens of identical copies
+        # fill the candidate window and crowd every real fact out.
+        vec_hits = [
+            uri for uri, score in vs.search_vectors(
+                params["query_embedding"], k=_typed_search_k(limit * 20), min_score=0.30)
+            if uri.startswith(prefixes) and score < 0.985
+        ][: limit * 40]
+        for rank, uri in enumerate(vec_hits):
+            ranked[uri] = ranked.get(uri, 0.0) + 1.0 / (60 + rank)
+        fts_hits = [
+            uri for uri, _ in vs.search_text(qtext, k=limit * 60) if uri.startswith(prefixes)
+        ][: limit * 40]
+        for rank, uri in enumerate(fts_hits):
+            ranked[uri] = ranked.get(uri, 0.0) + 1.0 / (60 + rank)
+        if not ranked:
+            return []
+
+        values_block = " ".join(f"<{u}>" for u in ranked)
+        sparql = f"""
+            SELECT ?s ?text ?role ?created ?archived WHERE {{
+                VALUES ?s {{ {values_block} }}
+                ?s <https://campy.dev/ns#text_raw> ?text .
+                OPTIONAL {{ ?s <https://campy.dev/ns#role> ?role }}
+                OPTIONAL {{ ?s <https://campy.dev/ns#created_at> ?created }}
+                OPTIONAL {{ ?s <https://campy.dev/ns#archived> ?archived }}
+            }}
+        """
+        from campy.brain.hippocampus.graph.vector_store import fts_content_terms
+
+        norm = lambda t: " ".join(str(t).lower().split())
+        qnorm = norm(qtext)
+        terms = fts_content_terms(qtext)
+        vec_set = set(vec_hits)
+        newest: dict[str, tuple[str, dict]] = {}
+        for row in self._client._execute_and_collect(sparql):
+            text = str(row.get("text") or "").strip()
+            if (not text or row.get("role") != "user" or bool(row.get("archived"))
+                    or text.endswith("?") or norm(text) == qnorm):
+                continue
+            # A lexical-only hit has no similarity floor, so require it to match
+            # at least two distinct query content words (or the only one there is)
+            # -- one shared common word is not evidence.
+            if row["s"] not in vec_set:
+                low = text.lower()
+                if sum(1 for t in terms if t in low) < min(2, len(terms) or 1):
+                    continue
+            created = row.get("created")
+            created = created.isoformat() if hasattr(created, "isoformat") else str(created or "")
+            key = norm(text)
+            if key not in newest or created > newest[key][0]:
+                newest[key] = (created, {"uri": row["s"], "text": text, "created": created})
+        picked = sorted(newest.values(), key=lambda kv: -ranked.get(kv[1]["uri"], 0.0))[:limit]
+        picked.sort(key=lambda kv: kv[0])
+        return [
+            RowDict({"text": v["text"], "role": "user", "created_at": v["created"],
+                     "node_id": v["uri"], "node_type": "Message"})
+            for _, v in picked
+        ]
+
     def _handle_thalamus_bundle(self, name: str, params: dict[str, Any]) -> list[Any]:
         query_embedding = params.get("query_embedding")
 
@@ -959,6 +1063,9 @@ class GraphGateway:
         if query_embedding is None or not self._vector_store:
             return []
 
+        if name == "thalamus.bundle_conversation":
+            return self._bundle_conversation(params)
+
         # Exact facts: thalamus.bundle_exact_facts_{tbl}[_flagged][_auth] or thalamus.bundle_exact_{tbl}[_flagged][_auth]
         if name.startswith("thalamus.bundle_exact"):
             sub = name.replace("thalamus.bundle_exact_facts_", "").replace("thalamus.bundle_exact_", "")
@@ -972,7 +1079,9 @@ class GraphGateway:
             # branch with the suffix set; harmless no-op otherwise.
             exclude_flagged = "_flagged" in sub
             limit = int(params.get("limit", 10))
-            candidates = self._vector_store.search_vectors(query_embedding, k=limit * 5, min_score=0.70)
+            candidates = self._vector_store.search_vectors(
+                query_embedding, k=_typed_search_k(limit), min_score=0.70
+            )
             prefix = f"{CID_BASE}{target_table}/"
             matching_uris = [uri for uri, _ in candidates if uri.startswith(prefix)]
             if not matching_uris:
@@ -1018,7 +1127,9 @@ class GraphGateway:
             exclude_archived = "_archived" in sub
             exclude_superseded = "_superseded" in sub
             limit = int(params.get("limit", 10))
-            candidates = self._vector_store.search_vectors(query_embedding, k=limit * 5, min_score=0.70)
+            candidates = self._vector_store.search_vectors(
+                query_embedding, k=_typed_search_k(limit), min_score=0.70
+            )
             prefix = f"{CID_BASE}{target_table}/"
             matching = [(uri, score) for uri, score in candidates if uri.startswith(prefix)]
             if not matching:

@@ -1235,6 +1235,15 @@ class OxigraphClient:
         pk_pred = ox.NamedNode(CAMPY_NS + pk_col)
         type_pred = ox.NamedNode(RDF_NS + "type")
         table_node = ox.NamedNode(CAMPY_NS + table)
+        # B454 fast path: the create templates mint `{base}{table}/{ENCODE_FOR_URI(pk)}`
+        # at one of the two known bases, so check those directly (O(1)) before
+        # falling back to the O(#nodes) scan -- that scan ran once per node
+        # create and grew with the store.
+        from urllib.parse import quote
+        for base in (CID_BASE, DATA_BASE):
+            cand = ox.NamedNode(f"{base}{table}/{quote(target, safe='')}")
+            if next(self.store.quads_for_pattern(cand, type_pred, table_node, None), None) is not None:
+                return cand.value
         for q in self.store.quads_for_pattern(None, pk_pred, None, None):
             obj = q.object
             if getattr(obj, "value", None) != target:

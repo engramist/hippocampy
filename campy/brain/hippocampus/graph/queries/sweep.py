@@ -509,6 +509,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?occ ?p3 ?o3 .
             }
             WHERE {
+                VALUES ?ids { }
                 ?s a campy:Session ; campy:session_id ?ids .
                 ?s campy:LOADED ?o .
                 OPTIONAL {
@@ -541,6 +542,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?occ ?p3 ?o3 .
             }
             WHERE {
+                VALUES ?ids { }
                 ?s a campy:Session ; campy:session_id ?ids .
                 ?s campy:WARM_NODE ?o .
                 OPTIONAL {
@@ -1097,6 +1099,10 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:archived false .
                 ?n campy:pathway_strength ?old_strength .
                 BIND((?old_strength * ?factor) AS ?new_strength)
+                # B454: an unchanged value (e.g. strength 0) would be DELETEd and re-INSERTed as
+                # the same triple; Oxigraph applies the insert first, so the delete wins and the
+                # node silently loses its pathway_strength. Skip no-op updates.
+                FILTER(?new_strength != ?old_strength)
             }
             """,
     ),
@@ -1134,6 +1140,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             DELETE { ?n campy:archived ?old_archived . }
             INSERT { ?n campy:archived true . }
             WHERE {
+                VALUES ?ids { }
                 ?n a campy:Concept ; campy:concept_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
             }
@@ -1195,6 +1202,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:pathway_strength ?strength .
             }
             WHERE {
+                VALUES ?ids { }
                 ?n a campy:Concept ; campy:concept_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
                 OPTIONAL { ?n campy:pathway_strength ?old_strength }
@@ -1220,6 +1228,10 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:archived false .
                 ?n campy:pathway_strength ?old_strength .
                 BIND((?old_strength * ?factor) AS ?new_strength)
+                # B454: an unchanged value (e.g. strength 0) would be DELETEd and re-INSERTed as
+                # the same triple; Oxigraph applies the insert first, so the delete wins and the
+                # node silently loses its pathway_strength. Skip no-op updates.
+                FILTER(?new_strength != ?old_strength)
             }
             """,
     ),
@@ -1257,6 +1269,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             DELETE { ?n campy:archived ?old_archived . }
             INSERT { ?n campy:archived true . }
             WHERE {
+                VALUES ?ids { }
                 ?n a campy:GlobalConstraint ; campy:global_constraint_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
             }
@@ -1318,6 +1331,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:pathway_strength ?strength .
             }
             WHERE {
+                VALUES ?ids { }
                 ?n a campy:GlobalConstraint ; campy:global_constraint_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
                 OPTIONAL { ?n campy:pathway_strength ?old_strength }
@@ -1343,6 +1357,10 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:archived false .
                 ?n campy:pathway_strength ?old_strength .
                 BIND((?old_strength * ?factor) AS ?new_strength)
+                # B454: an unchanged value (e.g. strength 0) would be DELETEd and re-INSERTed as
+                # the same triple; Oxigraph applies the insert first, so the delete wins and the
+                # node silently loses its pathway_strength. Skip no-op updates.
+                FILTER(?new_strength != ?old_strength)
             }
             """,
     ),
@@ -1380,6 +1398,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             DELETE { ?n campy:archived ?old_archived . }
             INSERT { ?n campy:archived true . }
             WHERE {
+                VALUES ?ids { }
                 ?n a campy:GlobalPreference ; campy:global_preference_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
             }
@@ -1441,6 +1460,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:pathway_strength ?strength .
             }
             WHERE {
+                VALUES ?ids { }
                 ?n a campy:GlobalPreference ; campy:global_preference_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
                 OPTIONAL { ?n campy:pathway_strength ?old_strength }
@@ -1466,6 +1486,10 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:archived false .
                 ?n campy:pathway_strength ?old_strength .
                 BIND((?old_strength * ?factor) AS ?new_strength)
+                # B454: an unchanged value (e.g. strength 0) would be DELETEd and re-INSERTed as
+                # the same triple; Oxigraph applies the insert first, so the delete wins and the
+                # node silently loses its pathway_strength. Skip no-op updates.
+                FILTER(?new_strength != ?old_strength)
             }
             """,
     ),
@@ -1503,6 +1527,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             DELETE { ?n campy:archived ?old_archived . }
             INSERT { ?n campy:archived true . }
             WHERE {
+                VALUES ?ids { }
                 ?n a campy:Decision ; campy:decision_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
             }
@@ -1564,6 +1589,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:pathway_strength ?strength .
             }
             WHERE {
+                VALUES ?ids { }
                 ?n a campy:Decision ; campy:decision_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
                 OPTIONAL { ?n campy:pathway_strength ?old_strength }
@@ -1589,6 +1615,10 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:archived false .
                 ?n campy:pathway_strength ?old_strength .
                 BIND((?old_strength * ?factor) AS ?new_strength)
+                # B454: an unchanged value (e.g. strength 0) would be DELETEd and re-INSERTed as
+                # the same triple; Oxigraph applies the insert first, so the delete wins and the
+                # node silently loses its pathway_strength. Skip no-op updates.
+                FILTER(?new_strength != ?old_strength)
             }
             """,
     ),
@@ -1626,6 +1656,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             DELETE { ?n campy:archived ?old_archived . }
             INSERT { ?n campy:archived true . }
             WHERE {
+                VALUES ?ids { }
                 ?n a campy:Constraint ; campy:constraint_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
             }
@@ -1687,6 +1718,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:pathway_strength ?strength .
             }
             WHERE {
+                VALUES ?ids { }
                 ?n a campy:Constraint ; campy:constraint_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
                 OPTIONAL { ?n campy:pathway_strength ?old_strength }
@@ -1712,6 +1744,10 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:archived false .
                 ?n campy:pathway_strength ?old_strength .
                 BIND((?old_strength * ?factor) AS ?new_strength)
+                # B454: an unchanged value (e.g. strength 0) would be DELETEd and re-INSERTed as
+                # the same triple; Oxigraph applies the insert first, so the delete wins and the
+                # node silently loses its pathway_strength. Skip no-op updates.
+                FILTER(?new_strength != ?old_strength)
             }
             """,
     ),
@@ -1749,6 +1785,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             DELETE { ?n campy:archived ?old_archived . }
             INSERT { ?n campy:archived true . }
             WHERE {
+                VALUES ?ids { }
                 ?n a campy:Requirement ; campy:requirement_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
             }
@@ -1810,6 +1847,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:pathway_strength ?strength .
             }
             WHERE {
+                VALUES ?ids { }
                 ?n a campy:Requirement ; campy:requirement_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
                 OPTIONAL { ?n campy:pathway_strength ?old_strength }
@@ -1835,6 +1873,10 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:archived false .
                 ?n campy:pathway_strength ?old_strength .
                 BIND((?old_strength * ?factor) AS ?new_strength)
+                # B454: an unchanged value (e.g. strength 0) would be DELETEd and re-INSERTed as
+                # the same triple; Oxigraph applies the insert first, so the delete wins and the
+                # node silently loses its pathway_strength. Skip no-op updates.
+                FILTER(?new_strength != ?old_strength)
             }
             """,
     ),
@@ -1872,6 +1914,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             DELETE { ?n campy:archived ?old_archived . }
             INSERT { ?n campy:archived true . }
             WHERE {
+                VALUES ?ids { }
                 ?n a campy:ActionItem ; campy:action_item_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
             }
@@ -1933,6 +1976,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:pathway_strength ?strength .
             }
             WHERE {
+                VALUES ?ids { }
                 ?n a campy:ActionItem ; campy:action_item_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
                 OPTIONAL { ?n campy:pathway_strength ?old_strength }
@@ -1958,6 +2002,10 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:archived false .
                 ?n campy:pathway_strength ?old_strength .
                 BIND((?old_strength * ?factor) AS ?new_strength)
+                # B454: an unchanged value (e.g. strength 0) would be DELETEd and re-INSERTed as
+                # the same triple; Oxigraph applies the insert first, so the delete wins and the
+                # node silently loses its pathway_strength. Skip no-op updates.
+                FILTER(?new_strength != ?old_strength)
             }
             """,
     ),
@@ -1965,18 +2013,19 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
         name="sweep.get_active_pathway_message",
         cypher="""
             MATCH (n:Message) WHERE n.archived = false
-            RETURN n.message_id, n.pathway_strength
+            RETURN n.message_id, n.pathway_strength, n.created_at
             """,
         params=(),
         mutating=False,
         description="Fetch active Message nodes with pathway_strength.",
         sparql="""
             PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?message_id ?pathway_strength WHERE {
+            SELECT ?message_id ?pathway_strength ?created_at WHERE {
                 ?n a campy:Message ;
                    campy:message_id ?message_id ;
                    campy:pathway_strength ?pathway_strength .
                 ?n campy:archived false .
+                OPTIONAL { ?n campy:created_at ?created_at }
             }
             """,
     ),
@@ -1995,6 +2044,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             DELETE { ?n campy:archived ?old_archived . }
             INSERT { ?n campy:archived true . }
             WHERE {
+                VALUES ?ids { }
                 ?n a campy:Message ; campy:message_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
             }
@@ -2056,6 +2106,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:pathway_strength ?strength .
             }
             WHERE {
+                VALUES ?ids { }
                 ?n a campy:Message ; campy:message_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
                 OPTIONAL { ?n campy:pathway_strength ?old_strength }
@@ -2081,6 +2132,10 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:archived false .
                 ?n campy:pathway_strength ?old_strength .
                 BIND((?old_strength * ?factor) AS ?new_strength)
+                # B454: an unchanged value (e.g. strength 0) would be DELETEd and re-INSERTed as
+                # the same triple; Oxigraph applies the insert first, so the delete wins and the
+                # node silently loses its pathway_strength. Skip no-op updates.
+                FILTER(?new_strength != ?old_strength)
             }
             """,
     ),
@@ -2118,6 +2173,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
             DELETE { ?n campy:archived ?old_archived . }
             INSERT { ?n campy:archived true . }
             WHERE {
+                VALUES ?ids { }
                 ?n a campy:DocumentExtract ; campy:extract_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
             }
@@ -2179,6 +2235,7 @@ SWEEP_QUERIES: tuple[NamedQuery, ...] = (
                 ?n campy:pathway_strength ?strength .
             }
             WHERE {
+                VALUES ?ids { }
                 ?n a campy:DocumentExtract ; campy:extract_id ?ids .
                 OPTIONAL { ?n campy:archived ?old_archived }
                 OPTIONAL { ?n campy:pathway_strength ?old_strength }
