@@ -29,6 +29,7 @@ import resource
 import signal
 import socket
 import subprocess
+import tempfile
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -388,6 +389,79 @@ def _vmmap_parsed(pid: int | None = None) -> dict:
             if len(tokens) >= 4:
                 result["small_resident"] = tokens[1]
                 result["small_swapped"] = tokens[3]
+    return result
+
+
+def _footprint_parsed(pid: int | None = None) -> dict:
+    """B452: fast, JSON-structured alternative to `_vmmap_parsed()` for the
+    automated watchdog specifically.
+
+    `vmmap -summary`'s text-parsing path (`_vmmap_parsed` below) is correct
+    but slow under load: confirmed live during B451's 43GB blowup, it
+    repeatedly exceeded its own 10s timeout ("[FootprintWatchdog] vmmap check
+    failed ... skipping this check", logged for hours), which is exactly when
+    the watchdog most needs to see a real sample. `footprint -j` (also a
+    built-in macOS diagnostic tool, no elevated privileges needed on your own
+    PID, confirmed by direct A/B timing: 0.68s for vmmap -summary vs 0.039s
+    for footprint at idle, and footprint stayed fast even sampled directly
+    against the live 46GB blowup process) reads the same kernel-reported
+    physical footprint but as a single struct read rather than a full memory
+    map walk, and returns JSON instead of text to parse.
+
+    Same return shape as `_vmmap_parsed()` (a drop-in replacement for that
+    dict's contract) so callers don't need to change: `footprint_mb` (float,
+    or None on any failure), `footprint_raw`, `small_resident`/`small_swapped`
+    (from the MALLOC_SMALL category, when present), `error`. Never raises.
+
+    Kept separate from `_vmmap_parsed()` rather than replacing it: the
+    SIGUSR1 manual diagnostic snapshot (`_dump_memory_snapshot`) is a rare,
+    operator-triggered, non-time-critical read where vmmap's fuller text
+    output (used by `_vmmap_swap_summary` below) is more valuable than speed.
+    """
+    result = {
+        "footprint_mb": None, "footprint_raw": None,
+        "small_resident": None, "small_swapped": None, "error": None,
+    }
+    target_pid = pid if pid is not None else os.getpid()
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tf:
+            json_path = tf.name
+        try:
+            out = subprocess.run(
+                ["footprint", "-j", json_path, "-p", str(target_pid)],
+                capture_output=True, text=True, timeout=10,
+            )
+            if out.returncode != 0:
+                result["error"] = out.stderr.strip() or f"footprint exited {out.returncode}"
+                return result
+            with open(json_path) as f:
+                data = json.load(f)
+        finally:
+            try:
+                os.unlink(json_path)
+            except OSError:
+                pass
+    except Exception as e:
+        result["error"] = str(e)
+        return result
+
+    processes = data.get("processes") or []
+    if not processes:
+        result["error"] = "footprint -j returned no process entries"
+        return result
+
+    footprint_bytes = processes[0].get("footprint")
+    if footprint_bytes is None:
+        result["error"] = "footprint -j output missing 'footprint' field"
+        return result
+    footprint_mb = footprint_bytes / (1024 * 1024)
+    result["footprint_mb"] = footprint_mb
+    result["footprint_raw"] = f"{footprint_mb:.1f}M"
+
+    small = (processes[0].get("categories") or {}).get("MALLOC_SMALL")
+    if small:
+        result["small_resident"] = f"{small.get('dirty', 0) / (1024 * 1024):.1f}M"
+        result["small_swapped"] = f"{small.get('swapped', 0) / (1024 * 1024):.1f}M"
     return result
 
 
@@ -1119,7 +1193,7 @@ class BrainDaemon:
         B354: footprint/swap-aware safety net, additive alongside a
         self-restart task (never a replacement for one).
 
-        Samples `vmmap -summary`'s physical footprint -- not RSS, not
+        Samples `_footprint_parsed()`'s physical footprint -- not RSS, not
         `psutil`, not `ru_maxrss` -- on an interval, and restarts if it has
         grown by more than `growth_threshold_mb` above this process's own
         startup baseline for `consecutive_breaches_required` consecutive
@@ -1132,8 +1206,12 @@ class BrainDaemon:
           RSS can drop to looking completely healthy while the *real*
           footprint (resident + swapped) keeps climbing. A watchdog gated on
           RSS would systematically fail to trigger exactly when it matters
-          most. `vmmap`'s physical footprint reading doesn't have that blind
-          spot -- see `_vmmap_parsed` above.
+          most. `footprint`'s physical footprint reading doesn't have that
+          blind spot -- see `_footprint_parsed` above. (B452: switched from
+          `vmmap -summary`'s text parsing, which is correct but slow enough
+          under real load to blow its own 10s timeout right when a real
+          blowup makes this check matter most -- confirmed live during
+          B451's 43GB incident.)
         - Relative to this process's own startup baseline, not a hardcoded
           absolute threshold: an external plan reviewed during B353 proposed
           a fixed 350MB threshold, which would have tripped almost
@@ -1156,12 +1234,24 @@ class BrainDaemon:
         see backlog/B354.md if these ever need adjusting based on real data.
         Set `[watchdog] enabled = false` to disable.
         """
-        baseline = _vmmap_parsed()
+        # B452: a transient failure while establishing the baseline (the
+        # daemon's own cold-start window is itself a burst of disk/CPU
+        # activity -- RocksDB WAL replay, embedding model warm-up -- that can
+        # make a single footprint/vmmap read fail) used to disable the
+        # watchdog for the rest of the process's life. Retry a few times,
+        # spaced out, before actually giving up.
+        baseline = None
+        for attempt in range(5):
+            baseline = _footprint_parsed()
+            if baseline["footprint_mb"] is not None:
+                break
+            if attempt < 4:
+                await asyncio.sleep(check_interval_seconds)
         if baseline["footprint_mb"] is None:
             _logger.warning(
-                "[FootprintWatchdog] Could not establish a startup baseline (%s) -- "
-                "watchdog disabled for this process's lifetime",
-                baseline["error"] or "vmmap output not recognized",
+                "[FootprintWatchdog] Could not establish a startup baseline after "
+                "5 attempts (%s) -- watchdog disabled for this process's lifetime",
+                baseline["error"] or "footprint output not recognized",
             )
             return
 
@@ -1177,10 +1267,10 @@ class BrainDaemon:
         breach_count = 0
         while True:
             await asyncio.sleep(check_interval_seconds)
-            current = _vmmap_parsed()
+            current = _footprint_parsed()
             if current["footprint_mb"] is None:
                 _logger.warning(
-                    "[FootprintWatchdog] vmmap check failed (%s) -- skipping this check",
+                    "[FootprintWatchdog] footprint check failed (%s) -- skipping this check",
                     current["error"] or "output not recognized",
                 )
                 continue
