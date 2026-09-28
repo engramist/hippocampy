@@ -633,26 +633,26 @@ async def test_periodic_restart_applies_jitter(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def _vmmap_ok(footprint_mb):
+def _footprint_ok(footprint_mb):
     return {
         "footprint_mb": footprint_mb, "footprint_raw": f"{footprint_mb}M",
         "small_resident": None, "small_swapped": None, "error": None,
     }
 
 
-def _vmmap_fail(error="vmmap unavailable"):
+def _footprint_fail(error="footprint unavailable"):
     return {
         "footprint_mb": None, "footprint_raw": None,
         "small_resident": None, "small_swapped": None, "error": error,
     }
 
 
-def _fake_vmmap_sequence(values):
+def _fake_footprint_sequence(values):
     """Yields each dict in `values` in order, then keeps repeating the last
     one -- so a test doesn't need to size the sequence exactly to how many
     checks the loop performs before it returns or is cancelled."""
     it = iter(values)
-    state = {"last": values[0] if values else _vmmap_fail("sequence exhausted")}
+    state = {"last": values[0] if values else _footprint_fail("sequence exhausted")}
 
     def _fake(pid=None):
         try:
@@ -674,8 +674,8 @@ async def test_footprint_watchdog_no_breach_never_restarts(monkeypatch):
     shutdown_calls = []
     monkeypatch.setattr(daemon, "shutdown", lambda: shutdown_calls.append(True))
 
-    fake = _fake_vmmap_sequence([_vmmap_ok(200), _vmmap_ok(210), _vmmap_ok(220), _vmmap_ok(215)])
-    monkeypatch.setattr(bd, "_vmmap_parsed", fake)
+    fake = _fake_footprint_sequence([_footprint_ok(200), _footprint_ok(210), _footprint_ok(220), _footprint_ok(215)])
+    monkeypatch.setattr(bd, "_footprint_parsed", fake)
 
     task = asyncio.create_task(
         daemon._periodic_footprint_watchdog(
@@ -704,8 +704,8 @@ async def test_footprint_watchdog_single_breach_resets_and_does_not_trigger(monk
 
     # baseline=100; one breach at 700 (+600 > 500 threshold), then back
     # under (150, +50) for the rest of the run.
-    fake = _fake_vmmap_sequence([_vmmap_ok(100), _vmmap_ok(700), _vmmap_ok(150), _vmmap_ok(150)])
-    monkeypatch.setattr(bd, "_vmmap_parsed", fake)
+    fake = _fake_footprint_sequence([_footprint_ok(100), _footprint_ok(700), _footprint_ok(150), _footprint_ok(150)])
+    monkeypatch.setattr(bd, "_footprint_parsed", fake)
 
     task = asyncio.create_task(
         daemon._periodic_footprint_watchdog(
@@ -733,8 +733,8 @@ async def test_footprint_watchdog_consecutive_breaches_trigger_restart(monkeypat
     monkeypatch.setattr(daemon, "shutdown", lambda: shutdown_calls.append(True))
 
     # baseline=100; three consecutive breaches, all well above the threshold.
-    fake = _fake_vmmap_sequence([_vmmap_ok(100), _vmmap_ok(700), _vmmap_ok(710), _vmmap_ok(720)])
-    monkeypatch.setattr(bd, "_vmmap_parsed", fake)
+    fake = _fake_footprint_sequence([_footprint_ok(100), _footprint_ok(700), _footprint_ok(710), _footprint_ok(720)])
+    monkeypatch.setattr(bd, "_footprint_parsed", fake)
 
     await asyncio.wait_for(
         daemon._periodic_footprint_watchdog(
@@ -756,8 +756,8 @@ async def test_footprint_watchdog_baseline_failure_disables_watchdog(monkeypatch
     shutdown_calls = []
     monkeypatch.setattr(daemon, "shutdown", lambda: shutdown_calls.append(True))
 
-    fake = _fake_vmmap_sequence([_vmmap_fail("vmmap not found")])
-    monkeypatch.setattr(bd, "_vmmap_parsed", fake)
+    fake = _fake_footprint_sequence([_footprint_fail("vmmap not found")])
+    monkeypatch.setattr(bd, "_footprint_parsed", fake)
 
     await asyncio.wait_for(
         daemon._periodic_footprint_watchdog(
@@ -767,6 +767,42 @@ async def test_footprint_watchdog_baseline_failure_disables_watchdog(monkeypatch
     )
 
     assert shutdown_calls == []
+
+
+@pytest.mark.asyncio
+async def test_footprint_watchdog_baseline_retries_before_disabling(monkeypatch):
+    """B452: a transient failure establishing the startup baseline (the
+    daemon's own cold start is itself a burst of disk/CPU activity that can
+    make a single sample fail) is retried, not treated as fatal on the first
+    miss -- the watchdog stays enabled if a later attempt succeeds."""
+    import campy.brain_daemon as bd
+
+    daemon = _make_daemon()
+    shutdown_calls = []
+    monkeypatch.setattr(daemon, "shutdown", lambda: shutdown_calls.append(True))
+
+    # First two baseline attempts fail, third succeeds at 100MB; then two
+    # in-threshold checks -- proves the baseline that stuck was the real one
+    # (100), not a null/failed sample being silently treated as baseline 0.
+    fake = _fake_footprint_sequence([
+        _footprint_fail("transient"), _footprint_fail("transient"), _footprint_ok(100),
+        _footprint_ok(150), _footprint_ok(150),
+    ])
+    monkeypatch.setattr(bd, "_footprint_parsed", fake)
+
+    task = asyncio.create_task(
+        daemon._periodic_footprint_watchdog(
+            check_interval_seconds=0.01, growth_threshold_mb=500, consecutive_breaches_required=3
+        )
+    )
+    await asyncio.sleep(0.2)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    assert shutdown_calls == []  # +50MB growth from a 100MB baseline never breaches a 500MB threshold
 
 
 @pytest.mark.asyncio
@@ -783,10 +819,10 @@ async def test_footprint_watchdog_transient_check_failure_is_skipped_not_fatal(m
     # baseline=100; breach, a transient vmmap failure in between, then two
     # more breaches -> 3 real breaches recorded, restart fires despite the
     # failure sitting in the middle of the streak.
-    fake = _fake_vmmap_sequence([
-        _vmmap_ok(100), _vmmap_ok(700), _vmmap_fail("transient"), _vmmap_ok(710), _vmmap_ok(720),
+    fake = _fake_footprint_sequence([
+        _footprint_ok(100), _footprint_ok(700), _footprint_fail("transient"), _footprint_ok(710), _footprint_ok(720),
     ])
-    monkeypatch.setattr(bd, "_vmmap_parsed", fake)
+    monkeypatch.setattr(bd, "_footprint_parsed", fake)
 
     await asyncio.wait_for(
         daemon._periodic_footprint_watchdog(
@@ -918,8 +954,8 @@ async def test_footprint_watchdog_trigger_emits_activity_event(monkeypatch, tmp_
     daemon, log_path = _daemon_with_activity_log(tmp_path)
     monkeypatch.setattr(daemon, "shutdown", lambda: None)
 
-    fake = _fake_vmmap_sequence([_vmmap_ok(100), _vmmap_ok(700), _vmmap_ok(710), _vmmap_ok(720)])
-    monkeypatch.setattr(bd, "_vmmap_parsed", fake)
+    fake = _fake_footprint_sequence([_footprint_ok(100), _footprint_ok(700), _footprint_ok(710), _footprint_ok(720)])
+    monkeypatch.setattr(bd, "_footprint_parsed", fake)
 
     await asyncio.wait_for(
         daemon._periodic_footprint_watchdog(

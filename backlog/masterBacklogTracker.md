@@ -83,7 +83,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B455 | Running the Test Suite Kills the Developer's Live Daemon | P2 | fixed | TBD | TBD | - | backlog/B455.md |
 | B454 | Retrieval/Consolidation Quality: Benchmark Facts Are Stored But Not Retrievable via ask/compile_context | P1 | fixed | TBD | TBD | - | backlog/B454.md |
 | B453 | Daemon Cold Start Takes 4-7 Minutes (Store Open + Gist-Centroid Recompute Every Start) | P2 | ready | TBD | TBD | - | backlog/B453.md |
-| B452 | FootprintWatchdog Did Not Catch a 43 GB Blowup (vmmap Times Out; Thresholds Too Slow) | P1 | ready | TBD | TBD | - | backlog/B452.md |
+| B452 | FootprintWatchdog Did Not Catch a 43 GB Blowup (vmmap Times Out; Thresholds Too Slow) | P1 | fixed | TBD | TBD | - | backlog/B452.md |
 | B451 | CO_OCCURS_WITH Upsert Minted a Fresh Reifier Per Solution and Doubled on Every Re-Write — the Daemon Memory Blowup | P0 | fixed | TBD | TBD | - | backlog/B451.md |
 | B450 | Benchmark Harness Could Silently Turn a Dead/Offline Daemon Into Fake Scores | P0 | fixed | TBD | TBD | - | backlog/B450.md |
 | B449 | campy.adapters.mcp_server Uses a 2-6s "Implicit Background" Timeout for All External Tool Calls — the Real Reason Every External Benchmark Scores 0% | P0 | fixed | TBD | TBD | - | backlog/B449.md |
