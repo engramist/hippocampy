@@ -13,11 +13,23 @@ blowup process during this investigation.
 from __future__ import annotations
 
 import os
+import sys
 import time
 
 import pytest
 
 from campy.brain_daemon import _footprint_parsed
+
+# `footprint`/`vmmap` are macOS-only diagnostic tools this watchdog is built
+# around (see _periodic_footprint_watchdog's own docstring on why RSS/psutil
+# are unsuitable here); CI runs on ubuntu-latest, where they don't exist.
+# These tests prove the real subprocess/JSON-parsing path works, which a
+# mocked-_footprint_parsed test (see test_auth_context.py's watchdog tests,
+# which do run on every platform) cannot -- so skip here instead of mocking
+# away the exact thing being verified.
+pytestmark = pytest.mark.skipif(
+    sys.platform != "darwin", reason="footprint/vmmap are macOS-only tools"
+)
 
 
 def test_footprint_parsed_reads_own_process():
