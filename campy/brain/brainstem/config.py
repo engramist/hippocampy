@@ -108,6 +108,8 @@ def load_config(config_path: str | Path | None = None) -> dict:
       1. Explicit path (if provided)
       2. Current working directory
       3. ~/.campy/config.toml or legacy ~/.sidequests/config.toml
+         -- or, when CAMPY_HOME is set, only $CAMPY_HOME/config.toml (an
+         isolated instance must never pick up the user's personal config)
     Raises FileNotFoundError if no config found.
     """
     if sys.version_info >= (3, 11):
@@ -129,12 +131,20 @@ def load_config(config_path: str | Path | None = None) -> dict:
         return config
 
     # No explicit path — search default locations.
+    from campy.paths import home_override
+
     search_paths = [
         Path.cwd() / "campy.toml",
         Path.cwd() / "sidequests.toml",
-        Path.home() / ".campy" / "config.toml",
-        Path.home() / ".sidequests" / "config.toml",
     ]
+    override = home_override()
+    if override is not None:
+        search_paths.append(override / "config.toml")
+    else:
+        search_paths += [
+            Path.home() / ".campy" / "config.toml",
+            Path.home() / ".sidequests" / "config.toml",
+        ]
 
     for path in search_paths:
         if path.exists():

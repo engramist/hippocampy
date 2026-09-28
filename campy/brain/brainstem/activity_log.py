@@ -7,6 +7,7 @@ user-facing, and redacts full message bodies so it can be watched live.
 from __future__ import annotations
 
 import json
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -44,7 +45,9 @@ def _default_activity_log() -> Path:
 
         return get_activity_log_path()
     except Exception:
-        return Path.home() / ".campy" / "activity.log"
+        override = os.environ.get("CAMPY_HOME")
+        root = Path(override).expanduser() if override else Path.home() / ".campy"
+        return root / "activity.log"
 
 WRITE_METHODS = {
     "notify_turn",

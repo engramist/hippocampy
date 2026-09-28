@@ -81,9 +81,13 @@ def _default_db_path() -> Path:
     acquire a transitive dependency on the rest of the brain package tree
     (or on Kùzu, which several of those modules import). ``~/.campy`` is
     documented in docs/rdf-schema-mapping.md §5 as this store's location;
-    this mirrors that path independently and cheaply.
+    this mirrors that path independently and cheaply -- including the
+    ``CAMPY_HOME`` override (campy.paths.home_override), without which an
+    isolated instance would share the user's real vector/FTS index.
     """
-    return Path(os.path.expanduser("~/.campy")) / "vectors.db"
+    override = os.environ.get("CAMPY_HOME")
+    root = Path(override).expanduser() if override else Path(os.path.expanduser("~/.campy"))
+    return root / "vectors.db"
 
 
 _FTS_STOPWORDS = frozenset(
