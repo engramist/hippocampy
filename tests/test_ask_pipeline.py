@@ -65,6 +65,7 @@ async def test_sub_budget_bypasses_compression_completely():
 
     mock_llm = MagicMock()
     mock_llm.chat.return_value = "Verified answer from uncompressed memory."
+    mock_llm.achat = AsyncMock(return_value="Verified answer from uncompressed memory.")
 
     meta = {}
     with patch("campy.brain.thalamus.ask.compile_bundle", new_callable=AsyncMock, return_value=bundle),          patch("campy.brain.thalamus.ask._get_llm", return_value=mock_llm),          patch("campy.brain.thalamus.ask._capture_turn", new_callable=AsyncMock),          patch("campy.brain.thalamus.compression.build_default_registry") as mock_registry:
@@ -132,6 +133,7 @@ class KeyManager:
 
     mock_llm = MagicMock()
     mock_llm.chat.return_value = "Answer generated under budget."
+    mock_llm.achat = AsyncMock(return_value="Answer generated under budget.")
 
     meta = {}
     with patch("campy.brain.thalamus.ask.compile_bundle", new_callable=AsyncMock, return_value=bundle),          patch("campy.brain.thalamus.ask._get_llm", return_value=mock_llm),          patch("campy.brain.thalamus.ask._capture_turn", new_callable=AsyncMock):
@@ -175,6 +177,7 @@ async def test_budget_parameter_precedence():
 
     mock_llm = MagicMock()
     mock_llm.chat.return_value = "ok"
+    mock_llm.achat = AsyncMock(return_value="ok")
 
     # Case 1: Caller passes budget_tokens=1000 override
     bundle = _make_bundle([_make_section("exact_fact", [{"k": "v"}], 2000)])
