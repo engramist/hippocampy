@@ -19,6 +19,7 @@ async def test_ask_returns_llm_response():
 
     mock_llm = MagicMock()
     mock_llm.chat.return_value = "We decided to use JWT tokens."
+    mock_llm.achat = AsyncMock(return_value="We decided to use JWT tokens.")
 
     with patch(
         "campy.brain.thalamus.ask.compile_bundle",
@@ -55,6 +56,7 @@ async def test_ask_calls_capture_with_question_and_answer():
 
     mock_llm = MagicMock()
     mock_llm.chat.return_value = "the answer"
+    mock_llm.achat = AsyncMock(return_value="the answer")
 
     captured = {}
 
@@ -85,6 +87,7 @@ async def test_ask_no_capture_skips_writeback():
 
     mock_llm = MagicMock()
     mock_llm.chat.return_value = "ephemeral answer"
+    mock_llm.achat = AsyncMock(return_value="ephemeral answer")
 
     with patch("campy.brain.thalamus.ask.compile_bundle", new_callable=AsyncMock, return_value=mock_bundle), \
          patch("campy.brain.thalamus.ask._get_llm", return_value=mock_llm), \

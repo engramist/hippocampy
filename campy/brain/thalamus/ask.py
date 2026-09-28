@@ -20,6 +20,7 @@ TWO-LANE THALAMIC COMPRESSION & BUDGET-GATED PRESSURE-RELIEF VALVE (B374):
 """
 
 from __future__ import annotations
+import asyncio
 import logging
 import re
 from typing import Optional, TYPE_CHECKING
@@ -354,10 +355,15 @@ async def run_ask(
 
         from campy.brain.thalamus.compression import build_default_registry
         _, router = build_default_registry(config)
-        compressed_sections = [
-            router.compress_section(section, query, config)
-            for section in bundle.sections
-        ]
+        # B447: LLMCompressor.compress() calls llm.chat() synchronously — real
+        # network I/O. This whole step used to run inline in this coroutine,
+        # blocking the daemon's single-threaded event loop (every other
+        # coroutine, including the Gated Consolidation Loop, cannot run at
+        # all while a blocking call is in flight) for the full round-trip.
+        # Same fix as LLMClient.achat(): offload to a worker thread.
+        compressed_sections = await asyncio.to_thread(
+            lambda: [router.compress_section(section, query, config) for section in bundle.sections]
+        )
         bundle.sections = compressed_sections
         post_tokens = sum(
             getattr(s, "token_estimate", getattr(s, "estimated_tokens", 0))
@@ -387,10 +393,25 @@ async def run_ask(
         {"role": "system", "content": _ASK_SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ]
-    answer = llm.chat(messages)
+    # B447: was a direct llm.chat(messages) -- a synchronous network call made
+    # directly inside this coroutine, blocking the daemon's single-threaded
+    # event loop for the full LLM round-trip (observed: 5-45s+ under real load).
+    # Every other coroutine in the process -- other ask()/notify_turn calls,
+    # the Gated Consolidation Loop worker, even the health-check endpoint --
+    # is cooperatively scheduled on that same loop and cannot run AT ALL while
+    # one is blocked, which is what made a chain of ask() calls fully serialize
+    # the daemon and let cumulative blocking delay an unrelated write (B447's
+    # 138s/256s create_gist_example writes) by however long the ask() calls
+    # ahead of it took. achat() already exists for exactly this (used
+    # correctly everywhere else in the codebase -- sweep.py, quest.py,
+    # hippocampus.py, step7_5_lesson.py); this was the one call site that
+    # never got migrated.
+    answer = await llm.achat(messages)
 
     if "H2" in variants:
-        answer = _h2_empty_claim_guard(answer, bundle, prompt, llm, meta=meta)
+        # B447: _h2_empty_claim_guard calls llm.chat() synchronously when it
+        # retries — same event-loop-blocking issue as the main call below.
+        answer = await asyncio.to_thread(_h2_empty_claim_guard, answer, bundle, prompt, llm, meta)
 
     # 4. Capture (closed loop) — both the question and the answer
     if capture:
