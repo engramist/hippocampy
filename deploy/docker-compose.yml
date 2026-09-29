@@ -1,0 +1,32 @@
+# B385: local cloud-parity run of the container: the same image, auth mode
+# and minimal surface as ECS, with a named volume standing in for EFS.
+#
+#   docker compose -f deploy/docker-compose.yml up --build
+#
+# Auth is IAM, exactly as in ECS, so callers must send SigV4-signed requests
+# (docs/cloud-integration-guide.md). The container verifies them against AWS
+# STS using the credentials below; point AWS_PROFILE at an account you can use.
+# The port is published on loopback only.
+services:
+  campy:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: campy:local
+    ports:
+      - "127.0.0.1:7799:7799"
+    volumes:
+      - campy-data:/data/campy
+      - ${HOME}/.aws:/home/campy/.aws:ro
+    environment:
+      AWS_PROFILE: ${AWS_PROFILE:-default}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      CAMPY_LLM_PROVIDER: ${CAMPY_LLM_PROVIDER:-bedrock}
+      CAMPY_LLM_MODEL: ${CAMPY_LLM_MODEL:?set CAMPY_LLM_MODEL to a Bedrock model or inference-profile id}
+      CAMPY_LLM_REGION: ${AWS_REGION:-us-east-1}
+      CAMPY_IAM_TENANT_ID: ${CAMPY_IAM_TENANT_ID:-local-test}
+      CAMPY_IAM_WORKSPACE_ID: ${CAMPY_IAM_WORKSPACE_ID:-local-test}
+      # Map real caller ARNs to workspaces to test multi-tenant isolation:
+      CAMPY_IAM_WORKSPACE_MAP_JSON: ${CAMPY_IAM_WORKSPACE_MAP_JSON:-}
+volumes:
+  campy-data:

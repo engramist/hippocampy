@@ -37,6 +37,10 @@ def test_every_documented_override_applies():
         "CAMPY_SERVER_BIND_HOST": "0.0.0.0",
         "CAMPY_SERVER_DASHBOARD_ENABLED": "false",
         "CAMPY_WEB_PORT": "8080",
+        "CAMPY_LLM_PROVIDER": "bedrock",
+        "CAMPY_LLM_MODEL": "us.example.model-v1:0",
+        "CAMPY_LLM_REGION": "us-east-1",
+        "CAMPY_LLM_BASE_URL": "https://llm.internal/v1",
         "CAMPY_IAM_TENANT_ID": "acme",
         "CAMPY_IAM_WORKSPACE_ID": "acme-default",
         "CAMPY_IAM_WORKSPACE_MAP_JSON": '{"arn:aws:iam::1:role/a": "ws-a"}',
@@ -50,6 +54,8 @@ def test_every_documented_override_applies():
     assert s["auth"] == "iam" and s["bind_host"] == "0.0.0.0"
     assert s["dashboard_enabled"] is False
     assert cfg["web"]["port"] == 8080
+    assert cfg["llm"] == {"provider": "bedrock", "model": "us.example.model-v1:0",
+                          "region": "us-east-1", "base_url": "https://llm.internal/v1"}
     assert s["iam_tenant_id"] == "acme" and s["iam_workspace_id"] == "acme-default"
     assert s["iam_workspace_map"] == {"arn:aws:iam::1:role/a": "ws-a"}
     assert s["iam_tenant_map"] == {"arn:aws:iam::1:role/a": "tenant-a"}
@@ -181,3 +187,117 @@ async def test_health_without_a_probe_stays_ok():
     from unittest.mock import MagicMock
     r = await _get_health(MagicMock())
     assert r.status_code == 200 and r.json()["storage"] == "unknown"
+
+
+# ---------------------------------------------------------------------------
+# deploy/ assets. The image itself is built in CI/by the operator (the build
+# needs registry + model downloads); these checks catch drift between the
+# assets and the code without a Docker daemon.
+# ---------------------------------------------------------------------------
+
+import json
+import os
+import re
+import shutil
+import subprocess
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+DEPLOY = REPO / "deploy"
+
+# Non-override env vars the assets may legitimately set.
+_KNOWN_RUNTIME_VARS = {"CAMPY_HOME", "CAMPY_SOCKET_PATH", "CAMPY_DEFAULT_CONFIG"}
+
+
+def _campy_vars_in(text: str) -> set:
+    # Full names only: prose wildcards like "CAMPY_IAM_*" end in "_".
+    return set(re.findall(r"\bCAMPY_[A-Z0-9_]*[A-Z0-9]\b", text))
+
+
+def test_assets_only_set_env_vars_the_daemon_reads():
+    """A typo'd CAMPY_* name in an asset would be silently ignored at runtime."""
+    known = set(ENV_OVERRIDES) | _KNOWN_RUNTIME_VARS
+    for name in ("Dockerfile", "ecs-task-definition.json", "docker-compose.yml", "entrypoint.sh"):
+        unknown = _campy_vars_in((DEPLOY / name).read_text()) - known
+        assert not unknown, f"{name} sets unknown vars {sorted(unknown)}"
+
+
+def test_dockerfile_runs_non_root_offline_with_iam():
+    text = (DEPLOY / "Dockerfile").read_text()
+    assert re.search(r"useradd --uid 1000\b", text)
+    assert re.search(r"^USER 1000:1000$", text, re.M)
+    for env in ("HF_HUB_OFFLINE=1", "CAMPY_SERVER_AUTH=iam", "CAMPY_SERVER_BIND_HOST=0.0.0.0",
+                "CAMPY_SERVER_DASHBOARD_ENABLED=false", "CAMPY_HOME=/data/campy",
+                "FASTEMBED_CACHE_PATH=/opt/campy-models/fastembed"):
+        assert env in text, env
+    assert "spacy download en_core_web_md" in text   # step1_ner loads it at runtime
+    assert "HEALTHCHECK" in text and "/health" in text
+
+
+def test_ecs_task_definition_shape():
+    td = json.loads((DEPLOY / "ecs-task-definition.json").read_text())
+    assert td["requiresCompatibilities"] == ["FARGATE"] and td["networkMode"] == "awsvpc"
+    (c,) = td["containerDefinitions"]
+    assert c["user"] == "1000:1000"
+    assert c["mountPoints"][0]["containerPath"] == "/data/campy"
+    assert td["volumes"][0]["efsVolumeConfiguration"]["transitEncryption"] == "ENABLED"
+    env = {e["name"]: e["value"] for e in c["environment"]}
+    assert env["CAMPY_SERVER_AUTH"] == "iam" and env["CAMPY_SERVER_DASHBOARD_ENABLED"] == "false"
+    assert "/health" in " ".join(c["healthCheck"]["command"])
+    # IAM maps come from SSM, not plain-text environment
+    assert {s["name"] for s in c["secrets"]} >= {"CAMPY_IAM_WORKSPACE_MAP_JSON"}
+
+
+def test_container_config_passes_the_bind_guard_and_builds_iam_resolver(tmp_path, monkeypatch):
+    from campy.brain_daemon import _build_http_principal_resolver, _enforce_bind_guard
+    from campy.brain.auth import IAMPrincipalResolver
+    home = tmp_path / "home"
+    home.mkdir()
+    shutil.copy(DEPLOY / "campy.container.toml", home / "config.toml")
+    monkeypatch.setenv("CAMPY_HOME", str(home))
+    monkeypatch.chdir(home)
+    for var in ENV_OVERRIDES:
+        monkeypatch.delenv(var, raising=False)
+    cfg = load_config()
+    s = cfg["server"]
+    _enforce_bind_guard(s["bind_host"], s["auth"])  # 0.0.0.0 + iam: allowed
+    assert isinstance(_build_http_principal_resolver(s["auth"], s), IAMPrincipalResolver)
+    assert cfg["watchdog"]["enabled"] is False and cfg["observability"]["enabled"] is False
+    assert cfg["daemon"]["restart_interval_hours"] == 0
+    assert cfg["embeddings"]["offline"] is True
+
+
+def _run_entrypoint(tmp_path, env_extra):
+    bindir = tmp_path / "bin"
+    bindir.mkdir(exist_ok=True)
+    fake = bindir / "python"
+    fake.write_text('#!/bin/sh\necho "fake-python $*"\n')
+    fake.chmod(0o755)
+    env = {"PATH": f"{bindir}:{os.environ['PATH']}", "CAMPY_HOME": str(tmp_path / "home"),
+           "CAMPY_SOCKET_PATH": str(tmp_path / "sock" / "brain.sock"),
+           "CAMPY_DEFAULT_CONFIG": str(DEPLOY / "campy.container.toml"), **env_extra}
+    return subprocess.run(["sh", str(DEPLOY / "entrypoint.sh")], env=env,
+                          capture_output=True, text=True, timeout=30)
+
+
+def test_entrypoint_seeds_config_then_runs_the_daemon(tmp_path):
+    r = _run_entrypoint(tmp_path, {"CAMPY_LLM_MODEL": "m"})
+    assert r.returncode == 0, r.stderr
+    assert "fake-python -m campy.brain_daemon" in r.stdout
+    seeded = tmp_path / "home" / "config.toml"
+    assert seeded.read_text() == (DEPLOY / "campy.container.toml").read_text()
+    assert (tmp_path / "sock").is_dir()
+
+
+def test_entrypoint_never_overwrites_an_existing_config(tmp_path):
+    (tmp_path / "home").mkdir()
+    (tmp_path / "home" / "config.toml").write_text('[llm]\nmodel = "mine"\n')
+    r = _run_entrypoint(tmp_path, {})
+    assert r.returncode == 0, r.stderr
+    assert (tmp_path / "home" / "config.toml").read_text() == '[llm]\nmodel = "mine"\n'
+
+
+def test_entrypoint_refuses_to_start_without_a_model(tmp_path):
+    r = _run_entrypoint(tmp_path, {})
+    assert r.returncode == 64
+    assert "CAMPY_LLM_MODEL" in r.stderr and "fake-python" not in r.stdout

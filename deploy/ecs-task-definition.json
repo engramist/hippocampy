@@ -1,0 +1,64 @@
+{
+  "family": "campy-memory",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "1024",
+  "memory": "4096",
+  "runtimePlatform": {"operatingSystemFamily": "LINUX", "cpuArchitecture": "X86_64"},
+  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/campy-task-execution",
+  "taskRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/campy-task",
+  "volumes": [
+    {
+      "name": "campy-data",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "<EFS_FILE_SYSTEM_ID>",
+        "transitEncryption": "ENABLED",
+        "authorizationConfig": {"accessPointId": "<EFS_ACCESS_POINT_ID>", "iam": "ENABLED"}
+      }
+    }
+  ],
+  "containerDefinitions": [
+    {
+      "name": "campy",
+      "image": "<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/campy:<TAG>",
+      "essential": true,
+      "user": "1000:1000",
+      "readonlyRootFilesystem": false,
+      "portMappings": [{"containerPort": 7799, "protocol": "tcp"}],
+      "mountPoints": [{"sourceVolume": "campy-data", "containerPath": "/data/campy", "readOnly": false}],
+      "environment": [
+        {"name": "CAMPY_SERVER_AUTH", "value": "iam"},
+        {"name": "CAMPY_SERVER_BIND_HOST", "value": "0.0.0.0"},
+        {"name": "CAMPY_SERVER_DASHBOARD_ENABLED", "value": "false"},
+        {"name": "CAMPY_WEB_PORT", "value": "7799"},
+        {"name": "CAMPY_LLM_PROVIDER", "value": "bedrock"},
+        {"name": "CAMPY_LLM_MODEL", "value": "<BEDROCK_MODEL_OR_INFERENCE_PROFILE_ID>"},
+        {"name": "CAMPY_LLM_REGION", "value": "<REGION>"},
+        {"name": "CAMPY_IAM_TENANT_ID", "value": "<DEFAULT_TENANT_ID>"},
+        {"name": "CAMPY_IAM_WORKSPACE_ID", "value": "<DEFAULT_WORKSPACE_ID>"}
+      ],
+      "secrets": [
+        {"name": "CAMPY_IAM_WORKSPACE_MAP_JSON", "valueFrom": "arn:aws:ssm:<REGION>:<ACCOUNT_ID>:parameter/campy/iam_workspace_map"},
+        {"name": "CAMPY_IAM_TENANT_MAP_JSON", "valueFrom": "arn:aws:ssm:<REGION>:<ACCOUNT_ID>:parameter/campy/iam_tenant_map"},
+        {"name": "CAMPY_IAM_PRINCIPAL_SCOPE_MAP_JSON", "valueFrom": "arn:aws:ssm:<REGION>:<ACCOUNT_ID>:parameter/campy/iam_principal_scope_map"}
+      ],
+      "healthCheck": {
+        "command": ["CMD", "python", "-c", "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:7799/health', timeout=3).status == 200 else 1)"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 120
+      },
+      "stopTimeout": 60,
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/campy-memory",
+          "awslogs-region": "<REGION>",
+          "awslogs-stream-prefix": "campy",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+# B385: default config for the Campy container (deploy/Dockerfile). The
+# entrypoint copies it to $CAMPY_HOME/config.toml on first start; after that
+# the copy on the volume is the one used (edit it there). Anything not set
+# here takes the built-in default. Environment variables override this file
+# (campy/brain/brainstem/config.py::ENV_OVERRIDES) -- the ECS task definition
+# sets the deployment-specific ones.
+
+[llm]
+# Bedrock uses the task role's credentials (boto3 default chain); no key to
+# store. Set CAMPY_LLM_MODEL to a model your account can invoke -- many need
+# a cross-region inference profile id (us./eu./apac. prefix).
+provider = "bedrock"
+model = "SET-CAMPY_LLM_MODEL"
+
+[embeddings]
+provider = "sentence-transformers"
+model = "sentence-transformers/all-MiniLM-L6-v2"   # baked into the image
+offline = true                                     # never download at runtime
+
+[nlp]
+spacy_model = "en_core_web_md"                     # baked into the image
+
+[capture]
+enabled = false        # no local agent transcripts to capture in a container
+
+[daemon]
+restart_interval_hours = 0   # self-restart exits and relies on launchd; ECS would replace the task instead
+
+[watchdog]
+enabled = false        # samples macOS vmmap/footprint; use ECS memory limits instead
+
+[observability]
+enabled = false        # the default endpoint is a local Phoenix at 127.0.0.1:6006
+
+[web]
+port = 7799
+
+[server]
+bind_host = "0.0.0.0"
+auth = "iam"                 # the bind guard refuses 0.0.0.0 with auth = "none"
+dashboard_enabled = false    # /health, /mcp, /sse, /api/v1/* only

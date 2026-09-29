@@ -223,7 +223,8 @@ auth = "none"              # none | iam | oidc (oidc reserved/not yet implemente
 dashboard_enabled = true    # set false to mount only /health, /mcp, /sse and the REST API /api/v1/*
 # B385: containers can set these via env instead (env wins over this file):
 #   CAMPY_SERVER_AUTH, CAMPY_SERVER_BIND_HOST, CAMPY_SERVER_DASHBOARD_ENABLED,
-#   CAMPY_WEB_PORT, CAMPY_IAM_TENANT_ID, CAMPY_IAM_WORKSPACE_ID,
+#   CAMPY_WEB_PORT, CAMPY_LLM_PROVIDER, CAMPY_LLM_MODEL, CAMPY_LLM_REGION,
+#   CAMPY_LLM_BASE_URL, CAMPY_IAM_TENANT_ID, CAMPY_IAM_WORKSPACE_ID,
 #   CAMPY_IAM_WORKSPACE_MAP_JSON, CAMPY_IAM_TENANT_MAP_JSON,
 #   CAMPY_IAM_PRINCIPAL_SCOPE_MAP_JSON, CAMPY_IAM_DEFAULT_SCOPES_JSON
 
