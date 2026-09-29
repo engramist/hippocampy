@@ -26,8 +26,10 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -98,6 +100,17 @@ ARTIFACT_TABLES = [
 # local-workspace dashboard and is guarded in the auth middleware. /api/v1/*
 # (rest_api, per-workspace since B457) is matched by prefix there.
 _WORKSPACE_ROUTED_PATHS = frozenset({"/health", "/mcp", "/sse"})
+
+_HEALTH_STORAGE_TIMEOUT_S = 1.0  # well under clients' 2s /health timeout
+_started_at = time.monotonic()
+
+
+def _rss_mb() -> float | None:
+    try:
+        import psutil
+        return round(psutil.Process().memory_info().rss / (1024 * 1024), 1)
+    except Exception:
+        return None
 
 
 def create_app(db, config: dict | None = None, *, principal_resolver=None, router=None) -> FastAPI:
@@ -198,8 +211,30 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
 
     @app.get("/health")
     async def health():
-        """Lightweight liveness probe used by hook scripts and setup smoke tests."""
-        return {"status": "ok"}
+        """Liveness probe for hook scripts, setup smoke tests and load
+        balancers. Public (no auth), so it carries only low-sensitivity
+        fields. B385: adds version, uptime, RSS and a storage probe; if the
+        store can't be queried within 1s it answers 503 so a load balancer
+        takes the task out of service. Stores without a `ping()` (test
+        doubles) report storage "unknown" and stay 200."""
+        body = {
+            "status": "ok",
+            "version": WEB_VERSION,
+            "uptime_s": round(time.monotonic() - _started_at, 1),
+            "rss_mb": _rss_mb(),
+            "storage": "unknown",
+        }
+        ping = getattr(db, "ping", None)
+        if inspect.iscoroutinefunction(ping):
+            try:
+                await asyncio.wait_for(ping(), timeout=_HEALTH_STORAGE_TIMEOUT_S)
+                body["storage"] = "ok"
+            except Exception:
+                _logger.warning("health: storage probe failed", exc_info=True)
+                body["status"] = "unhealthy"
+                body["storage"] = "unreachable"
+                return JSONResponse(body, status_code=503)
+        return body
 
     @app.get("/", response_class=HTMLResponse)
     async def index():
@@ -946,10 +981,14 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
         app.routes.append(route)
 
     if not _dashboard_enabled:
+        # Minimal (cloud) surface: health, MCP, and the REST API. /api/v1/*
+        # stays: it is per-workspace since B457, and non-MCP clients use it
+        # (B385). Only the dashboard (UI, /api/*, /static, ...) is dropped.
         allowed_paths = {"/health", "/mcp", "/sse"}
         app.router.routes = [
             route for route in app.router.routes
             if getattr(route, "path", None) in allowed_paths
+            or str(getattr(route, "path", "")).startswith("/api/v1/")
         ]
 
     return app

@@ -58,7 +58,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B377 | Engine Migration: Kùzu to Embedded Oxigraph (RDF-star) + sqlite-vec Architecture | P0 | consolidated into B384 | TBD | TBD | - | backlog/B377.md |
 | B380 | Non-Provisional Patent Claim Verification & Audit Evidence Pack | P0 | complete — merged #153, tracker was stale | TBD | TBD | backlog/plans/B-380-patent-evidence-pack.md | backlog/B380.md |
 | B384 | PARENT: Featherweight Engine Foundation: Pure ONNX Ingestion + Oxigraph (RDF-star) + sqlite-vec Architecture | P0 | superseded by B387, B389, B390, B391-B396, B397 | TBD | TBD | backlog/plans/B-384-featherweight-engine-foundation.md | backlog/B384.md |
-| B385 | Cloud Deployment Foundation & Multi-Tenant Agent Memory Service (AWS ECS/Fargate) | P0 | ready (reopened 2026-09-29: never implemented, see card audit) | TBD | TBD | backlog/plans/B-385-cloud-multi-tenant-service.md | backlog/B385.md |
+| B385 | Cloud Deployment Foundation & Multi-Tenant Agent Memory Service (AWS ECS/Fargate) | P0 | in-progress (code side done; deploy/ assets next) | TBD | TBD | backlog/plans/B-385-cloud-multi-tenant-service.md | backlog/B385.md |
 | B386 | GraphGateway Chokepoint Completion & Raw-Cypher Ratchet to Zero | P0 | complete — subsumed by B389/B397 cutover, tracker was stale | TBD | TBD | backlog/plans/B-386-gateway-chokepoint-completion.md | backlog/B386.md |
 | B387 | Torch-Free Ingestion Plane: Replace spaCy NER/Parse with ONNX | P0 | superseded by B400 (done) | TBD | TBD | - | backlog/B387.md |
 | B389 | OxigraphClient: RDF-star Store & Edge Reification Classification | P0 | complete | TBD | TBD | - | backlog/B389.md |
