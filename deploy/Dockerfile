@@ -33,7 +33,11 @@ RUN pip install -r /tmp/requirements.txt \
 # Bake the embedding model (the one [embeddings].model names) so the runtime
 # never downloads it.
 ARG EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
-RUN python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='${EMBEDDING_MODEL}')"
+# The Hugging Face cache writes some files owner-only (0600) as root; make the
+# tree world-readable so the runtime user (UID 1000) can read all of it. It
+# stays root-owned: the runtime never needs to write to it.
+RUN python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='${EMBEDDING_MODEL}')" \
+ && chmod -R a+rX /opt/campy-models
 
 # ---- runtime ----------------------------------------------------------------
 FROM ${PYTHON_IMAGE}

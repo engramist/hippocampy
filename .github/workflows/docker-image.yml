@@ -53,9 +53,11 @@ jobs:
           test "$uid" = "1000"
 
       # --network none: proves both models are baked into the image and
-      # load with no network at all (HF_HUB_OFFLINE=1 at runtime).
+      # load with no network at all (HF_HUB_OFFLINE=1 at runtime). Also fails
+      # on a "Permission denied" reading the model cache as UID 1000.
       - name: Models load offline
         run: |
+          set -o pipefail
           docker run --rm --network none --entrypoint python "$IMAGE" -c "
           import os, spacy
           from fastembed import TextEmbedding
@@ -63,7 +65,10 @@ jobs:
           TextEmbedding(model_name='sentence-transformers/all-MiniLM-L6-v2', local_files_only=True)
           assert os.environ['HF_HUB_OFFLINE'] == '1'
           print('models OK offline')
-          "
+          " 2>&1 | tee models.log
+          if grep -q "Permission denied" models.log; then
+            echo "model cache not readable by the runtime user"; exit 1
+          fi
 
       # Boot the daemon on a named volume (standing in for EFS) with the
       # image's defaults: IAM auth, 0.0.0.0, dashboard off. The LLM model is
