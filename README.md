@@ -173,11 +173,13 @@ agents/tenants over HTTP instead of a local Unix socket — the same
 specifically for that topology:
 
 - **Streamable-HTTP MCP transport** (`POST /mcp`, MCP spec 2025-03-26)
-  alongside the existing local Unix-socket transport — both now dispatch
-  through the same `route_tool_call()` chokepoint, so auth and workspace
-  routing apply identically regardless of which transport a request came in
-  on. Any MCP-speaking agent framework can talk to it — AWS Bedrock
-  AgentCore, Strands, LangGraph, CrewAI, not just Claude-family clients.
+  alongside the existing local Unix-socket transport. Both, and the REST API
+  (`/api/v1/*`), dispatch through the same `route_tool_call()` chokepoint,
+  so auth, scopes and workspace routing apply identically whichever way a
+  request comes in. The web dashboard is a local-workspace operator UI: with
+  auth on, it serves only principals of the `local` workspace. Any
+  MCP-speaking agent framework can talk to it — AWS Bedrock AgentCore,
+  Strands, LangGraph, CrewAI, not just Claude-family clients.
 - **IAM-based identity.** `IAMPrincipalResolver` verifies a SigV4-signed
   request by replaying it against AWS STS `GetCallerIdentity` and maps the
   caller to a `Principal` — no separate API keys or tokens for Campy to
