@@ -38,8 +38,15 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from campy.brain.auth import LocalSingleUserResolver, Principal, TransportContext
+from campy.brain.auth import (
+    SCOPE_MEMORY_READ,
+    SCOPE_MEMORY_WRITE,
+    LocalSingleUserResolver,
+    Principal,
+    TransportContext,
+)
 from campy.brain.hippocampus.graph.gateway import get_gateway
+from campy.brain.hippocampus.graph.router import LOCAL_WORKSPACE_ID
 from web.routes.metrics import register_token_metrics_routes
 
 _logger = logging.getLogger(__name__)
@@ -85,6 +92,13 @@ ARTIFACT_TABLES = [
 # ---------------------------------------------------------------------------
 # App factory
 # ---------------------------------------------------------------------------
+
+# B457: HTTP paths that are NOT the dashboard: they resolve the caller's own
+# workspace themselves (or, /health, touch no memory). Everything else is the
+# local-workspace dashboard and is guarded in the auth middleware. /api/v1/*
+# (rest_api, per-workspace since B457) is matched by prefix there.
+_WORKSPACE_ROUTED_PATHS = frozenset({"/health", "/mcp", "/sse"})
+
 
 def create_app(db, config: dict | None = None, *, principal_resolver=None, router=None) -> FastAPI:
     """
@@ -149,6 +163,27 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
             return JSONResponse({"detail": f"Unauthorized: {e}"}, status_code=401)
 
         request.state.principal = principal
+
+        # B457: the dashboard (UI, /api/*, /memory/*, /static, and any route
+        # added later) reads and writes the daemon's fixed "local" database,
+        # not a per-workspace one. With auth on, serve it only to principals
+        # of that workspace, holding the scope the method needs. Everything
+        # else is routed per workspace itself (/mcp, /sse via _dispatch_mcp;
+        # /api/v1/* via rest_api) or is public (/health). An allowlist, so a
+        # new route is guarded by default.
+        path = request.url.path
+        if not (path in _WORKSPACE_ROUTED_PATHS or path.startswith("/api/v1/")):
+            if principal.workspace_id != LOCAL_WORKSPACE_ID:
+                return JSONResponse(
+                    {"detail": "The dashboard serves the local workspace only; "
+                               f"principal workspace is {principal.workspace_id!r}."},
+                    status_code=403,
+                )
+            needed = SCOPE_MEMORY_READ if request.method.upper() in ("GET", "HEAD") else SCOPE_MEMORY_WRITE
+            try:
+                principal.require(needed)
+            except PermissionError as e:
+                return JSONResponse({"detail": str(e)}, status_code=403)
         return await call_next(request)
 
     # Serve static assets (CSS, JS, icons)
@@ -902,7 +937,9 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
     # ------------------------------------------------------------------
     from campy.brain.brainstem.rest_api import create_router
     
-    rest_routes = create_router(db=db, config=_config)
+    # B457: per-request principal + workspace routing, as /mcp does.
+    rest_routes = create_router(db=db, config=_config, router=_router,
+                                principal_resolver=_principal_resolver)
     for route in rest_routes:
         app.routes.append(route)
 

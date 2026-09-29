@@ -24,21 +24,64 @@ def _err(message: str, status: int = 400) -> JSONResponse:
     return JSONResponse({"ok": False, "error": message}, status_code=status)
 
 
-def create_router(db=None, config: dict = None):
-    """Create the REST API route list. db and config are injected at mount time."""
+def _result_response(result: dict) -> JSONResponse:
+    """Map a `_call_tool` result to a response: `error` -> an error with the
+    status `_call_tool` chose (500 for a handler failure), else success."""
+    if "error" in result:
+        return _err(result["error"], result.get("_http_status", 500))
+    return _ok(result)
 
-    async def _call_tool(tool_name: str, arguments: dict) -> dict:
-        """Call an MCP tool handler directly."""
-        from campy.brain.thalamus.tools import TOOL_HANDLERS
-        handler = TOOL_HANDLERS.get(tool_name)
-        if handler is None:
-            return {"error": f"Unknown tool: {tool_name}"}
+
+def create_router(db=None, config: dict = None, *, router=None, principal_resolver=None):
+    """Create the REST API route list. db and config are injected at mount time.
+
+    B457: every tool call resolves its principal per request (set by the HTTP
+    auth middleware, or the local single-user principal when auth is off) and
+    dispatches through `campy.brain_daemon.route_tool_call` -- the same
+    chokepoint the socket and `/mcp` transports use -- so REST gets the same
+    B315 forbidden-key guard and B424 scope enforcement. When `router` (a
+    `WorkspaceRouter`) is given, the database comes from it, keyed on
+    `principal.workspace_id`, exactly as `/mcp` does; `router=None` keeps the
+    fixed `db` (pre-B316 behaviour, tests without a router). Previously every
+    REST call ran against the fixed `db` whatever the caller's workspace.
+    """
+
+    async def _principal(request: Request):
+        principal = getattr(request.state, "principal", None)
+        if principal is not None:
+            return principal
+        from campy.brain.auth import LocalSingleUserResolver, TransportContext
+        resolver = principal_resolver or LocalSingleUserResolver()
+        return await resolver.resolve(TransportContext(transport="http", headers=dict(request.headers)))
+
+    async def _call_tool(request: Request, tool_name: str, arguments: dict) -> dict:
+        """Invoke an MCP tool through the shared chokepoint, in the caller's
+        workspace. Errors come back as {"error", "_http_status"}."""
+        from campy.brain_daemon import ForbiddenParamError, UnknownMethodError, route_tool_call
         try:
-            result = await handler(params=arguments, db=db, config=config or {})
-            return result
+            principal = await _principal(request)
+        except Exception as e:
+            return {"error": f"Unauthorized: {e}", "_http_status": 401}
+        tool_db = db
+        if router is not None:
+            try:
+                tool_db = await router.get(principal.workspace_id)
+            except ValueError as e:
+                return {"error": f"Invalid workspace: {e}", "_http_status": 400}
+        try:
+            return await route_tool_call(tool_name, arguments, tool_db, config or {}, principal)
+        except PermissionError as e:
+            return {"error": str(e), "_http_status": 403}
+        except UnknownMethodError:
+            return {"error": f"Unknown tool: {tool_name}", "_http_status": 404}
+        except ForbiddenParamError as e:
+            return {"error": str(e), "_http_status": 400}
         except Exception as e:
             logger.exception(f"Tool {tool_name} failed")
             return {"error": str(e)}
+        finally:
+            if router is not None:
+                router.release(principal.workspace_id)
 
     async def recall_endpoint(request: Request) -> JSONResponse:
         """GET /api/v1/recall?q=<query>&scope=both"""
@@ -47,12 +90,10 @@ def create_router(db=None, config: dict = None):
             return _err("Missing required parameter: q")
         scope = request.query_params.get("scope", "both")
         session_id = request.query_params.get("session_id", "rest-api")
-        result = await _call_tool("current_truth", {
+        result = await _call_tool(request, "current_truth", {
             "query": query, "scope": scope, "session_id": session_id,
         })
-        if "error" in result:
-            return _err(result["error"], 500)
-        return _ok(result)
+        return _result_response(result)
 
     async def bundle_endpoint(request: Request) -> JSONResponse:
         """POST /api/v1/bundle — body: {query, token_budget?, agent_type?}"""
@@ -63,14 +104,12 @@ def create_router(db=None, config: dict = None):
         query = body.get("query", "")
         if not query:
             return _err("Missing required field: query")
-        result = await _call_tool("compile_context", {
+        result = await _call_tool(request, "compile_context", {
             "query": query,
             "token_budget": body.get("token_budget", 32000),
             "agent_type": body.get("agent_type", "generic"),
         })
-        if "error" in result:
-            return _err(result["error"], 500)
-        return _ok(result)
+        return _result_response(result)
 
     async def timeline_endpoint(request: Request) -> JSONResponse:
         """GET /api/v1/timeline?since=<ISO>&limit=20"""
@@ -81,20 +120,16 @@ def create_router(db=None, config: dict = None):
         quest_id = request.query_params.get("quest_id")
         if quest_id:
             args["quest_id"] = quest_id
-        result = await _call_tool("reconstruct_timeline", args)
-        if "error" in result:
-            return _err(result["error"], 500)
-        return _ok(result)
+        result = await _call_tool(request, "reconstruct_timeline", args)
+        return _result_response(result)
 
     async def diff_endpoint(request: Request) -> JSONResponse:
         """GET /api/v1/diff?since=<ISO>"""
         since = request.query_params.get("since")
         if not since:
             return _err("Missing required parameter: since")
-        result = await _call_tool("diff_since", {"since_iso": since})
-        if "error" in result:
-            return _err(result["error"], 500)
-        return _ok(result)
+        result = await _call_tool(request, "diff_since", {"since_iso": since})
+        return _result_response(result)
 
     async def decide_endpoint(request: Request) -> JSONResponse:
         """POST /api/v1/decide — body: {query, session_id?}"""
@@ -108,18 +143,14 @@ def create_router(db=None, config: dict = None):
         args = {"query": query}
         if body.get("session_id"):
             args["session_id"] = body["session_id"]
-        result = await _call_tool("memory_decision", args)
-        if "error" in result:
-            return _err(result["error"], 500)
-        return _ok(result)
+        result = await _call_tool(request, "memory_decision", args)
+        return _result_response(result)
 
     async def status_endpoint(request: Request) -> JSONResponse:
         """GET /api/v1/status?session_id=<id>"""
         session_id = request.query_params.get("session_id", "rest-api")
-        result = await _call_tool("context_status", {"session_id": session_id})
-        if "error" in result:
-            return _err(result["error"], 500)
-        return _ok(result)
+        result = await _call_tool(request, "context_status", {"session_id": session_id})
+        return _result_response(result)
 
     async def notify_endpoint(request: Request) -> JSONResponse:
         """POST /api/v1/notify — body: {role, content, session_id?}"""
@@ -131,14 +162,12 @@ def create_router(db=None, config: dict = None):
         content = body.get("content", "")
         if not role or not content:
             return _err("Missing required fields: role, content")
-        result = await _call_tool("notify_turn", {
+        result = await _call_tool(request, "notify_turn", {
             "role": role,
             "content": content,
             "session_id": body.get("session_id", "rest-api"),
         })
-        if "error" in result:
-            return _err(result["error"], 500)
-        return _ok(result)
+        return _result_response(result)
 
     async def tools_endpoint(request: Request) -> JSONResponse:
         """GET /api/v1/tools — list available tools"""

@@ -286,8 +286,6 @@ async def test_hermes_adapter_calls_real_app_routes_via_asgi_transport():
     """Integration guard: exercise adapter calls against create_app() routes,
     not a fully mocked transport, so route drift is caught by tests."""
     import httpx
-    import sys
-    import types
 
     from adapters.hermes.adapter import HermesAdapter
     from web.server import create_app
@@ -305,28 +303,30 @@ async def test_hermes_adapter_calls_real_app_routes_via_asgi_transport():
 
     app = create_app(_EmptyDB(), config={"server": {"auth": "none"}})
 
-    async def _current_truth(*, params, db, config):
+    # B457: REST now dispatches through campy.brain_daemon.route_tool_call
+    # (the shared chokepoint), which calls handlers positionally from its
+    # own TOOL_HANDLERS -- so stub that dict, with the real handlers'
+    # (params, db, config, **kw) signature.
+    async def _current_truth(params, db, config, **kw):
         return {"results": [{"fact": params["query"]}], "session_id": params.get("session_id")}
 
-    async def _memory_decision(*, params, db, config):
+    async def _memory_decision(params, db, config, **kw):
         return {"recommended_tool": "compile_context", "query": params["query"]}
 
-    async def _notify_turn(*, params, db, config):
+    async def _notify_turn(params, db, config, **kw):
         return {"status": "queued", "session_id": params.get("session_id")}
 
-    async def _compile_context(*, params, db, config):
+    async def _compile_context(params, db, config, **kw):
         return {"bundle": {"query": params["query"], "agent_type": params.get("agent_type", "generic")}}
 
-    fake_tools_module = types.SimpleNamespace(
-        TOOL_HANDLERS={
-            "current_truth": _current_truth,
-            "memory_decision": _memory_decision,
-            "notify_turn": _notify_turn,
-            "compile_context": _compile_context,
-        }
-    )
+    import campy.brain_daemon as brain_daemon
 
-    with patch.dict(sys.modules, {"campy.brain.thalamus.tools": fake_tools_module}):
+    with patch.dict(brain_daemon.TOOL_HANDLERS, {
+        "current_truth": _current_truth,
+        "memory_decision": _memory_decision,
+        "notify_turn": _notify_turn,
+        "compile_context": _compile_context,
+    }):
         def _client_factory():
             return httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app),
