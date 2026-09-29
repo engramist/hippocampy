@@ -60,8 +60,9 @@ def create_router(db=None, config: dict = None, *, router=None, principal_resolv
         from campy.brain_daemon import ForbiddenParamError, UnknownMethodError, route_tool_call
         try:
             principal = await _principal(request)
-        except Exception as e:
-            return {"error": f"Unauthorized: {e}", "_http_status": 401}
+        except Exception:
+            logger.warning("REST principal resolution failed", exc_info=True)
+            return {"error": "Unauthorized", "_http_status": 401}
         tool_db = db
         if router is not None:
             try:
@@ -70,12 +71,16 @@ def create_router(db=None, config: dict = None, *, router=None, principal_resolv
                 return {"error": f"Invalid workspace: {e}", "_http_status": 400}
         try:
             return await route_tool_call(tool_name, arguments, tool_db, config or {}, principal)
-        except PermissionError as e:
-            return {"error": str(e), "_http_status": 403}
+        except PermissionError:
+            # Fixed message (no exception text): name only the missing scope.
+            from campy.brain.auth import required_scope_for
+            return {"error": f"Forbidden: {tool_name} needs the {required_scope_for(tool_name)!r} scope.",
+                    "_http_status": 403}
         except UnknownMethodError:
             return {"error": f"Unknown tool: {tool_name}", "_http_status": 404}
         except ForbiddenParamError as e:
-            return {"error": str(e), "_http_status": 400}
+            return {"error": f"Invalid params: {e.key!r} must not be supplied by the caller",
+                    "_http_status": 400}
         except Exception as e:
             logger.exception(f"Tool {tool_name} failed")
             return {"error": str(e)}

@@ -180,10 +180,12 @@ def create_app(db, config: dict | None = None, *, principal_resolver=None, route
                     status_code=403,
                 )
             needed = SCOPE_MEMORY_READ if request.method.upper() in ("GET", "HEAD") else SCOPE_MEMORY_WRITE
-            try:
-                principal.require(needed)
-            except PermissionError as e:
-                return JSONResponse({"detail": str(e)}, status_code=403)
+            if needed not in principal.scopes:
+                # Fixed message: never echo exception text to the caller.
+                return JSONResponse(
+                    {"detail": f"Forbidden: this request needs the {needed!r} scope."},
+                    status_code=403,
+                )
         return await call_next(request)
 
     # Serve static assets (CSS, JS, icons)
