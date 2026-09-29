@@ -1,0 +1,110 @@
+name: Container image
+
+# B385: build the deploy/Dockerfile image and boot it, on the CI runner only.
+# Nothing is pushed to any registry and no cloud credentials are used: the
+# image is built, checked, started, probed and thrown away. This is what
+# verifies B385's "builds cleanly, runs as non-root UID 1000, starts with
+# FastEmbed pre-cached in offline mode" criterion, and keeps it true as the
+# code changes.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths: &image_paths
+      - "deploy/**"
+      - "requirements.txt"
+      - ".dockerignore"
+      - "campy/**"
+      - "web/**"
+      - "adapters/**"
+      - ".github/workflows/docker-image.yml"
+  push:
+    branches: [main]
+    paths: *image_paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-boot:
+    name: build and boot
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IMAGE: campy:ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
+
+      - name: Build image
+        run: docker build -f deploy/Dockerfile -t "$IMAGE" .
+
+      - name: Runs as non-root UID 1000
+        run: |
+          uid=$(docker run --rm --entrypoint id "$IMAGE" -u)
+          echo "uid=$uid"
+          test "$uid" = "1000"
+
+      # --network none: proves both models are baked into the image and
+      # load with no network at all (HF_HUB_OFFLINE=1 at runtime).
+      - name: Models load offline
+        run: |
+          docker run --rm --network none --entrypoint python "$IMAGE" -c "
+          import os, spacy
+          from fastembed import TextEmbedding
+          spacy.load('en_core_web_md')
+          TextEmbedding(model_name='sentence-transformers/all-MiniLM-L6-v2', local_files_only=True)
+          assert os.environ['HF_HUB_OFFLINE'] == '1'
+          print('models OK offline')
+          "
+
+      # Boot the daemon on a named volume (standing in for EFS) with the
+      # image's defaults: IAM auth, 0.0.0.0, dashboard off. The LLM model is
+      # a placeholder -- startup doesn't call the LLM, and no AWS credentials
+      # are present, so nothing can reach a real account.
+      - name: Boot and probe /health
+        run: |
+          docker volume create campy-ci
+          docker run -d --name campy -p 127.0.0.1:7799:7799 \
+            -v campy-ci:/data/campy \
+            -e CAMPY_LLM_MODEL=ci-placeholder -e CAMPY_LLM_REGION=us-east-1 \
+            "$IMAGE"
+          for i in $(seq 1 90); do
+            if body=$(curl -sf http://127.0.0.1:7799/health); then break; fi
+            if [ "$(docker inspect -f '{{.State.Running}}' campy)" != "true" ]; then
+              echo "container exited"; exit 1
+            fi
+            sleep 2
+          done
+          echo "health: ${body:-<none>}"
+          echo "$body" | jq -e '.status == "ok" and .storage == "ok"'
+
+      - name: Config seeded on the volume
+        run: docker exec campy test -f /data/campy/config.toml
+
+      # IAM auth is on and no credentials are sent: the REST API must refuse.
+      - name: REST API requires auth
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7799/api/v1/tools)
+          echo "unauthenticated /api/v1/tools -> $code"
+          test "$code" = "401"
+
+      - name: Daemon logs (on failure)
+        if: failure()
+        run: |
+          docker logs campy 2>&1 | tail -n 200 || true
+          docker run --rm -v campy-ci:/d --entrypoint sh "$IMAGE" -c \
+            'tail -n 200 /d/daemon.boot.log /d/daemon.log 2>/dev/null' || true
+
+      - name: Clean up
+        if: always()
+        run: |
+          docker rm -f campy >/dev/null 2>&1 || true
+          docker volume rm campy-ci >/dev/null 2>&1 || true
