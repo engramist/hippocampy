@@ -58,7 +58,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B377 | Engine Migration: Kùzu to Embedded Oxigraph (RDF-star) + sqlite-vec Architecture | P0 | consolidated into B384 | TBD | TBD | - | backlog/B377.md |
 | B380 | Non-Provisional Patent Claim Verification & Audit Evidence Pack | P0 | complete — merged #153, tracker was stale | TBD | TBD | backlog/plans/B-380-patent-evidence-pack.md | backlog/B380.md |
 | B384 | PARENT: Featherweight Engine Foundation: Pure ONNX Ingestion + Oxigraph (RDF-star) + sqlite-vec Architecture | P0 | superseded by B387, B389, B390, B391-B396, B397 | TBD | TBD | backlog/plans/B-384-featherweight-engine-foundation.md | backlog/B384.md |
-| B385 | Cloud Deployment Foundation & Multi-Tenant Agent Memory Service (AWS ECS/Fargate) | P0 | complete | TBD | TBD | backlog/plans/B-385-cloud-multi-tenant-service.md | backlog/B385.md |
+| B385 | Cloud Deployment Foundation & Multi-Tenant Agent Memory Service (AWS ECS/Fargate) | P0 | ready (reopened 2026-09-29: never implemented, see card audit) | TBD | TBD | backlog/plans/B-385-cloud-multi-tenant-service.md | backlog/B385.md |
 | B386 | GraphGateway Chokepoint Completion & Raw-Cypher Ratchet to Zero | P0 | complete — subsumed by B389/B397 cutover, tracker was stale | TBD | TBD | backlog/plans/B-386-gateway-chokepoint-completion.md | backlog/B386.md |
 | B387 | Torch-Free Ingestion Plane: Replace spaCy NER/Parse with ONNX | P0 | superseded by B400 (done) | TBD | TBD | - | backlog/B387.md |
 | B389 | OxigraphClient: RDF-star Store & Edge Reification Classification | P0 | complete | TBD | TBD | - | backlog/B389.md |
@@ -80,6 +80,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B407 | Inference Pilot: Prove the RDF Thesis Before the Engine Cutover | P0 | complete | TBD | TBD | - | backlog/B407.md |
 | B408 | Stale-Base Guard: Make Silent Reverts Unmergeable | P0 | complete | TBD | TBD | - | backlog/B408.md |
 | B411 | Exhaustive Migration Fixture: Round-Trip Every Node and Edge Type | P0 | complete | TBD | TBD | - | backlog/B411.md |
+| B457 | HTTP REST and Dashboard Routes Ignore the Caller's Workspace (Cross-Tenant Access in Multi-Tenant Mode) | P1 | ready | TBD | TBD | - | backlog/B457.md |
 | B456 | CAMPY_HOME: Fully Isolated Runtime Dir (Benchmarks Must Not Use the Personal Store) | P1 | fixed | TBD | TBD | - | backlog/B456.md |
 | B455 | Running the Test Suite Kills the Developer's Live Daemon | P2 | fixed | TBD | TBD | - | backlog/B455.md |
 | B454 | Retrieval/Consolidation Quality: Benchmark Facts Are Stored But Not Retrievable via ask/compile_context | P1 | fixed | TBD | TBD | - | backlog/B454.md |
