@@ -1176,6 +1176,13 @@ class OxigraphClient:
     async def execute_read(self, sparql: str, params: dict[str, Any] | None = None):
         return await asyncio.to_thread(self._execute_and_collect, sparql, params)
 
+    async def ping(self) -> bool:
+        """B385: cheap storage liveness probe for GET /health. A lock-free
+        read (reads don't take the write lock), so a long write can't make
+        a healthy store look dead. Raises if the store can't be queried."""
+        await self.execute_read("ASK { ?s ?p ?o }")
+        return True
+
     def backfill_explicit_status(self) -> int:
         """Backfill explicit status on all existing nodes (§3.4a, §4.2f).
 

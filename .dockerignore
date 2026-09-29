@@ -1,0 +1,12 @@
+# B385: keep the image to what the daemon runs (see deploy/Dockerfile).
+.git
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+tests
+docs
+backlog
+benchmarks
+web/node_modules
+*.log

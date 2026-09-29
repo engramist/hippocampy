@@ -7,6 +7,8 @@ Returns a plain dict — all modules read config from this dict.
 
 from __future__ import annotations
 import copy
+import json
+import os
 import sys
 from pathlib import Path
 
@@ -102,6 +104,95 @@ def _merge_defaults(config: dict, defaults: dict) -> dict:
     return config
 
 
+# ---------------------------------------------------------------------------
+# B385: 12-factor environment overrides. A container sets these instead of
+# editing campy.toml. Applied after the file and defaults are loaded, so an
+# env var always wins. A malformed value fails loudly at startup, naming the
+# variable, rather than silently falling back to the file.
+# ---------------------------------------------------------------------------
+
+def _parse_bool(raw: str) -> bool:
+    low = raw.strip().lower()
+    if low in {"1", "true", "yes", "on"}:
+        return True
+    if low in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError("expected true/false")
+
+
+def _parse_json_str_map(raw: str) -> dict:
+    value = json.loads(raw)
+    if not isinstance(value, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in value.items()
+    ):
+        raise ValueError("expected a JSON object of string -> string")
+    return value
+
+
+def _parse_json_scope_map(raw: str) -> dict:
+    value = json.loads(raw)
+    if not isinstance(value, dict) or not all(
+        isinstance(k, str) and isinstance(v, list) and all(isinstance(x, str) for x in v)
+        for k, v in value.items()
+    ):
+        raise ValueError("expected a JSON object of string -> list of strings")
+    return value
+
+
+def _parse_json_str_list(raw: str) -> list:
+    value = json.loads(raw)
+    if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+        raise ValueError("expected a JSON list of strings")
+    return value
+
+
+def _parse_port(raw: str) -> int:
+    port = int(raw)
+    if not 1 <= port <= 65535:
+        raise ValueError("expected a port number 1-65535")
+    return port
+
+
+# env var -> (config section, key, parser)
+ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
+    "CAMPY_SERVER_AUTH": ("server", "auth", str.strip),
+    "CAMPY_SERVER_BIND_HOST": ("server", "bind_host", str.strip),
+    "CAMPY_SERVER_DASHBOARD_ENABLED": ("server", "dashboard_enabled", _parse_bool),
+    "CAMPY_WEB_PORT": ("web", "port", _parse_port),
+    "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
+    "CAMPY_LLM_MODEL": ("llm", "model", str.strip),
+    "CAMPY_LLM_REGION": ("llm", "region", str.strip),
+    "CAMPY_LLM_BASE_URL": ("llm", "base_url", str.strip),
+    "CAMPY_IAM_TENANT_ID": ("server", "iam_tenant_id", str.strip),
+    "CAMPY_IAM_WORKSPACE_ID": ("server", "iam_workspace_id", str.strip),
+    "CAMPY_IAM_WORKSPACE_MAP_JSON": ("server", "iam_workspace_map", _parse_json_str_map),
+    "CAMPY_IAM_TENANT_MAP_JSON": ("server", "iam_tenant_map", _parse_json_str_map),
+    "CAMPY_IAM_PRINCIPAL_SCOPE_MAP_JSON": ("server", "iam_principal_scope_map", _parse_json_scope_map),
+    "CAMPY_IAM_DEFAULT_SCOPES_JSON": ("server", "iam_default_scopes", _parse_json_str_list),
+}
+
+
+def apply_env_overrides(config: dict, environ=None) -> dict:
+    """Apply ENV_OVERRIDES to `config` in place and return it. Records the
+    names (never the values) of applied variables in `_env_overrides`."""
+    environ = os.environ if environ is None else environ
+    applied = []
+    for var, (section, key, parse) in ENV_OVERRIDES.items():
+        raw = environ.get(var)
+        if raw is None or raw == "":
+            continue
+        try:
+            value = parse(raw)
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"invalid {var}: {e}") from None
+        if not isinstance(config.get(section), dict):
+            config[section] = {}
+        config[section][key] = value
+        applied.append(var)
+    config["_env_overrides"] = applied
+    return config
+
+
 def load_config(config_path: str | Path | None = None) -> dict:
     """
     Load campy.toml. Searches in order:
@@ -128,7 +219,7 @@ def load_config(config_path: str | Path | None = None) -> dict:
             config = tomllib.load(f)
         _merge_defaults(config, _DEFAULT_CONFIG)
         config["_config_path"] = str(explicit)
-        return config
+        return apply_env_overrides(config)
 
     # No explicit path — search default locations.
     from campy.paths import home_override
@@ -152,7 +243,7 @@ def load_config(config_path: str | Path | None = None) -> dict:
                 config = tomllib.load(f)
             _merge_defaults(config, _DEFAULT_CONFIG)
             config["_config_path"] = str(path)
-            return config
+            return apply_env_overrides(config)
 
     raise FileNotFoundError(
         "campy/sidequests config not found. Run: campy setup"
