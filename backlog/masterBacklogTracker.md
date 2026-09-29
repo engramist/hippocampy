@@ -80,6 +80,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B407 | Inference Pilot: Prove the RDF Thesis Before the Engine Cutover | P0 | complete | TBD | TBD | - | backlog/B407.md |
 | B408 | Stale-Base Guard: Make Silent Reverts Unmergeable | P0 | complete | TBD | TBD | - | backlog/B408.md |
 | B411 | Exhaustive Migration Fixture: Round-Trip Every Node and Edge Type | P0 | complete | TBD | TBD | - | backlog/B411.md |
+| B456 | CAMPY_HOME: Fully Isolated Runtime Dir (Benchmarks Must Not Use the Personal Store) | P1 | fixed | TBD | TBD | - | backlog/B456.md |
 | B455 | Running the Test Suite Kills the Developer's Live Daemon | P2 | fixed | TBD | TBD | - | backlog/B455.md |
 | B454 | Retrieval/Consolidation Quality: Benchmark Facts Are Stored But Not Retrievable via ask/compile_context | P1 | fixed | TBD | TBD | - | backlog/B454.md |
 | B453 | Daemon Cold Start Takes 4-7 Minutes (Store Open + Gist-Centroid Recompute Every Start) | P2 | fixed | TBD | TBD | - | backlog/B453.md |

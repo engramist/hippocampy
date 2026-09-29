@@ -141,7 +141,12 @@ from campy.brain.llm.provider import create_llm_client
 from campy.brain.temporal_lobe.loop import step2_gist, step3_schema_org
 from campy.brain.temporal_lobe.loop.orchestrator import run_loop
 from campy.brain.brainstem.sweep import run_sweep
-from campy.paths import get_daemon_socket_path, get_database_path, get_workspace_root
+from campy.paths import (
+    get_daemon_socket_path,
+    get_database_path,
+    get_workspace_root,
+    primary_runtime_dir,
+)
 
 SOCKET_PATH = get_daemon_socket_path()
 DB_PATH     = get_database_path()
@@ -532,7 +537,7 @@ def _vmmap_swap_summary() -> str:
 # on the production process again.
 # ---------------------------------------------------------------------------
 
-_MEMORY_DEBUG_LOG = Path.home() / ".campy" / "memory_debug.log"
+_MEMORY_DEBUG_LOG = primary_runtime_dir() / "memory_debug.log"
 _last_type_counts = None
 
 

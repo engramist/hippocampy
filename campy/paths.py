@@ -7,6 +7,7 @@ existing memory databases from surprise moves.
 
 from __future__ import annotations
 
+import os
 from importlib import resources
 from pathlib import Path
 
@@ -18,23 +19,44 @@ from campy.branding import (
 )
 
 
+#: Environment variable that relocates ALL runtime state (socket, graph store,
+#: vector/FTS index, logs, offline queue, config lookup). Used to run a fully
+#: isolated daemon -- e.g. an external benchmark run that must not read or
+#: write the user's personal memory (campy-benchmarks' isolated mode).
+CAMPY_HOME_ENV = "CAMPY_HOME"
+
+
+def home_override() -> Path | None:
+    """Return the ``CAMPY_HOME`` directory if set, else None. Not created."""
+    value = os.environ.get(CAMPY_HOME_ENV)
+    return Path(value).expanduser() if value else None
+
+
 def legacy_runtime_dir() -> Path:
     """Return the legacy SideQuests runtime directory without creating it."""
     return Path.home() / LEGACY_RUNTIME_DIR
 
 
 def primary_runtime_dir() -> Path:
-    """Return the primary HippoCampy runtime directory without creating it."""
-    return Path.home() / PRIMARY_RUNTIME_DIR
+    """Return the primary HippoCampy runtime directory without creating it.
+
+    ``CAMPY_HOME`` wins when set."""
+    return home_override() or Path.home() / PRIMARY_RUNTIME_DIR
 
 
 def runtime_dir() -> Path:
     """Get or create the active runtime data directory.
 
-    Fresh installs create ``~/.campy``. If ``~/.sidequests`` already exists and
-    ``~/.campy`` does not, continue using the legacy path to avoid moving or
-    duplicating user memory data implicitly.
+    ``CAMPY_HOME``, when set, is used as-is with no legacy fallback, so an
+    isolated instance can never land in ``~/.campy`` or ``~/.sidequests``.
+    Otherwise fresh installs create ``~/.campy``; if ``~/.sidequests``
+    already exists and ``~/.campy`` does not, continue using the legacy path
+    to avoid moving or duplicating user memory data implicitly.
     """
+    override = home_override()
+    if override is not None:
+        override.mkdir(parents=True, exist_ok=True, mode=0o700)
+        return override
     primary = primary_runtime_dir()
     legacy = legacy_runtime_dir()
     runtime = legacy if legacy.exists() and not primary.exists() else primary
@@ -149,6 +171,8 @@ def ensure_runtime_paths() -> None:
 
 
 __all__ = [
+    "CAMPY_HOME_ENV",
+    "home_override",
     "legacy_runtime_dir",
     "primary_runtime_dir",
     "runtime_dir",
