@@ -1,0 +1,135 @@
+# B458 — Save-gate artifact category specification.
+#
+# What each Step 4 artifact category means. Step 4
+# (campy/brain/temporal_lobe/loop/step4_pattern.py) decides whether a statement
+# is saved as a Decision, Constraint, Requirement or ActionItem node, or not
+# saved as an artifact at all ("none"). Until this file, those categories were
+# defined only by regex lists.
+#
+# Classification is single-label: every statement gets exactly one category.
+# When a statement fits more than one, `precedence` decides (first match wins).
+#
+# The test for every category is what a future session needs to recall:
+# label a statement by the kind of memory that would change what an agent
+# does later.
+#
+# Consumers: benchmarks/save_gate (B458 labeled set and baseline).
+# Runtime use (classifier criteria, graph seeding) arrives with B460.
+# Loaded and validated by campy/brain/temporal_lobe/category_spec.py.
+
+version: 1
+
+precedence: [constraint, decision, requirement, action_item, none]
+
+categories:
+
+  constraint:
+    definition: >-
+      A standing rule about how work is done or how the system must behave,
+      in force across tasks until explicitly revoked.
+    include:
+      - Directives with no end date that govern future behavior ("never", "always", "must not", "don't").
+      - Policies, prohibitions and invariants, including security and process rules.
+      - Rules the speaker establishes by decision ("we decided never to X" is a constraint: the rule is what must be recalled).
+    exclude:
+      - Properties one deliverable must have to be accepted → requirement.
+      - Rules that apply only to the current task or message ("don't touch the tests in this PR") → none, unless restated as standing.
+      - Casual or descriptive use of rule words ("it always crashes on startup", "you never know") → none.
+      - Personal preferences stated without a rule ("I prefer tabs") → none (see open_questions).
+    near_miss:
+      - text: "The build always takes forever on Mondays."
+        label: none
+        why: '"always" describes an observation, not a rule.'
+      - text: "The export must include a CSV option."
+        label: requirement
+        why: Property of one deliverable, not a standing rule.
+
+  decision:
+    definition: >-
+      A settled choice between alternatives, or a reversal of an earlier
+      choice, that shapes later work.
+    include:
+      - Adopting, selecting or rejecting an option ("we'll use Postgres", "we went with X over Y").
+      - Reversals ("we're dropping Redis", "we no longer use the v1 API").
+      - Settled design or scope calls ("auth lives in the gateway, not the services").
+    exclude:
+      - Proposals, options and questions not yet settled ("what if we used Redis?", "maybe we should switch") → none.
+      - Choices that set a standing rule → constraint (precedence).
+      - Past-tense reports of routine actions that settle nothing ("I merged the PR") → none.
+      - Words like "chosen"/"selected" used descriptively ("the selected rows are highlighted") → none.
+    near_miss:
+      - text: "Should we move the queue to SQS?"
+        label: none
+        why: An open question; nothing is settled.
+      - text: "The selected option is highlighted in blue."
+        label: none
+        why: '"selected" describes UI state, not a choice.'
+
+  requirement:
+    definition: >-
+      A property that a specific deliverable (feature, API, component, release)
+      must have to be accepted.
+    include:
+      - Acceptance criteria and functional or non-functional requirements scoped to a deliverable ("the endpoint must return 404 for unknown ids", "search must respond in under 200 ms").
+      - Needs stated for a named piece of work ("the importer needs to handle UTF-16").
+    exclude:
+      - Rules for how work is done in general → constraint.
+      - Hedged suggestions ("we should probably add caching at some point") → none.
+      - Tasks to perform → action_item.
+    near_miss:
+      - text: "We should probably clean this up someday."
+        label: none
+        why: Hedged, no deliverable, no commitment.
+      - text: "We need to rerun the migration tonight."
+        label: action_item
+        why: A task to do, not a property of a deliverable.
+
+  action_item:
+    definition: >-
+      A specific task someone has committed to do, not yet done.
+    include:
+      - Committed next steps and TODOs ("next I'll add the migration", "TODO add retries to the uploader").
+      - Assigned work ("Sam will update the runbook").
+      - Scheduled work ("we'll cut the release on Friday").
+    exclude:
+      - Completed actions ("I added the migration") → none.
+      - Vague intentions with no specific task ("we'll figure it out") → none.
+      - Proposals phrased as questions ("should I add a test?") → none.
+    near_miss:
+      - text: "I added the retry logic to the uploader."
+        label: none
+        why: Already done; a status report, not a pending task.
+      - text: "We'll see how it goes."
+        label: none
+        why: No specific task.
+
+  none:
+    definition: >-
+      Nothing that should become a Decision, Constraint, Requirement or
+      ActionItem node. The Loop may still keep the entities as tentative
+      Concepts; this label only says "no artifact".
+    include:
+      - Questions, greetings, acknowledgements, chit-chat.
+      - Status reports and descriptions of completed work.
+      - Observations and facts about the system (see open_questions).
+      - Hedged or speculative statements.
+      - Emotional reactions without new content ("ugh, this is broken again").
+    exclude:
+      - Anything meeting another category's definition.
+    near_miss:
+      - text: "Great, ship it."
+        label: none
+        why: Approval of a change, not a settled choice between alternatives with lasting effect.
+
+open_questions:
+  - >-
+    Facts and observations ("the staging DB is on port 5433", "the API returns
+    404 for missing users") are often exactly what a later session needs, but
+    have no artifact category. Today they can only survive as tentative
+    Concepts. Should there be a `fact` category?
+  - >-
+    Preferences ("I prefer small PRs") sit between none and constraint.
+    GlobalPreference nodes exist in the schema but Step 4 never produces them.
+  - >-
+    Approvals ("ship it", "looks good") are labeled none here; they carry
+    outcome signal (B69) rather than content.

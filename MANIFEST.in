@@ -1,7 +1,7 @@
 include LICENSE
 include README.md
 include pyproject.toml
-recursive-include campy *.py *.md *.toml
+recursive-include campy *.py *.md *.toml *.yaml
 recursive-include mcp_engine *.py
 recursive-include adapters *.py *.sh *.md
 recursive-include web *.py *.html *.css *.js

@@ -130,6 +130,16 @@ def _entity_sentence(full_text: str, entity_text: str) -> str:
     return full_text[sent_start:sent_end].strip() or full_text
 
 
+def signal_scores(text: str) -> dict[str, int]:
+    """Score each artifact type by keyword-signal count (dict order breaks ties)."""
+    return {
+        "decision":    _match_signals(text, _DECISION_SIGNALS),
+        "constraint":  _match_signals(text, _CONSTRAINT_SIGNALS),
+        "requirement": _match_signals(text, _REQUIREMENT_SIGNALS),
+        "action_item": _match_signals(text, _ACTION_SIGNALS),
+    }
+
+
 def classify_artifact(text: str, gist_class: str | None,
                       schema_org_type: str | None,
                       entity_text: str | None = None,
@@ -152,13 +162,7 @@ def classify_artifact(text: str, gist_class: str | None,
     # L5 fix: score signals against entity-local sentence context, not full message.
     match_text = _entity_sentence(text, entity_text) if entity_text else text
 
-    # Score each artifact type by signal count
-    scores = {
-        "decision":    _match_signals(match_text, _DECISION_SIGNALS),
-        "constraint":  _match_signals(match_text, _CONSTRAINT_SIGNALS),
-        "requirement": _match_signals(match_text, _REQUIREMENT_SIGNALS),
-        "action_item": _match_signals(match_text, _ACTION_SIGNALS),
-    }
+    scores = signal_scores(match_text)
 
     best_type = max(scores, key=lambda k: scores[k])
     best_score = scores[best_type]
@@ -342,3 +346,35 @@ def compute_salience_multiplier(text: str) -> float:
         return 1.0
 
     return min(1.0 + (raw_score * 0.15), 1.6)
+
+
+
+# Amygdala rescue band: emotional content in [SALIENCE_RESCUE_MIN, NOISE_FLOOR)
+# is pulled just above the noise floor. Below the band stays noise — emotion
+# alone can't create memories from nothing.
+SALIENCE_RESCUE_MIN        = 0.45
+SALIENCE_RESCUE_MULTIPLIER = 1.3
+
+
+def apply_salience_rescue(step4_result: dict, text: str) -> tuple[dict, float, bool]:
+    """
+    Emotion sense (7th Cocktail Party sense, amygdala) applied to a
+    classify_artifact() result. Shared by the Loop orchestrator and the B458
+    save-gate harness so both make the same save decision.
+
+    Salience is computed from the full message: emotional cues are
+    message-global, not entity-scoped like the other senses.
+
+    Returns (step4_result, salience, rescued).
+    """
+    salience = compute_salience_multiplier(text)
+    if (not step4_result["should_proceed"]
+            and step4_result["confidence"] >= SALIENCE_RESCUE_MIN
+            and salience >= SALIENCE_RESCUE_MULTIPLIER):
+        return {
+            "artifact_type":  step4_result["artifact_type"] or "decision",
+            "confidence":     NOISE_FLOOR + 0.02,  # 0.62
+            "confidence_low": True,
+            "should_proceed": True,
+        }, salience, True
+    return step4_result, salience, False

@@ -31,7 +31,7 @@ from campy.brain.temporal_lobe.loop.step1b_relations import extract_relations
 from campy.brain.temporal_lobe.loop.step2_gist      import classify_concept
 from campy.brain.temporal_lobe.loop.step3_schema_org import route_to_schema_org
 from campy.brain.temporal_lobe.loop.step3b_relations import extract_semantic_relations
-from campy.brain.temporal_lobe.loop.step4_pattern   import classify_artifact, compute_salience_multiplier, NOISE_FLOOR
+from campy.brain.temporal_lobe.loop.step4_pattern   import classify_artifact, apply_salience_rescue
 from campy.brain.temporal_lobe.loop.step5_retrieval import (
     retrieve_candidates, MATCH_THRESHOLD, GRAY_ZONE_UPPER
 )
@@ -273,23 +273,10 @@ async def run_loop(message_id: str, text: str, db, llm_client,
             role=role,
         )
 
-        # Emotion sense — 7th Cocktail Party sense (Amygdala)
-        # Compute salience from full message text (emotional cues are
-        # message-global, not entity-scoped like other senses).
-        salience = compute_salience_multiplier(text)
-
-        # Amygdala rescue: emotional content in the 0.45–0.60 dead zone
-        # gets pulled above the noise floor. Below 0.45 stays noise —
-        # emotion alone can't create memories from nothing.
-        if (not step4_result["should_proceed"]
-                and step4_result["confidence"] >= 0.45
-                and salience >= 1.3):
-            step4_result = {
-                "artifact_type":  step4_result["artifact_type"] or "decision",
-                "confidence":     NOISE_FLOOR + 0.02,  # 0.62
-                "confidence_low": True,
-                "should_proceed": True,
-            }
+        # Emotion sense — 7th Cocktail Party sense (Amygdala): emotional
+        # content in the 0.45–0.60 dead zone is pulled above the noise floor.
+        step4_result, salience, rescued = apply_salience_rescue(step4_result, text)
+        if rescued:
             summary["salience_rescues"] = summary.get("salience_rescues", 0) + 1
 
         if not step4_result["should_proceed"]:
