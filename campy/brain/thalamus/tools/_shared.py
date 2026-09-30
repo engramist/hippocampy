@@ -247,16 +247,49 @@ def _drop_weak_lexical(rows: list[dict]) -> list[dict]:
     return [r for r, s in zip(rows, scores) if s >= floor]
 
 
-def _fusion_sort_key(entry: dict) -> tuple:
-    """B458: order by fused score, then break exact ties on lexical score.
+def _query_identifier_patterns(query: str) -> list[re.Pattern]:
+    """B458: regexes for the identifiers a query names.
 
-    A lexical-only hit and a vector-only hit at the same rank fuse to exactly
-    the same RRF score; before this the tie fell to insertion order (vector
-    sources are appended first), so an exact identifier match lost to a
-    merely similar note.
+    An identifier is a whitespace chunk containing both a letter and a digit
+    (`memgym_mysterypath_ep7`, `B458`, `v2`). It matches the same way the FTS
+    query phrases it (`vector_store._fts_match_expression`): its alphanumeric
+    parts in order, separated by non-alphanumerics, and not inside a longer
+    word -- so `ep1` does not match `ep17`.
     """
-    lexical = entry.get("sources", {}).get("lexical") or {}
-    return (entry["final"], float(lexical.get("score") or 0.0))
+    patterns = []
+    for chunk in (query or "").split():
+        if not (re.search(r"\d", chunk) and re.search(r"[^\W\d_]", chunk)):
+            continue
+        parts = re.findall(r"[^\W_]+", chunk)
+        body = r"[\W_]+".join(re.escape(p) for p in parts)
+        patterns.append(re.compile(rf"(?<![^\W_]){body}(?![^\W_])", re.IGNORECASE))
+    return patterns
+
+
+def _fusion_sort_key(query: str = ""):
+    """B458: the sort key for fused results.
+
+    1. Results containing more of the query's identifiers rank first. RRF is
+       rank-only, so a note that merely resembles the query (high in both the
+       vector and lexical lists) outranked the one note holding the exact id
+       the query named, which sat in only one list -- the MemoryGym "wrong
+       episode" failure. Queries without identifiers are unaffected.
+    2. Then the fused score.
+    3. Then lexical score: a lexical-only and a vector-only hit at the same
+       rank fuse to exactly the same score; the tie used to fall to insertion
+       order (vector first).
+    """
+    patterns = _query_identifier_patterns(query)
+
+    def key(entry: dict) -> tuple:
+        lexical = entry.get("sources", {}).get("lexical") or {}
+        ids_matched = 0
+        if patterns:
+            text = str((entry.get("result") or {}).get("text_raw") or "")
+            ids_matched = sum(1 for p in patterns if p.search(text))
+        return (ids_matched, entry["final"], float(lexical.get("score") or 0.0))
+
+    return key
 
 
 WARM_WEIGHT = 0.35  # B375: matches the card's (1.0 + warm_score * 0.35) boost

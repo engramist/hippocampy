@@ -61,10 +61,19 @@ def db(monkeypatch):
     shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _store_episodes(db: OxigraphClient, target: int, target_sim: float) -> None:
+def _store_episodes(db: OxigraphClient, target: int, target_sim: float,
+                    unrelated: int = 0) -> None:
     """All notes are near-identical to the query vector except the target,
-    which the vector search ranks well down the list."""
+    which the vector search ranks well down the list. `unrelated` adds that
+    many other notes first, as when other conversations share the store."""
     now = datetime.now(timezone.utc).isoformat()
+    for i in range(unrelated):
+        db.write_node("Message", {
+            "message_id": f"msg-other{i}", "role": "user",
+            "text_raw": f"Caroline mentioned the pottery class moved to Thursday, week {i}",
+            "confidence": 0.5, "confidence_low": True, "pathway_strength": 0.0,
+            "archived": False, "created_at": now, "embedding": _vec(0.0),
+        })
     for ep in range(EPISODES):
         sim = target_sim if ep == target else 0.95 - 0.01 * ep
         db.write_node("Message", {
@@ -98,6 +107,30 @@ async def test_exact_identifier_wins_when_outside_the_vector_top_n(db):
     # went to the vector hit).
     _store_episodes(db, target=7, target_sim=0.05)
     assert await _top_id(db, 7) == "msg-ep7"
+
+
+async def test_exact_identifier_wins_in_a_store_shared_with_other_notes(db):
+    # The real-model failure (2026-09-30, after LoCoMo ran in the same
+    # store): with other notes present, the words the episodes share are
+    # rare store-wide, so the other episodes score ~60% of the target in
+    # bm25 -- real partial matches the weak-lexical floor keeps -- and RRF
+    # ranks them above the target, which is only in the lexical list.
+    _store_episodes(db, target=7, target_sim=0.05, unrelated=60)
+    assert await _top_id(db, 7) == "msg-ep7"
+
+
+def test_identifier_patterns_match_whole_identifiers_only():
+    from campy.brain.thalamus.tools._shared import _query_identifier_patterns
+
+    [ep1] = _query_identifier_patterns("sequence for memgym_mysterypath_ep1")
+    assert ep1.search("Observation for memgym_mysterypath_ep1: ...")
+    assert ep1.search("MEMGYM-mysterypath ep1")          # separators, case
+    assert not ep1.search("Observation for memgym_mysterypath_ep17: ...")
+    assert not ep1.search("memgym_mysterypath_ep1x")
+    [b458] = _query_identifier_patterns("what did B458 change?")
+    assert b458.search("fix(B458): exact identifier")
+    # No letter+digit chunk: not an identifier, ranking is unchanged.
+    assert _query_identifier_patterns("what happened in 2024 with e-mail") == []
 
 
 def test_drop_weak_lexical_removes_zero_evidence_hits_only():
