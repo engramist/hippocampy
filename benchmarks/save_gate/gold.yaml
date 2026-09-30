@@ -1,4 +1,4 @@
-# B458 — Save-gate labeled set.
+# B462 — Save-gate labeled set.
 #
 # Each item: one statement, one label from campy/data/artifact_categories.yaml,
 # and a `probe` tag naming what the item tests:

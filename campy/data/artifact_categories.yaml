@@ -1,4 +1,4 @@
-# B458 — Save-gate artifact category specification.
+# B462 — Save-gate artifact category specification.
 #
 # What each Step 4 artifact category means. Step 4
 # (campy/brain/temporal_lobe/loop/step4_pattern.py) decides whether a statement
@@ -13,7 +13,7 @@
 # label a statement by the kind of memory that would change what an agent
 # does later.
 #
-# Consumers: benchmarks/save_gate (B458 labeled set and baseline).
+# Consumers: benchmarks/save_gate (B462 labeled set and baseline).
 # Runtime use (classifier criteria, graph seeding) arrives with B460.
 # Loaded and validated by campy/brain/temporal_lobe/category_spec.py.
 

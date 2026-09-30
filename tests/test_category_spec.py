@@ -1,4 +1,4 @@
-"""B458 — save-gate category spec: loads, validates, resolves overlaps."""
+"""B462 — save-gate category spec: loads, validates, resolves overlaps."""
 import copy
 
 import pytest

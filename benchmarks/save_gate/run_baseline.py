@@ -1,5 +1,5 @@
 """
-B458 — Save-gate baseline harness.
+B462 — Save-gate baseline harness.
 
 Runs the labeled statements in benchmarks/save_gate/gold.yaml through the
 Loop's save decision and reports how often it is right.

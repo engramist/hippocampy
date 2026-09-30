@@ -1,4 +1,4 @@
-# save_gate — B458 save-decision baseline
+# save_gate — B462 save-decision baseline
 
 Measures how well the Loop's Step 4 gate decides what gets saved to the graph,
 and as what (Decision, Constraint, Requirement, ActionItem, or nothing).

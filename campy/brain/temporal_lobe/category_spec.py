@@ -1,5 +1,5 @@
 """
-B458 — Save-gate artifact category specification loader.
+B462 — Save-gate artifact category specification loader.
 
 Loads and validates campy/data/artifact_categories.yaml: what each Step 4
 artifact category (decision, constraint, requirement, action_item, none)

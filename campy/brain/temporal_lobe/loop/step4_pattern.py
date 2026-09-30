@@ -359,7 +359,7 @@ SALIENCE_RESCUE_MULTIPLIER = 1.3
 def apply_salience_rescue(step4_result: dict, text: str) -> tuple[dict, float, bool]:
     """
     Emotion sense (7th Cocktail Party sense, amygdala) applied to a
-    classify_artifact() result. Shared by the Loop orchestrator and the B458
+    classify_artifact() result. Shared by the Loop orchestrator and the B462
     save-gate harness so both make the same save decision.
 
     Salience is computed from the full message: emotional cues are
