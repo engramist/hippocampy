@@ -20,6 +20,8 @@ from ._shared import (
     _PROCEDURE_INDEX,
     _apply_fusion_adjustments,
     _clamp,
+    _drop_weak_lexical,
+    _fusion_sort_key,
     _get_pk_for_node_type,
     _logger,
     _rrf_fuse,
@@ -271,6 +273,7 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
                     # FTS was loaded, so stale Messages leaked into recall
                     # results. Pass the same cutoff the CONTAINS branch uses.
                     lexical_rows = fts_search("Message", "message_fts_idx", query, lexical_limit, cutoff=cutoff)
+                    lexical_rows = _drop_weak_lexical(lexical_rows)  # B458
             except Exception:
                 lexical_rows = []
 
@@ -459,7 +462,7 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
             result_by_id[nid] = item
 
     adjusted_entries = _apply_fusion_adjustments(fused_entries, result_by_id, outcome_map, warm_nodes)
-    all_results = [entry["result"] for entry in sorted(adjusted_entries, key=lambda e: e["final"], reverse=True)]
+    all_results = [entry["result"] for entry in sorted(adjusted_entries, key=_fusion_sort_key, reverse=True)]
 
     debug_ranking = bool(params.get("debug_ranking"))
     if debug_ranking:
