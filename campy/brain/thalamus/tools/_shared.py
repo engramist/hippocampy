@@ -221,6 +221,44 @@ def _rrf_fuse(source_lists: dict[str, list[dict]], limit: int) -> list[dict]:
     return sorted(fused.values(), key=lambda e: e["rrf"], reverse=True)
 
 
+LEXICAL_MIN_RELATIVE_SCORE = 0.01
+# FTS5 clamps a term's IDF to 1e-6 when it occurs in (nearly) every row, so
+# a zero-evidence hit scores ~1e-6, not 0.
+LEXICAL_EVIDENCE_EPSILON = 1e-3
+
+
+def _drop_weak_lexical(rows: list[dict]) -> list[dict]:
+    """B458: drop FTS hits that carry no lexical evidence before RRF.
+
+    The FTS query is an OR of the query's content words, ranked by bm25, so
+    it also returns rows that matched only terms present in (nearly) every
+    document. Those score ~0 -- no evidence -- yet RRF is rank-only and gave
+    them full credit for ranks 2..N, so near-identical notes outranked the
+    one note that actually matched a unique identifier in the query (the
+    MemoryGym "wrong episode" failure). A hit scoring under 1% of the best
+    hit is dropped. When the best hit itself has no evidence (a tiny store,
+    where bm25 IDF degenerates) nothing is dropped.
+    """
+    scores = [float(r.get("score") or 0.0) for r in rows]
+    top = max(scores, default=0.0)
+    if top <= LEXICAL_EVIDENCE_EPSILON:
+        return rows
+    floor = top * LEXICAL_MIN_RELATIVE_SCORE
+    return [r for r, s in zip(rows, scores) if s >= floor]
+
+
+def _fusion_sort_key(entry: dict) -> tuple:
+    """B458: order by fused score, then break exact ties on lexical score.
+
+    A lexical-only hit and a vector-only hit at the same rank fuse to exactly
+    the same RRF score; before this the tie fell to insertion order (vector
+    sources are appended first), so an exact identifier match lost to a
+    merely similar note.
+    """
+    lexical = entry.get("sources", {}).get("lexical") or {}
+    return (entry["final"], float(lexical.get("score") or 0.0))
+
+
 WARM_WEIGHT = 0.35  # B375: matches the card's (1.0 + warm_score * 0.35) boost
 
 
