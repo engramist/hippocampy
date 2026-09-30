@@ -462,7 +462,7 @@ async def current_truth(params: dict, db: KuzuClient, config: dict) -> dict:
             result_by_id[nid] = item
 
     adjusted_entries = _apply_fusion_adjustments(fused_entries, result_by_id, outcome_map, warm_nodes)
-    all_results = [entry["result"] for entry in sorted(adjusted_entries, key=_fusion_sort_key, reverse=True)]
+    all_results = [entry["result"] for entry in sorted(adjusted_entries, key=_fusion_sort_key(query), reverse=True)]
 
     debug_ranking = bool(params.get("debug_ranking"))
     if debug_ranking:
