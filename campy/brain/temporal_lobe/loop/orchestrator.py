@@ -32,6 +32,7 @@ from campy.brain.temporal_lobe.loop.step2_gist      import classify_concept
 from campy.brain.temporal_lobe.loop.step3_schema_org import route_to_schema_org
 from campy.brain.temporal_lobe.loop.step3b_relations import extract_semantic_relations
 from campy.brain.temporal_lobe.loop.step4_pattern   import classify_artifact, apply_salience_rescue
+from campy.brain.hippocampus.schema import ORIGIN_ROLES
 from campy.brain.temporal_lobe.loop.step5_retrieval import (
     retrieve_candidates, MATCH_THRESHOLD, GRAY_ZONE_UPPER
 )
@@ -365,6 +366,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                     concept_id = await _store_concept(
                         entity, step4_result, vector, embedding_model, db, now,
                         anomaly_result=anomaly_result, salience=salience,
+                        role=role,
                     )
                 if concept_id:
                     summary["concepts_stored"] += 1
@@ -410,6 +412,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                     concept_id = await _store_concept(
                         entity, step4_result, vector, embedding_model, db, now,
                         anomaly_result=anomaly_result, salience=salience,
+                        role=role,
                     )
                 if concept_id:
                     summary["concepts_stored"] += 1
@@ -442,6 +445,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                 concept_id = await _store_concept(
                     entity, step4_result, vector, embedding_model, db, now,
                     anomaly_result=anomaly_result, salience=salience,
+                    role=role,
                 )
             if concept_id:
                 summary["concepts_stored"] += 1
@@ -497,7 +501,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
     # _store_relation will ensure both endpoints exist before creating the edge.
     for idx, rel in enumerate(deferred_relations):
         async with _timed(message_id, f"store_relation[{idx}/{len(deferred_relations)}]"):
-            await _store_relation(rel, db, now, embedding_model=embedding_model)
+            await _store_relation(rel, db, now, embedding_model=embedding_model, role=role)
 
     _logger.info(
         "[Loop:Timing] msg=%s step=TOTAL elapsed=%.2fs",
@@ -551,10 +555,32 @@ async def _create_disambiguation_event(
 # ---------------------------------------------------------------------------
 
 
+def _origin_role(role: str | None) -> str | None:
+    """B459: the Concept.origin_role for a turn role (None if not a known origin)."""
+    return role if role in ORIGIN_ROLES else None
+
+
+def _stronger_origin(existing: str | None, new: str | None) -> str | None:
+    """
+    B459: origin to keep when an existing Concept is mentioned again. A
+    stronger origin (user > document > assistant) upgrades it. An unknown
+    (pre-B459) origin is only ever upgraded to user or document, never
+    labelled assistant after the fact.
+    """
+    if new is None:
+        return existing
+    if existing is None:
+        return new if new != "assistant" else None
+    if existing not in ORIGIN_ROLES:
+        return new
+    return new if ORIGIN_ROLES.index(new) < ORIGIN_ROLES.index(existing) else existing
+
+
 async def _store_concept(entity: dict, step4: dict, vector: list[float],
                           embedding_model: str, db, now: str,
                           anomaly_result: dict | None = None,
-                          salience: float = 1.0) -> str | None:
+                          salience: float = 1.0,
+                          role: str | None = None) -> str | None:
     """
     Create a Concept node for an entity that cleared the noise floor.
 
@@ -567,8 +593,15 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
     last_accessed_at instead of creating a duplicate.
 
     B12: anomaly_result from check_anomalies is passed to flag anomalous nodes.
+
+    B459: records origin_role (the turn role) on new Concepts. On a dedup hit
+    the stronger origin wins (user > document > assistant), and the node is
+    only promoted out of confidence_low when this mention itself clears
+    HARD_LOCK (step4 confidence_low False). Previously any mention at >= 0.80
+    promoted it, so an assistant restating its own claim once confirmed it.
     """
     confidence = step4["confidence"]
+    origin_role = _origin_role(role)
     anomaly_type = None
     flagged_for_review = False
 
@@ -588,15 +621,17 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
         if existing:
             row = existing[0]
             existing_id = row.get("c.concept_id") if hasattr(row, "get") else row[0]
-            existing_ps = row.get("c.pathway_strength") if hasattr(row, "get") else row[1]
-            # Bump last_accessed_at and upgrade confidence_low if we're now more confident
+            existing_origin = row.get("c.origin_role") if hasattr(row, "get") else row[2]
+            # Bump last_accessed_at; promote out of confidence_low only if this
+            # mention is itself confident enough to be confirmed (B459).
             await gw.run(
                 "orchestrator.touch_dedup_concept",
                 id=existing_id,
                 now=now,
                 ps=max(confidence * salience, 0.50),
-                conf=confidence,
+                promote=not step4["confidence_low"],
                 salience=salience,
+                origin_role=_stronger_origin(existing_origin, origin_role),
             )
             _logger.debug("_store_concept: dedup hit for '%s' → %s", entity["text"], existing_id)
             return existing_id
@@ -620,6 +655,7 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
             salience_score=salience,
             anomaly_type=anomaly_type,
             flagged_for_review=flagged_for_review,
+            origin_role=origin_role,
             created_at=now,
         )
         return concept_id
@@ -732,7 +768,8 @@ async def _save_gist_example(text: str, vector: list[float], gist_class: str,
         _logger.exception("_save_gist_example failed for class=%s", gist_class)
 
 
-async def _ensure_concept_exists(text: str, embedding_model: str, db, now: str) -> None:
+async def _ensure_concept_exists(text: str, embedding_model: str, db, now: str,
+                                 role: str | None = None) -> None:
     """
     B32 fix: Ensure a Concept node exists for the given text_raw.
     If it already exists, do nothing. If it doesn't exist, create a minimal
@@ -764,6 +801,7 @@ async def _ensure_concept_exists(text: str, embedding_model: str, db, now: str) 
             embedding=vector,
             embedding_model=embedding_model,
             embedding_dim=len(vector),
+            origin_role=_origin_role(role),
             created_at=now,
         )
     except Exception:
@@ -771,7 +809,8 @@ async def _ensure_concept_exists(text: str, embedding_model: str, db, now: str) 
 
 
 async def _store_relation(rel: dict, db, now: str,
-                           embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"):
+                           embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
+                           role: str | None = None):
     """
     Store a named semantic relation between two Concept nodes.
 
@@ -792,8 +831,8 @@ async def _store_relation(rel: dict, db, now: str,
         return
 
     # Ensure both endpoints exist before creating the edge
-    await _ensure_concept_exists(rel["head"], embedding_model, db, now)
-    await _ensure_concept_exists(rel["tail"], embedding_model, db, now)
+    await _ensure_concept_exists(rel["head"], embedding_model, db, now, role=role)
+    await _ensure_concept_exists(rel["tail"], embedding_model, db, now, role=role)
 
     try:
         # B32 fix: Kuzu 0.11.3 has issues with merge on relationships when

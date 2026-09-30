@@ -270,6 +270,13 @@ async def rescore_nearby_low_confidence(concept_id: str, db) -> int:
     - If a confidence_low node now has multiple high-confidence neighbors,
       its confidence can be auto-promoted above the 0.90 threshold.
 
+    B459: an assistant-originated node (origin_role == "assistant") counts
+    only neighbors that came from a user or document turn. Assistant content
+    can't be corroborated by other assistant content, or by relation
+    endpoints of unknown origin (ISSUE-024: assistant claims need user or
+    graph evidence to be promoted, and the graph evidence must not be the
+    assistant's own).
+
     Returns count of nodes re-scored.
     """
     rescored = 0
@@ -284,14 +291,17 @@ async def rescore_nearby_low_confidence(concept_id: str, db) -> int:
                 cid = row.get("neighbor.concept_id")
                 conf = row.get("neighbor.confidence") or 0.5
                 pstr = row.get("neighbor.pathway_strength") or 0.5
+                origin = row.get("neighbor.origin_role")
             else:
                 cid = row[0]
                 conf = row[1] or 0.5
                 pstr = row[2] or 0.5
+                origin = row[3] if len(row) > 3 else None
             candidates.append({
                 "concept_id":       cid,
                 "confidence":       conf,
                 "pathway_strength": pstr,
+                "origin_role":      origin,
             })
     except Exception:
         return 0
@@ -299,8 +309,14 @@ async def rescore_nearby_low_confidence(concept_id: str, db) -> int:
     for candidate in candidates:
         cid = candidate["concept_id"]
         try:
-            # Count high-confidence neighbors (relationship density signal)
-            nbr_rows = _gateway(db).run_sync("pathways.count_high_confidence_neighbors", cid=cid)
+            # Count high-confidence neighbors (relationship density signal).
+            # B459: assistant-originated nodes count only user/document neighbors.
+            count_query = (
+                "pathways.count_corroborating_neighbors"
+                if candidate["origin_role"] == "assistant"
+                else "pathways.count_high_confidence_neighbors"
+            )
+            nbr_rows = _gateway(db).run_sync(count_query, cid=cid)
             if not nbr_rows:
                 continue
 

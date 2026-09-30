@@ -633,6 +633,13 @@ Re-scoring factors:
 
 `current_truth` ranks results by `pathway_strength × confidence` — low-confidence nodes surface but rank lower naturally.
 
+**Provenance rule (B459).** Every Concept records `origin_role` (`user`, `document`, `assistant`; NULL for nodes written before B459). Assistant content can't confirm itself:
+- Event-driven re-scoring of an assistant-originated node counts only neighbors whose `origin_role` is `user` or `document` (`pathways.count_corroborating_neighbors`). Other assistant nodes and relation endpoints of unknown origin are not corroboration.
+- A repeat mention (exact-text dedup) promotes a node out of `confidence_low` only when that mention itself clears `HARD_LOCK`. It used to promote at ≥ 0.80, so an assistant repeating itself once confirmed its own claim.
+- A repeat mention by a stronger origin upgrades `origin_role` (user > document > assistant); unknown origins are never relabelled `assistant`.
+
+Note: as of B459 the background sweep does not re-score `confidence_low` nodes (item 1 in the sweep list above describes intent, not current code); only the event-driven path does.
+
 ## Read Flow — Graph-Native RAG
 
 1. Embed user prompt

@@ -67,6 +67,11 @@ PROVENANCE_TABLES = (
 # the full contract.
 # ---------------------------------------------------------------------------
 
+# B459: Concept.origin_role values, strongest first. A Concept restated by
+# a stronger origin is upgraded (a user repeating an assistant claim makes it
+# user-backed). NULL = written before B459 (unknown origin).
+ORIGIN_ROLES = ("user", "document", "assistant")
+
 AUTHORITY_VALUES = frozenset({
     "earned",     # exists nowhere else — Campy is the source of truth
     "projected",  # mirrored from an external authority — rebuildable, not owned
@@ -1813,6 +1818,10 @@ SCHEMA_MIGRATIONS: list[tuple[str, str, str]] = [
     # avoidance Procedures it synthesizes (provenance for how salient
     # the source cluster was) - was missing, so every CREATE failed.
     ("Procedure",      "salience_score",        "DOUBLE"),
+
+    # B459: which turn role a Concept came from (ORIGIN_ROLES). Promotion
+    # paths must not let assistant content confirm itself (ISSUE-024).
+    ("Concept",        "origin_role",           "STRING"),
 
     # Basal Ganglia: maturity_stage — Procedure lifecycle tracking
     ("Procedure",      "maturity_stage",        "STRING"),
