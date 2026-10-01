@@ -148,6 +148,30 @@ class LLMClient:
         }
         return content, usage
 
+    def chat_choice(self, messages: list[dict]) -> tuple[str, list[tuple[str, float]] | None]:
+        """
+        B460: short answer plus the first answer token's top log-probabilities,
+        for constrained-choice decisions (campy/brain/llm/decide.py). Returns
+        (text, [(token, logprob), ...]) or (text, None) when the endpoint does
+        not return log-probabilities (it is then asked again without them).
+        """
+        try:
+            response = self._client.chat.completions.create(
+                model=self._model, messages=messages, temperature=0.0,
+                max_tokens=3, logprobs=True, top_logprobs=10,
+            )
+        except Exception:
+            # Endpoint rejected the logprobs parameters: plain call.
+            return self.chat(messages, max_tokens=3), None
+        choice = response.choices[0]
+        text = choice.message.content or ""
+        content = getattr(getattr(choice, "logprobs", None), "content", None) or []
+        for tok in content:  # first non-whitespace answer token
+            if (getattr(tok, "token", "") or "").strip():
+                top = getattr(tok, "top_logprobs", None) or []
+                return text, [(t.token, t.logprob) for t in top] or None
+        return text, None
+
     async def achat(self, messages: list[dict]) -> str:
         """
         Async chat — offloads blocking LLM call to a thread pool.

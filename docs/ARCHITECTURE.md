@@ -448,6 +448,7 @@ Maps each concept to a gist ontological class using a hybrid dual-process approa
 - System 2 (deliberate): If 0.60–0.85 → escalate to local LLM call for disambiguation.
 - Early exit: If < 0.60 → noise, vector-log only, no further processing.
 - Messages resolved by System 2 are saved as labeled examples → centroids improve over time.
+- B460: System 2 picks one lettered class. Its confidence is the model's probability for that class, read from token log-probabilities when the provider returns them, otherwise unknown (`None`). The model is no longer asked to write its own confidence. Near ties (top-two margin < 0.15) are logged as `[Gate:NearTie]` and are not saved as training examples.
 
 **Step 3 — schema.org Sub-graph Routing:** gist class routes to the relevant schema.org property subset only (not the full vocabulary). This gives the precise semantic "shape" for the next step. Routing table is core IP — stored as graph edges `(GistClass)-[ROUTES_TO]->(SchemaOrgType)`, seeded at M1 schema init.
 
@@ -534,7 +535,7 @@ When a message contains error/failure signals or significant action patterns (do
 
 **Step 5 — Dual-Scope Retrieval (Availability Heuristic):** Check branch scope (same MainQuest + vector similarity) then global scope (GlobalConstraint/GlobalPreference nodes) for existing matches.
 
-**Step 6 — Constrained Contradiction Arbitration:** Only runs in gray zone (0.75–0.92 similarity) or same artifact type match. LLM forced to `{classification, rationale_tokens, referenced_nodes}`. "Uncertain" → soft-lock.
+**Step 6 — Constrained Contradiction Arbitration:** Only runs in gray zone (0.75–0.92 similarity) or same artifact type match. LLM answers with one option letter (additive / contradiction / uncertain). "Uncertain" → soft-lock. B460: where the provider returns token log-probabilities, a near tie between the top two options (margin < 0.15) is treated as "uncertain" and logged as `[Gate:NearTie]`.
 
 **Step 7 — Pathway Update:**
 - Additive: increment `pathway_strength` on access: `strength += 1 * log(1 + 1/days_since_last_access)`. No duplicate node created.

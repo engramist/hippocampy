@@ -140,6 +140,11 @@ def signal_scores(text: str) -> dict[str, int]:
     }
 
 
+def entity_sentence(full_text: str, entity_text: str) -> str:
+    """The sentence(s) of full_text containing entity_text (B460: public for artifact text)."""
+    return _entity_sentence(full_text, entity_text)
+
+
 def classify_artifact(text: str, gist_class: str | None,
                       schema_org_type: str | None,
                       entity_text: str | None = None,

@@ -6,7 +6,9 @@ detection. The LLM is constrained to a 3-way forced-choice output
 (not free text), preventing hallucination creep.
 
 Triggers when Step 5 finds a candidate in the gray zone (0.75–0.92 similarity).
-LLM forced to classify the relationship as one of three options:
+LLM forced to classify the relationship as one of three options
+(B460: a single option letter; probabilities from token log-probabilities
+where the provider returns them):
 
   "additive"      → same idea expressed differently → strengthen existing node
   "contradiction" → directly conflicts → new node + DEPRECATED_BY on old
@@ -17,10 +19,17 @@ is genuinely insufficient. Both nodes remain in the graph and accumulate
 context over future messages.
 """
 
-import json
-import re
+from campy.brain.llm.decide import decide, log_near_tie, options_block
 
 VALID_CLASSIFICATIONS = {"additive", "contradiction", "uncertain"}
+
+# B460: option order is fixed so letters are stable across calls.
+_OPTIONS = ["additive", "contradiction", "uncertain"]
+_DESCRIPTIONS = {
+    "additive":      "the new concept reinforces or restates an existing one",
+    "contradiction": "the new concept directly conflicts with an existing one",
+    "uncertain":     "not enough evidence to decide",
+}
 
 
 def arbitrate(new_concept: dict, candidates: list[dict],
@@ -31,8 +40,11 @@ def arbitrate(new_concept: dict, candidates: list[dict],
     new_concept: {text, gist_class, schema_org_type, confidence, ...}
     candidates:  list of Step 5 results [{concept_id, text_raw, similarity, ...}]
 
-    Returns {classification, rationale, referenced_node_ids}.
-    Falls back to "uncertain" if LLM is unavailable or returns invalid output.
+    Returns {classification, rationale, referenced_node_ids, probs}.
+    Falls back to "uncertain" if the LLM is unavailable or its answer can't be
+    read. B460: the answer is a single option letter; where the provider
+    returns log-probabilities, a near tie between the top two options is
+    treated as "uncertain" (both nodes stay confidence_low) and logged.
     """
     if llm_client is None or not candidates:
         return _uncertain([], "LLM unavailable or no candidates")
@@ -54,48 +66,30 @@ def arbitrate(new_concept: dict, candidates: list[dict],
         f"{new_concept.get('schema_org_type', '?')})\n\n"
         f"Context sentence: \"{original_text}\"\n\n"
         f"Existing similar concepts:\n{candidate_lines}\n\n"
-        f"Choose exactly one classification:\n"
-        f"  additive      — the new concept reinforces or restates an existing one\n"
-        f"  contradiction — the new concept directly conflicts with an existing one\n"
-        f"  uncertain     — not enough evidence to decide\n\n"
-        f"Respond with JSON only:\n"
-        f'{{\"classification\": \"<additive|contradiction|uncertain>\", '
-        f'\"rationale\": \"<one sentence>\", '
-        f'\"referenced_index\": <1-{len(top)} or null>}}'
+        + options_block(_OPTIONS, _DESCRIPTIONS)
     )
 
-    try:
-        raw = llm_client.chat([{"role": "user", "content": prompt}])
-        # L11 fix: extract first {...} block to handle preamble, trailing text,
-        # varying fence styles (```json, ```JSON, no fence).
-        match = re.search(r'\{[^}]+\}', raw, re.DOTALL)
-        if not match:
-            return _uncertain([c["concept_id"] for c in top], "LLM returned no JSON")
-        result = json.loads(match.group())
+    decision = decide(llm_client, prompt, _OPTIONS)
+    if decision.choice is None:
+        return _uncertain([c["concept_id"] for c in top], "LLM answer unreadable")
 
-        classification = result.get("classification", "uncertain")
-        if classification not in VALID_CLASSIFICATIONS:
+    classification = decision.choice
+    rationale = f"model choice ({decision.source})"
+    if decision.near_tie():
+        log_near_tie("step6_arbitration", decision, new_concept.get("text", ""))
+        if classification != "uncertain":
             classification = "uncertain"
+            rationale = (f"near tie {decision.top_two[0]}|{decision.top_two[1]} "
+                         f"(margin {decision.margin:.2f})")
 
-        ref_idx = result.get("referenced_index")
-        referenced_ids = []
-        # L12 fix: coerce string/float LLM outputs to int before range check.
-        if ref_idx is not None:
-            try:
-                ref_idx = int(ref_idx)
-            except (TypeError, ValueError):
-                ref_idx = None
-        if ref_idx is not None and 1 <= ref_idx <= len(top):
-            referenced_ids = [top[ref_idx - 1]["concept_id"]]
-
-        return {
-            "classification":      classification,
-            "rationale":           result.get("rationale", ""),
-            "referenced_node_ids": referenced_ids,
-        }
-
-    except Exception:
-        return _uncertain([c["concept_id"] for c in top], "LLM parse error")
+    return {
+        "classification":      classification,
+        "rationale":           rationale,
+        # The orchestrator acts on the top candidate (and links "uncertain"
+        # DisambiguationEvents to it); report it as the reference.
+        "referenced_node_ids": [top[0]["concept_id"]],
+        "probs":               decision.probs,
+    }
 
 
 def _uncertain(node_ids: list, rationale: str) -> dict:
@@ -103,4 +97,5 @@ def _uncertain(node_ids: list, rationale: str) -> dict:
         "classification":      "uncertain",
         "rationale":           rationale,
         "referenced_node_ids": node_ids,
+        "probs":               None,
     }

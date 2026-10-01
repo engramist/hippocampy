@@ -33,6 +33,7 @@ from campy.brain.temporal_lobe.loop.step3_schema_org import route_to_schema_org
 from campy.brain.temporal_lobe.loop.step3b_relations import extract_semantic_relations
 from campy.brain.temporal_lobe.loop.step4_pattern   import (
     classify_artifact, apply_salience_rescue, apply_evidence_rescue, needs_evidence,
+    entity_sentence,
 )
 from campy.brain.hippocampus.schema import ORIGIN_ROLES
 from campy.brain.temporal_lobe.loop.step5_retrieval import (
@@ -206,7 +207,9 @@ async def run_loop(message_id: str, text: str, db, llm_client,
             schema_result = route_to_schema_org(gist_class, entity.get("label"))
             schema_org_type = schema_result["schema_org_type"]
 
-            if gist_result["system"] == "2" and gist_class:
+            # B460: a near-tie System 2 answer is not trustworthy enough to
+            # become a centroid training example.
+            if gist_result["system"] == "2" and gist_class and not gist_result.get("near_tie"):
                 async with _timed(message_id, f"save_gist_example[{idx}]"):
                     await _save_gist_example(
                         entity["text"], gist_result["vector"], gist_class, db, now
@@ -426,6 +429,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                                 confidence=step4_result["confidence"],
                                 message_id=message_id,
                                 session_id=session_id,
+                                statement=entity_sentence(text, entity["text"]),
                             )
                         summary["reified"] += 1
                         if summary["reified"] == 1 and llm_client is not None:
@@ -497,6 +501,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                             confidence=step4_result["confidence"],
                             message_id=message_id,
                             session_id=session_id,
+                            statement=entity_sentence(text, entity["text"]),
                         )
                     summary["reified"] += 1
                     if summary["reified"] == 1 and llm_client is not None:
@@ -697,9 +702,14 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
 async def _reify_concept(concept_id: str, artifact_type: str, entity: dict,
                           vector: list[float], embedding_model: str, db, now: str,
                           confidence: float = 1.0, message_id: str = "",
-                          session_id: str = "unknown"):
+                          session_id: str = "unknown",
+                          statement: str | None = None):
     """
     Create specific artifact node + REIFIED_AS edge for >90% confident concepts.
+    B460: when `statement` (the entity's sentence) is given, the artifact
+    stores and embeds the statement, not the bare entity span, so a Decision
+    reads "We decided to use PostgreSQL for the job queue." rather than
+    "PostgreSQL".
     D7 fix: also creates (Message)-[ESTABLISHED]->(artifact) provenance edge.
     B43 fix: also creates (artifact)-[ESTABLISHED_IN]->(Session) provenance edge
     for Decision, Constraint, Requirement, and ActionItem.
@@ -721,11 +731,19 @@ async def _reify_concept(concept_id: str, artifact_type: str, entity: dict,
     art_key = artifact_type.lower()
     gw = _gateway(db)
 
+    text_raw = entity["text"]
+    if statement and statement.strip() and statement.strip() != text_raw:
+        text_raw = statement.strip()
+        try:
+            vector = await asyncio.to_thread(emb.embed, text_raw, model_name=embedding_model)
+        except Exception:
+            _logger.exception("artifact statement embed failed; keeping entity vector")
+
     try:
         await gw.run(
             f"orchestrator.create_artifact_{art_key}",
             artifact_id=artifact_id,
-            text_raw=entity["text"],
+            text_raw=text_raw,
             embedding=vector,
             embedding_model=embedding_model,
             embedding_dim=len(vector),
