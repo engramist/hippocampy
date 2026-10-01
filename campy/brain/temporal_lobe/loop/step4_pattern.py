@@ -12,7 +12,10 @@ Confidence gate (not blocking — all above noise floor enter the graph):
 """
 
 from __future__ import annotations
+import logging
 import re
+
+_logger = logging.getLogger(__name__)
 
 NOISE_FLOOR        = 0.60
 HARD_LOCK          = 0.90
@@ -130,10 +133,27 @@ def _entity_sentence(full_text: str, entity_text: str) -> str:
     return full_text[sent_start:sent_end].strip() or full_text
 
 
+def signal_scores(text: str) -> dict[str, int]:
+    """Score each artifact type by keyword-signal count (dict order breaks ties)."""
+    return {
+        "decision":    _match_signals(text, _DECISION_SIGNALS),
+        "constraint":  _match_signals(text, _CONSTRAINT_SIGNALS),
+        "requirement": _match_signals(text, _REQUIREMENT_SIGNALS),
+        "action_item": _match_signals(text, _ACTION_SIGNALS),
+    }
+
+
+def entity_sentence(full_text: str, entity_text: str) -> str:
+    """The sentence(s) of full_text containing entity_text (B460: public for artifact text)."""
+    return _entity_sentence(full_text, entity_text)
+
+
 def classify_artifact(text: str, gist_class: str | None,
                       schema_org_type: str | None,
                       entity_text: str | None = None,
-                      role: str = "user") -> dict:
+                      role: str = "user",
+                      gate_model=None,
+                      embedding=None) -> dict:
     """
     Classify text into an artifact type using ontological context + keyword signals.
     Returns {artifact_type, confidence, confidence_low, should_proceed}.
@@ -145,6 +165,14 @@ def classify_artifact(text: str, gist_class: str | None,
     hallucination poisoning. Assistant-originated content can create Concepts and
     confidence_low artifacts, but can never create confirmed (>90%) Decisions or
     Constraints on its own. Only user-originated content crosses HARD_LOCK.
+
+    B460: with a `gate_model` (save_gate_model.GateModel), the artifact type
+    and confidence are the model's calibrated probability for the most
+    likely artifact category, instead of keyword counts and gist priors.
+    `embedding` is the entity sentence's embedding, needed only by models
+    trained with it. Every rule after the scoring (single-token cap, noise
+    floor, assistant cap, HARD_LOCK) is unchanged. The result then also
+    carries `probs` (all five categories).
     """
     if not gist_class:
         return _noise_result()
@@ -152,19 +180,17 @@ def classify_artifact(text: str, gist_class: str | None,
     # L5 fix: score signals against entity-local sentence context, not full message.
     match_text = _entity_sentence(text, entity_text) if entity_text else text
 
-    # Score each artifact type by signal count
-    scores = {
-        "decision":    _match_signals(match_text, _DECISION_SIGNALS),
-        "constraint":  _match_signals(match_text, _CONSTRAINT_SIGNALS),
-        "requirement": _match_signals(match_text, _REQUIREMENT_SIGNALS),
-        "action_item": _match_signals(match_text, _ACTION_SIGNALS),
-    }
+    probs = _model_probs(gate_model, match_text, gist_class, embedding)
+    scores = signal_scores(match_text)
 
     best_type = max(scores, key=lambda k: scores[k])
     best_score = scores[best_type]
 
+    if probs is not None:
+        artifact_type = max(_ARTIFACT_TYPES, key=probs.get)
+        confidence = probs[artifact_type]
     # Apply gist prior if no strong keyword signal
-    if best_score == 0:
+    elif best_score == 0:
         prior_type, prior_conf = _GIST_ARTIFACT_PRIOR.get(gist_class, (None, 0.40))
         if prior_type is None:
             return _noise_result()
@@ -179,7 +205,7 @@ def classify_artifact(text: str, gist_class: str | None,
     # A keyword match + gist agreement is strong evidence (1 hit + agree = 0.92).
     # Gist prior alone (no keyword signals) stays below HARD_LOCK.
     prior_type, _ = _GIST_ARTIFACT_PRIOR.get(gist_class, (None, 0))
-    if prior_type == artifact_type and best_score > 0:
+    if probs is None and prior_type == artifact_type and best_score > 0:
         confidence = min(confidence + 0.10, 0.98)
 
     # B300: single-token entities may exist as tentative Concepts but can
@@ -190,12 +216,14 @@ def classify_artifact(text: str, gist_class: str | None,
     if candidate_text.strip() and ' ' not in candidate_text.strip():
         confidence = min(confidence, 0.60)
 
+    extra = {"probs": probs} if probs is not None else {}
     if confidence < NOISE_FLOOR:
         return {
             "artifact_type":  artifact_type,
             "confidence":     confidence,  # preserve raw for salience rescue
             "confidence_low": True,
             "should_proceed": False,
+            **extra,
         }
 
     # ISSUE-024: assistant turns capped below HARD_LOCK — prevents hallucination
@@ -209,7 +237,29 @@ def classify_artifact(text: str, gist_class: str | None,
         "confidence":     confidence,
         "confidence_low": confidence < HARD_LOCK,
         "should_proceed": True,
+        **extra,
     }
+
+
+_ARTIFACT_TYPES = ("decision", "constraint", "requirement", "action_item")
+
+
+def _model_probs(gate_model, text: str, gist_class: str | None, embedding) -> dict | None:
+    """The gate model's category probabilities, or None to use keyword
+    scoring (no model, or the model failed on this input). Logs near ties
+    (B460 item 4) so recurring vague category pairs can be found."""
+    if gate_model is None:
+        return None
+    try:
+        probs = gate_model.predict_proba(text, gist_class, embedding)
+    except Exception as e:
+        _logger.warning("[Gate:Model] prediction failed (%s); using keyword scoring", e)
+        return None
+    from campy.brain.llm.decide import Decision, log_near_tie
+    decision = Decision(max(probs, key=probs.get), probs, "model")
+    if decision.near_tie():
+        log_near_tie("step4", decision, text)
+    return probs
 
 
 def _noise_result() -> dict:
@@ -342,3 +392,88 @@ def compute_salience_multiplier(text: str) -> float:
         return 1.0
 
     return min(1.0 + (raw_score * 0.15), 1.6)
+
+
+
+# Amygdala rescue band: emotional content in [SALIENCE_RESCUE_MIN, NOISE_FLOOR)
+# is pulled just above the noise floor. Below the band stays noise — emotion
+# alone can't create memories from nothing.
+SALIENCE_RESCUE_MIN        = 0.45
+SALIENCE_RESCUE_MULTIPLIER = 1.3
+
+
+def apply_salience_rescue(step4_result: dict, text: str) -> tuple[dict, float, bool]:
+    """
+    Emotion sense (7th Cocktail Party sense, amygdala) applied to a
+    classify_artifact() result. Shared by the Loop orchestrator and the B462
+    save-gate harness so both make the same save decision.
+
+    Salience is computed from the full message: emotional cues are
+    message-global, not entity-scoped like the other senses.
+
+    Returns (step4_result, salience, rescued).
+    """
+    salience = compute_salience_multiplier(text)
+    if (not step4_result["should_proceed"]
+            and step4_result["confidence"] >= SALIENCE_RESCUE_MIN
+            and salience >= SALIENCE_RESCUE_MULTIPLIER):
+        return {
+            "artifact_type":  step4_result["artifact_type"] or "decision",
+            "confidence":     NOISE_FLOOR + 0.02,  # 0.62
+            "confidence_low": True,
+            "should_proceed": True,
+        }, salience, True
+    return step4_result, salience, False
+
+
+# B459: evidence (Entity / Contradiction senses). An entity in the same
+# just-below-the-floor band the amygdala rescues is kept as a tentative
+# Concept when the graph already holds a confirmed Concept it closely matches.
+# Evidence only lifts to tentative (confidence_low), never to HARD_LOCK:
+# confirming still needs the statement itself, or B459-safe re-scoring.
+EVIDENCE_RESCUE_MIN = SALIENCE_RESCUE_MIN
+
+# Origins whose confirmed Concepts may corroborate an assistant turn.
+_CORROBORATING_ORIGINS = ("user", "document")
+
+
+def needs_evidence(step4_result: dict) -> bool:
+    """True when the gate would drop the entity but graph evidence could rescue it."""
+    return (not step4_result["should_proceed"]
+            and step4_result["confidence"] >= EVIDENCE_RESCUE_MIN)
+
+
+def supporting_evidence(candidates: list[dict], role: str = "user") -> list[dict]:
+    """
+    Step 5 candidates that count as evidence the entity matters: confirmed
+    (not confidence_low), not flagged for review, and, for assistant turns,
+    from a user or document origin (assistant content can't corroborate
+    itself; unknown origins don't count either).
+    """
+    out = []
+    for c in candidates or []:
+        if c.get("confidence_low", True) or c.get("flagged_for_review"):
+            continue
+        if role == "assistant" and c.get("origin_role") not in _CORROBORATING_ORIGINS:
+            continue
+        out.append(c)
+    return out
+
+
+def apply_evidence_rescue(step4_result: dict, candidates: list[dict],
+                          role: str = "user") -> tuple[dict, list[str], bool]:
+    """
+    Keep a just-below-the-floor entity as a tentative Concept when the graph
+    supports it. Returns (step4_result, supporting_concept_ids, rescued).
+    """
+    if not needs_evidence(step4_result):
+        return step4_result, [], False
+    support = supporting_evidence(candidates, role)
+    if not support:
+        return step4_result, [], False
+    return {
+        "artifact_type":  step4_result["artifact_type"],
+        "confidence":     NOISE_FLOOR + 0.02,  # same landing point as the salience rescue
+        "confidence_low": True,
+        "should_proceed": True,
+    }, [c["concept_id"] for c in support], True

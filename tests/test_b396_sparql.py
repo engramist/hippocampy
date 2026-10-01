@@ -31,7 +31,7 @@ def test_b396_query_counts():
     assert len(BACKUP_QUERIES) == 1
     assert len(CONTINUITY_QUERIES) == 7
     assert len(INGEST_QUERIES) == 11
-    assert len(PATHWAY_QUERIES) == 12
+    assert len(PATHWAY_QUERIES) == 13  # B459: + count_corroborating_neighbors
     assert len(BASAL_GANGLIA_QUERIES) == 17
     assert len(TASK_GRAPH_QUERIES) == 30
     assert len(ORCHESTRATOR_QUERIES) == 55
@@ -52,7 +52,7 @@ def test_b396_query_counts():
         + len(LESSONS_QUERIES)
         + len(TEMPORAL_LOBE_QUERIES)
     )
-    assert total == 1160
+    assert total == 1161  # B459: + pathways.count_corroborating_neighbors
 
 
 @pytest.mark.parametrize("query", BACKUP_QUERIES, ids=lambda q: q.name)

@@ -126,6 +126,10 @@ def retrieve_candidates(embedding: list[float], exclude_id: str,
             "gist_class":       node.get("gist_class", ""),
             "schema_org_type":  node.get("schema_org_type", ""),
             "created_at":       node.get("created_at", ""),
+            # B459: provenance + status, so the save gate can weigh evidence.
+            "confidence_low":     node.get("confidence_low", True),
+            "origin_role":        node.get("origin_role"),
+            "flagged_for_review": node.get("flagged_for_review", False),
         }
 
         if sim >= MATCH_THRESHOLD:

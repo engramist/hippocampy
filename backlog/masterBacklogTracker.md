@@ -80,6 +80,10 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B407 | Inference Pilot: Prove the RDF Thesis Before the Engine Cutover | P0 | complete | TBD | TBD | - | backlog/B407.md |
 | B408 | Stale-Base Guard: Make Silent Reverts Unmergeable | P0 | complete | TBD | TBD | - | backlog/B408.md |
 | B411 | Exhaustive Migration Fixture: Round-Trip Every Node and Edge Type | P0 | complete | TBD | TBD | - | backlog/B411.md |
+| B462 | Save-Gate Category Spec, Labeled Set, and Baseline Measurement | P2 | in-progress | TBD | TBD | - | backlog/B462.md |
+| B461 | Measure Save-Gate Changes on LoCoMo; Opt-In Jev Provider Trial (Conditional) | P3 | in-progress | TBD | TBD | - | backlog/B461.md |
+| B460 | Calibrated Decisions in the Write Path (Local-First) | P2 | in-progress | TBD | TBD | - | backlog/B460.md |
+| B459 | Evidence-Aware Save Gate: Retrieve Before Judging (Uncertain Band Only) | P2 | in-progress | TBD | TBD | - | backlog/B459.md |
 | B458 | current_truth: Exact Identifier Match Loses to Near-Identical Notes (RRF Fusion) | P1 | fixed (round 2: identifiers rank first; real-model confirmed) | TBD | TBD | - | backlog/B458.md |
 | B457 | HTTP REST and Dashboard Routes Ignore the Caller's Workspace (Cross-Tenant Access in Multi-Tenant Mode) | P1 | fixed | TBD | TBD | - | backlog/B457.md |
 | B456 | CAMPY_HOME: Fully Isolated Runtime Dir (Benchmarks Must Not Use the Personal Store) | P1 | fixed | TBD | TBD | - | backlog/B456.md |

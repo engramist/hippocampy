@@ -239,7 +239,9 @@ def test_step2_llm_fallback_called_in_gray_zone(monkeypatch):
     assert mock_llm.called, "LLM should have been called for gray-zone similarity 0.35"
     assert result["gist_class"] == "Category"
     assert result["system"] == "2"
-    assert result["confidence"] == pytest.approx(0.78, abs=0.01)
+    # B460: the model's self-reported "confidence" is no longer used; with no
+    # token log-probabilities from the client, confidence is unknown.
+    assert result["confidence"] is None
 
 
 def test_step2_decision_sentence_not_noise():

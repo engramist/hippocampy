@@ -1,0 +1,186 @@
+# B462 — Save-gate labeled set.
+#
+# Each item: one statement, one label from campy/data/artifact_categories.yaml,
+# and a `probe` tag naming what the item tests:
+#
+#   clear          plain positive with the usual trigger words
+#   no_keyword     positive with none of Step 4's trigger words (tests recall)
+#   hedged         hedged/speculative language that matches trigger words
+#   casual_rule    rule words ("always", "never", "must") used descriptively
+#   descriptive    decision words ("selected", "chosen", "merged") used descriptively
+#   past_status    completed work / status report
+#   question       question or proposal, nothing settled
+#   overlap        fits several categories; label set by spec precedence
+#   emotional      emotional language (amygdala salience)
+#   chit_chat      no work content
+#   fact           observation / fact about the system
+#
+# PROVENANCE: author-written and author-labeled (Claude, 2026-09-30), not drawn
+# from real sessions. Needs review by the project owner. Small n: treat metric
+# differences under ~10 points as noise.
+
+version: 1
+
+items:
+
+  # ---------------------------------------------------------------- decision
+  - {id: d01, label: decision, probe: clear, text: "We decided to use PostgreSQL for the job queue instead of Redis."}
+  - {id: d02, label: decision, probe: clear, text: "We chose Oxigraph over Kuzu for the primary store."}
+  - {id: d03, label: decision, probe: clear, text: "We went with fastembed so the daemon no longer needs PyTorch."}
+  - {id: d04, label: decision, probe: clear, text: "We agreed to ship the CLI before the web dashboard."}
+  - {id: d05, label: decision, probe: clear, text: "Decision: the plugin installs skills per user, not per project."}
+  - {id: d06, label: decision, probe: clear, text: "We settled on JSON Lines for the offline queue format."}
+  - {id: d07, label: decision, probe: no_keyword, text: "Let's go with SQLite for the vector store."}
+  - {id: d08, label: decision, probe: no_keyword, text: "OK, Postgres it is."}
+  - {id: d09, label: decision, probe: no_keyword, text: "We're dropping the SSE transport entirely."}
+  - {id: d10, label: decision, probe: no_keyword, text: "Auth lives in the gateway, not in each service."}
+  - {id: d11, label: decision, probe: no_keyword, text: "We'll use pytest-timeout with the thread method."}
+  - {id: d12, label: decision, probe: no_keyword, text: "The daemon will talk to adapters over a Unix socket rather than TCP."}
+  - {id: d13, label: decision, probe: no_keyword, text: "We no longer use the v1 recall API."}
+  - {id: d14, label: decision, probe: no_keyword, text: "Scratch the Redis idea, we're staying on the in-process cache."}
+  - {id: d15, label: decision, probe: no_keyword, text: "Use uv instead of pip for the installer."}
+  - {id: d16, label: decision, probe: no_keyword, text: "The benchmark harness switches to LoCoMo-10 as the primary suite."}
+  - {id: d17, label: decision, probe: clear, text: "After the review we finalized the schema: one node per statement."}
+  - {id: d18, label: decision, probe: no_keyword, text: "Rename the package to hippocampy and keep campy as the CLI name."}
+  - {id: d19, label: decision, probe: no_keyword, text: "We're moving the embeddings to ONNX Runtime."}
+  - {id: d20, label: decision, probe: no_keyword, text: "Llama 3.1 8B is the default local model going forward."}
+  - {id: d21, label: decision, probe: clear, text: "We selected Anthropic as the default cloud provider."}
+  - {id: d22, label: decision, probe: no_keyword, text: "We're reverting to the old tokenizer; the new one broke Unicode handling."}
+  - {id: d23, label: decision, probe: emotional, text: "Yes! Love it, let's go with the graph-native routing table."}
+  - {id: d24, label: decision, probe: no_keyword, text: "The dashboard stays loopback-only."}
+  - {id: d25, label: decision, probe: no_keyword, text: "Keep the regex senses as a fallback when Ollama is down."}
+  - {id: d26, label: decision, probe: no_keyword, text: "Instead of a cron job, the sweep runs inside the daemon."}
+  - {id: d27, label: decision, probe: clear, text: "We resolved the naming debate: tools are verbs, resources are nouns."}
+  - {id: d28, label: decision, probe: no_keyword, text: "Fine, we'll skip Windows support for the first release."}
+
+  # -------------------------------------------------------------- constraint
+  - {id: c01, label: constraint, probe: clear, text: "Never commit API keys to the repository."}
+  - {id: c02, label: constraint, probe: clear, text: "The daemon must not listen on a TCP port."}
+  - {id: c03, label: constraint, probe: clear, text: "Always run the full test suite before pushing to main."}
+  - {id: c04, label: constraint, probe: clear, text: "Writing outside the project directory is forbidden."}
+  - {id: c05, label: constraint, probe: clear, text: "All file paths must be canonicalized with realpath before use."}
+  - {id: c06, label: constraint, probe: clear, text: "Force-pushing to shared branches is prohibited."}
+  - {id: c07, label: constraint, probe: clear, text: "Make sure every new tool is added to the adapter allow-lists."}
+  - {id: c08, label: constraint, probe: no_keyword, text: "Don't use mocks in the integration tests."}
+  - {id: c09, label: constraint, probe: no_keyword, text: "No raw Cypher outside the query registry."}
+  - {id: c10, label: constraint, probe: no_keyword, text: "Don't ever store persistent state in Python dicts; the graph is the source of truth."}
+  - {id: c11, label: constraint, probe: no_keyword, text: "Stop adding print statements to the daemon, use the logger."}
+  - {id: c12, label: constraint, probe: no_keyword, text: "Only loopback binds for the dashboard, full stop."}
+  - {id: c13, label: constraint, probe: no_keyword, text: "Don't put model identifiers in commit messages."}
+  - {id: c14, label: constraint, probe: overlap, text: "We decided we must never log full prompt bodies."}
+  - {id: c15, label: constraint, probe: overlap, text: "We agreed that migrations always get a rollback script."}
+  - {id: c16, label: constraint, probe: overlap, text: "From now on we will squash-merge every PR."}
+  - {id: c17, label: constraint, probe: emotional, text: "I told you, stop editing generated files by hand!"}
+  - {id: c18, label: constraint, probe: emotional, text: "For the third time: do not touch the patent evidence pack without asking."}
+  - {id: c19, label: constraint, probe: clear, text: "Every backlog card must include acceptance criteria."}
+  - {id: c20, label: constraint, probe: clear, text: "Tests are never allowed to talk to the live daemon."}
+  - {id: c21, label: constraint, probe: no_keyword, text: "Keep secrets out of the activity log."}
+  - {id: c22, label: constraint, probe: no_keyword, text: "No new runtime dependencies without a discussion first."}
+  - {id: c23, label: constraint, probe: clear, text: "Assistant turns must not create confirmed decisions on their own."}
+  - {id: c24, label: constraint, probe: no_keyword, text: "Don't skip or quarantine failing tests to get CI green."}
+  - {id: c25, label: constraint, probe: clear, text: "Ensure all SPARQL goes through the gateway."}
+  - {id: c26, label: constraint, probe: no_keyword, text: "Use they/them unless someone has stated their pronouns."}
+  - {id: c27, label: constraint, probe: clear, text: "Documenting schema changes in ARCHITECTURE.md is mandatory."}
+  - {id: c28, label: constraint, probe: no_keyword, text: "Rebasing someone else's branch is off the table."}
+
+  # ------------------------------------------------------------- requirement
+  - {id: r01, label: requirement, probe: clear, text: "The recall endpoint must return results in under 200 milliseconds."}
+  - {id: r02, label: requirement, probe: clear, text: "The importer needs to handle UTF-16 encoded files."}
+  - {id: r03, label: requirement, probe: clear, text: "Acceptance criteria: the export includes both CSV and JSON."}
+  - {id: r04, label: requirement, probe: clear, text: "The installer is expected to work on Python 3.12 and 3.13."}
+  - {id: r05, label: requirement, probe: clear, text: "Requirement: the dashboard shows the last 50 activity events."}
+  - {id: r06, label: requirement, probe: clear, text: "The new bundle tool needs to return provenance for every fact."}
+  - {id: r07, label: requirement, probe: clear, text: "The migration must preserve every CO_OCCURS_WITH edge."}
+  - {id: r08, label: requirement, probe: no_keyword, text: "The search box has to support prefix matching."}
+  - {id: r09, label: requirement, probe: no_keyword, text: "Backups get restored in one command, including vectors."}
+  - {id: r10, label: requirement, probe: no_keyword, text: "The health check reports daemon version and uptime."}
+  - {id: r11, label: requirement, probe: clear, text: "The Windows installer needs a code-signed binary."}
+  - {id: r12, label: requirement, probe: clear, text: "We need the compile_context tool to cap bundles at 8k tokens."}
+  - {id: r13, label: requirement, probe: clear, text: "The CLI must print a clear error when the daemon is offline."}
+  - {id: r14, label: requirement, probe: no_keyword, text: "The plugin has to install without admin rights."}
+  - {id: r15, label: requirement, probe: clear, text: "Ask responses should cite the node ids they were built from."}
+  - {id: r16, label: requirement, probe: no_keyword, text: "Cold start under ten seconds on an M2."}
+  - {id: r17, label: requirement, probe: clear, text: "The trigger manifest needs to be regenerated whenever a Lesson changes."}
+  - {id: r18, label: requirement, probe: clear, text: "The graph export is required to round-trip without loss."}
+  - {id: r19, label: requirement, probe: clear, text: "The REST API must reject requests without a valid workspace."}
+  - {id: r20, label: requirement, probe: no_keyword, text: "Timeline view: newest first, grouped by session."}
+  - {id: r21, label: requirement, probe: clear, text: "The offline queue needs to survive a daemon restart."}
+  - {id: r22, label: requirement, probe: clear, text: "The report should include per-category precision and recall."}
+  - {id: r23, label: requirement, probe: no_keyword, text: "Deleting a node also removes its vectors."}
+  - {id: r24, label: requirement, probe: clear, text: "Search results must be deduplicated by content hash."}
+  - {id: r25, label: requirement, probe: clear, text: "The harness is expected to finish in under a minute on CI."}
+  - {id: r26, label: requirement, probe: no_keyword, text: "The status command exits non-zero when any check fails."}
+  - {id: r27, label: requirement, probe: clear, text: "The uninstaller needs to leave user data in place unless --purge is passed."}
+  - {id: r28, label: requirement, probe: clear, text: "The activity log must rotate at 10 MB."}
+
+  # ------------------------------------------------------------- action_item
+  - {id: a01, label: action_item, probe: clear, text: "Next step: add retries to the uploader."}
+  - {id: a02, label: action_item, probe: clear, text: "TODO: write the migration for the new edge type."}
+  - {id: a03, label: action_item, probe: clear, text: "I'll update the README after lunch."}
+  - {id: a04, label: action_item, probe: clear, text: "We will cut the release on Friday."}
+  - {id: a05, label: action_item, probe: clear, text: "I'm going to profile the sweep tomorrow."}
+  - {id: a06, label: action_item, probe: clear, text: "Action item: Sam files the bug with the fastembed maintainers."}
+  - {id: a07, label: action_item, probe: clear, text: "We plan to rerun LoCoMo once B460 lands."}
+  - {id: a08, label: action_item, probe: no_keyword, text: "Sam will update the runbook."}
+  - {id: a09, label: action_item, probe: no_keyword, text: "Remind me to rotate the API key on Monday."}
+  - {id: a10, label: action_item, probe: no_keyword, text: "Let me add a test for the salience rescue first."}
+  - {id: a11, label: action_item, probe: no_keyword, text: "Open a PR with the fix when you're done."}
+  - {id: a12, label: action_item, probe: no_keyword, text: "Still need to backfill the content hashes."}
+  - {id: a13, label: action_item, probe: clear, text: "We'll add the Windows CI job next sprint."}
+  - {id: a14, label: action_item, probe: no_keyword, text: "Follow up with legal about the CoNLL licence."}
+  - {id: a15, label: action_item, probe: clear, text: "The deploy is scheduled for Thursday at 9."}
+  - {id: a16, label: action_item, probe: no_keyword, text: "Tomorrow: clean up the dead Kuzu code paths."}
+  - {id: a17, label: action_item, probe: clear, text: "I plan to split the orchestrator into smaller modules."}
+  - {id: a18, label: action_item, probe: no_keyword, text: "Pinging Alex to review the schema change."}
+  - {id: a19, label: action_item, probe: clear, text: "Going to benchmark the new embedding provider tonight."}
+  - {id: a20, label: action_item, probe: overlap, text: "We need to rerun the migration tonight."}
+  - {id: a21, label: action_item, probe: no_keyword, text: "Your task: port the hook scripts to PowerShell."}
+  - {id: a22, label: action_item, probe: clear, text: "We'll write up the findings in the card after the run."}
+  - {id: a23, label: action_item, probe: no_keyword, text: "On my list for this week: the dashboard pagination bug."}
+  - {id: a24, label: action_item, probe: clear, text: "Next I'll wire the gate helper into the harness."}
+  - {id: a25, label: action_item, probe: no_keyword, text: "Assigning the flaky socket test to Priya."}
+  - {id: a26, label: action_item, probe: emotional, text: "Urgent: revoke the leaked token ASAP."}
+  - {id: a27, label: action_item, probe: no_keyword, text: "Before release, re-record the demo video."}
+  - {id: a28, label: action_item, probe: clear, text: "Todo for tomorrow: triage the open issues."}
+
+  # -------------------------------------------------------------------- none
+  - {id: n01, label: none, probe: hedged, text: "We should probably clean this up someday."}
+  - {id: n02, label: none, probe: hedged, text: "Maybe we should look at caching at some point."}
+  - {id: n03, label: none, probe: hedged, text: "It might be worth trying a bigger model, not sure."}
+  - {id: n04, label: none, probe: hedged, text: "You should be able to see the logs in the activity feed."}
+  - {id: n05, label: none, probe: hedged, text: "That should work now, I think."}
+  - {id: n06, label: none, probe: casual_rule, text: "The build always takes forever on Mondays."}
+  - {id: n07, label: none, probe: casual_rule, text: "I never know which venv is active."}
+  - {id: n08, label: none, probe: casual_rule, text: "It must be the proxy blocking the download."}
+  - {id: n09, label: none, probe: casual_rule, text: "The test always fails on the first run after a reboot."}
+  - {id: n10, label: none, probe: casual_rule, text: "Make sure you're sitting down, the benchmark numbers are wild."}
+  - {id: n11, label: none, probe: descriptive, text: "The selected rows are highlighted in blue."}
+  - {id: n12, label: none, probe: descriptive, text: "I merged the PR this morning."}
+  - {id: n13, label: none, probe: descriptive, text: "The chosen seed makes the test deterministic."}
+  - {id: n14, label: none, probe: descriptive, text: "The required fields are marked with an asterisk."}
+  - {id: n15, label: none, probe: past_status, text: "I ran the tests and three of them failed."}
+  - {id: n16, label: none, probe: past_status, text: "I added the retry logic to the uploader."}
+  - {id: n17, label: none, probe: past_status, text: "The migration finished in 42 seconds."}
+  - {id: n18, label: none, probe: past_status, text: "Fixed the typo in the README."}
+  - {id: n19, label: none, probe: past_status, text: "Deployed version 0.4.2 to staging."}
+  - {id: n20, label: none, probe: question, text: "Should we move the queue to SQS?"}
+  - {id: n21, label: none, probe: question, text: "What if we used Redis for the cache?"}
+  - {id: n22, label: none, probe: question, text: "Do we need a separate table for preferences?"}
+  - {id: n23, label: none, probe: question, text: "Is the daemon supposed to restart on its own?"}
+  - {id: n24, label: none, probe: question, text: "Would it make sense to require a schema version?"}
+  - {id: n25, label: none, probe: chit_chat, text: "Thanks, that's really helpful."}
+  - {id: n26, label: none, probe: chit_chat, text: "Good morning! Coffee first, then code."}
+  - {id: n27, label: none, probe: chit_chat, text: "Haha, fair enough."}
+  - {id: n28, label: none, probe: emotional, text: "Ugh, this is broken again."}
+  - {id: n29, label: none, probe: emotional, text: "This is awesome, great job on the dashboard."}
+  - {id: n30, label: none, probe: emotional, text: "Why is this so slow, damn."}
+  - {id: n31, label: none, probe: fact, text: "The staging database listens on port 5433."}
+  - {id: n32, label: none, probe: fact, text: "The API returns 404 for unknown user ids."}
+  - {id: n33, label: none, probe: fact, text: "Oxigraph stores RDF-star annotations natively."}
+  - {id: n34, label: none, probe: fact, text: "The sweep runs every five minutes by default."}
+  - {id: n35, label: none, probe: hedged, text: "We'll see how it goes."}
+  - {id: n36, label: none, probe: hedged, text: "We'll figure it out later."}
+  - {id: n37, label: none, probe: hedged, text: "I guess we could go either way on this."}
+  - {id: n38, label: none, probe: chit_chat, text: "Looks good to me."}
+  - {id: n39, label: none, probe: question, text: "Should I add a test for this?"}
+  - {id: n40, label: none, probe: descriptive, text: "The decision tree in the docs explains the routing."}

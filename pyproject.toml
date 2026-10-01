@@ -133,5 +133,5 @@ where = ["."]
 include = ["campy*", "adapters*", "web*"]
 
 [tool.setuptools.package-data]
-"campy.data" = ["**/*.md", "**/*.py", "**/*.toml", "**/*.json", "**/*.sh", "**/.*"]
+"campy.data" = ["**/*.md", "**/*.py", "**/*.toml", "**/*.json", "**/*.yaml", "**/*.sh", "**/.*"]
 "*" = ["campy.toml"]

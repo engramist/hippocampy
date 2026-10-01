@@ -53,7 +53,7 @@ async def _create_minimal_concept(gw, cid: str, emb):
     await gw.run(
         "orchestrator.create_minimal_concept",
         concept_id=cid, text_raw=f"concept {cid}", embedding=emb,
-        embedding_model="test", embedding_dim=len(emb), created_at=_now(),
+        embedding_model="test", embedding_dim=len(emb), origin_role=None, created_at=_now(),
     )
 
 

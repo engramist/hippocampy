@@ -448,6 +448,7 @@ Maps each concept to a gist ontological class using a hybrid dual-process approa
 - System 2 (deliberate): If 0.60–0.85 → escalate to local LLM call for disambiguation.
 - Early exit: If < 0.60 → noise, vector-log only, no further processing.
 - Messages resolved by System 2 are saved as labeled examples → centroids improve over time.
+- B460: System 2 picks one lettered class. Its confidence is the model's probability for that class, read from token log-probabilities when the provider returns them, otherwise unknown (`None`). The model is no longer asked to write its own confidence. Near ties (top-two margin < 0.15) are logged as `[Gate:NearTie]` and are not saved as training examples.
 
 **Step 3 — schema.org Sub-graph Routing:** gist class routes to the relevant schema.org property subset only (not the full vocabulary). This gives the precise semantic "shape" for the next step. Routing table is core IP — stored as graph edges `(GistClass)-[ROUTES_TO]->(SchemaOrgType)`, seeded at M1 schema init.
 
@@ -489,6 +490,7 @@ Also refines any Step 1b edge that has low confidence from ambiguous syntax. Res
 - < 60% → noise, vector-log only, no structural node created (filtered out — cocktail party background)
 - 60–90% → store with `confidence_low` flag, low `pathway_strength`, eligible for re-scoring (low attention)
 - > 90% → store with full confidence, proceed to Steps 5–7 (full attention fired)
+- B460 (opt-in): with `[save_gate] model_path` set, the confidence is a learned, temperature-calibrated probability of the most likely artifact category (`campy/brain/temporal_lobe/save_gate_model.py`; features: keyword signals, hashed n-grams, optionally gist class and sentence embedding) instead of `0.67 + 0.15 × keyword hits` and gist priors. The thresholds above and the single-token, assistant and rescue rules are unchanged. Unset (the default) or an unreadable model file keeps keyword scoring. Train and evaluate with `benchmarks/save_gate/train_gate.py`.
 
 **Cocktail Party Effect (Named Biomimetic Principle — IP Claim):** The Brain is always listening passively (adapter forwards all user + assistant turns). The Loop's Step 4 confidence gate is the selective attention mechanism — like hearing your name cut through background noise at a party. Most conversation is background; specific patterns (decision language, constraint language, entity mentions, contradictions to existing knowledge) cause the Brain's "senses" to fire.
 
@@ -511,6 +513,8 @@ The same principle should guide retrieval and prompting:
 
 No human confirmation required. Uncertain nodes enter as tentative knowledge, re-scored continuously.
 
+**Evidence rescue (B459).** An entity scoring just below the noise floor (0.45–0.60, the same band as the salience rescue) is looked up in the graph before it is dropped. If it closely matches (≥ `MATCH_THRESHOLD`) a confirmed, unflagged Concept, it is kept as tentative instead; for assistant turns the matching Concept must be user- or document-originated. Evidence never confirms anything on its own. The retrieved candidates are reused by Step 5, so this costs no extra retrieval for entities that proceed, and none at all for entities outside the band.
+
 **Prompt injection — what's actually mitigated and what isn't.** The Anomaly/Security sense above is a
 *contradiction* detector, not an injection detector: it flags new content that conflicts with an existing
 high-confidence constraint. A novel injected instruction with nothing pre-existing to contradict is not
@@ -532,7 +536,7 @@ When a message contains error/failure signals or significant action patterns (do
 
 **Step 5 — Dual-Scope Retrieval (Availability Heuristic):** Check branch scope (same MainQuest + vector similarity) then global scope (GlobalConstraint/GlobalPreference nodes) for existing matches.
 
-**Step 6 — Constrained Contradiction Arbitration:** Only runs in gray zone (0.75–0.92 similarity) or same artifact type match. LLM forced to `{classification, rationale_tokens, referenced_nodes}`. "Uncertain" → soft-lock.
+**Step 6 — Constrained Contradiction Arbitration:** Only runs in gray zone (0.75–0.92 similarity) or same artifact type match. LLM answers with one option letter (additive / contradiction / uncertain). "Uncertain" → soft-lock. B460: where the provider returns token log-probabilities, a near tie between the top two options (margin < 0.15) is treated as "uncertain" and logged as `[Gate:NearTie]`.
 
 **Step 7 — Pathway Update:**
 - Additive: increment `pathway_strength` on access: `strength += 1 * log(1 + 1/days_since_last_access)`. No duplicate node created.
@@ -632,6 +636,13 @@ Re-scoring factors:
 - Recency of supporting messages
 
 `current_truth` ranks results by `pathway_strength × confidence` — low-confidence nodes surface but rank lower naturally.
+
+**Provenance rule (B459).** Every Concept records `origin_role` (`user`, `document`, `assistant`; NULL for nodes written before B459). Assistant content can't confirm itself:
+- Event-driven re-scoring of an assistant-originated node counts only neighbors whose `origin_role` is `user` or `document` (`pathways.count_corroborating_neighbors`). Other assistant nodes and relation endpoints of unknown origin are not corroboration.
+- A repeat mention (exact-text dedup) promotes a node out of `confidence_low` only when that mention itself clears `HARD_LOCK`. It used to promote at ≥ 0.80, so an assistant repeating itself once confirmed its own claim.
+- A repeat mention by a stronger origin upgrades `origin_role` (user > document > assistant); unknown origins are never relabelled `assistant`.
+
+Note: as of B459 the background sweep does not re-score `confidence_low` nodes (item 1 in the sweep list above describes intent, not current code); only the event-driven path does.
 
 ## Read Flow — Graph-Native RAG
 

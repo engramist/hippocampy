@@ -108,7 +108,7 @@ async def test_new_concept_and_decision_are_vector_indexed(gw, ox_client):
         embedding_model="m", embedding_dim=384, gist_class="PhysicalThing",
         schema_org_type="SoftwareApplication", confidence=0.7, confidence_low=True,
         pathway_strength=0.5, salience_score=1.0, anomaly_type=None,
-        flagged_for_review=False, created_at="2026-09-24T00:00:00+00:00",
+        flagged_for_review=False, origin_role="user", created_at="2026-09-24T00:00:00+00:00",
     )
     await gw.run(
         "orchestrator.create_artifact_decision",

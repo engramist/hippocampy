@@ -51,6 +51,13 @@ graph_prune_threshold = 0.30  # percentile cutoff for pruning prunable graph nod
 structured_format = "toon"    # toon format for tabular / structured data
 ast_compression = true        # enable AST code folding
 
+[save_gate]
+# B460: calibrated Step 4 classifier, a JSON file written by
+#   python -m benchmarks.save_gate.train_gate --out <path>
+# Empty (default) = Step 4's keyword scoring. Read the training report first:
+# the labeled set it learns from is small and author-written (B462).
+model_path = ""
+
 [capture]
 enabled = true
 

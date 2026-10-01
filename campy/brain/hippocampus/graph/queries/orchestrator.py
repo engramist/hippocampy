@@ -44,7 +44,7 @@ ORCHESTRATOR_QUERIES = [
         cypher="""
         MATCH (c:Concept)
         WHERE toLower(c.text_raw) = toLower($t) AND c.archived = false
-        RETURN c.concept_id, c.pathway_strength
+        RETURN c.concept_id, c.pathway_strength, c.origin_role
         LIMIT 1
         """,
         params=("t",),
@@ -53,13 +53,14 @@ ORCHESTRATOR_QUERIES = [
         sparql="""
             PREFIX campy: <https://campy.dev/ns#>
 
-            SELECT ?concept_id ?pathway_strength
+            SELECT ?concept_id ?pathway_strength ?origin_role
             WHERE {
               ?c a campy:Concept ;
                  campy:concept_id ?concept_id ;
                  campy:text_raw ?text_raw ;
                  campy:pathway_strength ?pathway_strength .
               ?c campy:archived false .
+              OPTIONAL { ?c campy:origin_role ?origin_role }
               FILTER(LCASE(STR(?text_raw)) = LCASE(STR(?t)))
             }
             LIMIT 1
@@ -71,10 +72,11 @@ ORCHESTRATOR_QUERIES = [
         MATCH (c:Concept {concept_id: $id})
         SET c.last_accessed_at = timestamp($now),
             c.pathway_strength = CASE WHEN $ps > c.pathway_strength THEN $ps ELSE c.pathway_strength END,
-            c.confidence_low = CASE WHEN $conf >= 0.80 THEN false ELSE c.confidence_low END,
-            c.salience_score = CASE WHEN $salience > coalesce(c.salience_score, 1.0) THEN $salience ELSE coalesce(c.salience_score, 1.0) END
+            c.confidence_low = CASE WHEN $promote THEN false ELSE c.confidence_low END,
+            c.salience_score = CASE WHEN $salience > coalesce(c.salience_score, 1.0) THEN $salience ELSE coalesce(c.salience_score, 1.0) END,
+            c.origin_role = coalesce($origin_role, c.origin_role)
         """,
-        params=("id", "now", "ps", "conf", "salience"),
+        params=("id", "now", "ps", "promote", "salience", "origin_role"),
         mutating=True,
         description="Update pathway strength and last access on dedup hit",
         sparql="""
@@ -86,12 +88,14 @@ ORCHESTRATOR_QUERIES = [
               ?c campy:pathway_strength ?old_strength .
               ?c campy:confidence_low ?old_low .
               ?c campy:salience_score ?old_salience .
+              ?c campy:origin_role ?old_origin .
             }
             INSERT {
               ?c campy:last_accessed_at ?now .
               ?c campy:pathway_strength ?target_strength .
               ?c campy:confidence_low ?target_low .
               ?c campy:salience_score ?target_salience .
+              ?c campy:origin_role ?target_origin .
             }
             WHERE {
               ?c a campy:Concept ; campy:concept_id ?id .
@@ -99,8 +103,10 @@ ORCHESTRATOR_QUERIES = [
               OPTIONAL { ?c campy:pathway_strength ?old_strength }
               OPTIONAL { ?c campy:confidence_low ?old_low }
               OPTIONAL { ?c campy:salience_score ?old_salience }
+              OPTIONAL { ?c campy:origin_role ?old_origin }
               BIND(IF(BOUND(?old_strength) && ?ps > ?old_strength, ?ps, COALESCE(?old_strength, ?ps)) AS ?target_strength)
-              BIND(IF(?conf >= "0.80"^^xsd:double, false, COALESCE(?old_low, false)) AS ?target_low)
+              BIND(IF(?promote, false, COALESCE(?old_low, false)) AS ?target_low)
+              BIND(COALESCE(?origin_role, ?old_origin) AS ?target_origin)
               BIND(IF(?salience > COALESCE(?old_salience, "1.0"^^xsd:double), ?salience, COALESCE(?old_salience, "1.0"^^xsd:double)) AS ?target_salience)
             }
         """,
@@ -123,6 +129,7 @@ ORCHESTRATOR_QUERIES = [
             archived:         false,
             anomaly_type:     $anomaly_type,
             flagged_for_review: $flagged_for_review,
+            origin_role:      $origin_role,
             created_at:       timestamp($created_at),
             last_accessed_at: timestamp($created_at)
         })
@@ -131,7 +138,7 @@ ORCHESTRATOR_QUERIES = [
             "concept_id", "text_raw", "embedding", "embedding_model", "embedding_dim",
             "gist_class", "schema_org_type", "confidence", "confidence_low",
             "pathway_strength", "salience_score", "anomaly_type", "flagged_for_review",
-            "created_at",
+            "origin_role", "created_at",
         ),
         mutating=True,
         description="Create a new Concept node",
@@ -154,6 +161,7 @@ ORCHESTRATOR_QUERIES = [
                  campy:archived false ;
                  campy:anomaly_type ?anomaly_type ;
                  campy:flagged_for_review ?flagged_for_review ;
+                 campy:origin_role ?origin_role ;
                  campy:created_at ?created_at ;
                  campy:last_accessed_at ?created_at .
             }
@@ -237,11 +245,13 @@ ORCHESTRATOR_QUERIES = [
             confidence_low:   true,
             pathway_strength: 0.60,
             archived:         false,
+            origin_role:      $origin_role,
             created_at:       timestamp($created_at),
             last_accessed_at: timestamp($created_at)
         })
         """,
-        params=("concept_id", "text_raw", "embedding", "embedding_model", "embedding_dim", "created_at"),
+        params=("concept_id", "text_raw", "embedding", "embedding_model", "embedding_dim",
+                "origin_role", "created_at"),
         mutating=True,
         description="Create minimal low-confidence Concept node for relationship endpoint",
         sparql="""
@@ -261,6 +271,7 @@ ORCHESTRATOR_QUERIES = [
                  campy:confidence_low true ;
                  campy:pathway_strength "0.60"^^xsd:double ;
                  campy:archived false ;
+                 campy:origin_role ?origin_role ;
                  campy:created_at ?created_at ;
                  campy:last_accessed_at ?created_at .
             }

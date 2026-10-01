@@ -172,7 +172,8 @@ PATHWAY_QUERIES: tuple[NamedQuery, ...] = (
               AND neighbor.concept_id <> $id
             RETURN DISTINCT neighbor.concept_id,
                    neighbor.confidence,
-                   neighbor.pathway_strength
+                   neighbor.pathway_strength,
+                   neighbor.origin_role
             """,
         params=("id",),
         mutating=False,
@@ -180,7 +181,7 @@ PATHWAY_QUERIES: tuple[NamedQuery, ...] = (
         sparql="""
             PREFIX campy: <https://campy.dev/ns#>
 
-            SELECT DISTINCT ?concept_id ?confidence ?pathway_strength
+            SELECT DISTINCT ?concept_id ?confidence ?pathway_strength ?origin_role
             WHERE {
               ?anchor a campy:Concept ; campy:concept_id ?id .
               {
@@ -202,6 +203,7 @@ PATHWAY_QUERIES: tuple[NamedQuery, ...] = (
                         campy:confidence ?confidence ;
                         campy:pathway_strength ?pathway_strength .
               ?neighbor campy:archived false .
+              OPTIONAL { ?neighbor campy:origin_role ?origin_role }
               FILTER(?concept_id != ?id)
             }
         """,
@@ -231,6 +233,41 @@ PATHWAY_QUERIES: tuple[NamedQuery, ...] = (
                  campy:pathway_strength ?pathway_strength .
               ?n campy:archived false .
               FILTER(?confidence >= "0.60"^^xsd:double && ?n != ?c)
+            }
+        """,
+    ),
+    NamedQuery(
+        name="pathways.count_corroborating_neighbors",
+        cypher="""
+            MATCH (c:Concept {concept_id: $cid})-[]-(n:Concept)
+            WHERE n.archived = false AND n.confidence >= 0.60
+              AND n.origin_role IN ['user', 'document']
+            RETURN count(n) AS neighbor_count,
+                   avg(n.pathway_strength) AS avg_strength
+            """,
+        params=("cid",),
+        mutating=False,
+        description=(
+            "B459: like count_high_confidence_neighbors, but only neighbors that "
+            "came from a user or document turn (evidence that can corroborate "
+            "an assistant-originated Concept)."
+        ),
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+            SELECT (COUNT(DISTINCT ?n) AS ?neighbor_count) (AVG(?pathway_strength) AS ?avg_strength)
+            WHERE {
+              ?c a campy:Concept ; campy:concept_id ?cid .
+              { ?c ?p ?n } UNION { ?n ?p ?c }
+              FILTER(isIRI(?n) && ?p != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> && STRSTARTS(STR(?p), "https://campy.dev/ns#"))
+              ?n a campy:Concept ;
+                 campy:confidence ?confidence ;
+                 campy:pathway_strength ?pathway_strength ;
+                 campy:origin_role ?origin_role .
+              ?n campy:archived false .
+              FILTER(?confidence >= "0.60"^^xsd:double && ?n != ?c)
+              FILTER(?origin_role IN ("user", "document"))
             }
         """,
     ),

@@ -6,8 +6,8 @@ System 1: cosine similarity vs. GistClass centroids (fast, no LLM).
 System 2: Ollama LLM call for ambiguous 0.60–0.85 range.
 """
 
-import json
 from campy.brain.hippocampus.graph import embeddings as emb
+from campy.brain.llm.decide import decide, log_near_tie, options_block
 
 # Calibrated for all-MiniLM-L6-v2 (384-dim).
 # Seed examples vs own centroid score ~0.50-0.60; cross-class ~0.20-0.35.
@@ -111,28 +111,25 @@ def classify_concept(entity_text: str, embedding_model: str,
 
 
 def _classify_with_llm(entity_text: str, llm_client) -> dict:
-    """System 2: ask Ollama to classify. Saves example for centroid improvement."""
-    class_list = "\n".join(
-        f"- {name}: {desc}" for name, desc in GIST_DESCRIPTIONS.items()
-    )
+    """
+    System 2: ask the LLM to pick one gist class (B460: a single option letter).
+
+    confidence is the model's probability for the chosen class when the
+    provider returns token log-probabilities, else None (unknown); the model is
+    no longer asked to write its own confidence. A near tie between the top
+    two classes is logged and marked so the orchestrator does not save it as a
+    centroid training example.
+    """
     prompt = (
         f'Classify this concept into exactly one gist ontology class.\n\n'
         f'Concept: "{entity_text}"\n\n'
-        f'Classes:\n{class_list}\n\n'
-        f'Respond with JSON only, no explanation:\n'
-        f'{{"class": "<class_name>", "confidence": <0.0-1.0>}}'
+        + options_block(GIST_CLASSES, GIST_DESCRIPTIONS)
     )
-    try:
-        raw = llm_client.chat([{"role": "user", "content": prompt}])
-        # Strip markdown code fences if present
-        raw = raw.strip().strip("```json").strip("```").strip()
-        result = json.loads(raw)
-        class_name = result.get("class", "")
-        confidence = float(result.get("confidence", 0.7))
-        # L2 fix: return noise for unrecognized classes rather than silently
-        # misclassifying as the first entry ("Restriction").
-        if class_name not in GIST_CLASSES:
-            return {"gist_class": None, "confidence": 0.0, "system": "noise"}
-        return {"gist_class": class_name, "confidence": confidence, "system": "2"}
-    except Exception:
+    decision = decide(llm_client, prompt, GIST_CLASSES)
+    if decision.choice is None:
         return {"gist_class": None, "confidence": 0.0, "system": "noise"}
+    near_tie = decision.near_tie()
+    if near_tie:
+        log_near_tie("step2_gist", decision, entity_text)
+    return {"gist_class": decision.choice, "confidence": decision.probability,
+            "system": "2", "near_tie": near_tie}
