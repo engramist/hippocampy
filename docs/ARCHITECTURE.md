@@ -490,6 +490,7 @@ Also refines any Step 1b edge that has low confidence from ambiguous syntax. Res
 - < 60% → noise, vector-log only, no structural node created (filtered out — cocktail party background)
 - 60–90% → store with `confidence_low` flag, low `pathway_strength`, eligible for re-scoring (low attention)
 - > 90% → store with full confidence, proceed to Steps 5–7 (full attention fired)
+- B460 (opt-in): with `[save_gate] model_path` set, the confidence is a learned, temperature-calibrated probability of the most likely artifact category (`campy/brain/temporal_lobe/save_gate_model.py`; features: keyword signals, hashed n-grams, optionally gist class and sentence embedding) instead of `0.67 + 0.15 × keyword hits` and gist priors. The thresholds above and the single-token, assistant and rescue rules are unchanged. Unset (the default) or an unreadable model file keeps keyword scoring. Train and evaluate with `benchmarks/save_gate/train_gate.py`.
 
 **Cocktail Party Effect (Named Biomimetic Principle — IP Claim):** The Brain is always listening passively (adapter forwards all user + assistant turns). The Loop's Step 4 confidence gate is the selective attention mechanism — like hearing your name cut through background noise at a party. Most conversation is background; specific patterns (decision language, constraint language, entity mentions, contradictions to existing knowledge) cause the Brain's "senses" to fire.
 

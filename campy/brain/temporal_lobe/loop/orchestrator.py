@@ -49,6 +49,7 @@ from campy.brain.temporal_lobe.loop.step7_5_lesson import extract_lessons  # B11
 from campy.brain.temporal_lobe.loop.anomaly_detection import check_anomalies, store_anomaly_flag  # B12
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.llm.provider import create_llm_client_for_step  # B16
+from campy.brain.temporal_lobe.save_gate_model import load_gate_model  # B460
 
 
 # B447: step-level timing instrumentation. Filed after this loop was caught
@@ -127,6 +128,9 @@ async def run_loop(message_id: str, text: str, db, llm_client,
     llm_step2 = create_llm_client_for_step(config, "step2_gist") or llm_client
     llm_step3b = create_llm_client_for_step(config, "step3b_relations") or llm_client
     llm_step6 = create_llm_client_for_step(config, "step6_arbitration") or llm_client
+    # B460 — calibrated Step 4 classifier when [save_gate] model_path is set.
+    gate_model = load_gate_model(config)
+    sentence_vectors: dict[str, list[float]] = {}  # this message only
 
     # ------------------------------------------------------------------
     # Step 1, 1b, 2, 3, 3b — Entity and Relation extraction
@@ -272,12 +276,21 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         # Step 4 — Pattern Matching + Confidence Gating
         # L5 fix: pass entity_text so signal matching uses entity sentence context.
         # ISSUE-024 fix: pass role so assistant turns get confidence cap.
+        sentence_vector = None
+        if gate_model is not None and gate_model.needs_embedding:
+            sentence = entity_sentence(text, entity.get("text") or text)
+            if sentence not in sentence_vectors:
+                sentence_vectors[sentence] = await asyncio.to_thread(
+                    emb.embed, sentence, model_name=embedding_model)
+            sentence_vector = sentence_vectors[sentence]
         step4_result = classify_artifact(
             text,
             entity.get("gist_class"),
             entity.get("schema_org_type"),
             entity_text=entity.get("text"),
             role=role,
+            gate_model=gate_model,
+            embedding=sentence_vector,
         )
 
         # Emotion sense — 7th Cocktail Party sense (Amygdala): emotional

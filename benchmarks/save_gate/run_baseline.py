@@ -42,6 +42,7 @@ from campy.brain.temporal_lobe.loop.step4_pattern import (
     NOISE_FLOOR,
     apply_salience_rescue,
     classify_artifact,
+    entity_sentence,
     signal_scores,
 )
 
@@ -77,23 +78,32 @@ def _outcome(step4: dict) -> str:
 _OUTCOME_RANK = {"noise": 0, "tentative": 1, "reified": 2}
 
 
-def decide_message(text: str, typed_entities: list[dict], role: str = "user") -> dict:
+def decide_message(text: str, typed_entities: list[dict], role: str = "user",
+                   gate_model=None, embed: Callable[[str], list[float]] | None = None) -> dict:
     """
     Run the Step 4 gate over one message's typed entities (output of Steps
     1–3) exactly as run_loop does, and reduce to a message-level result: the
     strongest entity outcome (reified > tentative > noise, then confidence).
+
+    gate_model: a B460 GateModel to score with instead of keyword counts;
+    embed(sentence) is used when that model needs sentence embeddings.
 
     Returns {outcome, artifact_type, confidence, entities}.
     """
     best = {"outcome": "noise", "artifact_type": "none", "confidence": 0.0}
     per_entity = []
     for entity in typed_entities:
+        embedding = None
+        if gate_model is not None and gate_model.needs_embedding and embed is not None:
+            embedding = embed(entity_sentence(text, entity.get("text") or text))
         step4 = classify_artifact(
             text,
             entity.get("gist_class"),
             entity.get("schema_org_type"),
             entity_text=entity.get("text"),
             role=role,
+            gate_model=gate_model,
+            embedding=embedding,
         )
         step4, _salience, rescued = apply_salience_rescue(step4, text)
         outcome = _outcome(step4)
@@ -310,7 +320,11 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--mode", choices=("signals", "full"), default="signals")
     ap.add_argument("--json", help="write metrics (and per-item rows) to this path")
+    ap.add_argument("--gate-model", help="full mode: score Step 4 with this B460 gate model "
+                                         "(train_gate.py --out) instead of keyword counts")
     args = ap.parse_args(argv)
+    if args.gate_model and args.mode != "full":
+        ap.error("--gate-model needs --mode full")
 
     items = load_gold()
     if args.mode == "signals":
@@ -318,7 +332,13 @@ def main(argv: list[str] | None = None) -> int:
         print(format_signals(metrics))
     else:
         pipeline = build_full_pipeline()
-        results = [decide_message(it["text"], pipeline(it["text"])) for it in items]
+        gate_model, embed = None, None
+        if args.gate_model:
+            from campy.brain.hippocampus.graph import embeddings as emb
+            from campy.brain.temporal_lobe.save_gate_model import GateModel
+            gate_model, embed = GateModel.load(args.gate_model), emb.embed
+        results = [decide_message(it["text"], pipeline(it["text"]), gate_model=gate_model, embed=embed)
+                   for it in items]
         metrics = score_full(items, results)
         metrics["rows"] = [{"id": it["id"], "gold": it["label"], **r}
                            for it, r in zip(items, results)]
