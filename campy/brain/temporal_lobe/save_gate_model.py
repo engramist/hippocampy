@@ -22,7 +22,7 @@ train_gate.py (numpy). This module only featurizes and predicts, in pure
 Python, so the daemon gains no dependency.
 
 The model is a file artifact (JSON), not agent state: it is loaded from
-`[save_gate] model_path` and cached per path and mtime. No path configured,
+`[save_gate] model_path` and parsed once per path and mtime. No path configured,
 or an unreadable file, means Step 4 behaves exactly as before.
 """
 
@@ -35,6 +35,7 @@ import os
 import re
 import zlib
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -173,8 +174,17 @@ class GateModel:
         return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
-# Read-through cache of the model file: (path, mtime) -> model, or the error.
-_cache: dict[tuple[str, float], GateModel | None] = {}
+@lru_cache(maxsize=4)
+def _load_file(path: str, mtime: float) -> GateModel | None:
+    """Parse the model file once per (path, mtime); a changed file reloads.
+    Holds no agent state: the file is the model."""
+    try:
+        model = GateModel.load(path)
+        _logger.info("[Gate:Model] loaded %s (%s)", path, model.metadata.get("trained_on", "?"))
+        return model
+    except Exception as e:  # missing, unreadable, wrong format
+        _logger.warning("[Gate:Model] not using %s: %s; Step 4 keeps keyword scoring", path, e)
+        return None
 
 
 def load_gate_model(config: dict | None) -> GateModel | None:
@@ -185,14 +195,7 @@ def load_gate_model(config: dict | None) -> GateModel | None:
         return None
     path = os.path.expanduser(str(path))
     try:
-        key = (path, os.path.getmtime(path))
+        mtime = os.path.getmtime(path)
     except OSError:
-        key = (path, -1.0)
-    if key not in _cache:
-        try:
-            _cache[key] = GateModel.load(path)
-            _logger.info("[Gate:Model] loaded %s (%s)", path, _cache[key].metadata.get("trained_on", "?"))
-        except Exception as e:  # missing, unreadable, wrong format
-            _logger.warning("[Gate:Model] not using %s: %s; Step 4 keeps keyword scoring", path, e)
-            _cache[key] = None
-    return _cache[key]
+        mtime = -1.0
+    return _load_file(path, mtime)
