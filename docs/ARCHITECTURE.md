@@ -511,6 +511,8 @@ The same principle should guide retrieval and prompting:
 
 No human confirmation required. Uncertain nodes enter as tentative knowledge, re-scored continuously.
 
+**Evidence rescue (B459).** An entity scoring just below the noise floor (0.45–0.60, the same band as the salience rescue) is looked up in the graph before it is dropped. If it closely matches (≥ `MATCH_THRESHOLD`) a confirmed, unflagged Concept, it is kept as tentative instead; for assistant turns the matching Concept must be user- or document-originated. Evidence never confirms anything on its own. The retrieved candidates are reused by Step 5, so this costs no extra retrieval for entities that proceed, and none at all for entities outside the band.
+
 **Prompt injection — what's actually mitigated and what isn't.** The Anomaly/Security sense above is a
 *contradiction* detector, not an injection detector: it flags new content that conflicts with an existing
 high-confidence constraint. A novel injected instruction with nothing pre-existing to contradict is not

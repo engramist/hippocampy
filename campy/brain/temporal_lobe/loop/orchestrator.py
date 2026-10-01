@@ -31,7 +31,9 @@ from campy.brain.temporal_lobe.loop.step1b_relations import extract_relations
 from campy.brain.temporal_lobe.loop.step2_gist      import classify_concept
 from campy.brain.temporal_lobe.loop.step3_schema_org import route_to_schema_org
 from campy.brain.temporal_lobe.loop.step3b_relations import extract_semantic_relations
-from campy.brain.temporal_lobe.loop.step4_pattern   import classify_artifact, apply_salience_rescue
+from campy.brain.temporal_lobe.loop.step4_pattern   import (
+    classify_artifact, apply_salience_rescue, apply_evidence_rescue, needs_evidence,
+)
 from campy.brain.hippocampus.schema import ORIGIN_ROLES
 from campy.brain.temporal_lobe.loop.step5_retrieval import (
     retrieve_candidates, MATCH_THRESHOLD, GRAY_ZONE_UPPER
@@ -114,6 +116,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         "anomalies_detected": 0,  # B12
         "triggers_bound":    0,   # Phase 3: Step 4b auto-bindings
         "salience_rescues":  0,   # Emotion sense: amygdala noise-floor rescues
+        "evidence_rescues":  0,   # B459: graph-evidence noise-floor rescues
     }
 
     # ------------------------------------------------------------------
@@ -280,6 +283,30 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         if rescued:
             summary["salience_rescues"] = summary.get("salience_rescues", 0) + 1
 
+        # B459 — Entity / Contradiction senses: only for entities just below
+        # the noise floor, look the entity up before dropping it. A close match
+        # to a confirmed Concept (user/document-backed for assistant turns)
+        # keeps it as tentative. The candidates are reused by Step 5.
+        early_candidates = None
+        if needs_evidence(step4_result):
+            vector = entity.get("vector")
+            if not vector:
+                async with _timed(message_id, f"embed_fallback[{idx}]:evidence"):
+                    vector = await asyncio.to_thread(emb.embed, entity["text"], model_name=embedding_model)
+                entity["vector"] = vector
+            t0 = time.perf_counter()
+            early_candidates = retrieve_candidates(vector, "", db, exclude_ids=concept_ids)
+            step4_result, support_ids, ev_rescued = apply_evidence_rescue(
+                step4_result, early_candidates, role,
+            )
+            _logger.info(
+                "[Loop:Timing] msg=%s step=step4_evidence[%d] elapsed=%.2fs candidates=%d rescued=%s support=%s",
+                message_id[:8], idx, time.perf_counter() - t0, len(early_candidates),
+                ev_rescued, support_ids[:3],
+            )
+            if ev_rescued:
+                summary["evidence_rescues"] += 1
+
         if not step4_result["should_proceed"]:
             summary["noise_count"] += 1
             continue
@@ -316,8 +343,11 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         # "existing" concepts. retrieve_candidates uses the first exclude_id
         # for self-exclusion — pass the full list to skip all same-run concepts.
         t0 = time.perf_counter()
-        candidates = retrieve_candidates(vector, "", db,
-                                         exclude_ids=concept_ids)
+        if early_candidates is not None:
+            candidates = early_candidates  # B459: already retrieved for the gate
+        else:
+            candidates = retrieve_candidates(vector, "", db,
+                                             exclude_ids=concept_ids)
         _logger.info(
             "[Loop:Timing] msg=%s step=step5_retrieval[%d] elapsed=%.2fs candidates=%d",
             message_id[:8], idx, time.perf_counter() - t0, len(candidates),

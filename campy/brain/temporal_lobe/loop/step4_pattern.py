@@ -378,3 +378,56 @@ def apply_salience_rescue(step4_result: dict, text: str) -> tuple[dict, float, b
             "should_proceed": True,
         }, salience, True
     return step4_result, salience, False
+
+
+# B459: evidence (Entity / Contradiction senses). An entity in the same
+# just-below-the-floor band the amygdala rescues is kept as a tentative
+# Concept when the graph already holds a confirmed Concept it closely matches.
+# Evidence only lifts to tentative (confidence_low), never to HARD_LOCK:
+# confirming still needs the statement itself, or B459-safe re-scoring.
+EVIDENCE_RESCUE_MIN = SALIENCE_RESCUE_MIN
+
+# Origins whose confirmed Concepts may corroborate an assistant turn.
+_CORROBORATING_ORIGINS = ("user", "document")
+
+
+def needs_evidence(step4_result: dict) -> bool:
+    """True when the gate would drop the entity but graph evidence could rescue it."""
+    return (not step4_result["should_proceed"]
+            and step4_result["confidence"] >= EVIDENCE_RESCUE_MIN)
+
+
+def supporting_evidence(candidates: list[dict], role: str = "user") -> list[dict]:
+    """
+    Step 5 candidates that count as evidence the entity matters: confirmed
+    (not confidence_low), not flagged for review, and, for assistant turns,
+    from a user or document origin (assistant content can't corroborate
+    itself; unknown origins don't count either).
+    """
+    out = []
+    for c in candidates or []:
+        if c.get("confidence_low", True) or c.get("flagged_for_review"):
+            continue
+        if role == "assistant" and c.get("origin_role") not in _CORROBORATING_ORIGINS:
+            continue
+        out.append(c)
+    return out
+
+
+def apply_evidence_rescue(step4_result: dict, candidates: list[dict],
+                          role: str = "user") -> tuple[dict, list[str], bool]:
+    """
+    Keep a just-below-the-floor entity as a tentative Concept when the graph
+    supports it. Returns (step4_result, supporting_concept_ids, rescued).
+    """
+    if not needs_evidence(step4_result):
+        return step4_result, [], False
+    support = supporting_evidence(candidates, role)
+    if not support:
+        return step4_result, [], False
+    return {
+        "artifact_type":  step4_result["artifact_type"],
+        "confidence":     NOISE_FLOOR + 0.02,  # same landing point as the salience rescue
+        "confidence_low": True,
+        "should_proceed": True,
+    }, [c["concept_id"] for c in support], True
