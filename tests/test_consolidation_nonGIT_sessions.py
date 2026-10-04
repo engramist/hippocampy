@@ -5,12 +5,8 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-sys.path.insert(0, os.path.dirname(__file__))
 
-try:
-    from conftest import SPACY_AVAILABLE
-except ImportError:
-    SPACY_AVAILABLE = False
+from tests._spacy import SPACY_AVAILABLE
 
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.temporal_lobe.loop.orchestrator import run_loop
