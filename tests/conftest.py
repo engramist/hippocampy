@@ -17,16 +17,12 @@ def pytest_configure(config):
 # module-level don't corrupt sys.modules and cascade-fail unrelated tests.
 #
 # Tests that need a *real* working spaCy (i.e. actual NER output) must check
-# `SPACY_AVAILABLE` and skip when False.
+# `SPACY_AVAILABLE` (`from tests._spacy import SPACY_AVAILABLE`, never
+# `from conftest import ...` — see tests/_spacy.py) and skip when False.
 # ---------------------------------------------------------------------------
-SPACY_AVAILABLE = False
-try:
-    import spacy as _real_spacy
-    # Import alone isn't enough — spaCy 3.x loads on Python 3.14 but
-    # pydantic v1 compat is broken, so spacy.load() fails at runtime.
-    _real_spacy.load("en_core_web_md")
-    SPACY_AVAILABLE = True
-except Exception:
+from tests._spacy import SPACY_AVAILABLE
+
+if not SPACY_AVAILABLE:
     # Build a minimal stub that satisfies `import spacy` without side-effects.
     _stub = types.ModuleType("spacy")
     _stub.__version__ = "0.0.0+stub"

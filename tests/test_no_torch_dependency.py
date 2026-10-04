@@ -22,7 +22,7 @@ sys.modules as a result. It will fail the day something reintroduces a
 hard torch dependency (e.g. `sentence-transformers`, `spacy[transformers]`,
 `thinc[torch]`), which is the intended signal.
 
-Skips when spaCy itself isn't loadable — see tests/conftest.py: spaCy's
+Skips when spaCy itself isn't loadable — see tests/_spacy.py: spaCy's
 pydantic.v1 compat is broken on Python 3.14. CI runs Python 3.12.
 """
 import os
@@ -31,12 +31,8 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-sys.path.insert(0, os.path.dirname(__file__))  # make conftest importable
 
-try:
-    from conftest import SPACY_AVAILABLE
-except ImportError:
-    SPACY_AVAILABLE = False
+from tests._spacy import SPACY_AVAILABLE
 
 _needs_spacy = pytest.mark.skipif(
     not SPACY_AVAILABLE,
