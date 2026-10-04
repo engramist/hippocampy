@@ -33,46 +33,105 @@ VERB_PATTERNS: dict[str, str] = {
 }
 
 
+# B460: "We migrated from X to Y" names the retired value first. A move verb
+# with both a "from" and a "to" object means Y REPLACES X.
+MOVE_VERBS = {"migrate", "switch", "move", "transition", "upgrade", "change"}
+
+
+_NAME_PARTS = {"compound", "nummod", "amod", "appos", "flat", "nmod", "quantmod"}
+_NAME_PUNCT = {"-", "/", "."}
+_BREAK = set(":;,()")
+
+
+def _span_text(tok, doc) -> str:
+    """The name a token stands for: the token plus the adjacent modifiers that
+    are part of the name ("Vue 2", "PostgreSQL 14", "us-west-2"), then widened
+    to whole written words -- tokens with no space between them, since
+    "eu-central-1" parses as three tokens. Noun chunks alone drop the version
+    ("PostgreSQL" for "PostgreSQL 14"), and the version is the part that tells
+    two values apart."""
+    parts, stack = {tok.i}, [tok]
+    while stack:
+        for c in stack.pop().children:
+            if c.dep_ in _NAME_PARTS or (c.dep_ == "punct" and c.text in _NAME_PUNCT):
+                parts.add(c.i)
+                stack.append(c)
+    lo = hi = tok.i  # the contiguous run of name parts around the token
+    while lo - 1 in parts:
+        lo -= 1
+    while hi + 1 in parts:
+        hi += 1
+    while lo > 0 and not doc[lo - 1].whitespace_ and doc[lo - 1].text not in _BREAK:
+        lo -= 1
+    while hi + 1 < len(doc) and not doc[hi].whitespace_ and doc[hi + 1].text not in _BREAK | {"."}:
+        hi += 1
+    return doc[lo:hi + 1].text
+
+
+def _prep_object(verb, prep_word: str):
+    for c in verb.children:
+        if c.dep_ == "prep" and c.lower_ == prep_word:
+            return next((g for g in c.children if g.dep_ == "pobj"), None)
+    return None
+
+
+def _relation(head_tok, relation_type: str, tail_tok, doc) -> dict:
+    return {
+        "head":          _span_text(head_tok, doc),
+        "relation_type": relation_type,
+        "tail":          _span_text(tail_tok, doc),
+        "confidence":    0.85,
+        "inferred_by":   "system",
+    }
+
+
 def extract_relations(doc, entities: list[dict]) -> list[dict]:
     """
-    Walk the dep tree looking for: nsubj → VERB → dobj patterns.
+    Walk the dep tree for verb patterns:
+      - active:   nsubj -> VERB -> dobj/attr/pobj    ("A replaced B": A REPLACES B)
+      - passive:  nsubjpass <- VERB -> agent "by" X  ("B was replaced by A": A REPLACES B)
+      - move:     VERB from X to Y                   ("migrated from B to A": A REPLACES B)
     Returns list of {head, relation_type, tail, confidence, inferred_by}.
     Empty list = Step 3b eligibility check will fire.
+
+    B460: the passive subject is the relation's TAIL. It used to be taken as
+    the head, and passive and move sentences -- the usual way a supersession
+    is stated ("Zipkin has been replaced by OpenTelemetry", "migrated from
+    PostgreSQL 14 to PostgreSQL 16") -- produced nothing here, so Step 3b's
+    LLM guessed, and it named the retired value the winner.
     """
     relations = []
-    entity_texts = {e["text"].lower() for e in entities}
 
     for token in doc:
         if token.pos_ != "VERB":
             continue
+        lemma = token.lemma_.lower()
 
-        relation_type = VERB_PATTERNS.get(token.lemma_.lower())
+        if lemma in MOVE_VERBS:
+            old_tok, new_tok = _prep_object(token, "from"), _prep_object(token, "to")
+            if old_tok is not None and new_tok is not None:
+                relations.append(_relation(new_tok, "REPLACES", old_tok, doc))
+            continue
+
+        relation_type = VERB_PATTERNS.get(lemma)
         if not relation_type:
             continue
 
-        # Find nsubj (head) and dobj or attr (tail)
-        head_tok = next((c for c in token.children if c.dep_ in ("nsubj", "nsubjpass")), None)
-        tail_tok = next((c for c in token.children if c.dep_ in ("dobj", "attr", "pobj")), None)
-
-        if not head_tok or not tail_tok:
+        # The subject nearest the verb: "Final decision: X has been replaced
+        # by Y" parses both "decision" and X as passive subjects.
+        subjects = [c for c in token.children if c.dep_ in ("nsubj", "nsubjpass")]
+        if not subjects:
+            continue
+        subj = min(subjects, key=lambda c: abs(token.i - c.i))
+        if subj.dep_ == "nsubjpass":
+            agent = next((c for c in token.children if c.dep_ == "agent"), None)
+            actor = next((g for g in agent.children if g.dep_ == "pobj"), None) if agent is not None else None
+            if actor is not None:
+                relations.append(_relation(actor, relation_type, subj, doc))
             continue
 
-        head_text = head_tok.text
-        tail_text = tail_tok.text
-
-        # Expand to full noun chunk if possible
-        for chunk in doc.noun_chunks:
-            if head_tok in chunk:
-                head_text = chunk.text
-            if tail_tok in chunk:
-                tail_text = chunk.text
-
-        relations.append({
-            "head":          head_text,
-            "relation_type": relation_type,
-            "tail":          tail_text,
-            "confidence":    0.85,
-            "inferred_by":   "system",
-        })
+        obj = next((c for c in token.children if c.dep_ in ("dobj", "attr", "pobj")), None)
+        if obj is not None:
+            relations.append(_relation(subj, relation_type, obj, doc))
 
     return relations

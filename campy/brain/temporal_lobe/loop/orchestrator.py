@@ -19,6 +19,7 @@ Loop:
 from __future__ import annotations
 import asyncio
 import logging
+import re
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -220,11 +221,13 @@ async def run_loop(message_id: str, text: str, db, llm_client,
             message_id[:8], time.perf_counter() - t_step23, len(typed_entities),
         )
 
-        # Step 1b filtering
+        # Step 1b filtering: keep a relation that names a surviving entity.
+        # B460: "names" = equals it or contains it as whole words -- step1b
+        # spans keep versions ("PostgreSQL 16") that NER drops ("PostgreSQL").
         surviving_texts = {e["text"].lower() for e in typed_entities}
         surviving_step1b = [
             r for r in step1b_relations
-            if (r["head"].lower() in surviving_texts or r["tail"].lower() in surviving_texts)
+            if _names_entity(r["head"], surviving_texts) or _names_entity(r["tail"], surviving_texts)
         ]
         deferred_relations = list(surviving_step1b)
 
@@ -246,8 +249,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                     message_id[:8], time.perf_counter() - t0, len(step3b_relations),
                 )
                 for rel in step3b_relations:
-                    pair = (rel["head"].lower(), rel["tail"].lower())
-                    if pair not in step1b_covered_pairs:
+                    if _llm_relation_is_new(rel, step1b_covered_pairs):
                         deferred_relations.append(rel)
 
         summary["relations_found"] = len(deferred_relations)
@@ -781,6 +783,23 @@ async def _ensure_concept_exists(text: str, embedding_model: str, db, now: str) 
         )
     except Exception:
         _logger.debug("_ensure_concept_exists skipped for '%s' (may be duplicate)", text)
+
+
+def _llm_relation_is_new(rel: dict, step1b_pairs: set[tuple[str, str]]) -> bool:
+    """A Step 3b relation is kept only for a pair Step 1b did not relate, in
+    either direction. B460: Step 1b reads the direction off the sentence's
+    grammar; an LLM edge on the reversed pair ("PostgreSQL 14 CHOSEN_OVER
+    PostgreSQL 16" beside Step 1b's "PostgreSQL 16 REPLACES PostgreSQL 14") is
+    a guess contradicting it."""
+    pair = (rel["head"].lower(), rel["tail"].lower())
+    return pair not in step1b_pairs and pair[::-1] not in step1b_pairs
+
+
+def _names_entity(text: str, entity_texts: set[str]) -> bool:
+    """B460: `text` is one of the entities, or contains one as whole words."""
+    low = text.lower()
+    return low in entity_texts or any(
+        re.search(rf"(?<![^\W_]){re.escape(e)}(?![^\W_])", low) for e in entity_texts if e)
 
 
 async def _store_relation(rel: dict, db, now: str,
