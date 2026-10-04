@@ -316,6 +316,37 @@ class VectorStore:
             return []
         return [(uri, -float(bm25)) for uri, bm25 in rows]
 
+    def document_frequencies(
+        self, terms: Sequence[str], uri_prefixes: Sequence[str] = ()
+    ) -> dict[str, int]:
+        """B459: how many indexed documents contain each term, counted over
+        URIs starting with one of `uri_prefixes` (all documents if empty).
+
+        `terms` are single alphanumeric words (`fts_content_terms` output);
+        anything else counts 0 rather than reaching FTS5 as syntax.
+        """
+        import re
+
+        where, prefix_params = "", []
+        if uri_prefixes:
+            where = " AND (" + " OR ".join("uri LIKE ? ESCAPE '\\'" for _ in uri_prefixes) + ")"
+            prefix_params = [
+                p.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+                for p in uri_prefixes
+            ]
+        sql = f"SELECT count(*) FROM lexical WHERE lexical MATCH ?{where}"
+        out: dict[str, int] = {}
+        for term in terms:
+            if not re.fullmatch(r"[^\W_]+", term or ""):
+                out[term] = 0
+                continue
+            try:
+                with self._lock:
+                    out[term] = int(self._conn.execute(sql, [f'"{term}"', *prefix_params]).fetchone()[0])
+            except sqlite3.OperationalError:
+                out[term] = 0
+        return out
+
     # -- lifecycle ---------------------------------------------------------
 
     def close(self) -> None:

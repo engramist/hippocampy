@@ -1019,21 +1019,41 @@ class GraphGateway:
         from campy.brain.hippocampus.graph.vector_store import fts_content_terms
 
         norm = lambda t: " ".join(str(t).lower().split())
+        words = lambda t: set(re.findall(r"[^\W_]+", str(t).lower()))
         qnorm = norm(qtext)
         terms = fts_content_terms(qtext)
         vec_set = set(vec_hits)
+        rows = list(self._client._execute_and_collect(sparql))
+        # A lexical-only hit has no similarity floor, so one shared common word
+        # is not evidence: it must match two distinct query content words (or
+        # the only one there is), or -- B459 -- the query's anchor word: the
+        # rarest query word any stored message contains, which the vector
+        # search also found in one of its top hits (rare in the store AND
+        # semantically on topic). Without it, "Update: Jaeger is deprecated;
+        # migrate tracing to Zipkin" never reached a "current required tool for
+        # tracing?" bundle: "tracing" was the only query word in the store, so
+        # two could never match, and the longer superseding statements sat just
+        # under the similarity floor while the short original statement
+        # cleared it -- the bundle showed the old value and not its replacement.
+        need = min(2, len(terms) or 1)
+        df = {t: n for t, n in vs.document_frequencies(terms, prefixes).items() if n > 0}
+        top_vec_words: set[str] = set()
+        top_vec = set(vec_hits[:limit])
+        for row in rows:
+            if row["s"] in top_vec:
+                top_vec_words |= words(row.get("text") or "")
+        rarest = min(df.values(), default=0)
+        anchors = {t for t, n in df.items() if n == rarest and t in top_vec_words}
         newest: dict[str, tuple[str, dict]] = {}
-        for row in self._client._execute_and_collect(sparql):
+        for row in rows:
             text = str(row.get("text") or "").strip()
             if (not text or row.get("role") != "user" or bool(row.get("archived"))
                     or text.endswith("?") or norm(text) == qnorm):
                 continue
-            # A lexical-only hit has no similarity floor, so require it to match
-            # at least two distinct query content words (or the only one there is)
-            # -- one shared common word is not evidence.
             if row["s"] not in vec_set:
                 low = text.lower()
-                if sum(1 for t in terms if t in low) < min(2, len(terms) or 1):
+                if (sum(1 for t in terms if t in low) < need
+                        and not anchors & words(text)):
                     continue
             created = row.get("created")
             created = created.isoformat() if hasattr(created, "isoformat") else str(created or "")
