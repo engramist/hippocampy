@@ -20,6 +20,7 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
@@ -294,3 +295,228 @@ def repair_plan_valence_cmd(
 
     verb = "applied" if apply else "found"
     console.print(f"{len(candidates)} candidate(s) {verb}.")
+
+
+# ---------------------------------------------------------------------------
+# B465: supersession edges written backwards before B460
+# ---------------------------------------------------------------------------
+#
+# Before B460, consolidation's Step 3b LLM wrote "A CHOSEN_OVER B" edges with
+# the RETIRED value as A ("PostgreSQL 14 CHOSEN_OVER PostgreSQL 16" from "We
+# migrated from PostgreSQL 14 to PostgreSQL 16"). Edges carry no link to the
+# message they came from, so the repair re-reads the user's own statements:
+# B460's Step 1b reads a supersession's direction off the grammar (passive,
+# "from X to Y", active) with no LLM. An edge whose direction a user message
+# contradicts is replaced by "new REPLACES old" between the same two
+# Concepts; every edge no message speaks to is left alone and reported.
+
+_SUPERSESSION_RELS = ("CHOSEN_OVER", "REPLACES")
+_REPAIR_INFERRED_BY = "system:b465-repair"
+_REPAIR_CONFIDENCE = 0.85  # Step 1b's confidence for a verb-pattern relation
+
+
+@dataclass
+class SupersessionStatement:
+    """One "new REPLACES old" that Step 1b reads in a user message."""
+    new: str
+    old: str
+    message_id: str
+    text: str
+
+
+@dataclass
+class SupersessionEdgeVerdict:
+    rel: str
+    head: str
+    head_id: str
+    tail: str
+    tail_id: str
+    # "inverted": a user message says the tail replaced the head -> repaired
+    # "right": a user message says the head replaced the tail
+    # "conflicting": user messages say both -> left alone
+    # "unverifiable": no user message states a supersession of the pair
+    verdict: str
+    evidence: list[SupersessionStatement]
+
+    @property
+    def label(self) -> str:
+        return f"{self.head} -{self.rel}-> {self.tail}"
+
+
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"[^\W_]+", text.lower()))
+
+
+def _contains_words(text: str, part: str) -> bool:
+    return bool(part) and re.search(rf"(?<![^\W_]){re.escape(part)}(?![^\W_])", text) is not None
+
+
+def _names(span: str, concept: str) -> bool:
+    """A Step 1b span names a Concept when, case-insensitively, they are equal
+    or one contains the other as whole words: Step 1b keeps versions NER
+    drops ("PostgreSQL 16" vs the entity "postgresql"), and NER keeps words
+    Step 1b's span stops at ("OpenTelemetry OTel" from "OpenTelemetry (OTel)").
+    A Concept that names BOTH sides of a statement ("PostgreSQL" for
+    "PostgreSQL 16 REPLACES PostgreSQL 14") is ruled out by the caller."""
+    s, c = span.lower().strip(), concept.lower().strip()
+    return bool(s and c) and (s == c or _contains_words(s, c) or _contains_words(c, s))
+
+
+def _side(concept: str, st: SupersessionStatement) -> str | None:
+    """'new' / 'old' when the Concept names exactly one side of the statement."""
+    new, old = _names(st.new, concept), _names(st.old, concept)
+    if new and not old:
+        return "new"
+    if old and not new:
+        return "old"
+    return None
+
+
+def _load_nlp():
+    from campy.brain.temporal_lobe.loop.step1_ner import get_nlp
+
+    model = "en_core_web_md"
+    try:
+        from campy.brain.brainstem.config import load_config
+
+        model = load_config().get("nlp", {}).get("spacy_model", model)
+    except Exception:  # noqa: BLE001 -- no config: the daemon's default model
+        console.print(f"[dim]No Campy config found; using spaCy model {model}.[/dim]")
+    return get_nlp(model)
+
+
+def _row(row, key: str, idx: int):
+    return row.get(key) if isinstance(row, dict) else row[idx]
+
+
+async def find_supersession_verdicts(db, nlp=None) -> list[SupersessionEdgeVerdict]:
+    """Classify every Concept-Concept CHOSEN_OVER / REPLACES edge against the
+    supersessions Step 1b reads in the stored user Messages (read-only)."""
+    from campy.brain.temporal_lobe.loop.step1b_relations import extract_relations
+
+    gw = get_gateway(db)
+    edge_rows = await gw.run("cli.graph_repair_find_supersession_edges")
+    edges = [
+        (_row(r, "rel", 2), _row(r, "head", 1), str(_row(r, "head_id", 0)),
+         _row(r, "tail", 4), str(_row(r, "tail_id", 3)))
+        for r in edge_rows
+    ]
+    edges = sorted({e for e in edges if e[0] in _SUPERSESSION_RELS and e[1] and e[3]},
+                   key=lambda e: (e[1].lower(), e[3].lower(), e[0]))
+    if not edges:
+        return []
+
+    # Only parse messages that share a word with both ends of some edge: a
+    # span naming a Concept (see _names) always does.
+    pair_words = [(_words(h), _words(t)) for _, h, _, t, _ in edges]
+    messages = []
+    for r in await gw.run("cli.graph_repair_find_user_messages"):
+        text = _row(r, "text_raw", 1) or ""
+        mw = _words(text)
+        if any(hw & mw and tw & mw for hw, tw in pair_words):
+            messages.append((str(_row(r, "message_id", 0)), text))
+
+    statements: list[SupersessionStatement] = []
+    if messages:
+        nlp = nlp or _load_nlp()
+        for (mid, text), doc in zip(messages, nlp.pipe(t for _, t in messages)):
+            for rel in extract_relations(doc, []):
+                if rel["relation_type"] == "REPLACES":
+                    statements.append(SupersessionStatement(rel["head"], rel["tail"], mid, text))
+
+    verdicts = []
+    for rel, head, head_id, tail, tail_id in edges:
+        support, against = [], []
+        for st in statements:
+            sides = (_side(head, st), _side(tail, st))
+            if sides == ("new", "old"):
+                support.append(st)
+            elif sides == ("old", "new"):
+                against.append(st)
+        if against and support:
+            verdict, evidence = "conflicting", against + support
+        elif against:
+            verdict, evidence = "inverted", against
+        elif support:
+            verdict, evidence = "right", support
+        else:
+            verdict, evidence = "unverifiable", []
+        verdicts.append(SupersessionEdgeVerdict(rel, head, head_id, tail, tail_id, verdict, evidence))
+    return verdicts
+
+
+async def apply_supersession_repairs(db, verdicts: list[SupersessionEdgeVerdict]) -> None:
+    """For each inverted edge: remove it, then write "tail REPLACES head"
+    between the same Concepts (a no-op when that edge already exists)."""
+    from datetime import UTC, datetime
+
+    gw = get_gateway(db)
+    now = datetime.now(UTC).isoformat()
+    for v in verdicts:
+        if v.verdict != "inverted":
+            continue
+        await gw.run(f"orchestrator.remove_semantic_rel_{v.rel.lower()}", hid=v.head_id, tid=v.tail_id)
+        await gw.run(
+            "orchestrator.merge_semantic_rel_replaces",
+            hid=v.tail_id, tid=v.head_id,
+            confidence=_REPAIR_CONFIDENCE, inferred_by=_REPAIR_INFERRED_BY, now=now,
+        )
+
+
+async def repair_supersession_edges(db, apply: bool = False, nlp=None) -> list[SupersessionEdgeVerdict]:
+    verdicts = await find_supersession_verdicts(db, nlp=nlp)
+    if apply:
+        await apply_supersession_repairs(db, verdicts)
+    return verdicts
+
+
+def _excerpt(text: str, limit: int = 110) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+@graph_app.command("repair-supersession-edges")
+def repair_supersession_edges_cmd(
+    apply: bool = typer.Option(False, "--apply", help="Write changes (default: dry run)"),
+    db_path: str = typer.Option(
+        "", "--db-path", help="Path to the graph store (defaults to the active Campy database)"
+    ),
+    show_all: bool = typer.Option(
+        False, "--all", help="Also list edges that are right or unverifiable (default: only inverted and conflicting)"
+    ),
+) -> None:
+    """B465: fix CHOSEN_OVER/REPLACES edges that name the retired value as the
+    winner, judged against the user's own supersession statements."""
+    resolved_db_path = Path(db_path).expanduser() if db_path else get_database_path()
+    if not resolved_db_path.exists():
+        console.print(f"[red]Error:[/red] Campy database not found at {resolved_db_path}.")
+        raise typer.Exit(code=1)
+
+    # The store is opened writable even for a dry run (pyoxigraph's lock is
+    # exclusive either way): stop the daemon first, or run on a copy.
+    client = _open_repair_client(resolved_db_path, apply)
+    verdicts = asyncio.run(repair_supersession_edges(client, apply=apply))
+
+    shown = [v for v in verdicts if show_all or v.verdict in ("inverted", "conflicting")]
+    table = Table(title="Supersession edge repair — " + ("applied" if apply else "dry run"), show_lines=True)
+    table.add_column("edge")
+    table.add_column("verdict")
+    table.add_column("action")
+    table.add_column("user message")
+    for v in shown:
+        if v.verdict == "inverted":
+            action = f"{'removed' if apply else 'remove'}; {v.tail} -REPLACES-> {v.head}"
+        else:
+            action = "leave"
+        evidence = "\n".join(f"[{st.message_id[:8]}] {_excerpt(st.text)}" for st in v.evidence[:3])
+        table.add_row(escape(v.label), v.verdict, escape(action), escape(evidence))
+    console.print(table)
+
+    counts = {k: sum(v.verdict == k for v in verdicts) for k in ("inverted", "right", "conflicting", "unverifiable")}
+    console.print(
+        f"{len(verdicts)} CHOSEN_OVER/REPLACES edge(s): "
+        + ", ".join(f"{n} {k}" for k, n in counts.items())
+        + "."
+    )
+    if counts["inverted"]:
+        console.print(f"{counts['inverted']} inverted edge(s) {'repaired' if apply else 'would be repaired (re-run with --apply)'}.")

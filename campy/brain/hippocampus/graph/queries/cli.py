@@ -469,4 +469,53 @@ CLI_QUERIES: tuple[NamedQuery, ...] = (
             }
             """,
     ),
+    # -----------------------------------------------------------------------
+    # B465: supersession edges written backwards before B460
+    # -----------------------------------------------------------------------
+    NamedQuery(
+        name="cli.graph_repair_find_supersession_edges",
+        cypher="""
+            MATCH (h:Concept)-[r:CHOSEN_OVER|REPLACES]->(t:Concept)
+            RETURN h.concept_id AS head_id, h.text_raw AS head,
+                   label(r) AS rel,
+                   t.concept_id AS tail_id, t.text_raw AS tail
+            """,
+        params=(),
+        mutating=False,
+        description="List Concept-Concept edges that claim one value won (CHOSEN_OVER/REPLACES).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?head_id ?head ?rel ?tail_id ?tail WHERE {
+                VALUES ?p { campy:CHOSEN_OVER campy:REPLACES }
+                ?h ?p ?t .
+                ?h a campy:Concept ; campy:concept_id ?head_id ; campy:text_raw ?head .
+                ?t a campy:Concept ; campy:concept_id ?tail_id ; campy:text_raw ?tail .
+                BIND(STRAFTER(STR(?p), "#") AS ?rel)
+            }
+            """,
+    ),
+    NamedQuery(
+        name="cli.graph_repair_find_user_messages",
+        cypher="""
+            MATCH (m:Message)
+            WHERE m.role = 'user' AND m.text_raw IS NOT NULL
+            RETURN m.message_id AS message_id, m.text_raw AS text_raw,
+                   m.created_at AS created_at
+            ORDER BY m.created_at
+            """,
+        params=(),
+        mutating=False,
+        description="All stored user Messages, oldest first.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?message_id ?text_raw ?created_at WHERE {
+                ?m a campy:Message ;
+                   campy:role "user" ;
+                   campy:text_raw ?text_raw .
+                OPTIONAL { ?m campy:message_id ?message_id }
+                OPTIONAL { ?m campy:created_at ?created_at }
+            }
+            ORDER BY ?created_at
+            """,
+    ),
 )
