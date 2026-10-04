@@ -8,12 +8,8 @@ import sys
 import os
 import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-sys.path.insert(0, os.path.dirname(__file__))  # make conftest importable
 
-try:
-    from conftest import SPACY_AVAILABLE
-except ImportError:
-    SPACY_AVAILABLE = False
+from tests._spacy import SPACY_AVAILABLE
 
 pytestmark = pytest.mark.skipif(
     not SPACY_AVAILABLE,
