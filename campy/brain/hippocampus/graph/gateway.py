@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import logging
 import os
 import re
@@ -1006,16 +1007,6 @@ class GraphGateway:
         if not ranked:
             return []
 
-        values_block = " ".join(f"<{u}>" for u in ranked)
-        sparql = f"""
-            SELECT ?s ?text ?role ?created ?archived WHERE {{
-                VALUES ?s {{ {values_block} }}
-                ?s <https://campy.dev/ns#text_raw> ?text .
-                OPTIONAL {{ ?s <https://campy.dev/ns#role> ?role }}
-                OPTIONAL {{ ?s <https://campy.dev/ns#created_at> ?created }}
-                OPTIONAL {{ ?s <https://campy.dev/ns#archived> ?archived }}
-            }}
-        """
         from campy.brain.hippocampus.graph.vector_store import fts_content_terms
 
         norm = lambda t: " ".join(str(t).lower().split())
@@ -1023,7 +1014,7 @@ class GraphGateway:
         qnorm = norm(qtext)
         terms = fts_content_terms(qtext)
         vec_set = set(vec_hits)
-        rows = list(self._client._execute_and_collect(sparql))
+        rows = self._hydrate_messages(ranked)
         # A lexical-only hit has no similarity floor, so one shared common word
         # is not evidence: it must match two distinct query content words (or
         # the only one there is), or -- B459 -- the query's anchor word: the
@@ -1045,21 +1036,38 @@ class GraphGateway:
         rarest = min(df.values(), default=0)
         anchors = {t for t, n in df.items() if n == rarest and t in top_vec_words}
         newest: dict[str, tuple[str, dict]] = {}
+        on_topic: list[tuple[float, str]] = []
+
+        def keep(row: dict, text: str) -> str:
+            created = row.get("created")
+            created = created.isoformat() if hasattr(created, "isoformat") else str(created or "")
+            key = norm(text)
+            if key not in newest or created > newest[key][0]:
+                newest[key] = (created, {"uri": row["s"], "text": text, "created": created})
+            return newest[key][1]["uri"]
+
         for row in rows:
             text = str(row.get("text") or "").strip()
-            if (not text or row.get("role") != "user" or bool(row.get("archived"))
-                    or text.endswith("?") or norm(text) == qnorm):
+            if not text or bool(row.get("archived")) or norm(text) == qnorm:
                 continue
             if row["s"] not in vec_set:
                 low = text.lower()
                 if (sum(1 for t in terms if t in low) < need
                         and not anchors & words(text)):
                     continue
-            created = row.get("created")
-            created = created.isoformat() if hasattr(created, "isoformat") else str(created or "")
-            key = norm(text)
-            if key not in newest or created > newest[key][0]:
-                newest[key] = (created, {"uri": row["s"], "text": text, "created": created})
+            on_topic.append((ranked.get(row["s"], 0.0), text))
+            if row.get("role") != "user" or text.endswith("?"):
+                continue
+            keep(row, text)
+        # B463: what replaced the things the on-topic messages name.
+        try:
+            on_topic.sort(key=lambda st: -st[0])
+            for score, row, text in self._successor_statements(on_topic[:limit], limit, prefixes):
+                if norm(text) != qnorm and not text.endswith("?"):
+                    uri = keep(row, text)
+                    ranked[uri] = max(ranked.get(uri, 0.0), score)
+        except Exception:
+            _logger.debug("_bundle_conversation successor bridge failed", exc_info=True)
         picked = sorted(newest.values(), key=lambda kv: -ranked.get(kv[1]["uri"], 0.0))[:limit]
         picked.sort(key=lambda kv: kv[0])
         return [
@@ -1067,6 +1075,137 @@ class GraphGateway:
                      "node_id": v["uri"], "node_type": "Message"})
             for _, v in picked
         ]
+
+    def _hydrate_messages(self, uris: Iterable[str]) -> list[Any]:
+        values_block = " ".join(f"<{u}>" for u in uris)
+        if not values_block:
+            return []
+        sparql = f"""
+            SELECT ?s ?text ?role ?created ?archived WHERE {{
+                VALUES ?s {{ {values_block} }}
+                ?s <https://campy.dev/ns#text_raw> ?text .
+                OPTIONAL {{ ?s <https://campy.dev/ns#role> ?role }}
+                OPTIONAL {{ ?s <https://campy.dev/ns#created_at> ?created }}
+                OPTIONAL {{ ?s <https://campy.dev/ns#archived> ?archived }}
+            }}
+        """
+        return list(self._client._execute_and_collect(sparql))
+
+    def _successor_statements(
+        self, on_topic: list[tuple[float, str]], limit: int, prefixes: tuple[str, ...],
+    ) -> list[tuple[float, dict, str]]:
+        """B463: user statements of the CURRENT value of whatever the on-topic
+        messages name, when the graph says that thing was replaced.
+
+        A question that names a category ("our production database engine")
+        shares no words with the statement of the instance that replaced the
+        old one ("we have completely migrated from PostgreSQL 14 to PostgreSQL
+        16"), and that longer statement embeds far from the short question, so
+        neither plane finds it. What the stage does find on topic -- often only
+        assistant turns ("Noted. Primary database is PostgreSQL 14 ...") --
+        names the instance. The graph's REPLACES edges (written from user
+        statements, current value as head: B460) lead from a named instance to
+        the head of its chain, and the user's own statements naming that head
+        are the evidence. On-topic text of any role only chooses WHICH
+        entities to follow, the same way B459's anchor uses top vector hits;
+        the facts handed to the bundle are still user statements (ISSUE-024).
+
+        Returns (score, hydrated row, text): each statement inherits the
+        fused rank of the on-topic message that led to it, at most the 2
+        newest per head, so it ranks with its topic and never floods."""
+        if not on_topic:
+            return []
+        edges = self._client._execute_and_collect("""
+            SELECT ?new ?new_text ?old ?old_text ?archived ?flagged WHERE {
+                ?new <https://campy.dev/ns#REPLACES> ?old .
+                ?new a <https://campy.dev/ns#Concept> ;
+                     <https://campy.dev/ns#text_raw> ?new_text .
+                ?old a <https://campy.dev/ns#Concept> ;
+                     <https://campy.dev/ns#text_raw> ?old_text .
+                OPTIONAL { ?new <https://campy.dev/ns#archived> ?archived }
+                OPTIONAL { ?new <https://campy.dev/ns#flagged_for_review> ?flagged }
+            }
+        """)
+        if not edges:
+            return []
+        from campy.brain.hippocampus.graph.vector_store import fts_content_terms
+
+        def spans(text: str, name: str) -> list[tuple[int, int]]:
+            if not fts_content_terms(name):
+                return []
+            pattern = r"(?<![^\W_])" + re.escape(name.lower()) + r"(?![^\W_])"
+            return [m.span() for m in re.finditer(pattern, text.lower())]
+
+        def names(text: str, name: str) -> bool:
+            return bool(spans(text, name))
+
+        longer_cache: dict[str, list[str]] = {}
+
+        def longer_names(name: str) -> list[str]:
+            # Concepts whose name contains this one: "JSON REST" for "REST".
+            if name not in longer_cache:
+                lit = json.dumps(name.lower(), ensure_ascii=False)[1:-1]
+                longer_cache[name] = [str(r["t"]) for r in self._client._execute_and_collect(f"""
+                    SELECT DISTINCT ?t WHERE {{
+                        ?c a <https://campy.dev/ns#Concept> ; <https://campy.dev/ns#text_raw> ?t .
+                        FILTER(STRLEN(?t) > {len(name)} && CONTAINS(LCASE(?t), "{lit}"))
+                    }}
+                """)]
+            return longer_cache[name]
+
+        def mentions(text: str, name: str) -> bool:
+            # A name counts where it is not part of a longer concept name the
+            # text also contains: "we use JSON REST" names "JSON REST", not
+            # the unrelated "REST" that gRPC replaced in another conversation.
+            own = spans(text, name)
+            if not own:
+                return False
+            covers = [sp for longer in longer_names(name) for sp in spans(text, longer)]
+            return any(not any(ls <= s and e <= le for ls, le in covers) for s, e in own)
+
+        successors: dict[str, set[str]] = {}
+        old_names: dict[str, str] = {}
+        name_of: dict[str, str] = {}
+        dead: set[str] = set()
+        for e in edges:
+            if bool(e.get("archived")) or bool(e.get("flagged")):
+                dead.add(e["new"])
+                continue
+            successors.setdefault(e["old"], set()).add(e["new"])
+            old_names[e["old"]] = str(e["old_text"])
+            name_of[e["new"]] = str(e["new_text"])
+
+        def heads(start: str) -> set[str]:
+            out, seen, todo = set(), {start}, [start]
+            while todo:
+                for nxt in successors.get(todo.pop(), ()):
+                    if nxt in seen or nxt in dead:
+                        continue
+                    seen.add(nxt)
+                    if nxt in successors:
+                        todo.append(nxt)
+                    else:
+                        out.add(nxt)
+            return out
+
+        head_score: dict[str, float] = {}
+        for score, text in on_topic:
+            for old, name in old_names.items():
+                if mentions(text, name):
+                    for h in heads(old):
+                        head_score[h] = max(head_score.get(h, 0.0), score)
+        out: list[tuple[float, dict, str]] = []
+        for h, score in sorted(head_score.items(), key=lambda hs: -hs[1])[:limit]:
+            hits = self._vector_store.search_phrase(name_of[h], k=limit * 10, uri_prefixes=prefixes)
+            stated = []
+            for row in self._hydrate_messages(hits):
+                text = str(row.get("text") or "").strip()
+                if (row.get("role") == "user" and not bool(row.get("archived"))
+                        and names(text, name_of[h])):
+                    stated.append((str(row.get("created") or ""), row, text))
+            stated.sort(key=lambda c: c[0], reverse=True)
+            out.extend((score, row, text) for _, row, text in stated[:2])
+        return out
 
     def _handle_thalamus_bundle(self, name: str, params: dict[str, Any]) -> list[Any]:
         query_embedding = params.get("query_embedding")
