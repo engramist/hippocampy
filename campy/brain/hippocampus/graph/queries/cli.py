@@ -539,15 +539,16 @@ CLI_QUERIES: tuple[NamedQuery, ...] = (
             MATCH (m:Message)
             OPTIONAL MATCH (m)-[:SENT_IN]->(s:Session)
             RETURN m.message_id AS message_id, m.text_raw AS text_raw,
-                   m.archived AS archived, s.session_id AS session_id
+                   m.archived AS archived, s.session_id AS session_id, m.message_id AS uri
             """,
         params=(),
         mutating=False,
         description="Every Message with its text, archived flag and Session (if any).",
         sparql="""
             PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?message_id ?text_raw ?archived ?session_id WHERE {
+            SELECT ?message_id ?text_raw ?archived ?session_id ?uri WHERE {
                 ?m a campy:Message ; campy:message_id ?message_id .
+                BIND(STR(?m) AS ?uri)
                 OPTIONAL { ?m campy:text_raw ?text_raw }
                 OPTIONAL { ?m campy:archived ?archived }
                 OPTIONAL { ?m campy:SENT_IN ?s . ?s campy:session_id ?session_id }
@@ -558,20 +559,20 @@ CLI_QUERIES: tuple[NamedQuery, ...] = (
         name="cli.purge_find_message_products",
         cypher="""
             MATCH (m:Message)-[:ESTABLISHED]->(d:Decision)
-            RETURN m.message_id AS message_id, 'Decision' AS kind, d.decision_id AS node_id, d.archived AS archived
+            RETURN m.message_id AS message_id, 'Decision' AS kind, d.decision_id AS node_id, d.archived AS archived, d.decision_id AS uri
             UNION ALL
             MATCH (m:Message)-[:ESTABLISHED]->(c:Constraint)
-            RETURN m.message_id AS message_id, 'Constraint' AS kind, c.constraint_id AS node_id, c.archived AS archived
+            RETURN m.message_id AS message_id, 'Constraint' AS kind, c.constraint_id AS node_id, c.archived AS archived, c.constraint_id AS uri
             UNION ALL
             MATCH (m:Message)-[:CONTAINS_LESSON]->(l:Lesson)
-            RETURN m.message_id AS message_id, 'Lesson' AS kind, l.lesson_id AS node_id, l.archived AS archived
+            RETURN m.message_id AS message_id, 'Lesson' AS kind, l.lesson_id AS node_id, l.archived AS archived, l.lesson_id AS uri
             """,
         params=(),
         mutating=False,
         description="Decisions/Constraints a Message ESTABLISHED and Lessons it CONTAINS_LESSON.",
         sparql="""
             PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?message_id ?kind ?node_id ?archived WHERE {
+            SELECT ?message_id ?kind ?node_id ?archived ?uri WHERE {
                 ?m a campy:Message ; campy:message_id ?message_id .
                 {
                     ?m campy:ESTABLISHED ?n . ?n a campy:Decision ; campy:decision_id ?node_id .
@@ -584,19 +585,21 @@ CLI_QUERIES: tuple[NamedQuery, ...] = (
                     BIND("Lesson" AS ?kind)
                 }
                 OPTIONAL { ?n campy:archived ?archived }
+                BIND(STR(?n) AS ?uri)
             }
             """,
     ),
     NamedQuery(
         name="cli.purge_find_concepts",
-        cypher="MATCH (c:Concept) RETURN c.concept_id AS concept_id, c.text_raw AS text_raw, c.archived AS archived",
+        cypher="MATCH (c:Concept) RETURN c.concept_id AS concept_id, c.text_raw AS text_raw, c.archived AS archived, c.concept_id AS uri",
         params=(),
         mutating=False,
         description="Every Concept's id, name and archived flag.",
         sparql="""
             PREFIX campy: <https://campy.dev/ns#>
-            SELECT ?concept_id ?text_raw ?archived WHERE {
+            SELECT ?concept_id ?text_raw ?archived ?uri WHERE {
                 ?c a campy:Concept ; campy:concept_id ?concept_id .
+                BIND(STR(?c) AS ?uri)
                 OPTIONAL { ?c campy:text_raw ?text_raw }
                 OPTIONAL { ?c campy:archived ?archived }
             }

@@ -533,21 +533,24 @@ def repair_supersession_edges_cmd(
 # ESTABLISHED (Decisions, Constraints) or CONTAINS_LESSON, carry provenance and
 # are archived exactly. Concepts do not: the graph has no Concept -> Message
 # link, so a Concept is archived when a purged Message names it (whole words,
-# case-insensitive) and no remaining Message does. Everything is archived, not
-# deleted: retrieval skips archived nodes, the vector rows stay in step with
-# the graph, and an archive can be undone.
+# case-insensitive) and no remaining Message does. Nodes are archived, not
+# deleted (retrieval skips archived nodes; their text stays in the graph, so
+# an archive can be undone and re-embedded), and their vectors.db rows --
+# embedding and full-text -- are removed, so they neither crowd live hits out
+# of a search's top k nor count in the conversation stage's word statistics.
 
 
 @dataclass
 class SessionPurgePlan:
     prefixes: tuple[str, ...]
-    sessions: dict[str, list[str]]  # prefix -> session ids
+    sessions: dict[str, list[str]]  # prefix (or exact session id) -> session ids
     messages: dict[str, str]  # message_id -> text, all to be archived
     session_less: list[str]  # of those, the ones with no Session (exact copies)
     products: dict[str, list[str]]  # "Decision" / "Constraint" / "Lesson" -> ids
     concepts: dict[str, str]  # concept_id -> name, to be archived
     kept_concepts: int  # named by a purged Message, but also by a remaining one
     edges: dict[str, int]  # "both" / "one": Concept-Concept edges by archived ends
+    uris: list[str]  # every node to archive: its vectors.db rows are dropped too
 
 
 def _norm(text: str) -> str:
@@ -574,26 +577,33 @@ def _mentioned(names: dict[str, str], texts: list[str]) -> set[str]:
     return found
 
 
-async def plan_session_purge(db, prefixes) -> SessionPurgePlan:
-    prefixes = tuple(prefixes)
+async def plan_session_purge(db, prefixes=(), sessions_exact=()) -> SessionPurgePlan:
+    prefixes, exact = tuple(prefixes), tuple(sessions_exact)
     gw = get_gateway(db)
 
     def matches(session_id) -> str | None:
-        return next((p for p in prefixes if session_id and str(session_id).startswith(p)), None)
+        if not session_id:
+            return None
+        sid = str(session_id)
+        if sid in exact:
+            return sid
+        return next((p for p in prefixes if sid.startswith(p)), None)
 
-    sessions: dict[str, list[str]] = {p: [] for p in prefixes}
+    sessions: dict[str, list[str]] = {p: [] for p in prefixes + exact}
     for r in await gw.run("cli.purge_find_sessions"):
         sid = _row(r, "session_id", 0)
         if (p := matches(sid)) is not None:
             sessions[p].append(str(sid))
 
     purged: dict[str, str] = {}
+    uri_of: dict[str, str] = {}
     remaining: list[tuple[str, str, bool]] = []  # (id, text, has_session)
     for r in await gw.run("cli.purge_find_messages"):
         mid, text = str(_row(r, "message_id", 0)), _row(r, "text_raw", 1) or ""
         archived, sid = bool(_row(r, "archived", 2)), _row(r, "session_id", 3)
         if archived:
             continue
+        uri_of[mid] = str(_row(r, "uri", 4))
         if matches(sid) is not None:
             purged[mid] = text
         else:
@@ -614,9 +624,11 @@ async def plan_session_purge(db, prefixes) -> SessionPurgePlan:
     # produced it is purged.
     producers: dict[tuple[str, str], set[str]] = {}
     already: set[tuple[str, str]] = set()
+    product_uri: dict[tuple[str, str], str] = {}
     for r in await gw.run("cli.purge_find_message_products"):
         key = (_row(r, "kind", 1), str(_row(r, "node_id", 2)))
         producers.setdefault(key, set()).add(str(_row(r, "message_id", 0)))
+        product_uri[key] = str(_row(r, "uri", 4))
         if bool(_row(r, "archived", 3)):
             already.add(key)
     products: dict[str, list[str]] = {"Decision": [], "Constraint": [], "Lesson": []}
@@ -624,8 +636,13 @@ async def plan_session_purge(db, prefixes) -> SessionPurgePlan:
         if (kind, nid) not in already and mids <= purged.keys():
             products[kind].append(nid)
 
-    live = {str(_row(r, "concept_id", 0)): _row(r, "text_raw", 1) or ""
-            for r in await gw.run("cli.purge_find_concepts") if not bool(_row(r, "archived", 2))}
+    live: dict[str, str] = {}
+    concept_uri: dict[str, str] = {}
+    for r in await gw.run("cli.purge_find_concepts"):
+        if not bool(_row(r, "archived", 2)):
+            cid = str(_row(r, "concept_id", 0))
+            live[cid] = _row(r, "text_raw", 1) or ""
+            concept_uri[cid] = str(_row(r, "uri", 3))
     named_by_purged = _mentioned(live, list(purged.values()))
     candidates = {cid: live[cid] for cid in named_by_purged}
     still_named = _mentioned(candidates, remaining_texts)
@@ -639,8 +656,11 @@ async def plan_session_purge(db, prefixes) -> SessionPurgePlan:
         elif ends == 1:
             edges["one"] += 1
 
-    return SessionPurgePlan(prefixes, sessions, purged, session_less, products,
-                            concepts, len(still_named), edges)
+    uris = ([uri_of[m] for m in purged]
+            + [product_uri[(k, n)] for k, ids in products.items() for n in ids]
+            + [concept_uri[c] for c in concepts])
+    return SessionPurgePlan(prefixes + exact, sessions, purged, session_less, products,
+                            concepts, len(still_named), edges, uris)
 
 
 async def apply_session_purge(db, plan: SessionPurgePlan) -> None:
@@ -655,31 +675,42 @@ async def apply_session_purge(db, plan: SessionPurgePlan) -> None:
         await gw.run("sweep.archive_lesson", lid=nid)
     for cid in plan.concepts:
         await gw.run("quests.archive_concept", cid=cid)
+    vs = getattr(db, "vector_store", None)
+    if vs is not None:
+        for uri in plan.uris:
+            vs.delete_vector(uri)
+            vs.delete_text(uri)
 
 
-async def purge_sessions(db, prefixes, apply: bool = False) -> SessionPurgePlan:
-    plan = await plan_session_purge(db, prefixes)
+async def purge_sessions(db, prefixes=(), apply: bool = False, sessions=()) -> SessionPurgePlan:
+    plan = await plan_session_purge(db, prefixes, sessions)
     if apply:
         await apply_session_purge(db, plan)
     return plan
 
 
-_PREFIX_OPTION = typer.Option(..., "--prefix", help="Session-id prefix to archive (repeat for several; no default)")
+_PREFIX_OPTION = typer.Option(None, "--prefix", help="Session-id prefix to archive (repeatable; no default)")
+_SESSION_OPTION = typer.Option(None, "--session", help="Exact session id to archive (repeatable)")
 
 
 @graph_app.command("purge-sessions")
 def purge_sessions_cmd(
     prefixes: list[str] = _PREFIX_OPTION,
+    sessions: list[str] = _SESSION_OPTION,
     apply: bool = typer.Option(False, "--apply", help="Write changes (default: dry run)"),
     db_path: str = typer.Option(
         "", "--db-path", help="Path to the graph store (defaults to the active Campy database)"
     ),
     sample: int = typer.Option(20, "--sample", help="Concept names to list (0: none)"),
 ) -> None:
-    """B467: archive the Messages that sessions with these id prefixes wrote
-    (benchmark runs, say), what they established, and the Concepts that only
-    they mention."""
-    if any(not p.strip() for p in prefixes):
+    """B467: archive the Messages that sessions with these id prefixes (or
+    exact ids) wrote -- benchmark runs, say -- what they established, and the
+    Concepts that only they mention."""
+    prefixes, sessions = list(prefixes or []), list(sessions or [])
+    if not prefixes and not sessions:
+        console.print("[red]Error:[/red] give at least one --prefix or --session.")
+        raise typer.Exit(code=1)
+    if any(not p.strip() for p in prefixes + sessions):
         console.print("[red]Error:[/red] an empty --prefix would match every session.")
         raise typer.Exit(code=1)
     resolved_db_path = Path(db_path).expanduser() if db_path else get_database_path()
@@ -691,12 +722,12 @@ def purge_sessions_cmd(
     # either way): stop the daemon first, or run on a copy.
     client = _open_repair_client(resolved_db_path, apply)
     try:
-        plan = asyncio.run(purge_sessions(client, prefixes, apply=apply))
+        plan = asyncio.run(purge_sessions(client, prefixes, apply=apply, sessions=sessions))
     finally:
         client.close()  # release the store's lock now, not whenever it is collected
 
     table = Table(title="Session purge — " + ("applied" if apply else "dry run"))
-    table.add_column("prefix")
+    table.add_column("prefix / session")
     table.add_column("sessions", justify="right")
     for p in plan.prefixes:
         table.add_row(escape(p), str(len(plan.sessions[p])))
@@ -709,7 +740,9 @@ def purge_sessions_cmd(
         f"{len(plan.products['Constraint'])} / {len(plan.products['Lesson'])}\n"
         f"Concepts {verb}: {len(plan.concepts)} (named only by purged messages); "
         f"kept: {plan.kept_concepts} (also named by a remaining message)\n"
-        f"Concept-Concept edges with both ends archived: {plan.edges['both']}, one end: {plan.edges['one']}"
+        f"Concept-Concept edges with both ends archived: {plan.edges['both']}, one end: {plan.edges['one']}\n"
+        f"vectors.db rows (embedding + full-text) {'removed' if apply else 'to remove'} for "
+        f"{len(plan.uris)} node(s)"
     )
     if sample and plan.concepts:
         names = sorted({n for n in plan.concepts.values()}, key=str.lower)

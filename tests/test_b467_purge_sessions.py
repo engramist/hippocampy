@@ -175,7 +175,8 @@ def test_cli_needs_a_prefix_and_refuses_an_empty_one(tmp_path):
 
     _build_store(tmp_path / "brain.db").close()
     runner = CliRunner()
-    assert runner.invoke(graph_app, ["purge-sessions", "--db-path", str(tmp_path / "brain.db")]).exit_code != 0
+    res = runner.invoke(graph_app, ["purge-sessions", "--db-path", str(tmp_path / "brain.db")])
+    assert res.exit_code == 1 and "--prefix or --session" in res.output
     res = runner.invoke(graph_app, ["purge-sessions", "--prefix", "", "--db-path", str(tmp_path / "brain.db")])
     assert res.exit_code == 1 and "every session" in res.output
     res = runner.invoke(graph_app, ["purge-sessions", "--prefix", "locomo_", "--db-path", str(tmp_path / "brain.db")])
@@ -197,3 +198,61 @@ def test_supersession_repair_ignores_archived_data(client):
     assert [v.label for v in before if v.verdict == "inverted"] == ["PostgreSQL 14 -CHOSEN_OVER-> PostgreSQL 16"]
     _purge(client, apply=True)
     assert asyncio.run(find_supersession_verdicts(client, nlp=nlp)) == []
+
+
+def _index_everything(client):
+    """Give every Message and Concept a vector and a full-text row, as the
+    daemon does."""
+    from campy.brain.hippocampus.graph.vector_store import mint_uri
+
+    vs = client.vector_store
+    dim = vs.dim
+    for i, (mid, _sid, _role, text) in enumerate(MESSAGES):
+        uri = mint_uri("Message", mid)
+        vs.upsert_vector(uri, [float(i + 1)] + [0.0] * (dim - 1))
+        vs.index_text(uri, text)
+    for i, text in enumerate(CONCEPTS):
+        uri = mint_uri("Concept", _cid(text))
+        vs.upsert_vector(uri, [0.0, float(i + 1)] + [0.0] * (dim - 2))
+        vs.index_text(uri, text)
+
+
+def test_apply_drops_the_archived_nodes_vector_and_text_rows(client):
+    """Archived rows left in vectors.db would still take places in a search's
+    top k (results are filtered by `archived` only after hydration) and count
+    in the conversation stage's word frequencies."""
+    from campy.brain.hippocampus.graph.vector_store import mint_uri
+
+    _index_everything(client)
+    vs = client.vector_store
+    _purge(client, apply=True)
+
+    for mid in ("b1", "b2", "b3", "b4", "c1"):
+        assert vs.get_vector(mint_uri("Message", mid)) is None, mid
+    for mid in ("r1", "r2", "r3", "c2"):
+        assert vs.get_vector(mint_uri("Message", mid)) is not None, mid
+    for text, fate in CONCEPTS.items():
+        present = vs.get_vector(mint_uri("Concept", _cid(text))) is not None
+        assert present == (fate != "archive"), text
+    lexical = {u for u, _ in vs.search_text("PostgreSQL", k=50)}
+    assert mint_uri("Message", "r1") in lexical
+    assert not lexical & {mint_uri("Message", m) for m in ("b1", "b2", "c1")}
+
+
+def test_session_option_matches_exactly(client):
+    """--session x archives session "x" only; a prefix "x" would also take
+    "x-other". One-off ids (a session literally named "x") need it."""
+    from campy.brain.hippocampus.graph.vector_store import mint_uri
+
+    for sid, mid, text in (("x", "x1", "hello from Zorblax"), ("x-other", "x2", "hello from Quuxly")):
+        client.write_node("Session", {"session_id": sid, "started_at": NOW})
+        client.write_node("Message", {"message_id": mid, "text_raw": text, "role": "user",
+                                      "created_at": NOW, "archived": False})
+        client.write_edge("SENT_IN", mint_uri("Message", mid), mint_uri("Session", sid))
+    from campy.cli.graph_repair import purge_sessions
+
+    plan = asyncio.run(purge_sessions(client, [], apply=False, sessions=["x"]))
+    assert set(plan.messages) == {"x1"}
+    assert plan.sessions == {"x": ["x"]}
+    by_prefix = asyncio.run(purge_sessions(client, ["x"], apply=False))
+    assert set(by_prefix.messages) == {"x1", "x2"}
