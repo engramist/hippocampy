@@ -53,7 +53,7 @@ _NAME_PUNCT = {"-", "/", "."}
 _BREAK = set(":;,()")
 
 
-def _span_text(tok, doc) -> str:
+def _span(tok, doc):
     """The name a token stands for: the token plus the adjacent modifiers that
     are part of the name ("Vue 2", "PostgreSQL 14", "us-west-2"), then widened
     to whole written words -- tokens with no space between them, since
@@ -75,7 +75,23 @@ def _span_text(tok, doc) -> str:
         lo -= 1
     while hi + 1 < len(doc) and not doc[hi].whitespace_ and doc[hi + 1].text not in _BREAK | {"."}:
         hi += 1
-    return doc[lo:hi + 1].text
+    return doc[lo:hi + 1]
+
+
+def _is_name(span) -> bool:
+    """B464: the span names something -- a proper noun, a noun capitalized
+    mid-sentence ("Graphite", "REST", "gRPC"), a version or other numbered name
+    ("Python 3.12", "eu-central-1", "Route53"), or a word the model's
+    vocabulary does not know ("pytest", "yapf"). Common nouns ("the new
+    version", "the old one", "the team") are not names."""
+    has_vectors = span.vocab.vectors.shape[0] > 0  # no vectors (sm models): OOV says nothing
+    return any(
+        t.pos_ == "PROPN"
+        or (t.pos_ == "NOUN" and not t.is_sent_start and any(c.isupper() for c in t.text))
+        or any(c.isdigit() for c in t.text)
+        or (has_vectors and t.is_alpha and not t.has_vector)
+        for t in span if not (t.is_punct or t.is_space)
+    )
 
 
 def _prep_object(verb, prep_word: str):
@@ -131,12 +147,16 @@ def _deprecated_then_moved(doc) -> list[dict]:
 
 
 def _relation(head_tok, relation_type: str, tail_tok, doc) -> dict:
+    head, tail = _span(head_tok, doc), _span(tail_tok, doc)
     return {
-        "head":          _span_text(head_tok, doc),
+        "head":          head.text,
         "relation_type": relation_type,
-        "tail":          _span_text(tail_tok, doc),
+        "tail":          tail.text,
         "confidence":    0.85,
         "inferred_by":   "system",
+        # B464: both endpoints are names, so the relation can stand on its own
+        # (the orchestrator keeps such a REPLACES even when Step 2 drops its entities).
+        "names":         _is_name(head) and _is_name(tail),
     }
 
 

@@ -80,6 +80,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B407 | Inference Pilot: Prove the RDF Thesis Before the Engine Cutover | P0 | complete | TBD | TBD | - | backlog/B407.md |
 | B408 | Stale-Base Guard: Make Silent Reverts Unmergeable | P0 | complete | TBD | TBD | - | backlog/B408.md |
 | B411 | Exhaustive Migration Fixture: Round-Trip Every Node and Edge Type | P0 | complete | TBD | TBD | - | backlog/B411.md |
+| B464 | Stated Values Never Become Concepts, So No Supersession Edge Can Link Them | P1 | fixed (sandbox; real-model pending) | TBD | TBD | - | backlog/B464.md |
 | B460 | Relation Extraction Names the Retired Value as the Winner | P1 | fixed (real-model confirmed) | TBD | TBD | - | backlog/B460.md |
 | B466 | Step 1b Misses "Replace X with Y" and "X Is Deprecated ... Migrate to Y" | P1 | fixed (sandbox; real-model pending) | TBD | TBD | - | backlog/B466.md |
 | B459 | Conversation Evidence Drops the Statements That Supersede the One It Found | P1 | fixed (real-model confirmed) | TBD | TBD | - | backlog/B459.md |
