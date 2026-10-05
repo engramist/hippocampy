@@ -495,7 +495,10 @@ def repair_supersession_edges_cmd(
     # The store is opened writable even for a dry run (pyoxigraph's lock is
     # exclusive either way): stop the daemon first, or run on a copy.
     client = _open_repair_client(resolved_db_path, apply)
-    verdicts = asyncio.run(repair_supersession_edges(client, apply=apply))
+    try:
+        verdicts = asyncio.run(repair_supersession_edges(client, apply=apply))
+    finally:
+        client.close()  # release the store's lock now, not whenever it is collected
 
     shown = [v for v in verdicts if show_all or v.verdict in ("inverted", "conflicting")]
     table = Table(title="Supersession edge repair — " + ("applied" if apply else "dry run"), show_lines=True)
@@ -687,7 +690,10 @@ def purge_sessions_cmd(
     # Opened writable even for a dry run (pyoxigraph's lock is exclusive
     # either way): stop the daemon first, or run on a copy.
     client = _open_repair_client(resolved_db_path, apply)
-    plan = asyncio.run(purge_sessions(client, prefixes, apply=apply))
+    try:
+        plan = asyncio.run(purge_sessions(client, prefixes, apply=apply))
+    finally:
+        client.close()  # release the store's lock now, not whenever it is collected
 
     table = Table(title="Session purge — " + ("applied" if apply else "dry run"))
     table.add_column("prefix")

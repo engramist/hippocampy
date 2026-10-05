@@ -21,6 +21,8 @@ import asyncio
 
 import pytest
 
+from tests._spacy import SPACY_AVAILABLE
+
 NOW = "2026-10-01T12:00:00+00:00"
 
 SESSIONS = ["locomo_db_s1", "locomo_auth_s2", "arc_game_a", "real-7f3c", "arc-arc_eval_001-ab12"]
@@ -178,3 +180,20 @@ def test_cli_needs_a_prefix_and_refuses_an_empty_one(tmp_path):
     assert res.exit_code == 1 and "every session" in res.output
     res = runner.invoke(graph_app, ["purge-sessions", "--prefix", "locomo_", "--db-path", str(tmp_path / "brain.db")])
     assert res.exit_code == 0 and "Dry run" in res.output, res.output
+
+
+@pytest.mark.skipif(not SPACY_AVAILABLE, reason="needs spaCy with en_core_web_md")
+def test_supersession_repair_ignores_archived_data(client):
+    """After the purge, B465's repair neither lists edges between archived
+    Concepts nor reads archived Messages as the user's statements: the
+    fixture's "PostgreSQL 14 CHOSEN_OVER PostgreSQL 16" is inverted before
+    and gone after."""
+    import spacy
+
+    from campy.cli.graph_repair import find_supersession_verdicts
+
+    nlp = spacy.load("en_core_web_md")
+    before = asyncio.run(find_supersession_verdicts(client, nlp=nlp))
+    assert [v.label for v in before if v.verdict == "inverted"] == ["PostgreSQL 14 -CHOSEN_OVER-> PostgreSQL 16"]
+    _purge(client, apply=True)
+    assert asyncio.run(find_supersession_verdicts(client, nlp=nlp)) == []

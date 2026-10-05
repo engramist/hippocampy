@@ -482,7 +482,7 @@ CLI_QUERIES: tuple[NamedQuery, ...] = (
             """,
         params=(),
         mutating=False,
-        description="List Concept-Concept edges that claim one value won (CHOSEN_OVER/REPLACES).",
+        description="List Concept-Concept edges that claim one value won (CHOSEN_OVER/REPLACES); archived ends skipped (B467).",
         sparql="""
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?head_id ?head ?rel ?tail_id ?tail WHERE {
@@ -490,6 +490,8 @@ CLI_QUERIES: tuple[NamedQuery, ...] = (
                 ?h ?p ?t .
                 ?h a campy:Concept ; campy:concept_id ?head_id ; campy:text_raw ?head .
                 ?t a campy:Concept ; campy:concept_id ?tail_id ; campy:text_raw ?tail .
+                FILTER NOT EXISTS { ?h campy:archived true }
+                FILTER NOT EXISTS { ?t campy:archived true }
                 BIND(STRAFTER(STR(?p), "#") AS ?rel)
             }
             """,
@@ -505,13 +507,14 @@ CLI_QUERIES: tuple[NamedQuery, ...] = (
             """,
         params=(),
         mutating=False,
-        description="All stored user Messages, oldest first.",
+        description="All stored, non-archived user Messages, oldest first (B467: archived ones are not evidence).",
         sparql="""
             PREFIX campy: <https://campy.dev/ns#>
             SELECT ?message_id ?text_raw ?created_at WHERE {
                 ?m a campy:Message ;
                    campy:role "user" ;
                    campy:text_raw ?text_raw .
+                FILTER NOT EXISTS { ?m campy:archived true }
                 OPTIONAL { ?m campy:message_id ?message_id }
                 OPTIONAL { ?m campy:created_at ?created_at }
             }
