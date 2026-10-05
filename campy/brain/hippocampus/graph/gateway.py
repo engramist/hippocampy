@@ -1131,10 +1131,14 @@ class GraphGateway:
         from campy.brain.hippocampus.graph.vector_store import fts_content_terms
 
         def spans(text: str, name: str) -> list[tuple[int, int]]:
-            if not fts_content_terms(name):
+            # Substring test first: every (message, name) pair reaches here, and
+            # compiling a fresh pattern per pair dominated `ask` on stores with
+            # thousands of REPLACES edges (~1 s at 5k edges).
+            low, lname = text.lower(), name.lower()
+            if lname not in low or not fts_content_terms(name):
                 return []
-            pattern = r"(?<![^\W_])" + re.escape(name.lower()) + r"(?![^\W_])"
-            return [m.span() for m in re.finditer(pattern, text.lower())]
+            pattern = r"(?<![^\W_])" + re.escape(lname) + r"(?![^\W_])"
+            return [m.span() for m in re.finditer(pattern, low)]
 
         def names(text: str, name: str) -> bool:
             return bool(spans(text, name))
