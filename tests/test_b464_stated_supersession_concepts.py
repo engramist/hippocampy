@@ -44,15 +44,13 @@ def rels():
     # outside the fixture's wording
     ("We switched from Jenkins to GitHub Actions last week.", "GitHub Actions", "Jenkins"),
     ("Memcached was superseded by Redis cluster on port 6379.", "Redis cluster", "Memcached"),
-    ("Our team replaced flake8 with ruff.", None, None),  # active "A replaced B with C": not a REPLACES of names here
+    # B466: "replace B with C" -- before it, this gave "Our team REPLACES flake8"
+    ("Our team replaced flake8 with ruff.", "ruff", "flake8"),
 ])
 def test_step1b_marks_supersessions_between_names(rels, text, head, tail):
     from campy.brain.temporal_lobe.loop.orchestrator import _stated_supersession
 
     out = rels(text)
-    if head is None:
-        assert not any(_stated_supersession(r) for r in out), out
-        return
     match = [r for r in out if (r["head"], r["relation_type"], r["tail"]) == (head, "REPLACES", tail)]
     assert match, out
     assert match[0]["names"] is True
@@ -65,6 +63,8 @@ def test_step1b_marks_supersessions_between_names(rels, text, head, tail):
     "This approach replaces the manual process.",
     "The team deprecated the old API.",
     "We replaced it.",
+    "We replaced it with the new one.",
+    "The team replaced the old process with a script.",
 ])
 def test_step1b_supersession_between_common_nouns_is_not_a_stated_value(rels, text):
     from campy.brain.temporal_lobe.loop.orchestrator import _stated_supersession

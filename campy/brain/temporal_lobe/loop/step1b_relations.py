@@ -108,13 +108,6 @@ def _prep_objects_under(verb, prep_word: str) -> list:
             for g in t.children if g.dep_ == "pobj"]
 
 
-def _names_something(tok) -> bool:
-    """The token's name span holds a proper noun or a number -- a named
-    value, not "the new wiki"."""
-    sub = [t for t in tok.subtree if t.dep_ in _NAME_PARTS or t.i == tok.i]
-    return any(t.pos_ in ("PROPN", "NUM") or t.like_num for t in sub)
-
-
 def _deprecated_then_moved(doc) -> list[dict]:
     """B466: "X is deprecated; migrate serialization to Y" (one sentence or
     two) -> Y REPLACES X, but only when the message names exactly one retired
@@ -140,7 +133,7 @@ def _deprecated_then_moved(doc) -> list[dict]:
     if len(retired) != 1 or len(targets) != 1:
         return []
     old, new = retired[0], targets[0]
-    if not (_names_something(old) and _names_something(new)):
+    if not (_is_name(_span(old, doc)) and _is_name(_span(new, doc))):  # not "the new wiki"
         return []
     rel = _relation(new, "REPLACES", old, doc)
     return [rel] if rel["head"].lower() != rel["tail"].lower() else []
