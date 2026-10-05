@@ -316,6 +316,41 @@ class VectorStore:
             return []
         return [(uri, -float(bm25)) for uri, bm25 in rows]
 
+    def search_phrase(
+        self, phrase: str, k: int, uri_prefixes: Sequence[str] = ()
+    ) -> list[str]:
+        """B463: URIs of indexed documents containing `phrase`'s words
+        adjacently ("PostgreSQL 16" matches "...to PostgreSQL 16." but not
+        "PostgreSQL 14 ... version 16"), restricted to URIs starting with one
+        of `uri_prefixes` (all documents if empty), best bm25 first."""
+        import re
+
+        parts = re.findall(r"[^\W_]+", phrase or "")
+        if not parts or k <= 0:
+            return []
+        where, prefix_params = self._prefix_clause(uri_prefixes)
+        sql = (
+            f"SELECT uri FROM lexical WHERE lexical MATCH ?{where} "
+            "ORDER BY bm25(lexical) LIMIT ?"
+        )
+        try:
+            with self._lock:
+                rows = self._conn.execute(
+                    sql, ['"' + " ".join(parts) + '"', *prefix_params, k]).fetchall()
+        except sqlite3.OperationalError:
+            return []
+        return [uri for (uri,) in rows]
+
+    @staticmethod
+    def _prefix_clause(uri_prefixes: Sequence[str]) -> tuple[str, list[str]]:
+        if not uri_prefixes:
+            return "", []
+        where = " AND (" + " OR ".join("uri LIKE ? ESCAPE '\\'" for _ in uri_prefixes) + ")"
+        return where, [
+            p.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            for p in uri_prefixes
+        ]
+
     def document_frequencies(
         self, terms: Sequence[str], uri_prefixes: Sequence[str] = ()
     ) -> dict[str, int]:
@@ -327,13 +362,7 @@ class VectorStore:
         """
         import re
 
-        where, prefix_params = "", []
-        if uri_prefixes:
-            where = " AND (" + " OR ".join("uri LIKE ? ESCAPE '\\'" for _ in uri_prefixes) + ")"
-            prefix_params = [
-                p.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-                for p in uri_prefixes
-            ]
+        where, prefix_params = self._prefix_clause(uri_prefixes)
         sql = f"SELECT count(*) FROM lexical WHERE lexical MATCH ?{where}"
         out: dict[str, int] = {}
         for term in terms:
