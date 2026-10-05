@@ -1116,6 +1116,22 @@ class OxigraphClient:
         self.write_edge(table, h_uri, t_uri, props)
         return True
 
+    def remove_star_edge(self, table: str, subject_uri: str, object_uri: str) -> bool:
+        """B465: delete one `star` edge -- its plain triple and every reifier
+        annotating it (module docstring points 3-4: SPARQL DELETE cannot reach
+        the reifiers). Returns whether the edge existed."""
+        if classify_edge(table) != "star":
+            raise ValueError(f"{table} is not a 'star' edge")
+        triple = ox.Quad(
+            ox.NamedNode(subject_uri), ox.NamedNode(f"{CAMPY_NS}{table}"),
+            ox.NamedNode(object_uri), ox.DefaultGraph(),
+        )
+        existed = triple in self.store
+        self._remove_existing_reifiers(subject_uri, table, object_uri)
+        if existed:
+            self.store.remove(triple)
+        return existed
+
     # -- annotation cascade (§4.2e) -----------------------------------------
 
     def cascade_orphaned_annotations(self) -> int:

@@ -562,6 +562,15 @@ class GraphGateway:
             )
             return []
 
+        # 0c. B465: removing a semantic-relation star edge drops its reifiers.
+        if name.startswith("orchestrator.remove_semantic_rel_"):
+            self._client.remove_star_edge(
+                name.replace("orchestrator.remove_semantic_rel_", "").upper(),
+                mint_uri("Concept", params["hid"]),
+                mint_uri("Concept", params["tid"]),
+            )
+            return []
+
         # 1. Thalamus bundle queries
         if name.startswith("thalamus.bundle_") or name == "thalamus.analogical_get_quest_embedding":
             return self._handle_thalamus_bundle(name, params)

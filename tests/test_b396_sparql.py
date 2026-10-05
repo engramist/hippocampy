@@ -34,7 +34,7 @@ def test_b396_query_counts():
     assert len(PATHWAY_QUERIES) == 12
     assert len(BASAL_GANGLIA_QUERIES) == 17
     assert len(TASK_GRAPH_QUERIES) == 30
-    assert len(ORCHESTRATOR_QUERIES) == 55
+    assert len(ORCHESTRATOR_QUERIES) == 57  # B465: +2 remove_semantic_rel_*
     assert len(LESSONS_QUERIES) == 27
     # B375 gap 4: Lesson/Procedure joined the "warmable" table set so Step
     # 4b can pre-activate matched Lessons/Procedures in the warm frontier —
@@ -52,7 +52,7 @@ def test_b396_query_counts():
         + len(LESSONS_QUERIES)
         + len(TEMPORAL_LOBE_QUERIES)
     )
-    assert total == 1160
+    assert total == 1162
 
 
 @pytest.mark.parametrize("query", BACKUP_QUERIES, ids=lambda q: q.name)
@@ -136,6 +136,11 @@ def test_orchestrator_queries_sparql(store, query):
     if query.name.startswith("orchestrator.merge_semantic_rel_"):
         # B451: star-edge writes; a static SPARQL INSERT mints a reifier per
         # solution. Handled via OxigraphClient.upsert_semantic_relation.
+        assert query.sparql is None
+        return
+    if query.name.startswith("orchestrator.remove_semantic_rel_"):
+        # B465: a star edge's reifiers are out of SPARQL DELETE's reach.
+        # Handled via OxigraphClient.remove_star_edge.
         assert query.sparql is None
         return
 

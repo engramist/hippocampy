@@ -81,6 +81,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B408 | Stale-Base Guard: Make Silent Reverts Unmergeable | P0 | complete | TBD | TBD | - | backlog/B408.md |
 | B411 | Exhaustive Migration Fixture: Round-Trip Every Node and Edge Type | P0 | complete | TBD | TBD | - | backlog/B411.md |
 | B463 | ask Can't Reach the Current Value When the Question Uses a Category Word | P1 | fixed (awaiting real-model confirmation) | TBD | TBD | - | backlog/B463.md |
+| B465 | Repair Supersession Edges Written Backwards Before B460 | P1 | fixed (diag-store copy confirmed 8 -> 0; personal store pending) | TBD | TBD | - | backlog/B465.md |
 | B464 | Stated Values Never Become Concepts, So No Supersession Edge Can Link Them | P1 | fixed (sandbox; real-model pending) | TBD | TBD | - | backlog/B464.md |
 | B460 | Relation Extraction Names the Retired Value as the Winner | P1 | fixed (real-model confirmed) | TBD | TBD | - | backlog/B460.md |
 | B466 | Step 1b Misses "Replace X with Y" and "X Is Deprecated ... Migrate to Y" | P1 | fixed (sandbox; real-model pending) | TBD | TBD | - | backlog/B466.md |
