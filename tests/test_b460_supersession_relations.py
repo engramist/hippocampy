@@ -74,8 +74,9 @@ def test_step1b_names_the_new_value_as_head(rels, text, expected):
 
 @needs_spacy
 def test_step1b_needs_both_ends_of_a_move(rels):
-    # "migrate X to Y" names no retired value: no edge rather than a guess
-    assert rels("Update: Pickle is deprecated; migrate serialization to MessagePack.") == []
+    # "migrate X to Y" names no retired value: no edge rather than a guess.
+    # (B466: with "Pickle is deprecated" in the same message it does name one.)
+    assert rels("Update: migrate serialization to MessagePack.") == []
 
 
 def test_step3b_prompt_offers_replaces_and_states_direction():

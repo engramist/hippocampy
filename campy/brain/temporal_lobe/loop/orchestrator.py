@@ -25,7 +25,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from campy.brain.temporal_lobe.loop.step1_ner       import extract_entities
+from campy.brain.temporal_lobe.loop.step1_ner       import extract_entities, _is_junk_entity
 
 _logger = logging.getLogger(__name__)
 from campy.brain.temporal_lobe.loop.step1b_relations import extract_relations
@@ -224,10 +224,13 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         # Step 1b filtering: keep a relation that names a surviving entity.
         # B460: "names" = equals it or contains it as whole words -- step1b
         # spans keep versions ("PostgreSQL 16") that NER drops ("PostgreSQL").
+        # B464: or a supersession stated between two names, whatever Step 2
+        # made of the entities (see _stated_supersession).
         surviving_texts = {e["text"].lower() for e in typed_entities}
         surviving_step1b = [
             r for r in step1b_relations
             if _names_entity(r["head"], surviving_texts) or _names_entity(r["tail"], surviving_texts)
+            or _stated_supersession(r)
         ]
         deferred_relations = list(surviving_step1b)
 
@@ -800,6 +803,25 @@ def _names_entity(text: str, entity_texts: set[str]) -> bool:
     low = text.lower()
     return low in entity_texts or any(
         re.search(rf"(?<![^\W_]){re.escape(e)}(?![^\W_])", low) for e in entity_texts if e)
+
+
+def _stated_supersession(rel: dict) -> bool:
+    """B464: a Step 1b REPLACES between two names ("Final decision: nose2 has
+    been replaced by pytest") is kept even when Step 2 classed every entity of
+    the message as noise. Step 2 judges the NER spans ("Python" for "Python
+    3.12"; "pytest" is no entity at all), and when it drops them the user's own
+    statement of which value is current was discarded, and with it the only
+    path by which the current value became a Concept. Both endpoints must be
+    names (step1b `_is_name`), so "the new version replaces the old one"
+    still needs a surviving entity."""
+    head, tail = rel["head"], rel["tail"]
+    return (
+        rel["relation_type"] == "REPLACES"
+        and rel.get("names", False)
+        and head.lower() != tail.lower()
+        and not _is_junk_entity(head)
+        and not _is_junk_entity(tail)
+    )
 
 
 async def _store_relation(rel: dict, db, now: str,
