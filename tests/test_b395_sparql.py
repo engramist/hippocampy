@@ -23,11 +23,11 @@ def store():
 
 def test_b395_query_counts():
     assert len(WEB_QUERIES) == 75
-    assert len(CLI_QUERIES) == 16
+    assert len(CLI_QUERIES) == 18  # B465: +2 supersession-edge repair reads
     assert len(EXPLORE_QUERIES) == 12
     assert len(CAPABILITY_QUERIES) == 39
     total = len(WEB_QUERIES) + len(CLI_QUERIES) + len(EXPLORE_QUERIES) + len(CAPABILITY_QUERIES)
-    assert total == 142
+    assert total == 144
 
 
 @pytest.mark.parametrize("query", EXPLORE_QUERIES, ids=lambda q: q.name)

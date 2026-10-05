@@ -669,6 +669,25 @@ for rel_type in _SEMANTIC_RELS:
         )
     )
 
+# B465: the removal counterpart of merge_semantic_rel_* for the two edges that
+# say which value won, used by `campy graph repair-supersession-edges`. No
+# sparql= for the same reason: a star edge's reifiers are out of SPARQL
+# DELETE's reach (oxigraph_client module docstring point 3), so the gateway
+# dispatches it to OxigraphClient.remove_star_edge.
+for rel_type in ("CHOSEN_OVER", "REPLACES"):
+    ORCHESTRATOR_QUERIES.append(
+        NamedQuery(
+            name=f"orchestrator.remove_semantic_rel_{rel_type.lower()}",
+            cypher=f"""
+            MATCH (h:Concept {{concept_id: $hid}})-[r:{rel_type}]->(t:Concept {{concept_id: $tid}})
+            DELETE r
+            """,
+            params=("hid", "tid"),
+            mutating=True,
+            description=f"Remove one {rel_type} relation between Concepts",
+        )
+    )
+
 _ANOMALY_NODE_SPECS = [
     ("Concept", "concept_id", "concept"),
     ("Decision", "decision_id", "decision"),
