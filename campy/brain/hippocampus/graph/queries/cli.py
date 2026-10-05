@@ -518,4 +518,151 @@ CLI_QUERIES: tuple[NamedQuery, ...] = (
             ORDER BY ?created_at
             """,
     ),
+    # --- B467: archive what benchmark sessions wrote into a personal store ---
+    NamedQuery(
+        name="cli.purge_find_sessions",
+        cypher="MATCH (s:Session) RETURN s.session_id AS session_id",
+        params=(),
+        mutating=False,
+        description="Every Session's id (B467 matches them by prefix).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?session_id WHERE { ?s a campy:Session ; campy:session_id ?session_id }
+            """,
+    ),
+    NamedQuery(
+        name="cli.purge_find_messages",
+        cypher="""
+            MATCH (m:Message)
+            OPTIONAL MATCH (m)-[:SENT_IN]->(s:Session)
+            RETURN m.message_id AS message_id, m.text_raw AS text_raw,
+                   m.archived AS archived, s.session_id AS session_id
+            """,
+        params=(),
+        mutating=False,
+        description="Every Message with its text, archived flag and Session (if any).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?message_id ?text_raw ?archived ?session_id WHERE {
+                ?m a campy:Message ; campy:message_id ?message_id .
+                OPTIONAL { ?m campy:text_raw ?text_raw }
+                OPTIONAL { ?m campy:archived ?archived }
+                OPTIONAL { ?m campy:SENT_IN ?s . ?s campy:session_id ?session_id }
+            }
+            """,
+    ),
+    NamedQuery(
+        name="cli.purge_find_message_products",
+        cypher="""
+            MATCH (m:Message)-[:ESTABLISHED]->(d:Decision)
+            RETURN m.message_id AS message_id, 'Decision' AS kind, d.decision_id AS node_id, d.archived AS archived
+            UNION ALL
+            MATCH (m:Message)-[:ESTABLISHED]->(c:Constraint)
+            RETURN m.message_id AS message_id, 'Constraint' AS kind, c.constraint_id AS node_id, c.archived AS archived
+            UNION ALL
+            MATCH (m:Message)-[:CONTAINS_LESSON]->(l:Lesson)
+            RETURN m.message_id AS message_id, 'Lesson' AS kind, l.lesson_id AS node_id, l.archived AS archived
+            """,
+        params=(),
+        mutating=False,
+        description="Decisions/Constraints a Message ESTABLISHED and Lessons it CONTAINS_LESSON.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?message_id ?kind ?node_id ?archived WHERE {
+                ?m a campy:Message ; campy:message_id ?message_id .
+                {
+                    ?m campy:ESTABLISHED ?n . ?n a campy:Decision ; campy:decision_id ?node_id .
+                    BIND("Decision" AS ?kind)
+                } UNION {
+                    ?m campy:ESTABLISHED ?n . ?n a campy:Constraint ; campy:constraint_id ?node_id .
+                    BIND("Constraint" AS ?kind)
+                } UNION {
+                    ?m campy:CONTAINS_LESSON ?n . ?n a campy:Lesson ; campy:lesson_id ?node_id .
+                    BIND("Lesson" AS ?kind)
+                }
+                OPTIONAL { ?n campy:archived ?archived }
+            }
+            """,
+    ),
+    NamedQuery(
+        name="cli.purge_find_concepts",
+        cypher="MATCH (c:Concept) RETURN c.concept_id AS concept_id, c.text_raw AS text_raw, c.archived AS archived",
+        params=(),
+        mutating=False,
+        description="Every Concept's id, name and archived flag.",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?concept_id ?text_raw ?archived WHERE {
+                ?c a campy:Concept ; campy:concept_id ?concept_id .
+                OPTIONAL { ?c campy:text_raw ?text_raw }
+                OPTIONAL { ?c campy:archived ?archived }
+            }
+            """,
+    ),
+    NamedQuery(
+        name="cli.purge_find_concept_edges",
+        cypher="""
+            MATCH (a:Concept)-[r]->(b:Concept)
+            RETURN a.concept_id AS head_id, label(r) AS rel, b.concept_id AS tail_id
+            """,
+        params=(),
+        mutating=False,
+        description="Every Concept-to-Concept edge (B467 reports how many an archive leaves dangling).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            SELECT ?head_id ?rel ?tail_id WHERE {
+                ?a a campy:Concept ; campy:concept_id ?head_id ; ?p ?b .
+                ?b a campy:Concept ; campy:concept_id ?tail_id .
+                BIND(STRAFTER(STR(?p), "https://campy.dev/ns#") AS ?rel)
+            }
+            """,
+    ),
+    NamedQuery(
+        name="cli.purge_archive_message",
+        cypher="MATCH (n:Message {message_id: $node_id}) SET n.archived = true",
+        params=("node_id",),
+        mutating=True,
+        description="Archive one Message (B467).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            DELETE { ?n campy:archived ?old_archived . }
+            INSERT { ?n campy:archived true . }
+            WHERE {
+                ?n a campy:Message ; campy:message_id ?node_id .
+                OPTIONAL { ?n campy:archived ?old_archived }
+            }
+            """,
+    ),
+    NamedQuery(
+        name="cli.purge_archive_decision",
+        cypher="MATCH (n:Decision {decision_id: $node_id}) SET n.archived = true",
+        params=("node_id",),
+        mutating=True,
+        description="Archive one Decision (B467).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            DELETE { ?n campy:archived ?old_archived . }
+            INSERT { ?n campy:archived true . }
+            WHERE {
+                ?n a campy:Decision ; campy:decision_id ?node_id .
+                OPTIONAL { ?n campy:archived ?old_archived }
+            }
+            """,
+    ),
+    NamedQuery(
+        name="cli.purge_archive_constraint",
+        cypher="MATCH (n:Constraint {constraint_id: $node_id}) SET n.archived = true",
+        params=("node_id",),
+        mutating=True,
+        description="Archive one Constraint (B467).",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+            DELETE { ?n campy:archived ?old_archived . }
+            INSERT { ?n campy:archived true . }
+            WHERE {
+                ?n a campy:Constraint ; campy:constraint_id ?node_id .
+                OPTIONAL { ?n campy:archived ?old_archived }
+            }
+            """,
+    ),
 )

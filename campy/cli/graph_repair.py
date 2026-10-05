@@ -520,3 +520,193 @@ def repair_supersession_edges_cmd(
     )
     if counts["inverted"]:
         console.print(f"{counts['inverted']} inverted edge(s) {'repaired' if apply else 'would be repaired (re-run with --apply)'}.")
+
+
+# --- B467: archive what benchmark sessions wrote into a personal store -------
+#
+# Non-isolated campy-benchmarks runs wrote their fixture conversations into the
+# user's own store, and consolidation turned them into Concepts and edges that
+# `ask` then read as the user's decisions. Messages, and what a Message
+# ESTABLISHED (Decisions, Constraints) or CONTAINS_LESSON, carry provenance and
+# are archived exactly. Concepts do not: the graph has no Concept -> Message
+# link, so a Concept is archived when a purged Message names it (whole words,
+# case-insensitive) and no remaining Message does. Everything is archived, not
+# deleted: retrieval skips archived nodes, the vector rows stay in step with
+# the graph, and an archive can be undone.
+
+
+@dataclass
+class SessionPurgePlan:
+    prefixes: tuple[str, ...]
+    sessions: dict[str, list[str]]  # prefix -> session ids
+    messages: dict[str, str]  # message_id -> text, all to be archived
+    session_less: list[str]  # of those, the ones with no Session (exact copies)
+    products: dict[str, list[str]]  # "Decision" / "Constraint" / "Lesson" -> ids
+    concepts: dict[str, str]  # concept_id -> name, to be archived
+    kept_concepts: int  # named by a purged Message, but also by a remaining one
+    edges: dict[str, int]  # "both" / "one": Concept-Concept edges by archived ends
+
+
+def _norm(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
+def _mentioned(names: dict[str, str], texts: list[str]) -> set[str]:
+    """Ids of the `names` that some text contains as whole words
+    (case-insensitive). A word index narrows the texts each name is tried on."""
+    index: dict[str, set[int]] = {}
+    lowered = [t.lower() for t in texts]
+    for i, t in enumerate(lowered):
+        for w in _words(t):
+            index.setdefault(w, set()).add(i)
+    found = set()
+    for cid, name in names.items():
+        words = _words(name)
+        if not words:
+            continue
+        candidates = set.intersection(*(index.get(w, set()) for w in words))
+        low = name.lower().strip()
+        if any(_contains_words(lowered[i], low) for i in candidates):
+            found.add(cid)
+    return found
+
+
+async def plan_session_purge(db, prefixes) -> SessionPurgePlan:
+    prefixes = tuple(prefixes)
+    gw = get_gateway(db)
+
+    def matches(session_id) -> str | None:
+        return next((p for p in prefixes if session_id and str(session_id).startswith(p)), None)
+
+    sessions: dict[str, list[str]] = {p: [] for p in prefixes}
+    for r in await gw.run("cli.purge_find_sessions"):
+        sid = _row(r, "session_id", 0)
+        if (p := matches(sid)) is not None:
+            sessions[p].append(str(sid))
+
+    purged: dict[str, str] = {}
+    remaining: list[tuple[str, str, bool]] = []  # (id, text, has_session)
+    for r in await gw.run("cli.purge_find_messages"):
+        mid, text = str(_row(r, "message_id", 0)), _row(r, "text_raw", 1) or ""
+        archived, sid = bool(_row(r, "archived", 2)), _row(r, "session_id", 3)
+        if archived:
+            continue
+        if matches(sid) is not None:
+            purged[mid] = text
+        else:
+            remaining.append((mid, text, sid is not None))
+
+    # A Message with no Session that repeats a purged Message word for word is
+    # a copy of it (written by the same runs, outside any session).
+    purged_texts = {_norm(t) for t in purged.values() if t.strip()}
+    session_less = [mid for mid, text, has_session in remaining
+                    if not has_session and text.strip() and _norm(text) in purged_texts]
+    copies = set(session_less)
+    for mid, text, _ in remaining:
+        if mid in copies:
+            purged[mid] = text
+    remaining_texts = [text for mid, text, _ in remaining if mid not in copies]
+
+    # A Decision/Constraint/Lesson is archived only when every Message that
+    # produced it is purged.
+    producers: dict[tuple[str, str], set[str]] = {}
+    already: set[tuple[str, str]] = set()
+    for r in await gw.run("cli.purge_find_message_products"):
+        key = (_row(r, "kind", 1), str(_row(r, "node_id", 2)))
+        producers.setdefault(key, set()).add(str(_row(r, "message_id", 0)))
+        if bool(_row(r, "archived", 3)):
+            already.add(key)
+    products: dict[str, list[str]] = {"Decision": [], "Constraint": [], "Lesson": []}
+    for (kind, nid), mids in sorted(producers.items()):
+        if (kind, nid) not in already and mids <= purged.keys():
+            products[kind].append(nid)
+
+    live = {str(_row(r, "concept_id", 0)): _row(r, "text_raw", 1) or ""
+            for r in await gw.run("cli.purge_find_concepts") if not bool(_row(r, "archived", 2))}
+    named_by_purged = _mentioned(live, list(purged.values()))
+    candidates = {cid: live[cid] for cid in named_by_purged}
+    still_named = _mentioned(candidates, remaining_texts)
+    concepts = {cid: name for cid, name in candidates.items() if cid not in still_named}
+
+    edges = {"both": 0, "one": 0}
+    for r in await gw.run("cli.purge_find_concept_edges"):
+        ends = (str(_row(r, "head_id", 0)) in concepts) + (str(_row(r, "tail_id", 2)) in concepts)
+        if ends == 2:
+            edges["both"] += 1
+        elif ends == 1:
+            edges["one"] += 1
+
+    return SessionPurgePlan(prefixes, sessions, purged, session_less, products,
+                            concepts, len(still_named), edges)
+
+
+async def apply_session_purge(db, plan: SessionPurgePlan) -> None:
+    gw = get_gateway(db)
+    for mid in plan.messages:
+        await gw.run("cli.purge_archive_message", node_id=mid)
+    for nid in plan.products["Decision"]:
+        await gw.run("cli.purge_archive_decision", node_id=nid)
+    for nid in plan.products["Constraint"]:
+        await gw.run("cli.purge_archive_constraint", node_id=nid)
+    for nid in plan.products["Lesson"]:
+        await gw.run("sweep.archive_lesson", lid=nid)
+    for cid in plan.concepts:
+        await gw.run("quests.archive_concept", cid=cid)
+
+
+async def purge_sessions(db, prefixes, apply: bool = False) -> SessionPurgePlan:
+    plan = await plan_session_purge(db, prefixes)
+    if apply:
+        await apply_session_purge(db, plan)
+    return plan
+
+
+_PREFIX_OPTION = typer.Option(..., "--prefix", help="Session-id prefix to archive (repeat for several; no default)")
+
+
+@graph_app.command("purge-sessions")
+def purge_sessions_cmd(
+    prefixes: list[str] = _PREFIX_OPTION,
+    apply: bool = typer.Option(False, "--apply", help="Write changes (default: dry run)"),
+    db_path: str = typer.Option(
+        "", "--db-path", help="Path to the graph store (defaults to the active Campy database)"
+    ),
+    sample: int = typer.Option(20, "--sample", help="Concept names to list (0: none)"),
+) -> None:
+    """B467: archive the Messages that sessions with these id prefixes wrote
+    (benchmark runs, say), what they established, and the Concepts that only
+    they mention."""
+    if any(not p.strip() for p in prefixes):
+        console.print("[red]Error:[/red] an empty --prefix would match every session.")
+        raise typer.Exit(code=1)
+    resolved_db_path = Path(db_path).expanduser() if db_path else get_database_path()
+    if not resolved_db_path.exists():
+        console.print(f"[red]Error:[/red] Campy database not found at {resolved_db_path}.")
+        raise typer.Exit(code=1)
+
+    # Opened writable even for a dry run (pyoxigraph's lock is exclusive
+    # either way): stop the daemon first, or run on a copy.
+    client = _open_repair_client(resolved_db_path, apply)
+    plan = asyncio.run(purge_sessions(client, prefixes, apply=apply))
+
+    table = Table(title="Session purge — " + ("applied" if apply else "dry run"))
+    table.add_column("prefix")
+    table.add_column("sessions", justify="right")
+    for p in plan.prefixes:
+        table.add_row(escape(p), str(len(plan.sessions[p])))
+    console.print(table)
+    verb = "archived" if apply else "to archive"
+    console.print(
+        f"Messages {verb}: {len(plan.messages)} "
+        f"({len(plan.session_less)} with no session, word-for-word copies of purged ones)\n"
+        f"Decisions / Constraints / Lessons {verb}: {len(plan.products['Decision'])} / "
+        f"{len(plan.products['Constraint'])} / {len(plan.products['Lesson'])}\n"
+        f"Concepts {verb}: {len(plan.concepts)} (named only by purged messages); "
+        f"kept: {plan.kept_concepts} (also named by a remaining message)\n"
+        f"Concept-Concept edges with both ends archived: {plan.edges['both']}, one end: {plan.edges['one']}"
+    )
+    if sample and plan.concepts:
+        names = sorted({n for n in plan.concepts.values()}, key=str.lower)
+        console.print("Concepts " + verb + " (sample): " + escape(" · ".join(names[:sample])))
+    if not apply and plan.messages:
+        console.print("Dry run: nothing written. Re-run with --apply (daemon stopped, store backed up).")
