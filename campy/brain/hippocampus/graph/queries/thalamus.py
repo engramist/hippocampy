@@ -1797,6 +1797,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                 ?b a campy:Concept ;
                    campy:concept_id ?concept_id ;
                    campy:text_raw ?text_raw .
+                FILTER NOT EXISTS { ?b campy:archived true }
             }
             LIMIT 10
             """,
@@ -1822,6 +1823,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                 ?b a campy:Concept ;
                    campy:concept_id ?concept_id ;
                    campy:text_raw ?text_raw .
+                FILTER NOT EXISTS { ?b campy:archived true }
                 OPTIONAL { ?b campy:flagged_for_review ?flagged }
                 FILTER(!BOUND(?flagged) || ?flagged = false)
             }
@@ -1848,6 +1850,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                 BIND(STRAFTER(STR(?p1), "https://campy.dev/ns#") AS ?rel_type1)
                 ?mid a campy:Concept ;
                      campy:text_raw ?mid_text .
+                FILTER NOT EXISTS { ?mid campy:archived true }
                 VALUES ?p2 { campy:REQUIRES campy:ENABLES campy:REPLACES campy:CONTRADICTS
                              campy:PART_OF campy:CHOSEN_OVER campy:IMPLEMENTS campy:EXTENDS
                              campy:ALTERNATIVE_TO }
@@ -1856,6 +1859,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                 ?c a campy:Concept ;
                    campy:concept_id ?concept_id ;
                    campy:text_raw ?text_raw .
+                FILTER NOT EXISTS { ?c campy:archived true }
                 FILTER(?concept_id != ?aid)
             }
             LIMIT 10
@@ -1883,6 +1887,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                 BIND(STRAFTER(STR(?p1), "https://campy.dev/ns#") AS ?rel_type1)
                 ?mid a campy:Concept ;
                      campy:text_raw ?mid_text .
+                FILTER NOT EXISTS { ?mid campy:archived true }
                 OPTIONAL { ?mid campy:flagged_for_review ?mid_flagged }
                 FILTER(!BOUND(?mid_flagged) || ?mid_flagged = false)
                 VALUES ?p2 { campy:REQUIRES campy:ENABLES campy:REPLACES campy:CONTRADICTS
@@ -1893,6 +1898,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                 ?c a campy:Concept ;
                    campy:concept_id ?concept_id ;
                    campy:text_raw ?text_raw .
+                FILTER NOT EXISTS { ?c campy:archived true }
                 FILTER(?concept_id != ?aid)
                 OPTIONAL { ?c campy:flagged_for_review ?c_flagged }
                 FILTER(!BOUND(?c_flagged) || ?c_flagged = false)
