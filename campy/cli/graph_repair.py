@@ -551,30 +551,40 @@ class SessionPurgePlan:
     kept_concepts: int  # named by a purged Message, but also by a remaining one
     edges: dict[str, int]  # "both" / "one": Concept-Concept edges by archived ends
     uris: list[str]  # every node to archive: its vectors.db rows are dropped too
+    # edges between two kept Concepts that only purged Messages state: some
+    # purged Message names both ends, no remaining one does -- (rel, head uri,
+    # tail uri, "head -REL-> tail")
+    leaked_edges: list[tuple[str, str, str, str]]
 
 
 def _norm(text: str) -> str:
     return " ".join(text.lower().split())
 
 
-def _mentioned(names: dict[str, str], texts: list[str]) -> set[str]:
-    """Ids of the `names` that some text contains as whole words
-    (case-insensitive). A word index narrows the texts each name is tried on."""
+def _mentions(names: dict[str, str], texts: list[str]) -> dict[str, set[int]]:
+    """For each of the `names` some text contains as whole words
+    (case-insensitive), the indices of those texts. A word index narrows the
+    texts each name is tried on."""
     index: dict[str, set[int]] = {}
     lowered = [t.lower() for t in texts]
     for i, t in enumerate(lowered):
         for w in _words(t):
             index.setdefault(w, set()).add(i)
-    found = set()
+    found: dict[str, set[int]] = {}
     for cid, name in names.items():
         words = _words(name)
         if not words:
             continue
         candidates = set.intersection(*(index.get(w, set()) for w in words))
         low = name.lower().strip()
-        if any(_contains_words(lowered[i], low) for i in candidates):
-            found.add(cid)
+        hits = {i for i in candidates if _contains_words(lowered[i], low)}
+        if hits:
+            found[cid] = hits
     return found
+
+
+def _mentioned(names: dict[str, str], texts: list[str]) -> set[str]:
+    return set(_mentions(names, texts))
 
 
 async def plan_session_purge(db, prefixes=(), sessions_exact=()) -> SessionPurgePlan:
@@ -648,19 +658,42 @@ async def plan_session_purge(db, prefixes=(), sessions_exact=()) -> SessionPurge
     still_named = _mentioned(candidates, remaining_texts)
     concepts = {cid: name for cid, name in candidates.items() if cid not in still_named}
 
+    # Edges between two kept Concepts: provenance is missing for edges too,
+    # so the same mention rule decides -- an edge both of whose ends only
+    # purged Messages name together was derived from them ("REST
+    # CHOSEN_OVER GraphQL" from a load-test session, whose message would
+    # otherwise stay archived evidence against a still-standing edge).
+    kept = {cid: live[cid] for cid in live if cid not in concepts}
+    in_purged = _mentions(kept, list(purged.values()))
+    in_remaining = _mentions({c: kept[c] for c in in_purged}, remaining_texts)
     edges = {"both": 0, "one": 0}
+    leaked: list[tuple[str, str, str, str]] = []
     for r in await gw.run("cli.purge_find_concept_edges"):
-        ends = (str(_row(r, "head_id", 0)) in concepts) + (str(_row(r, "tail_id", 2)) in concepts)
+        h, rel, t = str(_row(r, "head_id", 0)), _row(r, "rel", 1), str(_row(r, "tail_id", 2))
+        ends = (h in concepts) + (t in concepts)
         if ends == 2:
             edges["both"] += 1
         elif ends == 1:
             edges["one"] += 1
+        elif (in_purged.get(h, set()) & in_purged.get(t, set())
+              and not in_remaining.get(h, set()) & in_remaining.get(t, set())
+              and h != t and _is_star(rel)):
+            leaked.append((rel, concept_uri[h], concept_uri[t], f"{kept[h]} -{rel}-> {kept[t]}"))
 
     uris = ([uri_of[m] for m in purged]
             + [product_uri[(k, n)] for k, ids in products.items() for n in ids]
             + [concept_uri[c] for c in concepts])
     return SessionPurgePlan(prefixes + exact, sessions, purged, session_less, products,
-                            concepts, len(still_named), edges, uris)
+                            concepts, len(still_named), edges, uris, leaked)
+
+
+def _is_star(rel) -> bool:
+    from campy.brain.hippocampus.graph.oxigraph_client import classify_edge
+
+    try:
+        return classify_edge(str(rel)) == "star"
+    except ValueError:  # not an edge table (e.g. rdf:type) or unclassified
+        return False
 
 
 async def apply_session_purge(db, plan: SessionPurgePlan) -> None:
@@ -675,6 +708,8 @@ async def apply_session_purge(db, plan: SessionPurgePlan) -> None:
         await gw.run("sweep.archive_lesson", lid=nid)
     for cid in plan.concepts:
         await gw.run("quests.archive_concept", cid=cid)
+    for rel, head_uri, tail_uri, _ in plan.leaked_edges:
+        db.remove_star_edge(rel, head_uri, tail_uri)
     vs = getattr(db, "vector_store", None)
     if vs is not None:
         for uri in plan.uris:
@@ -742,10 +777,18 @@ def purge_sessions_cmd(
         f"kept: {plan.kept_concepts} (also named by a remaining message)\n"
         f"Concept-Concept edges with both ends archived: {plan.edges['both']}, one end: {plan.edges['one']}\n"
         f"vectors.db rows (embedding + full-text) {'removed' if apply else 'to remove'} for "
-        f"{len(plan.uris)} node(s)"
+        f"{len(plan.uris)} node(s)\n"
+        f"Edges between kept Concepts stated only by purged messages "
+        f"{'removed' if apply else 'to remove'}: {len(plan.leaked_edges)}"
     )
+    for *_, label in plan.leaked_edges:
+        console.print("  " + escape(label))
     if sample and plan.concepts:
+        import random
+
         names = sorted({n for n in plan.concepts.values()}, key=str.lower)
-        console.print("Concepts " + verb + " (sample): " + escape(" · ".join(names[:sample])))
+        picked = sorted(random.Random(0).sample(names, min(sample, len(names))), key=str.lower)
+        console.print(f"Concepts {verb} (random sample of {len(picked)} of {len(names)} distinct names): "
+                      + escape(" · ".join(picked)))
     if not apply and plan.messages:
         console.print("Dry run: nothing written. Re-run with --apply (daemon stopped, store backed up).")

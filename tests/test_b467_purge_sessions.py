@@ -256,3 +256,40 @@ def test_session_option_matches_exactly(client):
     assert plan.sessions == {"x": ["x"]}
     by_prefix = asyncio.run(purge_sessions(client, ["x"], apply=False))
     assert set(by_prefix.messages) == {"x1", "x2"}
+
+
+def test_edges_only_purged_messages_state_are_removed(client):
+    """Edges carry no provenance either. An edge between two kept Concepts
+    whose ends only purged Messages name together was derived from them, and
+    would otherwise stand with its evidence archived (a backwards "REST
+    CHOSEN_OVER GraphQL" from a load-test session looked fine to B465 once the
+    message contradicting it was archived)."""
+    from campy.brain.hippocampus.graph.vector_store import mint_uri
+
+    for mid, text in (("b5", "We chose OpenTelemetry over PostgreSQL for the tracing store."),
+                      ("b6", "Kuzu will replace PostgreSQL for graph queries.")):
+        client.write_node("Message", {"message_id": mid, "text_raw": text, "role": "user",
+                                      "created_at": NOW, "archived": False})
+        client.write_edge("SENT_IN", mint_uri("Message", mid), mint_uri("Session", "locomo_db_s1"))
+    for head, rel, tail in (("PostgreSQL", "CHOSEN_OVER", "OpenTelemetry"),  # only b5 states it
+                            ("Kuzu", "REPLACES", "PostgreSQL")):             # real r1 names both too
+        assert client.upsert_semantic_relation(
+            rel, mint_uri("Concept", _cid(head)), mint_uri("Concept", _cid(tail)), 0.75, "LLM", NOW)
+
+    plan = _purge(client, apply=False)
+    assert [label for *_, label in plan.leaked_edges] == ["PostgreSQL -CHOSEN_OVER-> OpenTelemetry"]
+    _purge(client, apply=True)
+
+    rows = {(r["h"].value, r["p"].value.rsplit("#", 1)[-1], r["t"].value) for r in client.store.query("""
+        PREFIX campy: <https://campy.dev/ns#>
+        SELECT ?h ?p ?t WHERE {
+            VALUES ?p { campy:CHOSEN_OVER campy:REPLACES }
+            ?a ?p ?b . ?a campy:text_raw ?h . ?b campy:text_raw ?t }""")}
+    assert ("PostgreSQL", "CHOSEN_OVER", "OpenTelemetry") not in rows
+    assert ("Kuzu", "REPLACES", "PostgreSQL") in rows
+    reifiers = list(client.store.query("""
+        PREFIX campy: <https://campy.dev/ns#>
+        SELECT ?r WHERE { ?r <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies>
+                              <<( ?a campy:CHOSEN_OVER ?b )>> . ?a campy:text_raw "PostgreSQL" }"""))
+    assert not reifiers  # the annotation went with the edge
+    assert _purge(client, apply=False).leaked_edges == []
