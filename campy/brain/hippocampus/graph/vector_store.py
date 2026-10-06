@@ -351,6 +351,17 @@ class VectorStore:
             for p in uri_prefixes
         ]
 
+    def count_documents(self, uri_prefixes: Sequence[str] = ()) -> int:
+        """B470: how many documents the lexical index holds, counted over URIs
+        starting with one of `uri_prefixes` (all documents if empty)."""
+        where, prefix_params = self._prefix_clause(uri_prefixes)
+        sql = f"SELECT count(*) FROM lexical WHERE 1=1{where}"
+        try:
+            with self._lock:
+                return int(self._conn.execute(sql, prefix_params).fetchone()[0])
+        except sqlite3.OperationalError:
+            return 0
+
     def document_frequencies(
         self, terms: Sequence[str], uri_prefixes: Sequence[str] = ()
     ) -> dict[str, int]:

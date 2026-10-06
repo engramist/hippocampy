@@ -133,6 +133,13 @@ def _find_sparql_format_placeholder(sparql: str) -> re.Match[str] | None:
     return _SPARQL_FORMAT_PLACEHOLDER_RE.search(sparql)
 
 
+# B470: a query term in more than this share of the Messages is left out of
+# the conversation stage's FTS query (when the store holds at least
+# _COMMON_TERM_MIN_DOCS Messages).
+_COMMON_TERM_SHARE = 0.2
+_COMMON_TERM_MIN_DOCS = 50
+
+
 def _typed_search_k(limit: int) -> int:
     """B454: the vector store is one flat index across every node type. A typed
     lookup takes the global top-k and only then filters by node type, so a
@@ -1008,20 +1015,22 @@ class GraphGateway:
         ][: limit * 40]
         for rank, uri in enumerate(vec_hits):
             ranked[uri] = ranked.get(uri, 0.0) + 1.0 / (60 + rank)
+        from campy.brain.hippocampus.graph.vector_store import fts_content_terms
+
+        terms = fts_content_terms(qtext)
+        all_df = vs.document_frequencies(terms, prefixes)
         fts_hits = [
-            uri for uri, _ in vs.search_text(qtext, k=limit * 60) if uri.startswith(prefixes)
+            uri for uri, _ in vs.search_text(self._lexical_query(qtext, terms, all_df, prefixes), k=limit * 60)
+            if uri.startswith(prefixes)
         ][: limit * 40]
         for rank, uri in enumerate(fts_hits):
             ranked[uri] = ranked.get(uri, 0.0) + 1.0 / (60 + rank)
         if not ranked:
             return []
 
-        from campy.brain.hippocampus.graph.vector_store import fts_content_terms
-
         norm = lambda t: " ".join(str(t).lower().split())
         words = lambda t: set(re.findall(r"[^\W_]+", str(t).lower()))
         qnorm = norm(qtext)
-        terms = fts_content_terms(qtext)
         vec_set = set(vec_hits)
         rows = self._hydrate_messages(ranked)
         # A lexical-only hit has no similarity floor, so one shared common word
@@ -1036,7 +1045,7 @@ class GraphGateway:
         # under the similarity floor while the short original statement
         # cleared it -- the bundle showed the old value and not its replacement.
         need = min(2, len(terms) or 1)
-        df = {t: n for t, n in vs.document_frequencies(terms, prefixes).items() if n > 0}
+        df = {t: n for t, n in all_df.items() if n > 0}
         top_vec_words: set[str] = set()
         top_vec = set(vec_hits[:limit])
         for row in rows:
@@ -1084,6 +1093,40 @@ class GraphGateway:
                      "node_id": v["uri"], "node_type": "Message"})
             for _, v in picked
         ]
+
+    def _lexical_query(self, qtext: str, terms: list[str], df: dict[str, int],
+                       prefixes: tuple[str, ...]) -> str:
+        """B470: the conversation stage's FTS query without the terms most
+        Messages contain.
+
+        The stage fuses the vector and FTS lists by reciprocal rank. A query
+        word in most Messages -- a speaker's name in a chat history ("Where
+        has Melanie camped?" against ~80% of LoCoMo turns) -- puts nearly
+        every Message in the FTS list, so nearly every vector hit gets a
+        second RRF term and outscores the turn only FTS found (its rare word
+        at FTS rank 0, its similarity under the floor). Measured on LoCoMo-10
+        conv-26 (campy-benchmarks diag_locomo10_fusion.py, R11): dropping
+        terms in > 20% of Messages raised the stage's evidence recall at
+        limit 6 from 0.319 to 0.377 and lost no question.
+
+        Applies only to a store with enough Messages for a share to mean
+        something, and keeps the query whole when every term is common. The
+        lexical-only filter below still uses all of the query's terms."""
+        total = self._vector_store.count_documents(prefixes)
+        if total < _COMMON_TERM_MIN_DOCS:
+            return qtext
+        common = {t for t in terms if df.get(t, 0) > _COMMON_TERM_SHARE * total}
+        if not common or common >= set(terms):
+            return qtext
+        # drop whole single-word chunks only, so a multi-part id stays a phrase
+        kept = []
+        for chunk in qtext.split():
+            parts = [w.lower() for w in re.findall(r"[^\W_]+", chunk)]
+            if len(parts) == 2 and parts[1] == "s":  # a possessive: "Melanie's"
+                parts = parts[:1]
+            if not (len(parts) == 1 and parts[0] in common):
+                kept.append(chunk)
+        return " ".join(kept)
 
     def _hydrate_messages(self, uris: Iterable[str]) -> list[Any]:
         values_block = " ".join(f"<{u}>" for u in uris)
