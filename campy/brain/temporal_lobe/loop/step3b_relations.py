@@ -7,6 +7,9 @@ Triggered: >1 typed entity AND Step 1b found no relation.
 
 import json
 
+# B468: these steps answer with one short JSON object.
+MAX_TOKENS = 256
+
 SEMANTIC_TYPES = ["REPLACES", "CHOSEN_OVER", "IMPLEMENTS", "EXTENDS", "ALTERNATIVE_TO"]
 
 # B460: what each type means, and which end is the head. Without this the
@@ -62,7 +65,9 @@ def extract_semantic_relations(entities: list[dict], original_text: str,
     )
 
     try:
-        raw = llm_client.chat([{"role": "user", "content": prompt}])
+        # B468: one small JSON object; the cap stops a degenerate generation
+        # (8,000+ tokens seen on long turns) long before the client timeout.
+        raw = llm_client.chat([{"role": "user", "content": prompt}], max_tokens=MAX_TOKENS)
         raw = raw.strip().strip("```json").strip("```").strip()
 
         if raw.lower() == "null" or not raw:
