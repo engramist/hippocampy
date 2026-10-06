@@ -14,6 +14,7 @@ from campy.brain.hippocampus.graph import embeddings as emb
 # Original thresholds (0.85/0.60) were unreachable for this model.
 SYSTEM1_THRESHOLD = 0.50
 NOISE_FLOOR       = 0.18
+MAX_TOKENS        = 256   # B468: System 2 answers with one short JSON object
 
 GIST_CLASSES = [
     "Restriction", "PlannedEvent", "PhysicalThing",
@@ -123,7 +124,7 @@ def _classify_with_llm(entity_text: str, llm_client) -> dict:
         f'{{"class": "<class_name>", "confidence": <0.0-1.0>}}'
     )
     try:
-        raw = llm_client.chat([{"role": "user", "content": prompt}])
+        raw = llm_client.chat([{"role": "user", "content": prompt}], max_tokens=MAX_TOKENS)  # B468
         # Strip markdown code fences if present
         raw = raw.strip().strip("```json").strip("```").strip()
         result = json.loads(raw)
