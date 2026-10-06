@@ -87,6 +87,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B466 | Step 1b Misses "Replace X with Y" and "X Is Deprecated ... Migrate to Y" | P1 | complete (real-model confirmed 2026-10-05) | TBD | TBD | - | backlog/B466.md |
 | B467 | Benchmark Data Leaked Into the Personal Store | P2 | fixed in sandbox (personal-store run pending) | TBD | TBD | - | backlog/B467.md |
 | B469 | Retire the Kùzu Leftovers: Tests and Cypher That Production Never Runs | P2 | ready | TBD | TBD | - | backlog/B469.md |
+| B470 | Common Query Words Must Not Double-Count Every Vector Hit in the Conversation Stage | P2 | complete (benchmark confirmation pending) | TBD | TBD | - | backlog/B470.md |
 | B459 | Conversation Evidence Drops the Statements That Supersede the One It Found | P1 | fixed (real-model confirmed) | TBD | TBD | - | backlog/B459.md |
 | B458 | current_truth: Exact Identifier Match Loses to Near-Identical Notes (RRF Fusion) | P1 | fixed (round 2: identifiers rank first; real-model confirmed) | TBD | TBD | - | backlog/B458.md |
 | B457 | HTTP REST and Dashboard Routes Ignore the Caller's Workspace (Cross-Tenant Access in Multi-Tenant Mode) | P1 | fixed | TBD | TBD | - | backlog/B457.md |
