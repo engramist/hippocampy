@@ -1094,6 +1094,72 @@ class GraphGateway:
             for _, v in picked
         ]
 
+    def _bundle_assistant_words(self, params: dict[str, Any]) -> list[Any]:
+        """B471: what the ASSISTANT said on the topic, for a question about the
+        assistant's own words ("which pasta shape did you suggest?").
+
+        The conversation stage keeps user turns only: assistant text is
+        capped and untrusted (ISSUE-024) and must never stand in for what the
+        user decided. That made every question about the assistant's earlier
+        words unanswerable (LongMemEval single-session-assistant: evidence
+        recall 0.0). The bundle compiler calls this only when the question
+        asks about the assistant's words, and labels the rows as the
+        assistant's, in their own section -- so ISSUE-024 still holds for
+        every fact and decision bundle.
+
+        Ranking is the conversation stage's: vector (>= 0.30, no echoes) and
+        FTS (B470's query) fused by reciprocal rank; a lexical-only hit needs
+        two query content words. Returns the top `limit`, oldest first."""
+        vs = self._vector_store
+        limit = int(params.get("limit", 3))
+        qtext = (params.get("query_text") or "").strip()
+        if limit <= 0:
+            return []
+        from campy.brain.hippocampus.graph.vector_store import fts_content_terms
+
+        prefixes = (f"{CID_BASE}Message/", f"{DATA_BASE}Message/")
+        vec_hits = [
+            uri for uri, score in vs.search_vectors(
+                params["query_embedding"], k=_typed_search_k(limit * 40), min_score=0.30)
+            if uri.startswith(prefixes) and score < 0.985
+        ][: limit * 80]
+        terms = fts_content_terms(qtext)
+        df = vs.document_frequencies(terms, prefixes)
+        fts_hits = [
+            uri for uri, _ in vs.search_text(self._lexical_query(qtext, terms, df, prefixes), k=limit * 120)
+            if uri.startswith(prefixes)
+        ][: limit * 80]
+        ranked: dict[str, float] = {}
+        for hits in (vec_hits, fts_hits):
+            for rank, uri in enumerate(hits):
+                ranked[uri] = ranked.get(uri, 0.0) + 1.0 / (60 + rank)
+        if not ranked:
+            return []
+        need = min(2, len(terms) or 1)
+        vec_set = set(vec_hits)
+        qnorm = " ".join(qtext.lower().split())
+        best: dict[str, tuple[float, dict]] = {}
+        for row in self._hydrate_messages(ranked):
+            text = str(row.get("text") or "").strip()
+            if (row.get("role") != "assistant" or not text or bool(row.get("archived"))
+                    or " ".join(text.lower().split()) == qnorm):
+                continue
+            if row["s"] not in vec_set and sum(1 for t in terms if t in text.lower()) < need:
+                continue
+            created = row.get("created")
+            created = created.isoformat() if hasattr(created, "isoformat") else str(created or "")
+            key = " ".join(text.lower().split())
+            score = ranked.get(row["s"], 0.0)
+            if key not in best or score > best[key][0]:
+                best[key] = (score, {"uri": row["s"], "text": text, "created": created})
+        picked = sorted(best.values(), key=lambda sv: -sv[0])[:limit]
+        picked.sort(key=lambda sv: sv[1]["created"])
+        return [
+            RowDict({"text": v["text"], "role": "assistant", "created_at": v["created"],
+                     "node_id": v["uri"], "node_type": "Message"})
+            for _, v in picked
+        ]
+
     def _lexical_query(self, qtext: str, terms: list[str], df: dict[str, int],
                        prefixes: tuple[str, ...]) -> str:
         """B470: the conversation stage's FTS query without the terms most
@@ -1280,6 +1346,8 @@ class GraphGateway:
 
         if name == "thalamus.bundle_conversation":
             return self._bundle_conversation(params)
+        if name == "thalamus.bundle_assistant_words":
+            return self._bundle_assistant_words(params)
 
         # Exact facts: thalamus.bundle_exact_facts_{tbl}[_flagged][_auth] or thalamus.bundle_exact_{tbl}[_flagged][_auth]
         if name.startswith("thalamus.bundle_exact"):

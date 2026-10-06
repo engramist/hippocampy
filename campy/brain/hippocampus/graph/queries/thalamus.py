@@ -1581,6 +1581,18 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         description="B454: relevant user statements (vector + FTS fusion) as bundle evidence",
         # No sparql= — Python handler in GraphGateway._bundle_conversation.
     ),
+    NamedQuery(
+        name="thalamus.bundle_assistant_words",
+        cypher="MATCH (m:Message {role: 'assistant'}) "
+               "WHERE (1 - array_cosine_similarity(m.embedding, $query_embedding)) < 0.70 "
+               "RETURN m.text_raw as text, m.role as role, m.created_at as created_at "
+               "ORDER BY m.created_at ASC LIMIT $limit",
+        params=("query_embedding", "query_text", "limit"),
+        mutating=False,
+        description="B471: what the assistant said on this topic (vector + FTS fusion), for questions "
+                    "about the assistant's own words",
+        # No sparql= — Python handler in GraphGateway._bundle_assistant_words.
+    ),
     # Concept
     NamedQuery(
         name="thalamus.bundle_semantic_concept",
