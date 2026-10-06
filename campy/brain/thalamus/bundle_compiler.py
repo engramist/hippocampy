@@ -18,6 +18,7 @@ Pipeline stages:
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -87,7 +88,7 @@ def _table_has_flagged_for_review(db, table: str) -> bool:
 @dataclass
 class BundleSection:
     """One section of a ContextBundle."""
-    section_type: str  # "exact_fact", "plans", "semantic", "conversation", "graph", "tabular", "summary"
+    section_type: str  # "exact_fact", "plans", "semantic", "conversation", "assistant_said", "graph", "tabular", "summary"
     content: list[dict]
     token_estimate: int
     source_node_ids: list[str] = field(default_factory=list)
@@ -261,6 +262,14 @@ async def compile_bundle(
         sections.append(conversation_section)
         cumulative_tokens += conversation_section.token_estimate
         sources.extend(conversation_section.source_node_ids)
+
+    # Stage 3c (B471): what the assistant said, only for a question about the
+    # assistant's own words, and in its own labelled section (ISSUE-024).
+    assistant_section = await _stage_assistant_words(db, query, config)
+    if assistant_section and assistant_section.content:
+        sections.append(assistant_section)
+        cumulative_tokens += assistant_section.token_estimate
+        sources.extend(assistant_section.source_node_ids)
 
     # Stage 4: Graph structure
     graph_section = await _stage_graph_structure(db, query, config, tier_config, sources)
@@ -632,6 +641,69 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
         )
     except Exception as e:
         _logger.warning("Error in _stage_conversation: %s", e)
+        return None
+
+
+# B471: a question about the assistant's own earlier words. "you" as the one
+# who said/suggested/recommended it ("which pasta did you suggest", "you told
+# me", "did you mention"), or "your suggestion/recommendation/advice". A
+# request in the present ("can you tell me where I live?") is not one.
+_ASSISTANT_WORDS = re.compile(
+    r"\byou\s+(?:\w+\s+){0,2}?(?:said|suggested|recommended|mentioned|told|proposed|advised|"
+    r"gave|listed|explained|described|wrote|shared|provided|named|came\s+up\s+with)\b"
+    r"|\bdid\s+you\s+(?:\w+\s+)?(?:say|suggest|recommend|mention|tell|propose|advise|give|list|"
+    r"explain|describe|write|share|provide|name|come\s+up\s+with)\b"
+    r"|\byour\s+(?:\w+\s+)?(?:suggestions?|recommendations?|advice|answer|list|tips?|ideas?|"
+    r"explanation|proposal)\b",
+    re.IGNORECASE,
+)
+
+
+def asks_about_assistant_words(query: str) -> bool:
+    """B471: whether the question is about what the assistant said."""
+    return bool(_ASSISTANT_WORDS.search(query or ""))
+
+
+async def _stage_assistant_words(db, query: str, config: dict) -> Optional[BundleSection]:
+    """B471: the assistant's earlier words on the topic, for a question that
+    asks about them (`asks_about_assistant_words`), labelled as the
+    assistant's in their own section. Disabled with
+    `[retrieval] assistant_words_limit = 0`. Fail-soft."""
+    limit = int((config.get("retrieval", {}) or {}).get("assistant_words_limit", 3))
+    if limit <= 0 or not asks_about_assistant_words(query):
+        return None
+    try:
+        from campy.brain.hippocampus.graph import embeddings as emb
+
+        embedding_model = config.get("embeddings", {}).get(
+            "model", "sentence-transformers/all-MiniLM-L6-v2"
+        )
+        rows = await get_gateway(db).run(
+            "thalamus.bundle_assistant_words",
+            query_embedding=emb.embed(query, model_name=embedding_model), query_text=query, limit=limit,
+        )
+        content, node_ids = [], []
+        for r in (rows or []):
+            get = r.get if isinstance(r, dict) else (lambda k, d=None: d)
+            text, created = get("text"), get("created_at") or ""
+            if not text:
+                continue
+            stamp = (f"[assistant said, {str(created)[:16].replace('T', ' ')}] " if created
+                     else "[assistant said] ")
+            content.append({
+                "text": stamp + text, "type": "Message", "role": "assistant",
+                "created_at": created, "confidence": 0.5, "pathway_strength": 0.5,
+            })
+            node_ids.append(str(get("node_id") or text[:20]))
+        if not content:
+            return None
+        return BundleSection(
+            section_type="assistant_said", content=content,
+            token_estimate=sum(max(1, len(c["text"]) // 4) for c in content),
+            source_node_ids=node_ids,
+        )
+    except Exception as e:
+        _logger.warning("Error in _stage_assistant_words: %s", e)
         return None
 
 
