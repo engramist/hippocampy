@@ -88,7 +88,7 @@ def test_step3b_prompt_offers_replaces_and_states_direction():
     seen = []
 
     class LLM:
-        def chat(self, messages):
+        def chat(self, messages, **kwargs):
             seen.append(messages[0]["content"])
             return '{"head": "PostgreSQL 16", "relation_type": "REPLACES", "tail": "PostgreSQL 14", "confidence": 0.9}'
 

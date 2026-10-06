@@ -20,6 +20,9 @@ context over future messages.
 import json
 import re
 
+# B468: these steps answer with one short JSON object.
+MAX_TOKENS = 256
+
 VALID_CLASSIFICATIONS = {"additive", "contradiction", "uncertain"}
 
 
@@ -65,7 +68,7 @@ def arbitrate(new_concept: dict, candidates: list[dict],
     )
 
     try:
-        raw = llm_client.chat([{"role": "user", "content": prompt}])
+        raw = llm_client.chat([{"role": "user", "content": prompt}], max_tokens=MAX_TOKENS)  # B468
         # L11 fix: extract first {...} block to handle preamble, trailing text,
         # varying fence styles (```json, ```JSON, no fence).
         match = re.search(r'\{[^}]+\}', raw, re.DOTALL)

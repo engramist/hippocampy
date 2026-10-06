@@ -204,7 +204,7 @@ def test_step2_llm_fallback_called_in_gray_zone(monkeypatch):
     class MockLLM:
         def __init__(self):
             self.called = False
-        def chat(self, messages):
+        def chat(self, messages, **kwargs):
             self.called = True
             return '{"class": "Category", "confidence": 0.78}'
 
@@ -324,7 +324,7 @@ def test_step3b_returns_valid_relation():
     from campy.brain.temporal_lobe.loop.step3b_relations import extract_semantic_relations, SEMANTIC_TYPES
 
     class MockLLM:
-        def chat(self, messages):
+        def chat(self, messages, **kwargs):
             return '{"head": "React", "relation_type": "EXTENDS", "tail": "JavaScript", "confidence": 0.85}'
 
     entities = [
@@ -342,7 +342,7 @@ def test_step3b_null_response_returns_empty():
     from campy.brain.temporal_lobe.loop.step3b_relations import extract_semantic_relations
 
     class MockLLM:
-        def chat(self, messages):
+        def chat(self, messages, **kwargs):
             return "null"
 
     entities = [
@@ -367,7 +367,7 @@ def test_step3b_invalid_relation_type_rejected():
     from campy.brain.temporal_lobe.loop.step3b_relations import extract_semantic_relations
 
     class MockLLM:
-        def chat(self, messages):
+        def chat(self, messages, **kwargs):
             return '{"head": "A", "relation_type": "FOOBAR", "tail": "B", "confidence": 0.9}'
 
     entities = [
@@ -657,7 +657,7 @@ def test_step6_additive_classification():
     from campy.brain.temporal_lobe.loop.step6_arbitration import arbitrate
 
     class MockLLM:
-        def chat(self, messages):
+        def chat(self, messages, **kwargs):
             return '{"classification": "additive", "rationale": "same idea", "referenced_index": 1}'
 
     candidates = [{"concept_id": "abc", "text_raw": "existing", "similarity": 0.82,
@@ -671,7 +671,7 @@ def test_step6_contradiction_classification():
     from campy.brain.temporal_lobe.loop.step6_arbitration import arbitrate
 
     class MockLLM:
-        def chat(self, messages):
+        def chat(self, messages, **kwargs):
             return '{"classification": "contradiction", "rationale": "opposite", "referenced_index": 1}'
 
     candidates = [{"concept_id": "xyz", "text_raw": "old idea", "similarity": 0.80,
@@ -685,7 +685,7 @@ def test_step6_invalid_classification_falls_back_to_uncertain():
     from campy.brain.temporal_lobe.loop.step6_arbitration import arbitrate
 
     class MockLLM:
-        def chat(self, messages):
+        def chat(self, messages, **kwargs):
             return '{"classification": "BOGUS", "rationale": "??", "referenced_index": null}'
 
     candidates = [{"concept_id": "abc", "text_raw": "x", "similarity": 0.80,
@@ -706,7 +706,7 @@ def test_step6_llm_error_returns_uncertain():
     from campy.brain.temporal_lobe.loop.step6_arbitration import arbitrate
 
     class BrokenLLM:
-        def chat(self, messages):
+        def chat(self, messages, **kwargs):
             raise RuntimeError("connection refused")
 
     candidates = [{"concept_id": "abc", "text_raw": "x", "similarity": 0.82,
