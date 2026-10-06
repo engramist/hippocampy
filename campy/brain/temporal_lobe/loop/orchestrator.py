@@ -50,14 +50,14 @@ from campy.brain.llm.provider import create_llm_client_for_step  # B16
 
 # B447: step-level timing instrumentation. Filed after this loop was caught
 # stalling for 90+ minutes on unpredictable messages with no error and no
-# indication of which step was responsible — every `await` point here is a
-# candidate (plain `def` steps like classify_concept/classify_artifact/
-# retrieve_candidates/arbitrate are synchronous and were ruled out by direct
-# observation: unrelated MCP calls kept completing on the same event loop
-# throughout both stalls, which a blocking sync call inside this coroutine
-# could not have allowed). Deliberately cheap (a monotonic clock read + one
-# log line) so it's safe to leave in permanently, not just for this
-# investigation.
+# indication of which step was responsible. Deliberately cheap (a monotonic
+# clock read + one log line) so it's safe to leave in permanently.
+# B468: this loop runs as a task on the daemon's own event loop, so a plain
+# `def` step that calls the LLM (classify_concept, extract_semantic_relations,
+# arbitrate) blocks every request the daemon serves while it waits -- those
+# run via asyncio.to_thread. (B447's note that sync steps were "ruled out"
+# held for its stalls, not in general: a 3-minute Step 3b call froze the
+# daemon until notify_turn timed out.)
 @asynccontextmanager
 async def _timed(message_id: str, label: str):
     t0 = time.perf_counter()
@@ -190,7 +190,8 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                 message_id[:8], idx, len(entities), entity.get("text", "")[:40],
                 time.perf_counter() - t_step23,
             )
-            gist_result = classify_concept(
+            gist_result = await asyncio.to_thread(  # B468: LLM call, off the loop
+                classify_concept,
                 entity["text"], embedding_model, centroids, llm_step2,
                 context=text,
             )
@@ -246,7 +247,8 @@ async def run_loop(message_id: str, text: str, db, llm_client,
             )
             if uncovered_pairs_exist:
                 t0 = time.perf_counter()
-                step3b_relations = extract_semantic_relations(typed_entities, text, llm_step3b)
+                step3b_relations = await asyncio.to_thread(  # B468: LLM call, off the loop
+                    extract_semantic_relations, typed_entities, text, llm_step3b)
                 _logger.info(
                     "[Loop:Timing] msg=%s step=step3b_relations elapsed=%.2fs relations=%d",
                     message_id[:8], time.perf_counter() - t0, len(step3b_relations),
@@ -356,7 +358,8 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         elif top and top["similarity"] >= MATCH_THRESHOLD:
             # Gray zone → Step 6 arbitration
             t0 = time.perf_counter()
-            arb = arbitrate(
+            arb = await asyncio.to_thread(  # B468: LLM call, off the loop
+                arbitrate,
                 {**entity, "text": entity["text"]},
                 candidates,
                 text,
