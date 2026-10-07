@@ -646,15 +646,23 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
 
 # B471: a question about the assistant's own earlier words. "you" as the one
 # who said/suggested/recommended it ("which pasta did you suggest", "you told
-# me", "did you mention"), or "your suggestion/recommendation/advice". A
-# request in the present ("can you tell me where I live?") is not one.
+# me", "did you mention"), "your suggestion/recommendation/advice", or a
+# pointer back to an earlier exchange ("our previous chat about...", "that
+# shop we talked about"). A request in the present ("can you tell me where I
+# live?") is not one.
 _ASSISTANT_WORDS = re.compile(
     r"\byou\s+(?:\w+\s+){0,2}?(?:said|suggested|recommended|mentioned|told|proposed|advised|"
     r"gave|listed|explained|described|wrote|shared|provided|named|came\s+up\s+with)\b"
     r"|\bdid\s+you\s+(?:\w+\s+)?(?:say|suggest|recommend|mention|tell|propose|advise|give|list|"
     r"explain|describe|write|share|provide|name|come\s+up\s+with)\b"
     r"|\byour\s+(?:\w+\s+)?(?:suggestions?|recommendations?|advice|answer|list|tips?|ideas?|"
-    r"explanation|proposal)\b",
+    r"explanation|proposal)\b"
+    # a pointer back to an earlier exchange: "our previous chat about...",
+    # "the dessert shop we talked about last time" (LongMemEval R14: 3 of 5
+    # single-session-assistant questions were phrased this way and missed)
+    r"|\b(?:our|the|that)\s+(?:previous|last|earlier|prior|past|other)\s+"
+    r"(?:chat|conversation|discussion|talk|session|exchange)\b"
+    r"|\bwe\s+(?:talked|discussed|chatted|spoke|went\s+over)\b",
     re.IGNORECASE,
 )
 

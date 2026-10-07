@@ -81,6 +81,12 @@ async def test_the_conversation_stage_still_keeps_user_turns_only(gw):
     "I remember you told me about a podcast, what was it?",
     "Did you mention any vegan restaurants?",
     "Can you remind me of your recommendation for running shoes?",
+    # LongMemEval R14 misses (single-session-assistant):
+    "I'm checking our previous chat about the shift rotation sheet. Can you remind me what was the rotation for "
+    "Admon on a Sunday?",
+    "I'm going back to our previous conversation about the children's book on dinosaurs. What color was the "
+    "Plesiosaur?",
+    "Can you remind me of that unique dessert shop with the giant milkshakes we talked about last time?",
 ])
 def test_questions_about_the_assistants_words(q):
     assert asks_about_assistant_words(q)
@@ -91,6 +97,8 @@ def test_questions_about_the_assistants_words(q):
     "Could you suggest a pasta shape for pesto?",
     "What did I say about my job?",
     "What is our production database engine?",
+    "Can you remind me where my sister works?",
+    "What did we decide for the launch date?",
 ])
 def test_other_questions(q):
     assert not asks_about_assistant_words(q)

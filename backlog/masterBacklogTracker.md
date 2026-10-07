@@ -89,7 +89,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B468 | Consolidation Loop LLM Steps Freeze the Daemon | P1 | complete (real-model confirmed 2026-10-06) | TBD | TBD | - | backlog/B468.md |
 | B469 | Retire the Kùzu Leftovers: Tests and Cypher That Production Never Runs | P2 | ready | TBD | TBD | - | backlog/B469.md |
 | B470 | Common Query Words Must Not Double-Count Every Vector Hit in the Conversation Stage | P2 | complete (benchmark confirmation pending) | TBD | TBD | - | backlog/B470.md |
-| B471 | Recall of What the Assistant Said: the Conversation Stage Drops Every Assistant Turn | P2 | complete, option b (benchmark confirmation pending) | TBD | TBD | - | backlog/B471.md |
+| B471 | Recall of What the Assistant Said: the Conversation Stage Drops Every Assistant Turn | P2 | complete, option b (benchmark-confirmed: LongMemEval 0.400 -> 0.457) | TBD | TBD | - | backlog/B471.md |
 | B459 | Conversation Evidence Drops the Statements That Supersede the One It Found | P1 | fixed (real-model confirmed) | TBD | TBD | - | backlog/B459.md |
 | B458 | current_truth: Exact Identifier Match Loses to Near-Identical Notes (RRF Fusion) | P1 | fixed (round 2: identifiers rank first; real-model confirmed) | TBD | TBD | - | backlog/B458.md |
 | B457 | HTTP REST and Dashboard Routes Ignore the Caller's Workspace (Cross-Tenant Access in Multi-Tenant Mode) | P1 | fixed | TBD | TBD | - | backlog/B457.md |
