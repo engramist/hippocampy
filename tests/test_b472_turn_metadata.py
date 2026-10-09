@@ -50,8 +50,9 @@ async def _add(gw, n: int, text: str, cos: float, created: str, *, role="user", 
         "capture.create_message",
         message_id=f"m{n}", text_raw=text, embedding=_emb(n, cos), embedding_model="m",
         embedding_dim=DIM, role=role, byte_end=len(text), created_at=created,
-        speaker=speaker, occurred_at=occurred,
     )
+    if speaker or occurred:  # as notify_turn does
+        await gw.run("capture.set_message_source", message_id=f"m{n}", speaker=speaker, occurred_at=occurred)
 
 
 def _props(db, message_id: str) -> dict:
@@ -102,7 +103,9 @@ class _Recorder:
 
     async def run(self, name, **params):
         if name == "capture.create_message":
-            self.created.append(params)
+            self.created.append({**params, "speaker": None, "occurred_at": None})
+        elif name == "capture.set_message_source":
+            self.created[-1].update(speaker=params["speaker"], occurred_at=params["occurred_at"])
         return []
 
     def run_sync(self, name, **params):

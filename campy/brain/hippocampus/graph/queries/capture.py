@@ -82,15 +82,12 @@ CAPTURE_QUERIES = [
             confidence_low:  true,
             pathway_strength: 0.0,
             archived:        false,
-            speaker:         $speaker,
-            occurred_at:     timestamp($occurred_at),
             created_at:      timestamp($created_at)
         })
         """,
         params=(
             "message_id", "text_raw", "embedding", "embedding_model",
             "embedding_dim", "role", "byte_end", "created_at",
-            "speaker", "occurred_at",
         ),
         mutating=True,
         description="Create Message node in graph",
@@ -116,8 +113,27 @@ CAPTURE_QUERIES = [
                    campy:pathway_strength "0.0"^^xsd:double ;
                    campy:archived false ;
                    campy:created_at ?created_at .
-                # B472: who said it and when it happened, when the caller
-                # knows (unbound -- not written -- otherwise)
+            }
+            WHERE {
+                BIND(IRI(CONCAT("https://campy.dev/id/Message/", ?message_id)) AS ?m)
+            }
+            """,
+    ),
+    NamedQuery(
+        name="capture.set_message_source",
+        cypher="""
+        MATCH (m:Message {message_id: $message_id})
+        SET m.speaker = $speaker,
+            m.occurred_at = timestamp($occurred_at)
+        """,
+        params=("message_id", "speaker", "occurred_at"),
+        mutating=True,
+        description=(
+            "B472: record who said a Message and when it happened, when the "
+            "caller of notify_turn knows (an unbound value writes nothing)"
+        ),
+        sparql="""
+            INSERT {
                 ?m campy:speaker ?speaker .
                 ?m campy:occurred_at ?occurred_at .
             }

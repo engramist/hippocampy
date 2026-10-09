@@ -314,9 +314,10 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
         role=role,
         byte_end=len(content.encode()),
         created_at=now,
-        speaker=speaker,
-        occurred_at=occurred_at,
     )
+    if speaker or occurred_at:
+        await gw.run("capture.set_message_source", message_id=message_id,
+                     speaker=speaker, occurred_at=occurred_at)
 
     # B18: Update token estimate for this message
     if session_id != "unknown":
