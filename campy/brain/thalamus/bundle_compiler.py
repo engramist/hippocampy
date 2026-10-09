@@ -626,7 +626,9 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
             text, created = get("text"), get("created_at") or ""
             if not text:
                 continue
-            stamp = f"[user, {str(created)[:16].replace('T', ' ')}] " if created else "[user] "
+            # B472: the speaker, when the turn named one, else the role
+            who = get("speaker") or "user"
+            stamp = f"[{who}, {str(created)[:16].replace('T', ' ')}] " if created else f"[{who}] "
             content.append({
                 "text": stamp + text, "type": "Message", "role": "user",
                 "created_at": created, "confidence": 0.5, "pathway_strength": 0.5,
@@ -696,8 +698,9 @@ async def _stage_assistant_words(db, query: str, config: dict) -> Optional[Bundl
             text, created = get("text"), get("created_at") or ""
             if not text:
                 continue
-            stamp = (f"[assistant said, {str(created)[:16].replace('T', ' ')}] " if created
-                     else "[assistant said] ")
+            said = f"{get('speaker')} (assistant) said" if get("speaker") else "assistant said"
+            stamp = (f"[{said}, {str(created)[:16].replace('T', ' ')}] " if created
+                     else f"[{said}] ")
             content.append({
                 "text": stamp + text, "type": "Message", "role": "assistant",
                 "created_at": created, "confidence": 0.5, "pathway_strength": 0.5,

@@ -82,12 +82,15 @@ CAPTURE_QUERIES = [
             confidence_low:  true,
             pathway_strength: 0.0,
             archived:        false,
+            speaker:         $speaker,
+            occurred_at:     timestamp($occurred_at),
             created_at:      timestamp($created_at)
         })
         """,
         params=(
             "message_id", "text_raw", "embedding", "embedding_model",
             "embedding_dim", "role", "byte_end", "created_at",
+            "speaker", "occurred_at",
         ),
         mutating=True,
         description="Create Message node in graph",
@@ -113,6 +116,10 @@ CAPTURE_QUERIES = [
                    campy:pathway_strength "0.0"^^xsd:double ;
                    campy:archived false ;
                    campy:created_at ?created_at .
+                # B472: who said it and when it happened, when the caller
+                # knows (unbound -- not written -- otherwise)
+                ?m campy:speaker ?speaker .
+                ?m campy:occurred_at ?occurred_at .
             }
             WHERE {
                 BIND(IRI(CONCAT("https://campy.dev/id/Message/", ?message_id)) AS ?m)

@@ -1902,6 +1902,12 @@ SCHEMA_MIGRATIONS: list[tuple[str, str, str]] = [
     # docs/ARCHITECTURE.md's B321 section for the full contract.
     ("Session", "external_app_id", "STRING"),
     ("Session", "external_session_id", "STRING"),
+    # B472 Phase 1: a turn's speaker and when it happened, as data rather
+    # than text inside the turn (callers used to write "[date] Name:" into
+    # the content, and Step 1 extracted the prefix as concepts). Both
+    # nullable: notify_turn without them is unchanged.
+    ("Message", "speaker", "STRING"),
+    ("Message", "occurred_at", "TIMESTAMP"),
 ]
 
 # Alias for backwards compatibility with module-level references
