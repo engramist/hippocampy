@@ -25,7 +25,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from campy.brain.temporal_lobe.loop.step1_ner       import extract_entities, _is_junk_entity
+from campy.brain.temporal_lobe.loop.step1_ner       import extract_entities, normalize_entities, _is_junk_entity
 
 _logger = logging.getLogger(__name__)
 from campy.brain.temporal_lobe.loop.step1b_relations import extract_relations
@@ -74,7 +74,8 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                    config: dict, centroids: dict,
                    role: str = "user",
                    session_id: str = "unknown",
-                   precomputed: dict | None = None) -> dict:
+                   precomputed: dict | None = None,
+                   speaker: str | None = None) -> dict:
     """
     Run the Gated Consolidation Loop on a single message.
     Returns a summary dict of what was created/stored.
@@ -85,6 +86,10 @@ async def run_loop(message_id: str, text: str, db, llm_client,
 
     session_id: passed through to _reify_concept so ESTABLISHED_IN edges
     (artifact → Session) are written for all artifact types (B43).
+
+    speaker: who said the turn (B472 Phase 1, notify_turn's `speaker`). A
+    named speaker is seeded as a Person Concept, and its name anchors the
+    surface normalization of PERSON spans (B472 Phase 2).
 
     precomputed: optional dict to bypass expensive LLM steps for stable
     knowledge. Expected schema:
@@ -120,6 +125,11 @@ async def run_loop(message_id: str, text: str, db, llm_client,
     # B16 — Resolve per-step LLM clients (task-based model routing)
     # Falls back to the default llm_client if no override is configured.
     # ------------------------------------------------------------------
+    # B472 Phase 2: a named speaker is a person this memory knows about.
+    if _is_named_speaker(speaker):
+        async with _timed(message_id, "seed_speaker"):
+            await _seed_speaker_concept(speaker, embedding_model, db, now)
+
     llm_step2 = create_llm_client_for_step(config, "step2_gist") or llm_client
     llm_step3b = create_llm_client_for_step(config, "step3b_relations") or llm_client
     llm_step6 = create_llm_client_for_step(config, "step6_arbitration") or llm_client
@@ -165,6 +175,11 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         # Step 1 — NER (spaCy)
         t0 = time.perf_counter()
         doc, entities = extract_entities(text, model_name=spacy_model)
+        # B472 Phase 2: one entity, one surface -- "Caroline!", "Congrats
+        # Caroline" and "Caroline" all become "Caroline" before anything is
+        # matched or stored (the span is kept as entity["surface"]).
+        known_names = {speaker} if _is_named_speaker(speaker) else set()
+        entities = normalize_entities(entities, known_names)
         _logger.info(
             "[Loop:Timing] msg=%s step=step1_ner elapsed=%.2fs entities=%d",
             message_id[:8], time.perf_counter() - t0, len(entities),
@@ -351,6 +366,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
             if result.get("action") == "additive":
                 concept_ids.append(top["concept_id"])
                 summary["additive_updates"] += 1
+                await _attach_alt_label(top, entity["text"], vector, db, now, summary)
                 # O7: re-score nearby confidence_low nodes
                 async with _timed(message_id, f"rescore_nearby[{idx}]:strong"):
                     await rescore_nearby_low_confidence(top["concept_id"], db)
@@ -376,6 +392,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                 if result.get("action") == "additive":
                     concept_ids.append(top["concept_id"])
                     summary["additive_updates"] += 1
+                    await _attach_alt_label(top, entity["text"], vector, db, now, summary)
                     # O7: re-score nearby confidence_low nodes
                     async with _timed(message_id, f"rescore_nearby[{idx}]:gray_additive"):
                         await rescore_nearby_low_confidence(top["concept_id"], db)
@@ -624,6 +641,26 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
     except Exception:
         pass  # On error, fall through to create new node
 
+    # B472 Phase 2: a surface recorded as one of a Concept's labels is that
+    # Concept ("Postgres" once learned as PostgreSQL's alternative label).
+    try:
+        by_label = gw.run_sync("orchestrator.find_concept_by_label_text", t=entity["text"])
+        if by_label:
+            row = by_label[0]
+            existing_id = row.get("c.concept_id") if hasattr(row, "get") else row[0]
+            await gw.run(
+                "orchestrator.touch_dedup_concept",
+                id=existing_id,
+                now=now,
+                ps=max(confidence * salience, 0.50),
+                conf=confidence,
+                salience=salience,
+            )
+            _logger.debug("_store_concept: label hit for '%s' → %s", entity["text"], existing_id)
+            return existing_id
+    except Exception:
+        _logger.debug("_store_concept: label lookup failed for '%s'", entity["text"], exc_info=True)
+
     concept_id = str(uuid.uuid4())
     try:  # noqa: SIM105 — structured logging on failure, return None sentinel
         await gw.run(
@@ -751,6 +788,68 @@ async def _save_gist_example(text: str, vector: list[float], gist_class: str,
         )
     except Exception:
         _logger.exception("_save_gist_example failed for class=%s", gist_class)
+
+
+_GENERIC_SPEAKER_RE = re.compile(r"^(user|assistant|system|human|ai|bot|speaker\s*\d*|me|you)$", re.I)
+
+
+def _is_named_speaker(speaker: str | None) -> bool:
+    """B472 Phase 2: a speaker that names someone ("Caroline"), not a role or
+    a placeholder ("user", "assistant", "Speaker 1")."""
+    s = (speaker or "").strip()
+    return bool(s) and len(s) <= 80 and not _GENERIC_SPEAKER_RE.match(s) and any(ch.isalpha() for ch in s)
+
+
+async def _seed_speaker_concept(speaker: str, embedding_model: str, db, now: str) -> str | None:
+    """B472 Phase 2: make sure a named speaker exists as a Person Concept
+    (gist Agent / schema.org Person), once. Their name in later turns then
+    resolves to it by exact text. Returns the Concept id; None on error."""
+    gw = _gateway(db)
+    name = " ".join(speaker.split())
+    try:
+        for q in ("orchestrator.find_concept_by_exact_text", "orchestrator.find_concept_by_label_text"):
+            rows = gw.run_sync(q, t=name)
+            if rows:
+                row = rows[0]
+                return row.get("c.concept_id") if hasattr(row, "get") else row[0]
+        vector = await asyncio.to_thread(emb.embed, name, model_name=embedding_model)
+        concept_id = str(uuid.uuid4())
+        await gw.run(
+            "orchestrator.create_concept",
+            concept_id=concept_id, text_raw=name, embedding=vector,
+            embedding_model=embedding_model, embedding_dim=len(vector),
+            gist_class="Agent", schema_org_type="Person",
+            confidence=0.9, confidence_low=False, pathway_strength=0.5,
+            salience_score=1.0, anomaly_type=None, flagged_for_review=False,
+            created_at=now,
+        )
+        return concept_id
+    except Exception:
+        _logger.debug("_seed_speaker_concept failed for %r", speaker, exc_info=True)
+        return None
+
+
+async def _attach_alt_label(top: dict, surface: str, vector: list[float] | None, db, now: str,
+                            summary: dict | None = None) -> None:
+    """B472 Phase 2 (SKOS label accumulation): when an entity merged into an
+    existing Concept was worded differently ("Postgres" into "PostgreSQL"),
+    record that wording as an alternative Label of the Concept, once.
+    Best-effort: a failure never affects the merge."""
+    canonical = str(top.get("text_raw") or top.get("text") or "")
+    if not surface or not canonical or surface.strip().lower() == canonical.strip().lower() or len(surface) > 80:
+        return
+    gw = _gateway(db)
+    try:
+        if gw.run_sync("temporal_lobe.dict_find_alt_label", cid=top["concept_id"], txt=surface):
+            return
+        label_id = str(uuid.uuid4())
+        await gw.run("orchestrator.create_alt_label", lid=label_id, txt=surface,
+                     emb=vector or [], conf=0.8, source="loop:surface_variant", now=now)
+        await gw.run("temporal_lobe.dict_link_alt_label", cid=top["concept_id"], lid=label_id)
+        if summary is not None:
+            summary["alt_labels_added"] = summary.get("alt_labels_added", 0) + 1
+    except Exception:
+        _logger.debug("_attach_alt_label failed for %r -> %s", surface, top.get("concept_id"), exc_info=True)
 
 
 async def _ensure_concept_exists(text: str, embedding_model: str, db, now: str) -> None:

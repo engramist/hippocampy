@@ -610,6 +610,15 @@ Each time a concept is expressed a new way (paraphrase, synonym, abbreviation), 
 
 Labels also decay (Synaptic Pruning applies) — an `altLabel` never matched in retrieval weakens over time and can be archived.
 
+In the Loop (B472 Phase 2):
+- Step 1's spans are first normalized to one surface per entity. Edge
+  punctuation and quotes go, and so do greeting words around a person's
+  name, so "Congrats Caroline!" becomes "Caroline".
+- A surface that matches any Concept's label resolves to that Concept.
+- An entity merged into a Concept under a different wording adds that
+  wording as an `altLabel` (source `loop:surface_variant`).
+- A named speaker passed to `notify_turn` is seeded as a Person Concept.
+
 ### Valence & Outcome Learning — Pain/Pleasure Reflex (B66–B69)
 
 The third learning axis alongside frequency (Hebbian) and time (Ebbinghaus). Agents learn from consequences via outcome-weighted Plans. See "Active Agent System" section below.

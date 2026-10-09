@@ -50,6 +50,7 @@ _SPECS: dict[str, tuple[str, str, str, str | None]] = {
     "temporal_lobe.dict_create_concept":       ("Concept", "cid", "emb", "text"),
     "temporal_lobe.dict_create_pref_label":    ("Label", "lid", "emb", "txt"),
     "temporal_lobe.dict_create_alt_label":     ("Label", "lid", "emb", "txt"),
+    "orchestrator.create_alt_label":           ("Label", "lid", "emb", "txt"),
 }
 
 VECTOR_INDEX_SPECS: dict[str, VectorIndexSpec] = {

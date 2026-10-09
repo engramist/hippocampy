@@ -66,6 +66,69 @@ ORCHESTRATOR_QUERIES = [
         """,
     ),
     NamedQuery(
+        # B472 Phase 2: a surface already recorded as one of a Concept's
+        # labels (preferred or alternative) resolves to that Concept.
+        name="orchestrator.find_concept_by_label_text",
+        cypher="""
+        MATCH (c:Concept)-[:HAS_ALT_LABEL|HAS_PREF_LABEL]->(l:Label)
+        WHERE toLower(l.text) = toLower($t) AND c.archived = false
+        RETURN c.concept_id, c.pathway_strength
+        LIMIT 1
+        """,
+        params=("t",),
+        mutating=False,
+        description="Find a live Concept by one of its labels (case-insensitive)",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            SELECT ?concept_id ?pathway_strength
+            WHERE {
+              ?c a campy:Concept ;
+                 campy:concept_id ?concept_id ;
+                 campy:pathway_strength ?pathway_strength .
+              ?c campy:archived false .
+              { ?c campy:HAS_ALT_LABEL ?l } UNION { ?c campy:HAS_PREF_LABEL ?l }
+              ?l campy:text ?text .
+              FILTER(LCASE(STR(?text)) = LCASE(STR(?t)))
+            }
+            LIMIT 1
+        """,
+    ),
+    NamedQuery(
+        # B472 Phase 2: a new way of naming an existing Concept, learned by
+        # the Loop (SKOS label accumulation). Linked with
+        # temporal_lobe.dict_link_alt_label.
+        name="orchestrator.create_alt_label",
+        cypher="CREATE (l:Label {"
+               "  label_id: $lid, text: $txt, embedding: $emb,"
+               "  language: 'en', label_type: 'alternative',"
+               "  confidence: $conf, source: $source,"
+               "  created_at: $now"
+               "})",
+        params=("lid", "txt", "emb", "conf", "source", "now"),
+        mutating=True,
+        description="Create an alternative Label the Loop learned for a Concept",
+        sparql="""
+            PREFIX campy: <https://campy.dev/ns#>
+
+            INSERT {
+              ?l a campy:Label ;
+                 campy:label_id ?lid ;
+                 campy:text ?txt ;
+                 campy:embedding ?emb ;
+                 campy:language "en" ;
+                 campy:label_type "alternative" ;
+                 campy:confidence ?conf ;
+                 campy:source ?source ;
+                 campy:archived false ;
+                 campy:created_at ?now .
+            }
+            WHERE {
+              BIND(IRI(CONCAT("https://campy.dev/id/Label/", ENCODE_FOR_URI(STR(?lid)))) AS ?l)
+            }
+        """,
+    ),
+    NamedQuery(
         name="orchestrator.touch_dedup_concept",
         cypher="""
         MATCH (c:Concept {concept_id: $id})

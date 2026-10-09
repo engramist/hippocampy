@@ -1009,8 +1009,16 @@ class BrainDaemon:
             # re-embedding); this unpack previously declared only 4 names,
             # so every single .get() raised ValueError before reaching the
             # try/except below, permanently crash-looping this worker.
-            message_id, text, role, session_id, precomputed = await self._loop_queue.get()
+            item = await self._loop_queue.get()
             try:
+                # Producers put (message_id, text, role, session_id) and
+                # optionally precomputed (B434) and speaker (B472). Unpacking
+                # inside the try: a malformed item is logged and skipped,
+                # never crash-loops the worker (B434's failure mode;
+                # ingest_document still put the 4-tuple form).
+                message_id, text, role, session_id, *rest = item
+                precomputed = rest[0] if rest else None
+                speaker = rest[1] if len(rest) > 1 else None
                 print(f"[Loop] Processing ({role}): {text[:120]!r}")
                 summary = await run_loop(
                     message_id=message_id,
@@ -1022,6 +1030,7 @@ class BrainDaemon:
                     centroids=self._centroids,
                     session_id=session_id,
                     precomputed=precomputed,
+                    **({"speaker": speaker} if speaker else {}),
                 )
                 print(
                     f"[Loop] msg={message_id[:8]} "
@@ -1045,7 +1054,8 @@ class BrainDaemon:
                         pass  # Non-critical
 
             except Exception as e:
-                print(f"[Loop] Error processing message {message_id}: {e}")
+                ident = item[0] if isinstance(item, tuple) and item else item
+                print(f"[Loop] Error processing message {ident}: {e}")
             finally:
                 self._loop_queue.task_done()
 
