@@ -120,6 +120,29 @@ CAPTURE_QUERIES = [
             """,
     ),
     NamedQuery(
+        name="capture.set_message_source",
+        cypher="""
+        MATCH (m:Message {message_id: $message_id})
+        SET m.speaker = $speaker,
+            m.occurred_at = timestamp($occurred_at)
+        """,
+        params=("message_id", "speaker", "occurred_at"),
+        mutating=True,
+        description=(
+            "B472: record who said a Message and when it happened, when the "
+            "caller of notify_turn knows (an unbound value writes nothing)"
+        ),
+        sparql="""
+            INSERT {
+                ?m campy:speaker ?speaker .
+                ?m campy:occurred_at ?occurred_at .
+            }
+            WHERE {
+                BIND(IRI(CONCAT("https://campy.dev/id/Message/", ?message_id)) AS ?m)
+            }
+            """,
+    ),
+    NamedQuery(
         name="capture.link_message_sent_in_session",
         cypher="""
         MATCH (s:Session {session_id: $session_id}),

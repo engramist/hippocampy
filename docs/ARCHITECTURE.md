@@ -920,15 +920,25 @@ LLM → [stdio, JSON-RPC 2.0] → Adapter → [Unix socket, JSON-RPC 2.0] → Br
   "inputSchema": {
     "type": "object",
     "properties": {
-      "role":       { "type": "string", "enum": ["user", "assistant"] },
-      "content":    { "type": "string" },
-      "session_id": { "type": "string" }
+      "role":        { "type": "string", "enum": ["user", "assistant"] },
+      "content":     { "type": "string" },
+      "session_id":  { "type": "string" },
+      "speaker":     { "type": "string" },
+      "occurred_at": { "type": "string" }
     },
     "required": ["role", "content", "session_id"]
   }
 }
 ```
 Response: `{ "status": "queued" }` — always immediate, never blocks.
+
+`speaker` and `occurred_at` (B472 Phase 1) are optional: who said the turn
+(a name, when it is not just the user or the assistant) and when it
+happened (ISO 8601, for imported or replayed history). They are stored on
+the `Message`, never inside its text, so the Loop's Step 1 never extracts
+them as concepts. The conversation stages order and stamp turns by
+`occurred_at` when present (else `created_at`) and label them with the
+speaker (else the role). A call without them behaves as before.
 
 ### Retrieval Tools
 

@@ -18,6 +18,16 @@ TOOLS: list[dict] = [
                 "role":       {"type": "string", "enum": ["user", "assistant"]},
                 "content":    {"type": "string"},
                 "session_id": {"type": "string"},
+                "speaker": {
+                    "type": "string",
+                    "description": "Optional: who said it (a name), when not just the user or the assistant. "
+                                   "Pass it here, not inside content.",
+                },
+                "occurred_at": {
+                    "type": "string",
+                    "description": "Optional: when the turn happened (ISO 8601), when not now -- imported or "
+                                   "replayed history. Pass it here, not inside content.",
+                },
             },
             "required": ["role", "content", "session_id"],
         },

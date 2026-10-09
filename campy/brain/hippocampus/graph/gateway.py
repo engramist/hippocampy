@@ -1061,7 +1061,8 @@ class GraphGateway:
             created = created.isoformat() if hasattr(created, "isoformat") else str(created or "")
             key = norm(text)
             if key not in newest or created > newest[key][0]:
-                newest[key] = (created, {"uri": row["s"], "text": text, "created": created})
+                newest[key] = (created, {"uri": row["s"], "text": text, "created": created,
+                                         "speaker": row.get("speaker")})
             return newest[key][1]["uri"]
 
         for row in rows:
@@ -1090,7 +1091,7 @@ class GraphGateway:
         picked.sort(key=lambda kv: kv[0])
         return [
             RowDict({"text": v["text"], "role": "user", "created_at": v["created"],
-                     "node_id": v["uri"], "node_type": "Message"})
+                     "speaker": v.get("speaker"), "node_id": v["uri"], "node_type": "Message"})
             for _, v in picked
         ]
 
@@ -1151,12 +1152,13 @@ class GraphGateway:
             key = " ".join(text.lower().split())
             score = ranked.get(row["s"], 0.0)
             if key not in best or score > best[key][0]:
-                best[key] = (score, {"uri": row["s"], "text": text, "created": created})
+                best[key] = (score, {"uri": row["s"], "text": text, "created": created,
+                                     "speaker": row.get("speaker")})
         picked = sorted(best.values(), key=lambda sv: -sv[0])[:limit]
         picked.sort(key=lambda sv: sv[1]["created"])
         return [
             RowDict({"text": v["text"], "role": "assistant", "created_at": v["created"],
-                     "node_id": v["uri"], "node_type": "Message"})
+                     "speaker": v.get("speaker"), "node_id": v["uri"], "node_type": "Message"})
             for _, v in picked
         ]
 
@@ -1199,15 +1201,25 @@ class GraphGateway:
         if not values_block:
             return []
         sparql = f"""
-            SELECT ?s ?text ?role ?created ?archived WHERE {{
+            SELECT ?s ?text ?role ?created ?archived ?speaker ?occurred WHERE {{
                 VALUES ?s {{ {values_block} }}
                 ?s <https://campy.dev/ns#text_raw> ?text .
                 OPTIONAL {{ ?s <https://campy.dev/ns#role> ?role }}
                 OPTIONAL {{ ?s <https://campy.dev/ns#created_at> ?created }}
                 OPTIONAL {{ ?s <https://campy.dev/ns#archived> ?archived }}
+                OPTIONAL {{ ?s <https://campy.dev/ns#speaker> ?speaker }}
+                OPTIONAL {{ ?s <https://campy.dev/ns#occurred_at> ?occurred }}
             }}
         """
-        return list(self._client._execute_and_collect(sparql))
+        rows = list(self._client._execute_and_collect(sparql))
+        for row in rows:
+            # B472: a turn's time is when it happened, when the caller said
+            # so; otherwise when Campy stored it. Every consumer of `created`
+            # (newest-wins dedup, oldest-first order, the bundle's stamp)
+            # wants the former.
+            if row.get("occurred"):
+                row["created"] = row["occurred"]
+        return rows
 
     def _successor_statements(
         self, on_topic: list[tuple[float, str]], limit: int, prefixes: tuple[str, ...],

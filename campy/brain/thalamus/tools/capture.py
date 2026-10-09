@@ -106,6 +106,23 @@ def _gateway(db) -> GraphGateway:
     return GraphGateway(db, REGISTRY)
 
 
+def _parse_occurred_at(value) -> str | None:
+    """B472: an ISO 8601 time as a UTC ISO string (the form created_at is
+    stored in, so the two compare as text), or None when absent or
+    unparseable. A time with no zone is taken as UTC."""
+    if not value:
+        return None
+    try:
+        text = str(value).strip()
+        dt = datetime.fromisoformat(text[:-1] + "+00:00" if text.endswith("Z") else text)
+    except (TypeError, ValueError):
+        _logger.warning("notify_turn: ignoring unparseable occurred_at %r", value)
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat()
+
+
 async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
                        principal: "Principal | None" = None) -> dict:
     """
@@ -155,6 +172,15 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
     external_app_id = (params.get("external_app_id") or "").strip() or None
     external_session_id = (params.get("external_session_id") or "").strip() or None
 
+    # B472 Phase 1: who said it and when it happened, as data. A caller that
+    # knows them (an import, a replayed history, a multi-party chat) used to
+    # write them into `content`, where Step 1 extracted "Speaker" and dates
+    # as concepts. Both optional; a bad occurred_at is dropped, never fatal.
+    speaker = (str(params.get("speaker") or "")).strip()[:200] or None
+    if speaker and speaker.lower() == role:
+        speaker = None  # "user"/"assistant" says nothing the role doesn't
+    occurred_at = _parse_occurred_at(params.get("occurred_at"))
+
     # B312: provenance identifier for any Tier-1 facts this turn causes to be
     # written (passive plan detection, outcome-sense lessons). B315: when a
     # principal has been threaded in, it is the authoritative identity for
@@ -198,6 +224,9 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
     # scrubbed before anything derived from it (the vector) is computed or
     # persisted.
     content, scrub_metadata = await scrub_before_ingest(content)
+    if speaker:
+        # B472: stored next to the text and shown in bundles, so scrubbed too
+        speaker = (await scrub_before_ingest(speaker))[0]
     if scrub_metadata.get("was_scrubbed"):
         _logger.warning(
             "B338: Content scrubbed before ingest. Detected %d secrets (types: %s) "
@@ -286,6 +315,9 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
         byte_end=len(content.encode()),
         created_at=now,
     )
+    if speaker or occurred_at:
+        await gw.run("capture.set_message_source", message_id=message_id,
+                     speaker=speaker, occurred_at=occurred_at)
 
     # B18: Update token estimate for this message
     if session_id != "unknown":
