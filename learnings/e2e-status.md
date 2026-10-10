@@ -50,7 +50,7 @@ R20a 0.62 → 0.62 (0 flips). Judge noise was small.
 ## Open PRs
 
 - hippocampy#299 — M1.3 cite-or-abstain prompt (`[ask] answer_style`), gate R33 queued.
-- hippocampy#300 — M1.2 `Message.turn_index` (write path, needs T2) + near-duplicate collapse (read path); stacked on #299.
+- hippocampy#300 — M1.2 `Message.turn_index` (write path + `turn N` stamp, needs T2); the near-duplicate collapse was removed after R37 (never fired).
 - hippocampy#301 — M2.1 cross-encoder reranker (`[retrieval] reranker`, off by default; `CAMPY_RETRIEVAL_RERANKER` env override). Offline: LoCoMo-10 evidence recall at limit 6, 0.327 → 0.469.
 - campy-benchmarks#36 — `rerank` variant in `diag_locomo10_fusion.py`.
 

@@ -31,7 +31,6 @@ import asyncio
 import inspect
 import json
 import logging
-import math
 import os
 import re
 import time
@@ -347,16 +346,6 @@ def _materialize_rows(res: Any) -> Any:
 
 # B474: presentation order of the conversation stage's turns.
 CONVERSATION_ORDERS = ("rank", "time")
-
-
-def _cosine(a: Iterable[float], b: Iterable[float]) -> float:
-    """Cosine similarity of two equal-length vectors (0.0 when either is zero)."""
-    dot = na = nb = 0.0
-    for x, y in zip(a, b):
-        dot += x * y
-        na += x * x
-        nb += y * y
-    return dot / math.sqrt(na * nb) if na > 0.0 and nb > 0.0 else 0.0
 _BAD_ORDER_WARNED: set[str] = set()
 
 
@@ -1032,15 +1021,10 @@ class GraphGateway:
         reranker (plan M2.1) makes rank more meaningful. Unknown values fall
         back to "time".
 
-        B476: `collapse_cosine` (set by thalamus.bundle_conversation_collapsing;
-        absent or 0 = off) drops a turn when a better-ranked picked turn has
-        the same speaker, the same session and a stored embedding at least that
-        cosine-similar. The freed slot goes to the next candidate in rank
-        order, so `limit` stays the number of turns shown. Each row carries
-        the turn's `turn_index` (None for a turn captured before B476)."""
+        B476: each row carries the turn's `turn_index` (None for a turn captured
+        before B476)."""
         vs = self._vector_store
         limit = int(params.get("limit", 6))
-        collapse_cosine = float(params.get("collapse_cosine") or 0.0)
         order = str(params.get("order") or "time").lower()
         if order not in CONVERSATION_ORDERS:
             _warn_once_bad_conversation_order(order)
@@ -1111,8 +1095,7 @@ class GraphGateway:
             if key not in newest or created > newest[key][0]:
                 newest[key] = (created, {"uri": row["s"], "text": text, "created": created,
                                          "speaker": row.get("speaker"),
-                                         "turn_index": row.get("turn"),
-                                         "session": row.get("sess")})
+                                         "turn_index": row.get("turn")})
             return newest[key][1]["uri"]
 
         for row in rows:
@@ -1137,9 +1120,7 @@ class GraphGateway:
                     ranked[uri] = max(ranked.get(uri, 0.0), score)
         except Exception:
             _logger.debug("_bundle_conversation successor bridge failed", exc_info=True)
-        picked = self._pick_conversation(
-            sorted(newest.values(), key=lambda kv: -ranked.get(kv[1]["uri"], 0.0)),
-            limit, collapse_cosine)
+        picked = sorted(newest.values(), key=lambda kv: -ranked.get(kv[1]["uri"], 0.0))[:limit]
         if order == "time":
             picked.sort(key=lambda kv: kv[0])
         return [
@@ -1148,48 +1129,6 @@ class GraphGateway:
                      "node_id": v["uri"], "node_type": "Message"})
             for _, v in picked
         ]
-
-    def _pick_conversation(self, ordered: list[tuple[str, dict]], limit: int,
-                           collapse_cosine: float) -> list[tuple[str, dict]]:
-        """B476: the first `limit` of `ordered` (best rank first), skipping a
-        turn that near-duplicates a turn already picked.
-
-        Near-duplicate = same speaker, same session (both known) and stored
-        embeddings with cosine >= `collapse_cosine`. The vectors come from the
-        vector store (nothing is re-embedded) and are fetched only for a
-        candidate that has a same-speaker, same-session turn already picked,
-        so the cost is bounded by the candidates examined times `limit`
-        384-d dot products. A candidate with no stored vector is kept."""
-        if collapse_cosine <= 0.0:
-            return list(ordered[:limit])
-        vs = self._vector_store
-        vectors: dict[str, list[float] | None] = {}
-
-        def vec(uri: str) -> list[float] | None:
-            if uri not in vectors:
-                try:
-                    vectors[uri] = vs.get_vector(uri)
-                except Exception:
-                    vectors[uri] = None
-            return vectors[uri]
-
-        picked: list[tuple[str, dict]] = []
-        for kv in ordered:
-            if len(picked) >= limit:
-                break
-            cand = kv[1]
-            dup = False
-            if cand.get("session"):
-                for _, other in picked:
-                    if other.get("session") != cand["session"] or other.get("speaker") != cand.get("speaker"):
-                        continue
-                    a, b = vec(cand["uri"]), vec(other["uri"])
-                    if a and b and _cosine(a, b) >= collapse_cosine:
-                        dup = True
-                        break
-            if not dup:
-                picked.append(kv)
-        return picked
 
     def _bundle_assistant_words(self, params: dict[str, Any]) -> list[Any]:
         """B471: what the ASSISTANT said on the topic, for a question about the
@@ -1297,7 +1236,7 @@ class GraphGateway:
         if not values_block:
             return []
         sparql = f"""
-            SELECT ?s ?text ?role ?created ?archived ?speaker ?occurred ?turn ?sess WHERE {{
+            SELECT ?s ?text ?role ?created ?archived ?speaker ?occurred ?turn WHERE {{
                 VALUES ?s {{ {values_block} }}
                 ?s <https://campy.dev/ns#text_raw> ?text .
                 OPTIONAL {{ ?s <https://campy.dev/ns#role> ?role }}
@@ -1306,7 +1245,6 @@ class GraphGateway:
                 OPTIONAL {{ ?s <https://campy.dev/ns#speaker> ?speaker }}
                 OPTIONAL {{ ?s <https://campy.dev/ns#occurred_at> ?occurred }}
                 OPTIONAL {{ ?s <https://campy.dev/ns#turn_index> ?turn }}
-                OPTIONAL {{ ?s <https://campy.dev/ns#SENT_IN> ?sess }}
             }}
         """
         rows = list(self._client._execute_and_collect(sparql))
@@ -1454,7 +1392,7 @@ class GraphGateway:
         if query_embedding is None or not self._vector_store:
             return []
 
-        if name in ("thalamus.bundle_conversation", "thalamus.bundle_conversation_collapsing"):
+        if name == "thalamus.bundle_conversation":
             return self._bundle_conversation(params)
         if name == "thalamus.bundle_assistant_words":
             return self._bundle_assistant_words(params)

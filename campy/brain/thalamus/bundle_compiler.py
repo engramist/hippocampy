@@ -621,16 +621,6 @@ def _turn_stamp(who: str, when: str, turn_index) -> str:
     return "[" + ", ".join(parts) + "] "
 
 
-def _near_duplicate_cosine(value) -> float:
-    """`[retrieval] near_duplicate_cosine`, default 0.9; an unusable value
-    (not a number, or outside (0, 1]) falls back to the default."""
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return 0.9
-    return v if 0.0 < v <= 1.0 else 0.9
-
-
 async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSection]:
     """B454: relevant user statements from the raw conversation (see
     GraphGateway._bundle_conversation). Disabled with
@@ -655,15 +645,9 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
         if order not in CONVERSATION_ORDERS:
             _warn_once_bad_conversation_order(order)
             order = "time"
-        # B476: drop a turn that near-duplicates a better-ranked turn of the
-        # same speaker and session; the slot is backfilled from the next candidate
-        retrieval = config.get("retrieval", {}) or {}
-        collapse = retrieval.get("collapse_near_duplicates", True)
-        cosine = _near_duplicate_cosine(retrieval.get("near_duplicate_cosine", 0.9))
         rows = await get_gateway(db).run(
-            "thalamus.bundle_conversation_collapsing",
+            "thalamus.bundle_conversation",
             query_embedding=query_embedding, query_text=query, limit=limit, order=order,
-            collapse_cosine=cosine if collapse else 0.0,
         )
         content, node_ids = [], []
         for r in (rows or []):
