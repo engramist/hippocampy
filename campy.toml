@@ -307,6 +307,8 @@ home_title = "ARC-AGI Memory"
 # [retrieval]
 # conversation_limit = 6            # turns in the conversation section (0 disables it)
 # conversation_order = "rank"       # "rank" = best match first (default); "time" = oldest first (B454)
+# collapse_near_duplicates = true   # B476: drop a turn that near-duplicates a better-ranked turn of the same speaker and session
+# near_duplicate_cosine = 0.9       # B476: stored-embedding cosine at or above which two such turns count as duplicates
 
 # B375: Warm Frontier (Pre-Warmed Selective Activation) tuning. Every key
 # below matches warm_frontier.py's prior hardcoded default exactly, so

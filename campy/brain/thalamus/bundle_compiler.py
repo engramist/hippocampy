@@ -605,6 +605,32 @@ async def _stage_semantic_context(
         return None
 
 
+def _turn_stamp(who: str, when: str, turn_index) -> str:
+    """The `[speaker, time, turn N] ` prefix of a conversation turn. B476: the
+    turn's position in its session is shown when known, so same-speaker turns
+    with the same timestamp can be ordered; a turn without one is stamped as
+    before."""
+    parts = [who]
+    if when:
+        parts.append(when)
+    if turn_index is not None:
+        try:
+            parts.append(f"turn {int(turn_index)}")
+        except (TypeError, ValueError):
+            pass
+    return "[" + ", ".join(parts) + "] "
+
+
+def _near_duplicate_cosine(value) -> float:
+    """`[retrieval] near_duplicate_cosine`, default 0.9; an unusable value
+    (not a number, or outside (0, 1]) falls back to the default."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return 0.9
+    return v if 0.0 < v <= 1.0 else 0.9
+
+
 async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSection]:
     """B454: relevant user statements from the raw conversation (see
     GraphGateway._bundle_conversation). Disabled with
@@ -629,9 +655,15 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
         if order not in CONVERSATION_ORDERS:
             _warn_once_bad_conversation_order(order)
             order = "rank"
+        # B476: drop a turn that near-duplicates a better-ranked turn of the
+        # same speaker and session; the slot is backfilled from the next candidate
+        retrieval = config.get("retrieval", {}) or {}
+        collapse = retrieval.get("collapse_near_duplicates", True)
+        cosine = _near_duplicate_cosine(retrieval.get("near_duplicate_cosine", 0.9))
         rows = await get_gateway(db).run(
-            "thalamus.bundle_conversation",
+            "thalamus.bundle_conversation_collapsing",
             query_embedding=query_embedding, query_text=query, limit=limit, order=order,
+            collapse_cosine=cosine if collapse else 0.0,
         )
         content, node_ids = [], []
         for r in (rows or []):
@@ -641,7 +673,8 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
                 continue
             # B472: the speaker, when the turn named one, else the role
             who = get("speaker") or "user"
-            stamp = f"[{who}, {str(created)[:16].replace('T', ' ')}] " if created else f"[{who}] "
+            when = str(created)[:16].replace('T', ' ') if created else ""
+            stamp = _turn_stamp(who, when, get("turn_index"))
             content.append({
                 "text": stamp + text, "type": "Message", "role": "user",
                 "created_at": created, "confidence": 0.5, "pathway_strength": 0.5,
