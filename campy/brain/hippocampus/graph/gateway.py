@@ -1190,6 +1190,87 @@ class GraphGateway:
             for _, v in picked
         ]
 
+    def _bundle_observations(self, params: dict[str, Any]) -> list[Any]:
+        """B472 Phase 3c: the Observations relevant to a question, each with the
+        words it came from.
+
+        Three candidate lists, fused by reciprocal rank (k=60) like the
+        conversation stage: Observations whose embedding is near the question
+        (>= 0.30), Observations the FTS index matches (restricted to Observation
+        URIs, B470's common-term trim applied), and Observations OBSERVATION_ABOUT
+        a Concept the caller resolved from the question (`concept_ids`; those the
+        vector search also found come first, the rest oldest first). A
+        lexical-only hit must match two query content words, as in the
+        conversation stage. Archived and superseded rows are dropped.
+
+        Returns up to `limit` rows, best first, each carrying the claim
+        (subject/predicate/object/event/time/polarity/speaker/confidence), the
+        evidence quote and `evidence_ref` (the Message id), `observed_at`, and
+        `score`. Fail-soft: an empty store, or one with no embeddings, gives []."""
+        vs = self._vector_store
+        limit = int(params.get("limit", 8))
+        if limit <= 0:
+            return []
+        qtext = (params.get("query_text") or "").strip()
+        prefix = f"{CID_BASE}Observation/"
+        vec_hits = [
+            uri for uri, _ in vs.search_vectors(
+                params["query_embedding"], k=_typed_search_k(limit * 20), min_score=0.30)
+            if uri.startswith(prefix)
+        ][: limit * 40]
+        from campy.brain.hippocampus.graph.vector_store import fts_content_terms, mint_uri
+
+        terms = fts_content_terms(qtext)
+        fts_hits = [
+            uri for uri, _ in vs.search_text(
+                self._lexical_query(qtext, terms, vs.document_frequencies(terms, (prefix,)), (prefix,)),
+                k=limit * 60, uri_prefixes=(prefix,))
+        ][: limit * 40]
+        concept_uris = [f"<{mint_uri('Concept', c)}>" for c in (params.get("concept_ids") or [])[:12]]
+        concept_hits: list[str] = []
+        if concept_uris:
+            for row in self._client._execute_and_collect(f"""
+                SELECT DISTINCT ?o WHERE {{
+                    VALUES ?c {{ {" ".join(concept_uris)} }}
+                    ?o <https://campy.dev/ns#OBSERVATION_ABOUT> ?c .
+                }} LIMIT 400"""):
+                concept_hits.append(str(row["o"]))
+        vec_set = set(vec_hits)
+        concept_hits = [u for u in vec_hits if u in set(concept_hits)] + \
+            [u for u in concept_hits if u not in vec_set]
+        ranked: dict[str, float] = {}
+        for hits in (vec_hits, fts_hits, concept_hits):
+            for rank, uri in enumerate(hits):
+                ranked[uri] = ranked.get(uri, 0.0) + 1.0 / (60 + rank)
+        if not ranked:
+            return []
+
+        ns = "<https://campy.dev/ns#"
+        req = ("observation_id", "subject_text", "predicate", "object_text", "polarity",
+               "evidence_ref", "evidence_text", "text_raw", "archived")
+        opt = ("event_text", "time_text", "speaker", "observed_at", "confidence", "superseded_by")
+        rows = self._client._execute_and_collect(f"""
+            SELECT ?o {" ".join("?" + c for c in req + opt)} WHERE {{
+                VALUES ?o {{ {" ".join(f"<{u}>" for u in ranked)} }}
+                ?o a {ns}Observation> ; {" ; ".join(f"{ns}{c}> ?{c}" for c in req)} .
+                {" ".join(f"OPTIONAL {{ ?o {ns}{c}> ?{c} }}" for c in opt)}
+            }}""")
+        need = min(2, len(terms) or 1)
+        concept_set, fts_set = set(concept_hits), set(fts_hits)
+        out: list[RowDict] = []
+        for row in rows:
+            uri = str(row["o"])
+            if bool(row.get("archived")) or row.get("superseded_by"):
+                continue
+            if uri not in vec_set and uri not in concept_set:
+                low = f"{row.get('text_raw') or ''} {row.get('evidence_text') or ''}".lower()
+                if uri not in fts_set or sum(1 for t in terms if t in low) < need:
+                    continue
+            out.append(RowDict({**{c: row.get(c) for c in req + opt}, "node_id": uri,
+                                "score": ranked.get(uri, 0.0)}))
+        out.sort(key=lambda r: -r["score"])
+        return out[:limit]
+
     def _lexical_query(self, qtext: str, terms: list[str], df: dict[str, int],
                        prefixes: tuple[str, ...]) -> str:
         """B470: the conversation stage's FTS query without the terms most
@@ -1388,6 +1469,8 @@ class GraphGateway:
             return self._bundle_conversation(params)
         if name == "thalamus.bundle_assistant_words":
             return self._bundle_assistant_words(params)
+        if name == "thalamus.bundle_observations":
+            return self._bundle_observations(params)
 
         # Exact facts: thalamus.bundle_exact_facts_{tbl}[_flagged][_auth] or thalamus.bundle_exact_{tbl}[_flagged][_auth]
         if name.startswith("thalamus.bundle_exact"):

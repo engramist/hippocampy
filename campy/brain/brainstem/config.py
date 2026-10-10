@@ -79,6 +79,8 @@ _DEFAULT_CONFIG = {
         "idle_flush_seconds": 5,
         "max_turn_chars": 600,
         "queue_max": 5000,         # 3b: bounded worker queue; a full queue drops the newest, counted
+        "retrieval": False,        # 3c: feed the bundle's semantic section from Observations
+        "observation_limit": 8,    # 3c: most Observations the semantic section carries
     },
     "compression": {
         "strategy": "two_lane",       # two_lane (Protected Lane zero loss + Bulk Lane lossy)
@@ -173,6 +175,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     # B472 Phase 3b: lets a benchmark harness switch Observations on without
     # touching the config file it writes (the daemon inherits the environment).
     "CAMPY_OBSERVATIONS_ENABLED": ("observations", "enabled", _parse_bool),
+    # B472 Phase 3c: same reason, for the reader (independent of the writer).
+    "CAMPY_OBSERVATIONS_RETRIEVAL": ("observations", "retrieval", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
     "CAMPY_LLM_MODEL": ("llm", "model", str.strip),
     "CAMPY_LLM_REGION": ("llm", "region", str.strip),

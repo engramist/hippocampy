@@ -98,6 +98,22 @@ def observations_enabled(config: dict | None) -> bool:
     return bool(((config or {}).get("observations") or {}).get("enabled", False))
 
 
+def observations_retrieval_enabled(config: dict | None) -> bool:
+    """`[observations] retrieval` (default false; env `CAMPY_OBSERVATIONS_RETRIEVAL`):
+    the bundle's semantic section is fed from Observations (B472 Phase 3c).
+    Independent of `enabled`, which gates only the writer: a store built with
+    the worker on can be read with this on or off."""
+    return bool(((config or {}).get("observations") or {}).get("retrieval", False))
+
+
+def observation_limit(config: dict | None, default: int = 8) -> int:
+    """`[observations] observation_limit`: most Observations the semantic section carries."""
+    try:
+        return int(((config or {}).get("observations") or {}).get("observation_limit", default))
+    except (TypeError, ValueError):
+        return default
+
+
 # --- types ------------------------------------------------------------------------
 
 @dataclass
