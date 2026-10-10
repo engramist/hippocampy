@@ -18,6 +18,7 @@ Pipeline stages:
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Optional
@@ -609,7 +610,9 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
     """B454: relevant user statements from the raw conversation (see
     GraphGateway._bundle_conversation). Disabled with
     `[retrieval] conversation_limit = 0`; `[retrieval] conversation_order`
-    ("time" default | "rank") sets the turn order (B474). Fail-soft like the
+    ("time" default | "rank") sets the turn order (B474); `[retrieval] reranker`
+    ("none" default | a cross-encoder model name) and `reranker_candidates`
+    (50) rerank the candidates before the cut (B477). Fail-soft like the
     other stages."""
     limit = int((config.get("retrieval", {}) or {}).get("conversation_limit", 6))
     if limit <= 0:
@@ -629,10 +632,27 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
         if order not in CONVERSATION_ORDERS:
             _warn_once_bad_conversation_order(order)
             order = "time"
-        rows = await get_gateway(db).run(
-            "thalamus.bundle_conversation",
-            query_embedding=query_embedding, query_text=query, limit=limit, order=order,
-        )
+        # B477: optional cross-encoder rerank before the cut. A separate query
+        # (G.2: no new params on an existing one), so "none" runs the B474 query
+        # unchanged.
+        from campy.brain.hippocampus.graph import reranker as reranker_mod
+
+        retrieval = config.get("retrieval", {}) or {}
+        # CAMPY_RETRIEVAL_RERANKER overrides the config: lets a gate run turn the
+        # reranker on without editing the (copied) store's config.toml.
+        reranker = str(os.environ.get("CAMPY_RETRIEVAL_RERANKER") or retrieval.get("reranker") or "none")
+        if reranker_mod.is_enabled(reranker):
+            rows = await get_gateway(db).run(
+                "thalamus.bundle_conversation_reranked",
+                query_embedding=query_embedding, query_text=query, limit=limit, order=order,
+                reranker=reranker,
+                reranker_candidates=int(retrieval.get("reranker_candidates", reranker_mod.DEFAULT_CANDIDATES)),
+            )
+        else:
+            rows = await get_gateway(db).run(
+                "thalamus.bundle_conversation",
+                query_embedding=query_embedding, query_text=query, limit=limit, order=order,
+            )
         content, node_ids = [], []
         for r in (rows or []):
             get = r.get if isinstance(r, dict) else (lambda k, d=None: d)

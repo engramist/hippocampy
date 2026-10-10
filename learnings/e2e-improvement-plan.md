@@ -270,6 +270,7 @@ turn ─► 1 Capture ─► 2 Consolidate ─► store ─► 3 Retrieve ─►
 | 5 Answer | system prompt "use only the provided memory context…"; when any section has content the prompt adds "The sections below are NOT empty … must be used" (ask.py ~L173) | `ask.py` `run_ask` (L287), `_ASK_SYSTEM_PROMPT` (L188) |
 
 Config knobs: `[retrieval] conversation_limit` (6), `assistant_words_limit` (3).
+`[retrieval] conversation_order` ("time"; B474), `reranker` ("none"), `reranker_candidates` (50) (B477, M2.1; env override `CAMPY_RETRIEVAL_RERANKER`).
 
 ---
 

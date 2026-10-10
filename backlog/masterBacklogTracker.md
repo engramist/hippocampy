@@ -93,6 +93,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B472 | Source-Grounded Observations: Capture Who Did What, When, With Evidence | P1 | Phases 1-2 implemented; Phase 3 designed (measurement pending: R21, R22) | TBD | TBD | - | backlog/B472.md |
 | B473 | Relation Noise on Chat: Invented Engineering Relations and Bare Endpoint Concepts | P1 | implemented (measurement pending) | TBD | TBD | - | backlog/B473.md |
 | B474 | Conversation Evidence in Rank Order, Not Oldest-First (M1.1) | P2 | implemented (merge gate pending: eval_gate replay on golden stores) | TBD | TBD | - | backlog/B474.md |
+| B477 | Cross-Encoder Rerank of Conversation Candidates Before the Cut (M2.1) | P2 | implemented (ships off; merge gate pending: eval_gate with CAMPY_RETRIEVAL_RERANKER set) | TBD | TBD | - | backlog/B477.md |
 | B459 | Conversation Evidence Drops the Statements That Supersede the One It Found | P1 | fixed (real-model confirmed) | TBD | TBD | - | backlog/B459.md |
 | B458 | current_truth: Exact Identifier Match Loses to Near-Identical Notes (RRF Fusion) | P1 | fixed (round 2: identifiers rank first; real-model confirmed) | TBD | TBD | - | backlog/B458.md |
 | B457 | HTTP REST and Dashboard Routes Ignore the Caller's Workspace (Cross-Tenant Access in Multi-Tenant Mode) | P1 | fixed | TBD | TBD | - | backlog/B457.md |

@@ -1583,6 +1583,19 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         # No sparql= — Python handler in GraphGateway._bundle_conversation.
     ),
     NamedQuery(
+        name="thalamus.bundle_conversation_reranked",
+        cypher="MATCH (m:Message {role: 'user'}) "
+               "WHERE (1 - array_cosine_similarity(m.embedding, $query_embedding)) < 0.70 "
+               "RETURN m.text_raw as text, m.role as role, m.created_at as created_at "
+               "ORDER BY m.created_at ASC LIMIT $limit",
+        params=("query_embedding", "query_text", "limit", "order", "reranker", "reranker_candidates"),
+        mutating=False,
+        description="B477: thalamus.bundle_conversation with a cross-encoder rerank of the top "
+                    "`reranker_candidates` before the top-`limit` cut; run off the event loop. A "
+                    "separate query so the B454/B474 declared params stay unchanged (plan G.2)",
+        # No sparql= — Python handler in GraphGateway._bundle_conversation.
+    ),
+    NamedQuery(
         name="thalamus.bundle_assistant_words",
         cypher="MATCH (m:Message {role: 'assistant'}) "
                "WHERE (1 - array_cosine_similarity(m.embedding, $query_embedding)) < 0.70 "

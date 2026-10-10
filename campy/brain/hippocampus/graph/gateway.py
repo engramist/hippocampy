@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 from urllib.parse import unquote
 from campy.brain.hippocampus.schema import FACT_PREDICATE_TABLES
+from campy.brain.hippocampus.graph import reranker as reranker_mod
 from campy.brain.hippocampus.graph.oxigraph_client import (
     CID_BASE,
     DATA_BASE,
@@ -467,6 +468,11 @@ class GraphGateway:
     async def _dispatch_oxigraph(self, query: NamedQuery, params: dict[str, Any]) -> Any:
         if query.name == "orchestrator.get_gist_centroids":
             return self._handle_oxigraph_handler(query, params)
+        if query.name == "thalamus.bundle_conversation_reranked":
+            # B477: cross-encoder scoring is CPU-bound ONNX inference; keep it
+            # off the event loop (the vector store and the RDF store are
+            # thread-safe; the rest of the handler is the usual sync work).
+            return await asyncio.to_thread(self._handle_oxigraph_handler, query, params)
         if query.sparql is not None:
             if query.mutating:
                 res = await self._execute_write_with_timeout(query.name, query.sparql, params)
@@ -1019,9 +1025,24 @@ class GraphGateway:
         on a bundle-variant replay (R27) but was within noise on the code
         gate (R29: DMR +3/-3, LoCoMo-10 +3/-1), so it stays opt-in until a
         reranker (plan M2.1) makes rank more meaningful. Unknown values fall
-        back to "time"."""
+        back to "time".
+
+        B477: with `reranker` set (query `thalamus.bundle_conversation_reranked`)
+        the kept candidates -- AFTER the B459 lexical gate, the user-only /
+        de-dup filter and the B463 successor bridge, BEFORE the top-`limit`
+        cut -- are re-ordered by a cross-encoder over their best
+        `reranker_candidates` (default 50) by fused score, and the cut takes
+        the best by cross-encoder score. The gate therefore still decides what
+        may be evidence, and the bridge still decides which successor
+        statements join; the reranker only decides which of them survive the
+        cut and, under order="rank", their order. A bridge successor inherits
+        its predecessor's cross-encoder score when it has none higher, as it
+        inherits the fused score. A reranker that cannot load leaves the fused
+        order untouched."""
         vs = self._vector_store
         limit = int(params.get("limit", 6))
+        reranker = str(params.get("reranker") or "")
+        n_rerank = int(params.get("reranker_candidates") or reranker_mod.DEFAULT_CANDIDATES)
         order = str(params.get("order") or "time").lower()
         if order not in CONVERSATION_ORDERS:
             _warn_once_bad_conversation_order(order)
@@ -1082,6 +1103,7 @@ class GraphGateway:
         anchors = {t for t, n in df.items() if n == rarest and t in top_vec_words}
         newest: dict[str, tuple[str, dict]] = {}
         on_topic: list[tuple[float, str]] = []
+        bridged: dict[str, float] = {}  # B463 successor uri -> inherited fused score
 
         def keep(row: dict, text: str) -> str:
             created = row.get("created")
@@ -1112,9 +1134,13 @@ class GraphGateway:
                 if norm(text) != qnorm and not text.endswith("?"):
                     uri = keep(row, text)
                     ranked[uri] = max(ranked.get(uri, 0.0), score)
+                    bridged[uri] = score
         except Exception:
             _logger.debug("_bundle_conversation successor bridge failed", exc_info=True)
-        picked = sorted(newest.values(), key=lambda kv: -ranked.get(kv[1]["uri"], 0.0))[:limit]
+        ordered = sorted(newest.values(), key=lambda kv: -ranked.get(kv[1]["uri"], 0.0))
+        if reranker_mod.is_enabled(reranker) and qtext and (len(ordered) > limit or order == "rank"):
+            ordered = self._rerank_candidates(reranker, qtext, ordered, on_topic, bridged, n_rerank)
+        picked = ordered[:limit]
         if order == "time":
             picked.sort(key=lambda kv: kv[0])
         return [
@@ -1122,6 +1148,43 @@ class GraphGateway:
                      "speaker": v.get("speaker"), "node_id": v["uri"], "node_type": "Message"})
             for _, v in picked
         ]
+
+    @staticmethod
+    def _rerank_candidates(
+        reranker: str, qtext: str, ordered: list[tuple[str, dict]],
+        on_topic: list[tuple[float, str]], bridged: dict[str, float], n: int,
+    ) -> list[tuple[str, dict]]:
+        """B477: `ordered` (best fused score first) with its first `n` entries
+        re-ordered by cross-encoder score; the rest keep their fused order
+        behind them. Returns `ordered` unchanged when the model is unavailable.
+
+        Each turn is scored as "<speaker>: <text>" when it names a speaker --
+        the form the turn was embedded in (B472 1b) -- because the question
+        names its speaker ("what did Speaker 1 say...") and a cross-encoder
+        scoring the bare text cannot tell the two speakers' near-identical
+        turns apart.
+
+        A B463 successor statement shares no words with the question; it is in
+        the bundle because the on-topic turn (often an assistant turn) named
+        what it replaced. It therefore takes the cross-encoder score of that
+        leading turn when that is higher than its own, just as it takes the
+        leading turn's fused score. The leading turns are scored for this and
+        never returned."""
+        window = ordered[: max(1, n)]
+        texts = [f"{v['speaker']}: {v['text']}" if v.get("speaker") else v["text"]
+                 for _, v in window]
+        leaders = sorted({t for sc, t in on_topic if sc in set(bridged.values())})
+        scores = reranker_mod.score(reranker, qtext, texts + leaders)
+        if scores is None:
+            return ordered
+        ce = {v["uri"]: s for (_, v), s in zip(window, scores)}
+        lead_ce = {t: s for t, s in zip(leaders, scores[len(texts):])}
+        for uri, inherited in bridged.items():
+            led = [lead_ce[t] for sc, t in on_topic if sc == inherited and t in lead_ce]
+            if uri in ce and led:
+                ce[uri] = max(ce[uri], max(led))
+        head = sorted(window, key=lambda kv: -ce[kv[1]["uri"]])  # stable: ties keep fused order
+        return head + ordered[len(window):]
 
     def _bundle_assistant_words(self, params: dict[str, Any]) -> list[Any]:
         """B471: what the ASSISTANT said on the topic, for a question about the
@@ -1384,7 +1447,7 @@ class GraphGateway:
         if query_embedding is None or not self._vector_store:
             return []
 
-        if name == "thalamus.bundle_conversation":
+        if name in ("thalamus.bundle_conversation", "thalamus.bundle_conversation_reranked"):
             return self._bundle_conversation(params)
         if name == "thalamus.bundle_assistant_words":
             return self._bundle_assistant_words(params)
