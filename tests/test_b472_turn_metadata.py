@@ -99,7 +99,7 @@ class _Recorder:
     """Captures what notify_turn writes and queues, without a daemon."""
 
     def __init__(self):
-        self.created, self.queued = [], []
+        self.created, self.queued, self.embedded = [], [], []
 
     async def run(self, name, **params):
         if name == "capture.create_message":
@@ -124,7 +124,11 @@ class _Queue:
 def recorder(monkeypatch):
     rec = _Recorder()
     monkeypatch.setattr(capture, "_gateway", lambda db: rec)
-    monkeypatch.setattr(capture.emb, "embed", lambda text, model_name=None: list(QUERY_EMB))
+    def _embed(text, model_name=None):
+        rec.embedded.append(text)
+        return list(QUERY_EMB)
+
+    monkeypatch.setattr(capture.emb, "embed", _embed)
     monkeypatch.setattr(capture, "get_loop_queue", lambda: _Queue(rec.queued))
 
     async def _route(*a, **k):
@@ -240,3 +244,20 @@ async def test_the_assistant_section_keeps_its_label(fake_rows):
     texts = [c["text"] for c in section.content]
     assert texts[0] == "[Chef bot (assistant) said, 2023-05-10 12:00] Try trofie."
     assert texts[1] == "[assistant said, 2023-05-10 12:01] Linguine works too."
+
+
+@pytest.mark.asyncio
+async def test_a_named_speaker_is_embedded_with_the_text_but_not_stored_in_it(recorder):
+    # Phase 1b: R21 lost the speaker signal the "[date] Name:" prefix gave the
+    # embedding; the speaker goes back into the vector, never into text_raw
+    await capture.notify_turn({"role": "user", "content": "The only company I have is my pet cow.",
+                               "session_id": "unknown", "speaker": "Speaker 1"}, None, {})
+    assert recorder.embedded == ["Speaker 1: The only company I have is my pet cow."]
+    assert recorder.created[0]["text_raw"] == "The only company I have is my pet cow."
+    assert recorder.queued[0][1] == "The only company I have is my pet cow."  # the Loop sees the content
+
+
+@pytest.mark.asyncio
+async def test_without_a_speaker_the_embedding_is_the_content(recorder):
+    await capture.notify_turn({"role": "user", "content": "hello there", "session_id": "unknown"}, None, {})
+    assert recorder.embedded == ["hello there"]

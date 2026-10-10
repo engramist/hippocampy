@@ -236,7 +236,16 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
             session_id,
         )
 
-    vector     = emb.embed(content, model_name=embedding_model)
+    # B472 Phase 1b: who said it is part of what a turn is about for
+    # retrieval, so a named speaker is embedded with the text ("Caroline:
+    # ..."); the stored text stays the content alone, so Step 1 never
+    # extracts the name as a concept. Phase 1 had dropped it from the
+    # embedding too, and turns stopped matching questions that name their
+    # speaker: R21 (engramist/hippocampy#278), DMR 0.62 -> 0.42, LoCoMo-10
+    # 0.396 -> 0.354, conversation items per DMR question 6.0 -> 3.9 (fewer
+    # turns cleared the stage's 0.30 similarity floor).
+    embed_text = f"{speaker}: {content}" if speaker else content
+    vector     = emb.embed(embed_text, model_name=embedding_model)
     message_id = str(uuid.uuid4())
     now        = datetime.now(timezone.utc).isoformat()
 
