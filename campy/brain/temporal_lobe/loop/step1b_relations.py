@@ -194,6 +194,12 @@ def extract_relations(doc, entities: list[dict]) -> list[dict]:
             old = min(olds, key=lambda c: abs(token.i - c.i)) if olds else None
             preps = WITH_VERBS.get(lemma) or (SUBSTITUTE_VERBS[lemma],)
             new = next((o for p in preps if (o := _prep_object(token, p)) is not None), None)
+            if new is None and old is not None and lemma in WITH_VERBS:
+                # the parser can hang "with Y" off the object instead of the
+                # verb: "Architecture change: Replace Memcached with Redis
+                # cluster ..." (en_core_web_md: "Replace" an acl of "change",
+                # "with" a child of "Memcached")
+                new = next((o for p in preps if (o := _prep_object(old, p)) is not None), None)
             if lemma in SUBSTITUTE_VERBS:
                 old, new = new, next((c for c in token.children if c.dep_ == "dobj"), None)
             if old is not None and new is not None:

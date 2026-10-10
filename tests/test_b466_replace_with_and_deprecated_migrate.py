@@ -32,6 +32,10 @@ def rels():
 @pytest.mark.parametrize("text, expected", [
     ("We replaced Memcached with Redis.", ("Redis", "REPLACES", "Memcached")),
     ("Replace Memcached with Redis cluster on port 6379.", ("Redis cluster", "REPLACES", "Memcached")),
+    # B472/R25: after a colon "Replace" parses as an acl and "with" hangs off
+    # the object -- the LoCoMo fixture's p6_cache_engine turn
+    (("Architecture change: Replace Memcached with Redis cluster on port 6379 for distributed "
+      "locking and pub/sub. Memcached is retired."), ("Redis cluster", "REPLACES", "Memcached")),
     ("Memcached was replaced with Redis.", ("Redis", "REPLACES", "Memcached")),
     ("We swapped Jenkins for GitHub Actions.", ("GitHub Actions", "REPLACES", "Jenkins")),
     ("We substituted Vitest for Jest.", ("Vitest", "REPLACES", "Jest")),
