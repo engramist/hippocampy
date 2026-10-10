@@ -1105,7 +1105,9 @@ class GraphGateway:
         def keep(row: dict, text: str) -> str:
             created = row.get("created")
             created = created.isoformat() if hasattr(created, "isoformat") else str(created or "")
-            key = norm(text)
+            # B478: the speaker is part of what was said -- two speakers saying
+            # the same sentence are two statements, not one repeated
+            key = (str(row.get("speaker") or ""), norm(text))
             if key not in newest or created > newest[key][0]:
                 newest[key] = (created, {"uri": row["s"], "text": text, "created": created,
                                          "speaker": row.get("speaker"),
