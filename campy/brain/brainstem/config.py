@@ -80,6 +80,10 @@ _DEFAULT_CONFIG = {
     # B304: ask harness variant toggle. "H0" = baseline, unchanged behavior.
     "ask": {
         "harness_variant": "H0",
+        # M1.3 (B475): "cite" = answer only from the lines shown, quote the
+        # line used, abstain when none answers; "legacy" = the pre-M1.3
+        # "NOT empty ... must be used" instruction.
+        "answer_style": "cite",
     },
     # B325: remote MCP transport bind address + auth mode, explicit and
     # guarded (see campy/brain_daemon.py::_enforce_bind_guard). Defaults
