@@ -635,7 +635,7 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
     """B454: relevant user statements from the raw conversation (see
     GraphGateway._bundle_conversation). Disabled with
     `[retrieval] conversation_limit = 0`; `[retrieval] conversation_order`
-    ("rank" default | "time") sets the turn order (B474). Fail-soft like the
+    ("time" default | "rank") sets the turn order (B474). Fail-soft like the
     other stages."""
     limit = int((config.get("retrieval", {}) or {}).get("conversation_limit", 6))
     if limit <= 0:
@@ -650,11 +650,11 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
         from campy.brain.hippocampus.graph.gateway import (
             CONVERSATION_ORDERS, _warn_once_bad_conversation_order)
 
-        # B474: "rank" (best first, default) | "time" (oldest first)
-        order = str((config.get("retrieval", {}) or {}).get("conversation_order", "rank")).lower()
+        # B474: "time" (oldest first, default) | "rank" (best first)
+        order = str((config.get("retrieval", {}) or {}).get("conversation_order", "time")).lower()
         if order not in CONVERSATION_ORDERS:
             _warn_once_bad_conversation_order(order)
-            order = "rank"
+            order = "time"
         # B476: drop a turn that near-duplicates a better-ranked turn of the
         # same speaker and session; the slot is backfilled from the next candidate
         retrieval = config.get("retrieval", {}) or {}

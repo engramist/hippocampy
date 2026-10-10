@@ -332,6 +332,31 @@ mint_uri("T2", …), {props})` in `gateway.py` and asserts
 When adding or editing a handler `write_edge`, make it match the query's own cypher
 and this schema; the guard fails the build otherwise.
 
+#### 4.2g Observation edges (B472 Phase 3a)
+
+> The counts in section 1 and the 102 in section 4 are the `d3ef540` snapshot.
+> `schema.py` now declares 58 node tables and 112 rel tables; this subsection
+> records the two rel tables Phase 3a added, as section 4.2c requires.
+
+| Rel | From -> To | Class | Evidence |
+|---|---|---|---|
+| `OBSERVATION_ABOUT` | `Observation` -> `Concept` | **plain** | DDL carries no properties; the subject/object role is on the node (`subject_id`, `object_id`), not the edge. Writer: `observations.link_about_concept` (`MERGE`). |
+| `EVIDENCED_BY` | `Observation` -> `Message` | **plain** | DDL carries no properties; the supporting quote's offsets are on the `Observation` node (`evidence_start`, `evidence_end`, `evidence_text`). One edge per supporting Message. Writer: `observations.link_evidenced_by` (`MERGE`). |
+
+Both are idempotent under RDF set semantics: a second identical link inserts
+the same triple, which is how a duplicate draft adds its Message as further
+evidence without a second `Observation` row. Neither needs star or occurrence
+handling. `DEPRECATED_BY` (plain) also gains the `Observation` -> `Observation`
+pair because `Observation` is a `PROVENANCE_TABLES` member; Phase 3 never writes
+it.
+
+The `Observation` node itself needs no mapping rule beyond section 3: its
+`FLOAT[384]` embedding is never asserted as a triple (section 5), and a draft
+that supplies one is indexed through `vector_indexing._SPECS`
+(`observations.create_observation`). `archived` is always written, so the live
+filter is the plain BGP form (section 3.4a); `superseded_by` is absent on a live
+row, so liveness is `FILTER NOT EXISTS`.
+
 ### 4.3 Write-path side effects are NOT free on the `sparql=` path (B418a)
 
 A `NamedQuery` with a `sparql=` template routes through the gateway straight to

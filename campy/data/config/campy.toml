@@ -44,6 +44,15 @@ max_initial_backfill_files = 5
 [web]
 port = 7799
 
+# B472 Phase 3: source-grounded Observations extracted from user turns.
+# Ships disabled until a reader exists; nothing extracts or reads them yet.
+[observations]
+enabled = false
+llm_enabled = true       # only read when enabled
+llm_batch_turns = 20
+idle_flush_seconds = 5
+max_turn_chars = 600
+
 [wiki_projection]
 enabled = true
 vault_dir = "wiki"

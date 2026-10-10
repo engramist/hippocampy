@@ -364,7 +364,7 @@ def _warn_once_bad_conversation_order(value: str) -> None:
     if value not in _BAD_ORDER_WARNED:
         _BAD_ORDER_WARNED.add(value)
         _logger.warning(
-            "[retrieval] conversation_order=%r is not one of %s; using 'rank'",
+            "[retrieval] conversation_order=%r is not one of %s; using 'time'",
             value, CONVERSATION_ORDERS)
 
 
@@ -1021,14 +1021,16 @@ class GraphGateway:
         question echoes), de-duplicates repeated text keeping the newest, and
         returns the top `limit`.
 
-        B474: `order` picks the presentation order of those turns. "rank" (the
-        default) puts the best fused score first -- on replay the same six
-        turns gained 5 / lost 1 (DMR) and 5 / lost 2 (LoCoMo-10) against
-        oldest-first. "time" is the B454 order: oldest first, so a later
-        statement reads after the one it supersedes. Under "rank" supersession
-        stays visible through the date stamp each turn carries, and a B463
-        successor statement inherits its on-topic predecessor's score, so on a
-        tie it lands right after it. Unknown values fall back to "rank".
+        B474: `order` picks the presentation order of those turns. "time" (the
+        default) is the B454 order: oldest first, so a later statement reads
+        after the one it supersedes. "rank" puts the best fused score first;
+        supersession then stays visible through the date stamp each turn
+        carries, and a B463 successor statement inherits its on-topic
+        predecessor's score, so on a tie it lands right after it. "rank" won
+        on a bundle-variant replay (R27) but was within noise on the code
+        gate (R29: DMR +3/-3, LoCoMo-10 +3/-1), so it stays opt-in until a
+        reranker (plan M2.1) makes rank more meaningful. Unknown values fall
+        back to "time".
 
         B476: `collapse_cosine` (set by thalamus.bundle_conversation_collapsing;
         absent or 0 = off) drops a turn when a better-ranked picked turn has
@@ -1039,10 +1041,10 @@ class GraphGateway:
         vs = self._vector_store
         limit = int(params.get("limit", 6))
         collapse_cosine = float(params.get("collapse_cosine") or 0.0)
-        order = str(params.get("order") or "rank").lower()
+        order = str(params.get("order") or "time").lower()
         if order not in CONVERSATION_ORDERS:
             _warn_once_bad_conversation_order(order)
-            order = "rank"
+            order = "time"
         qtext = (params.get("query_text") or "").strip()
         if limit <= 0:
             return []

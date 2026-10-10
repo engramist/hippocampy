@@ -1,8 +1,9 @@
-"""B474: the conversation stage presents its turns best-ranked first by default.
+"""B474: the conversation stage can present its turns best-ranked first (opt-in).
 
 Replay R27 (same six turns, same store): rank order gained 5 / lost 1 on DMR
 (50 q) and gained 5 / lost 2 on LoCoMo-10 (60 q) against oldest-first.
-`[retrieval] conversation_order = "time"` keeps the B454 order. Embeddings are
+The code gate (R29) was within noise, so `[retrieval] conversation_order`
+defaults to "time" (the B454 order) and "rank" is opt-in. Embeddings are
 hand-built to chosen cosines so the tests don't depend on the embedding model.
 """
 
@@ -80,9 +81,9 @@ async def test_both_orders_pick_the_same_top_limit(gw):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("bad", ["newest", "", None, "RANKED"])
-async def test_an_unknown_order_falls_back_to_rank(gw, bad):
+async def test_an_unknown_order_falls_back_to_time(gw, bad):
     await _store(gw)
-    assert await _texts(gw, bad) == BY_RANK
+    assert await _texts(gw, bad) == BY_TIME
 
 
 @pytest.mark.asyncio
@@ -138,10 +139,10 @@ def recorder(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cfg,expected", [
-    ({}, "rank"),
+    ({}, "time"),
     ({"retrieval": {"conversation_order": "time"}}, "time"),
     ({"retrieval": {"conversation_order": "Rank"}}, "rank"),
-    ({"retrieval": {"conversation_order": "bogus"}}, "rank"),
+    ({"retrieval": {"conversation_order": "bogus"}}, "time"),
 ])
 async def test_stage_passes_the_configured_order(recorder, cfg, expected):
     section = await bundle_compiler._stage_conversation(None, "q", cfg)
