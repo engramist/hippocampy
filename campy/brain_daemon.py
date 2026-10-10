@@ -16,6 +16,7 @@ Concurrency: single asyncio event loop, asyncio.Lock for all Kùzu writes.
 """
 
 import asyncio
+import dataclasses
 import collections
 import gc
 import inspect
@@ -137,9 +138,12 @@ from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.hippocampus.graph.router import WorkspaceRouter
 from campy.brain.hippocampus.schema import init_schema
 from campy.brain.thalamus.tools import TOOL_HANDLERS, init_loop_queue
-from campy.brain.llm.provider import create_llm_client
+from campy.brain.llm.provider import create_llm_client, create_llm_client_for_step
 from campy.brain.temporal_lobe.loop import step2_gist, step3_schema_org
 from campy.brain.temporal_lobe.loop.orchestrator import run_loop
+from campy.brain.hippocampus.observations import observations_enabled
+from campy.brain.temporal_lobe.observations import ObservationWorkerStats, process_turn as process_observation_turn
+from campy.brain.thalamus.tools._shared import init_observation_queue
 from campy.brain.brainstem.sweep import run_sweep
 from campy.paths import (
     get_daemon_socket_path,
@@ -596,6 +600,40 @@ def _dump_memory_snapshot():
     print(f"[MemoryDebug] Snapshot written to {_MEMORY_DEBUG_LOG}", flush=True)
 
 
+def _stats_delta(before: ObservationWorkerStats, after: ObservationWorkerStats) -> dict:
+    """Per-turn change in the Observation worker's counters (counts only)."""
+    out: dict = {}
+    for k, v in after.__dict__.items():
+        if k == "rejected":
+            rej = {r: n - before.rejected.get(r, 0) for r, n in v.items() if n - before.rejected.get(r, 0)}
+            if rej:
+                out["rejected"] = rej
+        elif v - getattr(before, k, 0):
+            out[k] = v - getattr(before, k, 0)
+    return out
+
+
+def _enqueue_observation(daemon, item, message_id, role, session_id, speaker) -> None:
+    """B472 Phase 3b: hand a finished user turn to the Observation worker. Never
+    blocks and never raises: a full queue drops the newest turn (counted, logged)
+    rather than slowing the Loop to wait for the LLM-bound worker. No queue (the
+    default) means nothing happens. Called before the Loop queue's task_done, so
+    `consolidation_pending` never dips to zero in between."""
+    q = getattr(daemon, "_observation_queue", None)
+    if q is None or role != "user" or not isinstance(item, tuple) or len(item) < 5:
+        return   # disabled, assistant turn, or a document extract (4-tuple, not a Message)
+    try:
+        q.put_nowait((message_id, session_id, speaker))
+    except asyncio.QueueFull:
+        daemon._observation_stats.queue_dropped += 1
+        print(f"[Observations] queue full ({q.maxsize}); dropped msg={str(message_id)[:8]} "
+              f"(total dropped {daemon._observation_stats.queue_dropped})")
+        emit_activity("observations", config=daemon.config, lane="status", status="queue_full",
+                      details={"queue_max": q.maxsize, "dropped": daemon._observation_stats.queue_dropped})
+    except Exception:
+        _logger.exception("could not enqueue message for the Observation worker")
+
+
 class BrainDaemon:
 
     def __init__(self, config: dict):
@@ -605,6 +643,13 @@ class BrainDaemon:
         self._llm_client = None   # set in start()
         self._centroids  = {}     # set in start()
         self._loop_queue: asyncio.Queue = asyncio.Queue()
+        # B472 Phase 3b: only exists when [observations] enabled. Disabled
+        # (the default): no queue, no worker task, nothing enqueued.
+        self._observation_queue: asyncio.Queue | None = (
+            asyncio.Queue(maxsize=max(1, int((config.get("observations") or {}).get("queue_max", 5000))))
+            if observations_enabled(config) else None
+        )
+        self._observation_stats = ObservationWorkerStats()
         self._stale_projects: set[str] = set()
         self._last_file_regen: str | None = None
         # B315: local Campy is single-tenant cloud with auth stubbed — this
@@ -697,6 +742,7 @@ class BrainDaemon:
 
         # Wire loop queue into tools module
         init_loop_queue(self._loop_queue)
+        init_observation_queue(self._observation_queue)
 
         # B367: campy/brain_daemon.py had zero emit_activity() calls anywhere
         # despite being the sole live implementation since B365 -- restored
@@ -723,6 +769,13 @@ class BrainDaemon:
         loop_task.add_done_callback(
             lambda t: _restart_on_failure(t, self._loop_worker)
         )
+
+        # B472 Phase 3b: Observation worker, only when enabled
+        if self._observation_queue is not None:
+            obs_task = asyncio.create_task(self._observation_worker(), name="observation_worker")
+            obs_task.add_done_callback(
+                lambda t: _restart_on_failure(t, self._observation_worker)
+            )
 
         # Start background sweep
         sweep_interval = self.config.get("pruning", {}).get("sweep_interval_seconds", 300)
@@ -1032,6 +1085,7 @@ class BrainDaemon:
                     precomputed=precomputed,
                     **({"speaker": speaker} if speaker else {}),
                 )
+                _enqueue_observation(self, item, message_id, role, session_id, speaker)
                 print(
                     f"[Loop] msg={message_id[:8]} "
                     f"entities={summary['entities_found']} "
@@ -1058,6 +1112,47 @@ class BrainDaemon:
                 print(f"[Loop] Error processing message {ident}: {e}")
             finally:
                 self._loop_queue.task_done()
+
+    # ------------------------------------------------------------------
+    # Observation worker (B472 Phase 3b)
+    # ------------------------------------------------------------------
+
+    async def _observation_worker(self):
+        """Extract Observations from queued user turns, one LLM call per turn
+        (off the event loop). A bad turn is logged and skipped; the worker never
+        crash-loops and never touches the Loop queue."""
+        print("Observation worker started.")
+        client = None
+        try:
+            client = create_llm_client_for_step(self.config, "observations") or self._llm_client
+        except Exception:
+            _logger.exception("observation LLM client unavailable; falling back to the Loop's")
+            client = self._llm_client
+        embedding_model = self.config.get("embeddings", {}).get(
+            "model", "sentence-transformers/all-MiniLM-L6-v2"
+        )
+        stats = self._observation_stats
+        while True:
+            item = await self._observation_queue.get()
+            before = dataclasses.replace(stats, rejected=dict(stats.rejected))
+            try:
+                message_id, _session_id, _speaker, *_ = item   # unpack inside try: a malformed item is skipped
+                await process_observation_turn(
+                    self.db, self.config, client, message_id, stats,
+                    embedding_model=embedding_model,
+                )
+            except Exception as e:
+                stats.errors += 1
+                ident = item[0] if isinstance(item, tuple) and item else item
+                print(f"[Observations] Error processing message {ident}: {e}")
+            finally:
+                self._observation_queue.task_done()
+            try:
+                delta = _stats_delta(before, stats)
+                emit_activity("observations", config=self.config, lane="status", status="turn",
+                              details={**delta, "pending": self._observation_queue.qsize()})
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # Memory Control Panel web server (M7)
