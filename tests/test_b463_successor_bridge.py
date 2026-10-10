@@ -91,7 +91,7 @@ class _Store:
 
 async def _bundle(gw, query: str = DB_Q) -> list[str]:
     rows = await gw.run("thalamus.bundle_conversation",
-                        query_embedding=QUERY_EMB, query_text=query, limit=6)
+                        query_embedding=QUERY_EMB, query_text=query, limit=6, order="time")
     return [r["text"] for r in rows]
 
 
@@ -130,7 +130,7 @@ async def test_assistant_text_still_never_becomes_evidence(gw):
     texts = await _bundle(gw)
     assert PG14_ACK not in texts and PG16_ACK not in texts
     rows = await gw.run("thalamus.bundle_conversation",
-                        query_embedding=QUERY_EMB, query_text=DB_Q, limit=6)
+                        query_embedding=QUERY_EMB, query_text=DB_Q, limit=6, order="time")
     assert all(r["role"] == "user" for r in rows)
 
 

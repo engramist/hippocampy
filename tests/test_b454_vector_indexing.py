@@ -217,7 +217,7 @@ async def test_conversation_evidence_returns_user_assertions_oldest_first(gw, ox
     await _add_msg(gw, "m5", "Cache layer is Memcached on port 11211.", "user", "2026-09-22T11:00:00+00:00")
     q = "What is our active production database engine and version?"
     rows = await gw.run("thalamus.bundle_conversation",
-                        query_embedding=emb.embed(q), query_text=q, limit=5)
+                        query_embedding=emb.embed(q), query_text=q, limit=5, order="time")
     texts = [r["text"] for r in rows]
     assert texts[0].startswith("Our service uses PostgreSQL 14")
     assert texts[1].startswith("CRITICAL UPDATE")          # chronological: later supersedes earlier
@@ -233,7 +233,7 @@ async def test_conversation_evidence_dedupes_repeated_text_keeping_newest(gw, ox
     await _add_msg(gw, "d1", "We standardized on Redis for caching.", "user", "2026-09-20T10:00:00+00:00")
     await _add_msg(gw, "d2", "We standardized on Redis for caching.", "user", "2026-09-22T10:00:00+00:00")
     q = "What do we use for caching, Redis?"
-    rows = await gw.run("thalamus.bundle_conversation", query_embedding=emb.embed(q), query_text=q, limit=5)
+    rows = await gw.run("thalamus.bundle_conversation", query_embedding=emb.embed(q), query_text=q, limit=5, order="time")
     assert len(rows) == 1 and rows[0]["created_at"].startswith("2026-09-22")
 
 
@@ -243,7 +243,7 @@ async def test_conversation_evidence_empty_for_unrelated_query(gw, ox_client):
 
     await _add_msg(gw, "u1", "Our service uses PostgreSQL 14 hosted on AWS RDS.", "user", "2026-09-20T10:00:00+00:00")
     q = "What is the airspeed velocity of an unladen swallow?"
-    assert await gw.run("thalamus.bundle_conversation", query_embedding=emb.embed(q), query_text=q, limit=5) == []
+    assert await gw.run("thalamus.bundle_conversation", query_embedding=emb.embed(q), query_text=q, limit=5, order="time") == []
 
 
 # ---------------------------------------------------------------------------

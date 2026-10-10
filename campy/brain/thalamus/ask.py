@@ -103,6 +103,14 @@ _SECTION_DESCRIPTIONS: dict[str, str] = {
 }
 
 
+# B474: the conversation section is best-match-first by default; each item is
+# date-stamped, so a later statement still visibly supersedes an earlier one.
+_CONVERSATION_DESCRIPTION_RANK = (
+    "what the user said about this, best match first, each stamped with its date — "
+    "when statements conflict, the one with the most recent date supersedes earlier ones"
+)
+
+
 def _render_plan_item(item: dict) -> str:
     """Plan section items carry goal/status/valence/steps, not compact/toon/
     text/source — render them explicitly so they survive into the prompt."""
@@ -134,6 +142,8 @@ def _bundle_to_prompt(bundle, query: str) -> str:
     for section in bundle.sections:
         section_type = section.section_type
         description = _SECTION_DESCRIPTIONS.get(section_type, section_type)
+        if section_type == "conversation" and getattr(section, "order", "") == "rank":
+            description = _CONVERSATION_DESCRIPTION_RANK
         rendered_items = []
         for item in section.content:
             if not isinstance(item, dict):

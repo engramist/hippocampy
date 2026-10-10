@@ -92,6 +92,9 @@ class BundleSection:
     content: list[dict]
     token_estimate: int
     source_node_ids: list[str] = field(default_factory=list)
+    # B474: how a "conversation" section's items are ordered ("rank" | "time");
+    # empty for every other section. The ask prompt describes the order truthfully.
+    order: str = ""
 
 
 @dataclass
@@ -605,7 +608,9 @@ async def _stage_semantic_context(
 async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSection]:
     """B454: relevant user statements from the raw conversation (see
     GraphGateway._bundle_conversation). Disabled with
-    `[retrieval] conversation_limit = 0`. Fail-soft like the other stages."""
+    `[retrieval] conversation_limit = 0`; `[retrieval] conversation_order`
+    ("rank" default | "time") sets the turn order (B474). Fail-soft like the
+    other stages."""
     limit = int((config.get("retrieval", {}) or {}).get("conversation_limit", 6))
     if limit <= 0:
         return None
@@ -616,9 +621,17 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
             "model", "sentence-transformers/all-MiniLM-L6-v2"
         )
         query_embedding = emb.embed(query, model_name=embedding_model)
+        from campy.brain.hippocampus.graph.gateway import (
+            CONVERSATION_ORDERS, _warn_once_bad_conversation_order)
+
+        # B474: "rank" (best first, default) | "time" (oldest first)
+        order = str((config.get("retrieval", {}) or {}).get("conversation_order", "rank")).lower()
+        if order not in CONVERSATION_ORDERS:
+            _warn_once_bad_conversation_order(order)
+            order = "rank"
         rows = await get_gateway(db).run(
             "thalamus.bundle_conversation",
-            query_embedding=query_embedding, query_text=query, limit=limit,
+            query_embedding=query_embedding, query_text=query, limit=limit, order=order,
         )
         content, node_ids = [], []
         for r in (rows or []):
@@ -639,7 +652,7 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
         return BundleSection(
             section_type="conversation", content=content,
             token_estimate=sum(max(1, len(c["text"]) // 4) for c in content),
-            source_node_ids=node_ids,
+            source_node_ids=node_ids, order=order,
         )
     except Exception as e:
         _logger.warning("Error in _stage_conversation: %s", e)
