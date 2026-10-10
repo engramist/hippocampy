@@ -106,6 +106,41 @@ def _gateway(db) -> GraphGateway:
     return GraphGateway(db, REGISTRY)
 
 
+# B476: turn numbering. A turn's index is the number of Messages its session
+# already holds, read and the Message linked under one per-session lock, so
+# two notify_turn calls for the same session in this process cannot read the
+# same count. The lock is per (event loop, session): an asyncio.Lock must not
+# be shared across loops. The guarantee is within one process: indices are
+# assigned in link order, each is unique, and none is skipped. Another process
+# writing the same store concurrently (the daemon owns it in normal use) is
+# not covered, and deleting a session's Messages makes a later count reuse a
+# number -- the index orders turns, it is not an identity.
+_turn_locks: dict[tuple[int, str], asyncio.Lock] = {}
+
+
+def _session_turn_lock(session_id: str) -> asyncio.Lock:
+    key = (id(asyncio.get_running_loop()), session_id)
+    lock = _turn_locks.get(key)
+    if lock is None:
+        lock = _turn_locks[key] = asyncio.Lock()
+    return lock
+
+
+async def _next_turn_index(gw, session_id: str) -> int | None:
+    """B476: the count of Messages the session already holds, or None when
+    that cannot be read (capture must never fail over an ordinal)."""
+    try:
+        rows = await gw.run("capture.count_messages_in_session", sid=session_id)
+        row = rows[0] if rows else None
+        if row is None:
+            return 0
+        value = row.get("n") if hasattr(row, "get") else row[0]
+        return int(value or 0)
+    except Exception:
+        _logger.debug("B476: could not count messages in session %s", session_id, exc_info=True)
+        return None
+
+
 def _parse_occurred_at(value) -> str | None:
     """B472: an ISO 8601 time as a UTC ISO string (the form created_at is
     stored in, so the two compare as text), or None when absent or
@@ -345,14 +380,22 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
         except Exception:
             _logger.debug("compute_warm_frontier failed for session %s", session_id)
 
-    # Link Message → Session
+    # Link Message → Session, and number the turn (B476)
     if session_id != "unknown":
         gw = _gateway(db)
-        await gw.run(
-            "capture.link_message_sent_in_session",
-            session_id=session_id,
-            message_id=message_id,
-        )
+        async with _session_turn_lock(session_id):
+            turn_index = await _next_turn_index(gw, session_id)
+            await gw.run(
+                "capture.link_message_sent_in_session",
+                session_id=session_id,
+                message_id=message_id,
+            )
+            if turn_index is not None:
+                try:
+                    await gw.run("capture.set_message_turn_index",
+                                 message_id=message_id, turn_index=turn_index)
+                except Exception:
+                    _logger.exception("B476: failed to record turn_index for %s", message_id)
 
     # B192: Create FOLLOWED_BY edge from the previous message in the same session
     if session_id != "unknown":

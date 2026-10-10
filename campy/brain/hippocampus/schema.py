@@ -1908,6 +1908,11 @@ SCHEMA_MIGRATIONS: list[tuple[str, str, str]] = [
     # nullable: notify_turn without them is unchanged.
     ("Message", "speaker", "STRING"),
     ("Message", "occurred_at", "TIMESTAMP"),
+    # B476: the turn's position in its session (0-based count of Messages the
+    # session already held when it was captured), so a bundle can order two
+    # turns that carry the same speaker and timestamp. Nullable: stores that
+    # predate it, and turns captured without a session, have none.
+    ("Message", "turn_index", "INT64"),
 ]
 
 # Alias for backwards compatibility with module-level references

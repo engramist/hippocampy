@@ -143,6 +143,45 @@ CAPTURE_QUERIES = [
             """,
     ),
     NamedQuery(
+        name="capture.count_messages_in_session",
+        cypher="""
+        MATCH (m:Message)-[:SENT_IN]->(s:Session {session_id: $sid})
+        RETURN count(m) AS n
+        """,
+        params=("sid",),
+        mutating=False,
+        description=(
+            "B476: how many Messages a session already holds (archived "
+            "ones included) -- the next turn's index"
+        ),
+        sparql="""
+            SELECT (COUNT(?m) AS ?n) WHERE {
+                ?s a campy:Session ;
+                   campy:session_id ?sid .
+                ?m campy:SENT_IN ?s ;
+                   a campy:Message .
+            }
+            """,
+    ),
+    NamedQuery(
+        name="capture.set_message_turn_index",
+        cypher="""
+        MATCH (m:Message {message_id: $message_id})
+        SET m.turn_index = $turn_index
+        """,
+        params=("message_id", "turn_index"),
+        mutating=True,
+        description="B476: record a Message's position within its session",
+        sparql="""
+            INSERT {
+                ?m campy:turn_index ?turn_index .
+            }
+            WHERE {
+                BIND(IRI(CONCAT("https://campy.dev/id/Message/", ?message_id)) AS ?m)
+            }
+            """,
+    ),
+    NamedQuery(
         name="capture.link_message_sent_in_session",
         cypher="""
         MATCH (s:Session {session_id: $session_id}),

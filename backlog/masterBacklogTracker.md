@@ -94,6 +94,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B473 | Relation Noise on Chat: Invented Engineering Relations and Bare Endpoint Concepts | P1 | implemented (measurement pending) | TBD | TBD | - | backlog/B473.md |
 | B474 | Conversation Evidence in Rank Order, Not Oldest-First (M1.1) | P2 | implemented (merge gate pending: eval_gate replay on golden stores) | TBD | TBD | - | backlog/B474.md |
 | B475 | Answer Prompt: Cite or Abstain (M1.3) | P2 | implemented (merge gate pending: LoCoMo-10 adversarial + DMR, cite vs legacy) | TBD | TBD | - | backlog/B475.md |
+| B476 | Turn Ordinal and Near-Duplicate Collapse (M1.2) | P2 | implemented (merge gate pending: fresh DMR ingest, ordinal + collapse vs main) | TBD | TBD | - | backlog/B476.md |
 | B459 | Conversation Evidence Drops the Statements That Supersede the One It Found | P1 | fixed (real-model confirmed) | TBD | TBD | - | backlog/B459.md |
 | B458 | current_truth: Exact Identifier Match Loses to Near-Identical Notes (RRF Fusion) | P1 | fixed (round 2: identifiers rank first; real-model confirmed) | TBD | TBD | - | backlog/B458.md |
 | B457 | HTTP REST and Dashboard Routes Ignore the Caller's Workspace (Cross-Tenant Access in Multi-Tenant Mode) | P1 | fixed | TBD | TBD | - | backlog/B457.md |
