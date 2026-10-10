@@ -6,6 +6,7 @@ Triggered: >1 typed entity AND Step 1b found no relation.
 """
 
 import json
+import re
 
 # B468: these steps answer with one short JSON object.
 MAX_TOKENS = 256
@@ -25,6 +26,29 @@ TYPE_DEFINITIONS = (
     '- "A EXTENDS B": A builds on B\n'
     '- "A ALTERNATIVE_TO B": A and B are options for the same need'
 )
+
+
+# B473: the five types are choices, replacements, realizations and
+# extensions. A sentence with no such cue has none of them to state, and on
+# chat the model invented them anyway: a DMR store (R20a, 50 questions) had
+# 943 ALTERNATIVE_TO and 233 CHOSEN_OVER edges between things like "Mustang"
+# and "my car". The Loop asks Step 3b only when the sentence has a cue.
+_RELATION_CUE = re.compile(
+    r"\b(?:instead\s+of|rather\s+than|in\s+place\s+of|versus|vs\.?|alternatives?|"
+    r"cho(?:se|ose|osing|sen)|picked|selected|went\s+with|settled\s+on|opted|decided|decision|"
+    r"prefer(?:s|red|ring)?|replac\w*|supersed\w*|deprecat\w*|migrat\w*|switch(?:ed|ing|es)?|"
+    r"swap(?:ped|ping)?|upgrad\w*|downgrad\w*|retir\w*|phas(?:ed|ing)\s+out|"
+    r"implement\w*|extend\w*|extension|plugin|built\s+on|builds\s+on|based\s+on|on\s+top\s+of|"
+    r"wraps?|wrapper)\b"
+    # "moved/changed/ported X from A to B"
+    r"|\b(?:mov|chang|port|transition|convert)\w*\b[^.!?\n]*\bfrom\b[^.!?\n]*\bto\b",
+    re.IGNORECASE,
+)
+
+
+def has_relation_cue(text: str) -> bool:
+    """B473: whether a sentence could state one of SEMANTIC_TYPES."""
+    return bool(_RELATION_CUE.search(text or ""))
 
 
 def extract_semantic_relations(entities: list[dict], original_text: str,

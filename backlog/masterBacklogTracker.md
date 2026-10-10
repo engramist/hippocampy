@@ -90,7 +90,8 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B469 | Retire the Kùzu Leftovers: Tests and Cypher That Production Never Runs | P2 | ready | TBD | TBD | - | backlog/B469.md |
 | B470 | Common Query Words Must Not Double-Count Every Vector Hit in the Conversation Stage | P2 | complete (benchmark-confirmed: LoCoMo-10 0.347 -> 0.389, 3 runs each) | TBD | TBD | - | backlog/B470.md |
 | B471 | Recall of What the Assistant Said: the Conversation Stage Drops Every Assistant Turn | P2 | complete, option b (benchmark-confirmed: LongMemEval oracle 0.400 -> 0.571 with #286) | TBD | TBD | - | backlog/B471.md |
-| B472 | Source-Grounded Observations: Capture Who Did What, When, With Evidence | P1 | Phase 0 in progress (code audit done; store audit queued in R20) | TBD | TBD | - | backlog/B472.md |
+| B472 | Source-Grounded Observations: Capture Who Did What, When, With Evidence | P1 | Phases 1-2 implemented; Phase 3 designed (measurement pending: R21, R22) | TBD | TBD | - | backlog/B472.md |
+| B473 | Relation Noise on Chat: Invented Engineering Relations and Bare Endpoint Concepts | P1 | implemented (measurement pending) | TBD | TBD | - | backlog/B473.md |
 | B459 | Conversation Evidence Drops the Statements That Supersede the One It Found | P1 | fixed (real-model confirmed) | TBD | TBD | - | backlog/B459.md |
 | B458 | current_truth: Exact Identifier Match Loses to Near-Identical Notes (RRF Fusion) | P1 | fixed (round 2: identifiers rank first; real-model confirmed) | TBD | TBD | - | backlog/B458.md |
 | B457 | HTTP REST and Dashboard Routes Ignore the Caller's Workspace (Cross-Tenant Access in Multi-Tenant Mode) | P1 | fixed | TBD | TBD | - | backlog/B457.md |
