@@ -53,7 +53,8 @@ async def _pasta_chat(gw) -> None:
 
 
 async def _rows(gw, name: str, query: str, limit: int = 3) -> list[dict]:
-    return await gw.run(name, query_embedding=QUERY_EMB, query_text=query, limit=limit)
+    extra = {"order": "time"} if name == "thalamus.bundle_conversation" else {}
+    return await gw.run(name, query_embedding=QUERY_EMB, query_text=query, limit=limit, **extra)
 
 
 @pytest.mark.asyncio

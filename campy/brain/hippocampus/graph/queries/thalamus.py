@@ -1576,9 +1576,10 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                "WHERE (1 - array_cosine_similarity(m.embedding, $query_embedding)) < 0.70 "
                "RETURN m.text_raw as text, m.role as role, m.created_at as created_at "
                "ORDER BY m.created_at ASC LIMIT $limit",
-        params=("query_embedding", "query_text", "limit"),
+        params=("query_embedding", "query_text", "limit", "order"),
         mutating=False,
-        description="B454: relevant user statements (vector + FTS fusion) as bundle evidence",
+        description="B454: relevant user statements (vector + FTS fusion) as bundle evidence; "
+                    "`order` is 'rank' (best first) or 'time' (oldest first) -- B474",
         # No sparql= — Python handler in GraphGateway._bundle_conversation.
     ),
     NamedQuery(

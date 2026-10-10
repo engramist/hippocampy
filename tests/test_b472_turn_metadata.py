@@ -184,7 +184,7 @@ async def _chat(gw) -> None:
 async def test_conversation_rows_carry_speaker_and_occurred_time(gw):
     await _chat(gw)
     rows = await gw.run("thalamus.bundle_conversation", query_embedding=QUERY_EMB,
-                        query_text="Where does Caroline live?", limit=6)
+                        query_text="Where does Caroline live?", limit=6, order="time")
     by_text = {r["text"]: r for r in rows}
     austin = by_text["I live in Austin and love it."]
     assert austin["speaker"] == "Caroline"
@@ -199,7 +199,7 @@ async def test_conversation_rows_carry_speaker_and_occurred_time(gw):
 async def test_a_message_without_metadata_still_uses_created_at(gw):
     await _add(gw, 4, "We picked PostgreSQL for the main store.", 0.6, "2026-10-09T10:00:00+00:00")
     rows = await gw.run("thalamus.bundle_conversation", query_embedding=QUERY_EMB,
-                        query_text="Which database did we pick?", limit=6)
+                        query_text="Which database did we pick?", limit=6, order="time")
     assert rows and str(rows[0]["created_at"]).startswith("2026-10-09T10:00")
     assert rows[0].get("speaker") is None
 

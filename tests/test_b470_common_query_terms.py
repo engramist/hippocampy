@@ -58,7 +58,7 @@ class _Store:
 
 async def _bundle(gw, query: str) -> list[str]:
     rows = await gw.run("thalamus.bundle_conversation",
-                        query_embedding=QUERY_EMB, query_text=query, limit=6)
+                        query_embedding=QUERY_EMB, query_text=query, limit=6, order="time")
     return [r["text"] for r in rows]
 
 

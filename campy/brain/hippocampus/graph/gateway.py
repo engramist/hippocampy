@@ -344,6 +344,19 @@ def _materialize_rows(res: Any) -> Any:
     return res
 
 
+# B474: presentation order of the conversation stage's turns.
+CONVERSATION_ORDERS = ("rank", "time")
+_BAD_ORDER_WARNED: set[str] = set()
+
+
+def _warn_once_bad_conversation_order(value: str) -> None:
+    if value not in _BAD_ORDER_WARNED:
+        _BAD_ORDER_WARNED.add(value)
+        _logger.warning(
+            "[retrieval] conversation_order=%r is not one of %s; using 'time'",
+            value, CONVERSATION_ORDERS)
+
+
 class GraphGateway:
     """The chokepoint. Wraps a `KuzuClient` or `OxigraphClient` + `QueryRegistry`; `run()` is
     the only sanctioned way application code should reach the database."""
@@ -995,10 +1008,24 @@ class GraphGateway:
         user-role assertions (assistant text is capped/untrusted -- ISSUE-024 --
         and questions are not evidence, which also drops `ask`'s own captured
         question echoes), de-duplicates repeated text keeping the newest, and
-        returns the top `limit` in chronological order so a later statement
-        visibly supersedes an earlier one."""
+        returns the top `limit`.
+
+        B474: `order` picks the presentation order of those turns. "time" (the
+        default) is the B454 order: oldest first, so a later statement reads
+        after the one it supersedes. "rank" puts the best fused score first;
+        supersession then stays visible through the date stamp each turn
+        carries, and a B463 successor statement inherits its on-topic
+        predecessor's score, so on a tie it lands right after it. "rank" won
+        on a bundle-variant replay (R27) but was within noise on the code
+        gate (R29: DMR +3/-3, LoCoMo-10 +3/-1), so it stays opt-in until a
+        reranker (plan M2.1) makes rank more meaningful. Unknown values fall
+        back to "time"."""
         vs = self._vector_store
         limit = int(params.get("limit", 6))
+        order = str(params.get("order") or "time").lower()
+        if order not in CONVERSATION_ORDERS:
+            _warn_once_bad_conversation_order(order)
+            order = "time"
         qtext = (params.get("query_text") or "").strip()
         if limit <= 0:
             return []
@@ -1088,7 +1115,8 @@ class GraphGateway:
         except Exception:
             _logger.debug("_bundle_conversation successor bridge failed", exc_info=True)
         picked = sorted(newest.values(), key=lambda kv: -ranked.get(kv[1]["uri"], 0.0))[:limit]
-        picked.sort(key=lambda kv: kv[0])
+        if order == "time":
+            picked.sort(key=lambda kv: kv[0])
         return [
             RowDict({"text": v["text"], "role": "user", "created_at": v["created"],
                      "speaker": v.get("speaker"), "node_id": v["uri"], "node_type": "Message"})
