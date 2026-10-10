@@ -228,8 +228,8 @@ NODE_COLUMNS, NODE_PRIMARY_KEYS = _parse_node_schema()
 #
 # Exhaustive per docs/rdf-schema-mapping.md §4.2, covering every rel table
 # schema.py's `REL_TABLES` currently declares — see the module docstring's
-# reconciliation note above `_UNCLASSIFIED_ESCALATED` for why this is 110
-# tables, not the spec's snapshot count of 102 (schema.py has grown 8 more
+# reconciliation note above `_UNCLASSIFIED_ESCALATED` for why this is 112
+# tables, not the spec's snapshot count of 102 (schema.py has grown 10 more
 # rel tables since the spec's commit d3ef540, and one, CONTRADICTS, has two
 # colliding DDL statements — see below).
 #
@@ -237,7 +237,7 @@ NODE_COLUMNS, NODE_PRIMARY_KEYS = _parse_node_schema()
 #                Nothing to lose: repeated identical plain triples are
 #                idempotent under RDF set semantics, so no call-site
 #                analysis is needed for these — the schema itself proves it
-#                safe. 52 tables.
+#                safe. 54 tables (B472 Phase 3a: +EVIDENCED_BY, +OBSERVATION_ABOUT).
 # "star"       — at most one edge per (s,p,o), carrying properties.
 #                Confirmed (not guessed) via actual call sites: every
 #                writer for these tables uses Cypher `MERGE ... SET`
@@ -274,7 +274,7 @@ NODE_COLUMNS, NODE_PRIMARY_KEYS = _parse_node_schema()
 EdgeReification = TypingLiteral["plain", "star", "occurrence"]
 
 EDGE_REIFICATION: dict[str, EdgeReification] = {
-    # -- plain (52): property-free per schema.py REL_TABLES DDL -------------
+    # -- plain (54): property-free per schema.py REL_TABLES DDL -------------
     "ACTS_ON": "plain",
     "ANCHORED_ON_ENTITY": "plain",
     "ANCHORED_ON_GOAL": "plain",
@@ -311,6 +311,11 @@ EDGE_REIFICATION: dict[str, EdgeReification] = {
     "DOCUMENTS": "plain",
     "ESTABLISHED": "plain",
     "ESTABLISHED_IN": "plain",
+    # B472 Phase 3a: Observation -> Message. schema.py's DDL declares no
+    # properties (one edge per supporting turn; the evidence span lives on the
+    # Observation node), and the writer (observations.link_evidenced_by) is a
+    # MERGE, so a repeated link is a set-semantics no-op.
+    "EVIDENCED_BY": "plain",
     "GENERALIZES": "plain",
     # HAS_ALT_LABEL / HAS_PREF_LABEL / HAS_HIDDEN_LABEL: schema.py's DDL
     # carries no properties, even though two call sites (temporal_lobe.py,
@@ -327,6 +332,10 @@ EDGE_REIFICATION: dict[str, EdgeReification] = {
     "IN_WORKSPACE": "plain",
     "LEARNED": "plain",
     "NEXT_STEP": "plain",
+    # B472 Phase 3a: Observation -> Concept; property-free DDL, MERGE writer
+    # (observations.link_about_concept). The subject/object role is on the
+    # node (subject_id/object_id), not on the edge.
+    "OBSERVATION_ABOUT": "plain",
     "PLANNED_IN": "plain",
     "PRODUCED_HYPOTHESIS": "plain",
     "PRODUCED_LESSON": "plain",

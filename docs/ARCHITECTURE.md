@@ -741,6 +741,7 @@ When Step 4 classifies a Concept at >90% confidence as a specific artifact type,
 - `Message` / `DocumentExtract` (`byte_start`, `byte_end` or line ranges for provenance)
 - `Lesson` (`lesson_id`, `text_raw`, `embedding`, `domain`, `lesson_type`, `confidence`, `confidence_low`, `pathway_strength`, `archived`, `created_at`, `last_audited_at`, `stale_flagged`, `orphan_flagged`, `trigger_pattern STRING`, `trigger_hook_type STRING`, `trigger_tool STRING`, `trigger_project_scope STRING`) — trigger columns enable Layer 2 associative hooks and are auto-populated by Layer 3 Step 4b
 - `Plan`, `PlanStep` — see Active Agent System section above
+- `Observation` (B472 Phase 3a) — a typed, source-grounded claim a speaker made in a user turn: `subject_text`/`subject_id`, `predicate` (controlled set), `object_text`/`object_id`, `time_text`/`time_start`/`time_end`, `polarity`, `confidence`, and the supporting quote (`evidence_ref`, `evidence_start`, `evidence_end`, `evidence_text`, verified verbatim against the Message). A `PROVENANCE_TABLES` member (authority `earned`). Written only by `campy/brain/hippocampus/observations.py::record_observation`; edges `OBSERVATION_ABOUT` (Observation→Concept) and `EVIDENCED_BY` (Observation→Message). Nothing produces or reads Observations yet; `[observations] enabled = false`. Design: `backlog/plans/B-472-phase3-observations.md`.
 
 **External Consumer Evidence Nodes**:
 - `ArcRun`, `ArcTaskResult`, `ArcArtifact`, `ArcEvent` — durable records created by `ingest_arc_artifacts` from sibling `ARC_AGI` run artifacts
@@ -795,6 +796,10 @@ When Step 4 classifies a Concept at >90% confidence as a specific artifact type,
 # Document provenance
 (DocumentExtract)-[DERIVED_FROM]->(Document)
 (Message | DocumentExtract)-[ESTABLISHED]->(Decision | Constraint)
+
+# Observations (B472 Phase 3a)
+(Observation)-[OBSERVATION_ABOUT]->(Concept)
+(Observation)-[EVIDENCED_BY]->(Message)
 
 # Dataset provenance and linkage (B249)
 (Dataset)-[DATASET_DERIVED_FROM]->(Document)
@@ -1301,7 +1306,7 @@ Four columns on every table in `schema.PROVENANCE_TABLES`:
 facts: `Concept`, `Decision`, `Constraint`, `Requirement`, `ActionItem`, `GlobalConstraint`,
 `GlobalPreference`, `Lesson`, `Procedure`, `KnowledgeGap`, `Plan`, `PlanStep`, `Hypothesis`,
 `ActionFact`, `ActionEffect`, `VictoryCondition`, `Rule`, `Transition`, `DocumentExtract`,
-`WorkSummary`, `WorkArtifact`) + Tier 2 (learned/inferred Arc\* patterns: `ArcMechanic`,
+`WorkSummary`, `WorkArtifact`, `Observation`) + Tier 2 (learned/inferred Arc\* patterns: `ArcMechanic`,
 `ArcActionPattern`, `ArcEffectPattern`, `ArcPrecondition`, `ArcFailureMode`,
 `ArcRecoveryPolicy`, `ArcWorldModelStep`) table set. Structural/ontology/runtime-record
 tables (`Session`, `Message`, `Document`, `MainQuest`, `ArcRun`, `TaskGraph`, ...) do **not**
@@ -1830,10 +1835,10 @@ dedup happens on a new additive `content_hash` column instead.
 ### `content_hash` column
 
 One column, added to `schema.CONTENT_HASH_TABLES` — a **narrower** set than B312/B313's
-`PROVENANCE_TABLES`: the 21 Tier 1 claimed/observed-fact tables only (`Concept`, `Decision`,
+`PROVENANCE_TABLES`: the 22 Tier 1 claimed/observed-fact tables only (`Concept`, `Decision`,
 `Constraint`, `Requirement`, `ActionItem`, `GlobalConstraint`, `GlobalPreference`, `Lesson`,
 `Procedure`, `KnowledgeGap`, `Plan`, `PlanStep`, `Hypothesis`, `ActionFact`, `ActionEffect`,
-`VictoryCondition`, `Rule`, `Transition`, `DocumentExtract`, `WorkSummary`, `WorkArtifact`).
+`VictoryCondition`, `Rule`, `Transition`, `DocumentExtract`, `WorkSummary`, `WorkArtifact`, `Observation`).
 The Tier 2 Arc\* learned-pattern tables are deliberately excluded — this card only wires
 dedup-on-write into `capture.py`/`lessons.py`, so extending the column to tables nothing
 writes it to yet would be dead schema. `CONTENT_HASH_TABLES` is computed as "every

@@ -69,6 +69,16 @@ _DEFAULT_CONFIG = {
     "loop": {
         "max_co_occurrence_pairs": 45,
     },
+    # B472 Phase 3: source-grounded Observations. Ships disabled until a
+    # reader exists (Phase 5); 3a only declares the keys. The worker and the
+    # LLM route (3b/3c) are the only consumers of the rest.
+    "observations": {
+        "enabled": False,
+        "llm_enabled": True,       # only read when enabled
+        "llm_batch_turns": 20,
+        "idle_flush_seconds": 5,
+        "max_turn_chars": 600,
+    },
     "compression": {
         "strategy": "two_lane",       # two_lane (Protected Lane zero loss + Bulk Lane lossy)
         "budget_tokens": 4000,        # threshold above which pressure-relief compression triggers
@@ -80,6 +90,10 @@ _DEFAULT_CONFIG = {
     # B304: ask harness variant toggle. "H0" = baseline, unchanged behavior.
     "ask": {
         "harness_variant": "H0",
+        # M1.3 (B475): "cite" = answer only from the lines shown, quote the
+        # line used, abstain when none answers; "legacy" = the pre-M1.3
+        # "NOT empty ... must be used" instruction.
+        "answer_style": "cite",
     },
     # B325: remote MCP transport bind address + auth mode, explicit and
     # guarded (see campy/brain_daemon.py::_enforce_bind_guard). Defaults
