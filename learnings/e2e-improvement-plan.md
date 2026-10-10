@@ -1,264 +1,554 @@
-# End-to-end plan: improving Campy and its benchmark scores
+# End-to-end plan and runbook: improving Campy and its benchmark scores
 
-**Why this exists.** Work so far has advanced one phase at a time and
-stopped after each, waiting for a "go". This plan describes the whole path
-from where Campy is now to where it should be. It fixes the order and the
-gates, and states the decision rules in advance, so work can keep running
-without a stop between steps. It builds on `2026-10-benchmark-campaign.md`
-(read that first).
+**Audience:** an agent (e.g. a Sonnet session) that has to pick this work up
+cold and run it to the end without stopping between phases. Everything
+needed is here or linked. Read, in order:
 
-**Owner of the loop:** the cloud agent drives and merges; the local agent
-runs everything that needs real models; the user sets direction and can
-interrupt at any point. Standing permission to merge when a gate passes is
-assumed (already granted).
+1. `learnings/2026-10-summary.md` — what we know, in one page.
+2. This file, top to bottom, once.
+3. `learnings/e2e-status.md` — where the work is right now. **Update it
+   every time you finish a step.** It is how the next agent resumes.
+4. `learnings/2026-10-benchmark-campaign.md` — the evidence, when you need
+   the details behind a claim.
 
----
-
-## 1. The goal, stated as numbers
-
-Campy's claim is that memory beats stuffing the context and beats naive
-retrieval. The end state proves that on public benchmarks with the same
-model:
-
-| Suite | Now | Milestone target | End target | Why that target |
-|---|---|---|---|---|
-| LoCoMo-10 (judge) | 0.396 | 0.45 | ≥ full context (0.48) | match the model reading everything |
-| LoCoMo-10 multi-hop | 0–2 / 12 | 4 / 12 | 6 / 12 | full context gets 6 |
-| LoCoMo-10 adversarial abstain | 0.00–0.25 | 0.25 | ≥ 0.33 | Campy's one clear category win must hold |
-| DMR (judge) | 0.500 (fields) | 0.62 | ≥ 0.70 | recover text-mode, then close half the full-context gap (0.80) |
-| LongMemEval oracle | 0.600 | 0.63 | ≥ 0.66 | beat naive RAG (0.629) clearly |
-| LongMemEval s (recall) | 0.139 | 0.40 | ≥ 0.55 | close to oracle recall (0.61) |
-| LongMemEval s (accuracy, 30 q) | n/a (0.429 on 7) | baseline set | > full context | where memory should beat stuffing |
-| Fixture regression | 28/28, 0 INVERTED | hold | hold | never regress |
-
-The headline the project wants to publish: **"With the same small model,
-Campy beats naive RAG everywhere and beats full context on long
-histories."** Every milestone moves toward that sentence.
+Repository rules still apply: `CLAUDE.md`, `docs/ARCHITECTURE.md`,
+`docs/ecosystem-rules.md` (notably **no shadow stores**: the graph is the
+single source of truth).
 
 ---
 
-## 2. The target architecture (what "end to end" means)
+## Part A — Goal
 
-The pipeline has five stages. Most past work tuned one stage in isolation;
-the plan treats them as one system, with a measurement at every boundary.
+### A.1 The sentence we want to be able to publish
 
-```
-WRITE                                                 READ
-turn ──► 1 Capture ──► 2 Consolidate ──► store ──► 3 Retrieve ──► 4 Pack ──► 5 Answer
-         speaker,       entities,                    candidates,     evidence     prompt,
-         occurred_at,   observations,                rerank,         order,       cite or
-         session,       supersession                 session-aware   dedup,       abstain
-         turn index     edges                                        budget
-   measured by:  graph audit        evidence recall@k      bundle recall   accuracy, abstention
-```
+> "With the same small answering model, Campy beats naive RAG on every
+> suite and beats reading the full history on long histories."
 
-1. **Capture** (done, B472 Phase 1/1b): clean text plus speaker,
-   occurred_at and session as fields; the speaker embedded with the text.
-   Add a **turn ordinal within the session**, so turns that share a
-   timestamp (DMR) can be told apart and ordered.
-2. **Consolidate** (B472 Phase 2, B473 done; Phase 3 next): entities
-   resolved, no invented relations, and **source-grounded observations**:
-   who did/said/decided what, when, with a pointer to the evidence turn.
-   This is what the semantic section and multi-hop should draw on.
-3. **Retrieve**: candidates from three planes — turns (vector + FTS, as
-   now), observations (new), and graph neighbours of the entities the
-   question names (new, for multi-hop). Then **rerank** the fused
-   candidates with a cross-encoder or LLM scorer instead of relying on
-   reciprocal rank alone. For long histories, a **session prefilter**
-   (choose the few sessions most likely to hold the answer, then rank
-   within them).
-4. **Pack**: decide which evidence the model sees and how. Best-first or
-   chronological within a clear structure; near-duplicates collapsed; an
-   adaptive cutoff (stop when scores drop off) instead of a fixed six; each
-   item stamped `[speaker, date, session n, turn k]`.
-5. **Answer**: a prompt that asks the model to quote the evidence it uses
-   and to abstain when none supports an answer. Calibrate the "sections are
-   NOT empty" instruction, which currently pushes the model to answer
-   adversarial questions.
+### A.2 Targets
+
+All scores are the LLM-judge accuracy from campy-benchmarks with
+answering model `llama3.1:8b` and judge `gemma4:26b`, unless stated.
+
+| Suite (subset) | Now | M1 exit | M2 exit | M3/M4 exit | End target |
+|---|---|---|---|---|---|
+| LoCoMo-10 conv-26, 60 q | 0.396 | 0.42 | 0.45 | 0.47 | ≥ 0.48 (full history) |
+| LoCoMo-10 multi-hop (of 12) | 0–2 | hold | hold | 4 → 6 | 6 |
+| LoCoMo-10 adversarial abstention | 0.00–0.25 | ≥ 0.25 | ≥ 0.25 | ≥ 0.25 | ≥ 0.33 |
+| DMR, 50 q, fields mode | 0.500 | 0.62 | 0.64 | 0.66 | ≥ 0.70 |
+| LongMemEval oracle, 35 q | 0.600 | hold | 0.62 | 0.63 | ≥ 0.66 |
+| LongMemEval s evidence recall | 0.139 | hold | ≥ 0.40 | ≥ 0.45 | ≥ 0.55 |
+| LongMemEval s accuracy, 30 q | baseline from R20d | hold | +0.05 | +0.10 | > full history |
+| Fixture (LoCoMo fixture judge, INVERTED edges) | 28/28, 0 | hold | hold | hold | hold |
+| `ask` latency (p50) | baseline from M0 | ≤ 1.5× | ≤ 2× | ≤ 2× | ≤ 2× |
+
+"hold" = must not drop by more than the noise floor (§C.4).
 
 ---
 
-## 3. The evaluation system (built first, used by everything after)
+## Part B — Ground truth: repos, people, environment, conventions
 
-The plan only runs unattended if every change has an automatic, cheap,
-trustworthy verdict.
+### B.1 Repositories
 
-### 3.1 Three tiers
-
-| Tier | What | Time | When |
+| Repo | Role | Default branch | Notes |
 |---|---|---|---|
-| **T0 replay** | Read-path changes evaluated on **frozen golden stores** with `diag_answer_replay.py` (and the fusion replays), judged | 30–90 min | every read-path PR, before merge |
-| **T1 fixtures** | LoCoMo fixture 28/28, 0 INVERTED; unit tests; spaCy tests | minutes (CI) | every PR |
-| **T2 full runs** | Fresh ingestion: DMR 50, LoCoMo-10 60, LME oracle 35, LME s 30, with `--keep-store` and graph audit | 3–15 h | every write-path PR before merge; nightly on main |
+| `engramist/hippocampy` | Campy itself (daemon, memory, retrieval) | `main` | CI: pytest (with `en_core_web_md`), CodeQL, Semgrep + pip-audit, build-and-boot, ratchet scripts |
+| `engramist/campy-benchmarks` | Benchmark harness, datasets, diagnostics | `master` | **No CI.** Every change must be checked locally (self-checks `check_*.py`) |
 
-Read-path changes (retrieval, rerank, pack, prompt) need only T0 + T1.
-Write-path changes (capture, consolidation, observations) need T2.
+Other agents work in hippocampy too (including spaCy work). Never
+overwrite their changes; merge, don't force.
 
-### 3.2 Golden stores and splits
+### B.2 Who does what
 
-- Freeze the kept stores from R24 (DMR 50 + LoCoMo-10 conv-26) and from the
-  next LME s run as **golden stores**. Regenerate them only when a
-  write-path change merges (the new T2 run's stores become the new golden
-  set).
-- **Dev / held-out split.** Tune only on the dev split; a change merges
-  only if the held-out split does not regress.
-  - DMR: dev = the current 50; held-out = 50 more (questions 50–99).
-  - LoCoMo-10: dev = conv-26; held-out = a second conversation.
-  - LongMemEval: oracle stays a check; s is the scale test.
+| Actor | Can | Cannot |
+|---|---|---|
+| **You (cloud agent)** | read/write both repos, run unit tests, open/merge PRs, post on GitHub | run Ollama or real models; download embedding/spaCy models (blocked); touch the user's machine |
+| **Local agent** (the user's machine) | run real benchmarks (GPU, Ollama, `llama3.1:8b`, `gemma4:26b`), keep stores, run diagnostics, push results to its `local/results` branch | — (it follows numbered requests) |
+| **User** | sets direction, can interrupt | — should not be asked "may I continue?" |
 
-### 3.3 The gate (applied automatically)
+Standing permissions from the user: **merge your own PRs when the gate
+passes**, without waiting. Be honest, push back, no yes-man.
 
-A change passes when, on the held-out split and the other suites:
+### B.3 Talking to the local agent (engramist/hippocampy#278)
 
-- no suite drops by more than its **noise floor** (measured once: 3 repeat
-  runs on main; expected ~±4 points at n=50–60); and
-- the paired per-question comparison shows more gained than lost on the
-  targeted suite; and
-- the fixtures stay 28/28 with 0 INVERTED.
+- Post a comment headed exactly `## From \`user-bd\``.
+- Number every request: `R28`, `R29`, … (R27 was the last used on
+  2026-10-10; check the thread for the latest number before posting).
+- Each request contains: what and why in 2–3 lines; the **exact commit
+  pins** for both repos; **exact zsh commands** (no `#` comment lines, use
+  `git switch --detach origin/<branch>`); always `--isolated`; what to post
+  back (which tables, which ids); and the queue order.
+- Its replies are headed `### From the local agent to \`user-bd\``. They
+  include a `local/results` commit and file names.
+- If it is silent for > 2 h with work queued, re-post the request as a new
+  number and say why. It has missed requests twice through its own filter
+  bugs.
+- End every GitHub comment with:
 
-The verdict is posted as a table on #278 and the scorecard is updated.
+  ```
+  ---
+  _Generated by [Claude Code](https://claude.ai/code)_
+  ```
 
-### 3.4 Answer-model ablation (once, early)
+Request template:
 
-Re-ask the golden stores with a stronger answering model (same bundles) to
-learn how much of the gap is the 8b model. If a stronger model closes most
-of the gap, prioritise pack/answer work; if not, retrieval and
-consolidation.
+````markdown
+## From `user-bd`
+
+**R<n>: <one-line purpose>.** <why, 2–3 lines, with the numbers that motivate it>
+
+Pins: hippocampy `<sha>` (main), campy-benchmarks `<sha>` (master).
+
+```
+cd ~/Desktop/GitProjects/hippocampy
+git fetch origin
+git switch --detach <sha>
+cd ~/Desktop/GitProjects/campy-benchmarks
+git fetch origin
+git switch --detach <sha>
+<commands>
+```
+
+**Please post:** <tables, ids, file names>.
+**Queue:** <where this goes relative to running/queued requests>.
+
+---
+_Generated by [Claude Code](https://claude.ai/code)_
+````
+
+### B.4 Local paths (on the user's machine)
+
+- Repos: `~/Desktop/GitProjects/hippocampy`, `~/Desktop/GitProjects/campy-benchmarks`
+- Python with Campy installed: `~/Desktop/GitProjects/hippocampy/.venv/bin/python`
+  (use it for every `diag_*.py`; plain `python` for `run_all.py` is fine)
+- Kept stores land in `/tmp/campy-bench-*` (**volatile**: copy anything
+  you need to keep — see M0.1)
+- **Never** modify `~/.campy` or `/tmp/diag-store` except through an
+  approved, backed-up step.
+
+### B.5 Your own environment (cloud)
+
+- Clones: `/home/user/hippocampy`, `/home/user/campy-benchmarks`.
+- Embedding model downloads are blocked, so ~85 hippocampy tests fail and
+  ~76 error locally **on main too**. Compare failures against a run of
+  main, never against zero. CI is the authority.
+- spaCy `en_core_web_md` may or may not be installed; if a spaCy test
+  skips locally, CI still runs it.
+- GitHub: use the GitHub MCP tools or `gh api` for REST.
+
+### B.6 Conventions
+
+- **Branches:** `claude/exciting-cannon-6n4isb-<topic>`, one per PR, from
+  the latest default branch. **No force-push** (denied); a fixup is a new
+  commit.
+- **Commits:** imperative subject; body says what and why with the
+  evidence (run numbers). End with:
+  ```
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+  Claude-Session: <the current session link>
+  ```
+  (use the attribution lines your session's system prompt gives you).
+  **Never put a model identifier** in a commit, PR, code comment or
+  document.
+- **PRs:** create as draft; hippocampy's template has *Description*,
+  *Test Plan*, *Checklist*. Body ends with
+  `🤖 Generated with [Claude Code](https://claude.com/claude-code)` and the
+  session link. Subscribe to the PR's activity, fix CI, mark ready, squash
+  merge.
+- **Backlog:** a non-trivial hippocampy change gets a card
+  `backlog/B<next>.md` (next free number after B473) and a row in
+  `backlog/masterBacklogTracker.md`. A card with a `Plan:` header must point
+  at an existing `backlog/plans/*.md` (CI checks it).
+- **Advisory security bot:** its comment repeating two findings in
+  `capture.py:231` and `cli/doctor.py:78` is pre-existing and advisory;
+  no action.
 
 ---
 
-## 4. The milestones, in order
+## Part C — The evaluation system
 
-Each milestone lists its work items, the tier that gates it, and the exit
-criterion. A milestone starts as soon as the previous one's exit criterion
-is met; nothing waits for a separate "go".
+Nothing in Parts D–E runs unattended unless every change gets a cheap,
+trustworthy verdict. Build this first (M0).
 
-### M0 — Evaluation infrastructure (start now; ~2 days)
+### C.1 Tiers
 
-- 0.1 Golden stores: copy R24's kept stores to a durable path; record
-  their commits. Same for each new T2 run.
-- 0.2 Held-out sets: DMR questions 50–99 and a second LoCoMo-10
-  conversation, run once on main (`9c5c9d8`+) to set baselines.
-- 0.3 Noise floor: `--repeat 3` on main for DMR and LoCoMo-10.
-- 0.4 One command per tier: `make eval-read` (T0 replay on golden stores,
-  judged, paired diff vs main) and `make eval-write` (T2), both producing a
-  standard summary table.
-- 0.5 Answer-model ablation (§3.4).
-- 0.6 Finish R27 and R20d (in progress).
+| Tier | What | Runs where | Time | Required for |
+|---|---|---|---|---|
+| **T0 replay** | Re-ask the questions on **frozen golden stores** through `run_ask` with the branch's code; judge; paired diff against main | local agent | 30–90 min | every **read-path** change (retrieve, pack, prompt) |
+| **T1 tests** | hippocampy CI; campy-benchmarks `check_*.py`; LoCoMo fixture (28/28, 0 INVERTED) | CI / cloud / local | minutes | every change |
+| **T2 full run** | Fresh ingestion and answering; `--keep-store`; graph audit | local agent | 3–15 h | every **write-path** change (capture, consolidation, observations); nightly on main once M5 starts |
 
-**Exit:** the gate table can be produced for any branch with one command
-per tier.
+Read path: `campy/brain/thalamus/bundle_compiler.py`,
+`campy/brain/thalamus/ask.py`,
+`campy/brain/hippocampus/graph/gateway.py` (`_bundle_*`), retrieval config.
+Write path: `campy/brain/thalamus/tools/capture.py`,
+`campy/brain/temporal_lobe/loop/*`, schema, queries that create nodes.
 
-### M1 — Pack and answer: use the evidence that already arrives (~3 days)
+### C.2 Golden stores
 
-Retrieval now often brings the right turn (DMR recall 0.58); the model
-does not use it.
+A golden store is a kept store from a T2 run plus its result JSON, copied
+to a durable place and never written to (replays work on copies).
 
-- 1.1 Evidence order and count from R27's result: `rankorder`, a real
-  top-k, or an adaptive score cutoff.
-- 1.2 Turn ordinal in the stamp (`[Speaker 1, 2022-12-14, s3 t5]`); collapse
-  near-duplicate turns by the same speaker in the same session.
-- 1.3 Answer prompt: quote the supporting line, abstain if none; revisit
-  the "NOT empty" instruction (LoCoMo-10 adversarial fell to 0/12).
-- 1.4 Judge robustness: accept pronoun-flipped persona answers (a judge
-  prompt note for DMR's "you" framing) and re-judge disagreements twice.
+- Location (local machine): `~/campy-golden/<run-id>/` holding the result
+  JSON and one subdirectory per kept store.
+- Current candidates: R24a (LoCoMo-10, `/tmp/campy-bench-_g7_nemi`), R24b
+  (DMR, 50 stores, paths in the result JSON's `store` fields), R20a/R20c
+  (text-mode references).
+- Regenerate after every merged write-path change: the merging T2 run's
+  stores become the new golden set (keep the old one for reference).
 
-**Gate:** T0 + T1. **Exit:** DMR ≥ 0.62 in fields mode; LoCoMo-10 ≥ 0.42
-with adversarial ≥ 0.25; held-out no worse.
+### C.3 Splits
 
-### M2 — Retrieval ranking (~1 week)
+- **Dev** (tune on these): DMR questions 0–49; LoCoMo-10 conv-26 (first
+  conversation); LongMemEval oracle 35; LongMemEval s 30 (R20d's set).
+- **Held-out** (never tune on these; check every gate): DMR questions
+  50–99; a second LoCoMo-10 conversation (the loader's second sample).
+- The harness can only take the *first N* questions today
+  (`dmr/dataset.py:load_questions(max_questions)`,
+  `locomo10/dataset.py:load_conversations(conversations)`). M0.2 adds
+  selection options.
 
-- 2.1 Cross-encoder reranker over the top ~50 fused candidates (a small
-  local model; measure latency). This targets R8's median evidence rank of
-  28.
-- 2.2 Session prefilter for long histories (`sess3`/`sess5`/`gold` from
-  R20d tell how much it can win).
-- 2.3 Query understanding: extract named speakers, entities and time
-  expressions from the question and use them as filters or boosts (DMR
-  names the speaker; LoCoMo-10 temporal questions name dates).
-- 2.4 Re-tune the 0.30 similarity floor and RRF only after 2.1, on dev,
-  checked on held-out.
+### C.4 Noise floor
 
-**Gate:** T0 on DMR, LoCoMo-10 and LME s golden stores + T1. **Exit:**
-LoCoMo-10 evidence recall ≥ 0.60; LME s recall ≥ 0.40; accuracy not down
-anywhere.
+Measured in M0.3 from three repeat runs on main. Until then assume ±4
+points (≈2 questions at n=50–60). A change is **real** only if:
 
-### M3 — Observations (B472 Phase 3; ~1–2 weeks)
+- the paired per-question diff on the target suite has gained − lost ≥ 3,
+  **and**
+- the suite mean moves by more than the noise floor, **or** the same
+  direction appears on the held-out split.
 
-As designed in `backlog/plans/B-472-phase3-observations.md`: a new
-Observation table, a dedicated worker, user turns only, shipped disabled.
+### C.5 The gate (what decides a merge)
 
-- 3a schema and write API (no behaviour change);
-- 3b extraction worker behind a flag;
-- 3c observations as a retrieval plane (semantic section fed from them);
-- 3d enable by default once the gate passes.
+A change passes when **all** hold:
 
-**Gate:** T2 for 3b–3d (the write path changes), plus T0 for 3c. **Exit:**
-LoCoMo-10 multi-hop ≥ 4/12; LME oracle ≥ 0.63; the semantic section is
-present for most questions again and helps (a `nosem` replay shows a loss
-without it).
+1. T1 green (CI for hippocampy; self-checks for campy-benchmarks; fixture
+   28/28, 0 INVERTED for any change touching consolidation or retrieval).
+2. On its target suite (dev): real improvement per C.4.
+3. On every other suite and on held-out: no drop beyond the noise floor.
+4. `ask` p50 latency within the milestone's budget (A.2).
 
-### M4 — Multi-hop and temporal reasoning (~1 week)
+Post the gate table on #278 and in the PR description:
 
-- 4.1 Graph expansion: from the question's entities to their observations
-  and one hop further; pack the chain together.
-- 4.2 Time normalisation: resolve relative phrases ("last Friday") against
-  `occurred_at` at capture, so temporal questions compare dates.
-- 4.3 Optional two-step answering for multi-hop questions: retrieve,
-  extract intermediate facts, retrieve again.
+```
+| suite (split) | main | branch | Δ | gained | lost | noise | verdict |
+```
 
-**Gate:** T0 + T2 as applicable. **Exit:** multi-hop ≥ 6/12; temporal
-holds ≥ 6/12.
+### C.6 Tools (campy-benchmarks)
 
-### M5 — Scale, breadth and publication (~1 week, then continuous)
+| Tool | Command (local agent; `PY=~/Desktop/GitProjects/hippocampy/.venv/bin/python`) |
+|---|---|
+| Full run | `python run_all.py --baseline --isolated --keep-store --turn-metadata fields --suite dmr --dmr-questions 50 --judge-model gemma4:26b --out results/<id>.json` |
+| LoCoMo-10 | `... --suite locomo10 --locomo10-conversations 1 --locomo10-max-questions 60 ...` |
+| LongMemEval | `... --suite longmemeval --lme-variant oracle\|s --lme-questions N ...` |
+| Baselines | add `--baselines no_memory,full_context,naive_rag` (or `--baselines-only`) |
+| Repeats | `--repeat 3` |
+| Answer replay (T0) | `$PY diag_answer_replay.py <results.json> [--store <dir> for LoCoMo-10] --judge-model gemma4:26b --variants <v> --show --out <x>.json` |
+| Retrieval replay | `$PY diag_locomo10_fusion.py`, `$PY diag_lme_fusion.py <results.json> --show` |
+| Graph audit | `$PY diag_graph_audit.py <store dirs or results.json> --json <x>.json` |
+| Supersession edges | `$PY diag_supersession_edges.py <store>` |
+| Self-checks | `python check_turn_metadata.py`, `python check_own_history_baselines.py`, `python check_scorers.py`, … |
 
-- 5.1 LoCoMo-10 on all ten conversations; DMR on all questions; LME s on
-  ≥ 100 questions.
-- 5.2 Three seeds per headline number, with ranges.
-- 5.3 Publish `RESULTS.md` and the scorecard with baselines and the answer
-  model named; write up the method.
-- 5.4 Nightly T2 on main, posting regressions automatically.
-
-**Exit:** the headline sentence in §1 is true and published with ranges.
+`diag_answer_replay.py` today replays *variants of the bundle* with main's
+code. M0.4 extends it to replay **a branch's code** against main on the
+same stores (that is what T0 needs).
 
 ---
 
-## 5. Decision rules (so nothing waits for a person)
+## Part D — The target pipeline and where each stage lives
+
+```
+WRITE                                                   READ
+turn ─► 1 Capture ─► 2 Consolidate ─► store ─► 3 Retrieve ─► 4 Pack ─► 5 Answer
+```
+
+| Stage | Today | Code |
+|---|---|---|
+| 1 Capture | clean text; `speaker`, `occurred_at` fields; speaker embedded with the text (B472 P1/1b) | `campy/brain/thalamus/tools/capture.py` (`notify_turn`, `embed_text` at ~L247); `graph/queries/capture.py` (`capture.set_message_source`); `brain_daemon._loop_worker` (accepts 4/5/6-tuples) |
+| 2 Consolidate | spaCy NER + noun chunks → normalization (P2) → gist (Step 2) → schema.org (Step 3) → relations (Step 1b syntactic; Step 3b LLM, cue-gated, endpoints must exist — B473) | `campy/brain/temporal_lobe/loop/orchestrator.py` (`run_loop`, `_store_concept`, `_store_relation`, `_seed_speaker_concept`, `_attach_alt_label`), `step1_ner.py`, `step1b_relations.py`, `step3b_relations.py` |
+| 3 Retrieve | conversation stage: vector (floor 0.30, echo cutoff 0.985) + FTS (B470 query) fused by RRF k=60, user turns only, B459 lexical gate, B463 successor bridge, top `conversation_limit` (6) **then sorted oldest first**; plus exact_fact, semantic, assistant_said (B471), graph stages | `gateway.py` `_bundle_conversation` (~L989), `_lexical_query` (~L1165), `_successor_statements` (~L1224); `bundle_compiler.py` `compile_bundle` (L162), `_stage_conversation` (L605), `_stage_semantic_context` (L428) |
+| 4 Pack | each turn stamped `[speaker, YYYY-MM-DD HH:MM] text`; sections rendered with boundary tags | `bundle_compiler.py` L631 (stamp); `ask.py` `_bundle_to_prompt` (L123) |
+| 5 Answer | system prompt "use only the provided memory context…"; when any section has content the prompt adds "The sections below are NOT empty … must be used" (ask.py ~L173) | `ask.py` `run_ask` (L287), `_ASK_SYSTEM_PROMPT` (L188) |
+
+Config knobs: `[retrieval] conversation_limit` (6), `assistant_words_limit` (3).
+
+---
+
+## Part E — Milestones and work items
+
+Each item: **Why** (evidence) · **Do** (files, approach) · **Test** (T1) ·
+**Measure** (T0/T2 request) · **Done when**. Items within a milestone can
+run in parallel where the local agent's GPU allows; the GPU is the
+bottleneck, so keep its queue full.
+
+### M0 — Evaluation infrastructure (start immediately)
+
+**M0.1 Preserve golden stores.**
+Why: R20/R24 stores live in `/tmp` and vanish on reboot; every replay
+depends on them.
+Do: request (R-next) the local agent to copy R20a, R20c, R24a, R24b result
+JSONs and stores to `~/campy-golden/<run-id>/`, rewriting `store` paths in
+a copy of each result JSON, and to post the directory listing.
+Done when: listing posted; record paths in `e2e-status.md`.
+
+**M0.2 Question selection for held-out splits (campy-benchmarks).**
+Do: add `--dmr-offset N` (skip the first N records) and
+`--locomo10-conversation-ids <ids>` (pick samples by `sample_id`) to
+`run_all.py`, threaded into `dmr/dataset.py:load_questions` and
+`locomo10/dataset.py:load_conversations`; record the selection in the
+result's `dataset.options` so `report.py` keeps runs apart. Add cases to
+`check_dmr.py` / `check_locomo10.py`.
+Measure: request held-out baseline runs on main: DMR offset 50 count 50;
+LoCoMo-10 the second conversation (60 q), both `--keep-store`, with
+baselines. These become golden stores too.
+Done when: merged; held-out numbers recorded.
+
+**M0.3 Noise floor.**
+Do: request `--repeat 3` on main for DMR dev (50) and LoCoMo-10 dev (60).
+Record min–max per suite as the floor. Also record `ask` p50/p95 latency
+(in the result JSON per question: `latency_ms`).
+Done when: floor recorded in `e2e-status.md`.
+
+**M0.4 Branch replay (`diag_answer_replay.py --code`).**
+Why: T0 must compare *code*, not only bundle variants.
+Do: the replay already runs `run_ask` in a subprocess with
+`CAMPY_HOME=<copy>`. Add `--hippocampy <path>` (default: whatever is
+importable) so the subprocess runs with `PYTHONPATH=<path>`; the local
+agent keeps two worktrees (main and the branch). Add `eval_gate.py` that:
+runs the replay for main and branch on the same golden stores; judges
+both; prints the C.5 table (Δ, gained, lost) and writes JSON. Test it with
+fakes as `diag_answer_replay` was tested (a fake bundle and LLM where the
+expected answer order is known).
+Done when: one command produces the gate table for any branch.
+
+**M0.5 Answer-model ablation.**
+Why: tells how much of the gap is the 8b model, which orders M1 vs M2.
+Do: add `--llm-model` to the replay (overrides `[llm].model` in the copied
+store's `config.toml`); request a replay of DMR dev and LoCoMo-10 dev
+golden stores with the strongest model the local machine runs well (ask
+the local agent which; e.g. `qwen3:8b` is installed, larger if available).
+Decision: if the stronger model gains ≥ 10 points with the same bundles,
+do M1 fully before M2; otherwise start M2.1 in parallel with M1.
+
+**M0.6 Finish R27 and R20d (in flight on 2026-10-10).**
+R27 decides M1.1. R20d gives LongMemEval s at 30 q with baselines and the
+fusion diagnostic (`sess3`, `sess5`, `gold`), which sizes M2.2.
+
+**M0 exit:** the gate table can be produced for any branch with one
+command per tier; floor and held-out baselines recorded.
+
+### M1 — Use the evidence that already arrives
+
+Evidence: on DMR R24 the right turn is in the bundle for every lost
+question, often first, and the model answers from a near-duplicate turn by
+the same speaker in the same session. All M1 items are read-path: gate T0
++ T1.
+
+**M1.1 Evidence order and count.**
+Do: from R27, pick the variant that wins on DMR **and** LoCoMo-10 (dev),
+and holds on held-out:
+- `rankorder` wins → in `gateway._bundle_conversation`, drop the final
+  `picked.sort(key=lambda kv: kv[0])` (oldest-first) behind a config flag
+  `[retrieval] conversation_order = "rank"|"time"`; keep supersession
+  visible through the date in each stamp. Update B454/B463 tests that
+  assume chronological order.
+- `limit3`/`limit4` wins only on DMR → do **not** change the default;
+  instead implement an adaptive cutoff: keep turn k while its fused score
+  ≥ α × top score (α tuned on dev, e.g. 0.6–0.8; expose as
+  `[retrieval] conversation_relative_floor`).
+- only `oldest3` wins → DMR position bias; no change; note it.
+Test: unit tests on `_bundle_conversation` order with a fake vector store.
+Done when: gate passes on DMR and LoCoMo-10.
+
+**M1.2 Turn ordinal and duplicate collapse.**
+Do: capture a per-session turn index at `notify_turn` time (count of
+Messages already in the session; store as `Message.turn_index`, new
+migration — see §G.2 for the full schema checklist) **(write path: needs
+T2)**; render stamps as `[Speaker 1, 2022-12-14 07:00, turn 5]`. In the
+pack step, collapse turns by the same speaker in the same session whose
+texts are near-duplicates (cosine ≥ 0.9) keeping the best-ranked.
+Done when: DMR dev up beyond noise, nothing else down.
+
+**M1.3 Answer prompt: cite or abstain.**
+Do: in `ask.py`, replace the "NOT empty … must be used" insert with:
+"Answer only from the lines below. Quote the line you used. If no line
+answers the question, say you don't have that information." Keep H1/H2
+harness variants working. Measure on LoCoMo-10 adversarial (category 5)
+and DMR.
+Done when: adversarial ≥ 0.25 with no accuracy loss beyond noise.
+
+**M1.4 Judge robustness (campy-benchmarks).**
+Do: add to the DMR judge prompt that "you" in the question means the
+answering speaker and first/second person may be swapped; re-judge any
+verdict that disagrees between two judge calls with a third. Re-score
+existing results (judging is offline) and report how many verdicts change.
+Done when: merged; the scorecard notes the judge change.
+
+**M1 exit:** DMR ≥ 0.62 (fields mode), LoCoMo-10 ≥ 0.42 with adversarial ≥
+0.25, held-out not worse.
+
+### M2 — Retrieval ranking
+
+Evidence: LoCoMo-10 evidence median rank ~28 with 6 slots (R8); LongMemEval
+s recall 0.139 (oracle 0.61). Read-path unless noted: gate T0 + T1.
+
+**M2.1 Cross-encoder reranker.**
+Do: after RRF fusion in `_bundle_conversation`, take the top 50 candidates
+and score (query, turn text) with a small local cross-encoder (e.g. a
+MiniLM-class MS MARCO cross-encoder via `sentence-transformers`;
+lazy-loaded, cached, CPU-friendly). Re-order by its score before the cut.
+Config: `[retrieval] reranker = "none"|"<model name>"`, default `none`
+until the gate passes. Pin the model in `pyproject.toml` extras; handle
+the model being unavailable (fall back to RRF and log once).
+Test: unit test with a fake scorer that reverses order; latency test.
+Measure: T0 on DMR, LoCoMo-10, LME oracle and s golden stores; evidence
+recall from `diag_locomo10_fusion.py` with a `rerank` variant (add it).
+Done when: LoCoMo-10 recall ≥ 0.55 and accuracy up; latency ≤ 2×.
+
+**M2.2 Session prefilter for long histories.**
+Do: if a store has > N sessions (e.g. 15), score sessions by their best
+turn similarity (as `diag_lme_fusion.py`'s `sessK` variant does), keep the
+top K, rank turns inside them. Size K from R20d's `sess3`/`sess5`/`gold`.
+Done when: LME s recall ≥ 0.40.
+
+**M2.3 Query understanding.**
+Do: parse the question for a named speaker ("Speaker 1", a person's name),
+entities, and time expressions. Boost (not filter) turns whose `speaker`
+matches; pass time ranges to retrieval when explicit. Start rule-based
+(regex + spaCy), no LLM.
+Done when: DMR and LoCoMo-10 temporal up, nothing else down.
+
+**M2.4 Re-tune floor and fusion** only after M2.1, on dev, checked on
+held-out.
+
+**M2 exit:** LoCoMo-10 recall ≥ 0.60, LME s recall ≥ 0.40, accuracy not
+down anywhere, latency within budget.
+
+### M3 — Observations (B472 Phase 3)
+
+Design: `backlog/plans/B-472-phase3-observations.md` (approved
+decisions: dedicated Observation worker; ship disabled; exclude assistant
+turns; new Observation table, not FactEntity). Write path: gate T2 + T1.
+
+- **3a** Schema and write API, no behaviour change. Follow the full schema
+  checklist (§G.2). T1 only.
+- **3b** Extraction worker behind `[observations] enabled = false`: per
+  user turn, extract (subject, predicate, object, time, evidence message id)
+  with a short LLM prompt (`max_tokens` small, off the event loop like
+  B468); link subject/object to Concepts via the Phase 2 resolver; record
+  provenance. T2 with the flag on vs off on dev; audit observation counts
+  and a sample for correctness (post 20 random observations for review).
+- **3c** Retrieval plane: feed the semantic section from observations
+  matching the question's entities/terms, each linked to its evidence
+  turn. T0 (needs golden stores built with 3b on).
+- **3d** Enable by default when the gate passes.
+
+**M3 exit:** LoCoMo-10 multi-hop ≥ 4/12; LME oracle ≥ 0.63; a `nosem`
+replay now shows a loss (the section earns its place).
+
+### M4 — Multi-hop and time
+
+- **4.1** Graph expansion: from the question's entities to their
+  observations and one hop further; pack each chain together with its
+  evidence turns. Read path once observations exist.
+- **4.2** Time normalisation at capture: resolve relative phrases ("last
+  Friday", "next month") against `occurred_at` into ISO dates stored on the
+  observation. Write path.
+- **4.3** Optional two-step answering for questions classified multi-hop:
+  retrieve → extract intermediate facts → retrieve again → answer. Behind a
+  flag; measure latency.
+
+**M4 exit:** multi-hop ≥ 6/12; temporal ≥ 6/12.
+
+### M5 — Scale, breadth, publication
+
+- 5.1 LoCoMo-10 all ten conversations; DMR all questions; LME s ≥ 100.
+- 5.2 Three runs per headline number; publish ranges.
+- 5.3 Update `RESULTS.md` (campy-benchmarks `report.py`) and the scorecard
+  artifact (`https://claude.ai/artifact/3HYHMfokvvSTN3VZuPgFWT`: datasets
+  are JSON assets — upload a new asset and update the dataset's `source.url`).
+- 5.4 Nightly T2 on main via the local agent; regressions posted on #278.
+
+**M5 exit:** the A.1 sentence is true with ranges, and published.
+
+---
+
+## Part F — Decision rules (do not stop to ask)
 
 | Situation | Action |
 |---|---|
-| Gate passes | merge, update the scorecard, start the next item |
-| Gate fails by more than the noise floor | do not merge; post the per-question diff; diagnose with replay; one fix attempt, else drop the item and record why in `learnings/` |
-| Change is within noise either way | merge only if it simplifies or is a prerequisite; otherwise drop |
-| A diagnostic's result looks surprising | verify the diagnostic on a fake with known answers before acting on it |
-| Local agent silent for > 2 h with work queued | re-post the request with a fresh number; check the filter |
-| A milestone exit is not met after its time box ×2 | stop, write a learnings note, and ask the user to re-plan |
-| Anything touching `~/.campy` | only through an approved, backed-up step |
+| Gate passes | Merge (squash), update `e2e-status.md` and the scorecard, start the next item the same turn |
+| Gate fails beyond the noise floor | Don't merge. Post the per-question diff. Diagnose with a replay. One fix attempt; if it still fails, close the PR, record why in `learnings/`, move on |
+| Within noise either way | Merge only if it is a prerequisite or a simplification; otherwise close and record |
+| A diagnostic gives a surprising result | Re-test the diagnostic on a fake with a known answer before acting (R26's "top 3" was "oldest 3") |
+| A result contradicts an earlier one | Check pins (both repos), turn-metadata mode, isolation, judge model, and question selection before believing either |
+| Local agent silent > 2 h with work queued | Re-post as a new R-number |
+| CI red on your PR | Reproduce, fix, push; never skip or disable a test |
+| A milestone runs past 2× its time box | Write a learnings note and ask the user to re-plan (the only routine reason to ask) |
+| Anything touching `~/.campy` | Only through an approved, backed-up step |
+| Tempted to special-case a dataset | Don't. Every rule must be a general statement about conversations (e.g. #296: "a preposition can hang off the object") |
 
 ---
 
-## 6. How the loop runs day to day
+## Part G — Known traps
 
-1. The cloud agent keeps a **queue** at the top of #278: the next 3–5 runs
-   with exact commands. The local agent always has the next run ready, so
-   the GPU never idles waiting for a reply.
-2. Every PR states its tier and its gate result in the description.
-3. Each result is processed within one check-in: gate verdict, scorecard
-   update, next item queued.
-4. Every finished milestone, and every dropped item, adds a dated note to
-   `learnings/`.
-5. The user is asked only about direction changes, never "should I
-   continue".
+### G.1 Behaviour traps (each cost a cycle once)
+
+- The conversation stage returns its top turns **oldest first**; any
+  "first k" slice of a bundle is the oldest k, not the best k.
+- Removing a word from the **embedded** text changes what clears the 0.30
+  floor (B472 P1: cosine 0.539 → 0.219, DMR −20 points). Benchmark any
+  embedding change.
+- Questions name the speaker ("Speaker 2 asks Speaker 1 … what Speaker 1
+  said"); B470 already removes such frequent words from the keyword query.
+- DMR sessions share one timestamp per session; stamps cannot order turns
+  within a session (motivates M1.2).
+- LoCoMo-10 adversarial (category 5) is scored by abstention; the "NOT
+  empty" prompt line pushes the model to answer.
+- The judge marks pronoun flips wrong ("You used to…" for "I used to…") and
+  can judge the same answer differently across runs.
+- spaCy can attach a preposition to the object instead of the verb, and
+  tags unusual words as ADJ; write dependency rules to tolerate both.
+- `run_ask` is deterministic at temperature 0; replays reproduce answers
+  verbatim (99/99 in R26), so a replay difference is a real difference.
+
+### G.2 Code traps in hippocampy
+
+- `GraphGateway.run` requires a NamedQuery's params to **exactly** match its
+  declared params. Don't add params to an existing query; add a new query.
+- `_format_sparql_term(None)` yields `UNDEF`, so an INSERT skips that
+  triple — optional fields are fine as `None`.
+- New node property or table: update **all** of `schema.py` `NODE_TABLES` /
+  `REL_TABLES` and `_MIGRATIONS`, `PROVENANCE_TABLES`, `EDGE_REIFICATION` /
+  `classify_edge`, `docs/rdf-schema-mapping.md`, the migration fixture
+  `tests/fixtures/exhaustive_migration_graph.jsonl` (patch only the affected
+  rows; regenerating churns floats), `vector_indexing._SPECS` if embedded,
+  and the query counts in `tests/test_b396_sparql.py` (ORCHESTRATOR and
+  total).
+- The Loop worker queue (`brain_daemon._loop_worker`) accepts 4-, 5- and
+  6-tuples `(message_id, text, role, session_id[, precomputed[, speaker]])`;
+  pass new keyword arguments to `run_loop` only when present (test doubles
+  lack them).
+- Concept dedup is exact text, case-insensitive (B33), plus the Phase 2
+  label lookup; LLM relations (Step 3b) need existing endpoints (B473);
+  Step 1b relations still create theirs (B464).
+
+### G.3 Process traps
+
+- Results can be silently non-comparable: always state both pins,
+  `--turn-metadata`, `--isolated`, models, and the question selection.
+- Don't tune and evaluate on the same questions; check held-out.
+- Single-run deltas under the noise floor are not findings.
+- The local agent's results live on `local/results` in its clone; ask it to
+  push and name the commit.
 
 ---
 
-## 7. Risks and how the plan handles them
+## Part H — Keeping state: `learnings/e2e-status.md`
 
-| Risk | Mitigation |
-|---|---|
-| Overfitting to 50–60 questions | held-out splits, a second suite per change, repeat runs |
-| The 8b model is the ceiling | the M0 ablation tells early; M1 prompt work still helps |
-| Reranker or observations add latency | measure `ask` latency in every gate table; budget ≤ 2× today |
-| Phase 3 raises LLM cost per turn | user turns only, cue-gated, worker off the event loop, flag |
-| Benchmark-specific hacks creep in | every fix must be stated as a general rule about conversations (as #296 was), never a dataset id |
-| Local agent misses requests | numbered requests, queue, re-post rule |
+After every step, update `e2e-status.md`: current milestone and item, last
+gate table, open PRs, the local agent's queue (R-numbers), golden store
+paths and their commits, the noise floor, and the next three actions. A new
+agent should be able to read it and continue within minutes.
+
+When a milestone ends, add a dated note `learnings/YYYY-MM-<milestone>.md`
+with what was tried, the numbers, and what did not work.
