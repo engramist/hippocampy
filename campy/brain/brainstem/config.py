@@ -18,6 +18,10 @@ _DEFAULT_CONFIG = {
         "lexical_window_days": 14,
         "lexical_limit": 10,
         "timeline_limit": 200,
+        # B479: conversation-stage boosts for the speaker / explicit date the
+        # question names (a fraction of the best fused score; 0 = off).
+        "speaker_boost": 0.0,
+        "time_boost": 0.0,
         # B375: exposes warm_frontier.py's previously-hardcoded module
         # constants. Values match those prior hardcoded defaults exactly,
         # so an absent/partial [retrieval.warm_frontier] section changes
@@ -160,6 +164,13 @@ def _parse_json_str_list(raw: str) -> list:
     return value
 
 
+def _parse_boost(raw: str) -> float:
+    value = float(raw)
+    if not 0.0 <= value <= 10.0:
+        raise ValueError("expected a number 0-10")
+    return value
+
+
 def _parse_port(raw: str) -> int:
     port = int(raw)
     if not 1 <= port <= 65535:
@@ -177,6 +188,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_LLM_MODEL": ("llm", "model", str.strip),
     "CAMPY_LLM_REGION": ("llm", "region", str.strip),
     "CAMPY_LLM_BASE_URL": ("llm", "base_url", str.strip),
+    "CAMPY_RETRIEVAL_SPEAKER_BOOST": ("retrieval", "speaker_boost", _parse_boost),
+    "CAMPY_RETRIEVAL_TIME_BOOST": ("retrieval", "time_boost", _parse_boost),
     "CAMPY_IAM_TENANT_ID": ("server", "iam_tenant_id", str.strip),
     "CAMPY_IAM_WORKSPACE_ID": ("server", "iam_workspace_id", str.strip),
     "CAMPY_IAM_WORKSPACE_MAP_JSON": ("server", "iam_workspace_map", _parse_json_str_map),

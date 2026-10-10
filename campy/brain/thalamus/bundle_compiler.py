@@ -629,10 +629,22 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
         if order not in CONVERSATION_ORDERS:
             _warn_once_bad_conversation_order(order)
             order = "time"
-        rows = await get_gateway(db).run(
-            "thalamus.bundle_conversation",
-            query_embedding=query_embedding, query_text=query, limit=limit, order=order,
-        )
+        # B479: boosts for the speaker / explicit date the question names; both
+        # 0 (default) keeps the original query, byte for byte
+        retrieval = config.get("retrieval", {}) or {}
+        sb = max(0.0, float(retrieval.get("speaker_boost", 0.0) or 0.0))
+        tb = max(0.0, float(retrieval.get("time_boost", 0.0) or 0.0))
+        if sb or tb:
+            rows = await get_gateway(db).run(
+                "thalamus.bundle_conversation_cued",
+                query_embedding=query_embedding, query_text=query, limit=limit, order=order,
+                speaker_boost=sb, time_boost=tb,
+            )
+        else:
+            rows = await get_gateway(db).run(
+                "thalamus.bundle_conversation",
+                query_embedding=query_embedding, query_text=query, limit=limit, order=order,
+            )
         content, node_ids = [], []
         for r in (rows or []):
             get = r.get if isinstance(r, dict) else (lambda k, d=None: d)

@@ -1060,6 +1060,7 @@ class GraphGateway:
         qnorm = norm(qtext)
         vec_set = set(vec_hits)
         rows = self._hydrate_messages(ranked)
+        self._apply_query_cues(ranked, rows, qtext, params)  # B479
         # A lexical-only hit has no similarity floor, so one shared common word
         # is not evidence: it must match two distinct query content words (or
         # the only one there is), or -- B459 -- the query's anchor word: the
@@ -1124,6 +1125,36 @@ class GraphGateway:
                      "speaker": v.get("speaker"), "node_id": v["uri"], "node_type": "Message"})
             for _, v in picked
         ]
+
+    @staticmethod
+    def _apply_query_cues(ranked: dict[str, float], rows: list[Any], qtext: str,
+                          params: dict[str, Any]) -> None:
+        """B479: raise the fused score of candidates that match who/when the
+        question names (see campy.brain.thalamus.query_cues). Boost, never
+        filter. Scale: a matching candidate gains `boost * weight * top`, where
+        `top` is the best fused (RRF) score in `ranked`, so boost 0.5 lifts a
+        matching turn by half the leader's score -- about one rank step among
+        the leaders (RRF steps are ~1/60 of a ~2/60 top). Off (no-op) unless
+        a boost param is > 0, which only `bundle_conversation_cued` carries."""
+        sb = float(params.get("speaker_boost") or 0.0)
+        tb = float(params.get("time_boost") or 0.0)
+        if (sb <= 0.0 and tb <= 0.0) or not ranked:
+            return
+        from campy.brain.thalamus.query_cues import parse_query_cues
+
+        cues = parse_query_cues(qtext, {r.get("speaker") for r in rows if r.get("speaker")})
+        if not cues:
+            return
+        top = max(ranked.values())
+        weight = dict(cues.speakers) if sb > 0.0 else {}
+        for row in rows:
+            gain = sb * weight.get(str(row.get("speaker") or "").strip().casefold(), 0.0)
+            when = row.get("occurred")  # event time only; stored time is not "when"
+            day = (when.isoformat() if hasattr(when, "isoformat") else str(when or ""))[:10]
+            if tb > 0.0 and day and any(a <= day < b for a, b in cues.time_ranges):
+                gain += tb
+            if gain and row["s"] in ranked:
+                ranked[row["s"]] += gain * top
 
     def _bundle_assistant_words(self, params: dict[str, Any]) -> list[Any]:
         """B471: what the ASSISTANT said on the topic, for a question about the
@@ -1386,7 +1417,7 @@ class GraphGateway:
         if query_embedding is None or not self._vector_store:
             return []
 
-        if name == "thalamus.bundle_conversation":
+        if name in ("thalamus.bundle_conversation", "thalamus.bundle_conversation_cued"):
             return self._bundle_conversation(params)
         if name == "thalamus.bundle_assistant_words":
             return self._bundle_assistant_words(params)

@@ -41,6 +41,8 @@ def test_every_documented_override_applies():
         "CAMPY_LLM_MODEL": "us.example.model-v1:0",
         "CAMPY_LLM_REGION": "us-east-1",
         "CAMPY_LLM_BASE_URL": "https://llm.internal/v1",
+        "CAMPY_RETRIEVAL_SPEAKER_BOOST": "0.5",
+        "CAMPY_RETRIEVAL_TIME_BOOST": "0.25",
         "CAMPY_IAM_TENANT_ID": "acme",
         "CAMPY_IAM_WORKSPACE_ID": "acme-default",
         "CAMPY_IAM_WORKSPACE_MAP_JSON": '{"arn:aws:iam::1:role/a": "ws-a"}',
@@ -56,6 +58,7 @@ def test_every_documented_override_applies():
     assert cfg["web"]["port"] == 8080
     assert cfg["llm"] == {"provider": "bedrock", "model": "us.example.model-v1:0",
                           "region": "us-east-1", "base_url": "https://llm.internal/v1"}
+    assert cfg["retrieval"]["speaker_boost"] == 0.5 and cfg["retrieval"]["time_boost"] == 0.25
     assert s["iam_tenant_id"] == "acme" and s["iam_workspace_id"] == "acme-default"
     assert s["iam_workspace_map"] == {"arn:aws:iam::1:role/a": "ws-a"}
     assert s["iam_tenant_map"] == {"arn:aws:iam::1:role/a": "tenant-a"}

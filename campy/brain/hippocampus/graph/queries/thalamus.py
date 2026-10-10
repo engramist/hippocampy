@@ -1583,6 +1583,18 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         # No sparql= — Python handler in GraphGateway._bundle_conversation.
     ),
     NamedQuery(
+        name="thalamus.bundle_conversation_cued",
+        cypher="MATCH (m:Message {role: 'user'}) "
+               "WHERE (1 - array_cosine_similarity(m.embedding, $query_embedding)) < 0.70 "
+               "RETURN m.text_raw as text, m.role as role, m.created_at as created_at "
+               "ORDER BY m.created_at ASC LIMIT $limit",
+        params=("query_embedding", "query_text", "limit", "order", "speaker_boost", "time_boost"),
+        mutating=False,
+        description="B479: thalamus.bundle_conversation plus boosts for candidates whose speaker / "
+                    "event time match the speaker and explicit date the question names",
+        # No sparql= — Python handler in GraphGateway._bundle_conversation.
+    ),
+    NamedQuery(
         name="thalamus.bundle_assistant_words",
         cypher="MATCH (m:Message {role: 'assistant'}) "
                "WHERE (1 - array_cosine_similarity(m.embedding, $query_embedding)) < 0.70 "
