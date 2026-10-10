@@ -605,22 +605,6 @@ async def _stage_semantic_context(
         return None
 
 
-def _turn_stamp(who: str, when: str, turn_index) -> str:
-    """The `[speaker, time, turn N] ` prefix of a conversation turn. B476: the
-    turn's position in its session is shown when known, so same-speaker turns
-    with the same timestamp can be ordered; a turn without one is stamped as
-    before."""
-    parts = [who]
-    if when:
-        parts.append(when)
-    if turn_index is not None:
-        try:
-            parts.append(f"turn {int(turn_index)}")
-        except (TypeError, ValueError):
-            pass
-    return "[" + ", ".join(parts) + "] "
-
-
 async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSection]:
     """B454: relevant user statements from the raw conversation (see
     GraphGateway._bundle_conversation). Disabled with
@@ -657,8 +641,7 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
                 continue
             # B472: the speaker, when the turn named one, else the role
             who = get("speaker") or "user"
-            when = str(created)[:16].replace('T', ' ') if created else ""
-            stamp = _turn_stamp(who, when, get("turn_index"))
+            stamp = f"[{who}, {str(created)[:16].replace('T', ' ')}] " if created else f"[{who}] "
             content.append({
                 "text": stamp + text, "type": "Message", "role": "user",
                 "created_at": created, "confidence": 0.5, "pathway_strength": 0.5,

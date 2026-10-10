@@ -1022,7 +1022,9 @@ class GraphGateway:
         back to "time".
 
         B476: each row carries the turn's `turn_index` (None for a turn captured
-        before B476)."""
+        before B476); in "time" order it breaks ties between equal timestamps.
+        The ordinal is not rendered in the stamp (gate R39g: the `turn N`
+        stamp cost DMR 0.600 -> 0.540)."""
         vs = self._vector_store
         limit = int(params.get("limit", 6))
         order = str(params.get("order") or "time").lower()
@@ -1122,7 +1124,13 @@ class GraphGateway:
             _logger.debug("_bundle_conversation successor bridge failed", exc_info=True)
         picked = sorted(newest.values(), key=lambda kv: -ranked.get(kv[1]["uri"], 0.0))[:limit]
         if order == "time":
-            picked.sort(key=lambda kv: kv[0])
+            # B476: turns of one session (DMR) share one timestamp, so break
+            # ties by the turn's ordinal. A turn without one (captured before
+            # B476, or sessionless) sorts after the numbered turns of its
+            # timestamp, and sort() is stable, so un-numbered rows keep the
+            # order they had before.
+            picked.sort(key=lambda kv: (
+                kv[0], kv[1].get("turn_index") is None, kv[1].get("turn_index") or 0))
         return [
             RowDict({"text": v["text"], "role": "user", "created_at": v["created"],
                      "speaker": v.get("speaker"), "turn_index": v.get("turn_index"),

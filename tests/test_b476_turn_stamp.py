@@ -1,5 +1,6 @@
-"""B476 (M1.2) read path: bundle_conversation rows carry the turn ordinal and
-the conversation stage stamps it ("turn N").
+"""B476 (M1.2) read path: bundle_conversation rows carry the turn ordinal and,
+in "time" order, use it to break timestamp ties. The stamp does NOT render it
+(gate R39g: a `turn N` stamp cost DMR 0.600 -> 0.540).
 
 (The near-duplicate collapse originally in this card was removed after gate
 R37 -- it never fired on the golden stores -- so only the ordinal remains.)
@@ -66,13 +67,51 @@ async def test_rows_carry_the_turn_index_and_old_messages_have_none(gw):
 
 # --- the stamp and the stage's config ---------------------------------------------
 
-def test_stamp_with_and_without_the_index():
-    assert bundle_compiler._turn_stamp("Speaker 1", "2022-12-14 07:00", 5) == "[Speaker 1, 2022-12-14 07:00, turn 5] "
-    assert bundle_compiler._turn_stamp("Speaker 1", "2022-12-14 07:00", 0) == "[Speaker 1, 2022-12-14 07:00, turn 0] "
-    assert bundle_compiler._turn_stamp("Speaker 1", "2022-12-14 07:00", None) == "[Speaker 1, 2022-12-14 07:00] "
-    assert bundle_compiler._turn_stamp("user", "", None) == "[user] "
-    assert bundle_compiler._turn_stamp("user", "", 3) == "[user, turn 3] "
-    assert bundle_compiler._turn_stamp("user", "x", "oops") == "[user, x] "
+async def test_same_timestamp_turns_come_out_in_turn_order_in_time_mode(gw):
+    # insertion order deliberately scrambled relative to turn_index
+    await _add(gw, 1, "third thing I said.", 0.9, T.format(1), turn=2)
+    await _add(gw, 2, "first thing I said.", 0.9, T.format(1), turn=0)
+    await _add(gw, 3, "second thing I said.", 0.9, T.format(1), turn=1)
+    rows = await _rows(gw, limit=6, order="time")
+    assert [r["text"] for r in rows] == [
+        "first thing I said.", "second thing I said.", "third thing I said."]
+
+
+@pytest.mark.asyncio
+async def test_time_still_wins_over_turn_index(gw):
+    await _add(gw, 1, "later but low ordinal.", 0.9, T.format(2), turn=0)
+    await _add(gw, 2, "earlier but high ordinal.", 0.9, T.format(1), turn=9)
+    rows = await _rows(gw, limit=6, order="time")
+    assert [r["text"] for r in rows] == ["earlier but high ordinal.", "later but low ordinal."]
+
+
+@pytest.mark.asyncio
+async def test_none_turn_index_does_not_crash_and_sorts_after_numbered(gw):
+    await _add(gw, 1, "old turn without ordinal.", 0.9, T.format(1))
+    await _add(gw, 2, "numbered turn.", 0.9, T.format(1), turn=3)
+    await _add(gw, 3, "other old turn.", 0.9, T.format(2))
+    rows = await _rows(gw, limit=6, order="time")
+    assert [r["text"] for r in rows] == [
+        "numbered turn.", "old turn without ordinal.", "other old turn."]
+
+
+@pytest.mark.asyncio
+async def test_all_none_rows_keep_the_pre_b476_order(gw):
+    # sort is stable: equal timestamps and no ordinals -> same order as sorting on created alone
+    for n in (1, 2, 3):
+        await _add(gw, n, f"row {n} says something.", 0.9, T.format(1))
+    rows = await _rows(gw, limit=6, order="time")
+    with_key = sorted(rows, key=lambda r: (r["created_at"], r.get("turn_index") is None))
+    assert [r["text"] for r in rows] == [r["text"] for r in with_key]
+    assert all(r.get("turn_index") is None for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_rank_mode_ignores_turn_index(gw):
+    await _add(gw, 1, "best match here.", 0.95, T.format(1), turn=5)
+    await _add(gw, 2, "weaker match here.", 0.6, T.format(1), turn=0)
+    rows = await _rows(gw, limit=6, order="rank")
+    assert [r["text"] for r in rows][0] == "best match here."
 
 
 class _Capturing:
@@ -97,10 +136,12 @@ def stage(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_stage_stamps_the_ordinal_when_present(stage):
+async def test_stage_stamp_is_mains_format_even_with_an_ordinal(stage):
     stage([{"text": "a", "created_at": "2022-12-14T07:00:00+00:00", "speaker": "Speaker 1", "turn_index": 5,
             "node_id": "m1"},
-           {"text": "b", "created_at": "2022-12-14T07:00:00+00:00", "speaker": "Speaker 1", "node_id": "m2"}])
+           {"text": "b", "created_at": "2022-12-14T07:00:00+00:00", "speaker": "Speaker 1", "node_id": "m2"},
+           {"text": "c", "created_at": "", "node_id": "m3"}])
     section = await bundle_compiler._stage_conversation(None, "q", {})
     assert [c["text"] for c in section.content] == [
-        "[Speaker 1, 2022-12-14 07:00, turn 5] a", "[Speaker 1, 2022-12-14 07:00] b"]
+        "[Speaker 1, 2022-12-14 07:00] a", "[Speaker 1, 2022-12-14 07:00] b", "[user] c"]
+    assert not hasattr(bundle_compiler, "_turn_stamp")
