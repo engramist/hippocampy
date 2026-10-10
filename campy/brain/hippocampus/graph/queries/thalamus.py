@@ -1588,7 +1588,8 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                "WHERE (1 - array_cosine_similarity(m.embedding, $query_embedding)) < 0.70 "
                "RETURN m.text_raw as text, m.role as role, m.created_at as created_at "
                "ORDER BY m.created_at ASC LIMIT $limit",
-        params=("query_embedding", "query_text", "limit", "order", "reranker", "reranker_candidates"),
+        params=("query_embedding", "query_text", "limit", "order", "reranker", "reranker_candidates",
+                "reranker_mode"),
         mutating=False,
         description="B477: thalamus.bundle_conversation with a cross-encoder rerank of the top "
                     "`reranker_candidates` before the top-`limit` cut; run off the event loop. A "

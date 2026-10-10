@@ -612,7 +612,8 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
     `[retrieval] conversation_limit = 0`; `[retrieval] conversation_order`
     ("time" default | "rank") sets the turn order (B474); `[retrieval] reranker`
     ("none" default | a cross-encoder model name) and `reranker_candidates`
-    (50) rerank the candidates before the cut (B477). Fail-soft like the
+    (50) rerank the candidates before the cut (B477); `reranker_mode`
+    ("blend" default | "replace") picks RRF blend vs cross-encoder-only order. Fail-soft like the
     other stages."""
     limit = int((config.get("retrieval", {}) or {}).get("conversation_limit", 6))
     if limit <= 0:
@@ -647,6 +648,8 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
                 query_embedding=query_embedding, query_text=query, limit=limit, order=order,
                 reranker=reranker,
                 reranker_candidates=int(retrieval.get("reranker_candidates", reranker_mod.DEFAULT_CANDIDATES)),
+                reranker_mode=reranker_mod.normalize_mode(
+                    os.environ.get("CAMPY_RETRIEVAL_RERANKER_MODE") or retrieval.get("reranker_mode")),
             )
         else:
             rows = await get_gateway(db).run(

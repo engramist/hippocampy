@@ -1038,10 +1038,18 @@ class GraphGateway:
         cut and, under order="rank", their order. A bridge successor inherits
         its predecessor's cross-encoder score when it has none higher, as it
         inherits the fused score. A reranker that cannot load leaves the fused
-        order untouched."""
+        order untouched.
+
+        `reranker_mode` ("blend" default | "replace"): blend orders the window
+        by reciprocal rank fusion (k=60) of the fused rank and the
+        cross-encoder rank; replace uses the cross-encoder order alone. Turns
+        are scored as bare text, without speaker label (R34: the label made the
+        cross-encoder favour the other speaker's turns on DMR). See
+        reranker.py."""
         vs = self._vector_store
         limit = int(params.get("limit", 6))
         reranker = str(params.get("reranker") or "")
+        rr_mode = reranker_mod.normalize_mode(params.get("reranker_mode"))
         n_rerank = int(params.get("reranker_candidates") or reranker_mod.DEFAULT_CANDIDATES)
         order = str(params.get("order") or "time").lower()
         if order not in CONVERSATION_ORDERS:
@@ -1139,7 +1147,7 @@ class GraphGateway:
             _logger.debug("_bundle_conversation successor bridge failed", exc_info=True)
         ordered = sorted(newest.values(), key=lambda kv: -ranked.get(kv[1]["uri"], 0.0))
         if reranker_mod.is_enabled(reranker) and qtext and (len(ordered) > limit or order == "rank"):
-            ordered = self._rerank_candidates(reranker, qtext, ordered, on_topic, bridged, n_rerank)
+            ordered = self._rerank_candidates(reranker, qtext, ordered, on_topic, bridged, n_rerank, rr_mode)
         picked = ordered[:limit]
         if order == "time":
             picked.sort(key=lambda kv: kv[0])
@@ -1153,16 +1161,18 @@ class GraphGateway:
     def _rerank_candidates(
         reranker: str, qtext: str, ordered: list[tuple[str, dict]],
         on_topic: list[tuple[float, str]], bridged: dict[str, float], n: int,
+        mode: str = reranker_mod.DEFAULT_MODE,
     ) -> list[tuple[str, dict]]:
         """B477: `ordered` (best fused score first) with its first `n` entries
-        re-ordered by cross-encoder score; the rest keep their fused order
-        behind them. Returns `ordered` unchanged when the model is unavailable.
+        re-ordered; the rest keep their fused order behind them. Returns
+        `ordered` unchanged when the model is unavailable.
 
-        Each turn is scored as "<speaker>: <text>" when it names a speaker --
-        the form the turn was embedded in (B472 1b) -- because the question
-        names its speaker ("what did Speaker 1 say...") and a cross-encoder
-        scoring the bare text cannot tell the two speakers' near-identical
-        turns apart.
+        Turns are scored as BARE text. With a "<speaker>: " prefix the
+        cross-encoder matched the label in the question's framing and promoted
+        the other speaker's turns (DMR regression, R34); the speaker signal
+        stays in the fused rank, which embeds it (B472 1b). mode "replace"
+        orders the window by cross-encoder score; "blend" by reciprocal rank
+        fusion (k=60) of fused rank and cross-encoder rank.
 
         A B463 successor statement shares no words with the question; it is in
         the bundle because the on-topic turn (often an assistant turn) named
@@ -1171,8 +1181,7 @@ class GraphGateway:
         leading turn's fused score. The leading turns are scored for this and
         never returned."""
         window = ordered[: max(1, n)]
-        texts = [f"{v['speaker']}: {v['text']}" if v.get("speaker") else v["text"]
-                 for _, v in window]
+        texts = [v["text"] for _, v in window]
         leaders = sorted({t for sc, t in on_topic if sc in set(bridged.values())})
         scores = reranker_mod.score(reranker, qtext, texts + leaders)
         if scores is None:
@@ -1183,7 +1192,16 @@ class GraphGateway:
             led = [lead_ce[t] for sc, t in on_topic if sc == inherited and t in lead_ce]
             if uri in ce and led:
                 ce[uri] = max(ce[uri], max(led))
-        head = sorted(window, key=lambda kv: -ce[kv[1]["uri"]])  # stable: ties keep fused order
+        reranker_mod.announce(reranker, mode)
+        if mode == "replace":
+            head = sorted(window, key=lambda kv: -ce[kv[1]["uri"]])  # stable: ties keep fused order
+        else:
+            k = reranker_mod.RRF_K
+            by_ce = sorted(range(len(window)), key=lambda i: -ce[window[i][1]["uri"]])
+            ce_rank = {i: r for r, i in enumerate(by_ce)}
+            blended = [1.0 / (k + i) + 1.0 / (k + ce_rank[i]) for i in range(len(window))]
+            order = sorted(range(len(window)), key=lambda i: -blended[i])  # stable: ties keep fused order
+            head = [window[i] for i in order]
         return head + ordered[len(window):]
 
     def _bundle_assistant_words(self, params: dict[str, Any]) -> list[Any]:

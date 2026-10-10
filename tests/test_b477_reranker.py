@@ -78,13 +78,14 @@ async def _store(gw, turns=TURNS):
                          occurred_at=None)
 
 
-async def _words(gw, order="time", limit=6, query=Q, model=MODEL, n=50, plain=False):
+async def _words(gw, order="time", limit=6, query=Q, model=MODEL, n=50, plain=False, mode="replace"):
     if plain:
         rows = await gw.run("thalamus.bundle_conversation", query_embedding=QUERY_EMB,
                             query_text=query, limit=limit, order=order)
     else:
         rows = await gw.run(RERANKED, query_embedding=QUERY_EMB, query_text=query, limit=limit,
-                            order=order, reranker=model, reranker_candidates=n)
+                            order=order, reranker=model, reranker_candidates=n,
+                            reranker_mode=mode)
     return [r["text"].split()[0] for r in rows]
 
 
@@ -128,17 +129,54 @@ async def test_time_mode_with_no_cut_does_not_pay_for_scoring(gw, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_turns_are_scored_with_their_speaker(gw, monkeypatch):
+@pytest.mark.parametrize("mode", ["replace", "blend"])
+async def test_turns_are_scored_as_bare_text_without_the_speaker(gw, monkeypatch, mode):
+    # R34: a "<speaker>: " prefix let the cross-encoder match the speaker label in
+    # the question's framing and promote the other speaker's turns (DMR 0.52 -> 0.40).
     await _store(gw, [
         ("alpha statement about widgets", 0.50, "2026-10-01T10:00:00+00:00", "Speaker 1"),
-        ("bravo statement about gadgets", 0.90, "2026-10-02T10:00:00+00:00", None),
+        ("bravo statement about gadgets", 0.90, "2026-10-02T10:00:00+00:00", "Speaker 2"),
     ])
     seen = []
     _fake(monkeypatch, {}, seen)
-    await _words(gw, order="rank", query="zzqx what did Speaker 1 say")
-    texts = seen[0][1]
-    assert "Speaker 1: alpha statement about widgets" in texts
-    assert "bravo statement about gadgets" in texts  # no speaker -> bare text
+    await _words(gw, order="rank", query="zzqx what did Speaker 1 say", mode=mode)
+    assert sorted(seen[0][1]) == ["alpha statement about widgets", "bravo statement about gadgets"]
+    assert not any("Speaker" in t for t in seen[0][1])
+
+
+@pytest.mark.asyncio
+async def test_blend_keeps_a_fused_top_turn_the_cross_encoder_ranks_modestly(gw, monkeypatch):
+    await _store(gw)
+    # cross-encoder order: delta, alpha, bravo, charlie; fused order: bravo, charlie, alpha, delta
+    _fake(monkeypatch, {"delta": 4, "alpha": 3, "bravo": 2, "charlie": 1})
+    assert set(await _words(gw, limit=2, mode="replace")) == {"delta", "alpha"}
+    # RRF k=60: bravo (fused 0, ce 2) beats alpha (fused 2, ce 1) for the second slot
+    assert set(await _words(gw, limit=2, mode="blend")) == {"bravo", "delta"}
+    assert await _words(gw, order="rank", mode="blend") == ["bravo", "delta", "alpha", "charlie"]
+
+
+@pytest.mark.asyncio
+async def test_blend_is_the_default_mode_and_unknown_modes_fall_back_to_it(gw, monkeypatch):
+    await _store(gw)
+    _fake(monkeypatch, {"delta": 4, "alpha": 3, "bravo": 2, "charlie": 1})
+    assert reranker_mod.normalize_mode(None) == reranker_mod.normalize_mode("") == "blend"
+    for mode in ("", "nonsense", "BLEND"):
+        rows = await gw.run(RERANKED, query_embedding=QUERY_EMB, query_text=Q, limit=2,
+                            order="rank", reranker=MODEL, reranker_candidates=50,
+                            reranker_mode=mode)
+        assert {r["text"].split()[0] for r in rows} == {"bravo", "delta"}
+
+
+@pytest.mark.asyncio
+async def test_calls_counter_counts_scoring_passes_and_announces_once(gw, monkeypatch, caplog):
+    await _store(gw)
+    _fake(monkeypatch, {})
+    assert reranker_mod.CALLS == 0
+    with caplog.at_level(logging.INFO, logger=reranker_mod._logger.name):
+        await _words(gw, order="rank", mode="blend")
+        await _words(gw, order="rank", mode="blend")
+    assert reranker_mod.CALLS == 2
+    assert sum("reranker active" in r.message and "mode=blend" in r.message for r in caplog.records) == 1
 
 
 @pytest.mark.asyncio
@@ -176,7 +214,7 @@ async def test_reranker_off_is_the_same_query_and_same_rows(gw, monkeypatch):
     await _store(gw)
     _fake(monkeypatch, {"delta": 4})
     off = await gw.run(RERANKED, query_embedding=QUERY_EMB, query_text=Q, limit=6,
-                       order="rank", reranker="none", reranker_candidates=50)
+                       order="rank", reranker="none", reranker_candidates=50, reranker_mode="blend")
     plain = await gw.run("thalamus.bundle_conversation", query_embedding=QUERY_EMB,
                          query_text=Q, limit=6, order="rank")
     assert [dict(r) for r in off] == [dict(r) for r in plain]
@@ -190,7 +228,8 @@ async def test_a_successor_statement_keeps_its_leading_turns_cross_encoder_score
     await _db_store(gw)
     _fake(monkeypatch, {"Noted. Primary database": 8.0})
     rows = await gw.run(RERANKED, query_embedding=QUERY_EMB, query_text=DB_Q, limit=1,
-                        order="rank", reranker=MODEL, reranker_candidates=50)
+                        order="rank", reranker=MODEL, reranker_candidates=50,
+                        reranker_mode="replace")
     assert [r["text"] for r in rows] == [PG16_USER]
     assert PG14_ACK not in [r["text"] for r in rows]  # leaders are scored, never returned
 
@@ -238,6 +277,19 @@ async def test_stage_with_a_reranker_runs_the_reranked_query(recorder):
 
 
 @pytest.mark.asyncio
+async def test_stage_passes_the_reranker_mode(recorder, monkeypatch):
+    await bundle_compiler._stage_conversation(None, "q", {"retrieval": {"reranker": MODEL}})
+    assert recorder.params["reranker_mode"] == "blend"
+    await bundle_compiler._stage_conversation(
+        None, "q", {"retrieval": {"reranker": MODEL, "reranker_mode": "replace"}})
+    assert recorder.params["reranker_mode"] == "replace"
+    monkeypatch.setenv("CAMPY_RETRIEVAL_RERANKER_MODE", "blend")
+    await bundle_compiler._stage_conversation(
+        None, "q", {"retrieval": {"reranker": MODEL, "reranker_mode": "replace"}})
+    assert recorder.params["reranker_mode"] == "blend"
+
+
+@pytest.mark.asyncio
 async def test_env_var_turns_the_reranker_on_and_off(recorder, monkeypatch):
     monkeypatch.setenv("CAMPY_RETRIEVAL_RERANKER", MODEL)
     await bundle_compiler._stage_conversation(None, "q", {})
@@ -248,7 +300,8 @@ def test_registry_declares_the_reranked_query_without_touching_the_original():
     assert REGISTRY.get("thalamus.bundle_conversation").params == (
         "query_embedding", "query_text", "limit", "order")
     assert set(REGISTRY.get(RERANKED).params) == {
-        "query_embedding", "query_text", "limit", "order", "reranker", "reranker_candidates"}
+        "query_embedding", "query_text", "limit", "order", "reranker", "reranker_candidates",
+        "reranker_mode"}
 
 
 # -- the real model (skipped when it is not cached; CAMPY_TEST_REAL_RERANKER=1 allows download) --
@@ -268,13 +321,20 @@ def real_scorer():
     return lambda q, ts: [float(s) for s in model.rerank(q, ts)]
 
 
-def test_real_model_prefers_the_named_speakers_turn(real_scorer):
+def test_real_model_speaker_prefix_is_a_trap_so_turns_are_scored_bare(real_scorer):
+    """Documentation of why the prefix was tried and dropped. The first version
+    stamped "<speaker>: " on each turn, which does separate two speakers' copies
+    of the same sentence (the original assertion here). But on DMR the question
+    frames the OTHER speaker ("Speaker 2 asks Speaker 1 ..."), so the label
+    matches the wrong turns (R34: DMR 0.52 -> 0.40). Bare scoring cannot tell
+    identical copies apart -- that job belongs to the fused rank, which embeds
+    the speaker (B472 1b), hence the RRF blend. This test only pins the property
+    the blend relies on: bare scoring is indifferent to the speaker."""
     q = "What pasta shape did Speaker 1 say they like?"
-    right = "Speaker 1: I really like rigatoni because it holds sauce well."
-    wrong = "Speaker 2: I really like rigatoni because it holds sauce well."
-    other = "Speaker 1: We went hiking in the mountains last weekend."
-    s_right, s_wrong, s_other = real_scorer(q, [right, wrong, other])
-    assert s_right > s_wrong and s_right > s_other
+    text = "I really like rigatoni because it holds sauce well."
+    other = "We went hiking in the mountains last weekend."
+    s_text, s_other = real_scorer(q, [text, other])
+    assert s_text > s_other
 
 
 def test_real_model_latency_for_50_candidates_on_cpu(real_scorer, capsys):
