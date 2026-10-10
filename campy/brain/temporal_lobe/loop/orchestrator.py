@@ -31,7 +31,7 @@ _logger = logging.getLogger(__name__)
 from campy.brain.temporal_lobe.loop.step1b_relations import extract_relations
 from campy.brain.temporal_lobe.loop.step2_gist      import classify_concept
 from campy.brain.temporal_lobe.loop.step3_schema_org import route_to_schema_org
-from campy.brain.temporal_lobe.loop.step3b_relations import extract_semantic_relations
+from campy.brain.temporal_lobe.loop.step3b_relations import extract_semantic_relations, has_relation_cue
 from campy.brain.temporal_lobe.loop.step4_pattern   import classify_artifact, compute_salience_multiplier, NOISE_FLOOR
 from campy.brain.temporal_lobe.loop.step5_retrieval import (
     retrieve_candidates, MATCH_THRESHOLD, GRAY_ZONE_UPPER
@@ -260,7 +260,11 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                 for i, e1 in enumerate(typed_entities)
                 for e2 in typed_entities[i+1:]
             )
-            if uncovered_pairs_exist:
+            if uncovered_pairs_exist and not has_relation_cue(text):
+                # B473: no choice/replacement/extension cue, nothing for
+                # Step 3b to find -- and no LLM call
+                summary["step3b_skipped_no_cue"] = summary.get("step3b_skipped_no_cue", 0) + 1
+            elif uncovered_pairs_exist:
                 t0 = time.perf_counter()
                 step3b_relations = await asyncio.to_thread(  # B468: LLM call, off the loop
                     extract_semantic_relations, typed_entities, text, llm_step3b)
@@ -535,7 +539,8 @@ async def run_loop(message_id: str, text: str, db, llm_client,
     # _store_relation will ensure both endpoints exist before creating the edge.
     for idx, rel in enumerate(deferred_relations):
         async with _timed(message_id, f"store_relation[{idx}/{len(deferred_relations)}]"):
-            await _store_relation(rel, db, now, embedding_model=embedding_model)
+            if await _store_relation(rel, db, now, embedding_model=embedding_model) == "unresolved":
+                summary["relations_dropped_unresolved"] = summary.get("relations_dropped_unresolved", 0) + 1
 
     _logger.info(
         "[Loop:Timing] msg=%s step=TOTAL elapsed=%.2fs",
@@ -926,6 +931,21 @@ def _stated_supersession(rel: dict) -> bool:
     )
 
 
+def _endpoint_concept_id(text: str, db) -> str | None:
+    """A relation endpoint's live Concept: by exact text (case-insensitive,
+    strongest first), else by one of its labels (B472 Phase 2)."""
+    gw = _gateway(db)
+    for q in ("orchestrator.find_endpoint_concept", "orchestrator.find_concept_by_label_text"):
+        try:
+            rows = gw.run_sync(q, t=text)
+        except Exception:
+            continue
+        if rows:
+            row = rows[0]
+            return row.get("c.concept_id") if hasattr(row, "get") else row[0]
+    return None
+
+
 async def _store_relation(rel: dict, db, now: str,
                            embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"):
     """
@@ -947,9 +967,21 @@ async def _store_relation(rel: dict, db, now: str,
     if rel_type not in valid_types:
         return
 
-    # Ensure both endpoints exist before creating the edge
-    await _ensure_concept_exists(rel["head"], embedding_model, db, now)
-    await _ensure_concept_exists(rel["tail"], embedding_model, db, now)
+    if rel.get("inferred_by") == "LLM":
+        # B473: an LLM relation links Concepts that exist. Its endpoint
+        # strings are the model's own wording, and creating a bare Concept
+        # for each one that matched nothing filled a DMR store with untyped
+        # Concepts (R20a: 1,784 of 2,047 had no gist class). Step 1b's
+        # syntactic relations still create their endpoints (B32/B464: the
+        # relation can be the only place a stated value is named).
+        if not (_endpoint_concept_id(rel["head"], db) and _endpoint_concept_id(rel["tail"], db)):
+            _logger.debug("_store_relation: LLM relation dropped, unresolved endpoint: %s -[%s]-> %s",
+                          rel["head"], rel_type, rel["tail"])
+            return "unresolved"
+    else:
+        # Ensure both endpoints exist before creating the edge
+        await _ensure_concept_exists(rel["head"], embedding_model, db, now)
+        await _ensure_concept_exists(rel["tail"], embedding_model, db, now)
 
     try:
         # B32 fix: Kuzu 0.11.3 has issues with merge on relationships when
@@ -957,24 +989,13 @@ async def _store_relation(rel: dict, db, now: str,
         # 1. Look up both node IDs with separate queries
         # 2. create/merge the edge using node IDs directly.
         gw = _gateway(db)
-        h_result = gw.run_sync(
-            "orchestrator.find_endpoint_concept",
-            t=rel["head"],
-        )
-        t_result = gw.run_sync(
-            "orchestrator.find_endpoint_concept",
-            t=rel["tail"],
-        )
+        head_id = _endpoint_concept_id(rel["head"], db)
+        tail_id = _endpoint_concept_id(rel["tail"], db)
 
-        if not h_result or not t_result:
+        if not head_id or not tail_id:
             _logger.warning("_store_relation: endpoint not found — head=%s tail=%s",
                             rel["head"], rel["tail"])
             return
-
-        head_row = h_result[0]
-        tail_row = t_result[0]
-        head_id = head_row.get("c.concept_id") if hasattr(head_row, "get") else head_row[0]
-        tail_id = tail_row.get("c.concept_id") if hasattr(tail_row, "get") else tail_row[0]
 
         # Use inline property matching (same pattern as CO_OCCURS_WITH which works)
         # rather than a WHERE clause — Kuzu 0.11.3 merge + WHERE has edge cases
