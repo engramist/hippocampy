@@ -47,6 +47,7 @@ def test_every_documented_override_applies():
         "CAMPY_IAM_TENANT_MAP_JSON": '{"arn:aws:iam::1:role/a": "tenant-a"}',
         "CAMPY_IAM_PRINCIPAL_SCOPE_MAP_JSON": '{"arn:aws:iam::1:role/a": ["memory.read"]}',
         "CAMPY_IAM_DEFAULT_SCOPES_JSON": '["memory.read", "memory.write"]',
+        "CAMPY_OBSERVATIONS_ENABLED": "1",
     }
     assert set(env) == set(ENV_OVERRIDES), "test must cover every override"
     cfg = apply_env_overrides(_base(), env)
@@ -54,6 +55,7 @@ def test_every_documented_override_applies():
     assert s["auth"] == "iam" and s["bind_host"] == "0.0.0.0"
     assert s["dashboard_enabled"] is False
     assert cfg["web"]["port"] == 8080
+    assert cfg["observations"]["enabled"] is True
     assert cfg["llm"] == {"provider": "bedrock", "model": "us.example.model-v1:0",
                           "region": "us-east-1", "base_url": "https://llm.internal/v1"}
     assert s["iam_tenant_id"] == "acme" and s["iam_workspace_id"] == "acme-default"

@@ -75,9 +75,10 @@ _DEFAULT_CONFIG = {
     "observations": {
         "enabled": False,
         "llm_enabled": True,       # only read when enabled
-        "llm_batch_turns": 20,
+        "llm_batch_turns": 20,     # reserved: 3b extracts per turn and does not read these two
         "idle_flush_seconds": 5,
         "max_turn_chars": 600,
+        "queue_max": 5000,         # 3b: bounded worker queue; a full queue drops the newest, counted
     },
     "compression": {
         "strategy": "two_lane",       # two_lane (Protected Lane zero loss + Bulk Lane lossy)
@@ -169,6 +170,9 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_SERVER_BIND_HOST": ("server", "bind_host", str.strip),
     "CAMPY_SERVER_DASHBOARD_ENABLED": ("server", "dashboard_enabled", _parse_bool),
     "CAMPY_WEB_PORT": ("web", "port", _parse_port),
+    # B472 Phase 3b: lets a benchmark harness switch Observations on without
+    # touching the config file it writes (the daemon inherits the environment).
+    "CAMPY_OBSERVATIONS_ENABLED": ("observations", "enabled", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
     "CAMPY_LLM_MODEL": ("llm", "model", str.strip),
     "CAMPY_LLM_REGION": ("llm", "region", str.strip),
