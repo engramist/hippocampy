@@ -306,7 +306,7 @@ home_title = "ARC-AGI Memory"
 # leaving them commented out changes nothing.
 # [retrieval]
 # conversation_limit = 6            # turns in the conversation section (0 disables it)
-# conversation_order = "rank"       # "rank" = best match first (default); "time" = oldest first (B454)
+# conversation_order = "time"       # "time" = oldest first (B454, default); "rank" = best match first
 
 # B375: Warm Frontier (Pre-Warmed Selective Activation) tuning. Every key
 # below matches warm_frontier.py's prior hardcoded default exactly, so
