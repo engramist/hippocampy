@@ -206,3 +206,70 @@ def extract_entities(text: str, model_name: str = "en_core_web_md") -> tuple:
             })
 
     return doc, entities
+
+
+# ---------------------------------------------------------------------------
+# B472 Phase 2 (Step 2: govern the vocabulary) — surface normalization
+# ---------------------------------------------------------------------------
+# One entity must not become several Concepts because of how a sentence
+# wrapped its name: "Caroline", "Caroline!", "Congrats Caroline" and
+# "Wow Caroline" were four Concepts on a LoCoMo-10 store (B472 Phase 0).
+
+# Greetings and interjections that wrap a person's name in chat. Only ever
+# stripped from the edges of a PERSON span (or one naming a known speaker),
+# and never the whole span. Words that are also common first names (Will,
+# Grace, Joy, Hope...) are deliberately absent.
+_NAME_WRAPPERS = {
+    "congrats", "congratulations", "wow", "hey", "hi", "hello", "thanks",
+    "thank", "you", "oh", "omg", "yay", "aww", "awww", "dear", "bye",
+    "goodbye", "good", "morning", "night", "evening", "afternoon", "ok",
+    "okay", "yes", "no", "well", "so", "haha", "lol", "welcome", "sorry",
+}
+_EDGE_QUOTES = "\"'“”‘’`([{<"
+_EDGE_CLOSERS = "\"'“”‘’`)]}>"
+_TRAILING_PUNCT_RE = re.compile(r"[!?.,;:…]+$")
+_POSSESSIVE_RE = re.compile(r"(?<=\w)['’]s$")
+
+
+def normalize_surface(text: str, label: str = "", known_names: set[str] | None = None) -> str:
+    """The canonical surface of an entity span: edge quotes, trailing
+    sentence punctuation and a final possessive removed; for a PERSON span
+    (or one ending/starting with a known speaker's name), greeting and
+    interjection words at its edges removed too.
+
+    Internal punctuation is kept ("Node.js", "C++", "PostgreSQL 16"), and a
+    span is never normalized to nothing: the original is returned instead.
+    """
+    original = text
+    s = " ".join((text or "").split())
+    s = s.lstrip(_EDGE_QUOTES).rstrip(_EDGE_CLOSERS)
+    s = _TRAILING_PUNCT_RE.sub("", s).rstrip(_EDGE_CLOSERS).strip()
+    s = _POSSESSIVE_RE.sub("", s)
+    words = s.split()
+    known = {n.lower() for n in (known_names or ())}
+    is_name = label == "PERSON" or any(w.lower().strip(",") in known for w in words)
+    if is_name and len(words) > 1:
+        bare = lambda w: re.sub(r"[^\w]", "", w).lower()
+        while len(words) > 1 and bare(words[0]) in _NAME_WRAPPERS:
+            words = words[1:]
+        while len(words) > 1 and bare(words[-1]) in _NAME_WRAPPERS:
+            words = words[:-1]
+        s = _TRAILING_PUNCT_RE.sub("", " ".join(words).strip(",")).strip()
+    return s or original
+
+
+def normalize_entities(entities: list[dict], known_names: set[str] | None = None) -> list[dict]:
+    """Normalize each entity's text (keeping the span as `surface`) and
+    drop later entities whose normalized text repeats an earlier one."""
+    seen: set[str] = set()
+    out = []
+    for e in entities:
+        surface = e["text"]
+        text = normalize_surface(surface, e.get("label", ""), known_names)
+        # a span normalization changed is re-checked ("Hi!" -> "Hi"); an
+        # unchanged one already passed extract_entities' junk filter
+        if (text != surface and _is_junk_entity(text)) or text.lower() in seen:
+            continue
+        seen.add(text.lower())
+        out.append({**e, "text": text, "surface": surface})
+    return out

@@ -34,7 +34,7 @@ def test_b396_query_counts():
     assert len(PATHWAY_QUERIES) == 12
     assert len(BASAL_GANGLIA_QUERIES) == 17
     assert len(TASK_GRAPH_QUERIES) == 30
-    assert len(ORCHESTRATOR_QUERIES) == 57  # B465: +2 remove_semantic_rel_*
+    assert len(ORCHESTRATOR_QUERIES) == 59  # B465: +2 remove_semantic_rel_*; B472: +2 label lookup/create
     assert len(LESSONS_QUERIES) == 27
     # B375 gap 4: Lesson/Procedure joined the "warmable" table set so Step
     # 4b can pre-activate matched Lessons/Procedures in the warm frontier —
@@ -52,7 +52,7 @@ def test_b396_query_counts():
         + len(LESSONS_QUERIES)
         + len(TEMPORAL_LOBE_QUERIES)
     )
-    assert total == 1162
+    assert total == 1164  # B472 Phase 2: +2 orchestrator label queries
 
 
 @pytest.mark.parametrize("query", BACKUP_QUERIES, ids=lambda q: q.name)

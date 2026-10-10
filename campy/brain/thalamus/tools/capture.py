@@ -391,7 +391,9 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
     loop_queue = get_loop_queue()
     if loop_queue is not None:
         precomputed = params.get("precomputed")
-        await loop_queue.put((message_id, content, role, session_id, precomputed))
+        # B472 Phase 2: the speaker rides along, so the Loop can seed them
+        # as a Person and normalize their name in PERSON spans
+        await loop_queue.put((message_id, content, role, session_id, precomputed, speaker))
 
     # B14: Read previous loop summary (completed by the time this fires)
     insights = None
