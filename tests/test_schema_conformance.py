@@ -29,7 +29,7 @@ from scripts.check_schema_conformance import (
 
 
 def test_get_all_table_properties_coverage() -> None:
-    """Ensure all 57 node tables and 110 relationship tables are resolved."""
+    """Ensure all 58 node tables and 112 relationship tables are resolved."""
     props = get_all_table_properties()
 
     # All NODE_TABLES must be present

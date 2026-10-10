@@ -5,7 +5,7 @@ Verifies:
   Kùzu -> JSONL export -> Oxigraph + sqlite-vec import -> JSONL export
 yields set-equal nodes, edges, and edge properties against populated graphs:
   1. Patent conformance graph fixture (test_patent_conformance_roundtrip_migration)
-  2. B411 exhaustive migration graph fixture covering all 57 node tables and 95 classified edge tables
+  2. B411 exhaustive migration graph fixture covering all 58 node tables and 95 classified edge tables
      (test_exhaustive_graph_roundtrip_migration)
   3. B411 proof that unclassified edge tables raise ValueError during import as designed (§4.2d)
      (test_unclassified_edges_raise_during_migration)

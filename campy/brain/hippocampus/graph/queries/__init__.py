@@ -37,6 +37,7 @@ from campy.brain.hippocampus.graph.queries.provenance import PROVENANCE_QUERIES
 from campy.brain.hippocampus.graph.queries.cli import CLI_QUERIES
 from campy.brain.hippocampus.graph.queries.model_router import MODEL_ROUTER_QUERIES
 from campy.brain.hippocampus.graph.queries.handoff import HANDOFF_QUERIES
+from campy.brain.hippocampus.graph.queries.observations import OBSERVATION_QUERIES
 
 REGISTRY = QueryRegistry()
 REGISTRY.register_all(LESSONS_QUERIES)
@@ -62,6 +63,7 @@ REGISTRY.register_all(PROVENANCE_QUERIES)
 REGISTRY.register_all(CLI_QUERIES)
 REGISTRY.register_all(MODEL_ROUTER_QUERIES)
 REGISTRY.register_all(HANDOFF_QUERIES)
+REGISTRY.register_all(OBSERVATION_QUERIES)
 
 # B454: re-attach sqlite-vec/FTS indexing for sparql= node-creates (they bypass
 # OxigraphClient.write_node(), the only place that indexes).
