@@ -1594,6 +1594,18 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                     "about the assistant's own words",
         # No sparql= — Python handler in GraphGateway._bundle_assistant_words.
     ),
+    NamedQuery(
+        name="thalamus.bundle_observations",
+        cypher="MATCH (o:Observation) WHERE o.archived = false "
+               "RETURN o.observation_id as observation_id, o.text_raw as text "
+               "ORDER BY o.created_at ASC LIMIT $limit",
+        params=("query_embedding", "query_text", "concept_ids", "limit"),
+        mutating=False,
+        description="B472 Phase 3c: live Observations relevant to the question (vector + FTS + "
+                    "OBSERVATION_ABOUT the given Concepts, fused by reciprocal rank), each with its "
+                    "evidence quote and evidence Message id",
+        # No sparql= -- Python handler in GraphGateway._bundle_observations.
+    ),
     # Concept
     NamedQuery(
         name="thalamus.bundle_semantic_concept",

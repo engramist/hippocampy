@@ -105,6 +105,12 @@ _SECTION_DESCRIPTIONS: dict[str, str] = {
 
 # B474: the conversation section is best-match-first by default; each item is
 # date-stamped, so a later statement still visibly supersedes an earlier one.
+# B472 3c: a semantic section fed from Observations.
+_OBSERVATIONS_DESCRIPTION = (
+    "claims the user made, each as [speaker, date of the turn] with the words it came from in quotes — "
+    "answer from the quoted words; NEGATED, HYPOTHETICAL and PLANNED claims are not things that happened; "
+    "'when:' is the user's own phrase, relative to the date of that turn"
+)
 _CONVERSATION_DESCRIPTION_RANK = (
     "what the user said about this, best match first, each stamped with its date — "
     "when statements conflict, the one with the most recent date supersedes earlier ones"
@@ -142,6 +148,8 @@ def _bundle_to_prompt(bundle, query: str) -> str:
     for section in bundle.sections:
         section_type = section.section_type
         description = _SECTION_DESCRIPTIONS.get(section_type, section_type)
+        if section_type == "semantic" and getattr(section, "variant", "") == "observations":
+            description = _OBSERVATIONS_DESCRIPTION
         if section_type == "conversation" and getattr(section, "order", "") == "rank":
             description = _CONVERSATION_DESCRIPTION_RANK
         rendered_items = []
