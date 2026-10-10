@@ -48,6 +48,7 @@ PROVENANCE_TABLES = (
     "ArcMechanic", "ArcActionPattern", "ArcEffectPattern",
     "ArcPrecondition", "ArcFailureMode", "ArcRecoveryPolicy",
     "ArcWorldModelStep", "EntityDisappearance",
+    "Observation",  # B472 Phase 3a: a source-grounded claim extracted from a user turn
 )
 
 # ---------------------------------------------------------------------------
@@ -875,6 +876,61 @@ NODE_TABLES = {
         PRIMARY KEY (disappearance_id)
     """,
 
+    # B472 Phase 3a (backlog/plans/B-472-phase3-observations.md section 3.1):
+    # a typed, source-grounded claim a speaker made in a turn ("my sister is
+    # a nurse", "Caroline attended a support group on 7 May"). Written ONLY by
+    # hippocampus/observations.py::record_observation, which enforces the
+    # grounding rule (evidence_text is a verbatim span of the evidence
+    # Message). Separate from FactEntity on purpose: FactEntity mirrors
+    # externally-owned facts (authority = projected); an Observation is a
+    # Campy-extracted claim (authority = earned), so it is a PROVENANCE_TABLES
+    # member and carries the B312/B313/B320 columns inline, like
+    # EntityDisappearance above. evidence_ref is both the B312 provenance
+    # column and the required id of the supporting Message.
+    # Plain-string SPO plus resolved Concept ids: subject_id/object_id are
+    # NULL until a resolver links them (Phase 3a never creates a Concept).
+    # time_start/time_end are set only for explicit absolute dates.
+    "Observation": """
+        observation_id    STRING,
+        subject_text      STRING,
+        subject_id        STRING,
+        predicate         STRING,
+        object_text       STRING,
+        object_id         STRING,
+        event_text        STRING,
+        time_text         STRING,
+        time_start        TIMESTAMP,
+        time_end          TIMESTAMP,
+        time_precision    STRING,
+        speaker           STRING,
+        polarity          STRING,
+        confidence        DOUBLE,
+        confidence_low    BOOLEAN,
+        extraction_method STRING,
+        rule_version      STRING,
+        evidence_start    INT64,
+        evidence_end      INT64,
+        evidence_text     STRING,
+        text_raw          STRING,
+        embedding         FLOAT[384],
+        embedding_model   STRING,
+        embedding_dim     INT64,
+        last_accessed_at  TIMESTAMP,
+        archived          BOOLEAN,
+        flagged_for_review BOOLEAN,
+        created_at        TIMESTAMP,
+        source              STRING,
+        source_version      STRING,
+        observed_at         TIMESTAMP,
+        evidence_ref        STRING,
+        superseded_by       STRING,
+        superseded_at       TIMESTAMP,
+        supersession_reason STRING,
+        authority            STRING,
+        content_hash         STRING,
+        PRIMARY KEY (observation_id)
+    """,
+
     "ChunkExecution": """
         execution_id     STRING,
         task_id          STRING,
@@ -1387,6 +1443,12 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS FOLLOWED_BY (FROM Message TO Message, gap_seconds DOUBLE)",
     "CREATE REL TABLE IF NOT EXISTS ESTABLISHED_IN (FROM Decision TO Session, FROM Constraint TO Session, FROM Requirement TO Session, FROM ActionItem TO Session)",
     "CREATE REL TABLE IF NOT EXISTS DECISION_CHAIN (FROM Decision TO Decision, session_id STRING, step_number INT32)",
+    # B472 Phase 3a: Observation edges. Both property-free (the subject/object
+    # role lives on the node as subject_id/object_id). EVIDENCED_BY carries one
+    # edge per supporting Message; the first matches the node's evidence_ref.
+    # ABOUT would be too generic a name for the RDF predicate namespace.
+    "CREATE REL TABLE IF NOT EXISTS OBSERVATION_ABOUT (FROM Observation TO Concept)",
+    "CREATE REL TABLE IF NOT EXISTS EVIDENCED_BY (FROM Observation TO Message)",
     # Ontology routing (core IP — Shape-First Principle)
     "CREATE REL TABLE IF NOT EXISTS ROUTES_TO (FROM GistClass TO SchemaOrgType)",
     # SKOS labels
@@ -2105,6 +2167,20 @@ def init_schema(db: Any, seed_examples_path: str,
                        ", ".join(f"FROM {t} TO {t}" for t in PROVENANCE_TABLES) +
                        ")",
         },
+        # B472 Phase 3a: Observation joined PROVENANCE_TABLES, so DEPRECATED_BY
+        # gains FROM Observation TO Observation. The B326 entry above probes
+        # Requirement, which an already-widened table still passes, so it would
+        # never notice the new pair; probe the newest member instead. Same
+        # safety rule: only recreated while the table holds no edges.
+        {
+            "table": "DEPRECATED_BY",
+            "check": "MATCH (a:Observation)-[:DEPRECATED_BY]->(b:Observation) "
+                     "RETURN count(a) LIMIT 1",
+            "probe": "MATCH ()-[e:DEPRECATED_BY]->() RETURN count(e) AS cnt",
+            "new_ddl": "CREATE REL TABLE DEPRECATED_BY (" +
+                       ", ".join(f"FROM {t} TO {t}" for t in PROVENANCE_TABLES) +
+                       ")",
+        },
     ]
     for rmig in _REL_MIGRATIONS:
         try:
@@ -2222,6 +2298,7 @@ def init_schema(db: Any, seed_examples_path: str,
         "Concept", "Decision", "Constraint", "Requirement", "ActionItem",
         "GlobalConstraint", "GlobalPreference", "MainQuest", "SideQuest",
         "Message", "DocumentExtract", "Label",
+        "Observation",  # B472 Phase 3a
         "Lesson",  # B11
         "Plan",    # B66
         "PlanStep",  # B66
