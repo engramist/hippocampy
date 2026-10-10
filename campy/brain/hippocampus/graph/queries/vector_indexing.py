@@ -51,6 +51,9 @@ _SPECS: dict[str, tuple[str, str, str, str | None]] = {
     "temporal_lobe.dict_create_pref_label":    ("Label", "lid", "emb", "txt"),
     "temporal_lobe.dict_create_alt_label":     ("Label", "lid", "emb", "txt"),
     "orchestrator.create_alt_label":           ("Label", "lid", "emb", "txt"),
+    # B472 Phase 3a: indexes only when the draft carries an embedding (the
+    # gateway hook skips a None vector); nothing produces one until 3b.
+    "observations.create_observation":         ("Observation", "observation_id", "embedding", "text_raw"),
 }
 
 VECTOR_INDEX_SPECS: dict[str, VectorIndexSpec] = {
