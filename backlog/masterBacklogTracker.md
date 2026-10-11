@@ -94,6 +94,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B473 | Relation Noise on Chat: Invented Engineering Relations and Bare Endpoint Concepts | P1 | implemented (measurement pending) | TBD | TBD | - | backlog/B473.md |
 | B474 | Conversation Evidence in Rank Order, Not Oldest-First (M1.1) | P2 | complete (flag merged; default "time", rank opt-in after R29 gate within noise) | TBD | TBD | - | backlog/B474.md |
 | B475 | Answer Prompt: Cite or Abstain (M1.3) | P2 | complete (R33 gate: DMR 0.52 -> 0.60, +5/-1 real; LoCoMo-10 adversarial 0/12 -> 3/12; held-out check pending R30) | TBD | TBD | - | backlog/B475.md |
+| B480 | Optional Two-Step "Select Then Answer" Mode for ask (M4.3) | P2 | implemented (default off; gate pending) | TBD | TBD | - | backlog/B480.md |
 | B478 | Conversation De-dup Merges Identical Text From Different Speakers | P3 | implemented (gate pending) | TBD | TBD | - | backlog/B478.md |
 | B459 | Conversation Evidence Drops the Statements That Supersede the One It Found | P1 | fixed (real-model confirmed) | TBD | TBD | - | backlog/B459.md |
 | B458 | current_truth: Exact Identifier Match Loses to Near-Identical Notes (RRF Fusion) | P1 | fixed (round 2: identifiers rank first; real-model confirmed) | TBD | TBD | - | backlog/B458.md |
