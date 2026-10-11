@@ -128,7 +128,36 @@ def _render_plan_item(item: dict) -> str:
     return "\n".join(lines)
 
 
-def _bundle_to_prompt(bundle, query: str) -> str:
+# M1.3 / B475: the non-empty-bundle instruction. "legacy" is the pre-M1.3 text
+# verbatim; "cite" tells the model to answer only from the lines shown, quote
+# the supporting line, and abstain when nothing answers (LoCoMo adversarial
+# questions are scored by abstention; the legacy "must be used" wording pushed
+# the model to answer anyway).
+_ANSWER_INSTRUCTION_LEGACY = (
+    "The sections below are NOT empty — relevant memory exists for this "
+    "query and must be used to answer it. Do not claim memory is empty."
+)
+_ANSWER_INSTRUCTION_CITE = (
+    "Answer only from the lines below. Give a short answer, then quote the "
+    "line you used. If no line answers the question, say you don't have "
+    "that information."
+)
+
+
+def _answer_style(config: Optional[dict]) -> str:
+    """M1.3: resolve config["ask"]["answer_style"] -> "cite" (default) | "legacy".
+
+    Unknown values fall back to "cite" with a warning.
+    """
+    raw = ((config or {}).get("ask") or {}).get("answer_style") or "cite"
+    style = str(raw).strip().lower()
+    if style not in ("cite", "legacy"):
+        _logger.warning("Unknown [ask] answer_style %r; using 'cite'.", raw)
+        return "cite"
+    return style
+
+
+def _bundle_to_prompt(bundle, query: str, config: Optional[dict] = None) -> str:
     """Flatten compressed bundle sections into a single prompt string.
 
     B339: format_memory_with_boundary() escapes content internally before
@@ -180,8 +209,9 @@ def _bundle_to_prompt(bundle, query: str) -> str:
     if has_content:
         parts.insert(
             1,
-            "The sections below are NOT empty — relevant memory exists for this "
-            "query and must be used to answer it. Do not claim memory is empty.",
+            _ANSWER_INSTRUCTION_LEGACY
+            if _answer_style(config) == "legacy"
+            else _ANSWER_INSTRUCTION_CITE,
         )
     else:
         # B305: the bundle can now come back genuinely empty (relevance floor
@@ -391,7 +421,7 @@ async def run_ask(
         )
 
     # 3. Build prompt and send
-    prompt = _bundle_to_prompt(bundle, query)
+    prompt = _bundle_to_prompt(bundle, query, config)
     variants = _harness_variants(config)
     if "H1" in variants:
         prompt = _h1_identifier_fastpath(prompt, bundle, query)
