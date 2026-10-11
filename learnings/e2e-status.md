@@ -3,7 +3,7 @@
 Live state of `e2e-improvement-plan.md`. Update after every step; keep it
 short and current (history goes in dated `learnings/` notes).
 
-_Last updated: 2026-10-10 22:00 UTC_
+_Last updated: 2026-10-11 05:15 UTC_
 
 ## Who is running this
 
@@ -25,15 +25,17 @@ _Last updated: 2026-10-10 22:00 UTC_
 
 ## Current position
 
-- **Milestones:** M0 done except the noise floor (R31) and held-out baselines
-  (R30). M1: M1.1 flag merged (opt-in), M1.3 merged (gain), M1.4 merged,
-  M1.2 reduced to the turn ordinal (T2 in R39). M2.1 reranker on its one fix
-  attempt (R38). M2.3 built (#307), not yet gated. M3a merged; 3b/3c built,
-  T2 in R35, gate in R36.
-- **GPU queue:** R38 (running) → R39 (T2 DMR with turn_index + stamp gate) →
-  R30 (held-out baselines) → R35 (T2 LoCoMo-10 with observations) → R36
-  (observation retrieval gate + nosem) → R20d (LME s) → R31 (noise repeats).
-- **Next R-number:** R40.
+- **GPU runner:** no longer an agent. The lead runs shell chains
+  (`/tmp/lead-chain.log`; scripts in the lead's scratchpad) that import code
+  from worktrees via PYTHONPATH with an import guard; the main checkout is
+  never switched.
+- **Results since last update:** see `2026-10-m1-m2-gates.md`. Closed: #300,
+  #301, #307, #310. The answer-model ablation (R40) says model size is not
+  the limit.
+- **GPU queue:** R30 (held-out baselines on current main, running) → R35 (T2
+  LoCoMo-10 with observations) → R36 (observation retrieval gate + nosem) →
+  R44 (large dev golden sets: DMR 100–299, LoCoMo-10 conv-41/42/43) → R20d.
+- **Next R-number:** R45.
 
 ## Pins
 
@@ -69,11 +71,8 @@ Notes:
 
 ## Open PRs
 
-- hippocampy#300 — M1.2 `Message.turn_index` + `turn N` stamp (collapse removed); T2 + gate in R39.
-- hippocampy#301 — M2.1 reranker, fix attempt (bare text, blend); gate R38.
-- hippocampy#304 — M3b Observation extraction worker (off; `CAMPY_OBSERVATIONS_ENABLED`); T2 in R35.
-- hippocampy#305 — M3c observation-fed semantic section (off; `CAMPY_OBSERVATIONS_RETRIEVAL`); stacked on #304; gate R36.
-- hippocampy#307 — M2.3 speaker/time cue boosts (off; `CAMPY_RETRIEVAL_SPEAKER_BOOST`, `CAMPY_RETRIEVAL_TIME_BOOST`); not yet gated.
+- hippocampy#304 — M3b Observation extraction worker (off); T2 in R35.
+- hippocampy#305 — M3c observation-fed semantic section (off); gate R36.
 
 ## Latest numbers (fields mode)
 
@@ -101,6 +100,6 @@ Not measured yet (R31). Assume ±4 points at n=50–60.
 
 ## Next three actions
 
-1. R38 → merge or close #301 (one fix attempt used).
-2. R39 → decide #300; R30 → held-out check of #299.
-3. Gate #307 (speaker/time boosts) and R35/R36 → #304/#305.
+1. R30 → held-out check of #299 (cite prompt) and held-out baselines.
+2. R35/R36 → decide #304/#305 (observations).
+3. R44 → re-run the noise check on the large sets, then resume M2/M3 gating there.
