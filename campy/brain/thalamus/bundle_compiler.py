@@ -629,9 +629,14 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
         if order not in CONVERSATION_ORDERS:
             _warn_once_bad_conversation_order(order)
             order = "time"
+        # B481: retrieval fixes, defaults = the B454/B470 behaviour
+        retrieval = config.get("retrieval", {}) or {}
         rows = await get_gateway(db).run(
-            "thalamus.bundle_conversation",
+            "thalamus.bundle_conversation_v2",
             query_embedding=query_embedding, query_text=query, limit=limit, order=order,
+            question_filter=str(retrieval.get("question_filter", "trailing")),
+            fts_query=str(retrieval.get("fts_query", "full")),
+            fts_fusion=str(retrieval.get("fts_fusion", "rrf")),
         )
         content, node_ids = [], []
         for r in (rows or []):

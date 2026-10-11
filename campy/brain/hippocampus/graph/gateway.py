@@ -357,6 +357,98 @@ def _warn_once_bad_conversation_order(value: str) -> None:
             value, CONVERSATION_ORDERS)
 
 
+# B481: three opt-in retrieval fixes for the conversation stage, each default
+# preserving the B454/B470 behaviour exactly.
+QUESTION_FILTERS = ("trailing", "all_questions")
+FTS_QUERIES = ("full", "content")
+FTS_FUSIONS = ("rrf", "extra_only")
+_BAD_RETRIEVAL_SETTING_WARNED: set[tuple[str, str]] = set()
+
+
+def _retrieval_choice(params: dict[str, Any], key: str, allowed: tuple[str, ...]) -> str:
+    """`[retrieval] <key>` as passed by the stage; an unknown value warns once
+    and falls back to the first (default) choice."""
+    value = str(params.get(key) or allowed[0]).lower()
+    if value in allowed:
+        return value
+    if (key, value) not in _BAD_RETRIEVAL_SETTING_WARNED:
+        _BAD_RETRIEVAL_SETTING_WARNED.add((key, value))
+        _logger.warning("[retrieval] %s=%r is not one of %s; using %r", key, value, allowed, allowed[0])
+    return allowed[0]
+
+
+def is_question_turn(text: str, mode: str = "trailing") -> bool:
+    """B481: whether a stored turn is a question rather than a statement.
+
+    "trailing" (B454): the turn ends in "?". That also drops "She lives in
+    Texas with me. What about you?", a statement that happens to end with a
+    question back (8 of 21 evidence misses on 50 DMR stores). "all_questions":
+    a turn is a question only if EVERY sentence in it is -- pure questions
+    (and `ask`'s captured question echoes, which are a single question) are
+    still dropped; a statement followed by a question is kept."""
+    text = text.strip()
+    if mode != "all_questions":
+        return text.endswith("?")
+    sentences = [s for s in re.split(r"(?<=[.!?])[\"')\]]*\s+", text) if s.strip()]
+    return bool(sentences) and all(s.rstrip("\"')] ").endswith("?") for s in sentences)
+
+
+# B481: words that carry no topic when they frame a question ("what did I say
+# earlier about ...", "do you remember when ..."): reporting/discourse verbs and
+# vague nouns, on top of English stopwords and pronouns. General English only --
+# no dataset-specific words.
+_FTS_FRAMING_WORDS = frozenset(
+    "say said says saying tell told tells telling mention mentioned mentions talk talked talks "
+    "talking discuss discussed ask asked asks asking remember remembered recall recalled "
+    "earlier before previously previous ago later time times thing things conversation chat "
+    "ever long recently".split()
+)
+_FTS_FALLBACK_STOPWORDS = frozenset(
+    "a about above after again all also am an and any are as at be because been being below "
+    "between both but by can could did do does doing down during each few for from further had "
+    "has have having he her here hers herself him himself his how i if in into is it its itself "
+    "just me more most my myself no nor not of off on once only or other our ours ourselves out "
+    "over own same she should so some such than that the their theirs them themselves then there "
+    "these they this those through to too under until up very was we were what when where which "
+    "while who whom why will with would you your yours yourself yourselves".split()
+)
+_CONTENT_STOP: frozenset[str] | None = None
+
+
+def _content_stopwords() -> frozenset[str]:
+    """spaCy's English stopword list (importable without loading a model) when
+    available, else a fixed list; plus the framing words above."""
+    global _CONTENT_STOP
+    if _CONTENT_STOP is None:
+        try:
+            from spacy.lang.en.stop_words import STOP_WORDS as base
+        except Exception:
+            base = _FTS_FALLBACK_STOPWORDS
+        _CONTENT_STOP = frozenset(base) | _FTS_FRAMING_WORDS
+    return _CONTENT_STOP
+
+
+def content_fts_query(qtext: str) -> str:
+    """B481: `qtext` reduced to its content words (single-word chunks that are
+    stopwords, pronouns or question-framing words are dropped; a multi-part id
+    stays whole). Empty when nothing content-bearing remains."""
+    stop = _content_stopwords()
+    kept = []
+    for chunk in (qtext or "").split():
+        base = re.split(r"['\u2019]", chunk, maxsplit=1)[0]
+        parts = re.findall(r"[^\W_]+", base)
+        if len(parts) != 1:
+            if parts and base == chunk:
+                kept.append(chunk)  # multi-part id: keep as a phrase
+            continue
+        word = parts[0].lower()
+        contraction_stem = base != chunk and chunk.lower().endswith(("n't", "n\u2019t")) and word[:-1] in stop
+        if word in stop or contraction_stem:
+            continue
+        kept.append(base if base != chunk else chunk)
+    return " ".join(kept)
+
+
 class GraphGateway:
     """The chokepoint. Wraps a `KuzuClient` or `OxigraphClient` + `QueryRegistry`; `run()` is
     the only sanctioned way application code should reach the database."""
@@ -1026,6 +1118,9 @@ class GraphGateway:
         if order not in CONVERSATION_ORDERS:
             _warn_once_bad_conversation_order(order)
             order = "time"
+        qfilter = _retrieval_choice(params, "question_filter", QUESTION_FILTERS)
+        fts_mode = _retrieval_choice(params, "fts_query", FTS_QUERIES)
+        fusion = _retrieval_choice(params, "fts_fusion", FTS_FUSIONS)
         qtext = (params.get("query_text") or "").strip()
         if limit <= 0:
             return []
@@ -1046,11 +1141,22 @@ class GraphGateway:
 
         terms = fts_content_terms(qtext)
         all_df = vs.document_frequencies(terms, prefixes)
+        fts_text = qtext
+        if fts_mode == "content":
+            # B481: only the question's content words; none left -> no FTS
+            fts_text = content_fts_query(qtext)
         fts_hits = [
-            uri for uri, _ in vs.search_text(self._lexical_query(qtext, terms, all_df, prefixes), k=limit * 60)
+            uri for uri, _ in vs.search_text(self._lexical_query(fts_text, terms, all_df, prefixes), k=limit * 60)
             if uri.startswith(prefixes)
-        ][: limit * 40]
+        ][: limit * 40] if (fts_text or fts_mode == "full") else []
+        vec_known = set(vec_hits)
         for rank, uri in enumerate(fts_hits):
+            if fusion == "extra_only":
+                # B481: FTS never reorders a vector hit; its own finds queue
+                # up after the last vector hit, in FTS order
+                if uri not in vec_known:
+                    ranked[uri] = max(ranked.get(uri, 0.0), 1.0 / (60 + len(vec_hits) + rank))
+                continue
             ranked[uri] = ranked.get(uri, 0.0) + 1.0 / (60 + rank)
         if not ranked:
             return []
@@ -1104,14 +1210,14 @@ class GraphGateway:
                         and not anchors & words(text)):
                     continue
             on_topic.append((ranked.get(row["s"], 0.0), text))
-            if row.get("role") != "user" or text.endswith("?"):
+            if row.get("role") != "user" or is_question_turn(text, qfilter):
                 continue
             keep(row, text)
         # B463: what replaced the things the on-topic messages name.
         try:
             on_topic.sort(key=lambda st: -st[0])
             for score, row, text in self._successor_statements(on_topic[:limit], limit, prefixes):
-                if norm(text) != qnorm and not text.endswith("?"):
+                if norm(text) != qnorm and not is_question_turn(text, qfilter):
                     uri = keep(row, text)
                     ranked[uri] = max(ranked.get(uri, 0.0), score)
         except Exception:
@@ -1386,7 +1492,7 @@ class GraphGateway:
         if query_embedding is None or not self._vector_store:
             return []
 
-        if name == "thalamus.bundle_conversation":
+        if name in ("thalamus.bundle_conversation", "thalamus.bundle_conversation_v2"):
             return self._bundle_conversation(params)
         if name == "thalamus.bundle_assistant_words":
             return self._bundle_assistant_words(params)

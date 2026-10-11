@@ -183,6 +183,10 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_IAM_TENANT_MAP_JSON": ("server", "iam_tenant_map", _parse_json_str_map),
     "CAMPY_IAM_PRINCIPAL_SCOPE_MAP_JSON": ("server", "iam_principal_scope_map", _parse_json_scope_map),
     "CAMPY_IAM_DEFAULT_SCOPES_JSON": ("server", "iam_default_scopes", _parse_json_str_list),
+    # B481: conversation-stage retrieval switches (gating runs set these per run)
+    "CAMPY_RETRIEVAL_QUESTION_FILTER": ("retrieval", "question_filter", str.strip),
+    "CAMPY_RETRIEVAL_FTS_QUERY": ("retrieval", "fts_query", str.strip),
+    "CAMPY_RETRIEVAL_FTS_FUSION": ("retrieval", "fts_fusion", str.strip),
 }
 
 

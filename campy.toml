@@ -307,6 +307,10 @@ home_title = "ARC-AGI Memory"
 # [retrieval]
 # conversation_limit = 6            # turns in the conversation section (0 disables it)
 # conversation_order = "time"       # "time" = oldest first (B454, default); "rank" = best match first
+# B481 (opt-in; env CAMPY_RETRIEVAL_QUESTION_FILTER / _FTS_QUERY / _FTS_FUSION):
+# question_filter = "trailing"      # "trailing" = drop turns ending in "?" (default); "all_questions" = only turns that are all questions
+# fts_query = "full"                # "full" = whole question (default); "content" = content words only (no stopwords/framing verbs)
+# fts_fusion = "rrf"                # "rrf" = reciprocal-rank fusion (default); "extra_only" = FTS only adds candidates after the vector hits
 
 # B375: Warm Frontier (Pre-Warmed Selective Activation) tuning. Every key
 # below matches warm_frontier.py's prior hardcoded default exactly, so

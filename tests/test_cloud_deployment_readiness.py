@@ -47,6 +47,9 @@ def test_every_documented_override_applies():
         "CAMPY_IAM_TENANT_MAP_JSON": '{"arn:aws:iam::1:role/a": "tenant-a"}',
         "CAMPY_IAM_PRINCIPAL_SCOPE_MAP_JSON": '{"arn:aws:iam::1:role/a": ["memory.read"]}',
         "CAMPY_IAM_DEFAULT_SCOPES_JSON": '["memory.read", "memory.write"]',
+        "CAMPY_RETRIEVAL_QUESTION_FILTER": "all_questions",
+        "CAMPY_RETRIEVAL_FTS_QUERY": "content",
+        "CAMPY_RETRIEVAL_FTS_FUSION": "extra_only",
     }
     assert set(env) == set(ENV_OVERRIDES), "test must cover every override"
     cfg = apply_env_overrides(_base(), env)
@@ -61,6 +64,9 @@ def test_every_documented_override_applies():
     assert s["iam_tenant_map"] == {"arn:aws:iam::1:role/a": "tenant-a"}
     assert s["iam_principal_scope_map"] == {"arn:aws:iam::1:role/a": ["memory.read"]}
     assert s["iam_default_scopes"] == ["memory.read", "memory.write"]
+    assert cfg["retrieval"]["question_filter"] == "all_questions"
+    assert cfg["retrieval"]["fts_query"] == "content"
+    assert cfg["retrieval"]["fts_fusion"] == "extra_only"
     assert sorted(cfg["_env_overrides"]) == sorted(env)
 
 
