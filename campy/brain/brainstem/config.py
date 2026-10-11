@@ -94,6 +94,9 @@ _DEFAULT_CONFIG = {
         # line used, abstain when none answers; "legacy" = the pre-M1.3
         # "NOT empty ... must be used" instruction.
         "answer_style": "cite",
+        # B480: "direct" = one call with the whole bundle (default);
+        # "select" = ask which numbered lines answer, then answer from those.
+        "answer_mode": "direct",
     },
     # B325: remote MCP transport bind address + auth mode, explicit and
     # guarded (see campy/brain_daemon.py::_enforce_bind_guard). Defaults
@@ -177,6 +180,7 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_LLM_MODEL": ("llm", "model", str.strip),
     "CAMPY_LLM_REGION": ("llm", "region", str.strip),
     "CAMPY_LLM_BASE_URL": ("llm", "base_url", str.strip),
+    "CAMPY_ASK_ANSWER_MODE": ("ask", "answer_mode", str.strip),
     "CAMPY_IAM_TENANT_ID": ("server", "iam_tenant_id", str.strip),
     "CAMPY_IAM_WORKSPACE_ID": ("server", "iam_workspace_id", str.strip),
     "CAMPY_IAM_WORKSPACE_MAP_JSON": ("server", "iam_workspace_map", _parse_json_str_map),

@@ -41,6 +41,7 @@ def test_every_documented_override_applies():
         "CAMPY_LLM_MODEL": "us.example.model-v1:0",
         "CAMPY_LLM_REGION": "us-east-1",
         "CAMPY_LLM_BASE_URL": "https://llm.internal/v1",
+        "CAMPY_ASK_ANSWER_MODE": "select",
         "CAMPY_IAM_TENANT_ID": "acme",
         "CAMPY_IAM_WORKSPACE_ID": "acme-default",
         "CAMPY_IAM_WORKSPACE_MAP_JSON": '{"arn:aws:iam::1:role/a": "ws-a"}',
@@ -61,6 +62,7 @@ def test_every_documented_override_applies():
     assert s["iam_tenant_map"] == {"arn:aws:iam::1:role/a": "tenant-a"}
     assert s["iam_principal_scope_map"] == {"arn:aws:iam::1:role/a": ["memory.read"]}
     assert s["iam_default_scopes"] == ["memory.read", "memory.write"]
+    assert cfg["ask"]["answer_mode"] == "select"
     assert sorted(cfg["_env_overrides"]) == sorted(env)
 
 
