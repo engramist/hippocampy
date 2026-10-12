@@ -269,7 +269,7 @@ turn ─► 1 Capture ─► 2 Consolidate ─► store ─► 3 Retrieve ─►
 | 4 Pack | each turn stamped `[speaker, YYYY-MM-DD HH:MM] text`; sections rendered with boundary tags | `bundle_compiler.py` L631 (stamp); `ask.py` `_bundle_to_prompt` (L123) |
 | 5 Answer | system prompt "use only the provided memory context…"; when any section has content the prompt adds "The sections below are NOT empty … must be used" (ask.py ~L173) | `ask.py` `run_ask` (L287), `_ASK_SYSTEM_PROMPT` (L188) |
 
-Config knobs: `[retrieval] conversation_limit` (6), `assistant_words_limit` (3).
+Config knobs: `[retrieval] conversation_limit` (6), `assistant_words_limit` (3), `conversation_token_budget` (0 = off; B482: fill the section to N tokens instead of a fixed turn count).
 
 ---
 

@@ -167,6 +167,13 @@ def _parse_port(raw: str) -> int:
     return port
 
 
+def _parse_nonneg_int(raw: str) -> int:
+    value = int(raw)
+    if value < 0:
+        raise ValueError("expected an integer >= 0")
+    return value
+
+
 # env var -> (config section, key, parser)
 ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_SERVER_AUTH": ("server", "auth", str.strip),
@@ -177,6 +184,7 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_LLM_MODEL": ("llm", "model", str.strip),
     "CAMPY_LLM_REGION": ("llm", "region", str.strip),
     "CAMPY_LLM_BASE_URL": ("llm", "base_url", str.strip),
+    "CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET": ("retrieval", "conversation_token_budget", _parse_nonneg_int),
     "CAMPY_IAM_TENANT_ID": ("server", "iam_tenant_id", str.strip),
     "CAMPY_IAM_WORKSPACE_ID": ("server", "iam_workspace_id", str.strip),
     "CAMPY_IAM_WORKSPACE_MAP_JSON": ("server", "iam_workspace_map", _parse_json_str_map),

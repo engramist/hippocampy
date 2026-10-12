@@ -36,7 +36,7 @@ import re
 import time
 import unittest.mock
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 from urllib.parse import unquote
 from campy.brain.hippocampus.schema import FACT_PREDICATE_TABLES
 from campy.brain.hippocampus.graph.oxigraph_client import (
@@ -346,6 +346,21 @@ def _materialize_rows(res: Any) -> Any:
 
 # B474: presentation order of the conversation stage's turns.
 CONVERSATION_ORDERS = ("rank", "time")
+
+
+def conversation_stamp(speaker: Any, created: Any) -> str:
+    """B472/B482: the `[speaker, YYYY-MM-DD HH:MM] ` prefix each conversation
+    turn carries in the bundle (the speaker when the turn named one, else the
+    role)."""
+    who = speaker or "user"
+    return f"[{who}, {str(created)[:16].replace('T', ' ')}] " if created else f"[{who}] "
+
+
+def conversation_turn_tokens(speaker: Any, created: Any, text: str) -> int:
+    """B482: tokens one conversation turn costs in the bundle, by the same
+    estimate `_stage_conversation` puts in the section's `token_estimate`
+    (len // 4 of stamp + text, at least 1)."""
+    return max(1, len(conversation_stamp(speaker, created) + text) // 4)
 _BAD_ORDER_WARNED: set[str] = set()
 
 
@@ -1000,6 +1015,80 @@ class GraphGateway:
         raise NotImplementedError(f"No Python handler or SPARQL translation implemented for NamedQuery {name!r}")
 
     def _bundle_conversation(self, params: dict[str, Any]) -> list[Any]:
+        return self._bundle_conversation_impl(params, 0)
+
+    def _bundle_conversation_budget(self, params: dict[str, Any]) -> list[Any]:
+        """B482: the conversation stage filled to a token budget instead of a
+        fixed turn count (`thalamus.bundle_conversation_budget`).
+
+        1. When every eligible user turn in the store (user role, not
+           archived, not a question, not an echo of the query, de-duplicated
+           as in `_bundle_conversation`) fits `token_budget`, return ALL of
+           them, oldest first: full history, which is what a small store
+           should give. Enumerated only when the lexical index holds no more
+           than `token_budget` documents, so a large store never pays for it.
+        2. Otherwise rank as `_bundle_conversation` does (fused order,
+           B459 gate, B463 bridge) over a candidate pool sized to the budget,
+           and take turns in rank order until the budget is full (at least
+           `limit` of them when they fit; none that would overflow), then
+           present them in `order`.
+        `token_budget` <= 0 is exactly `_bundle_conversation`."""
+        budget = int(params.get("token_budget") or 0)
+        if budget > 0 and int(params.get("limit", 6)) > 0:
+            rows = self._conversation_all_turns(params, budget)
+            if rows is not None:
+                return rows
+        return self._bundle_conversation_impl(params, budget)
+
+    def _conversation_all_turns(self, params: dict[str, Any], budget: int) -> Optional[list[Any]]:
+        """B482: every eligible user turn, oldest first, when the whole set
+        fits `budget` tokens; None when it does not (or the store is too big
+        to bother enumerating)."""
+        vs = self._vector_store
+        prefixes = (f"{CID_BASE}Message/", f"{DATA_BASE}Message/")
+        if vs.count_documents(prefixes) > budget:
+            return None
+        qnorm = " ".join(str(params.get("query_text") or "").strip().lower().split())
+        enumerated = self._client._execute_and_collect("""
+            SELECT ?s ?text ?role ?created ?archived ?speaker ?occurred WHERE {
+                ?s a <https://campy.dev/ns#Message> ;
+                   <https://campy.dev/ns#role> "user" ;
+                   <https://campy.dev/ns#text_raw> ?text .
+                OPTIONAL { ?s <https://campy.dev/ns#created_at> ?created }
+                OPTIONAL { ?s <https://campy.dev/ns#archived> ?archived }
+                OPTIONAL { ?s <https://campy.dev/ns#speaker> ?speaker }
+                OPTIONAL { ?s <https://campy.dev/ns#occurred_at> ?occurred }
+            }
+        """)
+        newest: dict[tuple[str, str], dict] = {}
+        for row in enumerated:
+            text = str(row.get("text") or "").strip()
+            if (not text or not str(row["s"]).startswith(prefixes) or bool(row.get("archived"))
+                    or text.endswith("?")):
+                continue
+            norm_text = " ".join(text.lower().split())
+            if norm_text == qnorm:
+                continue
+            stored = row.get("created")
+            stored = stored.isoformat() if hasattr(stored, "isoformat") else str(stored or "")
+            when = row.get("occurred") or row.get("created")
+            when = when.isoformat() if hasattr(when, "isoformat") else str(when or "")
+            key = (str(row.get("speaker") or ""), norm_text)
+            # newest wins, as in `_bundle_conversation`; the stored time breaks
+            # ties between turns that share a (session-level) occurred_at
+            if key not in newest or (when, stored) > (newest[key]["created"], newest[key]["stored"]):
+                newest[key] = {"uri": row["s"], "text": text, "created": when, "stored": stored,
+                               "speaker": row.get("speaker")}
+        turns = sorted(newest.values(), key=lambda v: (v["created"], v["stored"], v["uri"]))
+        if sum(conversation_turn_tokens(v["speaker"], v["created"], v["text"]) for v in turns) > budget:
+            return None
+        return [
+            RowDict({"text": v["text"], "role": "user", "created_at": v["created"],
+                     "speaker": v.get("speaker"), "node_id": v["uri"], "node_type": "Message"})
+            for v in turns
+        ]
+
+    def _bundle_conversation_impl(self, params: dict[str, Any], token_budget: int = 0) -> list[Any]:
         """B454: relevant things the USER said, as bundle evidence.
 
         Consolidation keeps entity labels ("PostgreSQL"), not the statements, so
@@ -1029,6 +1118,9 @@ class GraphGateway:
         qtext = (params.get("query_text") or "").strip()
         if limit <= 0:
             return []
+        # B482: with a token budget the candidate pool must be able to fill
+        # it (a turn is ~12+ tokens); otherwise the pool is `limit`-sized.
+        pool = max(limit, token_budget // 12) if token_budget > 0 else limit
         prefixes = (f"{CID_BASE}Message/", f"{DATA_BASE}Message/")
         ranked: dict[str, float] = {}
         # A stored message that is (nearly) the query itself is an echo of the
@@ -1037,9 +1129,9 @@ class GraphGateway:
         # fill the candidate window and crowd every real fact out.
         vec_hits = [
             uri for uri, score in vs.search_vectors(
-                params["query_embedding"], k=_typed_search_k(limit * 20), min_score=0.30)
+                params["query_embedding"], k=_typed_search_k(pool * 20), min_score=0.30)
             if uri.startswith(prefixes) and score < 0.985
-        ][: limit * 40]
+        ][: pool * 40]
         for rank, uri in enumerate(vec_hits):
             ranked[uri] = ranked.get(uri, 0.0) + 1.0 / (60 + rank)
         from campy.brain.hippocampus.graph.vector_store import fts_content_terms
@@ -1047,9 +1139,9 @@ class GraphGateway:
         terms = fts_content_terms(qtext)
         all_df = vs.document_frequencies(terms, prefixes)
         fts_hits = [
-            uri for uri, _ in vs.search_text(self._lexical_query(qtext, terms, all_df, prefixes), k=limit * 60)
+            uri for uri, _ in vs.search_text(self._lexical_query(qtext, terms, all_df, prefixes), k=pool * 60)
             if uri.startswith(prefixes)
-        ][: limit * 40]
+        ][: pool * 40]
         for rank, uri in enumerate(fts_hits):
             ranked[uri] = ranked.get(uri, 0.0) + 1.0 / (60 + rank)
         if not ranked:
@@ -1091,7 +1183,8 @@ class GraphGateway:
             key = (str(row.get("speaker") or ""), norm(text))
             if key not in newest or created > newest[key][0]:
                 newest[key] = (created, {"uri": row["s"], "text": text, "created": created,
-                                         "speaker": row.get("speaker")})
+                                         "speaker": row.get("speaker"),
+                                         "stored": row.get("stored") or ""})
             return newest[key][1]["uri"]
 
         for row in rows:
@@ -1116,9 +1209,24 @@ class GraphGateway:
                     ranked[uri] = max(ranked.get(uri, 0.0), score)
         except Exception:
             _logger.debug("_bundle_conversation successor bridge failed", exc_info=True)
-        picked = sorted(newest.values(), key=lambda kv: -ranked.get(kv[1]["uri"], 0.0))[:limit]
-        if order == "time":
-            picked.sort(key=lambda kv: kv[0])
+        picked = sorted(newest.values(), key=lambda kv: -ranked.get(kv[1]["uri"], 0.0))
+        if token_budget > 0:
+            # B482: fill the budget in rank order, skipping a turn that would
+            # overflow it; if nothing fits, fall back to the top `limit`
+            used, fitted = 0, []
+            for kv in picked:
+                v = kv[1]
+                cost = conversation_turn_tokens(v.get("speaker"), v["created"], v["text"])
+                if used + cost <= token_budget:
+                    fitted.append(kv)
+                    used += cost
+            picked = fitted or picked[:limit]
+            if order == "time":
+                picked.sort(key=lambda kv: (kv[0], kv[1].get("stored") or ""))
+        else:
+            picked = picked[:limit]
+            if order == "time":
+                picked.sort(key=lambda kv: kv[0])
         return [
             RowDict({"text": v["text"], "role": "user", "created_at": v["created"],
                      "speaker": v.get("speaker"), "node_id": v["uri"], "node_type": "Message"})
@@ -1247,6 +1355,8 @@ class GraphGateway:
             # so; otherwise when Campy stored it. Every consumer of `created`
             # (newest-wins dedup, oldest-first order, the bundle's stamp)
             # wants the former.
+            row["stored"] = (row.get("created").isoformat()
+                             if hasattr(row.get("created"), "isoformat") else str(row.get("created") or ""))
             if row.get("occurred"):
                 row["created"] = row["occurred"]
         return rows
@@ -1388,6 +1498,8 @@ class GraphGateway:
 
         if name == "thalamus.bundle_conversation":
             return self._bundle_conversation(params)
+        if name == "thalamus.bundle_conversation_budget":
+            return self._bundle_conversation_budget(params)
         if name == "thalamus.bundle_assistant_words":
             return self._bundle_assistant_words(params)
 

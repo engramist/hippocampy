@@ -605,6 +605,14 @@ async def _stage_semantic_context(
         return None
 
 
+def _conversation_token_budget(config: dict) -> int:
+    """B482: `[retrieval] conversation_token_budget` (0/absent/invalid = off)."""
+    try:
+        return max(0, int((config.get("retrieval", {}) or {}).get("conversation_token_budget", 0) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSection]:
     """B454: relevant user statements from the raw conversation (see
     GraphGateway._bundle_conversation). Disabled with
@@ -622,17 +630,27 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
         )
         query_embedding = emb.embed(query, model_name=embedding_model)
         from campy.brain.hippocampus.graph.gateway import (
-            CONVERSATION_ORDERS, _warn_once_bad_conversation_order)
+            CONVERSATION_ORDERS, _warn_once_bad_conversation_order, conversation_stamp)
 
         # B474: "time" (oldest first, default) | "rank" (best first)
         order = str((config.get("retrieval", {}) or {}).get("conversation_order", "time")).lower()
         if order not in CONVERSATION_ORDERS:
             _warn_once_bad_conversation_order(order)
             order = "time"
-        rows = await get_gateway(db).run(
-            "thalamus.bundle_conversation",
-            query_embedding=query_embedding, query_text=query, limit=limit, order=order,
-        )
+        # B482: a token budget (> 0) fills the section to that many tokens
+        # instead of `limit` turns; 0 (default) is the fixed-limit path.
+        budget = _conversation_token_budget(config)
+        if budget > 0:
+            rows = await get_gateway(db).run(
+                "thalamus.bundle_conversation_budget",
+                query_embedding=query_embedding, query_text=query, limit=limit, order=order,
+                token_budget=budget,
+            )
+        else:
+            rows = await get_gateway(db).run(
+                "thalamus.bundle_conversation",
+                query_embedding=query_embedding, query_text=query, limit=limit, order=order,
+            )
         content, node_ids = [], []
         for r in (rows or []):
             get = r.get if isinstance(r, dict) else (lambda k, d=None: d)
@@ -640,8 +658,7 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
             if not text:
                 continue
             # B472: the speaker, when the turn named one, else the role
-            who = get("speaker") or "user"
-            stamp = f"[{who}, {str(created)[:16].replace('T', ' ')}] " if created else f"[{who}] "
+            stamp = conversation_stamp(get("speaker"), created)
             content.append({
                 "text": stamp + text, "type": "Message", "role": "user",
                 "created_at": created, "confidence": 0.5, "pathway_strength": 0.5,

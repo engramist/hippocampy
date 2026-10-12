@@ -307,6 +307,9 @@ home_title = "ARC-AGI Memory"
 # [retrieval]
 # conversation_limit = 6            # turns in the conversation section (0 disables it)
 # conversation_order = "time"       # "time" = oldest first (B454, default); "rank" = best match first
+# conversation_token_budget = 0     # B482: > 0 fills the section to this many tokens instead of
+#                                   # conversation_limit turns (all user turns if they fit, else
+#                                   # rank-filled); 0 = off. Env: CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET
 
 # B375: Warm Frontier (Pre-Warmed Selective Activation) tuning. Every key
 # below matches warm_frontier.py's prior hardcoded default exactly, so
