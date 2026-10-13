@@ -1583,6 +1583,19 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         # No sparql= — Python handler in GraphGateway._bundle_conversation.
     ),
     NamedQuery(
+        name="thalamus.bundle_conversation_budget",
+        cypher="MATCH (m:Message {role: 'user'}) "
+               "WHERE (1 - array_cosine_similarity(m.embedding, $query_embedding)) < 0.70 "
+               "RETURN m.text_raw as text, m.role as role, m.created_at as created_at "
+               "ORDER BY m.created_at ASC LIMIT $limit",
+        params=("query_embedding", "query_text", "limit", "order", "token_budget", "budget_mode"),
+        mutating=False,
+        description="B482: the conversation stage filled to a token budget: every eligible user turn "
+                    "oldest first when they all fit, else (budget_mode 'fit_all') the fixed-limit path or "
+                    "(budget_mode 'fill') rank-filled up to the budget",
+        # No sparql= — Python handler in GraphGateway._bundle_conversation_budget.
+    ),
+    NamedQuery(
         name="thalamus.bundle_assistant_words",
         cypher="MATCH (m:Message {role: 'assistant'}) "
                "WHERE (1 - array_cosine_similarity(m.embedding, $query_embedding)) < 0.70 "
@@ -1593,6 +1606,18 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         description="B471: what the assistant said on this topic (vector + FTS fusion), for questions "
                     "about the assistant's own words",
         # No sparql= — Python handler in GraphGateway._bundle_assistant_words.
+    ),
+    NamedQuery(
+        name="thalamus.bundle_observations",
+        cypher="MATCH (o:Observation) WHERE o.archived = false "
+               "RETURN o.observation_id as observation_id, o.text_raw as text "
+               "ORDER BY o.created_at ASC LIMIT $limit",
+        params=("query_embedding", "query_text", "concept_ids", "limit"),
+        mutating=False,
+        description="B472 Phase 3c: live Observations relevant to the question (vector + FTS + "
+                    "OBSERVATION_ABOUT the given Concepts, fused by reciprocal rank), each with its "
+                    "evidence quote and evidence Message id",
+        # No sparql= -- Python handler in GraphGateway._bundle_observations.
     ),
     # Concept
     NamedQuery(

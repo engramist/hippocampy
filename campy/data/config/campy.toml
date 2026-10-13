@@ -55,6 +55,11 @@ llm_batch_turns = 20
 idle_flush_seconds = 5   # (llm_batch_turns / idle_flush_seconds: reserved, not read yet)
 max_turn_chars = 600
 queue_max = 5000         # worker queue bound; a full queue drops the newest, counted
+# 3c: when true and the store holds Observations that match the question, the bundle's
+# semantic section carries them (each with its evidence quote) instead of Concepts/Decisions.
+# CAMPY_OBSERVATIONS_RETRIEVAL=1 turns it on without editing this file.
+retrieval = false
+observation_limit = 8    # most Observations the semantic section carries
 
 [wiki_projection]
 enabled = true

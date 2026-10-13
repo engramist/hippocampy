@@ -3,7 +3,7 @@
 Live state of `e2e-improvement-plan.md`. Update after every step; keep it
 short and current (history goes in dated `learnings/` notes).
 
-_Last updated: 2026-10-11 05:15 UTC_
+_Last updated: 2026-10-13 03:30 UTC_
 
 ## Who is running this
 
@@ -25,17 +25,25 @@ _Last updated: 2026-10-11 05:15 UTC_
 
 ## Current position
 
-- **GPU runner:** no longer an agent. The lead runs shell chains
-  (`/tmp/lead-chain.log`; scripts in the lead's scratchpad) that import code
-  from worktrees via PYTHONPATH with an import guard; the main checkout is
-  never switched.
-- **Results since last update:** see `2026-10-m1-m2-gates.md`. Closed: #300,
-  #301, #307, #310. The answer-model ablation (R40) says model size is not
-  the limit.
-- **GPU queue:** R30 (held-out baselines on current main, running) → R35 (T2
-  LoCoMo-10 with observations) → R36 (observation retrieval gate + nosem) →
-  R44 (large dev golden sets: DMR 100–299, LoCoMo-10 conv-41/42/43) → R20d.
-- **Next R-number:** R45.
+- **First real gain merged:** #313 (B482) conversation token budget, on by
+  default (3500 tokens, `fit_all`): if all eligible user turns fit, show them
+  all oldest first; otherwise the unchanged fixed-limit path. DMR 59 gained /
+  30 lost over 299 questions on three splits (McNemar p ≈ 0.003); dev-large
+  0.531 → 0.633 (naive RAG 0.62); fixture 28/28. Note: the squash commit
+  `6e352ff` kept a stale "(off by default; gate pending)" title; the code is on.
+- **Gates now use McNemar** (`eval_gate.py`, `gate_report.py`; campy-benchmarks#39).
+  Retrieval reshuffles flip ~30 of 200 answers each way, so only ~8+ point
+  effects are detectable at n=200.
+- **Closed since last update:** #312 recall fixes (pooled n=702 regression,
+  p=0.044), #310 select-then-answer. Cite prompt (#299) re-tested: neutral
+  (pooled 28/32), kept.
+- **Held-out baselines (R30, main):** DMR 50–99 Campy 0.54 / naive RAG 0.62 /
+  full 0.76; LoCoMo-10 conv-30 0.364 / 0.318 / 0.386.
+- **GPU runner:** `/tmp/lead-queue/runner.sh` runs `/tmp/lead-queue/[0-9]*.sh`
+  in order (log `/tmp/lead-chain.log`). Running: R20d (LongMemEval s, no
+  full-context baseline: 115k-token prompts time out). Never queue
+  full-context baselines on long histories.
+- **Next R-number:** R51.
 
 ## Pins
 
@@ -71,8 +79,10 @@ Notes:
 
 ## Open PRs
 
-- hippocampy#304 — M3b Observation extraction worker (off); T2 in R35.
-- hippocampy#305 — M3c observation-fed semantic section (off); gate R36.
+- hippocampy#304 / #305 — observations (extraction off; retrieval off). R36:
+  +6/−3 on LoCoMo dev but `nosem` equal, ~half the observations junk;
+  extraction slows ingestion (conv-41 failed to drain in 1 h). Re-gate on
+  r44 conv-42/43 stores (ingested with observations on).
 
 ## Latest numbers (fields mode)
 
@@ -89,10 +99,11 @@ category 5) and are not directly comparable to run_all's judge accuracy.
 
 ## Golden stores (`~/campy-golden/`, local machine)
 
-- `r24a/` LoCoMo-10 dev, store `stores/campy-bench-_g7_nemi`
-- `r24b/` DMR dev (50 stores)
-- `r20a/`, `r20c/` text-mode references
-- pending: `r30a`/`r30b` (held-out), `r35` (observations on), `r39` (turn_index)
+- dev: `r24b` DMR 0–49, `r24a` LoCoMo-10 conv-26
+- dev-large: `r44a` DMR 100–299 (200 stores); `r44-conv-42`, `r44-conv-43`
+  LoCoMo-10 (all questions; ingested with observations on)
+- held-out: `r30a` DMR 50–99, `r30b` LoCoMo-10 conv-30
+- other: `r20a`, `r20c` (text mode), `r35` (conv-26 with observations), `r39` (turn_index)
 
 ## Noise floor
 
@@ -100,6 +111,8 @@ Not measured yet (R31). Assume ±4 points at n=50–60.
 
 ## Next three actions
 
-1. R30 → held-out check of #299 (cite prompt) and held-out baselines.
-2. R35/R36 → decide #304/#305 (observations).
-3. R44 → re-run the noise check on the large sets, then resume M2/M3 gating there.
+1. R20d → LongMemEval s numbers (budget does not apply: histories too long).
+2. Re-gate observations (#305 on main) on r44 conv-42/43.
+3. Next large-effect candidate: what full history does that Campy does not on
+   LoCoMo (full 0.39–0.48 vs Campy 0.36–0.40) — e.g. a larger budget with
+   session-level selection (M2.2), measured with McNemar on dev-large.

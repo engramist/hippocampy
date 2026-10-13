@@ -79,6 +79,8 @@ _DEFAULT_CONFIG = {
         "idle_flush_seconds": 5,
         "max_turn_chars": 600,
         "queue_max": 5000,         # 3b: bounded worker queue; a full queue drops the newest, counted
+        "retrieval": False,        # 3c: feed the bundle's semantic section from Observations
+        "observation_limit": 8,    # 3c: most Observations the semantic section carries
     },
     "compression": {
         "strategy": "two_lane",       # two_lane (Protected Lane zero loss + Bulk Lane lossy)
@@ -168,6 +170,23 @@ def _parse_port(raw: str) -> int:
     return port
 
 
+def _parse_nonneg_int(raw: str) -> int:
+    value = int(raw)
+    if value < 0:
+        raise ValueError("expected an integer >= 0")
+    return value
+
+
+CONVERSATION_BUDGET_MODES = ("fit_all", "fill")
+
+
+def _parse_budget_mode(raw: str) -> str:
+    value = raw.strip().lower()
+    if value not in CONVERSATION_BUDGET_MODES:
+        raise ValueError("expected one of: " + ", ".join(CONVERSATION_BUDGET_MODES))
+    return value
+
+
 # env var -> (config section, key, parser)
 ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_SERVER_AUTH": ("server", "auth", str.strip),
@@ -177,10 +196,14 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     # B472 Phase 3b: lets a benchmark harness switch Observations on without
     # touching the config file it writes (the daemon inherits the environment).
     "CAMPY_OBSERVATIONS_ENABLED": ("observations", "enabled", _parse_bool),
+    # B472 Phase 3c: same reason, for the reader (independent of the writer).
+    "CAMPY_OBSERVATIONS_RETRIEVAL": ("observations", "retrieval", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
     "CAMPY_LLM_MODEL": ("llm", "model", str.strip),
     "CAMPY_LLM_REGION": ("llm", "region", str.strip),
     "CAMPY_LLM_BASE_URL": ("llm", "base_url", str.strip),
+    "CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET": ("retrieval", "conversation_token_budget", _parse_nonneg_int),
+    "CAMPY_RETRIEVAL_CONVERSATION_BUDGET_MODE": ("retrieval", "conversation_budget_mode", _parse_budget_mode),
     "CAMPY_IAM_TENANT_ID": ("server", "iam_tenant_id", str.strip),
     "CAMPY_IAM_WORKSPACE_ID": ("server", "iam_workspace_id", str.strip),
     "CAMPY_IAM_WORKSPACE_MAP_JSON": ("server", "iam_workspace_map", _parse_json_str_map),

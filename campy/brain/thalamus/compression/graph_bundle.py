@@ -103,6 +103,10 @@ def _score_node(node: dict, query_emb: list[float] | None, config: dict) -> floa
 
 
 def _compact_line(node: dict) -> str:
+    if node.get("type") == "Observation":
+        # B472 3c: the line is already "[who, date] claim (\"quote\")"; a type
+        # prefix would only add noise to it.
+        return node.get("text", "").strip()
     prefix = _node_prefix(node.get("type", ""))
     text = node.get("text", "").strip()
     return f"{prefix}:{text}"
@@ -116,7 +120,10 @@ def _compact_line(node: dict) -> str:
 # Constraints are hard rules — always protected by type. Decisions have no
 # explicit "locked" field in the schema, so a high confidence floor stands in
 # for "effectively locked"; kept high (0.95) so ordinary decisions still prune.
-_PROTECTED_TYPES = frozenset({"Constraint", "GlobalConstraint"})
+# B472 3c: an Observation is already capped (observation_limit) and carries its
+# evidence quote and polarity; dropping one by graph score would remove exactly
+# the source-grounded fact the section exists for, so they are never pruned.
+_PROTECTED_TYPES = frozenset({"Constraint", "GlobalConstraint", "Observation"})
 _LOCKED_DECISION_CONFIDENCE = 0.95
 
 
@@ -186,4 +193,5 @@ class GraphBundleCompressor(Compressor):
             content=[{"compact": compact_text}],
             token_estimate=len(compact_text) // 4,
             source_node_ids=section.source_node_ids,
+            variant=getattr(section, "variant", ""),
         )
