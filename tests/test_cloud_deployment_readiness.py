@@ -42,6 +42,7 @@ def test_every_documented_override_applies():
         "CAMPY_LLM_REGION": "us-east-1",
         "CAMPY_LLM_BASE_URL": "https://llm.internal/v1",
         "CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET": "3500",
+        "CAMPY_RETRIEVAL_CONVERSATION_BUDGET_MODE": "fill",
         "CAMPY_IAM_TENANT_ID": "acme",
         "CAMPY_IAM_WORKSPACE_ID": "acme-default",
         "CAMPY_IAM_WORKSPACE_MAP_JSON": '{"arn:aws:iam::1:role/a": "ws-a"}',
@@ -58,6 +59,7 @@ def test_every_documented_override_applies():
     assert cfg["llm"] == {"provider": "bedrock", "model": "us.example.model-v1:0",
                           "region": "us-east-1", "base_url": "https://llm.internal/v1"}
     assert cfg["retrieval"]["conversation_token_budget"] == 3500
+    assert cfg["retrieval"]["conversation_budget_mode"] == "fill"
     assert s["iam_tenant_id"] == "acme" and s["iam_workspace_id"] == "acme-default"
     assert s["iam_workspace_map"] == {"arn:aws:iam::1:role/a": "ws-a"}
     assert s["iam_tenant_map"] == {"arn:aws:iam::1:role/a": "tenant-a"}
@@ -76,6 +78,7 @@ def test_unset_and_empty_vars_leave_config_alone():
     ("CAMPY_WEB_PORT", "70000"),
     ("CAMPY_WEB_PORT", "http"),
     ("CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET", "-1"),
+    ("CAMPY_RETRIEVAL_CONVERSATION_BUDGET_MODE", "everything"),
     ("CAMPY_IAM_WORKSPACE_MAP_JSON", "{not json"),
     ("CAMPY_IAM_WORKSPACE_MAP_JSON", '["a", "b"]'),
     ("CAMPY_IAM_PRINCIPAL_SCOPE_MAP_JSON", '{"arn": "memory.read"}'),

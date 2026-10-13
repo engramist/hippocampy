@@ -1588,10 +1588,11 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                "WHERE (1 - array_cosine_similarity(m.embedding, $query_embedding)) < 0.70 "
                "RETURN m.text_raw as text, m.role as role, m.created_at as created_at "
                "ORDER BY m.created_at ASC LIMIT $limit",
-        params=("query_embedding", "query_text", "limit", "order", "token_budget"),
+        params=("query_embedding", "query_text", "limit", "order", "token_budget", "budget_mode"),
         mutating=False,
         description="B482: the conversation stage filled to a token budget: every eligible user turn "
-                    "oldest first when they all fit, else rank-filled up to the budget",
+                    "oldest first when they all fit, else (budget_mode 'fit_all') the fixed-limit path or "
+                    "(budget_mode 'fill') rank-filled up to the budget",
         # No sparql= — Python handler in GraphGateway._bundle_conversation_budget.
     ),
     NamedQuery(

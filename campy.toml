@@ -310,6 +310,10 @@ home_title = "ARC-AGI Memory"
 # conversation_token_budget = 0     # B482: > 0 fills the section to this many tokens instead of
 #                                   # conversation_limit turns (all user turns if they fit, else
 #                                   # rank-filled); 0 = off. Env: CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET
+# conversation_budget_mode = "fit_all"  # B482: when the whole history does not fit the budget:
+#                                   # "fit_all" = fall back to the fixed conversation_limit path;
+#                                   # "fill" = rank-fill to the budget.
+#                                   # Env: CAMPY_RETRIEVAL_CONVERSATION_BUDGET_MODE
 
 # B375: Warm Frontier (Pre-Warmed Selective Activation) tuning. Every key
 # below matches warm_frontier.py's prior hardcoded default exactly, so

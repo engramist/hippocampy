@@ -2,7 +2,9 @@
 filled to a token budget instead of a fixed turn count.
 
 0 = off = the fixed-limit path, unchanged. > 0: every eligible user turn,
-oldest first, when they all fit; otherwise rank-filled up to the budget.
+oldest first, when they all fit; otherwise, per `conversation_budget_mode`,
+the fixed-limit path ("fit_all", default) or rank-filled up to the budget
+("fill").
 """
 
 from __future__ import annotations
@@ -41,9 +43,10 @@ def _ids(rows):
     return [r["node_id"].rsplit("/", 1)[-1] for r in rows]
 
 
-async def _budget(gw, budget, limit=2, order="time", q="zzqx"):
+async def _budget(gw, budget, limit=2, order="time", q="zzqx", mode="fill"):
     return await gw.run("thalamus.bundle_conversation_budget", query_embedding=QUERY_EMB,
-                        query_text=q, limit=limit, order=order, token_budget=budget)
+                        query_text=q, limit=limit, order=order, token_budget=budget,
+                        budget_mode=mode)
 
 
 async def _fixed(gw, limit=2, order="time", q="zzqx"):
@@ -131,6 +134,32 @@ async def test_a_budget_smaller_than_any_turn_falls_back_to_the_limit(gw):
     assert _ids(await _budget(gw, 5, limit=1)) == ["m1"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("order", ["time", "rank"])
+async def test_fit_all_with_a_store_too_big_is_identical_to_budget_zero(gw, order):
+    for i in range(1, 41):
+        await _add(gw, i, f"Statement number {i} about my garden, " + "plants " * 12,
+                   f"2023-05-{(i % 28) + 1:02d}T10:00:00+00:00", cos=0.5 + i / 100)
+    fixed = await _fixed(gw, limit=3, order=order)
+    for mode in ("fit_all", None):  # explicit and absent (default is fit_all)
+        rows = await _budget(gw, 330, limit=3, order=order, mode=mode)
+        assert [dict(r) for r in rows] == [dict(r) for r in fixed]
+    # ...whereas fill takes more
+    assert len(await _budget(gw, 330, limit=3, order=order, mode="fill")) > len(fixed)
+
+
+@pytest.mark.asyncio
+async def test_fit_all_with_a_small_store_returns_all_turns(gw):
+    await _small_store(gw)
+    assert _ids(await _budget(gw, 2000, mode="fit_all")) == ["m1", "m2", "m3"]
+
+
+@pytest.mark.asyncio
+async def test_unknown_mode_behaves_as_fit_all(gw):
+    await _small_store(gw)
+    assert _ids(await _budget(gw, 2000, mode="bogus")) == ["m1", "m2", "m3"]
+
+
 # --- stage plumbing -------------------------------------------------------
 
 class _Recorder:
@@ -168,6 +197,15 @@ async def test_stage_budget_on_uses_the_budget_query(recorder):
         None, "q", {"retrieval": {"conversation_token_budget": 3500}})
     assert recorder.name == "thalamus.bundle_conversation_budget"
     assert recorder.params["token_budget"] == 3500 and recorder.params["limit"] == 6
+    assert recorder.params["budget_mode"] == "fit_all"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("val,want", [("fill", "fill"), ("FILL", "fill"), ("junk", "fit_all")])
+async def test_stage_passes_the_budget_mode(recorder, val, want):
+    await bundle_compiler._stage_conversation(
+        None, "q", {"retrieval": {"conversation_token_budget": 3500, "conversation_budget_mode": val}})
+    assert recorder.params["budget_mode"] == want
 
 
 @pytest.mark.asyncio

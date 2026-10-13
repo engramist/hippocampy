@@ -346,6 +346,8 @@ def _materialize_rows(res: Any) -> Any:
 
 # B474: presentation order of the conversation stage's turns.
 CONVERSATION_ORDERS = ("rank", "time")
+# B482: what the token-budget stage does when the whole history does not fit
+CONVERSATION_BUDGET_MODES = ("fit_all", "fill")
 
 
 def conversation_stamp(speaker: Any, created: Any) -> str:
@@ -1027,18 +1029,23 @@ class GraphGateway:
            them, oldest first: full history, which is what a small store
            should give. Enumerated only when the lexical index holds no more
            than `token_budget` documents, so a large store never pays for it.
-        2. Otherwise rank as `_bundle_conversation` does (fused order,
-           B459 gate, B463 bridge) over a candidate pool sized to the budget,
-           and take turns in rank order until the budget is full (at least
-           `limit` of them when they fit; none that would overflow), then
-           present them in `order`.
+        2. Otherwise it depends on `budget_mode`:
+           "fit_all" (default): exactly `_bundle_conversation` (the fixed
+           `limit` path, byte-identical to budget 0);
+           "fill": rank as `_bundle_conversation` does (fused order, B459
+           gate, B463 bridge) over a candidate pool sized to the budget, and
+           take turns in rank order until the budget is full (none that
+           would overflow), then present them in `order`.
         `token_budget` <= 0 is exactly `_bundle_conversation`."""
         budget = int(params.get("token_budget") or 0)
+        mode = str(params.get("budget_mode") or "fit_all").lower()
+        if mode not in CONVERSATION_BUDGET_MODES:
+            mode = "fit_all"
         if budget > 0 and int(params.get("limit", 6)) > 0:
             rows = self._conversation_all_turns(params, budget)
             if rows is not None:
                 return rows
-        return self._bundle_conversation_impl(params, budget)
+        return self._bundle_conversation_impl(params, budget if mode == "fill" else 0)
 
     def _conversation_all_turns(self, params: dict[str, Any], budget: int) -> Optional[list[Any]]:
         """B482: every eligible user turn, oldest first, when the whole set

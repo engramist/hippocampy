@@ -613,6 +613,13 @@ def _conversation_token_budget(config: dict) -> int:
         return 0
 
 
+def _conversation_budget_mode(config: dict) -> str:
+    """B482: `[retrieval] conversation_budget_mode` ("fit_all" default | "fill";
+    anything else = default)."""
+    mode = str((config.get("retrieval", {}) or {}).get("conversation_budget_mode", "fit_all")).strip().lower()
+    return mode if mode in ("fit_all", "fill") else "fit_all"
+
+
 async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSection]:
     """B454: relevant user statements from the raw conversation (see
     GraphGateway._bundle_conversation). Disabled with
@@ -639,12 +646,14 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
             order = "time"
         # B482: a token budget (> 0) fills the section to that many tokens
         # instead of `limit` turns; 0 (default) is the fixed-limit path.
+        # budget_mode "fit_all" (default): all turns when they fit, else the
+        # fixed-limit path; "fill": rank-fill to the budget.
         budget = _conversation_token_budget(config)
         if budget > 0:
             rows = await get_gateway(db).run(
                 "thalamus.bundle_conversation_budget",
                 query_embedding=query_embedding, query_text=query, limit=limit, order=order,
-                token_budget=budget,
+                token_budget=budget, budget_mode=_conversation_budget_mode(config),
             )
         else:
             rows = await get_gateway(db).run(
