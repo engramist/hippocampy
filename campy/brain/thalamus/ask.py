@@ -373,10 +373,25 @@ async def run_ask(
         for s in (bundle.sections or [])
     )
 
-    if total_tokens <= effective_budget:
+    # B482: with `[retrieval] conversation_token_budget` the conversation
+    # section is the evidence and has its own budget (the compression router
+    # never touches it: no route for "conversation"). Do not let it push the
+    # *other* sections (semantic/graph/...) into lossy compression: gate on
+    # the rest of the bundle.
+    from campy.brain.thalamus.bundle_compiler import _conversation_token_budget
+    conversation_tokens = 0
+    if _conversation_token_budget(config) > 0:
+        conversation_tokens = sum(
+            getattr(s, "token_estimate", getattr(s, "estimated_tokens", 0))
+            for s in (bundle.sections or []) if getattr(s, "section_type", "") == "conversation"
+        )
+    if meta is not None and conversation_tokens:
+        meta["conversation_tokens_exempt"] = conversation_tokens
+
+    if total_tokens - conversation_tokens <= effective_budget:
         _logger.info(
             "Bundle size within budget (%d <= %d). Bypassing compression stage.",
-            total_tokens,
+            total_tokens - conversation_tokens,
             effective_budget,
         )
         if meta is not None:
