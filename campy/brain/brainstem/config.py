@@ -174,7 +174,7 @@ def _parse_nonneg_int(raw: str) -> int:
     return value
 
 
-CONVERSATION_BUDGET_MODES = ("fit_all", "fill")
+CONVERSATION_BUDGET_MODES = ("fit_all", "fill", "sessions")
 
 
 def _parse_budget_mode(raw: str) -> str:
@@ -196,6 +196,7 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_LLM_BASE_URL": ("llm", "base_url", str.strip),
     "CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET": ("retrieval", "conversation_token_budget", _parse_nonneg_int),
     "CAMPY_RETRIEVAL_CONVERSATION_BUDGET_MODE": ("retrieval", "conversation_budget_mode", _parse_budget_mode),
+    "CAMPY_RETRIEVAL_CONVERSATION_BUDGET_LARGE": ("retrieval", "conversation_budget_large", _parse_nonneg_int),
     "CAMPY_IAM_TENANT_ID": ("server", "iam_tenant_id", str.strip),
     "CAMPY_IAM_WORKSPACE_ID": ("server", "iam_workspace_id", str.strip),
     "CAMPY_IAM_WORKSPACE_MAP_JSON": ("server", "iam_workspace_map", _parse_json_str_map),

@@ -347,7 +347,7 @@ def _materialize_rows(res: Any) -> Any:
 # B474: presentation order of the conversation stage's turns.
 CONVERSATION_ORDERS = ("rank", "time")
 # B482: what the token-budget stage does when the whole history does not fit
-CONVERSATION_BUDGET_MODES = ("fit_all", "fill")
+CONVERSATION_BUDGET_MODES = ("fit_all", "fill", "sessions")
 
 
 def conversation_stamp(speaker: Any, created: Any) -> str:
@@ -1038,6 +1038,22 @@ class GraphGateway:
            would overflow), then present them in `order`.
         `token_budget` <= 0 is exactly `_bundle_conversation`."""
         budget = int(params.get("token_budget") or 0)
+        return self._conversation_budgeted(params, budget, budget)
+
+    def _bundle_conversation_large(self, params: dict[str, Any]) -> list[Any]:
+        """B483: `_bundle_conversation_budget` with its own budget for the
+        large-history case. `token_budget` is the fit-all threshold (the whole
+        history is shown when it fits); `large_budget` (<= 0 = `token_budget`)
+        is the budget the "fill" and "sessions" modes fill when it does not.
+        The "sessions" mode (B483) ranks candidates as "fill" does, scores each
+        session (Message -[SENT_IN]-> Session) by its best candidate's fused
+        score, and takes whole sessions in that order until the budget is full
+        (see `_select_sessions`), presented chronologically."""
+        budget = int(params.get("token_budget") or 0)
+        large = int(params.get("large_budget") or 0) or budget
+        return self._conversation_budgeted(params, budget, large)
+
+    def _conversation_budgeted(self, params: dict[str, Any], budget: int, large: int) -> list[Any]:
         mode = str(params.get("budget_mode") or "fit_all").lower()
         if mode not in CONVERSATION_BUDGET_MODES:
             mode = "fit_all"
@@ -1045,7 +1061,9 @@ class GraphGateway:
             rows = self._conversation_all_turns(params, budget)
             if rows is not None:
                 return rows
-        return self._bundle_conversation_impl(params, budget if mode == "fill" else 0)
+        if budget <= 0 or mode == "fit_all" or large <= 0:
+            return self._bundle_conversation_impl(params, 0)
+        return self._bundle_conversation_impl(params, large, sessions=(mode == "sessions"))
 
     def _conversation_all_turns(self, params: dict[str, Any], budget: int) -> Optional[list[Any]]:
         """B482: every eligible user turn, oldest first, when the whole set
@@ -1095,7 +1113,9 @@ class GraphGateway:
             for v in turns
         ]
 
-    def _bundle_conversation_impl(self, params: dict[str, Any], token_budget: int = 0) -> list[Any]:
+    def _bundle_conversation_impl(
+        self, params: dict[str, Any], token_budget: int = 0, sessions: bool = False,
+    ) -> list[Any]:
         """B454: relevant things the USER said, as bundle evidence.
 
         Consolidation keeps entity labels ("PostgreSQL"), not the statements, so
@@ -1217,6 +1237,20 @@ class GraphGateway:
         except Exception:
             _logger.debug("_bundle_conversation successor bridge failed", exc_info=True)
         picked = sorted(newest.values(), key=lambda kv: -ranked.get(kv[1]["uri"], 0.0))
+        if token_budget > 0 and sessions:
+            # B483: whole sessions, best session first, shown chronologically
+            try:
+                turns = self._select_sessions(
+                    [kv[1] for kv in picked], ranked, token_budget, limit, qnorm, prefixes)
+            except Exception:
+                _logger.debug("_bundle_conversation sessions selection failed", exc_info=True)
+                turns = None
+            if turns is not None:
+                return [
+                    RowDict({"text": v["text"], "role": "user", "created_at": v["created"],
+                             "speaker": v.get("speaker"), "node_id": v["uri"], "node_type": "Message"})
+                    for v in turns
+                ]
         if token_budget > 0:
             # B482: fill the budget in rank order, skipping a turn that would
             # overflow it; if nothing fits, fall back to the top `limit`
@@ -1239,6 +1273,142 @@ class GraphGateway:
                      "speaker": v.get("speaker"), "node_id": v["uri"], "node_type": "Message"})
             for _, v in picked
         ]
+
+    def _select_sessions(
+        self, cands: list[dict], ranked: dict[str, float], budget: int, limit: int,
+        qnorm: str, prefixes: tuple[str, ...],
+    ) -> list[dict]:
+        """B483: pick conversation turns by whole session.
+
+        `cands` are the stage's filtered, de-duplicated user turns, best fused
+        score first. A session scores as its best candidate turn (the max
+        fused RRF score of any of its candidates -- the `sessK` variant of
+        campy-benchmarks' `diag_lme_fusion.py`); ties go to the session whose
+        best turn ranked first. Then:
+        1. the top-`limit` candidates are always kept (never less evidence
+           than the fixed path), as far as they fit `budget`;
+        2. sessions are taken best first, ALL their eligible user turns (user
+           role, not archived, not a question, not an echo of the query,
+           de-duplicated on (speaker, text)), while they fit the remaining
+           budget; a session that does not fit is skipped (a smaller, lower
+           ranked one may still fit);
+        3. if the best session alone does not fit, its turns closest to the
+           best-matching turn (a window, earlier turn first on a tie) fill
+           what is left;
+        4. the result is chronological (time, stored time, uri) so the model
+           reads coherent dialogue.
+        A candidate with no session link counts as a one-turn session."""
+        norm = lambda t: " ".join(str(t).lower().split())
+        cost = lambda v: conversation_turn_tokens(v.get("speaker"), v["created"], v["text"])
+        chrono = lambda v: (v["created"], v.get("stored") or "", v["uri"])
+        key_of = lambda v: (str(v.get("speaker") or ""), norm(v["text"]))
+        if not cands:
+            return []
+        sess_of = self._message_sessions([v["uri"] for v in cands])
+
+        chosen: dict[str, dict] = {}
+        keys: set = set()
+        used = 0
+
+        def take(v: dict) -> None:
+            nonlocal used
+            chosen[v["uri"]] = v
+            keys.add(key_of(v))
+            used += cost(v)
+
+        for v in cands[:limit]:
+            if used + cost(v) <= budget:
+                take(v)
+        if not chosen:
+            return sorted(cands[:limit], key=chrono)
+
+        # session -> (best score, rank of its best candidate, best candidate)
+        best: dict[str, tuple[float, int, dict]] = {}
+        for i, v in enumerate(cands):
+            sid = sess_of.get(v["uri"]) or v["uri"]
+            score = ranked.get(v["uri"], 0.0)
+            if sid not in best or score > best[sid][0]:
+                best[sid] = (score, i, v)
+        order = sorted(best, key=lambda sid: (-best[sid][0], best[sid][1]))
+        real = set(sess_of.values())
+        members = self._session_turns([sid for sid in order if sid in real], qnorm, prefixes)
+        taken_session = False
+        for sid in order:
+            anchor = best[sid][2]
+            full = members.get(sid) or [anchor]
+            if not any(v["uri"] == anchor["uri"] for v in full):
+                full = sorted(full + [anchor], key=chrono)
+            fresh = [v for v in full if v["uri"] not in chosen and key_of(v) not in keys]
+            need = sum(cost(v) for v in fresh)
+            if used + need <= budget:
+                for v in fresh:
+                    take(v)
+                taken_session = True
+            elif not taken_session:
+                taken_session = True
+                a = next(i for i, v in enumerate(full) if v["uri"] == anchor["uri"])
+                for i in sorted(range(len(full)), key=lambda i: (abs(i - a), i > a)):
+                    v = full[i]
+                    if v["uri"] in chosen or key_of(v) in keys:
+                        continue
+                    if used + cost(v) <= budget:
+                        take(v)
+        return sorted(chosen.values(), key=chrono)
+
+    def _message_sessions(self, uris: list[str]) -> dict[str, str]:
+        """B483: message URI -> the session URI it was SENT_IN (first, if several)."""
+        out: dict[str, str] = {}
+        if not uris:
+            return out
+        block = " ".join(f"<{u}>" for u in uris)
+        for row in self._client._execute_and_collect(f"""
+            SELECT ?m ?sess WHERE {{
+                VALUES ?m {{ {block} }}
+                ?m <https://campy.dev/ns#SENT_IN> ?sess .
+            }}
+        """):
+            out.setdefault(str(row["m"]), str(row["sess"]))
+        return out
+
+    def _session_turns(
+        self, sessions: list[str], qnorm: str, prefixes: tuple[str, ...],
+    ) -> dict[str, list[dict]]:
+        """B483: every eligible user turn of each session, chronological."""
+        if not sessions:
+            return {}
+        block = " ".join(f"<{u}>" for u in sessions)
+        rows = self._client._execute_and_collect(f"""
+            SELECT ?sess ?s ?text ?created ?archived ?speaker ?occurred WHERE {{
+                VALUES ?sess {{ {block} }}
+                ?s <https://campy.dev/ns#SENT_IN> ?sess ;
+                   <https://campy.dev/ns#role> "user" ;
+                   <https://campy.dev/ns#text_raw> ?text .
+                OPTIONAL {{ ?s <https://campy.dev/ns#created_at> ?created }}
+                OPTIONAL {{ ?s <https://campy.dev/ns#archived> ?archived }}
+                OPTIONAL {{ ?s <https://campy.dev/ns#speaker> ?speaker }}
+                OPTIONAL {{ ?s <https://campy.dev/ns#occurred_at> ?occurred }}
+            }}
+        """)
+        iso = lambda x: x.isoformat() if hasattr(x, "isoformat") else str(x or "")
+        by_key: dict[str, dict[tuple[str, str], dict]] = {}
+        for row in rows:
+            text = str(row.get("text") or "").strip()
+            if (not text or not str(row["s"]).startswith(prefixes) or bool(row.get("archived"))
+                    or text.endswith("?")):
+                continue
+            nt = " ".join(text.lower().split())
+            if nt == qnorm:
+                continue
+            stored = iso(row.get("created"))
+            when = iso(row.get("occurred") or row.get("created"))
+            v = {"uri": str(row["s"]), "text": text, "created": when, "stored": stored,
+                 "speaker": row.get("speaker")}
+            k = (str(row.get("speaker") or ""), nt)
+            d = by_key.setdefault(str(row["sess"]), {})
+            if k not in d or (when, stored) > (d[k]["created"], d[k]["stored"]):
+                d[k] = v
+        return {sid: sorted(d.values(), key=lambda v: (v["created"], v["stored"], v["uri"]))
+                for sid, d in by_key.items()}
 
     def _bundle_assistant_words(self, params: dict[str, Any]) -> list[Any]:
         """B471: what the ASSISTANT said on the topic, for a question about the
@@ -1507,6 +1677,8 @@ class GraphGateway:
             return self._bundle_conversation(params)
         if name == "thalamus.bundle_conversation_budget":
             return self._bundle_conversation_budget(params)
+        if name == "thalamus.bundle_conversation_large":
+            return self._bundle_conversation_large(params)
         if name == "thalamus.bundle_assistant_words":
             return self._bundle_assistant_words(params)
 
