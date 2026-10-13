@@ -56,10 +56,54 @@ def test_plans_section_explanation_is_present():
     assert "per-step outcomes" in prompt
 
 
-def test_nonempty_bundle_states_memory_is_not_empty():
+def test_nonempty_bundle_legacy_style_states_memory_is_not_empty():
+    """answer_style="legacy" keeps the pre-M1.3 text verbatim."""
     bundle = _bundle_with_plan_section()
-    prompt = _bundle_to_prompt(bundle, bundle.query)
-    assert "not empty" in prompt.lower() or "do not" in prompt.lower()
+    prompt = _bundle_to_prompt(bundle, bundle.query, {"ask": {"answer_style": "legacy"}})
+    assert (
+        "The sections below are NOT empty — relevant memory exists for this "
+        "query and must be used to answer it. Do not claim memory is empty."
+    ) in prompt
+
+
+def test_nonempty_bundle_default_style_is_cite_or_abstain():
+    """M1.3: default is "cite" — answer from the lines, quote one, abstain."""
+    bundle = _bundle_with_plan_section()
+    for cfg in (None, {}, {"ask": {}}, {"ask": {"answer_style": "cite"}}):
+        prompt = _bundle_to_prompt(bundle, bundle.query, cfg)
+        assert "Answer only from the lines below." in prompt
+        assert "quote the line you used" in prompt
+        assert "say you don't have that information" in prompt
+        # short answer first, quote second: not a bare quote
+        assert prompt.index("short answer") < prompt.index("quote the line")
+        assert "NOT empty" not in prompt
+        assert "must be used" not in prompt
+
+
+def test_unknown_answer_style_falls_back_to_cite():
+    bundle = _bundle_with_plan_section()
+    prompt = _bundle_to_prompt(bundle, bundle.query, {"ask": {"answer_style": "bogus"}})
+    assert "Answer only from the lines below." in prompt
+
+
+def test_answer_style_is_a_config_default():
+    from campy.brain.brainstem.config import _DEFAULT_CONFIG as DEFAULT_CONFIG
+
+    assert DEFAULT_CONFIG["ask"]["answer_style"] == "cite"
+
+
+def test_empty_bundle_prompt_unchanged_by_answer_style():
+    bundle = ContextBundle(
+        query="anything",
+        sections=[],
+        total_token_estimate=0,
+        token_budget=32000,
+        truncated=False,
+    )
+    base = _bundle_to_prompt(bundle, bundle.query)
+    for style in ("cite", "legacy"):
+        assert _bundle_to_prompt(bundle, bundle.query, {"ask": {"answer_style": style}}) == base
+    assert "Answer only from the lines below" not in base
 
 
 def test_empty_bundle_has_no_memory_exists_claim():
