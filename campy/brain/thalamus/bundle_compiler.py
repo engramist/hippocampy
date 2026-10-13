@@ -627,7 +627,18 @@ def _conversation_budget_mode(config: dict) -> str:
     """B482: `[retrieval] conversation_budget_mode` ("fit_all" default | "fill";
     anything else = default)."""
     mode = str((config.get("retrieval", {}) or {}).get("conversation_budget_mode", "fit_all")).strip().lower()
-    return mode if mode in ("fit_all", "fill") else "fit_all"
+    return mode if mode in ("fit_all", "fill", "sessions") else "fit_all"
+
+
+def _conversation_budget_large(config: dict, budget: int) -> int:
+    """B483: `[retrieval] conversation_budget_large` -- the budget "fill" and
+    "sessions" fill when the history does not fit `budget` (absent, 0 or
+    invalid = `budget`)."""
+    raw = (config.get("retrieval", {}) or {}).get("conversation_budget_large", 0)
+    try:
+        return max(0, int(raw or 0)) or budget
+    except (TypeError, ValueError):
+        return budget
 
 
 async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSection]:
@@ -659,11 +670,21 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
         # budget_mode "fit_all" (default): all turns when they fit, else the
         # fixed-limit path; "fill": rank-fill to the budget.
         budget = _conversation_token_budget(config)
-        if budget > 0:
+        mode = _conversation_budget_mode(config)
+        if budget > 0 and mode != "fit_all":
+            # B483: "fill"/"sessions" have their own budget for a history
+            # that does not fit `budget`
+            rows = await get_gateway(db).run(
+                "thalamus.bundle_conversation_large",
+                query_embedding=query_embedding, query_text=query, limit=limit, order=order,
+                token_budget=budget, budget_mode=mode,
+                large_budget=_conversation_budget_large(config, budget),
+            )
+        elif budget > 0:
             rows = await get_gateway(db).run(
                 "thalamus.bundle_conversation_budget",
                 query_embedding=query_embedding, query_text=query, limit=limit, order=order,
-                token_budget=budget, budget_mode=_conversation_budget_mode(config),
+                token_budget=budget, budget_mode=mode,
             )
         else:
             rows = await get_gateway(db).run(
