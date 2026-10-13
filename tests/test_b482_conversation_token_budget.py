@@ -183,7 +183,7 @@ def recorder(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("cfg", [{}, {"retrieval": {"conversation_token_budget": 0}},
+@pytest.mark.parametrize("cfg", [{"retrieval": {"conversation_token_budget": 0}},
                                  {"retrieval": {"conversation_token_budget": "junk"}}])
 async def test_stage_budget_off_uses_the_original_query(recorder, cfg):
     await bundle_compiler._stage_conversation(None, "q", cfg)
@@ -242,7 +242,7 @@ async def test_conversation_section_survives_compression_and_does_not_trigger_it
 
     # budget mode off: the same bundle is over the 2000-token threshold
     meta2: dict = {}
-    config_off = {"compression": {"budget_tokens": 2000}}
+    config_off = {"compression": {"budget_tokens": 2000}, "retrieval": {"conversation_token_budget": 0}}
     with patch("campy.brain.thalamus.ask.compile_bundle", new_callable=AsyncMock, return_value=bundle), \
             patch("campy.brain.thalamus.ask._get_llm", return_value=llm), \
             patch("campy.brain.thalamus.ask._capture_turn", new_callable=AsyncMock):
@@ -258,3 +258,11 @@ def test_conversation_is_not_in_the_compression_routes():
     _, router = build_default_registry({})
     assert router.route("conversation").__class__.__name__ == "NoOpCompressor"
     assert "conversation" not in ContentRouter._ROUTE
+
+
+@pytest.mark.asyncio
+async def test_stage_budget_is_on_by_default(recorder):
+    await bundle_compiler._stage_conversation(None, "q", {})
+    assert recorder.name == "thalamus.bundle_conversation_budget"
+    assert recorder.params["token_budget"] == bundle_compiler.DEFAULT_CONVERSATION_TOKEN_BUDGET == 3500
+    assert recorder.params["budget_mode"] == "fit_all"

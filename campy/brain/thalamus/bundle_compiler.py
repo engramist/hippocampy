@@ -605,10 +605,20 @@ async def _stage_semantic_context(
         return None
 
 
+# B482: on by default after the gate (R48/R49, DMR: 59 gained / 30 lost over
+# 299 questions on three independent splits, McNemar p ~ 0.003). With the
+# default "fit_all" mode a store whose history does not fit behaves exactly
+# as with 0 (the fixed conversation_limit path).
+DEFAULT_CONVERSATION_TOKEN_BUDGET = 3500
+
+
 def _conversation_token_budget(config: dict) -> int:
-    """B482: `[retrieval] conversation_token_budget` (0/absent/invalid = off)."""
+    """B482: `[retrieval] conversation_token_budget` (absent = 3500; 0 or
+    invalid = off)."""
+    raw = (config.get("retrieval", {}) or {}).get(
+        "conversation_token_budget", DEFAULT_CONVERSATION_TOKEN_BUDGET)
     try:
-        return max(0, int((config.get("retrieval", {}) or {}).get("conversation_token_budget", 0) or 0))
+        return max(0, int(raw or 0))
     except (TypeError, ValueError):
         return 0
 
