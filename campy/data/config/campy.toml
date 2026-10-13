@@ -45,13 +45,16 @@ max_initial_backfill_files = 5
 port = 7799
 
 # B472 Phase 3: source-grounded Observations extracted from user turns.
-# Ships disabled until a reader exists; nothing extracts or reads them yet.
+# Ships disabled until a reader exists (nothing reads them yet). Enabled, a
+# dedicated worker makes one extra LLM call per user turn (CAMPY_OBSERVATIONS_ENABLED=1
+# turns it on without editing this file).
 [observations]
 enabled = false
 llm_enabled = true       # only read when enabled
 llm_batch_turns = 20
-idle_flush_seconds = 5
+idle_flush_seconds = 5   # (llm_batch_turns / idle_flush_seconds: reserved, not read yet)
 max_turn_chars = 600
+queue_max = 5000         # worker queue bound; a full queue drops the newest, counted
 
 [wiki_projection]
 enabled = true

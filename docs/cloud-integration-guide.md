@@ -97,6 +97,7 @@ an error that names the variable. The full table is
 | `CAMPY_IAM_TENANT_MAP_JSON` | `{"<caller ARN>": "<tenant>"}` | from SSM |
 | `CAMPY_IAM_PRINCIPAL_SCOPE_MAP_JSON` | `{"<caller ARN>": ["memory.read", ...]}` | from SSM |
 | `CAMPY_IAM_DEFAULT_SCOPES_JSON` | scopes for callers without a scope-map entry | `["memory.read","memory.write"]` if unset |
+| `CAMPY_OBSERVATIONS_ENABLED` | `[observations].enabled` | unset (off); `1` enables B472 Phase 3b Observations, one extra LLM call per user turn |
 
 `CAMPY_HOME` sets where all state lives.
 
