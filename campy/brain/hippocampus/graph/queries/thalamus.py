@@ -820,6 +820,11 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         params=("lim",),
         mutating=False,
         description="Fetch ArcTaskResults for wiki projection",
+        # B427: steps must be OPTIONAL, not required -- arc_artifacts.py's
+        # _extract_task_results() computes it via _safe_int(...), which
+        # returns None whenever the source artifact's step-count field is
+        # missing or non-numeric. A required triple pattern for it dropped
+        # the whole task result from the wiki projection.
         sparql="""
             SELECT ?task_result_id ?summary ?domain ?status ?task_id ?puzzle_id
                    ?correct ?steps ?failure_class WHERE {
@@ -830,8 +835,8 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                    campy:task_id ?task_id ;
                    campy:puzzle_id ?puzzle_id ;
                    campy:correct ?correct ;
-                   campy:steps ?steps ;
                    campy:created_at ?created_at .
+                OPTIONAL { ?t campy:steps ?steps }
                 OPTIONAL { ?t campy:summary ?summary }
                 OPTIONAL { ?t campy:failure_class ?failure_class }
             }
@@ -874,6 +879,11 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         params=("lim",),
         mutating=False,
         description="Fetch ArcEvents for wiki projection",
+        # B427: step_index must be OPTIONAL, not required -- arc_artifacts.py's
+        # _extract_events() computes it via _safe_int(...), which is None for
+        # any event that doesn't carry a step/step_index/step_num field (e.g.
+        # run-level events like "artifact_ingested"). A required triple
+        # pattern for it dropped those events from the wiki projection.
         sparql="""
             SELECT ?event_id ?run_id ?task_id ?event_type ?timestamp ?step_index
                    ?actor ?tool_name ?action_name ?outcome ?domain ?summary WHERE {
@@ -883,8 +893,8 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                    campy:task_id ?task_id ;
                    campy:event_type ?event_type ;
                    campy:timestamp ?timestamp ;
-                   campy:step_index ?step_index ;
                    campy:domain ?domain .
+                OPTIONAL { ?e campy:step_index ?step_index }
                 OPTIONAL { ?e campy:actor ?actor }
                 OPTIONAL { ?e campy:tool_name ?tool_name }
                 OPTIONAL { ?e campy:action_name ?action_name }
@@ -904,6 +914,12 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         params=("lim",),
         mutating=False,
         description="Fetch ArcWorldModelSteps for wiki projection",
+        # B427: step_index/node_count/edge_count/compiled_claim_count must be
+        # OPTIONAL, not required -- arc_artifacts.py's
+        # _extract_world_model_steps() computes all four via _safe_int(...),
+        # which is None whenever the source artifact's world_model_step
+        # record is missing that field. A required triple pattern for any one
+        # of them dropped the whole step from the wiki projection.
         sparql="""
             SELECT ?world_model_step_id ?task_id ?step_index ?node_count ?edge_count
                    ?compiled_claim_count ?action_effect_class ?reasoning_mode
@@ -911,12 +927,12 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                 ?s a campy:ArcWorldModelStep ;
                    campy:world_model_step_id ?world_model_step_id ;
                    campy:task_id ?task_id ;
-                   campy:step_index ?step_index ;
-                   campy:node_count ?node_count ;
-                   campy:edge_count ?edge_count ;
-                   campy:compiled_claim_count ?compiled_claim_count ;
                    campy:single_action_stall_detected ?single_action_stall_detected ;
                    campy:created_at ?created_at .
+                OPTIONAL { ?s campy:step_index ?step_index }
+                OPTIONAL { ?s campy:node_count ?node_count }
+                OPTIONAL { ?s campy:edge_count ?edge_count }
+                OPTIONAL { ?s campy:compiled_claim_count ?compiled_claim_count }
                 OPTIONAL { ?s campy:action_effect_class ?action_effect_class }
                 OPTIONAL { ?s campy:reasoning_mode ?reasoning_mode }
                 OPTIONAL { ?s campy:planner_candidate_count ?planner_candidate_count }
@@ -970,6 +986,18 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         params=("lim",),
         mutating=False,
         description="Fetch ArcMechanics for wiki projection",
+        # B427: terminal_relevance/coordinate_relevance must be OPTIONAL, not
+        # required -- arc.merge_mechanic's own SPARQL (this file's write side)
+        # writes both as ordinary UNDEF-capable params, same as every other
+        # property on this node. The current sole caller
+        # (arc_mechanics.py's publish_mechanic_summary) happens to floor both
+        # to 0.0 via its own _safe_float(..., default=0.0), so neither is
+        # actually None through that one call site today -- but the write
+        # query's own contract already allows None, and nothing stops a
+        # future/second caller from relying on that (see B427's card, batch
+        # 4, for the full reasoning). A required triple pattern for either
+        # would drop the whole mechanic from the wiki projection the moment
+        # that happens.
         sparql="""
             SELECT ?mechanic_id ?name ?signature ?confidence ?terminal_relevance
                    ?coordinate_relevance ?evidence_count ?summary WHERE {
@@ -978,9 +1006,9 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                    campy:name ?name ;
                    campy:signature ?signature ;
                    campy:confidence ?confidence ;
-                   campy:terminal_relevance ?terminal_relevance ;
-                   campy:coordinate_relevance ?coordinate_relevance ;
                    campy:evidence_count ?evidence_count .
+                OPTIONAL { ?m campy:terminal_relevance ?terminal_relevance }
+                OPTIONAL { ?m campy:coordinate_relevance ?coordinate_relevance }
                 OPTIONAL { ?m campy:summary ?summary }
             }
             ORDER BY DESC(?confidence)
