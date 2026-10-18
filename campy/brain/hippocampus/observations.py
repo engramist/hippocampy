@@ -257,7 +257,11 @@ def observation_content_hash(draft: ObservationDraft) -> str:
     claims, not one."""
     subject = draft.subject_id or _norm_key(draft.subject_text)
     obj = draft.object_id or _norm_key(draft.object_text)
-    text = "|".join([subject, draft.predicate, obj, _norm_key(draft.time_text), draft.polarity])
+    parts = [subject, draft.predicate, obj, _norm_key(draft.time_text), draft.polarity]
+    if draft.time_start is not None:
+        # "went there yesterday" said on two different days is two events (B484).
+        parts.append(draft.time_start.date().isoformat())
+    text = "|".join(parts)
     return content_hash(table="Observation", text=text, source="observation")
 
 

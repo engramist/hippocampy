@@ -17,7 +17,11 @@ bare Concepts B473 removed.
 The LLM call is synchronous (`client.chat`), so it runs via `asyncio.to_thread`
 exactly as the Loop's LLM steps do since B468; the event loop is never blocked.
 
-Not here: relative-time normalisation (M4.2), pronoun resolution beyond the
+Time (B484, M4.2): the phrase is stored as written in `time_text`, and
+`timeparse.normalize_time` resolves it against the turn's date into
+`time_start`/`time_end`/`time_precision` (NULL when it cannot be resolved).
+
+Not here: pronoun resolution beyond the
 speaker (Phase 4), the pattern route and batching (design 5a/2; 3b is per turn).
 """
 
@@ -33,6 +37,7 @@ from typing import Any
 from campy.brain.hippocampus import observations as obs
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.hippocampus.graph.gateway import get_gateway
+from campy.brain.temporal_lobe.observations.timeparse import normalize_time
 
 _logger = logging.getLogger(__name__)
 
@@ -95,6 +100,8 @@ class ObservationWorkerStats:
     rejected: dict[str, int] = field(default_factory=dict)
     linked_subject: int = 0
     linked_object: int = 0
+    time_resolved: int = 0       # drafts whose time phrase resolved to a date range
+    time_unresolved: int = 0     # drafts with a time phrase that did not
     queue_dropped: int = 0       # set by the daemon when the queue is full
     errors: int = 0              # a turn that raised (logged, skipped)
 
@@ -331,6 +338,14 @@ async def _draft_from_proposal(
     if time_text and time_text.lower() in {"null", "none", "n/a", "unknown"}:
         time_text = None
 
+    observed_at = obs._as_datetime(occurred_at)
+    resolved = normalize_time(time_text, observed_at) if time_text else None
+    if time_text:
+        if resolved:
+            stats.time_resolved += 1
+        else:
+            stats.time_unresolved += 1
+
     draft = obs.ObservationDraft(
         evidence_ref=message_id,
         evidence_text=quote,
@@ -344,8 +359,11 @@ async def _draft_from_proposal(
         subject_id=subject_id,
         object_id=object_id,
         time_text=time_text,
+        time_start=resolved.start if resolved else None,
+        time_end=resolved.end if resolved else None,
+        time_precision=resolved.precision if resolved else None,
         speaker=speaker if named else None,
-        observed_at=obs._as_datetime(occurred_at),
+        observed_at=observed_at,
     )
     # Searchable sentence names the speaker, not "I".
     shown = obs.ObservationDraft(**{**draft.__dict__, "subject_text": display_subject})
