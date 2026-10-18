@@ -93,17 +93,16 @@ _QUOTE_TABLE = {
 
 
 def observations_enabled(config: dict | None) -> bool:
-    """`[observations] enabled` (default false: Phase 3 ships disabled until a
-    reader exists). Nothing in 3a consults this to do work; the 3b worker will."""
-    return bool(((config or {}).get("observations") or {}).get("enabled", False))
+    """`[observations] enabled` (default true; env CAMPY_OBSERVATIONS_ENABLED=0 turns the writer off)."""
+    return bool(((config or {}).get("observations") or {}).get("enabled", True))
 
 
 def observations_retrieval_enabled(config: dict | None) -> bool:
-    """`[observations] retrieval` (default false; env `CAMPY_OBSERVATIONS_RETRIEVAL`):
+    """`[observations] retrieval` (default true; env `CAMPY_OBSERVATIONS_RETRIEVAL=0` turns it off):
     the bundle's semantic section is fed from Observations (B472 Phase 3c).
     Independent of `enabled`, which gates only the writer: a store built with
     the worker on can be read with this on or off."""
-    return bool(((config or {}).get("observations") or {}).get("retrieval", False))
+    return bool(((config or {}).get("observations") or {}).get("retrieval", True))
 
 
 def observation_limit(config: dict | None, default: int = 8) -> int:

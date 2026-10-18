@@ -57,7 +57,12 @@ def gw(db):
     return GraphGateway(db, REGISTRY)
 
 
-CFG_ON = {"observations": {"retrieval": True, "observation_limit": 8}}
+# Conversation token budget 0 = the fixed 6-turn path = "the shown conversation is
+# NOT the whole history", which is when observations are used (see
+# test_full_history_* below for the other side).
+CFG_ON = {"observations": {"retrieval": True, "observation_limit": 8},
+          "retrieval": {"conversation_token_budget": 0}}
+CFG_OFF = {"observations": {"retrieval": False}, "retrieval": {"conversation_token_budget": 0}}
 
 
 class Store:
@@ -102,20 +107,26 @@ def _semantic(bundle):
 
 # --- flag off ----------------------------------------------------------------------
 
-def test_defaults_are_off():
-    assert _DEFAULT_CONFIG["observations"]["retrieval"] is False
+def test_defaults_are_on_and_env_can_turn_them_off():
+    assert _DEFAULT_CONFIG["observations"]["retrieval"] is True
+    assert _DEFAULT_CONFIG["observations"]["enabled"] is True
     assert _DEFAULT_CONFIG["observations"]["observation_limit"] == 8
+    for val in ("0", "false", "off"):
+        env = {"CAMPY_OBSERVATIONS_RETRIEVAL": val, "CAMPY_OBSERVATIONS_ENABLED": val}
+        out = apply_env_overrides({}, env)["observations"]
+        assert out["retrieval"] is False and out["enabled"] is False
     assert apply_env_overrides({}, {"CAMPY_OBSERVATIONS_RETRIEVAL": "1"})["observations"]["retrieval"] is True
     assert "retrieval" not in apply_env_overrides({}, {}).get("observations", {})
-    assert obs.observations_retrieval_enabled({}) is False
-    assert obs.observations_retrieval_enabled(_DEFAULT_CONFIG) is False
+    assert obs.observations_retrieval_enabled({}) is True
+    assert obs.observations_retrieval_enabled(_DEFAULT_CONFIG) is True
+    assert obs.observations_retrieval_enabled({"observations": {"retrieval": False}}) is False
 
 
 async def test_flag_off_bundle_ignores_observations(db, store):
     await store.concept("c-sing", "singer", emb=Q, stype="Person")
-    before = await bc.compile_bundle(QUESTION, db, {})
+    before = await bc.compile_bundle(QUESTION, db, CFG_OFF)
     await store.observe("I went to a LGBTQ support group yesterday", time_text="yesterday")
-    for cfg in ({}, {"observations": {"enabled": True}}, {"observations": {"retrieval": False}}):
+    for cfg in (CFG_OFF, {**CFG_OFF, "observations": {"enabled": True, "retrieval": False}}):
         after = await bc.compile_bundle(QUESTION, db, cfg)
         assert [(s.section_type, s.content, getattr(s, "variant", "")) for s in after.sections if s.section_type != "conversation"] \
             == [(s.section_type, s.content, "") for s in before.sections if s.section_type != "conversation"]
@@ -145,7 +156,7 @@ async def test_flag_on_semantic_section_carries_observations_with_evidence(db, s
 async def test_flag_on_without_matching_observations_falls_back(db, store):
     await store.concept("c-sing", "singer", emb=Q)
     await store.observe("I went to a LGBTQ support group yesterday", cos=0.05)   # under the 0.30 floor, no shared words
-    cfg_off, cfg_on = {}, CFG_ON
+    cfg_off, cfg_on = CFG_OFF, CFG_ON
     off = await bc.compile_bundle("Tell me about the singer", db, cfg_off)
     on = await bc.compile_bundle("Tell me about the singer", db, cfg_on)
     assert [(s.section_type, s.content) for s in on.sections] == [(s.section_type, s.content) for s in off.sections]
@@ -155,6 +166,49 @@ async def test_flag_on_without_matching_observations_falls_back(db, store):
 
 async def test_empty_store_returns_none(db):
     assert await bc._stage_observations(db, "anything at all", CFG_ON) is None
+
+
+# --- full vs partial history -------------------------------------------------------
+
+async def _add_turns(gw, n):
+    for i in range(n):
+        text = f"Turn number {i} about something unrelated."
+        await gw.run("capture.create_message", message_id=f"hist{i}", text_raw=text, embedding=None,
+                     embedding_model="m", embedding_dim=DIM, role="user", byte_end=len(text),
+                     created_at=f"2023-06-{i + 1:02d}T12:00:00+00:00")
+
+
+async def _sections(bundle):
+    return [(s.section_type, s.content, s.variant) for s in bundle.sections]
+
+
+async def test_full_history_bundle_uses_the_old_semantic_stage(db, gw, store):
+    """Whole history shown (B482 fit_all hit): observations are redundant, so the
+    bundle is byte-identical to retrieval off."""
+    await store.concept("c-sing", "singer", emb=Q)
+    await store.observe("I went to a LGBTQ support group yesterday", time_text="yesterday")
+    on = {"observations": {"retrieval": True}}      # default budget 3500: this tiny store fits
+    off = {"observations": {"retrieval": False}}
+    b_on, b_off = await bc.compile_bundle(QUESTION, db, on), await bc.compile_bundle(QUESTION, db, off)
+    conv = [s for s in b_on.sections if s.section_type == "conversation"]
+    assert conv and conv[0].full_history is True
+    assert await _sections(b_on) == await _sections(b_off)
+    assert all(s.variant == "" for s in b_on.sections)
+    assert any("singer" in c["text"] for s in _semantic(b_on) for c in s.content)
+
+
+async def test_partial_history_bundle_uses_observations(db, gw, store):
+    """History larger than the budget (so the section is the 6 ranked turns):
+    observations feed the semantic section."""
+    await store.concept("c-sing", "singer", emb=Q)
+    await store.observe("I went to a LGBTQ support group yesterday", time_text="yesterday")
+    await _add_turns(gw, 12)
+    cfg = {"observations": {"retrieval": True}, "retrieval": {"conversation_token_budget": 40}}
+    b = await bc.compile_bundle(QUESTION, db, cfg)
+    conv = [s for s in b.sections if s.section_type == "conversation"]
+    assert not conv or conv[0].full_history is False
+    (section,) = _semantic(b)
+    assert section.variant == "observations"
 
 
 # --- ranking, cap, floor -----------------------------------------------------------

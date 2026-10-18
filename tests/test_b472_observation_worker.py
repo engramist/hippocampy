@@ -98,10 +98,11 @@ WENT = {"subject": "I", "predicate": "did", "object": "went to the Denver suppor
 
 # --- off by default -----------------------------------------------------------------
 
-def test_disabled_by_default_means_no_queue_no_worker_and_nothing_enqueued(monkeypatch, tmp_path):
-    assert _DEFAULT_CONFIG["observations"]["enabled"] is False
+def test_disabled_means_no_queue_no_worker_and_nothing_enqueued(monkeypatch, tmp_path):
+    assert _DEFAULT_CONFIG["observations"]["enabled"] is True    # on by default (B472 3c gate)
     monkeypatch.setattr(bd, "OxigraphClient", lambda p: object())
-    assert bd.BrainDaemon(dict(_DEFAULT_CONFIG))._observation_queue is None
+    off_cfg = {**_DEFAULT_CONFIG, "observations": {**_DEFAULT_CONFIG["observations"], "enabled": False}}
+    assert bd.BrainDaemon(off_cfg)._observation_queue is None
     daemon = bd.BrainDaemon({**_DEFAULT_CONFIG, "observations": {**_DEFAULT_CONFIG["observations"], "enabled": True, "queue_max": 7}})
     assert daemon._observation_queue.maxsize == 7
 
@@ -110,9 +111,10 @@ def test_disabled_by_default_means_no_queue_no_worker_and_nothing_enqueued(monke
     bd._enqueue_observation(SimpleNamespace(), ("m", "t", "user", "s", None, None), "m", "user", "s", None)
 
 
-def test_env_override_turns_it_on():
+def test_env_override_toggles_it():
     assert apply_env_overrides({}, {"CAMPY_OBSERVATIONS_ENABLED": "1"})["observations"]["enabled"] is True
     assert apply_env_overrides({}, {"CAMPY_OBSERVATIONS_ENABLED": "false"})["observations"]["enabled"] is False
+    assert apply_env_overrides({}, {"CAMPY_OBSERVATIONS_ENABLED": "0"})["observations"]["enabled"] is False
     assert "observations" not in apply_env_overrides({}, {})
 
 
