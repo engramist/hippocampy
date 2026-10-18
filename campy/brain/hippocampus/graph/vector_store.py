@@ -289,7 +289,9 @@ class VectorStore:
             self._conn.execute("DELETE FROM lexical WHERE uri = ?", (uri,))
             self._conn.commit()
 
-    def search_text(self, query: str, k: int) -> list[tuple[str, float]]:
+    def search_text(
+        self, query: str, k: int, uri_prefixes: Sequence[str] = ()
+    ) -> list[tuple[str, float]]:
         """FTS5 full-text search. Returns ``[(uri, score)]`` ordered
         best-first, where ``score = -bm25(lexical)`` (higher is better,
         same convention as `search_vectors`).
@@ -301,17 +303,22 @@ class VectorStore:
         ANDed, so a question only matched a document containing every one of
         its words. It is now turned into an OR of quoted content-word terms
         (stopwords dropped) and ranked by bm25.
+
+        B472 3c: `uri_prefixes` (default: none) restricts the search to URIs
+        starting with one of them, applied before the top-k cut, so a small
+        type (Observations) is not crowded out by a large one (Messages).
         """
         match = _fts_match_expression(query)
         if match is None:
             return []
+        where, prefix_params = self._prefix_clause(uri_prefixes)
         sql = (
-            "SELECT uri, bm25(lexical) FROM lexical "
-            "WHERE lexical MATCH ? ORDER BY bm25(lexical) LIMIT ?"
+            f"SELECT uri, bm25(lexical) FROM lexical "
+            f"WHERE lexical MATCH ?{where} ORDER BY bm25(lexical) LIMIT ?"
         )
         try:
             with self._lock:
-                rows = self._conn.execute(sql, (match, k)).fetchall()
+                rows = self._conn.execute(sql, (match, *prefix_params, k)).fetchall()
         except sqlite3.OperationalError:
             return []
         return [(uri, -float(bm25)) for uri, bm25 in rows]

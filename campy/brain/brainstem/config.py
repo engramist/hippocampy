@@ -69,15 +69,19 @@ _DEFAULT_CONFIG = {
     "loop": {
         "max_co_occurrence_pairs": 45,
     },
-    # B472 Phase 3: source-grounded Observations. Ships disabled until a
-    # reader exists (Phase 5); 3a only declares the keys. The worker and the
-    # LLM route (3b/3c) are the only consumers of the rest.
+    # B472 Phase 3: source-grounded Observations. On by default
+    # (3c gate: LoCoMo-10 65 gained/39 lost p~0.014; shown only when the
+    # conversation section does not hold the whole history).
+    # CAMPY_OBSERVATIONS_ENABLED=0 / CAMPY_OBSERVATIONS_RETRIEVAL=0 turn off.
     "observations": {
-        "enabled": False,
+        "enabled": True,
         "llm_enabled": True,       # only read when enabled
-        "llm_batch_turns": 20,
+        "llm_batch_turns": 20,     # reserved: 3b extracts per turn and does not read these two
         "idle_flush_seconds": 5,
         "max_turn_chars": 600,
+        "queue_max": 5000,         # 3b: bounded worker queue; a full queue drops the newest, counted
+        "retrieval": True,         # 3c: feed the bundle's semantic section from Observations
+        "observation_limit": 8,    # 3c: most Observations the semantic section carries
     },
     "compression": {
         "strategy": "two_lane",       # two_lane (Protected Lane zero loss + Bulk Lane lossy)
@@ -190,6 +194,11 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_SERVER_BIND_HOST": ("server", "bind_host", str.strip),
     "CAMPY_SERVER_DASHBOARD_ENABLED": ("server", "dashboard_enabled", _parse_bool),
     "CAMPY_WEB_PORT": ("web", "port", _parse_port),
+    # B472 Phase 3b: lets a benchmark harness switch Observations on without
+    # touching the config file it writes (the daemon inherits the environment).
+    "CAMPY_OBSERVATIONS_ENABLED": ("observations", "enabled", _parse_bool),
+    # B472 Phase 3c: same reason, for the reader (independent of the writer).
+    "CAMPY_OBSERVATIONS_RETRIEVAL": ("observations", "retrieval", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
     "CAMPY_LLM_MODEL": ("llm", "model", str.strip),
     "CAMPY_LLM_REGION": ("llm", "region", str.strip),

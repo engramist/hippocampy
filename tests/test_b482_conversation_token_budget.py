@@ -144,6 +144,9 @@ async def test_fit_all_with_a_store_too_big_is_identical_to_budget_zero(gw, orde
     for mode in ("fit_all", None):  # explicit and absent (default is fit_all)
         rows = await _budget(gw, 330, limit=3, order=order, mode=mode)
         assert [dict(r) for r in rows] == [dict(r) for r in fixed]
+        # B472 3c: a partial history must never claim to be the whole one
+        assert not any(dict(r).get("full_history") for r in rows)
+    assert not any(dict(r).get("full_history") for r in fixed)
     # ...whereas fill takes more
     assert len(await _budget(gw, 330, limit=3, order=order, mode="fill")) > len(fixed)
 
@@ -151,7 +154,9 @@ async def test_fit_all_with_a_store_too_big_is_identical_to_budget_zero(gw, orde
 @pytest.mark.asyncio
 async def test_fit_all_with_a_small_store_returns_all_turns(gw):
     await _small_store(gw)
-    assert _ids(await _budget(gw, 2000, mode="fit_all")) == ["m1", "m2", "m3"]
+    rows = await _budget(gw, 2000, mode="fit_all")
+    assert _ids(rows) == ["m1", "m2", "m3"]
+    assert all(dict(r).get("full_history") is True for r in rows)
 
 
 @pytest.mark.asyncio
