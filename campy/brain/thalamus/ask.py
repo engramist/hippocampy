@@ -111,6 +111,11 @@ _OBSERVATIONS_DESCRIPTION = (
     "answer from the quoted words; NEGATED, HYPOTHETICAL and PLANNED claims are not things that happened; "
     "'when:' is the user's own phrase, relative to the date of that turn"
 )
+# M4.1: with graph expansion, an item groups the claims about one person or thing.
+_OBSERVATIONS_GROUPED_NOTE = (
+    "; 'About X:' gathers the claims about X from across the conversation, separated by '|' — "
+    "combine them to answer"
+)
 _CONVERSATION_DESCRIPTION_RANK = (
     "what the user said about this, best match first, each stamped with its date — "
     "when statements conflict, the one with the most recent date supersedes earlier ones"
@@ -179,6 +184,10 @@ def _bundle_to_prompt(bundle, query: str, config: Optional[dict] = None) -> str:
         description = _SECTION_DESCRIPTIONS.get(section_type, section_type)
         if section_type == "semantic" and getattr(section, "variant", "") == "observations":
             description = _OBSERVATIONS_DESCRIPTION
+            if any(isinstance(i, dict) and (i.get("entity") or any(
+                    ln.startswith("About ") for ln in str(i.get("compact") or "").split("\n")))
+                    for i in section.content):
+                description += _OBSERVATIONS_GROUPED_NOTE
         if section_type == "conversation" and getattr(section, "order", "") == "rank":
             description = _CONVERSATION_DESCRIPTION_RANK
         rendered_items = []

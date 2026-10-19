@@ -24,7 +24,12 @@ from datetime import datetime
 from typing import Optional
 
 from campy.brain.hippocampus.graph.gateway import get_gateway
-from campy.brain.hippocampus.observations import observation_limit, observations_retrieval_enabled
+from campy.brain.hippocampus.observations import (
+    observation_expand_hops,
+    observation_expand_limit,
+    observation_limit,
+    observations_retrieval_enabled,
+)
 from campy.brain.hippocampus.provenance import authority_of
 from campy.brain.hippocampus.table_registry import pk_for
 
@@ -715,6 +720,99 @@ async def _question_concept_ids(gw, query: str) -> list[str]:
     return ids
 
 
+def _observation_item(r: dict) -> dict:
+    try:
+        confidence = float(r.get("confidence")) if r.get("confidence") is not None else 0.5
+    except (TypeError, ValueError):
+        confidence = 0.5
+    return {
+        "text": render_observation(r), "type": "Observation",
+        "observation_id": r.get("observation_id"), "evidence_ref": r.get("evidence_ref"),
+        "polarity": r.get("polarity"), "confidence": confidence, "pathway_strength": 0.5,
+    }
+
+
+async def _expand_observations(gw, rows: list, query: str, config: dict, embedding_model: str,
+                               by_rank: bool) -> BundleSection:
+    """M4.1 graph expansion, behind `[observations] expand_hops = 1`.
+
+    The first-pass Observations (`rows`, best first) are about some Concepts --
+    the hop-1 entities. Up to `[observations] expand_limit` (6) further live
+    Observations about those Concepts are added, ranked by embedding similarity
+    to the question, so facts about one person told in different sessions come
+    together ("What might Caroline's political leaning be?"). The section is then
+    grouped by entity, one item per group:
+
+        About Caroline: [Caroline, 2023-05-08] did: went to a LGBTQ ... | [Caroline, 2023-06-27] ...
+
+    An Observation goes under the hop-1 entity most first-pass Observations are
+    about (first-pass order breaks ties); one about no hop-1 entity stands alone.
+    Within a group the order is the conversation order (oldest first by default).
+    Total Observations <= observation_limit + expand_limit. Compression never
+    prunes Observation items, and a group is one item, so nothing is dropped
+    or split. Nothing is stored: the entities are read from OBSERVATION_ABOUT."""
+    from campy.brain.hippocampus.graph import embeddings as emb
+
+    seed = [r for r in rows]
+    seed_ids = [str(r["observation_id"]) for r in seed if r.get("observation_id")]
+    ents = await gw.run("thalamus.bundle_observation_entities", observation_ids=seed_ids)
+    seed_support: dict[str, int] = {}
+    label: dict[str, str] = {}
+    for e in ents:
+        cid = str(e["concept_id"])
+        seed_support[cid] = seed_support.get(cid, 0) + 1
+        label.setdefault(cid, str(e.get("concept_text") or cid))
+    extra: list = []
+    limit = observation_expand_limit(config)
+    if seed_support and limit > 0:
+        order = sorted(seed_support, key=lambda c: -seed_support[c])
+        extra = list(await gw.run(
+            "thalamus.bundle_observations_expand",
+            query_embedding=emb.embed(query, model_name=embedding_model), entity_ids=order,
+            exclude_ids=seed_ids, limit=limit))
+        if extra:
+            for e in await gw.run("thalamus.bundle_observation_entities",
+                                  observation_ids=[str(r["observation_id"]) for r in extra]):
+                label.setdefault(str(e["concept_id"]), str(e.get("concept_text") or e["concept_id"]))
+                ents = list(ents) + [e]
+    about: dict[str, list[str]] = {}
+    for e in ents:
+        about.setdefault(str(e["observation_id"]), []).append(str(e["concept_id"]))
+
+    def group_of(r: dict) -> Optional[str]:
+        cands = [c for c in about.get(str(r.get("observation_id")), []) if c in seed_support]
+        return max(cands, key=lambda c: seed_support[c]) if cands else None
+
+    groups: dict[Optional[str], list] = {}
+    for r in list(seed) + extra:                      # first-pass order = group order
+        groups.setdefault(group_of(r), []).append(r)
+    content, node_ids = [], []
+    standalone = groups.pop(None, [])
+    blocks: list[tuple[Optional[str], list]] = [(c, rs) for c, rs in groups.items()]
+    if not by_rank:
+        standalone = sorted(standalone, key=lambda r: str(r.get("observed_at") or ""))
+    blocks += [(None, [r]) for r in standalone]
+    for cid, rs in blocks:
+        if not by_rank:
+            rs = sorted(rs, key=lambda r: str(r.get("observed_at") or ""))
+        items = [_observation_item(r) for r in rs]
+        if cid is None:
+            content.append(items[0])
+        else:
+            first = dict(items[0])
+            first["text"] = f"About {label[cid]}: " + " | ".join(i["text"] for i in items)
+            first["observation_ids"] = [i["observation_id"] for i in items]
+            first["evidence_refs"] = [i["evidence_ref"] for i in items]
+            first["entity"] = label[cid]
+            content.append(first)
+        node_ids.extend(str(r.get("observation_id") or r.get("node_id")) for r in rs)
+    return BundleSection(
+        section_type="semantic", content=content, source_node_ids=node_ids,
+        token_estimate=sum(max(1, len(c["text"]) // 4) for c in content),
+        variant="observations",
+    )
+
+
 async def _stage_observations(db, query: str, config: dict) -> Optional[BundleSection]:
     """B472 Phase 3c: the semantic section built from Observations -- typed,
     source-grounded claims the user made -- instead of Concept/Decision labels.
@@ -746,7 +844,10 @@ async def _stage_observations(db, query: str, config: dict) -> Optional[BundleSe
         )
         if not rows:
             return None
-        if str((config.get("retrieval", {}) or {}).get("conversation_order", "time")).lower() != "rank":
+        by_rank = str((config.get("retrieval", {}) or {}).get("conversation_order", "time")).lower() == "rank"
+        if observation_expand_hops(config) >= 1:
+            return await _expand_observations(gw, rows, query, config, embedding_model, by_rank)
+        if not by_rank:
             rows = sorted(rows, key=lambda r: str(r.get("observed_at") or ""))
         content, node_ids = [], []
         for r in rows:

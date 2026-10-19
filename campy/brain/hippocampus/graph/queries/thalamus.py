@@ -1619,6 +1619,28 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                     "evidence quote and evidence Message id",
         # No sparql= -- Python handler in GraphGateway._bundle_observations.
     ),
+    NamedQuery(
+        name="thalamus.bundle_observation_entities",
+        cypher="MATCH (o:Observation)-[:OBSERVATION_ABOUT]->(c:Concept) "
+               "WHERE o.observation_id IN $observation_ids "
+               "RETURN o.observation_id as observation_id, c.concept_id as concept_id, c.text_raw as concept_text",
+        params=("observation_ids",),
+        mutating=False,
+        description="M4.1: the Concepts each given Observation is OBSERVATION_ABOUT (id and label)",
+        # No sparql= -- Python handler in GraphGateway._bundle_observation_entities.
+    ),
+    NamedQuery(
+        name="thalamus.bundle_observations_expand",
+        cypher="MATCH (o:Observation)-[:OBSERVATION_ABOUT]->(c:Concept) "
+               "WHERE c.concept_id IN $entity_ids AND o.archived = false "
+               "RETURN o.observation_id as observation_id, o.text_raw as text LIMIT $limit",
+        params=("query_embedding", "entity_ids", "exclude_ids", "limit"),
+        mutating=False,
+        description="M4.1: live Observations about the given Concepts (not in exclude_ids), ranked by "
+                    "embedding similarity to the question, with evidence quote and Message id",
+        # No sparql= -- Python handler in GraphGateway._bundle_observations_expand.
+    ),
+
     # Concept
     NamedQuery(
         name="thalamus.bundle_semantic_concept",

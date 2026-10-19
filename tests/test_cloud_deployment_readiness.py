@@ -51,6 +51,7 @@ def test_every_documented_override_applies():
         "CAMPY_IAM_DEFAULT_SCOPES_JSON": '["memory.read", "memory.write"]',
         "CAMPY_OBSERVATIONS_ENABLED": "1",
         "CAMPY_OBSERVATIONS_RETRIEVAL": "1",
+        "CAMPY_OBSERVATIONS_EXPAND_HOPS": "1",
     }
     assert set(env) == set(ENV_OVERRIDES), "test must cover every override"
     cfg = apply_env_overrides(_base(), env)

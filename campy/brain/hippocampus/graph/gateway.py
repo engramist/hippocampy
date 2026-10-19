@@ -1391,6 +1391,75 @@ class GraphGateway:
         out.sort(key=lambda r: -r["score"])
         return out[:limit]
 
+    def _bundle_observation_entities(self, params: dict[str, Any]) -> list[Any]:
+        """M4.1: for each given Observation id, the Concepts it is OBSERVATION_ABOUT
+        (`observation_id`, `concept_id`, `concept_text`). Read-only."""
+        from campy.brain.hippocampus.graph.vector_store import mint_uri
+
+        ids = [str(i) for i in (params.get("observation_ids") or [])][:200]
+        if not ids:
+            return []
+        values = " ".join(f"<{mint_uri('Observation', i)}>" for i in ids)
+        rows = self._client._execute_and_collect(f"""
+            SELECT DISTINCT ?oid ?cid ?label WHERE {{
+                VALUES ?o {{ {values} }}
+                ?o <https://campy.dev/ns#observation_id> ?oid ;
+                   <https://campy.dev/ns#OBSERVATION_ABOUT> ?c .
+                ?c <https://campy.dev/ns#concept_id> ?cid .
+                OPTIONAL {{ ?c <https://campy.dev/ns#text_raw> ?label }}
+            }}""")
+        return [RowDict({"observation_id": r["oid"], "concept_id": r["cid"], "concept_text": r.get("label")})
+                for r in rows]
+
+    def _bundle_observations_expand(self, params: dict[str, Any]) -> list[Any]:
+        """M4.1 graph expansion: live Observations OBSERVATION_ABOUT any of
+        `entity_ids`, other than `exclude_ids`, best `limit` by cosine similarity
+        of their embedding to the question (an Observation without a stored
+        vector ranks last, oldest first). Rows have the same columns as
+        `_bundle_observations`. Archived and superseded rows are dropped."""
+        from campy.brain.hippocampus.graph.vector_store import mint_uri
+
+        limit = int(params.get("limit", 6))
+        entities = [str(c) for c in (params.get("entity_ids") or [])][:24]
+        if limit <= 0 or not entities:
+            return []
+        exclude = {mint_uri("Observation", i) for i in (params.get("exclude_ids") or [])}
+        values = " ".join(f"<{mint_uri('Concept', c)}>" for c in entities)
+        cand = [str(r["o"]) for r in self._client._execute_and_collect(f"""
+            SELECT DISTINCT ?o WHERE {{
+                VALUES ?c {{ {values} }}
+                ?o <https://campy.dev/ns#OBSERVATION_ABOUT> ?c .
+            }} LIMIT 2000""")]
+        cand = [u for u in cand if u not in exclude]
+        if not cand:
+            return []
+        ns = "<https://campy.dev/ns#"
+        req = ("observation_id", "subject_text", "predicate", "object_text", "polarity",
+               "evidence_ref", "evidence_text", "text_raw", "archived")
+        opt = ("event_text", "time_text", "time_start", "time_end", "time_precision", "speaker",
+               "observed_at", "confidence", "superseded_by")
+        rows = self._client._execute_and_collect(f"""
+            SELECT ?o {" ".join("?" + c for c in req + opt)} WHERE {{
+                VALUES ?o {{ {" ".join(f"<{u}>" for u in cand)} }}
+                ?o a {ns}Observation> ; {" ; ".join(f"{ns}{c}> ?{c}" for c in req)} .
+                {" ".join(f"OPTIONAL {{ ?o {ns}{c}> ?{c} }}" for c in opt)}
+            }}""")
+        q = [float(x) for x in params["query_embedding"]]
+        qn = sum(x * x for x in q) ** 0.5 or 1.0
+        out: list[RowDict] = []
+        for row in rows:
+            if bool(row.get("archived")) or row.get("superseded_by"):
+                continue
+            uri = str(row["o"])
+            v = self._vector_store.get_vector(uri)
+            score = -1.0
+            if v:
+                vn = sum(x * x for x in v) ** 0.5 or 1.0
+                score = sum(a * b for a, b in zip(q, v)) / (qn * vn)
+            out.append(RowDict({**{c: row.get(c) for c in req + opt}, "node_id": uri, "score": score}))
+        out.sort(key=lambda r: (-r["score"], str(r.get("observed_at") or "")))
+        return out[:limit]
+
     def _lexical_query(self, qtext: str, terms: list[str], df: dict[str, int],
                        prefixes: tuple[str, ...]) -> str:
         """B470: the conversation stage's FTS query without the terms most
@@ -1584,9 +1653,14 @@ class GraphGateway:
             emb = self._vector_store.get_vector(mint_uri("MainQuest", qid)) if self._vector_store else None
             return [RowDict({"q.embedding": emb, "q.name": qname})]
 
+        if name == "thalamus.bundle_observation_entities":
+            return self._bundle_observation_entities(params)
+
         if query_embedding is None or not self._vector_store:
             return []
 
+        if name == "thalamus.bundle_observations_expand":
+            return self._bundle_observations_expand(params)
         if name == "thalamus.bundle_conversation":
             return self._bundle_conversation(params)
         if name == "thalamus.bundle_conversation_budget":

@@ -60,6 +60,11 @@ queue_max = 5000         # worker queue bound; a full queue drops the newest, co
 # CAMPY_OBSERVATIONS_RETRIEVAL=0 turns it off without editing this file.
 retrieval = true
 observation_limit = 8    # most Observations the semantic section carries
+# M4.1 graph expansion for multi-hop questions: 1 adds up to expand_limit Observations about the
+# Concepts the first-pass Observations are about, and groups the section by entity.
+# CAMPY_OBSERVATIONS_EXPAND_HOPS=1 turns it on without editing this file.
+expand_hops = 0
+expand_limit = 6
 
 [wiki_projection]
 enabled = true

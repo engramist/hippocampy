@@ -113,6 +113,24 @@ def observation_limit(config: dict | None, default: int = 8) -> int:
         return default
 
 
+def observation_expand_hops(config: dict | None) -> int:
+    """`[observations] expand_hops` (default 0 = off; env `CAMPY_OBSERVATIONS_EXPAND_HOPS`): M4.1
+    graph expansion. 1 adds Observations about the Concepts the first-pass Observations are about
+    and groups the section by entity. Values above 1 behave as 1 (one hop is all that is built)."""
+    try:
+        return max(0, min(1, int(((config or {}).get("observations") or {}).get("expand_hops", 0))))
+    except (TypeError, ValueError):
+        return 0
+
+
+def observation_expand_limit(config: dict | None, default: int = 6) -> int:
+    """`[observations] expand_limit`: most extra Observations the expansion adds."""
+    try:
+        return max(0, int(((config or {}).get("observations") or {}).get("expand_limit", default)))
+    except (TypeError, ValueError):
+        return default
+
+
 # --- types ------------------------------------------------------------------------
 
 @dataclass

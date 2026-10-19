@@ -97,6 +97,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B478 | Conversation De-dup Merges Identical Text From Different Speakers | P3 | implemented (gate pending) | TBD | TBD | - | backlog/B478.md |
 | B482 | Conversation Stage Token-Budget Mode | P2 | implemented (off by default; DMR dev gate passed R48 p=0.019, held-out gate pending) | TBD | TBD | - | backlog/B482.md |
 | B484 | Time Normalisation at Capture (M4.2) | P2 | implemented (gate pending: LoCoMo temporal via replay + backfill) | TBD | TBD | - | backlog/B484.md |
+| B485 | Graph Expansion of the Observation Section for Multi-hop (M4.1) | P2 | implemented (off by default; gate pending: LoCoMo-10 multi-hop via replay) | TBD | TBD | - | backlog/B485.md |
 | B459 | Conversation Evidence Drops the Statements That Supersede the One It Found | P1 | fixed (real-model confirmed) | TBD | TBD | - | backlog/B459.md |
 | B458 | current_truth: Exact Identifier Match Loses to Near-Identical Notes (RRF Fusion) | P1 | fixed (round 2: identifiers rank first; real-model confirmed) | TBD | TBD | - | backlog/B458.md |
 | B457 | HTTP REST and Dashboard Routes Ignore the Caller's Workspace (Cross-Tenant Access in Multi-Tenant Mode) | P1 | fixed | TBD | TBD | - | backlog/B457.md |

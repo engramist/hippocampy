@@ -82,6 +82,8 @@ _DEFAULT_CONFIG = {
         "queue_max": 5000,         # 3b: bounded worker queue; a full queue drops the newest, counted
         "retrieval": True,         # 3c: feed the bundle's semantic section from Observations
         "observation_limit": 8,    # 3c: most Observations the semantic section carries
+        "expand_hops": 0,          # M4.1: 1 = add Observations about the first-pass entities, grouped by entity
+        "expand_limit": 6,         # M4.1: most extra Observations the expansion adds
     },
     "compression": {
         "strategy": "two_lane",       # two_lane (Protected Lane zero loss + Bulk Lane lossy)
@@ -199,6 +201,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_OBSERVATIONS_ENABLED": ("observations", "enabled", _parse_bool),
     # B472 Phase 3c: same reason, for the reader (independent of the writer).
     "CAMPY_OBSERVATIONS_RETRIEVAL": ("observations", "retrieval", _parse_bool),
+    # M4.1: graph expansion of the Observation section (0 = off, 1 = one hop).
+    "CAMPY_OBSERVATIONS_EXPAND_HOPS": ("observations", "expand_hops", _parse_nonneg_int),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
     "CAMPY_LLM_MODEL": ("llm", "model", str.strip),
     "CAMPY_LLM_REGION": ("llm", "region", str.strip),
