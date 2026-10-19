@@ -305,6 +305,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B47 | Local Benchmark Runner Infrastructure (Unified Harness) | P11 | complete (2026-03-28) | TBD | TBD | backlog/plans/B-47-benchmark-infrastructure.md | backlog/B47.md |
 | B48 | SideQuests A/B Evaluation Contract (Protocol-Correct) | P11 | complete (2026-03-28) | TBD | TBD | backlog/plans/B-48-ab-contract.md | backlog/B48.md |
 | B488 | An Archived Message Can Keep a Stale `archived=false` | P2 | complete (2026-10-19) | TBD | TBD | - | backlog/B488.md |
+| B490 | Agent Rules Files Still Name KuzuDB as the Store | P2 | open | TBD | TBD | - | backlog/B490.md |
 | B49 | SWE-CI Evaluation Card (Maintainability Under Evolution) | P11 | complete (2026-03-28) | TBD | TBD | backlog/plans/B-49-swe-ci-eval.md | backlog/B49.md |
 | B50 | LoCoBench Evaluation Card (Long-Context Degradation) | P11 | complete (2026-03-28) | TBD | TBD | backlog/plans/B-50-longcontext-eval.md | backlog/B50.md |
 | B51 | AMA-Bench + MemoryArena Card (Causality and Interdependent State) | P11 | complete (2026-03-28) | TBD | TBD | backlog/plans/B-51-ama-bench-eval.md | backlog/B51.md |
