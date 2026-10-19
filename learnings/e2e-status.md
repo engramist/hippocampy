@@ -3,7 +3,7 @@
 Live state of `e2e-improvement-plan.md`. Update after every step; keep it
 short and current (history goes in dated `learnings/` notes).
 
-_Last updated: 2026-10-19 12:15 UTC_
+_Last updated: 2026-10-19 22:45 UTC_
 
 ## Who is running this
 
@@ -25,20 +25,19 @@ _Last updated: 2026-10-19 12:15 UTC_
 
 ## Current position
 
-- **On main:** B482 conversation token budget on (DMR +10 points). B472
-  Observations and B484 dates are merged but **off by default** (#320): with
-  the adversarial-abstention scorer fixed (campy-benchmarks#41) their LoCoMo
-  gates are neutral (66/63). See the correction in
-  `2026-10-m3-observations.md`.
-- **Scoring fix:** before campy-benchmarks#41, LoCoMo-10 category-5 scoring
-  did not recognise Campy's "I don't have that information" abstention, so all
-  earlier LoCoMo numbers under-count Campy (re-scored main is ~0.43–0.53 on
-  dev-large/held-out, not 0.30–0.42). Full-history baselines must be re-scored
-  before any "Campy vs full history" claim.
-- **Closed:** #318 pending R63 (expansion), #319 quality filter (regression).
+- **Gate rule changed (2026-10-19):** score on the published metric (LoCoMo
+  categories 1–4; adversarial separate), pool dev + held-out, merge on
+  gained > lost with no p threshold. Re-score with `~/campy-lead/rescore5.py`.
+  See `2026-10-metric-switch.md`.
+- **On main (`0dacbd8`):** B482 token budget on; **B487 neighbour expansion on
+  (N=1)**, cat 1–4 pooled 0.374 → 0.467; Observations + B484 dates merged but
+  off by default.
+- **Open:** #326 B489 verify step (abstention; secondary under the new
+  metric), branch `claude/e2e-obs-on` (Observations back on; gate R66).
 - **GPU queue:** `~/campy-lead/runner.sh` (log `~/campy-lead/chain.log`):
-  R63 (#318 fix attempt) → R61 (LongMemEval s on main, observations off).
-- **Next R-number:** R64.
+  R64 N=2 (picks N) → R64b conv-43 N=1 retry → R66 Observations on top of
+  neighbours → R65 B489 verify → R61 LongMemEval s on main `0dacbd8`.
+- **Next R-number:** R67.
 
 ## Pins
 

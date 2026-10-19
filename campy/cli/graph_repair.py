@@ -298,6 +298,61 @@ def repair_plan_valence_cmd(
 
 
 # ---------------------------------------------------------------------------
+# B488: Messages archived without removing the stale `archived false`
+# ---------------------------------------------------------------------------
+#
+# Before B488, capture.archive_earlier_message_version inserted `archived true`
+# but its DELETE matched nothing, so the Message kept `archived false` as well.
+# The repair keeps `true` for every Message carrying both. Idempotent: once the
+# stale value is gone no Message matches.
+
+_DOUBLE_ARCHIVED_WHERE = """
+    ?m a campy:Message ;
+       campy:archived true ;
+       campy:archived false .
+"""
+
+
+async def find_double_archived_messages(db) -> list[str]:
+    """Message ids (or URIs when a Message has no id) holding both archived values."""
+    rows = await db.execute_read(
+        "PREFIX campy: <https://campy.dev/ns#>\n"
+        "SELECT DISTINCT ?m ?mid WHERE {" + _DOUBLE_ARCHIVED_WHERE +
+        "OPTIONAL { ?m campy:message_id ?mid } }"
+    )
+    return sorted(str(r.get("mid") or r["m"]) for r in rows)
+
+
+async def repair_double_archived_messages(db, apply: bool = False) -> list[str]:
+    found = await find_double_archived_messages(db)
+    if apply and found:
+        await db.execute_write(
+            "PREFIX campy: <https://campy.dev/ns#>\n"
+            "DELETE { ?m campy:archived false } WHERE {" + _DOUBLE_ARCHIVED_WHERE + "}"
+        )
+    return found
+
+
+@graph_app.command("repair-message-archived")
+def repair_message_archived_cmd(
+    apply: bool = typer.Option(False, "--apply", help="Write changes (default: dry run)"),
+    db_path: str = typer.Option(
+        "", "--db-path", help="Path to the graph store (defaults to the active Campy database)"
+    ),
+) -> None:
+    """B488: drop the stale `archived false` from Messages that are also archived."""
+    resolved_db_path = Path(db_path).expanduser() if db_path else get_database_path()
+    if not resolved_db_path.exists():
+        console.print("[red]Error:[/red] Campy database not found. Is the daemon running?")
+        raise typer.Exit(code=1)
+
+    client = _open_repair_client(resolved_db_path, apply)
+    found = asyncio.run(repair_double_archived_messages(client, apply=apply))
+    verb = "repaired" if apply else "found"
+    console.print(f"{len(found)} double-archived Message(s) {verb}.")
+
+
+# ---------------------------------------------------------------------------
 # B465: supersession edges written backwards before B460
 # ---------------------------------------------------------------------------
 #
@@ -608,10 +663,13 @@ async def plan_session_purge(db, prefixes=(), sessions_exact=()) -> SessionPurge
     purged: dict[str, str] = {}
     uri_of: dict[str, str] = {}
     remaining: list[tuple[str, str, bool]] = []  # (id, text, has_session)
-    for r in await gw.run("cli.purge_find_messages"):
+    message_rows = list(await gw.run("cli.purge_find_messages"))
+    # B488: a Message carrying both archived values is archived (one row each).
+    archived_ids = {str(_row(r, "message_id", 0)) for r in message_rows if bool(_row(r, "archived", 2))}
+    for r in message_rows:
         mid, text = str(_row(r, "message_id", 0)), _row(r, "text_raw", 1) or ""
-        archived, sid = bool(_row(r, "archived", 2)), _row(r, "session_id", 3)
-        if archived:
+        sid = _row(r, "session_id", 3)
+        if mid in archived_ids:
             continue
         uri_of[mid] = str(_row(r, "uri", 4))
         if matches(sid) is not None:

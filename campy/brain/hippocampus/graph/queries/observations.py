@@ -285,6 +285,7 @@ OBSERVATION_QUERIES: tuple[NamedQuery, ...] = (
               OPTIONAL { ?m campy:created_at ?created_at }
               OPTIONAL { ?m campy:archived ?archived }
             }
+            ORDER BY DESC(?archived)  # B488: a true value must win LIMIT 1
             LIMIT 1
             """,
     ),

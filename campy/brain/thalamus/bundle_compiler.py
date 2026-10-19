@@ -798,10 +798,16 @@ def _conversation_budget_mode(config: dict) -> str:
 DEFAULT_CONVERSATION_NEIGHBOUR_CAP = 18
 
 
+# B487: on by default since the 2026-10-19 gate (LoCoMo categories 1-4, dev +
+# held-out pooled: 52 gained / 18 lost).
+DEFAULT_CONVERSATION_NEIGHBOURS = 1
+
+
 def _conversation_neighbours(config: dict) -> int:
-    """B487: `[retrieval] conversation_neighbours` (absent, 0 or invalid = off)."""
+    """B487: `[retrieval] conversation_neighbours` (absent = 1; 0 or invalid = off)."""
     try:
-        return max(0, int((config.get("retrieval", {}) or {}).get("conversation_neighbours", 0) or 0))
+        return max(0, int((config.get("retrieval", {}) or {}).get(
+            "conversation_neighbours", DEFAULT_CONVERSATION_NEIGHBOURS) or 0))
     except (TypeError, ValueError):
         return 0
 
