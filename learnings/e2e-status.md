@@ -3,7 +3,7 @@
 Live state of `e2e-improvement-plan.md`. Update after every step; keep it
 short and current (history goes in dated `learnings/` notes).
 
-_Last updated: 2026-10-19 12:15 UTC_
+_Last updated: 2026-10-19 15:50 UTC_
 
 ## Who is running this
 
@@ -35,9 +35,10 @@ _Last updated: 2026-10-19 12:15 UTC_
   earlier LoCoMo numbers under-count Campy (re-scored main is ~0.43–0.53 on
   dev-large/held-out, not 0.30–0.42). Full-history baselines must be re-scored
   before any "Campy vs full history" claim.
-- **Closed:** #318 pending R63 (expansion), #319 quality filter (regression).
+- **Closed:** #318 expansion (fix attempt neutral, 25/28), #319 quality filter (regression). See `2026-10-scoring-fix-and-round5.md`.
 - **GPU queue:** `~/campy-lead/runner.sh` (log `~/campy-lead/chain.log`):
-  R63 (#318 fix attempt) → R61 (LongMemEval s on main, observations off).
+  R64 (#322 neighbour expansion, ±1/±2 turns in the same session) → R61
+  (LongMemEval s on main, observations off).
 - **Next R-number:** R64.
 
 ## Pins
