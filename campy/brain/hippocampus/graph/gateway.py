@@ -1593,7 +1593,7 @@ class GraphGateway:
             return self._bundle_conversation_budget(params)
         if name == "thalamus.bundle_assistant_words":
             return self._bundle_assistant_words(params)
-        if name == "thalamus.bundle_observations":
+        if name in ("thalamus.bundle_observations", "thalamus.bundle_observations_pool"):
             return self._bundle_observations(params)
 
         # Exact facts: thalamus.bundle_exact_facts_{tbl}[_flagged][_auth] or thalamus.bundle_exact_{tbl}[_flagged][_auth]

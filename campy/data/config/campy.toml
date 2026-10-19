@@ -60,6 +60,11 @@ queue_max = 5000         # worker queue bound; a full queue drops the newest, co
 # CAMPY_OBSERVATIONS_RETRIEVAL=0 turns it off without editing this file.
 retrieval = true
 observation_limit = 8    # most Observations the semantic section carries
+# B486: when true, the reader scores each candidate (observation_quality) and drops those under
+# quality_min before the observation_limit cut, so better ones fill the slots. Nothing is dropped
+# at capture. CAMPY_OBSERVATIONS_QUALITY_FILTER=1 turns it on without editing this file.
+quality_filter = false
+quality_min = 0.7
 
 [wiki_projection]
 enabled = true

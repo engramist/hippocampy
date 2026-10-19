@@ -24,7 +24,13 @@ from datetime import datetime
 from typing import Optional
 
 from campy.brain.hippocampus.graph.gateway import get_gateway
-from campy.brain.hippocampus.observations import observation_limit, observations_retrieval_enabled
+from campy.brain.hippocampus.observation_quality import observation_quality
+from campy.brain.hippocampus.observations import (
+    observation_limit,
+    observations_quality_filter_enabled,
+    observations_quality_min,
+    observations_retrieval_enabled,
+)
 from campy.brain.hippocampus.provenance import authority_of
 from campy.brain.hippocampus.table_registry import pk_for
 
@@ -715,6 +721,12 @@ async def _question_concept_ids(gw, query: str) -> list[str]:
     return ids
 
 
+# B486: with the quality filter on, fetch this many times observation_limit candidates
+# (capped) so the ones that pass the floor can fill the slots.
+_QUALITY_POOL_FACTOR = 5
+_QUALITY_POOL_MAX = 64
+
+
 async def _stage_observations(db, query: str, config: dict) -> Optional[BundleSection]:
     """B472 Phase 3c: the semantic section built from Observations -- typed,
     source-grounded claims the user made -- instead of Concept/Decision labels.
@@ -726,6 +738,10 @@ async def _stage_observations(db, query: str, config: dict) -> Optional[BundleSe
     date, the claim with its polarity, and the verbatim quote it came from.
     Items are presented in the conversation stage's order
     (`[retrieval] conversation_order`: oldest first by default).
+
+    With `[observations] quality_filter` on (B486), a larger candidate pool is fetched,
+    each is scored by `observation_quality`, and those under `quality_min` are skipped
+    before the cut.
 
     Returns None -- so the caller falls back to the old semantic stage -- when
     there are no matching Observations or anything fails."""
@@ -739,11 +755,18 @@ async def _stage_observations(db, query: str, config: dict) -> Optional[BundleSe
             "model", "sentence-transformers/all-MiniLM-L6-v2"
         )
         gw = get_gateway(db)
+        quality_filter = observations_quality_filter_enabled(config)
         rows = await gw.run(
-            "thalamus.bundle_observations",
+            "thalamus.bundle_observations_pool" if quality_filter else "thalamus.bundle_observations",
             query_embedding=emb.embed(query, model_name=embedding_model), query_text=query,
-            concept_ids=await _question_concept_ids(gw, query), limit=limit,
+            concept_ids=await _question_concept_ids(gw, query),
+            limit=min(limit * _QUALITY_POOL_FACTOR, _QUALITY_POOL_MAX) if quality_filter else limit,
         )
+        if quality_filter and rows:
+            # B486: score at read time; the low ones are skipped, not deleted. Candidates
+            # arrive best-first, so a stable filter then the cut keeps the ranking.
+            floor = observations_quality_min(config)
+            rows = [r for r in rows if observation_quality(r)[0] >= floor][:limit]
         if not rows:
             return None
         if str((config.get("retrieval", {}) or {}).get("conversation_order", "time")).lower() != "rank":

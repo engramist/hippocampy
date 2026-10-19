@@ -1619,6 +1619,17 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                     "evidence quote and evidence Message id",
         # No sparql= -- Python handler in GraphGateway._bundle_observations.
     ),
+    NamedQuery(
+        name="thalamus.bundle_observations_pool",
+        cypher="MATCH (o:Observation) WHERE o.archived = false "
+               "RETURN o.observation_id as observation_id, o.text_raw as text "
+               "ORDER BY o.created_at ASC LIMIT $limit",
+        params=("query_embedding", "query_text", "concept_ids", "limit"),
+        mutating=False,
+        description="B486: same candidates as thalamus.bundle_observations, for a larger `limit` -- the "
+                    "pool the read-time quality filter scores before the observation_limit cut",
+        # No sparql= -- Python handler in GraphGateway._bundle_observations.
+    ),
     # Concept
     NamedQuery(
         name="thalamus.bundle_semantic_concept",

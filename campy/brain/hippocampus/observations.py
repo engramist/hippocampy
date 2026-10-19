@@ -113,6 +113,19 @@ def observation_limit(config: dict | None, default: int = 8) -> int:
         return default
 
 
+def observations_quality_filter_enabled(config: dict | None) -> bool:
+    """B486 `[observations] quality_filter` (default false; env `CAMPY_OBSERVATIONS_QUALITY_FILTER`)."""
+    return bool(((config or {}).get("observations") or {}).get("quality_filter", False))
+
+
+def observations_quality_min(config: dict | None, default: float = 0.7) -> float:
+    """B486 `[observations] quality_min`: score floor used when the quality filter is on."""
+    try:
+        return float(((config or {}).get("observations") or {}).get("quality_min", default))
+    except (TypeError, ValueError):
+        return default
+
+
 # --- types ------------------------------------------------------------------------
 
 @dataclass

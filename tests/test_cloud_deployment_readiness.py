@@ -51,6 +51,7 @@ def test_every_documented_override_applies():
         "CAMPY_IAM_DEFAULT_SCOPES_JSON": '["memory.read", "memory.write"]',
         "CAMPY_OBSERVATIONS_ENABLED": "1",
         "CAMPY_OBSERVATIONS_RETRIEVAL": "1",
+        "CAMPY_OBSERVATIONS_QUALITY_FILTER": "1",
     }
     assert set(env) == set(ENV_OVERRIDES), "test must cover every override"
     cfg = apply_env_overrides(_base(), env)
@@ -60,6 +61,7 @@ def test_every_documented_override_applies():
     assert cfg["web"]["port"] == 8080
     assert cfg["observations"]["enabled"] is True
     assert cfg["observations"]["retrieval"] is True
+    assert cfg["observations"]["quality_filter"] is True
     assert cfg["llm"] == {"provider": "bedrock", "model": "us.example.model-v1:0",
                           "region": "us-east-1", "base_url": "https://llm.internal/v1"}
     assert cfg["retrieval"]["conversation_token_budget"] == 3500
