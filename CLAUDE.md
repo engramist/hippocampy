@@ -31,7 +31,7 @@ These are the sources of truth for the system design — shared across all agent
 
 ## Critical Rule: No Shadow Stores
 
-**KuzuDB is the single source of truth for all persistent agent state.** Do NOT store persistent data (roles, hypotheses, victory conditions, action facts, chunk history) in Python dicts or instance variables as the primary store. In-memory variables are permitted ONLY as read-through caches over KuzuDB. See `docs/ecosystem-rules.md` "No shadow stores rule" for full details.
+**The graph store (Oxigraph today) is the single source of truth for all persistent agent state.** Do NOT store persistent data (roles, hypotheses, victory conditions, action facts, chunk history) in Python dicts or instance variables as the primary store. In-memory variables are permitted ONLY as read-through caches over the graph store. `vectors.db` (sqlite-vec) is an index over graph nodes, not a store. See `docs/ecosystem-rules.md` "No shadow stores rule" for full details.
 
 ## Campy Memory Usage Policy
 
