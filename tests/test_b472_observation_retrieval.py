@@ -144,7 +144,7 @@ async def test_flag_on_semantic_section_carries_observations_with_evidence(db, s
     assert section.variant == "observations"
     assert len(section.content) == 1
     item = section.content[0]
-    assert item["text"] == ('[Caroline, 2023-05-08] did: went to a support group (when: yesterday) '
+    assert item["text"] == ('[Caroline, 2023-05-08] did: went to a support group (when: yesterday → 2023-05-07) '
                             '("I went to a LGBTQ support group yesterday")')
     assert item["type"] == "Observation" and item["observation_id"] == oid and item["evidence_ref"] == mid
     assert section.source_node_ids == [oid]
@@ -300,7 +300,7 @@ async def test_stage_renders_planned_claim_explicitly(db, store):
     await store.observe("I will go camping next month", cos=0.9, predicate="plans", obj="go camping",
                         polarity="planned", time_text="next month")
     (item,) = (await bc._stage_observations(db, "camping", CFG_ON)).content
-    assert item["text"].startswith("[Caroline, 2023-05-08] PLANNED (not yet done) plans: go camping (when: next month)")
+    assert item["text"].startswith("[Caroline, 2023-05-08] PLANNED (not yet done) plans: go camping (when: next month → 2023-06)")
     assert item["polarity"] == "planned"
 
 

@@ -216,7 +216,8 @@ async def test_a_user_turn_yields_observations_linked_to_message_and_existing_co
     assert job["subject_id"] == "c-dana" and job["extraction_method"] == "llm"
     assert job["rule_version"] == ex.RULE_VERSION and job["evidence_ref"] == "m1"
     assert did["subject_text"] == "I" and did["subject_id"] == "c-mel"      # speaker's Concept
-    assert did["time_text"] == "last Saturday" and did["time_start"] is None  # not normalised (M4.2)
+    assert did["time_text"] == "last Saturday"                                # kept as written
+    assert str(did["time_start"])[:10] == "2023-05-06" and did["time_precision"] == "day"   # B484 (M4.2)
     assert did["text_raw"].startswith("Melanie - did")
     assert await obs.observations_for_concept(db, "c-dana")
     assert stats.linked_subject == 2

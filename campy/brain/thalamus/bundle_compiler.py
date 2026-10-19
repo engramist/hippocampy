@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
 from campy.brain.hippocampus.graph.gateway import get_gateway
@@ -637,10 +638,33 @@ _QUOTE_CHARS = 300
 _MAX_CONCEPT_LOOKUPS = 40
 
 
+def _resolved_when(row: dict) -> Optional[str]:
+    """The date a time phrase resolves to, as text. Uses the stored
+    `time_start`/`time_end`/`time_precision` (B484), or -- for a row written
+    before time normalisation -- resolves `time_text` against `observed_at` on
+    the fly. Read-only: nothing is written."""
+    from campy.brain.temporal_lobe.observations.timeparse import format_resolved, normalize_time
+
+    if row.get("time_start"):
+        out = format_resolved(row.get("time_start"), row.get("time_end"), row.get("time_precision"))
+    else:
+        try:
+            anchor = row.get("observed_at")
+            if anchor is not None and not isinstance(anchor, datetime):
+                anchor = datetime.fromisoformat(str(anchor).replace("Z", "+00:00"))
+        except ValueError:
+            anchor = None
+        r = normalize_time(row.get("time_text"), anchor) if anchor else None
+        out = format_resolved(r.start, r.end, r.precision) if r else None
+    if out and out.lower() == str(row.get("time_text") or "").strip().lower():
+        return None                      # "2023-05-07 \u2192 2023-05-07" adds nothing
+    return out
+
+
 def render_observation(row: dict) -> str:
     """One Observation as a bundle line, with who said it, when, and the words:
 
-        [Caroline, 2023-05-08] did: went to a LGBTQ support group (when: yesterday) ("I went to a LGBTQ support group yesterday")
+        [Caroline, 2023-05-08] did: went to a LGBTQ support group (when: yesterday → 2023-05-07) ("I went to a LGBTQ support group yesterday")
 
     The polarity of a negated / hypothetical / planned claim is spelled out
     before the predicate. The subject is shown only when it is not the speaker."""
@@ -657,7 +681,8 @@ def render_observation(row: dict) -> str:
     obj = (get("event_text") or get("object_text") or "").strip()
     text = f"{stamp}{_POLARITY_MARKER.get(str(get('polarity') or 'asserted'), '')}{subj}{pred}: {obj}"
     if get("time_text"):
-        text += f" (when: {get('time_text')})"
+        resolved = _resolved_when(row)
+        text += f" (when: {get('time_text')} \u2192 {resolved})" if resolved else f" (when: {get('time_text')})"
     quote = " ".join(str(get("evidence_text") or "").split())
     if quote:
         text += f' ("{quote[:_QUOTE_CHARS]}")'
