@@ -1047,6 +1047,151 @@ class GraphGateway:
                 return rows
         return self._bundle_conversation_impl(params, budget if mode == "fill" else 0)
 
+    def _bundle_conversation_windows(self, params: dict[str, Any]) -> list[Any]:
+        """B487: the conversation stage with neighbour expansion
+        (`thalamus.bundle_conversation_windows`).
+
+        Evidence turns are often REPLIES that do not repeat the question's
+        words ("I love all dances, but contemporary is my top pick", answering
+        "what's your fave?"), so ranking alone misses them while the matched
+        turn next to them is found. This returns the stage's matched turns
+        (exactly `_bundle_conversation_budget`'s) plus up to `neighbours` turns
+        before and after each, in the same session (Message -[SENT_IN]->
+        Session), by EITHER speaker.
+
+        1. When the whole eligible history fits the token budget it is returned
+           untouched (full history: nothing to expand).
+        2. Otherwise each matched turn gets a window. A neighbour is any
+           non-archived USER turn that is not an echo of the query; it may be a
+           question (that is usually the context). Assistant turns stay out
+           (ISSUE-024). Windows are filled in rounds by distance (1, 2, ...)
+           across the matched turns in rank order, so a tight cap keeps the
+           best-ranked turns' closest neighbours; `neighbour_cap` bounds the
+           added turns in total. Turns are ordered within a session by
+           (occurred_at, stored time, uri); overlapping windows merge.
+        3. Presentation: each window is contiguous and chronological. Windows
+           are ordered oldest first ("time") or best-ranked matched turn first
+           ("rank"). Rows carry `neighbour: True` when they were not matched
+           themselves (display does not use it).
+        `neighbours` <= 0 is exactly `_bundle_conversation_budget`."""
+        n = int(params.get("neighbours") or 0)
+        cap = max(0, int(params.get("neighbour_cap") or 0))
+        order = str(params.get("order") or "time").lower()
+        if order not in CONVERSATION_ORDERS:
+            order = "time"
+        base = dict(params)
+        if n <= 0:
+            return self._bundle_conversation_budget(base)
+        base["order"] = "rank"  # rank order is needed to prioritise windows
+        matched = self._bundle_conversation_budget(base)
+        if not matched or all(r.get("full_history") for r in matched):
+            return matched  # full history is always oldest first, whatever `order` says
+        try:
+            return self._expand_windows(matched, params, n, cap, order)
+        except Exception:
+            _logger.debug("_bundle_conversation_windows expansion failed", exc_info=True)
+            return self._bundle_conversation_budget({**params})
+
+    def _expand_windows(self, matched: list[Any], params: dict[str, Any], n: int, cap: int,
+                        order: str) -> list[Any]:
+        prefixes = (f"{CID_BASE}Message/", f"{DATA_BASE}Message/")
+        qnorm = " ".join(str(params.get("query_text") or "").strip().lower().split())
+        rank_of = {r["node_id"]: i for i, r in enumerate(matched)}
+        values = " ".join(f"<{u}>" for u in rank_of)
+        sess_of = {}
+        for row in self._client._execute_and_collect(f"""
+            SELECT ?m ?s WHERE {{ VALUES ?m {{ {values} }} ?m <https://campy.dev/ns#SENT_IN> ?s }}
+        """):
+            sess_of.setdefault(str(row["m"]), str(row["s"]))
+        sessions = sorted(set(sess_of.values()))
+        seqs: dict[str, list[dict]] = {}
+        if sessions:
+            svals = " ".join(f"<{u}>" for u in sessions)
+            rows = self._client._execute_and_collect(f"""
+                SELECT ?m ?s ?text ?role ?created ?archived ?speaker ?occurred WHERE {{
+                    VALUES ?s {{ {svals} }}
+                    ?m <https://campy.dev/ns#SENT_IN> ?s ;
+                       <https://campy.dev/ns#text_raw> ?text .
+                    OPTIONAL {{ ?m <https://campy.dev/ns#role> ?role }}
+                    OPTIONAL {{ ?m <https://campy.dev/ns#created_at> ?created }}
+                    OPTIONAL {{ ?m <https://campy.dev/ns#archived> ?archived }}
+                    OPTIONAL {{ ?m <https://campy.dev/ns#speaker> ?speaker }}
+                    OPTIONAL {{ ?m <https://campy.dev/ns#occurred_at> ?occurred }}
+                }}
+            """)
+            iso = lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v or "")
+            rows = list(rows)
+            # a message can carry both archived=true and a stale archived=false
+            # (see capture.archive_earlier_message_version): any true wins
+            archived = {str(r["m"]) for r in rows if bool(r.get("archived"))}
+            seen: set[str] = set()
+            for row in rows:
+                uri, text = str(row["m"]), str(row.get("text") or "").strip()
+                if not uri.startswith(prefixes) or not text or uri in seen:
+                    continue
+                # a matched turn stays even if it would not pass the neighbour filter
+                if uri not in rank_of and (
+                        uri in archived or str(row.get("role") or "") != "user"
+                        or " ".join(text.lower().split()) == qnorm):
+                    continue
+                seen.add(uri)
+                stored = iso(row.get("created"))
+                when = iso(row.get("occurred")) or stored
+                seqs.setdefault(str(row["s"]), []).append(
+                    {"uri": uri, "text": text, "speaker": row.get("speaker"),
+                     "created": when, "stored": stored})
+            for seq in seqs.values():
+                seq.sort(key=lambda v: (v["created"], v["stored"], v["uri"]))
+        pos = {}
+        for sid, seq in seqs.items():
+            for i, v in enumerate(seq):
+                pos[v["uri"]] = (sid, i)
+        chosen = set(rank_of)
+        added = 0
+        for d in range(1, n + 1):
+            for r in matched:
+                where = pos.get(r["node_id"])
+                if where is None:
+                    continue
+                sid, i = where
+                for j in (i - d, i + d):
+                    if added >= cap:
+                        break
+                    if 0 <= j < len(seqs[sid]):
+                        uri = seqs[sid][j]["uri"]
+                        if uri not in chosen:
+                            chosen.add(uri)
+                            added += 1
+        # windows: maximal runs of chosen turns that are adjacent in a session
+        windows: list[list[dict]] = []
+        for sid, seq in seqs.items():
+            run: list[dict] = []
+            for v in seq:
+                if v["uri"] in chosen:
+                    run.append(v)
+                elif run:
+                    windows.append(run)
+                    run = []
+            if run:
+                windows.append(run)
+        by_uri = {r["node_id"]: r for r in matched}
+        placed = {v["uri"] for w in windows for v in w}
+        for r in matched:  # matched turns with no session are windows of one
+            if r["node_id"] not in placed:
+                windows.append([{"uri": r["node_id"], "text": r["text"], "speaker": r.get("speaker"),
+                                 "created": r.get("created_at") or "", "stored": ""}])
+        best = lambda w: min((rank_of[v["uri"]] for v in w if v["uri"] in rank_of), default=len(rank_of))
+        if order == "rank":
+            windows.sort(key=lambda w: (best(w), w[0]["created"]))
+        else:
+            windows.sort(key=lambda w: (w[0]["created"], w[0]["stored"], w[0]["uri"]))
+        return [
+            RowDict({"text": v["text"], "role": "user", "created_at": v["created"],
+                     "speaker": v.get("speaker"), "node_id": v["uri"], "node_type": "Message",
+                     **({} if v["uri"] in by_uri else {"neighbour": True})})
+            for w in windows for v in w
+        ]
+
     def _conversation_all_turns(self, params: dict[str, Any], budget: int) -> Optional[list[Any]]:
         """B482: every eligible user turn, oldest first, when the whole set
         fits `budget` tokens; None when it does not (or the store is too big
@@ -1591,6 +1736,8 @@ class GraphGateway:
             return self._bundle_conversation(params)
         if name == "thalamus.bundle_conversation_budget":
             return self._bundle_conversation_budget(params)
+        if name == "thalamus.bundle_conversation_windows":
+            return self._bundle_conversation_windows(params)
         if name == "thalamus.bundle_assistant_words":
             return self._bundle_assistant_words(params)
         if name == "thalamus.bundle_observations":

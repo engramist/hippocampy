@@ -206,6 +206,7 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_LLM_REGION": ("llm", "region", str.strip),
     "CAMPY_LLM_BASE_URL": ("llm", "base_url", str.strip),
     "CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET": ("retrieval", "conversation_token_budget", _parse_nonneg_int),
+    "CAMPY_RETRIEVAL_CONVERSATION_NEIGHBOURS": ("retrieval", "conversation_neighbours", _parse_nonneg_int),
     "CAMPY_RETRIEVAL_CONVERSATION_BUDGET_MODE": ("retrieval", "conversation_budget_mode", _parse_budget_mode),
     "CAMPY_IAM_TENANT_ID": ("server", "iam_tenant_id", str.strip),
     "CAMPY_IAM_WORKSPACE_ID": ("server", "iam_workspace_id", str.strip),
