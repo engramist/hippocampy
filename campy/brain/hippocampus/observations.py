@@ -131,6 +131,20 @@ def observation_expand_limit(config: dict | None, default: int = 6) -> int:
         return default
 
 
+DEFAULT_EXPAND_MIN_SCORE = 0.65
+
+
+def observation_expand_min_score(config: dict | None, default: float = DEFAULT_EXPAND_MIN_SCORE) -> float:
+    """`[observations] expand_min_score` (env `CAMPY_OBSERVATIONS_EXPAND_MIN_SCORE`): the expansion
+    runs only when the best first-pass Observation's cosine similarity to the question is at least
+    this. Below it the match is weak -- typically a question about something never said -- and more
+    facts about the entity push the model to answer instead of abstaining (R59). 0 always expands."""
+    try:
+        return float(((config or {}).get("observations") or {}).get("expand_min_score", default))
+    except (TypeError, ValueError):
+        return default
+
+
 # --- types ------------------------------------------------------------------------
 
 @dataclass

@@ -53,9 +53,10 @@ def gw(db):
     return GraphGateway(db, REGISTRY)
 
 
-def cfg(hops=0, limit=8, expand_limit=6, **extra):
+def cfg(hops=0, limit=8, expand_limit=6, min_score=0.0, **extra):
     return {"observations": {"retrieval": True, "observation_limit": limit,
-                             "expand_hops": hops, "expand_limit": expand_limit},
+                             "expand_hops": hops, "expand_limit": expand_limit,
+                             "expand_min_score": min_score},
             "retrieval": {"conversation_token_budget": 0, **extra}}
 
 
@@ -272,6 +273,38 @@ async def test_group_survives_compression_and_prompt(db, store):
     assert "'About X:' gathers" not in p0
 
 
+# --- strong-match gate (R59) -------------------------------------------------------
+
+async def test_weak_first_pass_is_not_expanded(db, store):
+    first, near, far, _ = await _world(store)               # best first-pass cosine 0.8
+    s = await _stage(db, cfg(hops=1, min_score=0.9))
+    assert set(_ids(s)) == {first}
+    assert all("About " not in c["text"] for c in s.content)
+    assert s.content == (await _stage(db, cfg(hops=0))).content
+
+
+async def test_strong_first_pass_is_expanded(db, store):
+    first, near, far, _ = await _world(store)
+    s = await _stage(db, cfg(hops=1, min_score=0.7))
+    assert set(_ids(s)) == {first, near, far}
+    assert s.content[0]["entity"] == "Caroline"
+
+
+async def test_threshold_is_inclusive_and_zero_always_expands(db, store):
+    first, near, far, _ = await _world(store)
+    assert len(_ids(await _stage(db, cfg(hops=1, min_score=0.0)))) == 3
+    assert len(_ids(await _stage(db, cfg(hops=1, min_score=0.5)))) == 3
+    assert len(_ids(await _stage(db, cfg(hops=1, min_score=0.99)))) == 1
+
+
+def test_gate_helper_uses_best_cosine_and_default():
+    rows = [{"cosine": 0.4}, {"cosine": 0.66}, {"cosine": None}]
+    assert bc._first_pass_is_strong(rows, {})                # default 0.65
+    assert not bc._first_pass_is_strong([{"cosine": 0.64}], {})
+    assert not bc._first_pass_is_strong([{}], {})            # no vector hit = weak
+    assert bc._first_pass_is_strong([{}], {"observations": {"expand_min_score": 0}})
+
+
 # --- config -------------------------------------------------------------------------
 
 def test_config_defaults_and_env():
@@ -282,3 +315,12 @@ def test_config_defaults_and_env():
     assert obs.observation_expand_hops({"observations": {"expand_hops": 5}}) == 1
     assert obs.observation_expand_hops({"observations": {"expand_hops": "x"}}) == 0
     assert obs.observation_expand_limit({"observations": {"expand_limit": 3}}) == 3
+    # R59 calibration: cat-1..4 best-first-pass cosine median 0.67, cat 5 0.63
+    assert _DEFAULT_CONFIG["observations"]["expand_min_score"] == 0.65
+    assert obs.observation_expand_min_score({}) == 0.65 and obs.observation_expand_min_score(_DEFAULT_CONFIG) == 0.65
+    assert obs.observation_expand_min_score({"observations": {"expand_min_score": 0.5}}) == 0.5
+    assert obs.observation_expand_min_score({"observations": {"expand_min_score": "x"}}) == 0.65
+    got = apply_env_overrides({}, {"CAMPY_OBSERVATIONS_EXPAND_MIN_SCORE": "0.7"})
+    assert got["observations"]["expand_min_score"] == 0.7
+    with pytest.raises(Exception):
+        apply_env_overrides({}, {"CAMPY_OBSERVATIONS_EXPAND_MIN_SCORE": "2"})

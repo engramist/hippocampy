@@ -64,6 +64,9 @@ observation_limit = 8    # most Observations the semantic section carries
 # Concepts the first-pass Observations are about, and groups the section by entity.
 # CAMPY_OBSERVATIONS_EXPAND_HOPS=1 turns it on without editing this file.
 expand_hops = 0
+# Expand only when the best first-pass Observation's cosine to the question is >= this: a weak match
+# (a question about something never said) is left alone so the model can still abstain. 0 = always.
+expand_min_score = 0.65
 expand_limit = 6
 
 [wiki_projection]

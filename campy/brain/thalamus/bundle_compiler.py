@@ -27,6 +27,7 @@ from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.hippocampus.observations import (
     observation_expand_hops,
     observation_expand_limit,
+    observation_expand_min_score,
     observation_limit,
     observations_retrieval_enabled,
 )
@@ -813,6 +814,17 @@ async def _expand_observations(gw, rows: list, query: str, config: dict, embeddi
     )
 
 
+def _first_pass_is_strong(rows: list, config: dict) -> bool:
+    """M4.1 gate: the best first-pass Observation's cosine to the question reaches
+    `[observations] expand_min_score`. A weak first pass (a question about something
+    never said) is not expanded: the extra facts made the model answer instead of abstaining."""
+    threshold = observation_expand_min_score(config)
+    if threshold <= 0:
+        return True
+    best = max((float(r.get("cosine") or 0.0) for r in rows), default=0.0)
+    return best >= threshold
+
+
 async def _stage_observations(db, query: str, config: dict) -> Optional[BundleSection]:
     """B472 Phase 3c: the semantic section built from Observations -- typed,
     source-grounded claims the user made -- instead of Concept/Decision labels.
@@ -845,7 +857,7 @@ async def _stage_observations(db, query: str, config: dict) -> Optional[BundleSe
         if not rows:
             return None
         by_rank = str((config.get("retrieval", {}) or {}).get("conversation_order", "time")).lower() == "rank"
-        if observation_expand_hops(config) >= 1:
+        if observation_expand_hops(config) >= 1 and _first_pass_is_strong(rows, config):
             return await _expand_observations(gw, rows, query, config, embedding_model, by_rank)
         if not by_rank:
             rows = sorted(rows, key=lambda r: str(r.get("observed_at") or ""))

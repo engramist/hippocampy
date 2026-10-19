@@ -1325,19 +1325,22 @@ class GraphGateway:
 
         Returns up to `limit` rows, best first, each carrying the claim
         (subject/predicate/object/event/time/polarity/speaker/confidence), the
-        evidence quote and `evidence_ref` (the Message id), `observed_at`, and
-        `score`. Fail-soft: an empty store, or one with no embeddings, gives []."""
+        evidence quote and `evidence_ref` (the Message id), `observed_at`,
+        `score` (the fused rank score) and `cosine` (similarity of the embedding
+        to the question; 0.0 when the vector search did not return it). Fail-soft: an empty store, or one with no embeddings, gives []."""
         vs = self._vector_store
         limit = int(params.get("limit", 8))
         if limit <= 0:
             return []
         qtext = (params.get("query_text") or "").strip()
         prefix = f"{CID_BASE}Observation/"
-        vec_hits = [
-            uri for uri, _ in vs.search_vectors(
+        vec_scored = [
+            (uri, float(sc)) for uri, sc in vs.search_vectors(
                 params["query_embedding"], k=_typed_search_k(limit * 20), min_score=0.30)
             if uri.startswith(prefix)
         ][: limit * 40]
+        vec_hits = [uri for uri, _ in vec_scored]
+        cosine_of = dict(vec_scored)
         from campy.brain.hippocampus.graph.vector_store import fts_content_terms, mint_uri
 
         terms = fts_content_terms(qtext)
@@ -1387,7 +1390,8 @@ class GraphGateway:
                 if uri not in fts_set or sum(1 for t in terms if t in low) < need:
                     continue
             out.append(RowDict({**{c: row.get(c) for c in req + opt}, "node_id": uri,
-                                "score": ranked.get(uri, 0.0)}))
+                                "score": ranked.get(uri, 0.0),
+                                "cosine": cosine_of.get(uri, 0.0)}))
         out.sort(key=lambda r: -r["score"])
         return out[:limit]
 

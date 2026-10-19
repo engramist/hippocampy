@@ -83,6 +83,7 @@ _DEFAULT_CONFIG = {
         "retrieval": True,         # 3c: feed the bundle's semantic section from Observations
         "observation_limit": 8,    # 3c: most Observations the semantic section carries
         "expand_hops": 0,          # M4.1: 1 = add Observations about the first-pass entities, grouped by entity
+        "expand_min_score": 0.65,  # M4.1: expand only if the best first-pass cosine to the question is >= this (0 = always)
         "expand_limit": 6,         # M4.1: most extra Observations the expansion adds
     },
     "compression": {
@@ -173,6 +174,13 @@ def _parse_port(raw: str) -> int:
     return port
 
 
+def _parse_unit_float(raw: str) -> float:
+    value = float(raw)
+    if not 0.0 <= value <= 1.0:
+        raise ValueError("expected a number between 0 and 1")
+    return value
+
+
 def _parse_nonneg_int(raw: str) -> int:
     value = int(raw)
     if value < 0:
@@ -203,6 +211,7 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_OBSERVATIONS_RETRIEVAL": ("observations", "retrieval", _parse_bool),
     # M4.1: graph expansion of the Observation section (0 = off, 1 = one hop).
     "CAMPY_OBSERVATIONS_EXPAND_HOPS": ("observations", "expand_hops", _parse_nonneg_int),
+    "CAMPY_OBSERVATIONS_EXPAND_MIN_SCORE": ("observations", "expand_min_score", _parse_unit_float),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
     "CAMPY_LLM_MODEL": ("llm", "model", str.strip),
     "CAMPY_LLM_REGION": ("llm", "region", str.strip),
