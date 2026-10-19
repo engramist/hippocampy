@@ -202,7 +202,7 @@ def recorder(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("cfg", [{}, {"retrieval": {"conversation_neighbours": 0}},
+@pytest.mark.parametrize("cfg", [{"retrieval": {"conversation_neighbours": 0}},
                                  {"retrieval": {"conversation_neighbours": "junk"}},
                                  {"retrieval": {"conversation_neighbours": -2}}])
 async def test_stage_neighbours_off_uses_the_existing_queries(recorder, cfg):
@@ -212,6 +212,13 @@ async def test_stage_neighbours_off_uses_the_existing_queries(recorder, cfg):
     await bundle_compiler._stage_conversation(
         None, "q", {"retrieval": {**cfg.get("retrieval", {}), "conversation_token_budget": 0}})
     assert recorder.name == "thalamus.bundle_conversation"
+
+
+@pytest.mark.asyncio
+async def test_stage_neighbours_are_on_by_default(recorder):
+    await bundle_compiler._stage_conversation(None, "q", {})
+    assert recorder.name == "thalamus.bundle_conversation_windows"
+    assert recorder.params["neighbours"] == bundle_compiler.DEFAULT_CONVERSATION_NEIGHBOURS == 1
 
 
 @pytest.mark.asyncio
