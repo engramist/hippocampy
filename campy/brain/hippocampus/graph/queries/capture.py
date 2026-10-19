@@ -63,6 +63,11 @@ CAPTURE_QUERIES = [
                    campy:text_raw ?text_raw .
                 FILTER(CONTAINS(?text_raw, ?marker))
                 ?m campy:archived false .
+                # B488: bind every current archived value so the DELETE above
+                # actually removes it. ?old_archived was previously unbound in
+                # WHERE, so the DELETE matched nothing and the stale `false`
+                # stayed beside the new `true`.
+                ?m campy:archived ?old_archived .
             }
             """,
     ),
