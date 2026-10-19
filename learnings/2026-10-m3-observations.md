@@ -1,4 +1,27 @@
-# M3 Observations and M4.2 dates: merged (2026-10-18)
+# M3 Observations and M4.2 dates: merged (2026-10-18), then turned off (2026-10-19)
+
+> **Correction (2026-10-19):** the Observations gain below was a scoring
+> artefact. Since B475 (cite-or-abstain) Campy abstains with "I don't have that
+> information", which the LoCoMo-10 category-5 (adversarial) abstention regex did
+> not recognise, so correct abstentions scored WRONG. campy-benchmarks#41 fixed
+> the regex (recognised abstentions on recent gate answers: 97/445 → 301/445).
+> Re-scored from the stored answers, observations on vs off:
+>
+> | Set | gained / lost | adversarial abstentions main → obs |
+> |---|---|---|
+> | conv-42 | 25 / 20 | 47 → 47 |
+> | conv-43 | 17 / 20 | 43 → 39 |
+> | held-out conv-30 | 7 / 5 | 9 → 8 |
+> | held-out conv-44 | 17 / 18 | 25 → 18 |
+> | **pooled** | **66 / 63 (neutral)** | **124 → 112** |
+>
+> Observations help ordinary questions and make the model abstain less on
+> adversarial ones. Neutral overall while costing one LLM call per user turn, so
+> hippocampy#320 turned extraction and retrieval **off by default**. The M4.2
+> dates (#316) only matter when observations are on. Every LoCoMo gate before
+> campy-benchmarks#41 under-counts Campy's adversarial abstentions; re-score with
+> `~/campy-lead/rescore5.py` (or the fixed harness) before comparing.
+
 
 hippocampy #305 (B472 Phase 3b+3c, on by default) and #316 (B484, M4.2).
 All gates are `eval_gate.py` replays, judge gemma4:26b with 3 votes,
