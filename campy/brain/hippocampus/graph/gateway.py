@@ -374,6 +374,30 @@ def _warn_once_bad_conversation_order(value: str) -> None:
             value, CONVERSATION_ORDERS)
 
 
+def _collapse_archived(rows: Iterable[Any]) -> list[Any]:
+    """B488: one row per subject, archived if ANY archived value is true.
+
+    A node carrying both `archived true` and a stale `archived false` (written
+    by a pre-B488 `capture.archive_earlier_message_version`) comes back as one
+    row per value; a reader judging rows one at a time would take the `false`
+    row and treat a superseded turn as live. Rows without a `s` pass through.
+    """
+    out: list[Any] = []
+    seen: dict[Any, Any] = {}
+    for row in rows:
+        key = row.get("s") if hasattr(row, "get") else None
+        if key is None:
+            out.append(row)
+            continue
+        first = seen.get(key)
+        if first is None:
+            seen[key] = row
+            out.append(row)
+        elif bool(row.get("archived")) and not bool(first.get("archived")):
+            first["archived"] = row.get("archived")
+    return out
+
+
 class GraphGateway:
     """The chokepoint. Wraps a `KuzuClient` or `OxigraphClient` + `QueryRegistry`; `run()` is
     the only sanctioned way application code should reach the database."""
@@ -1068,7 +1092,7 @@ class GraphGateway:
             }
         """)
         newest: dict[tuple[str, str], dict] = {}
-        for row in enumerated:
+        for row in _collapse_archived(enumerated):
             text = str(row.get("text") or "").strip()
             if (not text or not str(row["s"]).startswith(prefixes) or bool(row.get("archived"))
                     or text.endswith("?")):
@@ -1440,7 +1464,7 @@ class GraphGateway:
                 OPTIONAL {{ ?s <https://campy.dev/ns#occurred_at> ?occurred }}
             }}
         """
-        rows = list(self._client._execute_and_collect(sparql))
+        rows = _collapse_archived(self._client._execute_and_collect(sparql))
         for row in rows:
             # B472: a turn's time is when it happened, when the caller said
             # so; otherwise when Campy stored it. Every consumer of `created`
