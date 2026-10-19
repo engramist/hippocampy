@@ -175,15 +175,15 @@ def test_every_observation_query_has_sparql_that_parses(query):
     (store.update if query.mutating else store.query)(bound)
 
 
-def test_observations_ship_enabled():
-    assert _DEFAULT_CONFIG["observations"]["enabled"] is True
-    assert obs.observations_enabled({}) is True
+def test_observations_ship_disabled():
+    assert _DEFAULT_CONFIG["observations"]["enabled"] is False
+    assert obs.observations_enabled({}) is False
     assert obs.observations_enabled({"observations": {"enabled": False}}) is False
     assert obs.observations_enabled({"observations": {"enabled": True}}) is True
     import tomllib
     cfg = tomllib.loads((Path(__file__).resolve().parent.parent / "campy" / "data" / "config" / "campy.toml").read_text())
-    assert cfg["observations"]["enabled"] is True
-    assert cfg["observations"]["retrieval"] is True
+    assert cfg["observations"]["enabled"] is False
+    assert cfg["observations"]["retrieval"] is False
 
 
 # --- grounding ----------------------------------------------------------------------

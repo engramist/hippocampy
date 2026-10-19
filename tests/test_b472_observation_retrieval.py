@@ -107,9 +107,10 @@ def _semantic(bundle):
 
 # --- flag off ----------------------------------------------------------------------
 
-def test_defaults_are_on_and_env_can_turn_them_off():
-    assert _DEFAULT_CONFIG["observations"]["retrieval"] is True
-    assert _DEFAULT_CONFIG["observations"]["enabled"] is True
+def test_defaults_are_off_and_env_can_turn_them_on():
+    # off by default since the corrected LoCoMo-10 gates were neutral (campy-benchmarks#41)
+    assert _DEFAULT_CONFIG["observations"]["retrieval"] is False
+    assert _DEFAULT_CONFIG["observations"]["enabled"] is False
     assert _DEFAULT_CONFIG["observations"]["observation_limit"] == 8
     for val in ("0", "false", "off"):
         env = {"CAMPY_OBSERVATIONS_RETRIEVAL": val, "CAMPY_OBSERVATIONS_ENABLED": val}
@@ -117,8 +118,9 @@ def test_defaults_are_on_and_env_can_turn_them_off():
         assert out["retrieval"] is False and out["enabled"] is False
     assert apply_env_overrides({}, {"CAMPY_OBSERVATIONS_RETRIEVAL": "1"})["observations"]["retrieval"] is True
     assert "retrieval" not in apply_env_overrides({}, {}).get("observations", {})
-    assert obs.observations_retrieval_enabled({}) is True
-    assert obs.observations_retrieval_enabled(_DEFAULT_CONFIG) is True
+    assert obs.observations_retrieval_enabled({}) is False
+    assert obs.observations_retrieval_enabled(_DEFAULT_CONFIG) is False
+    assert obs.observations_retrieval_enabled({"observations": {"retrieval": True}}) is True
     assert obs.observations_retrieval_enabled({"observations": {"retrieval": False}}) is False
 
 

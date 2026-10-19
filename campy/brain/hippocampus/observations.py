@@ -94,7 +94,7 @@ _QUOTE_TABLE = {
 
 def observations_enabled(config: dict | None) -> bool:
     """`[observations] enabled` (default true; env CAMPY_OBSERVATIONS_ENABLED=0 turns the writer off)."""
-    return bool(((config or {}).get("observations") or {}).get("enabled", True))
+    return bool(((config or {}).get("observations") or {}).get("enabled", False))
 
 
 def observations_retrieval_enabled(config: dict | None) -> bool:
@@ -102,7 +102,7 @@ def observations_retrieval_enabled(config: dict | None) -> bool:
     the bundle's semantic section is fed from Observations (B472 Phase 3c).
     Independent of `enabled`, which gates only the writer: a store built with
     the worker on can be read with this on or off."""
-    return bool(((config or {}).get("observations") or {}).get("retrieval", True))
+    return bool(((config or {}).get("observations") or {}).get("retrieval", False))
 
 
 def observation_limit(config: dict | None, default: int = 8) -> int:

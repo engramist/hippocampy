@@ -99,7 +99,7 @@ WENT = {"subject": "I", "predicate": "did", "object": "went to the Denver suppor
 # --- off by default -----------------------------------------------------------------
 
 def test_disabled_means_no_queue_no_worker_and_nothing_enqueued(monkeypatch, tmp_path):
-    assert _DEFAULT_CONFIG["observations"]["enabled"] is True    # on by default (B472 3c gate)
+    assert _DEFAULT_CONFIG["observations"]["enabled"] is False   # off by default (corrected gates neutral)
     monkeypatch.setattr(bd, "OxigraphClient", lambda p: object())
     off_cfg = {**_DEFAULT_CONFIG, "observations": {**_DEFAULT_CONFIG["observations"], "enabled": False}}
     assert bd.BrainDaemon(off_cfg)._observation_queue is None
