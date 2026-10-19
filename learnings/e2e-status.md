@@ -3,7 +3,7 @@
 Live state of `e2e-improvement-plan.md`. Update after every step; keep it
 short and current (history goes in dated `learnings/` notes).
 
-_Last updated: 2026-10-13 03:30 UTC_
+_Last updated: 2026-10-19 00:40 UTC_
 
 ## Who is running this
 
@@ -25,25 +25,21 @@ _Last updated: 2026-10-13 03:30 UTC_
 
 ## Current position
 
-- **First real gain merged:** #313 (B482) conversation token budget, on by
-  default (3500 tokens, `fit_all`): if all eligible user turns fit, show them
-  all oldest first; otherwise the unchanged fixed-limit path. DMR 59 gained /
-  30 lost over 299 questions on three splits (McNemar p ≈ 0.003); dev-large
-  0.531 → 0.633 (naive RAG 0.62); fixture 28/28. Note: the squash commit
-  `6e352ff` kept a stale "(off by default; gate pending)" title; the code is on.
-- **Gates now use McNemar** (`eval_gate.py`, `gate_report.py`; campy-benchmarks#39).
-  Retrieval reshuffles flip ~30 of 200 answers each way, so only ~8+ point
-  effects are detectable at n=200.
-- **Closed since last update:** #312 recall fixes (pooled n=702 regression,
-  p=0.044), #310 select-then-answer. Cite prompt (#299) re-tested: neutral
-  (pooled 28/32), kept.
-- **Held-out baselines (R30, main):** DMR 50–99 Campy 0.54 / naive RAG 0.62 /
-  full 0.76; LoCoMo-10 conv-30 0.364 / 0.318 / 0.386.
-- **GPU runner:** `/tmp/lead-queue/runner.sh` runs `/tmp/lead-queue/[0-9]*.sh`
-  in order (log `/tmp/lead-chain.log`). Running: R20d (LongMemEval s, no
-  full-context baseline: 115k-token prompts time out). Never queue
-  full-context baselines on long histories.
-- **Next R-number:** R51.
+- **On main (all on by default):** B482 conversation token budget (#313,
+  DMR +10 points); B472 Observations (#305, LoCoMo 65/39, p≈0.014, used only
+  when the whole history does not fit); B484 observation dates (#316,
+  temporal 11/3). See `2026-10-m3-observations.md`.
+- **Milestones:** M1 done (budget, cite prompt). M2 closed except what the
+  budget covers (reranker, recall fixes, boosts, sessions mode all failed
+  their gates). M3 done. M4.2 done; M4.1 (graph expansion for multi-hop)
+  and M4.3 next.
+- **GPU queue:** `~/campy-lead/runner.sh` runs `~/campy-lead/queue/[0-9]*.sh`
+  (log `~/campy-lead/chain.log`, results `~/campy-lead/results`). Running:
+  R58, a large held-out LoCoMo conversation (conv-44, 675 turns) ingested
+  with observations, then gated.
+- **Check-ins:** the lead session runs a self-paced /loop with a job
+  monitor; nothing is kept in /tmp (macOS deletes it after ~3 days).
+- **Next R-number:** R59.
 
 ## Pins
 
@@ -79,10 +75,7 @@ Notes:
 
 ## Open PRs
 
-- hippocampy#304 / #305 — observations (extraction off; retrieval off). R36:
-  +6/−3 on LoCoMo dev but `nosem` equal, ~half the observations junk;
-  extraction slows ingestion (conv-41 failed to drain in 1 h). Re-gate on
-  r44 conv-42/43 stores (ingested with observations on).
+None.
 
 ## Latest numbers (fields mode)
 
@@ -111,8 +104,8 @@ Not measured yet (R31). Assume ±4 points at n=50–60.
 
 ## Next three actions
 
-1. R20d → LongMemEval s numbers (budget does not apply: histories too long).
-2. Re-gate observations (#305 on main) on r44 conv-42/43.
-3. Next large-effect candidate: what full history does that Campy does not on
-   LoCoMo (full 0.39–0.48 vs Campy 0.36–0.40) — e.g. a larger budget with
-   session-level selection (M2.2), measured with McNemar on dev-large.
+1. R58 → held-out check of observations on a long conversation.
+2. M4.1: from the question's entities to their observations and one hop
+   further (multi-hop: Campy 0–2 of 12 vs full history 6).
+3. Observation extraction precision (about half of sampled observations
+   were low quality).
