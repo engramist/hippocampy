@@ -1091,7 +1091,10 @@ class GraphGateway:
             return None
         return [
             RowDict({"text": v["text"], "role": "user", "created_at": v["created"],
-                     "speaker": v.get("speaker"), "node_id": v["uri"], "node_type": "Message"})
+                     "speaker": v.get("speaker"), "node_id": v["uri"], "node_type": "Message",
+                     # B472 3c: the whole eligible history is here (observations
+                     # would be redundant with it); see bundle_compiler.compile_bundle
+                     "full_history": True})
             for v in turns
         ]
 

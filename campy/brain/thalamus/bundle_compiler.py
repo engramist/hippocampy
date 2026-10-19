@@ -101,6 +101,9 @@ class BundleSection:
     # Concept/Decision/... preview ("observations"). Compressors carry it through;
     # the ask prompt describes the section accordingly.
     variant: str = ""
+    # B472 3c: a "conversation" section that holds the WHOLE eligible user
+    # history (B482 budget path, everything fit). Observations are redundant then.
+    full_history: bool = False
 
 
 @dataclass
@@ -245,11 +248,17 @@ async def compile_bundle(
         )
         return bundle
 
-    # Stage 3: Semantic context. B472 3c: with `[observations] retrieval` on and
-    # Observations matching the question, they REPLACE the Concept/Decision
-    # preview (replays R26/R27: that preview added nothing); otherwise unchanged.
+    # Stage 3: Semantic context. B472 3c: observations add what the shown
+    # conversation does not; when the conversation section already holds the
+    # WHOLE history (B482 fit_all hit) they are redundant (DMR held-out:
+    # 0.633 -> 0.571 with them), so the old Concept/Decision stage runs exactly
+    # as on main. That needs the conversation outcome first, so the conversation
+    # stage is computed here (stages run sequentially, not concurrently) and
+    # appended later in its usual position, after the budget check below.
+    conversation_section = await _stage_conversation(db, query, config)
     semantic_section = None
-    if observations_retrieval_enabled(config):
+    if observations_retrieval_enabled(config) and not (
+            conversation_section is not None and conversation_section.full_history):
         semantic_section = await _stage_observations(db, query, config)
     if semantic_section is None:
         semantic_section = await _stage_semantic_context(db, query, config, tier_config, session_id=session_id)
@@ -273,7 +282,6 @@ async def compile_bundle(
     # Stage 3b (B454): what the user actually said about this. Consolidation keeps
     # entity labels, not statements, so raw user turns are the only place a fact
     # like "we migrated to PostgreSQL 16" lives.
-    conversation_section = await _stage_conversation(db, query, config)
     if conversation_section and conversation_section.content:
         sections.append(conversation_section)
         cumulative_tokens += conversation_section.token_estimate
@@ -846,6 +854,8 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
             section_type="conversation", content=content,
             token_estimate=sum(max(1, len(c["text"]) // 4) for c in content),
             source_node_ids=node_ids, order=order,
+            full_history=bool(budget > 0 and all(
+                (r.get("full_history") if isinstance(r, dict) else False) for r in (rows or []))),
         )
     except Exception as e:
         _logger.warning("Error in _stage_conversation: %s", e)
