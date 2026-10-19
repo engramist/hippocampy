@@ -69,18 +69,20 @@ _DEFAULT_CONFIG = {
     "loop": {
         "max_co_occurrence_pairs": 45,
     },
-    # B472 Phase 3: source-grounded Observations. On by default
-    # (3c gate: LoCoMo-10 65 gained/39 lost p~0.014; shown only when the
-    # conversation section does not hold the whole history).
-    # CAMPY_OBSERVATIONS_ENABLED=0 / CAMPY_OBSERVATIONS_RETRIEVAL=0 turn off.
+    # B472 Phase 3: source-grounded Observations. OFF by default: with
+    # adversarial abstentions scored correctly (campy-benchmarks#41) the
+    # LoCoMo-10 gates are neutral (66 gained / 63 lost over four
+    # conversations; adversarial abstention 124 -> 112), and extraction costs
+    # one LLM call per user turn. CAMPY_OBSERVATIONS_ENABLED=1 /
+    # CAMPY_OBSERVATIONS_RETRIEVAL=1 turn them on.
     "observations": {
-        "enabled": True,
+        "enabled": False,
         "llm_enabled": True,       # only read when enabled
         "llm_batch_turns": 20,     # reserved: 3b extracts per turn and does not read these two
         "idle_flush_seconds": 5,
         "max_turn_chars": 600,
         "queue_max": 5000,         # 3b: bounded worker queue; a full queue drops the newest, counted
-        "retrieval": True,         # 3c: feed the bundle's semantic section from Observations
+        "retrieval": False,        # 3c: feed the bundle's semantic section from Observations
         "observation_limit": 8,    # 3c: most Observations the semantic section carries
     },
     "compression": {
