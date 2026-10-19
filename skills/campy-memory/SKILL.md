@@ -224,7 +224,7 @@ This shows live events:
 -> **Workaround:** `campy doctor --repair` and `campy activity --follow` to monitor restart.
 
 ### "Recall tool timed out"
--> Network or KuzuDB latency. Recall failed; no memory was added to context.
+-> Network or graph-store latency. Recall failed; no memory was added to context.
 -> **Workaround:** Retry or use `context_status` to check health. Fall back to current context.
 
 ### "I got the wrong recall results"
