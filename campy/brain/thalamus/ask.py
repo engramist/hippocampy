@@ -253,7 +253,7 @@ async def _verify_cited_answer(answer: str, query: str, prompt: str, llm,
     except Exception as exc:  # fail open: keep the original answer
         _logger.warning("B489 verify call failed (%s); keeping answer.", exc)
         return _done("verifier_error", answer)
-    if not str(reply or "").strip().upper().startswith("YES"):
+    if not re.sub(r"^[^A-Za-z]+", "", str(reply or "")).upper().startswith("YES"):
         return _done("verifier_no", _ABSTAIN_ANSWER)
     return _done("kept", answer)
 

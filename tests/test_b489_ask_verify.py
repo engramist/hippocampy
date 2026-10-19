@@ -86,3 +86,18 @@ def test_env_override_and_default():
         apply_env_overrides({}, {"CAMPY_ASK_ANSWER_STYLE": "bogus"})
     assert _answer_style(None) == "cite"
     assert _answer_style({"ask": {"answer_style": "verify"}}) == "verify"
+
+
+def test_verifier_yes_with_markdown_keeps():
+    import asyncio
+    from campy.brain.thalamus import ask as ask_mod
+
+    class _LLM:
+        async def achat(self, messages):
+            return "**Yes** — it does."
+
+    prompt = "Query: q\n\nContext from memory:\nCaroline: I love all dances, but contemporary is my top pick"
+    answer = 'Contemporary. "I love all dances, but contemporary is my top pick"'
+    meta = {}
+    out = asyncio.run(ask_mod._verify_cited_answer(answer, "q", prompt, _LLM(), meta))
+    assert out == answer and meta["verify"] == "kept"
