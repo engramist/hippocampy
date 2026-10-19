@@ -795,6 +795,33 @@ def _conversation_budget_mode(config: dict) -> str:
     return mode if mode in ("fit_all", "fill") else "fit_all"
 
 
+DEFAULT_CONVERSATION_NEIGHBOUR_CAP = 18
+
+
+# B487: on by default since the 2026-10-19 gate (LoCoMo categories 1-4, dev +
+# held-out pooled: 52 gained / 18 lost).
+DEFAULT_CONVERSATION_NEIGHBOURS = 1
+
+
+def _conversation_neighbours(config: dict) -> int:
+    """B487: `[retrieval] conversation_neighbours` (absent = 1; 0 or invalid = off)."""
+    try:
+        return max(0, int((config.get("retrieval", {}) or {}).get(
+            "conversation_neighbours", DEFAULT_CONVERSATION_NEIGHBOURS) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _conversation_neighbour_cap(config: dict) -> int:
+    """B487: `[retrieval] conversation_neighbour_cap` (absent = 18; invalid = 18)."""
+    raw = (config.get("retrieval", {}) or {}).get(
+        "conversation_neighbour_cap", DEFAULT_CONVERSATION_NEIGHBOUR_CAP)
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_CONVERSATION_NEIGHBOUR_CAP
+
+
 async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSection]:
     """B454: relevant user statements from the raw conversation (see
     GraphGateway._bundle_conversation). Disabled with
@@ -824,7 +851,16 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
         # budget_mode "fit_all" (default): all turns when they fit, else the
         # fixed-limit path; "fill": rank-fill to the budget.
         budget = _conversation_token_budget(config)
-        if budget > 0:
+        neighbours = _conversation_neighbours(config)
+        if neighbours > 0:
+            # B487: neighbour expansion (new query; the others are untouched)
+            rows = await get_gateway(db).run(
+                "thalamus.bundle_conversation_windows",
+                query_embedding=query_embedding, query_text=query, limit=limit, order=order,
+                token_budget=budget, budget_mode=_conversation_budget_mode(config),
+                neighbours=neighbours, neighbour_cap=_conversation_neighbour_cap(config),
+            )
+        elif budget > 0:
             rows = await get_gateway(db).run(
                 "thalamus.bundle_conversation_budget",
                 query_embedding=query_embedding, query_text=query, limit=limit, order=order,
