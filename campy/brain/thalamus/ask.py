@@ -151,16 +151,111 @@ _ANSWER_INSTRUCTION_CITE = (
 
 
 def _answer_style(config: Optional[dict]) -> str:
-    """M1.3: resolve config["ask"]["answer_style"] -> "cite" (default) | "legacy".
+    """M1.3: resolve config["ask"]["answer_style"] -> "cite" (default) | "legacy"
+    | "verify" (B489: "cite" plus a post-answer check of the quoted line).
 
     Unknown values fall back to "cite" with a warning.
     """
     raw = ((config or {}).get("ask") or {}).get("answer_style") or "cite"
     style = str(raw).strip().lower()
-    if style not in ("cite", "legacy"):
+    if style not in ("cite", "legacy", "verify"):
         _logger.warning("Unknown [ask] answer_style %r; using 'cite'.", raw)
         return "cite"
     return style
+
+
+# B489: "verify" answer style. The answer is produced with the "cite" prompt,
+# then checked: the quoted line must exist in the rendered context and a short
+# yes/no call must confirm it directly answers the question about the same
+# person. Anything that fails becomes an abstention.
+_ABSTAIN_ANSWER = "I don't have that information."
+_ABSTAIN_RE = re.compile(
+    r"(don'?t|do not|doesn'?t|does not|didn'?t|did not) (have|know|contain|provide|mention)"
+    r"|no (relevant )?(information|line|mention)|not (mentioned|stated|specified|available)"
+    r"|cannot (find|answer)|can'?t (find|answer)|unable to (find|answer)",
+    re.IGNORECASE,
+)
+_QUOTE_RES = (
+    re.compile(r'"([^"\n]{3,})"'),
+    re.compile(r"\u201c([^\u201d\n]{3,})\u201d"),
+    re.compile(r"(?im)^\W*(?:quote|quoted line|line used|supporting line|source)\s*:\s*(.+)$"),
+)
+_VERIFY_OVERLAP = 0.8
+_VERIFY_PROMPT = (
+    "Question: {question}\n\nLine from a conversation:\n{lines}\n\n"
+    "Does this line directly answer the question, about the same person the "
+    "question asks about? Reply YES or NO."
+)
+
+
+def _norm_tokens(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9']+", text.lower())
+
+
+def _extract_quotes(answer: str) -> list[str]:
+    """B489: quoted spans in an answer ("..." , curly quotes, or a "Quote: ..."
+    line), longest first. Short quoted terms are dropped when a 3+ token quote
+    exists, so a quoted keyword cannot stand in for the cited line."""
+    found: list[str] = []
+    for rx in _QUOTE_RES:
+        for m in rx.finditer(answer):
+            q = m.group(1).strip().strip("\"\u201c\u201d' ")
+            if q and q not in found:
+                found.append(q)
+    long_ones = [q for q in found if len(_norm_tokens(q)) >= 3]
+    return sorted(long_ones or found, key=len, reverse=True)
+
+
+def _match_context_lines(quotes: list[str], prompt: str) -> list[str]:
+    """B489: context lines (as rendered, speaker/date stamp included) that a
+    quote matches by normalised substring or token overlap >= 0.8."""
+    ctx = prompt.split("Context from memory:", 1)[-1]
+    lines = [ln.strip() for ln in ctx.splitlines() if ln.strip()]
+    matched: list[str] = []
+    for q in quotes[:3]:
+        qn = " ".join(_norm_tokens(q))
+        qset = set(qn.split())
+        if not qset:
+            continue
+        for ln in lines:
+            ln_tokens = _norm_tokens(ln)
+            hit = qn in " ".join(ln_tokens) or (
+                len(qset & set(ln_tokens)) / len(qset) >= _VERIFY_OVERLAP
+            )
+            if hit and ln not in matched:
+                matched.append(ln)
+    return matched
+
+
+async def _verify_cited_answer(answer: str, query: str, prompt: str, llm,
+                               meta: Optional[dict] = None) -> str:
+    """B489: deterministic quote check, then one YES/NO LLM call. Records
+    meta["verify"]: already_abstained | no_quote | quote_not_in_context |
+    verifier_no | verifier_error | kept. Fails open on verifier errors."""
+    def _done(status: str, out: str) -> str:
+        if meta is not None:
+            meta["verify"] = status
+        return out
+
+    if _ABSTAIN_RE.search(answer) and not _extract_quotes(answer):
+        return _done("already_abstained", answer)
+    quotes = _extract_quotes(answer)
+    if not quotes:
+        return _done("no_quote", _ABSTAIN_ANSWER)
+    lines = _match_context_lines(quotes, prompt)
+    if not lines:
+        return _done("quote_not_in_context", _ABSTAIN_ANSWER)
+    try:
+        reply = await llm.achat([{
+            "role": "user",
+            "content": _VERIFY_PROMPT.format(question=query, lines="\n".join(lines)),
+        }])
+    except Exception as exc:  # fail open: keep the original answer
+        _logger.warning("B489 verify call failed (%s); keeping answer.", exc)
+        return _done("verifier_error", answer)
+    if not str(reply or "").strip().upper().startswith("YES"):
+        return _done("verifier_no", _ABSTAIN_ANSWER)
+    return _done("kept", answer)
 
 
 def _bundle_to_prompt(bundle, query: str, config: Optional[dict] = None) -> str:
@@ -219,7 +314,7 @@ def _bundle_to_prompt(bundle, query: str, config: Optional[dict] = None) -> str:
             1,
             _ANSWER_INSTRUCTION_LEGACY
             if _answer_style(config) == "legacy"
-            else _ANSWER_INSTRUCTION_CITE,
+            else _ANSWER_INSTRUCTION_CITE,  # "cite" and "verify" share this
         )
     else:
         # B305: the bundle can now come back genuinely empty (relevance floor
@@ -476,6 +571,10 @@ async def run_ask(
         # B447: _h2_empty_claim_guard calls llm.chat() synchronously when it
         # retries — same event-loop-blocking issue as the main call below.
         answer = await asyncio.to_thread(_h2_empty_claim_guard, answer, bundle, prompt, llm, meta)
+
+    if _answer_style(config) == "verify":
+        # B489: check the cited line; abstain when it does not hold up.
+        answer = await _verify_cited_answer(answer, query, prompt, llm, meta)
 
     # 4. Capture (closed loop) — both the question and the answer
     if capture:

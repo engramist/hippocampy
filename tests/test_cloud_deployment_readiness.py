@@ -44,6 +44,7 @@ def test_every_documented_override_applies():
         "CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET": "3500",
         "CAMPY_RETRIEVAL_CONVERSATION_BUDGET_MODE": "fill",
         "CAMPY_RETRIEVAL_CONVERSATION_NEIGHBOURS": "2",
+        "CAMPY_ASK_ANSWER_STYLE": "verify",
         "CAMPY_IAM_TENANT_ID": "acme",
         "CAMPY_IAM_WORKSPACE_ID": "acme-default",
         "CAMPY_IAM_WORKSPACE_MAP_JSON": '{"arn:aws:iam::1:role/a": "ws-a"}',
@@ -66,6 +67,7 @@ def test_every_documented_override_applies():
     assert cfg["retrieval"]["conversation_token_budget"] == 3500
     assert cfg["retrieval"]["conversation_budget_mode"] == "fill"
     assert cfg["retrieval"]["conversation_neighbours"] == 2
+    assert cfg["ask"]["answer_style"] == "verify"
     assert s["iam_tenant_id"] == "acme" and s["iam_workspace_id"] == "acme-default"
     assert s["iam_workspace_map"] == {"arn:aws:iam::1:role/a": "ws-a"}
     assert s["iam_tenant_map"] == {"arn:aws:iam::1:role/a": "tenant-a"}
@@ -86,6 +88,7 @@ def test_unset_and_empty_vars_leave_config_alone():
     ("CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET", "-1"),
     ("CAMPY_RETRIEVAL_CONVERSATION_BUDGET_MODE", "everything"),
     ("CAMPY_RETRIEVAL_CONVERSATION_NEIGHBOURS", "-1"),
+    ("CAMPY_ASK_ANSWER_STYLE", "bogus"),
     ("CAMPY_IAM_WORKSPACE_MAP_JSON", "{not json"),
     ("CAMPY_IAM_WORKSPACE_MAP_JSON", '["a", "b"]'),
     ("CAMPY_IAM_PRINCIPAL_SCOPE_MAP_JSON", '{"arn": "memory.read"}'),

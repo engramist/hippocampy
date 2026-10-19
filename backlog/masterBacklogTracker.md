@@ -98,6 +98,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B482 | Conversation Stage Token-Budget Mode | P2 | implemented (off by default; DMR dev gate passed R48 p=0.019, held-out gate pending) | TBD | TBD | - | backlog/B482.md |
 | B484 | Time Normalisation at Capture (M4.2) | P2 | implemented (gate pending: LoCoMo temporal via replay + backfill) | TBD | TBD | - | backlog/B484.md |
 | B487 | Neighbour Expansion in the Conversation Stage | P2 | implemented (off by default; gate pending: LoCoMo-10 replay, N=1/2 vs 0) | TBD | TBD | - | backlog/B487.md |
+| B489 | Verify Step for Cited Answers | P2 | in review (off by default; gate pending) | TBD | TBD | - | backlog/B489.md |
 | B459 | Conversation Evidence Drops the Statements That Supersede the One It Found | P1 | fixed (real-model confirmed) | TBD | TBD | - | backlog/B459.md |
 | B458 | current_truth: Exact Identifier Match Loses to Near-Identical Notes (RRF Fusion) | P1 | fixed (round 2: identifiers rank first; real-model confirmed) | TBD | TBD | - | backlog/B458.md |
 | B457 | HTTP REST and Dashboard Routes Ignore the Caller's Workspace (Cross-Tenant Access in Multi-Tenant Mode) | P1 | fixed | TBD | TBD | - | backlog/B457.md |

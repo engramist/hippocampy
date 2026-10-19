@@ -190,6 +190,13 @@ def _parse_budget_mode(raw: str) -> str:
     return value
 
 
+def _parse_answer_style(raw: str) -> str:
+    value = raw.strip().lower()
+    if value not in ("cite", "legacy", "verify"):
+        raise ValueError("expected one of: cite, legacy, verify")
+    return value
+
+
 # env var -> (config section, key, parser)
 ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_SERVER_AUTH": ("server", "auth", str.strip),
@@ -208,6 +215,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET": ("retrieval", "conversation_token_budget", _parse_nonneg_int),
     "CAMPY_RETRIEVAL_CONVERSATION_NEIGHBOURS": ("retrieval", "conversation_neighbours", _parse_nonneg_int),
     "CAMPY_RETRIEVAL_CONVERSATION_BUDGET_MODE": ("retrieval", "conversation_budget_mode", _parse_budget_mode),
+    # B489: lets a benchmark harness switch the answer style via the environment.
+    "CAMPY_ASK_ANSWER_STYLE": ("ask", "answer_style", _parse_answer_style),
     "CAMPY_IAM_TENANT_ID": ("server", "iam_tenant_id", str.strip),
     "CAMPY_IAM_WORKSPACE_ID": ("server", "iam_workspace_id", str.strip),
     "CAMPY_IAM_WORKSPACE_MAP_JSON": ("server", "iam_workspace_map", _parse_json_str_map),
