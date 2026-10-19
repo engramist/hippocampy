@@ -152,6 +152,7 @@ WORKING_MEMORY_QUERIES = [
                 ?m campy:SENT_IN ?s ;
                    a campy:Message .
                 ?m campy:archived false .
+                FILTER NOT EXISTS { ?m campy:archived true }  # B488: any true value wins
             }
             """,
     ),
