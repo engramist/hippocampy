@@ -218,7 +218,7 @@ async def test_stage_neighbours_off_uses_the_existing_queries(recorder, cfg):
 async def test_stage_neighbours_are_on_by_default(recorder):
     await bundle_compiler._stage_conversation(None, "q", {})
     assert recorder.name == "thalamus.bundle_conversation_windows"
-    assert recorder.params["neighbours"] == bundle_compiler.DEFAULT_CONVERSATION_NEIGHBOURS == 1
+    assert recorder.params["neighbours"] == bundle_compiler.DEFAULT_CONVERSATION_NEIGHBOURS == 2
 
 
 @pytest.mark.asyncio
