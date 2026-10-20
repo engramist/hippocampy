@@ -36,7 +36,7 @@ import re
 import time
 import unittest.mock
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 from urllib.parse import unquote
 from campy.brain.hippocampus.schema import FACT_PREDICATE_TABLES
 from campy.brain.hippocampus.graph.oxigraph_client import (
@@ -346,6 +346,23 @@ def _materialize_rows(res: Any) -> Any:
 
 # B474: presentation order of the conversation stage's turns.
 CONVERSATION_ORDERS = ("rank", "time")
+# B482: what the token-budget stage does when the whole history does not fit
+CONVERSATION_BUDGET_MODES = ("fit_all", "fill")
+
+
+def conversation_stamp(speaker: Any, created: Any) -> str:
+    """B472/B482: the `[speaker, YYYY-MM-DD HH:MM] ` prefix each conversation
+    turn carries in the bundle (the speaker when the turn named one, else the
+    role)."""
+    who = speaker or "user"
+    return f"[{who}, {str(created)[:16].replace('T', ' ')}] " if created else f"[{who}] "
+
+
+def conversation_turn_tokens(speaker: Any, created: Any, text: str) -> int:
+    """B482: tokens one conversation turn costs in the bundle, by the same
+    estimate `_stage_conversation` puts in the section's `token_estimate`
+    (len // 4 of stamp + text, at least 1)."""
+    return max(1, len(conversation_stamp(speaker, created) + text) // 4)
 _BAD_ORDER_WARNED: set[str] = set()
 
 
@@ -355,6 +372,30 @@ def _warn_once_bad_conversation_order(value: str) -> None:
         _logger.warning(
             "[retrieval] conversation_order=%r is not one of %s; using 'time'",
             value, CONVERSATION_ORDERS)
+
+
+def _collapse_archived(rows: Iterable[Any]) -> list[Any]:
+    """B488: one row per subject, archived if ANY archived value is true.
+
+    A node carrying both `archived true` and a stale `archived false` (written
+    by a pre-B488 `capture.archive_earlier_message_version`) comes back as one
+    row per value; a reader judging rows one at a time would take the `false`
+    row and treat a superseded turn as live. Rows without a `s` pass through.
+    """
+    out: list[Any] = []
+    seen: dict[Any, Any] = {}
+    for row in rows:
+        key = row.get("s") if hasattr(row, "get") else None
+        if key is None:
+            out.append(row)
+            continue
+        first = seen.get(key)
+        if first is None:
+            seen[key] = row
+            out.append(row)
+        elif bool(row.get("archived")) and not bool(first.get("archived")):
+            first["archived"] = row.get("archived")
+    return out
 
 
 class GraphGateway:
@@ -1000,6 +1041,233 @@ class GraphGateway:
         raise NotImplementedError(f"No Python handler or SPARQL translation implemented for NamedQuery {name!r}")
 
     def _bundle_conversation(self, params: dict[str, Any]) -> list[Any]:
+        return self._bundle_conversation_impl(params, 0)
+
+    def _bundle_conversation_budget(self, params: dict[str, Any]) -> list[Any]:
+        """B482: the conversation stage filled to a token budget instead of a
+        fixed turn count (`thalamus.bundle_conversation_budget`).
+
+        1. When every eligible user turn in the store (user role, not
+           archived, not a question, not an echo of the query, de-duplicated
+           as in `_bundle_conversation`) fits `token_budget`, return ALL of
+           them, oldest first: full history, which is what a small store
+           should give. Enumerated only when the lexical index holds no more
+           than `token_budget` documents, so a large store never pays for it.
+        2. Otherwise it depends on `budget_mode`:
+           "fit_all" (default): exactly `_bundle_conversation` (the fixed
+           `limit` path, byte-identical to budget 0);
+           "fill": rank as `_bundle_conversation` does (fused order, B459
+           gate, B463 bridge) over a candidate pool sized to the budget, and
+           take turns in rank order until the budget is full (none that
+           would overflow), then present them in `order`.
+        `token_budget` <= 0 is exactly `_bundle_conversation`."""
+        budget = int(params.get("token_budget") or 0)
+        mode = str(params.get("budget_mode") or "fit_all").lower()
+        if mode not in CONVERSATION_BUDGET_MODES:
+            mode = "fit_all"
+        if budget > 0 and int(params.get("limit", 6)) > 0:
+            rows = self._conversation_all_turns(params, budget)
+            if rows is not None:
+                return rows
+        return self._bundle_conversation_impl(params, budget if mode == "fill" else 0)
+
+    def _bundle_conversation_windows(self, params: dict[str, Any]) -> list[Any]:
+        """B487: the conversation stage with neighbour expansion
+        (`thalamus.bundle_conversation_windows`).
+
+        Evidence turns are often REPLIES that do not repeat the question's
+        words ("I love all dances, but contemporary is my top pick", answering
+        "what's your fave?"), so ranking alone misses them while the matched
+        turn next to them is found. This returns the stage's matched turns
+        (exactly `_bundle_conversation_budget`'s) plus up to `neighbours` turns
+        before and after each, in the same session (Message -[SENT_IN]->
+        Session), by EITHER speaker.
+
+        1. When the whole eligible history fits the token budget it is returned
+           untouched (full history: nothing to expand).
+        2. Otherwise each matched turn gets a window. A neighbour is any
+           non-archived USER turn that is not an echo of the query; it may be a
+           question (that is usually the context). Assistant turns stay out
+           (ISSUE-024). Windows are filled in rounds by distance (1, 2, ...)
+           across the matched turns in rank order, so a tight cap keeps the
+           best-ranked turns' closest neighbours; `neighbour_cap` bounds the
+           added turns in total. Turns are ordered within a session by
+           (occurred_at, stored time, uri); overlapping windows merge.
+        3. Presentation: each window is contiguous and chronological. Windows
+           are ordered oldest first ("time") or best-ranked matched turn first
+           ("rank"). Rows carry `neighbour: True` when they were not matched
+           themselves (display does not use it).
+        `neighbours` <= 0 is exactly `_bundle_conversation_budget`."""
+        n = int(params.get("neighbours") or 0)
+        cap = max(0, int(params.get("neighbour_cap") or 0))
+        order = str(params.get("order") or "time").lower()
+        if order not in CONVERSATION_ORDERS:
+            order = "time"
+        base = dict(params)
+        if n <= 0:
+            return self._bundle_conversation_budget(base)
+        base["order"] = "rank"  # rank order is needed to prioritise windows
+        matched = self._bundle_conversation_budget(base)
+        if not matched or all(r.get("full_history") for r in matched):
+            return matched  # full history is always oldest first, whatever `order` says
+        try:
+            return self._expand_windows(matched, params, n, cap, order)
+        except Exception:
+            _logger.debug("_bundle_conversation_windows expansion failed", exc_info=True)
+            return self._bundle_conversation_budget({**params})
+
+    def _expand_windows(self, matched: list[Any], params: dict[str, Any], n: int, cap: int,
+                        order: str) -> list[Any]:
+        prefixes = (f"{CID_BASE}Message/", f"{DATA_BASE}Message/")
+        qnorm = " ".join(str(params.get("query_text") or "").strip().lower().split())
+        rank_of = {r["node_id"]: i for i, r in enumerate(matched)}
+        values = " ".join(f"<{u}>" for u in rank_of)
+        sess_of = {}
+        for row in self._client._execute_and_collect(f"""
+            SELECT ?m ?s WHERE {{ VALUES ?m {{ {values} }} ?m <https://campy.dev/ns#SENT_IN> ?s }}
+        """):
+            sess_of.setdefault(str(row["m"]), str(row["s"]))
+        sessions = sorted(set(sess_of.values()))
+        seqs: dict[str, list[dict]] = {}
+        if sessions:
+            svals = " ".join(f"<{u}>" for u in sessions)
+            rows = self._client._execute_and_collect(f"""
+                SELECT ?m ?s ?text ?role ?created ?archived ?speaker ?occurred WHERE {{
+                    VALUES ?s {{ {svals} }}
+                    ?m <https://campy.dev/ns#SENT_IN> ?s ;
+                       <https://campy.dev/ns#text_raw> ?text .
+                    OPTIONAL {{ ?m <https://campy.dev/ns#role> ?role }}
+                    OPTIONAL {{ ?m <https://campy.dev/ns#created_at> ?created }}
+                    OPTIONAL {{ ?m <https://campy.dev/ns#archived> ?archived }}
+                    OPTIONAL {{ ?m <https://campy.dev/ns#speaker> ?speaker }}
+                    OPTIONAL {{ ?m <https://campy.dev/ns#occurred_at> ?occurred }}
+                }}
+            """)
+            iso = lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v or "")
+            rows = list(rows)
+            # a message can carry both archived=true and a stale archived=false
+            # (see capture.archive_earlier_message_version): any true wins
+            archived = {str(r["m"]) for r in rows if bool(r.get("archived"))}
+            seen: set[str] = set()
+            for row in rows:
+                uri, text = str(row["m"]), str(row.get("text") or "").strip()
+                if not uri.startswith(prefixes) or not text or uri in seen:
+                    continue
+                # a matched turn stays even if it would not pass the neighbour filter
+                if uri not in rank_of and (
+                        uri in archived or str(row.get("role") or "") != "user"
+                        or " ".join(text.lower().split()) == qnorm):
+                    continue
+                seen.add(uri)
+                stored = iso(row.get("created"))
+                when = iso(row.get("occurred")) or stored
+                seqs.setdefault(str(row["s"]), []).append(
+                    {"uri": uri, "text": text, "speaker": row.get("speaker"),
+                     "created": when, "stored": stored})
+            for seq in seqs.values():
+                seq.sort(key=lambda v: (v["created"], v["stored"], v["uri"]))
+        pos = {}
+        for sid, seq in seqs.items():
+            for i, v in enumerate(seq):
+                pos[v["uri"]] = (sid, i)
+        chosen = set(rank_of)
+        added = 0
+        for d in range(1, n + 1):
+            for r in matched:
+                where = pos.get(r["node_id"])
+                if where is None:
+                    continue
+                sid, i = where
+                for j in (i - d, i + d):
+                    if added >= cap:
+                        break
+                    if 0 <= j < len(seqs[sid]):
+                        uri = seqs[sid][j]["uri"]
+                        if uri not in chosen:
+                            chosen.add(uri)
+                            added += 1
+        # windows: maximal runs of chosen turns that are adjacent in a session
+        windows: list[list[dict]] = []
+        for sid, seq in seqs.items():
+            run: list[dict] = []
+            for v in seq:
+                if v["uri"] in chosen:
+                    run.append(v)
+                elif run:
+                    windows.append(run)
+                    run = []
+            if run:
+                windows.append(run)
+        by_uri = {r["node_id"]: r for r in matched}
+        placed = {v["uri"] for w in windows for v in w}
+        for r in matched:  # matched turns with no session are windows of one
+            if r["node_id"] not in placed:
+                windows.append([{"uri": r["node_id"], "text": r["text"], "speaker": r.get("speaker"),
+                                 "created": r.get("created_at") or "", "stored": ""}])
+        best = lambda w: min((rank_of[v["uri"]] for v in w if v["uri"] in rank_of), default=len(rank_of))
+        if order == "rank":
+            windows.sort(key=lambda w: (best(w), w[0]["created"]))
+        else:
+            windows.sort(key=lambda w: (w[0]["created"], w[0]["stored"], w[0]["uri"]))
+        return [
+            RowDict({"text": v["text"], "role": "user", "created_at": v["created"],
+                     "speaker": v.get("speaker"), "node_id": v["uri"], "node_type": "Message",
+                     **({} if v["uri"] in by_uri else {"neighbour": True})})
+            for w in windows for v in w
+        ]
+
+    def _conversation_all_turns(self, params: dict[str, Any], budget: int) -> Optional[list[Any]]:
+        """B482: every eligible user turn, oldest first, when the whole set
+        fits `budget` tokens; None when it does not (or the store is too big
+        to bother enumerating)."""
+        vs = self._vector_store
+        prefixes = (f"{CID_BASE}Message/", f"{DATA_BASE}Message/")
+        if vs.count_documents(prefixes) > budget:
+            return None
+        qnorm = " ".join(str(params.get("query_text") or "").strip().lower().split())
+        enumerated = self._client._execute_and_collect("""
+            SELECT ?s ?text ?role ?created ?archived ?speaker ?occurred WHERE {
+                ?s a <https://campy.dev/ns#Message> ;
+                   <https://campy.dev/ns#role> "user" ;
+                   <https://campy.dev/ns#text_raw> ?text .
+                OPTIONAL { ?s <https://campy.dev/ns#created_at> ?created }
+                OPTIONAL { ?s <https://campy.dev/ns#archived> ?archived }
+                OPTIONAL { ?s <https://campy.dev/ns#speaker> ?speaker }
+                OPTIONAL { ?s <https://campy.dev/ns#occurred_at> ?occurred }
+            }
+        """)
+        newest: dict[tuple[str, str], dict] = {}
+        for row in _collapse_archived(enumerated):
+            text = str(row.get("text") or "").strip()
+            if (not text or not str(row["s"]).startswith(prefixes) or bool(row.get("archived"))
+                    or text.endswith("?")):
+                continue
+            norm_text = " ".join(text.lower().split())
+            if norm_text == qnorm:
+                continue
+            stored = row.get("created")
+            stored = stored.isoformat() if hasattr(stored, "isoformat") else str(stored or "")
+            when = row.get("occurred") or row.get("created")
+            when = when.isoformat() if hasattr(when, "isoformat") else str(when or "")
+            key = (str(row.get("speaker") or ""), norm_text)
+            # newest wins, as in `_bundle_conversation`; the stored time breaks
+            # ties between turns that share a (session-level) occurred_at
+            if key not in newest or (when, stored) > (newest[key]["created"], newest[key]["stored"]):
+                newest[key] = {"uri": row["s"], "text": text, "created": when, "stored": stored,
+                               "speaker": row.get("speaker")}
+        turns = sorted(newest.values(), key=lambda v: (v["created"], v["stored"], v["uri"]))
+        if sum(conversation_turn_tokens(v["speaker"], v["created"], v["text"]) for v in turns) > budget:
+            return None
+        return [
+            RowDict({"text": v["text"], "role": "user", "created_at": v["created"],
+                     "speaker": v.get("speaker"), "node_id": v["uri"], "node_type": "Message",
+                     # B472 3c: the whole eligible history is here (observations
+                     # would be redundant with it); see bundle_compiler.compile_bundle
+                     "full_history": True})
+            for v in turns
+        ]
+
+    def _bundle_conversation_impl(self, params: dict[str, Any], token_budget: int = 0) -> list[Any]:
         """B454: relevant things the USER said, as bundle evidence.
 
         Consolidation keeps entity labels ("PostgreSQL"), not the statements, so
@@ -1029,6 +1297,9 @@ class GraphGateway:
         qtext = (params.get("query_text") or "").strip()
         if limit <= 0:
             return []
+        # B482: with a token budget the candidate pool must be able to fill
+        # it (a turn is ~12+ tokens); otherwise the pool is `limit`-sized.
+        pool = max(limit, token_budget // 12) if token_budget > 0 else limit
         prefixes = (f"{CID_BASE}Message/", f"{DATA_BASE}Message/")
         ranked: dict[str, float] = {}
         # A stored message that is (nearly) the query itself is an echo of the
@@ -1037,9 +1308,9 @@ class GraphGateway:
         # fill the candidate window and crowd every real fact out.
         vec_hits = [
             uri for uri, score in vs.search_vectors(
-                params["query_embedding"], k=_typed_search_k(limit * 20), min_score=0.30)
+                params["query_embedding"], k=_typed_search_k(pool * 20), min_score=0.30)
             if uri.startswith(prefixes) and score < 0.985
-        ][: limit * 40]
+        ][: pool * 40]
         for rank, uri in enumerate(vec_hits):
             ranked[uri] = ranked.get(uri, 0.0) + 1.0 / (60 + rank)
         from campy.brain.hippocampus.graph.vector_store import fts_content_terms
@@ -1047,9 +1318,9 @@ class GraphGateway:
         terms = fts_content_terms(qtext)
         all_df = vs.document_frequencies(terms, prefixes)
         fts_hits = [
-            uri for uri, _ in vs.search_text(self._lexical_query(qtext, terms, all_df, prefixes), k=limit * 60)
+            uri for uri, _ in vs.search_text(self._lexical_query(qtext, terms, all_df, prefixes), k=pool * 60)
             if uri.startswith(prefixes)
-        ][: limit * 40]
+        ][: pool * 40]
         for rank, uri in enumerate(fts_hits):
             ranked[uri] = ranked.get(uri, 0.0) + 1.0 / (60 + rank)
         if not ranked:
@@ -1091,7 +1362,8 @@ class GraphGateway:
             key = (str(row.get("speaker") or ""), norm(text))
             if key not in newest or created > newest[key][0]:
                 newest[key] = (created, {"uri": row["s"], "text": text, "created": created,
-                                         "speaker": row.get("speaker")})
+                                         "speaker": row.get("speaker"),
+                                         "stored": row.get("stored") or ""})
             return newest[key][1]["uri"]
 
         for row in rows:
@@ -1116,9 +1388,24 @@ class GraphGateway:
                     ranked[uri] = max(ranked.get(uri, 0.0), score)
         except Exception:
             _logger.debug("_bundle_conversation successor bridge failed", exc_info=True)
-        picked = sorted(newest.values(), key=lambda kv: -ranked.get(kv[1]["uri"], 0.0))[:limit]
-        if order == "time":
-            picked.sort(key=lambda kv: kv[0])
+        picked = sorted(newest.values(), key=lambda kv: -ranked.get(kv[1]["uri"], 0.0))
+        if token_budget > 0:
+            # B482: fill the budget in rank order, skipping a turn that would
+            # overflow it; if nothing fits, fall back to the top `limit`
+            used, fitted = 0, []
+            for kv in picked:
+                v = kv[1]
+                cost = conversation_turn_tokens(v.get("speaker"), v["created"], v["text"])
+                if used + cost <= token_budget:
+                    fitted.append(kv)
+                    used += cost
+            picked = fitted or picked[:limit]
+            if order == "time":
+                picked.sort(key=lambda kv: (kv[0], kv[1].get("stored") or ""))
+        else:
+            picked = picked[:limit]
+            if order == "time":
+                picked.sort(key=lambda kv: kv[0])
         return [
             RowDict({"text": v["text"], "role": "user", "created_at": v["created"],
                      "speaker": v.get("speaker"), "node_id": v["uri"], "node_type": "Message"})
@@ -1192,6 +1479,87 @@ class GraphGateway:
             for _, v in picked
         ]
 
+    def _bundle_observations(self, params: dict[str, Any]) -> list[Any]:
+        """B472 Phase 3c: the Observations relevant to a question, each with the
+        words it came from.
+
+        Three candidate lists, fused by reciprocal rank (k=60) like the
+        conversation stage: Observations whose embedding is near the question
+        (>= 0.30), Observations the FTS index matches (restricted to Observation
+        URIs, B470's common-term trim applied), and Observations OBSERVATION_ABOUT
+        a Concept the caller resolved from the question (`concept_ids`; those the
+        vector search also found come first, the rest oldest first). A
+        lexical-only hit must match two query content words, as in the
+        conversation stage. Archived and superseded rows are dropped.
+
+        Returns up to `limit` rows, best first, each carrying the claim
+        (subject/predicate/object/event/time/polarity/speaker/confidence), the
+        evidence quote and `evidence_ref` (the Message id), `observed_at`, and
+        `score`. Fail-soft: an empty store, or one with no embeddings, gives []."""
+        vs = self._vector_store
+        limit = int(params.get("limit", 8))
+        if limit <= 0:
+            return []
+        qtext = (params.get("query_text") or "").strip()
+        prefix = f"{CID_BASE}Observation/"
+        vec_hits = [
+            uri for uri, _ in vs.search_vectors(
+                params["query_embedding"], k=_typed_search_k(limit * 20), min_score=0.30)
+            if uri.startswith(prefix)
+        ][: limit * 40]
+        from campy.brain.hippocampus.graph.vector_store import fts_content_terms, mint_uri
+
+        terms = fts_content_terms(qtext)
+        fts_hits = [
+            uri for uri, _ in vs.search_text(
+                self._lexical_query(qtext, terms, vs.document_frequencies(terms, (prefix,)), (prefix,)),
+                k=limit * 60, uri_prefixes=(prefix,))
+        ][: limit * 40]
+        concept_uris = [f"<{mint_uri('Concept', c)}>" for c in (params.get("concept_ids") or [])[:12]]
+        concept_hits: list[str] = []
+        if concept_uris:
+            for row in self._client._execute_and_collect(f"""
+                SELECT DISTINCT ?o WHERE {{
+                    VALUES ?c {{ {" ".join(concept_uris)} }}
+                    ?o <https://campy.dev/ns#OBSERVATION_ABOUT> ?c .
+                }} LIMIT 400"""):
+                concept_hits.append(str(row["o"]))
+        vec_set = set(vec_hits)
+        concept_hits = [u for u in vec_hits if u in set(concept_hits)] + \
+            [u for u in concept_hits if u not in vec_set]
+        ranked: dict[str, float] = {}
+        for hits in (vec_hits, fts_hits, concept_hits):
+            for rank, uri in enumerate(hits):
+                ranked[uri] = ranked.get(uri, 0.0) + 1.0 / (60 + rank)
+        if not ranked:
+            return []
+
+        ns = "<https://campy.dev/ns#"
+        req = ("observation_id", "subject_text", "predicate", "object_text", "polarity",
+               "evidence_ref", "evidence_text", "text_raw", "archived")
+        opt = ("event_text", "time_text", "speaker", "observed_at", "confidence", "superseded_by")
+        rows = self._client._execute_and_collect(f"""
+            SELECT ?o {" ".join("?" + c for c in req + opt)} WHERE {{
+                VALUES ?o {{ {" ".join(f"<{u}>" for u in ranked)} }}
+                ?o a {ns}Observation> ; {" ; ".join(f"{ns}{c}> ?{c}" for c in req)} .
+                {" ".join(f"OPTIONAL {{ ?o {ns}{c}> ?{c} }}" for c in opt)}
+            }}""")
+        need = min(2, len(terms) or 1)
+        concept_set, fts_set = set(concept_hits), set(fts_hits)
+        out: list[RowDict] = []
+        for row in rows:
+            uri = str(row["o"])
+            if bool(row.get("archived")) or row.get("superseded_by"):
+                continue
+            if uri not in vec_set and uri not in concept_set:
+                low = f"{row.get('text_raw') or ''} {row.get('evidence_text') or ''}".lower()
+                if uri not in fts_set or sum(1 for t in terms if t in low) < need:
+                    continue
+            out.append(RowDict({**{c: row.get(c) for c in req + opt}, "node_id": uri,
+                                "score": ranked.get(uri, 0.0)}))
+        out.sort(key=lambda r: -r["score"])
+        return out[:limit]
+
     def _lexical_query(self, qtext: str, terms: list[str], df: dict[str, int],
                        prefixes: tuple[str, ...]) -> str:
         """B470: the conversation stage's FTS query without the terms most
@@ -1241,12 +1609,14 @@ class GraphGateway:
                 OPTIONAL {{ ?s <https://campy.dev/ns#occurred_at> ?occurred }}
             }}
         """
-        rows = list(self._client._execute_and_collect(sparql))
+        rows = _collapse_archived(self._client._execute_and_collect(sparql))
         for row in rows:
             # B472: a turn's time is when it happened, when the caller said
             # so; otherwise when Campy stored it. Every consumer of `created`
             # (newest-wins dedup, oldest-first order, the bundle's stamp)
             # wants the former.
+            row["stored"] = (row.get("created").isoformat()
+                             if hasattr(row.get("created"), "isoformat") else str(row.get("created") or ""))
             if row.get("occurred"):
                 row["created"] = row["occurred"]
         return rows
@@ -1388,8 +1758,14 @@ class GraphGateway:
 
         if name == "thalamus.bundle_conversation":
             return self._bundle_conversation(params)
+        if name == "thalamus.bundle_conversation_budget":
+            return self._bundle_conversation_budget(params)
+        if name == "thalamus.bundle_conversation_windows":
+            return self._bundle_conversation_windows(params)
         if name == "thalamus.bundle_assistant_words":
             return self._bundle_assistant_words(params)
+        if name == "thalamus.bundle_observations":
+            return self._bundle_observations(params)
 
         # Exact facts: thalamus.bundle_exact_facts_{tbl}[_flagged][_auth] or thalamus.bundle_exact_{tbl}[_flagged][_auth]
         if name.startswith("thalamus.bundle_exact"):

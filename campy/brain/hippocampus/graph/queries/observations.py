@@ -285,6 +285,7 @@ OBSERVATION_QUERIES: tuple[NamedQuery, ...] = (
               OPTIONAL { ?m campy:created_at ?created_at }
               OPTIONAL { ?m campy:archived ?archived }
             }
+            ORDER BY DESC(?archived)  # B488: a true value must win LIMIT 1
             LIMIT 1
             """,
     ),
@@ -351,6 +352,52 @@ OBSERVATION_QUERIES: tuple[NamedQuery, ...] = (
             "ORDER BY ?created_at",
             lead="campy:archived false ;",
         ),
+    ),
+    NamedQuery(
+        name="observations.list_untimed",
+        cypher="""
+        MATCH (o:Observation)
+        WHERE o.archived = false AND o.time_text IS NOT NULL AND o.time_start IS NULL
+        RETURN o.observation_id AS observation_id, o.time_text AS time_text,
+               o.observed_at AS observed_at
+        ORDER BY o.observation_id
+        """,
+        params=(),
+        mutating=False,
+        description="Live Observations with a time phrase but no resolved date (B484 backfill candidates)",
+        sparql="""
+            SELECT ?observation_id ?time_text ?observed_at WHERE {
+              ?o a campy:Observation ;
+                 campy:observation_id ?observation_id ;
+                 campy:archived false ;
+                 campy:time_text ?time_text .
+              OPTIONAL { ?o campy:observed_at ?observed_at }
+              FILTER NOT EXISTS { ?o campy:time_start ?ts }
+            }
+            ORDER BY ?observation_id
+            """,
+    ),
+    NamedQuery(
+        name="observations.set_time",
+        cypher="""
+        MATCH (o:Observation {observation_id: $oid})
+        SET o.time_start = $time_start, o.time_end = $time_end,
+            o.time_precision = $time_precision
+        """,
+        params=("oid", "time_start", "time_end", "time_precision"),
+        mutating=True,
+        description="Set the resolved date range of an Observation (B484; time_text is never changed)",
+        sparql="""
+            DELETE { ?o campy:time_start ?os ; campy:time_end ?oe ; campy:time_precision ?op }
+            INSERT { ?o campy:time_start ?time_start ; campy:time_end ?time_end ;
+                        campy:time_precision ?time_precision }
+            WHERE {
+              ?o a campy:Observation ; campy:observation_id ?oid .
+              OPTIONAL { ?o campy:time_start ?os }
+              OPTIONAL { ?o campy:time_end ?oe }
+              OPTIONAL { ?o campy:time_precision ?op }
+            }
+            """,
     ),
     NamedQuery(
         name="observations.evidence_messages",

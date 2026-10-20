@@ -42,12 +42,18 @@ def test_every_documented_override_applies():
         "CAMPY_LLM_REGION": "us-east-1",
         "CAMPY_LLM_BASE_URL": "https://llm.internal/v1",
         "CAMPY_ASK_ANSWER_MODE": "select",
+        "CAMPY_LLM_MAX_TOKENS": "1024",
+        "CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET": "3500",
+        "CAMPY_RETRIEVAL_CONVERSATION_BUDGET_MODE": "fill",
+        "CAMPY_RETRIEVAL_CONVERSATION_NEIGHBOURS": "2",
         "CAMPY_IAM_TENANT_ID": "acme",
         "CAMPY_IAM_WORKSPACE_ID": "acme-default",
         "CAMPY_IAM_WORKSPACE_MAP_JSON": '{"arn:aws:iam::1:role/a": "ws-a"}',
         "CAMPY_IAM_TENANT_MAP_JSON": '{"arn:aws:iam::1:role/a": "tenant-a"}',
         "CAMPY_IAM_PRINCIPAL_SCOPE_MAP_JSON": '{"arn:aws:iam::1:role/a": ["memory.read"]}',
         "CAMPY_IAM_DEFAULT_SCOPES_JSON": '["memory.read", "memory.write"]',
+        "CAMPY_OBSERVATIONS_ENABLED": "1",
+        "CAMPY_OBSERVATIONS_RETRIEVAL": "1",
     }
     assert set(env) == set(ENV_OVERRIDES), "test must cover every override"
     cfg = apply_env_overrides(_base(), env)
@@ -55,8 +61,14 @@ def test_every_documented_override_applies():
     assert s["auth"] == "iam" and s["bind_host"] == "0.0.0.0"
     assert s["dashboard_enabled"] is False
     assert cfg["web"]["port"] == 8080
+    assert cfg["observations"]["enabled"] is True
+    assert cfg["observations"]["retrieval"] is True
     assert cfg["llm"] == {"provider": "bedrock", "model": "us.example.model-v1:0",
-                          "region": "us-east-1", "base_url": "https://llm.internal/v1"}
+                          "region": "us-east-1", "base_url": "https://llm.internal/v1",
+                          "max_tokens": 1024}
+    assert cfg["retrieval"]["conversation_token_budget"] == 3500
+    assert cfg["retrieval"]["conversation_budget_mode"] == "fill"
+    assert cfg["retrieval"]["conversation_neighbours"] == 2
     assert s["iam_tenant_id"] == "acme" and s["iam_workspace_id"] == "acme-default"
     assert s["iam_workspace_map"] == {"arn:aws:iam::1:role/a": "ws-a"}
     assert s["iam_tenant_map"] == {"arn:aws:iam::1:role/a": "tenant-a"}
@@ -75,6 +87,10 @@ def test_unset_and_empty_vars_leave_config_alone():
     ("CAMPY_SERVER_DASHBOARD_ENABLED", "maybe"),
     ("CAMPY_WEB_PORT", "70000"),
     ("CAMPY_WEB_PORT", "http"),
+    ("CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET", "-1"),
+    ("CAMPY_RETRIEVAL_CONVERSATION_BUDGET_MODE", "everything"),
+    ("CAMPY_RETRIEVAL_CONVERSATION_NEIGHBOURS", "-1"),
+    ("CAMPY_LLM_MAX_TOKENS", "-1"),
     ("CAMPY_IAM_WORKSPACE_MAP_JSON", "{not json"),
     ("CAMPY_IAM_WORKSPACE_MAP_JSON", '["a", "b"]'),
     ("CAMPY_IAM_PRINCIPAL_SCOPE_MAP_JSON", '{"arn": "memory.read"}'),

@@ -307,6 +307,18 @@ home_title = "ARC-AGI Memory"
 # [retrieval]
 # conversation_limit = 6            # turns in the conversation section (0 disables it)
 # conversation_order = "time"       # "time" = oldest first (B454, default); "rank" = best match first
+# conversation_token_budget = 3500  # B482 (default): if all user turns fit this many tokens, show
+#                                   # them all, oldest first; else see conversation_budget_mode;
+#                                   # 0 = off (always conversation_limit turns). Env: CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET
+# conversation_budget_mode = "fit_all"  # B482: when the whole history does not fit the budget:
+#                                   # "fit_all" = fall back to the fixed conversation_limit path;
+#                                   # "fill" = rank-fill to the budget.
+#                                   # Env: CAMPY_RETRIEVAL_CONVERSATION_BUDGET_MODE
+# conversation_neighbours = 0       # B487: add up to N same-session turns (either speaker) before and
+#                                   # after each matched turn (replies often miss the question's words);
+#                                   # 0 = off (default). Never touches the full-history path.
+#                                   # Env: CAMPY_RETRIEVAL_CONVERSATION_NEIGHBOURS
+# conversation_neighbour_cap = 18   # B487: most turns neighbour expansion may add in total
 
 # B375: Warm Frontier (Pre-Warmed Selective Activation) tuning. Every key
 # below matches warm_frontier.py's prior hardcoded default exactly, so

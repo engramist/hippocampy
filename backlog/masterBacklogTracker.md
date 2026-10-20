@@ -90,12 +90,15 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B469 | Retire the Kùzu Leftovers: Tests and Cypher That Production Never Runs | P2 | ready | TBD | TBD | - | backlog/B469.md |
 | B470 | Common Query Words Must Not Double-Count Every Vector Hit in the Conversation Stage | P2 | complete (benchmark-confirmed: LoCoMo-10 0.347 -> 0.389, 3 runs each) | TBD | TBD | - | backlog/B470.md |
 | B471 | Recall of What the Assistant Said: the Conversation Stage Drops Every Assistant Turn | P2 | complete, option b (benchmark-confirmed: LongMemEval oracle 0.400 -> 0.571 with #286) | TBD | TBD | - | backlog/B471.md |
-| B472 | Source-Grounded Observations: Capture Who Did What, When, With Evidence | P1 | Phases 1-2 implemented; Phase 3a (schema + write API) implemented, 3b-3d pending (measurement pending: R21, R22) | TBD | TBD | - | backlog/B472.md |
+| B472 | Source-Grounded Observations: Capture Who Did What, When, With Evidence | P1 | Phases 1-2 implemented; Phases 3a (schema + write API), 3b (Observation worker) and 3c (Observation retrieval into the semantic section), implemented, ON by default after the LoCoMo-10 gate (65 gained/39 lost, p~0.014), used only when the conversation section is not the whole history (DMR: redundant, 0.633->0.571); 3d pending (measurement pending: R21, R22) | TBD | TBD | - | backlog/B472.md |
 | B473 | Relation Noise on Chat: Invented Engineering Relations and Bare Endpoint Concepts | P1 | implemented (measurement pending) | TBD | TBD | - | backlog/B473.md |
 | B474 | Conversation Evidence in Rank Order, Not Oldest-First (M1.1) | P2 | complete (flag merged; default "time", rank opt-in after R29 gate within noise) | TBD | TBD | - | backlog/B474.md |
 | B475 | Answer Prompt: Cite or Abstain (M1.3) | P2 | complete (R33 gate: DMR 0.52 -> 0.60, +5/-1 real; LoCoMo-10 adversarial 0/12 -> 3/12; held-out check pending R30) | TBD | TBD | - | backlog/B475.md |
 | B480 | Optional Two-Step "Select Then Answer" Mode for ask (M4.3) | P2 | implemented (default off; gate pending) | TBD | TBD | - | backlog/B480.md |
 | B478 | Conversation De-dup Merges Identical Text From Different Speakers | P3 | implemented (gate pending) | TBD | TBD | - | backlog/B478.md |
+| B482 | Conversation Stage Token-Budget Mode | P2 | implemented (off by default; DMR dev gate passed R48 p=0.019, held-out gate pending) | TBD | TBD | - | backlog/B482.md |
+| B484 | Time Normalisation at Capture (M4.2) | P2 | implemented (gate pending: LoCoMo temporal via replay + backfill) | TBD | TBD | - | backlog/B484.md |
+| B487 | Neighbour Expansion in the Conversation Stage | P2 | complete (2026-10-19; on by default, N=1; LoCoMo cat 1-4 dev + held-out pooled 52 gained / 18 lost) | TBD | TBD | - | backlog/B487.md |
 | B459 | Conversation Evidence Drops the Statements That Supersede the One It Found | P1 | fixed (real-model confirmed) | TBD | TBD | - | backlog/B459.md |
 | B458 | current_truth: Exact Identifier Match Loses to Near-Identical Notes (RRF Fusion) | P1 | fixed (round 2: identifiers rank first; real-model confirmed) | TBD | TBD | - | backlog/B458.md |
 | B457 | HTTP REST and Dashboard Routes Ignore the Caller's Workspace (Cross-Tenant Access in Multi-Tenant Mode) | P1 | fixed | TBD | TBD | - | backlog/B457.md |
@@ -303,6 +306,12 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B46 | Benchmark Source Verification + Dataset Pinning | P11 | complete (2026-03-28) | TBD | TBD | - | backlog/B46.md |
 | B47 | Local Benchmark Runner Infrastructure (Unified Harness) | P11 | complete (2026-03-28) | TBD | TBD | backlog/plans/B-47-benchmark-infrastructure.md | backlog/B47.md |
 | B48 | SideQuests A/B Evaluation Contract (Protocol-Correct) | P11 | complete (2026-03-28) | TBD | TBD | backlog/plans/B-48-ab-contract.md | backlog/B48.md |
+| B488 | An Archived Message Can Keep a Stale `archived=false` | P2 | complete (2026-10-19) | TBD | TBD | - | backlog/B488.md |
+| B490 | Agent Rules Files Still Name KuzuDB as the Store | P2 | complete | TBD | TBD | - | backlog/B490.md |
+| B491 | Gate Results Must Record What the Model Received | P2 | open | TBD | TBD | - | backlog/B491.md |
+| B492 | Model-Derived Memories Enter as Candidates, Then Get Promoted | P2 | open | TBD | TBD | - | backlog/B492.md |
+| B493 | ARCHITECTURE.md and Code Docstrings Still Describe Kùzu as the Store | P3 | open | TBD | TBD | - | backlog/B493.md |
+| B494 | LLM calls have no output-length cap; a runaway generation hangs ask for ~12 minutes | P2 | in review | TBD | TBD | - | backlog/B494.md |
 | B49 | SWE-CI Evaluation Card (Maintainability Under Evolution) | P11 | complete (2026-03-28) | TBD | TBD | backlog/plans/B-49-swe-ci-eval.md | backlog/B49.md |
 | B50 | LoCoBench Evaluation Card (Long-Context Degradation) | P11 | complete (2026-03-28) | TBD | TBD | backlog/plans/B-50-longcontext-eval.md | backlog/B50.md |
 | B51 | AMA-Bench + MemoryArena Card (Causality and Interdependent State) | P11 | complete (2026-03-28) | TBD | TBD | backlog/plans/B-51-ama-bench-eval.md | backlog/B51.md |

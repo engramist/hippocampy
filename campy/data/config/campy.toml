@@ -12,6 +12,10 @@ provider = "ollama"
 # model size, was the actual bottleneck the whole time.
 model = "llama3.1:8b"
 base_url = "http://localhost:11434/v1"
+# B494: output-token cap on every LLM call (default 2048; 0 = no cap). Stops a
+# degenerate repetition running until the request timeout. A caller that needs
+# more passes max_tokens= per call. CAMPY_LLM_MAX_TOKENS overrides.
+# max_tokens = 2048
 
 [embeddings]
 provider = "sentence-transformers"
@@ -45,13 +49,21 @@ max_initial_backfill_files = 5
 port = 7799
 
 # B472 Phase 3: source-grounded Observations extracted from user turns.
-# Ships disabled until a reader exists; nothing extracts or reads them yet.
+# On by default. The
+# dedicated worker makes one extra LLM call per user turn (CAMPY_OBSERVATIONS_ENABLED=0
+# turns it off without editing this file).
 [observations]
-enabled = false
+enabled = true
 llm_enabled = true       # only read when enabled
 llm_batch_turns = 20
-idle_flush_seconds = 5
+idle_flush_seconds = 5   # (llm_batch_turns / idle_flush_seconds: reserved, not read yet)
 max_turn_chars = 600
+queue_max = 5000         # worker queue bound; a full queue drops the newest, counted
+# 3c: when true and the store holds Observations that match the question, the bundle's
+# semantic section carries them (each with its evidence quote) instead of Concepts/Decisions.
+# CAMPY_OBSERVATIONS_RETRIEVAL=0 turns it off without editing this file.
+retrieval = true
+observation_limit = 8    # most Observations the semantic section carries
 
 [wiki_projection]
 enabled = true

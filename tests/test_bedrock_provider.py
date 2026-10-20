@@ -169,14 +169,14 @@ class TestMessageTranslation:
         client = BedrockLLMClient(stub, "some-model")
         client.chat([{"role": "user", "content": "hi"}], temperature=0.7)
         request = stub.calls[0]
-        assert request["inferenceConfig"] == {"temperature": 0.7}
+        assert request["inferenceConfig"] == {"temperature": 0.7, "maxTokens": 2048}
         assert "temperature" not in request
 
     def test_default_temperature_is_zero(self):
         stub = _StubConverseClient()
         client = BedrockLLMClient(stub, "some-model")
         client.chat([{"role": "user", "content": "hi"}])
-        assert stub.calls[0]["inferenceConfig"] == {"temperature": 0.0}
+        assert stub.calls[0]["inferenceConfig"] == {"temperature": 0.0, "maxTokens": 2048}
 
     def test_system_param_only_present_when_system_messages_exist(self):
         stub = _StubConverseClient()

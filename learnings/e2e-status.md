@@ -3,7 +3,7 @@
 Live state of `e2e-improvement-plan.md`. Update after every step; keep it
 short and current (history goes in dated `learnings/` notes).
 
-_Last updated: 2026-10-10 22:00 UTC_
+_Last updated: 2026-10-20 12:15 UTC_
 
 ## Who is running this
 
@@ -25,15 +25,18 @@ _Last updated: 2026-10-10 22:00 UTC_
 
 ## Current position
 
-- **Milestones:** M0 done except the noise floor (R31) and held-out baselines
-  (R30). M1: M1.1 flag merged (opt-in), M1.3 merged (gain), M1.4 merged,
-  M1.2 reduced to the turn ordinal (T2 in R39). M2.1 reranker on its one fix
-  attempt (R38). M2.3 built (#307), not yet gated. M3a merged; 3b/3c built,
-  T2 in R35, gate in R36.
-- **GPU queue:** R38 (running) → R39 (T2 DMR with turn_index + stamp gate) →
-  R30 (held-out baselines) → R35 (T2 LoCoMo-10 with observations) → R36
-  (observation retrieval gate + nosem) → R20d (LME s) → R31 (noise repeats).
-- **Next R-number:** R40.
+- **Gate rule changed (2026-10-19):** score on the published metric (LoCoMo
+  categories 1–4; adversarial separate), pool dev + held-out, merge on
+  gained > lost with no p threshold. Re-score with `~/campy-lead/rescore5.py`.
+  See `2026-10-metric-switch.md`.
+- **On main (`8c38d23`):** B482 token budget; B487 neighbours **N=2** (#333);
+  Observations on (#331); B494 output cap 2048. Cat 1–4: neighbours up on 4/4
+  conversations, observations a further +3.9 pooled (4/4), N=2 vs N=1 42/26.
+- **Open:** #326 B489 verify (secondary); #318 expansion rebuilt on main
+  (`claude/e2e-m4-1-expansion`, gate R68 running).
+- **GPU queue:** R68 #318 expansion → R61 LongMemEval s on main `8c38d23` → R69
+  fresh-ingest LoCoMo-10 on the six unseen conversations vs baselines → R65 B489.
+- **Next R-number:** R70.
 
 ## Pins
 
@@ -69,11 +72,7 @@ Notes:
 
 ## Open PRs
 
-- hippocampy#300 — M1.2 `Message.turn_index` + `turn N` stamp (collapse removed); T2 + gate in R39.
-- hippocampy#301 — M2.1 reranker, fix attempt (bare text, blend); gate R38.
-- hippocampy#304 — M3b Observation extraction worker (off; `CAMPY_OBSERVATIONS_ENABLED`); T2 in R35.
-- hippocampy#305 — M3c observation-fed semantic section (off; `CAMPY_OBSERVATIONS_RETRIEVAL`); stacked on #304; gate R36.
-- hippocampy#307 — M2.3 speaker/time cue boosts (off; `CAMPY_RETRIEVAL_SPEAKER_BOOST`, `CAMPY_RETRIEVAL_TIME_BOOST`); not yet gated.
+None.
 
 ## Latest numbers (fields mode)
 
@@ -90,10 +89,11 @@ category 5) and are not directly comparable to run_all's judge accuracy.
 
 ## Golden stores (`~/campy-golden/`, local machine)
 
-- `r24a/` LoCoMo-10 dev, store `stores/campy-bench-_g7_nemi`
-- `r24b/` DMR dev (50 stores)
-- `r20a/`, `r20c/` text-mode references
-- pending: `r30a`/`r30b` (held-out), `r35` (observations on), `r39` (turn_index)
+- dev: `r24b` DMR 0–49, `r24a` LoCoMo-10 conv-26
+- dev-large: `r44a` DMR 100–299 (200 stores); `r44-conv-42`, `r44-conv-43`
+  LoCoMo-10 (all questions; ingested with observations on)
+- held-out: `r30a` DMR 50–99, `r30b` LoCoMo-10 conv-30
+- other: `r20a`, `r20c` (text mode), `r35` (conv-26 with observations), `r39` (turn_index)
 
 ## Noise floor
 
@@ -101,6 +101,11 @@ Not measured yet (R31). Assume ±4 points at n=50–60.
 
 ## Next three actions
 
-1. R38 → merge or close #301 (one fix attempt used).
-2. R39 → decide #300; R30 → held-out check of #299.
-3. Gate #307 (speaker/time boosts) and R35/R36 → #304/#305.
+1. Re-score every baseline (full_context, naive_rag) and Campy run with the
+   fixed scorer; publish one corrected table.
+2. Next lever from the full-history analysis: neighbour expansion (±2 turns
+   around each retrieved turn in the same session; evidence turns are often
+   replies that do not repeat the question's words).
+3. If observations are revisited: keep their ordinary-question gain without
+   the abstention loss (e.g. show observations only for non-adversarial-looking
+   questions, or tell the answer step that observations are not proof).

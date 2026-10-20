@@ -69,15 +69,19 @@ _DEFAULT_CONFIG = {
     "loop": {
         "max_co_occurrence_pairs": 45,
     },
-    # B472 Phase 3: source-grounded Observations. Ships disabled until a
-    # reader exists (Phase 5); 3a only declares the keys. The worker and the
-    # LLM route (3b/3c) are the only consumers of the rest.
+    # B472 Phase 3: source-grounded Observations. On by default
+    # (3c gate: LoCoMo-10 65 gained/39 lost p~0.014; shown only when the
+    # conversation section does not hold the whole history).
+    # CAMPY_OBSERVATIONS_ENABLED=0 / CAMPY_OBSERVATIONS_RETRIEVAL=0 turn off.
     "observations": {
-        "enabled": False,
+        "enabled": True,
         "llm_enabled": True,       # only read when enabled
-        "llm_batch_turns": 20,
+        "llm_batch_turns": 20,     # reserved: 3b extracts per turn and does not read these two
         "idle_flush_seconds": 5,
         "max_turn_chars": 600,
+        "queue_max": 5000,         # 3b: bounded worker queue; a full queue drops the newest, counted
+        "retrieval": True,         # 3c: feed the bundle's semantic section from Observations
+        "observation_limit": 8,    # 3c: most Observations the semantic section carries
     },
     "compression": {
         "strategy": "two_lane",       # two_lane (Protected Lane zero loss + Bulk Lane lossy)
@@ -97,6 +101,11 @@ _DEFAULT_CONFIG = {
         # B480: "direct" = one call with the whole bundle (default);
         # "select" = ask which numbered lines answer, then answer from those.
         "answer_mode": "direct",
+    },
+    # B494: output-token cap on every LLM call, so a runaway generation
+    # cannot run until the request timeout. 0 = no cap.
+    "llm": {
+        "max_tokens": 2048,
     },
     # B325: remote MCP transport bind address + auth mode, explicit and
     # guarded (see campy/brain_daemon.py::_enforce_bind_guard). Defaults
@@ -170,17 +179,43 @@ def _parse_port(raw: str) -> int:
     return port
 
 
+def _parse_nonneg_int(raw: str) -> int:
+    value = int(raw)
+    if value < 0:
+        raise ValueError("expected an integer >= 0")
+    return value
+
+
+CONVERSATION_BUDGET_MODES = ("fit_all", "fill")
+
+
+def _parse_budget_mode(raw: str) -> str:
+    value = raw.strip().lower()
+    if value not in CONVERSATION_BUDGET_MODES:
+        raise ValueError("expected one of: " + ", ".join(CONVERSATION_BUDGET_MODES))
+    return value
+
+
 # env var -> (config section, key, parser)
 ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_SERVER_AUTH": ("server", "auth", str.strip),
     "CAMPY_SERVER_BIND_HOST": ("server", "bind_host", str.strip),
     "CAMPY_SERVER_DASHBOARD_ENABLED": ("server", "dashboard_enabled", _parse_bool),
     "CAMPY_WEB_PORT": ("web", "port", _parse_port),
+    # B472 Phase 3b: lets a benchmark harness switch Observations on without
+    # touching the config file it writes (the daemon inherits the environment).
+    "CAMPY_OBSERVATIONS_ENABLED": ("observations", "enabled", _parse_bool),
+    # B472 Phase 3c: same reason, for the reader (independent of the writer).
+    "CAMPY_OBSERVATIONS_RETRIEVAL": ("observations", "retrieval", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
     "CAMPY_LLM_MODEL": ("llm", "model", str.strip),
     "CAMPY_LLM_REGION": ("llm", "region", str.strip),
     "CAMPY_LLM_BASE_URL": ("llm", "base_url", str.strip),
     "CAMPY_ASK_ANSWER_MODE": ("ask", "answer_mode", str.strip),
+    "CAMPY_LLM_MAX_TOKENS": ("llm", "max_tokens", _parse_nonneg_int),
+    "CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET": ("retrieval", "conversation_token_budget", _parse_nonneg_int),
+    "CAMPY_RETRIEVAL_CONVERSATION_NEIGHBOURS": ("retrieval", "conversation_neighbours", _parse_nonneg_int),
+    "CAMPY_RETRIEVAL_CONVERSATION_BUDGET_MODE": ("retrieval", "conversation_budget_mode", _parse_budget_mode),
     "CAMPY_IAM_TENANT_ID": ("server", "iam_tenant_id", str.strip),
     "CAMPY_IAM_WORKSPACE_ID": ("server", "iam_workspace_id", str.strip),
     "CAMPY_IAM_WORKSPACE_MAP_JSON": ("server", "iam_workspace_map", _parse_json_str_map),

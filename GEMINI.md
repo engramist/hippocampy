@@ -7,7 +7,7 @@ The system is built around a **Main Quest / Side Quest** paradigm, anchoring kno
 
 ### Key Technologies
 - **Language:** Python 3.11+
-- **Graph/Vector DB:** [Kùzu](https://kuzudb.com/) (embedded, pin version `0.11.3`)
+- **Graph/Vector DB:** [Oxigraph](https://github.com/oxigraph/oxigraph) (embedded, SPARQL via `pyoxigraph`) for the graph; SQLite `vectors.db` (sqlite-vec) as a vector index. Kùzu remains only for the legacy migrator (`campy migrate-legacy`) and old backups.
 - **NLP/NER:** [spaCy](https://spacy.io/) (`en_core_web_md` model)
 - **Embeddings:** [sentence-transformers](https://www.sbert.net/) (`all-MiniLM-L6-v2`)
 - **Web Framework:** [FastAPI](https://fastapi.tiangolo.com/) (Memory Control Panel / Web UI)
@@ -28,7 +28,7 @@ The daemon must be running for adapters and the web interface to function.
 ```bash
 python brain_daemon.py
 ```
-This starts the IPC server at `~/.campy/brain.sock` and the Kùzu database at `~/.campy/brain.db`.
+This starts the IPC server at `~/.campy/brain.sock` and the graph store under `~/.campy/`.
 
 ### 3. Running the Memory Control Panel (Web UI)
 The web interface allows for graph visualization and memory management.
@@ -53,7 +53,7 @@ pytest
 
 ### Architecture & Data Model
 - **Graph-Native:** Any entity with identity (Decision, Constraint, Concept) is a node, not a property.
-- **Kùzu Abstraction:** All Kùzu-specific logic resides in `campy/brain/hippocampus/graph/kuzu_client.py`. Do not import `kuzu` directly in other modules.
+- **Store Abstraction:** All Oxigraph-specific logic resides in `campy/brain/hippocampus/graph/oxigraph_client.py`. Keep engine-specific code there rather than importing `pyoxigraph` in new modules (`kuzu` is imported only by the legacy migrator, `kuzu_migrate.py`).
 - **Concurrency:** The Brain Daemon holds the sole `READ_WRITE` connection; an `asyncio.Lock` wraps all write operations.
 - **Selective Attention:** The "Cocktail Party Effect" is implemented via a confidence gate (Step 4 of the Loop). Only signals >60% confidence are structured; >90% are fully confirmed.
 
@@ -61,7 +61,7 @@ pytest
 - **Local Only:** All services (FastAPI, IPC) bind to `127.0.0.1` or use Unix sockets.
 - **Canonical Paths:** All file operations must use `realpath()` to prevent path traversal.
 - **Persistence:** Never revert changes unless explicitly asked. The graph is the "source of truth" for the assistant's memory.
-- **No Shadow Stores:** KuzuDB is the single source of truth for ALL persistent agent state. Do NOT store roles, hypotheses, victory conditions, action facts, or other decision-influencing data in Python dicts/instance variables as the primary store. In-memory variables are permitted ONLY as read-through caches over KuzuDB. See `docs/ecosystem-rules.md` "No shadow stores rule".
+- **No Shadow Stores:** The graph store (Oxigraph today) is the single source of truth for ALL persistent agent state; `vectors.db` is an index, not a store. Do NOT store roles, hypotheses, victory conditions, action facts, or other decision-influencing data in Python dicts/instance variables as the primary store. In-memory variables are permitted ONLY as read-through caches over the graph store. See `docs/ecosystem-rules.md` "No shadow stores rule".
 
 ### Documentation
 - **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md):** Canonical architecture reference — Loop steps, graph schema, IP claims, MCP tool schemas, and all design details. **Read this for any architecture question.**
@@ -254,7 +254,7 @@ This shows live events:
 -> **Workaround:** `campy doctor --repair` and `campy activity --follow` to monitor restart.
 
 ### "Recall tool timed out"
--> Network or KuzuDB latency. Recall failed; no memory was added to context.
+-> Network or graph-store latency. Recall failed; no memory was added to context.
 -> **Workaround:** Retry or use `context_status` to check health. Fall back to current context.
 
 ### "I got the wrong recall results"

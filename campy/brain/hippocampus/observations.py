@@ -93,9 +93,24 @@ _QUOTE_TABLE = {
 
 
 def observations_enabled(config: dict | None) -> bool:
-    """`[observations] enabled` (default false: Phase 3 ships disabled until a
-    reader exists). Nothing in 3a consults this to do work; the 3b worker will."""
-    return bool(((config or {}).get("observations") or {}).get("enabled", False))
+    """`[observations] enabled` (default true; env CAMPY_OBSERVATIONS_ENABLED=0 turns the writer off)."""
+    return bool(((config or {}).get("observations") or {}).get("enabled", True))
+
+
+def observations_retrieval_enabled(config: dict | None) -> bool:
+    """`[observations] retrieval` (default true; env `CAMPY_OBSERVATIONS_RETRIEVAL=0` turns it off):
+    the bundle's semantic section is fed from Observations (B472 Phase 3c).
+    Independent of `enabled`, which gates only the writer: a store built with
+    the worker on can be read with this on or off."""
+    return bool(((config or {}).get("observations") or {}).get("retrieval", True))
+
+
+def observation_limit(config: dict | None, default: int = 8) -> int:
+    """`[observations] observation_limit`: most Observations the semantic section carries."""
+    try:
+        return int(((config or {}).get("observations") or {}).get("observation_limit", default))
+    except (TypeError, ValueError):
+        return default
 
 
 # --- types ------------------------------------------------------------------------
@@ -241,7 +256,11 @@ def observation_content_hash(draft: ObservationDraft) -> str:
     claims, not one."""
     subject = draft.subject_id or _norm_key(draft.subject_text)
     obj = draft.object_id or _norm_key(draft.object_text)
-    text = "|".join([subject, draft.predicate, obj, _norm_key(draft.time_text), draft.polarity])
+    parts = [subject, draft.predicate, obj, _norm_key(draft.time_text), draft.polarity]
+    if draft.time_start is not None:
+        # "went there yesterday" said on two different days is two events (B484).
+        parts.append(draft.time_start.date().isoformat())
+    text = "|".join(parts)
     return content_hash(table="Observation", text=text, source="observation")
 
 

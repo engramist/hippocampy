@@ -796,11 +796,17 @@ async def context_status(params: dict, db: KuzuClient, config: dict) -> dict:
     # the Gated Consolidation Loop. Lets a caller (e.g. an external
     # benchmark) wait for consolidation to finish before probing, instead of
     # racing it. None = no loop queue (daemon not running the loop).
-    from campy.brain.thalamus.tools._shared import get_loop_queue
+    from campy.brain.thalamus.tools._shared import get_loop_queue, get_observation_queue
     _q = get_loop_queue()
     consolidation_pending = (
         None if _q is None else getattr(_q, "_unfinished_tasks", _q.qsize())
     )
+    # B472 Phase 3b: the Observation worker's backlog (queued plus in-flight)
+    # counts too, so a benchmark's settle also waits for observations. The
+    # queue only exists when [observations] enabled.
+    _oq = get_observation_queue()
+    if consolidation_pending is not None and _oq is not None:
+        consolidation_pending += getattr(_oq, "_unfinished_tasks", _oq.qsize())
 
     return {
         "consolidation_pending": consolidation_pending,

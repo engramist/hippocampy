@@ -203,6 +203,7 @@ RETRIEVAL_QUERIES = [
                 FILTER(CONTAINS(LCASE(?text_raw), LCASE(?query)))
                 FILTER(?created_at > ?cutoff)
                 ?m campy:archived false .
+                FILTER NOT EXISTS { ?m campy:archived true }  # B488: any true value wins
             }
             ORDER BY DESC(?created_at)
             """,

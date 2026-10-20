@@ -153,6 +153,20 @@ def get_loop_queue() -> Optional[asyncio.Queue]:
     return _loop_queue
 
 
+# B472 Phase 3b: the Observation worker's queue. None unless
+# [observations] enabled, so a default daemon is unchanged.
+_observation_queue: Optional[asyncio.Queue] = None
+
+
+def init_observation_queue(queue: Optional[asyncio.Queue]) -> None:
+    global _observation_queue
+    _observation_queue = queue
+
+
+def get_observation_queue() -> Optional[asyncio.Queue]:
+    return _observation_queue
+
+
 def _clamp(val: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, val))
 

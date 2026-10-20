@@ -20,9 +20,11 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
 from campy.brain.hippocampus.graph.gateway import get_gateway
+from campy.brain.hippocampus.observations import observation_limit, observations_retrieval_enabled
 from campy.brain.hippocampus.provenance import authority_of
 from campy.brain.hippocampus.table_registry import pk_for
 
@@ -95,6 +97,13 @@ class BundleSection:
     # B474: how a "conversation" section's items are ordered ("rank" | "time");
     # empty for every other section. The ask prompt describes the order truthfully.
     order: str = ""
+    # B472 3c: what a "semantic" section is made of when it is not the default
+    # Concept/Decision/... preview ("observations"). Compressors carry it through;
+    # the ask prompt describes the section accordingly.
+    variant: str = ""
+    # B472 3c: a "conversation" section that holds the WHOLE eligible user
+    # history (B482 budget path, everything fit). Observations are redundant then.
+    full_history: bool = False
 
 
 @dataclass
@@ -118,6 +127,7 @@ class ContextBundle:
                     "content": s.content,
                     "token_estimate": s.token_estimate,
                     "source_node_ids": s.source_node_ids,
+                    **({"variant": s.variant} if getattr(s, "variant", "") else {}),
                 }
                 for s in self.sections
             ],
@@ -238,8 +248,20 @@ async def compile_bundle(
         )
         return bundle
 
-    # Stage 3: Semantic context
-    semantic_section = await _stage_semantic_context(db, query, config, tier_config, session_id=session_id)
+    # Stage 3: Semantic context. B472 3c: observations add what the shown
+    # conversation does not; when the conversation section already holds the
+    # WHOLE history (B482 fit_all hit) they are redundant (DMR held-out:
+    # 0.633 -> 0.571 with them), so the old Concept/Decision stage runs exactly
+    # as on main. That needs the conversation outcome first, so the conversation
+    # stage is computed here (stages run sequentially, not concurrently) and
+    # appended later in its usual position, after the budget check below.
+    conversation_section = await _stage_conversation(db, query, config)
+    semantic_section = None
+    if observations_retrieval_enabled(config) and not (
+            conversation_section is not None and conversation_section.full_history):
+        semantic_section = await _stage_observations(db, query, config)
+    if semantic_section is None:
+        semantic_section = await _stage_semantic_context(db, query, config, tier_config, session_id=session_id)
     if semantic_section and semantic_section.content:
         sections.append(semantic_section)
         cumulative_tokens += semantic_section.token_estimate
@@ -260,7 +282,6 @@ async def compile_bundle(
     # Stage 3b (B454): what the user actually said about this. Consolidation keeps
     # entity labels, not statements, so raw user turns are the only place a fact
     # like "we migrated to PostgreSQL 16" lives.
-    conversation_section = await _stage_conversation(db, query, config)
     if conversation_section and conversation_section.content:
         sections.append(conversation_section)
         cumulative_tokens += conversation_section.token_estimate
@@ -605,6 +626,203 @@ async def _stage_semantic_context(
         return None
 
 
+# B472 3c: how a stored Observation reads in the bundle. A claim that did not
+# happen, or has not yet, must not read as one that did.
+_POLARITY_MARKER = {
+    "asserted": "",
+    "negated": "NEGATED (this was not so) ",
+    "hypothetical": "HYPOTHETICAL (not a fact) ",
+    "planned": "PLANNED (not yet done) ",
+}
+_QUOTE_CHARS = 300
+_MAX_CONCEPT_LOOKUPS = 40
+
+
+def _resolved_when(row: dict) -> Optional[str]:
+    """The date a time phrase resolves to, as text. Uses the stored
+    `time_start`/`time_end`/`time_precision` (B484), or -- for a row written
+    before time normalisation -- resolves `time_text` against `observed_at` on
+    the fly. Read-only: nothing is written."""
+    from campy.brain.temporal_lobe.observations.timeparse import format_resolved, normalize_time
+
+    if row.get("time_start"):
+        out = format_resolved(row.get("time_start"), row.get("time_end"), row.get("time_precision"))
+    else:
+        try:
+            anchor = row.get("observed_at")
+            if anchor is not None and not isinstance(anchor, datetime):
+                anchor = datetime.fromisoformat(str(anchor).replace("Z", "+00:00"))
+        except ValueError:
+            anchor = None
+        r = normalize_time(row.get("time_text"), anchor) if anchor else None
+        out = format_resolved(r.start, r.end, r.precision) if r else None
+    if out and out.lower() == str(row.get("time_text") or "").strip().lower():
+        return None                      # "2023-05-07 \u2192 2023-05-07" adds nothing
+    return out
+
+
+def render_observation(row: dict) -> str:
+    """One Observation as a bundle line, with who said it, when, and the words:
+
+        [Caroline, 2023-05-08] did: went to a LGBTQ support group (when: yesterday → 2023-05-07) ("I went to a LGBTQ support group yesterday")
+
+    The polarity of a negated / hypothetical / planned claim is spelled out
+    before the predicate. The subject is shown only when it is not the speaker."""
+    get = row.get
+    speaker = (get("speaker") or "").strip()
+    stamp_who = speaker or "user"
+    when = str(get("observed_at") or "")[:10]
+    stamp = f"[{stamp_who}, {when}] " if when else f"[{stamp_who}] "
+    subject = (get("subject_text") or "").strip()
+    subj = ""
+    if subject and subject.lower() not in {"i", "me", "the user", speaker.lower()}:
+        subj = f"{subject} "
+    pred = str(get("predicate") or "relates_to").replace("_", " ")
+    obj = (get("event_text") or get("object_text") or "").strip()
+    text = f"{stamp}{_POLARITY_MARKER.get(str(get('polarity') or 'asserted'), '')}{subj}{pred}: {obj}"
+    if get("time_text"):
+        resolved = _resolved_when(row)
+        text += f" (when: {get('time_text')} \u2192 {resolved})" if resolved else f" (when: {get('time_text')})"
+    quote = " ".join(str(get("evidence_text") or "").split())
+    if quote:
+        text += f' ("{quote[:_QUOTE_CHARS]}")'
+    return text
+
+
+async def _question_concept_ids(gw, query: str) -> list[str]:
+    """Concepts the question names: every 1-3 word span that starts and ends on
+    a content word, looked up by exact text and then by label (the Phase 2
+    lookups the Loop uses), longest span first. Never creates a Concept."""
+    from campy.brain.hippocampus.graph.vector_store import fts_content_terms
+    from campy.brain.temporal_lobe.observations.extract import find_existing_concept
+
+    tokens = [re.sub(r"(?:'s|\u2019s)$", "", t) for t in re.findall(r"[^\W_][^\s]*", query or "")]
+    tokens = [re.sub(r"^\W+|\W+$", "", t) for t in tokens]
+    tokens = [t for t in tokens if t]
+    content = [bool(fts_content_terms(t)) for t in tokens]
+    spans: list[str] = []
+    for n in (3, 2, 1):
+        for i in range(len(tokens) - n + 1):
+            if content[i] and content[i + n - 1]:
+                span = " ".join(tokens[i:i + n])
+                if span not in spans:
+                    spans.append(span)
+    ids: list[str] = []
+    for span in spans[:_MAX_CONCEPT_LOOKUPS]:
+        cid = await find_existing_concept(gw, span)
+        if cid and cid not in ids:
+            ids.append(cid)
+    return ids
+
+
+async def _stage_observations(db, query: str, config: dict) -> Optional[BundleSection]:
+    """B472 Phase 3c: the semantic section built from Observations -- typed,
+    source-grounded claims the user made -- instead of Concept/Decision labels.
+
+    Candidates: Observations about a Concept the question names, Observations
+    whose embedding or words match the question (gateway
+    `thalamus.bundle_observations`), fused by reciprocal rank, capped at
+    `[observations] observation_limit` (8). Each line carries the speaker, the
+    date, the claim with its polarity, and the verbatim quote it came from.
+    Items are presented in the conversation stage's order
+    (`[retrieval] conversation_order`: oldest first by default).
+
+    Returns None -- so the caller falls back to the old semantic stage -- when
+    there are no matching Observations or anything fails."""
+    limit = observation_limit(config)
+    if limit <= 0:
+        return None
+    try:
+        from campy.brain.hippocampus.graph import embeddings as emb
+
+        embedding_model = config.get("embeddings", {}).get(
+            "model", "sentence-transformers/all-MiniLM-L6-v2"
+        )
+        gw = get_gateway(db)
+        rows = await gw.run(
+            "thalamus.bundle_observations",
+            query_embedding=emb.embed(query, model_name=embedding_model), query_text=query,
+            concept_ids=await _question_concept_ids(gw, query), limit=limit,
+        )
+        if not rows:
+            return None
+        if str((config.get("retrieval", {}) or {}).get("conversation_order", "time")).lower() != "rank":
+            rows = sorted(rows, key=lambda r: str(r.get("observed_at") or ""))
+        content, node_ids = [], []
+        for r in rows:
+            try:
+                confidence = float(r.get("confidence")) if r.get("confidence") is not None else 0.5
+            except (TypeError, ValueError):
+                confidence = 0.5
+            content.append({
+                "text": render_observation(r), "type": "Observation",
+                "observation_id": r.get("observation_id"), "evidence_ref": r.get("evidence_ref"),
+                "polarity": r.get("polarity"), "confidence": confidence, "pathway_strength": 0.5,
+            })
+            node_ids.append(str(r.get("observation_id") or r.get("node_id")))
+        return BundleSection(
+            section_type="semantic", content=content, source_node_ids=node_ids,
+            token_estimate=sum(max(1, len(c["text"]) // 4) for c in content),
+            variant="observations",
+        )
+    except Exception as e:
+        _logger.warning("Error in _stage_observations: %s", e)
+        return None
+
+
+# B482: on by default after the gate (R48/R49, DMR: 59 gained / 30 lost over
+# 299 questions on three independent splits, McNemar p ~ 0.003). With the
+# default "fit_all" mode a store whose history does not fit behaves exactly
+# as with 0 (the fixed conversation_limit path).
+DEFAULT_CONVERSATION_TOKEN_BUDGET = 3500
+
+
+def _conversation_token_budget(config: dict) -> int:
+    """B482: `[retrieval] conversation_token_budget` (absent = 3500; 0 or
+    invalid = off)."""
+    raw = (config.get("retrieval", {}) or {}).get(
+        "conversation_token_budget", DEFAULT_CONVERSATION_TOKEN_BUDGET)
+    try:
+        return max(0, int(raw or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _conversation_budget_mode(config: dict) -> str:
+    """B482: `[retrieval] conversation_budget_mode` ("fit_all" default | "fill";
+    anything else = default)."""
+    mode = str((config.get("retrieval", {}) or {}).get("conversation_budget_mode", "fit_all")).strip().lower()
+    return mode if mode in ("fit_all", "fill") else "fit_all"
+
+
+DEFAULT_CONVERSATION_NEIGHBOUR_CAP = 18
+
+
+# B487: on by default since the 2026-10-19 gate (LoCoMo categories 1-4, dev +
+# held-out pooled: 52 gained / 18 lost); N=2 since R64/R67 (N=2 vs N=1 directly,
+# four conversations pooled: 42 gained / 26 lost).
+DEFAULT_CONVERSATION_NEIGHBOURS = 2
+
+
+def _conversation_neighbours(config: dict) -> int:
+    """B487: `[retrieval] conversation_neighbours` (absent = 2; 0 or invalid = off)."""
+    try:
+        return max(0, int((config.get("retrieval", {}) or {}).get(
+            "conversation_neighbours", DEFAULT_CONVERSATION_NEIGHBOURS) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _conversation_neighbour_cap(config: dict) -> int:
+    """B487: `[retrieval] conversation_neighbour_cap` (absent = 18; invalid = 18)."""
+    raw = (config.get("retrieval", {}) or {}).get(
+        "conversation_neighbour_cap", DEFAULT_CONVERSATION_NEIGHBOUR_CAP)
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_CONVERSATION_NEIGHBOUR_CAP
+
+
 async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSection]:
     """B454: relevant user statements from the raw conversation (see
     GraphGateway._bundle_conversation). Disabled with
@@ -622,17 +840,38 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
         )
         query_embedding = emb.embed(query, model_name=embedding_model)
         from campy.brain.hippocampus.graph.gateway import (
-            CONVERSATION_ORDERS, _warn_once_bad_conversation_order)
+            CONVERSATION_ORDERS, _warn_once_bad_conversation_order, conversation_stamp)
 
         # B474: "time" (oldest first, default) | "rank" (best first)
         order = str((config.get("retrieval", {}) or {}).get("conversation_order", "time")).lower()
         if order not in CONVERSATION_ORDERS:
             _warn_once_bad_conversation_order(order)
             order = "time"
-        rows = await get_gateway(db).run(
-            "thalamus.bundle_conversation",
-            query_embedding=query_embedding, query_text=query, limit=limit, order=order,
-        )
+        # B482: a token budget (> 0) fills the section to that many tokens
+        # instead of `limit` turns; 0 (default) is the fixed-limit path.
+        # budget_mode "fit_all" (default): all turns when they fit, else the
+        # fixed-limit path; "fill": rank-fill to the budget.
+        budget = _conversation_token_budget(config)
+        neighbours = _conversation_neighbours(config)
+        if neighbours > 0:
+            # B487: neighbour expansion (new query; the others are untouched)
+            rows = await get_gateway(db).run(
+                "thalamus.bundle_conversation_windows",
+                query_embedding=query_embedding, query_text=query, limit=limit, order=order,
+                token_budget=budget, budget_mode=_conversation_budget_mode(config),
+                neighbours=neighbours, neighbour_cap=_conversation_neighbour_cap(config),
+            )
+        elif budget > 0:
+            rows = await get_gateway(db).run(
+                "thalamus.bundle_conversation_budget",
+                query_embedding=query_embedding, query_text=query, limit=limit, order=order,
+                token_budget=budget, budget_mode=_conversation_budget_mode(config),
+            )
+        else:
+            rows = await get_gateway(db).run(
+                "thalamus.bundle_conversation",
+                query_embedding=query_embedding, query_text=query, limit=limit, order=order,
+            )
         content, node_ids = [], []
         for r in (rows or []):
             get = r.get if isinstance(r, dict) else (lambda k, d=None: d)
@@ -640,8 +879,7 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
             if not text:
                 continue
             # B472: the speaker, when the turn named one, else the role
-            who = get("speaker") or "user"
-            stamp = f"[{who}, {str(created)[:16].replace('T', ' ')}] " if created else f"[{who}] "
+            stamp = conversation_stamp(get("speaker"), created)
             content.append({
                 "text": stamp + text, "type": "Message", "role": "user",
                 "created_at": created, "confidence": 0.5, "pathway_strength": 0.5,
@@ -653,6 +891,8 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
             section_type="conversation", content=content,
             token_estimate=sum(max(1, len(c["text"]) // 4) for c in content),
             source_node_ids=node_ids, order=order,
+            full_history=bool(budget > 0 and all(
+                (r.get("full_history") if isinstance(r, dict) else False) for r in (rows or []))),
         )
     except Exception as e:
         _logger.warning("Error in _stage_conversation: %s", e)
