@@ -195,3 +195,104 @@ async def test_llm_client_achat_offloads_to_thread(monkeypatch):
     result = await client.achat([{"role": "user", "content": "hi"}])
     assert result == "ok"
     assert "chat" in thread_calls   # was offloaded to thread
+
+
+# ---------------------------------------------------------------------------
+# B494 — output-token cap
+# ---------------------------------------------------------------------------
+
+def _fake_openai(finish_reason="stop", text="hello"):
+    from unittest.mock import MagicMock
+    resp = MagicMock()
+    resp.choices[0].finish_reason = finish_reason
+    resp.choices[0].message.content = text
+    resp.usage = None
+    client = MagicMock()
+    client.chat.completions.create.return_value = resp
+    return client
+
+
+def _kwargs(client):
+    return client.chat.completions.create.call_args.kwargs
+
+
+def _make(cfg_llm, fake):
+    from campy.brain.llm.provider import LLMClient, resolve_max_tokens
+    return LLMClient(fake, "m", resolve_max_tokens(cfg_llm), "ollama")
+
+
+def test_b494_default_cap_passed_on_every_method():
+    fake = _fake_openai()
+    c = _make({}, fake)
+    c.chat([{"role": "user", "content": "q"}])
+    assert _kwargs(fake)["max_tokens"] == 2048
+    c.chat_with_usage([{"role": "user", "content": "q"}])
+    assert _kwargs(fake)["max_tokens"] == 2048
+    import asyncio
+    asyncio.run(c.achat([{"role": "user", "content": "q"}]))
+    assert _kwargs(fake)["max_tokens"] == 2048
+    asyncio.run(c.achat_with_usage([{"role": "user", "content": "q"}]))
+    assert _kwargs(fake)["max_tokens"] == 2048
+
+
+def test_b494_zero_disables_cap():
+    fake = _fake_openai()
+    _make({"max_tokens": 0}, fake).chat([{"role": "user", "content": "q"}])
+    assert "max_tokens" not in _kwargs(fake)
+
+
+def test_b494_configured_cap_and_per_call_override():
+    fake = _fake_openai()
+    c = _make({"max_tokens": 100}, fake)
+    c.chat([{"role": "user", "content": "q"}])
+    assert _kwargs(fake)["max_tokens"] == 100
+    c.chat([{"role": "user", "content": "q"}], max_tokens=7)
+    assert _kwargs(fake)["max_tokens"] == 7
+
+
+def test_b494_factory_reads_config():
+    from campy.brain.llm.provider import create_llm_client
+    c = create_llm_client({"llm": {"provider": "ollama", "max_tokens": 64}})
+    assert c._max_tokens == 64
+    c = create_llm_client({"llm": {"provider": "ollama"}})
+    assert c._max_tokens == 2048
+    c = create_llm_client({"llm": {"provider": "ollama", "max_tokens": 0}})
+    assert c._max_tokens is None
+
+
+def test_b494_env_override_parses():
+    from campy.brain.brainstem.config import apply_env_overrides
+    cfg = apply_env_overrides({"llm": {}}, {"CAMPY_LLM_MAX_TOKENS": "512"})
+    assert cfg["llm"]["max_tokens"] == 512
+
+
+def test_b494_length_finish_warns_and_returns_text(caplog):
+    import logging
+    fake = _fake_openai(finish_reason="length", text="partial")
+    c = _make({}, fake)
+    with caplog.at_level(logging.WARNING, logger="campy.brain.llm.provider"):
+        out = c.chat([{"role": "user", "content": "Q" * 300}])
+    assert out == "partial"
+    rec = [r for r in caplog.records if "output cap" in r.getMessage()]
+    assert rec and "ollama/m" in rec[0].getMessage()
+    assert "2048" in rec[0].getMessage()
+    assert "Q" * 120 in rec[0].getMessage() and "Q" * 121 not in rec[0].getMessage()
+
+
+def test_b494_normal_finish_does_not_warn(caplog):
+    import logging
+    c = _make({}, _fake_openai())
+    with caplog.at_level(logging.WARNING, logger="campy.brain.llm.provider"):
+        c.chat([{"role": "user", "content": "q"}])
+    assert not caplog.records
+
+
+def test_b494_bedrock_cap_in_request():
+    from campy.brain.llm.bedrock import BedrockLLMClient
+    from unittest.mock import MagicMock
+    stub = MagicMock()
+    stub.converse.return_value = {"output": {"message": {"content": [{"text": "x"}]}}}
+    BedrockLLMClient(stub, "m", 2048).chat([{"role": "user", "content": "q"}])
+    assert stub.converse.call_args.kwargs["inferenceConfig"]["maxTokens"] == 2048
+    BedrockLLMClient(stub, "m", None).chat([{"role": "user", "content": "q"}])
+    assert "maxTokens" not in stub.converse.call_args.kwargs["inferenceConfig"]

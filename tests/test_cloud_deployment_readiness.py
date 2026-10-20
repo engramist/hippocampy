@@ -41,6 +41,7 @@ def test_every_documented_override_applies():
         "CAMPY_LLM_MODEL": "us.example.model-v1:0",
         "CAMPY_LLM_REGION": "us-east-1",
         "CAMPY_LLM_BASE_URL": "https://llm.internal/v1",
+        "CAMPY_LLM_MAX_TOKENS": "1024",
         "CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET": "3500",
         "CAMPY_RETRIEVAL_CONVERSATION_BUDGET_MODE": "fill",
         "CAMPY_RETRIEVAL_CONVERSATION_NEIGHBOURS": "2",
@@ -62,7 +63,8 @@ def test_every_documented_override_applies():
     assert cfg["observations"]["enabled"] is True
     assert cfg["observations"]["retrieval"] is True
     assert cfg["llm"] == {"provider": "bedrock", "model": "us.example.model-v1:0",
-                          "region": "us-east-1", "base_url": "https://llm.internal/v1"}
+                          "region": "us-east-1", "base_url": "https://llm.internal/v1",
+                          "max_tokens": 1024}
     assert cfg["retrieval"]["conversation_token_budget"] == 3500
     assert cfg["retrieval"]["conversation_budget_mode"] == "fill"
     assert cfg["retrieval"]["conversation_neighbours"] == 2
@@ -86,6 +88,7 @@ def test_unset_and_empty_vars_leave_config_alone():
     ("CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET", "-1"),
     ("CAMPY_RETRIEVAL_CONVERSATION_BUDGET_MODE", "everything"),
     ("CAMPY_RETRIEVAL_CONVERSATION_NEIGHBOURS", "-1"),
+    ("CAMPY_LLM_MAX_TOKENS", "-1"),
     ("CAMPY_IAM_WORKSPACE_MAP_JSON", "{not json"),
     ("CAMPY_IAM_WORKSPACE_MAP_JSON", '["a", "b"]'),
     ("CAMPY_IAM_PRINCIPAL_SCOPE_MAP_JSON", '{"arn": "memory.read"}'),
