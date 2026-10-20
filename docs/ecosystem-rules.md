@@ -56,7 +56,7 @@ This is the most critical architectural rule in this project.
 | Agent Runtime & Harness | ARCOrchestrator, HypothesisManager, SolveEngine | `agents/arc3/orchestrator.py`, `agents/arc3/hypothesis.py`, `agents/arc3/solver.py` |
 | Shared Knowledge Assets | API knowledge cache, prompt strategy, state-to-text prompts | `agents/arc3/api_knowledge.py`, `benchmarks/arc3/prompts/`, `benchmarks/arc3/PROMPT_STRATEGY.md` |
 | Deterministic Tools & Services | StateSerializer, NER pipeline, embedding compute, spaCy, harness baseline | `benchmarks/arc3/state_serializer.py`, `campy/brain/temporal_lobe/loop/`, `campy/brain/hippocampus/graph/embeddings.py` |
-| Data Products & Memory | Brain Daemon, Gated Consolidation Loop, Kùzu graph, all MCP tools | `campy/brain/`, `brain_daemon.py` |
+| Data Products & Memory | Brain Daemon, Gated Consolidation Loop, graph store, all MCP tools | `campy/brain/`, `brain_daemon.py` |
 | Context Window Integration | File Bridge, Trigger Manifest, Associative Hooks, Anticipatory Engine | `campy/brain/thalamus/file_bridge.py`, `campy/brain/thalamus/trigger_manifest.py`, `campy/brain/temporal_lobe/loop/step4b_associative.py`, `adapters/claude_code/hooks/` |
 | Trusted Systems | ARC-AGI-3 API (Environment) | External API; interface in `benchmarks/arc3/harness.py` |
 
@@ -330,7 +330,7 @@ The Gated Consolidation Loop steps (NER, gist classification, relation extractio
 
 ## Data Products & Memory
 
-**Definition** — Governed memory surfaces and durable knowledge graph exposed through versioned MCP tool contracts. This is HippoCampy: the Gated Consolidation Loop, Kùzu graph database, and all MCP tools.
+**Definition** — Governed memory surfaces and durable knowledge graph exposed through versioned MCP tool contracts. This is HippoCampy: the Gated Consolidation Loop, graph database, and all MCP tools.
 
 ### Current owner
 
@@ -361,7 +361,7 @@ Campy is designed to serve multiple agents, not just ARC. If ARC code reaches in
 
 Data Products & Memory owns:
 
-- the Kùzu graph database and all schema
+- the graph database and all schema
 - the Gated Consolidation Loop (Steps 1–7)
 - all MCP tool contracts and handlers
 - background sweep processes (decay, resurrection, re-scoring, Hebbian promotion)
@@ -382,7 +382,7 @@ All agent access to Campy must go through the MCP tool contract defined in [docs
 
 The 19 MCP tools are the stable API surface. Agents must not:
 
-- bypass MCP tools to query Kùzu directly
+- bypass MCP tools to query the graph store directly
 - import Campy internal modules
 - assume internal schema or implementation details
 
@@ -394,32 +394,32 @@ Agents should retrieve durable context here through `BrainClientProtocol` and MC
 
 ### No shadow stores rule (CRITICAL)
 
-**KuzuDB is the single source of truth for all persistent agent state. Do NOT create in-memory dicts, lists, or instance variables as parallel data stores.**
+**The graph store (Oxigraph today) is the single source of truth for all persistent agent state; `vectors.db` is an index, not a store. Do NOT create in-memory dicts, lists, or instance variables as parallel data stores.**
 
-If a piece of data influences decisions across steps (roles, hypotheses, victory conditions, action facts, chunk history), it MUST be persisted to KuzuDB. In-memory variables may exist only as **read-through caches** that are populated from KuzuDB at the start of each step and flushed back after writes.
+If a piece of data influences decisions across steps (roles, hypotheses, victory conditions, action facts, chunk history), it MUST be persisted to the graph store. In-memory variables may exist only as **read-through caches** that are populated from the graph store at the start of each step and flushed back after writes.
 
 Violations of this rule:
-- Storing `ObjectRole` in a Python dict while `GridEntity.inferred_role` exists in KuzuDB
+- Storing `ObjectRole` in a Python dict while `GridEntity.inferred_role` exists in the graph store
 - Storing `Hypothesis` objects in a Python dict while a `Hypothesis` node type exists in the schema
 - Defining a node type in `schema.py` but never writing to it (ghost schema)
-- Creating a new dataclass to hold persistent state without a corresponding KuzuDB node type
+- Creating a new dataclass to hold persistent state without a corresponding graph node type
 
 The correct pattern:
 1. Define the node type in `campy/brain/hippocampus/schema.py`
-2. Write to KuzuDB via `KuzuClient` when state changes
-3. Read from KuzuDB (or a per-step cache populated from KuzuDB) when state is needed
-4. Never treat the cache as authoritative — KuzuDB is authoritative
+2. Write to the graph store via `OxigraphClient` when state changes
+3. Read from the graph store (or a per-step cache populated from the graph store) when state is needed
+4. Never treat the cache as authoritative — the graph store is authoritative
 
 This rule exists because the whole point of a knowledge graph is to make inferences across data. Data trapped in Python dicts is invisible to graph queries, cross-puzzle learning, and any future agent that needs to reason about the same state.
 
-**Clarification (B313) — this rule governs *earned* state.** "KuzuDB is the single source of truth" is unconditionally true for facts Campy itself learns: a `Hypothesis`, a `Lesson`, a chunk-history row exists nowhere else, so a Python dict holding one instead of (or ahead of) KuzuDB is exactly the shadow store this rule forbids. It does not, by itself, forbid Campy from also holding a *mirror* of state some other system already owns as canonical — a harvested capability catalog, App/Iteration records, workflow-engine run history. Mirroring an external authority into the graph is not a shadow store, because Campy was never the source of truth for it in the first place; there is nothing to "shadow." Two conditions make that distinction real instead of a loophole:
+**Clarification (B313) — this rule governs *earned* state.** "the graph store is the single source of truth" is unconditionally true for facts Campy itself learns: a `Hypothesis`, a `Lesson`, a chunk-history row exists nowhere else, so a Python dict holding one instead of (or ahead of) the graph store is exactly the shadow store this rule forbids. It does not, by itself, forbid Campy from also holding a *mirror* of state some other system already owns as canonical — a harvested capability catalog, App/Iteration records, workflow-engine run history. Mirroring an external authority into the graph is not a shadow store, because Campy was never the source of truth for it in the first place; there is nothing to "shadow." Two conditions make that distinction real instead of a loophole:
 
 1. The mirrored row **must be labelled** `authority = 'projected'` (`schema.AUTHORITY_VALUES`, `campy/brain/hippocampus/schema.py`) — never left indistinguishable from `earned` state. An unlabelled mirror is a shadow store with extra steps: nothing downstream can tell it apart from a fact Campy is solely responsible for, so it decays the same way — silently, unnoticed, and trusted as authoritative long after the real owner has moved on.
 2. The mirrored row **must be rebuildable** — non-NULL `source` + `source_version`, enforced at write time by `provenance.py`'s `validate_authority()`. A `projected` row that cannot be traced back to what it mirrors and at what version is an unlabelled shadow store wearing the label; the label is only meaningful if "rebuild it from the source" is a claim someone could actually act on. `find_stale_projections()` and `drop_projections()` (same module) exist so that claim is exercised, not just asserted once at write time.
 
-In short: the "no shadow stores" rule is about *unlabelled, unaccountable* duplication of authoritative state, not about whether Campy is allowed to hold a copy at all. `earned` facts must live in KuzuDB and nowhere else, full stop. `projected` facts may live in KuzuDB *in addition to* their real owner, provided the label and the rebuild path both hold — see `docs/ARCHITECTURE.md`'s B313 section for the full contract.
+In short: the "no shadow stores" rule is about *unlabelled, unaccountable* duplication of authoritative state, not about whether Campy is allowed to hold a copy at all. `earned` facts must live in the graph store and nowhere else, full stop. `projected` facts may live in the graph store *in addition to* their real owner, provided the label and the rebuild path both hold — see `docs/ARCHITECTURE.md`'s B313 section for the full contract.
 
-**Rule (B314) — new code MUST use named queries; inline Cypher outside the allowlist is rejected.** `campy/brain/hippocampus/graph/gateway.py`'s `GraphGateway`/`NamedQuery`/`QueryRegistry` is the sanctioned path from application code to KuzuDB. New code MUST reach the database through `GraphGateway.run("<domain>.<verb>_<subject>", **params)` against a `NamedQuery` registered under `campy/brain/hippocampus/graph/queries/`, not by building Cypher strings and passing them to `KuzuClient.execute()`/`execute_read()`/`execute_write()` directly. `scripts/check_cypher_ratchet.py` (`make check-cypher`, wired into CI) enforces this mechanically: it fails if the count of inline-Cypher lines outside the allowlist — or the count of `GraphGateway.execute_raw()` escape-hatch call sites — increases relative to `scripts/cypher_baseline.json`. The allowlist is narrow and reasoned, not a loophole: `schema.py`'s DDL and `kuzu_client.py`'s own engine plumbing (both inherently engine-specific, see `docs/ARCHITECTURE.md`'s B314 section), and `graph/queries/**` (where migrated Cypher is supposed to live). Everything else — including code in files not yet migrated — is expected to add new queries as `NamedQuery` entries rather than growing the pool of inline Cypher those files already carry; `execute_raw()` exists for the rare case a new call site cannot yet be expressed as a static named query, but every use is logged, ratchet-counted, and expected to be temporary.
+**Rule (B314) — new code MUST use named queries; inline Cypher outside the allowlist is rejected.** `campy/brain/hippocampus/graph/gateway.py`'s `GraphGateway`/`NamedQuery`/`QueryRegistry` is the sanctioned path from application code to the graph store. New code MUST reach the database through `GraphGateway.run("<domain>.<verb>_<subject>", **params)` against a `NamedQuery` registered under `campy/brain/hippocampus/graph/queries/`, not by building Cypher strings and passing them to the store client's `execute*()` methods directly. `scripts/check_cypher_ratchet.py` (`make check-cypher`, wired into CI) enforces this mechanically: it fails if the count of inline-Cypher lines outside the allowlist — or the count of `GraphGateway.execute_raw()` escape-hatch call sites — increases relative to `scripts/cypher_baseline.json`. The allowlist is narrow and reasoned, not a loophole: `schema.py`'s DDL and `oxigraph_client.py`'s own engine plumbing (both inherently engine-specific, see `docs/ARCHITECTURE.md`'s B314 section), and `graph/queries/**` (where migrated Cypher is supposed to live). Everything else — including code in files not yet migrated — is expected to add new queries as `NamedQuery` entries rather than growing the pool of inline Cypher those files already carry; `execute_raw()` exists for the rare case a new call site cannot yet be expressed as a static named query, but every use is logged, ratchet-counted, and expected to be temporary.
 
 ---
 

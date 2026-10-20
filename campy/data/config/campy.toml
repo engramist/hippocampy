@@ -12,6 +12,10 @@ provider = "ollama"
 # model size, was the actual bottleneck the whole time.
 model = "llama3.1:8b"
 base_url = "http://localhost:11434/v1"
+# B494: output-token cap on every LLM call (default 2048; 0 = no cap). Stops a
+# degenerate repetition running until the request timeout. A caller that needs
+# more passes max_tokens= per call. CAMPY_LLM_MAX_TOKENS overrides.
+# max_tokens = 2048
 
 [embeddings]
 provider = "sentence-transformers"

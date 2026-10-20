@@ -150,14 +150,16 @@ class BedrockLLMClient:
     to know or care which provider they actually have.
     """
 
-    def __init__(self, client, model: str):
+    def __init__(self, client, model: str, max_tokens: int | None = 2048):
         self._client = client
         self._model = model
+        self._max_tokens = max_tokens  # B494: output cap; None = no cap
         self.last_usage: dict | None = None
 
     # -- request building -----------------------------------------------
 
-    def _build_request(self, messages: list[dict], temperature: float) -> dict:
+    def _build_request(self, messages: list[dict], temperature: float,
+                       max_tokens: int | None = None) -> dict:
         system, converse_messages = _to_converse_messages(messages)
 
         request: dict = {
@@ -165,16 +167,25 @@ class BedrockLLMClient:
             "messages": converse_messages,
             "inferenceConfig": {"temperature": temperature},
         }
+        cap = max_tokens if max_tokens is not None else self._max_tokens
+        if cap is not None and cap > 0:
+            request["inferenceConfig"]["maxTokens"] = cap
         if system:
             request["system"] = system
         return request
 
-    def _converse(self, messages: list[dict], temperature: float = 0.0) -> dict:
-        request = self._build_request(messages, temperature)
+    def _converse(self, messages: list[dict], temperature: float = 0.0,
+                  max_tokens: int | None = None) -> dict:
+        request = self._build_request(messages, temperature, max_tokens)
         try:
-            return self._client.converse(**request)
+            response = self._client.converse(**request)
         except Exception as e:  # noqa: BLE001 — translate, then re-raise
             raise self._translate_error(e) from e
+        if isinstance(response, dict) and response.get("stopReason") == "max_tokens":
+            from campy.brain.llm.provider import log_truncated
+            log_truncated("bedrock", self._model,
+                          request["inferenceConfig"].get("maxTokens"), messages)
+        return response
 
     def _translate_error(self, e: Exception) -> Exception:
         """
@@ -203,24 +214,25 @@ class BedrockLLMClient:
         Use achat() from async code to avoid blocking the event loop.
         """
         temperature = kwargs.pop("temperature", 0.0)
-        response = self._converse(messages, temperature=temperature)
+        response = self._converse(messages, temperature=temperature,
+                                  max_tokens=kwargs.pop("max_tokens", None))
         self.last_usage = _map_usage(response)
         return _extract_text(response)
 
-    def chat_with_usage(self, messages: list[dict]) -> tuple[str, dict]:
+    def chat_with_usage(self, messages: list[dict], **kwargs) -> tuple[str, dict]:
         """B180: Synchronous chat that also returns token usage."""
-        response = self._converse(messages)
+        response = self._converse(messages, max_tokens=kwargs.pop("max_tokens", None))
         usage = _map_usage(response)
         self.last_usage = usage
         return _extract_text(response), usage
 
-    async def achat(self, messages: list[dict]) -> str:
+    async def achat(self, messages: list[dict], **kwargs) -> str:
         """Async chat — offloads the blocking network call to a thread pool."""
-        return await asyncio.to_thread(self.chat, messages)
+        return await asyncio.to_thread(self.chat, messages, **kwargs)
 
-    async def achat_with_usage(self, messages: list[dict]) -> tuple[str, dict]:
+    async def achat_with_usage(self, messages: list[dict], **kwargs) -> tuple[str, dict]:
         """B180: Async chat that also returns token usage."""
-        return await asyncio.to_thread(self.chat_with_usage, messages)
+        return await asyncio.to_thread(self.chat_with_usage, messages, **kwargs)
 
 
 def create_bedrock_client(
@@ -228,6 +240,7 @@ def create_bedrock_client(
     model: str,
     timeout_seconds: float | None = None,
     max_retries: int | None = None,
+    max_tokens: int | None = 2048,
 ):
     """
     Build a BedrockLLMClient over boto3's bedrock-runtime client.
@@ -275,4 +288,4 @@ def create_bedrock_client(
     except Exception as e:
         raise BedrockConfigError(f"Could not create Bedrock client: {e}") from e
 
-    return BedrockLLMClient(bedrock_client, model)
+    return BedrockLLMClient(bedrock_client, model, max_tokens)

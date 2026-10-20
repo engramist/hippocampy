@@ -8,7 +8,7 @@ Read `docs/ARCHITECTURE.md` before making architecture, schema, retrieval, captu
 Read `docs/ecosystem-rules.md` before changing package boundaries or persistence behavior.
 Use `docs/codebase-anatomy.md` when you need the target region for new code, and `docs/codebase-anatomy-refactor-plan.md` when you need migration context.
 
-KuzuDB is the single source of truth for persistent memory state. Do not introduce shadow stores for durable agent state; in-memory structures are allowed only as caches over graph-backed state.
+The graph store (Oxigraph today) is the single source of truth for persistent memory state; `vectors.db` is an index, not a store. Do not introduce shadow stores for durable agent state; in-memory structures are allowed only as caches over graph-backed state.
 
 ## Memory Usage Policy
 
@@ -22,7 +22,7 @@ For multi-entity or broad context queries, use `compile_context` instead of maki
 
 `memory_decision` automatically routes to `compile_context` when it detects multi-entity queries. You can also call it directly with a `token_budget` and optional `output_format` (generic, claude_code, codex, claude_desktop, chatgpt_desktop, arc).
 
-Tabular data (CSV, XLSX, TSV) ingested via `ingest_document` is stored in per-dataset SQLite files with metadata and extracted facts in the Kuzu graph. The bundle compiler includes relevant tabular data when assembling context.
+Tabular data (CSV, XLSX, TSV) ingested via `ingest_document` is stored in per-dataset SQLite files with metadata and extracted facts in the graph store. The bundle compiler includes relevant tabular data when assembling context.
 
 ## Augmented Inference (B289)
 
@@ -80,9 +80,9 @@ When reviewing a pull request, check each rule below. Post findings in this exac
 - Flag: any file under `agents/` or `benchmarks/` that imports from `campy/`
 - Flag: new files placed in the wrong top-level directory for their responsibility
 
-**2. No shadow stores** — persistent agent state must go through KuzuDB, not in-memory structures.
+**2. No shadow stores** — persistent agent state must go through the graph store, not in-memory structures.
 - Flag: module-level `dict` or `list` in `campy/` whose name contains `store`, `cache`, `state`, `registry`, or `db` as an underscore-delimited component (e.g. `_cache`, `session_state`, `vector_db`)
-- In-memory caches backed by KuzuDB reads are permitted; standalone in-memory state is not
+- In-memory caches backed by graph-store reads are permitted; standalone in-memory state is not
 
 **3. Tool registration** — every new MCP tool must follow the schema-first flow.
 - Flag: a new function in `campy/brain/thalamus/tools/__init__.py` matching `*_tool` or `handle_*`
