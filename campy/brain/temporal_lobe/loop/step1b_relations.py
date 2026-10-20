@@ -41,8 +41,16 @@ MOVE_VERBS = {"migrate", "switch", "move", "transition", "upgrade", "change"}
 # one after a preposition; the subject ("We replaced ...") is neither. verb ->
 # prepositions that introduce the new value.
 WITH_VERBS = {"replace": ("with", "by"), "swap": ("for", "with"), "exchange": ("for",)}
-# "substitute Y for X": the object is the NEW value.
+# "substitute Y for X": the object is the NEW value. "substitute X with Y"
+# (the common looser usage) reads like "replace X with Y": the object is OLD.
 SUBSTITUTE_VERBS = {"substitute": "for"}
+# B496: swap/exchange take either value as the object and "with" can name a
+# person or group ("swapped seats with the other team"), so their frames need
+# both values to be names, not both people. "replace"/"substitute" cannot
+# take a person as the counterpart, so they need no such check.
+SYMMETRIC_SWAP_VERBS = {"swap", "exchange"}
+# B496: negation words and scope-takers that withdraw a replacement.
+_NEG_PREPS = {"instead", "without"}
 # B466: "X is deprecated ... migrate to Y" -- retired value as the subject of
 # one of these, the new one as a move verb's "to" object.
 RETIRE_VERBS = {"deprecate", "retire", "sunset", "decommission", "discontinue"}
@@ -92,6 +100,38 @@ def _is_name(span) -> bool:
         or (has_vectors and t.is_alpha and not t.has_vector)
         for t in span if not (t.is_punct or t.is_space)
     )
+
+
+def _negated(verb) -> bool:
+    """B496: the verb's clause denies it ("did not replace", "never replaced",
+    "Don't replace", "decided not to replace", "instead of replacing",
+    "rather than replacing", "without replacing"). A denied replacement states
+    no supersession, and writing one retires a value that is still current."""
+    tok = verb
+    for _ in range(4):  # the verb itself, then the clauses it hangs from
+        if any(c.dep_ == "neg" for c in tok.children):
+            return True
+        head = tok.head
+        if tok.dep_ == "pcomp" and head.dep_ == "prep" and (
+                head.lower_ == "without"
+                or any(c.lower_ in _NEG_PREPS for c in head.children)
+                or head.lower_ == "than" and any(c.lower_ == "rather" for c in head.children)):
+            return True
+        if tok.dep_ not in ("xcomp", "ccomp", "advcl", "conj", "aux", "auxpass") or head is tok:
+            return False
+        tok = head
+    return False
+
+
+def _is_capitalized_name(span) -> bool:
+    """A name by its spelling, whatever tag the parser gave it ("Memcached"
+    is tagged ADJ): a token capitalized mid-sentence, or one with a digit."""
+    return any((not t.is_sent_start and t.text[:1].isupper()) or any(c.isdigit() for c in t.text)
+               for t in span)
+
+
+def _is_person(span) -> bool:
+    return any(t.ent_type_ == "PERSON" for t in span)
 
 
 def _prep_object(verb, prep_word: str):
@@ -177,6 +217,12 @@ def extract_relations(doc, entities: list[dict]) -> list[dict]:
             continue
         lemma = token.lemma_.lower()
 
+        # B496: a negated replace/move verb writes nothing (checked before any
+        # frame, so neither "Redis REPLACES Memcached" nor "We REPLACES ..." survives).
+        if (lemma in MOVE_VERBS or lemma in WITH_VERBS or lemma in SUBSTITUTE_VERBS
+                or VERB_PATTERNS.get(lemma) == "REPLACES") and _negated(token):
+            continue
+
         if lemma in MOVE_VERBS:
             old_tok, new_tok = _prep_object(token, "from"), _prep_object(token, "to")
             if old_tok is not None and new_tok is not None:
@@ -194,14 +240,29 @@ def extract_relations(doc, entities: list[dict]) -> list[dict]:
             old = min(olds, key=lambda c: abs(token.i - c.i)) if olds else None
             preps = WITH_VERBS.get(lemma) or (SUBSTITUTE_VERBS[lemma],)
             new = next((o for p in preps if (o := _prep_object(token, p)) is not None), None)
-            if new is None and old is not None and lemma in WITH_VERBS:
+            with_obj = None
+            if lemma in SUBSTITUTE_VERBS and old is not None:
+                # "substitute X with Y": Y in X's place (a "for" frame is below)
+                with_obj = _prep_object(token, "with") or _prep_object(old, "with")
+            if new is None and old is not None and lemma in WITH_VERBS and lemma not in SYMMETRIC_SWAP_VERBS:
                 # the parser can hang "with Y" off the object instead of the
                 # verb: "Architecture change: Replace Memcached with Redis
                 # cluster ..." (en_core_web_md: "Replace" an acl of "change",
                 # "with" a child of "Memcached")
                 new = next((o for p in preps if (o := _prep_object(old, p)) is not None), None)
-            if lemma in SUBSTITUTE_VERBS:
+            if with_obj is not None:
+                new = with_obj
+            elif lemma in SUBSTITUTE_VERBS:
                 old, new = new, next((c for c in token.children if c.dep_ == "dobj"), None)
+            if old is not None and new is not None and lemma in SYMMETRIC_SWAP_VERBS:
+                # B496: "swap seats/shifts with Dana" trades places; only a swap
+                # of two named things ("Jenkins for GitHub Actions")
+                # is a replacement. Both must be names and neither a person.
+                spans = (_span(old, doc), _span(new, doc))
+                # (one PERSON tag alone proves nothing: "Jenkins", "Spark" are
+                # tagged PERSON; "swap Alice with Bob" has two.)
+                if not all(_is_name(sp) or _is_capitalized_name(sp) for sp in spans) or all(map(_is_person, spans)):
+                    continue
             if old is not None and new is not None:
                 relations.append(_relation(new, "REPLACES", old, doc))
                 continue

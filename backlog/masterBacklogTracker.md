@@ -312,6 +312,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B493 | ARCHITECTURE.md and Code Docstrings Still Describe Kùzu as the Store | P3 | open | TBD | TBD | - | backlog/B493.md |
 | B494 | LLM calls have no output-length cap; a runaway generation hangs ask for ~12 minutes | P2 | in review | TBD | TBD | - | backlog/B494.md |
 | B495 | Principles and drift controls for coding agents | P2 | complete (2026-10-20) | TBD | TBD | - | backlog/B495.md |
+| B496 | Relation extraction writes a replacement for negated and person "swap" sentences | P2 | complete (2026-10-20) | TBD | TBD | - | backlog/B496.md |
 | B49 | SWE-CI Evaluation Card (Maintainability Under Evolution) | P11 | complete (2026-03-28) | TBD | TBD | backlog/plans/B-49-swe-ci-eval.md | backlog/B49.md |
 | B50 | LoCoBench Evaluation Card (Long-Context Degradation) | P11 | complete (2026-03-28) | TBD | TBD | backlog/plans/B-50-longcontext-eval.md | backlog/B50.md |
 | B51 | AMA-Bench + MemoryArena Card (Causality and Interdependent State) | P11 | complete (2026-03-28) | TBD | TBD | backlog/plans/B-51-ama-bench-eval.md | backlog/B51.md |
