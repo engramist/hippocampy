@@ -101,6 +101,11 @@ _DEFAULT_CONFIG = {
         # "NOT empty ... must be used" instruction.
         "answer_style": "cite",
     },
+    # B494: output-token cap on every LLM call, so a runaway generation
+    # cannot run until the request timeout. 0 = no cap.
+    "llm": {
+        "max_tokens": 2048,
+    },
     # B325: remote MCP transport bind address + auth mode, explicit and
     # guarded (see campy/brain_daemon.py::_enforce_bind_guard). Defaults
     # reproduce today's local-only behavior exactly — bind_host stays
@@ -205,6 +210,7 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_LLM_MODEL": ("llm", "model", str.strip),
     "CAMPY_LLM_REGION": ("llm", "region", str.strip),
     "CAMPY_LLM_BASE_URL": ("llm", "base_url", str.strip),
+    "CAMPY_LLM_MAX_TOKENS": ("llm", "max_tokens", _parse_nonneg_int),
     "CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET": ("retrieval", "conversation_token_budget", _parse_nonneg_int),
     "CAMPY_RETRIEVAL_CONVERSATION_NEIGHBOURS": ("retrieval", "conversation_neighbours", _parse_nonneg_int),
     "CAMPY_RETRIEVAL_CONVERSATION_BUDGET_MODE": ("retrieval", "conversation_budget_mode", _parse_budget_mode),

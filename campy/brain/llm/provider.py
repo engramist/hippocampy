@@ -44,8 +44,11 @@ B16 — Task-Based Model Routing:
         tabular_ingest      — Dataset summary + key-fact extraction (B250)
 """
 
+import logging
 import os
 from typing import Protocol, runtime_checkable
+
+_logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -67,11 +70,11 @@ class LLMClientProtocol(Protocol):
 
     def chat(self, messages: list[dict], **kwargs) -> str: ...
 
-    def chat_with_usage(self, messages: list[dict]) -> tuple[str, dict]: ...
+    def chat_with_usage(self, messages: list[dict], **kwargs) -> tuple[str, dict]: ...
 
-    async def achat(self, messages: list[dict]) -> str: ...
+    async def achat(self, messages: list[dict], **kwargs) -> str: ...
 
-    async def achat_with_usage(self, messages: list[dict]) -> tuple[str, dict]: ...
+    async def achat_with_usage(self, messages: list[dict], **kwargs) -> tuple[str, dict]: ...
 
 
 def _resolve_timeout_seconds(provider: str, llm_cfg: dict) -> float | None:
@@ -96,30 +99,85 @@ def _resolve_max_retries(provider: str, llm_cfg: dict) -> int | None:
         return 3 if provider == "ollama" else None
 
 
+DEFAULT_MAX_TOKENS = 2048
+
+
+def resolve_max_tokens(llm_cfg: dict) -> int | None:
+    """
+    B494: output-token cap for every completion. ``[llm] max_tokens`` (default
+    2048); 0 or negative disables the cap (returns None). A malformed value
+    falls back to the default rather than raising.
+    """
+    raw = llm_cfg.get("max_tokens")
+    if raw in (None, ""):
+        return DEFAULT_MAX_TOKENS
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_TOKENS
+    return value if value > 0 else None
+
+
+def log_truncated(provider_label: str, model: str, cap, messages: list[dict]) -> None:
+    """B494: warn that a completion hit the output cap, naming the question."""
+    last_user = ""
+    for m in reversed(messages or []):
+        if isinstance(m, dict) and m.get("role") == "user":
+            content = m.get("content")
+            last_user = content if isinstance(content, str) else str(content)
+            break
+    _logger.warning(
+        "[LLM] %s/%s hit the output cap (max_tokens=%s); response truncated. "
+        "Last user message: %r",
+        provider_label, model, cap, last_user[:120],
+    )
+
+
 class LLMClient:
     """
     Wrapper around an OpenAI-SDK-compatible chat endpoint.
     Provides both sync chat() for backward compat and async achat()
     that offloads the blocking network call to a thread pool.
+
+    B494: every request carries max_tokens (``[llm] max_tokens``, default 2048)
+    so a degenerate repetition cannot run until the request timeout. A call can
+    override the cap with ``max_tokens=`` in kwargs.
     """
 
-    def __init__(self, client, model: str):
+    def __init__(self, client, model: str, max_tokens: int | None = DEFAULT_MAX_TOKENS,
+                 provider: str = "openai"):
         self._client = client
         self._model  = model
+        self._max_tokens = max_tokens
+        self._provider = provider
         self.last_usage: dict | None = None
+
+    def _create(self, messages: list[dict], **kwargs):
+        kwargs = dict(kwargs)
+        override = kwargs.pop("max_tokens", None)
+        cap = override if override is not None else self._max_tokens
+        if cap is not None and cap > 0:
+            kwargs["max_tokens"] = cap
+        kwargs.setdefault("temperature", 0.0)
+        response = self._client.chat.completions.create(
+            model=self._model,
+            messages=messages,
+            **kwargs
+        )
+        try:
+            if response.choices[0].finish_reason == "length":
+                log_truncated(self._provider, self._model, cap, messages)
+        except (AttributeError, IndexError, TypeError):
+            pass
+        return response
 
     def chat(self, messages: list[dict], **kwargs) -> str:
         """
         Synchronous chat — blocks the calling thread.
         Use achat() from async code to avoid blocking the event loop.
         """
-        response = self._client.chat.completions.create(
-            model=self._model,
-            messages=messages,
-            temperature=0.0,
-            **kwargs
-        )
-        
+        response = self._create(messages, **kwargs)
+
         # B180: Track token usage if available
         if hasattr(response, 'usage') and response.usage:
             self.last_usage = {
@@ -127,19 +185,15 @@ class LLMClient:
                 "completion_tokens": getattr(response.usage, 'completion_tokens', 0),
                 "total_tokens": getattr(response.usage, 'total_tokens', 0),
             }
-            
+
         return response.choices[0].message.content or ""
 
-    def chat_with_usage(self, messages: list[dict]) -> tuple[str, dict]:
+    def chat_with_usage(self, messages: list[dict], **kwargs) -> tuple[str, dict]:
         """
         B180: Synchronous chat that also returns token usage.
         Returns (content, usage_dict).
         """
-        response = self._client.chat.completions.create(
-            model=self._model,
-            messages=messages,
-            temperature=0.0,
-        )
+        response = self._create(messages, **kwargs)
         content = response.choices[0].message.content or ""
         usage = {
             "prompt_tokens": getattr(response.usage, 'prompt_tokens', 0) if response.usage else 0,
@@ -148,21 +202,21 @@ class LLMClient:
         }
         return content, usage
 
-    async def achat(self, messages: list[dict]) -> str:
+    async def achat(self, messages: list[dict], **kwargs) -> str:
         """
         Async chat — offloads blocking LLM call to a thread pool.
         Use this from async code (loop steps, sweep, quest synthesis).
         Fixes S1: sync LLM calls were blocking the asyncio event loop.
         """
         import asyncio
-        return await asyncio.to_thread(self.chat, messages)
+        return await asyncio.to_thread(self.chat, messages, **kwargs)
 
-    async def achat_with_usage(self, messages: list[dict]) -> tuple[str, dict]:
+    async def achat_with_usage(self, messages: list[dict], **kwargs) -> tuple[str, dict]:
         """
         B180: Async chat that also returns token usage.
         """
         import asyncio
-        return await asyncio.to_thread(self.chat_with_usage, messages)
+        return await asyncio.to_thread(self.chat_with_usage, messages, **kwargs)
 
 
 def create_llm_client(config: dict) -> LLMClientProtocol | None:
@@ -176,6 +230,7 @@ def create_llm_client(config: dict) -> LLMClientProtocol | None:
         api_key           — cloud providers: read from env var if not set
         timeout_seconds   — optional request timeout for slow models / long reasoning
         max_retries       — optional retry count for transient provider errors
+        max_tokens        — B494: output-token cap per call (default 2048; 0 = no cap)
 
     Bedrock-only keys (see campy/brain/llm/bedrock.py):
         region            — optional; falls back to AWS_REGION / boto3 default
@@ -190,6 +245,7 @@ def create_llm_client(config: dict) -> LLMClientProtocol | None:
     client_options = {}
     timeout_seconds = _resolve_timeout_seconds(provider, llm_cfg)
     max_retries = _resolve_max_retries(provider, llm_cfg)
+    max_tokens = resolve_max_tokens(llm_cfg)
     if timeout_seconds is not None:
         client_options["timeout"] = timeout_seconds
     if max_retries is not None:
@@ -202,19 +258,19 @@ def create_llm_client(config: dict) -> LLMClientProtocol | None:
             base_url = llm_cfg.get("base_url", "http://localhost:11434/v1")
             # Ollama does not require a real API key
             client = OpenAI(base_url=base_url, api_key="ollama", **client_options)
-            return LLMClient(client, model)
+            return LLMClient(client, model, max_tokens, provider)
 
         if provider == "openai":
             api_key = llm_cfg.get("api_key") or os.environ.get("OPENAI_API_KEY", "")
             client = OpenAI(api_key=api_key, **client_options)
-            return LLMClient(client, model)
+            return LLMClient(client, model, max_tokens, provider)
 
         if provider == "anthropic":
             # Anthropic has an OpenAI-compatible endpoint via the API gateway
             base_url = llm_cfg.get("base_url", "https://api.anthropic.com/v1")
             api_key  = llm_cfg.get("api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
             client = OpenAI(base_url=base_url, api_key=api_key, **client_options)
-            return LLMClient(client, model)
+            return LLMClient(client, model, max_tokens, provider)
 
         if provider == "google":
             base_url = llm_cfg.get(
@@ -223,7 +279,7 @@ def create_llm_client(config: dict) -> LLMClientProtocol | None:
             )
             api_key = llm_cfg.get("api_key") or os.environ.get("GOOGLE_API_KEY", "")
             client = OpenAI(base_url=base_url, api_key=api_key, **client_options)
-            return LLMClient(client, model)
+            return LLMClient(client, model, max_tokens, provider)
 
         if provider == "bedrock":
             # Bedrock does not speak the OpenAI chat-completions wire format
@@ -233,7 +289,7 @@ def create_llm_client(config: dict) -> LLMClientProtocol | None:
             # dependency: importing this module never requires boto3 unless
             # a caller actually asks for provider="bedrock".
             from campy.brain.llm.bedrock import create_bedrock_client
-            return create_bedrock_client(llm_cfg, model, timeout_seconds, max_retries)
+            return create_bedrock_client(llm_cfg, model, timeout_seconds, max_retries, max_tokens)
 
         print(f"[LLM] Unknown provider '{provider}'. Loop will run in degraded mode.")
         return None

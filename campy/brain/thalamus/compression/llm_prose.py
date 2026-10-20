@@ -76,7 +76,17 @@ class LLMCompressor(Compressor):
                     ),
                 }
             ]
-            compressed = llm.chat(messages)
+            # B494: the default output cap (2048) is below what a large
+            # section's compressed form may legitimately need; give the call
+            # headroom over its own target instead of truncating it.
+            chat_kwargs = {}
+            try:
+                needed = int(int(target_tokens) * 1.5)
+            except (TypeError, ValueError):
+                needed = 0
+            if needed > 2048:
+                chat_kwargs["max_tokens"] = needed
+            compressed = llm.chat(messages, **chat_kwargs)
             token_estimate = len(compressed) // 4
             return BS(
                 section_type=section.section_type,
