@@ -4,6 +4,7 @@ This file gives agent-neutral guidance for Codex and other coding agents working
 
 ## Principles
 
+<!-- principles:begin (copy of PRINCIPLES.md; edit that file) -->
 These bind every agent working here. If a change cannot say which principle it serves, stop and ask.
 
 1. **The benchmark score is the measure.** Every change to retrieval or answering names its target and reports its gate result on the published metric (LoCoMo categories 1-4, LongMemEval overall, DMR accuracy). Receipts and paperwork are not progress.
@@ -24,6 +25,7 @@ These bind every agent working here. If a change cannot say which principle it s
 - A PR that cannot say which principle it serves.
 
 Run `python scripts/drift_report.py` to check for these; CI (`pr-score-effect`) requires a `## Score effect` section on PRs that touch retrieval, answering or config code.
+<!-- principles:end -->
 
 ## Sources Of Truth
 
