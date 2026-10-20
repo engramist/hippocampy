@@ -799,12 +799,13 @@ DEFAULT_CONVERSATION_NEIGHBOUR_CAP = 18
 
 
 # B487: on by default since the 2026-10-19 gate (LoCoMo categories 1-4, dev +
-# held-out pooled: 52 gained / 18 lost).
-DEFAULT_CONVERSATION_NEIGHBOURS = 1
+# held-out pooled: 52 gained / 18 lost); N=2 since R64/R67 (N=2 vs N=1 directly,
+# four conversations pooled: 42 gained / 26 lost).
+DEFAULT_CONVERSATION_NEIGHBOURS = 2
 
 
 def _conversation_neighbours(config: dict) -> int:
-    """B487: `[retrieval] conversation_neighbours` (absent = 1; 0 or invalid = off)."""
+    """B487: `[retrieval] conversation_neighbours` (absent = 2; 0 or invalid = off)."""
     try:
         return max(0, int((config.get("retrieval", {}) or {}).get(
             "conversation_neighbours", DEFAULT_CONVERSATION_NEIGHBOURS) or 0))
