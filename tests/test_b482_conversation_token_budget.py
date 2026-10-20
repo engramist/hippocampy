@@ -188,8 +188,8 @@ def recorder(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("cfg", [{"retrieval": {"conversation_token_budget": 0}},
-                                 {"retrieval": {"conversation_token_budget": "junk"}}])
+@pytest.mark.parametrize("cfg", [{"retrieval": {"conversation_neighbours": 0, "conversation_token_budget": 0}},
+                                 {"retrieval": {"conversation_neighbours": 0, "conversation_token_budget": "junk"}}])
 async def test_stage_budget_off_uses_the_original_query(recorder, cfg):
     await bundle_compiler._stage_conversation(None, "q", cfg)
     assert recorder.name == "thalamus.bundle_conversation"
@@ -199,7 +199,7 @@ async def test_stage_budget_off_uses_the_original_query(recorder, cfg):
 @pytest.mark.asyncio
 async def test_stage_budget_on_uses_the_budget_query(recorder):
     await bundle_compiler._stage_conversation(
-        None, "q", {"retrieval": {"conversation_token_budget": 3500}})
+        None, "q", {"retrieval": {"conversation_neighbours": 0, "conversation_token_budget": 3500}})
     assert recorder.name == "thalamus.bundle_conversation_budget"
     assert recorder.params["token_budget"] == 3500 and recorder.params["limit"] == 6
     assert recorder.params["budget_mode"] == "fit_all"
@@ -209,7 +209,7 @@ async def test_stage_budget_on_uses_the_budget_query(recorder):
 @pytest.mark.parametrize("val,want", [("fill", "fill"), ("FILL", "fill"), ("junk", "fit_all")])
 async def test_stage_passes_the_budget_mode(recorder, val, want):
     await bundle_compiler._stage_conversation(
-        None, "q", {"retrieval": {"conversation_token_budget": 3500, "conversation_budget_mode": val}})
+        None, "q", {"retrieval": {"conversation_neighbours": 0, "conversation_token_budget": 3500, "conversation_budget_mode": val}})
     assert recorder.params["budget_mode"] == want
 
 
@@ -267,7 +267,8 @@ def test_conversation_is_not_in_the_compression_routes():
 
 @pytest.mark.asyncio
 async def test_stage_budget_is_on_by_default(recorder):
-    await bundle_compiler._stage_conversation(None, "q", {})
+    # neighbours (B487, on by default) pinned off: this checks the budget default alone
+    await bundle_compiler._stage_conversation(None, "q", {"retrieval": {"conversation_neighbours": 0}})
     assert recorder.name == "thalamus.bundle_conversation_budget"
     assert recorder.params["token_budget"] == bundle_compiler.DEFAULT_CONVERSATION_TOKEN_BUDGET == 3500
     assert recorder.params["budget_mode"] == "fit_all"

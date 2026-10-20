@@ -219,12 +219,20 @@ points (≈2 questions at n=50–60). A change is **real** only if:
 
 ### C.5 The gate (what decides a merge)
 
-A change passes when **all** hold:
+_Changed 2026-10-19 (user): the goal is the benchmark score, not proof of
+an effect. See `2026-10-metric-switch.md`._
+
+Score every gate on the metric the benchmark publishes: LoCoMo categories
+1–4 (adversarial category 5 is reported separately, not in the headline),
+LongMemEval overall, DMR accuracy. Dev and held-out conversations are pooled
+as one sample. A change passes when **all** hold:
 
 1. T1 green (CI for hippocampy; self-checks for campy-benchmarks; fixture
    28/28, 0 INVERTED for any change touching consolidation or retrieval).
-2. On its target suite (dev): real improvement per C.4.
-3. On every other suite and on held-out: no drop beyond the noise floor.
+2. Pooled over the conversations run: more questions gained than lost on the
+   published metric, and the change points the same way in most
+   conversations. No p-value threshold (changes are flags and reversible).
+3. On every other suite: no drop beyond the noise floor.
 4. `ask` p50 latency within the milestone's budget (A.2).
 
 Post the gate table on #278 and in the PR description:
@@ -477,8 +485,8 @@ replay now shows a loss (the section earns its place).
 | Situation | Action |
 |---|---|
 | Gate passes | Merge (squash), update `e2e-status.md` and the scorecard, start the next item the same turn |
-| Gate fails beyond the noise floor | Don't merge. Post the per-question diff. Diagnose with a replay. One fix attempt; if it still fails, close the PR, record why in `learnings/`, move on |
-| Within noise either way | Merge only if it is a prerequisite or a simplification; otherwise close and record |
+| Gate fails (pooled lost ≥ gained on the published metric) | Don't merge. Post the per-question diff. Diagnose with a replay. One fix attempt; if it still fails, close the PR, record why in `learnings/`, move on |
+| Gained > lost but small | Merge (C.5); run the full benchmark every few merges to confirm the total moves |
 | A diagnostic gives a surprising result | Re-test the diagnostic on a fake with a known answer before acting (R26's "top 3" was "oldest 3") |
 | A result contradicts an earlier one | Check pins (both repos), turn-metadata mode, isolation, judge model, and question selection before believing either |
 | Local agent silent > 2 h with work queued | Re-post as a new R-number |

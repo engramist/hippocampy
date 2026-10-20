@@ -6,7 +6,7 @@ These are repository custom instructions for GitHub Copilot, including **Copilot
 
 Before reviewing or generating code, respect these:
 - `docs/ecosystem-rules.md` — layer boundaries and import constraints (the rules below enforce it)
-- KuzuDB is the **single source of truth** for persistent agent state. In-memory structures are allowed only as read-through caches over graph-backed state — never as the primary store.
+- The graph store (Oxigraph today) is the **single source of truth** for persistent agent state; `vectors.db` is an index, not a store. In-memory structures are allowed only as read-through caches over graph-backed state — never as the primary store.
 
 ## PR Review Checklist (Ecosystem Gate)
 
@@ -22,9 +22,9 @@ When reviewing a pull request, check each rule below and report findings in this
 - Flag: any file under `agents/` or `benchmarks/` that imports from `campy/`
 - Flag: new files placed in the wrong top-level directory for their responsibility
 
-**2. No shadow stores** — persistent agent state must go through KuzuDB, not in-memory structures.
+**2. No shadow stores** — persistent agent state must go through the graph store, not in-memory structures.
 - Flag: module-level `dict` or `list` in `campy/` whose name contains `store`, `cache`, `state`, `registry`, or `db` as an underscore-delimited component (e.g. `_cache`, `session_state`, `vector_db`)
-- In-memory caches backed by KuzuDB reads are permitted; standalone in-memory state is not
+- In-memory caches backed by graph-store reads are permitted; standalone in-memory state is not
 
 **3. Tool registration** — every new MCP tool must follow the schema-first flow.
 - Flag: a new function in `campy/brain/thalamus/tools/__init__.py` matching `*_tool` or `handle_*`

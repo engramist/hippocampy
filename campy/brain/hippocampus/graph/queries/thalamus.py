@@ -1596,6 +1596,20 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         # No sparql= — Python handler in GraphGateway._bundle_conversation_budget.
     ),
     NamedQuery(
+        name="thalamus.bundle_conversation_windows",
+        cypher="MATCH (m:Message {role: 'user'}) "
+               "WHERE (1 - array_cosine_similarity(m.embedding, $query_embedding)) < 0.70 "
+               "RETURN m.text_raw as text, m.role as role, m.created_at as created_at "
+               "ORDER BY m.created_at ASC LIMIT $limit",
+        params=("query_embedding", "query_text", "limit", "order", "token_budget", "budget_mode",
+                "neighbours", "neighbour_cap"),
+        mutating=False,
+        description="B487: the conversation stage plus up to `neighbours` same-session turns (either "
+                    "speaker) before and after each matched turn, capped at `neighbour_cap` added "
+                    "turns; the full-history path is returned untouched",
+        # No sparql= — Python handler in GraphGateway._bundle_conversation_windows.
+    ),
+    NamedQuery(
         name="thalamus.bundle_assistant_words",
         cypher="MATCH (m:Message {role: 'assistant'}) "
                "WHERE (1 - array_cosine_similarity(m.embedding, $query_embedding)) < 0.70 "

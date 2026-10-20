@@ -3,7 +3,7 @@
 Live state of `e2e-improvement-plan.md`. Update after every step; keep it
 short and current (history goes in dated `learnings/` notes).
 
-_Last updated: 2026-10-19 00:40 UTC_
+_Last updated: 2026-10-19 22:45 UTC_
 
 ## Who is running this
 
@@ -25,21 +25,19 @@ _Last updated: 2026-10-19 00:40 UTC_
 
 ## Current position
 
-- **On main (all on by default):** B482 conversation token budget (#313,
-  DMR +10 points); B472 Observations (#305, LoCoMo 65/39, p≈0.014, used only
-  when the whole history does not fit); B484 observation dates (#316,
-  temporal 11/3). See `2026-10-m3-observations.md`.
-- **Milestones:** M1 done (budget, cite prompt). M2 closed except what the
-  budget covers (reranker, recall fixes, boosts, sessions mode all failed
-  their gates). M3 done. M4.2 done; M4.1 (graph expansion for multi-hop)
-  and M4.3 next.
-- **GPU queue:** `~/campy-lead/runner.sh` runs `~/campy-lead/queue/[0-9]*.sh`
-  (log `~/campy-lead/chain.log`, results `~/campy-lead/results`). Running:
-  R58, a large held-out LoCoMo conversation (conv-44, 675 turns) ingested
-  with observations, then gated.
-- **Check-ins:** the lead session runs a self-paced /loop with a job
-  monitor; nothing is kept in /tmp (macOS deletes it after ~3 days).
-- **Next R-number:** R59.
+- **Gate rule changed (2026-10-19):** score on the published metric (LoCoMo
+  categories 1–4; adversarial separate), pool dev + held-out, merge on
+  gained > lost with no p threshold. Re-score with `~/campy-lead/rescore5.py`.
+  See `2026-10-metric-switch.md`.
+- **On main (`0dacbd8`):** B482 token budget on; **B487 neighbour expansion on
+  (N=1)**, cat 1–4 pooled 0.374 → 0.467; Observations + B484 dates merged but
+  off by default.
+- **Open:** #326 B489 verify step (abstention; secondary under the new
+  metric), branch `claude/e2e-obs-on` (Observations back on; gate R66).
+- **GPU queue:** `~/campy-lead/runner.sh` (log `~/campy-lead/chain.log`):
+  R64 N=2 (picks N) → R64b conv-43 N=1 retry → R66 Observations on top of
+  neighbours → R65 B489 verify → R61 LongMemEval s on main `0dacbd8`.
+- **Next R-number:** R67.
 
 ## Pins
 
@@ -104,8 +102,11 @@ Not measured yet (R31). Assume ±4 points at n=50–60.
 
 ## Next three actions
 
-1. R58 → held-out check of observations on a long conversation.
-2. M4.1: from the question's entities to their observations and one hop
-   further (multi-hop: Campy 0–2 of 12 vs full history 6).
-3. Observation extraction precision (about half of sampled observations
-   were low quality).
+1. Re-score every baseline (full_context, naive_rag) and Campy run with the
+   fixed scorer; publish one corrected table.
+2. Next lever from the full-history analysis: neighbour expansion (±2 turns
+   around each retrieved turn in the same session; evidence turns are often
+   replies that do not repeat the question's words).
+3. If observations are revisited: keep their ordinary-question gain without
+   the abstention loss (e.g. show observations only for non-adversarial-looking
+   questions, or tell the answer step that observations are not proof).
