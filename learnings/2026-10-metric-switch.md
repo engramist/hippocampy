@@ -59,3 +59,32 @@ More context (neighbours, observations, expansion) helps answerable questions
 and costs adversarial abstentions with the 8b answer model. Under the new
 metric that trade is worth taking; abstention work (B489 verify, #326) is now
 secondary and matters mainly for LongMemEval's abstention questions.
+
+## Follow-up the same night (2026-10-19/20)
+
+**Neighbour count (R64).** Against no neighbours, pooled cat 1–4 over conv-42/30/44:
+N=1 0.467 (52/18), N=2 0.484 (60/20). Directly, N=2 vs N=1: conv-42 16/9, conv-30
+4/4, conv-44 7/8 — pooled 27/21 but up on only 1 of 3 conversations, so the
+default stays N=1. conv-43 gets a direct N=1 vs N=2 gate (R67).
+
+**conv-43 hang (B494).** Both conv-43 neighbour gates died: one question made the
+answer model generate until the 3-minute Ollama timeout, retried 4×, aborting the
+replay. LLM calls had no output cap. B494 (#330) caps output at 2048 tokens and
+logs a warning naming the question when the cap is hit.
+
+**Observations back on (R66, #331).** On top of neighbours, golden stores
+ingested with observations on, cat 1–4:
+
+| Conversation | main | observations | gained | lost | adversarial |
+|---|---|---|---|---|---|
+| conv-42 (dev) | 0.422 | 0.472 | 18 | 8 | 36 → 43 /61 |
+| conv-30 (held-out) | 0.455 | 0.545 | 6 | 2 | 8 → 10 /16 |
+| conv-44 (held-out) | 0.545 | 0.569 | 8 | 5 | 17 → 18 /35 |
+| **pooled** | **0.467** | **0.514** | **32** | **15** | **61 → 71 /112** |
+
+Unlike neighbours, observations also improve adversarial abstention. Merged as
+the default (revert of #320).
+
+**Harness (B491, campy-benchmarks#42).** Gate JSONs now carry each side's SHA,
+dirty flag and `CAMPY_*` env, plus every model call and `meta` per question.
+First used on R66; it worked.

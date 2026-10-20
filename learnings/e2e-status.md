@@ -3,7 +3,7 @@
 Live state of `e2e-improvement-plan.md`. Update after every step; keep it
 short and current (history goes in dated `learnings/` notes).
 
-_Last updated: 2026-10-19 22:45 UTC_
+_Last updated: 2026-10-20 06:25 UTC_
 
 ## Who is running this
 
@@ -29,15 +29,15 @@ _Last updated: 2026-10-19 22:45 UTC_
   categories 1–4; adversarial separate), pool dev + held-out, merge on
   gained > lost with no p threshold. Re-score with `~/campy-lead/rescore5.py`.
   See `2026-10-metric-switch.md`.
-- **On main (`0dacbd8`):** B482 token budget on; **B487 neighbour expansion on
-  (N=1)**, cat 1–4 pooled 0.374 → 0.467; Observations + B484 dates merged but
-  off by default.
-- **Open:** #326 B489 verify step (abstention; secondary under the new
-  metric), branch `claude/e2e-obs-on` (Observations back on; gate R66).
-- **GPU queue:** `~/campy-lead/runner.sh` (log `~/campy-lead/chain.log`):
-  R64 N=2 (picks N) → R64b conv-43 N=1 retry → R66 Observations on top of
-  neighbours → R65 B489 verify → R61 LongMemEval s on main `0dacbd8`.
-- **Next R-number:** R67.
+- **On main (`030303a`):** B482 token budget; B487 neighbours N=1; **Observations
+  on (#331)**; B494 output cap 2048. Cat 1–4 vs the pre-neighbours main: neighbours
+  +9 points (R64), observations a further +4.7 (R66).
+- **Open:** #326 B489 verify (secondary); #318 expansion rebuilt on main
+  (`claude/e2e-m4-1-expansion`, gate R68).
+- **GPU queue:** R66 conv-43 → R67 conv-43 neighbours N=0/1/2 → R68 #318
+  expansion on top of observations → R61 LongMemEval s on main `030303a` → R65
+  B489 verify.
+- **Next R-number:** R69.
 
 ## Pins
 
