@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+> **Binding for all agents:** read the "Principles" section of `AGENTS.md` first; it applies to every change.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Implementation Workflow

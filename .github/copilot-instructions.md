@@ -1,5 +1,7 @@
 # GitHub Copilot Instructions for HippoCampy
 
+> **Binding for all agents:** read the "Principles" section of `AGENTS.md` first; it applies to every change.
+
 These are repository custom instructions for GitHub Copilot, including **Copilot code review**.
 
 ## Sources of Truth
