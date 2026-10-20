@@ -3,7 +3,7 @@
 Live state of `e2e-improvement-plan.md`. Update after every step; keep it
 short and current (history goes in dated `learnings/` notes).
 
-_Last updated: 2026-10-20 12:15 UTC_
+_Last updated: 2026-10-20 17:15 UTC_
 
 ## Who is running this
 
@@ -32,11 +32,13 @@ _Last updated: 2026-10-20 12:15 UTC_
 - **On main (`8c38d23`):** B482 token budget; B487 neighbours **N=2** (#333);
   Observations on (#331); B494 output cap 2048. Cat 1–4: neighbours up on 4/4
   conversations, observations a further +3.9 pooled (4/4), N=2 vs N=1 42/26.
-- **Open:** #326 B489 verify (secondary); #318 expansion rebuilt on main
-  (`claude/e2e-m4-1-expansion`, gate R68 running).
-- **GPU queue:** R68 #318 expansion → R61 LongMemEval s on main `8c38d23` → R69
-  fresh-ingest LoCoMo-10 on the six unseen conversations vs baselines → R65 B489.
-- **Next R-number:** R70.
+- **Open:** #326 B489 verify (secondary). #318 closed for good (R68).
+- **GPU queue:** R61 LongMemEval s on main (running under the memory guard,
+  personal-daemon extraction paused) → R70 #310 select-then-answer → R65 B489.
+  Parked: R69 fresh-ingest LoCoMo on unseen conversations (needs the owner's go).
+- **Process:** principles + drift controls in `AGENTS.md` (B495); daily
+  `scripts/drift_report.py`.
+- **Next R-number:** R71.
 
 ## Pins
 
