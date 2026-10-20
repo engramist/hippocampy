@@ -305,12 +305,22 @@ ARC_QUERIES: tuple[NamedQuery, ...] = (
         params=("eid",),
         mutating=False,
         description="Fetch centroid coordinates for an existing GridEntity.",
+        # B427: centroid_row/centroid_col must be OPTIONAL, not required --
+        # arc.merge_entity writes them straight from the caller's
+        # ent.get("centroid_row")/ent.get("centroid_col") (arc_queries.py's
+        # arc_perceive_state), which is None whenever the caller's entity dict
+        # doesn't report a centroid this frame. A required triple pattern for
+        # either property made the whole row vanish for that (very real,
+        # not just entity-doesn't-exist) case, which arc_perceive_state's own
+        # `existing_row is not None` check then silently misread as "entity
+        # doesn't exist yet" -- breaking move detection for any entity whose
+        # centroid was previously unset.
         sparql="""
             SELECT ?centroid_row ?centroid_col WHERE {
                 ?e a campy:GridEntity ;
-                   campy:entity_id ?eid ;
-                   campy:centroid_row ?centroid_row ;
-                   campy:centroid_col ?centroid_col .
+                   campy:entity_id ?eid .
+                OPTIONAL { ?e campy:centroid_row ?centroid_row }
+                OPTIONAL { ?e campy:centroid_col ?centroid_col }
             }
             """,
     ),
@@ -778,6 +788,15 @@ ARC_QUERIES: tuple[NamedQuery, ...] = (
         params=("tid",),
         mutating=False,
         description="Fetch goal evidence with support and contradiction counts.",
+        # B427: condition_type must be OPTIONAL, not required -- no writer
+        # anywhere in the repo ever asserts campy:condition_type on a
+        # VictoryCondition (arc.merge_victory_condition_confidence, the only
+        # writer, sets task_id/confidence/created_at/last_updated only; the
+        # column exists in schema.py's DDL but nothing populates it). A
+        # required triple pattern for it meant this query -- and the live,
+        # registered arc_get_goal_evidence MCP tool built on it -- returned
+        # ZERO goals for EVERY task, unconditionally, since the query was
+        # written.
         sparql="""
             SELECT ?condition_id ?condition_type ?confidence
                    (SUM(IF(BOUND(?h) && BOUND(?status) && ?status = "active", 1, 0)) AS ?supports)
@@ -786,8 +805,8 @@ ARC_QUERIES: tuple[NamedQuery, ...] = (
                 ?vc a campy:VictoryCondition ;
                     campy:task_id ?tid ;
                     campy:condition_id ?condition_id ;
-                    campy:condition_type ?condition_type ;
                     campy:confidence ?confidence .
+                OPTIONAL { ?vc campy:condition_type ?condition_type }
                 OPTIONAL {
                     ?h a campy:Hypothesis ;
                        campy:INFERRED_FROM ?vc .
