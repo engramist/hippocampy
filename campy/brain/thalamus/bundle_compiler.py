@@ -24,7 +24,11 @@ from datetime import datetime
 from typing import Optional
 
 from campy.brain.hippocampus.graph.gateway import get_gateway
-from campy.brain.hippocampus.observations import observation_limit, observations_retrieval_enabled
+from campy.brain.hippocampus.observations import (
+    observation_limit,
+    observations_retrieval_enabled,
+    observations_supersede_enabled,
+)
 from campy.brain.hippocampus.provenance import authority_of
 from campy.brain.hippocampus.table_registry import pk_for
 
@@ -679,7 +683,12 @@ def render_observation(row: dict) -> str:
         subj = f"{subject} "
     pred = str(get("predicate") or "relates_to").replace("_", " ")
     obj = (get("event_text") or get("object_text") or "").strip()
-    text = f"{stamp}{_POLARITY_MARKER.get(str(get('polarity') or 'asserted'), '')}{subj}{pred}: {obj}"
+    mark = ""
+    if get("superseded_by"):
+        # B499: a value the user later replaced; kept so "what was my previous X?" can be answered.
+        since = str(get("superseded_at") or "")[:10]
+        mark = f"(superseded {since}) " if since else "(superseded) "
+    text = f"{stamp}{mark}{_POLARITY_MARKER.get(str(get('polarity') or 'asserted'), '')}{subj}{pred}: {obj}"
     if get("time_text"):
         resolved = _resolved_when(row)
         text += f" (when: {get('time_text')} \u2192 {resolved})" if resolved else f" (when: {get('time_text')})"
@@ -740,7 +749,8 @@ async def _stage_observations(db, query: str, config: dict) -> Optional[BundleSe
         )
         gw = get_gateway(db)
         rows = await gw.run(
-            "thalamus.bundle_observations",
+            "thalamus.bundle_observations_history" if observations_supersede_enabled(config)
+            else "thalamus.bundle_observations",
             query_embedding=emb.embed(query, model_name=embedding_model), query_text=query,
             concept_ids=await _question_concept_ids(gw, query), limit=limit,
         )

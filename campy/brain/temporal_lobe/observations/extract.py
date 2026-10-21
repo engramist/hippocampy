@@ -292,7 +292,8 @@ async def process_turn(
             draft.embedding = await asyncio.to_thread(emb.embed, draft.text_raw, model_name=embedding_model)
         except Exception:
             draft.embedding = None   # still a valid Observation; just not vector-indexed
-        writes.record(await obs.record_observation(db, draft))
+        writes.record(await obs.record_observation(
+            db, draft, supersede=obs.observations_supersede_enabled(config)))
 
     stats.merge_write(writes)
     return writes.created

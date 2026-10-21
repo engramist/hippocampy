@@ -1490,7 +1490,8 @@ class GraphGateway:
         a Concept the caller resolved from the question (`concept_ids`; those the
         vector search also found come first, the rest oldest first). A
         lexical-only hit must match two query content words, as in the
-        conversation stage. Archived and superseded rows are dropped.
+        conversation stage. Archived rows are dropped; superseded rows are dropped
+        unless `include_superseded` (B499: they are then returned with `superseded_by`/`superseded_at`).
 
         Returns up to `limit` rows, best first, each carrying the claim
         (subject/predicate/object/event/time/polarity/speaker/confidence), the
@@ -1537,7 +1538,8 @@ class GraphGateway:
         ns = "<https://campy.dev/ns#"
         req = ("observation_id", "subject_text", "predicate", "object_text", "polarity",
                "evidence_ref", "evidence_text", "text_raw", "archived")
-        opt = ("event_text", "time_text", "speaker", "observed_at", "confidence", "superseded_by")
+        opt = ("event_text", "time_text", "speaker", "observed_at", "confidence", "superseded_by", "superseded_at")
+        include_superseded = bool(params.get("include_superseded"))
         rows = self._client._execute_and_collect(f"""
             SELECT ?o {" ".join("?" + c for c in req + opt)} WHERE {{
                 VALUES ?o {{ {" ".join(f"<{u}>" for u in ranked)} }}
@@ -1549,8 +1551,10 @@ class GraphGateway:
         out: list[RowDict] = []
         for row in rows:
             uri = str(row["o"])
-            if bool(row.get("archived")) or row.get("superseded_by"):
+            if bool(row.get("archived")):
                 continue
+            if row.get("superseded_by") and not include_superseded:
+                continue          # B499: kept (marked) only when [observations] supersede is on
             if uri not in vec_set and uri not in concept_set:
                 low = f"{row.get('text_raw') or ''} {row.get('evidence_text') or ''}".lower()
                 if uri not in fts_set or sum(1 for t in terms if t in low) < need:
@@ -1766,6 +1770,8 @@ class GraphGateway:
             return self._bundle_assistant_words(params)
         if name == "thalamus.bundle_observations":
             return self._bundle_observations(params)
+        if name == "thalamus.bundle_observations_history":
+            return self._bundle_observations({**params, "include_superseded": True})
 
         # Exact facts: thalamus.bundle_exact_facts_{tbl}[_flagged][_auth] or thalamus.bundle_exact_{tbl}[_flagged][_auth]
         if name.startswith("thalamus.bundle_exact"):
