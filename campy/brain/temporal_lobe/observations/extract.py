@@ -161,8 +161,52 @@ def parse_observations(raw: str | None) -> list[dict] | None:
 def _clean(value: Any) -> str | None:
     if value is None:
         return None
+    if isinstance(value, (dict, list, tuple, set)):
+        return None          # never stringify a container into a Python repr (B506)
     s = " ".join(str(value).split())
     return s or None
+
+
+_OBJECT_NAME_KEYS = ("name", "attribute", "key", "field")
+_OBJECT_VALUE_KEYS = ("value", "amount")
+
+
+def _render_object(value: Any) -> str | None:
+    """The stored text for a claim's `object`: a string as-is, a mapping as
+    `name: value`, a list of scalars joined by "; ". None when it cannot be
+    rendered sensibly (nested containers, unknown multi-key mappings). B506."""
+    if isinstance(value, dict):
+        if len(value) == 1:
+            name, val = next(iter(value.items()))
+            if val is not None and not _is_scalar(val):
+                return None
+            name_s, val_s = _clean(name), _clean(val)
+            if not name_s:
+                return None
+            return f"{name_s}: {val_s}" if val_s else name_s
+        name_k = next((k for k in _OBJECT_NAME_KEYS if k in value), None)
+        if name_k is None:
+            return None
+        val_k = next((k for k in _OBJECT_VALUE_KEYS if k in value), None)
+        if not all(_is_scalar(value[k]) or value[k] is None for k in (name_k, val_k) if k):
+            return None
+        if set(value) - {name_k, val_k}:
+            return None
+        name_s = _clean(value[name_k])
+        val_s = _clean(value[val_k]) if val_k else None
+        if not name_s:
+            return None
+        return f"{name_s}: {val_s}" if val_s else name_s
+    if isinstance(value, (list, tuple)):
+        if not value or not all(_is_scalar(x) for x in value):
+            return None
+        parts = [_clean(x) for x in value]
+        return "; ".join(p for p in parts if p) or None
+    return _clean(value)
+
+
+def _is_scalar(x: Any) -> bool:
+    return isinstance(x, (str, int, float, bool))
 
 
 def _confidence(value: Any) -> float:
@@ -304,7 +348,9 @@ async def _draft_from_proposal(
 ) -> obs.ObservationDraft | None:
     subject = _clean(p.get("subject"))
     predicate = (_clean(p.get("predicate")) or "").lower()
-    object_text = _clean(p.get("object"))
+    object_text = _render_object(p.get("object"))
+    if object_text is None and isinstance(p.get("object"), (dict, list, tuple)):
+        stats.rejected["object_unrenderable"] = stats.rejected.get("object_unrenderable", 0) + 1
     quote = _clean(p.get("quote"))
     if not (subject and predicate and object_text and quote):
         return None
