@@ -38,6 +38,7 @@ from campy.brain.hippocampus import observations as obs
 from campy.brain.hippocampus.concept_links import concept_index, graph_linking_enabled, link_observation_concepts
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.hippocampus.graph.gateway import get_gateway
+from campy.brain.temporal_lobe.observations import entities as ent
 from campy.brain.temporal_lobe.observations.timeparse import normalize_time
 
 _logger = logging.getLogger(__name__)
@@ -82,6 +83,29 @@ Rules:
 
 JSON array:"""
 
+# B504 (flag `[observations] entities`). Applied by string replacement so that with the flag
+# off the prompt is byte-identical to PROMPT_TEMPLATE. Structural, not rewording: it changes
+# WHAT is captured (an entity and its kind per claim; facts inside requests and plans) and
+# adds two output fields that rules then validate against the turn.
+_ENTITY_FIELDS = """- "object_entity": the named thing the fact is about (a product, place, title, person, event), copied exactly as written in the message, or null
+- "object_kind": the kind of that thing in one to three lower-case words ("model kit", "national park", "video editing software"), or null
+- "confidence": a number from 0 to 1
+"""
+_REQUEST_RULE_OLD = "- Opinions about the world, questions and requests are not facts: skip them.\n"
+_REQUEST_RULE_NEW = (
+    "- Opinions about the world are not facts. A question or request is not itself a fact, "
+    "but facts the speaker states about themselves inside it are.\n"
+    "- A value stated in passing inside a plan or request (\"to beat my personal best of 25:50\") "
+    "is also a has_attribute fact.\n"
+)
+ENTITY_PROMPT_TEMPLATE = (
+    PROMPT_TEMPLATE
+    .replace('- "confidence": a number from 0 to 1\n', _ENTITY_FIELDS, 1)
+    .replace(_REQUEST_RULE_OLD, _REQUEST_RULE_NEW, 1)
+)
+assert ENTITY_PROMPT_TEMPLATE != PROMPT_TEMPLATE
+ENTITY_MAX_TOKENS = 768     # two more short fields per fact
+
 
 @dataclass
 class ObservationWorkerStats:
@@ -103,6 +127,11 @@ class ObservationWorkerStats:
     linked_object: int = 0
     time_resolved: int = 0       # drafts whose time phrase resolved to a date range
     time_unresolved: int = 0     # drafts with a time phrase that did not
+    entity_rejected: int = 0     # B504: proposed entity failed the rules (not in turn, pronoun, too long)
+    kind_rejected: int = 0       # B504: proposed kind failed the rules
+    entities_linked: int = 0     # B504: claims linked to a validated entity Concept
+    kinds_linked: int = 0        # B504: entity -IS_A-> kind edges written
+    entity_concepts_created: int = 0   # B504: new Concepts (entity or kind)
     queue_dropped: int = 0       # set by the daemon when the queue is full
     errors: int = 0              # a turn that raised (logged, skipped)
 
@@ -121,12 +150,13 @@ class ObservationWorkerStats:
 
 # --- prompt and parsing -----------------------------------------------------------
 
-def build_messages(text: str, speaker: str | None, occurred_at: Any, max_chars: int = 600) -> list[dict]:
+def build_messages(text: str, speaker: str | None, occurred_at: Any, max_chars: int = 600,
+                   *, entities: bool = False) -> list[dict]:
     """The chat messages for one turn. The speaker and the turn's date go in so
     "I"/"my" attach to the speaker and relative time can be kept as written."""
     body = " ".join((text or "").split())[:max_chars]
     date = str(occurred_at)[:10] if occurred_at else "unknown"
-    prompt = PROMPT_TEMPLATE.format(
+    prompt = (ENTITY_PROMPT_TEMPLATE if entities else PROMPT_TEMPLATE).format(
         speaker=(speaker or "unknown"), date=date, text=body.replace('"""', "'''"),
     )
     return [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]
@@ -259,11 +289,13 @@ async def process_turn(
 
     speaker = msg.get("speaker")
     occurred_at = msg.get("occurred_at") or msg.get("created_at")
-    messages = build_messages(text, speaker, occurred_at, int(cfg.get("max_turn_chars", 600)))
+    entities_on = obs.observations_entities_enabled(config)
+    messages = build_messages(text, speaker, occurred_at, int(cfg.get("max_turn_chars", 600)), entities=entities_on)
 
     stats.llm_calls += 1
     try:
-        raw = await asyncio.to_thread(llm_client.chat, messages, max_tokens=MAX_TOKENS)  # B468: off the loop
+        raw = await asyncio.to_thread(llm_client.chat, messages,
+                                     max_tokens=ENTITY_MAX_TOKENS if entities_on else MAX_TOKENS)  # B468: off the loop
     except Exception:
         stats.llm_failed += 1
         _logger.warning("[Observations] LLM call failed for msg=%s", message_id[:8], exc_info=True)
@@ -291,12 +323,27 @@ async def process_turn(
         if draft is None:
             writes.record(obs.WriteResult("rejected", None, "malformed_proposal"))
             continue
+        proposed_entity = None
+        if entities_on:
+            if not ent.value_in_turn(draft.predicate, draft.object_text, text):
+                writes.record(obs.WriteResult("rejected", None, "value_not_in_turn"))
+                continue
+            proposed_entity = ent.validate_entity(p, text, stats)
         try:
             draft.embedding = await asyncio.to_thread(emb.embed, draft.text_raw, model_name=embedding_model)
         except Exception:
             draft.embedding = None   # still a valid Observation; just not vector-indexed
         result = await obs.record_observation(db, draft)
         writes.record(result)
+        if proposed_entity and result.ok and result.observation_id:
+            # B504: the validated entity (and kind) become Concepts before B503 links by text,
+            # so the linker's index already holds them
+            try:
+                await ent.write_entity(gw, proposed_entity, result.observation_id, message_id, stats,
+                                       embedding_model=embedding_model)
+                link_index = None
+            except Exception:
+                _logger.warning("[ObservationEntities] entity write failed msg=%s", message_id[:8], exc_info=True)
         if linking and result.ok and result.observation_id:
             # B503: link the claim (and its turn) to the Concepts its words name
             try:

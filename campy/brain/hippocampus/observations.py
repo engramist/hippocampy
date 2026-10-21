@@ -105,6 +105,14 @@ def observations_retrieval_enabled(config: dict | None) -> bool:
     return bool(((config or {}).get("observations") or {}).get("retrieval", True))
 
 
+def observations_entities_enabled(config: dict | None) -> bool:
+    """`[observations] entities` (default false; env `CAMPY_OBSERVATIONS_ENTITIES=1` turns it on), B504:
+    the extractor also proposes each claim's object entity and kind (rule-validated, written as
+    Concepts with IS_A / MENTIONS / OBSERVATION_ABOUT edges) and extracts facts stated inside
+    requests and plans. Off: prompt, schema and writes are exactly as before."""
+    return bool(((config or {}).get("observations") or {}).get("entities", False))
+
+
 def observation_limit(config: dict | None, default: int = 8) -> int:
     """`[observations] observation_limit`: most Observations the semantic section carries."""
     try:

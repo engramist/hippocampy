@@ -54,6 +54,7 @@ def test_every_documented_override_applies():
         "CAMPY_OBSERVATIONS_ENABLED": "1",
         "CAMPY_OBSERVATIONS_RETRIEVAL": "1",
         "CAMPY_GRAPH_LINKING": "1",
+        "CAMPY_OBSERVATIONS_ENTITIES": "1",
     }
     assert set(env) == set(ENV_OVERRIDES), "test must cover every override"
     cfg = apply_env_overrides(_base(), env)
@@ -64,6 +65,7 @@ def test_every_documented_override_applies():
     assert cfg["observations"]["enabled"] is True
     assert cfg["observations"]["retrieval"] is True
     assert cfg["retrieval"]["graph_linking"] is True
+    assert cfg["observations"]["entities"] is True
     assert cfg["llm"] == {"provider": "bedrock", "model": "us.example.model-v1:0",
                           "region": "us-east-1", "base_url": "https://llm.internal/v1",
                           "max_tokens": 1024}

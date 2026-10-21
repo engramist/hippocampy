@@ -87,6 +87,10 @@ _DEFAULT_CONFIG = {
         "queue_max": 5000,         # 3b: bounded worker queue; a full queue drops the newest, counted
         "retrieval": True,         # 3c: feed the bundle's semantic section from Observations
         "observation_limit": 8,    # 3c: most Observations the semantic section carries
+        # B504 (default off; env CAMPY_OBSERVATIONS_ENTITIES=1): the extractor also emits each
+        # claim's object entity + kind, validated by rule and written as Concepts, and extracts
+        # facts stated inside requests and plans.
+        "entities": False,
     },
     "compression": {
         "strategy": "two_lane",       # two_lane (Protected Lane zero loss + Bulk Lane lossy)
@@ -209,6 +213,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_OBSERVATIONS_ENABLED": ("observations", "enabled", _parse_bool),
     # B472 Phase 3c: same reason, for the reader (independent of the writer).
     "CAMPY_OBSERVATIONS_RETRIEVAL": ("observations", "retrieval", _parse_bool),
+    # B504: extraction emits object entities and kinds (Concepts + IS_A/MENTIONS edges).
+    "CAMPY_OBSERVATIONS_ENTITIES": ("observations", "entities", _parse_bool),
     # B503: link user turns / Observations to Concepts and walk the links at retrieval.
     "CAMPY_GRAPH_LINKING": ("retrieval", "graph_linking", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
