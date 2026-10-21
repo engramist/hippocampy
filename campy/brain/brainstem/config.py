@@ -18,6 +18,11 @@ _DEFAULT_CONFIG = {
         "lexical_window_days": 14,
         "lexical_limit": 10,
         "timeline_limit": 200,
+        # B503: graph linking (default off; env CAMPY_GRAPH_LINKING=1). Writes
+        # Message/Observation -> Concept links by rule and walks them at
+        # retrieval (1-2 hops); graph_linking_limit caps the walk's items.
+        "graph_linking": False,
+        "graph_linking_limit": 12,
         # B375: exposes warm_frontier.py's previously-hardcoded module
         # constants. Values match those prior hardcoded defaults exactly,
         # so an absent/partial [retrieval.warm_frontier] section changes
@@ -204,6 +209,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_OBSERVATIONS_ENABLED": ("observations", "enabled", _parse_bool),
     # B472 Phase 3c: same reason, for the reader (independent of the writer).
     "CAMPY_OBSERVATIONS_RETRIEVAL": ("observations", "retrieval", _parse_bool),
+    # B503: link user turns / Observations to Concepts and walk the links at retrieval.
+    "CAMPY_GRAPH_LINKING": ("retrieval", "graph_linking", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
     "CAMPY_LLM_MODEL": ("llm", "model", str.strip),
     "CAMPY_LLM_REGION": ("llm", "region", str.strip),

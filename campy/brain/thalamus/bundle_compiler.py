@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
+from campy.brain.hippocampus.concept_links import graph_linking_enabled, graph_linking_limit
 from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.hippocampus.observations import observation_limit, observations_retrieval_enabled
 from campy.brain.hippocampus.provenance import authority_of
@@ -266,6 +267,20 @@ async def compile_bundle(
         sections.append(semantic_section)
         cumulative_tokens += semantic_section.token_estimate
         sources.extend(semantic_section.source_node_ids)
+
+    # Stage 3a (B503, flag): what the graph links to the question's Concepts,
+    # beyond what the stages above already show. Skipped when the conversation
+    # section holds the whole history (nothing to add).
+    if graph_linking_enabled(config) and not (
+            conversation_section is not None and conversation_section.full_history):
+        shown = set(sources)
+        if conversation_section is not None:
+            shown.update(conversation_section.source_node_ids)
+        linked_section = await _stage_concept_walk(db, query, config, shown)
+        if linked_section and linked_section.content:
+            sections.append(linked_section)
+            cumulative_tokens += linked_section.token_estimate
+            sources.extend(linked_section.source_node_ids)
 
     if cumulative_tokens >= token_budget * 0.9:
         bundle = ContextBundle(
@@ -713,6 +728,66 @@ async def _question_concept_ids(gw, query: str) -> list[str]:
         if cid and cid not in ids:
             ids.append(cid)
     return ids
+
+
+async def _stage_concept_walk(db, query: str, config: dict, exclude: set[str]) -> Optional[BundleSection]:
+    """B503: the user turns and Observations linked, in the graph, to the
+    Concepts the question names (1 hop) or to their categories, children and
+    siblings (2 hops): gathered through the shared Concept, not through
+    similarity. Concepts are resolved as the Observation stage does, plus the
+    link writer's normalised match (so "model kits" finds "model kit").
+
+    Items already in the bundle (`exclude`: conversation turns, observation
+    ids) are left out; the rest are capped at `[retrieval] graph_linking_limit`
+    and shown oldest first, each stamped with its speaker and date. Returns
+    None when nothing is linked or anything fails."""
+    limit = graph_linking_limit(config)
+    if limit <= 0:
+        return None
+    try:
+        from campy.brain.hippocampus.concept_links import match_concepts
+        from campy.brain.hippocampus.graph.gateway import conversation_stamp
+
+        gw = get_gateway(db)
+        concept_ids = list(dict.fromkeys(
+            await _question_concept_ids(gw, query) + await match_concepts(gw, query)))
+        if not concept_ids:
+            return None
+        rows = await gw.run(
+            "thalamus.bundle_concept_walk",
+            concept_ids=concept_ids, limit=limit, exclude=sorted(exclude))
+        if not rows:
+            return None
+        content, node_ids = [], []
+        for r in rows:
+            if r.get("kind") == "Observation":
+                text = render_observation(r)
+                node_ids.append(str(r.get("observation_id") or r.get("node_id")))
+                content.append({
+                    "text": text, "type": "Observation", "observation_id": r.get("observation_id"),
+                    "evidence_ref": r.get("evidence_ref"), "polarity": r.get("polarity"),
+                    "confidence": 0.5, "pathway_strength": 0.5, "hop": r.get("hop"),
+                })
+            else:
+                text = str(r.get("text") or "")
+                if len(text) > _WALK_MESSAGE_CHARS:
+                    text = text[:_WALK_MESSAGE_CHARS].rstrip() + " ..."
+                node_ids.append(str(r.get("node_id")))
+                content.append({
+                    "text": conversation_stamp(r.get("speaker"), r.get("created_at")) + text,
+                    "type": "Message", "role": "user", "created_at": r.get("created_at"),
+                    "confidence": 0.5, "pathway_strength": 0.5, "hop": r.get("hop"),
+                })
+        return BundleSection(
+            section_type="linked", content=content, source_node_ids=node_ids,
+            token_estimate=sum(max(1, len(c["text"]) // 4) for c in content),
+        )
+    except Exception as e:
+        _logger.warning("Error in _stage_concept_walk: %s", e)
+        return None
+
+
+_WALK_MESSAGE_CHARS = 1200
 
 
 async def _stage_observations(db, query: str, config: dict) -> Optional[BundleSection]:

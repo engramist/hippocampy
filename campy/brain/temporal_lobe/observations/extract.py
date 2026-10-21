@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from campy.brain.hippocampus import observations as obs
+from campy.brain.hippocampus.concept_links import concept_index, graph_linking_enabled, link_observation_concepts
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.temporal_lobe.observations.timeparse import normalize_time
@@ -282,6 +283,8 @@ async def process_turn(
     if named:
         speaker_id = await find_existing_concept(gw, " ".join(speaker.split()))
 
+    linking = graph_linking_enabled(config)
+    link_index: dict[str, list[str]] | None = None
     writes = obs.WriteStats()
     for p in proposals:
         draft = await _draft_from_proposal(gw, p, message_id, text, speaker, named, speaker_id, occurred_at, stats)
@@ -292,7 +295,20 @@ async def process_turn(
             draft.embedding = await asyncio.to_thread(emb.embed, draft.text_raw, model_name=embedding_model)
         except Exception:
             draft.embedding = None   # still a valid Observation; just not vector-indexed
-        writes.record(await obs.record_observation(db, draft))
+        result = await obs.record_observation(db, draft)
+        writes.record(result)
+        if linking and result.ok and result.observation_id:
+            # B503: link the claim (and its turn) to the Concepts its words name
+            try:
+                if link_index is None:
+                    link_index = await concept_index(gw)
+                await link_observation_concepts(
+                    gw, result.observation_id, message_id,
+                    subject_text=draft.subject_text, predicate=draft.predicate,
+                    object_text=draft.object_text, event_text=draft.event_text,
+                    subject_id=draft.subject_id, object_id=draft.object_id, index=link_index)
+            except Exception:
+                _logger.warning("[GraphLinking] observation link failed msg=%s", message_id[:8], exc_info=True)
 
     stats.merge_write(writes)
     return writes.created

@@ -99,6 +99,7 @@ an error that names the variable. The full table is
 | `CAMPY_IAM_DEFAULT_SCOPES_JSON` | scopes for callers without a scope-map entry | `["memory.read","memory.write"]` if unset |
 | `CAMPY_OBSERVATIONS_ENABLED` | `[observations].enabled` | unset (off); `1` enables B472 Phase 3b Observations, one extra LLM call per user turn |
 | `CAMPY_OBSERVATIONS_RETRIEVAL` | `[observations].retrieval` | unset (off); `1` makes the bundle's semantic section carry matching Observations (B472 Phase 3c) |
+| `CAMPY_GRAPH_LINKING` | `[retrieval].graph_linking` | unset (off); `1` links user turns and Observations to the Concepts they name and adds a `linked` bundle section found by walking those links (B503) |
 
 `CAMPY_HOME` sets where all state lives.
 

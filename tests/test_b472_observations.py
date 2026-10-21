@@ -151,7 +151,7 @@ def test_edges_are_declared_and_classified_plain():
     assert props["OBSERVATION_ABOUT"] == set() and props["EVIDENCED_BY"] == set()
     assert classify_edge("OBSERVATION_ABOUT") == "plain"
     assert classify_edge("EVIDENCED_BY") == "plain"
-    assert Counter(EDGE_REIFICATION.values())["plain"] == 54
+    assert Counter(EDGE_REIFICATION.values())["plain"] == 56
     assert "FROM Observation TO Observation" in ddl["DEPRECATED_BY"]
 
 

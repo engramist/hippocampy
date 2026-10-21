@@ -1449,6 +1449,12 @@ REL_TABLES = [
     # ABOUT would be too generic a name for the RDF predicate namespace.
     "CREATE REL TABLE IF NOT EXISTS OBSERVATION_ABOUT (FROM Observation TO Concept)",
     "CREATE REL TABLE IF NOT EXISTS EVIDENCED_BY (FROM Observation TO Message)",
+    # B503: graph linking (flag CAMPY_GRAPH_LINKING). MENTIONS: a user Message
+    # names a Concept (rule match, never a model). IS_A: Concept -> category
+    # Concept, written only from an is_a Observation whose subject and object
+    # both resolved to Concepts. Both property-free.
+    "CREATE REL TABLE IF NOT EXISTS MENTIONS (FROM Message TO Concept)",
+    "CREATE REL TABLE IF NOT EXISTS IS_A (FROM Concept TO Concept)",
     # Ontology routing (core IP — Shape-First Principle)
     "CREATE REL TABLE IF NOT EXISTS ROUTES_TO (FROM GistClass TO SchemaOrgType)",
     # SKOS labels
