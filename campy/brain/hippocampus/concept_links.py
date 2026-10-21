@@ -28,13 +28,10 @@ Everything is gated by `[retrieval] graph_linking` / `CAMPY_GRAPH_LINKING`
 
 from __future__ import annotations
 
-import logging
 import re
 from typing import Any, Iterable
 
 from campy.brain.hippocampus.graph.gateway import get_gateway
-
-_logger = logging.getLogger(__name__)
 
 DEFAULT_WALK_LIMIT = 12
 MAX_SPAN_WORDS = 3
