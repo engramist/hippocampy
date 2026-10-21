@@ -823,6 +823,59 @@ def _conversation_neighbour_cap(config: dict) -> int:
         return DEFAULT_CONVERSATION_NEIGHBOUR_CAP
 
 
+def _gather_enabled(config: dict) -> bool:
+    """B502: `[retrieval] gather` (absent = off; env `CAMPY_RETRIEVAL_GATHER=1` turns it on)."""
+    return bool((config.get("retrieval", {}) or {}).get("gather", False))
+
+
+def _gather_limit(config: dict) -> int:
+    """B502: `[retrieval] gather_limit` (absent = 8): most extra turns the gather adds."""
+    try:
+        return max(0, int((config.get("retrieval", {}) or {}).get("gather_limit", 8)))
+    except (TypeError, ValueError):
+        return 8
+
+
+def _gather_per_session(config: dict) -> int:
+    """B502: `[retrieval] gather_per_session` (absent = 2): most gathered turns from one session."""
+    try:
+        return max(1, int((config.get("retrieval", {}) or {}).get("gather_per_session", 2)))
+    except (TypeError, ValueError):
+        return 2
+
+
+async def _gather_extra_turns(db, query: str, config: dict, query_embedding, rows: list, order: str) -> list:
+    """B502: add the gathered turns (gateway `thalamus.bundle_gather`) the
+    conversation stage did not already return, keeping the stage's order.
+    Fail-soft: any error leaves `rows` as they were."""
+    limit = _gather_limit(config)
+    if limit <= 0:
+        return rows
+    try:
+        have = {str(r.get("node_id")) for r in rows if isinstance(r, dict)}
+        have_text = {" ".join(str(r.get("text") or "").lower().split()) for r in rows if isinstance(r, dict)}
+        extra = await get_gateway(db).run(
+            "thalamus.bundle_gather", query_embedding=query_embedding, query_text=query,
+            limit=limit + len(have), per_session=_gather_per_session(config),
+        )
+        fresh = []
+        for r in (extra or []):
+            text_key = " ".join(str(r.get("text") or "").lower().split())
+            if str(r.get("node_id")) in have or text_key in have_text:
+                continue
+            have_text.add(text_key)
+            fresh.append(r)
+        if not fresh:
+            return rows
+        merged = list(rows) + fresh[:limit]
+        if order == "time":
+            merged.sort(key=lambda r: str(r.get("created_at") or ""))
+        return merged
+    except Exception:
+        _logger.debug("_gather_extra_turns failed", exc_info=True)
+        return rows
+
+
 async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSection]:
     """B454: relevant user statements from the raw conversation (see
     GraphGateway._bundle_conversation). Disabled with
@@ -872,6 +925,10 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
                 "thalamus.bundle_conversation",
                 query_embedding=query_embedding, query_text=query, limit=limit, order=order,
             )
+        full_history = bool(rows and budget > 0 and all(
+            (r.get("full_history") if isinstance(r, dict) else False) for r in (rows or [])))
+        if _gather_enabled(config) and not full_history:
+            rows = await _gather_extra_turns(db, query, config, query_embedding, rows or [], order)
         content, node_ids = [], []
         for r in (rows or []):
             get = r.get if isinstance(r, dict) else (lambda k, d=None: d)
@@ -891,8 +948,7 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
             section_type="conversation", content=content,
             token_estimate=sum(max(1, len(c["text"]) // 4) for c in content),
             source_node_ids=node_ids, order=order,
-            full_history=bool(budget > 0 and all(
-                (r.get("full_history") if isinstance(r, dict) else False) for r in (rows or []))),
+            full_history=full_history,
         )
     except Exception as e:
         _logger.warning("Error in _stage_conversation: %s", e)

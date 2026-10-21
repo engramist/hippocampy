@@ -366,6 +366,33 @@ def conversation_turn_tokens(speaker: Any, created: Any, text: str) -> int:
 _BAD_ORDER_WARNED: set[str] = set()
 
 
+# B502: a turn that ends in "?" is not automatically a question. "I just got a
+# kit at a show last weekend. Any painting tips?" states a fact and asks for
+# help. A turn states something when one of its sentences is not interrogative
+# and speaks of the speaker (first person).
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+_SELF_REFERENCE_RE = re.compile(r"(?<!\w)(i|i'm|i've|i'd|i'll|me|my|mine|myself|we|we're|we've|our)(?!\w)",
+                                re.IGNORECASE)
+
+
+def turn_states_something(text: str) -> bool:
+    return any(not sent.rstrip().endswith("?") and _SELF_REFERENCE_RE.search(sent)
+               for sent in _SENTENCE_SPLIT_RE.split(str(text or "").strip()))
+
+
+def light_stem(word: str) -> str:
+    """Plural / -ing / -ed folded, so "kits" meets "kit" and "camping" meets
+    "camp". Deliberately crude: it only has to make two forms of one word equal."""
+    for suffix in ("ing", "ed", "es", "s"):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            return word[: -len(suffix)]
+    return word
+
+
+def _stem_variants(stem: str) -> list[str]:
+    return [stem, stem + "s", stem + "es", stem + "ing", stem + "ed", stem + "e", stem + "d"]
+
+
 def _warn_once_bad_conversation_order(value: str) -> None:
     if value not in _BAD_ORDER_WARNED:
         _BAD_ORDER_WARNED.add(value)
@@ -1412,6 +1439,115 @@ class GraphGateway:
             for _, v in picked
         ]
 
+    def _bundle_gather(self, params: dict[str, Any]) -> list[Any]:
+        """B502: a second chance for the user turns the conversation stage
+        drops, so an answer spread over several sessions is not cut to the
+        few turns that cleared the stage's gates.
+
+        Measured on LongMemEval multi-session (R61): the missing evidence turns
+        were never candidates. Each was under the 0.30 similarity floor and a
+        lexical-only hit needs two exact query words ("kits" is not "kit"), or
+        it was dropped by the stage's "ends in ?" question test although it
+        states a fact. The pool was smaller than `limit`, so nothing was cut
+        for lack of room.
+
+        Candidates are the user turns found by (a) the question's content words
+        matched up to light stemming, each distinct anchor word weighted by how
+        rare it is in the store, requiring two distinct anchors (or the only
+        one), and (b) the vector plane (>= 0.30). The two lists are fused by
+        reciprocal rank. A turn is dropped when it is archived, an echo of the
+        question, or states nothing (`turn_states_something`). At most
+        `per_session` turns per session survive, so one chatty session cannot
+        fill the section; up to `limit` rows are returned, oldest first."""
+        import math
+
+        from campy.brain.hippocampus.graph.vector_store import fts_content_terms
+
+        vs = self._vector_store
+        limit = int(params.get("limit", 8))
+        per_session = max(1, int(params.get("per_session", 2)))
+        qtext = (params.get("query_text") or "").strip()
+        if limit <= 0 or not qtext:
+            return []
+        prefixes = (f"{CID_BASE}Message/", f"{DATA_BASE}Message/")
+        total = max(1, vs.count_documents(prefixes))
+        words = lambda t: re.findall(r"[^\W_]+", str(t).lower())
+        norm = lambda t: " ".join(str(t).lower().split())
+
+        stems: dict[str, None] = {}
+        for term in fts_content_terms(qtext):
+            stems.setdefault(light_stem(term), None)
+        variants = [v for st in stems for v in _stem_variants(st)]
+        lex_hits = [uri for uri, _ in vs.search_text(" ".join(variants), k=2000)
+                    if uri.startswith(prefixes)]
+        vec_hits = [uri for uri, score in vs.search_vectors(
+            params["query_embedding"], k=_typed_search_k(limit * 20), min_score=0.30)
+            if uri.startswith(prefixes) and score < 0.985]
+        candidates = list(dict.fromkeys(lex_hits + vec_hits))
+        if not candidates:
+            return []
+        rows = self._hydrate_messages(candidates)
+        word_stems = {str(r["s"]): {light_stem(w) for w in words(r.get("text") or "")} for r in rows}
+        df = {st: sum(1 for ws in word_stems.values() if st in ws) for st in stems}
+        # an anchor is a query word that most turns do not contain
+        anchors = {st for st, n in df.items() if 0 < n <= 0.2 * total}
+        idf = {st: math.log(1.0 + total / df[st]) for st in anchors}
+        need = min(2, len(anchors))
+        lex_set = set(lex_hits)
+        lexical: dict[str, float] = {}
+        for r in rows:
+            uri = str(r["s"])
+            hit = anchors & word_stems[uri]
+            if anchors and len(hit) >= need and uri in lex_set:
+                lexical[uri] = sum(idf[st] for st in hit)
+        lex_rank = {u: i for i, u in enumerate(sorted(lexical, key=lambda u: -lexical[u]))}
+        vec_rank = {u: i for i, u in enumerate(vec_hits)}
+        fused = {u: (1.0 / (60 + lex_rank[u]) if u in lex_rank else 0.0)
+                 + (1.0 / (60 + vec_rank[u]) if u in vec_rank else 0.0) for u in candidates}
+
+        qnorm = norm(qtext)
+        eligible = []
+        for r in rows:
+            uri, text = str(r["s"]), str(r.get("text") or "").strip()
+            if (not text or bool(r.get("archived")) or r.get("role") != "user" or norm(text) == qnorm
+                    or fused.get(uri, 0.0) <= 0.0 or not turn_states_something(text)):
+                continue
+            eligible.append((fused[uri], uri, r, text))
+        eligible.sort(key=lambda x: -x[0])
+        sessions: dict[str, str] = {}
+        uris = [u for _, u, _, _ in eligible]
+        if uris:
+            for srow in self._client._execute_and_collect(f"""
+                SELECT ?m ?sess WHERE {{
+                    VALUES ?m {{ {" ".join(f"<{u}>" for u in uris)} }}
+                    ?m <https://campy.dev/ns#SENT_IN> ?sess .
+                }}"""):
+                sessions[str(srow["m"])] = str(srow["sess"])
+        seen_text: set[tuple[str, str]] = set()
+        per: dict[str, int] = {}
+        picked: list[tuple[str, dict, str]] = []
+        for _, uri, r, text in eligible:
+            key = (str(r.get("speaker") or ""), norm(text))
+            sess = sessions.get(uri, uri)
+            if key in seen_text or per.get(sess, 0) >= per_session:
+                continue
+            seen_text.add(key)
+            per[sess] = per.get(sess, 0) + 1
+            picked.append((uri, r, text))
+            if len(picked) >= limit:
+                break
+
+        def when(r: dict) -> str:
+            created = r.get("created")
+            return created.isoformat() if hasattr(created, "isoformat") else str(created or "")
+
+        picked.sort(key=lambda x: (when(x[1]), x[1].get("stored") or ""))
+        return [
+            RowDict({"text": text, "role": "user", "created_at": when(r), "speaker": r.get("speaker"),
+                     "node_id": uri, "node_type": "Message", "gathered": True})
+            for uri, r, text in picked
+        ]
+
     def _bundle_assistant_words(self, params: dict[str, Any]) -> list[Any]:
         """B471: what the ASSISTANT said on the topic, for a question about the
         assistant's own words ("which pasta shape did you suggest?").
@@ -1762,6 +1898,8 @@ class GraphGateway:
             return self._bundle_conversation_budget(params)
         if name == "thalamus.bundle_conversation_windows":
             return self._bundle_conversation_windows(params)
+        if name == "thalamus.bundle_gather":
+            return self._bundle_gather(params)
         if name == "thalamus.bundle_assistant_words":
             return self._bundle_assistant_words(params)
         if name == "thalamus.bundle_observations":
