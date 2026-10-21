@@ -17,6 +17,7 @@ import math
 import pytest
 
 from campy.brain.brainstem.config import _DEFAULT_CONFIG, apply_env_overrides
+from campy.brain.hippocampus import observation_keys as ok
 from campy.brain.hippocampus import observations as obs
 from campy.brain.hippocampus.graph import embeddings as embeddings_mod
 from campy.brain.hippocampus.graph.gateway import GraphGateway
@@ -142,6 +143,89 @@ async def test_subject_id_keys_the_subject(db, store, gw):
     a = await store.attr("city: Oslo", "2023-01-01", subject="Maya", subject_id="c-maya")
     b = await store.attr("city: Bergen", "2023-02-01", subject="Maya", subject_id="c-maya")
     assert (await store.row(a))["superseded_by"] == b
+
+
+# --- tolerant matching (pure rules) -----------------------------------------------------
+
+def _match(a, b):
+    return ok.same_attribute_new_value(ok.parse_attribute(a), ok.parse_attribute(b))
+
+
+@pytest.mark.parametrize("a,b", [
+    # name drift: reorder, filler words, plural, spelling
+    ("personal best 5K: 27:12", "5K personal best time: 25:50"),
+    ("favourite colour: blue", "my favorite colors: green"),
+    ("current job: nurse", "job: doctor"),
+    # one name a subset of the other with >= 2 shared tokens
+    ("personal best 5K: 27:12", "personal best time in a charity 5K run: 25:50"),
+    # a quantity phrase carries the attribute and the value
+    ("500 followers", "600 followers"),
+    ("currently on page 200", "on page 220"),
+    ("completed 30 videos", "{'attribute': 'completed', 'value': '20 videos'}"),
+    ("{'watched 5 MCU films': None}", "{'watched 12 films': None}"),
+    # a stringified mapping, whichever key names it uses
+    ("{'name': 'tripod options', 'value': 'Manfrotto'}", "{'attribute': 'tripod options', 'value': 'Gitzo'}"),
+    ('{"name": "job", "value": "nurse"}', "job: doctor"),
+])
+def test_tolerant_attribute_match(a, b):
+    assert _match(a, b) and _match(b, a)
+
+
+@pytest.mark.parametrize("a,b", [
+    ("favourite color: blue", "favourite food: pizza"),          # one shared token is not enough
+    ("personal best 5K: 27:12", "personal best 10K: 55:00"),     # same prefix, different attribute
+    ("job: nurse", "job: nurse"),                                 # same value: nothing to supersede
+    ("job: nurse", "jobs: 5 years"),                              # same name, different value kind
+    ("budget: $300", "budget: 300 people"),                       # money vs count
+    ("5-6 hours", "10-12 hours"),                                 # bare unit: no attribute name
+    ("{'name': '3 weeks'}", "{'name': 'cleaning supplies'}"),     # the old "{'name'" collision
+    ("{'name': 'daily tidying routine'}", "{'name': 'tidying routine', 'value': 'daily'}"),
+    ("pages read: 200", "movies watched: 12"),
+    ("500 followers", "3 books"),
+    ("no colon here", "no colon there"),
+])
+def test_attribute_false_positives_are_not_matched(a, b):
+    assert not _match(a, b)
+
+
+def test_subject_matching():
+    me = lambda t, sp="Alex", i=None: (i, t, sp)   # noqa: E731
+    assert ok.same_subject(me("I"), me("the user"))                     # first-person forms
+    assert ok.same_subject(me("my"), me("me"))
+    assert not ok.same_subject(me("I", "Alex"), me("I", "Bea"))         # another speaker
+    assert ok.same_subject(me("my sister"), me("sister"))               # determiner dropped
+    assert not ok.same_subject(me("my old lens"), me("my new lens"))
+    assert ok.same_subject(me("Maya", i="c1"), me("maya"))              # id-resolved vs text only
+    assert not ok.same_subject(me("Maya", i="c1"), me("Maya", i="c2"))  # two ids decide alone
+
+
+async def test_stringified_mapping_attributes_no_longer_collide(db, store):
+    a = await store.attr("{'name': 'daily tidying routine'}", "2023-06-11")
+    b = await store.attr("{'name': '3 weeks'}", "2023-06-11")
+    c = await store.attr("{'name': 'tidying routine', 'value': 'daily'}", "2023-09-30")
+    for oid in (a, b, c):
+        assert not (await store.row(oid)).get("superseded_by")
+    assert await _edges(db) == []
+
+
+async def test_quantity_phrase_is_superseded_end_to_end(db, store):
+    old = await store.attr("500 followers", "2023-05-21")
+    new = await store.attr("600 followers", "2023-05-25")
+    assert (await store.row(old))["superseded_by"] == new
+
+
+async def test_first_person_forms_and_id_vs_text_subject_supersede(db, store, gw):
+    await gw.run("temporal_lobe.dict_create_concept", cid="c-maya", text="Maya", emb=_vec(0.0, 300),
+                 gist="Agent", stype="Person", now=__import__("datetime").datetime(2023, 1, 1))
+    a = await store.attr("city: Oslo", "2023-01-01", subject="the user")
+    b = await store.attr("city: Bergen", "2023-02-01", subject="I")
+    assert (await store.row(a))["superseded_by"] == b
+    c = await store.attr("job: nurse", "2023-01-01", subject="my sister")
+    d = await store.attr("job: doctor", "2023-02-01", subject="sister")
+    assert (await store.row(c))["superseded_by"] == d
+    e = await store.attr("city: Oslo", "2023-01-01", subject="Maya")
+    f = await store.attr("city: Bergen", "2023-02-01", subject="Maya", subject_id="c-maya")
+    assert (await store.row(e))["superseded_by"] == f
 
 
 async def test_flag_off_changes_nothing(db, store):

@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from campy.brain.hippocampus import observation_keys as ok
 from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.hippocampus.provenance import content_hash
 
@@ -414,30 +415,7 @@ async def record_observation(
 
 
 # --- B499: rule-based supersession of attribute Observations ------------------------
-
-def _split_attribute(object_text: str | None) -> tuple[str, str] | None:
-    """`"personal best 5K: 27:12"` -> (`"personal best 5k"`, `"27:12"`): the
-    attribute name (case-folded, whitespace collapsed) and the value, split at the
-    FIRST colon. None when there is no name or no value (such an Observation is
-    never superseded and never supersedes: there is nothing to key on)."""
-    if ":" not in (object_text or ""):
-        return None
-    name, value = object_text.split(":", 1)
-    name, value = _norm_key(name), _norm_key(value)
-    return (name, value) if name and value else None
-
-
-def _subject_key(subject_id: str | None, subject_text: str | None, speaker: str | None) -> str:
-    """Who the claim is about. A resolved Concept id wins; otherwise the subject
-    text, except that a first-person subject ("I", "the user") is keyed by speaker
-    so two speakers' "I" never collide."""
-    if subject_id:
-        return f"id:{subject_id}"
-    text = _norm_key(subject_text)
-    if text in _FIRST_PERSON or text == _UNKNOWN_SPEAKER_SUBJECT:
-        return f"self:{_norm_key(speaker)}"
-    return f"text:{text}"
-
+# The matching rules (attribute key, value type, subject) live in `observation_keys`.
 
 def _when(row: dict) -> tuple[datetime, datetime]:
     """Sort key (event time, then write time) as aware UTC datetimes."""
@@ -454,36 +432,37 @@ def _when(row: dict) -> tuple[datetime, datetime]:
 async def _supersede_attributes(gw: Any, oid: str, draft: ObservationDraft, msg: dict, now: datetime) -> None:
     """Link a new attribute Observation into the supersession chain. Pure rules, no model.
 
-    Candidates: live, asserted `has_attribute` Observations with the same subject
-    key and the same normalised attribute name, and a different normalised value.
+    Candidates: live, asserted `has_attribute` Observations about the same subject
+    (`observation_keys.same_subject`: a resolved id, else the text with first-person
+    forms keyed by speaker) that name the same attribute (`same_attribute_new_value`:
+    tolerant token match plus a value-type check) with a different value.
     Against each, the one with the earlier `observed_at` (ties: `created_at`) is
     marked superseded (`superseded_by`, `superseded_at` = the newer one's event
     time, reason `replaced`) and gets a `DEPRECATED_BY` edge to the newer one.
     So an out-of-order ingest marks the NEW row superseded instead. Nothing is
     deleted: both rows stay in the graph."""
-    parsed = _split_attribute(draft.object_text)
-    if parsed is None:
+    mine_key = ok.parse_attribute(draft.object_text)
+    if mine_key is None:
         return
-    name, value = parsed
     speaker = draft.speaker or msg.get("speaker")
-    key = _subject_key(draft.subject_id, draft.subject_text, speaker)
+    me_subject = (draft.subject_id, draft.subject_text, speaker)
+    rows: dict[str, dict] = {}
     if draft.subject_id:
-        rows = await gw.run("observations.live_attributes_by_subject_id", sid=draft.subject_id)
-    else:
-        rows = await gw.run("observations.live_attributes_by_subject_text", stext=draft.subject_text.strip())
+        for r in await gw.run("observations.live_attributes_by_subject_id", sid=draft.subject_id):
+            rows[dict(r).get("observation_id")] = dict(r)
+    for variant in ok.subject_text_variants(draft.subject_text):
+        for r in await gw.run("observations.live_attributes_by_subject_text", stext=variant):
+            rows[dict(r).get("observation_id")] = dict(r)
     me = await gw.run("observations.get_observation", oid=oid)
     if not me:
         return
     mine = dict(me[0])
-    for r in rows:
-        row = dict(r)
-        other = row.get("observation_id")
+    for other, row in rows.items():
         if not other or other == oid:
             continue
-        if _subject_key(row.get("subject_id"), row.get("subject_text"), row.get("speaker")) != key:
+        if not ok.same_subject(me_subject, (row.get("subject_id"), row.get("subject_text"), row.get("speaker"))):
             continue
-        theirs = _split_attribute(row.get("object_text"))
-        if theirs is None or theirs[0] != name or theirs[1] == value:
+        if not ok.same_attribute_new_value(mine_key, ok.parse_attribute(row.get("object_text"))):
             continue
         old, new = (row, mine) if _when(row) <= _when(mine) else (mine, row)
         if old is mine and mine.get("superseded_by"):
