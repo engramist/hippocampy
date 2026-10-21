@@ -44,3 +44,16 @@ gap is in answering, not retrieval. Campy-only wins: 4; naive_rag-only wins: 6.
 n=30 is small (±9 points); this is a position check, not a gate. It says
 the same thing the LoCoMo gates say: retrieval is level with a plain
 baseline, and the answer step throws away evidence it already has.
+
+## Correction (same day): retrieval, not answering; and text mode
+
+The "answer step throws away evidence" reading above was wrong. Of Campy's 20 wrong
+answers, 9 had no evidence in context and 5 had only part of it; only 6 had all of it.
+Equal average recall hid different profiles by type (Campy lower on knowledge-update
+and preference, higher on single-session and multi-session).
+
+R61 also ran with the harness default `--turn-metadata text`, which writes the date
+into the turn text and passes no `occurred_at`; Campy then stamps every memory with
+the ingest date (2026-10-20) and resolves "May 6th" to 2026. Hippocampy handles
+`occurred_at` correctly (B498); the harness default is now `fields`. Re-measure in
+fields mode before comparing (R71 onwards).
