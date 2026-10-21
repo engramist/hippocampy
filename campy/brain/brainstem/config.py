@@ -23,6 +23,10 @@ _DEFAULT_CONFIG = {
         # retrieval (1-2 hops); graph_linking_limit caps the walk's items.
         "graph_linking": False,
         "graph_linking_limit": 12,
+        # B505 (default off; env CAMPY_ANSWER_AGGREGATE=1): a question that asks for a count or
+        # a total gets a rule-computed list/sum of the matching items as an `aggregate` bundle
+        # section; the answer prompt then uses it instead of recounting.
+        "answer_aggregate": False,
         # B375: exposes warm_frontier.py's previously-hardcoded module
         # constants. Values match those prior hardcoded defaults exactly,
         # so an absent/partial [retrieval.warm_frontier] section changes
@@ -217,6 +221,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_OBSERVATIONS_ENTITIES": ("observations", "entities", _parse_bool),
     # B503: link user turns / Observations to Concepts and walk the links at retrieval.
     "CAMPY_GRAPH_LINKING": ("retrieval", "graph_linking", _parse_bool),
+    # B505: rule-computed counts and sums for aggregation questions.
+    "CAMPY_ANSWER_AGGREGATE": ("retrieval", "answer_aggregate", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
     "CAMPY_LLM_MODEL": ("llm", "model", str.strip),
     "CAMPY_LLM_REGION": ("llm", "region", str.strip),

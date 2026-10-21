@@ -100,6 +100,8 @@ an error that names the variable. The full table is
 | `CAMPY_OBSERVATIONS_ENABLED` | `[observations].enabled` | unset (off); `1` enables B472 Phase 3b Observations, one extra LLM call per user turn |
 | `CAMPY_OBSERVATIONS_RETRIEVAL` | `[observations].retrieval` | unset (off); `1` makes the bundle's semantic section carry matching Observations (B472 Phase 3c) |
 | `CAMPY_GRAPH_LINKING` | `[retrieval].graph_linking` | unset (off); `1` links user turns and Observations to the Concepts they name and adds a `linked` bundle section found by walking those links (B503) |
+| `CAMPY_OBSERVATIONS_ENTITIES` | `[observations].entities` | unset (off); `1` makes extraction emit object entities and kinds as Concepts with `IS_A` / `MENTIONS` edges (B504) |
+| `CAMPY_ANSWER_AGGREGATE` | `[retrieval].answer_aggregate` | unset (off); `1` adds an `aggregate` bundle section with a rule-computed count and sum for "how many / how much / total" questions; needs `CAMPY_GRAPH_LINKING=1` and `CAMPY_OBSERVATIONS_ENTITIES=1` to have items to count (B505) |
 
 `CAMPY_HOME` sets where all state lives.
 

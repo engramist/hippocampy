@@ -1671,6 +1671,16 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                     "deduplicated, capped, ordered by event time",
         # No sparql= -- Python handler in GraphGateway._bundle_concept_walk.
     ),
+    NamedQuery(
+        name="thalamus.bundle_aggregate_items",
+        cypher="MATCH (c:Concept)-[:IS_A]->(k:Concept) RETURN c.concept_id as node_id LIMIT 1",
+        params=("concept_ids",),
+        mutating=False,
+        description="B505: the first candidate kind Concept that has IS_A members, and the distinct member "
+                    "Concepts (direct, or through a sub-kind) with live user evidence: asserted Observations "
+                    "about them or user Messages that mention them",
+        # No sparql= -- Python handler in GraphGateway._bundle_aggregate_items.
+    ),
     # Concept
     NamedQuery(
         name="thalamus.bundle_semantic_concept",

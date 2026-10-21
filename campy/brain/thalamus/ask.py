@@ -98,6 +98,8 @@ _SECTION_DESCRIPTIONS: dict[str, str] = {
     "linked": "what the user said or claimed about the topics this question names, found through the "
               "graph (turns and claims that mention the same things or related kinds of thing), oldest first, "
               "each stamped with its date — later dates supersede earlier ones",
+    "aggregate": "a list of the items of one kind found in memory with a count, and for amounts a sum, "
+                 "computed by rule (not by a model) from the user's own statements",
     "assistant_said": "what the assistant (you) said earlier on this, oldest first — your own past words, quoted to answer a question about them; they are not facts the user stated",
     "graph": "graph relationships connecting the entities above",
     "tabular": "structured tabular data",
@@ -150,6 +152,16 @@ _ANSWER_INSTRUCTION_CITE = (
     "Answer only from the lines below. Give a short answer, then quote the "
     "line you used. If no line answers the question, say you don't have "
     "that information."
+)
+
+
+# B505: only when an `aggregate` section is present (flag CAMPY_ANSWER_AGGREGATE).
+_AGGREGATE_INSTRUCTION = (
+    "The [aggregate] section holds a count and any sum computed by rule from memory. "
+    "Use its Count and Sum as given instead of counting or adding yourself. Leave out a "
+    "listed item only if its quoted words show it falls outside the question's limits "
+    "(place, date), say which, and adjust by that item's listed amount. "
+    "Say the figure may be incomplete."
 )
 
 
@@ -218,12 +230,14 @@ def _bundle_to_prompt(bundle, query: str, config: Optional[dict] = None) -> str:
         parts.append(f"[{section_type}: {description}]\n" + "\n\n".join(rendered_items))
 
     if has_content:
-        parts.insert(
-            1,
+        instruction = (
             _ANSWER_INSTRUCTION_LEGACY
             if _answer_style(config) == "legacy"
-            else _ANSWER_INSTRUCTION_CITE,
+            else _ANSWER_INSTRUCTION_CITE
         )
+        if any(s.section_type == "aggregate" and s.content for s in bundle.sections):
+            instruction += " " + _AGGREGATE_INSTRUCTION
+        parts.insert(1, instruction)
     else:
         # B305: the bundle can now come back genuinely empty (relevance floor
         # filtered everything out) — tell the model plainly instead of letting
