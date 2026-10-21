@@ -32,15 +32,23 @@ _Last updated: 2026-10-20 17:15 UTC_
 - **On main (`8c38d23`):** B482 token budget; B487 neighbours **N=2** (#333);
   Observations on (#331); B494 output cap 2048. Cat 1–4: neighbours up on 4/4
   conversations, observations a further +3.9 pooled (4/4), N=2 vs N=1 42/26.
-- **Open:** #326 B489 verify (secondary). #318 closed for good (R68).
-- **R61 LongMemEval s (30 questions, main `8c38d23`, observations on):**
-  Campy 0.333 (10/30), naive_rag 0.400 (12/30), no_memory 0.167 (5/30).
-  Campy wins temporal reasoning (2/4 vs 0/4); loses on over-abstention with
-  the evidence in context (recall 1.0, answer "I don't have that") and on
-  knowledge-update picking the older value. See
-  `2026-10-21-r61-longmemeval-s.md`.
-- **GPU queue:** R70 #310 select-then-answer → R65 B489 verify (both target
-  the over-abstention R61 found).
+- **Open:** #326 B489 verify (secondary). #318 closed (R68). #310 select-then-answer
+  closed (R70: pooled 46/45, 2 of 4 conversations up — no pass).
+- **R61 LongMemEval s (30 q):** Campy 0.333, naive_rag 0.400, no_memory 0.167 —
+  but it ran in the harness's old default **text mode**, so every memory carried the
+  ingest date, not the session date. Not comparable to fields-mode numbers. Of
+  Campy's 20 wrong answers, 14 lacked evidence (9 none, 5 partial): mostly a
+  **retrieval/structure** gap, not the answer step. Campy recall < naive_rag on
+  knowledge-update (0.53 vs 0.83) and preference (0.25 vs 0.75).
+- **Structure plan (owner, 2026-10-21), one lever per PR:**
+  1. Event time — done: hippocampy already uses the source turn's date when given
+     `occurred_at` (B498 tests, #341); harness default is now `fields` (cb #43).
+  2. Event time everywhere — covered (only never-rendered Concepts carry capture time).
+  3. Knowledge-update supersession — B499 #343 (flag off), gate R71 vs R72.
+  4. Preferences reachable through the graph — B501, in progress.
+  5. Multi-session aggregation (0/4 for every system) — next.
+- **GPU queue:** R71 LME oracle knowledge-update 40q fields on main → R72 same with
+  B499 on → R65 B489 verify.
   Parked: R69 fresh-ingest LoCoMo on unseen conversations (needs the owner's go).
 - **Process:** principles + drift controls in `AGENTS.md` (B495); daily
   `scripts/drift_report.py`.
@@ -90,7 +98,7 @@ None.
 | LoCoMo-10 dev (60, all categories), main with cite prompt, replay | 0.350 (adversarial 3/12) | R33/R37 |
 | LoCoMo-10 conv-26 (judge accuracy, cat 1–4) | 0.396 | R24a, `9c5c9d8` |
 | LongMemEval oracle (35) | 0.600 | R20b, `402c96c` |
-| LongMemEval s (30), naive_rag 0.400, no_memory 0.167 | 0.333 | R61, `8c38d23` |
+| LongMemEval s (30), text mode (ingest dates), naive_rag 0.400 | 0.333 | R61, `8c38d23` |
 | Fixture | 28/28, 0 INVERTED | R23c |
 
 Replay numbers count all questions in the file (LoCoMo-10 includes
