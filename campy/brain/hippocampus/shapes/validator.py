@@ -210,7 +210,7 @@ def owl_project(data_graph: Any) -> Any:
                                                     campy:slotValue for every live value: SHACL
                                                     maxCount 1 on it is "one live value"
     """
-    from hashlib import sha1
+    from hashlib import sha256
     from urllib.parse import quote
 
     from rdflib import Literal, Namespace, URIRef
@@ -249,7 +249,7 @@ def owl_project(data_graph: Any) -> Any:
             g.add((subj, RDF.type, campy.AttributeSubject))
             g.add((subj, p, value))
             if p in functional:
-                slot = URIRef(SLOT_BASE + sha1(f"{subj}|{p}".encode()).hexdigest()[:20])
+                slot = URIRef(SLOT_BASE + sha256(f"{subj}|{p}".encode()).hexdigest()[:20])
                 g.add((slot, RDF.type, campy.FunctionalSlot))
                 g.add((slot, campy.slotSubject, subj))
                 g.add((slot, campy.slotProperty, p))
