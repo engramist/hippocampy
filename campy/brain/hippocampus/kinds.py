@@ -58,7 +58,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from campy.brain.hippocampus.concept_links import KIND_SCHEME, alt_label_index, norm_key  # noqa: F401 (alt_label_index re-exported)
+from campy.brain.hippocampus.concept_links import KIND_SCHEME, norm_key
 
 _logger = logging.getLogger(__name__)
 
