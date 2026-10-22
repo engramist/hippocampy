@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from campy.brain.hippocampus import observation_keys as ok
 from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.hippocampus.provenance import content_hash
 
@@ -122,6 +123,13 @@ def shacl_gate_enabled(config: dict | None) -> bool:
     shapes (hippocampus/shapes/campy_shapes.ttl) before writing and rejects a
     non-conforming one as `shacl_violation`. Off: the writer is unchanged."""
     return bool(((config or {}).get("observations") or {}).get("shacl_gate", False))
+
+
+def observations_supersede_enabled(config: dict | None) -> bool:
+    """`[observations] supersede` (default FALSE; env `CAMPY_OBSERVATIONS_SUPERSEDE=1` turns it on) (B499):
+    a newer asserted attribute Observation supersedes an older live one about the
+    same subject and attribute, and the bundle keeps the superseded one, marked."""
+    return bool(((config or {}).get("observations") or {}).get("supersede", False))
 
 
 def observation_limit(config: dict | None, default: int = 8) -> int:
@@ -329,6 +337,7 @@ async def record_observation(
     *,
     allowed_roles: frozenset[str] = EVIDENCE_ROLES,
     config: dict | None = None,
+    supersede: bool = False,
 ) -> WriteResult:
     """Validate `draft` against its evidence Message and write it.
 
@@ -347,6 +356,9 @@ async def record_observation(
 
     A draft matching a live Observation adds evidence to it instead (see the
     module docstring) and returns `status="duplicate"`.
+
+    `supersede` (B499, `[observations] supersede`, default off): after a
+    `created` asserted `has_attribute` Observation, apply `_supersede_attributes`.
     """
     reason = _validate_shape(draft)
     if reason:
@@ -434,6 +446,8 @@ async def record_observation(
     )
     await gw.run("observations.link_evidenced_by", oid=oid, mid=draft.evidence_ref)
     await _link_concepts(gw, oid, draft)
+    if supersede and draft.predicate == "has_attribute" and draft.polarity == "asserted":
+        await _supersede_attributes(gw, oid, draft, msg, now)
     return WriteResult("created", oid)
 
 
@@ -459,6 +473,67 @@ def _shacl_failures(
     }
     report = validator.validate_observation_candidate(fields, msg)
     return list(dict.fromkeys(f.key for f in validator.blocking(report)))
+
+
+# --- B499: rule-based supersession of attribute Observations ------------------------
+# The matching rules (attribute key, value type, subject) live in `observation_keys`.
+
+def _when(row: dict) -> tuple[datetime, datetime]:
+    """Sort key (event time, then write time) as aware UTC datetimes."""
+    floor = datetime.min.replace(tzinfo=timezone.utc)
+
+    def aware(v: Any) -> datetime | None:
+        d = _as_datetime(v)
+        return d if d is None or d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+    created = aware(row.get("created_at")) or floor
+    return aware(row.get("observed_at")) or created, created
+
+
+async def _supersede_attributes(gw: Any, oid: str, draft: ObservationDraft, msg: dict, now: datetime) -> None:
+    """Link a new attribute Observation into the supersession chain. Pure rules, no model.
+
+    Candidates: live, asserted `has_attribute` Observations about the same subject
+    (`observation_keys.same_subject`: a resolved id, else the text with first-person
+    forms keyed by speaker) that name the same attribute (`same_attribute_new_value`:
+    tolerant token match plus a value-type check) with a different value.
+    Against each, the one with the earlier `observed_at` (ties: `created_at`) is
+    marked superseded (`superseded_by`, `superseded_at` = the newer one's event
+    time, reason `replaced`) and gets a `DEPRECATED_BY` edge to the newer one.
+    So an out-of-order ingest marks the NEW row superseded instead. Nothing is
+    deleted: both rows stay in the graph."""
+    mine_key = ok.parse_attribute(draft.object_text)
+    if mine_key is None:
+        return
+    speaker = draft.speaker or msg.get("speaker")
+    me_subject = (draft.subject_id, draft.subject_text, speaker)
+    rows: dict[str, dict] = {}
+    if draft.subject_id:
+        for r in await gw.run("observations.live_attributes_by_subject_id", sid=draft.subject_id):
+            rows[dict(r).get("observation_id")] = dict(r)
+    for variant in ok.subject_text_variants(draft.subject_text):
+        for r in await gw.run("observations.live_attributes_by_subject_text", stext=variant):
+            rows[dict(r).get("observation_id")] = dict(r)
+    me = await gw.run("observations.get_observation", oid=oid)
+    if not me:
+        return
+    mine = dict(me[0])
+    for other, row in rows.items():
+        if not other or other == oid:
+            continue
+        if not ok.same_subject(me_subject, (row.get("subject_id"), row.get("subject_text"), row.get("speaker"))):
+            continue
+        if not ok.same_attribute_new_value(mine_key, ok.parse_attribute(row.get("object_text"))):
+            continue
+        old, new = (row, mine) if _when(row) <= _when(mine) else (mine, row)
+        if old is mine and mine.get("superseded_by"):
+            continue              # already superseded by a newer live row
+        at = _as_datetime(new.get("observed_at")) or now
+        await gw.run("observations.mark_superseded", oid=old["observation_id"],
+                     by=new["observation_id"], at=at, reason="replaced")
+        await gw.run("observations.link_deprecated_by", oid=old["observation_id"], by=new["observation_id"])
+        if old is mine:
+            mine["superseded_by"] = new["observation_id"]
 
 
 async def _link_concepts(gw: Any, oid: str, draft: ObservationDraft) -> None:

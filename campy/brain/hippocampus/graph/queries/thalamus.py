@@ -1672,6 +1672,17 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                     "INSTANCE_OF / BROADER and descends the BROADER closure to every narrower kind and its instances",
         # No sparql= -- Python handler in GraphGateway._bundle_concept_walk.
     ),
+    NamedQuery(
+        name="thalamus.bundle_observations_history",
+        cypher="MATCH (o:Observation) WHERE o.archived = false "
+               "RETURN o.observation_id as observation_id, o.text_raw as text "
+               "ORDER BY o.created_at ASC LIMIT $limit",
+        params=("query_embedding", "query_text", "concept_ids", "limit"),
+        mutating=False,
+        description="B499: thalamus.bundle_observations that also returns superseded Observations "
+                    "(with superseded_by / superseded_at), for `[observations] supersede`",
+        # No sparql= -- Python handler in GraphGateway._bundle_observations.
+    ),
     # Concept
     NamedQuery(
         name="thalamus.bundle_semantic_concept",

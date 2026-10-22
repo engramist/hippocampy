@@ -390,7 +390,8 @@ async def process_turn(
             draft.embedding = await asyncio.to_thread(emb.embed, draft.text_raw, model_name=embedding_model)
         except Exception:
             draft.embedding = None   # still a valid Observation; just not vector-indexed
-        result = await obs.record_observation(db, draft, config=config)
+        result = await obs.record_observation(
+            db, draft, config=config, supersede=obs.observations_supersede_enabled(config))
         writes.record(result)
         if proposed_entity and result.ok and result.observation_id:
             # B504: the validated entity (and kind) become Concepts before B503 links by text,
