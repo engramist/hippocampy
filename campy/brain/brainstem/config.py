@@ -18,6 +18,9 @@ _DEFAULT_CONFIG = {
         "lexical_window_days": 14,
         "lexical_limit": 10,
         "timeline_limit": 200,
+        # B501: a user turn ending in "?" that also states something in the first
+        # person counts as evidence. Off until gated. CAMPY_RETRIEVAL_CONVERSATION_EMBEDDED_STATEMENTS=1.
+        "conversation_embedded_statements": False,
         # B375: exposes warm_frontier.py's previously-hardcoded module
         # constants. Values match those prior hardcoded defaults exactly,
         # so an absent/partial [retrieval.warm_frontier] section changes
@@ -69,20 +72,18 @@ _DEFAULT_CONFIG = {
     "loop": {
         "max_co_occurrence_pairs": 45,
     },
-    # B472 Phase 3: source-grounded Observations. OFF by default: with
-    # adversarial abstentions scored correctly (campy-benchmarks#41) the
-    # LoCoMo-10 gates are neutral (66 gained / 63 lost over four
-    # conversations; adversarial abstention 124 -> 112), and extraction costs
-    # one LLM call per user turn. CAMPY_OBSERVATIONS_ENABLED=1 /
-    # CAMPY_OBSERVATIONS_RETRIEVAL=1 turn them on.
+    # B472 Phase 3: source-grounded Observations. On by default
+    # (3c gate: LoCoMo-10 65 gained/39 lost p~0.014; shown only when the
+    # conversation section does not hold the whole history).
+    # CAMPY_OBSERVATIONS_ENABLED=0 / CAMPY_OBSERVATIONS_RETRIEVAL=0 turn off.
     "observations": {
-        "enabled": False,
+        "enabled": True,
         "llm_enabled": True,       # only read when enabled
         "llm_batch_turns": 20,     # reserved: 3b extracts per turn and does not read these two
         "idle_flush_seconds": 5,
         "max_turn_chars": 600,
         "queue_max": 5000,         # 3b: bounded worker queue; a full queue drops the newest, counted
-        "retrieval": False,        # 3c: feed the bundle's semantic section from Observations
+        "retrieval": True,         # 3c: feed the bundle's semantic section from Observations
         "observation_limit": 8,    # 3c: most Observations the semantic section carries
     },
     "compression": {
@@ -223,6 +224,7 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_RETRIEVAL_CONVERSATION_BUDGET_MODE": ("retrieval", "conversation_budget_mode", _parse_budget_mode),
     # B489: lets a benchmark harness switch the answer style via the environment.
     "CAMPY_ASK_ANSWER_STYLE": ("ask", "answer_style", _parse_answer_style),
+    "CAMPY_RETRIEVAL_CONVERSATION_EMBEDDED_STATEMENTS": ("retrieval", "conversation_embedded_statements", _parse_bool),
     "CAMPY_IAM_TENANT_ID": ("server", "iam_tenant_id", str.strip),
     "CAMPY_IAM_WORKSPACE_ID": ("server", "iam_workspace_id", str.strip),
     "CAMPY_IAM_WORKSPACE_MAP_JSON": ("server", "iam_workspace_map", _parse_json_str_map),

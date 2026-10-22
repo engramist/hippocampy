@@ -799,17 +799,25 @@ DEFAULT_CONVERSATION_NEIGHBOUR_CAP = 18
 
 
 # B487: on by default since the 2026-10-19 gate (LoCoMo categories 1-4, dev +
-# held-out pooled: 52 gained / 18 lost).
-DEFAULT_CONVERSATION_NEIGHBOURS = 1
+# held-out pooled: 52 gained / 18 lost); N=2 since R64/R67 (N=2 vs N=1 directly,
+# four conversations pooled: 42 gained / 26 lost).
+DEFAULT_CONVERSATION_NEIGHBOURS = 2
 
 
 def _conversation_neighbours(config: dict) -> int:
-    """B487: `[retrieval] conversation_neighbours` (absent = 1; 0 or invalid = off)."""
+    """B487: `[retrieval] conversation_neighbours` (absent = 2; 0 or invalid = off)."""
     try:
         return max(0, int((config.get("retrieval", {}) or {}).get(
             "conversation_neighbours", DEFAULT_CONVERSATION_NEIGHBOURS) or 0))
     except (TypeError, ValueError):
         return 0
+
+
+def _conversation_embedded_statements(config: dict) -> bool:
+    """B501: `[retrieval] conversation_embedded_statements` (absent = off). When on, a
+    user turn that ends in "?" but states something in the first person counts as
+    evidence (see `gateway.is_question_only`)."""
+    return bool((config.get("retrieval", {}) or {}).get("conversation_embedded_statements", False))
 
 
 def _conversation_neighbour_cap(config: dict) -> int:
@@ -852,24 +860,26 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
         # fixed-limit path; "fill": rank-fill to the budget.
         budget = _conversation_token_budget(config)
         neighbours = _conversation_neighbours(config)
+        # B501: passed only when on, so the default call is unchanged
+        extra = {"embedded_statements": True} if _conversation_embedded_statements(config) else {}
         if neighbours > 0:
             # B487: neighbour expansion (new query; the others are untouched)
             rows = await get_gateway(db).run(
                 "thalamus.bundle_conversation_windows",
                 query_embedding=query_embedding, query_text=query, limit=limit, order=order,
                 token_budget=budget, budget_mode=_conversation_budget_mode(config),
-                neighbours=neighbours, neighbour_cap=_conversation_neighbour_cap(config),
+                neighbours=neighbours, neighbour_cap=_conversation_neighbour_cap(config), **extra,
             )
         elif budget > 0:
             rows = await get_gateway(db).run(
                 "thalamus.bundle_conversation_budget",
                 query_embedding=query_embedding, query_text=query, limit=limit, order=order,
-                token_budget=budget, budget_mode=_conversation_budget_mode(config),
+                token_budget=budget, budget_mode=_conversation_budget_mode(config), **extra,
             )
         else:
             rows = await get_gateway(db).run(
                 "thalamus.bundle_conversation",
-                query_embedding=query_embedding, query_text=query, limit=limit, order=order,
+                query_embedding=query_embedding, query_text=query, limit=limit, order=order, **extra,
             )
         content, node_ids = [], []
         for r in (rows or []):

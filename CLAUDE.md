@@ -1,5 +1,9 @@
 # CLAUDE.md
 
+**Binding for all agents — the principles below are loaded into every session:**
+
+@PRINCIPLES.md
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Implementation Workflow

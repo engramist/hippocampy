@@ -1,5 +1,9 @@
 # HippoCampy Daemon — Project Context
 
+**Binding for all agents — the principles below are loaded into every session:**
+
+@PRINCIPLES.md
+
 ## Project Overview
 **HippoCampy Daemon** is a standalone local AI memory system designed to provide persistent, cross-assistant context for software engineering tasks. It uses a **Gated Consolidation Loop**—a 9-step cognitive processing engine modeled on biomimetic heuristics—to transform passive AI memory into a self-correcting, auditable knowledge graph.
 
