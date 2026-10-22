@@ -98,6 +98,7 @@ class ObservationWorkerStats:
     created: int = 0
     duplicate: int = 0
     rejected: dict[str, int] = field(default_factory=dict)
+    shacl_shapes: dict[str, int] = field(default_factory=dict)   # B507: failed shape -> count (gate on)
     linked_subject: int = 0
     linked_object: int = 0
     time_resolved: int = 0       # drafts whose time phrase resolved to a date range
@@ -106,9 +107,11 @@ class ObservationWorkerStats:
     errors: int = 0              # a turn that raised (logged, skipped)
 
     def as_details(self) -> dict[str, Any]:
-        d = {k: v for k, v in self.__dict__.items() if k != "rejected" and v}
+        d = {k: v for k, v in self.__dict__.items() if k not in ("rejected", "shacl_shapes") and v}
         if self.rejected:
             d["rejected"] = dict(self.rejected)
+        if self.shacl_shapes:
+            d["shacl_shapes"] = dict(self.shacl_shapes)
         return d
 
     def merge_write(self, ws: obs.WriteStats) -> None:
@@ -116,6 +119,8 @@ class ObservationWorkerStats:
         self.duplicate += ws.duplicate
         for reason, n in ws.rejected.items():
             self.rejected[reason] = self.rejected.get(reason, 0) + n
+        for shape, n in ws.shacl_shapes.items():
+            self.shacl_shapes[shape] = self.shacl_shapes.get(shape, 0) + n
 
 
 # --- prompt and parsing -----------------------------------------------------------
@@ -292,7 +297,7 @@ async def process_turn(
             draft.embedding = await asyncio.to_thread(emb.embed, draft.text_raw, model_name=embedding_model)
         except Exception:
             draft.embedding = None   # still a valid Observation; just not vector-indexed
-        writes.record(await obs.record_observation(db, draft))
+        writes.record(await obs.record_observation(db, draft, config=config))
 
     stats.merge_write(writes)
     return writes.created

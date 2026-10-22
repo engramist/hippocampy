@@ -378,6 +378,9 @@ def test_stats_details_are_counts_only():
     assert d == {"turns": 2, "created": 1, "rejected": {"quote_not_found": 1}}
     delta = bd._stats_delta(ex.ObservationWorkerStats(turns=1), s)
     assert delta == {"turns": 1, "created": 1, "rejected": {"quote_not_found": 1}}
+    s.shacl_shapes = {"object_text [X]": 2}                    # B507: the gate's failed shapes
+    assert s.as_details()["shacl_shapes"] == {"object_text [X]": 2}
+    assert bd._stats_delta(ex.ObservationWorkerStats(), s)["shacl_shapes"] == {"object_text [X]": 2}
 
 
 @pytest.mark.asyncio
