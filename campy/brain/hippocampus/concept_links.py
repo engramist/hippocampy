@@ -33,6 +33,8 @@ from typing import Any, Iterable
 
 from campy.brain.hippocampus.graph.gateway import get_gateway
 
+KIND_SCHEME = "kind"                      # value of Concept.kind_scheme (B508)
+
 DEFAULT_WALK_LIMIT = 12
 MAX_SPAN_WORDS = 3
 MAX_SPANS = 400                # spans considered per text
@@ -122,7 +124,6 @@ async def concept_index(gw: Any, *, alt_labels: bool = False) -> dict[str, list[
         if key:
             index.setdefault(key, []).append(str(row.get("concept_id")))
     if alt_labels:
-        from campy.brain.hippocampus.kinds import alt_label_index
         for key, ids in (await alt_label_index(gw)).items():
             for cid in ids:
                 if cid not in index.setdefault(key, []):
@@ -203,13 +204,14 @@ async def link_observation_concepts(
         parent = _whole_text_concept(idx, object_text, object_id)
         if child and parent and child != parent:
             if skos:
-                from campy.brain.hippocampus import kinds as kinds_mod
-                known = await kinds_mod.load_kinds(gw)
-                await kinds_mod.mark_kind(gw, parent)
+                # Direct queries, not campy.brain.hippocampus.kinds: kinds imports
+                # this module, so importing it back would be a cycle.
+                known = {str(r["concept_id"]) for r in await gw.run("kinds.live_kinds")}
+                await gw.run("kinds.mark_kind", cid=parent, scheme=KIND_SCHEME)
                 if child in known:
-                    await kinds_mod.link_broader(gw, child, parent)
+                    await gw.run("kinds.link_broader", cid=child, pid=parent)
                 else:
-                    await kinds_mod.link_instance_of(gw, child, parent)
+                    await gw.run("kinds.link_instance_of", cid=child, kid=parent)
             else:
                 await gw.run("concept_links.link_is_a", cid=child, pid=parent)
     return ids
@@ -239,3 +241,13 @@ async def link_existing(db: Any, *, skos: bool = False) -> dict[str, int]:
         stats["observations"] += 1
         stats["observation_links"] += len(ids)
     return stats
+
+
+async def alt_label_index(gw: Any) -> dict[str, list[str]]:
+    """norm_key -> kind ids, over the kinds' altLabels (question side: "model-kits" finds "model kit")."""
+    index: dict[str, list[str]] = {}
+    for r in await gw.run("kinds.kind_alt_labels"):
+        key = norm_key(r.get("alt"))
+        if key:
+            index.setdefault(key, []).append(str(r["concept_id"]))
+    return index
