@@ -1605,6 +1605,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                "RETURN m.text_raw as text, m.role as role, m.created_at as created_at "
                "ORDER BY m.created_at ASC LIMIT $limit",
         params=("query_embedding", "query_text", "limit", "order"),
+        optional_params=("embedded_statements",),
         mutating=False,
         description="B454: relevant user statements (vector + FTS fusion) as bundle evidence; "
                     "`order` is 'rank' (best first) or 'time' (oldest first) -- B474",
@@ -1617,6 +1618,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                "RETURN m.text_raw as text, m.role as role, m.created_at as created_at "
                "ORDER BY m.created_at ASC LIMIT $limit",
         params=("query_embedding", "query_text", "limit", "order", "token_budget", "budget_mode"),
+        optional_params=("embedded_statements",),
         mutating=False,
         description="B482: the conversation stage filled to a token budget: every eligible user turn "
                     "oldest first when they all fit, else (budget_mode 'fit_all') the fixed-limit path or "
@@ -1631,6 +1633,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                "ORDER BY m.created_at ASC LIMIT $limit",
         params=("query_embedding", "query_text", "limit", "order", "token_budget", "budget_mode",
                 "neighbours", "neighbour_cap"),
+        optional_params=("embedded_statements",),
         mutating=False,
         description="B487: the conversation stage plus up to `neighbours` same-session turns (either "
                     "speaker) before and after each matched turn, capped at `neighbour_cap` added "
