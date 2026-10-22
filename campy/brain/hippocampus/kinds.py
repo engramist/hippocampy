@@ -58,12 +58,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from campy.brain.hippocampus.concept_links import norm_key
+from campy.brain.hippocampus.concept_links import KIND_SCHEME, alt_label_index, norm_key  # noqa: F401 (alt_label_index re-exported)
 
 _logger = logging.getLogger(__name__)
 
 NS = "https://campy.dev/ns#"
-KIND_SCHEME = "kind"                      # value of Concept.kind_scheme
 KIND_SCHEME_IRI = NS + "KindScheme"
 DEFAULT_CLOSEMATCH_THRESHOLD = 0.90
 MAX_CLOSEMATCH_COMPARISONS = 300          # kinds compared per new kind (bounded work)
@@ -241,11 +240,3 @@ async def add_alt_label(gw: Any, kind: Kind, surface: str) -> bool:
     return True
 
 
-async def alt_label_index(gw: Any) -> dict[str, list[str]]:
-    """norm_key -> kind ids, over the kinds' altLabels (question side: "model-kits" finds "model kit")."""
-    index: dict[str, list[str]] = {}
-    for r in await gw.run("kinds.kind_alt_labels"):
-        key = norm_key(r.get("alt"))
-        if key:
-            index.setdefault(key, []).append(str(r["concept_id"]))
-    return index
