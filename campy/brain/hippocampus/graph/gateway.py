@@ -198,6 +198,10 @@ class NamedQuery:
               `KuzuClient.execute_read()`.
         description: one line — what question this query answers.
         sparql: provisional SPARQL 1.1 query string for pure-graph traversal queries (~90%).
+        optional_params: names a caller MAY pass in addition to `params` (B501: a
+              flag added to a query must not break its existing callers). Only
+              Python-handler queries use them; the handler reads them with
+              `params.get`.
 
     Explicit Handler Dispatch Boundary (B384 Storage Foundation):
     Not all queries have a 1:1 SPARQL string equivalent:
@@ -220,6 +224,7 @@ class NamedQuery:
     description: str
     sparql: str | None = None
     vector_index: "VectorIndexSpec | None" = None
+    optional_params: tuple[str, ...] = ()
 
     @property
     def doc(self) -> str:
@@ -371,6 +376,32 @@ def conversation_turn_tokens(speaker: Any, created: Any, text: str) -> int:
 _BAD_ORDER_WARNED: set[str] = set()
 
 
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
+_FIRST_PERSON_CUE_RE = re.compile(r"(?<!\w)(i|i'm|i've|i'd|i'll|me|my|mine|myself)(?!\w)", re.IGNORECASE)
+
+
+def is_question_only(text: str, *, embedded_statements: bool = False) -> bool:
+    """True when a user turn is a question and so is not evidence (B454).
+
+    A turn is a question when it ends in "?". With `embedded_statements`
+    (B501, `[retrieval] conversation_embedded_statements`) a turn that ends in
+    "?" but also holds a declarative sentence in the first person ("I'm
+    trying to learn X, which I enjoy. Can you give me tips?") is NOT a pure
+    question: that sentence is the user's own statement and is evidence. The
+    test is structural (sentence form plus a first-person cue), never a
+    word list or topic."""
+    text = (text or "").strip()
+    if not text.endswith("?"):
+        return False
+    if not embedded_statements:
+        return True
+    for sentence in _SENTENCE_SPLIT_RE.split(text):
+        sentence = sentence.strip()
+        if sentence and not sentence.endswith("?") and _FIRST_PERSON_CUE_RE.search(sentence):
+            return False
+    return True
+
+
 def _warn_once_bad_conversation_order(value: str) -> None:
     if value not in _BAD_ORDER_WARNED:
         _BAD_ORDER_WARNED.add(value)
@@ -445,9 +476,9 @@ class GraphGateway:
 
         declared = set(query.params)
         provided = set(merged_params)
-        if declared != provided:
+        if not declared <= provided or not provided <= declared | set(query.optional_params):
             missing = sorted(declared - provided)
-            unexpected = sorted(provided - declared)
+            unexpected = sorted(provided - declared - set(query.optional_params))
             parts = []
             if missing:
                 parts.append(f"missing={missing}")
@@ -1230,6 +1261,7 @@ class GraphGateway:
         if vs.count_documents(prefixes) > budget:
             return None
         qnorm = " ".join(str(params.get("query_text") or "").strip().lower().split())
+        embedded = bool(params.get("embedded_statements"))   # B501
         enumerated = self._client._execute_and_collect("""
             SELECT ?s ?text ?role ?created ?archived ?speaker ?occurred WHERE {
                 ?s a <https://campy.dev/ns#Message> ;
@@ -1245,7 +1277,7 @@ class GraphGateway:
         for row in _collapse_archived(enumerated):
             text = str(row.get("text") or "").strip()
             if (not text or not str(row["s"]).startswith(prefixes) or bool(row.get("archived"))
-                    or text.endswith("?")):
+                    or is_question_only(text, embedded_statements=embedded)):
                 continue
             norm_text = " ".join(text.lower().split())
             if norm_text == qnorm:
@@ -1335,6 +1367,7 @@ class GraphGateway:
         words = lambda t: set(re.findall(r"[^\W_]+", str(t).lower()))
         qnorm = norm(qtext)
         vec_set = set(vec_hits)
+        embedded = bool(params.get("embedded_statements"))   # B501
         rows = self._hydrate_messages(ranked)
         # A lexical-only hit has no similarity floor, so one shared common word
         # is not evidence: it must match two distinct query content words (or
@@ -1381,14 +1414,14 @@ class GraphGateway:
                         and not anchors & words(text)):
                     continue
             on_topic.append((ranked.get(row["s"], 0.0), text))
-            if row.get("role") != "user" or text.endswith("?"):
+            if row.get("role") != "user" or is_question_only(text, embedded_statements=embedded):
                 continue
             keep(row, text)
         # B463: what replaced the things the on-topic messages name.
         try:
             on_topic.sort(key=lambda st: -st[0])
             for score, row, text in self._successor_statements(on_topic[:limit], limit, prefixes):
-                if norm(text) != qnorm and not text.endswith("?"):
+                if norm(text) != qnorm and not is_question_only(text, embedded_statements=embedded):
                     uri = keep(row, text)
                     ranked[uri] = max(ranked.get(uri, 0.0), score)
         except Exception:
