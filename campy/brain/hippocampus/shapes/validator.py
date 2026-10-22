@@ -134,8 +134,10 @@ def skos_project(data_graph: Any) -> Any:
     g = data_graph
     sub_of = [(p, q) for p, q in load_vocab().subject_objects(RDFS.subPropertyOf)
               if str(q).startswith(SKOS_NS)]
-    for c in set(g.subjects(RDF.type, campy.Concept)):
-        g.add((c, RDF.type, skos.Concept))
+    for c in set(g.subjects(RDF.type, campy.Concept)) | set(g.subjects(RDF.type, campy.AttributeProperty)):
+        g.add((c, RDF.type, skos.Concept))        # B509: an attribute property is a SKOS concept too
+        if (c, RDF.type, campy.AttributeProperty) in g:
+            g.add((c, skos.inScheme, campy.PropertyScheme))
         for t in g.objects(c, campy.text_raw):
             g.add((c, skos.prefLabel, t))
         for label in g.objects(c, campy.HAS_ALT_LABEL):
@@ -151,6 +153,247 @@ def skos_project(data_graph: Any) -> Any:
     for s_, o in list(g.subject_objects(skos.closeMatch)):
         g.add((o, skos.closeMatch, s_))
     return g
+
+
+# --- B509: OWL view of attribute properties and their values ----------------------------
+
+PROPERTY_BASE = NS.replace("ns#", "id/AttributeProperty/")
+SUBJECT_BASE = NS.replace("ns#", "id/AttributeSubject/")
+SLOT_BASE = NS.replace("ns#", "id/FunctionalSlot/")
+CONCEPT_BASE = NS.replace("ns#", "id/Concept/")
+
+
+def _truthy_false(values: Any) -> bool:
+    return any(str(v).lower() == "false" for v in values)
+
+
+def _value_term(g: Any, o: Any) -> Any:
+    """The RDF value of one attribute Observation: the Concept it names, else its typed
+    literal (xsd:decimal for number/money amounts, xsd:duration for seconds, xsd:date /
+    xsd:dateTime for a date), else its text normalised (case and spacing)."""
+    from rdflib import Literal, Namespace, URIRef
+    from rdflib.namespace import XSD
+
+    campy = Namespace(NS)
+    one = lambda p: next(iter(g.objects(o, campy[p])), None)
+    ref = one("attr_value_ref")
+    if ref is not None:
+        return URIRef(CONCEPT_BASE + str(ref))
+    num, unit, when, text = one("attr_value_num"), one("attr_value_unit"), one("attr_value_time"), one("attr_value")
+    kind = str(one("attr_value_kind") or "")
+    if num is not None:
+        amount = format(Decimal(repr(float(num))).normalize(), "f")
+        if kind == "duration" or (kind == "clock" and str(unit) == "second"):
+            return Literal(f"PT{int(float(num))}S", datatype=XSD.duration)
+        if kind == "money":
+            return Literal(f"{amount} {unit or ''}".strip())
+        return Literal(amount, datatype=XSD.decimal)
+    if when is not None:
+        t = str(when)
+        return Literal(t[:10], datatype=XSD.date) if t[11:19] in ("", "00:00:00") else Literal(t, datatype=XSD.dateTime)
+    return Literal(" ".join(str(text if text is not None else "").lower().split()))
+
+
+def owl_project(data_graph: Any) -> Any:
+    """Add, in place, the OWL view of attribute properties and return the graph. Idempotent.
+
+      owl:DatatypeProperty / owl:ObjectProperty     each campy:AttributeProperty, by prop_type
+      owl:FunctionalProperty                        the axioms campy_vocab.ttl states for its seed
+                                                    properties (same IRI), and any property whose
+                                                    functional_basis is set (modifier, confirmed)
+      <subject> <property> <value>                  each LIVE (not archived, not superseded),
+                                                    asserted Observation with a HAS_PROPERTY edge;
+                                                    the subject is a campy:AttributeSubject keyed
+                                                    like the supersession rule (resolved id, else
+                                                    the text with first-person forms by speaker)
+      campy:FunctionalSlot                          one per (subject, functional property), with
+                                                    campy:slotValue for every live value: SHACL
+                                                    maxCount 1 on it is "one live value"
+    """
+    from hashlib import sha1
+    from urllib.parse import quote
+
+    from rdflib import Literal, Namespace, URIRef
+    from rdflib.namespace import OWL, RDF
+
+    from campy.brain.hippocampus import observation_keys as ok
+
+    campy = Namespace(NS)
+    g = data_graph
+    props = set(g.subjects(RDF.type, campy.AttributeProperty))
+    if not props:
+        return g
+    vocab = load_vocab()
+    for p in props:
+        for t in vocab.objects(p, RDF.type):
+            g.add((p, RDF.type, t))
+        kind = str(next(iter(g.objects(p, campy.prop_type)), "datatype"))
+        g.add((p, RDF.type, OWL.ObjectProperty if kind == "object" else OWL.DatatypeProperty))
+        if next(iter(g.objects(p, campy.functional_basis)), None) is not None:
+            g.add((p, RDF.type, OWL.FunctionalProperty))
+    functional = {p for p in props if (p, RDF.type, OWL.FunctionalProperty) in g}
+    for o in set(g.subjects(campy.HAS_PROPERTY, None)):
+        if _truthy_false(g.objects(o, campy.archived)) is False or (o, campy.superseded_by, None) in g:
+            continue
+        if str(next(iter(g.objects(o, campy.polarity)), "")) != "asserted":
+            continue
+        for p in g.objects(o, campy.HAS_PROPERTY):
+            sid = next(iter(g.objects(o, campy.subject_id)), None)
+            if sid is not None:
+                key = f"id:{sid}"
+            else:
+                key = ok.subject_text_key(str(next(iter(g.objects(o, campy.subject_text)), "")),
+                                          str(next(iter(g.objects(o, campy.speaker)), "")))
+            subj = URIRef(SUBJECT_BASE + quote(key, safe=""))
+            value = _value_term(g, o)
+            g.add((subj, RDF.type, campy.AttributeSubject))
+            g.add((subj, p, value))
+            if p in functional:
+                slot = URIRef(SLOT_BASE + sha1(f"{subj}|{p}".encode()).hexdigest()[:20])
+                g.add((slot, RDF.type, campy.FunctionalSlot))
+                g.add((slot, campy.slotSubject, subj))
+                g.add((slot, campy.slotProperty, p))
+                g.add((slot, campy.slotValue, value))
+    return g
+
+
+# --- B509: reasoning checks (report only; nothing here edits the store) ---------------------
+
+@dataclass
+class ReasoningReport:
+    broader_cycles: list[list[str]] = field(default_factory=list)       # strongly connected groups, any length
+    redundant_broader: list[tuple[str, str]] = field(default_factory=list)   # (narrower, broader) implied by a longer path
+    inconsistencies: list[str] = field(default_factory=list)            # owlrl: what the axioms forbid
+
+
+def _broader_edges(g: Any) -> dict[str, set[str]]:
+    from rdflib import Namespace
+
+    skos = Namespace(SKOS_NS)
+    edges: dict[str, set[str]] = {}
+    for a, b in g.subject_objects(skos.broader):
+        edges.setdefault(str(a), set()).add(str(b))
+        edges.setdefault(str(b), set())
+    return edges
+
+
+def broader_cycles(g: Any) -> list[list[str]]:
+    """Every skos:broader cycle, of any length: the strongly connected components with more
+    than one node, and any node that is its own broader. Tarjan, iterative, O(nodes + edges)."""
+    edges = _broader_edges(g)
+    index: dict[str, int] = {}
+    low: dict[str, int] = {}
+    on: set[str] = set()
+    stack: list[str] = []
+    out: list[list[str]] = []
+    counter = 0
+    for root in sorted(edges):
+        if root in index:
+            continue
+        work = [(root, iter(sorted(edges[root])))]
+        index[root] = low[root] = counter
+        counter += 1
+        stack.append(root)
+        on.add(root)
+        while work:
+            node, it = work[-1]
+            advanced = False
+            for nxt in it:
+                if nxt not in index:
+                    index[nxt] = low[nxt] = counter
+                    counter += 1
+                    stack.append(nxt)
+                    on.add(nxt)
+                    work.append((nxt, iter(sorted(edges[nxt]))))
+                    advanced = True
+                    break
+                if nxt in on:
+                    low[node] = min(low[node], index[nxt])
+            if advanced:
+                continue
+            work.pop()
+            if work:
+                low[work[-1][0]] = min(low[work[-1][0]], low[node])
+            if low[node] == index[node]:
+                comp = []
+                while True:
+                    w = stack.pop()
+                    on.discard(w)
+                    comp.append(w)
+                    if w == node:
+                        break
+                if len(comp) > 1 or node in edges[node]:
+                    out.append(sorted(comp))
+    return sorted(out)
+
+
+def redundant_broader(g: Any) -> list[tuple[str, str]]:
+    """Transitive-reduction report: a skos:broader edge A -> C is redundant when A reaches C
+    by another path (A -> B -> C). Reported, never removed: B508's walk follows the closure,
+    so a redundant edge costs nothing at retrieval, only noise in the vocabulary."""
+    edges = _broader_edges(g)
+    out = []
+    for a in sorted(edges):
+        for c in sorted(edges[a]):
+            if a == c:
+                continue
+            seen, todo = set(), [b for b in edges[a] if b != c]
+            while todo:
+                n = todo.pop()
+                if n in seen:
+                    continue
+                if n == c:
+                    out.append((a, c))
+                    break
+                seen.add(n)
+                todo.extend(edges.get(n, ()))
+    return out
+
+
+def owl_inconsistencies(g: Any) -> list[str]:
+    """What the OWL 2 RL axioms of campy_vocab.ttl forbid, found by a reasoner (owlrl) over a
+    reasoning VIEW of the projected graph (the vocabulary, the Concept/property edges and the
+    attribute value triples only, never the Observation text): a pair that is both INSTANCE_OF
+    and BROADER (owl:propertyDisjointWith). (Two live values of a functional property are found by
+    SHACL, FunctionalSlotShape: OWL RL only derives owl:sameAs from them, it does not object to
+    two different literals.) Messages are strings."""
+    import owlrl
+    from rdflib import Graph, Namespace
+    from rdflib.namespace import OWL, RDF
+
+    campy = Namespace(NS)
+    view = Graph()
+    for t in load_vocab():
+        view.add(t)
+    edge_preds = [campy.BROADER, campy.INSTANCE_OF, campy.CLOSE_MATCH]
+    for p in edge_preds:
+        for t in g.triples((None, p, None)):
+            view.add(t)
+    props = set(g.subjects(RDF.type, campy.AttributeProperty))
+    for p in props:
+        for t in g.triples((p, RDF.type, None)):
+            view.add(t)
+    for subj in g.subjects(RDF.type, campy.AttributeSubject):
+        for pr, v in g.predicate_objects(subj):
+            if pr in props:
+                view.add((subj, pr, v))
+    closure = owlrl.OWLRL_Semantics(view, False, False, False)
+    closure.closure()
+    closure.flush_stored_triples()
+    return [str(m) for m in closure.error_messages]
+
+
+def reasoning_report(data_graph: Any, *, owl: bool = True) -> ReasoningReport:
+    """The broader-cycle check (any length), the transitive-reduction report and, when `owl`,
+    the owlrl consistency check, over the SKOS/OWL projection of `data_graph`."""
+    g = owl_project(skos_project(data_graph))
+    rep = ReasoningReport(broader_cycles=broader_cycles(g), redundant_broader=redundant_broader(g))
+    if owl:
+        try:
+            rep.inconsistencies = owl_inconsistencies(g)
+        except ImportError:
+            rep.inconsistencies = []
+    return rep
 
 
 def _turtle_escape(s: str) -> str:
@@ -170,6 +413,7 @@ def validate_graph(data_graph: Any, *, allow_warnings: bool = True) -> tuple[Sha
 
     shapes = load_shapes()
     skos_project(data_graph)    # B508: shapes are written in SKOS; add the SKOS view of stored Concepts
+    owl_project(data_graph)     # B509: attribute properties as OWL properties, their live values, functional slots
     with _lock:   # pyshacl mutates internal caches on the shapes graph
         conforms, results_graph, _ = validate(
             data_graph, shacl_graph=shapes, inference="none", abort_on_first=False,

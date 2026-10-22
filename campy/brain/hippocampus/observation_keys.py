@@ -30,6 +30,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+import dataclasses
 from dataclasses import dataclass, field
 
 _FIRST_PERSON = frozenset({"i", "me", "my", "myself", "mine", "we", "our", "ours", "us"})
@@ -77,6 +78,9 @@ class AttrKey:
     # B509: how the attribute and its value were written (not part of the match key)
     name: str = field(default="", compare=False)
     raw: str = field(default="", compare=False)
+    # the tokens of the name alone, when it was written apart from its value ("age: 30 years" -> {age});
+    # `tokens` also absorbs a quantity's unit for B499's matching. Empty = same as `tokens`.
+    name_tokens: frozenset = field(default=frozenset(), compare=False)
 
 
 def norm(text: str | None) -> str:
@@ -187,10 +191,10 @@ def parse_attribute(object_text: str | None) -> AttrKey | None:
             and len(re.findall(r"[a-z]+", norm(value)[lead.end():])) <= 3:
         vq = _quantity_key(f"{name} {value}")
         if vq is not None:
-            return vq
+            return dataclasses.replace(vq, name=name, raw=value, name_tokens=tokens)
     if not tokens:
         return None
-    return AttrKey(tokens, norm(value), _value_kind(value), name, value)
+    return AttrKey(tokens, norm(value), _value_kind(value), name, value, tokens)
 
 
 def attribute_names_match(a: frozenset[str], b: frozenset[str]) -> bool:

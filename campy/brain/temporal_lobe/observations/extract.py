@@ -105,6 +105,12 @@ ENTITY_PROMPT_TEMPLATE = (
     .replace(_REQUEST_RULE_OLD, _REQUEST_RULE_NEW, 1)
 )
 assert ENTITY_PROMPT_TEMPLATE != PROMPT_TEMPLATE
+# B509 (flag `[observations] owl_properties`): one more output field, the model's advice on whether
+# an attribute can hold only one current value. Stored as a candidate count; rules decide.
+_CARDINALITY_FIELD = (
+    '- "cardinality": for has_attribute facts only: "one" if a person can have only one current value '
+    'of this attribute (age, job, home city), "many" if several can hold at once (hobby, pet, '
+    'place visited); otherwise null\n- "confidence": a number from 0 to 1\n')
 ENTITY_MAX_TOKENS = 768     # two more short fields per fact
 
 
@@ -162,12 +168,15 @@ class ObservationWorkerStats:
 # --- prompt and parsing -----------------------------------------------------------
 
 def build_messages(text: str, speaker: str | None, occurred_at: Any, max_chars: int = 600,
-                   *, entities: bool = False) -> list[dict]:
+                   *, entities: bool = False, cardinality: bool = False) -> list[dict]:
     """The chat messages for one turn. The speaker and the turn's date go in so
     "I"/"my" attach to the speaker and relative time can be kept as written."""
     body = " ".join((text or "").split())[:max_chars]
     date = str(occurred_at)[:10] if occurred_at else "unknown"
-    prompt = (ENTITY_PROMPT_TEMPLATE if entities else PROMPT_TEMPLATE).format(
+    template = ENTITY_PROMPT_TEMPLATE if entities else PROMPT_TEMPLATE
+    if cardinality:
+        template = template.replace('- "confidence": a number from 0 to 1\n', _CARDINALITY_FIELD, 1)
+    prompt = template.format(
         speaker=(speaker or "unknown"), date=date, text=body.replace('"""', "'''"),
     )
     return [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]
@@ -345,12 +354,14 @@ async def process_turn(
     speaker = msg.get("speaker")
     occurred_at = msg.get("occurred_at") or msg.get("created_at")
     entities_on = obs.observations_entities_enabled(config)
-    messages = build_messages(text, speaker, occurred_at, int(cfg.get("max_turn_chars", 600)), entities=entities_on)
+    owl_on = obs.owl_properties_enabled(config)
+    messages = build_messages(text, speaker, occurred_at, int(cfg.get("max_turn_chars", 600)),
+                              entities=entities_on, cardinality=owl_on)
 
     stats.llm_calls += 1
     try:
         raw = await asyncio.to_thread(llm_client.chat, messages,
-                                     max_tokens=ENTITY_MAX_TOKENS if entities_on else MAX_TOKENS)  # B468: off the loop
+                                     max_tokens=ENTITY_MAX_TOKENS if (entities_on or owl_on) else MAX_TOKENS)  # B468: off the loop
     except Exception:
         stats.llm_failed += 1
         _logger.warning("[Observations] LLM call failed for msg=%s", message_id[:8], exc_info=True)
@@ -380,6 +391,9 @@ async def process_turn(
         if draft is None:
             writes.record(obs.WriteResult("rejected", None, "malformed_proposal"))
             continue
+        if owl_on and draft.predicate == "has_attribute":
+            advice = _clean(p.get("cardinality"))
+            draft.attr_cardinality = advice.lower() if advice and advice.lower() in ("one", "many") else None
         proposed_entity = None
         if entities_on:
             if not ent.value_in_turn(draft.predicate, draft.object_text, text):
@@ -397,9 +411,13 @@ async def process_turn(
             # B504: the validated entity (and kind) become Concepts before B503 links by text,
             # so the linker's index already holds them
             try:
-                await ent.write_entity(gw, proposed_entity, result.observation_id, message_id, stats,
-                                       embedding_model=embedding_model, skos=skos, closematch=closematch)
+                ent_id = await ent.write_entity(gw, proposed_entity, result.observation_id, message_id, stats,
+                                                embedding_model=embedding_model, skos=skos, closematch=closematch)
                 link_index = None
+                if owl_on and draft.predicate == "has_attribute":
+                    from campy.brain.hippocampus import attribute_properties as ap
+                    if ent_id:
+                        await ap.bind_object(gw, result.observation_id, ent_id)
             except Exception:
                 _logger.warning("[ObservationEntities] entity write failed msg=%s", message_id[:8], exc_info=True)
         if linking and result.ok and result.observation_id:

@@ -439,7 +439,7 @@ def test_the_alignment_file_matches_the_projection_and_the_schema():
     assert (campy.CLOSE_MATCH, RDFS.subPropertyOf, skos.closeMatch) in v
     ddl = " ".join(REL_TABLES)
     for edge in ("INSTANCE_OF", "BROADER", "CLOSE_MATCH"):
-        assert f"EXISTS {edge} (FROM Concept TO Concept)" in ddl
+        assert f"EXISTS {edge} (FROM Concept TO Concept" in ddl
 
 
 # --- structure report -------------------------------------------------------------------------

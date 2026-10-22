@@ -151,7 +151,7 @@ def test_edges_are_declared_and_classified_plain():
     assert props["OBSERVATION_ABOUT"] == set() and props["EVIDENCED_BY"] == set()
     assert classify_edge("OBSERVATION_ABOUT") == "plain"
     assert classify_edge("EVIDENCED_BY") == "plain"
-    assert Counter(EDGE_REIFICATION.values())["plain"] == 59
+    assert Counter(EDGE_REIFICATION.values())["plain"] == 60
     assert "FROM Observation TO Observation" in ddl["DEPRECATED_BY"]
 
 
@@ -429,7 +429,7 @@ def test_an_old_kuzu_store_gains_the_table_and_edges_with_no_data():
         client = KuzuClient(db_path=str(Path(d) / "old.db"))
         init_schema(client, seed_examples_path=str(SEED), embedding_model="sentence-transformers/all-MiniLM-L6-v2")
         # make it look pre-3a
-        for t in ("EVIDENCED_BY", "OBSERVATION_ABOUT", "DEPRECATED_BY"):
+        for t in ("EVIDENCED_BY", "OBSERVATION_ABOUT", "HAS_PROPERTY", "DEPRECATED_BY"):   # B509: HAS_PROPERTY points at Observation
             client.execute(f"DROP TABLE {t}")
         client.execute("CALL DROP_VECTOR_INDEX('Observation', 'observation_emb_idx')")
         client.execute("DROP TABLE Observation")

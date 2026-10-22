@@ -30,6 +30,7 @@ from campy.brain.hippocampus.observations import (
     observation_limit,
     observations_retrieval_enabled,
     observations_supersede_enabled,
+    owl_properties_enabled,
 )
 from campy.brain.hippocampus.provenance import authority_of
 from campy.brain.hippocampus.table_registry import pk_for
@@ -826,7 +827,8 @@ async def _stage_observations(db, query: str, config: dict) -> Optional[BundleSe
         )
         gw = get_gateway(db)
         rows = await gw.run(
-            "thalamus.bundle_observations_history" if observations_supersede_enabled(config)
+            "thalamus.bundle_observations_history"
+            if (observations_supersede_enabled(config) or owl_properties_enabled(config))
             else "thalamus.bundle_observations",
             query_embedding=emb.embed(query, model_name=embedding_model), query_text=query,
             concept_ids=await _question_concept_ids(gw, query), limit=limit,

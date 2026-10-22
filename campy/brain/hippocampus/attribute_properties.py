@@ -356,7 +356,7 @@ async def resolve(gw: Any, key: ok.AttrKey, *, closematch: float = 0.0, embed: A
                   stats: dict | None = None) -> Prop | None:
     """The AttributeProperty for a parsed attribute name, created if new (rules a, b, c above)."""
     bump = (lambda n: stats.__setitem__(n, stats.get(n, 0) + 1)) if stats is not None else (lambda n: None)
-    tokens = key.tokens
+    tokens = key.name_tokens or key.tokens
     stored = await load_properties(gw)
     v = vocab()
     plan = plan_property(tokens, stored, v.seeds)

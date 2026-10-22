@@ -21,7 +21,14 @@ Per store and pooled, it reports:
     altLabel with another kind: what consolidation should drive to 0), and the share
     of entities (gist_class "Entity") that have an instance-of kind;
   * % of has_attribute Observations whose object parses as "name: value", and the
-    count whose object is a stringified dict/list (B506).
+    count whose object is a stringified dict/list (B506);
+  * B509, attribute properties: the number of AttributeProperty nodes, the share that are
+    owl:FunctionalProperty (seed, modifier or rule-confirmed), the share of has_attribute
+    Observations linked to a property, the share with a typed literal value (number, money,
+    duration, date), the number of supersessions among has_attribute Observations, the
+    functional-property violations (a subject with two live values of one functional
+    property), and the reasoning checks over skos:broader: cycles of any length, redundant
+    (transitively implied) edges, and owlrl inconsistencies. Report only; nothing is edited.
 
 Conformance counts only sh:Violation results; sh:Warning results are listed apart.
 """
@@ -81,7 +88,7 @@ def to_rdflib(store):
     from rdflib import BNode, Graph, Literal, URIRef
 
     g = Graph()
-    keep = {NS + t for t in NODE_TYPES + ("Label", "Session")}
+    keep = {NS + t for t in NODE_TYPES + ("Label", "Session", "AttributeProperty")}
 
     def conv(term):
         if isinstance(term, ox.NamedNode):
@@ -149,6 +156,36 @@ def kind_metrics(g) -> dict:
             "entities": len(entities), "entities_with_kind": with_kind}
 
 
+def attribute_metrics(store, g, q) -> dict:
+    """B509 numerators/denominators: attribute properties, their functional share, linkage and
+    typed values of has_attribute Observations, supersessions, functional-property violations,
+    and the skos:broader reasoning checks. `g` is the SKOS-projected graph (it is OWL-projected
+    here, in place)."""
+    from rdflib import Namespace, URIRef
+    from rdflib.namespace import OWL, RDF
+
+    from campy.brain.hippocampus.shapes import validator
+
+    campy = Namespace(NS)
+    validator.owl_project(g)
+    attr = '?x a campy:Observation ; campy:predicate "has_attribute"'
+    props = set(g.subjects(RDF.type, campy.AttributeProperty))
+    violations = sum(1 for slot in g.subjects(RDF.type, campy.FunctionalSlot)
+                     if len(set(g.objects(slot, campy.slotValue))) > 1)
+    rep = validator.reasoning_report(g)
+    return {
+        "attr_properties": len(props),
+        "attr_props_functional": sum(1 for p in props if (p, RDF.type, OWL.FunctionalProperty) in g),
+        "attr_linked": q(f"{attr} ; campy:HAS_PROPERTY ?p"),
+        "attr_typed": q(f"{attr} . {{ ?x campy:attr_value_num ?v }} UNION {{ ?x campy:attr_value_time ?v }}"),
+        "attr_superseded": q(f"{attr} ; campy:superseded_by ?s"),
+        "functional_violations": violations,
+        "broader_cycles": len(rep.broader_cycles),
+        "broader_redundant": len(rep.redundant_broader),
+        "owl_inconsistencies": len(rep.inconsistencies),
+    }
+
+
 def measure(path: str | Path, *, shacl: bool = True) -> dict:
     """All metrics for one store, as raw numerators/denominators (poolable)."""
     from campy.brain.hippocampus.shapes import validator
@@ -162,8 +199,9 @@ def measure(path: str | Path, *, shacl: bool = True) -> dict:
     m["user_msgs_mention"] = q('?x a campy:Message ; campy:role "user" ; campy:MENTIONS ?c')
 
     g = validator.skos_project(to_rdflib(store))       # the SKOS view: prefLabel, altLabel, broader, inScheme
-    from rdflib import Namespace
-    labels = [str(t) for t in g.objects(None, Namespace(SKOS).prefLabel)]
+    from rdflib import Namespace, URIRef
+    skos_ns, campy_ns = Namespace(SKOS), Namespace(NS)
+    labels = [str(t) for c in g.subjects(URIRef(RDF_TYPE), campy_ns.Concept) for t in g.objects(c, skos_ns.prefLabel)]
     m["concepts"] = q("?x a campy:Concept")
     m["concept_fragments"] = sum(1 for lab in labels if validator.is_fragment(lab))
     norm = Counter(normalise_label(lab) for lab in labels)
@@ -175,6 +213,7 @@ def measure(path: str | Path, *, shacl: bool = True) -> dict:
     m["attr_structured"] = sum(1 for o in objs if STRUCTURED_RE.match(o))
 
     m.update(kind_metrics(g))
+    m.update(attribute_metrics(store, g, q))
 
     m["shacl"] = {}
     if shacl:
@@ -207,7 +246,9 @@ def pool(results: list[dict]) -> dict:
     out: dict = {"stores": len(results), "shacl": {t: {"total": 0, "nonconforming": 0, "warned": 0, "top": Counter()} for t in NODE_TYPES}}
     for key in ("observations", "obs_linked", "user_messages", "user_msgs_mention", "concepts", "concept_fragments",
                 "concept_redundant", "has_attribute", "attr_name_value", "attr_structured",
-                "kinds", "kinds_with_alt", "kinds_duplicate", "entities", "entities_with_kind"):
+                "kinds", "kinds_with_alt", "kinds_duplicate", "entities", "entities_with_kind",
+                "attr_properties", "attr_props_functional", "attr_linked", "attr_typed", "attr_superseded",
+                "functional_violations", "broader_cycles", "broader_redundant", "owl_inconsistencies"):
         out[key] = sum(r[key] for r in results)
     for r in results:
         for t, d in r["shacl"].items():
@@ -242,12 +283,21 @@ def render_row(name: str, r: dict) -> list[str]:
         pct(r["kinds_with_alt"], r["kinds"]),
         pct(r["kinds_duplicate"], r["kinds"]),
         pct(r["entities_with_kind"], r["entities"]),
+        str(r["attr_properties"]),
+        pct(r["attr_props_functional"], r["attr_properties"]),
+        pct(r["attr_linked"], r["has_attribute"]),
+        pct(r["attr_typed"], r["has_attribute"]),
+        str(r["attr_superseded"]),
+        str(r["functional_violations"]),
+        str(r["broader_cycles"]),
     ]
 
 
 HEADER = ["store", "SHACL Obs", "SHACL Msg", "SHACL Concept", "Obs->Concept", "UserMsg MENTIONS",
           "Concepts", "fragment", "dup", "attr name:value",
-          "kinds", "kinds w/ altLabel", "dup kinds", "entities w/ kind"]
+          "kinds", "kinds w/ altLabel", "dup kinds", "entities w/ kind",
+          "attr props", "functional", "attr linked", "attr typed", "superseded", "functional violations",
+          "broader cycles"]
 
 
 def table(rows: list[list[str]]) -> str:
@@ -299,6 +349,8 @@ def main(argv: list[str] | None = None) -> int:
     print(table(rows))
     print(f"\nObservations {pooled['observations']}, has_attribute {pooled['has_attribute']} "
           f"(stringified dict/list objects: {pooled['attr_structured']}), Messages(user) {pooled['user_messages']}")
+    print(f"Reasoning (skos:broader): cycles {pooled['broader_cycles']}, redundant edges {pooled['broader_redundant']}, "
+          f"owlrl inconsistencies {pooled['owl_inconsistencies']}")
     print("Top failing shapes (pooled):")
     print("\n".join(top_failures(pooled)) or "  none")
     if args.verbose:

@@ -32,7 +32,8 @@
 <https://campy.dev/shapes> a owl:Ontology ;
     rdfs:comment "Campy core shapes (B507)." ;
     sh:declare [ sh:prefix "campy" ; sh:namespace "https://campy.dev/ns#"^^xsd:anyURI ] ,
-               [ sh:prefix "skos" ; sh:namespace "http://www.w3.org/2004/02/skos/core#"^^xsd:anyURI ] .
+               [ sh:prefix "skos" ; sh:namespace "http://www.w3.org/2004/02/skos/core#"^^xsd:anyURI ] ,
+               [ sh:prefix "owl" ; sh:namespace "http://www.w3.org/2002/07/owl#"^^xsd:anyURI ] .
 
 # --- Observation --------------------------------------------------------------
 
@@ -142,6 +143,11 @@ campy:ObservationShape a sh:NodeShape ;
     sh:property [
         sh:path campy:OBSERVATION_ABOUT ; sh:name "OBSERVATION_ABOUT" ;
         sh:class campy:Concept ;
+    ] ;
+    # B509: an attribute Observation states a value of at most one attribute property.
+    sh:property [
+        sh:path campy:HAS_PROPERTY ; sh:name "HAS_PROPERTY" ;
+        sh:maxCount 1 ; sh:class campy:AttributeProperty ;
     ] ;
 
     # evidence_ref names one of the EVIDENCED_BY messages ...
@@ -305,7 +311,19 @@ campy:SkosConceptShape a sh:NodeShape ;
     ] ;
     sh:property [
         sh:path skos:inScheme ; sh:name "inScheme" ;
-        sh:in ( campy:KindScheme ) ;
+        sh:in ( campy:KindScheme campy:PropertyScheme ) ;
+    ] ;
+    # B509: kinds and attribute properties are two schemes; skos:broader stays inside one.
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:name "BroaderCrossesSchemes" ;
+        sh:message "skos:broader joins two different concept schemes" ;
+        sh:prefixes <https://campy.dev/shapes> ;
+        sh:select """
+            SELECT $this WHERE {
+              $this skos:broader ?b ; skos:inScheme ?s1 . ?b skos:inScheme ?s2 .
+              FILTER (?s1 != ?s2)
+            }""" ;
     ] ;
     sh:sparql [
         a sh:SPARQLConstraint ;
@@ -328,13 +346,23 @@ campy:SkosConceptShape a sh:NodeShape ;
 # is in the kind scheme.
 campy:KindShape a sh:NodeShape ;
     sh:targetObjectsOf campy:INSTANCE_OF ;
-    sh:targetObjectsOf skos:broader ;
-    sh:targetSubjectsOf skos:broader ;
     sh:name "Kind" ;
     sh:property [
         sh:path skos:inScheme ; sh:name "kind in scheme" ;
         sh:minCount 1 ; sh:hasValue campy:KindScheme ;
         sh:message "kind Concept is not in campy:KindScheme" ;
+    ] .
+
+# Either end of skos:broader is in a scheme (kinds: campy:KindScheme, attribute names:
+# campy:PropertyScheme, B509).
+campy:BroaderEndShape a sh:NodeShape ;
+    sh:targetObjectsOf skos:broader ;
+    sh:targetSubjectsOf skos:broader ;
+    sh:name "BroaderEnd" ;
+    sh:property [
+        sh:path skos:inScheme ; sh:name "kind in scheme" ;
+        sh:minCount 1 ; sh:in ( campy:KindScheme campy:PropertyScheme ) ;
+        sh:message "concept used in skos:broader is not in a concept scheme" ;
     ] .
 
 # An instance that is itself in the kind scheme is suspicious (a kind under INSTANCE_OF
@@ -351,4 +379,42 @@ campy:InstanceShape a sh:NodeShape ;
         sh:path skos:inScheme ; sh:name "instance is a kind" ;
         sh:maxCount 0 ; sh:severity sh:Warning ;
         sh:message "an INSTANCE_OF subject is itself a kind (use skos:broader between kinds)" ;
+    ] .
+
+# --- B509: attribute properties ---------------------------------------------------------
+
+campy:AttributePropertyShape a sh:NodeShape ;
+    sh:targetClass campy:AttributeProperty ;
+    sh:name "AttributeProperty" ;
+    sh:property [
+        sh:path campy:property_id ; sh:name "property_id" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path campy:prop_type ; sh:name "prop_type" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "datatype" "object" ) ;
+    ] ;
+    sh:property [
+        sh:path campy:functional_basis ; sh:name "functional_basis" ;
+        sh:maxCount 1 ; sh:in ( "modifier" "confirmed" ) ;
+    ] ;
+    # An owl:DatatypeProperty and an owl:ObjectProperty are disjoint kinds of property.
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:name "DatatypeAndObjectProperty" ;
+        sh:message "the property is both an owl:DatatypeProperty and an owl:ObjectProperty" ;
+        sh:prefixes <https://campy.dev/shapes> ;
+        sh:select "SELECT $this WHERE { $this a owl:DatatypeProperty , owl:ObjectProperty }" ;
+    ] .
+
+# The live projection of a functional property (shapes/validator.owl_project): one slot per
+# (subject, functional property), holding the values of the live, non-superseded,
+# asserted Observations. A functional property has ONE current value per subject.
+campy:FunctionalSlotShape a sh:NodeShape ;
+    sh:targetClass campy:FunctionalSlot ;
+    sh:name "FunctionalSlot" ;
+    sh:property [
+        sh:path campy:slotValue ; sh:name "FunctionalPropertyOneLiveValue" ;
+        sh:maxCount 1 ;
+        sh:message "a functional property has two live values for the same subject (an older one was not superseded)" ;
     ] .

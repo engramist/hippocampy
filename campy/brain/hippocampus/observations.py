@@ -125,6 +125,13 @@ def shacl_gate_enabled(config: dict | None) -> bool:
     return bool(((config or {}).get("observations") or {}).get("shacl_gate", False))
 
 
+def owl_properties_enabled(config: dict | None) -> bool:
+    """`[observations] owl_properties` (default FALSE; env `CAMPY_OWL_PROPERTIES=1` turns it on) (B509):
+    `has_attribute` names become OWL attribute properties and supersession follows from the
+    property (hippocampus/attribute_properties.py). Off: the writer is the base one."""
+    return bool(((config or {}).get("observations") or {}).get("owl_properties", False))
+
+
 def observations_supersede_enabled(config: dict | None) -> bool:
     """`[observations] supersede` (default FALSE; env `CAMPY_OBSERVATIONS_SUPERSEDE=1` turns it on) (B499):
     a newer asserted attribute Observation supersedes an older live one about the
@@ -167,6 +174,7 @@ class ObservationDraft:
     observed_at: datetime | None = None  # defaults to the Message's occurred_at / created_at
     text_raw: str | None = None         # defaults to render_observation_text(draft)
     embedding: list[float] | None = None
+    attr_cardinality: str | None = None  # B509: the extractor's advice, "one" | "many"; a candidate, never decides
 
 
 @dataclass(frozen=True)
@@ -446,9 +454,31 @@ async def record_observation(
     )
     await gw.run("observations.link_evidenced_by", oid=oid, mid=draft.evidence_ref)
     await _link_concepts(gw, oid, draft)
-    if supersede and draft.predicate == "has_attribute" and draft.polarity == "asserted":
+    if draft.predicate == "has_attribute" and owl_properties_enabled(config):
+        # B509: the attribute is a property node; only a functional property supersedes. This
+        # replaces B499's string rule, which cannot tell "age" from "hobby".
+        from campy.brain.hippocampus import attribute_properties as ap
+        from campy.brain.hippocampus.kinds import closematch_threshold
+
+        try:
+            await ap.apply(gw, oid, draft, msg, now, closematch=closematch_threshold(config),
+                           embed=_property_embedder(config))
+        except Exception:   # the Observation is written; a property failure must not lose the turn
+            _logger.warning("[Observations] attribute property failed for %s", oid[:8], exc_info=True)
+    elif supersede and draft.predicate == "has_attribute" and draft.polarity == "asserted":
         await _supersede_attributes(gw, oid, draft, msg, now)
     return WriteResult("created", oid)
+
+
+def _property_embedder(config: dict | None):
+    """label -> vector for the optional property CLOSE_MATCH, or None when that is off."""
+    from campy.brain.hippocampus.kinds import closematch_threshold
+
+    if closematch_threshold(config) <= 0:
+        return None
+    from campy.brain.hippocampus.graph import embeddings as emb
+
+    return lambda text: emb.embed(text, model_name=EMBEDDING_MODEL)
 
 
 def _shacl_failures(
