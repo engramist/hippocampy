@@ -604,10 +604,11 @@ def _stats_delta(before: ObservationWorkerStats, after: ObservationWorkerStats) 
     """Per-turn change in the Observation worker's counters (counts only)."""
     out: dict = {}
     for k, v in after.__dict__.items():
-        if k == "rejected":
-            rej = {r: n - before.rejected.get(r, 0) for r, n in v.items() if n - before.rejected.get(r, 0)}
-            if rej:
-                out["rejected"] = rej
+        if isinstance(v, dict):    # "rejected", "shacl_shapes" (B507): per-key counts
+            prev = getattr(before, k, None) or {}
+            changed = {r: n - prev.get(r, 0) for r, n in v.items() if n - prev.get(r, 0)}
+            if changed:
+                out[k] = changed
         elif v - getattr(before, k, 0):
             out[k] = v - getattr(before, k, 0)
     return out

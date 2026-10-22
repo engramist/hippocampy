@@ -126,3 +126,25 @@ Not measured yet (R31). Assume ±4 points at n=50–60.
 3. If observations are revisited: keep their ordinary-question gain without
    the abstention loss (e.g. show observations only for non-adversarial-looking
    questions, or tell the answer step that observations are not proof).
+
+## Fields-mode LongMemEval oracle gates (2026-10-21)
+
+Fresh ingest per question, fields mode (session dates as `occurred_at`), llama3.1:8b
+answers, gemma4:26b judge (3 votes). Main = `8c38d23` code.
+
+| Run | Arm | Type (n) | Campy | naive_rag | Evidence recall | vs main |
+|---|---|---|---|---|---|---|
+| R71 | main | knowledge-update (40) | 0.85 | 0.575 | 0.725 | — |
+| R72 | B499 supersession | knowledge-update (40) | 0.85 | — | — | 0 gained / 0 lost |
+| R73 | main | preference (30) | 0.30 | 0.70 | 0.22 | — |
+| R74 | B501 "?" turns with statements | preference (30) | 0.567 | — | 0.88 | **10 gained / 2 lost** |
+| R76 | main | multi-session (30) | 0.20 | 0.133 | 0.63 | — |
+
+- B499 fired only 4 times in 40 stores (3 false positives from dict-repr objects).
+  All 6 R71 misses gave an older value as current, but in 4 the newer value never
+  became an Observation: the cause is extraction/retrieval, not the supersession key.
+  Follow-up 722fc24 (tolerant keys) is queued as R86; B506 (#352) fixes the dict reprs.
+- B501 passes LongMemEval; it waits on the LoCoMo replay (R75) before merging.
+- Memory trap: the 17 GB judge and the 9 GB answer model both resident leave ~8% free
+  on the 32 GB machine; memguard stopped R73 once. `~/campy-lead/judgeswap.sh` now
+  unloads the answer model when a LongMemEval judge phase starts.

@@ -91,6 +91,7 @@ _DEFAULT_CONFIG = {
         # claim's object entity + kind, validated by rule and written as Concepts, and extracts
         # facts stated inside requests and plans.
         "entities": False,
+        "shacl_gate": False,       # B507: validate each draft against the SHACL shapes before writing
     },
     "compression": {
         "strategy": "two_lane",       # two_lane (Protected Lane zero loss + Bulk Lane lossy)
@@ -217,6 +218,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_OBSERVATIONS_ENTITIES": ("observations", "entities", _parse_bool),
     # B503: link user turns / Observations to Concepts and walk the links at retrieval.
     "CAMPY_GRAPH_LINKING": ("retrieval", "graph_linking", _parse_bool),
+    # B507: the SHACL write gate (default off).
+    "CAMPY_SHACL_GATE": ("observations", "shacl_gate", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
     "CAMPY_LLM_MODEL": ("llm", "model", str.strip),
     "CAMPY_LLM_REGION": ("llm", "region", str.strip),
