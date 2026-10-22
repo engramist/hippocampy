@@ -24,6 +24,7 @@ from datetime import datetime
 from typing import Optional
 
 from campy.brain.hippocampus.concept_links import graph_linking_enabled, graph_linking_limit
+from campy.brain.hippocampus.kinds import skos_vocab_enabled
 from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.hippocampus.observations import observation_limit, observations_retrieval_enabled
 from campy.brain.hippocampus.provenance import authority_of
@@ -744,18 +745,19 @@ async def _stage_concept_walk(db, query: str, config: dict, exclude: set[str]) -
     limit = graph_linking_limit(config)
     if limit <= 0:
         return None
+    skos = skos_vocab_enabled(config)
     try:
         from campy.brain.hippocampus.concept_links import match_concepts
         from campy.brain.hippocampus.graph.gateway import conversation_stamp
 
         gw = get_gateway(db)
         concept_ids = list(dict.fromkeys(
-            await _question_concept_ids(gw, query) + await match_concepts(gw, query)))
+            await _question_concept_ids(gw, query) + await match_concepts(gw, query, alt_labels=skos)))
         if not concept_ids:
             return None
         rows = await gw.run(
             "thalamus.bundle_concept_walk",
-            concept_ids=concept_ids, limit=limit, exclude=sorted(exclude))
+            concept_ids=concept_ids, limit=limit, exclude=sorted(exclude), skos=skos)
         if not rows:
             return None
         content, node_ids = [], []

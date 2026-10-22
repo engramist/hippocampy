@@ -27,10 +27,12 @@
 @prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix owl:   <http://www.w3.org/2002/07/owl#> .
+@prefix skos:  <http://www.w3.org/2004/02/skos/core#> .
 
 <https://campy.dev/shapes> a owl:Ontology ;
     rdfs:comment "Campy core shapes (B507)." ;
-    sh:declare [ sh:prefix "campy" ; sh:namespace "https://campy.dev/ns#"^^xsd:anyURI ] .
+    sh:declare [ sh:prefix "campy" ; sh:namespace "https://campy.dev/ns#"^^xsd:anyURI ] ,
+               [ sh:prefix "skos" ; sh:namespace "http://www.w3.org/2004/02/skos/core#"^^xsd:anyURI ] .
 
 # --- Observation --------------------------------------------------------------
 
@@ -234,6 +236,11 @@ campy:EvidenceMessageShape a sh:NodeShape ;
     ] .
 
 # --- Concept ------------------------------------------------------------------
+#
+# The shapes are written in SKOS. validator.validate_graph first adds the SKOS view
+# of a stored Concept (skos:prefLabel from text_raw, skos:altLabel from the
+# HAS_ALT_LABEL Labels, skos:broader from campy:BROADER, ...; see campy_vocab.ttl),
+# so a store and a hand-built SKOS graph are checked by the same shapes.
 
 campy:ConceptShape a sh:NodeShape ;
     sh:targetClass campy:Concept ;
@@ -242,18 +249,6 @@ campy:ConceptShape a sh:NodeShape ;
         sh:path campy:concept_id ; sh:name "concept_id" ;
         sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
     ] ;
-    # The preferred label. Today it is the `text_raw` column; B507 step 2 (SKOS)
-    # re-points this to skos:prefLabel.
-    sh:property [
-        sh:path campy:text_raw ; sh:name "prefLabel" ;
-        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
-        sh:pattern "\\S" ; sh:message "Concept has no preferred label" ;
-    ] ;
-    sh:property [
-        sh:path campy:text_raw ; sh:name "prefLabel content" ;
-        sh:not [ sh:pattern "@@STOPWORD_ONLY@@" ; sh:flags "i" ] ;
-        sh:message "Concept label is empty or stopword-only" ;
-    ] ;
     sh:property [
         sh:path campy:archived ; sh:name "archived" ;
         sh:maxCount 1 ; sh:datatype xsd:boolean ;
@@ -261,3 +256,99 @@ campy:ConceptShape a sh:NodeShape ;
     sh:property [ sh:path campy:CO_OCCURS_WITH ; sh:class campy:Concept ] ;
     sh:property [ sh:path campy:HAS_ALT_LABEL ; sh:class campy:Label ] ;
     sh:property [ sh:path campy:HAS_PREF_LABEL ; sh:class campy:Label ] .
+
+campy:SkosConceptShape a sh:NodeShape ;
+    sh:targetClass skos:Concept ;
+    sh:name "SkosConcept" ;
+    # Exactly one preferred label, with content.
+    sh:property [
+        sh:path skos:prefLabel ; sh:name "prefLabel" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+        sh:pattern "\\S" ; sh:message "Concept has no preferred label" ;
+    ] ;
+    sh:property [
+        sh:path skos:prefLabel ; sh:name "prefLabel content" ;
+        sh:not [ sh:pattern "@@STOPWORD_ONLY@@" ; sh:flags "i" ] ;
+        sh:message "Concept label is empty or stopword-only" ;
+    ] ;
+    # Alternative labels follow the same content rule ...
+    sh:property [
+        sh:path skos:altLabel ; sh:name "altLabel" ;
+        sh:datatype xsd:string ; sh:pattern "\\S" ;
+        sh:message "altLabel is empty or not a string" ;
+    ] ;
+    sh:property [
+        sh:path skos:altLabel ; sh:name "altLabel content" ;
+        sh:not [ sh:pattern "@@STOPWORD_ONLY@@" ; sh:flags "i" ] ;
+        sh:message "altLabel is empty or stopword-only" ;
+    ] ;
+    # ... and an altLabel that only repeats the prefLabel (SKOS: pref and alt are disjoint).
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:name "AltLabelRepeatsPrefLabel" ;
+        sh:message "an altLabel equals the prefLabel (ignoring case)" ;
+        sh:prefixes <https://campy.dev/shapes> ;
+        sh:select """
+            SELECT $this WHERE {
+              $this skos:prefLabel ?p ; skos:altLabel ?a .
+              FILTER (LCASE(STR(?p)) = LCASE(STR(?a)))
+            }""" ;
+    ] ;
+    # skos:broader and skos:closeMatch relate Concepts to Concepts, never to themselves.
+    sh:property [
+        sh:path skos:broader ; sh:name "broader" ;
+        sh:class skos:Concept ; sh:message "skos:broader must point to a skos:Concept" ;
+    ] ;
+    sh:property [
+        sh:path skos:closeMatch ; sh:name "closeMatch" ;
+        sh:class skos:Concept ; sh:message "skos:closeMatch must point to a skos:Concept" ;
+    ] ;
+    sh:property [
+        sh:path skos:inScheme ; sh:name "inScheme" ;
+        sh:in ( campy:KindScheme ) ;
+    ] ;
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:name "BroaderNotSelf" ;
+        sh:message "a Concept is its own broader Concept" ;
+        sh:prefixes <https://campy.dev/shapes> ;
+        sh:select "SELECT $this WHERE { $this skos:broader $this }" ;
+    ] ;
+    # "Instance of" and "narrower than" are different relations: the same pair may not
+    # carry both (the conflation B508 removes).
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:name "InstanceOfAndBroader" ;
+        sh:message "the same pair is both INSTANCE_OF and skos:broader" ;
+        sh:prefixes <https://campy.dev/shapes> ;
+        sh:select "SELECT $this WHERE { $this campy:INSTANCE_OF ?k ; skos:broader ?k }" ;
+    ] .
+
+# Anything used as a kind -- the object of INSTANCE_OF, either end of skos:broader --
+# is in the kind scheme.
+campy:KindShape a sh:NodeShape ;
+    sh:targetObjectsOf campy:INSTANCE_OF ;
+    sh:targetObjectsOf skos:broader ;
+    sh:targetSubjectsOf skos:broader ;
+    sh:name "Kind" ;
+    sh:property [
+        sh:path skos:inScheme ; sh:name "kind in scheme" ;
+        sh:minCount 1 ; sh:hasValue campy:KindScheme ;
+        sh:message "kind Concept is not in campy:KindScheme" ;
+    ] .
+
+# An instance that is itself in the kind scheme is suspicious (a kind under INSTANCE_OF
+# instead of skos:broader): reported, not blocking.
+campy:InstanceShape a sh:NodeShape ;
+    sh:targetSubjectsOf campy:INSTANCE_OF ;
+    sh:name "Instance" ;
+    sh:severity sh:Warning ;
+    sh:property [
+        sh:path campy:INSTANCE_OF ; sh:name "INSTANCE_OF range" ;
+        sh:class skos:Concept ; sh:severity sh:Warning ;
+    ] ;
+    sh:property [
+        sh:path skos:inScheme ; sh:name "instance is a kind" ;
+        sh:maxCount 0 ; sh:severity sh:Warning ;
+        sh:message "an INSTANCE_OF subject is itself a kind (use skos:broader between kinds)" ;
+    ] .

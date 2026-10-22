@@ -23,6 +23,13 @@ _DEFAULT_CONFIG = {
         # retrieval (1-2 hops); graph_linking_limit caps the walk's items.
         "graph_linking": False,
         "graph_linking_limit": 12,
+        # B508: SKOS vocabulary for kinds (default off; env CAMPY_SKOS_VOCAB=1). Kinds are
+        # consolidated by rule (same label, head noun), entity -INSTANCE_OF-> kind and
+        # kind -BROADER-> kind replace the single IS_A, and the walk follows both.
+        # skos_closematch_threshold: cosine at or above which two kinds get an advisory
+        # CLOSE_MATCH edge (never merged); 0 turns it off.
+        "skos_vocab": False,
+        "skos_closematch_threshold": 0.90,
         # B375: exposes warm_frontier.py's previously-hardcoded module
         # constants. Values match those prior hardcoded defaults exactly,
         # so an absent/partial [retrieval.warm_frontier] section changes
@@ -218,6 +225,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_OBSERVATIONS_ENTITIES": ("observations", "entities", _parse_bool),
     # B503: link user turns / Observations to Concepts and walk the links at retrieval.
     "CAMPY_GRAPH_LINKING": ("retrieval", "graph_linking", _parse_bool),
+    # B508: SKOS vocabulary for kinds (consolidation, INSTANCE_OF vs BROADER).
+    "CAMPY_SKOS_VOCAB": ("retrieval", "skos_vocab", _parse_bool),
     # B507: the SHACL write gate (default off).
     "CAMPY_SHACL_GATE": ("observations", "shacl_gate", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),

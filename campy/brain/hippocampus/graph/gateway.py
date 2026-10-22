@@ -1578,6 +1578,12 @@ class GraphGateway:
         superseded rows, assistant turns, and ids in `exclude` (already in the
         bundle) are dropped.
 
+        `skos` (B508, flag `skos_vocab`): hop 2 also follows INSTANCE_OF and
+        BROADER (skos:broader) like IS_A, and descends the BROADER closure: every
+        kind narrower than a given kind, and the instances of those kinds, so a
+        question about "model kits" reaches the entities hung on "plastic model
+        kit". CLOSE_MATCH is never followed (advisory only).
+
         Selection under `limit`: hop 1 before hop 2, newest first within a hop;
         the rows come back oldest first by event time (Message `occurred_at`
         else `created_at`; Observation `observed_at`). Each row: `kind`
@@ -1625,12 +1631,27 @@ class GraphGateway:
                 first = linked(c0)
         if not c0:
             return []
-        near = [str(r["x"]) for r in run(f"""
+        if params.get("skos"):
+            # B508: one step is IS_A (legacy), INSTANCE_OF or BROADER; and every kind
+            # transitively narrower than a given kind, with its instances, is reached
+            up = f"({ns}IS_A>|{ns}INSTANCE_OF>|{ns}BROADER>)"
+            narrower = f"({ns}BROADER>|{ns}IS_A>)+"
+            near_query = f"""
+            SELECT DISTINCT ?x WHERE {{
+                VALUES ?c {{ {" ".join(c0)} }}
+                {{ ?c {up} ?x }} UNION {{ ?x {up} ?c }}
+                UNION {{ ?c {up} ?p . ?x {up} ?p . FILTER(?x != ?c) }}
+                UNION {{ ?x {narrower} ?c }}
+                UNION {{ ?k {narrower} ?c . ?x {ns}INSTANCE_OF> ?k }}
+            }} LIMIT 500"""
+        else:
+            near_query = f"""
             SELECT DISTINCT ?x WHERE {{
                 VALUES ?c {{ {" ".join(c0)} }}
                 {{ ?c {ns}IS_A> ?x }} UNION {{ ?x {ns}IS_A> ?c }}
                 UNION {{ ?c {ns}IS_A> ?p . ?x {ns}IS_A> ?p . FILTER(?x != ?c) }}
-            }} LIMIT 200""")]
+            }} LIMIT 200"""
+        near = [str(r["x"]) for r in run(near_query)]
         near = [f"<{u}>" for u in dict.fromkeys(near) if f"<{u}>" not in c0]
         second = {u: cs for u, cs in linked(near).items() if u not in first}
 

@@ -1664,11 +1664,12 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
     NamedQuery(
         name="thalamus.bundle_concept_walk",
         cypher="MATCH (m:Message)-[:MENTIONS]->(c:Concept) RETURN m.message_id as node_id LIMIT $limit",
-        params=("concept_ids", "limit", "exclude"),
+        params=("concept_ids", "limit", "exclude", "skos"),
         mutating=False,
         description="B503: user Messages and live Observations linked (MENTIONS / OBSERVATION_ABOUT) to the "
                     "given Concepts (hop 1) or to their IS_A parents, children and siblings (hop 2), "
-                    "deduplicated, capped, ordered by event time",
+                    "deduplicated, capped, ordered by event time. B508 (skos true): hop 2 also follows "
+                    "INSTANCE_OF / BROADER and descends the BROADER closure to every narrower kind and its instances",
         # No sparql= -- Python handler in GraphGateway._bundle_concept_walk.
     ),
     # Concept

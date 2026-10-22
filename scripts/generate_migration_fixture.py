@@ -6,7 +6,7 @@ Derives schema coverage directly by importing `campy/brain/hippocampus/schema.py
 (reusing B406 three-source derivation: NODE_TABLES, REL_TABLES, and SCHEMA_MIGRATIONS).
 Generates an exhaustive JSONL graph fixture covering:
 - All 58 node tables (with every declared property populated)
-- All 114 edge types (99 classified + 13 verified unclassified escalated)
+- All 117 edge types (102 classified + 13 verified unclassified escalated)
 - Multiple occurrences per (s,p,o) for all 15 occurrence types
 - Plain triples and quoted annotations for all 30 star types
 - All §3.1 datatypes (STRING[], TIMESTAMP, DOUBLE, FLOAT[384])
@@ -103,7 +103,7 @@ def derive_schema() -> tuple[dict[str, dict[str, str]], dict[str, dict[str, Any]
 
     # Sanity checks against schema.py
     assert len(node_schemas) == 58, f"Expected 58 node tables, got {len(node_schemas)}"
-    assert len(rel_schemas) == 114, f"Expected 114 rel tables, got {len(rel_schemas)}"
+    assert len(rel_schemas) == 117, f"Expected 117 rel tables, got {len(rel_schemas)}"
 
     return node_schemas, rel_schemas
 
@@ -176,7 +176,7 @@ def generate_rel_rows(
 
     For occurrence edges (15 types): 2 distinct occurrences between the exact same (s, p, o).
     For star edges (28 types): properties populated to exercise quoted annotation + plain triple.
-    For plain edges (56 types): valid endpoints.
+    For plain edges (59 types): valid endpoints.
     For unclassified edges (15 types): generated only if include_unclassified=True.
     """
     rows: list[dict[str, Any]] = []
@@ -340,7 +340,7 @@ def main() -> None:
     print(f"Generated exhaustive migration fixture at {args.out}")
     print(f"  Nodes: {len(node_rows)} rows across {len(node_schemas)} tables")
     print(f"  Edges: {len(rel_rows)} rows across {len(set(r['_table'] for r in rel_rows))} tables")
-    print(f"  Classified reification: 15 occurrence (multiple occurrences), 30 star (plain+quoted), 56 plain")
+    print(f"  Classified reification: 15 occurrence (multiple occurrences), 30 star (plain+quoted), 59 plain")
     print(f"  Unclassified tables: 13 verified to raise in classify_edge()")
 
 

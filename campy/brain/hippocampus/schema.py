@@ -180,6 +180,7 @@ NODE_TABLES = {
         supersession_reason STRING,
         authority            STRING,
         content_hash         STRING,
+        kind_scheme          STRING,
         PRIMARY KEY (concept_id)
     """,
 
@@ -1455,6 +1456,12 @@ REL_TABLES = [
     # both resolved to Concepts. Both property-free.
     "CREATE REL TABLE IF NOT EXISTS MENTIONS (FROM Message TO Concept)",
     "CREATE REL TABLE IF NOT EXISTS IS_A (FROM Concept TO Concept)",
+    # B508: SKOS vocabulary for kinds (flag CAMPY_SKOS_VOCAB). INSTANCE_OF: entity ->
+    # kind. BROADER: kind -> broader kind (skos:broader). CLOSE_MATCH: kind ~ kind
+    # (skos:closeMatch, advisory). All property-free; a kind is Concept.kind_scheme='kind'.
+    "CREATE REL TABLE IF NOT EXISTS INSTANCE_OF (FROM Concept TO Concept)",
+    "CREATE REL TABLE IF NOT EXISTS BROADER (FROM Concept TO Concept)",
+    "CREATE REL TABLE IF NOT EXISTS CLOSE_MATCH (FROM Concept TO Concept)",
     # Ontology routing (core IP — Shape-First Principle)
     "CREATE REL TABLE IF NOT EXISTS ROUTES_TO (FROM GistClass TO SchemaOrgType)",
     # SKOS labels
@@ -1838,6 +1845,7 @@ SCHEMA_MIGRATIONS: list[tuple[str, str, str]] = [
 
     # B64: Ensure 'archived' column exists for all relevant tables
     ("Concept",         "archived", "BOOLEAN"),
+    ("Concept",         "kind_scheme", "STRING"),     # B508: 'kind' puts the Concept in campy:KindScheme
     ("Decision",        "archived", "BOOLEAN"),
     ("Constraint",      "archived", "BOOLEAN"),
     ("Requirement",     "archived", "BOOLEAN"),

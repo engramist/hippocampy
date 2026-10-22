@@ -32,6 +32,9 @@ from typing import Any, Mapping
 
 NS = "https://campy.dev/ns#"
 SHAPES_PATH = Path(__file__).with_name("campy_shapes.ttl")
+VOCAB_PATH = Path(__file__).with_name("campy_vocab.ttl")     # B508: Campy <-> SKOS alignment
+SKOS_NS = "http://www.w3.org/2004/02/skos/core#"
+KIND_SCHEME_VALUE = "kind"                                   # Concept.kind_scheme of a kind
 SH = "http://www.w3.org/ns/shacl#"
 
 # Words that carry no concept on their own. A label made only of these (and
@@ -102,6 +105,54 @@ def load_shapes() -> Any:
     return g
 
 
+@lru_cache(maxsize=1)
+def load_vocab() -> Any:
+    """The parsed Campy <-> SKOS alignment (campy_vocab.ttl), cached."""
+    from rdflib import Graph
+
+    g = Graph()
+    g.parse(VOCAB_PATH, format="turtle")
+    return g
+
+
+def skos_project(data_graph: Any) -> Any:
+    """Add, in place, the SKOS view of every Campy Concept in `data_graph` and return it.
+    Idempotent; only adds triples.
+
+      rdf:type skos:Concept                         every campy:Concept
+      skos:prefLabel                                from campy:text_raw
+      skos:altLabel                                 from each HAS_ALT_LABEL Label's text
+      skos:inScheme campy:KindScheme                when Concept.kind_scheme = 'kind'
+      skos:broader / skos:closeMatch                for each stored campy edge declared
+                                                    rdfs:subPropertyOf one in campy_vocab.ttl
+      skos:narrower, symmetric skos:closeMatch      the inverses SKOS defines
+    A graph that already states these in SKOS is left as it is."""
+    from rdflib import Namespace, URIRef
+    from rdflib.namespace import RDF, RDFS
+
+    campy, skos = Namespace(NS), Namespace(SKOS_NS)
+    g = data_graph
+    sub_of = [(p, q) for p, q in load_vocab().subject_objects(RDFS.subPropertyOf)
+              if str(q).startswith(SKOS_NS)]
+    for c in set(g.subjects(RDF.type, campy.Concept)):
+        g.add((c, RDF.type, skos.Concept))
+        for t in g.objects(c, campy.text_raw):
+            g.add((c, skos.prefLabel, t))
+        for label in g.objects(c, campy.HAS_ALT_LABEL):
+            for t in g.objects(label, campy.text):
+                g.add((c, skos.altLabel, t))
+        if any(str(v) == KIND_SCHEME_VALUE for v in g.objects(c, campy.kind_scheme)):
+            g.add((c, skos.inScheme, campy.KindScheme))
+    for p, q in sub_of:
+        for s_, o in list(g.subject_objects(p)):
+            g.add((s_, q, o))
+    for s_, o in list(g.subject_objects(skos.broader)):
+        g.add((o, skos.narrower, s_))
+    for s_, o in list(g.subject_objects(skos.closeMatch)):
+        g.add((o, skos.closeMatch, s_))
+    return g
+
+
 def _turtle_escape(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
@@ -118,6 +169,7 @@ def validate_graph(data_graph: Any, *, allow_warnings: bool = True) -> tuple[Sha
     from rdflib.namespace import RDF
 
     shapes = load_shapes()
+    skos_project(data_graph)    # B508: shapes are written in SKOS; add the SKOS view of stored Concepts
     with _lock:   # pyshacl mutates internal caches on the shapes graph
         conforms, results_graph, _ = validate(
             data_graph, shacl_graph=shapes, inference="none", abort_on_first=False,

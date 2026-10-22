@@ -45,6 +45,7 @@ from campy.brain.temporal_lobe.loop.step4b_associative import check_associative_
 from campy.brain.temporal_lobe.loop.step7_5_lesson import extract_lessons  # B11
 from campy.brain.temporal_lobe.loop.anomaly_detection import check_anomalies, store_anomaly_flag  # B12
 from campy.brain.hippocampus.concept_links import graph_linking_enabled, link_message_concepts
+from campy.brain.hippocampus.kinds import skos_vocab_enabled
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.llm.provider import create_llm_client_for_step  # B16
 
@@ -565,7 +566,8 @@ async def _link_turn(message_id: str, text: str, role: str, config: dict, db, re
     if role != "user" or not graph_linking_enabled(config):
         return
     try:
-        await link_message_concepts(_gateway(db), message_id, text, resolved_ids)
+        await link_message_concepts(_gateway(db), message_id, text, resolved_ids,
+                                    alt_labels=skos_vocab_enabled(config))
     except Exception:
         _logger.warning("[GraphLinking] msg=%s link failed", message_id[:8], exc_info=True)
 

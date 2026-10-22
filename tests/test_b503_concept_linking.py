@@ -200,7 +200,7 @@ async def test_link_existing_backfills_a_store_written_without_linking(db, gw, s
 
 async def _walk(gw, concept_ids, **kw):
     return await gw.run("thalamus.bundle_concept_walk", concept_ids=concept_ids,
-                        limit=kw.get("limit", 12), exclude=kw.get("exclude", []))
+                        limit=kw.get("limit", 12), exclude=kw.get("exclude", []), skos=kw.get("skos", False))
 
 
 async def test_walk_gathers_every_session_through_the_shared_concept(db, gw, store):

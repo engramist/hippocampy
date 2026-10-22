@@ -111,24 +111,32 @@ def candidate_spans(text: str | None) -> list[str]:
 
 # --- matching -----------------------------------------------------------------------
 
-async def concept_index(gw: Any) -> dict[str, list[str]]:
+async def concept_index(gw: Any, *, alt_labels: bool = False) -> dict[str, list[str]]:
     """norm_key -> Concept ids, built fresh from the graph on each call (a
-    read-through view, never kept)."""
+    read-through view, never kept). `alt_labels` (B508, flag `skos_vocab`) also
+    indexes the altLabels of kind Concepts, so a kind is found by any wording it
+    has accumulated."""
     index: dict[str, list[str]] = {}
     for row in await gw.run("concept_links.live_concepts"):
         key = norm_key(row.get("text_raw"))
         if key:
             index.setdefault(key, []).append(str(row.get("concept_id")))
+    if alt_labels:
+        from campy.brain.hippocampus.kinds import alt_label_index
+        for key, ids in (await alt_label_index(gw)).items():
+            for cid in ids:
+                if cid not in index.setdefault(key, []):
+                    index[key].append(cid)
     return index
 
 
 async def match_concepts(gw: Any, text: str | None, *, index: dict[str, list[str]] | None = None,
-                         limit: int = MAX_CONCEPTS_PER_TEXT) -> list[str]:
+                         limit: int = MAX_CONCEPTS_PER_TEXT, alt_labels: bool = False) -> list[str]:
     """Ids of the live Concepts `text` names, longest span first, at most `limit`."""
     spans = candidate_spans(text)
     if not spans:
         return []
-    idx = index if index is not None else await concept_index(gw)
+    idx = index if index is not None else await concept_index(gw, alt_labels=alt_labels)
     if not idx:
         return []
     out: list[str] = []
@@ -155,9 +163,11 @@ def _whole_text_concept(index: dict[str, list[str]], text: str | None, known: st
 
 async def link_message_concepts(gw: Any, message_id: str, text: str | None,
                                 already_resolved: Iterable[str] = (), *,
-                                index: dict[str, list[str]] | None = None) -> list[str]:
+                                index: dict[str, list[str]] | None = None,
+                                alt_labels: bool = False) -> list[str]:
     """MENTIONS from a user Message to every Concept it names. Returns the ids linked."""
-    ids = list(dict.fromkeys([c for c in already_resolved if c] + await match_concepts(gw, text, index=index)))
+    ids = list(dict.fromkeys([c for c in already_resolved if c]
+                             + await match_concepts(gw, text, index=index, alt_labels=alt_labels)))
     for cid in ids:
         await gw.run("concept_links.link_message_concept", mid=message_id, cid=cid)
     return ids
@@ -167,12 +177,17 @@ async def link_observation_concepts(
     gw: Any, observation_id: str, message_id: str | None, *,
     subject_text: str | None, predicate: str | None, object_text: str | None,
     event_text: str | None = None, subject_id: str | None = None, object_id: str | None = None,
-    index: dict[str, list[str]] | None = None,
+    index: dict[str, list[str]] | None = None, skos: bool = False,
 ) -> list[str]:
     """OBSERVATION_ABOUT (and MENTIONS from its evidence Message) to the
     Concepts the claim's own words name; IS_A subject -> object for an `is_a`
-    claim whose two ends both resolve. Returns the Concept ids linked."""
-    idx = index if index is not None else await concept_index(gw)
+    claim whose two ends both resolve. Returns the Concept ids linked.
+
+    `skos` (B508, flag `skos_vocab`): the `is_a` claim is split by what the
+    subject is. The object becomes a kind; a subject that is itself a kind is
+    BROADER-linked to it ("a tank is a vehicle": subtype), any other subject is
+    INSTANCE_OF it ("Tiger I is a tank": instance). IS_A is not written."""
+    idx = index if index is not None else await concept_index(gw, alt_labels=skos)
     ids = [c for c in (subject_id, object_id) if c]
     # a first-person subject ("I") names nobody; its words are not matched
     for t in (object_text, event_text, subject_text):
@@ -187,23 +202,32 @@ async def link_observation_concepts(
         child = _whole_text_concept(idx, subject_text, subject_id)
         parent = _whole_text_concept(idx, object_text, object_id)
         if child and parent and child != parent:
-            await gw.run("concept_links.link_is_a", cid=child, pid=parent)
+            if skos:
+                from campy.brain.hippocampus import kinds as kinds_mod
+                known = await kinds_mod.load_kinds(gw)
+                await kinds_mod.mark_kind(gw, parent)
+                if child in known:
+                    await kinds_mod.link_broader(gw, child, parent)
+                else:
+                    await kinds_mod.link_instance_of(gw, child, parent)
+            else:
+                await gw.run("concept_links.link_is_a", cid=child, pid=parent)
     return ids
 
 
-async def link_existing(db: Any) -> dict[str, int]:
+async def link_existing(db: Any, *, skos: bool = False) -> dict[str, int]:
     """One pass over a store written without linking: MENTIONS for every live
     user Message, OBSERVATION_ABOUT / IS_A for every live Observation, by the same
     rules as the write path. Idempotent. For stores built before B503 and for
     offline replay; the Loop and the Observation worker link new turns as they
     arrive when the flag is on."""
     gw = get_gateway(db)
-    idx = await concept_index(gw)
+    idx = await concept_index(gw, alt_labels=skos)
     stats = {"messages": 0, "message_links": 0, "observations": 0, "observation_links": 0}
     if not idx:
         return stats
     for row in await gw.run("concept_links.list_user_messages"):
-        ids = await link_message_concepts(gw, row["message_id"], row.get("text_raw"), index=idx)
+        ids = await link_message_concepts(gw, row["message_id"], row.get("text_raw"), index=idx, alt_labels=skos)
         stats["messages"] += 1
         stats["message_links"] += len(ids)
     for row in await gw.run("concept_links.list_live_observations"):
@@ -211,7 +235,7 @@ async def link_existing(db: Any) -> dict[str, int]:
             gw, row["observation_id"], row.get("evidence_ref"),
             subject_text=row.get("subject_text"), predicate=row.get("predicate"),
             object_text=row.get("object_text"), event_text=row.get("event_text"),
-            subject_id=row.get("subject_id"), object_id=row.get("object_id"), index=idx)
+            subject_id=row.get("subject_id"), object_id=row.get("object_id"), index=idx, skos=skos)
         stats["observations"] += 1
         stats["observation_links"] += len(ids)
     return stats

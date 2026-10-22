@@ -2,7 +2,7 @@
 tests/test_migration_fixture_conformance.py — B411 Acceptance Gate: Fixture conformance guard.
 
 Asserts:
-- Fixture covers all 58 node tables and all 114 edge types (97 classified + 15 verified unclassified).
+- Fixture covers all 58 node tables and all 117 edge types (100 classified + 15 verified unclassified).
 - Coverage asserted programmatically against schema.py, so newly added tables fail until represented.
 - Every occurrence type round-trips multiple occurrences on one (s, p, o).
 - Every star type has properties populated for plain triple and quoted annotation.
@@ -39,11 +39,11 @@ from scripts.generate_migration_fixture import (
 
 
 def test_schema_coverage_derivation():
-    """Verify that schema derivation extracts all 58 node tables and 114 rel tables from schema.py."""
+    """Verify that schema derivation extracts all 58 node tables and 117 rel tables from schema.py."""
     node_schemas, rel_schemas = derive_schema()
 
     assert len(node_schemas) == 58, f"Expected 58 node tables, got {len(node_schemas)}"
-    assert len(rel_schemas) == 114, f"Expected 114 rel tables, got {len(rel_schemas)}"
+    assert len(rel_schemas) == 117, f"Expected 117 rel tables, got {len(rel_schemas)}"
 
     all_props = get_all_table_properties()
     for t, cols in node_schemas.items():
@@ -64,7 +64,7 @@ def test_classify_edge_raises_for_unclassified_escalated_tables():
 
 
 def test_reification_classification_partition():
-    """Verify that EDGE_REIFICATION and UNCLASSIFIED_ESCALATED_TABLES partition all 114 edge tables."""
+    """Verify that EDGE_REIFICATION and UNCLASSIFIED_ESCALATED_TABLES partition all 117 edge tables."""
     _, rel_schemas = derive_schema()
     all_rel_names = set(rel_schemas.keys())
 
@@ -82,7 +82,7 @@ def test_reification_classification_partition():
 
     assert occ_count == 15, f"Expected 15 occurrence tables, got {occ_count}"
     assert star_count == 30, f"Expected 30 star tables, got {star_count}"
-    assert plain_count == 56, f"Expected 56 plain tables, got {plain_count}"
+    assert plain_count == 59, f"Expected 59 plain tables, got {plain_count}"
 
 
 def test_exhaustive_migration_fixture_file_conformance():

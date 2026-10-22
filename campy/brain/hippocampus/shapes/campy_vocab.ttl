@@ -1,0 +1,44 @@
+# campy_vocab.ttl -- B508: how Campy's stored edges and columns line up with SKOS.
+#
+# The store keeps Campy-named edges (campy:BROADER, campy:INSTANCE_OF, ...) because
+# every writer and reader works in that namespace. This file is the declared
+# alignment: shapes/validator.py `skos_project` reads the rdfs:subPropertyOf pairs
+# below and adds the SKOS statement for each stored one (skos:broader for each
+# campy:BROADER, ...), so the SHACL shapes are written in plain SKOS and nothing is
+# stored twice.
+#
+#   Concept.text_raw            is the skos:prefLabel          (projected by code)
+#   Concept -HAS_ALT_LABEL-> Label.text   is a skos:altLabel   (projected by code)
+#   Concept.kind_scheme = 'kind'  is skos:inScheme campy:KindScheme (projected by code)
+#
+# Two different relations, kept apart (the reason this card exists):
+#   campy:INSTANCE_OF  entity -> kind        "this thing is one of those"
+#   campy:BROADER      kind   -> broader kind "this kind is a subtype of that kind"
+# They are declared disjoint, so a reasoner (B509, OWL) can flag a pair that is both.
+# INSTANCE_OF is deliberately not rdf:type: a kind is an individual of skos:Concept,
+# and typing instances by it would make the kind a class as well (punning).
+
+@prefix campy: <https://campy.dev/ns#> .
+@prefix skos:  <http://www.w3.org/2004/02/skos/core#> .
+@prefix owl:   <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+
+campy:KindScheme a skos:ConceptScheme ;
+    skos:prefLabel "Campy kinds" ;
+    rdfs:comment "The vocabulary of kinds extracted from conversation: 'model kit', 'camping trip', ..." .
+
+campy:BROADER a owl:ObjectProperty ;
+    rdfs:subPropertyOf skos:broader ;
+    rdfs:domain skos:Concept ; rdfs:range skos:Concept ;
+    rdfs:comment "Kind is narrower than the kind it points to (subtype)." .
+
+campy:CLOSE_MATCH a owl:ObjectProperty, owl:SymmetricProperty ;
+    rdfs:subPropertyOf skos:closeMatch ;
+    rdfs:domain skos:Concept ; rdfs:range skos:Concept ;
+    rdfs:comment "Two kinds that look alike; advisory, never merged and never walked." .
+
+campy:INSTANCE_OF a owl:ObjectProperty ;
+    rdfs:domain skos:Concept ; rdfs:range skos:Concept ;
+    owl:propertyDisjointWith campy:BROADER ;
+    rdfs:comment "Entity is an instance of the kind it points to." .

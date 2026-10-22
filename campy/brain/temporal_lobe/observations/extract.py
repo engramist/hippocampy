@@ -36,6 +36,7 @@ from typing import Any
 
 from campy.brain.hippocampus import observations as obs
 from campy.brain.hippocampus.concept_links import concept_index, graph_linking_enabled, link_observation_concepts
+from campy.brain.hippocampus.kinds import closematch_threshold, skos_vocab_enabled
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.temporal_lobe.observations import entities as ent
@@ -131,7 +132,12 @@ class ObservationWorkerStats:
     entity_rejected: int = 0     # B504: proposed entity failed the rules (not in turn, pronoun, too long)
     kind_rejected: int = 0       # B504: proposed kind failed the rules
     entities_linked: int = 0     # B504: claims linked to a validated entity Concept
-    kinds_linked: int = 0        # B504: entity -IS_A-> kind edges written
+    kinds_linked: int = 0        # B504: entity -IS_A-> kind edges written (B508: INSTANCE_OF / BROADER)
+    kinds_created: int = 0       # B508: new kind Concepts in the scheme
+    kinds_reused: int = 0        # B508: a proposed kind matched an existing prefLabel/altLabel
+    kinds_broader: int = 0       # B508: kind -BROADER-> kind edges (head-noun containment)
+    kinds_close_match: int = 0   # B508: advisory CLOSE_MATCH edges
+    kind_alt_labels: int = 0     # B508: altLabels accumulated on kinds
     entity_concepts_created: int = 0   # B504: new Concepts (entity or kind)
     queue_dropped: int = 0       # set by the daemon when the queue is full
     errors: int = 0              # a turn that raised (logged, skipped)
@@ -321,6 +327,8 @@ async def process_turn(
         speaker_id = await find_existing_concept(gw, " ".join(speaker.split()))
 
     linking = graph_linking_enabled(config)
+    skos = skos_vocab_enabled(config)
+    closematch = closematch_threshold(config)
     link_index: dict[str, list[str]] | None = None
     writes = obs.WriteStats()
     for p in proposals:
@@ -345,7 +353,7 @@ async def process_turn(
             # so the linker's index already holds them
             try:
                 await ent.write_entity(gw, proposed_entity, result.observation_id, message_id, stats,
-                                       embedding_model=embedding_model)
+                                       embedding_model=embedding_model, skos=skos, closematch=closematch)
                 link_index = None
             except Exception:
                 _logger.warning("[ObservationEntities] entity write failed msg=%s", message_id[:8], exc_info=True)
@@ -353,12 +361,12 @@ async def process_turn(
             # B503: link the claim (and its turn) to the Concepts its words name
             try:
                 if link_index is None:
-                    link_index = await concept_index(gw)
+                    link_index = await concept_index(gw, alt_labels=skos)
                 await link_observation_concepts(
                     gw, result.observation_id, message_id,
                     subject_text=draft.subject_text, predicate=draft.predicate,
                     object_text=draft.object_text, event_text=draft.event_text,
-                    subject_id=draft.subject_id, object_id=draft.object_id, index=link_index)
+                    subject_id=draft.subject_id, object_id=draft.object_id, index=link_index, skos=skos)
             except Exception:
                 _logger.warning("[GraphLinking] observation link failed msg=%s", message_id[:8], exc_info=True)
 

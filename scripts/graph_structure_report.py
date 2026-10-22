@@ -13,7 +13,13 @@ Per store and pooled, it reports:
   * % of Observations linked to a Concept (OBSERVATION_ABOUT);
   * % of user Messages that MENTION a Concept (0 until B503 adds the edge);
   * Concept count, the share that are fragments (stopword-only or 1-2 chars), and
-    the redundant-duplicate rate (labels equal after normalisation);
+    the redundant-duplicate rate (labels equal after normalisation); both read the
+    SKOS prefLabel (B508: campy:text_raw is its stored form, see shapes/campy_vocab.ttl);
+  * B508, the kind vocabulary: number of kinds (in campy:KindScheme, or used as a kind
+    by INSTANCE_OF / skos:broader / the legacy IS_A), the share of kinds with at least
+    one altLabel, the duplicate-kind rate (kinds that share a normalised prefLabel or
+    altLabel with another kind: what consolidation should drive to 0), and the share
+    of entities (gist_class "Entity") that have an instance-of kind;
   * % of has_attribute Observations whose object parses as "name: value", and the
     count whose object is a stringified dict/list (B506).
 
@@ -37,6 +43,7 @@ NS = "https://campy.dev/ns#"
 RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 XSD_STRING = "http://www.w3.org/2001/XMLSchema#string"
 NODE_TYPES = ("Observation", "Message", "Concept")
+SKOS = "http://www.w3.org/2004/02/skos/core#"
 NAME_VALUE_RE = re.compile(r"^[^:{}\[\]]+:\s*\S")      # mirrors AttributeObjectIsNameValue in the shapes
 STRUCTURED_RE = re.compile(r"^\s*[\{\[]")              # mirrors "object_text not a structure"
 _ARTICLE_RE = re.compile(r"^(?:the|a|an)\s+")
@@ -101,6 +108,47 @@ def to_rdflib(store):
     return g
 
 
+def kind_metrics(g) -> dict:
+    """B508 kind-vocabulary numerators/denominators from a SKOS-projected rdflib graph."""
+    from rdflib import Namespace, URIRef
+    from rdflib.namespace import RDF
+
+    from campy.brain.hippocampus.concept_links import norm_key
+
+    campy, skos = Namespace(NS), Namespace(SKOS)
+    kinds = set(g.subjects(skos.inScheme, campy.KindScheme))
+    kinds |= set(g.objects(None, campy.INSTANCE_OF)) | set(g.objects(None, campy.IS_A))
+    kinds |= set(g.subjects(skos.broader, None)) | set(g.objects(None, skos.broader))
+    kinds = {k for k in kinds if (k, RDF.type, campy.Concept) in g}
+    # duplicate kinds: union kinds that share a normalised pref/alt label
+    parent = {k: k for k in kinds}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    owner: dict[str, URIRef] = {}
+    with_alt = 0
+    for k in kinds:
+        labels = [str(t) for t in g.objects(k, skos.prefLabel)]
+        alts = [str(t) for t in g.objects(k, skos.altLabel)]
+        with_alt += bool(alts)
+        for key in {norm_key(x) for x in labels + alts} - {""}:
+            if key in owner:
+                parent[find(k)] = find(owner[key])
+            else:
+                owner[key] = k
+    components = len({find(k) for k in kinds})
+    entities = [c for c in g.subjects(RDF.type, campy.Concept)
+                if str(g.value(c, campy.gist_class) or "") == "Entity" and c not in kinds]
+    with_kind = sum(1 for c in entities
+                    if (c, campy.INSTANCE_OF, None) in g or (c, campy.IS_A, None) in g)
+    return {"kinds": len(kinds), "kinds_with_alt": with_alt, "kinds_duplicate": len(kinds) - components,
+            "entities": len(entities), "entities_with_kind": with_kind}
+
+
 def measure(path: str | Path, *, shacl: bool = True) -> dict:
     """All metrics for one store, as raw numerators/denominators (poolable)."""
     from campy.brain.hippocampus.shapes import validator
@@ -113,7 +161,9 @@ def measure(path: str | Path, *, shacl: bool = True) -> dict:
     m["user_messages"] = q('?x a campy:Message ; campy:role "user"')
     m["user_msgs_mention"] = q('?x a campy:Message ; campy:role "user" ; campy:MENTIONS ?c')
 
-    labels = [r[0] for r in _rows(store, f"PREFIX campy: <{NS}> SELECT ?l WHERE {{ ?c a campy:Concept ; campy:text_raw ?l }}")]
+    g = validator.skos_project(to_rdflib(store))       # the SKOS view: prefLabel, altLabel, broader, inScheme
+    from rdflib import Namespace
+    labels = [str(t) for t in g.objects(None, Namespace(SKOS).prefLabel)]
     m["concepts"] = q("?x a campy:Concept")
     m["concept_fragments"] = sum(1 for lab in labels if validator.is_fragment(lab))
     norm = Counter(normalise_label(lab) for lab in labels)
@@ -124,9 +174,10 @@ def measure(path: str | Path, *, shacl: bool = True) -> dict:
     m["attr_name_value"] = sum(1 for o in objs if NAME_VALUE_RE.match(o))
     m["attr_structured"] = sum(1 for o in objs if STRUCTURED_RE.match(o))
 
+    m.update(kind_metrics(g))
+
     m["shacl"] = {}
     if shacl:
-        g = to_rdflib(store)
         report, _ = validator.validate_graph(g)
         from rdflib import URIRef
         type_of = {}
@@ -155,7 +206,8 @@ def measure(path: str | Path, *, shacl: bool = True) -> dict:
 def pool(results: list[dict]) -> dict:
     out: dict = {"stores": len(results), "shacl": {t: {"total": 0, "nonconforming": 0, "warned": 0, "top": Counter()} for t in NODE_TYPES}}
     for key in ("observations", "obs_linked", "user_messages", "user_msgs_mention", "concepts", "concept_fragments",
-                "concept_redundant", "has_attribute", "attr_name_value", "attr_structured"):
+                "concept_redundant", "has_attribute", "attr_name_value", "attr_structured",
+                "kinds", "kinds_with_alt", "kinds_duplicate", "entities", "entities_with_kind"):
         out[key] = sum(r[key] for r in results)
     for r in results:
         for t, d in r["shacl"].items():
@@ -186,11 +238,16 @@ def render_row(name: str, r: dict) -> list[str]:
         pct(r["concept_fragments"], r["concepts"]),
         pct(r["concept_redundant"], r["concepts"]),
         pct(r["attr_name_value"], r["has_attribute"]),
+        str(r["kinds"]),
+        pct(r["kinds_with_alt"], r["kinds"]),
+        pct(r["kinds_duplicate"], r["kinds"]),
+        pct(r["entities_with_kind"], r["entities"]),
     ]
 
 
 HEADER = ["store", "SHACL Obs", "SHACL Msg", "SHACL Concept", "Obs->Concept", "UserMsg MENTIONS",
-          "Concepts", "fragment", "dup", "attr name:value"]
+          "Concepts", "fragment", "dup", "attr name:value",
+          "kinds", "kinds w/ altLabel", "dup kinds", "entities w/ kind"]
 
 
 def table(rows: list[list[str]]) -> str:
@@ -217,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("stores", nargs="+", help="store directories (Campy homes or brain.db dirs)")
     ap.add_argument("-v", "--verbose", action="store_true", help="per-store top failing shapes")
     ap.add_argument("--json", action="store_true", help="emit JSON instead of tables")
-    ap.add_argument("--no-shacl", action="store_true", help="skip SHACL validation (fast: SPARQL metrics only)")
+    ap.add_argument("--no-shacl", action="store_true", help="skip SHACL validation (faster; the count metrics are still computed)")
     args = ap.parse_args(argv)
 
     results, skipped = [], []

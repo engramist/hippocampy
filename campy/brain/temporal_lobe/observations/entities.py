@@ -21,6 +21,12 @@ Writes (graph store only; plain idempotent edges, nothing kept in Python):
   normalised key (`concept_links.norm_key`), else created like a dictionary Concept.
   Observation -OBSERVATION_ABOUT-> entity;  Message -MENTIONS-> entity;
   entity -IS_A-> kind.
+
+With `[retrieval] skos_vocab` on (B508) the kind is written into the SKOS vocabulary
+instead (campy/brain/hippocampus/kinds.py): the kind label is consolidated against the
+kinds already there by rule (same label, head noun, optional close match), the entity
+is `INSTANCE_OF` the kind (or `BROADER`-linked to it when the entity is itself a kind),
+and a differently worded surface accumulates as an altLabel. IS_A is not written.
 """
 
 from __future__ import annotations
@@ -31,6 +37,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from campy.brain.hippocampus import kinds as kinds_mod
 from campy.brain.hippocampus import observations as obs
 from campy.brain.hippocampus.concept_links import concept_index, norm_key
 from campy.brain.hippocampus.graph import embeddings as emb
@@ -137,18 +144,73 @@ async def _concept_for(gw: Any, name: str, index: dict[str, list[str]], stats: A
     return cid
 
 
+def _bump(stats: Any, name: str, n: int = 1) -> None:
+    if hasattr(stats, name):
+        setattr(stats, name, getattr(stats, name) + n)
+
+
+async def resolve_kind(gw: Any, name: str, index: dict[str, list[str]], stats: Any, *,
+                       embedding_model: str, closematch: float = 0.0) -> str | None:
+    """B508: the kind Concept for `name`, consolidated against the scheme by rule
+    (see kinds.plan_kind): the same kind when the normalised label matches a prefLabel
+    or altLabel, else a new kind that is `BROADER`-linked under the kinds whose label
+    ends its own (and over the kinds it ends), plus an advisory CLOSE_MATCH when an
+    embedding clears `closematch`. Never calls a model."""
+    known = await kinds_mod.load_kinds(gw)
+    plan = kinds_mod.plan_kind(name, known)
+    if plan.exact:
+        if await kinds_mod.add_alt_label(gw, known[plan.exact], name):
+            _bump(stats, "kind_alt_labels")
+        _bump(stats, "kinds_reused")
+        return plan.exact
+    kind_id = await _concept_for(gw, name, index, stats, embedding_model=embedding_model)
+    if not kind_id:
+        return None
+    await kinds_mod.mark_kind(gw, kind_id)
+    _bump(stats, "kinds_created")
+    for parent in plan.broader:
+        await kinds_mod.link_broader(gw, kind_id, parent)
+        _bump(stats, "kinds_broader")
+    for child in plan.narrower:
+        await kinds_mod.link_broader(gw, child, kind_id)
+        _bump(stats, "kinds_broader")
+    if closematch > 0:
+        try:
+            vec = emb.embed(name, model_name=embedding_model)
+            others = kinds_mod.close_matches(
+                vec, known, lambda label: emb.embed(label, model_name=embedding_model), closematch,
+                exclude={kind_id, *plan.broader, *plan.narrower})
+        except Exception:
+            _logger.debug("close-match search failed", exc_info=True)
+            others = []
+        for other in others:
+            await kinds_mod.link_close_match(gw, kind_id, other)
+            _bump(stats, "kinds_close_match")
+    return kind_id
+
+
 async def write_entity(gw: Any, proposal: EntityProposal, observation_id: str, message_id: str,
-                       stats: Any, *, embedding_model: str = obs.EMBEDDING_MODEL) -> str | None:
+                       stats: Any, *, embedding_model: str = obs.EMBEDDING_MODEL,
+                       skos: bool = False, closematch: float = 0.0) -> str | None:
     """Create or reuse the entity (and kind) Concepts and write the edges.
-    Returns the entity Concept id."""
-    index = await concept_index(gw)
+    Returns the entity Concept id. `skos` (B508) writes the kind into the SKOS vocabulary."""
+    index = await concept_index(gw, alt_labels=skos)
     entity_id = await _concept_for(gw, proposal.entity, index, stats, embedding_model=embedding_model)
     if not entity_id:
         return None
     await gw.run("observations.link_about_concept", oid=observation_id, cid=entity_id)
     await gw.run("concept_links.link_message_concept", mid=message_id, cid=entity_id)
     stats.entities_linked += 1
-    if proposal.kind:
+    if proposal.kind and skos:
+        kind_id = await resolve_kind(gw, proposal.kind, index, stats, embedding_model=embedding_model,
+                                     closematch=closematch)
+        if kind_id and kind_id != entity_id:
+            if entity_id in await kinds_mod.load_kinds(gw):      # a kind under a kind: subtype, not instance
+                await kinds_mod.link_broader(gw, entity_id, kind_id)
+            else:
+                await kinds_mod.link_instance_of(gw, entity_id, kind_id)
+            stats.kinds_linked += 1
+    elif proposal.kind:
         kind_id = await _concept_for(gw, proposal.kind, index, stats, embedding_model=embedding_model)
         if kind_id and kind_id != entity_id:
             await gw.run("concept_links.link_is_a", cid=entity_id, pid=kind_id)
