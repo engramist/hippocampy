@@ -237,7 +237,7 @@ NODE_COLUMNS, NODE_PRIMARY_KEYS = _parse_node_schema()
 #                Nothing to lose: repeated identical plain triples are
 #                idempotent under RDF set semantics, so no call-site
 #                analysis is needed for these — the schema itself proves it
-#                safe. 59 tables (B472 Phase 3a: +EVIDENCED_BY, +OBSERVATION_ABOUT; B503: +MENTIONS, +IS_A; B508: +INSTANCE_OF, +BROADER, +CLOSE_MATCH).
+#                safe. 60 tables (B509: +HAS_PROPERTY; B472 Phase 3a: +EVIDENCED_BY, +OBSERVATION_ABOUT; B503: +MENTIONS, +IS_A; B508: +INSTANCE_OF, +BROADER, +CLOSE_MATCH).
 # "star"       — at most one edge per (s,p,o), carrying properties.
 #                Confirmed (not guessed) via actual call sites: every
 #                writer for these tables uses Cypher `MERGE ... SET`
@@ -342,6 +342,8 @@ EDGE_REIFICATION: dict[str, EdgeReification] = {
     "INSTANCE_OF": "plain",
     "BROADER": "plain",
     "CLOSE_MATCH": "plain",
+    # B509: Observation -> AttributeProperty; property-free, MERGE writer (properties.link_property).
+    "HAS_PROPERTY": "plain",
     "PLANNED_IN": "plain",
     "PRODUCED_HYPOTHESIS": "plain",
     "PRODUCED_LESSON": "plain",

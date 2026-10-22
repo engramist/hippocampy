@@ -98,6 +98,9 @@ _DEFAULT_CONFIG = {
         # claim's object entity + kind, validated by rule and written as Concepts, and extracts
         # facts stated inside requests and plans.
         "entities": False,
+        # B509 (default off; env CAMPY_OWL_PROPERTIES=1): has_attribute names become OWL attribute
+        # properties (vocabulary nodes); a functional property's newer value supersedes the older.
+        "owl_properties": False,
         "shacl_gate": False,       # B507: validate each draft against the SHACL shapes before writing
         "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
     },
@@ -230,6 +233,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_SKOS_VOCAB": ("retrieval", "skos_vocab", _parse_bool),
     # B507: the SHACL write gate (default off).
     "CAMPY_SHACL_GATE": ("observations", "shacl_gate", _parse_bool),
+    # B509: OWL attribute properties; functional properties drive supersession.
+    "CAMPY_OWL_PROPERTIES": ("observations", "owl_properties", _parse_bool),
     # B499: rule-based supersession of attribute Observations (default off).
     "CAMPY_OBSERVATIONS_SUPERSEDE": ("observations", "supersede", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),

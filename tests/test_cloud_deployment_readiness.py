@@ -56,6 +56,7 @@ def test_every_documented_override_applies():
         "CAMPY_GRAPH_LINKING": "1",
         "CAMPY_OBSERVATIONS_ENTITIES": "1",
         "CAMPY_SHACL_GATE": "1",
+        "CAMPY_OWL_PROPERTIES": "1",
         "CAMPY_SKOS_VOCAB": "1",
         "CAMPY_OBSERVATIONS_SUPERSEDE": "1",
     }

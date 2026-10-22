@@ -30,7 +30,7 @@ from __future__ import annotations
 import ast
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 _FIRST_PERSON = frozenset({"i", "me", "my", "myself", "mine", "we", "our", "ours", "us"})
 _UNKNOWN_SPEAKER_SUBJECT = "the user"
@@ -74,6 +74,9 @@ class AttrKey:
     tokens: frozenset[str]
     value: str
     kind: str          # number | duration | money | date | clock | text
+    # B509: how the attribute and its value were written (not part of the match key)
+    name: str = field(default="", compare=False)
+    raw: str = field(default="", compare=False)
 
 
 def norm(text: str | None) -> str:
@@ -131,7 +134,8 @@ def _quantity_key(phrase: str) -> AttrKey | None:
     if not tokens or tokens <= _BARE_UNITS:
         return None            # "5-6 hours": a value with no attribute name
     kind = "duration" if any(t in _DURATION_UNITS for t in tokens) else "number"
-    return AttrKey(tokens, value, kind)
+    name = " ".join((p[:m.start()] + " " + p[m.end():]).split())
+    return AttrKey(tokens, value, kind, name, value)
 
 
 def _parse_mapping(text: str) -> tuple[str, str | None] | None:
@@ -186,7 +190,7 @@ def parse_attribute(object_text: str | None) -> AttrKey | None:
             return vq
     if not tokens:
         return None
-    return AttrKey(tokens, norm(value), _value_kind(value))
+    return AttrKey(tokens, norm(value), _value_kind(value), name, value)
 
 
 def attribute_names_match(a: frozenset[str], b: frozenset[str]) -> bool:

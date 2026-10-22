@@ -67,6 +67,9 @@ observation_limit = 8    # most Observations the semantic section carries
 # B507: validate each extracted Observation against the SHACL shapes before it is written;
 # a non-conforming draft is rejected as `shacl_violation`. CAMPY_SHACL_GATE=1 turns it on.
 shacl_gate = false
+# B509: has_attribute names become OWL attribute properties (functional ones supersede older values).
+# CAMPY_OWL_PROPERTIES=1 turns it on.
+owl_properties = false
 
 [wiki_projection]
 enabled = true

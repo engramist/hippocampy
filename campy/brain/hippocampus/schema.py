@@ -929,7 +929,34 @@ NODE_TABLES = {
         supersession_reason STRING,
         authority            STRING,
         content_hash         STRING,
+        attr_value           STRING,
+        attr_value_kind      STRING,
+        attr_value_num       DOUBLE,
+        attr_value_unit      STRING,
+        attr_value_time      TIMESTAMP,
+        attr_value_ref       STRING,
         PRIMARY KEY (observation_id)
+    """,
+
+    # B509: an attribute (has_attribute name) as a vocabulary entry: an owl:DatatypeProperty or
+    # owl:ObjectProperty and a skos:Concept in campy:PropertyScheme. text_raw is the prefLabel;
+    # altLabels are Labels via HAS_ALT_LABEL. Whether it is functional is NOT stored here for
+    # the seed attributes (campy_vocab.ttl declares those); functional_basis ('modifier' or
+    # 'confirmed') says why a non-seed one is functional, advised_* count the extractor's advice (a candidate, never a fact).
+    "AttributeProperty": """
+        property_id          STRING,
+        text_raw             STRING,
+        match_key            STRING,
+        prop_type            STRING,
+        functional_basis     STRING,
+        confirmed_by         STRING,
+        advised_one          INT32,
+        advised_many         INT32,
+        archived             BOOLEAN,
+        created_at           TIMESTAMP,
+        source               STRING,
+        authority            STRING,
+        PRIMARY KEY (property_id)
     """,
 
     "ChunkExecution": """
@@ -1460,13 +1487,16 @@ REL_TABLES = [
     # kind. BROADER: kind -> broader kind (skos:broader). CLOSE_MATCH: kind ~ kind
     # (skos:closeMatch, advisory). All property-free; a kind is Concept.kind_scheme='kind'.
     "CREATE REL TABLE IF NOT EXISTS INSTANCE_OF (FROM Concept TO Concept)",
-    "CREATE REL TABLE IF NOT EXISTS BROADER (FROM Concept TO Concept)",
-    "CREATE REL TABLE IF NOT EXISTS CLOSE_MATCH (FROM Concept TO Concept)",
+    "CREATE REL TABLE IF NOT EXISTS BROADER (FROM Concept TO Concept, FROM AttributeProperty TO AttributeProperty)",
+    "CREATE REL TABLE IF NOT EXISTS CLOSE_MATCH (FROM Concept TO Concept, FROM AttributeProperty TO AttributeProperty)",
+    # B509: an attribute Observation points at its AttributeProperty (one); BROADER / CLOSE_MATCH
+    # also relate two AttributeProperties (skos:broader / skos:closeMatch between attribute names).
+    "CREATE REL TABLE IF NOT EXISTS HAS_PROPERTY (FROM Observation TO AttributeProperty)",
     # Ontology routing (core IP — Shape-First Principle)
     "CREATE REL TABLE IF NOT EXISTS ROUTES_TO (FROM GistClass TO SchemaOrgType)",
     # SKOS labels
     "CREATE REL TABLE IF NOT EXISTS HAS_PREF_LABEL (FROM Concept TO Label, FROM Decision TO Label, FROM Constraint TO Label, FROM Requirement TO Label, FROM ActionItem TO Label)",
-    "CREATE REL TABLE IF NOT EXISTS HAS_ALT_LABEL (FROM Concept TO Label, FROM Decision TO Label, FROM Constraint TO Label, FROM Requirement TO Label, FROM ActionItem TO Label)",
+    "CREATE REL TABLE IF NOT EXISTS HAS_ALT_LABEL (FROM Concept TO Label, FROM Decision TO Label, FROM Constraint TO Label, FROM Requirement TO Label, FROM ActionItem TO Label, FROM AttributeProperty TO Label)",
     "CREATE REL TABLE IF NOT EXISTS HAS_HIDDEN_LABEL (FROM Concept TO Label, FROM Decision TO Label, FROM Constraint TO Label, FROM Requirement TO Label, FROM ActionItem TO Label)",
     "CREATE REL TABLE IF NOT EXISTS LOADED (FROM Session TO Concept, FROM Session TO Decision, FROM Session TO Constraint, FROM Session TO Requirement, FROM Session TO ActionItem, FROM Session TO GlobalConstraint, FROM Session TO GlobalPreference, injected_at TIMESTAMP, token_estimate INT32, source STRING, load_hits INT32)",
     "CREATE REL TABLE IF NOT EXISTS WARM_NODE (FROM Session TO Concept, FROM Session TO Decision, FROM Session TO Constraint, FROM Session TO Requirement, FROM Session TO ActionItem, FROM Session TO GlobalConstraint, FROM Session TO GlobalPreference, activation_score DOUBLE, activated_at TIMESTAMP)",
@@ -1846,6 +1876,12 @@ SCHEMA_MIGRATIONS: list[tuple[str, str, str]] = [
     # B64: Ensure 'archived' column exists for all relevant tables
     ("Concept",         "archived", "BOOLEAN"),
     ("Concept",         "kind_scheme", "STRING"),     # B508: 'kind' puts the Concept in campy:KindScheme
+    ("Observation",     "attr_value", "STRING"),     # B509
+    ("Observation",     "attr_value_kind", "STRING"),     # B509
+    ("Observation",     "attr_value_num", "DOUBLE"),     # B509
+    ("Observation",     "attr_value_unit", "STRING"),     # B509
+    ("Observation",     "attr_value_time", "TIMESTAMP"),     # B509
+    ("Observation",     "attr_value_ref", "STRING"),     # B509
     ("Decision",        "archived", "BOOLEAN"),
     ("Constraint",      "archived", "BOOLEAN"),
     ("Requirement",     "archived", "BOOLEAN"),
