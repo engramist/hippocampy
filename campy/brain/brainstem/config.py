@@ -229,6 +229,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_OBSERVATIONS_ENTITIES": ("observations", "entities", _parse_bool),
     # B503: link user turns / Observations to Concepts and walk the links at retrieval.
     "CAMPY_GRAPH_LINKING": ("retrieval", "graph_linking", _parse_bool),
+    # 0 keeps the write-path links but adds no walk section at retrieval.
+    "CAMPY_GRAPH_LINKING_LIMIT": ("retrieval", "graph_linking_limit", _parse_nonneg_int),
     # B508: SKOS vocabulary for kinds (consolidation, INSTANCE_OF vs BROADER).
     "CAMPY_SKOS_VOCAB": ("retrieval", "skos_vocab", _parse_bool),
     # B507: the SHACL write gate (default off).
