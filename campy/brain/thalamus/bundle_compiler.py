@@ -23,7 +23,15 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
-from campy.brain.hippocampus.concept_links import graph_linking_enabled, graph_linking_limit
+from campy.brain.hippocampus.concept_links import (
+    graph_linking_enabled,
+    graph_linking_limit,
+    graph_walk_v2_enabled,
+    graph_walk_v2_limit,
+    graph_walk_v2_max_share,
+    graph_walk_v2_min_similarity,
+    graph_walk_v2_protect,
+)
 from campy.brain.hippocampus.kinds import skos_vocab_enabled
 from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.hippocampus.observations import (
@@ -274,10 +282,25 @@ async def compile_bundle(
         cumulative_tokens += semantic_section.token_estimate
         sources.extend(semantic_section.source_node_ids)
 
+    # Stage 3a (B510, flag): the precise walk replaces B503's below. It adds a few turns
+    # the bundle lacks, about strong anchors only, and pays for them out of the
+    # conversation section (conversation + linked never exceeds the conversation
+    # section alone). Skipped when the conversation holds the whole history.
+    if graph_walk_v2_enabled(config):
+        if not (conversation_section is not None and conversation_section.full_history):
+            linked_section, conversation_section = await _stage_concept_walk_v2(
+                db, query, config, conversation_section, semantic_section)
+            if linked_section and linked_section.content:
+                sections.append(linked_section)
+                cumulative_tokens += linked_section.token_estimate
+                sources.extend(linked_section.source_node_ids)
+        for c in (conversation_section.content if conversation_section else []):
+            c.pop("keep_rank", None)
+            c.pop("neighbour", None)
     # Stage 3a (B503, flag): what the graph links to the question's Concepts,
     # beyond what the stages above already show. Skipped when the conversation
     # section holds the whole history (nothing to add).
-    if graph_linking_enabled(config) and not (
+    elif graph_linking_enabled(config) and not (
             conversation_section is not None and conversation_section.full_history):
         shown = set(sources)
         if conversation_section is not None:
@@ -802,6 +825,117 @@ async def _stage_concept_walk(db, query: str, config: dict, exclude: set[str]) -
 _WALK_MESSAGE_CHARS = 1200
 
 
+def _turn_tokens(text: str) -> int:
+    return max(1, len(text) // 4)
+
+
+async def _stage_concept_walk_v2(db, query: str, config: dict, conversation_section, semantic_section):
+    """B510: the precise walk (see `graph/walk_v2.py` for the anchor, coverage and ranking
+    rules). Returns `(linked_section | None, conversation_section)`.
+
+    The rows are paid for out of the conversation section: the bundle's conversation +
+    linked tokens never exceed the conversation section's own tokens (or, with no
+    conversation section, `[retrieval] conversation_token_budget`). Items are taken
+    strongest first; for each, conversation turns are displaced weakest first (highest
+    `keep_rank`: a neighbour turn ranks by its matched turn's rank plus 1.5 per step away)
+    until its cost is covered. The `graph_walk_v2_protect` best matched turns are never
+    displaced; an item that cannot be paid for is not added. The `keep_rank` annotation is
+    removed from the section. Returns the inputs unchanged when anything fails or nothing
+    qualifies."""
+    limit = graph_walk_v2_limit(config)
+    if limit <= 0:
+        return None, conversation_section
+    try:
+        from campy.brain.hippocampus.concept_links import match_concepts
+        from campy.brain.hippocampus.graph import embeddings as emb
+        from campy.brain.hippocampus.graph.gateway import conversation_stamp, conversation_turn_tokens
+
+        gw = get_gateway(db)
+        concept_ids = list(dict.fromkeys(
+            await _question_concept_ids(gw, query)
+            + await match_concepts(gw, query, alt_labels=skos_vocab_enabled(config))))
+        if not concept_ids:
+            return None, conversation_section
+        embedding_model = config.get("embeddings", {}).get("model", "sentence-transformers/all-MiniLM-L6-v2")
+        conv = conversation_section
+        conv_content = list(conv.content) if conv else []
+        conv_ids = list(conv.source_node_ids) if conv else []
+        semantic_refs = [c.get("evidence_ref") for c in (semantic_section.content if semantic_section else [])
+                         if isinstance(c, dict) and c.get("evidence_ref")]
+        rows = await gw.run(
+            "thalamus.bundle_concept_walk_v2",
+            concept_ids=concept_ids, limit=limit, max_share=graph_walk_v2_max_share(config),
+            min_similarity=graph_walk_v2_min_similarity(config),
+            query_embedding=emb.embed(query, model_name=embedding_model), query_text=query,
+            conversation_ids=conv_ids, conversation_texts=[c["text"] for c in conv_content],
+            semantic_refs=semantic_refs)
+        if not rows:
+            return None, conversation_section
+
+        # what the conversation section may give up: weakest first, never the protected best
+        protect = graph_walk_v2_protect(config)
+        droppable = sorted(
+            (i for i, c in enumerate(conv_content)
+             if "keep_rank" in c and not (not c.get("neighbour") and c["keep_rank"] < protect)),
+            key=lambda i: -conv_content[i]["keep_rank"])
+        conv_tokens = sum(_turn_tokens(c["text"]) for c in conv_content)
+        allowed = conv_tokens if conv else _conversation_token_budget(config)
+        from campy.brain.hippocampus.graph.walk_v2 import cosine
+        vs = getattr(db, "vector_store", None)
+        q_emb = emb.embed(query, model_name=embedding_model)
+        sim_of: dict[int, float] = {}        # conversation turn index -> cosine to the question
+
+        def turn_sim(i: int) -> float:
+            if i not in sim_of:
+                sim_of[i] = cosine(vs, conv_ids[i], q_emb) if i < len(conv_ids) else 0.0
+            return sim_of[i]
+
+        used, dropped, picked = conv_tokens, set(), []
+        for r in rows:                       # strongest first
+            text = str(r.get("text") or "")
+            if len(text) > _WALK_MESSAGE_CHARS:
+                text = text[:_WALK_MESSAGE_CHARS].rstrip() + " ..."
+            stamped = conversation_stamp(r.get("speaker"), r.get("created_at")) + text
+            cost = _turn_tokens(stamped)
+            trial, trial_used = set(), used
+            for i in droppable:
+                if trial_used + cost <= allowed:
+                    break
+                if i not in dropped:
+                    trial.add(i)
+                    trial_used -= _turn_tokens(conv_content[i]["text"])
+            if trial_used + cost > allowed:
+                continue                     # cannot be paid for out of the conversation
+            if trial and float(r.get("similarity") or 0.0) < max(turn_sim(i) for i in trial):
+                continue                     # never swap a turn closer to the question for a farther one
+            dropped |= trial
+            used = trial_used + cost
+            picked.append((r, stamped))
+        if not picked:
+            return None, conversation_section
+        new_conv = conversation_section
+        if conv:
+            keep_idx = [i for i in range(len(conv_content)) if i not in dropped]
+            new_conv = BundleSection(
+                section_type=conv.section_type,
+                content=[{k: v for k, v in conv_content[i].items() if k not in ("keep_rank", "neighbour")}
+                         for i in keep_idx],
+                token_estimate=sum(_turn_tokens(conv_content[i]["text"]) for i in keep_idx),
+                source_node_ids=[conv_ids[i] for i in keep_idx] if len(conv_ids) == len(conv_content) else conv_ids,
+                order=conv.order, variant=conv.variant, full_history=False)
+        picked.sort(key=lambda rs: (str(rs[0].get("created_at") or ""), str(rs[0].get("node_id"))))
+        content = [{"text": t, "type": "Message", "role": "user", "created_at": r.get("created_at"),
+                    "confidence": 0.5, "pathway_strength": 0.5, "hop": r.get("hop")} for r, t in picked]
+        linked = BundleSection(
+            section_type="linked", content=content,
+            source_node_ids=[str(r.get("node_id")) for r, _ in picked],
+            token_estimate=sum(_turn_tokens(c["text"]) for c in content))
+        return linked, new_conv
+    except Exception as e:
+        _logger.warning("Error in _stage_concept_walk_v2: %s", e)
+        return None, conversation_section
+
+
 async def _stage_observations(db, query: str, config: dict) -> Optional[BundleSection]:
     """B472 Phase 3c: the semantic section built from Observations -- typed,
     source-grounded claims the user made -- instead of Concept/Decision labels.
@@ -951,6 +1085,8 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
         neighbours = _conversation_neighbours(config)
         # B501: passed only when on, so the default call is unchanged
         extra = {"embedded_statements": True} if _conversation_embedded_statements(config) else {}
+        if graph_walk_v2_enabled(config):
+            extra["annotate_rank"] = True    # B510: the walk needs each turn's keep_rank to displace the weakest
         if neighbours > 0:
             # B487: neighbour expansion (new query; the others are untouched)
             rows = await get_gateway(db).run(
@@ -978,10 +1114,14 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
                 continue
             # B472: the speaker, when the turn named one, else the role
             stamp = conversation_stamp(get("speaker"), created)
-            content.append({
+            item = {
                 "text": stamp + text, "type": "Message", "role": "user",
                 "created_at": created, "confidence": 0.5, "pathway_strength": 0.5,
-            })
+            }
+            if graph_walk_v2_enabled(config) and get("keep_rank") is not None:
+                # B510: consumed (and removed) by compile_bundle's walk stage
+                item["keep_rank"], item["neighbour"] = get("keep_rank"), bool(get("neighbour"))
+            content.append(item)
             node_ids.append(str(get("node_id") or text[:20]))
         if not content:
             return None

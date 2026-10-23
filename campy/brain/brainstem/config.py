@@ -23,6 +23,16 @@ _DEFAULT_CONFIG = {
         # retrieval (1-2 hops); graph_linking_limit caps the walk's items.
         "graph_linking": False,
         "graph_linking_limit": 12,
+        # B510: the precise walk (default off; env CAMPY_GRAPH_WALK_V2=1) replaces B503's walk at
+        # retrieval: strong anchors only (typed entity, or a kind with instances; never a speaker
+        # or a concept linked to more than graph_walk_v2_max_share of the messages), only turns
+        # the bundle does not already show, at most graph_walk_v2_limit of them, paid for out of
+        # the conversation section (the prompt does not grow).
+        "graph_walk_v2": False,
+        "graph_walk_v2_limit": 4,
+        "graph_walk_v2_max_share": 0.10,
+        "graph_walk_v2_min_similarity": 0.0,
+        "graph_walk_v2_protect": 3,
         # B508: SKOS vocabulary for kinds (default off; env CAMPY_SKOS_VOCAB=1). Kinds are
         # consolidated by rule (same label, head noun), entity -INSTANCE_OF-> kind and
         # kind -BROADER-> kind replace the single IS_A, and the walk follows both.
@@ -234,6 +244,9 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_GRAPH_LINKING": ("retrieval", "graph_linking", _parse_bool),
     # 0 keeps the write-path links but adds no walk section at retrieval.
     "CAMPY_GRAPH_LINKING_LIMIT": ("retrieval", "graph_linking_limit", _parse_nonneg_int),
+    # B510: the precise walk (replaces B503's walk at retrieval) and its item cap.
+    "CAMPY_GRAPH_WALK_V2": ("retrieval", "graph_walk_v2", _parse_bool),
+    "CAMPY_GRAPH_WALK_V2_LIMIT": ("retrieval", "graph_walk_v2_limit", _parse_nonneg_int),
     # B508: SKOS vocabulary for kinds (consolidation, INSTANCE_OF vs BROADER).
     "CAMPY_SKOS_VOCAB": ("retrieval", "skos_vocab", _parse_bool),
     # B507: the SHACL write gate (default off).

@@ -1605,7 +1605,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                "RETURN m.text_raw as text, m.role as role, m.created_at as created_at "
                "ORDER BY m.created_at ASC LIMIT $limit",
         params=("query_embedding", "query_text", "limit", "order"),
-        optional_params=("embedded_statements",),
+        optional_params=("embedded_statements", "annotate_rank"),
         mutating=False,
         description="B454: relevant user statements (vector + FTS fusion) as bundle evidence; "
                     "`order` is 'rank' (best first) or 'time' (oldest first) -- B474",
@@ -1618,7 +1618,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                "RETURN m.text_raw as text, m.role as role, m.created_at as created_at "
                "ORDER BY m.created_at ASC LIMIT $limit",
         params=("query_embedding", "query_text", "limit", "order", "token_budget", "budget_mode"),
-        optional_params=("embedded_statements",),
+        optional_params=("embedded_statements", "annotate_rank"),
         mutating=False,
         description="B482: the conversation stage filled to a token budget: every eligible user turn "
                     "oldest first when they all fit, else (budget_mode 'fit_all') the fixed-limit path or "
@@ -1633,7 +1633,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                "ORDER BY m.created_at ASC LIMIT $limit",
         params=("query_embedding", "query_text", "limit", "order", "token_budget", "budget_mode",
                 "neighbours", "neighbour_cap"),
-        optional_params=("embedded_statements",),
+        optional_params=("embedded_statements", "annotate_rank"),
         mutating=False,
         description="B487: the conversation stage plus up to `neighbours` same-session turns (either "
                     "speaker) before and after each matched turn, capped at `neighbour_cap` added "
@@ -1674,6 +1674,22 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                     "deduplicated, capped, ordered by event time. B508 (skos true): hop 2 also follows "
                     "INSTANCE_OF / BROADER and descends the BROADER closure to every narrower kind and its instances",
         # No sparql= -- Python handler in GraphGateway._bundle_concept_walk.
+    ),
+    NamedQuery(
+        name="thalamus.bundle_concept_walk_v2",
+        cypher="MATCH (m:Message)-[:MENTIONS]->(c:Concept) RETURN m.message_id as node_id LIMIT $limit",
+        params=("concept_ids", "limit"),
+        optional_params=("max_share", "min_similarity", "query_embedding", "query_text",
+                         "conversation_ids", "conversation_texts", "semantic_refs"),
+        mutating=False,
+        description="B510: the precise walk. User Messages that mention (or evidence an Observation about) a "
+                    "strong anchor -- a typed entity, or the instances of a kind with 2..12 -- of the "
+                    "Concepts the question names; never a participant, an untyped Concept, or one linked to "
+                    "more than `max_share` of the messages; anchors the conversation already mentions drop "
+                    "out; turns already shown (conversation ids, semantic evidence refs) are left out, "
+                    "de-duplicated by source message; hop 1 before hop 2, then anchors hit, then cosine; "
+                    "at most `limit` rows",
+        # No sparql= -- Python handler in campy.brain.hippocampus.graph.walk_v2.
     ),
     NamedQuery(
         name="thalamus.bundle_observations_history",

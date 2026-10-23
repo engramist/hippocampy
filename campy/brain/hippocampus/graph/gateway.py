@@ -1208,6 +1208,7 @@ class GraphGateway:
                 pos[v["uri"]] = (sid, i)
         chosen = set(rank_of)
         added = 0
+        keep: dict[str, float] = {}   # B510: neighbour -> keep_rank (anchor's rank + 1.5 per step away)
         for d in range(1, n + 1):
             for r in matched:
                 where = pos.get(r["node_id"])
@@ -1222,6 +1223,7 @@ class GraphGateway:
                         if uri not in chosen:
                             chosen.add(uri)
                             added += 1
+                            keep[uri] = rank_of[r["node_id"]] + 1.5 * d
         # windows: maximal runs of chosen turns that are adjacent in a session
         windows: list[list[dict]] = []
         for sid, seq in seqs.items():
@@ -1245,10 +1247,13 @@ class GraphGateway:
             windows.sort(key=lambda w: (best(w), w[0]["created"]))
         else:
             windows.sort(key=lambda w: (w[0]["created"], w[0]["stored"], w[0]["uri"]))
+        annotate = bool(params.get("annotate_rank"))   # B510: see `_bundle_conversation_impl`
         return [
             RowDict({"text": v["text"], "role": "user", "created_at": v["created"],
                      "speaker": v.get("speaker"), "node_id": v["uri"], "node_type": "Message",
-                     **({} if v["uri"] in by_uri else {"neighbour": True})})
+                     **({} if v["uri"] in by_uri else {"neighbour": True}),
+                     **({"keep_rank": rank_of[v["uri"]] if v["uri"] in rank_of else keep.get(v["uri"], 99.0)}
+                        if annotate else {})})
             for w in windows for v in w
         ]
 
@@ -1444,9 +1449,14 @@ class GraphGateway:
             picked = picked[:limit]
             if order == "time":
                 picked.sort(key=lambda kv: kv[0])
+        # B510: with `annotate_rank` each row carries `keep_rank` (0 = best match), which the
+        # precise walk uses to choose the turns it displaces; absent otherwise (rows unchanged)
+        rank_idx = {kv[1]["uri"]: i for i, kv in enumerate(sorted(
+            picked, key=lambda kv: -ranked.get(kv[1]["uri"], 0.0)))} if params.get("annotate_rank") else {}
         return [
             RowDict({"text": v["text"], "role": "user", "created_at": v["created"],
-                     "speaker": v.get("speaker"), "node_id": v["uri"], "node_type": "Message"})
+                     "speaker": v.get("speaker"), "node_id": v["uri"], "node_type": "Message",
+                     **({"keep_rank": rank_idx[v["uri"]]} if rank_idx else {})})
             for _, v in picked
         ]
 
@@ -1929,6 +1939,9 @@ class GraphGateway:
 
         if name == "thalamus.bundle_concept_walk":
             return self._bundle_concept_walk(params)
+        if name == "thalamus.bundle_concept_walk_v2":
+            from campy.brain.hippocampus.graph.walk_v2 import bundle_concept_walk_v2
+            return bundle_concept_walk_v2(self, params)
 
         if query_embedding is None or not self._vector_store:
             return []
