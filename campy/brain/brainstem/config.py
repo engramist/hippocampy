@@ -30,6 +30,9 @@ _DEFAULT_CONFIG = {
         # CLOSE_MATCH edge (never merged); 0 turns it off.
         "skos_vocab": False,
         "skos_closematch_threshold": 0.90,
+        # B501: a user turn ending in "?" that also states something in the first
+        # person counts as evidence. Off until gated. CAMPY_RETRIEVAL_CONVERSATION_EMBEDDED_STATEMENTS=1.
+        "conversation_embedded_statements": False,
         # B375: exposes warm_frontier.py's previously-hardcoded module
         # constants. Values match those prior hardcoded defaults exactly,
         # so an absent/partial [retrieval.warm_frontier] section changes
@@ -247,6 +250,7 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_RETRIEVAL_CONVERSATION_TOKEN_BUDGET": ("retrieval", "conversation_token_budget", _parse_nonneg_int),
     "CAMPY_RETRIEVAL_CONVERSATION_NEIGHBOURS": ("retrieval", "conversation_neighbours", _parse_nonneg_int),
     "CAMPY_RETRIEVAL_CONVERSATION_BUDGET_MODE": ("retrieval", "conversation_budget_mode", _parse_budget_mode),
+    "CAMPY_RETRIEVAL_CONVERSATION_EMBEDDED_STATEMENTS": ("retrieval", "conversation_embedded_statements", _parse_bool),
     "CAMPY_IAM_TENANT_ID": ("server", "iam_tenant_id", str.strip),
     "CAMPY_IAM_WORKSPACE_ID": ("server", "iam_workspace_id", str.strip),
     "CAMPY_IAM_WORKSPACE_MAP_JSON": ("server", "iam_workspace_map", _parse_json_str_map),
