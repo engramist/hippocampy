@@ -56,6 +56,8 @@ _READ_COLUMNS: tuple[tuple[str, bool], ...] = (
     ("source", False),
     ("source_version", False),
     ("observed_at", False),
+    ("superseded_by", False),
+    ("superseded_at", False),
     ("authority", False),
     ("content_hash", False),
     ("created_at", True),
@@ -396,6 +398,87 @@ OBSERVATION_QUERIES: tuple[NamedQuery, ...] = (
               OPTIONAL { ?o campy:time_start ?os }
               OPTIONAL { ?o campy:time_end ?oe }
               OPTIONAL { ?o campy:time_precision ?op }
+            }
+            """,
+    ),
+    NamedQuery(
+        name="observations.live_attributes_by_subject_id",
+        cypher=f"""
+        MATCH (o:Observation)
+        WHERE o.predicate = 'has_attribute' AND o.polarity = 'asserted'
+              AND o.archived = false AND o.superseded_by IS NULL
+              AND o.subject_id = $sid
+        RETURN {_CYPHER_RETURN}
+        """,
+        params=("sid",),
+        mutating=False,
+        description="B499: live asserted has_attribute Observations about one subject Concept",
+        sparql=_read_sparql(
+            "FILTER NOT EXISTS { ?o campy:superseded_by ?sup }",
+            lead='campy:predicate "has_attribute" ; campy:polarity "asserted" ; '
+                 'campy:archived false ; campy:subject_id ?sid ;',
+        ),
+    ),
+    NamedQuery(
+        name="observations.live_attributes_by_subject_text",
+        cypher=f"""
+        MATCH (o:Observation)
+        WHERE o.predicate = 'has_attribute' AND o.polarity = 'asserted'
+              AND o.archived = false AND o.superseded_by IS NULL
+              AND o.subject_text = $stext
+        RETURN {_CYPHER_RETURN}
+        """,
+        params=("stext",),
+        mutating=False,
+        description="B499: live asserted has_attribute Observations by exact subject text "
+                    "(the caller filters speaker and attribute name)",
+        sparql=_read_sparql(
+            "FILTER NOT EXISTS { ?o campy:superseded_by ?sup }",
+            lead='campy:predicate "has_attribute" ; campy:polarity "asserted" ; '
+                 'campy:archived false ; campy:subject_text ?stext ;',
+        ),
+    ),
+    NamedQuery(
+        name="observations.mark_superseded",
+        cypher="""
+        MATCH (n:Observation {observation_id: $oid})
+        SET n.superseded_by = $by, n.superseded_at = $at, n.supersession_reason = $reason
+        """,
+        params=("oid", "by", "at", "reason"),
+        mutating=True,
+        description="B499: mark an Observation superseded (same three columns as provenance.mark_superseded_*)",
+        sparql="""
+            DELETE {
+                ?n campy:superseded_by ?o1 . ?n campy:superseded_at ?o2 .
+                ?n campy:supersession_reason ?o3 . ?n prov:invalidatedAtTime ?o4 .
+            }
+            INSERT {
+                ?n campy:superseded_by ?by . ?n campy:superseded_at ?at .
+                ?n campy:supersession_reason ?reason . ?n prov:invalidatedAtTime ?at .
+            }
+            WHERE {
+                ?n a campy:Observation ; campy:observation_id ?oid .
+                OPTIONAL { ?n campy:superseded_by ?o1 }
+                OPTIONAL { ?n campy:superseded_at ?o2 }
+                OPTIONAL { ?n campy:supersession_reason ?o3 }
+                OPTIONAL { ?n prov:invalidatedAtTime ?o4 }
+            }
+            """,
+    ),
+    NamedQuery(
+        name="observations.link_deprecated_by",
+        cypher="""
+        MATCH (a:Observation {observation_id: $oid}), (b:Observation {observation_id: $by})
+        MERGE (a)-[:DEPRECATED_BY]->(b)
+        """,
+        params=("oid", "by"),
+        mutating=True,
+        description="B499: (older)-[:DEPRECATED_BY]->(newer) between two Observations",
+        sparql="""
+            INSERT { ?old campy:DEPRECATED_BY ?new . ?new prov:wasRevisionOf ?old . }
+            WHERE {
+                ?old a campy:Observation ; campy:observation_id ?oid .
+                ?new a campy:Observation ; campy:observation_id ?by .
             }
             """,
     ),

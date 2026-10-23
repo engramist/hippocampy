@@ -1,0 +1,113 @@
+# campy_vocab.ttl -- B508: how Campy's stored edges and columns line up with SKOS.
+#
+# The store keeps Campy-named edges (campy:BROADER, campy:INSTANCE_OF, ...) because
+# every writer and reader works in that namespace. This file is the declared
+# alignment: shapes/validator.py `skos_project` reads the rdfs:subPropertyOf pairs
+# below and adds the SKOS statement for each stored one (skos:broader for each
+# campy:BROADER, ...), so the SHACL shapes are written in plain SKOS and nothing is
+# stored twice.
+#
+#   Concept.text_raw            is the skos:prefLabel          (projected by code)
+#   Concept -HAS_ALT_LABEL-> Label.text   is a skos:altLabel   (projected by code)
+#   Concept.kind_scheme = 'kind'  is skos:inScheme campy:KindScheme (projected by code)
+#
+# Two different relations, kept apart (the reason this card exists):
+#   campy:INSTANCE_OF  entity -> kind        "this thing is one of those"
+#   campy:BROADER      kind   -> broader kind "this kind is a subtype of that kind"
+# They are declared disjoint, so a reasoner (B509, OWL) can flag a pair that is both.
+# INSTANCE_OF is deliberately not rdf:type: a kind is an individual of skos:Concept,
+# and typing instances by it would make the kind a class as well (punning).
+
+@prefix campy: <https://campy.dev/ns#> .
+@prefix skos:  <http://www.w3.org/2004/02/skos/core#> .
+@prefix owl:   <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+
+campy:KindScheme a skos:ConceptScheme ;
+    skos:prefLabel "Campy kinds" ;
+    rdfs:comment "The vocabulary of kinds extracted from conversation: 'model kit', 'camping trip', ..." .
+
+campy:BROADER a owl:ObjectProperty ;
+    rdfs:subPropertyOf skos:broader ;
+    rdfs:domain skos:Concept ; rdfs:range skos:Concept ;
+    rdfs:comment "Kind is narrower than the kind it points to (subtype)." .
+
+campy:CLOSE_MATCH a owl:ObjectProperty, owl:SymmetricProperty ;
+    rdfs:subPropertyOf skos:closeMatch ;
+    rdfs:domain skos:Concept ; rdfs:range skos:Concept ;
+    rdfs:comment "Two kinds that look alike; advisory, never merged and never walked." .
+
+campy:INSTANCE_OF a owl:ObjectProperty ;
+    rdfs:domain skos:Concept ; rdfs:range skos:Concept ;
+    owl:propertyDisjointWith campy:BROADER ;
+    rdfs:comment "Entity is an instance of the kind it points to." .
+
+
+# ---------------------------------------------------------------------------------------
+# B509: attribute properties (has_attribute names as an OWL vocabulary)
+#
+# A `has_attribute` Observation names an attribute ("age", "personal best 5K", "hobby"). With
+# `[observations] owl_properties` on, each name resolves to an AttributeProperty node: an
+# owl:DatatypeProperty (the value is a literal) or an owl:ObjectProperty (the value is a
+# Concept), and a skos:Concept in campy:PropertyScheme with prefLabel and altLabels. The
+# Observation points at it (HAS_PROPERTY) and its value is projected as the triple
+#   <subject> <property> <value>
+# by shapes/validator.owl_project.
+#
+# The rule that matters: a property declared owl:FunctionalProperty has ONE current value per
+# subject, so a newer value supersedes the older one (DEPRECATED_BY). Anything not declared
+# functional never supersedes ("hobby: tennis" and "hobby: chess" are both true).
+# What is declared functional is decided here, in data, not in Python:
+#   1. the seed properties below (matched by label), and
+#   2. any attribute whose name contains a campy:SingleValuedModifier ("favorite food",
+#      "personal best 5K"): such a name picks out ONE thing, and
+#   3. (stored on the node, not here) a property whose single-valuedness was confirmed by
+#      the replacement rule in hippocampus/attribute_properties.py.
+# The extractor's own advice (cardinality "one") is stored as a candidate and never decides.
+#
+# Seed IRIs are the stored node IRIs (prop:<property_id>), so a seed stored in the graph is
+# functional by IRI identity, with no flag copied onto the node.
+
+@prefix prop:  <https://campy.dev/id/AttributeProperty/> .
+
+campy:PropertyScheme a skos:ConceptScheme ;
+    skos:prefLabel "Campy attribute properties" ;
+    rdfs:comment "The vocabulary of attribute names extracted from conversation: 'age', 'personal best 5K', ..." .
+
+campy:AttributeProperty a owl:Class ;
+    rdfs:comment "Stored node type for an attribute name; an individual that is also an owl:DatatypeProperty or owl:ObjectProperty (punning)." .
+
+campy:SingleValuedModifier a owl:Class ;
+    rdfs:comment "A word or phrase that, inside an attribute name, makes it single-valued: favorite X, personal best X." .
+
+campy:HAS_PROPERTY a owl:ObjectProperty, owl:FunctionalProperty ;
+    rdfs:domain campy:Observation ; rdfs:range campy:AttributeProperty ;
+    rdfs:comment "The attribute name an Observation states a value of; at most one." .
+
+campy:DEPRECATED_BY a owl:ObjectProperty ;
+    rdfs:domain campy:Observation ; rdfs:range campy:Observation ;
+    rdfs:comment "Older Observation -> the newer one that replaced it (B499/B509)." .
+
+[] a campy:SingleValuedModifier ; skos:prefLabel "favorite" .
+[] a campy:SingleValuedModifier ; skos:prefLabel "personal best" .
+[] a campy:SingleValuedModifier ; skos:prefLabel "birth" .
+
+prop:age a owl:DatatypeProperty, owl:FunctionalProperty ; skos:prefLabel "age" ;
+    skos:altLabel "years old" , "age in years" .
+prop:birthday a owl:DatatypeProperty, owl:FunctionalProperty ; skos:prefLabel "birthday" ;
+    skos:altLabel "date of birth" , "birthdate" .
+prop:occupation a owl:DatatypeProperty, owl:FunctionalProperty ; skos:prefLabel "occupation" ;
+    skos:altLabel "job" , "job title" , "profession" , "current job" , "current role" .
+prop:employer a owl:DatatypeProperty, owl:FunctionalProperty ; skos:prefLabel "employer" ;
+    skos:altLabel "company" , "workplace" , "current employer" , "works at" .
+prop:residence a owl:DatatypeProperty, owl:FunctionalProperty ; skos:prefLabel "residence" ;
+    skos:altLabel "location" , "city" , "lives in" , "home city" , "current city" , "address" , "hometown" .
+prop:relationship_status a owl:DatatypeProperty, owl:FunctionalProperty ; skos:prefLabel "relationship status" ;
+    skos:altLabel "marital status" .
+prop:follower_count a owl:DatatypeProperty, owl:FunctionalProperty ; skos:prefLabel "follower count" ;
+    skos:altLabel "followers" , "subscribers" , "subscriber count" .
+prop:weight a owl:DatatypeProperty, owl:FunctionalProperty ; skos:prefLabel "weight" .
+prop:height a owl:DatatypeProperty, owl:FunctionalProperty ; skos:prefLabel "height" .
+prop:salary a owl:DatatypeProperty, owl:FunctionalProperty ; skos:prefLabel "salary" ;
+    skos:altLabel "income" , "annual salary" .

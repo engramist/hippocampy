@@ -54,6 +54,13 @@ def test_every_documented_override_applies():
         "CAMPY_IAM_DEFAULT_SCOPES_JSON": '["memory.read", "memory.write"]',
         "CAMPY_OBSERVATIONS_ENABLED": "1",
         "CAMPY_OBSERVATIONS_RETRIEVAL": "1",
+        "CAMPY_GRAPH_LINKING": "1",
+        "CAMPY_GRAPH_LINKING_LIMIT": "0",
+        "CAMPY_OBSERVATIONS_ENTITIES": "1",
+        "CAMPY_SHACL_GATE": "1",
+        "CAMPY_OWL_PROPERTIES": "1",
+        "CAMPY_SKOS_VOCAB": "1",
+        "CAMPY_OBSERVATIONS_SUPERSEDE": "1",
     }
     assert set(env) == set(ENV_OVERRIDES), "test must cover every override"
     cfg = apply_env_overrides(_base(), env)
@@ -63,6 +70,11 @@ def test_every_documented_override_applies():
     assert cfg["web"]["port"] == 8080
     assert cfg["observations"]["enabled"] is True
     assert cfg["observations"]["retrieval"] is True
+    assert cfg["retrieval"]["graph_linking"] is True
+    assert cfg["retrieval"]["graph_linking_limit"] == 0
+    assert cfg["observations"]["entities"] is True
+    assert cfg["observations"]["shacl_gate"] is True
+    assert cfg["retrieval"]["skos_vocab"] is True
     assert cfg["llm"] == {"provider": "bedrock", "model": "us.example.model-v1:0",
                           "region": "us-east-1", "base_url": "https://llm.internal/v1",
                           "max_tokens": 1024}

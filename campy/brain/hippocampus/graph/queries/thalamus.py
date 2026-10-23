@@ -1664,6 +1664,28 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                     "evidence quote and evidence Message id",
         # No sparql= -- Python handler in GraphGateway._bundle_observations.
     ),
+    NamedQuery(
+        name="thalamus.bundle_concept_walk",
+        cypher="MATCH (m:Message)-[:MENTIONS]->(c:Concept) RETURN m.message_id as node_id LIMIT $limit",
+        params=("concept_ids", "limit", "exclude", "skos"),
+        mutating=False,
+        description="B503: user Messages and live Observations linked (MENTIONS / OBSERVATION_ABOUT) to the "
+                    "given Concepts (hop 1) or to their IS_A parents, children and siblings (hop 2), "
+                    "deduplicated, capped, ordered by event time. B508 (skos true): hop 2 also follows "
+                    "INSTANCE_OF / BROADER and descends the BROADER closure to every narrower kind and its instances",
+        # No sparql= -- Python handler in GraphGateway._bundle_concept_walk.
+    ),
+    NamedQuery(
+        name="thalamus.bundle_observations_history",
+        cypher="MATCH (o:Observation) WHERE o.archived = false "
+               "RETURN o.observation_id as observation_id, o.text_raw as text "
+               "ORDER BY o.created_at ASC LIMIT $limit",
+        params=("query_embedding", "query_text", "concept_ids", "limit"),
+        mutating=False,
+        description="B499: thalamus.bundle_observations that also returns superseded Observations "
+                    "(with superseded_by / superseded_at), for `[observations] supersede`",
+        # No sparql= -- Python handler in GraphGateway._bundle_observations.
+    ),
     # Concept
     NamedQuery(
         name="thalamus.bundle_semantic_concept",

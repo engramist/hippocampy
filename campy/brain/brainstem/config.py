@@ -18,6 +18,18 @@ _DEFAULT_CONFIG = {
         "lexical_window_days": 14,
         "lexical_limit": 10,
         "timeline_limit": 200,
+        # B503: graph linking (default off; env CAMPY_GRAPH_LINKING=1). Writes
+        # Message/Observation -> Concept links by rule and walks them at
+        # retrieval (1-2 hops); graph_linking_limit caps the walk's items.
+        "graph_linking": False,
+        "graph_linking_limit": 12,
+        # B508: SKOS vocabulary for kinds (default off; env CAMPY_SKOS_VOCAB=1). Kinds are
+        # consolidated by rule (same label, head noun), entity -INSTANCE_OF-> kind and
+        # kind -BROADER-> kind replace the single IS_A, and the walk follows both.
+        # skos_closematch_threshold: cosine at or above which two kinds get an advisory
+        # CLOSE_MATCH edge (never merged); 0 turns it off.
+        "skos_vocab": False,
+        "skos_closematch_threshold": 0.90,
         # B501: a user turn ending in "?" that also states something in the first
         # person counts as evidence. Off until gated. CAMPY_RETRIEVAL_CONVERSATION_EMBEDDED_STATEMENTS=1.
         "conversation_embedded_statements": False,
@@ -85,6 +97,15 @@ _DEFAULT_CONFIG = {
         "queue_max": 5000,         # 3b: bounded worker queue; a full queue drops the newest, counted
         "retrieval": True,         # 3c: feed the bundle's semantic section from Observations
         "observation_limit": 8,    # 3c: most Observations the semantic section carries
+        # B504 (default off; env CAMPY_OBSERVATIONS_ENTITIES=1): the extractor also emits each
+        # claim's object entity + kind, validated by rule and written as Concepts, and extracts
+        # facts stated inside requests and plans.
+        "entities": False,
+        # B509 (default off; env CAMPY_OWL_PROPERTIES=1): has_attribute names become OWL attribute
+        # properties (vocabulary nodes); a functional property's newer value supersedes the older.
+        "owl_properties": False,
+        "shacl_gate": False,       # B507: validate each draft against the SHACL shapes before writing
+        "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
     },
     "compression": {
         "strategy": "two_lane",       # two_lane (Protected Lane zero loss + Bulk Lane lossy)
@@ -207,6 +228,20 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_OBSERVATIONS_ENABLED": ("observations", "enabled", _parse_bool),
     # B472 Phase 3c: same reason, for the reader (independent of the writer).
     "CAMPY_OBSERVATIONS_RETRIEVAL": ("observations", "retrieval", _parse_bool),
+    # B504: extraction emits object entities and kinds (Concepts + IS_A/MENTIONS edges).
+    "CAMPY_OBSERVATIONS_ENTITIES": ("observations", "entities", _parse_bool),
+    # B503: link user turns / Observations to Concepts and walk the links at retrieval.
+    "CAMPY_GRAPH_LINKING": ("retrieval", "graph_linking", _parse_bool),
+    # 0 keeps the write-path links but adds no walk section at retrieval.
+    "CAMPY_GRAPH_LINKING_LIMIT": ("retrieval", "graph_linking_limit", _parse_nonneg_int),
+    # B508: SKOS vocabulary for kinds (consolidation, INSTANCE_OF vs BROADER).
+    "CAMPY_SKOS_VOCAB": ("retrieval", "skos_vocab", _parse_bool),
+    # B507: the SHACL write gate (default off).
+    "CAMPY_SHACL_GATE": ("observations", "shacl_gate", _parse_bool),
+    # B509: OWL attribute properties; functional properties drive supersession.
+    "CAMPY_OWL_PROPERTIES": ("observations", "owl_properties", _parse_bool),
+    # B499: rule-based supersession of attribute Observations (default off).
+    "CAMPY_OBSERVATIONS_SUPERSEDE": ("observations", "supersede", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
     "CAMPY_LLM_MODEL": ("llm", "model", str.strip),
     "CAMPY_LLM_REGION": ("llm", "region", str.strip),

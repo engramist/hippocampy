@@ -44,6 +44,8 @@ from campy.brain.temporal_lobe.loop.step7_pathway   import (
 from campy.brain.temporal_lobe.loop.step4b_associative import check_associative_triggers  # Phase 3
 from campy.brain.temporal_lobe.loop.step7_5_lesson import extract_lessons  # B11
 from campy.brain.temporal_lobe.loop.anomaly_detection import check_anomalies, store_anomaly_flag  # B12
+from campy.brain.hippocampus.concept_links import graph_linking_enabled, link_message_concepts
+from campy.brain.hippocampus.kinds import skos_vocab_enabled
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.llm.provider import create_llm_client_for_step  # B16
 
@@ -187,6 +189,7 @@ async def run_loop(message_id: str, text: str, db, llm_client,
         summary["entities_found"] = len(entities)
 
         if not entities:
+            await _link_turn(message_id, text, role, config, db, ())
             return summary  # nothing to process
 
         # Step 1b — Verb Pattern Relation Extraction
@@ -527,6 +530,9 @@ async def run_loop(message_id: str, text: str, db, llm_client,
             await write_co_occurs_with(concept_ids, min_conf, db, now, co_threshold,
                                        max_pairs=max_pairs)
 
+    # B503 (flag): MENTIONS from a user turn to the Concepts it names
+    await _link_turn(message_id, text, role, config, db, concept_ids)
+
     # Step 7.5 — Lesson extraction (indicator-based)
     async with _timed(message_id, "step7_5_lessons"):
         lesson_result = await extract_lessons(
@@ -551,6 +557,19 @@ async def run_loop(message_id: str, text: str, db, llm_client,
 
 from campy.brain.hippocampus.graph.gateway import GraphGateway
 from campy.brain.hippocampus.graph.queries import REGISTRY
+
+
+async def _link_turn(message_id: str, text: str, role: str, config: dict, db, resolved_ids) -> None:
+    """B503: with `[retrieval] graph_linking` on, link a user turn to the
+    Concepts it names (the ones this run resolved plus a rule match of its
+    words against existing Concepts). Never fails the Loop."""
+    if role != "user" or not graph_linking_enabled(config):
+        return
+    try:
+        await link_message_concepts(_gateway(db), message_id, text, resolved_ids,
+                                    alt_labels=skos_vocab_enabled(config))
+    except Exception:
+        _logger.warning("[GraphLinking] msg=%s link failed", message_id[:8], exc_info=True)
 
 
 def _gateway(db) -> GraphGateway:

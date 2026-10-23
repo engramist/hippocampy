@@ -140,6 +140,11 @@ _COMMON_TERM_SHARE = 0.2
 _COMMON_TERM_MIN_DOCS = 50
 
 
+def _neg_str(value: str) -> tuple[int, ...]:
+    """Sort key that orders strings newest-first inside an ascending sort."""
+    return tuple(-ord(ch) for ch in value) + (1,)
+
+
 def _typed_search_k(limit: int) -> int:
     """B454: the vector store is one flat index across every node type. A typed
     lookup takes the global top-k and only then filters by node type, so a
@@ -1523,7 +1528,8 @@ class GraphGateway:
         a Concept the caller resolved from the question (`concept_ids`; those the
         vector search also found come first, the rest oldest first). A
         lexical-only hit must match two query content words, as in the
-        conversation stage. Archived and superseded rows are dropped.
+        conversation stage. Archived rows are dropped; superseded rows are dropped
+        unless `include_superseded` (B499: they are then returned with `superseded_by`/`superseded_at`).
 
         Returns up to `limit` rows, best first, each carrying the claim
         (subject/predicate/object/event/time/polarity/speaker/confidence), the
@@ -1570,7 +1576,8 @@ class GraphGateway:
         ns = "<https://campy.dev/ns#"
         req = ("observation_id", "subject_text", "predicate", "object_text", "polarity",
                "evidence_ref", "evidence_text", "text_raw", "archived")
-        opt = ("event_text", "time_text", "speaker", "observed_at", "confidence", "superseded_by")
+        opt = ("event_text", "time_text", "speaker", "observed_at", "confidence", "superseded_by", "superseded_at")
+        include_superseded = bool(params.get("include_superseded"))
         rows = self._client._execute_and_collect(f"""
             SELECT ?o {" ".join("?" + c for c in req + opt)} WHERE {{
                 VALUES ?o {{ {" ".join(f"<{u}>" for u in ranked)} }}
@@ -1582,8 +1589,10 @@ class GraphGateway:
         out: list[RowDict] = []
         for row in rows:
             uri = str(row["o"])
-            if bool(row.get("archived")) or row.get("superseded_by"):
+            if bool(row.get("archived")):
                 continue
+            if row.get("superseded_by") and not include_superseded:
+                continue          # B499: kept (marked) only when [observations] supersede is on
             if uri not in vec_set and uri not in concept_set:
                 low = f"{row.get('text_raw') or ''} {row.get('evidence_text') or ''}".lower()
                 if uri not in fts_set or sum(1 for t in terms if t in low) < need:
@@ -1592,6 +1601,138 @@ class GraphGateway:
                                 "score": ranked.get(uri, 0.0)}))
         out.sort(key=lambda r: -r["score"])
         return out[:limit]
+
+    def _bundle_concept_walk(self, params: dict[str, Any]) -> list[Any]:
+        """B503: the user turns and Observations the graph links to a question's
+        Concepts, no similarity involved.
+
+        Hop 1: items linked to the given Concepts (Message -MENTIONS->,
+        Observation -OBSERVATION_ABOUT->). Hop 2: items linked to a Concept one
+        IS_A step away: a parent (category), a child, or a sibling (shares a
+        parent). A Concept linked to more than `_COMMON_TERM_SHARE` of a
+        store's Messages (>= `_COMMON_TERM_MIN_DOCS` of them) is a speaker or a
+        filler word, not a topic, and is not walked (B470's rule). Archived and
+        superseded rows, assistant turns, and ids in `exclude` (already in the
+        bundle) are dropped.
+
+        `skos` (B508, flag `skos_vocab`): hop 2 also follows INSTANCE_OF and
+        BROADER (skos:broader) like IS_A, and descends the BROADER closure: every
+        kind narrower than a given kind, and the instances of those kinds, so a
+        question about "model kits" reaches the entities hung on "plastic model
+        kit". CLOSE_MATCH is never followed (advisory only).
+
+        Selection under `limit`: hop 1 before hop 2, newest first within a hop;
+        the rows come back oldest first by event time (Message `occurred_at`
+        else `created_at`; Observation `observed_at`). Each row: `kind`
+        ("Message" | "Observation"), `node_id`, `hop`, `event_time`, and the
+        Message's `text`/`speaker`/`created_at` or the Observation's claim
+        fields. Fail-soft: no links gives []."""
+        limit = int(params.get("limit", 12))
+        ids = list(dict.fromkeys(params.get("concept_ids") or []))[:12]
+        if limit <= 0 or not ids:
+            return []
+        from campy.brain.hippocampus.graph.vector_store import mint_uri
+
+        ns = "<https://campy.dev/ns#"
+        exclude = {str(x) for x in (params.get("exclude") or [])}
+        run = self._client._execute_and_collect
+
+        def linked(concept_uris: list[str]) -> dict[str, set[str]]:
+            """item uri -> the given concepts it links to, by kind."""
+            out: dict[str, set[str]] = {}
+            if not concept_uris:
+                return out
+            for kind, edge in (("m", "MENTIONS"), ("o", "OBSERVATION_ABOUT")):
+                for row in run(f"""
+                    SELECT ?i ?c WHERE {{
+                        VALUES ?c {{ {" ".join(concept_uris)} }}
+                        ?i {ns}{edge}> ?c .
+                    }} LIMIT 5000"""):
+                    out.setdefault(str(row["i"]), set()).add(str(row["c"]))
+            return out
+
+        c0 = [f"<{mint_uri('Concept', c)}>" for c in ids]
+        first = linked(c0)
+        # B470: drop a Concept that is in most of the conversation (a speaker)
+        prefixes = (f"{CID_BASE}Message/",)
+        total = self._vector_store.count_documents(prefixes) if self._vector_store else 0
+        if total >= _COMMON_TERM_MIN_DOCS:
+            per_concept: dict[str, int] = {}
+            for uri, cs in first.items():
+                if "/Message/" in uri:
+                    for c in cs:
+                        per_concept[c] = per_concept.get(c, 0) + 1
+            common = {c for c, n in per_concept.items() if n > _COMMON_TERM_SHARE * total}
+            if common:
+                c0 = [c for c in c0 if c.strip('<>') not in common]
+                first = linked(c0)
+        if not c0:
+            return []
+        if params.get("skos"):
+            # B508: one step is IS_A (legacy), INSTANCE_OF or BROADER; and every kind
+            # transitively narrower than a given kind, with its instances, is reached
+            up = f"({ns}IS_A>|{ns}INSTANCE_OF>|{ns}BROADER>)"
+            narrower = f"({ns}BROADER>|{ns}IS_A>)+"
+            near_query = f"""
+            SELECT DISTINCT ?x WHERE {{
+                VALUES ?c {{ {" ".join(c0)} }}
+                {{ ?c {up} ?x }} UNION {{ ?x {up} ?c }}
+                UNION {{ ?c {up} ?p . ?x {up} ?p . FILTER(?x != ?c) }}
+                UNION {{ ?x {narrower} ?c }}
+                UNION {{ ?k {narrower} ?c . ?x {ns}INSTANCE_OF> ?k }}
+            }} LIMIT 500"""
+        else:
+            near_query = f"""
+            SELECT DISTINCT ?x WHERE {{
+                VALUES ?c {{ {" ".join(c0)} }}
+                {{ ?c {ns}IS_A> ?x }} UNION {{ ?x {ns}IS_A> ?c }}
+                UNION {{ ?c {ns}IS_A> ?p . ?x {ns}IS_A> ?p . FILTER(?x != ?c) }}
+            }} LIMIT 200"""
+        near = [str(r["x"]) for r in run(near_query)]
+        near = [f"<{u}>" for u in dict.fromkeys(near) if f"<{u}>" not in c0]
+        second = {u: cs for u, cs in linked(near).items() if u not in first}
+
+        hop = {u: 1 for u in first}
+        hop.update({u: 2 for u in second})
+        msg_uris = [u for u in hop if "/Message/" in u]
+        obs_uris = [u for u in hop if "/Observation/" in u]
+        items: list[RowDict] = []
+
+        for row in self._hydrate_messages(msg_uris):
+            uri = str(row["s"])
+            if bool(row.get("archived")) or row.get("role") != "user" or not row.get("text"):
+                continue
+            created = row.get("created")
+            stamp = created.isoformat() if hasattr(created, "isoformat") else str(created or "")
+            items.append(RowDict({
+                "kind": "Message", "node_id": uri, "hop": hop[uri], "event_time": stamp,
+                "text": row["text"], "role": "user", "speaker": row.get("speaker"),
+                "created_at": stamp}))
+        if obs_uris:
+            req = ("observation_id", "subject_text", "predicate", "object_text", "polarity",
+                   "evidence_ref", "evidence_text", "text_raw", "archived")
+            opt = ("event_text", "time_text", "speaker", "observed_at", "confidence", "superseded_by")
+            for row in run(f"""
+                SELECT ?o {" ".join("?" + c for c in req + opt)} WHERE {{
+                    VALUES ?o {{ {" ".join(f"<{u}>" for u in obs_uris)} }}
+                    ?o a {ns}Observation> ; {" ; ".join(f"{ns}{c}> ?{c}" for c in req)} .
+                    {" ".join(f"OPTIONAL {{ ?o {ns}{c}> ?{c} }}" for c in opt)}
+                }}"""):
+                uri = str(row["o"])
+                if bool(row.get("archived")) or row.get("superseded_by"):
+                    continue
+                observed = row.get("observed_at")
+                stamp = observed.isoformat() if hasattr(observed, "isoformat") else str(observed or "")
+                items.append(RowDict({**{c: row.get(c) for c in req + opt}, "kind": "Observation",
+                                      "node_id": uri, "hop": hop[uri], "event_time": stamp}))
+
+        items = [r for r in items
+                 if r["node_id"] not in exclude and str(r.get("observation_id") or "") not in exclude]
+        # best `limit` (hop 1 first, newest first), shown oldest first
+        items.sort(key=lambda r: (r["hop"], _neg_str(r["event_time"])))
+        picked = items[:limit]
+        picked.sort(key=lambda r: (r["event_time"], r["node_id"]))
+        return picked
 
     def _lexical_query(self, qtext: str, terms: list[str], df: dict[str, int],
                        prefixes: tuple[str, ...]) -> str:
@@ -1786,6 +1927,9 @@ class GraphGateway:
             emb = self._vector_store.get_vector(mint_uri("MainQuest", qid)) if self._vector_store else None
             return [RowDict({"q.embedding": emb, "q.name": qname})]
 
+        if name == "thalamus.bundle_concept_walk":
+            return self._bundle_concept_walk(params)
+
         if query_embedding is None or not self._vector_store:
             return []
 
@@ -1799,6 +1943,8 @@ class GraphGateway:
             return self._bundle_assistant_words(params)
         if name == "thalamus.bundle_observations":
             return self._bundle_observations(params)
+        if name == "thalamus.bundle_observations_history":
+            return self._bundle_observations({**params, "include_superseded": True})
 
         # Exact facts: thalamus.bundle_exact_facts_{tbl}[_flagged][_auth] or thalamus.bundle_exact_{tbl}[_flagged][_auth]
         if name.startswith("thalamus.bundle_exact"):

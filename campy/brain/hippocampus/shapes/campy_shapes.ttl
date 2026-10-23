@@ -1,0 +1,420 @@
+# campy_shapes.ttl -- B507: SHACL shapes for the core Campy node types.
+#
+# Namespace: campy: <https://campy.dev/ns#> (docs/rdf-schema-mapping.md). Nodes
+# are typed `a campy:<Table>`, columns are `campy:<column>` literals, and the
+# plain edges (OBSERVATION_ABOUT, EVIDENCED_BY, ...) are direct triples.
+#
+# What these shapes are for
+#   * "The model advises; rules decide" (PRINCIPLES.md 3): a model-extracted
+#     Observation is a candidate until it conforms. The write gate
+#     (`[observations] shacl_gate`, default off) validates one candidate against
+#     ObservationShape + MessageShape before record_observation writes it.
+#   * The structure metric (scripts/graph_structure_report.py) validates whole
+#     stores against the same file, so the gate and the measure cannot disagree.
+#
+# Severity: sh:Violation blocks the gate; sh:Warning is reported, never blocks
+# (the gate runs pyshacl with allow_warnings).
+#
+# Value sets below mirror Python constants and are pinned equal by
+# tests/test_b507_shacl.py (hippocampus/observations.py: PREDICATES, POLARITIES,
+# TIME_PRECISIONS, EXTRACTION_METHODS). The literal "@@STOPWORD_ONLY@@" is a
+# placeholder the loader (shapes/validator.py) replaces with the regex built
+# from LABEL_STOPWORDS, so the stopword list lives in one place.
+
+@prefix campy: <https://campy.dev/ns#> .
+@prefix sh:    <http://www.w3.org/ns/shacl#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:   <http://www.w3.org/2002/07/owl#> .
+@prefix skos:  <http://www.w3.org/2004/02/skos/core#> .
+
+<https://campy.dev/shapes> a owl:Ontology ;
+    rdfs:comment "Campy core shapes (B507)." ;
+    sh:declare [ sh:prefix "campy" ; sh:namespace "https://campy.dev/ns#"^^xsd:anyURI ] ,
+               [ sh:prefix "skos" ; sh:namespace "http://www.w3.org/2004/02/skos/core#"^^xsd:anyURI ] ,
+               [ sh:prefix "owl" ; sh:namespace "http://www.w3.org/2002/07/owl#"^^xsd:anyURI ] .
+
+# --- Observation --------------------------------------------------------------
+
+campy:ObservationShape a sh:NodeShape ;
+    sh:targetClass campy:Observation ;
+    sh:name "Observation" ;
+    sh:description "A typed, source-grounded claim a speaker made in a turn." ;
+
+    # Subject: text or an id.
+    sh:or (
+        [ sh:path campy:subject_text ; sh:minCount 1 ; sh:pattern "\\S" ]
+        [ sh:path campy:subject_id ; sh:minCount 1 ]
+    ) ;
+
+    sh:property [
+        sh:path campy:observation_id ; sh:name "observation_id" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path campy:subject_text ; sh:name "subject_text" ;
+        sh:maxCount 1 ; sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path campy:predicate ; sh:name "predicate" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+        sh:in ( "did" "has_attribute" "is_a" "located_in" "owns"
+                "relates_to" "prefers" "plans" "changed_to" ) ;
+    ] ;
+    sh:property [
+        sh:path campy:polarity ; sh:name "polarity" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+        sh:in ( "asserted" "negated" "hypothetical" "planned" ) ;
+    ] ;
+    sh:property [
+        sh:path campy:object_text ; sh:name "object_text" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+        sh:pattern "\\S" ;                       # an object is required, and not blank
+        sh:maxLength 200 ;
+    ] ;
+    # An object that is only stopwords / punctuation ("it", "the", "...") says nothing.
+    sh:property [
+        sh:path campy:object_text ; sh:name "object_text content" ;
+        sh:not [ sh:pattern "@@STOPWORD_ONLY@@" ; sh:flags "i" ] ;
+        sh:message "object_text is empty or stopword-only" ;
+    ] ;
+    # B506: a stringified dict/list is a parse failure, not a value.
+    sh:property [
+        sh:path campy:object_text ; sh:name "object_text not a structure" ;
+        sh:not [ sh:pattern "^\\s*[\\{\\[]" ] ;
+        sh:message "object_text is a stringified dict/list" ;
+    ] ;
+    sh:property [
+        sh:path campy:observed_at ; sh:name "observed_at" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ;
+    ] ;
+    sh:property [
+        sh:path campy:extraction_method ; sh:name "extraction_method" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "pattern" "llm" ) ;
+    ] ;
+    sh:property [
+        sh:path campy:confidence ; sh:name "confidence" ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:or ( [ sh:datatype xsd:decimal ] [ sh:datatype xsd:double ] ) ;
+        sh:minInclusive "0.60"^^xsd:decimal ; sh:maxInclusive "1.0"^^xsd:decimal ;
+    ] ;
+    sh:property [
+        sh:path campy:evidence_text ; sh:name "evidence_text" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+        sh:pattern "\\S" ; sh:maxLength 400 ;
+    ] ;
+    sh:property [
+        sh:path campy:evidence_start ; sh:name "evidence_start" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 0 ;
+        sh:lessThanOrEquals campy:evidence_end ;
+    ] ;
+    sh:property [
+        sh:path campy:evidence_end ; sh:name "evidence_end" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ;
+    ] ;
+    sh:property [
+        sh:path campy:evidence_ref ; sh:name "evidence_ref" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path campy:time_precision ; sh:name "time_precision" ;
+        sh:maxCount 1 ; sh:in ( "day" "week" "month" "year" "unknown" ) ;
+    ] ;
+    sh:property [
+        sh:path campy:time_start ; sh:name "time_start" ;
+        sh:maxCount 1 ; sh:datatype xsd:dateTime ; sh:lessThanOrEquals campy:time_end ;
+    ] ;
+    sh:property [
+        sh:path campy:time_end ; sh:name "time_end" ;
+        sh:maxCount 1 ; sh:datatype xsd:dateTime ;
+    ] ;
+    sh:property [
+        sh:path campy:archived ; sh:name "archived" ;
+        sh:maxCount 1 ; sh:datatype xsd:boolean ;
+    ] ;
+
+    # Edges. Every Observation has an evidence Message, and it is a user turn
+    # (Phase 3 decision 3: assistant turns are not evidence).
+    sh:property [
+        sh:path campy:EVIDENCED_BY ; sh:name "EVIDENCED_BY" ;
+        sh:minCount 1 ; sh:class campy:Message ; sh:node campy:EvidenceMessageShape ;
+    ] ;
+    sh:property [
+        sh:path campy:OBSERVATION_ABOUT ; sh:name "OBSERVATION_ABOUT" ;
+        sh:class campy:Concept ;
+    ] ;
+    # B509: an attribute Observation states a value of at most one attribute property.
+    sh:property [
+        sh:path campy:HAS_PROPERTY ; sh:name "HAS_PROPERTY" ;
+        sh:maxCount 1 ; sh:class campy:AttributeProperty ;
+    ] ;
+
+    # evidence_ref names one of the EVIDENCED_BY messages ...
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:name "EvidenceRefLinked" ;
+        sh:message "evidence_ref is not one of the EVIDENCED_BY messages" ;
+        sh:prefixes <https://campy.dev/shapes> ;
+        sh:select """
+            SELECT $this WHERE {
+              $this campy:evidence_ref ?ref .
+              FILTER NOT EXISTS { $this campy:EVIDENCED_BY ?m . ?m campy:message_id ?ref }
+            }""" ;
+    ] ;
+    # ... and the quote is the exact span the offsets name in that message ("no quote, no row").
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:name "QuoteIsSpanOfEvidence" ;
+        sh:message "evidence_text is not the span [evidence_start, evidence_end) of the evidence message" ;
+        sh:prefixes <https://campy.dev/shapes> ;
+        sh:select """
+            SELECT $this WHERE {
+              $this campy:evidence_ref ?ref ; campy:evidence_text ?q ;
+                    campy:evidence_start ?s ; campy:evidence_end ?e .
+              ?m campy:message_id ?ref ; campy:text_raw ?t .
+              FILTER (SUBSTR(?t, ?s + 1, ?e - ?s) != ?q)
+            }""" ;
+    ] .
+
+# An attribute claim ("has_attribute") carries its value as "name: value".
+# Warning only: older stores hold free-form objects.
+campy:AttributeObjectShape a sh:NodeShape ;
+    sh:targetClass campy:Observation ;
+    sh:name "AttributeObject" ;
+    sh:severity sh:Warning ;
+    sh:message "has_attribute object is not of the form 'name: value'" ;
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:name "AttributeObjectIsNameValue" ;
+        sh:message "has_attribute object is not of the form 'name: value'" ;
+        sh:severity sh:Warning ;
+        sh:prefixes <https://campy.dev/shapes> ;
+        sh:select """
+            SELECT $this WHERE {
+              $this campy:predicate "has_attribute" ; campy:object_text ?o .
+              FILTER (!REGEX(?o, "^[^:{}\\\\[\\\\]]+:\\\\s*\\\\S"))
+            }""" ;
+    ] .
+
+# --- Message ------------------------------------------------------------------
+
+campy:MessageShape a sh:NodeShape ;
+    sh:targetClass campy:Message ;
+    sh:name "Message" ;
+    sh:property [
+        sh:path campy:message_id ; sh:name "message_id" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path campy:text_raw ; sh:name "text_raw" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "\\S" ;
+    ] ;
+    sh:property [
+        sh:path campy:role ; sh:name "role" ;
+        sh:maxCount 1 ; sh:in ( "user" "assistant" "system" "tool" ) ;
+    ] ;
+    sh:property [
+        sh:path campy:archived ; sh:name "archived" ;
+        sh:maxCount 1 ; sh:datatype xsd:boolean ;
+    ] ;
+    # occurred_at is stored as an ISO string on Message today (Observation.observed_at
+    # is the typed dateTime); accept either so this is not a false alarm.
+    sh:property [
+        sh:path campy:occurred_at ; sh:name "occurred_at" ;
+        sh:maxCount 1 ; sh:or ( [ sh:datatype xsd:string ] [ sh:datatype xsd:dateTime ] ) ;
+    ] ;
+    sh:property [ sh:path campy:SENT_IN ; sh:class campy:Session ] ;
+    sh:property [ sh:path campy:FOLLOWED_BY ; sh:class campy:Message ] ;
+    # B503 adds MENTIONS; the range is pinned now so the edge arrives typed.
+    sh:property [ sh:path campy:MENTIONS ; sh:name "MENTIONS" ; sh:class campy:Concept ] .
+
+# The Message an Observation rests on: a live user turn.
+campy:EvidenceMessageShape a sh:NodeShape ;
+    sh:name "EvidenceMessage" ;
+    sh:property [
+        sh:path campy:role ; sh:name "evidence role" ;
+        sh:minCount 1 ; sh:in ( "user" ) ;
+    ] ;
+    sh:property [
+        sh:path campy:archived ; sh:name "evidence archived" ;
+        sh:in ( false ) ;
+    ] .
+
+# --- Concept ------------------------------------------------------------------
+#
+# The shapes are written in SKOS. validator.validate_graph first adds the SKOS view
+# of a stored Concept (skos:prefLabel from text_raw, skos:altLabel from the
+# HAS_ALT_LABEL Labels, skos:broader from campy:BROADER, ...; see campy_vocab.ttl),
+# so a store and a hand-built SKOS graph are checked by the same shapes.
+
+campy:ConceptShape a sh:NodeShape ;
+    sh:targetClass campy:Concept ;
+    sh:name "Concept" ;
+    sh:property [
+        sh:path campy:concept_id ; sh:name "concept_id" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path campy:archived ; sh:name "archived" ;
+        sh:maxCount 1 ; sh:datatype xsd:boolean ;
+    ] ;
+    sh:property [ sh:path campy:CO_OCCURS_WITH ; sh:class campy:Concept ] ;
+    sh:property [ sh:path campy:HAS_ALT_LABEL ; sh:class campy:Label ] ;
+    sh:property [ sh:path campy:HAS_PREF_LABEL ; sh:class campy:Label ] .
+
+campy:SkosConceptShape a sh:NodeShape ;
+    sh:targetClass skos:Concept ;
+    sh:name "SkosConcept" ;
+    # Exactly one preferred label, with content.
+    sh:property [
+        sh:path skos:prefLabel ; sh:name "prefLabel" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+        sh:pattern "\\S" ; sh:message "Concept has no preferred label" ;
+    ] ;
+    sh:property [
+        sh:path skos:prefLabel ; sh:name "prefLabel content" ;
+        sh:not [ sh:pattern "@@STOPWORD_ONLY@@" ; sh:flags "i" ] ;
+        sh:message "Concept label is empty or stopword-only" ;
+    ] ;
+    # Alternative labels follow the same content rule ...
+    sh:property [
+        sh:path skos:altLabel ; sh:name "altLabel" ;
+        sh:datatype xsd:string ; sh:pattern "\\S" ;
+        sh:message "altLabel is empty or not a string" ;
+    ] ;
+    sh:property [
+        sh:path skos:altLabel ; sh:name "altLabel content" ;
+        sh:not [ sh:pattern "@@STOPWORD_ONLY@@" ; sh:flags "i" ] ;
+        sh:message "altLabel is empty or stopword-only" ;
+    ] ;
+    # ... and an altLabel that only repeats the prefLabel (SKOS: pref and alt are disjoint).
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:name "AltLabelRepeatsPrefLabel" ;
+        sh:message "an altLabel equals the prefLabel (ignoring case)" ;
+        sh:prefixes <https://campy.dev/shapes> ;
+        sh:select """
+            SELECT $this WHERE {
+              $this skos:prefLabel ?p ; skos:altLabel ?a .
+              FILTER (LCASE(STR(?p)) = LCASE(STR(?a)))
+            }""" ;
+    ] ;
+    # skos:broader and skos:closeMatch relate Concepts to Concepts, never to themselves.
+    sh:property [
+        sh:path skos:broader ; sh:name "broader" ;
+        sh:class skos:Concept ; sh:message "skos:broader must point to a skos:Concept" ;
+    ] ;
+    sh:property [
+        sh:path skos:closeMatch ; sh:name "closeMatch" ;
+        sh:class skos:Concept ; sh:message "skos:closeMatch must point to a skos:Concept" ;
+    ] ;
+    sh:property [
+        sh:path skos:inScheme ; sh:name "inScheme" ;
+        sh:in ( campy:KindScheme campy:PropertyScheme ) ;
+    ] ;
+    # B509: kinds and attribute properties are two schemes; skos:broader stays inside one.
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:name "BroaderCrossesSchemes" ;
+        sh:message "skos:broader joins two different concept schemes" ;
+        sh:prefixes <https://campy.dev/shapes> ;
+        sh:select """
+            SELECT $this WHERE {
+              $this skos:broader ?b ; skos:inScheme ?s1 . ?b skos:inScheme ?s2 .
+              FILTER (?s1 != ?s2)
+            }""" ;
+    ] ;
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:name "BroaderNotSelf" ;
+        sh:message "a Concept is its own broader Concept" ;
+        sh:prefixes <https://campy.dev/shapes> ;
+        sh:select "SELECT $this WHERE { $this skos:broader $this }" ;
+    ] ;
+    # "Instance of" and "narrower than" are different relations: the same pair may not
+    # carry both (the conflation B508 removes).
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:name "InstanceOfAndBroader" ;
+        sh:message "the same pair is both INSTANCE_OF and skos:broader" ;
+        sh:prefixes <https://campy.dev/shapes> ;
+        sh:select "SELECT $this WHERE { $this campy:INSTANCE_OF ?k ; skos:broader ?k }" ;
+    ] .
+
+# Anything used as a kind -- the object of INSTANCE_OF, either end of skos:broader --
+# is in the kind scheme.
+campy:KindShape a sh:NodeShape ;
+    sh:targetObjectsOf campy:INSTANCE_OF ;
+    sh:name "Kind" ;
+    sh:property [
+        sh:path skos:inScheme ; sh:name "kind in scheme" ;
+        sh:minCount 1 ; sh:hasValue campy:KindScheme ;
+        sh:message "kind Concept is not in campy:KindScheme" ;
+    ] .
+
+# Either end of skos:broader is in a scheme (kinds: campy:KindScheme, attribute names:
+# campy:PropertyScheme, B509).
+campy:BroaderEndShape a sh:NodeShape ;
+    sh:targetObjectsOf skos:broader ;
+    sh:targetSubjectsOf skos:broader ;
+    sh:name "BroaderEnd" ;
+    sh:property [
+        sh:path skos:inScheme ; sh:name "kind in scheme" ;
+        sh:minCount 1 ; sh:in ( campy:KindScheme campy:PropertyScheme ) ;
+        sh:message "concept used in skos:broader is not in a concept scheme" ;
+    ] .
+
+# An instance that is itself in the kind scheme is suspicious (a kind under INSTANCE_OF
+# instead of skos:broader): reported, not blocking.
+campy:InstanceShape a sh:NodeShape ;
+    sh:targetSubjectsOf campy:INSTANCE_OF ;
+    sh:name "Instance" ;
+    sh:severity sh:Warning ;
+    sh:property [
+        sh:path campy:INSTANCE_OF ; sh:name "INSTANCE_OF range" ;
+        sh:class skos:Concept ; sh:severity sh:Warning ;
+    ] ;
+    sh:property [
+        sh:path skos:inScheme ; sh:name "instance is a kind" ;
+        sh:maxCount 0 ; sh:severity sh:Warning ;
+        sh:message "an INSTANCE_OF subject is itself a kind (use skos:broader between kinds)" ;
+    ] .
+
+# --- B509: attribute properties ---------------------------------------------------------
+
+campy:AttributePropertyShape a sh:NodeShape ;
+    sh:targetClass campy:AttributeProperty ;
+    sh:name "AttributeProperty" ;
+    sh:property [
+        sh:path campy:property_id ; sh:name "property_id" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path campy:prop_type ; sh:name "prop_type" ;
+        sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "datatype" "object" ) ;
+    ] ;
+    sh:property [
+        sh:path campy:functional_basis ; sh:name "functional_basis" ;
+        sh:maxCount 1 ; sh:in ( "modifier" "confirmed" ) ;
+    ] ;
+    # An owl:DatatypeProperty and an owl:ObjectProperty are disjoint kinds of property.
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:name "DatatypeAndObjectProperty" ;
+        sh:message "the property is both an owl:DatatypeProperty and an owl:ObjectProperty" ;
+        sh:prefixes <https://campy.dev/shapes> ;
+        sh:select "SELECT $this WHERE { $this a owl:DatatypeProperty , owl:ObjectProperty }" ;
+    ] .
+
+# The live projection of a functional property (shapes/validator.owl_project): one slot per
+# (subject, functional property), holding the values of the live, non-superseded,
+# asserted Observations. A functional property has ONE current value per subject.
+campy:FunctionalSlotShape a sh:NodeShape ;
+    sh:targetClass campy:FunctionalSlot ;
+    sh:name "FunctionalSlot" ;
+    sh:property [
+        sh:path campy:slotValue ; sh:name "FunctionalPropertyOneLiveValue" ;
+        sh:maxCount 1 ;
+        sh:message "a functional property has two live values for the same subject (an older one was not superseded)" ;
+    ] .

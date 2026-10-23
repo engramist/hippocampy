@@ -32,14 +32,18 @@ by its content hash and adds the missing edges.
 
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from campy.brain.hippocampus import observation_keys as ok
 from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.hippocampus.provenance import content_hash
+
+_logger = logging.getLogger(__name__)
 
 # --- the v1 vocabularies (design section 3.3; a predicate is added by review) ---
 
@@ -80,6 +84,7 @@ REJECT_REASONS = (
     "bad_embedding",
     "subject_concept_missing",
     "object_concept_missing",
+    "shacl_violation",   # B507: the SHACL gate (off by default) rejected the draft
 )
 
 _FIRST_PERSON = frozenset({"i", "me", "my", "myself", "mine"})
@@ -103,6 +108,35 @@ def observations_retrieval_enabled(config: dict | None) -> bool:
     Independent of `enabled`, which gates only the writer: a store built with
     the worker on can be read with this on or off."""
     return bool(((config or {}).get("observations") or {}).get("retrieval", True))
+
+
+def observations_entities_enabled(config: dict | None) -> bool:
+    """`[observations] entities` (default false; env `CAMPY_OBSERVATIONS_ENTITIES=1` turns it on), B504:
+    the extractor also proposes each claim's object entity and kind (rule-validated, written as
+    Concepts with IS_A / MENTIONS / OBSERVATION_ABOUT edges) and extracts facts stated inside
+    requests and plans. Off: prompt, schema and writes are exactly as before."""
+    return bool(((config or {}).get("observations") or {}).get("entities", False))
+
+def shacl_gate_enabled(config: dict | None) -> bool:
+    """`[observations] shacl_gate` (default FALSE; env `CAMPY_SHACL_GATE=1` turns it on):
+    B507. When on, `record_observation` validates each draft against the SHACL
+    shapes (hippocampus/shapes/campy_shapes.ttl) before writing and rejects a
+    non-conforming one as `shacl_violation`. Off: the writer is unchanged."""
+    return bool(((config or {}).get("observations") or {}).get("shacl_gate", False))
+
+
+def owl_properties_enabled(config: dict | None) -> bool:
+    """`[observations] owl_properties` (default FALSE; env `CAMPY_OWL_PROPERTIES=1` turns it on) (B509):
+    `has_attribute` names become OWL attribute properties and supersession follows from the
+    property (hippocampus/attribute_properties.py). Off: the writer is the base one."""
+    return bool(((config or {}).get("observations") or {}).get("owl_properties", False))
+
+
+def observations_supersede_enabled(config: dict | None) -> bool:
+    """`[observations] supersede` (default FALSE; env `CAMPY_OBSERVATIONS_SUPERSEDE=1` turns it on) (B499):
+    a newer asserted attribute Observation supersedes an older live one about the
+    same subject and attribute, and the bundle keeps the superseded one, marked."""
+    return bool(((config or {}).get("observations") or {}).get("supersede", False))
 
 
 def observation_limit(config: dict | None, default: int = 8) -> int:
@@ -140,6 +174,7 @@ class ObservationDraft:
     observed_at: datetime | None = None  # defaults to the Message's occurred_at / created_at
     text_raw: str | None = None         # defaults to render_observation_text(draft)
     embedding: list[float] | None = None
+    attr_cardinality: str | None = None  # B509: the extractor's advice, "one" | "many"; a candidate, never decides
 
 
 @dataclass(frozen=True)
@@ -147,6 +182,7 @@ class WriteResult:
     status: str                         # 'created' | 'duplicate' | 'rejected'
     observation_id: str | None = None
     reason: str | None = None           # one of REJECT_REASONS when rejected
+    detail: str | None = None           # B507: for shacl_violation, the failed shapes, ';'-joined
 
     @property
     def ok(self) -> bool:
@@ -161,6 +197,7 @@ class WriteStats:
     created: int = 0
     duplicate: int = 0
     rejected: dict[str, int] = field(default_factory=dict)
+    shacl_shapes: dict[str, int] = field(default_factory=dict)   # B507: failed shape -> count
 
     def record(self, result: WriteResult) -> WriteResult:
         if result.status == "created":
@@ -169,6 +206,9 @@ class WriteStats:
             self.duplicate += 1
         else:
             self.rejected[result.reason or "unknown"] = self.rejected.get(result.reason or "unknown", 0) + 1
+            if result.reason == "shacl_violation" and result.detail:
+                for shape in result.detail.split(";"):
+                    self.shacl_shapes[shape] = self.shacl_shapes.get(shape, 0) + 1
         return result
 
 
@@ -304,6 +344,8 @@ async def record_observation(
     draft: ObservationDraft,
     *,
     allowed_roles: frozenset[str] = EVIDENCE_ROLES,
+    config: dict | None = None,
+    supersede: bool = False,
 ) -> WriteResult:
     """Validate `draft` against its evidence Message and write it.
 
@@ -316,10 +358,15 @@ async def record_observation(
       - the quote is not a verbatim span of the Message (whitespace and quote
         marks aside);
       - the subject is neither in the quote nor a first-person word on a user turn;
-      - subject_id / object_id name a Concept that does not exist.
+      - subject_id / object_id name a Concept that does not exist;
+      - with `[observations] shacl_gate` on (default off), the draft does not
+        conform to the SHACL shapes (`shacl_violation`; B507).
 
     A draft matching a live Observation adds evidence to it instead (see the
     module docstring) and returns `status="duplicate"`.
+
+    `supersede` (B499, `[observations] supersede`, default off): after a
+    `created` asserted `has_attribute` Observation, apply `_supersede_attributes`.
     """
     reason = _validate_shape(draft)
     if reason:
@@ -351,6 +398,16 @@ async def record_observation(
     if draft.object_id and not await _concept_exists(gw, draft.object_id):
         return _reject("object_concept_missing")
 
+    observed_at = _as_datetime(draft.observed_at or msg.get("occurred_at") or msg.get("created_at"))
+    time_precision = draft.time_precision or ("unknown" if draft.time_text else None)
+
+    if shacl_gate_enabled(config):
+        failed = _shacl_failures(draft, msg, quote, start, end, observed_at, time_precision)
+        if failed:
+            _logger.warning("[Observations] SHACL gate rejected a draft for msg=%s: %s",
+                            str(draft.evidence_ref)[:8], "; ".join(failed))
+            return WriteResult("rejected", None, "shacl_violation", ";".join(failed))
+
     now = datetime.now(timezone.utc)
     key = observation_content_hash(draft)
     existing = await gw.run("observations.find_live_by_hash", key=key)
@@ -375,7 +432,7 @@ async def record_observation(
         time_text=draft.time_text,
         time_start=draft.time_start,
         time_end=draft.time_end,
-        time_precision=draft.time_precision or ("unknown" if draft.time_text else None),
+        time_precision=time_precision,
         speaker=draft.speaker or msg.get("speaker"),
         polarity=draft.polarity,
         confidence=float(draft.confidence),
@@ -390,14 +447,123 @@ async def record_observation(
         embedding_model=EMBEDDING_MODEL if draft.embedding is not None else None,
         embedding_dim=EMBEDDING_DIM if draft.embedding is not None else None,
         source=f"loop:observation:{draft.extraction_method}",
-        observed_at=_as_datetime(draft.observed_at or msg.get("occurred_at") or msg.get("created_at")),
+        observed_at=observed_at,
         evidence_ref=draft.evidence_ref,
         content_hash=key,
         now=now,
     )
     await gw.run("observations.link_evidenced_by", oid=oid, mid=draft.evidence_ref)
     await _link_concepts(gw, oid, draft)
+    if draft.predicate == "has_attribute" and owl_properties_enabled(config):
+        # B509: the attribute is a property node; only a functional property supersedes. This
+        # replaces B499's string rule, which cannot tell "age" from "hobby".
+        from campy.brain.hippocampus import attribute_properties as ap
+        from campy.brain.hippocampus.kinds import closematch_threshold
+
+        try:
+            await ap.apply(gw, oid, draft, msg, now, closematch=closematch_threshold(config),
+                           embed=_property_embedder(config))
+        except Exception:   # the Observation is written; a property failure must not lose the turn
+            _logger.warning("[Observations] attribute property failed for %s", oid[:8], exc_info=True)
+    elif supersede and draft.predicate == "has_attribute" and draft.polarity == "asserted":
+        await _supersede_attributes(gw, oid, draft, msg, now)
     return WriteResult("created", oid)
+
+
+def _property_embedder(config: dict | None):
+    """label -> vector for the optional property CLOSE_MATCH, or None when that is off."""
+    from campy.brain.hippocampus.kinds import closematch_threshold
+
+    if closematch_threshold(config) <= 0:
+        return None
+    from campy.brain.hippocampus.graph import embeddings as emb
+
+    return lambda text: emb.embed(text, model_name=EMBEDDING_MODEL)
+
+
+def _shacl_failures(
+    draft: ObservationDraft, msg: dict, quote: str, start: int, end: int,
+    observed_at: datetime | None, time_precision: str | None,
+) -> list[str]:
+    """B507: the blocking SHACL failures for `draft` as it would be written
+    (shape names, de-duplicated, in order); empty when it conforms."""
+    from campy.brain.hippocampus.shapes import validator   # lazy: the gate is off by default
+
+    fields = {
+        "observation_id": "candidate",   # the real id is minted at create time
+        "subject_text": draft.subject_text.strip(), "subject_id": draft.subject_id,
+        "predicate": draft.predicate, "object_text": draft.object_text.strip(),
+        "object_id": draft.object_id, "event_text": draft.event_text,
+        "time_text": draft.time_text, "time_start": draft.time_start, "time_end": draft.time_end,
+        "time_precision": time_precision, "speaker": draft.speaker or msg.get("speaker"),
+        "polarity": draft.polarity, "confidence": draft.confidence,
+        "extraction_method": draft.extraction_method, "rule_version": draft.rule_version,
+        "evidence_start": start, "evidence_end": end, "evidence_text": quote,
+        "observed_at": observed_at, "evidence_ref": draft.evidence_ref,
+    }
+    report = validator.validate_observation_candidate(fields, msg)
+    return list(dict.fromkeys(f.key for f in validator.blocking(report)))
+
+
+# --- B499: rule-based supersession of attribute Observations ------------------------
+# The matching rules (attribute key, value type, subject) live in `observation_keys`.
+
+def _when(row: dict) -> tuple[datetime, datetime]:
+    """Sort key (event time, then write time) as aware UTC datetimes."""
+    floor = datetime.min.replace(tzinfo=timezone.utc)
+
+    def aware(v: Any) -> datetime | None:
+        d = _as_datetime(v)
+        return d if d is None or d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+    created = aware(row.get("created_at")) or floor
+    return aware(row.get("observed_at")) or created, created
+
+
+async def _supersede_attributes(gw: Any, oid: str, draft: ObservationDraft, msg: dict, now: datetime) -> None:
+    """Link a new attribute Observation into the supersession chain. Pure rules, no model.
+
+    Candidates: live, asserted `has_attribute` Observations about the same subject
+    (`observation_keys.same_subject`: a resolved id, else the text with first-person
+    forms keyed by speaker) that name the same attribute (`same_attribute_new_value`:
+    tolerant token match plus a value-type check) with a different value.
+    Against each, the one with the earlier `observed_at` (ties: `created_at`) is
+    marked superseded (`superseded_by`, `superseded_at` = the newer one's event
+    time, reason `replaced`) and gets a `DEPRECATED_BY` edge to the newer one.
+    So an out-of-order ingest marks the NEW row superseded instead. Nothing is
+    deleted: both rows stay in the graph."""
+    mine_key = ok.parse_attribute(draft.object_text)
+    if mine_key is None:
+        return
+    speaker = draft.speaker or msg.get("speaker")
+    me_subject = (draft.subject_id, draft.subject_text, speaker)
+    rows: dict[str, dict] = {}
+    if draft.subject_id:
+        for r in await gw.run("observations.live_attributes_by_subject_id", sid=draft.subject_id):
+            rows[dict(r).get("observation_id")] = dict(r)
+    for variant in ok.subject_text_variants(draft.subject_text):
+        for r in await gw.run("observations.live_attributes_by_subject_text", stext=variant):
+            rows[dict(r).get("observation_id")] = dict(r)
+    me = await gw.run("observations.get_observation", oid=oid)
+    if not me:
+        return
+    mine = dict(me[0])
+    for other, row in rows.items():
+        if not other or other == oid:
+            continue
+        if not ok.same_subject(me_subject, (row.get("subject_id"), row.get("subject_text"), row.get("speaker"))):
+            continue
+        if not ok.same_attribute_new_value(mine_key, ok.parse_attribute(row.get("object_text"))):
+            continue
+        old, new = (row, mine) if _when(row) <= _when(mine) else (mine, row)
+        if old is mine and mine.get("superseded_by"):
+            continue              # already superseded by a newer live row
+        at = _as_datetime(new.get("observed_at")) or now
+        await gw.run("observations.mark_superseded", oid=old["observation_id"],
+                     by=new["observation_id"], at=at, reason="replaced")
+        await gw.run("observations.link_deprecated_by", oid=old["observation_id"], by=new["observation_id"])
+        if old is mine:
+            mine["superseded_by"] = new["observation_id"]
 
 
 async def _link_concepts(gw: Any, oid: str, draft: ObservationDraft) -> None:

@@ -95,6 +95,9 @@ _SECTION_DESCRIPTIONS: dict[str, str] = {
     "plans": "documented work plans with per-step outcomes — completed or in-flight work, with recorded results",
     "semantic": "related concepts, decisions, constraints, and requirements",
     "conversation": "what the user said about this, oldest first — when statements conflict, the most recent one supersedes earlier ones",
+    "linked": "what the user said or claimed about the topics this question names, found through the "
+              "graph (turns and claims that mention the same things or related kinds of thing), oldest first, "
+              "each stamped with its date — later dates supersede earlier ones",
     "assistant_said": "what the assistant (you) said earlier on this, oldest first — your own past words, quoted to answer a question about them; they are not facts the user stated",
     "graph": "graph relationships connecting the entities above",
     "tabular": "structured tabular data",

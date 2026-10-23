@@ -55,6 +55,12 @@ dependencies = [
     # the installed 0.5.11 wheel: "License: MIT OR Apache-2.0" — both
     # compatible with this project's Apache-2.0 license).
     "pyoxigraph==0.5.11",
+    # B507: SHACL validation of model-extracted Observations (the write gate,
+    # `[observations] shacl_gate`, default off) and the graph structure report.
+    # Pure Python (rdflib is its only real dependency), imported lazily.
+    # BSD-3-Clause / Apache-2.0 compatible with this project's license.
+    "pyshacl>=0.30,<1",
+    "rdflib>=7.0,<8",
     # B400: verified this does NOT transitively pull in torch/torchvision.
     # thinc (spacy's ML backend) lists torch only behind an opt-in extra
     # (`thinc[torch]`) that neither spacy nor this list requests -- a clean
@@ -134,4 +140,5 @@ include = ["campy*", "adapters*", "web*"]
 
 [tool.setuptools.package-data]
 "campy.data" = ["**/*.md", "**/*.py", "**/*.toml", "**/*.json", "**/*.sh", "**/.*"]
+"campy.brain.hippocampus.shapes" = ["*.ttl"]
 "*" = ["campy.toml"]
