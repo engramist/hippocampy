@@ -133,8 +133,10 @@ class WalkV2:
             n = int(vs.count_documents((f"{CID_BASE}Message/",))) if vs is not None else 0
             if n:
                 return n
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            # The lexical index is optional (absent in some stores and tests);
+            # fall through to counting Messages in the graph itself.
+            _logger.debug("walk v2: lexical message count unavailable; counting in the graph")
         rows = self.run(f"SELECT (COUNT(?m) AS ?n) WHERE {{ ?m a {NS}Message> }}")
         return int(rows[0]["n"]) if rows else 0
 
