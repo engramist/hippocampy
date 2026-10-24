@@ -34,6 +34,9 @@ numpy>=1.26
 # something else hard-depends on it (sentence-transformers did, pre-B355).
 # See backlog/B400.md for the full investigation.
 spacy==3.8.3
+# B515: preshed 3.0.14 (2026-10-24) breaks spacy 3.8.3's tokenizer load
+# (OverflowError in tokenizer.from_disk). Lift once a fixed preshed ships.
+preshed<3.0.14
 # After pip install, run: python -m spacy download en_core_web_md
 
 # LLM provider abstraction (OpenAI-SDK-compatible for Ollama + cloud providers)
