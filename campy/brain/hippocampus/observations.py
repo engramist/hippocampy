@@ -175,6 +175,8 @@ class ObservationDraft:
     text_raw: str | None = None         # defaults to render_observation_text(draft)
     embedding: list[float] | None = None
     attr_cardinality: str | None = None  # B509: the extractor's advice, "one" | "many"; a candidate, never decides
+    attr_name: str | None = None         # B511: the extractor's structured attribute, set only after
+    attr_value: str | None = None        #       attribute_names.validate_structured passed
 
 
 @dataclass(frozen=True)
