@@ -127,7 +127,7 @@ def test_compute_dependency_closure_trusts_non_self_metadata():
 
 def test_load_pyproject_declared_includes_known_direct_deps():
     declared = load_pyproject_declared()
-    for name in ("fastembed", "pyoxigraph", "spacy", "typer", "fastapi", "hippocampy"):
+    for name in ("onnxruntime", "pyoxigraph", "spacy", "typer", "fastapi", "hippocampy"):
         assert name in declared, f"{name} should be a declared root"
     # B355: sentence-transformers was removed as a dependency; it must not
     # be declared, or a real contamination would go undetected.
@@ -137,7 +137,7 @@ def test_load_pyproject_declared_includes_known_direct_deps():
 
 def test_load_requirements_declared_includes_known_direct_deps():
     declared = load_requirements_declared()
-    for name in ("pyoxigraph", "fastembed", "spacy", "psutil", "pytest"):
+    for name in ("pyoxigraph", "onnxruntime", "spacy", "psutil", "pytest"):
         assert name in declared
 
 

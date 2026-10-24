@@ -545,12 +545,12 @@ class VenvManager:
         return True
 
     def prewarm_embeddings(self) -> bool:
-        """Pre-warm the local embedding model (fastembed/ONNX, B355)."""
+        """Pre-warm the local embedding model (ONNX Runtime, B355/B512)."""
         click.echo("  Pre-warming embedding model...")
         result = subprocess.run(
             [str(self.python), "-c",
-             "from fastembed import TextEmbedding; "
-             "m = TextEmbedding(model_name='sentence-transformers/all-MiniLM-L6-v2'); "
+             "from campy.brain.hippocampus.graph.onnx_embedder import OnnxTextEmbedder; "
+             "m = OnnxTextEmbedder(model_name='sentence-transformers/all-MiniLM-L6-v2'); "
              "list(m.embed(['test']))"],
             capture_output=True, text=True, timeout=300
         )

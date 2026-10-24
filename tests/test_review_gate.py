@@ -472,5 +472,15 @@ def test_comment_shows_tracked_summary():
 
 
 def test_repo_tracked_file_parses():
-    from review_gate import load_tracked
-    assert load_tracked(today="2026-10-23"), "the repo's .github/security-tracked.json should load"
+    """The repo's tracked-CVE file is valid JSON of the expected shape. It may
+    be empty (B512 cleared the pillow entry); a malformed file would make
+    load_tracked silently return {} and hide nothing, so check the shape here."""
+    import json
+    import os
+    from review_gate import TRACKED_FILE, load_tracked
+    with open(TRACKED_FILE) as fh:
+        data = json.load(fh)
+    assert isinstance(data.get("tracked"), list)
+    for entry in data["tracked"]:
+        assert {"package", "ids", "card", "review_by"} <= set(entry)
+    assert isinstance(load_tracked(today="2026-10-23"), dict)

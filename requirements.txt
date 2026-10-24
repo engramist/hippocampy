@@ -8,18 +8,22 @@ rdflib>=7.0,<8
 sqlite-vec>=0.1.6
 
 # Embeddings (384-dim — matches FLOAT[384] schema; changing requires full re-embedding)
-# B355: fastembed/ONNX Runtime replaced sentence-transformers/PyTorch as the
-# local embedding backend -- same model (sentence-transformers/all-MiniLM-
-# L6-v2, via its ONNX conversion, qdrant/all-MiniLM-L6-v2-onnx), verified
-# near-perfect output parity (cosine similarity 1.000000 across 200 real
-# test sentences). Motivated by B342/B353: PyTorch/sentence-transformers
-# was the dominant contributor to brain_daemon.py's ~1.2-2GB fresh-start
-# memory footprint; fastembed runs the identical model at ~60-80MB. This
-# also resolves the transformers-CVE pinning conflict the previous
-# sentence-transformers==3.3.1 pin was stuck with (fastembed does not
-# depend on the `transformers` package at all). See backlog/B353.md and
-# backlog/B355.md for the full investigation and verification.
-fastembed==0.8.0
+# B355: ONNX Runtime replaced sentence-transformers/PyTorch as the local
+# embedding backend -- same model (sentence-transformers/all-MiniLM-L6-v2,
+# via its ONNX conversion, qdrant/all-MiniLM-L6-v2-onnx). Motivated by
+# B342/B353: PyTorch/sentence-transformers was the dominant contributor to
+# brain_daemon.py's ~1.2-2GB fresh-start memory footprint; ONNX Runtime runs
+# the identical model at ~60-80MB. This also resolves the transformers-CVE
+# pinning conflict the previous sentence-transformers==3.3.1 pin was stuck with.
+# B512: run it directly (campy/brain/hippocampus/graph/onnx_embedder.py)
+# instead of through fastembed, whose every release caps pillow<13 (37
+# advisories on pillow 12.3.0, B500). Output is bit-identical to fastembed
+# 0.8.0 on 2,259 texts (cosine 1.0, max abs diff 0.0). Exact pins: vectors
+# are schema-load-bearing (FLOAT[384]). See backlog/B353.md, B355.md, B512.md.
+onnxruntime==1.29.0
+tokenizers==0.23.2
+huggingface_hub>=0.24
+numpy>=1.26
 
 # NLP / NER / dependency parsing (en_core_web_md required — sm has no dep parser)
 # B400: verified spacy/thinc does NOT transitively pull in torch/torchvision.
