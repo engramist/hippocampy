@@ -46,7 +46,7 @@ is compared with the kinds already in the scheme, in this order:
 
 Retrieval (B503's walk, and B505's counts) follow `INSTANCE_OF` and `BROADER` in
 both directions and descend the `BROADER` closure, so "model kit" reaches every
-instance of every narrower kind. `RELATION_PATH_*` below are the SPARQL fragments
+instance of every narrower kind. `kind_paths.RELATION_PATH_*` are the SPARQL fragments
 those readers share.
 """
 
@@ -67,10 +67,8 @@ KIND_SCHEME_IRI = NS + "KindScheme"
 DEFAULT_CLOSEMATCH_THRESHOLD = 0.90
 MAX_CLOSEMATCH_COMPARISONS = 300          # kinds compared per new kind (bounded work)
 
-# SPARQL fragments for readers (walk, counts). `<ns...>` full IRIs, ready to inline.
-_B, _I, _L = f"<{NS}BROADER>", f"<{NS}INSTANCE_OF>", f"<{NS}IS_A>"
-RELATION_PATH_UP = f"({_L}|{_I}|{_B})"            # one step from a thing to its kind / broader kind
-RELATION_PATH_NARROWER_CLOSURE = f"({_B}|{_L})+"  # x ... transitively narrower than a kind
+# SPARQL fragments for readers (walk, counts): see kind_paths.py, an import-free
+# module so the gateway can use them without importing this one.
 
 
 def skos_vocab_enabled(config: dict | None) -> bool:

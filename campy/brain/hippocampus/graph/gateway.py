@@ -1745,7 +1745,7 @@ class GraphGateway:
 
         `skos` (B508, flag `skos_vocab`): members are the Concepts that are
         `INSTANCE_OF` (or legacy `IS_A`) the kind or any kind in its narrower
-        closure (`kinds.RELATION_PATH_NARROWER_CLOSURE`: `BROADER` / `IS_A`
+        closure (`kind_paths.RELATION_PATH_NARROWER_CLOSURE`: `BROADER` / `IS_A`
         steps), so an instance of "plastic model kit" is a "model kit". A Concept
         that is itself the target of such a step is a kind, not an item, and is
         not a member.
@@ -1797,7 +1797,7 @@ class GraphGateway:
 
         def skos_members(kind: str) -> set[str]:
             """B508: instances of `kind` or of any kind narrower than it (leaf items only)."""
-            from campy.brain.hippocampus.kinds import RELATION_PATH_NARROWER_CLOSURE
+            from campy.brain.hippocampus.kind_paths import RELATION_PATH_NARROWER_CLOSURE
 
             kinds = {kind} | {str(r["k"]) for r in run(f"""
                 SELECT DISTINCT ?k WHERE {{ ?k {RELATION_PATH_NARROWER_CLOSURE} <{kind}> }} LIMIT 2000""")}
