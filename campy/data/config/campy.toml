@@ -64,12 +64,34 @@ queue_max = 5000         # worker queue bound; a full queue drops the newest, co
 # CAMPY_OBSERVATIONS_RETRIEVAL=0 turns it off without editing this file.
 retrieval = true
 observation_limit = 8    # most Observations the semantic section carries
-# B507: validate each extracted Observation against the SHACL shapes before it is written;
-# a non-conforming draft is rejected as `shacl_violation`. CAMPY_SHACL_GATE=1 turns it on.
-shacl_gate = false
-# B509: has_attribute names become OWL attribute properties (functional ones supersede older values).
-# CAMPY_OWL_PROPERTIES=1 turns it on.
-owl_properties = false
+# B507/B514: validate each extracted Observation against the SHACL shapes before it is written;
+# a non-conforming draft is rejected as `shacl_violation`. Gate R93: neutral (1 gained / 1 lost).
+# Skipped (logged once) if pyshacl/rdflib cannot be imported. CAMPY_SHACL_GATE=0 turns it off.
+shacl_gate = true
+# B509/B514: has_attribute names become OWL attribute properties (functional ones supersede older
+# values; replaces B499's string rule `supersede`, which stays off). CAMPY_OWL_PROPERTIES=0 turns it off.
+owl_properties = true
+# B504/B514: the extractor also emits each claim's object entity, kind and cardinality, written as
+# Concepts; also extracts facts stated inside requests and plans. Roughly 20-40% more output tokens
+# per fact-bearing turn. Gate R96 (all four structure flags on, graph_linking_limit 0): LoCoMo 0.517
+# vs main 0.525, 7 gained / 8 lost (neutral); SHACL conformance 90.4% -> 95.1%.
+# CAMPY_OBSERVATIONS_ENTITIES=0 turns it off.
+entities = true
+# B499: newer attribute value supersedes older by string rule. Off; owl_properties replaces it.
+supersede = false
+
+[retrieval]
+# B501/B514: a user turn ending in "?" that also states something in the first person counts as
+# evidence. Gates: LongMemEval oracle preference 0.30 -> 0.567 (10 gained / 2 lost); LoCoMo-10
+# replay pooled 0.526 -> 0.548 (22 gained / 10 lost, up on 3 of 4).
+# CAMPY_RETRIEVAL_CONVERSATION_EMBEDDED_STATEMENTS=0 turns it off.
+conversation_embedded_statements = true
+# B503/B508/B514: graph linking and the SKOS kind vocabulary are WRITTEN by default (gate R96:
+# 0.517 vs 0.525, 7 gained / 8 lost, neutral; Observations linked to a Concept 79.5% -> 94.9%).
+# graph_linking_limit = 0 means the retrieval walk adds no section (the v1 walk lost: R95 7 / 14).
+graph_linking = true
+graph_linking_limit = 0
+skos_vocab = true
 
 [wiki_projection]
 enabled = true
