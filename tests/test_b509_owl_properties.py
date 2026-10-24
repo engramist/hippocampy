@@ -98,7 +98,7 @@ def store(db, gw):
 # --- flag --------------------------------------------------------------------------------
 
 def test_flag_default_off_env_on():
-    assert _DEFAULT_CONFIG["observations"]["owl_properties"] is False
+    assert _DEFAULT_CONFIG["observations"]["owl_properties"] is True   # B514
     assert obs.owl_properties_enabled(None) is False
     assert ap.owl_properties_enabled({"observations": {"owl_properties": True}}) is True
     on = apply_env_overrides({"observations": {}}, {"CAMPY_OWL_PROPERTIES": "1"})

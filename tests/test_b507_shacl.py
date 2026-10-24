@@ -182,9 +182,9 @@ GATE_ON = {"observations": {"shacl_gate": True}}
 
 
 def test_the_gate_is_off_by_default_and_has_an_env_override():
-    assert _DEFAULT_CONFIG["observations"]["shacl_gate"] is False
+    assert _DEFAULT_CONFIG["observations"]["shacl_gate"] is True   # B514
     assert obs.shacl_gate_enabled(None) is False and obs.shacl_gate_enabled({}) is False
-    assert obs.shacl_gate_enabled(_DEFAULT_CONFIG) is False
+    assert obs.shacl_gate_enabled(_DEFAULT_CONFIG) is True
     assert obs.shacl_gate_enabled(GATE_ON) is True
     assert apply_env_overrides({}, {"CAMPY_SHACL_GATE": "1"})["observations"]["shacl_gate"] is True
     assert apply_env_overrides({}, {"CAMPY_SHACL_GATE": "0"})["observations"]["shacl_gate"] is False

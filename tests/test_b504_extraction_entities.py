@@ -110,9 +110,9 @@ async def run(db, cfg, store, text, llm, day=3):
 # --- flag, and off = unchanged --------------------------------------------------------
 
 def test_flag_default_off_env_on():
-    assert _DEFAULT_CONFIG["observations"]["entities"] is False
+    assert _DEFAULT_CONFIG["observations"]["entities"] is True   # B514
     assert obs.observations_entities_enabled({}) is False
-    assert obs.observations_entities_enabled(_DEFAULT_CONFIG) is False
+    assert obs.observations_entities_enabled(_DEFAULT_CONFIG) is True
     assert obs.observations_entities_enabled(apply_env_overrides({}, {"CAMPY_OBSERVATIONS_ENTITIES": "1"})) is True
     assert obs.observations_entities_enabled(
         apply_env_overrides({"observations": {"entities": True}}, {"CAMPY_OBSERVATIONS_ENTITIES": "0"})) is False

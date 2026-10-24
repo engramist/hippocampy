@@ -131,6 +131,6 @@ async def test_stage_passes_the_flag_only_when_on(recorder, retrieval):
 
 def test_env_override_and_default():
     from campy.brain.brainstem.config import _DEFAULT_CONFIG, apply_env_overrides
-    assert _DEFAULT_CONFIG["retrieval"]["conversation_embedded_statements"] is False
-    cfg = apply_env_overrides({}, {"CAMPY_RETRIEVAL_CONVERSATION_EMBEDDED_STATEMENTS": "1"})
-    assert cfg["retrieval"]["conversation_embedded_statements"] is True
+    assert _DEFAULT_CONFIG["retrieval"]["conversation_embedded_statements"] is True  # B514
+    cfg = apply_env_overrides({}, {"CAMPY_RETRIEVAL_CONVERSATION_EMBEDDED_STATEMENTS": "0"})
+    assert cfg["retrieval"]["conversation_embedded_statements"] is False

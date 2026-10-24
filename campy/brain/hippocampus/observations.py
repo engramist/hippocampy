@@ -481,13 +481,28 @@ def _property_embedder(config: dict | None):
     return lambda text: emb.embed(text, model_name=EMBEDDING_MODEL)
 
 
+_SHACL_UNAVAILABLE_LOGGED = False
+
+
+def _warn_shacl_unavailable(exc: BaseException) -> None:
+    """B514: log once per process that the SHACL gate is skipped (pyshacl/rdflib missing)."""
+    global _SHACL_UNAVAILABLE_LOGGED
+    if not _SHACL_UNAVAILABLE_LOGGED:
+        _SHACL_UNAVAILABLE_LOGGED = True
+        _logger.warning("[Observations] SHACL gate skipped: pyshacl/rdflib not importable (%s)", exc)
+
+
 def _shacl_failures(
     draft: ObservationDraft, msg: dict, quote: str, start: int, end: int,
     observed_at: datetime | None, time_precision: str | None,
 ) -> list[str]:
     """B507: the blocking SHACL failures for `draft` as it would be written
     (shape names, de-duplicated, in order); empty when it conforms."""
-    from campy.brain.hippocampus.shapes import validator   # lazy: the gate is off by default
+    try:
+        from campy.brain.hippocampus.shapes import validator   # lazy: imports pyshacl/rdflib
+    except ImportError as exc:    # B514: a missing package must never crash ingest
+        _warn_shacl_unavailable(exc)
+        return []
 
     fields = {
         "observation_id": "candidate",   # the real id is minted at create time
@@ -501,7 +516,11 @@ def _shacl_failures(
         "evidence_start": start, "evidence_end": end, "evidence_text": quote,
         "observed_at": observed_at, "evidence_ref": draft.evidence_ref,
     }
-    report = validator.validate_observation_candidate(fields, msg)
+    try:
+        report = validator.validate_observation_candidate(fields, msg)
+    except ImportError as exc:    # pyshacl / rdflib imported lazily inside the validator
+        _warn_shacl_unavailable(exc)
+        return []
     return list(dict.fromkeys(f.key for f in validator.blocking(report)))
 
 
