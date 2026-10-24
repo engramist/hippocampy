@@ -1686,6 +1686,18 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                     "(with superseded_by / superseded_at), for `[observations] supersede`",
         # No sparql= -- Python handler in GraphGateway._bundle_observations.
     ),
+    NamedQuery(
+        name="thalamus.bundle_aggregate_items",
+        cypher="MATCH (c:Concept)-[:IS_A]->(k:Concept) RETURN c.concept_id as node_id LIMIT 1",
+        params=("concept_ids",),
+        optional_params=("skos", "typed"),
+        mutating=False,
+        description="B505: the first candidate kind Concept that has members (IS_A direct or through a sub-kind; "
+                    "with `skos` INSTANCE_OF over the BROADER narrower closure), and the distinct member "
+                    "Concepts with live user evidence: asserted Observations about them or user Messages that "
+                    "mention them; with `typed` the Observations carry their B509 typed attribute literal",
+        # No sparql= -- Python handler in GraphGateway._bundle_aggregate_items.
+    ),
     # Concept
     NamedQuery(
         name="thalamus.bundle_semantic_concept",

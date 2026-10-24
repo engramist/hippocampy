@@ -61,6 +61,7 @@ def test_every_documented_override_applies():
         "CAMPY_OWL_PROPERTIES": "1",
         "CAMPY_SKOS_VOCAB": "1",
         "CAMPY_OBSERVATIONS_SUPERSEDE": "1",
+        "CAMPY_ANSWER_AGGREGATE": "1",
     }
     assert set(env) == set(ENV_OVERRIDES), "test must cover every override"
     cfg = apply_env_overrides(_base(), env)
@@ -75,6 +76,7 @@ def test_every_documented_override_applies():
     assert cfg["observations"]["entities"] is True
     assert cfg["observations"]["shacl_gate"] is True
     assert cfg["retrieval"]["skos_vocab"] is True
+    assert cfg["retrieval"]["answer_aggregate"] is True
     assert cfg["llm"] == {"provider": "bedrock", "model": "us.example.model-v1:0",
                           "region": "us-east-1", "base_url": "https://llm.internal/v1",
                           "max_tokens": 1024}
