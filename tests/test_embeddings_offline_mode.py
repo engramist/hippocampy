@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import types
-
 import pytest
 
 
@@ -17,8 +15,14 @@ class _FakeFEMissing:
         raise ValueError("model not found")
 
 
+def _onnx_embedder_module():
+    import campy.brain.hippocampus.graph.onnx_embedder as mod
+
+    return mod
+
+
 def _reset_embeddings_module(mod):
-    mod._fe_model = None
+    mod._onnx_model = None
     mod._offline_mode = False
 
 
@@ -27,13 +31,9 @@ def test_offline_mode_uses_local_files_only(monkeypatch):
 
     _reset_embeddings_module(emb)
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
-    monkeypatch.setitem(
-        __import__("sys").modules,
-        "fastembed",
-        types.SimpleNamespace(TextEmbedding=_FakeFEOk),
-    )
+    monkeypatch.setattr(_onnx_embedder_module(), "OnnxTextEmbedder", _FakeFEOk)
 
-    emb._get_fe_model("sentence-transformers/all-MiniLM-L6-v2")
+    emb._get_onnx_model("sentence-transformers/all-MiniLM-L6-v2")
 
     assert _FakeFEOk.last_local_files_only is True
 
@@ -43,14 +43,10 @@ def test_offline_mode_cache_miss_has_actionable_error(monkeypatch):
 
     _reset_embeddings_module(emb)
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
-    monkeypatch.setitem(
-        __import__("sys").modules,
-        "fastembed",
-        types.SimpleNamespace(TextEmbedding=_FakeFEMissing),
-    )
+    monkeypatch.setattr(_onnx_embedder_module(), "OnnxTextEmbedder", _FakeFEMissing)
 
     with pytest.raises(RuntimeError, match="Embedding model not found in local cache"):
-        emb._get_fe_model("sentence-transformers/all-MiniLM-L6-v2")
+        emb._get_onnx_model("sentence-transformers/all-MiniLM-L6-v2")
 
 
 def test_offline_env_var_overrides_config_when_true(monkeypatch):
@@ -79,11 +75,7 @@ def test_offline_cache_miss_message_survives_ollama_fallback_failure(monkeypatch
     _reset_embeddings_module(emb)
     emb._provider = "sentence-transformers"
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
-    monkeypatch.setitem(
-        __import__("sys").modules,
-        "fastembed",
-        types.SimpleNamespace(TextEmbedding=_FakeFEMissing),
-    )
+    monkeypatch.setattr(_onnx_embedder_module(), "OnnxTextEmbedder", _FakeFEMissing)
 
     def _fake_ollama_unreachable(text, model_name):
         raise ConnectionError("Connection refused")

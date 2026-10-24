@@ -50,6 +50,50 @@ def extract_rule_ids_from_comment(body):
     return {r.strip() for r in m.group(1).split(",") if r.strip()}
 
 
+TRACKED_FILE = os.path.join(os.path.dirname(__file__), "..", "security-tracked.json")
+
+
+def load_tracked(path=TRACKED_FILE, today=None):
+    """Tracked dependency CVEs (B500): {(package, id): entry} for entries not past review_by.
+    Missing or unreadable file -> {} (nothing is hidden)."""
+    import datetime
+    today = today or datetime.date.today().isoformat()
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    for entry in data.get("tracked", []):
+        if str(entry.get("review_by", "")) < today:
+            continue
+        pkg = str(entry.get("package", "")).lower()
+        for cve in entry.get("ids", []):
+            out[(pkg, cve)] = entry
+    return out
+
+
+def split_tracked(findings, tracked):
+    """(untracked, tracked_summary): dependency findings matching a tracked (package, id)
+    are removed and summarised per card; everything else passes through unchanged."""
+    keep, groups = [], {}
+    for f in findings:
+        if f.get("source") == "dependency":
+            pkg = f["file"].split(":", 1)[-1].strip().split("==")[0].lower()
+            entry = tracked.get((pkg, f["rule"]))
+            if entry is not None:
+                key = (entry.get("card", "?"), pkg)
+                g = groups.setdefault(key, {"entry": entry, "ids": [], "package": pkg})
+                g["ids"].append(f["rule"])
+                continue
+        keep.append(f)
+    summary = [
+        f"- {len(g['ids'])} {g['package']} CVE(s) tracked on {card} ({g['entry'].get('reason', '')}; review by {g['entry'].get('review_by', '?')})"
+        for (card, _), g in sorted(groups.items())
+    ]
+    return keep, summary
+
+
 def format_findings_table(findings):
     """Return (markdown_table_str, rule_ids_list). Empty input → ('', [])."""
     if not findings:
@@ -69,7 +113,7 @@ def format_findings_table(findings):
     return header + "\n" + "\n".join(rows), rule_ids
 
 
-def build_comment_body(findings, phase, blocking=True):
+def build_comment_body(findings, phase, blocking=True, tracked_summary=None):
     """Build the full PR comment body, including hidden rule IDs for escalation.
 
     Args:
@@ -108,6 +152,8 @@ def build_comment_body(findings, phase, blocking=True):
             )
     else:
         parts.append("All checks passed. ✓")
+    if tracked_summary:
+        parts += ["", "**Known and tracked (not listed above):**", *tracked_summary]
     return "\n".join(parts)
 
 
@@ -316,6 +362,9 @@ def main():
             with open(path) as fh:
                 all_findings.extend(parser_fn(json.load(fh)))
 
+    # Tracked dependency CVEs (B500) become one summary line instead of rows.
+    all_findings, tracked_summary = split_tracked(all_findings, load_tracked())
+
     # Split into blocking (code-level HIGH/CRITICAL) and advisory (dependency CVEs + others)
     blocking, advisory = partition_findings(all_findings)
 
@@ -336,9 +385,9 @@ def main():
 
     # Post or replace the findings comment
     if blocking:
-        body = build_comment_body(blocking, args.phase, blocking=True)
+        body = build_comment_body(blocking, args.phase, blocking=True, tracked_summary=tracked_summary)
     else:
-        body = build_comment_body(advisory[:20], args.phase, blocking=False)
+        body = build_comment_body(advisory[:20], args.phase, blocking=False, tracked_summary=tracked_summary)
     _post_or_replace_comment(repo, pr_number, body, previous_bot_comment)
 
     # Handle escalation on repeat failures

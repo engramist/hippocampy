@@ -99,7 +99,13 @@ an error that names the variable. The full table is
 | `CAMPY_IAM_DEFAULT_SCOPES_JSON` | scopes for callers without a scope-map entry | `["memory.read","memory.write"]` if unset |
 | `CAMPY_OBSERVATIONS_ENABLED` | `[observations].enabled` | unset (off); `1` enables B472 Phase 3b Observations, one extra LLM call per user turn |
 | `CAMPY_OBSERVATIONS_RETRIEVAL` | `[observations].retrieval` | unset (off); `1` makes the bundle's semantic section carry matching Observations (B472 Phase 3c) |
-| `CAMPY_GRAPH_LINKING` | `[retrieval].graph_linking` | unset (off); `1` links user turns and Observations to the Concepts they name and adds a `linked` bundle section found by walking those links (B503) |
+| `CAMPY_GRAPH_LINKING` | `[retrieval].graph_linking` | on (B514); `0` stops linking user turns and Observations to the Concepts they name (B503) |
+| `CAMPY_GRAPH_LINKING_LIMIT` | `[retrieval].graph_linking_limit` | `0`: links are written but the retrieval walk adds no `linked` section; a positive number restores the v1 walk (it lost on LoCoMo, R95) |
+| `CAMPY_OBSERVATIONS_ENTITIES` | `[observations].entities` | on (B514); `0` stops the extractor emitting object entity, kind and cardinality (about 20-40% fewer output tokens per fact-bearing turn) |
+| `CAMPY_SKOS_VOCAB` | `[retrieval].skos_vocab` | on (B514); `0` stops writing the SKOS kind vocabulary (B508) |
+| `CAMPY_OWL_PROPERTIES` | `[observations].owl_properties` | on (B514); `0` stops treating attribute names as OWL properties (B509) |
+| `CAMPY_SHACL_GATE` | `[observations].shacl_gate` | on (B514); `0` stops validating each Observation against the SHACL shapes before writing (B507). Skipped with one log line if pyshacl/rdflib cannot be imported |
+| `CAMPY_RETRIEVAL_CONVERSATION_EMBEDDED_STATEMENTS` | `[retrieval].conversation_embedded_statements` | on (B514); `0` stops counting a first-person statement inside a question as evidence (B501) |
 | `CAMPY_GRAPH_WALK_V2` | `[retrieval].graph_walk_v2` | unset (off); `1` replaces B503's walk with the precise walk: strong anchors only, at most `CAMPY_GRAPH_WALK_V2_LIMIT` (default 4) turns the bundle lacks, paid for out of the conversation section (B510) |
 
 `CAMPY_HOME` sets where all state lives.

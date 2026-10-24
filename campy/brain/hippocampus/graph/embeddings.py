@@ -5,17 +5,17 @@ Supports three providers (configured in campy.toml [embeddings]):
     sentence-transformers  → local, fastest (default) — despite the config
                               label (kept for backward compatibility with
                               existing campy.toml files), this is backed by
-                              fastembed/ONNX Runtime, not PyTorch, as of
-                              B355. See that card for why: the PyTorch/
-                              sentence-transformers stack was the dominant
-                              contributor to brain_daemon.py's ~1.2-2GB
-                              fresh-start memory footprint (B342/B353);
-                              fastembed runs the identical model
-                              (sentence-transformers/all-MiniLM-L6-v2, via
-                              its ONNX conversion) at ~60-80MB, with
-                              verified near-perfect output parity (cosine
-                              similarity 1.000000 across 200 real test
-                              sentences — see B353/B355 for the test).
+                              ONNX Runtime, not PyTorch, as of B355. See that
+                              card for why: the PyTorch/sentence-transformers
+                              stack was the dominant contributor to
+                              brain_daemon.py's ~1.2-2GB fresh-start memory
+                              footprint (B342/B353). B355 ran the identical
+                              model (sentence-transformers/all-MiniLM-L6-v2,
+                              via its ONNX conversion) through fastembed;
+                              B512 runs the same files through ONNX Runtime
+                              + tokenizers directly (onnx_embedder.py),
+                              bit-identical to fastembed 0.8.0 on 2,259
+                              texts, and drops fastembed's pillow<13 cap.
     ollama                 → local Ollama server via HTTP
     openai                 → OpenAI cloud API
 
@@ -50,7 +50,7 @@ _offline_mode: bool = False
 _configured: bool = False
 
 # Provider-specific singletons
-_fe_model = None          # fastembed.TextEmbedding instance (B355)
+_onnx_model = None        # onnx_embedder.OnnxTextEmbedder instance (B355/B512)
 _openai_client = None     # openai.OpenAI instance
 
 
@@ -102,41 +102,40 @@ def _is_offline_enabled() -> bool:
     return os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1"
 
 
-def _get_fe_model(model_name: str):
+def _get_onnx_model(model_name: str):
     """Lazy singleton for the local embedding backend.
 
-    B355: fastembed/ONNX Runtime, not sentence-transformers/PyTorch — see
-    the module docstring for why. fastembed's `all-MiniLM-L6-v2` conversion
-    (qdrant/all-MiniLM-L6-v2-onnx) outputs unit-normalized vectors already
-    (verified directly: L2 norm == 1.0), matching what the old
-    `normalize_embeddings=True` call used to produce, so no extra
-    normalization step is needed in `_embed_fe`/`_embed_batch_fe` below.
+    B355: ONNX Runtime, not sentence-transformers/PyTorch -- see the module
+    docstring. B512: run directly via ``onnx_embedder`` instead of
+    fastembed. The model's vectors are already unit-normalised (L2 norm ==
+    1.0), matching what the old ``normalize_embeddings=True`` call produced,
+    so no extra normalisation is needed in ``_embed_onnx`` below.
     """
-    global _fe_model
-    if _fe_model is None:
-        from fastembed import TextEmbedding
+    global _onnx_model
+    if _onnx_model is None:
+        from campy.brain.hippocampus.graph.onnx_embedder import OnnxTextEmbedder
         offline = _is_offline_enabled()
         try:
-            _fe_model = TextEmbedding(model_name=model_name, local_files_only=offline)
+            _onnx_model = OnnxTextEmbedder(model_name=model_name, local_files_only=offline)
         except Exception as e:
             if offline:
                 raise RuntimeError(
                     "Embedding model not found in local cache and offline mode is enabled. "
                     "Pre-bake the model into the image cache (HF_HOME/~/.cache/huggingface, "
-                    "fastembed shares the huggingface_hub cache) "
+                    "or FASTEMBED_CACHE_PATH if set) "
                     "or unset HF_HUB_OFFLINE/TRANSFORMERS_OFFLINE (or [embeddings].offline)."
                 ) from e
             raise
-    return _fe_model
+    return _onnx_model
 
 
-def _embed_fe(text: str, model_name: str) -> list[float]:
-    model = _get_fe_model(model_name)
+def _embed_onnx(text: str, model_name: str) -> list[float]:
+    model = _get_onnx_model(model_name)
     return next(model.embed([text])).tolist()
 
 
-def _embed_batch_fe(texts: list[str], model_name: str) -> list[list[float]]:
-    model = _get_fe_model(model_name)
+def _embed_batch_onnx(texts: list[str], model_name: str) -> list[list[float]]:
+    model = _get_onnx_model(model_name)
     return [vec.tolist() for vec in model.embed(texts)]
 
 
@@ -211,13 +210,13 @@ _FALLBACK_ORDER = {
 }
 
 _EMBED_FN = {
-    "sentence-transformers": _embed_fe,
+    "sentence-transformers": _embed_onnx,
     "ollama":                _embed_ollama,
     "openai":                _embed_openai,
 }
 
 _EMBED_BATCH_FN = {
-    "sentence-transformers": _embed_batch_fe,
+    "sentence-transformers": _embed_batch_onnx,
     "ollama":                _embed_batch_ollama,
     "openai":                _embed_batch_openai,
 }
@@ -228,7 +227,7 @@ def _embed_with_fallback(text: str, model_name: str) -> list[float]:
 
     External round-3 verification, Finding 3: collecting only `last_err`
     silently discarded the actionable offline-cache-miss RuntimeError
-    (`_get_fe_model` above) whenever a later fallback provider also failed —
+    (`_get_onnx_model` above) whenever a later fallback provider also failed —
     exactly the common case in an egress-locked environment, where Ollama is
     unreachable too. The pre-bake-the-cache instruction never reached the
     operator; they saw only the final, unhelpful Ollama connection error.
@@ -284,14 +283,14 @@ def _embed_batch_with_fallback(texts: list[str], model_name: str) -> list[list[f
 
 def get_model(model_name: str = MODEL_NAME):
     """Return the local embedding model (backward compat for callers)."""
-    return _get_fe_model(model_name)
+    return _get_onnx_model(model_name)
 
 
 def prewarm(model_name: str = MODEL_NAME) -> None:
     """
     Called at daemon startup to eagerly load the embedding model.
 
-    For sentence-transformers (fastembed/ONNX as of B355): loads weights
+    For sentence-transformers (ONNX Runtime as of B355/B512): loads weights
     into memory. For ollama/openai: issues a single test embed to verify
     connectivity.
     """
@@ -299,7 +298,7 @@ def prewarm(model_name: str = MODEL_NAME) -> None:
     _model_name = model_name
 
     if _provider == "sentence-transformers":
-        _get_fe_model(model_name)
+        _get_onnx_model(model_name)
         _logger.info("Local embedding model pre-warmed: %s", model_name)
     elif _provider == "ollama":
         try:
@@ -312,7 +311,7 @@ def prewarm(model_name: str = MODEL_NAME) -> None:
                 "Ollama embedding prewarm failed (%s); will fallback to "
                 "local embedding model at runtime", e
             )
-            _get_fe_model(model_name)
+            _get_onnx_model(model_name)
     elif _provider == "openai":
         try:
             vec = _embed_openai("prewarm test", model_name)
@@ -324,13 +323,13 @@ def prewarm(model_name: str = MODEL_NAME) -> None:
                 "OpenAI embedding prewarm failed (%s); will fallback to "
                 "local embedding model at runtime", e
             )
-            _get_fe_model(model_name)
+            _get_onnx_model(model_name)
     else:
         _logger.warning(
             "Unknown embedding provider '%s'; defaulting to local embedding model",
             _provider,
         )
-        _get_fe_model(model_name)
+        _get_onnx_model(model_name)
 
 
 def embed(text: str, model_name: str = MODEL_NAME) -> list[float]:

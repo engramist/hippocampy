@@ -1,0 +1,4 @@
+{
+  "_doc": "Dependency CVEs we know about, cannot fix yet, and track on a backlog card. review_gate.py lists them as one summary line instead of re-flagging each on every PR. Matching is by exact CVE id AND package, so a NEW CVE on the same package still shows. Each entry expires on review_by: after that date the CVEs are listed again until someone re-checks and renews or removes the entry.",
+  "tracked": []
+}

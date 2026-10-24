@@ -26,17 +26,23 @@ classifiers = [
 # or is replaced.
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    # B355: fastembed/ONNX Runtime replaced sentence-transformers/PyTorch as
-    # the local embedding backend -- same model (sentence-transformers/all-
-    # MiniLM-L6-v2, via its ONNX conversion), ~60-80MB instead of ~1.2GB.
-    # Verified near-perfect output parity (cosine similarity 1.000000 across
-    # 200 real test sentences). See backlog/B353.md and backlog/B355.md.
-    # Exact-pinned (like fastembed), not floored like most deps below:
-    # output parity was verified against 0.8.0 specifically, and embedding
-    # vectors are schema-load-bearing (FLOAT[384], re-embedding required on
-    # any change) -- a floating floor could silently pull a newer fastembed
-    # with different ONNX conversion behavior. Matches requirements.txt.
-    "fastembed==0.8.0",
+    # B355: ONNX Runtime replaced sentence-transformers/PyTorch as the local
+    # embedding backend -- same model (sentence-transformers/all-MiniLM-L6-v2,
+    # via its ONNX conversion qdrant/all-MiniLM-L6-v2-onnx), ~60-80MB instead
+    # of ~1.2GB. B512: run it directly (campy/brain/hippocampus/graph/
+    # onnx_embedder.py) instead of through fastembed, whose every release caps
+    # pillow<13 (37 advisories on pillow 12.3.0, B500). Output is bit-identical
+    # to fastembed 0.8.0 on 2,259 texts (cosine 1.0, max abs diff 0.0). See
+    # backlog/B353.md, B355.md, B512.md.
+    # onnxruntime and tokenizers are exact-pinned (like fastembed was), not
+    # floored like most deps below: vectors are schema-load-bearing
+    # (FLOAT[384], re-embedding required on any change), so a floating floor
+    # could silently pull a release that changes the numbers. Matches
+    # requirements.txt. huggingface_hub and numpy are plumbing: floors suffice.
+    "onnxruntime==1.29.0",
+    "tokenizers==0.23.2",
+    "huggingface_hub>=0.24",
+    "numpy>=1.26",
     # B390: embedded ANN + FTS5 store that replaces Kùzu's
     # QUERY_VECTOR_INDEX / QUERY_FTS_INDEX once neither the graph nor the
     # vector/lexical planes have a SPARQL equivalent (docs/rdf-schema-
@@ -47,7 +53,7 @@ dependencies = [
     "sqlite-vec>=0.1.6",
     # B389 / B397: RDF-star store (campy/brain/hippocampus/graph/oxigraph_client.py)
     # following B397's cutover from Kùzu to Oxigraph. Exact-
-    # pinned like fastembed above: oxigraph_client.py's implementation
+    # pinned like onnxruntime above: oxigraph_client.py's implementation
     # notes document empirically-observed 0.5.11 storage-layer behavior
     # (e.g. XSD-integer-derived datatypes canonicalizing to xsd:integer)
     # that a floating floor could silently change under a newer release.
@@ -123,7 +129,9 @@ observability = [
 ]
 indicator = [
     "pystray>=0.19",
-    "Pillow>=10.0",
+    # B512: pillow is no longer pulled in by fastembed, so this extra is its
+    # only source. Floor at 13.0.0: it fixes the advisories B500 tracked.
+    "Pillow>=13.0.0",
 ]
 
 [project.scripts]

@@ -152,7 +152,7 @@ Everything else should earn its way into the prompt.
 - **Language:** Python
 - **Database:** Oxigraph (`pyoxigraph==0.5.11`) for RDF-star graph store + `sqlite-vec>=0.1.6` for vector similarity and FTS5 search (replacing retired Kùzu engine per B397). Zero external database servers. No Neo4j, Postgres, ChromaDB, Pinecone, or LanceDB.
 - **NER / Zoning:** `spaCy` (local, zero LLM cost for concept extraction)
-- **Embeddings:** `fastembed`/ONNX Runtime (local; `sentence-transformers/all-MiniLM-L6-v2`, same model as before B355 — see B342/B353/B355 below for why the runtime changed)
+- **Embeddings:** ONNX Runtime + `tokenizers`, run directly by `campy/brain/hippocampus/graph/onnx_embedder.py` (local; `sentence-transformers/all-MiniLM-L6-v2`, same model as before B355 — see B342/B353/B355 below for why the runtime changed; B512 dropped the `fastembed` wrapper, vectors bit-identical)
 - **Ontologies:** gist (Semantic Arts) for upper-level classification → schema.org sub-graphs for domain-specific attributes
 - **LLM:** Configurable via `campy.toml` — Ollama (default/local) or cloud providers (OpenAI, Anthropic, Google) as opt-in
 - **Memory Control Panel:** FastAPI web app bound strictly to `127.0.0.1` (no external access)
@@ -168,7 +168,7 @@ base_url = "http://localhost:11434"   # ollama only
 # api_key loaded from env var for cloud providers
 
 [embeddings]
-provider = "sentence-transformers"   # config label kept for backward compat; backed by fastembed/ONNX
+provider = "sentence-transformers"   # config label kept for backward compat; backed by ONNX Runtime
                                       # since B355, not PyTorch -- same model, ~6.5x smaller footprint
                                       # contribution from the embedding backend itself (1.22GB -> 186MB,
                                       # see B355's correction note). B355 believed spaCy/thinc carried its
@@ -1672,7 +1672,7 @@ This card does **not** move embeddings to Bedrock, and that is a considered deci
 oversight:
 
 - `campy/brain/hippocampus/graph/embeddings.py` uses a local embedding model
-  (`sentence-transformers/all-MiniLM-L6-v2`, 384-dim — run via `fastembed`/ONNX Runtime as of
+  (`sentence-transformers/all-MiniLM-L6-v2`, 384-dim — run via ONNX Runtime (through `fastembed` as of B355, directly via `onnx_embedder.py` as of B512) as of
   B355, previously PyTorch/`SentenceTransformer`; same model, same output, see B342/B353/B355
   below), and **every embedding column across ~53 node tables in `schema.py` is `FLOAT[384]`**,
   with Kùzu HNSW indexes built on that fixed dimension. `schema.py` has a startup dimension
@@ -2887,6 +2887,8 @@ dropped ~6.5x (1.22GB -> 186MB); the best estimate for the full daemon's baselin
 (extrapolated, not directly re-measured) is ~2.2GB, putting the real whole-daemon improvement around
 45-50% at that time — real, but not the dramatic number first reported. See `backlog/B355.md`'s own
 correction note for the full measurement trail.
+
+**B512 (2026-10-24):** the `fastembed` wrapper itself was dropped; `campy/brain/hippocampus/graph/onnx_embedder.py` runs the same ONNX file and tokenizer with ONNX Runtime and `tokenizers` directly. Output is bit-identical to fastembed 0.8.0 (2,259 real and edge-case texts, max absolute difference 0.0). The reason was dependency hygiene: every fastembed release caps `pillow<13`, which pinned Campy to pillow 12.3.0 and its 37 advisories (B500).
 
 **Correction (B400):** the claim above — that `thinc` imports `torch` "unconditionally... independent of
 the embedding backend" — is wrong, and B400 is the card that found this. `thinc` does not declare `torch`
