@@ -412,3 +412,65 @@ def test_partition_mixed():
     assert len(blocking) == 1
     assert len(advisory) == 2
     assert blocking[0]["rule"] == "code-issue"
+
+
+# --- B500: tracked dependency CVEs -------------------------------------------------
+
+def _tracked_file(tmp_path, review_by="2099-01-01"):
+    import json as _json
+    p = tmp_path / "tracked.json"
+    p.write_text(_json.dumps({"tracked": [{
+        "package": "pillow", "ids": ["CVE-1", "CVE-2"], "card": "B500",
+        "reason": "blocked upstream", "review_by": review_by}]}))
+    return str(p)
+
+
+def _dep(pkg, cve):
+    return {"file": f"dependency: {pkg}==12.3.0", "line": "-", "rule": cve,
+            "severity": "HIGH", "fix": "Upgrade", "source": "dependency"}
+
+
+def test_tracked_cves_are_summarised_not_listed(tmp_path):
+    from review_gate import load_tracked, split_tracked
+    tracked = load_tracked(_tracked_file(tmp_path), today="2026-10-23")
+    keep, summary = split_tracked([_dep("pillow", "CVE-1"), _dep("pillow", "CVE-2")], tracked)
+    assert keep == []
+    assert len(summary) == 1 and "2 pillow CVE(s) tracked on B500" in summary[0]
+
+
+def test_new_cve_on_tracked_package_still_listed(tmp_path):
+    from review_gate import load_tracked, split_tracked
+    tracked = load_tracked(_tracked_file(tmp_path), today="2026-10-23")
+    keep, _ = split_tracked([_dep("pillow", "CVE-NEW")], tracked)
+    assert [f["rule"] for f in keep] == ["CVE-NEW"]
+
+
+def test_expired_entry_hides_nothing(tmp_path):
+    from review_gate import load_tracked, split_tracked
+    tracked = load_tracked(_tracked_file(tmp_path, review_by="2026-01-01"), today="2026-10-23")
+    keep, summary = split_tracked([_dep("pillow", "CVE-1")], tracked)
+    assert len(keep) == 1 and summary == []
+
+
+def test_code_findings_never_tracked(tmp_path):
+    from review_gate import load_tracked, split_tracked
+    tracked = load_tracked(_tracked_file(tmp_path), today="2026-10-23")
+    code = {"file": "x.py", "line": 1, "rule": "CVE-1", "severity": "HIGH", "fix": "-", "source": "code"}
+    keep, _ = split_tracked([code], tracked)
+    assert keep == [code]
+
+
+def test_missing_tracked_file_hides_nothing(tmp_path):
+    from review_gate import load_tracked
+    assert load_tracked(str(tmp_path / "absent.json")) == {}
+
+
+def test_comment_shows_tracked_summary():
+    from review_gate import build_comment_body
+    body = build_comment_body([], "Security", blocking=False, tracked_summary=["- 8 pillow CVE(s) tracked on B500"])
+    assert "Known and tracked" in body and "B500" in body and "PASSED" in body
+
+
+def test_repo_tracked_file_parses():
+    from review_gate import load_tracked
+    assert load_tracked(today="2026-10-23"), "the repo's .github/security-tracked.json should load"

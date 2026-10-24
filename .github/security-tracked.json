@@ -1,0 +1,15 @@
+{
+  "_doc": "Dependency CVEs we know about, cannot fix yet, and track on a backlog card. review_gate.py lists them as one summary line instead of re-flagging each on every PR. Matching is by exact CVE id AND package, so a NEW CVE on the same package still shows. Each entry expires on review_by: after that date the CVEs are listed again until someone re-checks and renews or removes the entry.",
+  "tracked": [
+    {
+      "package": "pillow",
+      "ids": [
+        "CVE-2026-112395", "CVE-2026-112397", "CVE-2026-112400", "CVE-2026-112404",
+        "CVE-2026-112895", "CVE-2026-112896", "CVE-2026-112897", "CVE-2026-112899"
+      ],
+      "card": "B500",
+      "reason": "blocked upstream: every fastembed release caps pillow<13; Campy embeds text only and its one PIL use draws an in-memory icon, never decoding a file",
+      "review_by": "2027-01-31"
+    }
+  ]
+}
