@@ -129,7 +129,7 @@ async def feed(db, store, config, text, entity, kind, day=3):
 # --- flag ---------------------------------------------------------------------------
 
 def test_flag_default_off_env_on_and_closematch_default():
-    assert _DEFAULT_CONFIG["retrieval"]["skos_vocab"] is False
+    assert _DEFAULT_CONFIG["retrieval"]["skos_vocab"] is True   # B514
     assert kinds_mod.skos_vocab_enabled(None) is False
     assert kinds_mod.skos_vocab_enabled({"retrieval": {"skos_vocab": True}}) is True
     assert kinds_mod.closematch_threshold(_DEFAULT_CONFIG) == 0.90

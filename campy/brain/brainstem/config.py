@@ -18,21 +18,30 @@ _DEFAULT_CONFIG = {
         "lexical_window_days": 14,
         "lexical_limit": 10,
         "timeline_limit": 200,
-        # B503: graph linking (default off; env CAMPY_GRAPH_LINKING=1). Writes
-        # Message/Observation -> Concept links by rule and walks them at
-        # retrieval (1-2 hops); graph_linking_limit caps the walk's items.
-        "graph_linking": False,
-        "graph_linking_limit": 12,
-        # B508: SKOS vocabulary for kinds (default off; env CAMPY_SKOS_VOCAB=1). Kinds are
+        # B503/B514: graph linking (default ON; env CAMPY_GRAPH_LINKING=0 turns it off). Writes
+        # Message/Observation -> Concept links by rule. Gate R96 (fresh-ingest LoCoMo, with
+        # entities, skos_vocab and owl_properties on, limit 0): 0.517 vs main 0.525, 7 gained /
+        # 8 lost (neutral); Observations linked to a Concept 79.5% -> 94.9%, user Messages
+        # with MENTIONS 0 -> 79.7%.
+        # graph_linking_limit caps the retrieval WALK's items; 0 (the default) writes the links
+        # but adds no walk section: the v1 walk hurt (R95: 7 gained / 14 lost) and its redesign
+        # is gated separately. CAMPY_GRAPH_LINKING_LIMIT=12 restores the v1 walk.
+        "graph_linking": True,
+        "graph_linking_limit": 0,
+        # B508/B514: SKOS vocabulary for kinds (default ON; env CAMPY_SKOS_VOCAB=0 turns it off;
+        # part of the R96 stack, see graph_linking). Kinds are
         # consolidated by rule (same label, head noun), entity -INSTANCE_OF-> kind and
         # kind -BROADER-> kind replace the single IS_A, and the walk follows both.
         # skos_closematch_threshold: cosine at or above which two kinds get an advisory
         # CLOSE_MATCH edge (never merged); 0 turns it off.
-        "skos_vocab": False,
+        "skos_vocab": True,
         "skos_closematch_threshold": 0.90,
-        # B501: a user turn ending in "?" that also states something in the first
-        # person counts as evidence. Off until gated. CAMPY_RETRIEVAL_CONVERSATION_EMBEDDED_STATEMENTS=1.
-        "conversation_embedded_statements": False,
+        # B501/B514: a user turn ending in "?" that also states something in the first
+        # person counts as evidence. Default ON (gates: LongMemEval oracle preference
+        # 0.30 -> 0.567, 10 gained / 2 lost; LoCoMo-10 replay pooled over 4 conversations
+        # 0.526 -> 0.548, 22 gained / 10 lost, up on 3 of 4).
+        # CAMPY_RETRIEVAL_CONVERSATION_EMBEDDED_STATEMENTS=0 turns it off.
+        "conversation_embedded_statements": True,
         # B505 (default off; env CAMPY_ANSWER_AGGREGATE=1): a question that asks for a count or
         # a total gets a rule-computed list/sum of the matching items as an `aggregate` bundle
         # section; the answer prompt then uses it instead of recounting.
@@ -101,14 +110,21 @@ _DEFAULT_CONFIG = {
         "queue_max": 5000,         # 3b: bounded worker queue; a full queue drops the newest, counted
         "retrieval": True,         # 3c: feed the bundle's semantic section from Observations
         "observation_limit": 8,    # 3c: most Observations the semantic section carries
-        # B504 (default off; env CAMPY_OBSERVATIONS_ENTITIES=1): the extractor also emits each
-        # claim's object entity + kind, validated by rule and written as Concepts, and extracts
-        # facts stated inside requests and plans.
-        "entities": False,
-        # B509 (default off; env CAMPY_OWL_PROPERTIES=1): has_attribute names become OWL attribute
-        # properties (vocabulary nodes); a functional property's newer value supersedes the older.
-        "owl_properties": False,
-        "shacl_gate": False,       # B507: validate each draft against the SHACL shapes before writing
+        # B504/B514 (default ON; env CAMPY_OBSERVATIONS_ENTITIES=0 turns it off): the extractor
+        # also emits each claim's object entity + kind (and cardinality), validated by rule and
+        # written as Concepts, and extracts facts stated inside requests and plans. Costs roughly
+        # 20-40% more output tokens per fact-bearing turn. Gate R96 (see retrieval.graph_linking):
+        # neutral on LoCoMo (7 gained / 8 lost); SHACL Observation conformance 90.4% -> 95.1%,
+        # fragment Concepts 4.9% -> 2.9%, dict-repr objects 35 -> 0.
+        "entities": True,
+        # B509/B514 (default ON; env CAMPY_OWL_PROPERTIES=0 turns it off): has_attribute names
+        # become OWL attribute properties (vocabulary nodes); a functional property's newer value
+        # supersedes the older (this replaces B499's string rule below; they are never both applied).
+        "owl_properties": True,
+        # B507/B514 (default ON; env CAMPY_SHACL_GATE=0 turns it off): validate each draft against
+        # the SHACL shapes before writing. Gate R93: neutral, 1 gained / 1 lost. If pyshacl/rdflib
+        # cannot be imported the gate logs once and is skipped.
+        "shacl_gate": True,
         "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
     },
     "compression": {
