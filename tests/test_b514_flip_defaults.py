@@ -141,7 +141,7 @@ async def test_shacl_gate_with_missing_packages_logs_once_and_writes(db, gw, mon
         raise ImportError("No module named 'pyshacl'")
 
     monkeypatch.setattr(validator, "validate_observation_candidate", missing)
-    monkeypatch.setattr(obs, "_SHACL_UNAVAILABLE_LOGGED", False)
+    monkeypatch.setattr(obs, "_SHACL_WARNED", set())
     await _message(gw, "m1", "I work as a nurse at the Denver clinic.")
     cfg = copy.deepcopy(_DEFAULT_CONFIG)
     with caplog.at_level("WARNING", logger=obs.__name__):
