@@ -36,7 +36,10 @@ ARG EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 # The Hugging Face cache writes some files owner-only (0600) as root; make the
 # tree world-readable so the runtime user (UID 1000) can read all of it. It
 # stays root-owned: the runtime never needs to write to it.
-RUN python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='${EMBEDDING_MODEL}')" \
+# B512: loaded through Campy's own ONNX embedder (no fastembed); it honours
+# FASTEMBED_CACHE_PATH, which is why the variable keeps its old name.
+COPY campy/brain/hippocampus/graph/onnx_embedder.py /tmp/onnx_embedder.py
+RUN python -c "import importlib.util as u; s = u.spec_from_file_location('onnx_embedder', '/tmp/onnx_embedder.py'); m = u.module_from_spec(s); s.loader.exec_module(m); m.OnnxTextEmbedder(model_name='${EMBEDDING_MODEL}')" \
  && chmod -R a+rX /opt/campy-models
 
 # ---- runtime ----------------------------------------------------------------

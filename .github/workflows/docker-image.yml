@@ -60,9 +60,10 @@ jobs:
           set -o pipefail
           docker run --rm --network none --entrypoint python "$IMAGE" -c "
           import os, spacy
-          from fastembed import TextEmbedding
+          from campy.brain.hippocampus.graph.onnx_embedder import OnnxTextEmbedder
           spacy.load('en_core_web_md')
-          TextEmbedding(model_name='sentence-transformers/all-MiniLM-L6-v2', local_files_only=True)
+          m = OnnxTextEmbedder(model_name='sentence-transformers/all-MiniLM-L6-v2', local_files_only=True)
+          assert list(m.embed(['offline check']))[0].shape == (384,)
           assert os.environ['HF_HUB_OFFLINE'] == '1'
           print('models OK offline')
           " 2>&1 | tee models.log
