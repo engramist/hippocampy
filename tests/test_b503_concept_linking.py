@@ -88,14 +88,15 @@ def store(db, gw):
 # --- flag ---------------------------------------------------------------------------
 
 async def test_flag_default_off_and_env_turns_it_on():
-    assert _DEFAULT_CONFIG["retrieval"]["graph_linking"] is False
+    assert _DEFAULT_CONFIG["retrieval"]["graph_linking"] is True   # B514: on, walk limit 0
     assert cl.graph_linking_enabled({}) is False
-    assert cl.graph_linking_enabled(_DEFAULT_CONFIG) is False
+    assert cl.graph_linking_enabled(_DEFAULT_CONFIG) is True
     assert cl.graph_linking_enabled({"retrieval": {"graph_linking": True}}) is True
     cfg = apply_env_overrides({"retrieval": {}}, {"CAMPY_GRAPH_LINKING": "1"})
     assert cl.graph_linking_enabled(cfg) is True
     cfg = apply_env_overrides({"retrieval": {"graph_linking": True}}, {"CAMPY_GRAPH_LINKING": "0"})
     assert cl.graph_linking_enabled(cfg) is False
+    assert _DEFAULT_CONFIG["retrieval"]["graph_linking_limit"] == 0
     assert cl.graph_linking_limit({}) == 12 and cl.graph_linking_limit({"retrieval": {"graph_linking_limit": 5}}) == 5
 
 
