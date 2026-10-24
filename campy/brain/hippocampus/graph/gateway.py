@@ -1734,6 +1734,164 @@ class GraphGateway:
         picked.sort(key=lambda r: (r["event_time"], r["node_id"]))
         return picked
 
+    def _bundle_aggregate_items(self, params: dict[str, Any]) -> list[Any]:
+        """B505: the distinct entities of a kind that the user has said something about.
+
+        `concept_ids` are candidate kind Concepts in priority order; the first
+        with at least one member is the kind (`kind_id`, `kind_text` on
+        every row). Members (default): Concepts that are `IS_A` the kind, directly
+        or through a sub-kind (a direct member that itself has members is a
+        sub-kind: its members count, it does not).
+
+        `skos` (B508, flag `skos_vocab`): members are the Concepts that are
+        `INSTANCE_OF` (or legacy `IS_A`) the kind or any kind in its narrower
+        closure (`kinds.RELATION_PATH_NARROWER_CLOSURE`: `BROADER` / `IS_A`
+        steps), so an instance of "plastic model kit" is a "model kit". A Concept
+        that is itself the target of such a step is a kind, not an item, and is
+        not a member.
+
+        `typed` (B509, flag `owl_properties`): an Observation that carries a typed
+        attribute value also returns `attr_kind`, `attr_num`, `attr_unit`.
+
+        One row per member Concept
+        that has at least one piece of live evidence from the user:
+
+          - an Observation about it (`OBSERVATION_ABOUT`): not archived, not
+            superseded, polarity "asserted" (negated / hypothetical / planned
+            claims are not things the user has);
+          - a user Message that `MENTIONS` it: not archived. A member whose
+            only live claims are not asserted is dropped even if a Message
+            mentions it.
+
+        Each row: `concept_id`, `name`, `kind_id`, `kind_text`, `evidence`: a
+        list of dicts (`kind` "Observation" | "Message", `when` event time,
+        `quote`, and for an Observation `object_text`, `event_text`,
+        `time_text`). Rows are unordered and not deduplicated by name: the
+        caller does both. Fail-soft: no kind or no members gives []."""
+        ids = list(dict.fromkeys(params.get("concept_ids") or []))[:24]
+        if not ids:
+            return []
+        from campy.brain.hippocampus.graph.vector_store import mint_uri
+
+        ns = "<https://campy.dev/ns#"
+        run = self._client._execute_and_collect
+
+        def uri_id(uri: Any) -> str:
+            return str(uri).rsplit("/", 1)[-1]
+
+        def children(parents: list[str]) -> dict[str, set[str]]:
+            """parent uri -> child concept uris (IS_A)."""
+            out: dict[str, set[str]] = {}
+            if not parents:
+                return out
+            for row in run(f"""
+                SELECT ?x ?p WHERE {{
+                    VALUES ?p {{ {" ".join(f"<{u}>" for u in parents)} }}
+                    ?x {ns}IS_A> ?p .
+                }} LIMIT 5000"""):
+                out.setdefault(str(row["p"]), set()).add(str(row["x"]))
+            return out
+
+        skos = bool(params.get("skos"))
+        typed = bool(params.get("typed"))
+
+        def skos_members(kind: str) -> set[str]:
+            """B508: instances of `kind` or of any kind narrower than it (leaf items only)."""
+            from campy.brain.hippocampus.kinds import RELATION_PATH_NARROWER_CLOSURE
+
+            kinds = {kind} | {str(r["k"]) for r in run(f"""
+                SELECT DISTINCT ?k WHERE {{ ?k {RELATION_PATH_NARROWER_CLOSURE} <{kind}> }} LIMIT 2000""")}
+            out: dict[str, set[str]] = {}
+            for row in run(f"""
+                SELECT DISTINCT ?x ?k WHERE {{
+                    VALUES ?k {{ {" ".join(f"<{u}>" for u in sorted(kinds))} }}
+                    {{ ?x {ns}INSTANCE_OF> ?k }} UNION {{ ?x {ns}IS_A> ?k }}
+                }} LIMIT 5000"""):
+                out[str(row["x"])] = out.get(str(row["x"]), set()) | {str(row["k"])}
+            # an x that is itself a kind some other member hangs on is a sub-kind, not an item
+            used = {k for ks in out.values() for k in ks}
+            return {x for x in out if x not in used and x != kind}
+
+        kind_uri, direct = None, set()
+        for cid in ids:
+            uri = mint_uri("Concept", cid)
+            found = skos_members(uri) if skos else children([uri]).get(uri)
+            if found:
+                kind_uri, direct = uri, found
+                break
+        if kind_uri is None:
+            return []
+        if skos:
+            members = set(direct)
+        else:
+            below = children(sorted(direct))
+            members = {m for d in direct for m in (below.get(d) or {d})} - {kind_uri}
+        if not members:
+            return []
+
+        mem_block = " ".join(f"<{u}>" for u in sorted(members))
+        names = {str(r["c"]): r.get("t") for r in run(f"""
+            SELECT ?c ?t WHERE {{
+                VALUES ?c {{ {mem_block} }}
+                ?c {ns}text_raw> ?t .
+                FILTER NOT EXISTS {{ ?c {ns}archived> true }}
+            }}""")}
+        kind_name = next((r.get("t") for r in run(
+            f"SELECT ?t WHERE {{ <{kind_uri}> {ns}text_raw> ?t }}")), None)
+
+        def stamp(value: Any) -> str:
+            return value.isoformat() if hasattr(value, "isoformat") else str(value or "")
+
+        evidence: dict[str, list[dict]] = {u: [] for u in names}
+        judged: set[str] = set()      # members the user made a live claim about, whatever its polarity
+        req = ("observation_id", "predicate", "object_text", "polarity", "evidence_text")
+        opt = ("event_text", "time_text", "observed_at", "superseded_by", "archived")
+        if typed:
+            opt += ("attr_value_kind", "attr_value_num", "attr_value_unit")
+        for row in run(f"""
+            SELECT ?c ?o {" ".join("?" + c for c in req + opt)} WHERE {{
+                VALUES ?c {{ {" ".join(f"<{u}>" for u in names)} }}
+                ?o {ns}OBSERVATION_ABOUT> ?c ; {" ; ".join(f"{ns}{c}> ?{c}" for c in req)} .
+                {" ".join(f"OPTIONAL {{ ?o {ns}{c}> ?{c} }}" for c in opt)}
+            }}"""):
+            if bool(row.get("archived")) or row.get("superseded_by"):
+                continue
+            judged.add(str(row["c"]))
+            if row.get("polarity") != "asserted":
+                continue
+            ev = {
+                "kind": "Observation", "id": str(row["observation_id"]), "when": stamp(row.get("observed_at")),
+                "quote": row.get("evidence_text") or "", "object_text": row.get("object_text") or "",
+                "event_text": row.get("event_text") or "", "time_text": row.get("time_text") or ""}
+            if typed and row.get("attr_value_num") is not None:
+                ev.update(attr_kind=str(row.get("attr_value_kind") or ""),
+                          attr_num=float(row["attr_value_num"]), attr_unit=str(row.get("attr_value_unit") or ""))
+            evidence[str(row["c"])].append(ev)
+        mentions: dict[str, list[str]] = {}
+        for row in run(f"""
+            SELECT ?m ?c WHERE {{
+                VALUES ?c {{ {" ".join(f"<{u}>" for u in names)} }}
+                ?m {ns}MENTIONS> ?c .
+            }} LIMIT 5000"""):
+            mentions.setdefault(str(row["m"]), []).append(str(row["c"]))
+        for row in self._hydrate_messages(list(mentions)):
+            if bool(row.get("archived")) or row.get("role") != "user" or not row.get("text"):
+                continue
+            uri = str(row["s"])
+            for c in mentions.get(uri, ()):
+                evidence[c].append({"kind": "Message", "id": uri_id(uri), "when": stamp(row.get("created")),
+                                    "quote": row["text"]})
+        out: list[RowDict] = []
+        for c, ev in evidence.items():
+            # a member whose only live claims are negated / hypothetical / planned is not
+            # something the user has: a bare mention does not outweigh the claim
+            if c in judged and not any(e["kind"] == "Observation" for e in ev):
+                continue
+            if ev:
+                out.append(RowDict({"concept_id": uri_id(c), "name": names[c], "kind_id": uri_id(kind_uri),
+                                    "kind_text": kind_name, "evidence": ev}))
+        return out
+
     def _lexical_query(self, qtext: str, terms: list[str], df: dict[str, int],
                        prefixes: tuple[str, ...]) -> str:
         """B470: the conversation stage's FTS query without the terms most
@@ -1929,6 +2087,9 @@ class GraphGateway:
 
         if name == "thalamus.bundle_concept_walk":
             return self._bundle_concept_walk(params)
+
+        if name == "thalamus.bundle_aggregate_items":
+            return self._bundle_aggregate_items(params)
 
         if query_embedding is None or not self._vector_store:
             return []

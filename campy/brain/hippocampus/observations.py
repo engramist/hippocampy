@@ -139,6 +139,14 @@ def observations_supersede_enabled(config: dict | None) -> bool:
     return bool(((config or {}).get("observations") or {}).get("supersede", False))
 
 
+def answer_aggregate_enabled(config: dict | None) -> bool:
+    """`[retrieval] answer_aggregate` (default false; env `CAMPY_ANSWER_AGGREGATE=1` turns it on), B505:
+    a "how many / how much / total" question whose kind resolves to a Concept gets a count (and, for
+    durations and amounts, a sum) computed by rule from the graph, as an `aggregate` bundle section.
+    Off: the bundle and the answer prompt are exactly as before."""
+    return bool(((config or {}).get("retrieval") or {}).get("answer_aggregate", False))
+
+
 def observation_limit(config: dict | None, default: int = 8) -> int:
     """`[observations] observation_limit`: most Observations the semantic section carries."""
     try:

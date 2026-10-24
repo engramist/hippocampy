@@ -31,6 +31,7 @@ from campy.brain.hippocampus.observations import (
     observations_retrieval_enabled,
     observations_supersede_enabled,
     owl_properties_enabled,
+    answer_aggregate_enabled,
 )
 from campy.brain.hippocampus.provenance import authority_of
 from campy.brain.hippocampus.table_registry import pk_for
@@ -287,6 +288,17 @@ async def compile_bundle(
             sections.append(linked_section)
             cumulative_tokens += linked_section.token_estimate
             sources.extend(linked_section.source_node_ids)
+
+    # Stage 3a' (B505, flag): a count / sum the question asks for, computed by
+    # rule from the graph. Not budget-gated: it is one short section, and the
+    # answer prompt tells the model to use it instead of recounting.
+    if answer_aggregate_enabled(config):
+        from campy.brain.thalamus.aggregation import build_aggregate_section
+        aggregate_section = await build_aggregate_section(db, query, config)
+        if aggregate_section and aggregate_section.content:
+            sections.append(aggregate_section)
+            cumulative_tokens += aggregate_section.token_estimate
+            sources.extend(aggregate_section.source_node_ids)
 
     if cumulative_tokens >= token_budget * 0.9:
         bundle = ContextBundle(

@@ -33,6 +33,10 @@ _DEFAULT_CONFIG = {
         # B501: a user turn ending in "?" that also states something in the first
         # person counts as evidence. Off until gated. CAMPY_RETRIEVAL_CONVERSATION_EMBEDDED_STATEMENTS=1.
         "conversation_embedded_statements": False,
+        # B505 (default off; env CAMPY_ANSWER_AGGREGATE=1): a question that asks for a count or
+        # a total gets a rule-computed list/sum of the matching items as an `aggregate` bundle
+        # section; the answer prompt then uses it instead of recounting.
+        "answer_aggregate": False,
         # B375: exposes warm_frontier.py's previously-hardcoded module
         # constants. Values match those prior hardcoded defaults exactly,
         # so an absent/partial [retrieval.warm_frontier] section changes
@@ -242,6 +246,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_OWL_PROPERTIES": ("observations", "owl_properties", _parse_bool),
     # B499: rule-based supersession of attribute Observations (default off).
     "CAMPY_OBSERVATIONS_SUPERSEDE": ("observations", "supersede", _parse_bool),
+    # B505: rule-computed counts and sums for aggregation questions.
+    "CAMPY_ANSWER_AGGREGATE": ("retrieval", "answer_aggregate", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
     "CAMPY_LLM_MODEL": ("llm", "model", str.strip),
     "CAMPY_LLM_REGION": ("llm", "region", str.strip),
