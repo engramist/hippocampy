@@ -111,6 +111,11 @@ _CARDINALITY_FIELD = (
     '- "cardinality": for has_attribute facts only: "one" if a person can have only one current value '
     'of this attribute (age, job, home city), "many" if several can hold at once (hobby, pet, '
     'place visited); otherwise null\n- "confidence": a number from 0 to 1\n')
+# B511 (same flag): the attribute as a name and a value, for rules to validate against the turn.
+_ATTRIBUTE_FIELD = (
+    '- "attribute": for has_attribute facts only: {{"name": a short noun phrase naming the attribute '
+    '("age", "job", "followers", "page"), "value": its value copied exactly as written in the message}}; '
+    'null if the fact is not an attribute that has a name\n- "confidence": a number from 0 to 1\n')
 ENTITY_MAX_TOKENS = 768     # two more short fields per fact
 
 
@@ -176,6 +181,7 @@ def build_messages(text: str, speaker: str | None, occurred_at: Any, max_chars: 
     template = ENTITY_PROMPT_TEMPLATE if entities else PROMPT_TEMPLATE
     if cardinality:
         template = template.replace('- "confidence": a number from 0 to 1\n', _CARDINALITY_FIELD, 1)
+        template = template.replace('- "confidence": a number from 0 to 1\n', _ATTRIBUTE_FIELD, 1)
     prompt = template.format(
         speaker=(speaker or "unknown"), date=date, text=body.replace('"""', "'''"),
     )
@@ -394,6 +400,14 @@ async def process_turn(
         if owl_on and draft.predicate == "has_attribute":
             advice = _clean(p.get("cardinality"))
             draft.attr_cardinality = advice.lower() if advice and advice.lower() in ("one", "many") else None
+            # B511: the structured attribute is advice; it is kept only when rules validate it
+            from campy.brain.hippocampus import attribute_names as an
+
+            pair, why = an.validate_structured(p.get("attribute"), text)
+            if pair:
+                draft.attr_name, draft.attr_value = pair
+            elif why:
+                stats.rejected[why] = stats.rejected.get(why, 0) + 1
         proposed_entity = None
         if entities_on:
             if not ent.value_in_turn(draft.predicate, draft.object_text, text):

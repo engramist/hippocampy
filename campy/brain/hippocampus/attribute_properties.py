@@ -58,6 +58,10 @@ Functional properties (single current value per subject). Rules decide, the mode
   the commonest case (one update) unfixed. A wrong confirmation costs one superseded row
   that is kept, marked, and rendered, never deleted.
 
+Where the name comes from (B511): the extractor's validated structured `attribute`, B499's
+parse of "name: value", then shape rules (quantity, copula, count, age) in attribute_names.py.
+No rule, no property: the Observation stays unlinked rather than carry an invented name.
+
 Supersession. A functional property's newer value (by `observed_at`, ties `created_at`)
 supersedes the older one for the same subject: the older gets `superseded_by` /
 `superseded_at` (the newer one's event time) and a DEPRECATED_BY edge to the newer one, and
@@ -401,14 +405,41 @@ async def resolve(gw: Any, key: ok.AttrKey, *, closematch: float = 0.0, embed: A
 
 # --- applying it to one Observation ----------------------------------------------------------
 
+def attribute_key(draft: Any, msg: dict, *, rules: bool = True, stats: dict | None = None) -> ok.AttrKey | None:
+    """The attribute name and value of a `has_attribute` draft (B511), or None when no rule can
+    name it. In order: the extractor's validated structured `attribute` (draft.attr_name/attr_value),
+    then B499's parse of "name: value", then the shape rules of attribute_names (quantity, copula,
+    count, age). `rules=False` is the B509 behaviour (the parse of the written object only)."""
+    from campy.brain.hippocampus import attribute_names as an
+
+    def bump(n: str) -> None:
+        if stats is not None:
+            stats[n] = stats.get(n, 0) + 1
+
+    if not rules:
+        return ok.parse_attribute(draft.object_text)
+    name, value = getattr(draft, "attr_name", None), getattr(draft, "attr_value", None)
+    if name and value:
+        key = an.key_from_pair(name, value)
+        if key is not None:
+            bump("attr_named_structured")
+            return key
+    speaker = draft.speaker or msg.get("speaker")
+    key, source = an.derive_key(draft.object_text, quote=getattr(draft, "evidence_text", None),
+                                turn=msg.get("text_raw"), subject_text=draft.subject_text, speaker=speaker)
+    if key is not None:
+        bump(f"attr_named_{source}")
+    return key
+
+
 async def apply(gw: Any, oid: str, draft: Any, msg: dict, now: datetime, *, closematch: float = 0.0,
-                embed: Any = None, stats: dict | None = None) -> str | None:
+                embed: Any = None, stats: dict | None = None, rules: bool = True) -> str | None:
     """Link a freshly written `has_attribute` Observation to its property, store its value apart
     from its name, and apply the functional-property supersession. Returns the property id, or
-    None when the object has no attribute name/value pair (it is then left as written)."""
+    None when no attribute name/value pair can be read or derived (it is then left as written)."""
     from campy.brain.hippocampus import observations as obs
 
-    key = ok.parse_attribute(draft.object_text)
+    key = attribute_key(draft, msg, rules=rules, stats=stats)
     if key is None:
         return None
     me = await gw.run("observations.get_observation", oid=oid)
@@ -502,7 +533,8 @@ async def bind_object(gw: Any, oid: str, entity_id: str) -> str:
     return "mismatch"
 
 
-async def backfill(gw: Any, *, closematch: float = 0.0, embed: Any = None, limit: int | None = None) -> dict:
+async def backfill(gw: Any, *, closematch: float = 0.0, embed: Any = None, limit: int | None = None,
+                   rules: bool = True) -> dict:
     """Resolve the `has_attribute` Observations that have no property yet, oldest first (so
     supersession sees them in event order). Idempotent. Returns the counts."""
     from campy.brain.hippocampus import observations as obs
@@ -523,6 +555,6 @@ async def backfill(gw: Any, *, closematch: float = 0.0, embed: Any = None, limit
             subject_id=row.get("subject_id"), speaker=row.get("speaker"))
         msg = await gw.run("observations.get_message", mid=draft.evidence_ref)
         pid = await apply(gw, oid, draft, dict(msg[0]) if msg else {}, datetime.now(timezone.utc),
-                          closematch=closematch, embed=embed, stats=stats)
+                          closematch=closematch, embed=embed, stats=stats, rules=rules)
         stats["linked" if pid else "skipped"] += 1
     return stats
