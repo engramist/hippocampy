@@ -481,14 +481,13 @@ def _property_embedder(config: dict | None):
     return lambda text: emb.embed(text, model_name=EMBEDDING_MODEL)
 
 
-_SHACL_UNAVAILABLE_LOGGED = False
+_SHACL_WARNED: set[str] = set()   # once-per-process warnings already logged (B514)
 
 
 def _warn_shacl_unavailable(exc: BaseException) -> None:
     """B514: log once per process that the SHACL gate is skipped (pyshacl/rdflib missing)."""
-    global _SHACL_UNAVAILABLE_LOGGED
-    if not _SHACL_UNAVAILABLE_LOGGED:
-        _SHACL_UNAVAILABLE_LOGGED = True
+    if "unavailable" not in _SHACL_WARNED:
+        _SHACL_WARNED.add("unavailable")
         _logger.warning("[Observations] SHACL gate skipped: pyshacl/rdflib not importable (%s)", exc)
 
 
