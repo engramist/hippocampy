@@ -56,6 +56,8 @@ def test_every_documented_override_applies():
         "CAMPY_OBSERVATIONS_RETRIEVAL": "1",
         "CAMPY_GRAPH_LINKING": "1",
         "CAMPY_GRAPH_LINKING_LIMIT": "0",
+        "CAMPY_GRAPH_WALK_V2": "1",
+        "CAMPY_GRAPH_WALK_V2_LIMIT": "3",
         "CAMPY_OBSERVATIONS_ENTITIES": "1",
         "CAMPY_SHACL_GATE": "1",
         "CAMPY_OWL_PROPERTIES": "1",
@@ -72,6 +74,8 @@ def test_every_documented_override_applies():
     assert cfg["observations"]["retrieval"] is True
     assert cfg["retrieval"]["graph_linking"] is True
     assert cfg["retrieval"]["graph_linking_limit"] == 0
+    assert cfg["retrieval"]["graph_walk_v2"] is True
+    assert cfg["retrieval"]["graph_walk_v2_limit"] == 3
     assert cfg["observations"]["entities"] is True
     assert cfg["observations"]["shacl_gate"] is True
     assert cfg["retrieval"]["skos_vocab"] is True

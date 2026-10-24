@@ -61,6 +61,43 @@ def graph_linking_limit(config: dict | None, default: int = DEFAULT_WALK_LIMIT) 
         return default
 
 
+def graph_walk_v2_enabled(config: dict | None) -> bool:
+    """B510: `[retrieval] graph_walk_v2` (default false; env `CAMPY_GRAPH_WALK_V2=1`). When on,
+    the precise walk (`walk_v2.py`) replaces B503's walk at retrieval; the link writers are
+    unchanged (they follow `graph_linking`)."""
+    return bool(((config or {}).get("retrieval") or {}).get("graph_walk_v2", False))
+
+
+def _retrieval_number(config: dict | None, key: str, default, cast):
+    try:
+        return cast(((config or {}).get("retrieval") or {}).get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def graph_walk_v2_limit(config: dict | None) -> int:
+    """`[retrieval] graph_walk_v2_limit`: most items the precise walk adds (default 4)."""
+    return max(0, _retrieval_number(config, "graph_walk_v2_limit", 4, int))
+
+
+def graph_walk_v2_max_share(config: dict | None) -> float:
+    """`[retrieval] graph_walk_v2_max_share`: an anchor linked to more than this share of the
+    store's messages is background, not a topic (default 0.10)."""
+    return min(1.0, max(0.0, _retrieval_number(config, "graph_walk_v2_max_share", 0.10, float)))
+
+
+def graph_walk_v2_min_similarity(config: dict | None) -> float:
+    """`[retrieval] graph_walk_v2_min_similarity`: cosine a linked turn must reach against the
+    question (default 0.0 = no floor)."""
+    return _retrieval_number(config, "graph_walk_v2_min_similarity", 0.0, float)
+
+
+def graph_walk_v2_protect(config: dict | None) -> int:
+    """`[retrieval] graph_walk_v2_protect`: the best-ranked matched conversation turns the walk
+    never displaces (default 3)."""
+    return max(0, _retrieval_number(config, "graph_walk_v2_protect", 3, int))
+
+
 # --- normalisation ------------------------------------------------------------------
 
 def _content_terms(text: str) -> list[str]:
