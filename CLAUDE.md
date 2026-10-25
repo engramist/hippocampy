@@ -41,6 +41,8 @@ These are the sources of truth for the system design — shared across all agent
 
 Use `skills/campy-memory/SKILL.md` (dev-only) or `plugin/skills/recall/SKILL.md` (ships with plugin) as the canonical memory-use policy. Do not recall on every turn. Use recall only when the answer or plan depends on durable prior decisions, timeline, lessons, procedures, or similar past work.
 
+Before any capture, retrieval, bundle-assembly or answering card, load `skills/campy-graph/SKILL.md`: answers that a graph query can compute are computed by a query anchored on the subject entity, not in Python.
+
 If uncertain, call `memory_decision` first; it recommends the appropriate recall tool without retrieving memory itself. For multi-entity or broad context queries, `memory_decision` routes to `compile_context` (B252) which assembles heterogeneous context bundles from all memory types.
 
 For synthesized answers from memory in a single call, use `ask` (B289): it augments the query, compresses the bundle via the thalamic compression pipeline, calls the LLM, and captures the result. Use `current_truth` for raw fact retrieval; use `compile_context` for context bundles; use `ask` for synthesized answers.

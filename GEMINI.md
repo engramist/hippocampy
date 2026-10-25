@@ -73,6 +73,7 @@ pytest
 - **[`docs/codebase-anatomy.md`](docs/codebase-anatomy.md):** Target region map for new code placement during the anatomy refactor.
 - **[`docs/codebase-anatomy-refactor-plan.md`](docs/codebase-anatomy-refactor-plan.md):** Migration notes and sequencing context for the anatomy refactor.
 - **[`plugin/skills/recall/SKILL.md`](plugin/skills/recall/SKILL.md):** Canonical memory-use policy (ships with plugin; dev-only: `skills/campy-memory/SKILL.md`). Do not recall on every turn; if unsure, call `memory_decision` before choosing a recall tool.
+- **[`skills/campy-graph/SKILL.md`](skills/campy-graph/SKILL.md):** Load before any capture, retrieval, bundle-assembly or answering card: answers a graph query can compute are computed by a query anchored on the subject entity, not in Python.
 - **CLAUDE.md:** Claude-specific workflow (delegation model).
 - **InvertorsDocs/:** Original Inventor's Notebook and seed examples for the ontology.
 
