@@ -98,6 +98,10 @@ conversation_embedded_statements = true
 # graph_linking_limit = 0 means the retrieval walk adds no section (the v1 walk lost: R95 7 / 14).
 graph_linking = true
 graph_linking_limit = 0
+# B524: a count/list question ("how many pets does X have") adds a graph_count bundle section computed by a
+# subject-anchored graph query (needs object_roles and ownership_rule). Off until gated.
+# CAMPY_GRAPH_COUNT=1 turns it on.
+graph_count = false
 skos_vocab = true
 
 [wiki_projection]

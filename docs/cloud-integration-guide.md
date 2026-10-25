@@ -106,6 +106,7 @@ an error that names the variable. The full table is
 | `CAMPY_OWL_PROPERTIES` | `[observations].owl_properties` | on (B514); `0` stops treating attribute names as OWL properties (B509) |
 | `CAMPY_OBSERVATIONS_OBJECT_ROLES` | `[observations].object_roles` | off (B522); `1` records each Observation's subject and object Concepts as `HAS_SUBJECT` / `HAS_OBJECT` edges |
 | `CAMPY_OBSERVATIONS_OWNERSHIP_RULE` | `[observations].ownership_rule` | off (B523); `1` writes an `owns` Observation (speaker to object Concept) when a turn states first-person possession of a known entity |
+| `CAMPY_GRAPH_COUNT` | `[retrieval].graph_count` | off (B524); `1` adds a `graph_count` bundle section to a count/list question ("how many pets does X have"), computed by a subject-anchored graph query; needs `object_roles` and `ownership_rule` |
 | `CAMPY_SHACL_GATE` | `[observations].shacl_gate` | on (B514); `0` stops validating each Observation against the SHACL shapes before writing (B507). Skipped with one log line if pyshacl/rdflib cannot be imported |
 | `CAMPY_RETRIEVAL_CONVERSATION_EMBEDDED_STATEMENTS` | `[retrieval].conversation_embedded_statements` | on (B514); `0` stops counting a first-person statement inside a question as evidence (B501) |
 

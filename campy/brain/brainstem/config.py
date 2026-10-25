@@ -28,6 +28,10 @@ _DEFAULT_CONFIG = {
         # is gated separately. CAMPY_GRAPH_LINKING_LIMIT=12 restores the v1 walk.
         "graph_linking": True,
         "graph_linking_limit": 0,
+        # B524 (default OFF; env CAMPY_GRAPH_COUNT=1 turns it on): a count/list question ("how many pets does
+        # X have") adds a `graph_count` bundle section computed by a subject-anchored graph query (needs the
+        # B522 object_roles and B523 ownership_rule edges). Gate pending.
+        "graph_count": False,
         # B508/B514: SKOS vocabulary for kinds (default ON; env CAMPY_SKOS_VOCAB=0 turns it off;
         # part of the R96 stack, see graph_linking). Kinds are
         # consolidated by rule (same label, head noun), entity -INSTANCE_OF-> kind and
@@ -258,6 +262,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_GRAPH_LINKING": ("retrieval", "graph_linking", _parse_bool),
     # 0 keeps the write-path links but adds no walk section at retrieval.
     "CAMPY_GRAPH_LINKING_LIMIT": ("retrieval", "graph_linking_limit", _parse_nonneg_int),
+    # B524: count/list questions answered by a subject-anchored graph query (bundle section).
+    "CAMPY_GRAPH_COUNT": ("retrieval", "graph_count", _parse_bool),
     # B508: SKOS vocabulary for kinds (consolidation, INSTANCE_OF vs BROADER).
     "CAMPY_SKOS_VOCAB": ("retrieval", "skos_vocab", _parse_bool),
     # B507: the SHACL write gate (default off).
