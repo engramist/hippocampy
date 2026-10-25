@@ -10,14 +10,16 @@ only decides WHETHER and WITH WHAT the question calls them, and formats the rows
 Wording routes, it never answers (campy-graph rule 4). Three things are resolved from the question, all
 against what the graph already holds, nothing is ever created:
 
-  * the FORM: a small documented set of count/list shapes (`COUNT_FORMS`);
+  * the FORM: a small documented set of count/list shapes (`COUNT_FORMS`). A question for a time or a
+    quantity of time (`TIME_QUESTIONS`: when, which year, how long, how many months ...) declines;
   * the SUBJECT: the one non-kind Concept the question names (`concept_links.candidate_spans` then
     `extract.find_existing_concept`, the closed-set lookup the bundle compiler uses). Zero or several
     (two speakers named) decline;
   * the KIND: the one kind Concept whose label or altLabel the question names (`kinds.load_kinds`,
     plural folded by `concept_links.norm_key`). The query then follows `INSTANCE_OF` and `BROADER*`;
   * the RELATION: a verb in the question mapped to a predicate of the closed set (`RELATION_BY_VERB`).
-    A verb not in the map is not guessed.
+    A verb not in the map is not guessed, and
+    have/has/had count only as the main verb (an auxiliary, "which cities has Jon visited", does not).
 
 Any one missing means no section and the normal pipeline answers. An "as of <date>" or "by <date>" in the
 question bounds the evidence turns' dates (parsed by `timeparse.normalize_time`); a time phrase that does
@@ -58,6 +60,17 @@ RELATION_BY_VERB: dict[str, str] = {
     "keep": "owns", "keeps": "owns", "kept": "owns", "keeping": "owns",
 }
 
+# Questions that ask WHEN or HOW LONG (a time, or a quantity of time) are not counts of things, whatever
+# verb they carry ("Which year did X adopt ...", "How many months passed ..."): they decline here.
+TIME_QUESTIONS = (
+    r"\bwhen\b|\b(?:what|which)\s+(?:year|month|date|day|week|time)\b|\bhow long\b|\bhow often\b"
+    r"|\bhow many\s+(?:days?|weeks?|months?|years?|times?|hours?|minutes?|seconds?)\b|\bhow much time\b"
+)
+# "have/has/had" is the possession verb only as the MAIN verb; as an auxiliary ("which cities has Jon
+# visited", "what books have the kids read") the parser tags it aux and it maps to nothing.
+_AUXILIARY_DEPS = frozenset({"aux", "auxpass"})
+_HAVE_FORMS = frozenset({"have", "has", "had", "having"})
+
 _AS_OF_RE = re.compile(r"\b(?:as of|by)\s+(?!the end of\b)([^?!]*?)\s*[?.!]*\s*$", re.IGNORECASE)
 _QUOTE_CHARS = 120
 
@@ -83,16 +96,54 @@ class Resolved:
     kind_label: str
 
 
-def route_question(question: str) -> Optional[Route]:
+_NLP = None
+
+
+def _default_nlp():
+    global _NLP
+    if _NLP is None:
+        try:
+            from campy.brain.temporal_lobe.loop.step1_ner import get_nlp
+            _NLP = get_nlp()
+        except Exception:
+            _logger.debug("spaCy model unavailable; 'have' cannot be told from an auxiliary", exc_info=True)
+            _NLP = False
+    return _NLP or None
+
+
+def _mapped_predicates(question: str, nlp) -> set[str]:
+    """Predicates of the closed set the question's verbs map to. `have` forms count only as a main verb
+    (not tagged aux by the parser); with no parser they do not count."""
+    if nlp is None:
+        return {RELATION_BY_VERB[w] for w in re.findall(r"[a-z]+", question)
+                if w in RELATION_BY_VERB and w not in _HAVE_FORMS}
+    return {RELATION_BY_VERB[t.text.lower()] for t in nlp(question)
+            if t.text.lower() in RELATION_BY_VERB and not _is_auxiliary_have(t)}
+
+
+def _is_auxiliary_have(token) -> bool:
+    """A have-form the parser tags aux, or that governs a past participle of another verb ("what songs
+    have the band recorded": the parser can take `have` for the root). A participle that is itself a mapped
+    verb ("has Audrey got") leaves it a main verb: the mapped verb answers the relation either way."""
+    if token.text.lower() not in _HAVE_FORMS:
+        return False
+    if token.dep_ in _AUXILIARY_DEPS:
+        return True
+    return any(c.tag_ == "VBN" and c.text.lower() not in RELATION_BY_VERB for c in token.children)
+
+
+def route_question(question: str, nlp=None) -> Optional[Route]:
     """The form, relation and time bound the question carries, or None when it is not a count/list
-    question, names no mapped verb, or carries a time phrase that does not parse. Pure."""
-    q = " ".join(str(question or "").lower().replace("’", "'").split())
-    if not q:
+    question, asks for a time or a quantity of time, names no mapped verb (a `have` that is an
+    auxiliary does not count), or carries a time phrase that does not parse. `nlp`: a spaCy pipeline
+    (default: the NER step's)."""
+    q = " ".join(str(question or "").lower().replace("\u2019", "'").split())
+    if not q or re.search(TIME_QUESTIONS, q):
         return None
     form = next((name for name, pattern in COUNT_FORMS.items() if re.search(pattern, q)), None)
     if form is None:
         return None
-    predicates = {RELATION_BY_VERB[w] for w in re.findall(r"[a-z]+", q) if w in RELATION_BY_VERB}
+    predicates = _mapped_predicates(" ".join(str(question).split()), nlp or _default_nlp())
     if len(predicates) != 1:
         return None
     before = None
