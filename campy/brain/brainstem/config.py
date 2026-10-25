@@ -133,6 +133,10 @@ _DEFAULT_CONFIG = {
         # `owns` Observations for first-person possession of an existing Concept ("my X Name", "I
         # adopted Name"), whatever predicate the extractor chose. Gate pending.
         "ownership_rule": False,
+        # B525 (default OFF; env CAMPY_KIND_HYGIENE=1 turns it on): a kind label is written as a clean singular
+        # noun ("my dogs" -> "dog", the wording kept as an altLabel) and a meta-noun ("name", "thing", ...) is
+        # never a kind. Gate pending.
+        "kind_hygiene": False,
         "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
     },
     "compression": {
@@ -274,6 +278,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_OBSERVATIONS_OBJECT_ROLES": ("observations", "object_roles", _parse_bool),
     # B523: first-person possession rule writes `owns` Observations.
     "CAMPY_OBSERVATIONS_OWNERSHIP_RULE": ("observations", "ownership_rule", _parse_bool),
+    # B525: kind labels are clean singular nouns; meta-nouns are never kinds.
+    "CAMPY_KIND_HYGIENE": ("observations", "kind_hygiene", _parse_bool),
     # B499: rule-based supersession of attribute Observations (default off).
     "CAMPY_OBSERVATIONS_SUPERSEDE": ("observations", "supersede", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
