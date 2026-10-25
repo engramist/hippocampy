@@ -347,7 +347,205 @@ async def test_backfill_over_existing_messages_and_idempotent(db, gw):
     fired: list = []
     first = await ow.backfill_ownership(db, ON, record=fired)
     assert (first.firings, first.created) == (2, 2)
-    assert sorted((label, status) for _, label, _, status in fired) == [("Civic", "created"), ("Toby", "created")]
+    assert sorted((label, status) for _, label, _, status, _how in fired) == [("Civic", "created"), ("Toby", "created")]
     second = await ow.backfill_ownership(db, ON)
     assert (second.created, second.duplicate) == (0, 2)
     assert sorted(r["object_id"] for r in await owns(gw, "c-andrew")) == ["c-civic", "c-toby"]
+
+
+# --- widened grammar (B523): naming, care, coordination ----------------------------------------
+
+def fire(nlp, text, *, ctx=None, confirmed=None, mode="all", known=None):
+    stats = ow.OwnershipStats()
+    ms = ow.find_ownership(nlp(text), known if known is not None else KNOWN, stats,
+                           context_kinds=ctx, confirmed=confirmed, mode=mode)
+    return ms, stats
+
+
+@pytest.mark.parametrize("text,ctx,label,kind", [
+    ("We named her Luna last week.", ["cat"], "Luna", "cat"),
+    ("I named him Civic.", ["car"], "Civic", "car"),
+    ("We call it Nova.", ["bike"], "Nova", "bike"),
+    ("Nova is what I named him.", ["bike"], "Nova", "bike"),
+    ("Birch is what we named it.", ["house"], "Birch", "house"),
+    ("His name is Max and he loves walks.", ["plant"], "Max", "plant"),
+    ("Her name is Acme.", ["company"], "Acme", "company"),
+])
+def test_naming_uses_a_possessed_kind_from_the_previous_turn(nlp, text, ctx, label, kind):
+    (m,) = fire(nlp, text, ctx=ctx)[0]
+    assert (m.label, m.construction) == (label, "naming")
+
+
+def test_naming_takes_its_kind_from_the_same_turn(nlp):
+    ms, _ = fire(nlp, "I just got a new puppy. His name is Max.")
+    assert [(m.label, m.construction) for m in ms] == [("Max", "naming")]
+    ms, _ = fire(nlp, "My new bike is great, we named it Nova.")
+    assert [(m.label, m.construction) for m in ms] == [("Nova", "naming")]
+
+
+def test_naming_carries_the_kind_when_the_entity_is_created(nlp):
+    ms, _ = fire(nlp, "We named her Pixie.", ctx=["kitten"], known={})
+    assert [(m.label, m.concept_id, m.kind, m.construction) for m in ms] == [("Pixie", None, "kitten", "naming")]
+
+
+@pytest.mark.parametrize("text,ctx,reason", [
+    ("I named him Max.", [], "no_kind_context"),                       # no possessed kind noun precedes
+    ("His name is Max.", [], "no_kind_context"),
+    ("I named the project Atlas.", [], "no_kind_context"),
+    ("I named the project Birch.", ["cat"], None),                      # a kind, but not this one
+    ("I want to name him Rex.", ["dog"], "irrealis"),
+    ("I would name him Rex.", ["dog"], "irrealis"),
+    ("They named him Rex.", ["dog"], "not_first_person"),
+    ("I didn't name him Rex.", ["dog"], "negated"),
+    ("Did you name him Rex?", ["dog"], None),
+])
+def test_naming_negatives(nlp, text, ctx, reason):
+    ms, stats = fire(nlp, text, ctx=ctx, known={**KNOWN, "atlas": "c-atlas"})
+    assert ms == []
+    if reason:
+        assert stats.skipped.get(reason, 0) >= 1, stats.skipped
+
+
+def test_naming_ignores_a_person_role_or_a_possession_of_someone_else(nlp):
+    nouns = ow._kind_nouns(nlp("My friend is lovely. Her dog barks. I met my sister."))
+    assert nouns == []
+    assert ow._kind_nouns(nlp("A new puppy I adopted is great. I got a plant. My pups run.")) == ["puppy", "plant", "pup"]
+
+
+@pytest.mark.parametrize("text,label", [
+    ("We feel so lucky to have Luna.", "Luna"),
+    ("I'm grateful to have Nova.", "Nova"),
+    ("I love having Civic around.", "Civic"),
+    ("I enjoy having Birch.", "Birch"),
+    ("I'm so happy to have Acme.", "Acme"),
+])
+def test_care_construction_fires(nlp, text, label):
+    (m,) = fire(nlp, text)[0]
+    assert (m.label, m.construction) == (label, "care")
+
+
+@pytest.mark.parametrize("text,reason", [
+    ("I want to have Nova.", "irrealis"),
+    ("I would like to have Nova.", "irrealis"),
+    ("I hope to have Luna someday.", "irrealis"),
+    ("I'm going to have Nova.", "irrealis"),
+    ("She is lucky to have Luna.", "not_first_person"),
+    ("I'm not lucky to have Nova.", "irrealis"),
+])
+def test_care_negatives(nlp, text, reason):
+    ms, stats = fire(nlp, text)
+    assert ms == []
+
+
+def test_care_does_not_fire_for_plural_person_role_nouns(nlp):
+    ms, _ = fire(nlp, "I'm lucky to have friends like Jo.", known={**KNOWN, "jo": "c-jo"})
+    assert ms == []
+    ms, _ = fire(nlp, "Lucky to have friends like Jo.", known={**KNOWN, "jo": "c-jo"})
+    assert ms == []
+
+
+def test_coordination_only_confirms(nlp):
+    text = "Toby and I went hiking."
+    ms, stats = fire(nlp, text, confirmed={"c-toby"})
+    assert [(m.label, m.construction) for m in ms] == [("Toby", "coordination")]
+    ms, stats = fire(nlp, text, confirmed={"c-buddy"})                 # not confirmed: never creates ownership alone
+    assert ms == [] and stats.skipped == {"unconfirmed_coordination": 1}
+    ms, _ = fire(nlp, text, confirmed=None)                            # no confirmations given: construction off
+    assert ms == []
+    ms, _ = fire(nlp, text, confirmed={"c-toby"}, mode="no_coordination")
+    assert ms == []
+    ms, _ = fire(nlp, "Me and Toby went hiking.", confirmed={"c-toby"})
+    assert [m.construction for m in ms] == ["coordination"]
+
+
+@pytest.mark.parametrize("text", [
+    "Sam and I went hiking.",                    # a friend: nothing confirms Sam
+    "Toby and Sam went hiking.",                 # not with the speaker
+    "Toby and I didn't go hiking.",
+    "Did Toby and I go hiking?",
+])
+def test_coordination_negatives(nlp, text):
+    ms, _ = fire(nlp, text, confirmed={"c-toby"})        # Toby is confirmed, Sam is not
+    assert ms == []
+
+
+def test_coordination_never_creates_a_concept(nlp):
+    ms, stats = fire(nlp, "Pixie and I went hiking.", confirmed={"c-toby"}, known={})
+    assert ms == []
+
+
+# --- widened grammar on a real store ---------------------------------------------------------
+
+async def test_naming_across_the_speakers_previous_turn_on_a_store(db, gw):
+    await seed(gw)
+    await turn(gw, "p1", "We just got a new kitten!", day=3)
+    await turn(gw, "p2", "That's lovely, congratulations!", speaker="Audrey", day=3)
+    await turn(gw, "p3", "We named her Pixie.", day=3)
+    for a, b in (("p1", "p2"), ("p2", "p3")):
+        db.execute(f"INSERT DATA {{ <https://campy.dev/id/Message/{a}> <https://campy.dev/ns#FOLLOWED_BY> <https://campy.dev/id/Message/{b}> }}")
+    await concept(gw, "c-audrey", "Audrey")
+    stats = ow.OwnershipStats()
+    rec: list = []
+    assert await ow.apply_to_message(db, ON, "p3", stats, record=rec) == 1
+    assert [(l, c) for _, l, _, _, c in rec] == [("Pixie", "naming")]
+    assert stats.entity_concepts_created >= 1
+    (row,) = await owns(gw, "c-andrew")
+    assert row["object_label"] == "Pixie" and "kitten" in row["kinds"].split("|")
+
+
+async def test_naming_without_a_possessed_kind_before_it_writes_nothing(db, gw):
+    await seed(gw)
+    await turn(gw, "p1", "The weather is nice.", day=3)
+    await turn(gw, "p2", "We named her Pixie.", day=3)
+    db.execute("INSERT DATA { <https://campy.dev/id/Message/p1> <https://campy.dev/ns#FOLLOWED_BY> <https://campy.dev/id/Message/p2> }")
+    stats = ow.OwnershipStats()
+    assert await ow.apply_to_message(db, ON, "p2", stats) == 0
+    assert stats.skipped.get("no_kind_context") == 1 and await owns(gw, "c-andrew") == []
+
+
+async def test_coordination_confirmed_by_an_owned_kind_and_two_pass_backfill(db, gw):
+    await seed(gw)
+    await concept(gw, "c-buddy", "Buddy")
+    await concept(gw, "c-dog", "dog")
+    from campy.brain.hippocampus import kinds as kinds_mod
+
+    await kinds_mod.mark_kind(gw, "c-dog")
+    await kinds_mod.link_instance_of(gw, "c-toby", "c-dog")
+    await kinds_mod.link_instance_of(gw, "c-buddy", "c-dog")
+    # the coordination turn comes FIRST in time: the two-pass backfill must not depend on order
+    await turn(gw, "m1", "Buddy and I went hiking.", mentions=("c-buddy",), day=3)
+    await turn(gw, "m2", "Sam and I went hiking.", mentions=("c-sam",), day=4)
+    await turn(gw, "m3", "My dog Toby is such a sweetheart.", mentions=("c-toby",), day=5)
+    fired: list = []
+    stats = await ow.backfill_ownership(db, ON, record=fired)
+    got = sorted((label, how) for _, label, _, _, how in fired)
+    assert got == [("Buddy", "coordination"), ("Toby", "possessive")]
+    assert stats.skipped.get("unconfirmed_coordination") == 1               # Sam
+    assert sorted(r["object_id"] for r in await owns(gw, "c-andrew")) == ["c-buddy", "c-toby"]
+    again = await ow.backfill_ownership(db, ON)
+    assert again.created == 0
+
+
+async def test_person_like_kind_does_not_confirm_coordination(db, gw):
+    await seed(gw)
+    await concept(gw, "c-person", "person")
+    from campy.brain.hippocampus import kinds as kinds_mod
+
+    await kinds_mod.mark_kind(gw, "c-person")
+    await kinds_mod.link_instance_of(gw, "c-toby", "c-person")      # an extractor error seen in real data
+    await kinds_mod.link_instance_of(gw, "c-sam", "c-person")
+    await turn(gw, "m1", "My dog Toby is such a sweetheart.", mentions=("c-toby",), day=3)
+    await turn(gw, "m2", "Sam and I went hiking.", mentions=("c-sam",), day=4)
+    await ow.backfill_ownership(db, ON)
+    assert [r["object_id"] for r in await owns(gw, "c-andrew")] == ["c-toby"]
+
+
+def test_a_possessed_noun_must_be_a_known_kind_to_serve_as_naming_context(nlp):
+    doc = nlp("Pets bring joy to our lives. My pups run, and I got a plant.")
+    assert ow._kind_nouns(doc, vocab={"pup"}) == ["pup", "plant"]        # "our lives" is not a kind; acquired needs none
+    assert ow._kind_nouns(doc) == ["life", "pup", "plant"]
+
+
+def test_naming_list_shares_the_clause(nlp):
+    ms, _ = fire(nlp, "Their names are Toby, Buddy and Luna.", ctx=["dog"])
+    assert sorted(m.label for m in ms) == ["Buddy", "Luna", "Toby"]

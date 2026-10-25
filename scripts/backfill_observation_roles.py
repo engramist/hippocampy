@@ -58,8 +58,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"ambiguous (several candidate objects, skipped): {d['ambiguous']}")
     if args.ownership:
         print(f"ownership rule: {d['ownership']}")
-        for mid, label, quote, status in fired[: args.sample]:
-            print(f"  [{status}] {label}: {quote!r}  (msg {mid[:8]})")
+        for mid, label, quote, status, how in fired[: args.sample]:
+            print(f"  [{status}] [{how}] {label}: {quote!r}  (msg {mid[:8]})")
     return 0
 
 

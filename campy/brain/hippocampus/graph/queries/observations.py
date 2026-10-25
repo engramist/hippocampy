@@ -467,6 +467,57 @@ OBSERVATION_QUERIES: tuple[NamedQuery, ...] = (
             """,
     ),
     NamedQuery(
+        name="observations.preceding_messages",
+        cypher="""
+        MATCH path = (p:Message)-[:FOLLOWED_BY*1..3]->(m:Message {message_id: $mid})
+        WHERE p.role = 'user' AND p.archived = false
+        RETURN length(path) AS hop, p.message_id AS message_id, p.speaker AS speaker, p.text_raw AS text_raw
+        ORDER BY hop
+        """,
+        params=("mid",),
+        mutating=False,
+        description=("Up to three Messages before a Message along FOLLOWED_BY, nearest first (hop 1..3), with "
+                     "speaker and text. The ownership rule picks the speaker's previous turn from them."),
+        sparql="""
+            SELECT ?hop ?message_id ?speaker ?text_raw WHERE {
+              ?m a campy:Message ; campy:message_id ?mid .
+              { ?p campy:FOLLOWED_BY ?m . BIND(1 AS ?hop) }
+              UNION { ?p campy:FOLLOWED_BY/campy:FOLLOWED_BY ?m . BIND(2 AS ?hop) }
+              UNION { ?p campy:FOLLOWED_BY/campy:FOLLOWED_BY/campy:FOLLOWED_BY ?m . BIND(3 AS ?hop) }
+              ?p campy:message_id ?message_id ; campy:text_raw ?text_raw ; campy:role "user" .
+              OPTIONAL { ?p campy:speaker ?speaker }
+              FILTER NOT EXISTS { ?p campy:archived true }
+            }
+            ORDER BY ?hop
+            """,
+    ),
+    NamedQuery(
+        name="observations.ownership_confirmations",
+        cypher="""
+        MATCH (o:Observation {predicate: 'owns', rule_version: $rule, archived: false})-[:HAS_SUBJECT]->(s:Concept {concept_id: $sid}),
+              (o)-[:HAS_OBJECT]->(y:Concept)
+        OPTIONAL MATCH (y)-[:INSTANCE_OF]->(:Concept)-[:BROADER*0..]->(k:Concept)<-[:BROADER*0..]-(:Concept)<-[:INSTANCE_OF]-(x:Concept)
+        RETURN DISTINCT coalesce(x.concept_id, y.concept_id) AS concept_id, k.text_raw AS kind_label
+        """,
+        params=("sid", "rule"),
+        mutating=False,
+        description=("Concepts an \"X and I\" sentence may be confirmed against for a speaker: the objects of the "
+                     "speaker's rule-written owns Observations (no kind_label), and Concepts INSTANCE_OF a kind "
+                     "that one of those objects is INSTANCE_OF (kind_label set)."),
+        sparql="""
+            SELECT DISTINCT ?concept_id ?kind_label WHERE {
+              ?s a campy:Concept ; campy:concept_id ?sid .
+              ?o a campy:Observation ; campy:predicate "owns" ; campy:archived false ;
+                 campy:rule_version ?rule ; campy:HAS_SUBJECT ?s ; campy:HAS_OBJECT ?y .
+              { ?y campy:concept_id ?concept_id }
+              UNION
+              { ?y (campy:INSTANCE_OF|campy:IS_A)/campy:BROADER* ?k .
+                ?x (campy:INSTANCE_OF|campy:IS_A)/campy:BROADER* ?k .
+                ?k campy:text_raw ?kind_label . ?x campy:concept_id ?concept_id }
+            }
+            """,
+    ),
+    NamedQuery(
         name="observations.touch_observation",
         cypher="""
         MATCH (o:Observation {observation_id: $oid})
