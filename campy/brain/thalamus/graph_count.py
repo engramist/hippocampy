@@ -205,16 +205,24 @@ def _day(value) -> str:
     return str(value)[:10] if value else ""
 
 
-def render_graph_count(resolved: Resolved, route: Route, count: int, rows: list[dict]) -> str:
-    """The section text: the query's count, then its rows (object, date, source turn, quote)."""
+def _item(r: dict) -> str:
+    quote = " ".join(str(r.get("quote") or "").split())[:_QUOTE_CHARS]
+    cite = f"{_day(r.get('occurred_at'))}, {r.get('evidence_message_id')}"
+    return f'- {r.get("object_label")} ({cite}' + (f', "{quote}"' if quote else "") + ")"
+
+
+def render_graph_count(resolved: Resolved, route: Route, count: int, rows: list[dict],
+                       unkinded: list[dict] | None = None) -> str:
+    """The section text: the query's count for the asked kind, its rows (object, date, source turn,
+    quote), then, separately, the subject's other recorded objects with no kind recorded."""
     pred = route.predicate.replace("_", " ")
     bound = f", evidence dated before {_day(route.before)}" if route.before else ""
     lines = [f"[graph count] {resolved.subject_label} {pred} {count} of kind {resolved.kind_label}"
              f" (counted in the graph over {resolved.subject_label}'s recorded {pred} claims{bound}):"]
-    for r in rows:
-        quote = " ".join(str(r.get("quote") or "").split())[:_QUOTE_CHARS]
-        cite = f"{_day(r.get('occurred_at'))}, {r.get('evidence_message_id')}"
-        lines.append(f'- {r.get("object_label")} ({cite}' + (f', "{quote}"' if quote else "") + ")")
+    lines += [_item(r) for r in rows]
+    if unkinded:
+        lines.append(f"Also recorded as {pred}, kind not recorded (not in the count above):")
+        lines += [_item(r) for r in unkinded]
     return "\n".join(lines)
 
 
@@ -241,11 +249,13 @@ async def build_graph_count_section(db, query: str, config: dict):
         if count <= 0:
             return None
         rows = await gw.run("observations.objects_of_subject_kind", **params)
-        text = render_graph_count(resolved, route, count, rows)
+        unkinded = await gw.run("observations.objects_of_subject_no_kind",
+                                **{k: v for k, v in params.items() if k != "kind_id"})
+        text = render_graph_count(resolved, route, count, rows, unkinded)
         return BundleSection(
             section_type=SECTION_TYPE,
             content=[{"text": text, "type": "GraphCount", "confidence": 0.9, "pathway_strength": 0.9}],
-            source_node_ids=[str(r.get("observation_id")) for r in rows if r.get("observation_id")],
+            source_node_ids=[str(r.get("observation_id")) for r in [*rows, *unkinded] if r.get("observation_id")],
             token_estimate=max(1, len(text) // 4),
         )
     except Exception as e:
