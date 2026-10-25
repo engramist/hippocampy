@@ -467,35 +467,6 @@ OBSERVATION_QUERIES: tuple[NamedQuery, ...] = (
             """,
     ),
     NamedQuery(
-        name="observations.messages_with_concepts",
-        cypher="""
-        MATCH (m:Message)-[:MENTIONS]->(c:Concept)
-        WHERE m.role = 'user' AND m.archived = false AND c.archived = false AND c.kind_scheme IS NULL
-        RETURN DISTINCT m.message_id AS message_id, m.occurred_at AS occurred_at
-        UNION
-        MATCH (o:Observation)-[:EVIDENCED_BY]->(m:Message), (o)-[:OBSERVATION_ABOUT]->(c:Concept)
-        WHERE m.role = 'user' AND m.archived = false AND c.archived = false AND c.kind_scheme IS NULL
-        RETURN DISTINCT m.message_id AS message_id, m.occurred_at AS occurred_at
-        """,
-        params=(),
-        mutating=False,
-        description="Live user Messages linked to at least one entity Concept (the ownership rule's backfill candidates)",
-        sparql="""
-            SELECT DISTINCT ?message_id ?occurred_at WHERE {
-              ?m a campy:Message ; campy:message_id ?message_id ; campy:role "user" .
-              FILTER NOT EXISTS { ?m campy:archived true }
-              OPTIONAL { ?m campy:occurred_at ?occurred_at }
-              { ?m campy:MENTIONS ?c }
-              UNION
-              { ?o campy:EVIDENCED_BY ?m ; campy:OBSERVATION_ABOUT ?c }
-              ?c a campy:Concept .
-              FILTER NOT EXISTS { ?c campy:archived true }
-              FILTER NOT EXISTS { ?c campy:kind_scheme "kind" }
-            }
-            ORDER BY ?occurred_at ?message_id
-            """,
-    ),
-    NamedQuery(
         name="observations.touch_observation",
         cypher="""
         MATCH (o:Observation {observation_id: $oid})

@@ -111,6 +111,8 @@ def test_the_same_entity_twice_fires_once(nlp):
     ("I'm going to adopt Buddy.", "irrealis"),
     ("My friend Sam owns a car.", "not_ownable"),
     ("My sister Anna lives nearby.", "not_ownable"),
+    ("Garlic is my go-to ingredient.", "not_ownable"),
+    ("Nova is my favorite bike.", "not_ownable"),
     ("Last Tuesday, my gf, Sam, and I played board games.", "not_ownable"),
     ("Last Tuesday, my gf, Toby, and I had a really awesome night playing board games.", "not_ownable"),
     ("I got Sam to help me move.", "not_ownable"),
@@ -122,9 +124,20 @@ def test_negatives_do_not_fire(nlp, text, reason):
         assert stats.skipped.get(reason, 0) >= 1, stats.skipped
 
 
-def test_an_entity_that_is_not_a_known_concept_is_skipped_and_counted(nlp):
-    labels, stats = run(nlp, "My dog Toby loves walks.", known={"buddy": "c-buddy"})
-    assert labels == [] and stats.skipped == {"no_concept": 1}
+def test_a_proper_noun_with_no_concept_is_returned_for_creation_with_its_head_noun(nlp):
+    stats = ow.OwnershipStats()
+    ms = ow.find_ownership(nlp("My dog Pixie loves walks."), {"buddy": "c-buddy"}, stats)
+    assert [(m.label, m.concept_id, m.kind, m.quote) for m in ms] == [("Pixie", None, "dog", "My dog Pixie")]
+    ms = ow.find_ownership(nlp("We adopted Pixie."), {}, stats)
+    assert [(m.label, m.concept_id, m.kind) for m in ms] == [("Pixie", None, None)]     # no head noun, no kind
+    ms = ow.find_ownership(nlp("Pixie, my pups, is a star."), {}, stats)
+    assert [m.kind for m in ms] == ["pup"]
+
+
+def test_negatives_with_an_unknown_proper_noun_still_skip(nlp):
+    for text in ("Your dog Pixie is cute.", "I don't have a car named Pixie.", "My friend Pixie called."):
+        ms = ow.find_ownership(nlp(text), {}, ow.OwnershipStats())
+        assert ms == [], text
 
 
 def test_a_kind_word_alone_is_not_an_entity(nlp):
@@ -232,15 +245,51 @@ async def test_a_second_turn_adds_evidence_not_a_second_claim(db, gw):
     assert len(edges(db, "EVIDENCED_BY")) == 2
 
 
-async def test_entity_must_already_be_linked_to_the_message(db, gw):
+async def test_known_concept_not_linked_to_the_message_is_reused_not_duplicated(db, gw):
     await seed(gw)
     await turn(gw, "m1", "My dog Toby is such a sweetheart.")           # Toby exists but is not linked
+    before = len(await gw.run("concept_links.live_concepts"))
     stats = ow.OwnershipStats()
-    assert await ow.apply_to_message(db, ON, "m1", stats) == 0
-    assert await owns(gw, "c-andrew") == [] and stats.skipped == {"no_concept": 1}
-    concepts_before = len(await gw.run("concept_links.live_concepts"))
-    await ow.apply_to_message(db, ON, "m1", stats)
-    assert len(await gw.run("concept_links.live_concepts")) == concepts_before    # never creates one
+    assert await ow.apply_to_message(db, ON, "m1", stats) == 1
+    assert [r["object_id"] for r in await owns(gw, "c-andrew")] == ["c-toby"]
+    assert [r["text_raw"] for r in await gw.run("concept_links.live_concepts")].count("Toby") == 1
+
+
+async def test_unknown_proper_noun_creates_one_concept_and_a_kind_second_mention_reuses_it(db, gw):
+    await seed(gw)
+    await turn(gw, "m1", "We adopted a puppy named Pixie.")
+    await turn(gw, "m2", "My dog Pixie is so cute.", day=4)
+    s1, s2 = ow.OwnershipStats(), ow.OwnershipStats()
+    assert await ow.apply_to_message(db, ON, "m1", s1) == 1
+    assert s1.entity_concepts_created == 2 and s1.kinds_linked == 1       # Pixie and the kind "puppy"
+    assert await ow.apply_to_message(db, ON, "m2", s2) == 0               # same claim: evidence added
+    assert s2.duplicate == 1 and s2.entity_concepts_created == 1       # only the new kind "dog"
+    names = [r["text_raw"] for r in await gw.run("concept_links.live_concepts")]
+    assert names.count("Pixie") == 1
+    rows = await owns(gw, "c-andrew")
+    assert {r["object_id"] for r in rows} == {rows[0]["object_id"]}        # one object; one row per evidence turn
+    row = rows[0]
+    assert row["object_label"] == "Pixie"
+    assert "puppy" in row["kinds"].split("|")
+    assert len(edges(db, "EVIDENCED_BY")) == 2 and ("m1", row["object_id"]) in edges(db, "MENTIONS")
+
+
+async def test_created_entity_without_head_noun_has_no_kind(db, gw):
+    await seed(gw)
+    await turn(gw, "m1", "I adopted Pixie last week.")
+    stats = ow.OwnershipStats()
+    assert await ow.apply_to_message(db, ON, "m1", stats) == 1
+    assert stats.entity_concepts_created == 1 and stats.kinds_linked == 0
+
+
+async def test_negative_with_unknown_proper_noun_creates_nothing(db, gw):
+    await seed(gw)
+    before = len(await gw.run("concept_links.live_concepts"))
+    await turn(gw, "m1", "Your dog Pixie is cute.")
+    await turn(gw, "m2", "I wish I had a dog named Pixie.", day=4)
+    for mid in ("m1", "m2"):
+        await ow.apply_to_message(db, ON, mid, ow.OwnershipStats())
+    assert len(await gw.run("concept_links.live_concepts")) == before and edges(db, "HAS_OBJECT") == set()
 
 
 async def test_a_concept_linked_through_an_observation_is_in_the_closed_set(db, gw):
@@ -297,7 +346,7 @@ async def test_backfill_over_existing_messages_and_idempotent(db, gw):
     await turn(gw, "m4", "No entity here at all.", day=6)
     fired: list = []
     first = await ow.backfill_ownership(db, ON, record=fired)
-    assert (first.firings, first.created) == (2, 2) and first.skipped.get("not_first_person") == 1
+    assert (first.firings, first.created) == (2, 2)
     assert sorted((label, status) for _, label, _, status in fired) == [("Civic", "created"), ("Toby", "created")]
     second = await ow.backfill_ownership(db, ON)
     assert (second.created, second.duplicate) == (0, 2)

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -64,7 +65,11 @@ PERSON_ROLE_NOUNS = frozenset({
     "teacher", "mentor", "manager", "roommate", "classmate", "client", "student", "employee",
     "gf", "bf", "bff", "hubby", "bro", "sis", "in-law", "stepmother", "stepfather", "godmother", "godfather",
 })
+# Modifiers that turn "my X" into a preference or an ideal rather than a thing held.
+_PREFERENCE_MODIFIERS = frozenset({"favorite", "favourite", "go", "ideal", "dream"})
 _LINK_DEPS = frozenset({"appos", "compound"})
+
+_CUE_RE = re.compile(r"(?<!\w)(i|we|my|our)(?!\w)", re.IGNORECASE)
 
 SKIP_REASONS = ("no_concept", "negated", "irrealis", "not_first_person", "question", "not_ownable",
                 "no_speaker", "too_long")
@@ -72,12 +77,13 @@ SKIP_REASONS = ("no_concept", "negated", "irrealis", "not_first_person", "questi
 
 @dataclass(frozen=True)
 class OwnershipMatch:
-    concept_id: str
+    concept_id: str | None    # None: a proper noun with no Concept yet (the writer creates it)
     label: str
     quote: str
     start: int            # char offsets of the quote in the Message text
     end: int
     construction: str     # "possessive" | "acquisition"
+    kind: str | None = None   # head noun of the construction ("dog" in "my dog Pixie"); None without one
 
 
 @dataclass
@@ -88,13 +94,24 @@ class OwnershipStats:
     duplicate: int = 0                # the claim already existed (evidence added)
     rejected: dict[str, int] = field(default_factory=dict)
     skipped: dict[str, int] = field(default_factory=dict)
+    # Concepts the rule created for a proper noun the turn grounds (names match entities.py counters)
+    entity_concepts_created: int = 0
+    entities_linked: int = 0
+    kinds_created: int = 0
+    kinds_reused: int = 0
+    kinds_broader: int = 0
+    kinds_close_match: int = 0
+    kind_alt_labels: int = 0
+    kinds_linked: int = 0
 
     def skip(self, reason: str) -> None:
         self.skipped[reason] = self.skipped.get(reason, 0) + 1
 
     def as_details(self) -> dict[str, Any]:
         return {"messages": self.messages, "firings": self.firings, "created": self.created,
-                "duplicate": self.duplicate, "rejected": dict(self.rejected), "skipped": dict(self.skipped)}
+                "duplicate": self.duplicate, "concepts_created": self.entity_concepts_created,
+                "kinds_created": self.kinds_created, "kinds_linked": self.kinds_linked,
+                "rejected": dict(self.rejected), "skipped": dict(self.skipped)}
 
 
 # --- the matcher (pure; spaCy Doc in, matches out) -----------------------------------
@@ -223,6 +240,8 @@ def _classify(doc, span):
             lo_i, hi_i = sorted((p.i, a.i, e.i))[0], sorted((p.i, a.i, e.i))[-1]
             if a.lemma_ in PERSON_ROLE_NOUNS or any(t.pos_ == "NOUN" and t.lemma_.lower() in PERSON_ROLE_NOUNS for t in doc[lo_i:hi_i + 1]):
                 return "not_ownable"     # also when the parser hangs "my" on the name: "my gf, Toby"
+            if any(t.lower_ in _PREFERENCE_MODIFIERS for t in doc[a.left_edge.i:a.i + 1]):
+                return "not_ownable"     # "Garlic is my go-to ingredient": a preference, not a possession
             gov = a.head
             if a.dep_ in ("dobj", "attr") and gov.lemma_ in ACQUISITION_VERBS | {"be"}:
                 if _negated(gov):
@@ -231,7 +250,7 @@ def _classify(doc, span):
                     return "irrealis"
             lo = min(p.i, a.i, e.i)
             hi = max(p.i, a.i, entity_end - 1)
-            return ("possessive", lo, hi)
+            return ("possessive", lo, hi, a)
         if a.dep_ == "dobj" and a.head.pos_ == "VERB" and a.head.lemma_ in ACQUISITION_VERBS:
             verb = a.head
             subj, first = _first_person_subject(verb)
@@ -252,7 +271,7 @@ def _classify(doc, span):
                 return "irrealis"
             lo = min(subj.i, e.i)
             hi = max(a.i, entity_end - 1)
-            return ("acquisition", lo, hi)
+            return ("acquisition", lo, hi, a)
     return None
 
 
@@ -283,7 +302,7 @@ def find_ownership(doc, concepts: dict[str, str], stats: OwnershipStats | None =
         if isinstance(verdict, str):
             stats.skip(verdict)
             continue
-        _, lo, hi = verdict
+        _, lo, hi, _anchor = verdict
         a, b = doc[lo].idx, doc[hi].idx + len(doc[hi])
         if b - a > obs.MAX_EVIDENCE_CHARS:
             stats.skip("too_long")
@@ -292,8 +311,19 @@ def find_ownership(doc, concepts: dict[str, str], stats: OwnershipStats | None =
         out.append(OwnershipMatch(cid, doc[s:e_].text, text[a:b], a, b, verdict[0]))
     for s, e_ in _propn_spans(doc, spans):
         verdict = _classify(doc, doc[s:e_])
-        if isinstance(verdict, tuple):
-            stats.skip("no_concept")
+        if isinstance(verdict, str):
+            stats.skip(verdict)
+        elif isinstance(verdict, tuple):
+            # a proper noun the turn grounds as possessed but no Concept names yet: the writer
+            # creates it (a rule confirms it; nothing is proposed by a model)
+            _, lo, hi, anchor = verdict
+            a, b = doc[lo].idx, doc[hi].idx + len(doc[hi])
+            name = doc[s:e_].text
+            if b - a > obs.MAX_EVIDENCE_CHARS:
+                stats.skip("too_long")
+            elif not any(m.concept_id is None and m.label.lower() == name.lower() for m in out):
+                kind = anchor.lemma_.lower() if anchor.pos_ == "NOUN" and anchor.i not in range(s, e_) else None
+                out.append(OwnershipMatch(None, name, text[a:b], a, b, verdict[0], kind))
     return out
 
 
@@ -322,10 +352,9 @@ async def apply_to_message(db: Any, config: dict, message_id: str, stats: Owners
     stats.messages += 1
     speaker = msg.get("speaker")
     text = msg.get("text_raw") or ""
+    if not _CUE_RE.search(text):
+        return 0                          # no first-person word: no construction to find
     concept_rows = await gw.run("observations.message_concepts", mid=message_id)
-    if not concept_rows:
-        stats.skip("no_concept")
-        return 0
     if not _is_named(speaker):
         stats.skip("no_speaker")
         return 0
@@ -339,16 +368,35 @@ async def apply_to_message(db: Any, config: dict, message_id: str, stats: Owners
         cid, label = r["concept_id"], (r["label"] or "").strip()
         if cid and label and cid != speaker_id:
             concepts.setdefault(" ".join(label.lower().split()), cid)
-    if not concepts:
-        stats.skip("no_concept")
-        return 0
 
     nlp = _nlp(config)
     doc = await asyncio.to_thread(nlp, text)
     matches = find_ownership(doc, concepts, stats)
     created = 0
     occurred_at = msg.get("occurred_at") or msg.get("created_at")
+    index: dict[str, list[str]] | None = None
     for m in matches:
+        if m.concept_id is None:
+            # a proper noun the turn grounds as possessed: reuse a Concept of that name or create one
+            from campy.brain.hippocampus.concept_links import concept_index
+            from campy.brain.hippocampus.kinds import closematch_threshold, skos_vocab_enabled
+            from campy.brain.temporal_lobe.observations import entities as ent
+
+            skos = skos_vocab_enabled(config)
+            if index is None:
+                index = await concept_index(gw, alt_labels=skos)
+            cid = await ent._concept_for(gw, m.label, index, stats, embedding_model=embedding_model)
+            if not cid:
+                stats.skip("no_concept")
+                continue
+            if cid == speaker_id:
+                continue                  # the speaker's own name is not a possession
+            m = OwnershipMatch(cid, m.label, m.quote, m.start, m.end, m.construction, m.kind)
+            await gw.run("concept_links.link_message_concept", mid=message_id, cid=cid)
+            stats.entities_linked += 1
+            if m.kind:
+                await _link_kind(gw, cid, m.kind, index, stats, skos=skos, embedding_model=embedding_model,
+                                 closematch=closematch_threshold(config))
         stats.firings += 1
         draft = obs.ObservationDraft(
             evidence_ref=message_id, evidence_text=m.quote, subject_text="I", predicate="owns",
@@ -376,13 +424,32 @@ async def apply_to_message(db: Any, config: dict, message_id: str, stats: Owners
     return created
 
 
+async def _link_kind(gw: Any, entity_id: str, kind: str, index: dict, stats: OwnershipStats, *,
+                     skos: bool, embedding_model: str, closematch: float) -> None:
+    """The kind of a created entity, through the same path entities.write_entity uses."""
+    from campy.brain.hippocampus import kinds as kinds_mod
+    from campy.brain.temporal_lobe.observations import entities as ent
+
+    if skos:
+        kind_id = await ent.resolve_kind(gw, kind, index, stats, embedding_model=embedding_model,
+                                         closematch=closematch)
+        if kind_id and kind_id != entity_id:
+            await kinds_mod.link_instance_of(gw, entity_id, kind_id)
+            stats.kinds_linked += 1
+    else:
+        kind_id = await ent._concept_for(gw, kind, index, stats, embedding_model=embedding_model)
+        if kind_id and kind_id != entity_id:
+            await gw.run("concept_links.link_is_a", cid=entity_id, pid=kind_id)
+            stats.kinds_linked += 1
+
+
 async def backfill_ownership(db: Any, config: dict, *, embedding_model: str = obs.EMBEDDING_MODEL,
                              record: list | None = None) -> OwnershipStats:
     """Run the rule over every live user Message that is linked to an entity Concept. WRITES: run it
     on a copy of a store or as a maintenance step. Idempotent."""
     gw = get_gateway(db)
     stats = OwnershipStats()
-    for r in await gw.run("observations.messages_with_concepts"):
+    for r in await gw.run("concept_links.list_user_messages"):
         try:
             await apply_to_message(db, config, r["message_id"], stats, embedding_model=embedding_model, record=record)
         except Exception:
