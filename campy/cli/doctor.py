@@ -75,7 +75,8 @@ class DoctorChecker:
                 self.checks.append(("Runtime Dir", True, f"{path} (0700)"))
             else:
                 if self.repair_mode:
-                    os.chmod(path, 0o700)
+                    # B519: owner-only is the restrictive mode for the runtime dir.
+                    os.chmod(path, 0o700)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
                     self.checks.append(("Runtime Dir", True, f"{path} (repaired to 0700)"))
                 else:
                     self.checks.append(("Runtime Dir", False, f"{path} ({mode:o}; expected 700)"))

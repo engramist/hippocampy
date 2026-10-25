@@ -228,7 +228,8 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
         # B472: stored next to the text and shown in bundles, so scrubbed too
         speaker = (await scrub_before_ingest(speaker))[0]
     if scrub_metadata.get("was_scrubbed"):
-        _logger.warning(
+        # B519: logs counts and secret types only, never values.
+        _logger.warning(  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
             "B338: Content scrubbed before ingest. Detected %d secrets (types: %s) "
             "in session %s. Secrets redacted as [REDACTED:secret_type].",
             scrub_metadata["secrets_found"],
