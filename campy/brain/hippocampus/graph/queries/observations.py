@@ -105,19 +105,25 @@ _OBJECTS_OF_SUBJECT_KIND_PATTERN = r"""
               FILTER NOT EXISTS { ?o campy:DEPRECATED_BY ?newer }
               ?m campy:occurred_at ?occurred_at .
               FILTER (!BOUND(?before) || ?occurred_at < ?before)
+"""
+_KIND_CLOSURE = r"""
               ?kind a campy:Concept ; campy:concept_id ?kind_id .
               ?x (campy:INSTANCE_OF|campy:IS_A)/campy:BROADER* ?kind .
 """
+# B524: the subject's live objects of this predicate that have NO recorded kind at all.
+_NO_KIND = r"""
+              FILTER NOT EXISTS { ?x (campy:INSTANCE_OF|campy:IS_A) ?anykind }
+"""
 
 OBJECTS_OF_SUBJECT_KIND_COUNT_SPARQL = (
-    "SELECT (COUNT(DISTINCT ?x) AS ?n) WHERE {" + _OBJECTS_OF_SUBJECT_KIND_PATTERN + "}"
+    "SELECT (COUNT(DISTINCT ?x) AS ?n) WHERE {" + _OBJECTS_OF_SUBJECT_KIND_PATTERN + _KIND_CLOSURE + "}"
 )
 
 # One row per object: the object's earliest live evidence (no live Observation of the same subject,
 # predicate and object has an earlier evidence Message inside the bound).
 OBJECTS_OF_SUBJECT_KIND_LIST_SPARQL = (
     "SELECT DISTINCT ?object_id ?object_label ?observation_id ?quote ?evidence_message_id ?occurred_at WHERE {"
-    + _OBJECTS_OF_SUBJECT_KIND_PATTERN
+    + _OBJECTS_OF_SUBJECT_KIND_PATTERN + _KIND_CLOSURE
     + r"""
               ?x campy:concept_id ?object_id ; campy:text_raw ?object_label .
               ?o campy:observation_id ?observation_id .
@@ -134,6 +140,28 @@ OBJECTS_OF_SUBJECT_KIND_LIST_SPARQL = (
               }
             } ORDER BY ?occurred_at ?object_label"""
 )
+
+# Same rows and same earliest-evidence rule, for objects with no kind recorded (no kind param).
+OBJECTS_OF_SUBJECT_NO_KIND_SPARQL = (
+    "SELECT DISTINCT ?object_id ?object_label ?observation_id ?quote ?evidence_message_id ?occurred_at WHERE {"
+    + _OBJECTS_OF_SUBJECT_KIND_PATTERN + _NO_KIND
+    + r"""
+              ?x campy:concept_id ?object_id ; campy:text_raw ?object_label .
+              ?o campy:observation_id ?observation_id .
+              OPTIONAL { ?o campy:evidence_text ?quote }
+              ?m campy:message_id ?evidence_message_id .
+              FILTER NOT EXISTS {
+                ?o2 a campy:Observation ; campy:predicate ?predicate ; campy:archived false ;
+                    campy:HAS_SUBJECT ?s ; campy:HAS_OBJECT ?x ; campy:EVIDENCED_BY ?m2 .
+                FILTER NOT EXISTS { ?o2 campy:DEPRECATED_BY ?newer2 }
+                ?m2 campy:occurred_at ?occ2 .
+                FILTER (!BOUND(?before) || ?occ2 < ?before)
+                FILTER (?occ2 < ?occurred_at || (?occ2 = ?occurred_at &&
+                        (STR(?m2) < STR(?m) || (?m2 = ?m && STR(?o2) < STR(?o)))))
+              }
+            } ORDER BY ?occurred_at ?object_label"""
+)
+
 
 _OBJECT_CANDIDATES = r"""
               ?o a campy:Observation ; campy:object_text ?object_text ; campy:OBSERVATION_ABOUT ?cand .
@@ -515,6 +543,25 @@ OBSERVATION_QUERIES: tuple[NamedQuery, ...] = (
         description=("The distinct objects counted by observations.count_objects_of_subject, one row each, with "
                      "its earliest live evidence (observation, quote, message id, date). Same conditions."),
         sparql=OBJECTS_OF_SUBJECT_KIND_LIST_SPARQL,
+    ),
+    NamedQuery(
+        name="observations.objects_of_subject_no_kind",
+        cypher="""
+        MATCH (o:Observation)-[:HAS_SUBJECT]->(s:Concept {concept_id: $sid}),
+              (o)-[:HAS_OBJECT]->(x:Concept), (o)-[:EVIDENCED_BY]->(m:Message)
+        WHERE o.archived = false AND o.predicate = $predicate
+          AND NOT (o)-[:DEPRECATED_BY]->(:Observation)
+          AND NOT (x)-[:INSTANCE_OF|IS_A]->(:Concept)
+          AND ($before IS NULL OR m.occurred_at < $before)
+        RETURN x.concept_id AS object_id, x.text_raw AS object_label, o.observation_id AS observation_id,
+               o.evidence_text AS quote, m.message_id AS evidence_message_id, m.occurred_at AS occurred_at
+        ORDER BY occurred_at, object_label
+        """,
+        params=("sid", "predicate", "before"),
+        mutating=False,
+        description=("The subject's live objects of one predicate that have no recorded kind (no INSTANCE_OF / "
+                     "IS_A), one row each with earliest evidence. Objects of a different known kind are not listed."),
+        sparql=OBJECTS_OF_SUBJECT_NO_KIND_SPARQL,
     ),
     # --- B523: the closed set of entities a turn can own -------------------------------
     NamedQuery(

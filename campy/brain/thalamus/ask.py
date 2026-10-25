@@ -98,8 +98,8 @@ _SECTION_DESCRIPTIONS: dict[str, str] = {
     "linked": "what the user said or claimed about the topics this question names, found through the "
               "graph (turns and claims that mention the same things or related kinds of thing), oldest first, "
               "each stamped with its date — later dates supersede earlier ones",
-    "graph_count": "an exact count and list computed by a graph query over the claims the user made about one "
-                   "subject, each item citing its source turn and date — use the count as stated",
+    "graph_count": "the count of the user's recorded ownership claims of the asked kind, from a graph query; "
+                   "objects of unknown kind are listed separately; each item cites its turn",
     "assistant_said": "what the assistant (you) said earlier on this, oldest first — your own past words, quoted to answer a question about them; they are not facts the user stated",
     "graph": "graph relationships connecting the entities above",
     "tabular": "structured tabular data",

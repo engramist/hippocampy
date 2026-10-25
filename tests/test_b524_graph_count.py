@@ -282,6 +282,26 @@ async def test_flag_on_builds_a_cited_section_from_the_query(db, gw):
     assert len(sec.source_node_ids) == 2
 
 
+async def test_kindless_objects_are_listed_separately_and_other_kinds_are_not(db, gw):
+    await seed(db, gw)
+    await concept(gw, "c-scout", "Scout")                                 # no kind recorded at all
+    await owns(db, gw, "m7", "10-20", "Andrew", "c-andrew", "c-scout", "Scout", "I'm lucky to have Scout.")
+    await concept(gw, "c-car", "Civic")                                   # a different known kind
+    await kinds.link_instance_of(gw, "c-car", "c-vehicle")
+    await owns(db, gw, "m8", "10-21", "Andrew", "c-andrew", "c-car", "Civic", "I bought a Civic.")
+    assert await n_of(gw, **params("c-andrew", "c-pet")) == 2             # Scout is not counted
+    p = dict(sid="c-andrew", predicate="owns", before=None)
+    assert [r["object_label"] for r in await gw.run("observations.objects_of_subject_no_kind", **p)] == ["Scout"]
+    assert [r["object_label"] for r in await gw.run(
+        "observations.objects_of_subject_no_kind", **{**p, "before": "2023-10-01T00:00:00+00:00"})] == []
+    sec = await gc.build_graph_count_section(db, "How many pets does Andrew have?", ON)
+    text = sec.content[0]["text"]
+    head, _, tail = text.partition("Also recorded as owns, kind not recorded")
+    assert "owns 2 of kind pet" in head and "Scout" not in head
+    assert 'Scout (2023-10-20, m7, "I\'m lucky to have Scout.")' in tail
+    assert "Civic" not in text and "bike" not in text
+
+
 async def test_time_bound_in_the_question_reaches_the_query(db, gw):
     await seed(db, gw)
     sec = await gc.build_graph_count_section(db, "How many pets did Andrew have as of 1 July 2023?", ON)
