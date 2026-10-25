@@ -93,13 +93,20 @@ EMOTION_VERBS = frozenset({"love", "enjoy", "appreciate", "adore", "cherish", "t
 _STATE_VERBS = frozenset({"be", "feel", "seem", "get", "become"})
 # Kinds that cannot be what a speaker "possesses", for confirming "X and I" by a shared kind.
 NON_POSSESSABLE_KINDS = frozenset({"person", "people", "human", "man", "woman", "adult", "individual", "boy", "girl"})
+# What a thing the speaker holds can be: WordNet lexicographer files (first, most frequent sense).
+OWNABLE_LEXNAMES = frozenset({"noun.animal", "noun.artifact", "noun.food", "noun.plant", "noun.possession"})
+# Lexnames that rule a noun out even when a graph kind of that name exists (an extractor can file
+# "people" under a kind "group"); only consulted when WordNet is installed.
+NON_OWNABLE_LEXNAMES = frozenset({"noun.group", "noun.person", "noun.act", "noun.event", "noun.state", "noun.feeling",
+                                  "noun.cognition", "noun.communication", "noun.attribute", "noun.time"})
+_NAME_ENTITY_LABELS = frozenset({"PERSON", "ORG", "GPE", "LOC", "FAC", "WORK_OF_ART", "PRODUCT", "EVENT", "NORP", "LAW"})
 COORDINATION_RULE_ID = RULE_ID + ":coordination"
 _NAMING_CUE_RE = re.compile(r"(?<!\w)(nam(e|ed|ing)|call(ed|ing)?)(?!\w)", re.IGNORECASE)
 _LINK_DEPS = frozenset({"appos", "compound"})
 
 _CUE_RE = re.compile(r"(?<!\w)(i|we|my|our)(?!\w)", re.IGNORECASE)
 
-SKIP_REASONS = ("no_concept", "negated", "irrealis", "not_first_person", "question", "not_ownable",
+SKIP_REASONS = ("modifier", "partial_name", "no_concept", "negated", "irrealis", "not_first_person", "question", "not_ownable",
                 "no_speaker", "too_long")
 
 
@@ -144,6 +151,53 @@ class OwnershipStats:
 
 
 # --- the matcher (pure; spaCy Doc in, matches out) -----------------------------------
+
+def _wordnet_lexname(lemma: str) -> str | None:
+    """Lexicographer file of the first (most frequent) noun sense of `lemma`, or None when NLTK's
+    WordNet is not installed (optional extra `wordnet`) or the word is unknown."""
+    try:
+        from nltk.corpus import wordnet as wn
+
+        senses = wn.synsets(lemma, pos="n")
+        return senses[0].lexname() if senses else None
+    except Exception:           # ImportError, LookupError (corpus not downloaded)
+        return None
+
+
+def make_ownable(instantiated_kinds: set[str]):
+    """The test for "can the speaker hold one of these": the noun is a kind already in the graph that
+    some entity is INSTANCE_OF (`instantiated_kinds`, norm_key forms), or its WordNet lexname is one of
+    OWNABLE_LEXNAMES; a WordNet lexname in NON_OWNABLE_LEXNAMES (group, act, state ...) vetoes both.
+    Without WordNet it is the graph kinds alone."""
+    from campy.brain.hippocampus.concept_links import norm_key
+
+    def ownable(lemma: str) -> bool:
+        lexname = _wordnet_lexname(lemma.lower())
+        if lexname in NON_OWNABLE_LEXNAMES:
+            return False
+        return norm_key(lemma) in instantiated_kinds or lexname in OWNABLE_LEXNAMES
+
+    return ownable
+
+
+def _full_span(doc, s: int, e: int) -> tuple[int, int]:
+    """A proper-noun span grown to the whole name: leading proper-noun compounds ("Iron" of "Iron Man")
+    and the named entity spaCy recognises around it, trimmed to proper-noun tokens."""
+    lo, hi = s, e
+    while lo > 0 and doc[lo - 1].pos_ == "PROPN" and doc[lo - 1].dep_ in ("compound", "amod", "nmod") \
+            and lo <= doc[lo - 1].head.i < hi:
+        lo -= 1
+    for ent in doc.ents:
+        if ent.label_ in _NAME_ENTITY_LABELS and ent.start <= lo and hi <= ent.end:
+            a, b = ent.start, ent.end
+            while a < b and doc[a].pos_ != "PROPN":
+                a += 1
+            while b > a and doc[b - 1].pos_ != "PROPN":
+                b -= 1
+            if all(doc[i].pos_ == "PROPN" for i in range(a, b)) and a <= lo and hi <= b:
+                lo, hi = a, b
+    return lo, hi
+
 
 def _is_question(sent) -> bool:
     return sent.text.strip().endswith("?")
@@ -251,13 +305,16 @@ def _first_person_subject(verb):
     return None, False
 
 
-def _classify(doc, span):
+def _classify(doc, span, ownable=None):
     """Decide one entity head `e` (spaCy token): (construction, quote_start_tok, quote_end_tok)
     when it is first-person possessed, or a skip reason, or None when no ownership construction
     touches it."""
     e, entity_end = span.root, span.end
     if _is_question(e.sent):
         return None if not _touches_ownership(e, span.start) else "question"
+    if e.dep_ in ("compound", "amod", "nmod") and e.head.i > e.i and e.head.pos_ in ("NOUN", "PROPN"):
+        # "my Rocky Mountains trip", "my Gryffindor scarf": the name modifies the possessed noun
+        return "modifier" if _touches_ownership(e, span.start) else None
     anchors = _anchors(e, span.start)
     for a in anchors:
         poss = _poss_of(a)
@@ -271,6 +328,8 @@ def _classify(doc, span):
                 return "not_ownable"     # also when the parser hangs "my" on the name: "my gf, Toby"
             if any(t.lower_ in _PREFERENCE_MODIFIERS for t in doc[a.left_edge.i:a.i + 1]):
                 return "not_ownable"     # "Garlic is my go-to ingredient": a preference, not a possession
+            if _not_ownable(a, span, ownable):
+                return "not_ownable"     # "Nature is my haven": the held noun is not a thing one holds
             gov = a.head
             if a.dep_ in ("dobj", "attr") and gov.lemma_ in ACQUISITION_VERBS | {"be"}:
                 if _negated(gov):
@@ -297,7 +356,7 @@ def _classify(doc, span):
             if any(c.dep_ in ("xcomp", "ccomp") for c in verb.children) or (
                     nxt is not None and nxt.lower_ == "to" and nxt.dep_ == "aux"):
                 return "not_ownable"     # "I got Sam to help": the object is an agent, not a possession
-            if a.lemma_ in PERSON_ROLE_NOUNS:
+            if a.lemma_ in PERSON_ROLE_NOUNS or _not_ownable(a, span, ownable):
                 return "not_ownable"
             if _negated(verb):
                 return "negated"
@@ -307,6 +366,14 @@ def _classify(doc, span):
             hi = max(a.i, entity_end - 1)
             return (construction, lo, hi, a)
     return None
+
+
+def _not_ownable(anchor, span, ownable) -> bool:
+    """True when the held noun is a common noun other than the entity and fails the ownable test.
+    No test given (None): nothing is rejected."""
+    if ownable is None or anchor.pos_ != "NOUN" or span.start <= anchor.i < span.end:
+        return False
+    return not ownable(anchor.lemma_.lower())
 
 
 def _stative_subject(verb):
@@ -450,7 +517,7 @@ def _kind_of(extra, span) -> str | None:
 
 def find_ownership(doc, concepts: dict[str, str], stats: OwnershipStats | None = None, *,
                    context_kinds: list[str] | None = None, confirmed: set[str] | None = None,
-                   mode: str = "all", kind_vocab: set[str] | None = None) -> list[OwnershipMatch]:
+                   mode: str = "all", kind_vocab: set[str] | None = None, ownable=None) -> list[OwnershipMatch]:
     """First-person possession (or care, or naming) of a named entity in `doc`.
 
     `concepts` maps a lower-cased entity label to its Concept id (the closed set). One match per
@@ -463,8 +530,24 @@ def find_ownership(doc, concepts: dict[str, str], stats: OwnershipStats | None =
     text = doc.text
     spans = _concept_spans(doc, concepts)
     ctx = [*(context_kinds or []), *_kind_nouns(doc, kind_vocab)]
-    entities = [(s, e_, key) for s, e_, key in spans if doc[s:e_].root.pos_ == "PROPN"]
-    entities += [(s, e_, None) for s, e_ in _propn_spans(doc, spans)]
+    entities = []
+    covered: set[int] = set()
+    for s, e_, key in spans:
+        if doc[s:e_].root.pos_ != "PROPN":
+            continue
+        fs, fe = _full_span(doc, s, e_)
+        covered.update(range(fs, fe))
+        if (fs, fe) != (s, e_):
+            stats.skip("partial_name")       # the Concept is only part of the name ("Man" in "Iron Man")
+            continue
+        entities.append((s, e_, key))
+    for s, e_ in _propn_spans(doc, spans):
+        if all(i in covered for i in range(s, e_)):
+            continue
+        fs, fe = _full_span(doc, s, e_)
+        if any(i in covered for i in range(fs, fe)) and (fs, fe) != (s, e_):
+            continue
+        entities.append((fs, fe, None))
     out: list[OwnershipMatch] = []
     seen: set[str] = set()
     for s, e_, key in entities:
@@ -477,9 +560,9 @@ def find_ownership(doc, concepts: dict[str, str], stats: OwnershipStats | None =
         if mode != "coordination_only":
             verdict = _naming(doc, span, ctx)
             if verdict is None:
-                verdict = _classify(doc, span)
+                verdict = _classify(doc, span, ownable)
             elif verdict == "no_kind_context":
-                held = _classify(doc, span)          # "I named my cat Luna" is a possession whatever precedes
+                held = _classify(doc, span, ownable)          # "I named my cat Luna" is a possession whatever precedes
                 verdict = held if isinstance(held, tuple) else verdict
         if verdict is None and mode != "no_coordination" and (mode == "coordination_only" or confirmed is not None):
             verdict = _coordination(doc, span)
@@ -564,7 +647,9 @@ async def apply_to_message(db: Any, config: dict, message_id: str, stats: Owners
     confirmed: set[str] | None = None
     if mode != "no_coordination":
         confirmed = await _confirmed_for_coordination(gw, speaker_id)
-    matches = find_ownership(doc, concepts, stats, context_kinds=context_kinds, confirmed=confirmed, mode=mode, kind_vocab=vocab)
+    ownable = await _ownable_test(gw) if mode != "coordination_only" else None
+    matches = find_ownership(doc, concepts, stats, context_kinds=context_kinds, confirmed=confirmed, mode=mode,
+                             kind_vocab=vocab, ownable=ownable)
     created = 0
     occurred_at = msg.get("occurred_at") or msg.get("created_at")
     index: dict[str, list[str]] | None = None
@@ -627,6 +712,20 @@ async def _kind_vocabulary(gw: Any) -> set[str]:
         out.add(" ".join(k.pref.lower().split()))
         out.update(" ".join(a.lower().split()) for a in k.alts)
     return out
+
+
+async def _ownable_test(gw: Any):
+    """The ownable test (`make_ownable`) over the kinds that currently have instances in the graph."""
+    from campy.brain.hippocampus import kinds as kinds_mod
+    from campy.brain.hippocampus.concept_links import norm_key
+
+    ids = {str(r["concept_id"]) for r in await gw.run("observations.instantiated_kinds")}
+    keys: set[str] = set()
+    if ids:
+        for kid, k in (await kinds_mod.load_kinds(gw)).items():
+            if kid in ids:
+                keys.update(norm_key(x) for x in (k.pref, *k.alts))
+    return make_ownable(keys)
 
 
 async def _confirmed_for_coordination(gw: Any, speaker_id: str) -> set[str]:

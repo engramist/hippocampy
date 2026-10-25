@@ -203,9 +203,16 @@ async def owns(gw, speaker_id):
     return [dict(r) for r in await gw.run("observations.objects_of_subject", sid=speaker_id, predicate="owns")]
 
 
-async def seed(gw):
+async def seed(gw, owned_kinds=("dog", "car", "bike", "puppy")):
+    from campy.brain.hippocampus import kinds as kinds_mod
+
     for cid, text in (("c-andrew", "Andrew"), ("c-toby", "Toby"), ("c-civic", "Civic"), ("c-sam", "Sam")):
         await concept(gw, cid, text)
+    for kind in owned_kinds:      # real categories: kinds that some entity is INSTANCE_OF (the ownable test)
+        await concept(gw, f"k-{kind}", kind)
+        await kinds_mod.mark_kind(gw, f"k-{kind}")
+        await concept(gw, f"x-{kind}", f"seed {kind} entity")
+        await kinds_mod.link_instance_of(gw, f"x-{kind}", f"k-{kind}")
 
 
 async def test_rule_writes_an_owns_observation_the_query_reads(db, gw):
@@ -261,9 +268,9 @@ async def test_unknown_proper_noun_creates_one_concept_and_a_kind_second_mention
     await turn(gw, "m2", "My dog Pixie is so cute.", day=4)
     s1, s2 = ow.OwnershipStats(), ow.OwnershipStats()
     assert await ow.apply_to_message(db, ON, "m1", s1) == 1
-    assert s1.entity_concepts_created == 2 and s1.kinds_linked == 1       # Pixie and the kind "puppy"
+    assert s1.entity_concepts_created == 1 and s1.kinds_linked == 1       # Pixie; the kind "puppy" exists
     assert await ow.apply_to_message(db, ON, "m2", s2) == 0               # same claim: evidence added
-    assert s2.duplicate == 1 and s2.entity_concepts_created == 1       # only the new kind "dog"
+    assert s2.duplicate == 1 and s2.entity_concepts_created == 0
     names = [r["text_raw"] for r in await gw.run("concept_links.live_concepts")]
     assert names.count("Pixie") == 1
     rows = await owns(gw, "c-andrew")
@@ -549,3 +556,91 @@ def test_a_possessed_noun_must_be_a_known_kind_to_serve_as_naming_context(nlp):
 def test_naming_list_shares_the_clause(nlp):
     ms, _ = fire(nlp, "Their names are Toby, Buddy and Luna.", ctx=["dog"])
     assert sorted(m.label for m in ms) == ["Buddy", "Luna", "Toby"]
+
+
+# --- ownable head nouns, compound modifiers, full names (B523 precision) ---------------------------
+
+OWNABLE = ow.make_ownable({"dog", "car", "bike", "scarf", "poster", "cat", "plant", "house", "company"})
+
+
+@pytest.mark.parametrize("text", [
+    "I'm so excited about my Nova trip.",                  # the trip is held; Nova modifies it
+    "I love my Birch scarf.",
+    "I framed my Civic poster.",
+    "We packed our Acme mug.",
+    "My Luna Park visit was fun.",
+])
+def test_a_name_that_modifies_the_possessed_noun_is_not_owned(nlp, text):
+    ms, stats = fire(nlp, text)
+    assert ms == [] and stats.skipped.get("modifier", 0) + stats.skipped.get("partial_name", 0) >= 1, stats.skipped
+
+
+@pytest.mark.parametrize("text", [
+    "Nova is my top pick.",
+    "Birch has always been my haven.",
+    "Acme is my passion.",
+    "Luna is my inspiration.",
+    "Civic is my favorite hobby.",
+])
+def test_a_predicate_nominal_whose_noun_is_not_ownable_does_not_fire(nlp, text):
+    ms, stats = ow.find_ownership(nlp(text), KNOWN, ow.OwnershipStats(), ownable=OWNABLE), None
+    assert ms == []
+
+
+@pytest.mark.parametrize("text,label", [
+    ("Nova is my bike.", "Nova"),
+    ("Birch has always been my house.", "Birch"),
+    ("Acme is my company.", "Acme"),
+    ("Luna is my cat.", "Luna"),
+    ("Civic is my car.", "Civic"),
+    ("Toby, my plant, thrives.", "Toby"),
+])
+def test_a_predicate_nominal_with_an_ownable_noun_fires(nlp, text, label):
+    ms = ow.find_ownership(nlp(text), KNOWN, ow.OwnershipStats(), ownable=OWNABLE)
+    assert [m.label for m in ms] == [label]
+
+
+def test_the_acquisition_object_head_noun_must_be_ownable_too(nlp):
+    stats = ow.OwnershipStats()
+    assert ow.find_ownership(nlp("I started my group called Nova."), KNOWN, stats, ownable=OWNABLE) == []
+    assert stats.skipped.get("not_ownable") == 1
+    assert [m.label for m in ow.find_ownership(nlp("I bought a bike called Nova."), KNOWN, ow.OwnershipStats(),
+                                               ownable=OWNABLE)] == ["Nova"]
+    assert ow.find_ownership(nlp("I adopted Nova."), KNOWN, ow.OwnershipStats(), ownable=OWNABLE) != []   # no head noun
+
+
+def test_ownable_uses_graph_kinds_or_wordnet(monkeypatch):
+    graph_only = ow.make_ownable({"dog"})
+    assert graph_only("dogs") and not graph_only("haven")
+    monkeypatch.setattr(ow, "_wordnet_lexname", lambda w: {"scarf": "noun.artifact", "haven": "noun.location",
+                                                           "apple": "noun.food"}.get(w))
+    both = ow.make_ownable({"dog"})
+    assert both("scarf") and both("apple") and both("dog") and not both("haven")
+    monkeypatch.setattr(ow, "_wordnet_lexname", lambda w: {"group": "noun.group", "dog": "noun.animal"}.get(w))
+    vetoed = ow.make_ownable({"group", "dog"})                  # a graph kind "group" (filed under people) is vetoed
+    assert vetoed("dog") and not vetoed("group")
+
+
+def test_wordnet_missing_falls_back_to_graph_kinds(monkeypatch):
+    import builtins
+
+    real = builtins.__import__
+
+    def deny(name, *a, **k):
+        if name.startswith("nltk"):
+            raise ImportError(name)
+        return real(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", deny)
+    assert ow._wordnet_lexname("scarf") is None
+    assert ow.make_ownable({"dog"})("dog") and not ow.make_ownable({"dog"})("scarf")
+
+
+def test_the_whole_proper_noun_span_is_the_entity(nlp):
+    known = {**KNOWN, "man": "c-man"}
+    ms, stats = fire(nlp, "Iron Man is my cat.", known=known)           # "Man" alone is only part of the name
+    assert ms == [] and stats.skipped.get("partial_name") == 1
+    ms = ow.find_ownership(nlp("Iron Man is my cat."), {}, ow.OwnershipStats())
+    assert [m.label for m in ms] == ["Iron Man"]                          # unknown names are created whole
+    ms = ow.find_ownership(nlp("Mount Fuji is my house."), {}, ow.OwnershipStats())
+    assert all(m.label != "Fuji" for m in ms)
