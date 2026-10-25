@@ -32,6 +32,7 @@ These are repository custom instructions for GitHub Copilot, including **Copilot
 Before reviewing or generating code, respect these:
 - `docs/ecosystem-rules.md` — layer boundaries and import constraints (the rules below enforce it)
 - The graph store (Oxigraph today) is the **single source of truth** for persistent agent state; `vectors.db` is an index, not a store. In-memory structures are allowed only as read-through caches over graph-backed state — never as the primary store.
+- `skills/campy-graph/SKILL.md` — for capture, retrieval and answering changes: flag Python that counts, filters or joins what a SPARQL query anchored on the subject entity could compute.
 
 ## PR Review Checklist (Ecosystem Gate)
 

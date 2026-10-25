@@ -35,6 +35,8 @@ Use `docs/codebase-anatomy.md` when you need the target region for new code, and
 
 The graph store (Oxigraph today) is the single source of truth for persistent memory state; `vectors.db` is an index, not a store. Do not introduce shadow stores for durable agent state; in-memory structures are allowed only as caches over graph-backed state.
 
+Before any capture, retrieval, bundle-assembly or answering card, load `skills/campy-graph/SKILL.md`: answers that a graph query can compute are computed by a query anchored on the subject entity, not in Python.
+
 ## Memory Usage Policy
 
 Use `plugin/skills/recall/SKILL.md` as the canonical policy for when to recall Campy memory (dev-only: `skills/campy-memory/SKILL.md`). The short version: do not recall on every turn; recall only when a decision needs durable memory, and keep returned context compact.
