@@ -1,0 +1,6 @@
+{
+  "note": "Conversations used by past LoCoMo-10 gates (category 1-4). conv-30 and conv-44 have been used for every lever since mid-October 2026, so they are adaptively reused: a lever tuned against them can look good there and not hold elsewhere (PRINCIPLES.md 4). scripts/gate_slice.py prefers conversations NOT listed here; `--record` appends the slice it proposes.",
+  "gates": [
+    {"label": "every lever since mid-October 2026", "conversations": ["conv-30", "conv-44"], "max_questions": 60}
+  ]
+}

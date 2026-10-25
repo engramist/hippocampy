@@ -12,7 +12,7 @@
 
 ## Score effect
 
-<!-- Gate table (suite | main | branch | gained | lost) on the published metric, or "None — <reason>" (e.g. docs-only, test-only, infra). -->
+<!-- Gate table (suite | main | branch | gained | lost) on the published metric, or "None — <reason>" (e.g. docs-only, test-only, infra). With a gate table, add a line "Targets in gate: N" (N >= 10, or "all", or "none — <reason>"): how many of the lever's target questions the gate slice holds; count or pick a slice with scripts/gate_slice.py. -->
 
 ## What
 

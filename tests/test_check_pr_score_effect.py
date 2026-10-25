@@ -23,7 +23,7 @@ GD = "\n## Graph design\nNone — CI tooling\n"
 
 
 def test_relevant_with_filled_section_passes():
-    body = GD + "## Score effect\n\n| suite | main | branch | gained | lost |\n|---|---|---|---|---|\n| LoCoMo | 60 | 62 | 3 | 1 |\n\n## Test Plan\n"
+    body = GD + "## Score effect\n\n| suite | main | branch | gained | lost |\n|---|---|---|---|---|\n| LoCoMo | 60 | 62 | 3 | 1 |\nTargets in gate: 12\n\n## Test Plan\n"
     assert check(body, RELEVANT)[0]
 
 
@@ -84,3 +84,31 @@ def test_graph_design_rejects_prose_without_query():
 
 def test_graph_design_not_required_off_path():
     assert check(None, IRRELEVANT)[0]
+
+
+GATE = "| suite | main | branch | gained | lost |\n|---|---|---|---|---|\n| LoCoMo | 60 | 62 | 3 | 1 |\n"
+
+
+def _se(extra):
+    return GD + "## Score effect\n\n" + GATE + extra + "\n## Test Plan\n"
+
+
+def test_gate_table_without_targets_line_fails():
+    ok, msg = check(_se(""), RELEVANT)
+    assert not ok and "Targets in gate" in msg and "gate_slice.py" in msg
+
+
+def test_gate_table_targets_variants():
+    assert check(_se("Targets in gate: 12\n"), RELEVANT)[0]
+    assert check(_se("Targets in gate: all\n"), RELEVANT)[0]
+    assert check(_se("Targets in gate: none — change is not question-specific\n"), RELEVANT)[0]
+
+
+def test_gate_table_too_few_targets_fails():
+    ok, msg = check(_se("Targets in gate: 4\n"), RELEVANT)
+    assert not ok and "below 10" in msg
+    assert not check(_se("Targets in gate: none\n"), RELEVANT)[0]
+
+
+def test_none_reason_section_needs_no_targets_line():
+    assert check(GD + "## Score effect\nNone — evaluation tooling only\n", RELEVANT)[0]

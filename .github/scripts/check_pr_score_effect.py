@@ -76,6 +76,26 @@ def graph_design_ok(section):
     return bool(_NONE_RE.match(section) or _SPARQL_RE.search(section) or _NAMED_QUERY_RE.search(section))
 
 
+# A gate table (a markdown row with the gained/lost counts) must say how many of the lever's target
+# questions the gate holds (B520): `Targets in gate: N` (N >= 10), `all`, or `none — <reason>`.
+_GATE_ROW_RE = re.compile(r"^\s*\|.*\b(gained|lost)\b", re.IGNORECASE | re.MULTILINE)
+_TARGETS_RE = re.compile(r"^\W*Targets in gate:[ \t]*(\d+|all|none[ \t]*[—–-][ \t]*\S.*)$", re.IGNORECASE | re.MULTILINE)
+MIN_TARGETS = 10
+
+
+def targets_in_gate_ok(section):
+    """Return (ok, problem). Sections without a gate table (`None — <reason>`) need no line."""
+    if not _GATE_ROW_RE.search(section or ""):
+        return True, ""
+    m = _TARGETS_RE.search(section)
+    if not m:
+        return False, "the gate table has no 'Targets in gate: N' line"
+    v = m.group(1).strip().lower()
+    if v.isdigit() and int(v) < MIN_TARGETS:
+        return False, f"'Targets in gate: {v}' is below {MIN_TARGETS}"
+    return True, ""
+
+
 def check(body, changed):
     """Return (ok, message)."""
     hits = relevant_files(changed)
@@ -84,6 +104,14 @@ def check(body, changed):
     section = score_effect_section(body)
     shown = "\n".join(f"  - {f}" for f in hits[:10])
     if section:
+        t_ok, t_problem = targets_in_gate_ok(section)
+        if not t_ok:
+            return False, (
+                f"The '## Score effect' gate is not shown to hold enough of the lever's target questions: "
+                f"{t_problem}.\n\nAdd 'Targets in gate: N' (N >= {MIN_TARGETS}, or 'all', or "
+                "'Targets in gate: none — <reason>'). Count the lever's target construction in the gate "
+                "slice, or pick a slice, with scripts/gate_slice.py (B520)."
+            )
         if graph_design_ok(section_text(body, "Graph design")):
             return True, "Score effect and Graph design sections present."
         return False, (
