@@ -129,7 +129,7 @@ def log_truncated(provider_label: str, model: str, cap, messages: list[dict]) ->
             break
     # B519: no raw user text in daemon.log; length and a short hash identify the question.
     digest = hashlib.sha256(last_user.encode("utf-8", "replace")).hexdigest()[:12]
-    _logger.warning(
+    _logger.warning(  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
         "[LLM] %s/%s hit the output cap (max_tokens=%s); response truncated. "
         "Last user message: %d chars, sha256 %s",
         provider_label, model, cap, len(last_user), digest,
