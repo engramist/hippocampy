@@ -44,6 +44,7 @@ B16 — Task-Based Model Routing:
         tabular_ingest      — Dataset summary + key-fact extraction (B250)
 """
 
+import hashlib
 import logging
 import os
 from typing import Protocol, runtime_checkable
@@ -119,17 +120,19 @@ def resolve_max_tokens(llm_cfg: dict) -> int | None:
 
 
 def log_truncated(provider_label: str, model: str, cap, messages: list[dict]) -> None:
-    """B494: warn that a completion hit the output cap, naming the question."""
+    """B494: warn that a completion hit the output cap, identifying the question without its text."""
     last_user = ""
     for m in reversed(messages or []):
         if isinstance(m, dict) and m.get("role") == "user":
             content = m.get("content")
             last_user = content if isinstance(content, str) else str(content)
             break
+    # B519: no raw user text in daemon.log; length and a short hash identify the question.
+    digest = hashlib.sha256(last_user.encode("utf-8", "replace")).hexdigest()[:12]
     _logger.warning(
         "[LLM] %s/%s hit the output cap (max_tokens=%s); response truncated. "
-        "Last user message: %r",
-        provider_label, model, cap, last_user[:120],
+        "Last user message: %d chars, sha256 %s",
+        provider_label, model, cap, len(last_user), digest,
     )
 
 
