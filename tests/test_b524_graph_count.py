@@ -129,6 +129,44 @@ def test_unrouted_questions_decline(question):
     assert gc.route_question(question) is None
 
 
+@pytest.mark.parametrize("question", [
+    "When did Mia adopt her cat?",
+    "Which year did Omar buy his first guitar?",
+    "What month did Lena get her bike?",
+    "What date did Sam adopt the parrot?",
+    "How long has Priya kept her turtles?",
+    "How often does Ravi get new books?",
+    "How many months passed between Kai adopting a hamster and a rabbit?",
+    "How many years did Tess own the boat?",
+    "How many times did Noor adopt a pet?",
+])
+def test_questions_for_a_time_or_a_quantity_of_time_decline(question):
+    assert gc.route_question(question) is None
+
+
+@pytest.mark.parametrize("question", [
+    "Which cities has Jon visited?",
+    "What books have the kids read?",
+    "How many bikes have you ridden?",
+    "Which countries has Mara traveled to?",
+    "What songs have the band recorded?",
+])
+def test_auxiliary_have_is_not_possession(question):
+    assert gc.route_question(question) is None
+
+
+@pytest.mark.parametrize("question", [
+    "How many pets does Andrew have?",
+    "What toys does Mia have?",
+    "Which cars did Sam have?",
+    "How many instruments will Lena have?",
+    "How many dogs has Audrey got?",
+    "How many cats did Noor adopt?",
+])
+def test_main_verb_have_and_other_mapped_verbs_route(question):
+    assert gc.route_question(question).predicate == "owns"
+
+
 def test_every_mapped_verb_is_a_predicate_of_the_closed_set():
     assert set(gc.RELATION_BY_VERB.values()) <= set(obs.PREDICATES)
 
