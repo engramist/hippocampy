@@ -56,13 +56,13 @@ def test_fstring_iri_loop_literal_and_path_constant(tmp_path):
     d = tmp_path / "campy" / "x"
     d.mkdir(parents=True)
     (d / "m.py").write_text(
-        'ns = "<https://campy.dev/ns#"\\n'
-        'UP = "campy:IS_A|campy:BROADER"\\n'
-        'def reads():\\n'
-        '    for e in ("MENTIONS",):\\n'
-        '        q = f"SELECT ?i WHERE {{ ?i {ns}{e}> ?c . ?c {ns}INSTANCE_OF> ?k }}"\\n'
-        'def writes():\\n'
-        '    return "INSERT DATA { <a> <https://campy.dev/ns#SECRET> 1 }"\\n'
+        'ns = "<https://campy.dev/ns#"\n'
+        'UP = "campy:IS_A|campy:BROADER"\n'
+        'def reads():\n'
+        '    for e in ("MENTIONS",):\n'
+        '        q = f"SELECT ?i WHERE {{ ?i {ns}{e}> ?c . ?c {ns}INSTANCE_OF> ?k }}"\n'
+        'def writes():\n'
+        '    return "INSERT DATA { <a> <https://campy.dev/ns#SECRET> 1 }"\n'
     )
     got = c.read_names_from_files(tmp_path)
     assert {"MENTIONS", "INSTANCE_OF", "IS_A", "BROADER"} <= got
