@@ -1,18 +1,22 @@
-## Description
-
-<!-- What does this PR do? Why? -->
-
 ## Principle
 
-<!-- Which principle in AGENTS.md this change serves (number + name). -->
+<!-- Which principle in PRINCIPLES.md this change serves (number + name). -->
 
 ## Lever and target
 
 <!-- What you changed (the lever) and which benchmark/questions it should move (the target). -->
 
+## Graph design
+
+<!-- The edge(s) this change reads or writes and the query that reads them (SPARQL or NamedQuery name), or "None — <reason>". See skills/campy-graph/SKILL.md "Design-review checklist". -->
+
 ## Score effect
 
 <!-- Gate table (suite | main | branch | gained | lost) on the published metric, or "None — <reason>" (e.g. docs-only, test-only, infra). -->
+
+## What
+
+<!-- What does this PR do, and why? -->
 
 ## Test Plan
 

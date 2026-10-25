@@ -20,8 +20,8 @@ import sys
 # Keep in sync with .github/scripts/check_pr_score_effect.py (a test enforces it).
 RELEVANT_PATHS = (
     "campy/brain/thalamus/",
-    "campy/brain/hippocampus/graph/",
-    "campy/brain/hippocampus/observations.py",
+    "campy/brain/hippocampus/",  # graph store, schema and capture (incl. graph/, observations.py)
+    "campy/brain/temporal_lobe/",  # capture: what gets written decides what can be answered
     "campy/brain/llm/",
     "campy/brain/brainstem/config.py",
 )
