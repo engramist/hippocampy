@@ -77,6 +77,9 @@ owl_properties = true
 # vs main 0.525, 7 gained / 8 lost (neutral); SHACL conformance 90.4% -> 95.1%.
 # CAMPY_OBSERVATIONS_ENTITIES=0 turns it off.
 entities = true
+# B522: record each Observation's subject and object Concepts as HAS_SUBJECT / HAS_OBJECT edges
+# (OBSERVATION_ABOUT stays). Off until gated. CAMPY_OBSERVATIONS_OBJECT_ROLES=1 turns it on.
+object_roles = false
 # B499: newer attribute value supersedes older by string rule. Off; owl_properties replaces it.
 supersede = false
 

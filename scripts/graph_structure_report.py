@@ -11,6 +11,9 @@ Per store and pooled, it reports:
   * SHACL conformance per node type (Observation, Message, Concept) against
     campy/brain/hippocampus/shapes/campy_shapes.ttl, with the top failing shapes;
   * % of Observations linked to a Concept (OBSERVATION_ABOUT);
+  * B522, object roles: the share of Observations with a HAS_SUBJECT / HAS_OBJECT edge
+    (the `observations.role_link_counts` NamedQuery); `--subject NAME [--predicate P]` lists what
+    that subject has as objects (the `observations.objects_of_subject` NamedQuery);
   * % of user Messages that MENTION a Concept (0 until B503 adds the edge);
   * Concept count, the share that are fragments (stopword-only or 1-2 chars), and
     the redundant-duplicate rate (labels equal after normalisation); both read the
@@ -79,6 +82,37 @@ def _rows(store, query: str) -> list[tuple]:
 def _count(store, query: str) -> int:
     rows = _rows(store, query)
     return int(rows[0][0]) if rows else 0
+
+
+def run_named(store, name: str, **params) -> list[dict]:
+    """Run a registered read NamedQuery's SPARQL on a read-only pyoxigraph store, with its params
+    bound exactly as the gateway binds them (so the report and the runtime read the same query)."""
+    from campy.brain.hippocampus.graph.oxigraph_client import _bind_params_to_sparql
+    from campy.brain.hippocampus.graph.queries import REGISTRY
+
+    query = REGISTRY.get(name)
+    if query.mutating or not query.sparql:
+        raise ValueError(f"{name} is not a SPARQL read query")
+    result = store.query(_bind_params_to_sparql(query.sparql, params))
+    names = [v.value for v in result.variables]
+    return [{n: (t.value if t is not None else None) for n, t in zip(names, row)} for row in result]
+
+
+def role_counts(store) -> dict:
+    """B522: Observations, and how many carry HAS_SUBJECT / HAS_OBJECT."""
+    row = run_named(store, "observations.role_link_counts")[0]
+    return {"observations": int(row["observations"]), "with_subject_edge": int(row["with_subject"]),
+            "with_object_edge": int(row["with_object"])}
+
+
+def objects_of_subject(store, subject: str, predicate: str | None = None) -> list[dict]:
+    """B522: what the Concept(s) labelled `subject` have as objects (`observations.objects_of_subject`)."""
+    ids = [r[0] for r in _rows(store, f'PREFIX campy: <{NS}> SELECT DISTINCT ?id WHERE {{ ?c a campy:Concept ; '
+                                      f'campy:text_raw ?l ; campy:concept_id ?id . FILTER(LCASE(STR(?l)) = LCASE("{subject.replace(chr(34), "")}")) }}')]
+    rows: list[dict] = []
+    for sid in ids:
+        rows += run_named(store, "observations.objects_of_subject", sid=sid, predicate=predicate)
+    return rows
 
 
 def to_rdflib(store):
@@ -195,6 +229,7 @@ def measure(path: str | Path, *, shacl: bool = True) -> dict:
     m: dict = {"store": str(path)}
     m["observations"] = q("?x a campy:Observation")
     m["obs_linked"] = q("?x a campy:Observation ; campy:OBSERVATION_ABOUT ?c")
+    m.update({k: v for k, v in role_counts(store).items() if k != "observations"})
     m["user_messages"] = q('?x a campy:Message ; campy:role "user"')
     m["user_msgs_mention"] = q('?x a campy:Message ; campy:role "user" ; campy:MENTIONS ?c')
 
@@ -244,7 +279,7 @@ def measure(path: str | Path, *, shacl: bool = True) -> dict:
 
 def pool(results: list[dict]) -> dict:
     out: dict = {"stores": len(results), "shacl": {t: {"total": 0, "nonconforming": 0, "warned": 0, "top": Counter()} for t in NODE_TYPES}}
-    for key in ("observations", "obs_linked", "user_messages", "user_msgs_mention", "concepts", "concept_fragments",
+    for key in ("observations", "obs_linked", "with_subject_edge", "with_object_edge", "user_messages", "user_msgs_mention", "concepts", "concept_fragments",
                 "concept_redundant", "has_attribute", "attr_name_value", "attr_structured",
                 "kinds", "kinds_with_alt", "kinds_duplicate", "entities", "entities_with_kind",
                 "attr_properties", "attr_props_functional", "attr_linked", "attr_typed", "attr_superseded",
@@ -274,6 +309,8 @@ def render_row(name: str, r: dict) -> list[str]:
         name,
         *(conformance(sh[t]) if sh else "-" for t in NODE_TYPES),
         pct(r["obs_linked"], r["observations"]),
+        pct(r["with_subject_edge"], r["observations"]),
+        pct(r["with_object_edge"], r["observations"]),
         pct(r["user_msgs_mention"], r["user_messages"]),
         str(r["concepts"]),
         pct(r["concept_fragments"], r["concepts"]),
@@ -293,7 +330,7 @@ def render_row(name: str, r: dict) -> list[str]:
     ]
 
 
-HEADER = ["store", "SHACL Obs", "SHACL Msg", "SHACL Concept", "Obs->Concept", "UserMsg MENTIONS",
+HEADER = ["store", "SHACL Obs", "SHACL Msg", "SHACL Concept", "Obs->Concept", "Obs HAS_SUBJECT", "Obs HAS_OBJECT", "UserMsg MENTIONS",
           "Concepts", "fragment", "dup", "attr name:value",
           "kinds", "kinds w/ altLabel", "dup kinds", "entities w/ kind",
           "attr props", "functional", "attr linked", "attr typed", "superseded", "functional violations",
@@ -324,8 +361,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("stores", nargs="+", help="store directories (Campy homes or brain.db dirs)")
     ap.add_argument("-v", "--verbose", action="store_true", help="per-store top failing shapes")
     ap.add_argument("--json", action="store_true", help="emit JSON instead of tables")
+    ap.add_argument("--subject", help="B522: list what this subject has as objects (HAS_SUBJECT -> HAS_OBJECT)")
+    ap.add_argument("--predicate", help="with --subject: only Observations with this predicate")
     ap.add_argument("--no-shacl", action="store_true", help="skip SHACL validation (faster; the count metrics are still computed)")
     args = ap.parse_args(argv)
+
+    if args.subject:
+        for s in args.stores:
+            rows = objects_of_subject(open_store(s), args.subject, args.predicate)
+            print(f"{s}: {len(rows)} object row(s) for {args.subject!r}"
+                  + (f", predicate {args.predicate!r}" if args.predicate else ""))
+            for r in rows:
+                print("  " + json.dumps(r, sort_keys=True))
+        return 0
 
     results, skipped = [], []
     for s in args.stores:

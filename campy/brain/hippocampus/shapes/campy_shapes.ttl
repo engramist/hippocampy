@@ -144,6 +144,15 @@ campy:ObservationShape a sh:NodeShape ;
         sh:path campy:OBSERVATION_ABOUT ; sh:name "OBSERVATION_ABOUT" ;
         sh:class campy:Concept ;
     ] ;
+    # B522: the role of the Concept an Observation names: at most one subject, at most one object.
+    sh:property [
+        sh:path campy:HAS_SUBJECT ; sh:name "HAS_SUBJECT" ;
+        sh:maxCount 1 ; sh:class campy:Concept ;
+    ] ;
+    sh:property [
+        sh:path campy:HAS_OBJECT ; sh:name "HAS_OBJECT" ;
+        sh:maxCount 1 ; sh:class campy:Concept ;
+    ] ;
     # B509: an attribute Observation states a value of at most one attribute property.
     sh:property [
         sh:path campy:HAS_PROPERTY ; sh:name "HAS_PROPERTY" ;

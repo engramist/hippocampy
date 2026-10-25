@@ -136,6 +136,8 @@
 {"_type": "rel", "_label": "DECISION_CHAIN", "_table": "DECISION_CHAIN", "_from_table": "Decision", "_from_pk": "decision-fix-1", "_to_table": "Decision", "_to_pk": "decision-fix-2", "session_id": "decision_chain-session_id-1", "step_number": 1}
 {"_type": "rel", "_label": "OBSERVATION_ABOUT", "_table": "OBSERVATION_ABOUT", "_from_table": "Observation", "_from_pk": "observation-fix-1", "_to_table": "Concept", "_to_pk": "concept-fix-1"}
 {"_type": "rel", "_label": "EVIDENCED_BY", "_table": "EVIDENCED_BY", "_from_table": "Observation", "_from_pk": "observation-fix-1", "_to_table": "Message", "_to_pk": "message-fix-1"}
+{"_type": "rel", "_label": "HAS_SUBJECT", "_table": "HAS_SUBJECT", "_from_table": "Observation", "_from_pk": "observation-fix-1", "_to_table": "Concept", "_to_pk": "concept-fix-1"}
+{"_type": "rel", "_label": "HAS_OBJECT", "_table": "HAS_OBJECT", "_from_table": "Observation", "_from_pk": "observation-fix-1", "_to_table": "Concept", "_to_pk": "concept-fix-1"}
 {"_type": "rel", "_label": "MENTIONS", "_table": "MENTIONS", "_from_table": "Message", "_from_pk": "message-fix-1", "_to_table": "Concept", "_to_pk": "concept-fix-1"}
 {"_type": "rel", "_label": "IS_A", "_table": "IS_A", "_from_table": "Concept", "_from_pk": "concept-fix-1", "_to_table": "Concept", "_to_pk": "concept-fix-2"}
 {"_type": "rel", "_label": "INSTANCE_OF", "_table": "INSTANCE_OF", "_from_table": "Concept", "_from_pk": "concept-fix-1", "_to_table": "Concept", "_to_pk": "concept-fix-2"}

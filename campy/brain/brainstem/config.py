@@ -121,6 +121,10 @@ _DEFAULT_CONFIG = {
         # the SHACL shapes before writing. Gate R93: neutral, 1 gained / 1 lost. If pyshacl/rdflib
         # cannot be imported the gate logs once and is skipped.
         "shacl_gate": True,
+        # B522 (default OFF; env CAMPY_OBSERVATIONS_OBJECT_ROLES=1 turns it on): each Observation
+        # records its subject and object Concepts as HAS_SUBJECT / HAS_OBJECT edges (OBSERVATION_ABOUT
+        # is unchanged). Gate pending.
+        "object_roles": False,
         "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
     },
     "compression": {
@@ -256,6 +260,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_SHACL_GATE": ("observations", "shacl_gate", _parse_bool),
     # B509: OWL attribute properties; functional properties drive supersession.
     "CAMPY_OWL_PROPERTIES": ("observations", "owl_properties", _parse_bool),
+    # B522: HAS_SUBJECT / HAS_OBJECT edges for each Observation's subject and object Concepts.
+    "CAMPY_OBSERVATIONS_OBJECT_ROLES": ("observations", "object_roles", _parse_bool),
     # B499: rule-based supersession of attribute Observations (default off).
     "CAMPY_OBSERVATIONS_SUPERSEDE": ("observations", "supersede", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
