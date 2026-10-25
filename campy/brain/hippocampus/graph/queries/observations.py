@@ -492,6 +492,26 @@ OBSERVATION_QUERIES: tuple[NamedQuery, ...] = (
             """,
     ),
     NamedQuery(
+        name="observations.instantiated_kinds",
+        cypher="""
+        MATCH (e:Concept)-[:INSTANCE_OF]->(:Concept)-[:BROADER*0..]->(k:Concept)
+        WHERE k.kind_scheme = 'kind' AND k.archived = false
+        RETURN DISTINCT k.concept_id AS concept_id
+        """,
+        params=(),
+        mutating=False,
+        description=("Kind Concepts that some entity is INSTANCE_OF, directly or through a narrower kind "
+                     "(BROADER*): the real categories of things. The ownership rule's ownable test."),
+        sparql="""
+            SELECT DISTINCT ?concept_id WHERE {
+              ?e (campy:INSTANCE_OF|campy:IS_A) ?k0 .
+              ?k0 campy:BROADER* ?k .
+              ?k a campy:Concept ; campy:concept_id ?concept_id ; campy:kind_scheme "kind" .
+              FILTER NOT EXISTS { ?k campy:archived true }
+            }
+            """,
+    ),
+    NamedQuery(
         name="observations.ownership_confirmations",
         cypher="""
         MATCH (o:Observation {predicate: 'owns', rule_version: $rule, archived: false})-[:HAS_SUBJECT]->(s:Concept {concept_id: $sid}),
