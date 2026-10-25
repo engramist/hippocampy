@@ -1,15 +1,11 @@
 # Graph terms declared in schema.py that no SPARQL read site uses (B518).
 # Ratchet: do not add lines; remove a line once something reads the term.
 # Regenerate: python .github/scripts/check_write_only_terms.py --update
-edge:ACTS_ON
 edge:ADJACENT_TO
 edge:ANCHORED_ON_ENTITY
 edge:ANCHORED_ON_GOAL
-edge:ANOMALY_DETECTED
-edge:APPLIED_PROCEDURE
 edge:APPLIES_TO_ARCHETYPE
 edge:ARC_EVENT_FROM_ARTIFACT
-edge:ARC_MECHANIC_REQUIRES
 edge:ARC_RUN_HAS_ARTIFACT
 edge:ARC_RUN_HAS_TASK
 edge:ARC_RUN_HAS_WORLD_MODEL_STEP
@@ -25,7 +21,6 @@ edge:CORRELATES_WITH
 edge:CO_MOVES_WITH
 edge:DATASET_BELONGS_TO_QUEST
 edge:DATASET_DERIVED_FROM
-edge:DESCRIBED_BY_DATASET
 edge:DISAPPEARED
 edge:DOCUMENTS
 edge:EXECUTED_AS
@@ -33,13 +28,9 @@ edge:GENERALIZES
 edge:HAS_HIDDEN_LABEL
 edge:HYPOTHESIZED_IN
 edge:IDENTIFIED_GAP_IN
-edge:INSTANCE_OF
 edge:IN_WORKSPACE
-edge:IS_A
-edge:MENTIONS
 edge:OBSERVED_IN
 edge:PRODUCED_HYPOTHESIS
-edge:REROUTED_FROM
 edge:RESPONDS_TO
 edge:SAME_COLOR_AS
 edge:STRUCTURALLY_SIMILAR
@@ -49,9 +40,7 @@ edge:TRIGGERED
 edge:UPDATES_PATHWAY
 edge:USED
 prop:access_mode
-prop:activated_at
 prop:alias_added
-prop:applied_at
 prop:aspect_ratio
 prop:attr_value_ref
 prop:bbox_max_col
@@ -62,7 +51,6 @@ prop:byte_end
 prop:byte_start
 prop:category
 prop:chunk_family
-prop:cluster_size
 prop:color_shifted
 prop:cols
 prop:compactness
@@ -85,11 +73,8 @@ prop:execution_id
 prop:expected_outcome
 prop:first_seen_at
 prop:game_type
-prop:gap_seconds
 prop:graduation_score
 prop:hostname
-prop:inferred_at
-prop:inferred_by
 prop:input_data
 prop:is_background
 prop:is_interactive
@@ -113,20 +98,13 @@ prop:provider
 prop:provider_id
 prop:provider_name
 prop:purpose_embedding
-prop:reason
-prop:requirement
-prop:rerouted_at
 prop:role_confidence
-prop:rows
 prop:schema_json
 prop:seq
 prop:snapshot_id
 prop:source_format
 prop:steps_used
-prop:success
 prop:symmetry_axes
 prop:target_color_id
 prop:tokens_in
 prop:tokens_out
-prop:type
-prop:weight

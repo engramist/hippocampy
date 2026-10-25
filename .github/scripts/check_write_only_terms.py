@@ -18,8 +18,16 @@ A term is READ when `campy:NAME` appears in a SPARQL read site:
   3. any *.rq file
   4. a string literal elsewhere under campy/ that contains SELECT, ASK or CONSTRUCT
      (excluding schema.py itself, which only declares)
-Not counted: Cypher text, and dynamic names built at run time (`campy:{table}`).
-A term read only that way shows up in the baseline; that is a known limit.
+  5. inside a python function whose strings include SELECT/ASK/CONSTRUCT (a read
+     function; INSERT/DELETE-only functions do not count): `campy:NAME`, the full IRI
+     `<https://campy.dev/ns#NAME>`, an f-string IRI piece `{ns}NAME>`, and a quoted
+     "NAME" literal that feeds such a query (`for edge in ("MENTIONS", ...)`)
+  6. a module-level string constant holding property paths (`campy:A|campy:B/...`)
+     that has no INSERT/DELETE in it
+Rules 5 and 6 are matched by bare name against the declared terms, so they can
+over-count a read (a quoted "type" in a read function); that errs toward fewer
+baseline entries, never toward a false CI failure.
+Not counted: Cypher text, and names built entirely at run time.
 
 Ratchet (same shape as scripts/check_cypher_ratchet.py): terms already write-only
 live in .github/scripts/write_only_terms_baseline.txt, one per line. CI fails when
@@ -108,6 +116,39 @@ def read_names_from_queries(queries):
     return out
 
 
+_WRITE_KW_RE = re.compile(r"\b(INSERT|DELETE)\b")
+_IRI_RE = re.compile(r"campy\.dev/ns#([A-Za-z_][A-Za-z0-9_]*)")
+_FSTR_IRI_RE = re.compile(r"(?<![\w.])([A-Za-z_][A-Za-z0-9_]*)>")
+_BARE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _strings(node):
+    return [n.value for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+
+
+def names_from_python(tree):
+    """Names read by python SPARQL strings (rules 4 to 6)."""
+    out = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            strs = _strings(node)
+            if not any(_READ_KW_RE.search(v) for v in strs):
+                continue
+            for v in strs:
+                out |= _names(v) | set(_IRI_RE.findall(v)) | set(_FSTR_IRI_RE.findall(v))
+                if _BARE_RE.match(v):
+                    out.add(v)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if _READ_KW_RE.search(node.value):
+                out |= _names(node.value) | set(_IRI_RE.findall(node.value))
+    for stmt in tree.body:  # rule 6: module-level path constants
+        if isinstance(stmt, (ast.Assign, ast.AnnAssign)) and stmt.value is not None:
+            for v in _strings(stmt.value):
+                if not _WRITE_KW_RE.search(v):
+                    out |= _names(v)
+    return out
+
+
 def read_names_from_files(root):
     """Names read by .rq files and by SPARQL read strings in python (rules 3 and 4)."""
     out = set()
@@ -123,10 +164,7 @@ def read_names_from_files(root):
             tree = ast.parse(py.read_text(encoding="utf-8"))
         except (SyntaxError, UnicodeDecodeError):
             continue
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                if _READ_KW_RE.search(node.value):
-                    out |= _names(node.value)
+        out |= names_from_python(tree)
     return out
 
 
