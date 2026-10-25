@@ -56,6 +56,11 @@ jobs:
       - name: Check Cypher ratchet
         run: python scripts/check_cypher_ratchet.py
 
+      # B518: fail on a new graph term (edge/property in schema.py) that no SPARQL
+      # query reads, relative to .github/scripts/write_only_terms_baseline.txt.
+      - name: Check write-only graph terms
+        run: python .github/scripts/check_write_only_terms.py
+
       # B406: fail if queries reference non-existent properties relative to
       # scripts/schema_conformance_baseline.json.
       - name: Check schema conformance
