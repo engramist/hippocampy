@@ -276,7 +276,8 @@ def test_b494_length_finish_warns_and_returns_text(caplog):
     rec = [r for r in caplog.records if "output cap" in r.getMessage()]
     assert rec and "ollama/m" in rec[0].getMessage()
     assert "2048" in rec[0].getMessage()
-    assert "Q" * 120 in rec[0].getMessage() and "Q" * 121 not in rec[0].getMessage()
+    # B519: the question is identified by length and hash, its text never reaches the log
+    assert "300 chars" in rec[0].getMessage() and "QQQ" not in rec[0].getMessage()
 
 
 def test_b494_normal_finish_does_not_warn(caplog):
