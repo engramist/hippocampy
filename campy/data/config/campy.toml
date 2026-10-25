@@ -80,6 +80,10 @@ entities = true
 # B522: record each Observation's subject and object Concepts as HAS_SUBJECT / HAS_OBJECT edges
 # (OBSERVATION_ABOUT stays). Off until gated. CAMPY_OBSERVATIONS_OBJECT_ROLES=1 turns it on.
 object_roles = false
+# B523: a grammar rule writes `owns` Observations (subject = the speaker, object = an existing Concept)
+# for first-person possession ("my dog Toby", "I adopted Buddy"). Off until gated.
+# CAMPY_OBSERVATIONS_OWNERSHIP_RULE=1 turns it on.
+ownership_rule = false
 # B499: newer attribute value supersedes older by string rule. Off; owl_properties replaces it.
 supersede = false
 

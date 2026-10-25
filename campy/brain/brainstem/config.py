@@ -125,6 +125,10 @@ _DEFAULT_CONFIG = {
         # records its subject and object Concepts as HAS_SUBJECT / HAS_OBJECT edges (OBSERVATION_ABOUT
         # is unchanged). Gate pending.
         "object_roles": False,
+        # B523 (default OFF; env CAMPY_OBSERVATIONS_OWNERSHIP_RULE=1 turns it on): a grammar rule writes
+        # `owns` Observations for first-person possession of an existing Concept ("my X Name", "I
+        # adopted Name"), whatever predicate the extractor chose. Gate pending.
+        "ownership_rule": False,
         "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
     },
     "compression": {
@@ -262,6 +266,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_OWL_PROPERTIES": ("observations", "owl_properties", _parse_bool),
     # B522: HAS_SUBJECT / HAS_OBJECT edges for each Observation's subject and object Concepts.
     "CAMPY_OBSERVATIONS_OBJECT_ROLES": ("observations", "object_roles", _parse_bool),
+    # B523: first-person possession rule writes `owns` Observations.
+    "CAMPY_OBSERVATIONS_OWNERSHIP_RULE": ("observations", "ownership_rule", _parse_bool),
     # B499: rule-based supersession of attribute Observations (default off).
     "CAMPY_OBSERVATIONS_SUPERSEDE": ("observations", "supersede", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),

@@ -438,6 +438,63 @@ OBSERVATION_QUERIES: tuple[NamedQuery, ...] = (
             ORDER BY ?occurred_at ?observation_id
             """,
     ),
+    # --- B523: the closed set of entities a turn can own -------------------------------
+    NamedQuery(
+        name="observations.message_concepts",
+        cypher="""
+        MATCH (m:Message {message_id: $mid})-[:MENTIONS]->(c:Concept)
+        WHERE c.archived = false AND c.kind_scheme IS NULL
+        RETURN DISTINCT c.concept_id AS concept_id, c.text_raw AS label
+        UNION
+        MATCH (o:Observation)-[:EVIDENCED_BY]->(m:Message {message_id: $mid}), (o)-[:OBSERVATION_ABOUT]->(c:Concept)
+        WHERE c.archived = false AND c.kind_scheme IS NULL
+        RETURN DISTINCT c.concept_id AS concept_id, c.text_raw AS label
+        """,
+        params=("mid",),
+        mutating=False,
+        description=("Entity Concepts (not kinds) a Message is linked to: MENTIONS from the Message, or "
+                     "OBSERVATION_ABOUT from an Observation it evidences. The ownership rule's closed set."),
+        sparql="""
+            SELECT DISTINCT ?concept_id ?label WHERE {
+              ?m a campy:Message ; campy:message_id ?mid .
+              { ?m campy:MENTIONS ?c }
+              UNION
+              { ?o campy:EVIDENCED_BY ?m ; campy:OBSERVATION_ABOUT ?c }
+              ?c a campy:Concept ; campy:concept_id ?concept_id ; campy:text_raw ?label .
+              FILTER NOT EXISTS { ?c campy:archived true }
+              FILTER NOT EXISTS { ?c campy:kind_scheme "kind" }
+            }
+            """,
+    ),
+    NamedQuery(
+        name="observations.messages_with_concepts",
+        cypher="""
+        MATCH (m:Message)-[:MENTIONS]->(c:Concept)
+        WHERE m.role = 'user' AND m.archived = false AND c.archived = false AND c.kind_scheme IS NULL
+        RETURN DISTINCT m.message_id AS message_id, m.occurred_at AS occurred_at
+        UNION
+        MATCH (o:Observation)-[:EVIDENCED_BY]->(m:Message), (o)-[:OBSERVATION_ABOUT]->(c:Concept)
+        WHERE m.role = 'user' AND m.archived = false AND c.archived = false AND c.kind_scheme IS NULL
+        RETURN DISTINCT m.message_id AS message_id, m.occurred_at AS occurred_at
+        """,
+        params=(),
+        mutating=False,
+        description="Live user Messages linked to at least one entity Concept (the ownership rule's backfill candidates)",
+        sparql="""
+            SELECT DISTINCT ?message_id ?occurred_at WHERE {
+              ?m a campy:Message ; campy:message_id ?message_id ; campy:role "user" .
+              FILTER NOT EXISTS { ?m campy:archived true }
+              OPTIONAL { ?m campy:occurred_at ?occurred_at }
+              { ?m campy:MENTIONS ?c }
+              UNION
+              { ?o campy:EVIDENCED_BY ?m ; campy:OBSERVATION_ABOUT ?c }
+              ?c a campy:Concept .
+              FILTER NOT EXISTS { ?c campy:archived true }
+              FILTER NOT EXISTS { ?c campy:kind_scheme "kind" }
+            }
+            ORDER BY ?occurred_at ?message_id
+            """,
+    ),
     NamedQuery(
         name="observations.touch_observation",
         cypher="""

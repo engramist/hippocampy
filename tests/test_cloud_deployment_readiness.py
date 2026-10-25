@@ -62,6 +62,7 @@ def test_every_documented_override_applies():
         "CAMPY_SKOS_VOCAB": "1",
         "CAMPY_OBSERVATIONS_SUPERSEDE": "1",
         "CAMPY_OBSERVATIONS_OBJECT_ROLES": "1",
+        "CAMPY_OBSERVATIONS_OWNERSHIP_RULE": "1",
     }
     assert set(env) == set(ENV_OVERRIDES), "test must cover every override"
     cfg = apply_env_overrides(_base(), env)
