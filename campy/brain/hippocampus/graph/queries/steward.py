@@ -93,6 +93,7 @@ def _for(rel: str) -> list[NamedQuery]:
               FILTER(?a != ?b)
               ?r rdf:reifies <<( ?a campy:{rel} ?b )>> ;
                  campy:link_source "steward" ; campy:link_status "candidate" ; campy:agreed_by ?any .
+              FILTER(?any IN ("wordnet", "second_model", "person"))
               {cycle}
             }}
             """,
@@ -138,6 +139,7 @@ KIND_STEWARD_QUERIES = [
               ?b a campy:Concept ; campy:concept_id ?pid .
               ?r rdf:reifies <<( ?a campy:BROADER ?b )>> ;
                  campy:link_source "wordnet" ; campy:link_status "disputed" ; campy:agreed_by ?any .
+              FILTER(?any IN ("second_model", "person"))
             }
             """,
     ),
@@ -259,7 +261,7 @@ KIND_STEWARD_QUERIES = [
         params=(),
         mutating=False,
         description="Open steward proposals (a candidate of its own, or a disputed WordNet link) argued from at least "
-                    "two different evidence sets and not yet agreed by recurrence: the same-proposal-twice route",
+                    "two different evidence sets and not yet marked recurrent: recorded to strengthen a promotion, never to make one",
         sparql="""
             SELECT ?relation ?lsrc ?child_id ?parent_id (COUNT(DISTINCT ?es) AS ?sets) WHERE {
               ?r rdf:reifies <<( ?a ?p ?b )>> ; campy:link_source ?lsrc ; campy:link_status ?st ; campy:evidence_set ?es .
@@ -276,12 +278,13 @@ KIND_STEWARD_QUERIES = [
         cypher="MATCH (a:Concept) RETURN a.concept_id AS child_id",
         params=(),
         mutating=False,
-        description="Steward proposals with an agreeing second source that are still open (candidate to promote, "
+        description="Steward proposals with an independent agreeing source (wordnet, second_model, person; recurrence alone does not count) that are still open (candidate to promote, "
                     "disputed WordNet link to reject)",
         sparql="""
             SELECT DISTINCT ?relation ?lsrc ?child_id ?parent_id WHERE {
               ?r rdf:reifies <<( ?a ?p ?b )>> ; campy:link_source ?lsrc ; campy:link_status ?st ; campy:agreed_by ?any .
               FILTER(?p IN (campy:BROADER, campy:INSTANCE_OF))
+              FILTER(?any IN ("wordnet", "second_model", "person"))
               FILTER((?lsrc = "steward" && ?st = "candidate") || (?lsrc = "wordnet" && ?st = "disputed"))
               ?a campy:concept_id ?child_id . ?b campy:concept_id ?parent_id .
               BIND(IF(?p = campy:BROADER, "BROADER", "INSTANCE_OF") AS ?relation)

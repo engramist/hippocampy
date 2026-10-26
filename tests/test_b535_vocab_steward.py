@@ -6,7 +6,7 @@ Real Oxigraph store, a scripted model (no network). Pins:
   nothing, the list holds only live kinds (never the kind itself or a kind below it);
 - candidates are reifiers that assert nothing: the B524 count, the walk and the kind vocabulary do not see them
   until promoted;
-- every promotion route (WordNet closure, recurrence over two evidence sets, a second model, a person), and
+- every promotion route (WordNet closure, a second model, a person); recurrence is recorded but never promotes alone; and
   no promotion without one;
 - review of a WordNet link: keep stores nothing; one reject is "disputed" and the link stays in the walk; a
   second source retracts it, the record stays, and WordNet's backfill does not put it back;
@@ -255,25 +255,32 @@ async def test_common_sense_link_wordnet_does_not_support_stays_a_candidate(db, 
     assert await count(gw, "c-pet") == 0
 
 
-async def test_route_recurrence_needs_two_different_evidence_sets(db, gw, no_wn):
-    await world(db, gw, dogs=3)                                              # one set of three
+async def test_recurrence_alone_never_promotes(db, gw, no_wn):
+    await world(db, gw, dogs=3)
     m = Model(pick={"dog": "pet"})
-    rep = await st.run_steward(gw, ON, tasks=("parent",), client=m, only={"dog"})
-    assert rep.promoted == 0 and (await status_of(gw, "dog", "pet"))[0] == "candidate"
+    await st.run_steward(gw, ON, tasks=("parent",), client=m, only={"dog"})
     await concept(gw, "c-d3", "Dog3")                                        # a fourth dog: a second set appears
     await kinds_mod.link_instance_of(gw, "c-d3", "c-dog")
     rep = await st.run_steward(gw, ON, tasks=("parent",), client=m, only={"dog"})
-    assert rep.agreed["recurrence"] == 1 and rep.promoted == 1
+    assert rep.agreed["recurrence"] == 1 and rep.promoted == 0
     status, source, agreed, sets = await status_of(gw, "dog", "pet")
-    assert (status, agreed, sets) == ("promoted", "recurrence", 2)
-    assert await count(gw, "c-pet") == 3
+    assert (status, agreed, sets) == ("candidate", "recurrence", 2)
+    assert await count(gw, "c-pet") == 0
+
+
+async def test_recurrence_strengthens_a_second_model_promotion(db, gw, no_wn):
+    await world(db, gw, dogs=6)
+    rep = await st.run_steward(gw, ON, tasks=("parent",), client=Model(pick={"dog": "pet"}),
+                               second_client=Model(pick={"dog": "pet"}), only={"dog"})
+    assert rep.promoted == 1
+    assert (await status_of(gw, "dog", "pet"))[2] == "recurrence,second_model"
 
 
 async def test_recurrence_in_one_run_asks_the_second_set_with_the_list_reversed(db, gw, no_wn):
     await world(db, gw, dogs=6)
     m = Model(pick={"dog": "pet"})
     rep = await st.run_steward(gw, ON, tasks=("parent",), client=m, only={"dog"})
-    assert rep.calls == 2 and rep.promoted == 1
+    assert rep.calls == 2 and rep.promoted == 0
     order = [re.findall(r"^\d+\. (.+)$", p, re.M) for p in m.prompts]
     assert order[0] == list(reversed(order[1]))
 
@@ -370,12 +377,13 @@ async def test_a_second_source_retracts_the_link_and_the_record_stays(db, gw, wn
     assert ("dog", "pet") not in await broader(gw)                              # WordNet's backfill does not put it back
 
 
-async def test_recurrence_retracts_a_disputed_link_and_a_disagreeing_second_model_does_not(db, gw, no_wn):
+async def test_recurrence_alone_does_not_retract_a_disputed_link(db, gw, no_wn):
     await wordnet_link(db, gw, dogs=6)
     rep = await st.run_steward(gw, ON, tasks=("review",), client=Model(verdicts={"dog -> pet": "reject"}),
                                second_client=Model())                           # the second model says keep
-    assert rep.calls == 2 and rep.rejected == 1                                  # two evidence sets recur
-    assert (await status_of(gw, "dog", "pet"))[2] == "recurrence" and ("dog", "pet") not in await broader(gw)
+    assert rep.calls == 2 and rep.rejected == 0                                  # two evidence sets recur
+    assert (await status_of(gw, "dog", "pet"))[:3] == ("disputed", "wordnet", "recurrence")
+    assert ("dog", "pet") in await broader(gw)
 
 
 async def test_a_disagreeing_second_model_leaves_it_disputed(db, gw, no_wn):

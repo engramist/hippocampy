@@ -21,11 +21,11 @@ The rules it works under (PRINCIPLES 3, and campy-graph rule 3):
     one it picked. A number outside the list, or a number whose echoed name is another kind's, is rejected and
     counted; there is no way to name a new kind or an id.
   * A DECLARED RULE promotes (`PROMOTION_RULE`): a proposal is promoted when an independent second source
-    agrees: (i) WordNet's hypernym closure contains the parent (`wordnet.hypernym_support`), (ii) the same
-    proposal recurs from two different evidence sets (different entities or turns, and the candidate list in the
-    opposite order), (iii) a second model family, when one is configured, picks the same answer. A person can also
-    agree (`agree`). A steward "reject" of a WordNet link retracts the link only when (ii) or (iii) agrees;
-    otherwise the link is "disputed" and stays in the walk.
+    agrees: (i) WordNet's hypernym closure contains the parent (`wordnet.hypernym_support`), or (iii) a second
+    model family, when one is configured, picks the same answer; a person can also agree (`agree`). (ii) The same
+    proposal recurring from two different evidence sets is recorded (`agreed_by recurrence`) and strengthens a
+    promotion, but never promotes alone (one model repeats an error that comes from the kind's label). A steward
+    "reject" of a WordNet link retracts the link only on (iii) or a person; otherwise it is "disputed" and stays.
   * Every vote and every agreeing source is recorded on the reifier (`steward.proposals` reads them).
   * The steward reads the graph only. It is never given a benchmark question or answer, and the model that
     writes the vocabulary is `[llm.steward]` (default the global `[llm]`) while the second source is
@@ -50,10 +50,12 @@ from campy.brain.hippocampus.concept_links import norm_key
 _logger = logging.getLogger(__name__)
 
 PROMOTION_RULE = (
-    "A steward proposal is promoted when an independent second source agrees: (i) WordNet's hypernym closure "
-    "contains the proposed parent, (ii) the same proposal recurs from two different evidence sets, or (iii) a "
-    "second model family, when configured, gives the same answer. A steward reject of a WordNet link retracts "
-    "the link only on (ii) or (iii); otherwise it is disputed and the link stays.")
+    "A steward proposal is promoted when an independent source agrees: (i) WordNet's hypernym closure contains the "
+    "proposed parent, or (iii) a second model family, when configured, gives the same answer (or a person agrees). "
+    "Recurrence of the same proposal from different evidence sets is recorded and strengthens such a promotion, but "
+    "never promotes alone: the same model repeats its error when it comes from the kind's label. A steward reject of a "
+    "WordNet link retracts the link only on a second model family (or a person); otherwise it is disputed and the "
+    "link stays.")
 
 SOURCE = "steward"
 ROUTES = ("wordnet", "recurrence", "second_model", "person")
@@ -462,8 +464,9 @@ async def _task_review(gw, kinds, ask, ask_second, report, budget, rounds, only)
 # --- the promotion rule -------------------------------------------------------------------
 
 async def apply_promotion_rule(gw: Any, kinds: dict[str, kinds_mod.Kind] | None, report: StewardReport | None = None) -> StewardReport:
-    """(i) WordNet agreement for open BROADER candidates, (ii) recurrence over evidence sets, then promote the
-    candidates that have an agreeing source and retract the disputed WordNet links that have one. Idempotent."""
+    """(i) WordNet agreement for open BROADER candidates, (ii) record recurrence over evidence sets (it
+    promotes nothing), then promote the candidates that have an independent agreeing source (wordnet, second model,
+    person) and retract the disputed WordNet links a second model or person agrees with. Idempotent."""
     report = report if report is not None else StewardReport()
     kinds = kinds if kinds is not None else await kinds_mod.load_kinds(gw)
     from campy.brain.temporal_lobe.lexicon import wordnet as wn_mod
