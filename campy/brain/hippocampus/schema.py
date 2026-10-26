@@ -1492,10 +1492,16 @@ REL_TABLES = [
     # B508: SKOS vocabulary for kinds (flag CAMPY_SKOS_VOCAB). INSTANCE_OF: entity ->
     # kind. BROADER: kind -> broader kind (skos:broader). CLOSE_MATCH: kind ~ kind
     # (skos:closeMatch, advisory). All property-free; a kind is Concept.kind_scheme='kind'.
-    "CREATE REL TABLE IF NOT EXISTS INSTANCE_OF (FROM Concept TO Concept)",
+    # B535: an INSTANCE_OF the vocabulary steward proposes is a reifier carrying the same annotations as BROADER's
+    # (see below) and asserts nothing until promoted.
+    "CREATE REL TABLE IF NOT EXISTS INSTANCE_OF (FROM Concept TO Concept, link_source STRING, link_status STRING, evidence_set STRING, steward_reason STRING, agreed_by STRING)",
     # B534: BROADER carries an optional `link_source` (who proposed the link: "wordnet"), stored as an
     # RDF-star annotation on the BROADER triple by kinds.link_broader_sourced; unannotated = the label rule.
-    "CREATE REL TABLE IF NOT EXISTS BROADER (FROM Concept TO Concept, FROM AttributeProperty TO AttributeProperty, link_source STRING)",
+    # B535: the steward's candidates and reviews are reifiers with link_status (candidate | promoted | rejected |
+    # disputed), evidence_set (one per set of examples it argued from), steward_reason and agreed_by (the
+    # independent source: wordnet | recurrence | second_model | person); read by queries/steward.py. A candidate's
+    # reifier does not assert the BROADER triple, so no walk sees it.
+    "CREATE REL TABLE IF NOT EXISTS BROADER (FROM Concept TO Concept, FROM AttributeProperty TO AttributeProperty, link_source STRING, link_status STRING, evidence_set STRING, steward_reason STRING, agreed_by STRING)",
     "CREATE REL TABLE IF NOT EXISTS CLOSE_MATCH (FROM Concept TO Concept, FROM AttributeProperty TO AttributeProperty)",
     # B509: an attribute Observation points at its AttributeProperty (one); BROADER / CLOSE_MATCH
     # also relate two AttributeProperties (skos:broader / skos:closeMatch between attribute names).

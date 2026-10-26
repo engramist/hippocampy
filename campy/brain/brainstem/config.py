@@ -141,6 +141,12 @@ _DEFAULT_CONFIG = {
         # installed) proposes BROADER links to existing kinds that are its hypernyms, and from existing
         # narrower kinds to it. Closed set; each link carries link_source "wordnet". Gate pending.
         "wordnet_kinds": False,
+        # B535 (default OFF; env CAMPY_VOCAB_STEWARD=1 turns it on): a vocabulary steward above the NLP pipeline
+        # proposes kind parents, entity kinds and reviews of WordNet links, each from a closed numbered list.
+        # Everything it writes is a candidate (invisible to retrieval) until an independent source agrees
+        # (WordNet's closure, the same proposal from two evidence sets, or a second model family set under
+        # [llm.steward_second]). The steward's own model is [llm.steward] (default: the global [llm]). Gate pending.
+        "vocab_steward": False,
         "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
     },
     "compression": {
@@ -286,6 +292,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_KIND_HYGIENE": ("observations", "kind_hygiene", _parse_bool),
     # B534: WordNet proposes BROADER links between existing kinds.
     "CAMPY_WORDNET_KINDS": ("observations", "wordnet_kinds", _parse_bool),
+    # B535: the vocabulary steward proposes kind links and entity kinds from closed choices.
+    "CAMPY_VOCAB_STEWARD": ("observations", "vocab_steward", _parse_bool),
     # B499: rule-based supersession of attribute Observations (default off).
     "CAMPY_OBSERVATIONS_SUPERSEDE": ("observations", "supersede", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
