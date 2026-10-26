@@ -128,6 +128,70 @@ KIND_QUERIES = [
             }
             """,
     ),
+    # --- B534 WordNet proposes BROADER links between existing kinds ---
+    NamedQuery(
+        name="kinds.link_broader_sourced",
+        cypher="""
+        MATCH (a:Concept {concept_id: $cid}), (b:Concept {concept_id: $pid})
+        MERGE (a)-[r:BROADER]->(b) SET r.link_source = $src
+        """,
+        params=("cid", "pid", "src"),
+        mutating=True,
+        description="Kind is narrower than a kind, with the source that proposed the link (RDF-star reifier "
+                    "campy:link_source on the BROADER triple); skipped when the pair is already related "
+                    "either way through BROADER (no duplicate path, no cycle)",
+        sparql="""
+            INSERT {
+              ?a campy:BROADER ?b .
+              _:r rdf:reifies <<( ?a campy:BROADER ?b )>> .
+              _:r campy:link_source ?src .
+            }
+            WHERE {
+              ?a a campy:Concept ; campy:concept_id ?cid .
+              ?b a campy:Concept ; campy:concept_id ?pid .
+              FILTER(?a != ?b)
+              FILTER NOT EXISTS { ?a campy:BROADER+ ?b }
+              FILTER NOT EXISTS { ?b campy:BROADER+ ?a }
+            }
+            """,
+    ),
+    NamedQuery(
+        name="kinds.broader_links_by_source",
+        cypher="""
+        MATCH (a:Concept)-[r:BROADER]->(b:Concept) WHERE a.kind_scheme = 'kind' AND a.archived = false
+        RETURN coalesce(r.link_source, 'label_rule') AS source, count(*) AS n
+        """,
+        params=(),
+        mutating=False,
+        description="Live kind BROADER links per source: 'wordnet' (campy:link_source on the reifier) or "
+                    "'label_rule' (no reifier: the head-noun rule, an extractor is_a, or B525 merges)",
+        sparql="""
+            SELECT ?source (COUNT(*) AS ?n) WHERE {
+              ?a a campy:Concept ; campy:kind_scheme "kind" ; campy:archived false ; campy:BROADER ?b .
+              OPTIONAL { ?r rdf:reifies <<( ?a campy:BROADER ?b )>> ; campy:link_source ?s }
+              BIND(COALESCE(?s, "label_rule") AS ?source)
+            } GROUP BY ?source
+            """,
+    ),
+    NamedQuery(
+        name="kinds.broader_links_detail",
+        cypher="""
+        MATCH (a:Concept)-[r:BROADER]->(b:Concept) WHERE a.kind_scheme = 'kind' AND a.archived = false
+        RETURN a.text_raw AS child, b.text_raw AS parent, coalesce(r.link_source, 'label_rule') AS source
+        """,
+        params=(),
+        mutating=False,
+        description="Every live kind BROADER link with its labels and source (child, parent, source)",
+        sparql="""
+            SELECT ?child ?parent ?source WHERE {
+              ?a a campy:Concept ; campy:kind_scheme "kind" ; campy:archived false ;
+                 campy:text_raw ?child ; campy:BROADER ?b .
+              ?b campy:text_raw ?parent .
+              OPTIONAL { ?r rdf:reifies <<( ?a campy:BROADER ?b )>> ; campy:link_source ?s }
+              BIND(COALESCE(?s, "label_rule") AS ?source)
+            }
+            """,
+    ),
     # --- B525 kind hygiene (scripts/consolidate_kinds.py; kinds.apply_hygiene) ---
     NamedQuery(
         name="kinds.instance_counts",

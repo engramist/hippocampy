@@ -55,6 +55,15 @@ The surface the model wrote stays as an altLabel, so lookup by the old wording s
 kinds that collapse to one label merge into one survivor, meta-noun kinds lose their
 INSTANCE_OF edges and are archived; nothing is deleted except those edges.
 
+WordNet (B534, flag `[observations] wordnet_kinds`, env `CAMPY_WORDNET_KINDS`, default off). The
+labels of two kinds already in the scheme often stand in a hypernym relation that no suffix rule sees
+("puppy" is a kind of "dog" is a kind of "animal"). `temporal_lobe/lexicon/wordnet.plan_links` reads that
+from WordNet (first/frequent senses only) and `link_broader_sourced` writes `child BROADER parent` with
+`campy:link_source "wordnet"` on the edge's RDF-star reifier, so a later steward can tell these links from
+the label rule's (`kinds.broader_links_by_source` reads the property). Closed set: only existing kinds are
+linked, no kind is ever created from WordNet. It runs when a kind is created (up, and down to existing
+narrower kinds) and as `scripts/backfill_wordnet_kinds.py` over a store.
+
 Retrieval (B503's walk, and B505's counts) follow `INSTANCE_OF` and `BROADER` in
 both directions and descend the `BROADER` closure, so "model kit" reaches every
 instance of every narrower kind. `RELATION_PATH_*` below are the SPARQL fragments
@@ -92,6 +101,11 @@ def skos_vocab_enabled(config: dict | None) -> bool:
 def kind_hygiene_enabled(config: dict | None) -> bool:
     """`[observations] kind_hygiene` (default false; env `CAMPY_KIND_HYGIENE=1` turns it on)."""
     return bool(((config or {}).get("observations") or {}).get("kind_hygiene", False))
+
+
+def wordnet_kinds_enabled(config: dict | None) -> bool:
+    """`[observations] wordnet_kinds` (default false; env `CAMPY_WORDNET_KINDS=1` turns it on)."""
+    return bool(((config or {}).get("observations") or {}).get("wordnet_kinds", False))
 
 
 def closematch_threshold(config: dict | None, default: float = DEFAULT_CLOSEMATCH_THRESHOLD) -> float:
@@ -369,6 +383,13 @@ async def link_instance_of(gw: Any, entity_id: str, kind_id: str) -> None:
 async def link_broader(gw: Any, narrower_id: str, broader_id: str) -> None:
     if narrower_id != broader_id:
         await gw.run("kinds.link_broader", cid=narrower_id, pid=broader_id)
+
+
+async def link_broader_sourced(gw: Any, narrower_id: str, broader_id: str, source: str) -> None:
+    """B534: `narrower BROADER broader`, with `campy:link_source` on the edge's reifier. A no-op when the
+    pair is already related through BROADER (the query checks), so a re-run adds nothing."""
+    if narrower_id != broader_id:
+        await gw.run("kinds.link_broader_sourced", cid=narrower_id, pid=broader_id, src=source)
 
 
 async def link_close_match(gw: Any, a: str, b: str) -> None:

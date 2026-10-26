@@ -344,7 +344,7 @@ EDGE_REIFICATION: dict[str, EdgeReification] = {
     "IS_A": "plain",
     # B508: SKOS vocabulary for kinds; property-free, MERGE writers (kinds.link_*).
     "INSTANCE_OF": "plain",
-    "BROADER": "plain",
+    "BROADER": "plain",   # B534: an optional link_source annotation is written by kinds.link_broader_sourced (SPARQL), not write_edge
     "CLOSE_MATCH": "plain",
     # B509: Observation -> AttributeProperty; property-free, MERGE writer (properties.link_property).
     "HAS_PROPERTY": "plain",
