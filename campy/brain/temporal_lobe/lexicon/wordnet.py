@@ -21,8 +21,9 @@ occurrences in a sense-tagged corpus. `noun_synsets(word, cutoff)` keeps the fir
 sense whose count for this word is at least `cutoff` x the first sense's count (a word whose first sense
 has no tagged occurrences keeps the first sense only). The default is the first sense only
 (`SENSE_FIRST_ONLY`); `SENSE_FREQUENT` (0.5) also keeps the senses at least half as frequent. Measured on
-two stores (PR body): the frequent-sense setting added 12 links on one and 3 on the other, nearly all wrong
-("character" under "concept", "gift" under "ability", "activity" under "state"), so the default is first sense.
+two stores (PR body): the frequent-sense setting added 9 links on one and 2 on the other, about three of
+eleven right ("character" under "concept", "landmark" under "event", "garden" under "group"), so the default
+is first sense.
 Both ends use it: a parent kind is matched only through a sense of ITS word that passes the same cutoff
 ("country" is a lemma of the synset "area", but not the dominant sense of "country").
 
