@@ -122,6 +122,10 @@ _DEFAULT_CONFIG = {
         # cannot be imported the gate logs once and is skipped.
         "shacl_gate": True,
         "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
+        # B538 (default off; env CAMPY_TURN_DATES=1 turns it on): every user turn's relative time
+        # expressions ("yesterday", "last week") are resolved by rule against the turn's date at
+        # capture (TimeMention nodes) and shown as "yesterday [= 2023-05-07]" in the bundle.
+        "turn_dates": False,
     },
     "compression": {
         "strategy": "two_lane",       # two_lane (Protected Lane zero loss + Bulk Lane lossy)
@@ -256,6 +260,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_SHACL_GATE": ("observations", "shacl_gate", _parse_bool),
     # B509: OWL attribute properties; functional properties drive supersession.
     "CAMPY_OWL_PROPERTIES": ("observations", "owl_properties", _parse_bool),
+    # B538: relative dates in user turns resolved by rule at capture and shown inline (default off).
+    "CAMPY_TURN_DATES": ("observations", "turn_dates", _parse_bool),
     # B499: rule-based supersession of attribute Observations (default off).
     "CAMPY_OBSERVATIONS_SUPERSEDE": ("observations", "supersede", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),

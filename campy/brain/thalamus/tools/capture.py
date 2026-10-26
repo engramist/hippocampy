@@ -329,6 +329,17 @@ async def notify_turn(params: dict, db: KuzuClient, config: dict, *,
         await gw.run("capture.set_message_source", message_id=message_id,
                      speaker=speaker, occurred_at=occurred_at)
 
+    # B538: with `[observations] turn_dates` on, every user turn's relative time
+    # expressions are resolved by rule against its date (occurred_at, else now)
+    # and stored as TimeMentions. Never fails the capture.
+    if role == "user":
+        from campy.brain.hippocampus.turn_mentions import turn_dates_enabled, write_turn_mentions
+        if turn_dates_enabled(config):
+            try:
+                await write_turn_mentions(gw, message_id, content, occurred_at or now)
+            except Exception:
+                _logger.warning("[TurnDates] msg=%s write failed", message_id[:8], exc_info=True)
+
     # B18: Update token estimate for this message
     if session_id != "unknown":
         from campy.brain.thalamus.working_memory import update_token_estimate, estimate_tokens
