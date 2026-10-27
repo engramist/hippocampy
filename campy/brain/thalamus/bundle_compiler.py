@@ -22,8 +22,10 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
+from urllib.parse import quote as _urlquote
 
 from campy.brain.hippocampus.concept_links import graph_linking_enabled, graph_linking_limit
+from campy.brain.hippocampus.turn_mentions import annotate_turn, load_mentions, turn_dates_enabled
 from campy.brain.hippocampus.kinds import skos_vocab_enabled
 from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.hippocampus.observations import (
@@ -690,13 +692,31 @@ def _resolved_when(row: dict) -> Optional[str]:
     return out
 
 
-def render_observation(row: dict) -> str:
+_MESSAGE_URI = "https://campy.dev/id/Message/"
+
+
+def _message_uri(message_id) -> str:
+    return _MESSAGE_URI + _urlquote(str(message_id), safe="") if message_id else ""
+
+
+async def _turn_mentions(db, config: dict, message_uris: list) -> dict:
+    """B538: the stored, resolved time expressions of the turns about to be shown,
+    by Message URI. Empty (no query) when `[observations] turn_dates` is off."""
+    if not turn_dates_enabled(config):
+        return {}
+    return await load_mentions(get_gateway(db), [str(u) for u in message_uris if u])
+
+
+def render_observation(row: dict, inline: bool = False, mentions: list | None = None) -> str:
     """One Observation as a bundle line, with who said it, when, and the words:
 
         [Caroline, 2023-05-08] did: went to a LGBTQ support group (when: yesterday → 2023-05-07) ("I went to a LGBTQ support group yesterday")
 
     The polarity of a negated / hypothetical / planned claim is spelled out
-    before the predicate. The subject is shown only when it is not the speaker."""
+    before the predicate. The subject is shown only when it is not the speaker.
+    `inline` (B538, `[observations] turn_dates`) writes the resolved date as
+    `[= date]` after the phrase, as the conversation turns do; `mentions` are
+    the stored time expressions of the evidence turn, resolved inside the quote."""
     get = row.get
     speaker = (get("speaker") or "").strip()
     stamp_who = speaker or "user"
@@ -716,10 +736,15 @@ def render_observation(row: dict) -> str:
     text = f"{stamp}{mark}{_POLARITY_MARKER.get(str(get('polarity') or 'asserted'), '')}{subj}{pred}: {obj}"
     if get("time_text"):
         resolved = _resolved_when(row)
-        text += f" (when: {get('time_text')} \u2192 {resolved})" if resolved else f" (when: {get('time_text')})"
+        if inline:
+            # B538: the same "phrase [= date]" form the conversation turns use
+            text += f" (when: {get('time_text')} [= {resolved}])" if resolved else f" (when: {get('time_text')})"
+        else:
+            text += f" (when: {get('time_text')} \u2192 {resolved})" if resolved else f" (when: {get('time_text')})"
     quote = " ".join(str(get("evidence_text") or "").split())
     if quote:
-        text += f' ("{quote[:_QUOTE_CHARS]}")'
+        shown = annotate_turn(quote[:_QUOTE_CHARS], mentions) if mentions else quote[:_QUOTE_CHARS]
+        text += f' ("{shown}")'
     return text
 
 
@@ -779,9 +804,13 @@ async def _stage_concept_walk(db, query: str, config: dict, exclude: set[str]) -
         if not rows:
             return None
         content, node_ids = [], []
+        mentions = await _turn_mentions(db, config, [
+            (r.get("node_id") if r.get("kind") != "Observation" else _message_uri(r.get("evidence_ref")))
+            for r in rows])
+        inline = turn_dates_enabled(config)
         for r in rows:
             if r.get("kind") == "Observation":
-                text = render_observation(r)
+                text = render_observation(r, inline=inline, mentions=mentions.get(_message_uri(r.get("evidence_ref"))))
                 node_ids.append(str(r.get("observation_id") or r.get("node_id")))
                 content.append({
                     "text": text, "type": "Observation", "observation_id": r.get("observation_id"),
@@ -792,6 +821,7 @@ async def _stage_concept_walk(db, query: str, config: dict, exclude: set[str]) -
                 text = str(r.get("text") or "")
                 if len(text) > _WALK_MESSAGE_CHARS:
                     text = text[:_WALK_MESSAGE_CHARS].rstrip() + " ..."
+                text = annotate_turn(text, mentions.get(str(r.get("node_id"))))
                 node_ids.append(str(r.get("node_id")))
                 content.append({
                     "text": conversation_stamp(r.get("speaker"), r.get("created_at")) + text,
@@ -846,13 +876,16 @@ async def _stage_observations(db, query: str, config: dict) -> Optional[BundleSe
         if str((config.get("retrieval", {}) or {}).get("conversation_order", "time")).lower() != "rank":
             rows = sorted(rows, key=lambda r: str(r.get("observed_at") or ""))
         content, node_ids = [], []
+        inline = turn_dates_enabled(config)
+        mentions = await _turn_mentions(db, config, [_message_uri(r.get("evidence_ref")) for r in rows])
         for r in rows:
             try:
                 confidence = float(r.get("confidence")) if r.get("confidence") is not None else 0.5
             except (TypeError, ValueError):
                 confidence = 0.5
             content.append({
-                "text": render_observation(r), "type": "Observation",
+                "text": render_observation(r, inline=inline, mentions=mentions.get(_message_uri(r.get("evidence_ref")))),
+                "type": "Observation",
                 "observation_id": r.get("observation_id"), "evidence_ref": r.get("evidence_ref"),
                 "polarity": r.get("polarity"), "confidence": confidence, "pathway_strength": 0.5,
             })
@@ -979,11 +1012,15 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
                 query_embedding=query_embedding, query_text=query, limit=limit, order=order, **extra,
             )
         content, node_ids = [], []
+        # B538: the resolved dates of the relative time expressions in these turns
+        mentions = await _turn_mentions(db, config, [
+            (r.get("node_id") if isinstance(r, dict) else None) for r in (rows or [])])
         for r in (rows or []):
             get = r.get if isinstance(r, dict) else (lambda k, d=None: d)
             text, created = get("text"), get("created_at") or ""
             if not text:
                 continue
+            text = annotate_turn(text, mentions.get(str(get("node_id"))))
             # B472: the speaker, when the turn named one, else the role
             stamp = conversation_stamp(get("speaker"), created)
             content.append({
