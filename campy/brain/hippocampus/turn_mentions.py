@@ -1,7 +1,7 @@
 """
 B538: relative dates in user turns, resolved by rule and stored in the graph.
 
-Behind `[observations] turn_dates` (default false; env `CAMPY_TURN_DATES=1`).
+Behind `[observations] turn_dates` (on in the shipped config; env `CAMPY_TURN_DATES=0` turns it off).
 
 Write: `write_turn_mentions(gw, message_id, text, anchor)` finds the relative time
 expressions of one user turn (`temporal_lobe.observations.turn_dates`), resolves
@@ -33,7 +33,7 @@ TURN_DATES_SUFFIX = ("; a bracketed [= date] after a time phrase is that phrase 
 
 
 def turn_dates_enabled(config: dict | None) -> bool:
-    """`[observations] turn_dates` (default false; env `CAMPY_TURN_DATES=1` turns it on)."""
+    """`[observations] turn_dates` (on in the shipped config; a config without the key is off)."""
     return bool(((config or {}).get("observations") or {}).get("turn_dates", False))
 
 
