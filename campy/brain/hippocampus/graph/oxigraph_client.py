@@ -344,6 +344,8 @@ EDGE_REIFICATION: dict[str, EdgeReification] = {
     "CLOSE_MATCH": "plain",
     # B509: Observation -> AttributeProperty; property-free, MERGE writer (properties.link_property).
     "HAS_PROPERTY": "plain",
+    # B538: Message -> TimeMention; property-free, idempotent writer (turn_mentions.upsert).
+    "HAS_TIME_MENTION": "plain",
     "PLANNED_IN": "plain",
     "PRODUCED_HYPOTHESIS": "plain",
     "PRODUCED_LESSON": "plain",
