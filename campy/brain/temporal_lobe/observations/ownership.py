@@ -136,6 +136,7 @@ class OwnershipStats:
     kinds_reused: int = 0
     kinds_broader: int = 0
     kinds_close_match: int = 0
+    kinds_dropped_meta: int = 0   # B525: a proposed kind was a meta-noun (name, thing, ...) and dropped
     kind_alt_labels: int = 0
     kinds_linked: int = 0
 
@@ -656,7 +657,7 @@ async def apply_to_message(db: Any, config: dict, message_id: str, stats: Owners
         if m.concept_id is None:
             # a proper noun the turn grounds as possessed: reuse a Concept of that name or create one
             from campy.brain.hippocampus.concept_links import concept_index
-            from campy.brain.hippocampus.kinds import closematch_threshold, skos_vocab_enabled
+            from campy.brain.hippocampus.kinds import closematch_threshold, kind_hygiene_enabled, skos_vocab_enabled
             from campy.brain.temporal_lobe.observations import entities as ent
 
             skos = skos_vocab_enabled(config)
@@ -673,7 +674,7 @@ async def apply_to_message(db: Any, config: dict, message_id: str, stats: Owners
             stats.entities_linked += 1
             if m.kind:
                 await _link_kind(gw, cid, m.kind, index, stats, skos=skos, embedding_model=embedding_model,
-                                 closematch=closematch_threshold(config))
+                                 closematch=closematch_threshold(config), hygiene=kind_hygiene_enabled(config))
         stats.firings += 1
         draft = obs.ObservationDraft(
             evidence_ref=message_id, evidence_text=m.quote, subject_text="I", predicate="owns",
@@ -741,14 +742,15 @@ async def _confirmed_for_coordination(gw: Any, speaker_id: str) -> set[str]:
 
 
 async def _link_kind(gw: Any, entity_id: str, kind: str, index: dict, stats: OwnershipStats, *,
-                     skos: bool, embedding_model: str, closematch: float) -> None:
+                     skos: bool, embedding_model: str, closematch: float,
+                     hygiene: bool = False) -> None:
     """The kind of a created entity, through the same path entities.write_entity uses."""
     from campy.brain.hippocampus import kinds as kinds_mod
     from campy.brain.temporal_lobe.observations import entities as ent
 
     if skos:
         kind_id = await ent.resolve_kind(gw, kind, index, stats, embedding_model=embedding_model,
-                                         closematch=closematch)
+                                         closematch=closematch, hygiene=hygiene)
         if kind_id and kind_id != entity_id:
             await kinds_mod.link_instance_of(gw, entity_id, kind_id)
             stats.kinds_linked += 1

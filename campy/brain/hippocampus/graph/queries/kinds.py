@@ -128,4 +128,134 @@ KIND_QUERIES = [
             }
             """,
     ),
+    # --- B525 kind hygiene (scripts/consolidate_kinds.py; kinds.apply_hygiene) ---
+    NamedQuery(
+        name="kinds.instance_counts",
+        cypher="""
+        MATCH (x:Concept)-[:INSTANCE_OF]->(k:Concept) WHERE k.kind_scheme = 'kind'
+        RETURN k.concept_id AS concept_id, count(DISTINCT x) AS n
+        """,
+        params=(),
+        mutating=False,
+        description="INSTANCE_OF members per kind Concept",
+        sparql="""
+            SELECT ?concept_id (COUNT(DISTINCT ?x) AS ?n) WHERE {
+              ?k a campy:Concept ; campy:concept_id ?concept_id ; campy:kind_scheme "kind" .
+              ?x campy:INSTANCE_OF ?k .
+            } GROUP BY ?concept_id
+            """,
+    ),
+    NamedQuery(
+        name="kinds.set_kind_label",
+        cypher="MATCH (c:Concept {concept_id: $cid}) SET c.text_raw = $txt",
+        params=("cid", "txt"),
+        mutating=True,
+        description="Replace a kind Concept's prefLabel (text_raw)",
+        sparql="""
+            DELETE { ?c campy:text_raw ?old }
+            INSERT { ?c campy:text_raw ?txt }
+            WHERE { ?c a campy:Concept ; campy:concept_id ?cid ; campy:text_raw ?old }
+            """,
+    ),
+    NamedQuery(
+        name="kinds.merge_instance_of",
+        cypher="""
+        MATCH (x:Concept)-[r:INSTANCE_OF]->(l:Concept {concept_id: $lid}), (s:Concept {concept_id: $sid})
+        DELETE r MERGE (x)-[:INSTANCE_OF]->(s)
+        """,
+        params=("lid", "sid"),
+        mutating=True,
+        description="Re-point every INSTANCE_OF edge of a merged kind to the surviving kind",
+        sparql="""
+            DELETE { ?x campy:INSTANCE_OF ?l }
+            INSERT { ?x campy:INSTANCE_OF ?s }
+            WHERE {
+              ?l a campy:Concept ; campy:concept_id ?lid .
+              ?s a campy:Concept ; campy:concept_id ?sid .
+              ?x campy:INSTANCE_OF ?l .
+              FILTER(?x != ?s)
+            }
+            """,
+    ),
+    NamedQuery(
+        name="kinds.merge_broader_up",
+        cypher="""
+        MATCH (l:Concept {concept_id: $lid})-[r:BROADER]->(p:Concept), (s:Concept {concept_id: $sid})
+        DELETE r MERGE (s)-[:BROADER]->(p)
+        """,
+        params=("lid", "sid"),
+        mutating=True,
+        description="A merged kind's BROADER edges now leave the surviving kind",
+        sparql="""
+            DELETE { ?l campy:BROADER ?p }
+            INSERT { ?s campy:BROADER ?p }
+            WHERE {
+              ?l a campy:Concept ; campy:concept_id ?lid .
+              ?s a campy:Concept ; campy:concept_id ?sid .
+              ?l campy:BROADER ?p .
+              FILTER(?p != ?s)
+            }
+            """,
+    ),
+    NamedQuery(
+        name="kinds.merge_broader_down",
+        cypher="""
+        MATCH (c:Concept)-[r:BROADER]->(l:Concept {concept_id: $lid}), (s:Concept {concept_id: $sid})
+        DELETE r MERGE (c)-[:BROADER]->(s)
+        """,
+        params=("lid", "sid"),
+        mutating=True,
+        description="Kinds narrower than a merged kind are now narrower than the surviving kind",
+        sparql="""
+            DELETE { ?c campy:BROADER ?l }
+            INSERT { ?c campy:BROADER ?s }
+            WHERE {
+              ?l a campy:Concept ; campy:concept_id ?lid .
+              ?s a campy:Concept ; campy:concept_id ?sid .
+              ?c campy:BROADER ?l .
+              FILTER(?c != ?s)
+            }
+            """,
+    ),
+    NamedQuery(
+        name="kinds.merge_alt_labels",
+        cypher="""
+        MATCH (l:Concept {concept_id: $lid})-[r:HAS_ALT_LABEL]->(a:Label), (s:Concept {concept_id: $sid})
+        DELETE r MERGE (s)-[:HAS_ALT_LABEL]->(a)
+        """,
+        params=("lid", "sid"),
+        mutating=True,
+        description="A merged kind's altLabels move to the surviving kind",
+        sparql="""
+            DELETE { ?l campy:HAS_ALT_LABEL ?a }
+            INSERT { ?s campy:HAS_ALT_LABEL ?a }
+            WHERE {
+              ?l a campy:Concept ; campy:concept_id ?lid .
+              ?s a campy:Concept ; campy:concept_id ?sid .
+              ?l campy:HAS_ALT_LABEL ?a .
+            }
+            """,
+    ),
+    NamedQuery(
+        name="kinds.drop_instance_of",
+        cypher="MATCH (:Concept)-[r:INSTANCE_OF]->(k:Concept {concept_id: $kid}) DELETE r",
+        params=("kid",),
+        mutating=True,
+        description="Remove the INSTANCE_OF edges that point at a meta-noun kind (plain edges have no archive form)",
+        sparql="""
+            DELETE { ?x campy:INSTANCE_OF ?k }
+            WHERE { ?k a campy:Concept ; campy:concept_id ?kid . ?x campy:INSTANCE_OF ?k . }
+            """,
+    ),
+    NamedQuery(
+        name="kinds.detach_alt_label",
+        cypher="MATCH (:Concept {concept_id: $cid})-[r:HAS_ALT_LABEL]->(l:Label {text: $txt}) DELETE r",
+        params=("cid", "txt"),
+        mutating=True,
+        description="Detach one altLabel from a kind (the Label node stays; it only stops naming this kind)",
+        sparql="""
+            DELETE { ?k campy:HAS_ALT_LABEL ?l }
+            WHERE { ?k a campy:Concept ; campy:concept_id ?cid ; campy:HAS_ALT_LABEL ?l . ?l campy:text ?txt . }
+            """,
+    ),
 ]
