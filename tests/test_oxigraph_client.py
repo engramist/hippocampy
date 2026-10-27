@@ -107,7 +107,7 @@ def test_edge_reification_counts():
     # nobody noticing.
     from collections import Counter
     counts = Counter(EDGE_REIFICATION.values())
-    assert counts["plain"] == 62  # B522: +HAS_SUBJECT, +HAS_OBJECT; B472 Phase 3a: +EVIDENCED_BY, +OBSERVATION_ABOUT; B503: +MENTIONS, +IS_A; B508: +INSTANCE_OF, +BROADER, +CLOSE_MATCH; B509: +HAS_PROPERTY
+    assert counts["plain"] == 63  # B522: +HAS_SUBJECT, +HAS_OBJECT; B472 Phase 3a: +EVIDENCED_BY, +OBSERVATION_ABOUT; B503: +MENTIONS, +IS_A; B508: +INSTANCE_OF, +BROADER, +CLOSE_MATCH; B509: +HAS_PROPERTY; B538: +HAS_TIME_MENTION
     assert counts["star"] == 30  # B430: DERIVED_FROM_FACT, REQUIRES_ENTITY newly classified
     assert counts["occurrence"] == 15
     assert len(UNCLASSIFIED_ESCALATED_TABLES) == 13  # B430: 15 -> 13

@@ -138,6 +138,10 @@ _DEFAULT_CONFIG = {
         # never a kind. Gate pending.
         "kind_hygiene": False,
         "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
+        # B538 (default off; env CAMPY_TURN_DATES=1 turns it on): every user turn's relative time
+        # expressions ("yesterday", "last week") are resolved by rule against the turn's date at
+        # capture (TimeMention nodes) and shown as "yesterday [= 2023-05-07]" in the bundle.
+        "turn_dates": False,
     },
     "compression": {
         "strategy": "two_lane",       # two_lane (Protected Lane zero loss + Bulk Lane lossy)
@@ -280,6 +284,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_OBSERVATIONS_OWNERSHIP_RULE": ("observations", "ownership_rule", _parse_bool),
     # B525: kind labels are clean singular nouns; meta-nouns are never kinds.
     "CAMPY_KIND_HYGIENE": ("observations", "kind_hygiene", _parse_bool),
+    # B538: relative dates in user turns resolved by rule at capture and shown inline (default off).
+    "CAMPY_TURN_DATES": ("observations", "turn_dates", _parse_bool),
     # B499: rule-based supersession of attribute Observations (default off).
     "CAMPY_OBSERVATIONS_SUPERSEDE": ("observations", "supersede", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
