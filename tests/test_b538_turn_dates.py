@@ -275,12 +275,23 @@ def test_observation_when_and_quote_use_the_same_bracket_form():
     assert '("I went to the group yesterday [= 2023-05-07]")' in new
 
 
-def test_the_flag_defaults_off_and_has_an_env_switch(monkeypatch):
+def test_the_flag_defaults_on_and_has_an_env_switch(monkeypatch):
     monkeypatch.delenv("CAMPY_TURN_DATES", raising=False)
-    assert tm.turn_dates_enabled(load_config()) is False
-    monkeypatch.setenv("CAMPY_TURN_DATES", "1")
     assert tm.turn_dates_enabled(load_config()) is True
+    monkeypatch.setenv("CAMPY_TURN_DATES", "0")
+    assert tm.turn_dates_enabled(load_config()) is False
     assert tm.turn_dates_enabled(None) is False
+
+
+def test_the_packaged_config_ships_it_on():
+    import sys
+    from pathlib import Path
+    if sys.version_info >= (3, 11):
+        import tomllib
+    else:  # pragma: no cover
+        import tomli as tomllib
+    packaged = Path(__file__).resolve().parent.parent / "campy" / "data" / "config" / "campy.toml"
+    assert tomllib.loads(packaged.read_text())["observations"]["turn_dates"] is True
 
 
 def test_ask_prompt_gains_one_line_only_with_the_flag(monkeypatch):
