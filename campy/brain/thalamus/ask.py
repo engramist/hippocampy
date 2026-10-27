@@ -174,6 +174,7 @@ def _bundle_to_prompt(bundle, query: str, config: Optional[dict] = None) -> str:
     unescaped — escaping it again at this call site would double-escape it.
     """
     from campy.brain.thalamus.memory_formatter import format_memory_with_boundary
+    from campy.brain.hippocampus.turn_mentions import TURN_DATES_SUFFIX, turn_dates_enabled
 
     parts = [f"Query: {query}\n\nContext from memory:\n"]
     has_content = False
@@ -184,6 +185,9 @@ def _bundle_to_prompt(bundle, query: str, config: Optional[dict] = None) -> str:
             description = _OBSERVATIONS_DESCRIPTION
         if section_type == "conversation" and getattr(section, "order", "") == "rank":
             description = _CONVERSATION_DESCRIPTION_RANK
+        if turn_dates_enabled(config) and (section_type in ("conversation", "linked") or (
+                section_type == "semantic" and getattr(section, "variant", "") == "observations")):
+            description += TURN_DATES_SUFFIX     # B538: one line, no other wording change
         rendered_items = []
         for item in section.content:
             if not isinstance(item, dict):
