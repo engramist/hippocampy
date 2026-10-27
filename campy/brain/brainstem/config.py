@@ -126,10 +126,11 @@ _DEFAULT_CONFIG = {
         # is unchanged). Gate pending.
         "object_roles": False,
         "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
-        # B538 (default off; env CAMPY_TURN_DATES=1 turns it on): every user turn's relative time
+        # B538 (default ON; env CAMPY_TURN_DATES=0 turns it off): every user turn's relative time
         # expressions ("yesterday", "last week") are resolved by rule against the turn's date at
         # capture (TimeMention nodes) and shown as "yesterday [= 2023-05-07]" in the bundle.
-        "turn_dates": False,
+        # Gate R104 vs R103 (unseen LoCoMo): 0.450 -> 0.503, 28 gained / 12 lost, all 5 conversations up.
+        "turn_dates": True,
     },
     "compression": {
         "strategy": "two_lane",       # two_lane (Protected Lane zero loss + Bulk Lane lossy)
@@ -266,7 +267,7 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_OWL_PROPERTIES": ("observations", "owl_properties", _parse_bool),
     # B522: HAS_SUBJECT / HAS_OBJECT edges for each Observation's subject and object Concepts.
     "CAMPY_OBSERVATIONS_OBJECT_ROLES": ("observations", "object_roles", _parse_bool),
-    # B538: relative dates in user turns resolved by rule at capture and shown inline (default off).
+    # B538: relative dates in user turns resolved by rule at capture and shown inline (default on).
     "CAMPY_TURN_DATES": ("observations", "turn_dates", _parse_bool),
     # B499: rule-based supersession of attribute Observations (default off).
     "CAMPY_OBSERVATIONS_SUPERSEDE": ("observations", "supersede", _parse_bool),
