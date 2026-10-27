@@ -228,3 +228,28 @@ def plan_links(kinds: dict[str, Any], *, involving: set[str] | None = None,
                 continue
             out.append(WordNetLink(cid, pid, child.pref, kinds[pid].pref, anc.path))
     return out
+
+
+def hypernym_support(child_label: str, parent_keys: set[str], cutoff: float = SENSE_CUTOFF) -> list[str] | None:
+    """B535: the synset path from the child's sense up to a hypernym that one of `parent_keys` (norm_key forms of the
+    parent kind's label and altLabels) names, or None. The same sense policy as `plan_links` (the child's first
+    sense; the parent's word must mean that synset in its dominant sense), but ANY ancestor counts, not only the
+    nearest one: this is the independent check of a proposal someone else made, not a proposal. None without WordNet."""
+    if not available() or not parent_keys:
+        return None
+    syns: list[Any] = []
+    for word in head_words(child_label):
+        syns = noun_synsets(word, cutoff)
+        if syns:
+            break
+    if not syns:
+        return None
+    wanted = {k for k in parent_keys if k and k not in _TOO_GENERAL}
+    own = {norm_key(l.name().replace("_", " ")) for s in syns for l in s.lemmas()}
+    for anc in sorted(hypernym_closure(syns).values(), key=lambda a: (a.distance, a.synset)):
+        for key in anc.keys & wanted:
+            if key in own:
+                continue
+            if anc.synset in {s.name() for s in noun_synsets(key.replace(" ", "_"), cutoff)}:
+                return anc.path
+    return None

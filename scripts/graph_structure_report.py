@@ -24,6 +24,8 @@ Per store and pooled, it reports:
     altLabel with another kind: what consolidation should drive to 0), and the share
     of entities (gist_class "Entity") that have an instance-of kind; and (B534) the live kind
     BROADER links per source, "wordnet" or "label_rule" (the `kinds.broader_links_by_source` query);
+    and (B535) the vocabulary steward's records per relation, source and status (candidate, promoted,
+    rejected, disputed: the `steward.status_counts` query);
   * % of has_attribute Observations whose object parses as "name: value", and the
     count whose object is a stringified dict/list (B506);
   * B509, attribute properties: the number of AttributeProperty nodes, the share that are
@@ -251,6 +253,9 @@ def measure(path: str | Path, *, shacl: bool = True) -> dict:
     m.update(kind_metrics(g))
     # B534: live kind BROADER links per source ('wordnet' vs 'label_rule'), by the registered query
     m["broader_by_source"] = {r["source"]: int(r["n"]) for r in run_named(store, "kinds.broader_links_by_source")}
+    # B535: the vocabulary steward's decision records per relation / source / status (`steward.status_counts`)
+    m["steward"] = {f"{r['relation']}/{r['source']}/{r['status']}": int(r["n"])
+                    for r in run_named(store, "steward.status_counts")}
     m.update(attribute_metrics(store, g, q))
 
     m["shacl"] = {}
@@ -289,6 +294,7 @@ def pool(results: list[dict]) -> dict:
                 "functional_violations", "broader_cycles", "broader_redundant", "owl_inconsistencies"):
         out[key] = sum(r[key] for r in results)
     out["broader_by_source"] = dict(sum((Counter(r.get("broader_by_source", {})) for r in results), Counter()))
+    out["steward"] = dict(sum((Counter(r.get("steward", {})) for r in results), Counter()))
     for r in results:
         for t, d in r["shacl"].items():
             p = out["shacl"][t]
@@ -404,6 +410,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Reasoning (skos:broader): cycles {pooled['broader_cycles']}, redundant edges {pooled['broader_redundant']}, "
           f"owlrl inconsistencies {pooled['owl_inconsistencies']}")
     print(f"Kind BROADER links by source (B534): {pooled['broader_by_source'] or 'none'}")
+    print(f"Steward records by relation/source/status (B535): {pooled['steward'] or 'none'}")
     print("Top failing shapes (pooled):")
     print("\n".join(top_failures(pooled)) or "  none")
     if args.verbose:

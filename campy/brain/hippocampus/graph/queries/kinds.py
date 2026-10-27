@@ -139,7 +139,7 @@ KIND_QUERIES = [
         mutating=True,
         description="Kind is narrower than a kind, with the source that proposed the link (RDF-star reifier "
                     "campy:link_source on the BROADER triple); skipped when the pair is already related "
-                    "either way through BROADER (no duplicate path, no cycle)",
+                    "either way through BROADER (no duplicate path, no cycle) or when a steward rejected it (B535)",
         sparql="""
             INSERT {
               ?a campy:BROADER ?b .
@@ -152,6 +152,7 @@ KIND_QUERIES = [
               FILTER(?a != ?b)
               FILTER NOT EXISTS { ?a campy:BROADER+ ?b }
               FILTER NOT EXISTS { ?b campy:BROADER+ ?a }
+              FILTER NOT EXISTS { ?rej rdf:reifies <<( ?a campy:BROADER ?b )>> ; campy:link_status "rejected" }
             }
             """,
     ),
@@ -168,7 +169,8 @@ KIND_QUERIES = [
         sparql="""
             SELECT ?source (COUNT(*) AS ?n) WHERE {
               ?a a campy:Concept ; campy:kind_scheme "kind" ; campy:archived false ; campy:BROADER ?b .
-              OPTIONAL { ?r rdf:reifies <<( ?a campy:BROADER ?b )>> ; campy:link_source ?s }
+              OPTIONAL { ?r rdf:reifies <<( ?a campy:BROADER ?b )>> ; campy:link_source ?s .
+                         FILTER NOT EXISTS { ?r campy:link_status "candidate" } }
               BIND(COALESCE(?s, "label_rule") AS ?source)
             } GROUP BY ?source
             """,
@@ -187,7 +189,8 @@ KIND_QUERIES = [
               ?a a campy:Concept ; campy:kind_scheme "kind" ; campy:archived false ;
                  campy:text_raw ?child ; campy:BROADER ?b .
               ?b campy:text_raw ?parent .
-              OPTIONAL { ?r rdf:reifies <<( ?a campy:BROADER ?b )>> ; campy:link_source ?s }
+              OPTIONAL { ?r rdf:reifies <<( ?a campy:BROADER ?b )>> ; campy:link_source ?s .
+                         FILTER NOT EXISTS { ?r campy:link_status "candidate" } }
               BIND(COALESCE(?s, "label_rule") AS ?source)
             }
             """,
