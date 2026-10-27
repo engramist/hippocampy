@@ -549,6 +549,27 @@ NODE_TABLES = {
         PRIMARY KEY (label_id)
     """,
 
+    # B538: a relative time expression in a user turn ("yesterday", "last week") resolved by rule
+    # against the turn's date. One node per expression, hung off its Message by HAS_TIME_MENTION.
+    # time_text is the phrase as written, span_start/span_end its character offsets in the turn,
+    # time_start/time_end the inclusive resolved range (00:00 UTC) and time_precision day/week/
+    # month/year, the same typed literals as Observation (B484). The bundle shows the resolved date
+    # right after the phrase (graph/queries/turn_mentions.py `turn_mentions.for_messages`).
+    "TimeMention": """
+        mention_id     STRING,
+        time_text      STRING,
+        span_start     INT64,
+        span_end       INT64,
+        time_start     TIMESTAMP,
+        time_end       TIMESTAMP,
+        time_precision STRING,
+        archived       BOOLEAN,
+        created_at     TIMESTAMP,
+        source         STRING,
+        authority      STRING,
+        PRIMARY KEY (mention_id)
+    """,
+
     "MergeEvent": """
         merge_event_id       STRING,
         pre_pathway_strength DOUBLE,
@@ -1506,6 +1527,8 @@ REL_TABLES = [
     # B509: an attribute Observation points at its AttributeProperty (one); BROADER / CLOSE_MATCH
     # also relate two AttributeProperties (skos:broader / skos:closeMatch between attribute names).
     "CREATE REL TABLE IF NOT EXISTS HAS_PROPERTY (FROM Observation TO AttributeProperty)",
+    # B538: a user Message to each resolved relative time expression in it (plain, idempotent).
+    "CREATE REL TABLE IF NOT EXISTS HAS_TIME_MENTION (FROM Message TO TimeMention)",
     # Ontology routing (core IP — Shape-First Principle)
     "CREATE REL TABLE IF NOT EXISTS ROUTES_TO (FROM GistClass TO SchemaOrgType)",
     # SKOS labels

@@ -67,6 +67,7 @@ def test_every_documented_override_applies():
         "CAMPY_KIND_HYGIENE": "1",
         "CAMPY_WORDNET_KINDS": "1",
         "CAMPY_VOCAB_STEWARD": "1",
+        "CAMPY_TURN_DATES": "1",
     }
     assert set(env) == set(ENV_OVERRIDES), "test must cover every override"
     cfg = apply_env_overrides(_base(), env)
