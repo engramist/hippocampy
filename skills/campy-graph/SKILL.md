@@ -42,6 +42,8 @@ kinds, concept_links, attribute_properties, graph/gateway), `campy/brain/tempora
    shows that query. No run or provenance machinery dressed as knowledge.
 6. **One construction, not one case** (PRINCIPLES 4). The query is parameterised by subject and
    relation; nothing names "pets" or "Andrew".
+7. **The model never writes a query.** Every read is a registered NamedQuery parameterised by Concept ids the code resolved from a closed set. Published Text-to-SPARQL/Cypher results show that even frontier models with the schema in hand reverse edges and invent predicates; an ontology check plus repair loop is the minimum when a model must write one. We avoid that whole class of error by never letting it.
+8. **How graph results are written out matters.** The same graph serialised differently swings model accuracy by large margins, so a section's layout is structure, not wording. Change it as a lever with a gate, not as a tidy-up. Before merging any retrieval or answering change, open one real rendered prompt on a store copy (`compile_bundle` + `ask._bundle_to_prompt`) and read what the model sees. B527 and B524's unknown-kind fix were both found this way.
 
 ## The schema, as built (verified)
 
