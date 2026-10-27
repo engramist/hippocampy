@@ -104,6 +104,8 @@ dependencies = [
 [project.optional-dependencies]
 # B523: WordNet lexnames make the ownership rule's "ownable noun" test work before the graph has the kind.
 # Needs the corpus too: python -m nltk.downloader wordnet. Without it the rule uses graph kinds only.
+# B534: the same loader (temporal_lobe/lexicon/wordnet.py) proposes kind hierarchy links between existing kinds
+# ([observations] wordnet_kinds). nltk is Apache-2.0; Princeton WordNet 3.0 is permissively licensed.
 wordnet = ["nltk>=3.8"]
 dev = [
     "pytest>=9.1.1",

@@ -1514,7 +1514,9 @@ REL_TABLES = [
     # kind. BROADER: kind -> broader kind (skos:broader). CLOSE_MATCH: kind ~ kind
     # (skos:closeMatch, advisory). All property-free; a kind is Concept.kind_scheme='kind'.
     "CREATE REL TABLE IF NOT EXISTS INSTANCE_OF (FROM Concept TO Concept)",
-    "CREATE REL TABLE IF NOT EXISTS BROADER (FROM Concept TO Concept, FROM AttributeProperty TO AttributeProperty)",
+    # B534: BROADER carries an optional `link_source` (who proposed the link: "wordnet"), stored as an
+    # RDF-star annotation on the BROADER triple by kinds.link_broader_sourced; unannotated = the label rule.
+    "CREATE REL TABLE IF NOT EXISTS BROADER (FROM Concept TO Concept, FROM AttributeProperty TO AttributeProperty, link_source STRING)",
     "CREATE REL TABLE IF NOT EXISTS CLOSE_MATCH (FROM Concept TO Concept, FROM AttributeProperty TO AttributeProperty)",
     # B509: an attribute Observation points at its AttributeProperty (one); BROADER / CLOSE_MATCH
     # also relate two AttributeProperties (skos:broader / skos:closeMatch between attribute names).

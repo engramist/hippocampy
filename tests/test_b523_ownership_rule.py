@@ -560,6 +560,14 @@ def test_naming_list_shares_the_clause(nlp):
 
 # --- ownable head nouns, compound modifiers, full names (B523 precision) ---------------------------
 
+@pytest.fixture(autouse=True)
+def _no_wordnet_unless_a_test_supplies_it(monkeypatch):
+    """The ownable test consults WordNet when it is installed (B534 shares the loader). These tests pin the
+    rule against the graph kinds alone, so they must not depend on whether the corpus is on the machine
+    (real WordNet files "haven" under noun.artifact); tests that want a lexname patch it themselves."""
+    monkeypatch.setattr(ow, "_wordnet_lexname", lambda w: None)
+
+
 OWNABLE = ow.make_ownable({"dog", "car", "bike", "scarf", "poster", "cat", "plant", "house", "company"})
 
 
@@ -632,7 +640,9 @@ def test_wordnet_missing_falls_back_to_graph_kinds(monkeypatch):
         return real(name, *a, **k)
 
     monkeypatch.setattr(builtins, "__import__", deny)
-    assert ow._wordnet_lexname("scarf") is None
+    from campy.brain.temporal_lobe.lexicon import wordnet
+
+    assert wordnet.lexname("scarf") is None
     assert ow.make_ownable({"dog"})("dog") and not ow.make_ownable({"dog"})("scarf")
 
 
