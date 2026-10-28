@@ -1498,6 +1498,12 @@ REL_TABLES = [
     # ABOUT would be too generic a name for the RDF predicate namespace.
     "CREATE REL TABLE IF NOT EXISTS OBSERVATION_ABOUT (FROM Observation TO Concept)",
     "CREATE REL TABLE IF NOT EXISTS EVIDENCED_BY (FROM Observation TO Message)",
+    # B522: the role of each Concept an Observation names. OBSERVATION_ABOUT stays the untyped
+    # "names this Concept" edge; HAS_SUBJECT / HAS_OBJECT say which one is the subject and which
+    # the object (written when [observations] object_roles is on). Both property-free; an
+    # Observation has at most one of each.
+    "CREATE REL TABLE IF NOT EXISTS HAS_SUBJECT (FROM Observation TO Concept)",
+    "CREATE REL TABLE IF NOT EXISTS HAS_OBJECT (FROM Observation TO Concept)",
     # B503: graph linking (flag CAMPY_GRAPH_LINKING). MENTIONS: a user Message
     # names a Concept (rule match, never a model). IS_A: Concept -> category
     # Concept, written only from an is_a Observation whose subject and object

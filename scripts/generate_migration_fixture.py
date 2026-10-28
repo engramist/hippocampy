@@ -6,7 +6,7 @@ Derives schema coverage directly by importing `campy/brain/hippocampus/schema.py
 (reusing B406 three-source derivation: NODE_TABLES, REL_TABLES, and SCHEMA_MIGRATIONS).
 Generates an exhaustive JSONL graph fixture covering:
 - All 60 node tables (with every declared property populated)
-- All 119 edge types (103 classified + 13 verified unclassified escalated)
+- All 121 edge types (108 classified + 13 verified unclassified escalated)
 - Multiple occurrences per (s,p,o) for all 15 occurrence types
 - Plain triples and quoted annotations for all 30 star types
 - All §3.1 datatypes (STRING[], TIMESTAMP, DOUBLE, FLOAT[384])
@@ -103,7 +103,7 @@ def derive_schema() -> tuple[dict[str, dict[str, str]], dict[str, dict[str, Any]
 
     # Sanity checks against schema.py
     assert len(node_schemas) == 60, f"Expected 60 node tables, got {len(node_schemas)}"
-    assert len(rel_schemas) == 119, f"Expected 119 rel tables, got {len(rel_schemas)}"
+    assert len(rel_schemas) == 121, f"Expected 121 rel tables, got {len(rel_schemas)}"
 
     return node_schemas, rel_schemas
 
@@ -340,7 +340,7 @@ def main() -> None:
     print(f"Generated exhaustive migration fixture at {args.out}")
     print(f"  Nodes: {len(node_rows)} rows across {len(node_schemas)} tables")
     print(f"  Edges: {len(rel_rows)} rows across {len(set(r['_table'] for r in rel_rows))} tables")
-    print(f"  Classified reification: 15 occurrence (multiple occurrences), 30 star (plain+quoted), 61 plain")
+    print(f"  Classified reification: 15 occurrence (multiple occurrences), 30 star (plain+quoted), 63 plain")
     print(f"  Unclassified tables: 13 verified to raise in classify_edge()")
 
 
