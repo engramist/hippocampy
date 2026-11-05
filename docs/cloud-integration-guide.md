@@ -113,6 +113,7 @@ an error that names the variable. The full table is
 | `CAMPY_TURN_DATES` | `[observations].turn_dates` | on (B538); `0` stops resolving relative time expressions in user turns ("yesterday", "last week") against the turn's date at capture and showing `phrase [= date]` in the bundle |
 | `CAMPY_SHACL_GATE` | `[observations].shacl_gate` | on (B514); `0` stops validating each Observation against the SHACL shapes before writing (B507). Skipped with one log line if pyshacl/rdflib cannot be imported |
 | `CAMPY_RETRIEVAL_CONVERSATION_EMBEDDED_STATEMENTS` | `[retrieval].conversation_embedded_statements` | on (B514); `0` stops counting a first-person statement inside a question as evidence (B501) |
+| `CAMPY_PROFILE` | `[pipeline].profile` | `main` (B545): today's defaults. `principled` turns on the flags listed in `docs/pipeline-map.md` as one set (`PROFILES` in `campy/brain/brainstem/config.py`). Per flag: its env var > an explicit value in the config file > the profile > the built-in default. An unknown name fails at startup. `campy status` prints the profile and each flag's resolved value and source |
 
 `CAMPY_HOME` sets where all state lives.
 

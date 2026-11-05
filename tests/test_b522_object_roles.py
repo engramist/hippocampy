@@ -105,11 +105,13 @@ def test_flag_default_off_env_on():
         apply_env_overrides({"observations": {"object_roles": True}}, {"CAMPY_OBSERVATIONS_OBJECT_ROLES": "0"})) is False
 
 
-def test_shipped_toml_declares_the_flag_off():
+def test_shipped_toml_leaves_the_flag_to_the_default():
+    """B545: the template must not set the flag (an explicit value would pin it against the profile)."""
     import tomllib
 
     path = Path(__file__).resolve().parents[1] / "campy" / "data" / "config" / "campy.toml"
-    assert tomllib.loads(path.read_text())["observations"]["object_roles"] is False
+    assert "object_roles" not in tomllib.loads(path.read_text())["observations"]
+    assert _DEFAULT_CONFIG["observations"]["object_roles"] is False
 
 
 # --- writes ---------------------------------------------------------------------------

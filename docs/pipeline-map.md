@@ -107,6 +107,8 @@ B534, B535), count and list (B524), the concept walk with a limit, typed object 
 question analysis once per question (gap), the graph signal as a vote in fusion (gap). Demoted:
 the decision tracker as a side branch that only adds records (B543); the old semantic stage.
 
+Switch: `[pipeline] profile = "principled"` or `CAMPY_PROFILE=principled` (B545; default `main`; the set is `PROFILES` in `campy/brain/brainstem/config.py`; `campy status` prints it).
+
 Before the profile is gated, each part is checked offline on a store copy: the edge exists, the
 query anchored on the subject returns the evidence turns, and one rendered prompt is read. Then
 one gate: the profile against main, fresh ingest, unseen conversations, followed by a breakdown
