@@ -33,6 +33,7 @@ Closed set. This module never decides a kind should exist: `plan_links` only pai
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -69,13 +70,21 @@ def available() -> bool:
 
 def lexname(lemma: str) -> str | None:
     """Lexicographer file of the first (most frequent) noun sense of `lemma` ("noun.animal"), or None
-    when WordNet is not installed or the word is unknown."""
+    when WordNet is not installed or the word is unknown. A unique beginner (file `noun.Tops`: group,
+    animal, food, person ...) takes the file most of its hyponyms are in, the category it heads
+    (group.n.01 -> noun.group)."""
     wn = _wn()
     if wn is None:
         return None
     try:
         senses = wn.synsets(lemma, pos="n")
-        return senses[0].lexname() if senses else None
+        if not senses:
+            return None
+        lexname = senses[0].lexname()
+        if lexname == "noun.Tops":
+            below = Counter(h.lexname() for h in senses[0].hyponyms() if h.lexname() != "noun.Tops")
+            lexname = below.most_common(1)[0][0] if below else lexname
+        return lexname
     except Exception:
         return None
 

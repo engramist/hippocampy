@@ -165,14 +165,18 @@ def make_ownable(instantiated_kinds: set[str]):
     """The test for "can the speaker hold one of these": the noun is a kind already in the graph that
     some entity is INSTANCE_OF (`instantiated_kinds`, norm_key forms), or its WordNet lexname is one of
     OWNABLE_LEXNAMES; a WordNet lexname in NON_OWNABLE_LEXNAMES (group, act, state ...) vetoes both.
-    Without WordNet it is the graph kinds alone."""
+    Without WordNet it is the graph kinds alone. `graph_kind_required=True` drops the WordNet route:
+    used for "X is my N", the copular form where metaphors live ("Birch is my haven": WordNet's first
+    sense of "haven" is a shelter, an artifact)."""
     from campy.brain.hippocampus.concept_links import norm_key
 
-    def ownable(lemma: str) -> bool:
+    def ownable(lemma: str, *, graph_kind_required: bool = False) -> bool:
         lexname = _wordnet_lexname(lemma.lower())
         if lexname in NON_OWNABLE_LEXNAMES:
             return False
-        return norm_key(lemma) in instantiated_kinds or lexname in OWNABLE_LEXNAMES
+        if norm_key(lemma) in instantiated_kinds:
+            return True
+        return not graph_kind_required and lexname in OWNABLE_LEXNAMES
 
     return ownable
 
@@ -325,7 +329,7 @@ def _classify(doc, span, ownable=None):
                 return "not_ownable"     # also when the parser hangs "my" on the name: "my gf, Toby"
             if any(t.lower_ in _PREFERENCE_MODIFIERS for t in doc[a.left_edge.i:a.i + 1]):
                 return "not_ownable"     # "Garlic is my go-to ingredient": a preference, not a possession
-            if _not_ownable(a, span, ownable):
+            if _not_ownable(a, span, ownable, graph_kind_required=a.dep_ == "attr" and a.head.lemma_ == "be"):
                 return "not_ownable"     # "Nature is my haven": the held noun is not a thing one holds
             gov = a.head
             if a.dep_ in ("dobj", "attr") and gov.lemma_ in ACQUISITION_VERBS | {"be"}:
@@ -365,12 +369,12 @@ def _classify(doc, span, ownable=None):
     return None
 
 
-def _not_ownable(anchor, span, ownable) -> bool:
+def _not_ownable(anchor, span, ownable, *, graph_kind_required: bool = False) -> bool:
     """True when the held noun is a common noun other than the entity and fails the ownable test.
     No test given (None): nothing is rejected."""
     if ownable is None or anchor.pos_ != "NOUN" or span.start <= anchor.i < span.end:
         return False
-    return not ownable(anchor.lemma_.lower())
+    return not ownable(anchor.lemma_.lower(), graph_kind_required=graph_kind_required)
 
 
 def _stative_subject(verb):
