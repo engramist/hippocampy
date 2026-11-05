@@ -66,6 +66,7 @@ State today: 84-87% of Observations carry a subject; about 6% have a typed objec
 | Concepts the question names | 1-3 word spans looked up in the closed Concept set (never creates one) | principled |
 | Subject of the question | which person the question is about | mixed: done inside some stages, not once for all |
 | Kind and shape | "how many / which / list / latest / when" and the kind asked for | gap: the set-valued router existed only in the L3 screen; B524 has its own |
+| One analysis per question (B547) | `thalamus/question_analysis.py`: shape, subject (ties, unresolved names), kind in the closed kind set, Concepts named; rule-based, recorded as `bundle.analysis`; the observation stage, the concept walk and B524 read it | principled | `question_analysis` (off), part of the principled profile |
 
 ## 5. Retrieval: three signals
 

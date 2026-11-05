@@ -27,6 +27,12 @@ not parse declines rather than answering a different question.
 
 Python formats the query's rows. It does not count, dedupe or filter them. Behind `[retrieval]
 graph_count` (env `CAMPY_GRAPH_COUNT`, default off).
+
+B547: with `[retrieval] question_analysis` on, the question analysis replaces the three resolvers above. The
+FORM is the analysis's shape (count or list; a time question is `when`, so it declines), the SUBJECT its one
+person (no subject, a tie, or an unresolved outranking name decline) and the KIND its closed-set kind (none,
+or one found only by dropping a leading modifier, declines: a count of the wrong kind is worse than none).
+This module keeps its verb -> predicate map and its "as of" parse.
 """
 
 from __future__ import annotations
@@ -132,17 +138,24 @@ def _is_auxiliary_have(token) -> bool:
     return any(c.tag_ == "VBN" and c.text.lower() not in RELATION_BY_VERB for c in token.children)
 
 
-def route_question(question: str, nlp=None) -> Optional[Route]:
+def route_question(question: str, nlp=None, analysis=None) -> Optional[Route]:
     """The form, relation and time bound the question carries, or None when it is not a count/list
     question, asks for a time or a quantity of time, names no mapped verb (a `have` that is an
     auxiliary does not count), or carries a time phrase that does not parse. `nlp`: a spaCy pipeline
-    (default: the NER step's)."""
-    q = " ".join(str(question or "").lower().replace("\u2019", "'").split())
-    if not q or re.search(TIME_QUESTIONS, q):
-        return None
-    form = next((name for name, pattern in COUNT_FORMS.items() if re.search(pattern, q)), None)
-    if form is None:
-        return None
+    (default: the NER step's). `analysis` (B547): the question analysis; its shape is the form and its
+    text (the question up to the first "?") is what the verbs and the "as of" are read from."""
+    if analysis is not None:
+        if analysis.shape not in ("count", "list"):
+            return None
+        question, form = analysis.text, analysis.shape
+        q = " ".join(question.lower().replace("\u2019", "'").split())
+    else:
+        q = " ".join(str(question or "").lower().replace("\u2019", "'").split())
+        if not q or re.search(TIME_QUESTIONS, q):
+            return None
+        form = next((name for name, pattern in COUNT_FORMS.items() if re.search(pattern, q)), None)
+        if form is None:
+            return None
     predicates = _mapped_predicates(" ".join(str(question).split()), nlp or _default_nlp())
     if len(predicates) != 1:
         return None
@@ -158,6 +171,17 @@ def route_question(question: str, nlp=None) -> Optional[Route]:
             return None
         before = resolved.end + timedelta(days=1)
     return Route(form=form, predicate=next(iter(predicates)), before=before, as_of_text=as_of_text)
+
+
+def resolve_from_analysis(analysis) -> Optional[Resolved]:
+    """B547: the subject and kind of a question analysis. None without a subject, with several anchors
+    (a tie), with an outranking name that is not in the graph, without a kind, or with a kind found only
+    by dropping a leading modifier."""
+    if (analysis.subject_id is None or analysis.tie or analysis.subject_unresolved
+            or not analysis.kind_id or analysis.kind_match != "full"):
+        return None
+    return Resolved(subject_id=analysis.subject_id, subject_label=analysis.subject or "",
+                    kind_id=analysis.kind_id, kind_label=analysis.kind_label or "")
 
 
 async def resolve_question(gw, question: str) -> Optional[Resolved]:
@@ -226,12 +250,13 @@ def render_graph_count(resolved: Resolved, route: Route, count: int, rows: list[
     return "\n".join(lines)
 
 
-async def build_graph_count_section(db, query: str, config: dict):
+async def build_graph_count_section(db, query: str, config: dict, analysis=None):
     """The `graph_count` BundleSection for a count/list question, or None (flag off, question not routed,
-    subject/kind unresolved, nothing recorded, or any failure). The normal pipeline then answers."""
+    subject/kind unresolved, nothing recorded, or any failure). The normal pipeline then answers.
+    `analysis` (B547): the question analysis, read instead of this module's own parsing."""
     if not graph_count_enabled(config):
         return None
-    route = route_question(query)
+    route = route_question(query, analysis=analysis)
     if route is None:
         return None
     try:
@@ -239,7 +264,7 @@ async def build_graph_count_section(db, query: str, config: dict):
         from campy.brain.thalamus.bundle_compiler import BundleSection
 
         gw = get_gateway(db)
-        resolved = await resolve_question(gw, query)
+        resolved = resolve_from_analysis(analysis) if analysis is not None else await resolve_question(gw, query)
         if resolved is None:
             return None
         params = dict(sid=resolved.subject_id, kind_id=resolved.kind_id, predicate=route.predicate,
@@ -257,6 +282,7 @@ async def build_graph_count_section(db, query: str, config: dict):
             content=[{"text": text, "type": "GraphCount", "confidence": 0.9, "pathway_strength": 0.9}],
             source_node_ids=[str(r.get("observation_id")) for r in [*rows, *unkinded] if r.get("observation_id")],
             token_estimate=max(1, len(text) // 4),
+            reads=["shape", "subject_id", "kind_id", "kind_match", "text"] if analysis is not None else [],
         )
     except Exception as e:
         _logger.warning("Error in build_graph_count_section: %s", e)
