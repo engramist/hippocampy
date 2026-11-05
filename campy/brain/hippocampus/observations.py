@@ -139,6 +139,13 @@ def object_roles_enabled(config: dict | None) -> bool:
     return bool(((config or {}).get("observations") or {}).get("object_roles", False))
 
 
+def ownership_rule_enabled(config: dict | None) -> bool:
+    """`[observations] ownership_rule` (default FALSE; env `CAMPY_OBSERVATIONS_OWNERSHIP_RULE=1` turns it on)
+    (B523): a grammar rule over the user's turn (temporal_lobe/observations/ownership.py) writes an
+    `owns` Observation, speaker to object Concept, for first-person possession of a known entity."""
+    return bool(((config or {}).get("observations") or {}).get("ownership_rule", False))
+
+
 def observations_supersede_enabled(config: dict | None) -> bool:
     """`[observations] supersede` (default FALSE; env `CAMPY_OBSERVATIONS_SUPERSEDE=1` turns it on) (B499):
     a newer asserted attribute Observation supersedes an older live one about the

@@ -438,6 +438,105 @@ OBSERVATION_QUERIES: tuple[NamedQuery, ...] = (
             ORDER BY ?occurred_at ?observation_id
             """,
     ),
+    # --- B523: the closed set of entities a turn can own -------------------------------
+    NamedQuery(
+        name="observations.message_concepts",
+        cypher="""
+        MATCH (m:Message {message_id: $mid})-[:MENTIONS]->(c:Concept)
+        WHERE c.archived = false AND c.kind_scheme IS NULL
+        RETURN DISTINCT c.concept_id AS concept_id, c.text_raw AS label
+        UNION
+        MATCH (o:Observation)-[:EVIDENCED_BY]->(m:Message {message_id: $mid}), (o)-[:OBSERVATION_ABOUT]->(c:Concept)
+        WHERE c.archived = false AND c.kind_scheme IS NULL
+        RETURN DISTINCT c.concept_id AS concept_id, c.text_raw AS label
+        """,
+        params=("mid",),
+        mutating=False,
+        description=("Entity Concepts (not kinds) a Message is linked to: MENTIONS from the Message, or "
+                     "OBSERVATION_ABOUT from an Observation it evidences. The ownership rule's closed set."),
+        sparql="""
+            SELECT DISTINCT ?concept_id ?label WHERE {
+              ?m a campy:Message ; campy:message_id ?mid .
+              { ?m campy:MENTIONS ?c }
+              UNION
+              { ?o campy:EVIDENCED_BY ?m ; campy:OBSERVATION_ABOUT ?c }
+              ?c a campy:Concept ; campy:concept_id ?concept_id ; campy:text_raw ?label .
+              FILTER NOT EXISTS { ?c campy:archived true }
+              FILTER NOT EXISTS { ?c campy:kind_scheme "kind" }
+            }
+            """,
+    ),
+    NamedQuery(
+        name="observations.preceding_messages",
+        cypher="""
+        MATCH path = (p:Message)-[:FOLLOWED_BY*1..3]->(m:Message {message_id: $mid})
+        WHERE p.role = 'user' AND p.archived = false
+        RETURN length(path) AS hop, p.message_id AS message_id, p.speaker AS speaker, p.text_raw AS text_raw
+        ORDER BY hop
+        """,
+        params=("mid",),
+        mutating=False,
+        description=("Up to three Messages before a Message along FOLLOWED_BY, nearest first (hop 1..3), with "
+                     "speaker and text. The ownership rule picks the speaker's previous turn from them."),
+        sparql="""
+            SELECT ?hop ?message_id ?speaker ?text_raw WHERE {
+              ?m a campy:Message ; campy:message_id ?mid .
+              { ?p campy:FOLLOWED_BY ?m . BIND(1 AS ?hop) }
+              UNION { ?p campy:FOLLOWED_BY/campy:FOLLOWED_BY ?m . BIND(2 AS ?hop) }
+              UNION { ?p campy:FOLLOWED_BY/campy:FOLLOWED_BY/campy:FOLLOWED_BY ?m . BIND(3 AS ?hop) }
+              ?p campy:message_id ?message_id ; campy:text_raw ?text_raw ; campy:role "user" .
+              OPTIONAL { ?p campy:speaker ?speaker }
+              FILTER NOT EXISTS { ?p campy:archived true }
+            }
+            ORDER BY ?hop
+            """,
+    ),
+    NamedQuery(
+        name="observations.instantiated_kinds",
+        cypher="""
+        MATCH (e:Concept)-[:INSTANCE_OF]->(:Concept)-[:BROADER*0..]->(k:Concept)
+        WHERE k.kind_scheme = 'kind' AND k.archived = false
+        RETURN DISTINCT k.concept_id AS concept_id
+        """,
+        params=(),
+        mutating=False,
+        description=("Kind Concepts that some entity is INSTANCE_OF, directly or through a narrower kind "
+                     "(BROADER*): the real categories of things. The ownership rule's ownable test."),
+        sparql="""
+            SELECT DISTINCT ?concept_id WHERE {
+              ?e (campy:INSTANCE_OF|campy:IS_A) ?k0 .
+              ?k0 campy:BROADER* ?k .
+              ?k a campy:Concept ; campy:concept_id ?concept_id ; campy:kind_scheme "kind" .
+              FILTER NOT EXISTS { ?k campy:archived true }
+            }
+            """,
+    ),
+    NamedQuery(
+        name="observations.ownership_confirmations",
+        cypher="""
+        MATCH (o:Observation {predicate: 'owns', rule_version: $rule, archived: false})-[:HAS_SUBJECT]->(s:Concept {concept_id: $sid}),
+              (o)-[:HAS_OBJECT]->(y:Concept)
+        OPTIONAL MATCH (y)-[:INSTANCE_OF]->(:Concept)-[:BROADER*0..]->(k:Concept)<-[:BROADER*0..]-(:Concept)<-[:INSTANCE_OF]-(x:Concept)
+        RETURN DISTINCT coalesce(x.concept_id, y.concept_id) AS concept_id, k.text_raw AS kind_label
+        """,
+        params=("sid", "rule"),
+        mutating=False,
+        description=("Concepts an \"X and I\" sentence may be confirmed against for a speaker: the objects of the "
+                     "speaker's rule-written owns Observations (no kind_label), and Concepts INSTANCE_OF a kind "
+                     "that one of those objects is INSTANCE_OF (kind_label set)."),
+        sparql="""
+            SELECT DISTINCT ?concept_id ?kind_label WHERE {
+              ?s a campy:Concept ; campy:concept_id ?sid .
+              ?o a campy:Observation ; campy:predicate "owns" ; campy:archived false ;
+                 campy:rule_version ?rule ; campy:HAS_SUBJECT ?s ; campy:HAS_OBJECT ?y .
+              { ?y campy:concept_id ?concept_id }
+              UNION
+              { ?y (campy:INSTANCE_OF|campy:IS_A)/campy:BROADER* ?k .
+                ?x (campy:INSTANCE_OF|campy:IS_A)/campy:BROADER* ?k .
+                ?k campy:text_raw ?kind_label . ?x campy:concept_id ?concept_id }
+            }
+            """,
+    ),
     NamedQuery(
         name="observations.touch_observation",
         cypher="""

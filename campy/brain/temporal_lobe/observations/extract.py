@@ -336,6 +336,34 @@ async def process_turn(
     *,
     embedding_model: str = obs.EMBEDDING_MODEL,
 ) -> int:
+    """Extract and write the Observations of one Message (the LLM pass, `_extract_turn`), then, with
+    `[observations] ownership_rule` on, the first-person possession rule (B523) over the same turn,
+    after the entities it can name are linked. The rule needs no LLM, so it also runs on turns the
+    extractor skips. Returns how many Observations were newly created."""
+    created = await _extract_turn(db, config, llm_client, message_id, stats, embedding_model=embedding_model)
+    if obs.ownership_rule_enabled(config):
+        from campy.brain.temporal_lobe.observations import ownership
+
+        try:
+            rule_stats = ownership.OwnershipStats()
+            created += await ownership.apply_to_message(db, config, message_id, rule_stats,
+                                                        embedding_model=embedding_model)
+            stats.created += rule_stats.created
+            stats.duplicate += rule_stats.duplicate
+        except Exception:
+            _logger.warning("[Ownership] rule failed msg=%s", message_id[:8], exc_info=True)
+    return created
+
+
+async def _extract_turn(
+    db: Any,
+    config: dict,
+    llm_client: Any,
+    message_id: str,
+    stats: ObservationWorkerStats,
+    *,
+    embedding_model: str = obs.EMBEDDING_MODEL,
+) -> int:
     """Extract and write the Observations of one Message. Returns how many were
     newly created. Never raises for a bad model reply or a rejected draft; a
     storage error propagates to the worker, which logs and skips the turn.
