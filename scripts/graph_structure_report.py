@@ -22,7 +22,8 @@ Per store and pooled, it reports:
     by INSTANCE_OF / skos:broader / the legacy IS_A), the share of kinds with at least
     one altLabel, the duplicate-kind rate (kinds that share a normalised prefLabel or
     altLabel with another kind: what consolidation should drive to 0), and the share
-    of entities (gist_class "Entity") that have an instance-of kind;
+    of entities (gist_class "Entity") that have an instance-of kind; and (B534) the live kind
+    BROADER links per source, "wordnet" or "label_rule" (the `kinds.broader_links_by_source` query);
   * % of has_attribute Observations whose object parses as "name: value", and the
     count whose object is a stringified dict/list (B506);
   * B509, attribute properties: the number of AttributeProperty nodes, the share that are
@@ -248,6 +249,8 @@ def measure(path: str | Path, *, shacl: bool = True) -> dict:
     m["attr_structured"] = sum(1 for o in objs if STRUCTURED_RE.match(o))
 
     m.update(kind_metrics(g))
+    # B534: live kind BROADER links per source ('wordnet' vs 'label_rule'), by the registered query
+    m["broader_by_source"] = {r["source"]: int(r["n"]) for r in run_named(store, "kinds.broader_links_by_source")}
     m.update(attribute_metrics(store, g, q))
 
     m["shacl"] = {}
@@ -285,6 +288,7 @@ def pool(results: list[dict]) -> dict:
                 "attr_properties", "attr_props_functional", "attr_linked", "attr_typed", "attr_superseded",
                 "functional_violations", "broader_cycles", "broader_redundant", "owl_inconsistencies"):
         out[key] = sum(r[key] for r in results)
+    out["broader_by_source"] = dict(sum((Counter(r.get("broader_by_source", {})) for r in results), Counter()))
     for r in results:
         for t, d in r["shacl"].items():
             p = out["shacl"][t]
@@ -399,6 +403,7 @@ def main(argv: list[str] | None = None) -> int:
           f"(stringified dict/list objects: {pooled['attr_structured']}), Messages(user) {pooled['user_messages']}")
     print(f"Reasoning (skos:broader): cycles {pooled['broader_cycles']}, redundant edges {pooled['broader_redundant']}, "
           f"owlrl inconsistencies {pooled['owl_inconsistencies']}")
+    print(f"Kind BROADER links by source (B534): {pooled['broader_by_source'] or 'none'}")
     print("Top failing shapes (pooled):")
     print("\n".join(top_failures(pooled)) or "  none")
     if args.verbose:
