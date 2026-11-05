@@ -28,6 +28,10 @@ _DEFAULT_CONFIG = {
         # is gated separately. CAMPY_GRAPH_LINKING_LIMIT=12 restores the v1 walk.
         "graph_linking": True,
         "graph_linking_limit": 0,
+        # B524 (default OFF; env CAMPY_GRAPH_COUNT=1 turns it on): a count/list question ("how many pets does
+        # X have") adds a `graph_count` bundle section computed by a subject-anchored graph query (needs the
+        # B522 object_roles and B523 ownership_rule edges). Gate pending.
+        "graph_count": False,
         # B508/B514: SKOS vocabulary for kinds (default ON; env CAMPY_SKOS_VOCAB=0 turns it off;
         # part of the R96 stack, see graph_linking). Kinds are
         # consolidated by rule (same label, head noun), entity -INSTANCE_OF-> kind and
@@ -134,6 +138,10 @@ _DEFAULT_CONFIG = {
         # `owns` Observations for first-person possession of an existing Concept ("my X Name", "I
         # adopted Name"), whatever predicate the extractor chose. Gate pending.
         "ownership_rule": False,
+        # B525 (default OFF; env CAMPY_KIND_HYGIENE=1 turns it on): a kind label is written as a clean singular
+        # noun ("my dogs" -> "dog", the wording kept as an altLabel) and a meta-noun ("name", "thing", ...) is
+        # never a kind. Gate pending.
+        "kind_hygiene": False,
         "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
         # B538 (default ON; env CAMPY_TURN_DATES=0 turns it off): every user turn's relative time
         # expressions ("yesterday", "last week") are resolved by rule against the turn's date at
@@ -268,6 +276,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_GRAPH_LINKING": ("retrieval", "graph_linking", _parse_bool),
     # 0 keeps the write-path links but adds no walk section at retrieval.
     "CAMPY_GRAPH_LINKING_LIMIT": ("retrieval", "graph_linking_limit", _parse_nonneg_int),
+    # B524: count/list questions answered by a subject-anchored graph query (bundle section).
+    "CAMPY_GRAPH_COUNT": ("retrieval", "graph_count", _parse_bool),
     # B508: SKOS vocabulary for kinds (consolidation, INSTANCE_OF vs BROADER).
     "CAMPY_SKOS_VOCAB": ("retrieval", "skos_vocab", _parse_bool),
     # B544: admit every named entity of a user turn as a Concept (default off).
@@ -280,6 +290,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_OBSERVATIONS_OBJECT_ROLES": ("observations", "object_roles", _parse_bool),
     # B523: first-person possession rule writes `owns` Observations.
     "CAMPY_OBSERVATIONS_OWNERSHIP_RULE": ("observations", "ownership_rule", _parse_bool),
+    # B525: kind labels are clean singular nouns; meta-nouns are never kinds.
+    "CAMPY_KIND_HYGIENE": ("observations", "kind_hygiene", _parse_bool),
     # B538: relative dates in user turns resolved by rule at capture and shown inline (default on).
     "CAMPY_TURN_DATES": ("observations", "turn_dates", _parse_bool),
     # B499: rule-based supersession of attribute Observations (default off).
