@@ -91,6 +91,24 @@ def _read_sparql(extra_patterns: str = "", tail: str = "", lead: str = "") -> st
             """
 
 
+# B522: the Concepts an Observation names (OBSERVATION_ABOUT) that could be its object: not the
+# subject, not a kind, label of 3+ characters appearing as whole words in object_text, and the
+# Observation has neither an object edge nor an object_id. The backfill links one only when it is
+# the single candidate (a GROUP BY ... HAVING count), never by taking the first of several.
+_OBJECT_CANDIDATES = r"""
+              ?o a campy:Observation ; campy:object_text ?object_text ; campy:OBSERVATION_ABOUT ?cand .
+              FILTER NOT EXISTS { ?o campy:HAS_OBJECT ?had }
+              FILTER NOT EXISTS { ?o campy:object_id ?has_id }
+              ?cand a campy:Concept ; campy:concept_id ?cand_id ; campy:text_raw ?label .
+              FILTER NOT EXISTS { ?cand campy:kind_scheme "kind" }
+              FILTER NOT EXISTS { ?o campy:subject_id ?cand_id }
+              FILTER(STRLEN(?label) >= 3)
+              FILTER(REGEX(?object_text,
+                           CONCAT("(^|[^[:alnum:]])", REPLACE(?label, "([.*+?^${}()|\\[\\]\\\\])", "\\\\$1"),
+                                  "($|[^[:alnum:]])"), "i"))
+"""
+
+
 OBSERVATION_QUERIES: tuple[NamedQuery, ...] = (
     NamedQuery(
         name="observations.create_observation",
@@ -219,6 +237,205 @@ OBSERVATION_QUERIES: tuple[NamedQuery, ...] = (
               ?o a campy:Observation ; campy:observation_id ?oid .
               ?c a campy:Concept ; campy:concept_id ?cid .
             }
+            """,
+    ),
+    # --- B522: subject / object roles --------------------------------------------------
+    NamedQuery(
+        name="observations.link_subject",
+        cypher="""
+        MATCH (o:Observation {observation_id: $oid}),
+              (c:Concept {concept_id: $cid})
+        WHERE NOT (o)-[:HAS_SUBJECT]->()
+        MERGE (o)-[:HAS_SUBJECT]->(c)
+        """,
+        params=("oid", "cid"),
+        mutating=True,
+        description="Record the Concept that is an Observation's subject (HAS_SUBJECT; at most one, first wins, idempotent)",
+        sparql="""
+            INSERT { ?o campy:HAS_SUBJECT ?c . }
+            WHERE {
+              ?o a campy:Observation ; campy:observation_id ?oid .
+              ?c a campy:Concept ; campy:concept_id ?cid .
+              FILTER NOT EXISTS { ?o campy:HAS_SUBJECT ?other }
+            }
+            """,
+    ),
+    NamedQuery(
+        name="observations.link_object",
+        cypher="""
+        MATCH (o:Observation {observation_id: $oid}),
+              (c:Concept {concept_id: $cid})
+        WHERE NOT (o)-[:HAS_OBJECT]->()
+        MERGE (o)-[:HAS_OBJECT]->(c)
+        """,
+        params=("oid", "cid"),
+        mutating=True,
+        description="Record the Concept that is an Observation's object (HAS_OBJECT; at most one, first wins, idempotent)",
+        sparql="""
+            INSERT { ?o campy:HAS_OBJECT ?c . }
+            WHERE {
+              ?o a campy:Observation ; campy:observation_id ?oid .
+              ?c a campy:Concept ; campy:concept_id ?cid .
+              FILTER NOT EXISTS { ?o campy:HAS_OBJECT ?other }
+            }
+            """,
+    ),
+    NamedQuery(
+        name="observations.set_object_id_from_role",
+        cypher="""
+        MATCH (o:Observation {observation_id: $oid})-[:HAS_OBJECT]->(c:Concept)
+        WHERE o.object_id IS NULL
+        SET o.object_id = c.concept_id
+        """,
+        params=("oid",),
+        mutating=True,
+        description="Fill an empty object_id literal from the HAS_OBJECT Concept (oid None = every Observation)",
+        sparql="""
+            INSERT { ?o campy:object_id ?cid . }
+            WHERE {
+              ?o a campy:Observation ; campy:observation_id ?oid ; campy:HAS_OBJECT ?c .
+              ?c campy:concept_id ?cid .
+              FILTER NOT EXISTS { ?o campy:object_id ?existing }
+            }
+            """,
+    ),
+    NamedQuery(
+        name="observations.backfill_subject_roles",
+        cypher="""
+        MATCH (o:Observation), (c:Concept {concept_id: o.subject_id})
+        WHERE NOT (o)-[:HAS_SUBJECT]->()
+        MERGE (o)-[:HAS_SUBJECT]->(c)
+        """,
+        params=(),
+        mutating=True,
+        description="HAS_SUBJECT for every Observation whose subject_id names a Concept and has no subject edge yet",
+        sparql="""
+            INSERT { ?o campy:HAS_SUBJECT ?c . }
+            WHERE {
+              ?o a campy:Observation ; campy:subject_id ?sid .
+              ?c a campy:Concept ; campy:concept_id ?sid .
+              FILTER NOT EXISTS { ?o campy:HAS_SUBJECT ?other }
+            }
+            """,
+    ),
+    NamedQuery(
+        name="observations.backfill_object_roles_from_id",
+        cypher="""
+        MATCH (o:Observation), (c:Concept {concept_id: o.object_id})
+        WHERE NOT (o)-[:HAS_OBJECT]->()
+        MERGE (o)-[:HAS_OBJECT]->(c)
+        """,
+        params=(),
+        mutating=True,
+        description="HAS_OBJECT for every Observation whose object_id names a Concept and has no object edge yet",
+        sparql="""
+            INSERT { ?o campy:HAS_OBJECT ?c . }
+            WHERE {
+              ?o a campy:Observation ; campy:object_id ?oid .
+              ?c a campy:Concept ; campy:concept_id ?oid .
+              FILTER NOT EXISTS { ?o campy:HAS_OBJECT ?other }
+            }
+            """,
+    ),
+    NamedQuery(
+        name="observations.backfill_object_roles_from_text",
+        cypher="""
+        MATCH (o:Observation)-[:OBSERVATION_ABOUT]->(c:Concept)
+        WHERE NOT (o)-[:HAS_OBJECT]->() AND o.object_id IS NULL
+          AND c.concept_id <> o.subject_id AND toLower(o.object_text) CONTAINS toLower(c.text_raw)
+        WITH o, collect(DISTINCT c) AS cs WHERE size(cs) = 1
+        UNWIND cs AS c
+        MERGE (o)-[:HAS_OBJECT]->(c)
+        """,
+        params=(),
+        mutating=True,
+        description=("HAS_OBJECT for an Observation with no object edge and no object_id when exactly one "
+                     "non-subject, non-kind OBSERVATION_ABOUT Concept's label appears in its object_text"),
+        sparql=f"""
+            INSERT {{ ?o campy:HAS_OBJECT ?c . }}
+            WHERE {{
+              {{ SELECT ?o (SAMPLE(?cand) AS ?c) WHERE {{ {_OBJECT_CANDIDATES} }}
+                 GROUP BY ?o HAVING (COUNT(DISTINCT ?cand) = 1) }}
+            }}
+            """,
+    ),
+    NamedQuery(
+        name="observations.ambiguous_object_candidates",
+        cypher="""
+        MATCH (o:Observation)-[:OBSERVATION_ABOUT]->(c:Concept)
+        WHERE NOT (o)-[:HAS_OBJECT]->() AND o.object_id IS NULL
+          AND c.concept_id <> o.subject_id AND toLower(o.object_text) CONTAINS toLower(c.text_raw)
+        WITH o, count(DISTINCT c) AS n WHERE n > 1
+        RETURN o.observation_id AS observation_id, n
+        """,
+        params=(),
+        mutating=False,
+        description="Observations with no object edge where more than one OBSERVATION_ABOUT Concept's label fits the object_text",
+        sparql=f"""
+            SELECT ?observation_id (COUNT(DISTINCT ?cand) AS ?n) WHERE {{
+              {_OBJECT_CANDIDATES}
+              ?o campy:observation_id ?observation_id .
+            }}
+            GROUP BY ?observation_id HAVING (COUNT(DISTINCT ?cand) > 1)
+            """,
+    ),
+    NamedQuery(
+        name="observations.role_link_counts",
+        cypher="""
+        MATCH (o:Observation)
+        OPTIONAL MATCH (o)-[s:HAS_SUBJECT]->()
+        OPTIONAL MATCH (o)-[b:HAS_OBJECT]->()
+        RETURN count(DISTINCT o) AS observations, count(DISTINCT s) AS with_subject,
+               count(DISTINCT b) AS with_object
+        """,
+        params=(),
+        mutating=False,
+        description="How many Observations exist, and how many carry a HAS_SUBJECT / HAS_OBJECT edge",
+        sparql="""
+            SELECT (COUNT(DISTINCT ?o) AS ?observations)
+                   (COUNT(DISTINCT ?hs) AS ?with_subject)
+                   (COUNT(DISTINCT ?ho) AS ?with_object) WHERE {
+              ?o a campy:Observation .
+              OPTIONAL { ?o campy:HAS_SUBJECT ?hs_c . BIND(?o AS ?hs) }
+              OPTIONAL { ?o campy:HAS_OBJECT ?ho_c . BIND(?o AS ?ho) }
+            }
+            """,
+    ),
+    NamedQuery(
+        name="observations.objects_of_subject",
+        cypher="""
+        MATCH (o:Observation)-[:HAS_SUBJECT]->(s:Concept {concept_id: $sid}),
+              (o)-[:HAS_OBJECT]->(obj:Concept)
+        WHERE o.archived = false AND ($predicate IS NULL OR o.predicate = $predicate)
+        OPTIONAL MATCH (obj)-[:INSTANCE_OF]->(:Concept)-[:BROADER*0..]->(k:Concept)
+        OPTIONAL MATCH (o)-[:EVIDENCED_BY]->(m:Message)
+        RETURN o.observation_id AS observation_id, o.predicate AS predicate,
+               obj.concept_id AS object_id, obj.text_raw AS object_label,
+               collect(DISTINCT k.text_raw) AS kinds, m.message_id AS evidence_message_id,
+               m.occurred_at AS occurred_at
+        ORDER BY occurred_at, observation_id
+        """,
+        params=("sid", "predicate"),
+        mutating=False,
+        description=("What a subject Concept has as objects: object Concept, label, kinds (INSTANCE_OF then "
+                     "BROADER*), the Observation's predicate, evidence message and date. predicate None = any."),
+        sparql=r"""
+            SELECT ?observation_id ?predicate ?object_id ?object_label
+                   (GROUP_CONCAT(DISTINCT ?kind_label; separator="|") AS ?kinds)
+                   ?evidence_message_id ?occurred_at
+            WHERE {
+              ?s a campy:Concept ; campy:concept_id ?sid .
+              ?o a campy:Observation ; campy:observation_id ?observation_id ;
+                 campy:predicate ?predicate ; campy:archived false ;
+                 campy:HAS_SUBJECT ?s ; campy:HAS_OBJECT ?obj .
+              FILTER NOT EXISTS { ?o campy:DEPRECATED_BY ?newer }
+              ?obj campy:concept_id ?object_id ; campy:text_raw ?object_label .
+              OPTIONAL { ?obj (campy:INSTANCE_OF|campy:IS_A)/campy:BROADER* ?kind . ?kind campy:text_raw ?kind_label }
+              OPTIONAL { ?o campy:EVIDENCED_BY ?m . ?m campy:message_id ?evidence_message_id
+                         OPTIONAL { ?m campy:occurred_at ?occurred_at } }
+            }
+            GROUP BY ?observation_id ?predicate ?object_id ?object_label ?evidence_message_id ?occurred_at
+            ORDER BY ?occurred_at ?observation_id
             """,
     ),
     NamedQuery(

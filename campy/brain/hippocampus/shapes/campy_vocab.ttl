@@ -85,6 +85,16 @@ campy:HAS_PROPERTY a owl:ObjectProperty, owl:FunctionalProperty ;
     rdfs:domain campy:Observation ; rdfs:range campy:AttributeProperty ;
     rdfs:comment "The attribute name an Observation states a value of; at most one." .
 
+# B522 (flag [observations] object_roles): which Concept an Observation is about as its subject, and
+# which as its object. OBSERVATION_ABOUT (untyped, "names this Concept") is kept for the retrieval walk.
+campy:HAS_SUBJECT a owl:ObjectProperty, owl:FunctionalProperty ;
+    rdfs:domain campy:Observation ; rdfs:range campy:Concept ;
+    rdfs:comment "The Concept an Observation states something about; at most one." .
+
+campy:HAS_OBJECT a owl:ObjectProperty, owl:FunctionalProperty ;
+    rdfs:domain campy:Observation ; rdfs:range campy:Concept ;
+    rdfs:comment "The Concept that is the object of an Observation (what the subject owns, likes, ...); at most one." .
+
 campy:DEPRECATED_BY a owl:ObjectProperty ;
     rdfs:domain campy:Observation ; rdfs:range campy:Observation ;
     rdfs:comment "Older Observation -> the newer one that replaced it (B499/B509)." .

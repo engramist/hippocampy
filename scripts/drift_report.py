@@ -304,8 +304,11 @@ def graph_structure(store_path):
     import graph_structure_report as gsr
 
     store = gsr.open_store(store_path)
-    return {k: gsr._count(store, f"{_NS}SELECT (COUNT(DISTINCT ?x) AS ?n) WHERE {{ {body} }}")
-            for k, body in GRAPH_QUERIES.items()}
+    counts = {k: gsr._count(store, f"{_NS}SELECT (COUNT(DISTINCT ?x) AS ?n) WHERE {{ {body} }}")
+              for k, body in GRAPH_QUERIES.items()}
+    roles = gsr.role_counts(store)      # B522: the observations.role_link_counts NamedQuery
+    counts["with_subject_edge"], counts["with_object_edge"] = roles["with_subject_edge"], roles["with_object_edge"]
+    return counts
 
 
 def _pct(n, d):
@@ -379,6 +382,9 @@ def build_report(commits, days, missing_prs=None, merged=None, threshold=SCORE_T
         lines.append(f"- Observations: {o}")
         lines.append(f"- with subject_id: {graph['with_subject_id']} ({_pct(graph['with_subject_id'], o)})")
         lines.append(f"- object-linked (object_id): {graph['with_object_id']} ({_pct(graph['with_object_id'], o)})  <- principle-8 target, should go up")
+        if "with_object_edge" in graph:
+            lines.append(f"- object-role-linked (HAS_OBJECT edge): {graph['with_object_edge']} ({_pct(graph['with_object_edge'], o)}); "
+                         f"subject-role-linked (HAS_SUBJECT): {graph['with_subject_edge']} ({_pct(graph['with_subject_edge'], o)})")
         lines.append(f"- owns/relates_to with an entity object: {graph['link_preds_with_object']}/{graph['link_preds']} ({_pct(graph['link_preds_with_object'], graph['link_preds'])})")
     elif store_given:
         lines.append("- store could not be read")
