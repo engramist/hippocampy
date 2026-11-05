@@ -238,6 +238,14 @@ async def compile_bundle(
         )
         return bundle
 
+    # Stage 1b (B524, flag): a count/list question about one subject, answered by a graph query.
+    from campy.brain.thalamus.graph_count import build_graph_count_section
+    count_section = await build_graph_count_section(db, query, config)
+    if count_section and count_section.content:
+        sections.append(count_section)
+        cumulative_tokens += count_section.token_estimate
+        sources.extend(count_section.source_node_ids)
+
     # Stage 2: Plan lane
     plans_section = await _stage_plans(db, query, config, tier_config)
     if plans_section and plans_section.content:
