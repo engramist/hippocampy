@@ -40,10 +40,12 @@ from campy.brain.hippocampus.kinds import closematch_threshold, kind_hygiene_ena
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.temporal_lobe.observations import entities as ent
+from campy.brain.temporal_lobe.observations import typed_objects
 from campy.brain.temporal_lobe.observations.timeparse import normalize_time
 
 _logger = logging.getLogger(__name__)
 
+_UNSET = object()          # sentinel: "not built yet" (None means "could not be built")
 RULE_VERSION = "llm-1"
 MAX_TOKENS = 512            # a JSON array of a handful of short objects
 MAX_PER_TURN = 8            # proposals beyond this are dropped and counted
@@ -151,6 +153,7 @@ class ObservationWorkerStats:
     kinds_dropped_meta: int = 0   # B525: a proposed kind was a meta-noun (name, thing, ...) and dropped
     kinds_wordnet: int = 0        # B534: kind BROADER links proposed from WordNet hypernyms
     kind_alt_labels: int = 0     # B508: altLabels accumulated on kinds
+    typed_objects: dict[str, int] = field(default_factory=dict)   # B546: counts of the typed-object rule (flag on)
     entity_concepts_created: int = 0   # B504: new Concepts (entity or kind)
     queue_dropped: int = 0       # set by the daemon when the queue is full
     errors: int = 0              # a turn that raised (logged, skipped)
@@ -424,6 +427,8 @@ async def _extract_turn(
     hygiene = kind_hygiene_enabled(config)
     wordnet = wordnet_kinds_enabled(config)
     link_index: dict[str, list[str]] | None = None
+    typed_on = obs.typed_objects_enabled(config)
+    tctx: Any = _UNSET            # B546: the turn's shared context, built on first use
     writes = obs.WriteStats()
     for p in proposals:
         draft = await _draft_from_proposal(gw, p, message_id, text, speaker, named, speaker_id, occurred_at, stats)
@@ -472,6 +477,20 @@ async def _extract_turn(
                                           object_id=ent_id)
             except Exception:
                 _logger.warning("[ObservationEntities] entity write failed msg=%s", message_id[:8], exc_info=True)
+        if typed_on and result.ok and result.observation_id:
+            # B546: the object of the claim is linked (HAS_OBJECT) to an admitted entity or an ObjectPhrase and
+            # typed (INSTANCE_OF) by rule; the model's kind is not used
+            try:
+                if tctx is _UNSET:
+                    tctx = await typed_objects.turn_context(gw, config, message_id, text, speaker)
+                if tctx is not None:
+                    await typed_objects.apply_to_observation(
+                        gw, config, tctx, result.observation_id, predicate=draft.predicate,
+                        object_text=draft.object_text, subject_text=draft.subject_text,
+                        subject_id=draft.subject_id, quote=draft.evidence_text, ostats=stats,
+                        embedding_model=embedding_model)
+            except Exception:
+                _logger.warning("[TypedObjects] failed msg=%s", message_id[:8], exc_info=True)
         if linking and result.ok and result.observation_id:
             # B503: link the claim (and its turn) to the Concepts its words name
             try:
@@ -485,6 +504,13 @@ async def _extract_turn(
             except Exception:
                 _logger.warning("[GraphLinking] observation link failed msg=%s", message_id[:8], exc_info=True)
 
+    if tctx is not None and tctx is not _UNSET:
+        for k, v in tctx.stats.as_dict().items():
+            if isinstance(v, dict):
+                for rk, rv in v.items():
+                    stats.typed_objects[f"rejected:{rk}"] = stats.typed_objects.get(f"rejected:{rk}", 0) + rv
+            else:
+                stats.typed_objects[k] = stats.typed_objects.get(k, 0) + v
     stats.merge_write(writes)
     return writes.created
 

@@ -96,12 +96,15 @@ def _read_sparql(extra_patterns: str = "", tail: str = "", lead: str = "") -> st
 # Observation has neither an object edge nor an object_id. The backfill links one only when it is
 # the single candidate (a GROUP BY ... HAVING count), never by taking the first of several.
 # B524: the subject-anchored pattern behind the count and the list of "what a subject has, of one kind".
+# B546: `?x a campy:Concept` keeps an ObjectPhrase (one node per fact, so "a book" twice is two nodes) out of the
+# count: a count is of entities. With the flag off every HAS_OBJECT target is a Concept, so nothing changes.
 # Subject = the HAS_SUBJECT Concept; kind = INSTANCE_OF then BROADER* (kinds.RELATION_PATH_*); live =
 # not archived and not DEPRECATED_BY; the optional bound is on the evidence Message's occurred_at.
 _OBJECTS_OF_SUBJECT_KIND_PATTERN = r"""
               ?s a campy:Concept ; campy:concept_id ?sid .
               ?o a campy:Observation ; campy:predicate ?predicate ; campy:archived false ;
                  campy:HAS_SUBJECT ?s ; campy:HAS_OBJECT ?x ; campy:EVIDENCED_BY ?m .
+              ?x a campy:Concept .
               FILTER NOT EXISTS { ?o campy:DEPRECATED_BY ?newer }
               ?m campy:occurred_at ?occurred_at .
               FILTER (!BOUND(?before) || ?occurred_at < ?before)
@@ -629,6 +632,7 @@ OBSERVATION_QUERIES: tuple[NamedQuery, ...] = (
                      "(BROADER*): the real categories of things. The ownership rule's ownable test."),
         sparql="""
             SELECT DISTINCT ?concept_id WHERE {
+              ?e a campy:Concept .
               ?e (campy:INSTANCE_OF|campy:IS_A) ?k0 .
               ?k0 campy:BROADER* ?k .
               ?k a campy:Concept ; campy:concept_id ?concept_id ; campy:kind_scheme "kind" .
