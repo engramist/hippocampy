@@ -137,6 +137,10 @@ _DEFAULT_CONFIG = {
         # noun ("my dogs" -> "dog", the wording kept as an altLabel) and a meta-noun ("name", "thing", ...) is
         # never a kind. Gate pending.
         "kind_hygiene": False,
+        # B534 (default OFF; env CAMPY_WORDNET_KINDS=1 turns it on): when a kind is created, WordNet (if
+        # installed) proposes BROADER links to existing kinds that are its hypernyms, and from existing
+        # narrower kinds to it. Closed set; each link carries link_source "wordnet". Gate pending.
+        "wordnet_kinds": False,
         "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
         # B538 (default ON; env CAMPY_TURN_DATES=0 turns it off): every user turn's relative time
         # expressions ("yesterday", "last week") are resolved by rule against the turn's date at
@@ -285,6 +289,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_OBSERVATIONS_OWNERSHIP_RULE": ("observations", "ownership_rule", _parse_bool),
     # B525: kind labels are clean singular nouns; meta-nouns are never kinds.
     "CAMPY_KIND_HYGIENE": ("observations", "kind_hygiene", _parse_bool),
+    # B534: WordNet proposes BROADER links between existing kinds.
+    "CAMPY_WORDNET_KINDS": ("observations", "wordnet_kinds", _parse_bool),
     # B538: relative dates in user turns resolved by rule at capture and shown inline (default on).
     "CAMPY_TURN_DATES": ("observations", "turn_dates", _parse_bool),
     # B499: rule-based supersession of attribute Observations (default off).

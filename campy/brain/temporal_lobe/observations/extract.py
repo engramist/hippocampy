@@ -36,7 +36,7 @@ from typing import Any
 
 from campy.brain.hippocampus import observations as obs
 from campy.brain.hippocampus.concept_links import concept_index, graph_linking_enabled, link_observation_concepts
-from campy.brain.hippocampus.kinds import closematch_threshold, kind_hygiene_enabled, skos_vocab_enabled
+from campy.brain.hippocampus.kinds import closematch_threshold, kind_hygiene_enabled, skos_vocab_enabled, wordnet_kinds_enabled
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.temporal_lobe.observations import entities as ent
@@ -149,6 +149,7 @@ class ObservationWorkerStats:
     kinds_broader: int = 0       # B508: kind -BROADER-> kind edges (head-noun containment)
     kinds_close_match: int = 0   # B508: advisory CLOSE_MATCH edges
     kinds_dropped_meta: int = 0   # B525: a proposed kind was a meta-noun (name, thing, ...) and dropped
+    kinds_wordnet: int = 0        # B534: kind BROADER links proposed from WordNet hypernyms
     kind_alt_labels: int = 0     # B508: altLabels accumulated on kinds
     entity_concepts_created: int = 0   # B504: new Concepts (entity or kind)
     queue_dropped: int = 0       # set by the daemon when the queue is full
@@ -421,6 +422,7 @@ async def _extract_turn(
     skos = skos_vocab_enabled(config)
     closematch = closematch_threshold(config)
     hygiene = kind_hygiene_enabled(config)
+    wordnet = wordnet_kinds_enabled(config)
     link_index: dict[str, list[str]] | None = None
     writes = obs.WriteStats()
     for p in proposals:
@@ -458,7 +460,7 @@ async def _extract_turn(
             try:
                 ent_id = await ent.write_entity(gw, proposed_entity, result.observation_id, message_id, stats,
                                                 embedding_model=embedding_model, skos=skos, closematch=closematch,
-                                                hygiene=hygiene)
+                                                hygiene=hygiene, wordnet=wordnet)
                 link_index = None
                 if owl_on and draft.predicate == "has_attribute":
                     from campy.brain.hippocampus import attribute_properties as ap

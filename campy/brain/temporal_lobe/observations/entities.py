@@ -150,7 +150,8 @@ def _bump(stats: Any, name: str, n: int = 1) -> None:
 
 
 async def resolve_kind(gw: Any, name: str, index: dict[str, list[str]], stats: Any, *,
-                       embedding_model: str, closematch: float = 0.0, hygiene: bool = False) -> str | None:
+                       embedding_model: str, closematch: float = 0.0, hygiene: bool = False,
+                       wordnet: bool = False) -> str | None:
     """B508: the kind Concept for `name`, consolidated against the scheme by rule
     (see kinds.plan_kind): the same kind when the normalised label matches a prefLabel
     or altLabel, else a new kind that is `BROADER`-linked under the kinds whose label
@@ -158,7 +159,10 @@ async def resolve_kind(gw: Any, name: str, index: dict[str, list[str]], stats: A
     embedding clears `closematch`. Never calls a model.
 
     `hygiene` (B525): the label is first made a clean singular noun (kinds.normalise_kind_label), the
-    wording the model used is kept as an altLabel, and a meta-noun is not a kind (None, counted)."""
+    wording the model used is kept as an altLabel, and a meta-noun is not a kind (None, counted).
+
+    `wordnet` (B534): a newly created kind is also linked, from WordNet's hypernyms, to existing kinds
+    above it and from existing kinds below it (see `propose_wordnet_links`)."""
     surface = name
     if hygiene:
         clean = kinds_mod.normalise_kind_label(name)
@@ -199,13 +203,31 @@ async def resolve_kind(gw: Any, name: str, index: dict[str, list[str]], stats: A
         for other in others:
             await kinds_mod.link_close_match(gw, kind_id, other)
             _bump(stats, "kinds_close_match")
+    if wordnet:
+        _bump(stats, "kinds_wordnet", await propose_wordnet_links(gw, {kind_id}))
     return kind_id
+
+
+async def propose_wordnet_links(gw: Any, involving: set[str] | None = None) -> int:
+    """B534: write the WordNet hypernym links (`kinds_mod.link_broader_sourced`, source "wordnet") between
+    kinds already in the scheme. `involving` limits them to links whose child or parent is one of those
+    kinds (a kind was just created); None = every kind (the backfill). Closed set: nothing is created.
+    Returns the number of links proposed (a link already implied by existing BROADER edges is a no-op
+    in the graph). 0 without WordNet."""
+    from campy.brain.temporal_lobe.lexicon import wordnet as wn_mod
+
+    if not wn_mod.available():
+        return 0
+    links = wn_mod.plan_links(await kinds_mod.load_kinds(gw), involving=involving)
+    for link in links:
+        await kinds_mod.link_broader_sourced(gw, link.child, link.parent, link.source)
+    return len(links)
 
 
 async def write_entity(gw: Any, proposal: EntityProposal, observation_id: str, message_id: str,
                        stats: Any, *, embedding_model: str = obs.EMBEDDING_MODEL,
                        skos: bool = False, closematch: float = 0.0,
-                       hygiene: bool = False) -> str | None:
+                       hygiene: bool = False, wordnet: bool = False) -> str | None:
     """Create or reuse the entity (and kind) Concepts and write the edges.
     Returns the entity Concept id. `skos` (B508) writes the kind into the SKOS vocabulary."""
     index = await concept_index(gw, alt_labels=skos)
@@ -217,7 +239,7 @@ async def write_entity(gw: Any, proposal: EntityProposal, observation_id: str, m
     stats.entities_linked += 1
     if proposal.kind and skos:
         kind_id = await resolve_kind(gw, proposal.kind, index, stats, embedding_model=embedding_model,
-                                     closematch=closematch, hygiene=hygiene)
+                                     closematch=closematch, hygiene=hygiene, wordnet=wordnet)
         if kind_id and kind_id != entity_id:
             if entity_id in await kinds_mod.load_kinds(gw):      # a kind under a kind: subtype, not instance
                 await kinds_mod.link_broader(gw, entity_id, kind_id)
