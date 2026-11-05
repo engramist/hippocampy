@@ -55,6 +55,16 @@ def nlp():
     return _nlp()
 
 
+# The typing rule answers "no" to every kind question without WordNet (an optional extra, B523),
+# so the end-to-end typing tests need it; CI without the corpus skips them.
+def _wordnet_available():
+    from campy.brain.temporal_lobe.lexicon import wordnet as wn
+    return wn.available()
+
+
+needs_wordnet = pytest.mark.skipif(not _wordnet_available(), reason="WordNet not installed")
+
+
 @pytest.fixture(autouse=True)
 def _embedder(monkeypatch):
     monkeypatch.setattr(embeddings_mod, "embed", lambda text, model_name=None: Q)
@@ -295,6 +305,7 @@ async def kind_ids(gw):
     return {r["text_raw"]: r["concept_id"] for r in await gw.run("kinds.live_kinds")}
 
 
+@needs_wordnet
 async def test_entity_object_is_linked_to_the_admitted_concept_and_typed_by_the_stated_kind(db, gw, world):
     await seed_sam(world)
     llm = LLM(claim("I love sports brands like Nike.", "sports brands like Nike", predicate="prefers"))
@@ -311,6 +322,7 @@ async def test_entity_object_is_linked_to_the_admitted_concept_and_typed_by_the_
     assert rows and str(rows[0]["id"]) == "c-nike" and str(rows[0]["m"]).endswith(mid)
 
 
+@needs_wordnet
 async def test_without_admitted_entities_only_the_nameless_path_runs(db, gw, world):
     """B544 absent: no Concept has `ner_label`, so the entity path finds nothing; a nameless object still works."""
     await seed_sam(world)
@@ -327,6 +339,7 @@ async def test_without_admitted_entities_only_the_nameless_path_runs(db, gw, wor
     assert (await gw.run("typed_objects.message_entities", mid="m1")) == []
 
 
+@needs_wordnet
 async def test_nameless_object_is_one_phrase_per_observation_typed_by_its_head(db, gw, world):
     await seed_sam(world)
     await world.concept("k-book", "book", kind=True)
@@ -341,6 +354,7 @@ async def test_nameless_object_is_one_phrase_per_observation_typed_by_its_head(d
     assert sorted((str(r["t"]), str(r["r"])) for r in rows) == [("book", "b546-1"), ("good book", "b546-1")]
 
 
+@needs_wordnet
 async def test_an_untyped_head_is_a_candidate_read_by_the_steward_query(db, gw, world):
     await seed_sam(world)
     await world.concept("k-book", "book", kind=True)
@@ -378,6 +392,7 @@ async def test_a_kind_label_a_named_entity_holds_is_not_created(db, gw, world):
     assert world.edges("INSTANCE_OF") == set()
 
 
+@needs_wordnet
 async def test_a_quote_whose_stored_offsets_are_wrong_is_still_placed_by_search(db, gw, world):
     await seed_sam(world)
     await world.concept("k-book", "book", kind=True)
@@ -425,6 +440,7 @@ async def build_flag_off_store(db, gw, world):
                   LLM(claim("I read a good novel last week.", "read a good novel")), day=5)
 
 
+@needs_wordnet
 async def test_backfill_writes_the_same_rule_and_is_idempotent(db, gw, world):
     await build_flag_off_store(db, gw, world)
     assert world.count("ObjectPhrase") == 0 and world.edges("HAS_OBJECT") == set()
@@ -439,6 +455,7 @@ async def test_backfill_writes_the_same_rule_and_is_idempotent(db, gw, world):
     assert s2.kinds_created == 0
 
 
+@needs_wordnet
 async def test_flag_off_writes_nothing_and_renders_the_same_prompt(db, gw, world, tmp_path):
     from campy.brain.thalamus import bundle_compiler as bc
     from campy.brain.thalamus.ask import _bundle_to_prompt
@@ -488,6 +505,7 @@ async def fixture_store(db, gw, world):
     return mids
 
 
+@needs_wordnet
 async def test_exact_role_query_returns_the_subjects_book_facts_with_their_turns(db, gw, world):
     mids = await fixture_store(db, gw, world)
     ks = await kind_ids(gw)
@@ -512,6 +530,7 @@ async def test_loose_query_also_takes_an_entity_the_fact_only_names(db, gw, worl
     assert exact <= loose
 
 
+@needs_wordnet
 async def test_a_phrase_is_not_a_concept_and_not_counted_as_something_the_subject_has(db, gw, world):
     await fixture_store(db, gw, world)
     ks = await kind_ids(gw)
@@ -523,6 +542,7 @@ async def test_a_phrase_is_not_a_concept_and_not_counted_as_something_the_subjec
     assert "good book" not in live and "book" in live               # "book" still resolves to the kind
 
 
+@needs_wordnet
 async def test_instantiated_kinds_ignore_phrases(db, gw, world):
     await seed_sam(world)
     await world.concept("k-book", "book", kind=True)
