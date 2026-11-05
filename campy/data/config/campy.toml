@@ -109,6 +109,9 @@ graph_linking = true
 # subject-anchored graph query (needs object_roles and ownership_rule). Off until gated.
 # CAMPY_GRAPH_COUNT=1 turns it on.
 # graph_count = false  # B524; on under profile "principled"
+# B547: the question is analysed once (shape, subject, kind, Concepts named) and the stages read it. Off until gated.
+# CAMPY_QUESTION_ANALYSIS=1 turns it on.
+# question_analysis = false  # B547; on under profile "principled"
 skos_vocab = true
 
 [loop]

@@ -44,6 +44,7 @@ from campy.brain.hippocampus.graph.queries.steward import KIND_STEWARD_QUERIES
 from campy.brain.hippocampus.graph.queries.entity_admission import ENTITY_ADMISSION_QUERIES
 from campy.brain.hippocampus.graph.queries.properties import PROPERTY_QUERIES
 from campy.brain.hippocampus.graph.queries.turn_mentions import TURN_MENTION_QUERIES
+from campy.brain.hippocampus.graph.queries.question_analysis import QUESTION_ANALYSIS_QUERIES
 
 REGISTRY = QueryRegistry()
 REGISTRY.register_all(LESSONS_QUERIES)
@@ -76,6 +77,7 @@ REGISTRY.register_all(KIND_STEWARD_QUERIES)
 REGISTRY.register_all(ENTITY_ADMISSION_QUERIES)
 REGISTRY.register_all(PROPERTY_QUERIES)
 REGISTRY.register_all(TURN_MENTION_QUERIES)
+REGISTRY.register_all(QUESTION_ANALYSIS_QUERIES)
 
 # B454: re-attach sqlite-vec/FTS indexing for sparql= node-creates (they bypass
 # OxigraphClient.write_node(), the only place that indexes).

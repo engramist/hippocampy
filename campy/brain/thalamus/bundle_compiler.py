@@ -35,6 +35,7 @@ from campy.brain.hippocampus.observations import (
     owl_properties_enabled,
 )
 from campy.brain.hippocampus.provenance import authority_of
+from campy.brain.thalamus.question_analysis import analyse_for_bundle, question_analysis_enabled
 from campy.brain.hippocampus.table_registry import pk_for
 
 _logger = logging.getLogger(__name__)
@@ -113,6 +114,9 @@ class BundleSection:
     # B472 3c: a "conversation" section that holds the WHOLE eligible user
     # history (B482 budget path, everything fit). Observations are redundant then.
     full_history: bool = False
+    # B547: the fields of the question analysis this section read (e.g. ["concept_ids"]); empty when the
+    # analysis is off or the section did not read it.
+    reads: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -125,6 +129,8 @@ class ContextBundle:
     truncated: bool  # True if budget forced compression
     sources: list[str] = field(default_factory=list)
     compilation_ms: float = 0.0
+    # B547: the question analysis (QuestionAnalysis.to_dict()) when `[retrieval] question_analysis` is on.
+    analysis: Optional[dict] = None
 
     def to_dict(self) -> dict:
         """Serialize for MCP response."""
@@ -137,6 +143,7 @@ class ContextBundle:
                     "token_estimate": s.token_estimate,
                     "source_node_ids": s.source_node_ids,
                     **({"variant": s.variant} if getattr(s, "variant", "") else {}),
+                    **({"reads": list(s.reads)} if getattr(s, "reads", None) else {}),
                 }
                 for s in self.sections
             ],
@@ -145,6 +152,7 @@ class ContextBundle:
             "truncated": self.truncated,
             "sources": self.sources,
             "compilation_ms": self.compilation_ms,
+            **({"analysis": self.analysis} if self.analysis is not None else {}),
         }
 
 
@@ -219,6 +227,13 @@ async def compile_bundle(
     sources = []
     cumulative_tokens = 0
 
+    # Stage 0 (B547, flag): the question is analysed once; the stages below read it.
+    analysis = None
+    analysis_dict = None
+    if question_analysis_enabled(config):
+        analysis = await analyse_for_bundle(db, query)
+        analysis_dict = analysis.to_dict() if analysis is not None else None
+
     # Stage 1: Exact facts
     exact_facts_section = await _stage_exact_facts(db, query, config, tier_config)
     if exact_facts_section and exact_facts_section.content:
@@ -235,12 +250,13 @@ async def compile_bundle(
             truncated=True,
             sources=sources,
             compilation_ms=(time.time() - start_time) * 1000,
+            analysis=analysis_dict,
         )
         return bundle
 
     # Stage 1b (B524, flag): a count/list question about one subject, answered by a graph query.
     from campy.brain.thalamus.graph_count import build_graph_count_section
-    count_section = await build_graph_count_section(db, query, config)
+    count_section = await build_graph_count_section(db, query, config, analysis=analysis)
     if count_section and count_section.content:
         sections.append(count_section)
         cumulative_tokens += count_section.token_estimate
@@ -262,6 +278,7 @@ async def compile_bundle(
             truncated=True,
             sources=sources,
             compilation_ms=(time.time() - start_time) * 1000,
+            analysis=analysis_dict,
         )
         return bundle
 
@@ -276,7 +293,7 @@ async def compile_bundle(
     semantic_section = None
     if observations_retrieval_enabled(config) and not (
             conversation_section is not None and conversation_section.full_history):
-        semantic_section = await _stage_observations(db, query, config)
+        semantic_section = await _stage_observations(db, query, config, analysis=analysis)
     if semantic_section is None:
         semantic_section = await _stage_semantic_context(db, query, config, tier_config, session_id=session_id)
     if semantic_section and semantic_section.content:
@@ -292,7 +309,7 @@ async def compile_bundle(
         shown = set(sources)
         if conversation_section is not None:
             shown.update(conversation_section.source_node_ids)
-        linked_section = await _stage_concept_walk(db, query, config, shown)
+        linked_section = await _stage_concept_walk(db, query, config, shown, analysis=analysis)
         if linked_section and linked_section.content:
             sections.append(linked_section)
             cumulative_tokens += linked_section.token_estimate
@@ -307,6 +324,7 @@ async def compile_bundle(
             truncated=True,
             sources=sources,
             compilation_ms=(time.time() - start_time) * 1000,
+            analysis=analysis_dict,
         )
         return bundle
 
@@ -342,6 +360,7 @@ async def compile_bundle(
             truncated=True,
             sources=sources,
             compilation_ms=(time.time() - start_time) * 1000,
+            analysis=analysis_dict,
         )
         return bundle
 
@@ -364,6 +383,7 @@ async def compile_bundle(
             truncated=True,
             sources=sources,
             compilation_ms=(time.time() - start_time) * 1000,
+            analysis=analysis_dict,
         )
         return bundle
 
@@ -398,6 +418,7 @@ async def compile_bundle(
         truncated=truncated,
         sources=list(set(sources)),  # Deduplicate
         compilation_ms=(time.time() - start_time) * 1000,
+        analysis=analysis_dict,
     )
 
     return bundle
@@ -774,7 +795,7 @@ async def _question_concept_ids(gw, query: str) -> list[str]:
     return ids
 
 
-async def _stage_concept_walk(db, query: str, config: dict, exclude: set[str]) -> Optional[BundleSection]:
+async def _stage_concept_walk(db, query: str, config: dict, exclude: set[str], analysis=None) -> Optional[BundleSection]:
     """B503: the user turns and Observations linked, in the graph, to the
     Concepts the question names (1 hop) or to their categories, children and
     siblings (2 hops): gathered through the shared Concept, not through
@@ -784,7 +805,10 @@ async def _stage_concept_walk(db, query: str, config: dict, exclude: set[str]) -
     Items already in the bundle (`exclude`: conversation turns, observation
     ids) are left out; the rest are capped at `[retrieval] graph_linking_limit`
     and shown oldest first, each stamped with its speaker and date. Returns
-    None when nothing is linked or anything fails."""
+    None when nothing is linked or anything fails.
+
+    B547: with a question `analysis`, its Concept ids replace both resolvers (the analysis already folds
+    plurals and altLabels through the same `norm_key`)."""
     limit = graph_linking_limit(config)
     if limit <= 0:
         return None
@@ -794,8 +818,11 @@ async def _stage_concept_walk(db, query: str, config: dict, exclude: set[str]) -
         from campy.brain.hippocampus.graph.gateway import conversation_stamp
 
         gw = get_gateway(db)
-        concept_ids = list(dict.fromkeys(
-            await _question_concept_ids(gw, query) + await match_concepts(gw, query, alt_labels=skos)))
+        if analysis is not None:
+            concept_ids = list(dict.fromkeys(analysis.concept_ids))
+        else:
+            concept_ids = list(dict.fromkeys(
+                await _question_concept_ids(gw, query) + await match_concepts(gw, query, alt_labels=skos)))
         if not concept_ids:
             return None
         rows = await gw.run(
@@ -831,6 +858,7 @@ async def _stage_concept_walk(db, query: str, config: dict, exclude: set[str]) -
         return BundleSection(
             section_type="linked", content=content, source_node_ids=node_ids,
             token_estimate=sum(max(1, len(c["text"]) // 4) for c in content),
+            reads=["concept_ids"] if analysis is not None else [],
         )
     except Exception as e:
         _logger.warning("Error in _stage_concept_walk: %s", e)
@@ -840,7 +868,7 @@ async def _stage_concept_walk(db, query: str, config: dict, exclude: set[str]) -
 _WALK_MESSAGE_CHARS = 1200
 
 
-async def _stage_observations(db, query: str, config: dict) -> Optional[BundleSection]:
+async def _stage_observations(db, query: str, config: dict, analysis=None) -> Optional[BundleSection]:
     """B472 Phase 3c: the semantic section built from Observations -- typed,
     source-grounded claims the user made -- instead of Concept/Decision labels.
 
@@ -853,7 +881,9 @@ async def _stage_observations(db, query: str, config: dict) -> Optional[BundleSe
     (`[retrieval] conversation_order`: oldest first by default).
 
     Returns None -- so the caller falls back to the old semantic stage -- when
-    there are no matching Observations or anything fails."""
+    there are no matching Observations or anything fails.
+
+    B547: with a question `analysis`, the Concepts the question names are its `concept_ids`."""
     limit = observation_limit(config)
     if limit <= 0:
         return None
@@ -869,7 +899,8 @@ async def _stage_observations(db, query: str, config: dict) -> Optional[BundleSe
             if (observations_supersede_enabled(config) or owl_properties_enabled(config))
             else "thalamus.bundle_observations",
             query_embedding=emb.embed(query, model_name=embedding_model), query_text=query,
-            concept_ids=await _question_concept_ids(gw, query), limit=limit,
+            concept_ids=(list(analysis.concept_ids) if analysis is not None
+                         else await _question_concept_ids(gw, query)), limit=limit,
         )
         if not rows:
             return None
@@ -894,6 +925,7 @@ async def _stage_observations(db, query: str, config: dict) -> Optional[BundleSe
             section_type="semantic", content=content, source_node_ids=node_ids,
             token_estimate=sum(max(1, len(c["text"]) // 4) for c in content),
             variant="observations",
+            reads=["concept_ids"] if analysis is not None else [],
         )
     except Exception as e:
         _logger.warning("Error in _stage_observations: %s", e)
