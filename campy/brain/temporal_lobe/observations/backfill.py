@@ -59,3 +59,43 @@ async def backfill_time(db: Any, *, limit: int | None = None) -> BackfillStats:
         stats.filled += 1
     _logger.info("[Observations] time backfill: %s", stats.as_details())
     return stats
+
+
+@dataclass
+class RoleBackfillStats:
+    observations: int = 0
+    subject_before: int = 0
+    object_before: int = 0
+    subject_after: int = 0
+    object_after: int = 0
+    ambiguous: int = 0      # no object edge: more than one OBSERVATION_ABOUT Concept fits object_text
+
+    def as_details(self) -> dict[str, int]:
+        return {k: v for k, v in self.__dict__.items()}
+
+
+async def _role_counts(gw: Any) -> tuple[int, int, int]:
+    row = dict((await gw.run("observations.role_link_counts"))[0])
+    return int(row["observations"]), int(row["with_subject"]), int(row["with_object"])
+
+
+async def backfill_roles(db: Any) -> RoleBackfillStats:
+    """B522: give existing Observations their HAS_SUBJECT / HAS_OBJECT edges.
+
+    HAS_SUBJECT from `subject_id`; HAS_OBJECT from `object_id`, else from the one non-subject,
+    non-kind OBSERVATION_ABOUT Concept whose label appears as whole words in `object_text`
+    (several candidates: skipped and counted as ambiguous). An empty `object_id` is then filled
+    from the object edge. Each step is one set-based graph update, so nothing is held in Python.
+    Idempotent; it never removes an edge and never touches OBSERVATION_ABOUT. It WRITES: run it
+    on a copy of a store or as a maintenance step, not in the read path."""
+    gw = get_gateway(db)
+    stats = RoleBackfillStats()
+    stats.observations, stats.subject_before, stats.object_before = await _role_counts(gw)
+    await gw.run("observations.backfill_subject_roles")
+    await gw.run("observations.backfill_object_roles_from_id")
+    await gw.run("observations.backfill_object_roles_from_text")
+    await gw.run("observations.set_object_id_from_role", oid=None)
+    _, stats.subject_after, stats.object_after = await _role_counts(gw)
+    stats.ambiguous = len(await gw.run("observations.ambiguous_object_candidates"))
+    _logger.info("[Observations] role backfill: %s", stats.as_details())
+    return stats

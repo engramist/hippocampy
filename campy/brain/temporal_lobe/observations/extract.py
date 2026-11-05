@@ -361,6 +361,7 @@ async def process_turn(
     occurred_at = msg.get("occurred_at") or msg.get("created_at")
     entities_on = obs.observations_entities_enabled(config)
     owl_on = obs.owl_properties_enabled(config)
+    roles_on = obs.object_roles_enabled(config)
     messages = build_messages(text, speaker, occurred_at, int(cfg.get("max_turn_chars", 600)),
                               entities=entities_on, cardinality=owl_on)
 
@@ -432,6 +433,10 @@ async def process_turn(
                     from campy.brain.hippocampus import attribute_properties as ap
                     if ent_id:
                         await ap.bind_object(gw, result.observation_id, ent_id)
+                if ent_id and roles_on:
+                    # B522: the entity write_entity resolved is this claim's object
+                    await obs.write_roles(gw, result.observation_id, subject_id=draft.subject_id,
+                                          object_id=ent_id)
             except Exception:
                 _logger.warning("[ObservationEntities] entity write failed msg=%s", message_id[:8], exc_info=True)
         if linking and result.ok and result.observation_id:

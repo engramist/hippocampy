@@ -132,6 +132,13 @@ def owl_properties_enabled(config: dict | None) -> bool:
     return bool(((config or {}).get("observations") or {}).get("owl_properties", False))
 
 
+def object_roles_enabled(config: dict | None) -> bool:
+    """`[observations] object_roles` (default FALSE; env `CAMPY_OBSERVATIONS_OBJECT_ROLES=1` turns it on)
+    (B522): each Observation records which Concept is its subject (HAS_SUBJECT) and which its object
+    (HAS_OBJECT, with an empty object_id filled from it), next to the untyped OBSERVATION_ABOUT."""
+    return bool(((config or {}).get("observations") or {}).get("object_roles", False))
+
+
 def observations_supersede_enabled(config: dict | None) -> bool:
     """`[observations] supersede` (default FALSE; env `CAMPY_OBSERVATIONS_SUPERSEDE=1` turns it on) (B499):
     a newer asserted attribute Observation supersedes an older live one about the
@@ -417,7 +424,7 @@ async def record_observation(
         oid = existing[0]["observation_id"]
         await gw.run("observations.link_evidenced_by", oid=oid, mid=draft.evidence_ref)
         await gw.run("observations.touch_observation", oid=oid, now=now)
-        await _link_concepts(gw, oid, draft)
+        await _link_concepts(gw, oid, draft, roles=object_roles_enabled(config))
         return WriteResult("duplicate", oid)
 
     oid = str(uuid.uuid4())
@@ -455,7 +462,7 @@ async def record_observation(
         now=now,
     )
     await gw.run("observations.link_evidenced_by", oid=oid, mid=draft.evidence_ref)
-    await _link_concepts(gw, oid, draft)
+    await _link_concepts(gw, oid, draft, roles=object_roles_enabled(config))
     if draft.predicate == "has_attribute" and owl_properties_enabled(config):
         # B509: the attribute is a property node; only a functional property supersedes. This
         # replaces B499's string rule, which cannot tell "age" from "hobby".
@@ -586,9 +593,23 @@ async def _supersede_attributes(gw: Any, oid: str, draft: ObservationDraft, msg:
             mine["superseded_by"] = new["observation_id"]
 
 
-async def _link_concepts(gw: Any, oid: str, draft: ObservationDraft) -> None:
+async def _link_concepts(gw: Any, oid: str, draft: ObservationDraft, *, roles: bool = False) -> None:
     for cid in dict.fromkeys(c for c in (draft.subject_id, draft.object_id) if c):
         await gw.run("observations.link_about_concept", oid=oid, cid=cid)
+    if roles:
+        await write_roles(gw, oid, subject_id=draft.subject_id, object_id=draft.object_id)
+
+
+async def write_roles(gw: Any, oid: str, *, subject_id: str | None = None, object_id: str | None = None) -> None:
+    """B522: record the subject and object Concepts of an Observation as HAS_SUBJECT / HAS_OBJECT
+    (each at most one, the first written wins) and fill an empty `object_id` from the object edge.
+    Idempotent; the caller decides whether the flag allows it. An object equal to the subject is
+    not an object."""
+    if subject_id:
+        await gw.run("observations.link_subject", oid=oid, cid=subject_id)
+    if object_id and object_id != subject_id:
+        await gw.run("observations.link_object", oid=oid, cid=object_id)
+        await gw.run("observations.set_object_id_from_role", oid=oid)
 
 
 # --- reads --------------------------------------------------------------------------
