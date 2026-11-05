@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -53,7 +54,14 @@ async def admit_entities(gw: Any, message_id: str, entities: list[dict], *,
                          embedding_model: str) -> list[str]:
     """Admit each entity whose label is in `ADMITTED_LABELS`; link the turn to it. Returns
     the Concept ids (one per distinct Concept, in order). Never raises for one bad entity."""
+    return [cid for cid, _ in await admit_entities_with_text(gw, message_id, entities, embedding_model=embedding_model)]
+
+
+async def admit_entities_with_text(gw: Any, message_id: str, entities: list[dict], *,
+                                   embedding_model: str) -> list[tuple[str, str]]:
+    """`admit_entities`, returning (Concept id, entity text) pairs."""
     ids: list[str] = []
+    pairs: list[tuple[str, str]] = []
     for e in entities:
         label, text = e.get("label"), (e.get("text") or "").strip()
         if label not in ADMITTED_LABELS or not text:
@@ -69,7 +77,8 @@ async def admit_entities(gw: Any, message_id: str, entities: list[dict], *,
             continue
         if cid not in ids:
             ids.append(cid)
-    return ids
+            pairs.append((cid, text))
+    return pairs
 
 
 async def _concept_for(gw: Any, text: str, embedding_model: str) -> str | None:
@@ -98,3 +107,32 @@ async def can_be_kind(gw: Any, concept_id: str) -> bool:
     if row.get("ner_label"):
         return False
     return str(row.get("schema_org_type") or "").rsplit(":", 1)[-1] != "Person"
+
+
+async def admit_turn(gw: Any, message_id: str, text: str, speaker: str | None, config: dict | None, *,
+                     embedding_model: str) -> list[tuple[str, str]]:
+    """Admit the named entities of one turn from its text: step 1 (spaCy + surface
+    normalisation, as the Loop runs it) then `admit_entities`. Idempotent (the lookups find
+    what an earlier call or the Loop wrote), so the Observation extractor calls it before it
+    links a claim's words to Concepts and does not depend on whether `run_loop` ran first.
+    No-op when the flag is off. Never raises."""
+    if not entity_admission_enabled(config):
+        return []
+    try:
+        from campy.brain.temporal_lobe.loop.step1_ner import extract_entities, normalize_entities
+        model = ((config or {}).get("nlp") or {}).get("spacy_model", "en_core_web_md")
+        _, entities = await asyncio.to_thread(extract_entities, text, model)
+        known = {speaker} if speaker and speaker.strip() else set()
+        entities = normalize_entities(entities, known)
+        return await admit_entities_with_text(gw, message_id, entities, embedding_model=embedding_model)
+    except Exception:
+        _logger.warning("[EntityAdmission] msg=%s turn admission failed", message_id[:8], exc_info=True)
+        return []
+
+
+def names_in(entity_text: str | None, claim_words: str | None) -> bool:
+    """True when `entity_text` occurs in `claim_words` as whole words, case-insensitively
+    ("Art" is not in "artist"; "Nike" is in "signed with Nike's team")."""
+    e = " ".join((entity_text or "").lower().replace("\u2019", "'").split())
+    c = " ".join((claim_words or "").lower().replace("\u2019", "'").split())
+    return bool(e) and re.search(r"(?<!\w)" + re.escape(e) + r"(?!\w)", c) is not None

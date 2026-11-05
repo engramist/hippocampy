@@ -228,3 +228,68 @@ async def test_named_entities_query_reads_what_admission_wrote(db, gw):
     await _loop(db, "m7", text, ON)
     rows = await gw.run("entity_admission.named_entities")
     assert {(r["text_raw"], r["ner_label"]) for r in rows} >= {("Nike", "ORG"), ("Barcelona", "GPE")}
+
+
+# --- extraction-time resolution (order independent) --------------------------------------
+
+import json
+from campy.brain.temporal_lobe.observations import extract as ex
+
+XCFG_ON = {"loop": {"entity_admission": True}, "retrieval": {"graph_linking": True},
+           "observations": {"enabled": True, "llm_enabled": True}}
+XCFG_OFF = {"loop": {"entity_admission": False}, "retrieval": {"graph_linking": True},
+            "observations": {"enabled": True, "llm_enabled": True}}
+
+
+class _LLM:
+    def __init__(self):
+        self.reply = json.dumps([{
+            "subject": "I", "predicate": "did", "object": "read The Name of the Wind", "time": None,
+            "polarity": "asserted", "quote": '"The Name of the Wind" is great', "confidence": 0.9}])
+
+    def chat(self, messages, **kwargs):
+        return self.reply
+
+
+async def _extract(db, gw, cfg, mid="x1"):
+    await _message(gw, mid, D6_8)
+    await gw.run("capture.set_message_source", message_id=mid, speaker="Tim",
+                 occurred_at=T0.isoformat())
+    st = ex.ObservationWorkerStats()
+    n = await ex.process_turn(db, cfg, _LLM(), mid, st)
+    return n
+
+
+def _about(db):
+    rows = db._execute_and_collect(
+        f"SELECT ?t WHERE {{ ?o a {NS}Observation> ; {NS}OBSERVATION_ABOUT> ?c . ?c {NS}text_raw> ?t }}")
+    return {str(r["t"]) for r in rows}
+
+
+async def test_extractor_links_to_title_when_run_loop_never_ran(db, gw):
+    assert await _extract(db, gw, XCFG_ON) == 1
+    assert "The Name of the Wind" in _about(db)
+    assert dict(_concepts(db))["The Name of the Wind"] == "WORK_OF_ART"
+
+
+async def test_extractor_links_to_title_when_run_loop_ran_first_without_duplicates(db, gw, monkeypatch):
+    _step2_noise(monkeypatch)
+    await _message(gw, "x1", D6_8)
+    await _loop(db, "x1", D6_8, ON)
+    await gw.run("capture.set_message_source", message_id="x1", speaker="Tim", occurred_at=T0.isoformat())
+    created = await ex.process_turn(db, XCFG_ON, _LLM(), "x1", ex.ObservationWorkerStats())
+    assert created == 1 and "The Name of the Wind" in _about(db)
+    names = [t.lower() for t, _ in _concepts(db)]
+    assert len(names) == len(set(names))
+
+
+async def test_extractor_flag_off_unchanged(db, gw):
+    assert await _extract(db, gw, XCFG_OFF) == 1
+    assert "The Name of the Wind" not in _about(db)
+    assert "The Name of the Wind" not in dict(_concepts(db))
+
+
+async def test_names_in_is_whole_word():
+    assert ea.names_in("Art", "I am an artist") is False
+    assert ea.names_in("Nike", "signed with Nike's team") is True
+    assert ea.names_in("The Name of the Wind", "read the name of the wind") is True

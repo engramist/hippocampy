@@ -36,6 +36,7 @@ from typing import Any
 
 from campy.brain.hippocampus import observations as obs
 from campy.brain.hippocampus.concept_links import concept_index, graph_linking_enabled, link_observation_concepts
+from campy.brain.hippocampus.entity_admission import admit_turn, names_in
 from campy.brain.hippocampus.kinds import closematch_threshold, skos_vocab_enabled
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.hippocampus.graph.gateway import get_gateway
@@ -364,6 +365,10 @@ async def process_turn(
     messages = build_messages(text, speaker, occurred_at, int(cfg.get("max_turn_chars", 600)),
                               entities=entities_on, cardinality=owl_on)
 
+    # B544 (flag `[loop] entity_admission`): the turn's named entities are Concepts before any
+    # claim is linked to Concepts by its words, whichever of this worker and run_loop ran first.
+    admitted = await admit_turn(gw, message_id, text, speaker, config, embedding_model=embedding_model)
+
     stats.llm_calls += 1
     try:
         raw = await asyncio.to_thread(llm_client.chat, messages,
@@ -434,6 +439,14 @@ async def process_turn(
                         await ap.bind_object(gw, result.observation_id, ent_id)
             except Exception:
                 _logger.warning("[ObservationEntities] entity write failed msg=%s", message_id[:8], exc_info=True)
+        if admitted and result.ok and result.observation_id:
+            # B544: the claim is about each admitted named entity its own words contain. A rule
+            # over the entity's full text (the B503 span matcher stops at 3 words, so it cannot
+            # see "The Name of the Wind"); a Concept is only ever one the turn's NER admitted.
+            claim_words = " ".join(filter(None, (draft.subject_text, draft.object_text, draft.event_text)))
+            for cid, etext in admitted:
+                if names_in(etext, claim_words):
+                    await gw.run("observations.link_about_concept", oid=result.observation_id, cid=cid)
         if linking and result.ok and result.observation_id:
             # B503: link the claim (and its turn) to the Concepts its words name
             try:
