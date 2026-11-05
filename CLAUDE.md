@@ -31,6 +31,8 @@ Optional delegation workflow:
 
 These are the sources of truth for the system design — shared across all agents (Claude, Gemini, Codex).
 
+**For the end-to-end pipeline (capture, graph, vector encoding, retrieval signals, fusion, prompt, answer), what follows the principles and what is legacy, and the principled profile to be gated as a whole, see [`docs/pipeline-map.md`](docs/pipeline-map.md).**
+
 **For architectural questions that are open, being measured, or deliberately deferred — as distinct from settled design — see [`docs/ARCHITECTURE.md`'s "Open Research Questions" section](docs/ARCHITECTURE.md#open-research-questions).**
 
 ## Critical Rule: No Shadow Stores

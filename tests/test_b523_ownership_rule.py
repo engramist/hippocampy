@@ -562,6 +562,23 @@ def test_naming_list_shares_the_clause(nlp):
 
 OWNABLE = ow.make_ownable({"dog", "car", "bike", "scarf", "poster", "cat", "plant", "house", "company"})
 
+# WordNet's first noun sense of each word these tests use (read from WordNet 3.0), so a test gives the
+# same verdict whether or not NLTK's WordNet is installed; "none" is the no-WordNet path.
+_WORDNET_FIRST_SENSE = {
+    "dog": "noun.animal", "cat": "noun.animal", "car": "noun.artifact", "bike": "noun.artifact",
+    "scarf": "noun.artifact", "house": "noun.artifact", "plant": "noun.artifact", "guitar": "noun.artifact",
+    "haven": "noun.artifact", "poster": "noun.communication", "company": "noun.group", "group": "noun.group",
+    "pick": "noun.cognition", "passion": "noun.feeling", "inspiration": "noun.cognition", "hobby": "noun.act",
+    "trip": "noun.act",
+}
+
+
+@pytest.fixture(params=["none", "wordnet"])
+def lexicon(request, monkeypatch):
+    table = {} if request.param == "none" else _WORDNET_FIRST_SENSE
+    monkeypatch.setattr(ow, "_wordnet_lexname", lambda w: table.get(w))
+    return request.param
+
 
 @pytest.mark.parametrize("text", [
     "I'm so excited about my Nova trip.",                  # the trip is held; Nova modifies it
@@ -582,7 +599,7 @@ def test_a_name_that_modifies_the_possessed_noun_is_not_owned(nlp, text):
     "Luna is my inspiration.",
     "Civic is my favorite hobby.",
 ])
-def test_a_predicate_nominal_whose_noun_is_not_ownable_does_not_fire(nlp, text):
+def test_a_predicate_nominal_whose_noun_is_not_ownable_does_not_fire(nlp, lexicon, text):
     ms, stats = ow.find_ownership(nlp(text), KNOWN, ow.OwnershipStats(), ownable=OWNABLE), None
     assert ms == []
 
@@ -590,12 +607,11 @@ def test_a_predicate_nominal_whose_noun_is_not_ownable_does_not_fire(nlp, text):
 @pytest.mark.parametrize("text,label", [
     ("Nova is my bike.", "Nova"),
     ("Birch has always been my house.", "Birch"),
-    ("Acme is my company.", "Acme"),
     ("Luna is my cat.", "Luna"),
     ("Civic is my car.", "Civic"),
     ("Toby, my plant, thrives.", "Toby"),
 ])
-def test_a_predicate_nominal_with_an_ownable_noun_fires(nlp, text, label):
+def test_a_predicate_nominal_with_an_ownable_noun_fires(nlp, lexicon, text, label):
     ms = ow.find_ownership(nlp(text), KNOWN, ow.OwnershipStats(), ownable=OWNABLE)
     assert [m.label for m in ms] == [label]
 
@@ -609,7 +625,42 @@ def test_the_acquisition_object_head_noun_must_be_ownable_too(nlp):
     assert ow.find_ownership(nlp("I adopted Nova."), KNOWN, ow.OwnershipStats(), ownable=OWNABLE) != []   # no head noun
 
 
+def test_a_group_noun_is_not_ownership_once_wordnet_says_so(nlp, lexicon):
+    # "my company" is usually where the speaker works; WordNet files it under groups (as team, family,
+    # club), which vetoes it. Without WordNet only the graph kind decides.
+    ms = ow.find_ownership(nlp("Acme is my company."), KNOWN, ow.OwnershipStats(), ownable=OWNABLE)
+    assert [m.label for m in ms] == ([] if lexicon == "wordnet" else ["Acme"])
+
+
+def test_the_copular_form_needs_a_graph_kind_wordnet_alone_is_not_enough(nlp, monkeypatch):
+    # "X is my N" is where metaphors live ("my haven", "my rock"); the same noun in an acquisition or
+    # appositive construction may still pass on WordNet alone.
+    monkeypatch.setattr(ow, "_wordnet_lexname", lambda w: _WORDNET_FIRST_SENSE.get(w))
+    graph_kinds = ow.make_ownable({"dog"})
+    assert ow.find_ownership(nlp("Nova is my guitar."), KNOWN, ow.OwnershipStats(), ownable=graph_kinds) == []
+    assert ow.find_ownership(nlp("Birch has always been my haven."), KNOWN, ow.OwnershipStats(),
+                             ownable=graph_kinds) == []
+    assert [m.label for m in ow.find_ownership(nlp("I bought a guitar called Nova."), KNOWN, ow.OwnershipStats(),
+                                               ownable=graph_kinds)] == ["Nova"]
+    assert graph_kinds("guitar") and not graph_kinds("guitar", graph_kind_required=True)
+    assert graph_kinds("dog", graph_kind_required=True)
+
+
+def test_a_unique_beginner_takes_the_category_it_heads():
+    pytest.importorskip("nltk", exc_type=ImportError)
+    try:
+        from nltk.corpus import wordnet as wn
+        wn.synsets("dog")
+    except LookupError:
+        pytest.skip("WordNet corpus not downloaded")
+    # group.n.01 is filed under noun.Tops, so a first-sense lookup alone never vetoes "my group"
+    assert ow._wordnet_lexname("group") == "noun.group"
+    assert ow._wordnet_lexname("animal") == "noun.animal"
+    assert ow._wordnet_lexname("haven") == "noun.artifact"
+
+
 def test_ownable_uses_graph_kinds_or_wordnet(monkeypatch):
+    monkeypatch.setattr(ow, "_wordnet_lexname", lambda w: None)    # no WordNet
     graph_only = ow.make_ownable({"dog"})
     assert graph_only("dogs") and not graph_only("haven")
     monkeypatch.setattr(ow, "_wordnet_lexname", lambda w: {"scarf": "noun.artifact", "haven": "noun.location",
