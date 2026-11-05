@@ -44,6 +44,17 @@ is compared with the kinds already in the scheme, in this order:
       `CLOSE_MATCH` edge, never a merge and never followed by the walk. A model-free
       vector comparison advises; the two rules above decide.
 
+Hygiene (B525, flag `[observations] kind_hygiene`, env `CAMPY_KIND_HYGIENE`, default off).
+A kind label is a clean singular noun, so a question can name it: `normalise_kind_label`
+drops leading determiners ("my dogs" -> "dogs"), puts the last word into the singular with the
+spaCy model the NER step already loads ("dogs" -> "dog", "puppies" -> "puppy", "mice" ->
+"mouse"; only a word spaCy tags as a plural noun changes), and returns None for a meta-noun
+(`META_NOUNS`: words that describe a category, not a category: "name", "thing", "type" ...).
+The surface the model wrote stays as an altLabel, so lookup by the old wording still works.
+`plan_hygiene` is the same rule over the kinds already in a store (scripts/consolidate_kinds.py):
+kinds that collapse to one label merge into one survivor, meta-noun kinds lose their
+INSTANCE_OF edges and are archived; nothing is deleted except those edges.
+
 Retrieval (B503's walk, and B505's counts) follow `INSTANCE_OF` and `BROADER` in
 both directions and descend the `BROADER` closure, so "model kit" reaches every
 instance of every narrower kind. `RELATION_PATH_*` below are the SPARQL fragments
@@ -78,6 +89,11 @@ def skos_vocab_enabled(config: dict | None) -> bool:
     return bool(((config or {}).get("retrieval") or {}).get("skos_vocab", False))
 
 
+def kind_hygiene_enabled(config: dict | None) -> bool:
+    """`[observations] kind_hygiene` (default false; env `CAMPY_KIND_HYGIENE=1` turns it on)."""
+    return bool(((config or {}).get("observations") or {}).get("kind_hygiene", False))
+
+
 def closematch_threshold(config: dict | None, default: float = DEFAULT_CLOSEMATCH_THRESHOLD) -> float:
     """`[retrieval] skos_closematch_threshold`: cosine at or above which two kinds are
     linked by CLOSE_MATCH. 0 (or anything not a positive number) turns it off."""
@@ -86,6 +102,141 @@ def closematch_threshold(config: dict | None, default: float = DEFAULT_CLOSEMATC
     except (TypeError, ValueError):
         return default
     return v if v > 0 else 0.0
+
+
+# --- B525: clean kind labels ---------------------------------------------------------
+
+# Leading words that say whose or which one, not what kind ("my dogs", "this dish").
+LABEL_DETERMINERS = frozenset({
+    "a", "an", "the", "my", "our", "your", "his", "her", "their", "its",
+    "this", "that", "these", "those",
+})
+# Words that describe a category rather than name one. "Scout is a name" says nothing about what
+# Scout is; as a kind they swallow every named thing. Closed and small on purpose: grow it only from
+# a kind a store shows holding unrelated entities.
+META_NOUNS = frozenset({
+    "name", "thing", "type", "kind", "sort", "stuff", "one", "item", "example", "part", "way", "lot", "bit",
+})
+# Nouns that are plural in form only; their "singular" is not a word for the thing.
+_PLURALE_TANTUM = frozenset({
+    "binoculars", "scissors", "glasses", "sunglasses", "pants", "jeans", "trousers", "shorts", "clothes",
+    "headphones", "goggles", "pliers", "tweezers", "leggings", "pajamas", "news", "series", "species",
+})
+_WORD_STRIP = ".,;:!?\"()[]"
+
+
+def _singular_by_rule(word: str) -> str:
+    """The no-model fallback: -ies -> -y, a plain trailing -s dropped (not -ss/-us/-is)."""
+    low = word.lower()
+    if len(low) <= 3 or low in _PLURALE_TANTUM:
+        return word
+    if low.endswith("ies"):
+        return word[:-3] + "y"
+    if low.endswith(("ss", "us", "is")) or not low.endswith("s"):
+        return word
+    return word[:-1]
+
+
+def _singular_by_spacy(words: list[str], nlp: Any) -> str | None:
+    """The last word's lemma when spaCy tags it a plural noun, else None (no change)."""
+    # inside "The ... ." the tagger reads the phrase as a noun phrase; alone, "gardens" is tagged a proper noun
+    doc = nlp("The " + " ".join(words).lower() + ".")
+    toks = [t for t in doc if not t.is_space and not t.is_punct]
+    if len(toks) < 2 or toks[-1].text.lower() != words[-1].lower():
+        return None                                     # the tokeniser split the word differently
+    last = toks[-1]
+    return last.lemma_ if last.tag_ in ("NNS", "NNPS") and last.lemma_ else None
+
+
+def _default_nlp() -> Any | None:
+    try:
+        from campy.brain.temporal_lobe.loop.step1_ner import get_nlp
+        return get_nlp()
+    except Exception:
+        _logger.debug("spaCy unavailable for kind lemmatisation", exc_info=True)
+        return None
+
+
+def normalise_kind_label(label: str | None, nlp: Any | None = None) -> str | None:
+    """The clean form of a kind label: determiners dropped, last word singular. None when nothing is
+    left, or when the result is a meta-noun (the kind is not written). `nlp` is a loaded spaCy model
+    (default: the one the NER step uses; without one, a suffix rule). Case of the surviving words is kept."""
+    t = " ".join(str(label or "").replace("\u2019", "'").split())
+    t = t.strip(_WORD_STRIP + " ")
+    words = t.split(" ") if t else []
+    while len(words) > 1 and words[0].lower() in LABEL_DETERMINERS:
+        words = words[1:]
+    if not words or not any(ch.isalpha() for ch in " ".join(words)):
+        return None
+    if words[-1].lower().endswith("'s") and len(words[-1]) > 2:
+        words[-1] = words[-1][:-2]                       # a possessive is not a kind
+    last = words[-1]
+    if last.lower() not in _PLURALE_TANTUM:
+        model = nlp if nlp is not None else _default_nlp()
+        lemma = None
+        if model is not None:
+            try:
+                lemma = _singular_by_spacy(words, model)
+            except Exception:
+                _logger.debug("spaCy lemmatisation failed", exc_info=True)
+        else:
+            lemma = _singular_by_rule(last)
+        if lemma and lemma.lower() != last.lower():
+            words[-1] = lemma.capitalize() if last[:1].isupper() and not last.isupper() else lemma
+    out = " ".join(words)
+    return None if out.lower() in META_NOUNS else out
+
+
+@dataclass
+class HygienePlan:
+    """What `plan_hygiene` decides for a store's kinds. All ids are kind Concept ids."""
+    relabel: dict[str, str] = field(default_factory=dict)         # survivor -> new prefLabel
+    merge: dict[str, str] = field(default_factory=dict)           # merged kind -> survivor
+    drop_meta: list[str] = field(default_factory=list)            # meta-noun kinds
+    detach_alts: list[tuple[str, str]] = field(default_factory=list)   # (surviving kind, altLabel) to detach
+    unchanged: int = 0
+
+
+def plan_hygiene(kinds: dict[str, "Kind"], instance_counts: dict[str, int] | None = None,
+                 nlp: Any | None = None) -> HygienePlan:
+    """The same rule over existing kinds. Kinds whose clean labels share a key are one kind; the
+    survivor is, in order, one whose label is already the clean label, the one with most instances,
+    the lowest id (deterministic). Pure: nothing is read or written here."""
+    counts = instance_counts or {}
+    plan = HygienePlan()
+    groups: dict[str, list[tuple[str, str]]] = {}
+    for cid in sorted(kinds):
+        clean = normalise_kind_label(kinds[cid].pref, nlp)
+        if clean is None:
+            plan.drop_meta.append(cid)
+            continue
+        groups.setdefault(norm_key(clean) or clean.lower(), []).append((cid, clean))
+    for members in groups.values():
+        clean = members[0][1]
+        survivor = min(members, key=lambda m: (
+            kinds[m[0]].pref.casefold() != clean.casefold(), -counts.get(m[0], 0), m[0]))[0]
+        for cid, _ in members:
+            if cid != survivor:
+                plan.merge[cid] = survivor
+        if kinds[survivor].pref != clean:
+            plan.relabel[survivor] = clean
+        elif len(members) == 1:
+            plan.unchanged += 1
+    # A prefLabel outranks an altLabel (plan_kind rule (a)). An altLabel whose key is ANOTHER live kind's
+    # prefLabel key makes that word name two kinds ("dogs" on "animal" next to "dog"), and one that is
+    # exactly its own kind's prefLabel says nothing: detach both. Other wordings stay.
+    dropped = set(plan.drop_meta) | set(plan.merge)
+    pref_after = {cid: plan.relabel.get(cid, kinds[cid].pref) for cid in kinds if cid not in dropped}
+    owner = {norm_key(p) or p.lower(): cid for cid, p in sorted(pref_after.items(), reverse=True)}
+    for cid in sorted(kinds):
+        if cid in plan.drop_meta:
+            continue
+        holder = plan.merge.get(cid, cid)
+        for alt in kinds[cid].alts:
+            hit = owner.get(norm_key(alt) or alt.lower())
+            if (hit is not None and hit != holder) or alt.casefold() == pref_after[holder].casefold():
+                plan.detach_alts.append((holder, alt))
+    return plan
 
 
 # --- the kinds already in the scheme -------------------------------------------------
@@ -240,3 +391,32 @@ async def add_alt_label(gw: Any, kind: Kind, surface: str) -> bool:
     return True
 
 
+
+
+async def apply_hygiene(gw: Any, plan: HygienePlan, kinds: dict[str, Kind]) -> dict[str, int]:
+    """Carry `plan` out on the graph with set-based updates. Idempotent: a second run over the result
+    plans nothing. Merged and meta-noun kinds are archived, never deleted; their old wording is kept
+    as an altLabel of the survivor; only INSTANCE_OF edges into a meta-noun kind are removed (plain
+    edges have no archive form). Returns counts."""
+    done = {"relabelled": 0, "merged": 0, "meta_archived": 0, "alt_labels": 0, "alts_detached": 0}
+    for cid in sorted(plan.relabel):                    # first, so a merge compares against the clean label
+        k = kinds[cid]
+        old, k.pref = k.pref, plan.relabel[cid]
+        await gw.run("kinds.set_kind_label", cid=cid, txt=k.pref)
+        done["alt_labels"] += await add_alt_label(gw, k, old)
+        done["relabelled"] += 1
+    for cid in sorted(plan.merge):
+        survivor = plan.merge[cid]
+        for q in ("merge_instance_of", "merge_broader_up", "merge_broader_down", "merge_alt_labels"):
+            await gw.run(f"kinds.{q}", lid=cid, sid=survivor)
+        await gw.run("quests.archive_concept", cid=cid)
+        done["alt_labels"] += await add_alt_label(gw, kinds[survivor], kinds[cid].pref)
+        done["merged"] += 1
+    for holder, alt in plan.detach_alts:
+        await gw.run("kinds.detach_alt_label", cid=holder, txt=alt)
+        done["alts_detached"] += 1
+    for cid in sorted(plan.drop_meta):
+        await gw.run("kinds.drop_instance_of", kid=cid)
+        await gw.run("quests.archive_concept", cid=cid)
+        done["meta_archived"] += 1
+    return done

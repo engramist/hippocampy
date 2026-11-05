@@ -150,16 +150,26 @@ def _bump(stats: Any, name: str, n: int = 1) -> None:
 
 
 async def resolve_kind(gw: Any, name: str, index: dict[str, list[str]], stats: Any, *,
-                       embedding_model: str, closematch: float = 0.0) -> str | None:
+                       embedding_model: str, closematch: float = 0.0, hygiene: bool = False) -> str | None:
     """B508: the kind Concept for `name`, consolidated against the scheme by rule
     (see kinds.plan_kind): the same kind when the normalised label matches a prefLabel
     or altLabel, else a new kind that is `BROADER`-linked under the kinds whose label
     ends its own (and over the kinds it ends), plus an advisory CLOSE_MATCH when an
-    embedding clears `closematch`. Never calls a model."""
+    embedding clears `closematch`. Never calls a model.
+
+    `hygiene` (B525): the label is first made a clean singular noun (kinds.normalise_kind_label), the
+    wording the model used is kept as an altLabel, and a meta-noun is not a kind (None, counted)."""
+    surface = name
+    if hygiene:
+        clean = kinds_mod.normalise_kind_label(name)
+        if clean is None:
+            _bump(stats, "kinds_dropped_meta")
+            return None
+        name = clean
     known = await kinds_mod.load_kinds(gw)
     plan = kinds_mod.plan_kind(name, known)
     if plan.exact:
-        if await kinds_mod.add_alt_label(gw, known[plan.exact], name):
+        if await kinds_mod.add_alt_label(gw, known[plan.exact], surface):
             _bump(stats, "kind_alt_labels")
         _bump(stats, "kinds_reused")
         return plan.exact
@@ -168,6 +178,9 @@ async def resolve_kind(gw: Any, name: str, index: dict[str, list[str]], stats: A
         return None
     await kinds_mod.mark_kind(gw, kind_id)
     _bump(stats, "kinds_created")
+    if hygiene and surface.strip() != name:
+        if await kinds_mod.add_alt_label(gw, kinds_mod.Kind(kind_id, name), surface):
+            _bump(stats, "kind_alt_labels")
     for parent in plan.broader:
         await kinds_mod.link_broader(gw, kind_id, parent)
         _bump(stats, "kinds_broader")
@@ -191,7 +204,8 @@ async def resolve_kind(gw: Any, name: str, index: dict[str, list[str]], stats: A
 
 async def write_entity(gw: Any, proposal: EntityProposal, observation_id: str, message_id: str,
                        stats: Any, *, embedding_model: str = obs.EMBEDDING_MODEL,
-                       skos: bool = False, closematch: float = 0.0) -> str | None:
+                       skos: bool = False, closematch: float = 0.0,
+                       hygiene: bool = False) -> str | None:
     """Create or reuse the entity (and kind) Concepts and write the edges.
     Returns the entity Concept id. `skos` (B508) writes the kind into the SKOS vocabulary."""
     index = await concept_index(gw, alt_labels=skos)
@@ -203,7 +217,7 @@ async def write_entity(gw: Any, proposal: EntityProposal, observation_id: str, m
     stats.entities_linked += 1
     if proposal.kind and skos:
         kind_id = await resolve_kind(gw, proposal.kind, index, stats, embedding_model=embedding_model,
-                                     closematch=closematch)
+                                     closematch=closematch, hygiene=hygiene)
         if kind_id and kind_id != entity_id:
             if entity_id in await kinds_mod.load_kinds(gw):      # a kind under a kind: subtype, not instance
                 await kinds_mod.link_broader(gw, entity_id, kind_id)
