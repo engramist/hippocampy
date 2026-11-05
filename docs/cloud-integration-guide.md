@@ -114,6 +114,7 @@ an error that names the variable. The full table is
 | `CAMPY_SHACL_GATE` | `[observations].shacl_gate` | on (B514); `0` stops validating each Observation against the SHACL shapes before writing (B507). Skipped with one log line if pyshacl/rdflib cannot be imported |
 | `CAMPY_RETRIEVAL_CONVERSATION_EMBEDDED_STATEMENTS` | `[retrieval].conversation_embedded_statements` | on (B514); `0` stops counting a first-person statement inside a question as evidence (B501) |
 | `CAMPY_ENTITY_ADMISSION` | `[loop].entity_admission` | off (B544); `1` stores every named entity of a user turn (person, title, place, organisation, product, event, group) as a Concept with its NER label and a MENTIONS edge from the turn, whatever Loop steps 2 and 4 decide |
+| `CAMPY_PROFILE` | `[pipeline].profile` | `main` (B545): today's defaults. `principled` turns on the flags listed in `docs/pipeline-map.md` as one set (`PROFILES` in `campy/brain/brainstem/config.py`). Per flag: its env var > an explicit value in the config file > the profile > the built-in default. An unknown name fails at startup. `campy status` prints the profile and each flag's resolved value and source |
 
 `CAMPY_HOME` sets where all state lives.
 

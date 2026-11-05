@@ -383,6 +383,20 @@ def migrate_legacy(
     )
 
 
+def _print_pipeline_profile() -> None:
+    """B545: the active pipeline profile and the resolved value (and where it came from) of its flags."""
+    try:
+        from campy.brain.brainstem.config import load_config, profile_report
+
+        report = profile_report(load_config())
+    except Exception as e:  # no config yet, or an invalid profile name: say so, do not hide the daemon status
+        console.print(f"[yellow]pipeline profile: unavailable ({e})[/yellow]")
+        return
+    console.print(f"[bold]pipeline profile:[/bold] {report['profile']}")
+    for name, info in report["flags"].items():
+        console.print(f"  {name} = {info['value']}  [dim]({info['source']})[/dim]", highlight=False, markup=True)
+
+
 @app.command()
 def status(
     watch: bool = typer.Option(False, "--watch", "-w", help="Live-updating phase display"),
@@ -412,6 +426,7 @@ def status(
         return f"[{color}]🧠 {phase}[/{color}] · {uptime:.0f}s"
 
     if not watch:
+        _print_pipeline_profile()
         # One-shot mode: hit heartbeat endpoint, fall back to legacy check
         try:
             r = httpx.get(HEARTBEAT_URL, timeout=2.0)

@@ -103,7 +103,19 @@ async def test_flag_env_override_and_packaged_toml():
     cfg = apply_env_overrides({"loop": {"entity_admission": True}}, {"CAMPY_ENTITY_ADMISSION": "0"})
     assert ea.entity_admission_enabled(cfg) is False
     packaged = tomllib.loads((Path(orch.__file__).parents[3] / "data/config/campy.toml").read_text())
-    assert packaged["loop"]["entity_admission"] is False
+    # B545: the template leaves profile members unset, so profile "principled" can turn it on
+    assert "entity_admission" not in packaged.get("loop", {})
+
+
+def test_profile_principled_turns_admission_on_and_env_still_wins(tmp_path, monkeypatch):
+    from campy.brain.brainstem.config import load_config
+    path = tmp_path / "config.toml"
+    path.write_text('[llm]\nprovider = "ollama"\n')
+    monkeypatch.setenv("CAMPY_PROFILE", "principled")
+    monkeypatch.delenv("CAMPY_ENTITY_ADMISSION", raising=False)
+    assert ea.entity_admission_enabled(load_config(path)) is True
+    monkeypatch.setenv("CAMPY_ENTITY_ADMISSION", "0")
+    assert ea.entity_admission_enabled(load_config(path)) is False
 
 
 # --- the Loop ---------------------------------------------------------------------------
