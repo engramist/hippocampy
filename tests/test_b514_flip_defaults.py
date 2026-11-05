@@ -61,8 +61,9 @@ def test_code_defaults():
 
 
 def test_packaged_toml_defaults_match_the_code():
-    with open(PACKAGED, "rb") as f:
-        _check(tomllib.load(f))
+    # B545: the template leaves profile members (graph_linking_limit) unset so a profile can set them;
+    # what matters is the effective config the daemon resolves from it.
+    _check(load_config(PACKAGED))
 
 
 def test_a_user_config_without_the_sections_gets_the_defaults(tmp_path):

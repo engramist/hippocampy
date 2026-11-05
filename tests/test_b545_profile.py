@@ -146,3 +146,68 @@ def test_report_lists_members_and_stay_on_flags(tmp_path, monkeypatch):
     assert rep["flags"]["retrieval.graph_linking_limit"] == {"value": 12, "source": "profile"}
     assert rep["flags"]["observations.turn_dates"] == {"value": True, "source": "default"}
     assert rep["flags"]["loop.entity_admission"]["value"] is True
+
+
+# --- shipped templates and a fresh (benchmark --isolated style) home ------------------------
+
+import shutil
+import tomllib
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+TEMPLATES = [REPO / "campy.toml", REPO / "campy" / "data" / "config" / "campy.toml"]
+
+
+@pytest.mark.parametrize("template", TEMPLATES, ids=lambda p: str(p.relative_to(REPO)))
+def test_shipped_templates_set_no_profile_member(template):
+    raw = tomllib.loads(template.read_text())
+    for section, items in PROFILES["principled"].items():
+        for key in items:
+            assert key not in (raw.get(section) or {}), f"{template.name} pins {section}.{key}"
+
+
+@pytest.mark.parametrize("template", TEMPLATES, ids=lambda p: str(p.relative_to(REPO)))
+def test_fresh_isolated_home_resolves_every_member_on(tmp_path, monkeypatch, template):
+    """campy-benchmarks --isolated writes <CAMPY_HOME>/config.toml = the base config (a copy of a template or
+    ~/.campy/config.toml) plus overrides for capture/daemon/web/server/activity keys, and the daemon
+    loads only that file. Do the same here and require every member ON through its real helper."""
+    home = tmp_path / "home"
+    home.mkdir()
+    cfg_text = template.read_text()
+    raw = tomllib.loads(cfg_text)
+    raw.setdefault("web", {})["port"] = 17999
+    raw.setdefault("server", {})["bind_host"] = "127.0.0.1"
+    raw.setdefault("capture", {})["enabled"] = False
+    raw.setdefault("watchdog", {})["enabled"] = False
+    lines = []
+    for sec, vals in raw.items():
+        if isinstance(vals, dict) and all(not isinstance(v, (dict, list)) for v in vals.values()):
+            lines.append(f"[{sec}]")
+            lines += [f"{k} = {_toml(v)}" for k, v in vals.items()]
+    (home / "config.toml").write_text("\n".join(lines) + "\n")
+    monkeypatch.setenv("CAMPY_HOME", str(home))
+    monkeypatch.chdir(home)
+    monkeypatch.setenv(PROFILE_ENV, "principled")
+    cfg = load_config()
+    assert cfg["_config_path"] == str(home / "config.toml")
+    for member, helper in MEMBERS.items():
+        value = helper(cfg)
+        assert (value == 12) if member == ("retrieval", "graph_linking_limit") else (value is True), member
+    assert all(v["source"] == "profile" for k, v in profile_report(cfg)["flags"].items()
+               if tuple(k.split(".")) in MEMBERS)
+
+
+def _toml(v):
+    import json as _j
+    return "true" if v is True else "false" if v is False else _j.dumps(v)
+
+
+def test_main_effective_config_is_unchanged_by_the_template_edit(tmp_path):
+    """Under profile main, the resolved flag values for a copy of the shipped template are the built-in defaults."""
+    cfg = load_config(str(TEMPLATES[1]))
+    assert cfg["_profile"] == "main"
+    assert cfg["observations"]["object_roles"] is False and cfg["observations"]["ownership_rule"] is False
+    assert cfg["retrieval"]["graph_count"] is False and cfg["retrieval"]["graph_linking_limit"] == 0
+    for section, key in [("observations", "object_roles"), ("observations", "ownership_rule"),
+                         ("retrieval", "graph_count"), ("retrieval", "graph_linking_limit")]:
+        assert cfg[section][key] == _DEFAULT_CONFIG[section][key]

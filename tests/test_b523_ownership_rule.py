@@ -156,11 +156,20 @@ def test_flag_default_off_env_on():
         {"observations": {"ownership_rule": True}}, {"CAMPY_OBSERVATIONS_OWNERSHIP_RULE": "0"})) is False
 
 
-def test_shipped_toml_declares_the_flag_off():
+from campy.brain.brainstem.config import _DEFAULT_CONFIG as load_defaults_cfg
+
+
+def load_defaults():
+    return load_defaults_cfg
+
+
+def test_shipped_toml_leaves_the_flag_to_the_default():
     import tomllib
 
     path = Path(__file__).resolve().parents[1] / "campy" / "data" / "config" / "campy.toml"
-    assert tomllib.loads(path.read_text())["observations"]["ownership_rule"] is False
+    # B545: not set in the template (an explicit value would pin it against the profile); default is off
+    assert "ownership_rule" not in tomllib.loads(path.read_text())["observations"]
+    assert obs.ownership_rule_enabled(load_defaults()) is False
 
 
 # --- the writer, on a real store ---------------------------------------------------------
