@@ -342,6 +342,126 @@ def apply_env_overrides(config: dict, environ=None) -> dict:
     return config
 
 
+# ---------------------------------------------------------------------------
+# B545: pipeline profiles. A profile is a named set of flag values; it adds no
+# behaviour of its own (each part keeps its own flag, P7). Precedence for one
+# flag, highest first: its env var > an explicit value in the user's config file
+# > the profile > the built-in default. "main" is the empty table: today's
+# defaults, unchanged. Choose with `[pipeline] profile = "..."` or CAMPY_PROFILE.
+# ---------------------------------------------------------------------------
+
+DEFAULT_PROFILE = "main"
+PROFILE_ENV = "CAMPY_PROFILE"
+
+PROFILES: dict[str, dict[str, dict[str, object]]] = {
+    "main": {},
+    "principled": {
+        "loop": {
+            # B544: every named entity becomes a Concept with its NER label, whatever Loop steps 2-7 decide.
+            # (PR #387; until it merges the key is unread and harmless.)
+            "entity_admission": True,
+        },
+        "observations": {
+            "object_roles": True,       # B522: typed HAS_SUBJECT / HAS_OBJECT edges on Observations
+            "ownership_rule": True,     # B523: first-person possession decided by a grammar rule
+            "kind_hygiene": True,       # B525: kind labels are clean singular nouns
+            "wordnet_kinds": True,      # B534: WordNet proposes BROADER links between kinds
+            "vocab_steward": True,      # B535: steward proposes kind links and kinds; a rule promotes
+        },
+        "retrieval": {
+            "graph_count": True,        # B524: count/list questions answered by a subject-anchored query
+            # B503 concept walk: 12 is the cap the walk was built and gated with (concept_links.DEFAULT_WALK_LIMIT;
+            # gated in R95 as the v1 walk, see backlog/B514.md and B510.md). Re-gated as part of this profile.
+            "graph_linking_limit": 12,
+        },
+    },
+}
+
+# Flags `campy status` and benchmark provenance report: every profile member, plus current-default
+# flags the profile leaves as they are (they are part of "what ran").
+PROFILE_STAYS_ON = (
+    ("observations", "enabled"), ("observations", "retrieval"), ("observations", "entities"),
+    ("observations", "owl_properties"), ("observations", "shacl_gate"), ("observations", "turn_dates"),
+    ("retrieval", "graph_linking"), ("retrieval", "skos_vocab"),
+)
+
+
+def profile_flag_keys() -> list[tuple[str, str]]:
+    keys: list[tuple[str, str]] = []
+    for table in PROFILES.values():
+        for section, items in table.items():
+            for key in items:
+                if (section, key) not in keys:
+                    keys.append((section, key))
+    return keys + [k for k in PROFILE_STAYS_ON if k not in keys]
+
+
+def resolve_profile_name(file_config: dict, environ=None) -> str:
+    """Env CAMPY_PROFILE > `[pipeline] profile` > "main". An unknown name raises: a typo must
+    never silently run `main` and be recorded as a different pipeline (P6)."""
+    environ = os.environ if environ is None else environ
+    raw = (environ.get(PROFILE_ENV) or "").strip()
+    source = PROFILE_ENV
+    if not raw:
+        raw = str(((file_config.get("pipeline") or {}).get("profile")) or "").strip()
+        source = "[pipeline] profile"
+    name = (raw or DEFAULT_PROFILE).lower()
+    if name not in PROFILES:
+        raise ValueError(f"invalid {source}: unknown profile {raw!r}; known profiles: {', '.join(sorted(PROFILES))}")
+    return name
+
+
+def apply_profile(config: dict, environ=None) -> dict:
+    """Fill the profile's values into `config` (the user's file, before defaults are merged) where
+    the file sets no value of its own. Records `_profile` and, per reported flag, `_profile_sources`."""
+    import logging
+
+    name = resolve_profile_name(config, environ)
+    sources: dict[str, str] = {}
+    for section, items in PROFILES[name].items():
+        if not isinstance(config.get(section), dict):
+            config[section] = {}
+        for key, value in items.items():
+            if key in config[section]:
+                sources[f"{section}.{key}"] = "file"
+                if config[section][key] != value:
+                    logging.getLogger(__name__).warning(
+                        "profile %r wants %s.%s = %r but the config file sets %r; the file wins",
+                        name, section, key, value, config[section][key])
+            else:
+                config[section][key] = copy.deepcopy(value)
+                sources[f"{section}.{key}"] = "profile"
+    config["_profile"] = name
+    config["_profile_sources"] = sources
+    return config
+
+
+def _finish_config(config: dict, environ=None) -> dict:
+    apply_profile(config, environ)
+    _merge_defaults(config, _DEFAULT_CONFIG)
+    apply_env_overrides(config, environ)
+    return config
+
+
+def profile_report(config: dict) -> dict:
+    """{"profile": name, "flags": {"section.key": {"value", "source"}}} for a loaded config. Source is
+    env / file / profile / default, so a flag pinned by the user's file shows as such."""
+    sources = dict(config.get("_profile_sources") or {})
+    env_hit = set(config.get("_env_overrides") or [])
+    env_for = {(sec, key): var for var, (sec, key, _p) in ENV_OVERRIDES.items()}
+    flags: dict[str, dict] = {}
+    for section, key in profile_flag_keys():
+        name = f"{section}.{key}"
+        value = (config.get(section) or {}).get(key)
+        if value is None:
+            value = (_DEFAULT_CONFIG.get(section) or {}).get(key)
+        source = sources.get(name, "default")
+        if env_for.get((section, key)) in env_hit:
+            source = "env"
+        flags[name] = {"value": value, "source": source}
+    return {"profile": config.get("_profile", DEFAULT_PROFILE), "flags": flags}
+
+
 def load_config(config_path: str | Path | None = None) -> dict:
     """
     Load campy.toml. Searches in order:
@@ -366,9 +486,8 @@ def load_config(config_path: str | Path | None = None) -> dict:
             )
         with open(explicit, "rb") as f:
             config = tomllib.load(f)
-        _merge_defaults(config, _DEFAULT_CONFIG)
         config["_config_path"] = str(explicit)
-        return apply_env_overrides(config)
+        return _finish_config(config)
 
     # No explicit path — search default locations.
     from campy.paths import home_override
@@ -390,9 +509,8 @@ def load_config(config_path: str | Path | None = None) -> dict:
         if path.exists():
             with open(path, "rb") as f:
                 config = tomllib.load(f)
-            _merge_defaults(config, _DEFAULT_CONFIG)
             config["_config_path"] = str(path)
-            return apply_env_overrides(config)
+            return _finish_config(config)
 
     raise FileNotFoundError(
         "campy/sidequests config not found. Run: campy setup"
