@@ -98,6 +98,12 @@ graph_linking = true
 graph_linking_limit = 0
 skos_vocab = true
 
+[loop]
+# B544: every named entity (PERSON, WORK_OF_ART, GPE, ORG, PRODUCT, LOC, FAC, EVENT, NORP) found in a
+# user turn becomes a Concept with its NER label and a MENTIONS edge, whatever Loop steps 2 and 4
+# decide. Off until its gate. CAMPY_ENTITY_ADMISSION=1 turns it on.
+entity_admission = false
+
 [wiki_projection]
 enabled = true
 vault_dir = "wiki"

@@ -207,6 +207,10 @@ async def link_observation_concepts(
                 # Direct queries, not campy.brain.hippocampus.kinds: kinds imports
                 # this module, so importing it back would be a cycle.
                 known = {str(r["concept_id"]) for r in await gw.run("kinds.live_kinds")}
+                # B544 guard: a named entity or a Person is never a kind, so no edge hangs on it
+                from campy.brain.hippocampus.entity_admission import can_be_kind
+                if not await can_be_kind(gw, parent):
+                    return ids
                 await gw.run("kinds.mark_kind", cid=parent, scheme=KIND_SCHEME)
                 if child in known:
                     await gw.run("kinds.link_broader", cid=child, pid=parent)

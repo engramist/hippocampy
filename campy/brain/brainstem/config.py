@@ -92,6 +92,11 @@ _DEFAULT_CONFIG = {
     },
     "loop": {
         "max_co_occurrence_pairs": 45,
+        # B544: every named entity (PERSON, WORK_OF_ART, GPE, ORG, PRODUCT, LOC, FAC, EVENT,
+        # NORP) step 1 finds in a user turn becomes a Concept with its NER label and a MENTIONS
+        # edge from the turn, whatever Loop steps 2 and 4 decide. Default OFF until its gate.
+        # CAMPY_ENTITY_ADMISSION=1 turns it on.
+        "entity_admission": False,
     },
     # B472 Phase 3: source-grounded Observations. On by default
     # (3c gate: LoCoMo-10 65 gained/39 lost p~0.014; shown only when the
@@ -257,6 +262,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_GRAPH_LINKING_LIMIT": ("retrieval", "graph_linking_limit", _parse_nonneg_int),
     # B508: SKOS vocabulary for kinds (consolidation, INSTANCE_OF vs BROADER).
     "CAMPY_SKOS_VOCAB": ("retrieval", "skos_vocab", _parse_bool),
+    # B544: admit every named entity of a user turn as a Concept (default off).
+    "CAMPY_ENTITY_ADMISSION": ("loop", "entity_admission", _parse_bool),
     # B507: the SHACL write gate (default off).
     "CAMPY_SHACL_GATE": ("observations", "shacl_gate", _parse_bool),
     # B509: OWL attribute properties; functional properties drive supersession.

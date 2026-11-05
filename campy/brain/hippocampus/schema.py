@@ -181,6 +181,7 @@ NODE_TABLES = {
         authority            STRING,
         content_hash         STRING,
         kind_scheme          STRING,
+        ner_label            STRING,
         PRIMARY KEY (concept_id)
     """,
 
@@ -1899,6 +1900,7 @@ SCHEMA_MIGRATIONS: list[tuple[str, str, str]] = [
     # B64: Ensure 'archived' column exists for all relevant tables
     ("Concept",         "archived", "BOOLEAN"),
     ("Concept",         "kind_scheme", "STRING"),     # B508: 'kind' puts the Concept in campy:KindScheme
+    ("Concept",         "ner_label", "STRING"),       # B544: the NER label that admitted the Concept as a named entity
     ("Observation",     "attr_value", "STRING"),     # B509
     ("Observation",     "attr_value_kind", "STRING"),     # B509
     ("Observation",     "attr_value_num", "DOUBLE"),     # B509
