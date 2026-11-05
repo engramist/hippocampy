@@ -40,6 +40,7 @@ from campy.brain.hippocampus.graph.queries.handoff import HANDOFF_QUERIES
 from campy.brain.hippocampus.graph.queries.observations import OBSERVATION_QUERIES
 from campy.brain.hippocampus.graph.queries.concept_links import CONCEPT_LINK_QUERIES
 from campy.brain.hippocampus.graph.queries.kinds import KIND_QUERIES
+from campy.brain.hippocampus.graph.queries.steward import KIND_STEWARD_QUERIES
 from campy.brain.hippocampus.graph.queries.properties import PROPERTY_QUERIES
 from campy.brain.hippocampus.graph.queries.turn_mentions import TURN_MENTION_QUERIES
 
@@ -70,6 +71,7 @@ REGISTRY.register_all(HANDOFF_QUERIES)
 REGISTRY.register_all(OBSERVATION_QUERIES)
 REGISTRY.register_all(CONCEPT_LINK_QUERIES)
 REGISTRY.register_all(KIND_QUERIES)
+REGISTRY.register_all(KIND_STEWARD_QUERIES)
 REGISTRY.register_all(PROPERTY_QUERIES)
 REGISTRY.register_all(TURN_MENTION_QUERIES)
 

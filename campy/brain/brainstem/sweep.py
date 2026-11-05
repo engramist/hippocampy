@@ -255,6 +255,20 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
             _logger.warning("[Sweep] Pattern discovery failed", exc_info=True)
             summary["errors"] += 1
 
+        # Step 7.6: B535 vocabulary steward (flag [observations] vocab_steward, default off): proposes kind links and
+        # entity kinds from closed choices, then applies the declared promotion rule. Bounded calls per sweep.
+        try:
+            from campy.brain.temporal_lobe import steward
+
+            if steward.steward_enabled(config):
+                from campy.brain.hippocampus.graph.gateway import get_gateway
+
+                rep = await steward.run_steward(get_gateway(db), config, max_calls=steward.SWEEP_MAX_CALLS)
+                summary["steward"] = rep.as_dict()
+        except Exception:
+            _logger.warning("[Sweep] Vocabulary steward failed", exc_info=True)
+            summary["errors"] += 1
+
         return summary
     finally:
         set_phase("idle")
