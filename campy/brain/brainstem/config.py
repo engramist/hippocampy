@@ -403,6 +403,47 @@ PROFILE_STAYS_ON = (
 )
 
 
+# B553: profile members that read WordNet (the optional extra `wordnet`: nltk + its corpus). Without it they
+# run but do less (B523 falls back to graph kinds, B534/B535 propose no WordNet links, B546 types nothing).
+# Decision (user, 2026-11-05): the profile warns, it does not refuse to start.
+PROFILE_NEEDS_WORDNET = (
+    ("observations", "ownership_rule"), ("observations", "wordnet_kinds"),
+    ("observations", "vocab_steward"), ("observations", "typed_objects"),
+)
+
+
+def wordnet_available() -> bool:
+    """Whether NLTK and its WordNet corpus load (the one check: temporal_lobe/lexicon/wordnet.py)."""
+    try:
+        from campy.brain.temporal_lobe.lexicon import wordnet as wn_mod
+
+        return wn_mod.available()
+    except Exception:
+        return False
+
+
+def wordnet_degraded(config: dict, available: bool | None = None) -> list[str]:
+    """The switched-on flags that read WordNet, when WordNet is missing ([] when it is present)."""
+    if available is None:
+        available = wordnet_available()
+    if available:
+        return []
+    return [f"{sec}.{key}" for sec, key in PROFILE_NEEDS_WORDNET if (config.get(sec) or {}).get(key) is True]
+
+
+def warn_if_wordnet_missing(config: dict, available: bool | None = None) -> list[str]:
+    """Log one warning naming the members that degrade without WordNet; returns them."""
+    import logging
+
+    degraded = wordnet_degraded(config, available)
+    if degraded:
+        logging.getLogger(__name__).warning(
+            "profile %r: WordNet is not installed, so %s run degraded; install it with "
+            "`pip install 'hippocampy[wordnet]' && python -m nltk.downloader wordnet`",
+            config.get("_profile", DEFAULT_PROFILE), ", ".join(degraded))
+    return degraded
+
+
 def profile_flag_keys() -> list[tuple[str, str]]:
     keys: list[tuple[str, str]] = []
     for table in PROFILES.values():
@@ -476,7 +517,9 @@ def profile_report(config: dict) -> dict:
         if env_for.get((section, key)) in env_hit:
             source = "env"
         flags[name] = {"value": value, "source": source}
-    return {"profile": config.get("_profile", DEFAULT_PROFILE), "flags": flags}
+    available = wordnet_available()
+    return {"profile": config.get("_profile", DEFAULT_PROFILE), "flags": flags,
+            "wordnet": {"available": available, "degraded": wordnet_degraded(config, available)}}
 
 
 def load_config(config_path: str | Path | None = None) -> dict:

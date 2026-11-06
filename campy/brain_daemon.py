@@ -1507,6 +1507,9 @@ async def main():
     # daemon.log — including any BrainDaemon(config) startup crash (cf. B417).
     config = load_config()
     _setup_daemon_logging(config)
+    # B553: the principled profile runs degraded without WordNet; say so once, in daemon.log.
+    from campy.brain.brainstem.config import warn_if_wordnet_missing
+    warn_if_wordnet_missing(config)
     daemon = BrainDaemon(config)
 
     loop = asyncio.get_running_loop()
