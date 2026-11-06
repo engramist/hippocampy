@@ -136,6 +136,11 @@ skos_vocab = true
 # stays evidence. Needs entity_admission. Off by default; on under profile "principled" (B545).
 # CAMPY_ENTITY_STANDING=1 turns it on.
 # entity_standing = false
+# B543: Loop steps 2-7 (the original decision tracker, deprecated) only add records: a contradiction verdict stores the
+# new Concept and a DisambiguationEvent and archives nothing; a Loop failure never drops the turn's Observation
+# extraction. Warns at start when entity_admission is off. Off by default; on under profile "principled" (B545).
+# CAMPY_TRACKER_SIDE_BRANCH=1 turns it on.
+# tracker_side_branch = false
 
 [wiki_projection]
 enabled = true

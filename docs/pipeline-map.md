@@ -33,7 +33,7 @@ others, and the turn text is always the evidence shown (P3).
 |---|---|---|---|
 | Turn storage | Message node: text, speaker, role, `occurred_at`, `FOLLOWED_BY`, `SENT_IN` | principled | always |
 | NER and parse (step 1) | spaCy `en_core_web_md`: named entities with labels, noun phrases, dependency parse | principled as evidence | always |
-| Old decision tracker (steps 2-7) | gist centroids for software work, decision/constraint/requirement/action-item gate, arbitration, pathway; also decides whether any entity of the turn is stored | **legacy**; drops most named things (conv-43: places 1/22, organisations 0/16, titles 1/9) | always; becomes a side branch (B543) |
+| Old decision tracker (steps 2-7) | gist centroids for software work, decision/constraint/requirement/action-item gate, arbitration, pathway; also decides whether any entity of the turn is stored | **legacy**, deprecated; drops most named things (conv-43: places 1/22, organisations 0/16, titles 1/9). With the flag it only adds records and never removes a stored Concept (a contradiction verdict stores the new Concept and a `DisambiguationEvent`, archives nothing) or withholds a turn's Observation extraction (B543); on R105 it withheld 93% of step 1's entities, 133 of 154 admitted entities exist only because of B544 | `tracker_side_branch` (off), part of the principled profile |
 | Entity admission (B544) | every named entity becomes a Concept with `ner_label`, `MENTIONS` from the turn, whatever steps 2-7 say | principled | `entity_admission` (off), #387 |
 | Relative dates (B538) | `TimeMention` per relative expression, resolved by rule against the turn's date | principled | `turn_dates` (on) |
 | Fact extractor | the model proposes subject / predicate / object / time / quote; `record_observation` writes only with a verbatim quote; links to existing Concepts only | **mixed**: subject mostly anchored; object is free text, kinds rarely typed (B540, B542) | `observations` (on) |
@@ -112,10 +112,10 @@ non-answers that the judge never sees. Status: mixed (B539 open).
 
 ## The principled profile (to be assembled)
 
-On: entity admission (B544), entity standing (B549), roles (B522), ownership (B523), kind hygiene and hierarchy (B525,
+On: entity admission (B544), entity standing (B549), the tracker as a side branch (B543), roles (B522), ownership (B523), kind hygiene and hierarchy (B525,
 B534, B535), count and list (B524), the concept walk with a limit, typed object entities (B546),
 question analysis once per question (B547), the graph signal as a vote in conversation seed fusion (B548). Demoted:
-the decision tracker as a side branch that only adds records (B543); the old semantic stage.
+the decision tracker as a side branch that only adds records (B543, `tracker_side_branch`); the old semantic stage.
 
 Switch: `[pipeline] profile = "principled"` or `CAMPY_PROFILE=principled` (B545; default `main`; the set is `PROFILES` in `campy/brain/brainstem/config.py`; `campy status` prints it).
 

@@ -141,6 +141,7 @@ from campy.brain.thalamus.tools import TOOL_HANDLERS, init_loop_queue
 from campy.brain.llm.provider import create_llm_client, create_llm_client_for_step
 from campy.brain.temporal_lobe.loop import step2_gist, step3_schema_org
 from campy.brain.temporal_lobe.loop.orchestrator import run_loop
+from campy.brain.temporal_lobe.loop.tracker_branch import tracker_side_branch_enabled, warn_if_tracker_without_admission
 from campy.brain.hippocampus.observations import observations_enabled
 from campy.brain.temporal_lobe.observations import ObservationWorkerStats, process_turn as process_observation_turn
 from campy.brain.thalamus.tools._shared import init_observation_queue
@@ -1074,18 +1075,25 @@ class BrainDaemon:
                 precomputed = rest[0] if rest else None
                 speaker = rest[1] if len(rest) > 1 else None
                 print(f"[Loop] Processing ({role}): {text[:120]!r}")
-                summary = await run_loop(
-                    message_id=message_id,
-                    text=text,
-                    role=role,
-                    db=self.db,
-                    llm_client=self._llm_client,
-                    config=self.config,
-                    centroids=self._centroids,
-                    session_id=session_id,
-                    precomputed=precomputed,
-                    **({"speaker": speaker} if speaker else {}),
-                )
+                try:
+                    summary = await run_loop(
+                        message_id=message_id,
+                        text=text,
+                        role=role,
+                        db=self.db,
+                        llm_client=self._llm_client,
+                        config=self.config,
+                        centroids=self._centroids,
+                        session_id=session_id,
+                        precomputed=precomputed,
+                        **({"speaker": speaker} if speaker else {}),
+                    )
+                except Exception:
+                    # B543: with `[loop] tracker_side_branch` a Loop failure never withholds the turn's
+                    # Observation extraction (flag off: the turn is dropped, as before).
+                    if tracker_side_branch_enabled(self.config):
+                        _enqueue_observation(self, item, message_id, role, session_id, speaker)
+                    raise
                 _enqueue_observation(self, item, message_id, role, session_id, speaker)
                 print(
                     f"[Loop] msg={message_id[:8]} "
@@ -1510,6 +1518,8 @@ async def main():
     # B553: the principled profile runs degraded without WordNet; say so once, in daemon.log.
     from campy.brain.brainstem.config import warn_if_wordnet_missing
     warn_if_wordnet_missing(config)
+    # B543: one warning when the tracker is a side branch but no rule stores entities.
+    warn_if_tracker_without_admission(config)
     daemon = BrainDaemon(config)
 
     loop = asyncio.get_running_loop()
