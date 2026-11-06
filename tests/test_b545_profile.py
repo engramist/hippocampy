@@ -18,6 +18,7 @@ from campy.brain.brainstem.config import (
 )
 from campy.brain.hippocampus import kinds, observations as obs
 from campy.brain.hippocampus.concept_links import graph_linking_limit
+from campy.brain.hippocampus.entity_standing import entity_standing_enabled
 from campy.brain.temporal_lobe.observations import evidence_entities as evid
 from campy.brain.temporal_lobe.steward import steward_enabled
 from campy.brain.thalamus.graph_count import graph_count_enabled
@@ -52,6 +53,7 @@ MEMBERS = {
     ("observations", "evidence_entity_links"): evid.evidence_entity_links_enabled,   # B554
     # B544 (PR #387): its helper is not on this base; the key is read from [loop] once it merges.
     ("loop", "entity_admission"): lambda c: bool(c["loop"].get("entity_admission", False)),
+    ("loop", "entity_standing"): entity_standing_enabled,                # B549
 }
 
 

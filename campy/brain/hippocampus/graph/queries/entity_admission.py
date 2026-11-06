@@ -34,17 +34,22 @@ ENTITY_ADMISSION_QUERIES = [
         cypher="""
         MATCH (c:Concept {concept_id: $cid})
         RETURN c.ner_label AS ner_label, c.schema_org_type AS schema_org_type,
-               c.kind_scheme AS kind_scheme
+               c.kind_scheme AS kind_scheme, c.entity_standing AS entity_standing
         """,
         params=("cid",),
         mutating=False,
-        description="A Concept's NER label, schema.org type and kind scheme (the kind guard reads these)",
+        description=("A Concept's NER label, schema.org type, kind scheme and standing, and whether it can be a kind "
+                     "(the kind guard reads `can_be_kind`: not a Person; not a labelled Concept unless its standing "
+                     "is doubtful, B549)"),
         sparql="""
-            SELECT ?ner_label ?schema_org_type ?kind_scheme WHERE {
+            SELECT ?ner_label ?schema_org_type ?kind_scheme ?entity_standing ?can_be_kind WHERE {
               ?c a campy:Concept ; campy:concept_id ?cid .
               OPTIONAL { ?c campy:ner_label ?ner_label }
               OPTIONAL { ?c campy:schema_org_type ?schema_org_type }
               OPTIONAL { ?c campy:kind_scheme ?kind_scheme }
+              OPTIONAL { ?c campy:entity_standing ?entity_standing }
+              BIND(!((BOUND(?ner_label) && COALESCE(STR(?entity_standing), "") != "doubtful")
+                     || (BOUND(?schema_org_type) && STRENDS(STR(?schema_org_type), "Person"))) AS ?can_be_kind)
             }
             """,
     ),

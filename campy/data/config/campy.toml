@@ -131,6 +131,11 @@ skos_vocab = true
 # user turn becomes a Concept with its NER label and a MENTIONS edge, whatever Loop steps 2 and 4
 # decide. Off by default; on under profile "principled" (B545). CAMPY_ENTITY_ADMISSION=1 turns it on.
 # entity_admission = false
+# B549: an admitted entity's standing (confirmed / doubtful / unverified) is derived by rule (speakers, capitalisation
+# evidence in its conversation) and a wrapped span ("Yep Deb") is trimmed to the name it holds; the tagger's label
+# stays evidence. Needs entity_admission. Off by default; on under profile "principled" (B545).
+# CAMPY_ENTITY_STANDING=1 turns it on.
+# entity_standing = false
 
 [wiki_projection]
 enabled = true

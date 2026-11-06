@@ -43,6 +43,7 @@ others, and the turn text is always the evidence shown (P3).
 | Kind cycles (B541) | refuse a `BROADER` write that closes a cycle | gap | card |
 | Typed object entities (B546) | at write time the object of a fact is linked (`HAS_OBJECT`) to an admitted entity or to an `ObjectPhrase` node and typed (`INSTANCE_OF`) by a rule: kind stated in the sentence, WordNet places, speakers, the head noun matched to the closed kind set; else a `kind_candidate` | principled; reads: `typed_objects.exact_role_turns` (what B548 votes with) | `typed_objects` (off), part of the principled profile |
 | Evidence entity links (B554) | at write time an Observation is linked (`OBSERVATION_ABOUT`) to each admitted entity whose occurrence lies in its evidence: the quote located in its source turn, else the clause holding it by the dependency parse; the model's wording plays no part | principled; reads: the concept walk and `typed_objects.loose_role_turns` (the existing OBSERVATION_ABOUT readers), `entity_admission.unlinked_entities` (coverage) | `evidence_entity_links` (off), part of the principled profile |
+| Entity standing (B549) | the tagger's label stays evidence (`ner_label`); each admitted entity gets `entity_standing` (`confirmed` / `doubtful` / `unverified`) by rule: a conversation speaker, or a capital that sentence position does not explain and the conversation never writes in lowercase; a wrapped span ("Yep Deb") is trimmed to the known name it holds. Withdraws trust from non-names (Yoga, Art, Glad, Congrats); does not repair person / place / organisation errors | principled; reads: `entity_admission.concept_status` (the kind guard: a doubtful word may be a kind), `typed_objects.named_entity_texts` (the kind-label guard), `question_analysis.concept_lexicon` (a PERSON label needs `confirmed`; B547); B554 and B548 do not read it | `entity_standing` (off), part of the principled profile |
 
 ## 2. Graph (the facts)
 
@@ -111,7 +112,7 @@ non-answers that the judge never sees. Status: mixed (B539 open).
 
 ## The principled profile (to be assembled)
 
-On: entity admission (B544), roles (B522), ownership (B523), kind hygiene and hierarchy (B525,
+On: entity admission (B544), entity standing (B549), roles (B522), ownership (B523), kind hygiene and hierarchy (B525,
 B534, B535), count and list (B524), the concept walk with a limit, typed object entities (B546),
 question analysis once per question (B547), the graph signal as a vote in conversation seed fusion (B548). Demoted:
 the decision tracker as a side branch that only adds records (B543); the old semantic stage.

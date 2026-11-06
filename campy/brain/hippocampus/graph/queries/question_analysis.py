@@ -23,12 +23,18 @@ QUESTION_ANALYSIS_QUERIES = [
         mutating=False,
         description="Every live Concept with its type and the tagger label B544 stores (ner_label), for resolving the people and entities a question names",
         sparql="""
-            SELECT ?concept_id ?text_raw ?schema_org_type ?kind_scheme ?ner_label WHERE {
+            SELECT ?concept_id ?text_raw ?schema_org_type ?kind_scheme ?ner_label ?entity_standing ?person_basis WHERE {
               ?c a campy:Concept ; campy:concept_id ?concept_id ;
                  campy:text_raw ?text_raw ; campy:archived false .
               OPTIONAL { ?c campy:schema_org_type ?schema_org_type }
               OPTIONAL { ?c campy:kind_scheme ?kind_scheme }
               OPTIONAL { ?c campy:ner_label ?ner_label }
+              OPTIONAL { ?c campy:entity_standing ?entity_standing }
+              # B549: a person is typed Person (strong), or tagged PERSON and not withdrawn by the standing rule
+              # (weak: B547 still needs the question-side tagger to agree). No standing recorded = as before.
+              BIND(IF(BOUND(?schema_org_type) && STRENDS(STR(?schema_org_type), "Person"), "strong",
+                   IF(COALESCE(STR(?ner_label), "") = "PERSON"
+                      && (!BOUND(?entity_standing) || STR(?entity_standing) = "confirmed"), "weak", "")) AS ?person_basis)
             }
             """,
     ),
