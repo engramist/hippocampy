@@ -151,6 +151,13 @@ _DEFAULT_CONFIG = {
         # (WordNet's closure, the same proposal from two evidence sets, or a second model family set under
         # [llm.steward_second]). The steward's own model is [llm.steward] (default: the global [llm]). Gate pending.
         "vocab_steward": False,
+        # B546 (default OFF; env CAMPY_TYPED_OBJECTS=1 turns it on): the object of a fact is a typed entity. At
+        # Observation write time a rule links the object to an existing admitted Concept (HAS_OBJECT) or, when no
+        # entity is named, to one ObjectPhrase node per Observation, and types it (INSTANCE_OF) from a kind the
+        # sentence states, WordNet places, the conversation's speakers, or the head noun matched to a kind that
+        # exists; else it is only a candidate. No model call; no Concept is created except a kind. Gate pending
+        # (judged with the principled profile, B545).
+        "typed_objects": False,
         "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
         # B538 (default ON; env CAMPY_TURN_DATES=0 turns it off): every user turn's relative time
         # expressions ("yesterday", "last week") are resolved by rule against the turn's date at
@@ -305,6 +312,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_WORDNET_KINDS": ("observations", "wordnet_kinds", _parse_bool),
     # B535: the vocabulary steward proposes kind links and entity kinds from closed choices.
     "CAMPY_VOCAB_STEWARD": ("observations", "vocab_steward", _parse_bool),
+    # B546: the object of a fact is a typed entity (HAS_OBJECT to a Concept or an ObjectPhrase, INSTANCE_OF by rule).
+    "CAMPY_TYPED_OBJECTS": ("observations", "typed_objects", _parse_bool),
     # B538: relative dates in user turns resolved by rule at capture and shown inline (default on).
     "CAMPY_TURN_DATES": ("observations", "turn_dates", _parse_bool),
     # B499: rule-based supersession of attribute Observations (default off).
@@ -373,6 +382,7 @@ PROFILES: dict[str, dict[str, dict[str, object]]] = {
             "kind_hygiene": True,       # B525: kind labels are clean singular nouns
             "wordnet_kinds": True,      # B534: WordNet proposes BROADER links between kinds
             "vocab_steward": True,      # B535: steward proposes kind links and kinds; a rule promotes
+            "typed_objects": True,      # B546: the object of a fact is a typed entity (HAS_OBJECT, INSTANCE_OF by rule)
         },
         "retrieval": {
             "graph_count": True,        # B524: count/list questions answered by a subject-anchored query

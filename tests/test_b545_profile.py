@@ -45,6 +45,7 @@ MEMBERS = {
     ("observations", "vocab_steward"): steward_enabled,                  # B535
     ("retrieval", "graph_linking_limit"): graph_linking_limit,           # B503 walk
     ("retrieval", "question_analysis"): question_analysis_enabled,       # B547
+    ("observations", "typed_objects"): obs.typed_objects_enabled,        # B546
     # B544 (PR #387): its helper is not on this base; the key is read from [loop] once it merges.
     ("loop", "entity_admission"): lambda c: bool(c["loop"].get("entity_admission", False)),
 }

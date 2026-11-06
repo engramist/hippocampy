@@ -41,7 +41,7 @@ others, and the turn text is always the evidence shown (P3).
 | Ownership rule (B523) | first-person possession decided by rule | principled | parked, #373 |
 | Kind hygiene and hierarchy (B525, B534, B535) | clean singular kind labels; WordNet and steward propose `BROADER`, a rule promotes | principled | parked, #375, #378, #379 |
 | Kind cycles (B541) | refuse a `BROADER` write that closes a cycle | gap | card |
-| Typed object entities | the object of a fact as an entity with a kind | **gap**: the main reason subject-anchored queries reach little (L3, B540, B542 screens) | — |
+| Typed object entities (B546) | at write time the object of a fact is linked (`HAS_OBJECT`) to an admitted entity or to an `ObjectPhrase` node and typed (`INSTANCE_OF`) by a rule: kind stated in the sentence, WordNet places, speakers, the head noun matched to the closed kind set; else a `kind_candidate` | principled; reads: `typed_objects.exact_role_turns` (what B548 votes with) | `typed_objects` (off), part of the principled profile |
 
 ## 2. Graph (the facts)
 
@@ -104,7 +104,7 @@ non-answers that the judge never sees. Status: mixed (B539 open).
 ## The principled profile (to be assembled)
 
 On: entity admission (B544), roles (B522), ownership (B523), kind hygiene and hierarchy (B525,
-B534, B535), count and list (B524), the concept walk with a limit, typed object entities (gap),
+B534, B535), count and list (B524), the concept walk with a limit, typed object entities (B546),
 question analysis once per question (gap), the graph signal as a vote in fusion (gap). Demoted:
 the decision tracker as a side branch that only adds records (B543); the old semantic stage.
 

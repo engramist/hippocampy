@@ -5,7 +5,7 @@ scripts/generate_migration_fixture.py — B411 Exhaustive Migration Fixture Gene
 Derives schema coverage directly by importing `campy/brain/hippocampus/schema.py`
 (reusing B406 three-source derivation: NODE_TABLES, REL_TABLES, and SCHEMA_MIGRATIONS).
 Generates an exhaustive JSONL graph fixture covering:
-- All 60 node tables (with every declared property populated)
+- All 61 node tables (with every declared property populated)
 - All 121 edge types (108 classified + 13 verified unclassified escalated)
 - Multiple occurrences per (s,p,o) for all 15 occurrence types
 - Plain triples and quoted annotations for all 30 star types
@@ -102,7 +102,7 @@ def derive_schema() -> tuple[dict[str, dict[str, str]], dict[str, dict[str, Any]
             rel_schemas[table]["columns"][col] = col_type
 
     # Sanity checks against schema.py
-    assert len(node_schemas) == 60, f"Expected 60 node tables, got {len(node_schemas)}"
+    assert len(node_schemas) == 61, f"Expected 61 node tables, got {len(node_schemas)}"
     assert len(rel_schemas) == 121, f"Expected 121 rel tables, got {len(rel_schemas)}"
 
     return node_schemas, rel_schemas
@@ -235,12 +235,12 @@ def verify_conformance(
     rel_rows: list[dict[str, Any]],
 ) -> None:
     """Assert all B411 acceptance criteria programmatically."""
-    # 1. 60/60 node tables covered
+    # 1. 61/61 node tables covered
     covered_nodes = {r["_table"] for r in node_rows if r["_type"] == "node"}
     assert covered_nodes == set(node_schemas.keys()), (
         f"Missing node tables in fixture: {set(node_schemas.keys()) - covered_nodes}"
     )
-    assert len(covered_nodes) == 60
+    assert len(covered_nodes) == 61
 
     # 2. Every node row has all declared properties populated
     for r in node_rows:

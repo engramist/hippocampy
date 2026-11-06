@@ -2,7 +2,7 @@
 tests/test_migration_fixture_conformance.py — B411 Acceptance Gate: Fixture conformance guard.
 
 Asserts:
-- Fixture covers all 60 node tables and all 121 edge types (108 classified + 13 verified unclassified).
+- Fixture covers all 61 node tables and all 121 edge types (108 classified + 13 verified unclassified).
 - Coverage asserted programmatically against schema.py, so newly added tables fail until represented.
 - Every occurrence type round-trips multiple occurrences on one (s, p, o).
 - Every star type has properties populated for plain triple and quoted annotation.
@@ -39,10 +39,10 @@ from scripts.generate_migration_fixture import (
 
 
 def test_schema_coverage_derivation():
-    """Verify that schema derivation extracts all 60 node tables and 121 rel tables from schema.py."""
+    """Verify that schema derivation extracts all 61 node tables and 121 rel tables from schema.py."""
     node_schemas, rel_schemas = derive_schema()
 
-    assert len(node_schemas) == 60, f"Expected 60 node tables, got {len(node_schemas)}"
+    assert len(node_schemas) == 61, f"Expected 61 node tables, got {len(node_schemas)}"
     assert len(rel_schemas) == 121, f"Expected 121 rel tables, got {len(rel_schemas)}"
 
     all_props = get_all_table_properties()

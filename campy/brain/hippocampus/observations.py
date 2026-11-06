@@ -139,6 +139,13 @@ def object_roles_enabled(config: dict | None) -> bool:
     return bool(((config or {}).get("observations") or {}).get("object_roles", False))
 
 
+def typed_objects_enabled(config: dict | None) -> bool:
+    """`[observations] typed_objects` (default FALSE; env `CAMPY_TYPED_OBJECTS=1` turns it on) (B546): the
+    object of a fact is linked (HAS_OBJECT) to an existing entity Concept or to an ObjectPhrase node and typed
+    (INSTANCE_OF a kind) by rule when an Observation is written. On under the `principled` profile (B545)."""
+    return bool(((config or {}).get("observations") or {}).get("typed_objects", False))
+
+
 def ownership_rule_enabled(config: dict | None) -> bool:
     """`[observations] ownership_rule` (default FALSE; env `CAMPY_OBSERVATIONS_OWNERSHIP_RULE=1` turns it on)
     (B523): a grammar rule over the user's turn (temporal_lobe/observations/ownership.py) writes an
