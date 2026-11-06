@@ -68,4 +68,42 @@ ENTITY_ADMISSION_QUERIES = [
             GROUP BY ?ner_label ?concept_id ?text_raw
             """,
     ),
+    NamedQuery(
+        name="entity_admission.unlinked_entities",
+        cypher="""
+        MATCH (c:Concept)
+        WHERE c.ner_label IS NOT NULL AND c.archived = false AND NOT (:Observation)-[:OBSERVATION_ABOUT]->(c)
+        RETURN c.ner_label AS ner_label, c.concept_id AS concept_id, c.text_raw AS text_raw
+        """,
+        params=(),
+        mutating=False,
+        description=("B554: admitted named-entity Concepts no Observation is OBSERVATION_ABOUT (no fact hangs off "
+                     "them); the coverage number of the evidence-link rule, read by its backfill"),
+        sparql="""
+            SELECT ?ner_label ?concept_id ?text_raw WHERE {
+              ?c a campy:Concept ; campy:concept_id ?concept_id ; campy:text_raw ?text_raw ; campy:ner_label ?ner_label .
+              FILTER NOT EXISTS { ?c campy:archived true }
+              FILTER NOT EXISTS { ?o campy:OBSERVATION_ABOUT ?c }
+            }
+            """,
+    ),
+    NamedQuery(
+        name="entity_admission.entity_links",
+        cypher="""
+        MATCH (o:Observation)-[:OBSERVATION_ABOUT]->(c:Concept)
+        WHERE c.ner_label IS NOT NULL AND c.archived = false
+        RETURN o.observation_id AS observation_id, c.concept_id AS concept_id
+        """,
+        params=(),
+        mutating=False,
+        description=("B554: the (Observation, admitted entity) pairs already linked by OBSERVATION_ABOUT; the "
+                     "backfill counts only links that are new against these"),
+        sparql="""
+            SELECT ?observation_id ?concept_id WHERE {
+              ?o a campy:Observation ; campy:observation_id ?observation_id ; campy:OBSERVATION_ABOUT ?c .
+              ?c a campy:Concept ; campy:concept_id ?concept_id ; campy:ner_label ?ner_label .
+              FILTER NOT EXISTS { ?c campy:archived true }
+            }
+            """,
+    ),
 ]

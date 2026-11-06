@@ -42,7 +42,8 @@ from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.temporal_lobe.observations import entities as ent
 from campy.brain.temporal_lobe.observations import typed_objects
 from campy.brain.temporal_lobe.observations.timeparse import normalize_time
-from campy.brain.hippocampus.entity_admission import admit_turn, names_in  # B544
+from campy.brain.hippocampus.entity_admission import admit_turn_parsed, names_in  # B544
+from campy.brain.temporal_lobe.observations import evidence_entities as evid  # B554
 
 _logger = logging.getLogger(__name__)
 
@@ -401,7 +402,10 @@ async def _extract_turn(
 
     # B544 (flag `[loop] entity_admission`): the turn's named entities are Concepts before any
     # claim is linked to Concepts by its words, whichever of this worker and run_loop ran first.
-    admitted = await admit_turn(gw, message_id, text, speaker, config, embedding_model=embedding_model)
+    parsed_turn = await admit_turn_parsed(gw, message_id, text, speaker, config, embedding_model=embedding_model)
+    admitted = parsed_turn.pairs
+    evidence_on = bool(admitted) and evid.evidence_entity_links_enabled(config)   # B554
+    evidence_written: list[tuple[str, str]] = []
 
     stats.llm_calls += 1
     try:
@@ -490,6 +494,8 @@ async def _extract_turn(
             for cid, etext in admitted:
                 if names_in(etext, claim_words):
                     await gw.run("observations.link_about_concept", oid=result.observation_id, cid=cid)
+        if evidence_on and result.ok and result.observation_id and draft.evidence_text:
+            evidence_written.append((result.observation_id, draft.evidence_text))     # B554: linked after the loop
         if typed_on and result.ok and result.observation_id:
             # B546: the object of the claim is linked (HAS_OBJECT) to an admitted entity or an ObjectPhrase and
             # typed (INSTANCE_OF) by rule; the model's kind is not used
@@ -516,6 +522,16 @@ async def _extract_turn(
                     subject_id=draft.subject_id, object_id=draft.object_id, index=link_index, skos=skos)
             except Exception:
                 _logger.warning("[GraphLinking] observation link failed msg=%s", message_id[:8], exc_info=True)
+
+    if evidence_on and evidence_written:
+        # B554: the claim is about each admitted entity its evidence names (quote, then its clause); a rule over
+        # the source turn, the model's wording plays no part. Needs every quote of the turn, so it runs here.
+        try:
+            spans = evid.turn_spans(parsed_turn.raw_entities, admitted, parsed_turn.known_names)
+            speakers = await typed_objects.load_speakers(gw)
+            await evid.link_turn(gw, parsed_turn.doc, text, admitted, spans, evidence_written, speakers)
+        except Exception:
+            _logger.warning("[EvidenceLinks] failed msg=%s", message_id[:8], exc_info=True)
 
     if tctx is not None and tctx is not _UNSET:
         for k, v in tctx.stats.as_dict().items():

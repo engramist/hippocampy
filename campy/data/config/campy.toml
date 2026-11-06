@@ -90,6 +90,10 @@ entities = true
 # an ObjectPhrase node and types it (INSTANCE_OF) from a kind the sentence states, WordNet places, the speakers
 # or its head noun; no model. Off until gated. CAMPY_TYPED_OBJECTS=1 turns it on.
 # typed_objects = false  # B546; on under profile "principled"
+# B554: an Observation is linked (OBSERVATION_ABOUT) to every entity B544 admitted whose occurrence lies in its
+# evidence (the quote located in its turn, then its clause by the dependency parse); no model, needs entity_admission.
+# Off until gated. CAMPY_EVIDENCE_ENTITY_LINKS=1 turns it on.
+# evidence_entity_links = false  # B554; on under profile "principled"
 # B499: newer attribute value supersedes older by string rule. Off; owl_properties replaces it.
 supersede = false
 # B538: relative time expressions in user turns ("yesterday", "last week") resolved by rule against

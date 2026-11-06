@@ -18,6 +18,7 @@ from campy.brain.brainstem.config import (
 )
 from campy.brain.hippocampus import kinds, observations as obs
 from campy.brain.hippocampus.concept_links import graph_linking_limit
+from campy.brain.temporal_lobe.observations import evidence_entities as evid
 from campy.brain.temporal_lobe.steward import steward_enabled
 from campy.brain.thalamus.graph_count import graph_count_enabled
 from campy.brain.thalamus.question_analysis import question_analysis_enabled
@@ -46,6 +47,7 @@ MEMBERS = {
     ("retrieval", "graph_linking_limit"): graph_linking_limit,           # B503 walk
     ("retrieval", "question_analysis"): question_analysis_enabled,       # B547
     ("observations", "typed_objects"): obs.typed_objects_enabled,        # B546
+    ("observations", "evidence_entity_links"): evid.evidence_entity_links_enabled,   # B554
     # B544 (PR #387): its helper is not on this base; the key is read from [loop] once it merges.
     ("loop", "entity_admission"): lambda c: bool(c["loop"].get("entity_admission", False)),
 }

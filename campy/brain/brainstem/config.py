@@ -163,6 +163,11 @@ _DEFAULT_CONFIG = {
         # exists; else it is only a candidate. No model call; no Concept is created except a kind. Gate pending
         # (judged with the principled profile, B545).
         "typed_objects": False,
+        # B554 (default OFF; env CAMPY_EVIDENCE_ENTITY_LINKS=1 turns it on): an Observation is linked
+        # (OBSERVATION_ABOUT) to every entity B544 admitted whose occurrence lies in its evidence: the quote located
+        # in its source turn, then the clause holding it (dependency parse). The model's wording plays no part.
+        # A no-op without [loop] entity_admission. Gate: part of the principled-profile gate.
+        "evidence_entity_links": False,
         "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
         # B538 (default ON; env CAMPY_TURN_DATES=0 turns it off): every user turn's relative time
         # expressions ("yesterday", "last week") are resolved by rule against the turn's date at
@@ -321,6 +326,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_VOCAB_STEWARD": ("observations", "vocab_steward", _parse_bool),
     # B546: the object of a fact is a typed entity (HAS_OBJECT to a Concept or an ObjectPhrase, INSTANCE_OF by rule).
     "CAMPY_TYPED_OBJECTS": ("observations", "typed_objects", _parse_bool),
+    # B554: an Observation is linked (OBSERVATION_ABOUT) to the admitted entities its evidence names.
+    "CAMPY_EVIDENCE_ENTITY_LINKS": ("observations", "evidence_entity_links", _parse_bool),
     # B538: relative dates in user turns resolved by rule at capture and shown inline (default on).
     "CAMPY_TURN_DATES": ("observations", "turn_dates", _parse_bool),
     # B499: rule-based supersession of attribute Observations (default off).
@@ -390,6 +397,7 @@ PROFILES: dict[str, dict[str, dict[str, object]]] = {
             "wordnet_kinds": True,      # B534: WordNet proposes BROADER links between kinds
             "vocab_steward": True,      # B535: steward proposes kind links and kinds; a rule promotes
             "typed_objects": True,      # B546: the object of a fact is a typed entity (HAS_OBJECT, INSTANCE_OF by rule)
+            "evidence_entity_links": True,   # B554: a fact is linked to the admitted entities its evidence names
         },
         "retrieval": {
             "graph_count": True,        # B524: count/list questions answered by a subject-anchored query

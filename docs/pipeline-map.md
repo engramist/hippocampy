@@ -42,6 +42,7 @@ others, and the turn text is always the evidence shown (P3).
 | Kind hygiene and hierarchy (B525, B534, B535) | clean singular kind labels; WordNet and steward propose `BROADER`, a rule promotes | principled | parked, #375, #378, #379 |
 | Kind cycles (B541) | refuse a `BROADER` write that closes a cycle | gap | card |
 | Typed object entities (B546) | at write time the object of a fact is linked (`HAS_OBJECT`) to an admitted entity or to an `ObjectPhrase` node and typed (`INSTANCE_OF`) by a rule: kind stated in the sentence, WordNet places, speakers, the head noun matched to the closed kind set; else a `kind_candidate` | principled; reads: `typed_objects.exact_role_turns` (what B548 votes with) | `typed_objects` (off), part of the principled profile |
+| Evidence entity links (B554) | at write time an Observation is linked (`OBSERVATION_ABOUT`) to each admitted entity whose occurrence lies in its evidence: the quote located in its source turn, else the clause holding it by the dependency parse; the model's wording plays no part | principled; reads: the concept walk and `typed_objects.loose_role_turns` (the existing OBSERVATION_ABOUT readers), `entity_admission.unlinked_entities` (coverage) | `evidence_entity_links` (off), part of the principled profile |
 
 ## 2. Graph (the facts)
 
