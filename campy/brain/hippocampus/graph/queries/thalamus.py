@@ -1605,7 +1605,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                "RETURN m.text_raw as text, m.role as role, m.created_at as created_at "
                "ORDER BY m.created_at ASC LIMIT $limit",
         params=("query_embedding", "query_text", "limit", "order"),
-        optional_params=("embedded_statements",),
+        optional_params=("embedded_statements", "graph_turns"),
         mutating=False,
         description="B454: relevant user statements (vector + FTS fusion) as bundle evidence; "
                     "`order` is 'rank' (best first) or 'time' (oldest first) -- B474",
@@ -1618,7 +1618,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                "RETURN m.text_raw as text, m.role as role, m.created_at as created_at "
                "ORDER BY m.created_at ASC LIMIT $limit",
         params=("query_embedding", "query_text", "limit", "order", "token_budget", "budget_mode"),
-        optional_params=("embedded_statements",),
+        optional_params=("embedded_statements", "graph_turns"),
         mutating=False,
         description="B482: the conversation stage filled to a token budget: every eligible user turn "
                     "oldest first when they all fit, else (budget_mode 'fit_all') the fixed-limit path or "
@@ -1633,7 +1633,7 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
                "ORDER BY m.created_at ASC LIMIT $limit",
         params=("query_embedding", "query_text", "limit", "order", "token_budget", "budget_mode",
                 "neighbours", "neighbour_cap"),
-        optional_params=("embedded_statements",),
+        optional_params=("embedded_statements", "graph_turns"),
         mutating=False,
         description="B487: the conversation stage plus up to `neighbours` same-session turns (either "
                     "speaker) before and after each matched turn, capped at `neighbour_cap` added "
@@ -2346,3 +2346,65 @@ for _flagged in (False, True):
             )
 
 THALAMUS_QUERIES = list(THALAMUS_QUERIES) + ARCHIVED_SUPERSEDED_QUERIES
+
+
+# B548: the graph's vote in conversation seed selection. Read by `GraphGateway._bundle_conversation_impl`
+# through the `graph_turns` parameter (the message URIs this query returns, best first).
+# The rule is all in the query: the subject's live Observations, the evidence turn each rests on, ranked
+# kind match, then entity match, then support, then date. `kind_ids` / `ent_ids` are lists so they bind as
+# `VALUES ?kind_id { }` / `VALUES ?ent_id { }`; an empty list makes its OPTIONAL match nothing. `need_kind` is
+# 1 when the question asks a kind (B547 `kind_id`): then only kind matches are returned (strict), else an
+# entity match is enough. An entity is any Concept the question names other than the subject and the kind
+# (restricting it to Concepts with a tagger label or an INSTANCE_OF edge was measured and lost: seed recall
+# 0.452 against 0.458 unrestricted, net questions gained 4 against 8; see backlog/B548.md). A kind is matched
+# through `INSTANCE_OF` / `BROADER*` (B546).
+GRAPH_VOTE_QUERIES: list[NamedQuery] = [
+    NamedQuery(
+        name="thalamus.graph_vote_turns",
+        cypher="""
+        MATCH (s:Concept {concept_id: $sid}), (o:Observation)-[:HAS_SUBJECT]->(s), (o)-[:EVIDENCED_BY]->(m:Message)
+        WHERE o.archived = false AND NOT (o)-[:DEPRECATED_BY]->(:Observation)
+        RETURN m.message_id AS message_id, count(DISTINCT o) AS support
+        ORDER BY support DESC
+        """,
+        params=("sids", "kind_ids", "ent_ids", "need_kind"),
+        mutating=False,
+        description=("B548: evidence turns of the subject's live Observations that match what the question asks "
+                     "(object under the asked kind by HAS_OBJECT/INSTANCE_OF/BROADER*, or about a Concept "
+                     "the question names by OBSERVATION_ABOUT), ranked kind, entity, support, newest; when a kind is "
+                     "asked (`need_kind` = 1) only kind matches. Rows: message URI `m`. The Cypher form is a "
+                     "documentation shape; the SPARQL is the reader."),
+        sparql="""
+            SELECT ?m (MAX(?kind_hit) AS ?kind_rank) (MAX(?ent_hit) AS ?ent_rank)
+                   (COUNT(DISTINCT ?o) AS ?support) (MAX(?when) AS ?latest) WHERE {
+              VALUES ?sid { }
+              ?s a campy:Concept ; campy:concept_id ?sid .
+              ?o a campy:Observation ; campy:HAS_SUBJECT ?s ; campy:EVIDENCED_BY ?m .
+              FILTER NOT EXISTS { ?o campy:archived true }
+              FILTER NOT EXISTS { ?o campy:DEPRECATED_BY ?_newer }
+              OPTIONAL { ?m campy:occurred_at ?when }
+              OPTIONAL {
+                VALUES ?kind_id { }
+                ?kc a campy:Concept ; campy:concept_id ?kind_id .
+                ?o campy:HAS_OBJECT ?e . ?e campy:INSTANCE_OF ?k . ?k campy:BROADER* ?kc .
+                FILTER(?e != ?s)
+                BIND(1 AS ?kh)
+              }
+              OPTIONAL {
+                VALUES ?ent_id { }
+                ?ec a campy:Concept ; campy:concept_id ?ent_id .
+                ?o campy:OBSERVATION_ABOUT ?ec .
+                FILTER(?ec != ?s)
+                BIND(1 AS ?eh)
+              }
+              BIND(COALESCE(?kh, 0) AS ?kind_hit)
+              BIND(COALESCE(?eh, 0) AS ?ent_hit)
+            }
+            GROUP BY ?m
+            HAVING (MAX(?kind_hit) + MAX(?ent_hit) > 0 && MAX(?kind_hit) >= MAX(?need_kind))
+            ORDER BY DESC(?kind_rank) DESC(?ent_rank) DESC(?support) DESC(?latest) ?m
+            LIMIT 60
+            """,
+    ),
+]
+THALAMUS_QUERIES = list(THALAMUS_QUERIES) + GRAPH_VOTE_QUERIES

@@ -36,6 +36,11 @@ _DEFAULT_CONFIG = {
         # question is analysed once (shape, subject, kind, the Concepts it names) at the top of the bundle
         # compile and the stages read that instead of parsing it themselves. Gate: with the profile (B545).
         "question_analysis": False,
+        # B548 (default OFF; env CAMPY_GRAPH_VOTE=1 turns it on; on under profile "principled"): the graph's
+        # list (evidence turns of the subject's Observations that match the kind asked or the entities named)
+        # joins vector and lexical in conversation seed selection. Needs question_analysis. Gate: with the
+        # profile (B545).
+        "graph_vote": False,
         # B508/B514: SKOS vocabulary for kinds (default ON; env CAMPY_SKOS_VOCAB=0 turns it off;
         # part of the R96 stack, see graph_linking). Kinds are
         # consolidated by rule (same label, head noun), entity -INSTANCE_OF-> kind and
@@ -306,6 +311,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_GRAPH_COUNT": ("retrieval", "graph_count", _parse_bool),
     # B547: the question is analysed once; stages read the analysis (bundle section `reads`, `bundle.analysis`).
     "CAMPY_QUESTION_ANALYSIS": ("retrieval", "question_analysis", _parse_bool),
+    # B548: the graph votes in conversation seed selection (needs question_analysis).
+    "CAMPY_GRAPH_VOTE": ("retrieval", "graph_vote", _parse_bool),
     # B508: SKOS vocabulary for kinds (consolidation, INSTANCE_OF vs BROADER).
     "CAMPY_SKOS_VOCAB": ("retrieval", "skos_vocab", _parse_bool),
     # B544: admit every named entity of a user turn as a Concept (default off).
@@ -402,6 +409,7 @@ PROFILES: dict[str, dict[str, dict[str, object]]] = {
         "retrieval": {
             "graph_count": True,        # B524: count/list questions answered by a subject-anchored query
             "question_analysis": True,  # B547: the question is analysed once; the stages read the analysis
+            "graph_vote": True,         # B548: the graph's evidence turns are a third list in seed fusion
             # B503 concept walk: 12 is the cap the walk was built and gated with (concept_links.DEFAULT_WALK_LIMIT;
             # gated in R95 as the v1 walk, see backlog/B514.md and B510.md). Re-gated as part of this profile.
             "graph_linking_limit": 12,

@@ -85,11 +85,18 @@ State today: 84-87% of Observations carry a subject; about 6% have a typed objec
 
 ## 6. Fusion
 
-Reciprocal rank fusion (k = 60) inside each stage: vector and lexical for conversation turns;
-vector, lexical and named-Concept for Observations. Top 6 seed turns, two neighbours each side,
-cap 18 (B487). Status: **mixed**. Fusion happens per stage, not across the three signals; the graph
-signal is not a vote in turn selection, so a turn the graph says is the subject's fact about the
-asked-for kind ranks no higher than any other turn.
+Reciprocal rank fusion (k = 60) inside each stage: vector and lexical for conversation turns, plus the graph's
+vote (B548, below); vector, lexical and named-Concept for Observations. Top 6 seed turns, two neighbours each side,
+cap 18 (B487). Status: **mixed**. Fusion happens per stage, not across the three signals.
+
+The graph's vote (B548, `[retrieval] graph_vote`, default off, in the principled profile; needs `question_analysis`):
+for a question with one resolved subject (no tie), `thalamus.graph_vote_turns` returns the evidence turns of that
+subject's live Observations, anchored by `HAS_SUBJECT`: when a kind is asked (B547), only those whose object is under it
+(`HAS_OBJECT`, `INSTANCE_OF`, `BROADER*`); otherwise those about a Concept the question names (`OBSERVATION_ABOUT`,
+which carries B554's evidence links). Ranked kind, entity, support (facts the turn evidences), newest. The top 6 join
+the conversation fusion as a third list at weight 1 and skip the lexical-only gate (B459). No subject, a tie, or
+nothing asked: the two-list path, unchanged. It reaches conversation seed selection only; the Observation stage's own
+lists are not changed.
 
 ## 7. Prompt
 
@@ -106,7 +113,7 @@ non-answers that the judge never sees. Status: mixed (B539 open).
 
 On: entity admission (B544), roles (B522), ownership (B523), kind hygiene and hierarchy (B525,
 B534, B535), count and list (B524), the concept walk with a limit, typed object entities (B546),
-question analysis once per question (gap), the graph signal as a vote in fusion (gap). Demoted:
+question analysis once per question (B547), the graph signal as a vote in conversation seed fusion (B548). Demoted:
 the decision tracker as a side branch that only adds records (B543); the old semantic stage.
 
 Switch: `[pipeline] profile = "principled"` or `CAMPY_PROFILE=principled` (B545; default `main`; the set is `PROFILES` in `campy/brain/brainstem/config.py`; `campy status` prints it).
