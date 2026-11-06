@@ -1680,6 +1680,7 @@ class GraphGateway:
                 UNION {{ ?c {up} ?p . ?x {up} ?p . FILTER(?x != ?c) }}
                 UNION {{ ?x {narrower} ?c }}
                 UNION {{ ?k {narrower} ?c . ?x {ns}INSTANCE_OF> ?k }}
+                FILTER NOT EXISTS {{ ?x a {ns}ObjectPhrase> }}
             }} LIMIT 500"""
         else:
             near_query = f"""

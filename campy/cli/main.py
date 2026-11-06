@@ -395,6 +395,12 @@ def _print_pipeline_profile() -> None:
     console.print(f"[bold]pipeline profile:[/bold] {report['profile']}")
     for name, info in report["flags"].items():
         console.print(f"  {name} = {info['value']}  [dim]({info['source']})[/dim]", highlight=False, markup=True)
+    wn = report.get("wordnet") or {}
+    if wn.get("available"):
+        console.print("  wordnet: available")
+    else:
+        degraded = ", ".join(wn.get("degraded") or []) or "none switched on"
+        console.print(f"  [yellow]wordnet: NOT installed; degraded: {degraded}[/yellow]", highlight=False)
 
 
 @app.command()

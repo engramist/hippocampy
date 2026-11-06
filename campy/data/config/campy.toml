@@ -86,6 +86,10 @@ entities = true
 # for first-person possession ("my dog Toby", "I adopted Buddy"). Off until gated.
 # CAMPY_OBSERVATIONS_OWNERSHIP_RULE=1 turns it on.
 # ownership_rule = false  # B523; on under profile "principled"
+# B546: the object of a fact is a typed entity: at write time a rule links it (HAS_OBJECT) to an admitted entity or
+# an ObjectPhrase node and types it (INSTANCE_OF) from a kind the sentence states, WordNet places, the speakers
+# or its head noun; no model. Off until gated. CAMPY_TYPED_OBJECTS=1 turns it on.
+# typed_objects = false  # B546; on under profile "principled"
 # B499: newer attribute value supersedes older by string rule. Off; owl_properties replaces it.
 supersede = false
 # B538: relative time expressions in user turns ("yesterday", "last week") resolved by rule against

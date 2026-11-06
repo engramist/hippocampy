@@ -571,6 +571,23 @@ NODE_TABLES = {
         PRIMARY KEY (mention_id)
     """,
 
+    # B546: the object of a fact when no entity is named ("a book", "a trip to the coast"): one node per
+    # Observation, hung off it by HAS_OBJECT, so "a book" in two facts is two nodes. It is not a Concept on
+    # purpose: a Concept enters the concept index, where the word "book" would then resolve to the phrase
+    # instead of the kind. text_raw is the noun phrase up to its head; the kind is
+    # INSTANCE_OF (a rule matched the head to a kind of the closed set) or, when none matched, kind_candidate
+    # (the head lemma: a steward may confirm it later; it asserts nothing). rule_version names the rule.
+    "ObjectPhrase": """
+        phrase_id      STRING,
+        text_raw       STRING,
+        kind_candidate STRING,
+        rule_version   STRING,
+        archived       BOOLEAN,
+        created_at     TIMESTAMP,
+        source         STRING,
+        PRIMARY KEY (phrase_id)
+    """,
+
     "MergeEvent": """
         merge_event_id       STRING,
         pre_pathway_strength DOUBLE,
@@ -1504,7 +1521,9 @@ REL_TABLES = [
     # the object (written when [observations] object_roles is on). Both property-free; an
     # Observation has at most one of each.
     "CREATE REL TABLE IF NOT EXISTS HAS_SUBJECT (FROM Observation TO Concept)",
-    "CREATE REL TABLE IF NOT EXISTS HAS_OBJECT (FROM Observation TO Concept)",
+    # B546: HAS_OBJECT may also point at an ObjectPhrase (the object when no entity is named), and an
+    # ObjectPhrase is INSTANCE_OF a kind (see INSTANCE_OF below); object_id names Concepts only.
+    "CREATE REL TABLE IF NOT EXISTS HAS_OBJECT (FROM Observation TO Concept, FROM Observation TO ObjectPhrase)",
     # B503: graph linking (flag CAMPY_GRAPH_LINKING). MENTIONS: a user Message
     # names a Concept (rule match, never a model). IS_A: Concept -> category
     # Concept, written only from an is_a Observation whose subject and object
@@ -1516,7 +1535,7 @@ REL_TABLES = [
     # (skos:closeMatch, advisory). All property-free; a kind is Concept.kind_scheme='kind'.
     # B535: an INSTANCE_OF the vocabulary steward proposes is a reifier carrying the same annotations as BROADER's
     # (see below) and asserts nothing until promoted.
-    "CREATE REL TABLE IF NOT EXISTS INSTANCE_OF (FROM Concept TO Concept, link_source STRING, link_status STRING, evidence_set STRING, steward_reason STRING, agreed_by STRING)",
+    "CREATE REL TABLE IF NOT EXISTS INSTANCE_OF (FROM Concept TO Concept, FROM ObjectPhrase TO Concept, link_source STRING, link_status STRING, evidence_set STRING, steward_reason STRING, agreed_by STRING)",
     # B534: BROADER carries an optional `link_source` (who proposed the link: "wordnet"), stored as an
     # RDF-star annotation on the BROADER triple by kinds.link_broader_sourced; unannotated = the label rule.
     # B535: the steward's candidates and reviews are reifiers with link_status (candidate | promoted | rejected |
