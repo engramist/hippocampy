@@ -79,6 +79,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from campy.brain.hippocampus.concept_links import KIND_SCHEME, norm_key
+from campy.brain.hippocampus.entity_admission import can_be_kind
 
 _logger = logging.getLogger(__name__)
 
@@ -372,8 +373,14 @@ def close_matches(vec: list[float], kinds: dict[str, Kind], embed_label, thresho
 
 # --- graph writes (plain edges, idempotent) --------------------------------------------
 
-async def mark_kind(gw: Any, concept_id: str) -> None:
+async def mark_kind(gw: Any, concept_id: str) -> bool:
+    """Put a Concept in the kind scheme. B544 guard: a named entity or a Person is never
+    a kind; returns False (and writes nothing) for one."""
+    if not await can_be_kind(gw, concept_id):
+        _logger.info("mark_kind refused: %s is a named entity or a Person", concept_id)
+        return False
     await gw.run("kinds.mark_kind", cid=concept_id, scheme=KIND_SCHEME)
+    return True
 
 
 async def link_instance_of(gw: Any, entity_id: str, kind_id: str) -> None:

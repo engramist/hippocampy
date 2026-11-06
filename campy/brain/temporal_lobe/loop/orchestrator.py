@@ -46,6 +46,7 @@ from campy.brain.temporal_lobe.loop.step7_5_lesson import extract_lessons  # B11
 from campy.brain.temporal_lobe.loop.anomaly_detection import check_anomalies, store_anomaly_flag  # B12
 from campy.brain.hippocampus.concept_links import graph_linking_enabled, link_message_concepts
 from campy.brain.hippocampus.kinds import skos_vocab_enabled
+from campy.brain.hippocampus.entity_admission import admit_entities, entity_admission_enabled
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.llm.provider import create_llm_client_for_step  # B16
 
@@ -187,6 +188,14 @@ async def run_loop(message_id: str, text: str, db, llm_client,
             message_id[:8], time.perf_counter() - t0, len(entities),
         )
         summary["entities_found"] = len(entities)
+
+        # B544 (flag `[loop] entity_admission`): a named entity of a user turn is stored as a
+        # Concept (with its NER label) and the turn MENTIONS it, whatever steps 2 and 4 decide.
+        if role == "user" and entity_admission_enabled(config):
+            async with _timed(message_id, "entity_admission"):
+                admitted = await admit_entities(_gateway(db), message_id, entities,
+                                                embedding_model=embedding_model)
+            summary["entities_admitted"] = len(admitted)
 
         if not entities:
             await _link_turn(message_id, text, role, config, db, ())

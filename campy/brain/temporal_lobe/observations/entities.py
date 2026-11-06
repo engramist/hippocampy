@@ -180,7 +180,9 @@ async def resolve_kind(gw: Any, name: str, index: dict[str, list[str]], stats: A
     kind_id = await _concept_for(gw, name, index, stats, embedding_model=embedding_model)
     if not kind_id:
         return None
-    await kinds_mod.mark_kind(gw, kind_id)
+    if not await kinds_mod.mark_kind(gw, kind_id):      # B544: a named entity / Person is not a kind
+        _bump(stats, "kind_rejected")
+        return None
     _bump(stats, "kinds_created")
     if hygiene and surface.strip() != name:
         if await kinds_mod.add_alt_label(gw, kinds_mod.Kind(kind_id, name), surface):

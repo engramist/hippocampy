@@ -42,6 +42,7 @@ from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.temporal_lobe.observations import entities as ent
 from campy.brain.temporal_lobe.observations import typed_objects
 from campy.brain.temporal_lobe.observations.timeparse import normalize_time
+from campy.brain.hippocampus.entity_admission import admit_turn, names_in  # B544
 
 _logger = logging.getLogger(__name__)
 
@@ -398,6 +399,10 @@ async def _extract_turn(
     messages = build_messages(text, speaker, occurred_at, int(cfg.get("max_turn_chars", 600)),
                               entities=entities_on, cardinality=owl_on)
 
+    # B544 (flag `[loop] entity_admission`): the turn's named entities are Concepts before any
+    # claim is linked to Concepts by its words, whichever of this worker and run_loop ran first.
+    admitted = await admit_turn(gw, message_id, text, speaker, config, embedding_model=embedding_model)
+
     stats.llm_calls += 1
     try:
         raw = await asyncio.to_thread(llm_client.chat, messages,
@@ -477,6 +482,14 @@ async def _extract_turn(
                                           object_id=ent_id)
             except Exception:
                 _logger.warning("[ObservationEntities] entity write failed msg=%s", message_id[:8], exc_info=True)
+        if admitted and result.ok and result.observation_id:
+            # B544: the claim is about each admitted named entity its own words contain. A rule
+            # over the entity's full text (the B503 span matcher stops at 3 words, so it cannot
+            # see "The Name of the Wind"); a Concept is only ever one the turn's NER admitted.
+            claim_words = " ".join(filter(None, (draft.subject_text, draft.object_text, draft.event_text)))
+            for cid, etext in admitted:
+                if names_in(etext, claim_words):
+                    await gw.run("observations.link_about_concept", oid=result.observation_id, cid=cid)
         if typed_on and result.ok and result.observation_id:
             # B546: the object of the claim is linked (HAS_OBJECT) to an admitted entity or an ObjectPhrase and
             # typed (INSTANCE_OF) by rule; the model's kind is not used
