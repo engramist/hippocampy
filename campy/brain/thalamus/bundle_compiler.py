@@ -289,7 +289,7 @@ async def compile_bundle(
     # as on main. That needs the conversation outcome first, so the conversation
     # stage is computed here (stages run sequentially, not concurrently) and
     # appended later in its usual position, after the budget check below.
-    conversation_section = await _stage_conversation(db, query, config)
+    conversation_section = await _stage_conversation(db, query, config, analysis=analysis)
     semantic_section = None
     if observations_retrieval_enabled(config) and not (
             conversation_section is not None and conversation_section.full_history):
@@ -992,7 +992,7 @@ def _conversation_neighbour_cap(config: dict) -> int:
         return DEFAULT_CONVERSATION_NEIGHBOUR_CAP
 
 
-async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSection]:
+async def _stage_conversation(db, query: str, config: dict, analysis=None) -> Optional[BundleSection]:
     """B454: relevant user statements from the raw conversation (see
     GraphGateway._bundle_conversation). Disabled with
     `[retrieval] conversation_limit = 0`; `[retrieval] conversation_order`
@@ -1024,6 +1024,11 @@ async def _stage_conversation(db, query: str, config: dict) -> Optional[BundleSe
         neighbours = _conversation_neighbours(config)
         # B501: passed only when on, so the default call is unchanged
         extra = {"embedded_statements": True} if _conversation_embedded_statements(config) else {}
+        # B548: the graph's vote (flag; needs the B547 analysis), passed only when it has turns
+        from campy.brain.thalamus.graph_vote import graph_vote_turns
+        graph_turns = await graph_vote_turns(db, config, analysis)
+        if graph_turns:
+            extra["graph_turns"] = graph_turns
         if neighbours > 0:
             # B487: neighbour expansion (new query; the others are untouched)
             rows = await get_gateway(db).run(

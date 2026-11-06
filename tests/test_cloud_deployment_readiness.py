@@ -67,6 +67,7 @@ def test_every_documented_override_applies():
         "CAMPY_OBSERVATIONS_OWNERSHIP_RULE": "1",
         "CAMPY_GRAPH_COUNT": "1",
         "CAMPY_QUESTION_ANALYSIS": "1",
+        "CAMPY_GRAPH_VOTE": "1",
         "CAMPY_KIND_HYGIENE": "1",
         "CAMPY_WORDNET_KINDS": "1",
         "CAMPY_VOCAB_STEWARD": "1",
@@ -87,6 +88,7 @@ def test_every_documented_override_applies():
     assert cfg["observations"]["shacl_gate"] is True
     assert cfg["retrieval"]["skos_vocab"] is True
     assert cfg["retrieval"]["question_analysis"] is True
+    assert cfg["retrieval"]["graph_vote"] is True
     assert cfg["loop"]["entity_admission"] is True
     assert cfg["observations"]["evidence_entity_links"] is True
     assert cfg["llm"] == {"provider": "bedrock", "model": "us.example.model-v1:0",

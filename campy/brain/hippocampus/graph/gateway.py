@@ -356,6 +356,8 @@ def _materialize_rows(res: Any) -> Any:
 
 # B474: presentation order of the conversation stage's turns.
 CONVERSATION_ORDERS = ("rank", "time")
+# B548: how many of the graph vote's turns enter fusion (weight 1, as the vector and lexical lists).
+GRAPH_VOTE_TOP = 6
 # B482: what the token-budget stage does when the whole history does not fit
 CONVERSATION_BUDGET_MODES = ("fit_all", "fill")
 
@@ -1360,6 +1362,14 @@ class GraphGateway:
         ][: pool * 40]
         for rank, uri in enumerate(fts_hits):
             ranked[uri] = ranked.get(uri, 0.0) + 1.0 / (60 + rank)
+        # B548: the graph's vote, a third ranked list (`thalamus.graph_vote_turns`, passed in best first).
+        # Same weight as the other two; the top GRAPH_VOTE_TOP only.
+        graph_hits = [
+            uri for uri in (params.get("graph_turns") or []) if str(uri).startswith(prefixes)
+        ][:GRAPH_VOTE_TOP]
+        for rank, uri in enumerate(graph_hits):
+            ranked[uri] = ranked.get(uri, 0.0) + 1.0 / (60 + rank)
+        graph_set = set(graph_hits)
         if not ranked:
             return []
 
@@ -1408,7 +1418,7 @@ class GraphGateway:
             text = str(row.get("text") or "").strip()
             if not text or bool(row.get("archived")) or norm(text) == qnorm:
                 continue
-            if row["s"] not in vec_set:
+            if row["s"] not in vec_set and row["s"] not in graph_set:
                 low = text.lower()
                 if (sum(1 for t in terms if t in low) < need
                         and not anchors & words(text)):

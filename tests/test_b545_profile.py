@@ -22,6 +22,7 @@ from campy.brain.temporal_lobe.observations import evidence_entities as evid
 from campy.brain.temporal_lobe.steward import steward_enabled
 from campy.brain.thalamus.graph_count import graph_count_enabled
 from campy.brain.thalamus.question_analysis import question_analysis_enabled
+from campy.brain.thalamus.graph_vote import graph_vote_enabled
 
 
 @pytest.fixture(autouse=True)
@@ -46,6 +47,7 @@ MEMBERS = {
     ("observations", "vocab_steward"): steward_enabled,                  # B535
     ("retrieval", "graph_linking_limit"): graph_linking_limit,           # B503 walk
     ("retrieval", "question_analysis"): question_analysis_enabled,       # B547
+    ("retrieval", "graph_vote"): graph_vote_enabled,                     # B548
     ("observations", "typed_objects"): obs.typed_objects_enabled,        # B546
     ("observations", "evidence_entity_links"): evid.evidence_entity_links_enabled,   # B554
     # B544 (PR #387): its helper is not on this base; the key is read from [loop] once it merges.
