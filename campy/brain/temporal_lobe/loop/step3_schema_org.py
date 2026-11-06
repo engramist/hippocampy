@@ -1,4 +1,7 @@
 """
+
+DEPRECATED (B543): part of the original decision tracker; a side branch that only adds records
+(`[loop] tracker_side_branch`), see temporal_lobe/loop/tracker_branch.py.
 Step 3 — schema.org Sub-graph Routing
 
 Named IP Claim: Shape-First Principle.

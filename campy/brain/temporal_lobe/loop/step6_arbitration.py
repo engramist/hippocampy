@@ -1,4 +1,7 @@
 """
+
+DEPRECATED (B543): part of the original decision tracker; a side branch that only adds records
+(`[loop] tracker_side_branch`), see temporal_lobe/loop/tracker_branch.py.
 Step 6 — Constrained Contradiction Arbitration
 
 Named IP Claim: System 2 Deliberate Reasoning applied to contradiction

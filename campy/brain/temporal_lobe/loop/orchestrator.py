@@ -1,6 +1,10 @@
 """
 mcp_engine/loop/orchestrator.py — Gated Consolidation Loop (Steps 1–7, M4)
 
+DEPRECATED (B543): steps 2-7 are the original decision tracker. With `[loop] tracker_side_branch` they only add
+records and never decide what is stored (see temporal_lobe/loop/tracker_branch.py); entity storage is B544
+admission. Kept for the developer store (Layer 2 triggers read Lessons and Procedures).
+
 Runs the 9-step loop on a single message.
 Called from the background worker in brain_daemon.py (never blocks notify_turn).
 
@@ -44,6 +48,7 @@ from campy.brain.temporal_lobe.loop.step7_pathway   import (
 from campy.brain.temporal_lobe.loop.step4b_associative import check_associative_triggers  # Phase 3
 from campy.brain.temporal_lobe.loop.step7_5_lesson import extract_lessons  # B11
 from campy.brain.temporal_lobe.loop.anomaly_detection import check_anomalies, store_anomaly_flag  # B12
+from campy.brain.temporal_lobe.loop.tracker_branch import tracker_side_branch_enabled
 from campy.brain.hippocampus.concept_links import graph_linking_enabled, link_message_concepts
 from campy.brain.hippocampus.kinds import skos_vocab_enabled
 from campy.brain.hippocampus.entity_admission import admit_parsed, entity_admission_enabled, trim_wrapped
@@ -403,6 +408,12 @@ async def run_loop(message_id: str, text: str, db, llm_client,
                 "[Loop:Timing] msg=%s step=step6_arbitration[%d] elapsed=%.2fs classification=%s",
                 message_id[:8], idx, time.perf_counter() - t0, arb.get("classification"),
             )
+
+            # B543: with `[loop] tracker_side_branch` a contradiction verdict never archives a stored
+            # Concept: it takes the uncertain route (new Concept + DisambiguationEvent for curation).
+            if tracker_side_branch_enabled(config) and arb["classification"] == "contradiction":
+                arb = {**arb, "classification": "uncertain"}
+                summary["contradictions_kept"] = summary.get("contradictions_kept", 0) + 1
 
             if arb["classification"] == "additive":
                 async with _timed(message_id, f"apply_additive[{idx}]:gray"):

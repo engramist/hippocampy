@@ -74,6 +74,7 @@ def test_every_documented_override_applies():
         "CAMPY_TURN_DATES": "1",
         "CAMPY_ENTITY_ADMISSION": "1",
         "CAMPY_ENTITY_STANDING": "1",
+        "CAMPY_TRACKER_SIDE_BRANCH": "1",
     }
     assert set(env) == set(ENV_OVERRIDES), "test must cover every override"
     cfg = apply_env_overrides(_base(), env)
@@ -92,6 +93,7 @@ def test_every_documented_override_applies():
     assert cfg["retrieval"]["graph_vote"] is True
     assert cfg["loop"]["entity_admission"] is True
     assert cfg["loop"]["entity_standing"] is True
+    assert cfg["loop"]["tracker_side_branch"] is True
     assert cfg["observations"]["evidence_entity_links"] is True
     assert cfg["llm"] == {"provider": "bedrock", "model": "us.example.model-v1:0",
                           "region": "us-east-1", "base_url": "https://llm.internal/v1",

@@ -1,4 +1,7 @@
 """
+
+DEPRECATED (B543): part of the original decision tracker; a side branch that only adds records
+(`[loop] tracker_side_branch`), see temporal_lobe/loop/tracker_branch.py.
 Step 2 — gist Rapid Classification (Kahneman System 1 / System 2)
 
 Named IP Claim: Kahneman System 1/2 hybrid classifier.

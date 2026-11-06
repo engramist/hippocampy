@@ -116,6 +116,12 @@ _DEFAULT_CONFIG = {
         # the kind-label guard and the B547 persons read it. A no-op without entity_admission. Gate: part of the
         # principled-profile gate.
         "entity_standing": False,
+        # B543 (default OFF; env CAMPY_TRACKER_SIDE_BRANCH=1 turns it on; on under profile "principled"): Loop steps
+        # 2-7 (the original decision tracker, deprecated) only add records: a contradiction verdict stores the new
+        # Concept and a DisambiguationEvent and archives nothing, and a Loop failure never drops the turn's
+        # Observation extraction. Warns at daemon start when entity_admission is off. Gate: part of the
+        # principled-profile gate.
+        "tracker_side_branch": False,
     },
     # B472 Phase 3: source-grounded Observations. On by default
     # (3c gate: LoCoMo-10 65 gained/39 lost p~0.014; shown only when the
@@ -325,6 +331,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_ENTITY_ADMISSION": ("loop", "entity_admission", _parse_bool),
     # B549: a named entity's standing is derived by rule; the tagger's label stays evidence (default off).
     "CAMPY_ENTITY_STANDING": ("loop", "entity_standing", _parse_bool),
+    # B543: Loop steps 2-7 (the deprecated decision tracker) only add records (default off).
+    "CAMPY_TRACKER_SIDE_BRANCH": ("loop", "tracker_side_branch", _parse_bool),
     # B507: the SHACL write gate (default off).
     "CAMPY_SHACL_GATE": ("observations", "shacl_gate", _parse_bool),
     # B509: OWL attribute properties; functional properties drive supersession.
@@ -406,6 +414,8 @@ PROFILES: dict[str, dict[str, dict[str, object]]] = {
             "entity_admission": True,
             # B549: the standing of an admitted entity is derived by rule; the kind guard and B547 read it.
             "entity_standing": True,
+            # B543: the decision tracker (steps 2-7) only adds records; it never removes or withholds.
+            "tracker_side_branch": True,
         },
         "observations": {
             "object_roles": True,       # B522: typed HAS_SUBJECT / HAS_OBJECT edges on Observations

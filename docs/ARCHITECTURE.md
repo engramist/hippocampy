@@ -266,8 +266,8 @@ distribution should still be reviewed for implementation readiness, private data
 tuning details, and non-provisional strategy. Core IP claims covered by the filed disclosure:
 - Gated Consolidation Loop (9-step biomimetic pipeline)
 - Shape-First Principle (ontological grounding before semantic work, applied at every pipeline level)
-- Kahneman System 1/2 hybrid classifier (Step 2)
-- Cocktail Party Effect selective attention gate (Step 4)
+- Kahneman System 1/2 hybrid classifier (Step 2) (the decision tracker, deprecated as a storage gate, B543)
+- Cocktail Party Effect selective attention gate (Step 4) (the decision tracker, deprecated as a storage gate, B543)
 - gist → schema.org routing table (stored as graph edges, not code)
 - **Context Window as Working Memory Model (IP Claim)** — modeling each LLM session as a tracked working memory buffer with load/unload semantics
 - **Smart Deduplication via Load Tracking (IP Claim)** — demoting (not excluding) already-loaded graph nodes in retrieval results
@@ -422,6 +422,8 @@ To reduce cold-start latency and avoid repeated LLM calls for stable protocol or
 This ensures consumers spend more time on the current task and less time re-learning stable API, project, or domain facts on every run.
 
 ## Gated Consolidation Loop (9 Steps — Write Flow)
+
+> **Deprecated as the storage gate (B543).** Steps 2-7 below are the original decision tracker, built to track a developer's decisions. They used to decide whether any entity of a turn was stored. What is stored is now decided by rule: step 1 marks, and entity admission (B544, `[loop] entity_admission`) writes a Concept and its `MENTIONS` edge for every named entity, whatever steps 2-7 decide. With `[loop] tracker_side_branch` (default off, on under the `principled` profile) steps 2-7 are a side branch that only adds records (Decision, Constraint, Requirement, ActionItem, Lesson, Procedure, relations, co-occurrence): a contradiction verdict stores the new Concept and a `DisambiguationEvent` and archives nothing, and a Loop failure never drops the turn's Observation extraction. The steps stay working for the developer store (Layer 2 triggers read Lessons and Procedures). Removal is a later decision. The Named IP Claims for Step 2 and Step 4 describe this tracker; they are unchanged.
 
 **Step 1 — Zoning / NER:** spaCy extracts raw concepts (people, objects, places, actions, quantities). Zero LLM cost.
 
