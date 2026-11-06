@@ -48,6 +48,45 @@ CONCEPT_LINK_QUERIES = [
             """,
     ),
     NamedQuery(
+        name="concept_links.conversation_common",
+        cypher="""
+        MATCH (m:Message)-[:MENTIONS]->(c:Concept) WHERE c.concept_id IN $concept_ids
+        RETURN DISTINCT c.concept_id AS concept_id LIMIT 0
+        """,
+        params=("concept_ids", "share", "min_docs"),
+        mutating=False,
+        description=("B559: of the given Concepts, those linked (MENTIONS) to more than `share` of the live user "
+                     "Messages of one conversation they occur in, a conversation having at least `min_docs` such "
+                     "Messages. A conversation is the Messages of the sessions that share their first-named "
+                     "speaker (the minimum speaker label of the session); Messages of sessions without a speaker "
+                     "form one pool. The walk drops these seeds: a speaker is not a topic."),
+        sparql="""
+            SELECT DISTINCT ?concept_id WHERE {
+              {
+                SELECT ?conv (COUNT(DISTINCT ?m) AS ?total) WHERE {
+                  ?m a campy:Message ; campy:role "user" ; campy:SENT_IN ?s .
+                  FILTER NOT EXISTS { ?m campy:archived true }
+                  OPTIONAL { SELECT ?s (MIN(STR(?sp)) AS ?first) WHERE {
+                               ?o campy:SENT_IN ?s ; campy:speaker ?sp . FILTER(STR(?sp) != "") } GROUP BY ?s }
+                  BIND(COALESCE(?first, "") AS ?conv)
+                } GROUP BY ?conv
+              }
+              {
+                SELECT ?concept_id ?conv (COUNT(DISTINCT ?m) AS ?hits) WHERE {
+                  VALUES ?concept_id { }
+                  ?c a campy:Concept ; campy:concept_id ?concept_id .
+                  ?m campy:MENTIONS ?c ; campy:role "user" ; campy:SENT_IN ?s .
+                  FILTER NOT EXISTS { ?m campy:archived true }
+                  OPTIONAL { SELECT ?s (MIN(STR(?sp)) AS ?first) WHERE {
+                               ?o campy:SENT_IN ?s ; campy:speaker ?sp . FILTER(STR(?sp) != "") } GROUP BY ?s }
+                  BIND(COALESCE(?first, "") AS ?conv)
+                } GROUP BY ?concept_id ?conv
+              }
+              FILTER(?total >= ?min_docs && ?hits > ?share * ?total)
+            }
+            """,
+    ),
+    NamedQuery(
         name="concept_links.live_concepts",
         cypher="""
         MATCH (c:Concept) WHERE c.archived = false

@@ -795,6 +795,20 @@ async def _question_concept_ids(gw, query: str) -> list[str]:
     return ids
 
 
+# B559: a seed Concept linked to more than this share of the Messages of one conversation it occurs in (a
+# conversation with at least _WALK_COMMON_MIN_DOCS Messages) is a speaker or a filler word there, not a topic.
+_WALK_COMMON_SHARE = 0.2
+_WALK_COMMON_MIN_DOCS = 50
+
+
+async def _without_conversation_common(gw, concept_ids: list[str]) -> list[str]:
+    """`concept_ids` less the ones `concept_links.conversation_common` reports (a graph query, never counted here)."""
+    rows = await gw.run("concept_links.conversation_common", concept_ids=list(concept_ids),
+                        share=_WALK_COMMON_SHARE, min_docs=_WALK_COMMON_MIN_DOCS)
+    common = {str(r["concept_id"]) for r in (rows or [])}
+    return [c for c in concept_ids if c not in common]
+
+
 async def _stage_concept_walk(db, query: str, config: dict, exclude: set[str], analysis=None) -> Optional[BundleSection]:
     """B503: the user turns and Observations linked, in the graph, to the
     Concepts the question names (1 hop) or to their categories, children and
@@ -819,10 +833,14 @@ async def _stage_concept_walk(db, query: str, config: dict, exclude: set[str], a
 
         gw = get_gateway(db)
         if analysis is not None:
-            concept_ids = list(dict.fromkeys(analysis.concept_ids))
+            # B559: the Concepts the question names other than its subject (see walk_seed_ids)
+            concept_ids = list(dict.fromkeys(analysis.walk_seed_ids()))
         else:
             concept_ids = list(dict.fromkeys(
                 await _question_concept_ids(gw, query) + await match_concepts(gw, query, alt_labels=skos)))
+        if not concept_ids:
+            return None
+        concept_ids = await _without_conversation_common(gw, concept_ids)
         if not concept_ids:
             return None
         rows = await gw.run(

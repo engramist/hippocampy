@@ -112,6 +112,18 @@ class QuestionAnalysis:
     def concept_ids(self) -> list[str]:
         return [c["id"] for c in self.concepts]
 
+    def walk_seed_ids(self) -> list[str]:
+        """B559: the Concepts the concept walk starts from: the ones the question names other than its own
+        subject. The subject, the anchors (a tie's group) and every person Concept are left out: their facts
+        reach the prompt through the vote (B548) and the Observations stage, and a person is linked to so many
+        turns that the walk's cap fills with the newest of them."""
+        people = {c["id"] for c in self.concepts if c["role"] == "person"}
+        people.update(self.anchor_ids)
+        people.update(s["id"] for s in self.subjects)
+        if self.subject_id:
+            people.add(self.subject_id)
+        return [c["id"] for c in self.concepts if c["id"] not in people]
+
     def to_dict(self) -> dict:
         d = asdict(self)
         for k in ("modifiers", "subjects", "anchor_ids", "subject_unresolved", "concepts", "dates"):
