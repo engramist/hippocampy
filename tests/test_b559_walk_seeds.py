@@ -3,10 +3,7 @@
 Real Oxigraph store, no model, no LLM. Pins:
 - `QuestionAnalysis.walk_seed_ids`: the subject, the anchors (a tie's group) and person Concepts are not seeds;
 - the walk adds nothing when the question names only its subject, and still walks from a named entity;
-- `concept_links.conversation_common`: a Concept linked to more than 20% of the Messages of one conversation is
-  reported, a share of exactly 20% or a conversation under `min_docs` is not, and the test is per conversation
-  (a share that is small over the whole store still counts); the walk drops those seeds;
-- profile main (walk limit 0): no walk section, the seed query never runs.
+- profile main (walk limit 0): no walk section, the walk query never runs.
 """
 
 from __future__ import annotations
@@ -82,19 +79,6 @@ def analysis(*concepts, subject=None, anchors=(), subjects=()):
         concepts=tuple({"id": c, "label": c, "span": c, "source": "t", "role": r} for c, r in concepts))
 
 
-async def two_conversations(store, *, ann_hits=3, kyoto_hits=2):
-    """Conversation 1 (Ann, Bob; sessions a1, a2) and 2 (Cy, Di; session b1), 10 Messages each."""
-    for cid, text in (("c-ann", "Ann"), ("c-kyoto", "Kyoto"), ("c-cy", "Cy")):
-        await store.concept(cid, text)
-    for i in range(10):
-        m = ["c-ann"] * (i < ann_hits) + ["c-kyoto"] * (i < kyoto_hits)
-        await store.message(f"conv one turn {i}", session="a1" if i < 5 else "a2",
-                            speaker="Ann" if i % 2 else "Bob", mentions=m, day=1 + i)
-    for i in range(10):
-        await store.message(f"conv two turn {i}", session="b1", speaker="Cy" if i % 2 else "Di",
-                            mentions=["c-cy"] if i == 0 else [], day=1 + i)
-
-
 # --- the seeds ----------------------------------------------------------------------
 
 async def test_the_subject_the_anchors_and_persons_are_not_seeds():
@@ -137,54 +121,11 @@ async def test_the_walk_still_follows_a_named_entity_and_not_the_subject(db, gw,
     assert [c["text"].split("] ")[-1] for c in sec.content] == ["I finished the Spitfire model kit"]
 
 
-# --- the per-conversation test --------------------------------------------------------
-
-async def common(gw, ids, **kw):
-    rows = await gw.run("concept_links.conversation_common", concept_ids=ids,
-                        share=kw.get("share", 0.2), min_docs=kw.get("min_docs", 10))
-    return {str(r["concept_id"]) for r in rows}
-
-
-async def test_a_concept_over_a_fifth_of_one_conversation_is_common_though_rare_in_the_store(gw, store):
-    await two_conversations(store, ann_hits=3, kyoto_hits=2)
-    # Ann: 3 of conversation 1's 10 Messages (30%), 3 of the store's 20 (15%, under the old store-wide 20%)
-    # Kyoto: 2 of 10 is exactly 20%, not more than 20%; Cy: 1 of 10 in its own conversation
-    assert await common(gw, ["c-ann", "c-kyoto", "c-cy"]) == {"c-ann"}
-
-
-async def test_the_share_and_the_minimum_are_parameters(gw, store):
-    await two_conversations(store, ann_hits=3, kyoto_hits=2)
-    assert await common(gw, ["c-ann", "c-kyoto", "c-cy"], share=0.05) == {"c-ann", "c-kyoto", "c-cy"}
-    assert await common(gw, ["c-ann", "c-kyoto", "c-cy"], min_docs=11) == set()          # 10-Message conversations
-    assert await common(gw, []) == set()
-
-
-async def test_the_walk_drops_a_seed_common_in_its_conversation(db, gw, store, monkeypatch):
-    await two_conversations(store, ann_hits=0, kyoto_hits=4)         # Kyoto: 4 of 10 in conversation 1
-    monkeypatch.setattr(bc, "_WALK_COMMON_MIN_DOCS", 10)
-    a = analysis(("c-kyoto", "entity"), ("c-cy", "entity"), subject=None)
-    sec = await bc._stage_concept_walk(db, "Kyoto and Cy?", WALK, set(), analysis=a)
-    assert [c["text"].split("] ")[-1] for c in sec.content] == ["conv two turn 0"]      # only Cy's turn
-    b = analysis(("c-kyoto", "entity"))
-    assert await bc._stage_concept_walk(db, "Kyoto?", WALK, set(), analysis=b) is None
-
-
-async def test_without_speakers_the_store_is_one_conversation(gw, store):
-    await store.concept("c-x", "X")
-    for i in range(10):
-        await store.gw.run("capture.create_message", message_id=f"n{i}", text_raw=f"t{i}", embedding=None,
-                           embedding_model="m", embedding_dim=DIM, role="user", byte_end=2,
-                           created_at=f"2023-05-{1 + i:02d}T12:00:00+00:00")
-        store.db.write_edge("SENT_IN", mint_uri("Message", f"n{i}"), mint_uri("Session", "plain"))
-        if i < 3:
-            store.db.write_edge("MENTIONS", mint_uri("Message", f"n{i}"), mint_uri("Concept", "c-x"))
-    assert await common(gw, ["c-x"]) == {"c-x"}
-
-
 # --- profile main ---------------------------------------------------------------------
 
-async def test_profile_main_runs_no_walk_and_no_seed_query(db, gw, store, monkeypatch):
-    await two_conversations(store)
+async def test_profile_main_runs_no_walk(db, gw, store, monkeypatch):
+    await store.concept("c-kyoto", "Kyoto")
+    await store.message("Kyoto was lovely", session="s1", speaker="Sam", mentions=["c-kyoto"])
     ran = []
     real = bc.get_gateway(db).run
 
@@ -192,6 +133,6 @@ async def test_profile_main_runs_no_walk_and_no_seed_query(db, gw, store, monkey
         ran.append(name)
         return await real(name, **kw)
     monkeypatch.setattr(bc, "get_gateway", lambda _db: type("G", (), {"run": staticmethod(spy)})())
-    b = await bc.compile_bundle("Kyoto and Cy?", db, MAIN)
+    b = await bc.compile_bundle("What about Kyoto?", db, MAIN)
     assert "linked" not in [s.section_type for s in b.sections]
-    assert "concept_links.conversation_common" not in ran and "thalamus.bundle_concept_walk" not in ran
+    assert "thalamus.bundle_concept_walk" not in ran
