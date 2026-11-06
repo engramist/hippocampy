@@ -455,7 +455,7 @@ async def test_the_walk_reads_concept_ids_from_the_analysis(db, gw, monkeypatch)
     a = analyse_question("What did Andrew say about Toby?", await qa.load_lexicon(gw))
     cfg = {**ON, "retrieval": {**ON["retrieval"], "graph_linking_limit": 12}}
     await bc._stage_concept_walk(db, "What did Andrew say about Toby?", cfg, set(), analysis=a)
-    assert set(got["ids"]) == {"c-andrew", "c-toby"}
+    assert set(got["ids"]) == {"c-toby"}                      # B559: the subject is not a walk seed
 
 
 async def test_the_instruction_sentence_does_not_resolve_a_concept(db, gw):

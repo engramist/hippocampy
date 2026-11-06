@@ -819,7 +819,8 @@ async def _stage_concept_walk(db, query: str, config: dict, exclude: set[str], a
 
         gw = get_gateway(db)
         if analysis is not None:
-            concept_ids = list(dict.fromkeys(analysis.concept_ids))
+            # B559: the Concepts the question names other than its subject (see walk_seed_ids)
+            concept_ids = list(dict.fromkeys(analysis.walk_seed_ids()))
         else:
             concept_ids = list(dict.fromkeys(
                 await _question_concept_ids(gw, query) + await match_concepts(gw, query, alt_labels=skos)))

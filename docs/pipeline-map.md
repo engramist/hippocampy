@@ -79,7 +79,7 @@ State today: 84-87% of Observations carry a subject; about 6% have a typed objec
 | b lexical | conversation | FTS5 over turn text; a lexical-only hit needs two content words | principled | on |
 | b lexical | observations | FTS5 restricted to Observation URIs | principled | on |
 | c graph | observations about named Concepts | Observations `OBSERVATION_ABOUT` a Concept the question names | principled, starved by capture | on |
-| c graph | concept walk (B503) | what the graph links to the question's Concepts, 1-2 hops | principled; switched off after a gate run while capture was dropping its targets | `graph_linking_limit` 0 |
+| c graph | concept walk (B503, B559) | what the graph links to the Concepts the question names other than its subject, 1-2 hops; the subject, the anchors and person Concepts are not seeds (their facts arrive through the vote and the Observation stage); no seed left, no section | principled; switched off after a gate run while capture was dropping its targets, and seeded with the subject (it filled its cap with that person's newest turns: 2 of 3,588 items held a gold turn) | `graph_linking_limit` 0; 12 in the principled profile |
 | c graph | count and list (B524) | subject-anchored SPARQL computes count / list | principled | parked, #374 |
 | c graph | latest and before/after | supersession (B499, B509 OWL properties) | mixed | `owl_properties` (on) |
 | c graph | old semantic stage | Concept/Decision labels by similarity, used when there are no Observations | legacy | fallback |
