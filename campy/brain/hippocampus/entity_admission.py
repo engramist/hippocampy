@@ -19,7 +19,8 @@ audit found NER-label kinds 37% wrong). Steps 2-7 still run for Decisions, Const
 the like; their exact-text dedup finds the admitted Concept, so no duplicate is created.
 
 Guard (`can_be_kind`, independent of the flag): a Concept that is a named entity
-(`ner_label` set) or a Person is never put in the kind scheme.
+(`ner_label` set) or a Person is never put in the kind scheme, except a labelled Concept whose derived
+standing (B549, `[loop] entity_standing`) is `doubtful`: a common word the tagger caught.
 
 Graph store only; every write is a named query through the gateway.
 """
@@ -82,6 +83,35 @@ async def admit_entities_with_text(gw: Any, message_id: str, entities: list[dict
     return pairs
 
 
+async def trim_wrapped(gw: Any, message_id: str, doc: Any, entities: list[dict], speaker: str | None,
+                       config: dict | None) -> list[dict]:
+    """With `[loop] entity_standing` on, step 1's entities with each wrapped span replaced by the known name it
+    holds ("Yep Deb" -> "Deb"); otherwise the entities as given. Never raises."""
+    from campy.brain.hippocampus import entity_standing as es
+    if doc is None or not es.entity_standing_enabled(config):
+        return entities
+    try:
+        return await es.trim_entities(gw, doc, entities, message_id, speaker)
+    except Exception:
+        _logger.warning("[EntityAdmission] msg=%s span trimming failed", message_id[:8], exc_info=True)
+        return entities
+
+
+async def admit_parsed(gw: Any, message_id: str, doc: Any, entities: list[dict], speaker: str | None,
+                       config: dict | None, *, embedding_model: str, trimmed: bool = False) -> list[tuple[str, str]]:
+    """The one admission entry both workers call (the Loop and the Observation extractor): with `[loop]
+    entity_standing` on, a wrapped span is trimmed first (unless the caller already did), the entities are
+    admitted, then the standing of every entity the turn admitted or mentions is assessed. With the flag off this
+    is exactly `admit_entities_with_text`."""
+    from campy.brain.hippocampus import entity_standing as es
+    if not trimmed:
+        entities = await trim_wrapped(gw, message_id, doc, entities, speaker, config)
+    pairs = await admit_entities_with_text(gw, message_id, entities, embedding_model=embedding_model)
+    if es.entity_standing_enabled(config):
+        await es.assess_turn(gw, message_id, pairs, speaker, config)
+    return pairs
+
+
 async def _concept_for(gw: Any, text: str, embedding_model: str) -> str | None:
     """The live Concept the existing lookups find for `text`, else a new one."""
     for query in ("orchestrator.find_concept_by_exact_text", "orchestrator.find_concept_by_label_text"):
@@ -99,13 +129,16 @@ async def _concept_for(gw: Any, text: str, embedding_model: str) -> str | None:
 
 
 async def can_be_kind(gw: Any, concept_id: str) -> bool:
-    """False when the Concept is a named entity (`ner_label` set) or a Person: such a
-    Concept is an instance, never a kind. An unknown id or a plain Concept can be one."""
+    """False when the Concept is a Person, or a named entity (`ner_label` set) whose standing is not `doubtful`
+    (B549: a labelled common word such as "art" or "music" may be a kind). An unknown id or a plain Concept can be
+    one. The query decides (`entity_admission.concept_status`, `can_be_kind`)."""
     rows = await gw.run("entity_admission.concept_status", cid=concept_id)
     if not rows:
         return True
     row = rows[0]
-    if row.get("ner_label"):
+    if row.get("can_be_kind") is not None:
+        return bool(row["can_be_kind"])
+    if row.get("ner_label") and row.get("entity_standing") != "doubtful":      # a gateway without the column
         return False
     return str(row.get("schema_org_type") or "").rsplit(":", 1)[-1] != "Person"
 
@@ -132,7 +165,7 @@ async def admit_turn_parsed(gw: Any, message_id: str, text: str, speaker: str | 
         doc, raw = await asyncio.to_thread(extract_entities, text, model)
         known = {speaker} if speaker and speaker.strip() else set()
         entities = normalize_entities(raw, known)
-        pairs = await admit_entities_with_text(gw, message_id, entities, embedding_model=embedding_model)
+        pairs = await admit_parsed(gw, message_id, doc, entities, speaker, config, embedding_model=embedding_model)
         return ParsedTurn(pairs, doc, raw, known)
     except Exception:
         _logger.warning("[EntityAdmission] msg=%s turn admission failed", message_id[:8], exc_info=True)

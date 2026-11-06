@@ -182,6 +182,7 @@ NODE_TABLES = {
         content_hash         STRING,
         kind_scheme          STRING,
         ner_label            STRING,
+        entity_standing      STRING,
         PRIMARY KEY (concept_id)
     """,
 
@@ -1934,6 +1935,7 @@ SCHEMA_MIGRATIONS: list[tuple[str, str, str]] = [
     ("Concept",         "archived", "BOOLEAN"),
     ("Concept",         "kind_scheme", "STRING"),     # B508: 'kind' puts the Concept in campy:KindScheme
     ("Concept",         "ner_label", "STRING"),       # B544: the NER label that admitted the Concept as a named entity
+    ("Concept",         "entity_standing", "STRING"), # B549: confirmed | doubtful | unverified, derived by rule from independent signals
     ("Observation",     "attr_value", "STRING"),     # B509
     ("Observation",     "attr_value_kind", "STRING"),     # B509
     ("Observation",     "attr_value_num", "DOUBLE"),     # B509

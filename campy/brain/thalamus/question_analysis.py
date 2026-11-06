@@ -16,7 +16,9 @@ What it says about a question:
 
 Persons. A Concept is a person when the graph says so (`schema_org_type` Person), or when B544 stored
 `ner_label` PERSON AND spaCy tags the same span PERSON in the question (two independent taggers agree). The
-raw tagger label alone is not trusted (B549: it labels Yoga, Art, Jasper, Aerosmith ... PERSON). The module
+raw tagger label alone is not trusted (B549: it labels Yoga, Art, Jasper, Aerosmith ... PERSON); with
+`[loop] entity_standing` on, a PERSON label also needs the Concept's derived standing to be `confirmed`
+(`question_analysis.concept_lexicon` decides this in the query, `person_basis`). The module
 works whether or not B544 has admitted entities: without `ner_label` there are simply no weak persons.
 
 The text analysed is the question up to its first "?": the harness appends an instruction sentence to
@@ -144,9 +146,15 @@ async def load_lexicon(gw) -> QuestionLexicon:
         key = norm_key(text)
         if key and cid not in index.setdefault(key, []):
             index[key].append(cid)
-        if str(r.get("schema_org_type") or "").endswith("Person"):
+        # B549: the query decides the basis (a recorded standing can withdraw a PERSON label); a row without
+        # `person_basis` (an older gateway) is read as before
+        basis = r.get("person_basis")
+        if basis is None:
+            basis = ("strong" if str(r.get("schema_org_type") or "").endswith("Person")
+                     else "weak" if str(r.get("ner_label") or "") == "PERSON" else "")
+        if basis == "strong":
             strong.setdefault(text.lower(), cid)
-        elif str(r.get("ner_label") or "") == "PERSON":
+        elif basis == "weak":
             weak.setdefault(text.lower(), cid)
     for r in sorted(await gw.run("question_analysis.concept_surfaces"),
                     key=lambda r: (str(r.get("concept_id")), str(r.get("surface")))):

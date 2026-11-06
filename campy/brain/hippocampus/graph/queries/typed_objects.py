@@ -162,13 +162,15 @@ TYPED_OBJECT_QUERIES: tuple[NamedQuery, ...] = (
         params=(),
         mutating=False,
         description=("Texts of the live non-kind Concepts that are named entities (a tagger label, or schema.org "
-                     "Person): a kind label that equals one of them is never created (the kind guard)"),
+                     "Person): a kind label that equals one of them is never created (the kind guard). A labelled Concept whose "
+                     "standing is doubtful (B549: a common word the tagger caught) is not one of them"),
         sparql="""
             SELECT DISTINCT ?text_raw WHERE {
               ?c a campy:Concept ; campy:text_raw ?text_raw .
               FILTER NOT EXISTS { ?c campy:archived true }
               FILTER NOT EXISTS { ?c campy:kind_scheme "kind" }
-              { ?c campy:ner_label ?_l } UNION { ?c campy:schema_org_type ?ty . FILTER(STRENDS(STR(?ty), "Person")) }
+              { ?c campy:ner_label ?_l . FILTER NOT EXISTS { ?c campy:entity_standing "doubtful" } }
+              UNION { ?c campy:schema_org_type ?ty . FILTER(STRENDS(STR(?ty), "Person")) }
             }
             """,
     ),
