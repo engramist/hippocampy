@@ -30,6 +30,7 @@ import asyncio
 import logging
 import re
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
@@ -109,6 +110,35 @@ async def can_be_kind(gw: Any, concept_id: str) -> bool:
     return str(row.get("schema_org_type") or "").rsplit(":", 1)[-1] != "Person"
 
 
+@dataclass
+class ParsedTurn:
+    """What `admit_turn_parsed` found: the admitted (Concept id, text) pairs, the spaCy parse of the turn and
+    step 1's undeduplicated entities (every occurrence, with character offsets)."""
+    pairs: list[tuple[str, str]]
+    doc: Any = None
+    raw_entities: list[dict] = field(default_factory=list)
+    known_names: set[str] = field(default_factory=set)
+
+
+async def admit_turn_parsed(gw: Any, message_id: str, text: str, speaker: str | None, config: dict | None, *,
+                            embedding_model: str) -> ParsedTurn:
+    """`admit_turn`, also returning the parse and the raw entities it already computed (B554 reads them, so the
+    turn is not parsed twice). No-op (empty) when the flag is off. Never raises."""
+    if not entity_admission_enabled(config):
+        return ParsedTurn([])
+    try:
+        from campy.brain.temporal_lobe.loop.step1_ner import extract_entities, normalize_entities
+        model = ((config or {}).get("nlp") or {}).get("spacy_model", "en_core_web_md")
+        doc, raw = await asyncio.to_thread(extract_entities, text, model)
+        known = {speaker} if speaker and speaker.strip() else set()
+        entities = normalize_entities(raw, known)
+        pairs = await admit_entities_with_text(gw, message_id, entities, embedding_model=embedding_model)
+        return ParsedTurn(pairs, doc, raw, known)
+    except Exception:
+        _logger.warning("[EntityAdmission] msg=%s turn admission failed", message_id[:8], exc_info=True)
+        return ParsedTurn([])
+
+
 async def admit_turn(gw: Any, message_id: str, text: str, speaker: str | None, config: dict | None, *,
                      embedding_model: str) -> list[tuple[str, str]]:
     """Admit the named entities of one turn from its text: step 1 (spaCy + surface
@@ -116,18 +146,7 @@ async def admit_turn(gw: Any, message_id: str, text: str, speaker: str | None, c
     what an earlier call or the Loop wrote), so the Observation extractor calls it before it
     links a claim's words to Concepts and does not depend on whether `run_loop` ran first.
     No-op when the flag is off. Never raises."""
-    if not entity_admission_enabled(config):
-        return []
-    try:
-        from campy.brain.temporal_lobe.loop.step1_ner import extract_entities, normalize_entities
-        model = ((config or {}).get("nlp") or {}).get("spacy_model", "en_core_web_md")
-        _, entities = await asyncio.to_thread(extract_entities, text, model)
-        known = {speaker} if speaker and speaker.strip() else set()
-        entities = normalize_entities(entities, known)
-        return await admit_entities_with_text(gw, message_id, entities, embedding_model=embedding_model)
-    except Exception:
-        _logger.warning("[EntityAdmission] msg=%s turn admission failed", message_id[:8], exc_info=True)
-        return []
+    return (await admit_turn_parsed(gw, message_id, text, speaker, config, embedding_model=embedding_model)).pairs
 
 
 def names_in(entity_text: str | None, claim_words: str | None) -> bool:

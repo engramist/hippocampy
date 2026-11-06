@@ -63,6 +63,7 @@ def test_every_documented_override_applies():
         "CAMPY_OBSERVATIONS_SUPERSEDE": "1",
         "CAMPY_OBSERVATIONS_OBJECT_ROLES": "1",
         "CAMPY_TYPED_OBJECTS": "1",
+        "CAMPY_EVIDENCE_ENTITY_LINKS": "1",
         "CAMPY_OBSERVATIONS_OWNERSHIP_RULE": "1",
         "CAMPY_GRAPH_COUNT": "1",
         "CAMPY_QUESTION_ANALYSIS": "1",
@@ -87,6 +88,7 @@ def test_every_documented_override_applies():
     assert cfg["retrieval"]["skos_vocab"] is True
     assert cfg["retrieval"]["question_analysis"] is True
     assert cfg["loop"]["entity_admission"] is True
+    assert cfg["observations"]["evidence_entity_links"] is True
     assert cfg["llm"] == {"provider": "bedrock", "model": "us.example.model-v1:0",
                           "region": "us-east-1", "base_url": "https://llm.internal/v1",
                           "max_tokens": 1024}
