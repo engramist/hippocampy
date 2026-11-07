@@ -449,7 +449,7 @@ async def test_the_walk_reads_concept_ids_from_the_analysis(db, gw, monkeypatch)
 
     async def spy(name, **kw):
         if name == "thalamus.bundle_concept_walk":
-            got["ids"] = kw["concept_ids"]
+            got["ids"] = kw["sids"]
         return await real_run(name, **kw)
     monkeypatch.setattr(bc, "get_gateway", lambda _db: type("G", (), {"run": staticmethod(spy)})())
     a = analyse_question("What did Andrew say about Toby?", await qa.load_lexicon(gw))

@@ -53,7 +53,7 @@ class Store:
         await self.gw.run("temporal_lobe.dict_create_concept", cid=cid, text=text,
                           emb=[0.0] * DIM, gist="Category", stype="DefinedTerm", now=T0)
 
-    async def message(self, text, *, session, speaker, mentions=(), day=1):
+    async def message(self, text, *, session, speaker, mentions=(), day=1, spoken_by=None):
         self.n += 1
         mid = f"m{self.n}"
         stamp = f"2023-05-{day:02d}T12:00:00+00:00"
@@ -61,6 +61,8 @@ class Store:
                           embedding_model="m", embedding_dim=DIM, role="user", byte_end=len(text), created_at=stamp)
         await self.gw.run("capture.set_message_source", message_id=mid, speaker=speaker, occurred_at=stamp)
         self.db.write_edge("SENT_IN", mint_uri("Message", mid), mint_uri("Session", session))
+        if spoken_by:                                       # B560: the walk anchors on this edge
+            self.db.write_edge("SPOKEN_BY", mint_uri("Message", mid), mint_uri("Concept", spoken_by))
         for cid in mentions:
             self.db.write_edge("MENTIONS", mint_uri("Message", mid), mint_uri("Concept", cid))
         return mid
@@ -112,10 +114,11 @@ async def test_the_walk_adds_nothing_when_only_the_subject_is_named(db, gw, stor
 async def test_the_walk_still_follows_a_named_entity_and_not_the_subject(db, gw, store):
     await store.concept("c-sam", "Sam")
     await store.concept("c-kit", "model kit")
-    await store.message("Sam says hello", session="s1", speaker="Sam", mentions=["c-sam"], day=1)
+    await store.message("Sam says hello", session="s1", speaker="Sam", mentions=["c-sam"], day=1, spoken_by="c-sam")
     await store.message("I finished the Spitfire model kit", session="s1", speaker="Sam",
-                        mentions=["c-sam", "c-kit"], day=2)
-    await store.message("Sam asks about weather", session="s1", speaker="Sam", mentions=["c-sam"], day=3)
+                        mentions=["c-sam", "c-kit"], day=2, spoken_by="c-sam")
+    await store.message("Sam asks about weather", session="s1", speaker="Sam", mentions=["c-sam"], day=3,
+                        spoken_by="c-sam")
     a = analysis(("c-sam", "person"), ("c-kit", "entity"), subject="c-sam", anchors=["c-sam"], subjects=["c-sam"])
     sec = await bc._stage_concept_walk(db, "What did Sam do with the model kit?", WALK, set(), analysis=a)
     assert [c["text"].split("] ")[-1] for c in sec.content] == ["I finished the Spitfire model kit"]

@@ -141,6 +141,10 @@ skos_vocab = true
 # extraction. Warns at start when entity_admission is off. Off by default; on under profile "principled" (B545).
 # CAMPY_TRACKER_SIDE_BRANCH=1 turns it on.
 # tracker_side_branch = false
+# B560: a turn's named speaker is linked by `Message -SPOKEN_BY-> Concept` (the speaker's Person Concept). The concept
+# walk reads it, so a linked turn must be the question's subject's own. Off by default; on under profile "principled"
+# (B545). CAMPY_SPOKEN_BY=1 turns it on.
+# spoken_by = false
 
 [wiki_projection]
 enabled = true

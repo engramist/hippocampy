@@ -110,7 +110,7 @@ def _config(**retrieval):
     return cfg
 
 
-async def test_default_limit_zero_adds_no_walk_section_but_a_positive_limit_does(db, gw):
+async def test_default_limit_zero_adds_no_walk_section_but_the_links_are_written(db, gw):
     from campy.brain.hippocampus import concept_links as cl
 
     await gw.run("temporal_lobe.dict_create_concept", cid="c-kit", text="model kit", emb=[0.0] * DIM,
@@ -121,8 +121,9 @@ async def test_default_limit_zero_adds_no_walk_section_but_a_positive_limit_does
     q = "How many model kits do I own?"
     default = await bc.compile_bundle(q, db, _config())
     assert not any(s.section_type == "linked" for s in default.sections)
-    walked = await bc.compile_bundle(q, db, _config(graph_linking_limit=12))
-    assert any(s.section_type == "linked" for s in walked.sections)      # the links ARE written
+    # the links ARE written (B560: the walk itself needs the question's subject and `SPOKEN_BY`, see test_b560)
+    rows = db._execute_and_collect("SELECT ?m WHERE { ?m <https://campy.dev/ns#MENTIONS> ?c }")
+    assert len(rows) == 2
 
 
 # --- the SHACL gate degrades safely ---------------------------------------------------
