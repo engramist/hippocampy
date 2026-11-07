@@ -253,7 +253,7 @@ async def test_plan_with_passing_value_also_yields_has_attribute(db, gw, store):
 
 # --- end to end -----------------------------------------------------------------------
 
-async def test_how_many_model_kits_walk_gathers_all_three(db, gw, store):
+async def test_how_many_model_kits_all_three_turns_link_to_the_shared_concept(db, gw, store):
     sessions = [("Picked up a Revell F-15 Eagle model kit.", 3, "Revell F-15 Eagle"),
                 ("Finished the Tamiya Spitfire model kit.", 11, "Tamiya Spitfire"),
                 ("Started a Tiger I tank model kit.", 19, "Tiger I")]
@@ -261,8 +261,5 @@ async def test_how_many_model_kits_walk_gathers_all_three(db, gw, store):
         llm = LLM(claim(text.rstrip("."), text.rstrip("."), entity=name, kind="model kit"))
         await run(db, BOTH, store, text, llm, day=day)
     assert len(store.edges("IS_A")) == 3
-    bundle = await bc.compile_bundle("How many model kits do I own?", db, BOTH)
-    (section,) = [s for s in bundle.sections if s.section_type == "linked"]
-    turns = [c["text"] for c in section.content if c["type"] == "Message"]
-    assert [("Revell" in t, "Spitfire" in t, "Tiger" in t) for t in turns] \
-        == [(True, False, False), (False, True, False), (False, False, True)]
+    # all three turns are linked to the shared Concept (B560: the walk over them is tested in test_b560)
+    assert len({m for m, c in store.edges("MENTIONS")}) == 3 and len({c for _, c in store.edges("MENTIONS")}) >= 1

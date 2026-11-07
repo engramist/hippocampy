@@ -1531,6 +1531,9 @@ REL_TABLES = [
     # both resolved to Concepts. Both property-free.
     "CREATE REL TABLE IF NOT EXISTS MENTIONS (FROM Message TO Concept)",
     "CREATE REL TABLE IF NOT EXISTS IS_A (FROM Concept TO Concept)",
+    # B560: SPOKEN_BY, a Message -> the speaker's Person Concept (flag [loop] spoken_by), property-free. The speaker
+    # was only a string on the turn; the concept walk needs "this turn is the subject's own" as an edge.
+    "CREATE REL TABLE IF NOT EXISTS SPOKEN_BY (FROM Message TO Concept)",
     # B508: SKOS vocabulary for kinds (flag CAMPY_SKOS_VOCAB). INSTANCE_OF: entity ->
     # kind. BROADER: kind -> broader kind (skos:broader). CLOSE_MATCH: kind ~ kind
     # (skos:closeMatch, advisory). All property-free; a kind is Concept.kind_scheme='kind'.

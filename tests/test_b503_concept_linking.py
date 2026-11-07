@@ -197,109 +197,9 @@ async def test_link_existing_backfills_a_store_written_without_linking(db, gw, s
     assert len(store.edges("MENTIONS")) == 2 and again["messages"] == 2
 
 
-# --- the walk -----------------------------------------------------------------------
-
-async def _walk(gw, concept_ids, **kw):
-    return await gw.run("thalamus.bundle_concept_walk", concept_ids=concept_ids,
-                        limit=kw.get("limit", 12), exclude=kw.get("exclude", []), skos=kw.get("skos", False))
-
-
-async def test_walk_gathers_every_session_through_the_shared_concept(db, gw, store):
-    """"How many model kits": three sessions, three different kits, none sharing a word with
-    the question but the Concept; all three come back, oldest first."""
-    await store.concept("c-kit", "model kit")
-    texts = [("Picked up a Revell F-15 Eagle model kit.", 3), ("Finished the Tamiya Spitfire model kit.", 11),
-             ("Started a Tiger I tank model kit.", 19)]
-    mids = []
-    for text, day in texts:
-        mid = await store.message(text, day=day)
-        await cl.link_message_concepts(gw, mid, text)
-        mids.append(mid)
-    noise = await store.message("Unrelated chat about cooking.", day=12)
-    rows = await _walk(gw, ["c-kit"])
-    assert [r["node_id"].rsplit("/", 1)[-1] for r in rows] == mids
-    assert all(r["kind"] == "Message" and r["hop"] == 1 for r in rows)
-    assert noise not in [r["node_id"].rsplit("/", 1)[-1] for r in rows]
-
-
-async def test_walk_second_hop_reaches_siblings_parents_and_children(db, gw, store):
-    for cid, text in [("c-kit", "model kit"), ("c-f15", "Revell F-15 Eagle"), ("c-spit", "Tamiya Spitfire"),
-                      ("c-hobby", "hobby"), ("c-tiger", "Tiger I tank")]:
-        await store.concept(cid, text)
-    for child, parent in [("c-f15", "c-kit"), ("c-spit", "c-kit"), ("c-kit", "c-hobby")]:
-        await gw.run("concept_links.link_is_a", cid=child, pid=parent)
-    a = await store.message("The Revell F-15 Eagle is done.", day=3)
-    b = await store.message("The Tamiya Spitfire is next.", day=9)
-    c = await store.message("I love my hobby.", day=15)
-    d = await store.message("A Tiger I tank sits on my shelf.", day=20)      # not related by IS_A
-    for mid, text in [(a, "The Revell F-15 Eagle is done."), (b, "The Tamiya Spitfire is next."),
-                      (c, "I love my hobby."), (d, "A Tiger I tank sits on my shelf.")]:
-        await cl.link_message_concepts(gw, mid, text)
-    ids = lambda rows: [r["node_id"].rsplit("/", 1)[-1] for r in rows]       # noqa: E731
-    # from the F-15: its sibling (Spitfire) and its category's category (hobby is 2 IS_A away: not walked)
-    rows = await _walk(gw, ["c-f15"])
-    assert ids(rows) == [a, b] and [r["hop"] for r in rows] == [1, 2]
-    # from the category: its children (both kits) and its parent (hobby)
-    rows = await _walk(gw, ["c-kit"])
-    assert ids(rows) == [a, b, c] and all(r["hop"] == 2 for r in rows)
-    assert d not in ids(rows)
-
-
-async def test_walk_cap_prefers_hop1_then_newest_and_shows_oldest_first(db, gw, store):
-    await store.concept("c-kit", "model kit")
-    await store.concept("c-f15", "Revell F-15 Eagle")
-    await gw.run("concept_links.link_is_a", cid="c-f15", pid="c-kit")
-    own = [await store.message(f"model kit number {i}", day=2 + i) for i in range(3)]
-    sib = await store.message("Revell F-15 Eagle, finally.", day=25)
-    for mid, text in [(m, f"model kit number {i}") for i, m in enumerate(own)] + [(sib, "Revell F-15 Eagle, finally.")]:
-        await cl.link_message_concepts(gw, mid, text)
-    rows = await _walk(gw, ["c-kit"], limit=3)
-    got = [r["node_id"].rsplit("/", 1)[-1] for r in rows]
-    # hop 1 = the three "model kit" turns (the F-15 turn is hop 2 and loses to them under the cap)
-    assert got == own
-    rows = await _walk(gw, ["c-kit"], limit=4)
-    assert [r["node_id"].rsplit("/", 1)[-1] for r in rows] == own + [sib]
-
-
-async def test_walk_excludes_shown_items_archived_and_assistant_rows(db, gw, store):
-    await store.concept("c-kit", "model kit")
-    keep = await store.message("model kit A", day=3)
-    shown = await store.message("model kit B", day=4)
-    gone = await store.message("model kit C", day=5)
-    asst = await store.message("model kit D", day=6, role="assistant")
-    for mid in (keep, shown, gone, asst):
-        await gw.run("concept_links.link_message_concept", mid=mid, cid="c-kit")    # even a stray assistant link
-    await db.execute_write(
-        f"INSERT DATA {{ <https://campy.dev/id/Message/{gone}> {NS}archived> true }}")
-    exclude = [f"https://campy.dev/id/Message/{shown}"]
-    rows = await _walk(gw, ["c-kit"], exclude=exclude)
-    assert [r["node_id"].rsplit("/", 1)[-1] for r in rows] == [keep]
-
-
-async def test_walk_includes_observations_and_drops_superseded(db, gw, store):
-    await store.concept("c-kit", "model kit")
-    oid, mid = await _observe(db, gw, store, quote="I own a model kit", subject="I", predicate="owns",
-                              obj="a model kit", day=4)
-    await cl.link_observation_concepts(gw, oid, mid, subject_text="I", predicate="owns", object_text="a model kit")
-    rows = await _walk(gw, ["c-kit"])
-    kinds = {r["kind"]: r for r in rows}
-    assert set(kinds) == {"Observation", "Message"}
-    assert kinds["Observation"]["observation_id"] == oid and kinds["Observation"]["evidence_ref"] == mid
-    await db.execute_write(f"INSERT DATA {{ <https://campy.dev/id/Observation/{oid}> {NS}superseded_by> \"x\" }}")
-    assert [r["kind"] for r in await _walk(gw, ["c-kit"])] == ["Message"]
-
-
-async def test_walk_drops_a_concept_that_is_in_most_of_the_conversation(db, gw, store, monkeypatch):
-    await store.concept("c-sam", "Sam")
-    for i in range(60):
-        await gw.run("capture.create_message", message_id=f"s{i}", text_raw=f"Sam said {i}", embedding=None,
-                     embedding_model="m", embedding_dim=DIM, role="user", byte_end=9,
-                     created_at="2023-05-02T12:00:00+00:00")
-        await gw.run("concept_links.link_message_concept", mid=f"s{i}", cid="c-sam")
-    monkeypatch.setattr(gw._vector_store, "count_documents", lambda prefixes: 100)
-    assert await _walk(gw, ["c-sam"]) == []
-    monkeypatch.setattr(gw._vector_store, "count_documents", lambda prefixes: 10_000)
-    assert len(await _walk(gw, ["c-sam"], limit=5)) == 5          # a big store: 60 is not "most"
+# --- the walk ---
+# B560 replaced the store-wide walk with one anchored on the question's subject (SPOKEN_BY); its tests are
+# in tests/test_b560_anchored_walk.py.
 
 
 # --- the bundle ---------------------------------------------------------------------
@@ -312,16 +212,6 @@ async def _three_session_store(gw, store):
         await cl.link_message_concepts(gw, mid, text)
 
 
-async def test_bundle_flag_on_adds_a_linked_section_with_every_session(db, gw, store):
-    await _three_session_store(gw, store)
-    bundle = await bc.compile_bundle("How many model kits do I own?", db, ON)
-    (section,) = [s for s in bundle.sections if s.section_type == "linked"]
-    assert all(c["text"].startswith("[Sam, 2023-05-") for c in section.content)
-    assert [("Revell" in c["text"], "Spitfire" in c["text"], "Tiger" in c["text"]) for c in section.content] \
-        == [(True, False, False), (False, True, False), (False, False, True)]
-    assert len(section.source_node_ids) == 3 and section.token_estimate > 0
-
-
 async def test_bundle_flag_off_is_unchanged(db, gw, store):
     await _three_session_store(gw, store)
     off = await bc.compile_bundle("How many model kits do I own?", db, OFF)
@@ -332,14 +222,6 @@ async def test_bundle_flag_off_is_unchanged(db, gw, store):
     on = await bc.compile_bundle("How many model kits do I own?", db, ON)
     assert [(s.section_type, s.content) for s in on.sections if s.section_type != "linked"] \
         == [(s.section_type, s.content) for s in off.sections]
-
-
-async def test_bundle_does_not_repeat_what_the_conversation_stage_shows(db, gw, store):
-    await _three_session_store(gw, store)
-    on = await bc.compile_bundle("How many model kits do I own?", db, ON)
-    shown = {nid for s in on.sections if s.section_type == "conversation" for nid in s.source_node_ids}
-    linked = [nid for s in on.sections if s.section_type == "linked" for nid in s.source_node_ids]
-    assert not shown & set(linked)
 
 
 async def test_bundle_without_question_concepts_has_no_linked_section(db, gw, store):

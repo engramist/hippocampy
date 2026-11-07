@@ -237,7 +237,7 @@ NODE_COLUMNS, NODE_PRIMARY_KEYS = _parse_node_schema()
 #                Nothing to lose: repeated identical plain triples are
 #                idempotent under RDF set semantics, so no call-site
 #                analysis is needed for these — the schema itself proves it
-#                safe. 62 tables (B522: +HAS_SUBJECT, +HAS_OBJECT; B509: +HAS_PROPERTY; B472 Phase 3a: +EVIDENCED_BY, +OBSERVATION_ABOUT; B503: +MENTIONS, +IS_A; B508: +INSTANCE_OF, +BROADER, +CLOSE_MATCH).
+#                safe. 64 tables (B560: +SPOKEN_BY; B522: +HAS_SUBJECT, +HAS_OBJECT; B509: +HAS_PROPERTY; B472 Phase 3a: +EVIDENCED_BY, +OBSERVATION_ABOUT; B503: +MENTIONS, +IS_A; B508: +INSTANCE_OF, +BROADER, +CLOSE_MATCH).
 # "star"       — at most one edge per (s,p,o), carrying properties.
 #                Confirmed (not guessed) via actual call sites: every
 #                writer for these tables uses Cypher `MERGE ... SET`
@@ -341,6 +341,8 @@ EDGE_REIFICATION: dict[str, EdgeReification] = {
     "HAS_SUBJECT": "plain",
     "HAS_OBJECT": "plain",
     "MENTIONS": "plain",
+    # B560: Message -> the speaker's Concept; property-free, MERGE-style writer (spoken_by.link_spoken_by).
+    "SPOKEN_BY": "plain",
     "IS_A": "plain",
     # B508: SKOS vocabulary for kinds; property-free, MERGE writers (kinds.link_*).
     "INSTANCE_OF": "plain",

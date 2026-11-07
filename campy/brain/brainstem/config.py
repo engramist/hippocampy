@@ -122,6 +122,11 @@ _DEFAULT_CONFIG = {
         # Observation extraction. Warns at daemon start when entity_admission is off. Gate: part of the
         # principled-profile gate.
         "tracker_side_branch": False,
+        # B560 (default OFF; env CAMPY_SPOKEN_BY=1 turns it on; on under profile "principled"): a user turn's named
+        # speaker is linked from the turn by `Message -SPOKEN_BY-> Concept` (the speaker's Person Concept, the one the
+        # Loop already seeds). The concept walk (B503, B560) reads it to keep only the subject's own turns. Gate: part
+        # of the principled-profile gate.
+        "spoken_by": False,
     },
     # B472 Phase 3: source-grounded Observations. On by default
     # (3c gate: LoCoMo-10 65 gained/39 lost p~0.014; shown only when the
@@ -333,6 +338,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_ENTITY_STANDING": ("loop", "entity_standing", _parse_bool),
     # B543: Loop steps 2-7 (the deprecated decision tracker) only add records (default off).
     "CAMPY_TRACKER_SIDE_BRANCH": ("loop", "tracker_side_branch", _parse_bool),
+    # B560: a turn's named speaker is linked by SPOKEN_BY (default off).
+    "CAMPY_SPOKEN_BY": ("loop", "spoken_by", _parse_bool),
     # B507: the SHACL write gate (default off).
     "CAMPY_SHACL_GATE": ("observations", "shacl_gate", _parse_bool),
     # B509: OWL attribute properties; functional properties drive supersession.
@@ -416,6 +423,8 @@ PROFILES: dict[str, dict[str, dict[str, object]]] = {
             "entity_standing": True,
             # B543: the decision tracker (steps 2-7) only adds records; it never removes or withholds.
             "tracker_side_branch": True,
+            # B560: Message -SPOKEN_BY-> the speaker's Concept; the concept walk anchors on it.
+            "spoken_by": True,
         },
         "observations": {
             "object_roles": True,       # B522: typed HAS_SUBJECT / HAS_OBJECT edges on Observations

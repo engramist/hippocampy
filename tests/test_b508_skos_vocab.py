@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -249,9 +250,7 @@ async def test_close_match_is_recorded_not_merged_and_not_walked(db, gw, store, 
     assert all(k.alts == [] for k in (await store.kinds()).values())
     # the walk from one kind does not reach the other kind's instance
     ids = {v: k for k, v in (await store.label_of()).items()}
-    rows = await gw.run("thalamus.bundle_concept_walk", concept_ids=[ids["scale model"]],
-                        limit=12, exclude=[], skos=True)
-    texts = " ".join(str(r.get("text") or r.get("object_text") or "") for r in rows)
+    texts = " ".join(await _texts(db, store, "scale model"))
     assert "Revell" in texts and "Spitfire" not in texts
 
 
@@ -292,12 +291,16 @@ SESSIONS = [("Picked up a Revell F-15 Eagle.", "Revell F-15 Eagle", "plastic mod
             ("Walked Rex by the lake.", "Rex", "pet")]
 
 
-async def _texts(db, config, question):
-    bundle = await bc.compile_bundle(question, db, config)
-    sections = [s for s in bundle.sections if s.section_type == "linked"]
-    if not sections:
-        return []
-    return [c["text"] for c in sections[0].content if c["type"] == "Message"]
+async def _texts(db, store, kind_label):
+    """The turns the B560 walk returns from the Concept `kind_label`, for the speaker Sam (every turn SPOKEN_BY him)."""
+    from campy.brain.hippocampus.graph.oxigraph_client import mint_uri
+    await store.gw.run("temporal_lobe.dict_create_concept", cid="c-sam", text="Sam", emb=[0.0] * DIM,
+                       gist="Agent", stype="Person", now=datetime(2023, 5, 1, tzinfo=timezone.utc))
+    for i in range(1, store.n + 1):
+        store.db.write_edge("SPOKEN_BY", mint_uri("Message", f"m{i}"), mint_uri("Concept", "c-sam"))
+    ids = {v: k for k, v in (await store.label_of()).items()}
+    rows = await store.gw.run("thalamus.bundle_concept_walk", sids=[ids[kind_label]], subj_ids=["c-sam"], shown=[])
+    return [str(r["text"]) for r in rows]
 
 
 async def _populate(db, store, config):
@@ -307,14 +310,14 @@ async def _populate(db, store, config):
 
 async def test_walk_from_a_broad_kind_reaches_every_narrower_kinds_instances(db, store):
     await _populate(db, store, cfg())
-    turns = await _texts(db, cfg(), "How many kits do I own?")
+    turns = await _texts(db, store, "kit")
     joined = " ".join(turns)
     assert "Revell" in joined and "Spitfire" in joined and "Tiger" in joined and "lake" not in joined
 
 
 async def test_walk_from_a_middle_kind_reaches_the_narrower_one(db, store):
     await _populate(db, store, cfg())
-    joined = " ".join(await _texts(db, cfg(), "How many model kits do I own?"))
+    joined = " ".join(await _texts(db, store, "model kit"))
     assert "Revell" in joined and "Spitfire" in joined and "lake" not in joined
 
 
@@ -327,7 +330,7 @@ async def test_flag_off_behaves_as_b504(db, store):
     assert len(await store.edges("IS_A")) == 4
     assert (await store.kinds()) == {}
     # the walk from "kit" reaches only what hangs on it (Tiger), as before
-    joined = " ".join(await _texts(db, off, "How many kits do I own?"))
+    joined = " ".join(await _texts(db, store, "kit"))
     assert "Tiger" in joined and "Revell" not in joined
 
 

@@ -19,6 +19,7 @@ from campy.brain.brainstem.config import (
 from campy.brain.hippocampus import kinds, observations as obs
 from campy.brain.hippocampus.concept_links import graph_linking_limit
 from campy.brain.hippocampus.entity_standing import entity_standing_enabled
+from campy.brain.hippocampus.spoken_by import spoken_by_enabled
 from campy.brain.temporal_lobe.loop.tracker_branch import tracker_side_branch_enabled
 from campy.brain.temporal_lobe.observations import evidence_entities as evid
 from campy.brain.temporal_lobe.steward import steward_enabled
@@ -56,6 +57,7 @@ MEMBERS = {
     ("loop", "entity_admission"): lambda c: bool(c["loop"].get("entity_admission", False)),
     ("loop", "entity_standing"): entity_standing_enabled,                # B549
     ("loop", "tracker_side_branch"): tracker_side_branch_enabled,        # B543
+    ("loop", "spoken_by"): spoken_by_enabled,                            # B560
 }
 
 

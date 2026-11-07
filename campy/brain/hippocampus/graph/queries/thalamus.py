@@ -1666,14 +1666,53 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
     ),
     NamedQuery(
         name="thalamus.bundle_concept_walk",
-        cypher="MATCH (m:Message)-[:MENTIONS]->(c:Concept) RETURN m.message_id as node_id LIMIT $limit",
-        params=("concept_ids", "limit", "exclude", "skos"),
+        cypher="MATCH (m:Message)-[:SPOKEN_BY]->(s:Concept {concept_id: $subj_id}), (m)-[:MENTIONS]->(c:Concept {concept_id: $sid}) "
+               "WHERE m.role = 'user' AND m.archived = false "
+               "RETURN m.message_id AS node_id, m.text_raw AS text ORDER BY m.occurred_at DESC",
+        params=("sids", "subj_ids", "shown"),
         mutating=False,
-        description="B503: user Messages and live Observations linked (MENTIONS / OBSERVATION_ABOUT) to the "
-                    "given Concepts (hop 1) or to their IS_A parents, children and siblings (hop 2), "
-                    "deduplicated, capped, ordered by event time. B508 (skos true): hop 2 also follows "
-                    "INSTANCE_OF / BROADER and descends the BROADER closure to every narrower kind and its instances",
-        # No sparql= -- Python handler in GraphGateway._bundle_concept_walk.
+        description="B503, B560: the user turns the question's subject spoke (Message -SPOKEN_BY-> subject) that are "
+                    "linked by MENTIONS to a walk seed Concept (hop 1) or to one SKOS step from it (hop 2: IS_A / "
+                    "INSTANCE_OF / BROADER parent, child or sibling, the BROADER closure and its instances). "
+                    "Not archived, not already `shown`; best first: hop 1 before hop 2, then distinct seeds linked, "
+                    "then the number of the subject's Observations the turn evidences, then newest. No subject (an "
+                    "empty `subj_ids`) or no seed returns nothing. Rows: `i` (message URI), `text`, `speaker`, `h` "
+                    "(hop), `latest` (the turn's time). The Cypher form is a documentation shape; the SPARQL is the "
+                    "reader.",
+        sparql="""
+            SELECT ?i ?text ?speaker (MIN(?hop) AS ?h) (COUNT(DISTINCT ?via) AS ?linked)
+                   (COUNT(DISTINCT ?ev) AS ?evidence) (MAX(?when) AS ?latest) WHERE {
+              VALUES ?sid { }
+              VALUES ?subj_id { }
+              ?c a campy:Concept ; campy:concept_id ?sid .
+              ?subj a campy:Concept ; campy:concept_id ?subj_id .
+              {
+                { ?i campy:MENTIONS ?c . BIND(?c AS ?via) BIND(1 AS ?hop) }
+                UNION
+                {
+                  { ?c (campy:IS_A|campy:INSTANCE_OF|campy:BROADER) ?x }
+                  UNION { ?x (campy:IS_A|campy:INSTANCE_OF|campy:BROADER) ?c }
+                  UNION { ?c (campy:IS_A|campy:INSTANCE_OF|campy:BROADER) ?p .
+                          ?x (campy:IS_A|campy:INSTANCE_OF|campy:BROADER) ?p . FILTER(?x != ?c) }
+                  UNION { ?x (campy:BROADER|campy:IS_A)+ ?c }
+                  UNION { ?k (campy:BROADER|campy:IS_A)+ ?c . ?x campy:INSTANCE_OF ?k }
+                  FILTER NOT EXISTS { ?x a campy:ObjectPhrase }
+                  ?i campy:MENTIONS ?x . BIND(?x AS ?via) BIND(2 AS ?hop)
+                }
+              }
+              ?i a campy:Message ; campy:role "user" ; campy:SPOKEN_BY ?subj ; campy:text_raw ?text .
+              OPTIONAL { ?i campy:occurred_at ?occurred }
+              OPTIONAL { ?i campy:created_at ?created }
+              OPTIONAL { ?i campy:speaker ?speaker }
+              BIND(COALESCE(?occurred, ?created) AS ?when)
+              FILTER NOT EXISTS { ?i campy:archived true }
+              FILTER NOT EXISTS { VALUES ?shown { } FILTER(?shown = ?i) }
+              OPTIONAL { ?so campy:HAS_SUBJECT ?subj ; campy:EVIDENCED_BY ?i . BIND(?so AS ?ev) }
+            }
+            GROUP BY ?i ?text ?speaker
+            ORDER BY ?h DESC(?linked) DESC(?evidence) DESC(?latest) ?i
+            LIMIT 50
+            """,
     ),
     NamedQuery(
         name="thalamus.bundle_observations_history",

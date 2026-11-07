@@ -44,6 +44,7 @@ others, and the turn text is always the evidence shown (P3).
 | Typed object entities (B546) | at write time the object of a fact is linked (`HAS_OBJECT`) to an admitted entity or to an `ObjectPhrase` node and typed (`INSTANCE_OF`) by a rule: kind stated in the sentence, WordNet places, speakers, the head noun matched to the closed kind set; else a `kind_candidate` | principled; reads: `typed_objects.exact_role_turns` (what B548 votes with) | `typed_objects` (off), part of the principled profile |
 | Evidence entity links (B554) | at write time an Observation is linked (`OBSERVATION_ABOUT`) to each admitted entity whose occurrence lies in its evidence: the quote located in its source turn, else the clause holding it by the dependency parse; the model's wording plays no part | principled; reads: the concept walk and `typed_objects.loose_role_turns` (the existing OBSERVATION_ABOUT readers), `entity_admission.unlinked_entities` (coverage) | `evidence_entity_links` (off), part of the principled profile |
 | Entity standing (B549) | the tagger's label stays evidence (`ner_label`); each admitted entity gets `entity_standing` (`confirmed` / `doubtful` / `unverified`) by rule: a conversation speaker, or a capital that sentence position does not explain and the conversation never writes in lowercase; a wrapped span ("Yep Deb") is trimmed to the known name it holds. Withdraws trust from non-names (Yoga, Art, Glad, Congrats); does not repair person / place / organisation errors | principled; reads: `entity_admission.concept_status` (the kind guard: a doubtful word may be a kind), `typed_objects.named_entity_texts` (the kind-label guard), `question_analysis.concept_lexicon` (a PERSON label needs `confirmed`; B547); B554 and B548 do not read it | `entity_standing` (off), part of the principled profile |
+| Speaker edge (B560) | the turn is linked to its named speaker's Person Concept (`Message -SPOKEN_BY-> Concept`), the Concept the Loop already seeds for a named speaker; a role or placeholder ("user", "Speaker 1") gets none. `scripts/backfill_spoken_by.py` links an existing store | principled; reads: `thalamus.bundle_concept_walk` (the walk keeps only the subject's turns) | `spoken_by` (off), part of the principled profile |
 
 ## 2. Graph (the facts)
 
@@ -79,7 +80,7 @@ State today: 84-87% of Observations carry a subject; about 6% have a typed objec
 | b lexical | conversation | FTS5 over turn text; a lexical-only hit needs two content words | principled | on |
 | b lexical | observations | FTS5 restricted to Observation URIs | principled | on |
 | c graph | observations about named Concepts | Observations `OBSERVATION_ABOUT` a Concept the question names | principled, starved by capture | on |
-| c graph | concept walk (B503, B559) | what the graph links to the Concepts the question names other than its subject, 1-2 hops; the subject, the anchors and person Concepts are not seeds (their facts arrive through the vote and the Observation stage); no seed left, no section | principled; switched off after a gate run while capture was dropping its targets, and seeded with the subject (it filled its cap with that person's newest turns: 2 of 3,588 items held a gold turn) | `graph_linking_limit` 0; 12 in the principled profile |
+| c graph | concept walk (B503, B559, B560) | the user turns the question's subject spoke (`Message -SPOKEN_BY-> subject`, not a string match) that link (`MENTIONS`) to the Concepts the question names other than its subject, 1-2 hops; the subject, the anchors and person Concepts are not seeds (their facts arrive through the vote and the Observation stage); hop 1, then distinct seeds linked, then the subject's Observations the turn evidences, then newest; no analysis, no subject, a tie or no seed left, no section; Messages only (Observations are the observation stage's); one NamedQuery, no Python filtering | principled; the store-wide walk was removed after R106 (63% of linked turns from other conversations, 177 of 230 linked sections held a turn dated after the whole conversation: judge accuracy 0.503 to 0.427); B559 seeded it without the subject (2 of 3,588 items held a gold turn) | `graph_linking_limit` 0; 12 in the principled profile; the edge needs `spoken_by` (off), part of the principled profile |
 | c graph | count and list (B524) | subject-anchored SPARQL computes count / list | principled | parked, #374 |
 | c graph | latest and before/after | supersession (B499, B509 OWL properties) | mixed | `owl_properties` (on) |
 | c graph | old semantic stage | Concept/Decision labels by similarity, used when there are no Observations | legacy | fallback |
@@ -101,7 +102,7 @@ lists are not changed.
 
 ## 7. Prompt
 
-Sections in order: exact facts, semantic (Observations, or the old stage), linked (walk, off),
+Sections in order: exact facts, semantic (Observations, or the old stage), linked (the subject's own turns the concept walk finds; off on main),
 conversation turns with dates inline (B538), plans, summaries. Status: principled in form (evidence
 stays linked to its source turn); what reaches it is limited by stages 1-6.
 
@@ -113,7 +114,7 @@ non-answers that the judge never sees. Status: mixed (B539 open).
 ## The principled profile (to be assembled)
 
 On: entity admission (B544), entity standing (B549), the tracker as a side branch (B543), roles (B522), ownership (B523), kind hygiene and hierarchy (B525,
-B534, B535), count and list (B524), the concept walk with a limit, typed object entities (B546),
+B534, B535), count and list (B524), the concept walk with a limit anchored on the subject (B560, `spoken_by`), typed object entities (B546),
 question analysis once per question (B547), the graph signal as a vote in conversation seed fusion (B548). Demoted:
 the decision tracker as a side branch that only adds records (B543, `tracker_side_branch`); the old semantic stage.
 

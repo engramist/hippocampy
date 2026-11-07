@@ -26,7 +26,6 @@ from urllib.parse import quote as _urlquote
 
 from campy.brain.hippocampus.concept_links import graph_linking_enabled, graph_linking_limit
 from campy.brain.hippocampus.turn_mentions import annotate_turn, load_mentions, turn_dates_enabled
-from campy.brain.hippocampus.kinds import skos_vocab_enabled
 from campy.brain.hippocampus.graph.gateway import get_gateway
 from campy.brain.hippocampus.observations import (
     observation_limit,
@@ -796,76 +795,65 @@ async def _question_concept_ids(gw, query: str) -> list[str]:
 
 
 async def _stage_concept_walk(db, query: str, config: dict, exclude: set[str], analysis=None) -> Optional[BundleSection]:
-    """B503: the user turns and Observations linked, in the graph, to the
-    Concepts the question names (1 hop) or to their categories, children and
-    siblings (2 hops): gathered through the shared Concept, not through
-    similarity. Concepts are resolved as the Observation stage does, plus the
-    link writer's normalised match (so "model kits" finds "model kit").
+    """B503, B560: the user turns the question's SUBJECT spoke that are linked, in the graph, to the Concepts the
+    question names (1 hop) or to their categories, children and siblings (2 hops): gathered through the shared
+    Concept, not through similarity. One NamedQuery (`thalamus.bundle_concept_walk`) holds the whole rule: the
+    turn is `SPOKEN_BY` the subject Concept (B560's edge), `MENTIONS` a seed, is not archived and is not already
+    shown (`exclude`: the conversation turns and Observation ids in the bundle); best first by hop, distinct seeds
+    linked, the subject's Observations the turn evidences, then newest. The cap is `[retrieval] graph_linking_limit`
+    (at most `WALK_MAX`); the turns are shown oldest first, each stamped with its speaker and date.
 
-    Items already in the bundle (`exclude`: conversation turns, observation
-    ids) are left out; the rest are capped at `[retrieval] graph_linking_limit`
-    and shown oldest first, each stamped with its speaker and date. Returns
-    None when nothing is linked or anything fails.
-
-    B547: with a question `analysis`, its Concept ids replace both resolvers (the analysis already folds
-    plurals and altLabels through the same `norm_key`)."""
+    The walk needs the question analysis (B547): its seeds are `walk_seed_ids()` and its anchor the one resolved
+    subject. No analysis, no subject, a tie (two anchors) or no seed adds nothing; a first-person question with no
+    named subject adds nothing yet (its anchor, the user's own unlabelled turns, is a follow-up). Returns None
+    when nothing is linked or anything fails."""
     limit = graph_linking_limit(config)
-    if limit <= 0:
+    if limit <= 0 or analysis is None:
         return None
-    skos = skos_vocab_enabled(config)
+    if not analysis.subject_id or analysis.tie or analysis.subject_unresolved:
+        return None
     try:
-        from campy.brain.hippocampus.concept_links import match_concepts
         from campy.brain.hippocampus.graph.gateway import conversation_stamp
 
-        gw = get_gateway(db)
-        if analysis is not None:
-            # B559: the Concepts the question names other than its subject (see walk_seed_ids)
-            concept_ids = list(dict.fromkeys(analysis.walk_seed_ids()))
-        else:
-            concept_ids = list(dict.fromkeys(
-                await _question_concept_ids(gw, query) + await match_concepts(gw, query, alt_labels=skos)))
-        if not concept_ids:
+        seeds = list(dict.fromkeys(analysis.walk_seed_ids()))[:12]
+        if not seeds:
             return None
+        gw = get_gateway(db)
         rows = await gw.run(
             "thalamus.bundle_concept_walk",
-            concept_ids=concept_ids, limit=limit, exclude=sorted(exclude), skos=skos)
+            sids=seeds, subj_ids=[analysis.subject_id], shown=sorted(exclude))
+        rows = list(rows or [])[:min(limit, WALK_MAX)]
         if not rows:
             return None
+        rows.sort(key=lambda r: (str(r.get("latest") or ""), str(r.get("i"))))
+        mentions = await _turn_mentions(db, config, [r.get("i") for r in rows])
         content, node_ids = [], []
-        mentions = await _turn_mentions(db, config, [
-            (r.get("node_id") if r.get("kind") != "Observation" else _message_uri(r.get("evidence_ref")))
-            for r in rows])
-        inline = turn_dates_enabled(config)
         for r in rows:
-            if r.get("kind") == "Observation":
-                text = render_observation(r, inline=inline, mentions=mentions.get(_message_uri(r.get("evidence_ref"))))
-                node_ids.append(str(r.get("observation_id") or r.get("node_id")))
-                content.append({
-                    "text": text, "type": "Observation", "observation_id": r.get("observation_id"),
-                    "evidence_ref": r.get("evidence_ref"), "polarity": r.get("polarity"),
-                    "confidence": 0.5, "pathway_strength": 0.5, "hop": r.get("hop"),
-                })
-            else:
-                text = str(r.get("text") or "")
-                if len(text) > _WALK_MESSAGE_CHARS:
-                    text = text[:_WALK_MESSAGE_CHARS].rstrip() + " ..."
-                text = annotate_turn(text, mentions.get(str(r.get("node_id"))))
-                node_ids.append(str(r.get("node_id")))
-                content.append({
-                    "text": conversation_stamp(r.get("speaker"), r.get("created_at")) + text,
-                    "type": "Message", "role": "user", "created_at": r.get("created_at"),
-                    "confidence": 0.5, "pathway_strength": 0.5, "hop": r.get("hop"),
-                })
+            uri = str(r.get("i"))
+            text = str(r.get("text") or "")
+            if len(text) > _WALK_MESSAGE_CHARS:
+                text = text[:_WALK_MESSAGE_CHARS].rstrip() + " ..."
+            text = annotate_turn(text, mentions.get(uri))
+            when = r.get("latest")
+            stamp = when.isoformat() if hasattr(when, "isoformat") else str(when or "")
+            node_ids.append(uri)
+            content.append({
+                "text": conversation_stamp(r.get("speaker"), stamp) + text,
+                "type": "Message", "role": "user", "created_at": stamp,
+                "confidence": 0.5, "pathway_strength": 0.5, "hop": r.get("h"),
+            })
         return BundleSection(
             section_type="linked", content=content, source_node_ids=node_ids,
             token_estimate=sum(max(1, len(c["text"]) // 4) for c in content),
-            reads=["concept_ids"] if analysis is not None else [],
+            reads=["concept_ids", "subject_id"],
         )
     except Exception as e:
         _logger.warning("Error in _stage_concept_walk: %s", e)
         return None
 
 
+# The walk query returns at most this many rows (LIMIT in `thalamus.bundle_concept_walk`).
+WALK_MAX = 50
 _WALK_MESSAGE_CHARS = 1200
 
 

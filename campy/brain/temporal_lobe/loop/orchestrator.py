@@ -52,6 +52,7 @@ from campy.brain.temporal_lobe.loop.tracker_branch import tracker_side_branch_en
 from campy.brain.hippocampus.concept_links import graph_linking_enabled, link_message_concepts
 from campy.brain.hippocampus.kinds import skos_vocab_enabled
 from campy.brain.hippocampus.entity_admission import admit_parsed, entity_admission_enabled, trim_wrapped
+from campy.brain.hippocampus.spoken_by import link_spoken_by, spoken_by_enabled
 from campy.brain.hippocampus.graph import embeddings as emb
 from campy.brain.llm.provider import create_llm_client_for_step  # B16
 
@@ -134,9 +135,16 @@ async def run_loop(message_id: str, text: str, db, llm_client,
     # Falls back to the default llm_client if no override is configured.
     # ------------------------------------------------------------------
     # B472 Phase 2: a named speaker is a person this memory knows about.
+    speaker_cid = None
     if _is_named_speaker(speaker):
         async with _timed(message_id, "seed_speaker"):
-            await _seed_speaker_concept(speaker, embedding_model, db, now)
+            speaker_cid = await _seed_speaker_concept(speaker, embedding_model, db, now)
+        # B560 (flag `[loop] spoken_by`): the turn is SPOKEN_BY that Concept, so "the subject's own turns" is an edge.
+        if speaker_cid and spoken_by_enabled(config):
+            try:
+                await link_spoken_by(_gateway(db), message_id, speaker_cid)
+            except Exception:
+                _logger.warning("[SpokenBy] msg=%s link failed", message_id[:8], exc_info=True)
 
     llm_step2 = create_llm_client_for_step(config, "step2_gist") or llm_client
     llm_step3b = create_llm_client_for_step(config, "step3b_relations") or llm_client
