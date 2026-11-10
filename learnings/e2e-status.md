@@ -8,6 +8,8 @@ _Last updated: 2026-11-10_
   kept stores, `main` then `principled` with the walk off. Working files: `~/campy-lead/scratch/step0/` (outside
   the repo). The 4 evidence labels written with `;` or spaces are split into ids in the question file; the harness
   fix is still to do.
+- **Step 0b (fact contract): done.** `docs/fact-contract.md`, approved 2026-11-10: keep the 9 predicates and add action,
+  with and place roles; text objects allowed but flagged; action kinds from an independent source.
 - Steps 1-4: not started.
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
