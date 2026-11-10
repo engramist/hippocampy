@@ -25,7 +25,7 @@ Each step is one PR, designed and reviewed against `skills/campy-graph/SKILL.md`
 
 | # | Step | Measure | Passes when | Killed when |
 |---|---|---|---|---|
-| 0 | **Fix the test.** Ask all 809 cat 1-4 questions of the five gate conversations, not 300. Replay `main` on its kept store as the new baseline. Fix the 8 unparseable evidence labels. | Noise on the score | Noise falls from about ±9 of 300 to about ±15 of 809 (±0.03 to ±0.018) | — |
+| 0 | **Fix the test.** Ask all 809 cat 1-4 questions of the five gate conversations, not 300. Replay `main` on its kept store as the new baseline. Fix the 8 unparseable evidence labels. Recall also counts a fact in the prompt whose source turn (`EVIDENCED_BY`) is a gold turn, so an answer from the graph is visible to the measure. | Noise on the score | Noise falls from about ±9 of 300 to about ±15 of 809 (±0.03 to ±0.018) | — |
 | 1 | **Capture writes the object.** Read 50 unlinked facts and classify why each has no object entity. Then change capture so every fact has an object entity or is flagged unanchored. Review whether 9 relation types are enough. | Object-linked share, on one re-captured conversation | 60% or more (estimate; reset after reading the 50) | Under 40%: stop and rethink the extraction form, don't patch |
 | 2 | **Kinds and places.** Each object entity gets a kind (`INSTANCE_OF`, `BROADER`), and places get a `LOCATED_IN` chain, from a rule or an independent source, not from the extractor (P3). | Share of object entities with a kind | 70% or more (estimate) | The source can't type activities and places without per-dataset rules (P4) |
 | 3 | **Answer from the graph.** List, count, latest and which-kind questions run a query anchored on the subject. Its rows, with their source turns, go in the prompt. | Questions where the query returns rows; accuracy on those | 100 or more of 809 fire, and accuracy on them beats the same questions on `main` | Fewer than 30 fire: the edges from steps 1-2 are still missing; go back |
@@ -35,10 +35,13 @@ At step 4 every one of the 15 `principled` switches is either on by default or d
 
 ## How I work under this plan
 
+- Before any proposal, I state which graph edge the change reads or writes. If the answer is none, it is not in this plan.
 - Before each run, one line: the hypothesis, the expected size, the result that kills it.
 - A conclusion goes to memory only after two measurements agree.
 - Cards are filed with their fix, except blockers.
 - I report results, not progress checks.
+- One session per step. Each starts from this file, not from a summary of an earlier chat.
+- `python scripts/drift_report.py` runs at each step's result, and its verdict goes in the report.
 - If a step's graph number moves and the score doesn't, I say so and stop before starting another lever.
 
 ## Not known yet
