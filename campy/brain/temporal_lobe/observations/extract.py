@@ -44,6 +44,7 @@ from campy.brain.temporal_lobe.observations import typed_objects
 from campy.brain.temporal_lobe.observations.timeparse import normalize_time
 from campy.brain.hippocampus.entity_admission import admit_turn_parsed, names_in  # B544
 from campy.brain.temporal_lobe.observations import evidence_entities as evid  # B554
+from campy.brain.temporal_lobe.observations import roles as roles_mod  # B564
 
 _logger = logging.getLogger(__name__)
 
@@ -121,6 +122,17 @@ _ATTRIBUTE_FIELD = (
     '("age", "job", "followers", "page"), "value": its value copied exactly as written in the message}}; '
     'null if the fact is not an attribute that has a name\n- "confidence": a number from 0 to 1\n')
 ENTITY_MAX_TOKENS = 768     # two more short fields per fact
+# B564 (flag `[observations] roles`): three more output fields per fact (an action, who it was done with, where),
+# each copied from the message; rules confirm every span against the turn (roles.py). Inserted last, so with the
+# flag off the prompt is byte-identical.
+_ROLE_FIELDS = (
+    '- "action": for did and plans facts only: the activity exactly as written in the message ("visited", '
+    '"pottery class", "hike"), or null. For "went on a hike" write "hike"\n'
+    '- "with": who the subject did it with, each person or group exactly as written ("Anna", "my friends"), '
+    'as a JSON list, or null\n'
+    '- "place": where it happened, exactly as written ("my mom\'s house", "the park"), or null\n'
+    '- "confidence": a number from 0 to 1\n')
+ROLES_MAX_TOKENS = 1024     # three more fields per fact, up to MAX_PER_TURN facts
 
 
 @dataclass
@@ -156,6 +168,7 @@ class ObservationWorkerStats:
     kinds_wordnet: int = 0        # B534: kind BROADER links proposed from WordNet hypernyms
     kind_alt_labels: int = 0     # B508: altLabels accumulated on kinds
     typed_objects: dict[str, int] = field(default_factory=dict)   # B546: counts of the typed-object rule (flag on)
+    roles: dict[str, int] = field(default_factory=dict)           # B564: counts of the roles rule (flag on)
     entity_concepts_created: int = 0   # B504: new Concepts (entity or kind)
     queue_dropped: int = 0       # set by the daemon when the queue is full
     errors: int = 0              # a turn that raised (logged, skipped)
@@ -180,7 +193,7 @@ class ObservationWorkerStats:
 # --- prompt and parsing -----------------------------------------------------------
 
 def build_messages(text: str, speaker: str | None, occurred_at: Any, max_chars: int = 600,
-                   *, entities: bool = False, cardinality: bool = False) -> list[dict]:
+                   *, entities: bool = False, cardinality: bool = False, roles: bool = False) -> list[dict]:
     """The chat messages for one turn. The speaker and the turn's date go in so
     "I"/"my" attach to the speaker and relative time can be kept as written."""
     body = " ".join((text or "").split())[:max_chars]
@@ -189,6 +202,8 @@ def build_messages(text: str, speaker: str | None, occurred_at: Any, max_chars: 
     if cardinality:
         template = template.replace('- "confidence": a number from 0 to 1\n', _CARDINALITY_FIELD, 1)
         template = template.replace('- "confidence": a number from 0 to 1\n', _ATTRIBUTE_FIELD, 1)
+    if roles:
+        template = template.replace('- "confidence": a number from 0 to 1\n', _ROLE_FIELDS, 1)
     prompt = template.format(
         speaker=(speaker or "unknown"), date=date, text=body.replace('"""', "'''"),
     )
@@ -397,8 +412,9 @@ async def _extract_turn(
     entities_on = obs.observations_entities_enabled(config)
     owl_on = obs.owl_properties_enabled(config)
     roles_on = obs.object_roles_enabled(config)
+    capture_roles_on = obs.capture_roles_enabled(config)      # B564
     messages = build_messages(text, speaker, occurred_at, int(cfg.get("max_turn_chars", 600)),
-                              entities=entities_on, cardinality=owl_on)
+                              entities=entities_on, cardinality=owl_on, roles=capture_roles_on)
 
     # B544 (flag `[loop] entity_admission`): the turn's named entities are Concepts before any
     # claim is linked to Concepts by its words, whichever of this worker and run_loop ran first.
@@ -410,7 +426,8 @@ async def _extract_turn(
     stats.llm_calls += 1
     try:
         raw = await asyncio.to_thread(llm_client.chat, messages,
-                                     max_tokens=ENTITY_MAX_TOKENS if (entities_on or owl_on) else MAX_TOKENS)  # B468: off the loop
+                                     max_tokens=ROLES_MAX_TOKENS if capture_roles_on
+                                     else ENTITY_MAX_TOKENS if (entities_on or owl_on) else MAX_TOKENS)  # B468: off the loop
     except Exception:
         stats.llm_failed += 1
         _logger.warning("[Observations] LLM call failed for msg=%s", message_id[:8], exc_info=True)
@@ -439,6 +456,7 @@ async def _extract_turn(
     typed_on = obs.typed_objects_enabled(config)
     tctx: Any = _UNSET            # B546: the turn's shared context, built on first use
     writes = obs.WriteStats()
+    role_facts: list[roles_mod.FactIn] = []       # B564: the facts whose roles are confirmed once the turn is written
     for p in proposals:
         draft = await _draft_from_proposal(gw, p, message_id, text, speaker, named, speaker_id, occurred_at, stats)
         if draft is None:
@@ -510,6 +528,11 @@ async def _extract_turn(
                         embedding_model=embedding_model)
             except Exception:
                 _logger.warning("[TypedObjects] failed msg=%s", message_id[:8], exc_info=True)
+        if capture_roles_on and result.ok and result.observation_id and draft.evidence_text:
+            rp = roles_mod.propose(p)
+            if rp:
+                role_facts.append(roles_mod.FactIn(result.observation_id, draft.evidence_text, draft.predicate, rp,
+                                                   draft.subject_text))
         if linking and result.ok and result.observation_id:
             # B503: link the claim (and its turn) to the Concepts its words name
             try:
@@ -532,6 +555,18 @@ async def _extract_turn(
             await evid.link_turn(gw, parsed_turn.doc, text, admitted, spans, evidence_written, speakers)
         except Exception:
             _logger.warning("[EvidenceLinks] failed msg=%s", message_id[:8], exc_info=True)
+
+    if role_facts:
+        # B564: action / with / place, confirmed by rule against the turn once every fact of it is written
+        try:
+            if tctx is _UNSET:
+                tctx = await typed_objects.turn_context(gw, config, message_id, text, speaker)
+            if tctx is not None:
+                rstats = await roles_mod.link_turn(gw, tctx, role_facts, find_existing_concept)
+                for k, v in rstats.as_dict().items():
+                    stats.roles[k] = stats.roles.get(k, 0) + v
+        except Exception:
+            _logger.warning("[Roles] failed msg=%s", message_id[:8], exc_info=True)
 
     if tctx is not None and tctx is not _UNSET:
         for k, v in tctx.stats.as_dict().items():

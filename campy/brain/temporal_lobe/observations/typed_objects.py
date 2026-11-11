@@ -209,6 +209,7 @@ class RuleContext:
     kind_by_key: dict[str, str]                    # norm_key(kind label or alt) -> kind Concept id
     subject_ids: frozenset[str] = frozenset()
     subject_names: frozenset[str] = frozenset()    # lower-cased: the speaker and the Observation's subject text
+    physical_values: bool = False                  # B564 (flag `roles`): has_attribute / is_a may hold a physical noun
 
 
 def np_suffixes(tok) -> list[str]:
@@ -399,7 +400,10 @@ def typed_objects(pred: str, object_text: str, ws: int, we: int, doc, ctx: RuleC
     kbk = ctx.kind_by_key
     spans = mention_spans(doc, ctx.mentions, ws, we)
     mention_all = mention_spans(doc, ctx.mentions, 0, len(doc.text))
-    od = nlp(object_text) if object_text else None
+    head_text = object_text
+    if ctx.physical_values and pred == "has_attribute" and ":" in (object_text or ""):
+        head_text = object_text.split(":", 1)[1].strip()           # B564: "pet: dog" -> the value
+    od = nlp(head_text) if head_text else None
     ohead, ocue = object_head(od) if od is not None and len(od) else (None, None)
 
     for s, e, cid, surface, label in spans:
@@ -445,13 +449,17 @@ def typed_objects(pred: str, object_text: str, ws: int, we: int, doc, ctx: RuleC
         items.append(Item("entity", cid, text, lab, "stated", "copula_ref", "object" if ov else "about", None, kid,
                           {"label": label}))
 
-    if pred in ("has_attribute", "is_a") or not object_text or any(i.role == "object" for i in items):
+    value_pred = pred in ("has_attribute", "is_a")
+    if (value_pred and not ctx.physical_values) or not object_text or any(i.role == "object" for i in items):
         return items, rej
     if ohead is None:
         rej.append("object_not_noun_phrase")
         return items, rej
     if ocue == "propn" or (ocue != "gerund" and ohead.text[:1].isupper() and (ohead.i > 0 or len(od) == 1)):
         rej.append("capitalised_head_not_admitted")
+        return items, rej
+    if value_pred and ocue == "gerund":
+        rej.append("value_not_physical")                            # B564: a value is a thing, not an activity
         return items, rej
     if ocue == "gerund":
         wn = wn_mod._wn()
@@ -460,6 +468,9 @@ def typed_objects(pred: str, object_text: str, ws: int, we: int, doc, ctx: RuleC
         lemma = singular(ohead)
     if not good_kind_word(lemma):
         rej.append("object_head_not_a_kind_word")
+        return items, rej
+    if value_pred and not wn_mod.first_sense_under(lemma, wn_mod.PHYSICAL_ROOTS):
+        rej.append("value_not_physical")                            # B564: "courage", "job" stay text
         return items, rej
     if ocue == "gerund":
         kid, lab = kbk.get(norm_key(lemma)), lemma
@@ -487,6 +498,7 @@ class ObsRow:
     speaker: str | None
     start: int | None = None
     end: int | None = None
+    physical_values: bool = False       # B564: see RuleContext
 
 
 @dataclass
@@ -553,7 +565,8 @@ def _plan(row: ObsRow, mentions, speakers, kbk, nlp, doc_cache: dict, stats: Typ
     ctx = RuleContext(
         mentions=mentions, speakers=speakers, kind_by_key=kbk,
         subject_ids=frozenset({row.subject_id}) if row.subject_id else frozenset(),
-        subject_names=frozenset(x.strip().lower() for x in (row.speaker or "", row.subject_text or "") if x.strip()))
+        subject_names=frozenset(x.strip().lower() for x in (row.speaker or "", row.subject_text or "") if x.strip()),
+        physical_values=row.physical_values)
     items, rej = typed_objects(row.predicate, row.object_text, span[0], span[1], doc, ctx, nlp)
     return items, rej
 
@@ -672,7 +685,7 @@ async def apply_to_observation(gw: Any, config: dict | None, tctx: TurnContext, 
                                quote: str, ostats: Any, embedding_model: str = obs.EMBEDDING_MODEL) -> None:
     """Type the object of one just-written Observation of the turn `tctx` describes."""
     row = ObsRow(observation_id, predicate, object_text, subject_text, subject_id, quote, tctx.message_id, tctx.text,
-                 tctx.speaker)
+                 tctx.speaker, physical_values=obs.capture_roles_enabled(config))
     await process_observation(gw, config, row, tctx.mentions, tctx.speakers, tctx.nlp, tctx.docs, tctx.stats, ostats,
                               embedding_model=embedding_model)
 
@@ -697,7 +710,7 @@ async def backfill_typed_objects(db: Any, config: dict | None = None, *, embeddi
             str(r["observation_id"]), str(r["predicate"]), str(r["object_text"]), str(r["subject_text"]),
             str(r["subject_id"]) if r.get("subject_id") else None, str(r["evidence_text"]), str(r["message_id"]),
             str(r["message_text"]), str(r["speaker"]) if r.get("speaker") else None,
-            int(r["evidence_start"]), int(r["evidence_end"])))
+            int(r["evidence_start"]), int(r["evidence_end"]), obs.capture_roles_enabled(config)))
     rows.sort(key=lambda x: x.oid)
     if limit:
         rows = rows[:limit]

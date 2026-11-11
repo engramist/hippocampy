@@ -27,6 +27,8 @@ import pyoxigraph as ox
 CAMPY = "https://campy.dev/ns#"
 RDF_TYPE = ox.NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
 TEXT_RAW = ox.NamedNode(CAMPY + "text_raw")
+KIND_SCHEME = ox.NamedNode(CAMPY + "kind_scheme")
+ACTION = ox.Literal("action")      # B564: an action kind is reached by its edges only, never by similarity or text
 DEFAULT = ox.DefaultGraph()
 
 TABLES = (
@@ -51,6 +53,8 @@ def backfill(store, vs, embed, tables=TABLES, dry_run: bool = False, batch_log: 
                 None,
             )
             if not text or not text.strip():
+                continue
+            if table == "Concept" and any(True for _ in store.quads_for_pattern(q.subject, KIND_SCHEME, ACTION, DEFAULT)):
                 continue
             seen += 1
             has_vec = vs.get_vector(uri) is not None
