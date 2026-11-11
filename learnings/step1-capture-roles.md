@@ -43,7 +43,7 @@ decision 1 stands).
 
 ## 3. The design
 
-Flag `[observations] roles` (env `CAMPY_OBSERVATION_ROLES`), on under `principled`, default off. Off is byte-identical
+Flag `[observations] roles` (env `CAMPY_OBSERVATION_ROLES`), default off, and not in the `principled` profile until step 1 passes. Off is byte-identical
 to today.
 
 ### 3.1 What the model proposes (closed form)
@@ -170,5 +170,6 @@ One PR, one flag:
 - Tests: rules on hand-written turns (including the 50 sampled ones), the role-fill query on a small store, flag off is
   byte-identical.
 
-Risk to watch: action Concepts enter the concept index, so a question word like "hike" will resolve to the action
-kind. Nothing reads that in step 1; step 3 relies on it.
+Decision (6.1 of the code plan): action Concepts are excluded from the text lookups and from the vector and text indexes, so
+a word never resolves to one; step 3 resolves question verbs through the same WordNet sense function and
+`roles.action_concept`.
