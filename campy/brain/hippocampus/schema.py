@@ -1525,6 +1525,12 @@ REL_TABLES = [
     # B546: HAS_OBJECT may also point at an ObjectPhrase (the object when no entity is named), and an
     # ObjectPhrase is INSTANCE_OF a kind (see INSTANCE_OF below); object_id names Concepts only.
     "CREATE REL TABLE IF NOT EXISTS HAS_OBJECT (FROM Observation TO Concept, FROM Observation TO ObjectPhrase)",
+    # B564 (flag [observations] roles): the roles of an event fact. HAS_ACTION: the action kind (a WordNet action Concept,
+    # at most one); HAS_PARTICIPANT: who the subject did it with (any number); HAS_PLACE: where (at most one). The
+    # nameless form of a participant or place is an ObjectPhrase. Plain edges.
+    "CREATE REL TABLE IF NOT EXISTS HAS_ACTION (FROM Observation TO Concept)",
+    "CREATE REL TABLE IF NOT EXISTS HAS_PARTICIPANT (FROM Observation TO Concept, FROM Observation TO ObjectPhrase)",
+    "CREATE REL TABLE IF NOT EXISTS HAS_PLACE (FROM Observation TO Concept, FROM Observation TO ObjectPhrase)",
     # B503: graph linking (flag CAMPY_GRAPH_LINKING). MENTIONS: a user Message
     # names a Concept (rule match, never a model). IS_A: Concept -> category
     # Concept, written only from an is_a Observation whose subject and object

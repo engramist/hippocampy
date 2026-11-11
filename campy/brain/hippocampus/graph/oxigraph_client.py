@@ -237,7 +237,7 @@ NODE_COLUMNS, NODE_PRIMARY_KEYS = _parse_node_schema()
 #                Nothing to lose: repeated identical plain triples are
 #                idempotent under RDF set semantics, so no call-site
 #                analysis is needed for these — the schema itself proves it
-#                safe. 64 tables (B560: +SPOKEN_BY; B522: +HAS_SUBJECT, +HAS_OBJECT; B509: +HAS_PROPERTY; B472 Phase 3a: +EVIDENCED_BY, +OBSERVATION_ABOUT; B503: +MENTIONS, +IS_A; B508: +INSTANCE_OF, +BROADER, +CLOSE_MATCH).
+#                safe. 67 tables (B564: +HAS_ACTION, +HAS_PARTICIPANT, +HAS_PLACE; B560: +SPOKEN_BY; B522: +HAS_SUBJECT, +HAS_OBJECT; B509: +HAS_PROPERTY; B472 Phase 3a: +EVIDENCED_BY, +OBSERVATION_ABOUT; B503: +MENTIONS, +IS_A; B508: +INSTANCE_OF, +BROADER, +CLOSE_MATCH).
 # "star"       — at most one edge per (s,p,o), carrying properties.
 #                Confirmed (not guessed) via actual call sites: every
 #                writer for these tables uses Cypher `MERGE ... SET`
@@ -340,6 +340,10 @@ EDGE_REIFICATION: dict[str, EdgeReification] = {
     # (observations.link_subject / link_object).
     "HAS_SUBJECT": "plain",
     "HAS_OBJECT": "plain",
+    # B564: roles of an event fact; property-free, MERGE-style writers (roles.link_*).
+    "HAS_ACTION": "plain",
+    "HAS_PARTICIPANT": "plain",
+    "HAS_PLACE": "plain",
     "MENTIONS": "plain",
     # B560: Message -> the speaker's Concept; property-free, MERGE-style writer (spoken_by.link_spoken_by).
     "SPOKEN_BY": "plain",

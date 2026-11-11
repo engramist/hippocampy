@@ -153,6 +153,20 @@ campy:ObservationShape a sh:NodeShape ;
         sh:path campy:HAS_OBJECT ; sh:name "HAS_OBJECT" ;
         sh:maxCount 1 ; sh:class campy:Concept ;
     ] ;
+    # B564: the roles of an event fact: at most one action kind and one place; any number of participants.
+    sh:property [
+        sh:path campy:HAS_ACTION ; sh:name "HAS_ACTION" ;
+        sh:maxCount 1 ; sh:class campy:Concept ;
+    ] ;
+    sh:property [
+        sh:path campy:HAS_PLACE ; sh:name "HAS_PLACE" ;
+        sh:maxCount 1 ;
+        sh:or ( [ sh:class campy:Concept ] [ sh:class campy:ObjectPhrase ] ) ;
+    ] ;
+    sh:property [
+        sh:path campy:HAS_PARTICIPANT ; sh:name "HAS_PARTICIPANT" ;
+        sh:or ( [ sh:class campy:Concept ] [ sh:class campy:ObjectPhrase ] ) ;
+    ] ;
     # B509: an attribute Observation states a value of at most one attribute property.
     sh:property [
         sh:path campy:HAS_PROPERTY ; sh:name "HAS_PROPERTY" ;
