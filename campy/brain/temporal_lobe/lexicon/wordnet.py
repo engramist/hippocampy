@@ -262,3 +262,125 @@ def hypernym_support(child_label: str, parent_keys: set[str], cutoff: float = SE
             if anc.synset in {s.name() for s in noun_synsets(key.replace(" ", "_"), cutoff)}:
                 return anc.path
     return None
+
+
+# --- B564: action kinds and role heads --------------------------------------------------
+#
+# An action kind is a WordNet noun synset under `event.n.01` (`act.n.02` is itself under it, so one root
+# reaches every action). The model never names the sense: `action_sense` picks it by rule from the verb or
+# activity noun the turn contains, and `action_chain` is the hypernym chain written as BROADER with
+# `link_source "wordnet"`. The ids are WordNet's synset names, so no id is invented.
+
+ACTION_ROOT = "event.n.01"
+# A light verb names no activity ("went", "made"): the activity is in its object. Never given a sense.
+LIGHT_VERBS = frozenset({"go", "get", "take", "make", "do", "have", "be", "give", "put", "keep", "let", "come"})
+PERSON_ROOTS = ("person.n.01", "social_group.n.01")
+PLACE_ROOTS = ("location.n.01", "structure.n.01", "geological_formation.n.01", "body_of_water.n.01",
+               "vegetation.n.01")
+PHYSICAL_ROOTS = ("physical_entity.n.01",)
+
+
+@dataclass(frozen=True)
+class ActionSense:
+    synset: str                                   # "hike.n.01"
+    lemma: str                                    # first lemma of the synset ("hike")
+    chain: tuple[tuple[str, str], ...]            # (child synset, parent synset) up to ACTION_ROOT
+    labels: tuple[tuple[str, str], ...]           # (synset, first lemma) of the sense and every ancestor
+
+    @property
+    def concept_id(self) -> str:
+        return "wn:" + self.synset
+
+
+def concept_id_of(synset_name: str) -> str:
+    return "wn:" + synset_name
+
+
+def _under(syn: Any, root: Any) -> bool:
+    return syn == root or root in syn.closure(lambda x: x.hypernyms())
+
+
+def first_sense_under(word: str, roots: tuple[str, ...] | list[str]) -> bool:
+    """True when the first (most frequent) noun sense of `word` is under one of the synsets `roots` (names)."""
+    wn = _wn()
+    if wn is None or not word:
+        return False
+    try:
+        senses = wn.synsets(word.lower().replace(" ", "_"), pos="n")
+        if not senses:
+            return False
+        return any(_under(senses[0], wn.synset(r)) for r in roots)
+    except Exception:
+        return False
+
+
+def _action_candidates(wn: Any, lemma: str, root: Any) -> list[tuple[int, int, int, Any]]:
+    """(-count, direct 0 / derived 1, order, synset) for the event senses `lemma` has as a noun, or that a verb
+    `lemma` is nominalised to (WordNet's derivationally related nouns)."""
+    out: list[tuple[int, int, int, Any]] = []
+    order = 0
+    for s in wn.synsets(lemma, pos="n"):
+        if _under(s, root):
+            n = sum(x.count() for x in s.lemmas() if x.name().lower() == lemma)
+            out.append((-n, 0, order, s))
+        order += 1
+    for vs in wn.synsets(lemma, pos="v"):
+        for vl in vs.lemmas():
+            if vl.name().lower() != lemma:
+                continue
+            for d in vl.derivationally_related_forms():
+                ds = d.synset()
+                if ds.pos() == "n" and _under(ds, root):
+                    n = sum(x.count() for x in ds.lemmas() if x.name().lower() == d.name().lower())
+                    out.append((-n, 1, order, ds))
+                order += 1
+    return out
+
+
+def action_chain(syn: Any, root: Any) -> tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]]:
+    """((child, parent) names, (synset, first lemma) labels): every hypernym edge from `syn` up to `root`
+    inclusive, over all hypernym paths; a parent outside the root's subtree is not followed."""
+    edges: list[tuple[str, str]] = []
+    seen = {syn.name()}
+    labels = {syn.name(): syn.lemmas()[0].name()}
+    todo = [syn]
+    while todo:
+        cur = todo.pop()
+        if cur == root:
+            continue
+        for p in cur.hypernyms():
+            if not _under(p, root):
+                continue
+            edges.append((cur.name(), p.name()))
+            if p.name() not in seen:
+                seen.add(p.name())
+                labels[p.name()] = p.lemmas()[0].name()
+                todo.append(p)
+    return tuple(sorted(set(edges))), tuple(sorted(labels.items()))
+
+
+def action_sense(words: list[str]) -> ActionSense | None:
+    """The action kind of the first of `words` (lemmas, most specific first: the whole phrase with `_`, then its
+    head) that has one: the most frequent event noun sense (lemma counts), direct before derived on a tie, then
+    WordNet's sense order. A light verb has none (and stops the search); no WordNet or no sense gives None."""
+    wn = _wn()
+    if wn is None:
+        return None
+    try:
+        root = wn.synset(ACTION_ROOT)
+        for w in words:
+            lemma = (w or "").lower().replace(" ", "_")
+            if not lemma or lemma in LIGHT_VERBS:
+                if lemma in LIGHT_VERBS:
+                    return None
+                continue
+            cands = _action_candidates(wn, lemma, root)
+            if not cands:
+                continue
+            best = min(cands, key=lambda c: c[:3])[3]
+            chain, labels = action_chain(best, root)
+            return ActionSense(best.name(), best.lemmas()[0].name().replace("_", " "), chain,
+                               tuple((k, v.replace("_", " ")) for k, v in labels))
+    except Exception:
+        _logger.debug("action sense lookup failed for %r", words, exc_info=True)
+    return None

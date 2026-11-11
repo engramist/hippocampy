@@ -60,6 +60,7 @@ CONCEPT_LINK_QUERIES = [
             SELECT ?concept_id ?text_raw WHERE {
               ?c a campy:Concept ; campy:concept_id ?concept_id ;
                  campy:text_raw ?text_raw ; campy:archived false .
+              FILTER NOT EXISTS { ?c campy:kind_scheme "action" }   # B564: an action kind is not found by its text
             }
             """,
     ),
