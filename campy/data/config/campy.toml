@@ -94,6 +94,10 @@ entities = true
 # evidence (the quote located in its turn, then its clause by the dependency parse); no model, needs entity_admission.
 # Off until gated. CAMPY_EVIDENCE_ENTITY_LINKS=1 turns it on.
 # evidence_entity_links = false  # B554; on under profile "principled"
+# B564: the extraction form also asks for an action, a with list and a place; a rule confirms each span in the turn and
+# writes HAS_ACTION (a WordNet action Concept, no embedding), HAS_PARTICIPANT and HAS_PLACE, and lets has_attribute /
+# is_a hold a physical common noun. Off until gated; in no profile yet; no backfill. CAMPY_OBSERVATION_ROLES=1 turns it on.
+# roles = false  # B564
 # B499: newer attribute value supersedes older by string rule. Off; owl_properties replaces it.
 supersede = false
 # B538: relative time expressions in user turns ("yesterday", "last week") resolved by rule against

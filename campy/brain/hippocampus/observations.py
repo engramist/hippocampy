@@ -139,6 +139,14 @@ def object_roles_enabled(config: dict | None) -> bool:
     return bool(((config or {}).get("observations") or {}).get("object_roles", False))
 
 
+def capture_roles_enabled(config: dict | None) -> bool:
+    """`[observations] roles` (default FALSE; env `CAMPY_OBSERVATION_ROLES=1` turns it on) (B564): the extraction
+    form also asks for an action, a with list and a place; a rule confirms each span in the turn and writes
+    HAS_ACTION / HAS_PARTICIPANT / HAS_PLACE (and extends the B546 object path to physical values). Off: prompt and
+    writes are exactly as before. Not in the `principled` profile until its gate passes."""
+    return bool(((config or {}).get("observations") or {}).get("roles", False))
+
+
 def typed_objects_enabled(config: dict | None) -> bool:
     """`[observations] typed_objects` (default FALSE; env `CAMPY_TYPED_OBJECTS=1` turns it on) (B546): the
     object of a fact is linked (HAS_OBJECT) to an existing entity Concept or to an ObjectPhrase node and typed

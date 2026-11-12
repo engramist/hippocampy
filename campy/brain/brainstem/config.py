@@ -190,6 +190,10 @@ _DEFAULT_CONFIG = {
         # in its source turn, then the clause holding it (dependency parse). The model's wording plays no part.
         # A no-op without [loop] entity_admission. Gate: part of the principled-profile gate.
         "evidence_entity_links": False,
+        # B564 (default OFF; env CAMPY_OBSERVATION_ROLES=1 turns it on; NOT in profile "principled" until step 1 of the
+        # 2026-11-10 plan passes its gate): the extraction form gains "action", "with" and "place"; a rule confirms each
+        # span in the turn and writes HAS_ACTION (a WordNet action Concept), HAS_PARTICIPANT and HAS_PLACE. No backfill.
+        "roles": False,
         "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
         # B538 (default ON; env CAMPY_TURN_DATES=0 turns it off): every user turn's relative time
         # expressions ("yesterday", "last week") are resolved by rule against the turn's date at
@@ -358,6 +362,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_TYPED_OBJECTS": ("observations", "typed_objects", _parse_bool),
     # B554: an Observation is linked (OBSERVATION_ABOUT) to the admitted entities its evidence names.
     "CAMPY_EVIDENCE_ENTITY_LINKS": ("observations", "evidence_entity_links", _parse_bool),
+    # B564: the action / with / place roles of a fact (default off; not in a profile yet).
+    "CAMPY_OBSERVATION_ROLES": ("observations", "roles", _parse_bool),
     # B538: relative dates in user turns resolved by rule at capture and shown inline (default on).
     "CAMPY_TURN_DATES": ("observations", "turn_dates", _parse_bool),
     # B499: rule-based supersession of attribute Observations (default off).

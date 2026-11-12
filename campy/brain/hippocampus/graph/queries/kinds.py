@@ -24,6 +24,7 @@ KIND_QUERIES = [
             WHERE {
               ?c a campy:Concept ; campy:concept_id ?cid .
               OPTIONAL { ?c campy:kind_scheme ?old }
+              FILTER NOT EXISTS { ?c campy:kind_scheme "action" }   # B564: an action kind never becomes a kind
             }
             """,
     ),

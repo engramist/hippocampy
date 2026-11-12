@@ -358,6 +358,7 @@ Generated from Backlog_Archive032726.md on 2026-03-27.
 | B196 | # B196: Internal Consistency Audit — Graph-Wide Contradiction Detection | P99 | **Status**: complete (2026-04-09) | TBD | TBD | backlog/plans/B-196-consistency-audit.md | backlog/B196.md |
 | B292-HANDOFF-2026-07-13 | # B292 Handoff - 2026-07-13 | P99 | ## Provenance | TBD | TBD | - | backlog/B292-HANDOFF-2026-07-13.md |
 | B322 | Learned Change Coupling and Conflict Forecast | P99 | deferred | TBD | TBD | - | backlog/B322.md |
+| B564 | B564: capture writes the roles of an event fact (action, with, place) | P1 | **Status**: implemented behind `[observations] roles`, gate pending (2026-11-10) | TBD | TBD | learnings/step1-capture-roles.md | backlog/B564.md |
 
 ## Summary
 

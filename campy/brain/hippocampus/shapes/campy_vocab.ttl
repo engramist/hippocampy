@@ -95,6 +95,20 @@ campy:HAS_OBJECT a owl:ObjectProperty, owl:FunctionalProperty ;
     rdfs:domain campy:Observation ; rdfs:range campy:Concept ;
     rdfs:comment "The Concept that is the object of an Observation (what the subject owns, likes, ...); at most one." .
 
+# B564 (flag [observations] roles): the roles of an event fact. The action is a WordNet action Concept
+# (kind_scheme "action", concept_id "wn:<synset>"), reached through BROADER* for "what kind of thing did X do".
+campy:HAS_ACTION a owl:ObjectProperty, owl:FunctionalProperty ;
+    rdfs:domain campy:Observation ; rdfs:range campy:Concept ;
+    rdfs:comment "The action kind of an event Observation (a WordNet action Concept); at most one." .
+
+campy:HAS_PLACE a owl:ObjectProperty, owl:FunctionalProperty ;
+    rdfs:domain campy:Observation ;
+    rdfs:comment "Where an event Observation happened (a place Concept or a nameless ObjectPhrase); at most one." .
+
+campy:HAS_PARTICIPANT a owl:ObjectProperty ;
+    rdfs:domain campy:Observation ;
+    rdfs:comment "Who the subject did it with (a Concept or a nameless ObjectPhrase); any number." .
+
 campy:DEPRECATED_BY a owl:ObjectProperty ;
     rdfs:domain campy:Observation ; rdfs:range campy:Observation ;
     rdfs:comment "Older Observation -> the newer one that replaced it (B499/B509)." .

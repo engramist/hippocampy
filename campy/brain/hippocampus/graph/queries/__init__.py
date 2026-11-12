@@ -45,6 +45,7 @@ from campy.brain.hippocampus.graph.queries.entity_admission import ENTITY_ADMISS
 from campy.brain.hippocampus.graph.queries.entity_standing import ENTITY_STANDING_QUERIES
 from campy.brain.hippocampus.graph.queries.spoken_by import SPOKEN_BY_QUERIES
 from campy.brain.hippocampus.graph.queries.typed_objects import TYPED_OBJECT_QUERIES
+from campy.brain.hippocampus.graph.queries.roles import ROLE_QUERIES
 from campy.brain.hippocampus.graph.queries.properties import PROPERTY_QUERIES
 from campy.brain.hippocampus.graph.queries.turn_mentions import TURN_MENTION_QUERIES
 from campy.brain.hippocampus.graph.queries.question_analysis import QUESTION_ANALYSIS_QUERIES
@@ -81,6 +82,7 @@ REGISTRY.register_all(ENTITY_ADMISSION_QUERIES)
 REGISTRY.register_all(ENTITY_STANDING_QUERIES)
 REGISTRY.register_all(SPOKEN_BY_QUERIES)
 REGISTRY.register_all(TYPED_OBJECT_QUERIES)
+REGISTRY.register_all(ROLE_QUERIES)
 REGISTRY.register_all(PROPERTY_QUERIES)
 REGISTRY.register_all(TURN_MENTION_QUERIES)
 REGISTRY.register_all(QUESTION_ANALYSIS_QUERIES)

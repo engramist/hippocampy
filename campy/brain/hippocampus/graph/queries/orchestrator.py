@@ -60,6 +60,7 @@ ORCHESTRATOR_QUERIES = [
                  campy:text_raw ?text_raw ;
                  campy:pathway_strength ?pathway_strength .
               ?c campy:archived false .
+              FILTER NOT EXISTS { ?c campy:kind_scheme "action" }   # B564: an action kind is not found by its text
               FILTER(LCASE(STR(?text_raw)) = LCASE(STR(?t)))
             }
             LIMIT 1
@@ -87,6 +88,7 @@ ORCHESTRATOR_QUERIES = [
                  campy:concept_id ?concept_id ;
                  campy:pathway_strength ?pathway_strength .
               ?c campy:archived false .
+              FILTER NOT EXISTS { ?c campy:kind_scheme "action" }   # B564: an action kind is not found by its text
               { ?c campy:HAS_ALT_LABEL ?l } UNION { ?c campy:HAS_PREF_LABEL ?l }
               ?l campy:text ?text .
               FILTER(LCASE(STR(?text)) = LCASE(STR(?t)))
@@ -279,6 +281,7 @@ ORCHESTRATOR_QUERIES = [
                  campy:text_raw ?text_raw ;
                  campy:pathway_strength ?pathway_strength .
               ?c campy:archived false .
+              FILTER NOT EXISTS { ?c campy:kind_scheme "action" }   # B564: an action kind is not found by its text
               FILTER(LCASE(STR(?text_raw)) = LCASE(STR(?t)))
             }
             ORDER BY DESC(?pathway_strength)

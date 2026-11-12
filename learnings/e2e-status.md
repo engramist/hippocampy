@@ -32,10 +32,12 @@ _Last updated: 2026-11-10 (step 0 result)_
   - **Known limit of the replay.** The kept store holds all five conversations, but the live gate asks each
     conversation's questions before the next one is ingested. In the replay, 266 (`main`) and 240 (`principled`) of
     809 prompts carry turns from another conversation. Both arms carry it, but the replay is not the live gate.
+    Left as it is (decided 2026-11-10); raise it again before step 3 is measured.
   - `scripts/drift_report.py`: "watch: score flat while code landed" (28 commits in 7 days, 4 with a gate result).
 - **Step 0b (fact contract): done.** `docs/fact-contract.md`, approved 2026-11-10: keep the 9 predicates and add action,
   with and place roles; text objects allowed but flagged; action kinds from an independent source.
-- **Step 1 (capture writes the roles): design written, waiting for approval** (`learnings/step1-capture-roles.md`).
+- **Step 1 (capture writes the roles): design approved 2026-11-10, with a shared-node measure, a sense-accuracy gate and a
+  side-effect guard** (`learnings/step1-capture-roles.md`). Building, flag `[observations] roles`, default off.
 - Steps 2-4: not started.
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
