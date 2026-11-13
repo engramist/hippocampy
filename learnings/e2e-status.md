@@ -52,7 +52,7 @@ _Last updated: 2026-11-12 (plan revised; rulings table added)_
 
 ## Rulings
 
-One row per measured result. "Proposed" rows are the lead's recommendation and wait for the user.
+One row per measured result. Rulings dated 2026-11-13 were approved by the user on that day.
 
 | Result | Measured | Ruling |
 |---|---|---|
@@ -61,10 +61,10 @@ One row per measured result. "Proposed" rows are the lead's recommendation and w
 | Roles as free spans in the fact prompt (first form, PR 410) | conv-26: anchored 47.3%, shared 34.2%, both under their kill lines; only 43% of facts matched flag-off | Stopped 2026-11-11; its fields come out with the second form |
 | Always-missed review (step 0d) | 337 always-missed; 34 test faults (29 key or label, 5 not in the conversation), 24 judge doubts | Kept: the ids are reported next to every later score; the denominator stays 809 |
 | LongMemEval runs R108, R109 | not run | Parked until step 4 |
-| Concept walk (store-wide and anchored, B556-B560) | lowers accuracy on 300 questions; about 2% of its rows hold gold | Not ruled. Proposed: off until step 4, then retested once or deleted |
-| Graph vote and question analysis | neutral on accuracy; recall up, non-answers down | Not ruled. Proposed: kept |
-| Graph count | fired on 0 of 300 questions | Not ruled. Proposed: folded into step Q's queries or deleted |
-| The other `principled` switches | not measured one by one | Not ruled; each is on by default or deleted at step 4 |
+| Concept walk (store-wide and anchored, B556-B560) | lowers accuracy on 300 questions; about 2% of its rows hold gold | Parked 2026-11-13: off until step 4, then retested once or deleted |
+| Graph vote and question analysis | neutral on accuracy; recall up, non-answers down | Kept 2026-11-13 |
+| Graph count | fired on 0 of 300 questions | Stopped as a separate lever 2026-11-13: folded into step Q's queries or deleted |
+| The other `principled` switches | not measured one by one | Parked 2026-11-13: each is on by default or deleted at step 4 |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
