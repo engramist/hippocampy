@@ -19,6 +19,11 @@ Reads:
   query_hits.facts_count             the same facts counted: distinct objects and distinct facts (graph count, folded in)
   query_hits.facts_latest            the newest of the same facts
   query_hits.facts_exist             whether any such fact exists (false is the answer "not recorded")
+  query_hits.role_targets            step 1: the Concepts named by a term that are a role of one of the subject's live
+                                     facts: its action kind or a kind BROADER* above it (HAS_ACTION), a participant
+                                     (HAS_PARTICIPANT) or a place (HAS_PLACE); the role is returned with each. The
+                                     facts themselves are read by roles.py's facts.by_action_kind / with_participant /
+                                     at_place
 
 Edges read by the facts queries: HAS_SUBJECT (or the literal subject_id), HAS_OBJECT, EVIDENCED_BY, INSTANCE_OF,
 BROADER. Resolution also reads SPOKEN_BY, MENTIONS, SENT_IN, text_raw and HAS_ALT_LABEL.
@@ -231,6 +236,32 @@ QUERY_HIT_QUERIES = [
             SELECT ((COUNT(?o) > 0) AS ?exists) WHERE {{
               {_FACTS_BODY}
             }}
+            """,
+    ),
+    NamedQuery(
+        name="query_hits.role_targets",
+        cypher=("MATCH (o:Observation {subject_id: $sid})-[:HAS_ACTION|HAS_PARTICIPANT|HAS_PLACE]->(k:Concept) "
+                "WHERE k.text_raw IN $terms AND o.archived = false RETURN DISTINCT k.concept_id AS kid"),
+        params=("terms", "sid"),
+        mutating=False,
+        description=("The Concepts a question term names (label or altLabel) that are the action kind (or a kind "
+                     "BROADER* above it), a participant or the place of one of the subject's live facts, with the role"),
+        sparql="""
+            SELECT DISTINCT ?kid ?role WHERE {
+              VALUES ?term { }
+              { ?k campy:text_raw ?term } UNION { ?k campy:HAS_ALT_LABEL ?_l . ?_l campy:text ?term }
+              ?k a campy:Concept ; campy:concept_id ?kid .
+              FILTER(?kid != ?sid && STRLEN(?term) > 2)
+              FILTER NOT EXISTS { ?k campy:archived true }
+              { ?o campy:HAS_ACTION ?_a . ?_a campy:BROADER* ?k . BIND("action" AS ?role) }
+              UNION { ?o campy:HAS_PARTICIPANT ?k . BIND("participant" AS ?role) }
+              UNION { ?o campy:HAS_PLACE ?k . BIND("place" AS ?role) }
+              ?o a campy:Observation .
+              { ?o campy:HAS_SUBJECT ?_s . ?_s campy:concept_id ?sid } UNION { ?o campy:subject_id ?sid }
+              FILTER NOT EXISTS { ?o campy:archived true }
+              FILTER NOT EXISTS { ?o campy:DEPRECATED_BY ?_newer }
+            }
+            ORDER BY ?kid ?role
             """,
     ),
 ]
