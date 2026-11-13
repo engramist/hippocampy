@@ -7,6 +7,10 @@ prints a compact Markdown report: commits by kind, commits touching
 retrieval/answering paths, recent commits that mention a gate result, and (if
 `gh` is installed) open PRs lacking a filled `## Score effect` section.
 
+Step 0e (2026-11-13) adds "Measures moved": of the merged PRs in the window, how many reported a gate table, how
+many moved a measure beyond noise (net gained - lost above MOVE_NET questions, or a score change above
+MOVE_SCORE when no counts are given), and how many stated a `Prediction:` line.
+
 B521 adds outcome sections: the score trend parsed from merged PRs' `## Score effect`
 tables, the docs-only share of commits, graph structure of a store copy (`--store`,
 object-linked share is the principle-8 target) and regex call sites added/removed under
@@ -123,6 +127,10 @@ def open_prs_missing_score_effect():
 
 DOCS_SHARE_LIMIT = 0.40
 SCORE_THRESHOLD = 0.01
+# Step 0e: beyond noise on the 809-question gate (about +/-14 questions, +/-0.018; plan step 4's "more than 15").
+MOVE_NET = 15
+MOVE_SCORE = 0.018
+_PREDICTION_RE = re.compile(r"^\W*Prediction:[ \t]*\S", re.IGNORECASE | re.MULTILINE)
 _NUM = r"(\d*\.\d+|\d+)"
 _SUITE_FAMILIES = (("locomo", "LoCoMo"), ("longmemeval", "LongMemEval"), ("dmr", "DMR"))
 _PROSE_RE = re.compile(_NUM + r"\s*(?:→|->|to)\s*" + _NUM)
@@ -275,6 +283,31 @@ def score_flat(families, threshold):
     return not any(v["last"] - v["first"] > threshold for v in families.values())
 
 
+def row_moved(row, net_min=MOVE_NET, score_min=MOVE_SCORE):
+    """A gate row moved a measure: net gained - lost above net_min questions, or, without counts, a score change
+    above score_min."""
+    if row.get("gained") is not None and row.get("lost") is not None:
+        return abs(row["gained"] - row["lost"]) > net_min
+    if row.get("baseline") is not None and row.get("branch") is not None:
+        return abs(row["branch"] - row["baseline"]) > score_min
+    return False
+
+
+def measures_moved(prs, net_min=MOVE_NET, score_min=MOVE_SCORE):
+    """Of the merged PRs: {'merged': n, 'gated': [numbers], 'moved': [numbers], 'predicted': [numbers]}."""
+    out = {"merged": len(prs or []), "gated": [], "moved": [], "predicted": []}
+    for pr in sorted(prs or [], key=lambda p: p.get("mergedAt") or ""):
+        body = pr.get("body") or ""
+        rows = parse_score_rows(body)
+        if rows:
+            out["gated"].append(pr["number"])
+        if any(row_moved(r, net_min, score_min) for r in rows):
+            out["moved"].append(pr["number"])
+        if _PREDICTION_RE.search(_score_section(body)):
+            out["predicted"].append(pr["number"])
+    return out
+
+
 def docs_share(commits):
     return sum(classify(c["files"]) == "docs" for c in commits) / len(commits) if commits else 0.0
 
@@ -371,6 +404,17 @@ def build_report(commits, days, missing_prs=None, merged=None, threshold=SCORE_T
             lines.append(f"- **{name}**: earliest baseline {v['first']:.3f} -> latest branch {v['last']:.3f} ({v['last'] - v['first']:+.3f})")
         flat = score_flat(families, threshold)
         lines.append(f"- {'score flat' if flat else 'score rose'} (threshold {threshold})")
+        lines.append("")
+    lines.append("## Measures moved (merged PRs)")
+    if merged is None:
+        lines += ["- gh unavailable: unknown", ""]
+    else:
+        mm = measures_moved(merged)
+        refs = lambda ns: (" (" + ", ".join(f"#{n}" for n in ns) + ")") if ns else ""
+        lines.append(f"- merged: {mm['merged']}; with a gate table: {len(mm['gated'])}")
+        lines.append(f"- moved a measure beyond noise (net > {MOVE_NET} questions or > {MOVE_SCORE}): "
+                     f"{len(mm['moved'])}{refs(mm['moved'])}")
+        lines.append(f"- stated a Prediction line: {len(mm['predicted'])}")
         lines.append("")
     lines.append("## Docs share")
     lines.append(f"- docs-only commits: {kinds['docs']}/{len(commits)} = {_pct(kinds['docs'], len(commits))}"

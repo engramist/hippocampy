@@ -4,7 +4,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".github", "scripts"))
 
-from check_pr_score_effect import RELEVANT_PATHS, check, graph_design_ok
+from check_pr_score_effect import RELEVANT_PATHS, check, graph_design_ok, prediction_ok
 
 RELEVANT = ["campy/brain/thalamus/ask.py", "README.md"]
 IRRELEVANT = ["README.md", "docs/x.md", "tests/test_a.py"]
@@ -23,12 +23,12 @@ GD = "\n## Graph design\nNone — CI tooling\n"
 
 
 def test_relevant_with_filled_section_passes():
-    body = GD + "## Score effect\n\n| suite | main | branch | gained | lost |\n|---|---|---|---|---|\n| LoCoMo | 60 | 62 | 3 | 1 |\nTargets in gate: 12\n\n## Test Plan\n"
+    body = GD + "## Score effect\n\n| suite | main | branch | gained | lost |\n|---|---|---|---|---|\n| LoCoMo | 60 | 62 | 3 | 1 |\nTargets in gate: 12\nPrediction: LoCoMo +2 to +4\n\n## Test Plan\n"
     assert check(body, RELEVANT)[0]
 
 
 def test_relevant_with_none_reason_passes():
-    assert check(GD + "## Score effect\nNone — docs only\n", RELEVANT)[0]
+    assert check(GD + "## Score effect\nNone — docs only\nPrediction: none — docs only\n", RELEVANT)[0]
 
 
 def test_relevant_missing_section_fails():
@@ -90,7 +90,7 @@ GATE = "| suite | main | branch | gained | lost |\n|---|---|---|---|---|\n| LoCo
 
 
 def _se(extra):
-    return GD + "## Score effect\n\n" + GATE + extra + "\n## Test Plan\n"
+    return GD + "## Score effect\n\n" + GATE + extra + "Prediction: LoCoMo +1 to +3\n\n## Test Plan\n"
 
 
 def test_gate_table_without_targets_line_fails():
@@ -111,4 +111,34 @@ def test_gate_table_too_few_targets_fails():
 
 
 def test_none_reason_section_needs_no_targets_line():
-    assert check(GD + "## Score effect\nNone — evaluation tooling only\n", RELEVANT)[0]
+    assert check(GD + "## Score effect\nNone — evaluation tooling only\nPrediction: none — tooling\n", RELEVANT)[0]
+
+
+# --- step 0e: a prediction before the result -----------------------------------------------------
+
+PRED_BODY = GD + "## Score effect\nNone — refactor\n{line}\n## Test Plan\n"
+
+
+def test_prediction_missing_fails_with_pointer():
+    ok, msg = check(PRED_BODY.format(line=""), RELEVANT)
+    assert not ok and "Prediction:" in msg and "0e" in msg
+
+
+def test_prediction_variants():
+    assert check(PRED_BODY.format(line="Prediction: query hits +20 to +40 of 809"), RELEVANT)[0]
+    assert check(PRED_BODY.format(line="**Prediction:** none — no code path reads it"), RELEVANT)[0]
+    ok, msg = check(PRED_BODY.format(line="Prediction: none"), RELEVANT)
+    assert not ok and "needs a reason" in msg
+    assert not check(PRED_BODY.format(line="Prediction:"), RELEVANT)[0]
+    assert not check(PRED_BODY.format(line="**Prediction:** none"), RELEVANT)[0]
+    assert not check(PRED_BODY.format(line="**Prediction:**"), RELEVANT)[0]
+
+
+def test_prediction_must_be_in_score_effect_section():
+    body = GD + "## Score effect\nNone — refactor\n\n## Test Plan\nPrediction: +5\n"
+    assert not check(body, RELEVANT)[0]
+
+
+def test_prediction_not_required_off_path():
+    assert check("## Score effect\nNone — docs\n", IRRELEVANT)[0]
+    assert prediction_ok("Prediction: LoCoMo flat")[0] and not prediction_ok("")[0]
