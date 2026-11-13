@@ -51,9 +51,32 @@ _Last updated: 2026-11-12 (plan revised; rulings table added)_
   - Restated 809 baseline: principled 432 (0.534), main 426 (0.527); without the 34 test faults, 430/775 and 423/775.
     By category, principled: cat 1 38/153, cat 2 86/171, cat 3 21/51, cat 4 287/434.
   - Against the shared store: +14 and +10, inside the ±14 noise, so no measurable change.
+- **Step Q (query hits): done 2026-11-13** (PR 418, `query_hits.*` NamedQueries and their CI test). Baseline on the
+  five principled per-conversation stores from step 0c:
+  - Subject resolved on 801 of 809.
+  - Query hits: 111 of 809 (13.7%): cat 1 22/153, cat 2 29/171, cat 3 4/51, cat 4 56/434. conv-26 alone: 14 of 152.
+  - Misses, by the first missing edge:
+    - object is text (no `HAS_OBJECT` to a Concept): 291
+    - the question names no object Concept: 117
+    - object not reached by `INSTANCE_OF` / `BROADER`: 113
+    - gold fact without the subject edge: 90
+    - no fact on a gold turn: 79
+    - subject unresolved: 8
+  - Hits among the 34 test faults: 6. Among the 337 always-missed: 38 (the graph holds the gold row, but answering missed
+    it; a step-4 input).
+  - Noise: 0. A rerun is identical, and the conv-26 re-capture gives the same count.
+  - Lines approved 2026-11-13 (review session, delegated by the user):
+    - Step 2 (809): pass +45 net hits, kill under +15.
+    - Step 1 (conv-26, baseline 14): pass +5 net, kill under +2. Three conditions:
+      - The role reads (`facts.by_action_kind` / `with_participant` / `at_place`) count as hits only under the same rule:
+        a question term names the action kind, partner or place Concept (exact label, in SPARQL), the fact is the
+        subject's, a gold turn is among the rows, and there are at most 25 facts.
+      - Net is gained minus lost; the baseline hits lost on the re-captured store are listed.
+      - +2 to +4 is not a pass. It is reported, with no third form.
+      The plan row's mechanism checks are reported alongside.
 - **Plan revised 2026-11-12:** steps 0c (per-conversation replay stores), 0d (always-missed questions), 0e (predictions in
-  CI) and Q (a thin graph query, whose hits become the measure for steps 1 and 2) come before step 1 continues. 0c and
-  0d done; Q designed, waiting for review; 0e not started.
+  CI) and Q (a thin graph query, whose hits become the measure for steps 1 and 2) come before step 1 continues. 0c, 0d
+  and Q done; 0e in review (PR 419).
 - Steps 2-4: not started.
 
 ## Rulings
@@ -67,6 +90,7 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Roles as free spans in the fact prompt (first form, PR 410) | conv-26: anchored 47.3%, shared 34.2%, both under their kill lines; only 43% of facts matched flag-off | Stopped 2026-11-11; its fields come out with the second form |
 | Always-missed review (step 0d) | 337 always-missed; 34 test faults (29 key or label, 5 not in the conversation), 24 judge doubts | Kept: the ids are reported next to every later score; the denominator stays 809 |
 | One store per conversation (step 0c) | foreign-turn prompts 0 of 809 in both arms; principled 0.534, main 0.527 (+14, +10, inside noise) | Not ruled. Proposed: kept; these stores are the replay baseline and step Q is measured on them |
+| Query hits baseline (step Q) | 111 of 809 hits; subject resolved 801; largest miss: object is text (291) | Kept 2026-11-13 (review session, delegated): the measure for steps 1 and 2, with the approved lines above |
 | LongMemEval runs R108, R109 | not run | Parked until step 4 |
 | Concept walk (store-wide and anchored, B556-B560) | lowers accuracy on 300 questions; about 2% of its rows hold gold | Parked 2026-11-13: off until step 4, then retested once or deleted |
 | Graph vote and question analysis | neutral on accuracy; recall up, non-answers down | Kept 2026-11-13 |
