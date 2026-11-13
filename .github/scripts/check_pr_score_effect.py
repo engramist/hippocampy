@@ -6,6 +6,10 @@ A PR that changes retrieval, answering or config code must say what it did to
 the benchmark score: a `## Score effect` section with a gate table, or
 `None — <reason>`. PRs that touch none of those paths pass without it.
 
+Since step 0e (2026-11-13) the Score effect section of those PRs must also carry a prediction made before the
+run: a line `Prediction: <expected measure and size>`, or `Prediction: none — <reason>` when the change cannot
+move a measure.
+
 The same PRs also need a `## Graph design` section (B518): the edge(s) the change
 reads or writes and the query that reads them (SPARQL or a NamedQuery name), or
 `None — <reason>`. See skills/campy-graph/SKILL.md, "Design-review checklist".
@@ -96,6 +100,25 @@ def targets_in_gate_ok(section):
     return True, ""
 
 
+# Step 0e: a prediction (expected measure and size) stated before the result, or `none — <reason>`.
+_PREDICTION_RE = re.compile(r"^\W*Prediction:[ \t]*(\S.*)$", re.IGNORECASE | re.MULTILINE)
+_PREDICTION_NONE_RE = re.compile(r"^none\b", re.IGNORECASE)
+_PREDICTION_NONE_REASON_RE = re.compile(r"^none[ \t]*[—–-][ \t]*\S", re.IGNORECASE)
+
+
+def prediction_ok(section):
+    """Return (ok, problem) for the Score effect section's `Prediction:` line."""
+    m = _PREDICTION_RE.search(section or "")
+    if not m:
+        return False, "it has no 'Prediction:' line"
+    value = m.group(1).strip().lstrip("*_` ").strip()
+    if not value:
+        return False, "its 'Prediction:' line is empty"
+    if _PREDICTION_NONE_RE.match(value) and not _PREDICTION_NONE_REASON_RE.match(value):
+        return False, "'Prediction: none' needs a reason ('Prediction: none — <reason>')"
+    return True, ""
+
+
 def check(body, changed):
     """Return (ok, message)."""
     hits = relevant_files(changed)
@@ -113,7 +136,15 @@ def check(body, changed):
                 "slice, or pick a slice, with scripts/gate_slice.py (B520)."
             )
         if graph_design_ok(section_text(body, "Graph design")):
-            return True, "Score effect and Graph design sections present."
+            p_ok, p_problem = prediction_ok(section)
+            if not p_ok:
+                return False, (
+                    f"The '## Score effect' section states no prediction: {p_problem}.\n\n"
+                    "Add a line 'Prediction: <expected measure and size>' written before the run (for example "
+                    "'Prediction: query hits +20 to +40 of 809'), or 'Prediction: none — <reason>' when the change "
+                    "cannot move a measure. Plan step 0e, learnings/e2e-improvement-plan.md."
+                )
+            return True, "Score effect (with a prediction) and Graph design sections present."
         return False, (
             f"The '## Graph design' section is missing or empty, but this PR changes retrieval, "
             f"answering, capture or config code:\n{shown}\n\n"

@@ -53,14 +53,20 @@ _Last updated: 2026-11-12 (plan revised; rulings table added)_
   - 5 whose answer is not in the conversation;
   - 24 more flagged as possible judge errors.
   The 34 test-fault ids are reported next to every later score.
+- **Step 0c (one store per conversation): done 2026-11-13.** Each of the five conversations was captured into its own
+  store, for principled (walk off) and for main, and its questions were replayed on that store.
+  - Prompts carrying another conversation's turns: 0 of 809 in both arms (240 and 266 on the shared store).
+  - Restated 809 baseline: principled 432 (0.534), main 426 (0.527); without the 34 test faults, 430/775 and 423/775.
+    By category, principled: cat 1 38/153, cat 2 86/171, cat 3 21/51, cat 4 287/434.
+  - Against the shared store: +14 and +10, inside the ±14 noise, so no measurable change.
 - **Plan revised 2026-11-12:** steps 0c (per-conversation replay stores), 0d (always-missed questions), 0e (predictions in
-  CI) and Q (a thin graph query, whose hits become the measure for steps 1 and 2) come before step 1 continues. None
-  started.
+  CI) and Q (a thin graph query, whose hits become the measure for steps 1 and 2) come before step 1 continues. 0c and
+  0d done; Q designed, waiting for review; 0e not started.
 - Steps 2-4: not started.
 
 ## Rulings
 
-One row per measured result. "Proposed" rows are the lead's recommendation and wait for the user.
+One row per measured result. Rulings dated 2026-11-13 were approved by the user on that day.
 
 | Result | Measured | Ruling |
 |---|---|---|
@@ -68,11 +74,12 @@ One row per measured result. "Proposed" rows are the lead's recommendation and w
 | A stronger model as the reader | 0.463 against 0.470, 300 questions; abstains on a third | Stopped |
 | Roles as free spans in the fact prompt (first form, PR 410) | conv-26: anchored 47.3%, shared 34.2%, both under their kill lines; only 43% of facts matched flag-off | Stopped 2026-11-11; its fields come out with the second form |
 | Always-missed review (step 0d) | 337 always-missed; 34 test faults (29 key or label, 5 not in the conversation), 24 judge doubts | Kept: the ids are reported next to every later score; the denominator stays 809 |
+| One store per conversation (step 0c) | foreign-turn prompts 0 of 809 in both arms; principled 0.534, main 0.527 (+14, +10, inside noise) | Not ruled. Proposed: kept; these stores are the replay baseline and step Q is measured on them |
 | LongMemEval runs R108, R109 | not run | Parked until step 4 |
-| Concept walk (store-wide and anchored, B556-B560) | lowers accuracy on 300 questions; about 2% of its rows hold gold | Not ruled. Proposed: off until step 4, then retested once or deleted |
-| Graph vote and question analysis | neutral on accuracy; recall up, non-answers down | Not ruled. Proposed: kept |
-| Graph count | fired on 0 of 300 questions | Not ruled. Proposed: folded into step Q's queries or deleted |
-| The other `principled` switches | not measured one by one | Not ruled; each is on by default or deleted at step 4 |
+| Concept walk (store-wide and anchored, B556-B560) | lowers accuracy on 300 questions; about 2% of its rows hold gold | Parked 2026-11-13: off until step 4, then retested once or deleted |
+| Graph vote and question analysis | neutral on accuracy; recall up, non-answers down | Kept 2026-11-13 |
+| Graph count | fired on 0 of 300 questions | Stopped as a separate lever 2026-11-13: folded into step Q's queries or deleted |
+| The other `principled` switches | not measured one by one | Parked 2026-11-13: each is on by default or deleted at step 4 |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a

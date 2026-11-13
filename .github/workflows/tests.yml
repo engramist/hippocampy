@@ -3,8 +3,9 @@ name: Tests
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-  push:
-    branches: [main]
+  # No run on push to main: a PR must be current with main to pass (B408, 'Check branch is
+  # current with main'), so the squash-merged commit is the tree the PR run already tested.
+  workflow_dispatch:
 
 # B399: cancel superseded runs on the same branch/PR instead of letting them
 # pile up as red X's once a newer push has already made them moot.
@@ -27,6 +28,25 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha || github.ref }}
 
+      # A change that touches only learnings/ (plan, status, dated notes) cannot change
+      # what the code does: no test, script or package reads that folder. The job still
+      # reports success, so the required check is satisfied, but the slow steps are skipped.
+      - name: Detect notes-only change
+        id: scope
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          notes_only=false
+          if [ -n "$BASE_REF" ]; then
+            git fetch --quiet origin "$BASE_REF"
+            files=$(git diff --name-only "origin/$BASE_REF...HEAD")
+            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -qv '^learnings/'; then
+              notes_only=true
+            fi
+          fi
+          echo "notes_only=$notes_only" >> "$GITHUB_OUTPUT"
+          echo "notes_only=$notes_only"
+
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -34,6 +54,7 @@ jobs:
           cache: "pip"
 
       - name: Install dependencies
+        if: steps.scope.outputs.notes_only != 'true'
         run: |
           pip install -r requirements.txt
           pip install -e .[test,wordnet]
@@ -41,16 +62,19 @@ jobs:
       # en_core_web_md is required (en_core_web_sm has no trained dependency
       # parser, needed for Step 1b verb patterns) — see requirements.txt.
       - name: Download spaCy model
+        if: steps.scope.outputs.notes_only != 'true'
         run: python -m spacy download en_core_web_md
 
       # B553: the principled profile's WordNet members (B523, B534, B535, B546) are tested only with the corpus.
       - name: Download WordNet corpus
+        if: steps.scope.outputs.notes_only != 'true'
         run: python -m nltk.downloader wordnet
 
       # B293: fail if generated extension tool definitions have drifted from
       # tool_schemas.TOOLS. Lives here (not security-gate.yml) because the
       # generator imports campy, which requires the project to be installed.
       - name: Verify generated extension tools are up to date
+        if: steps.scope.outputs.notes_only != 'true'
         run: |
           python scripts/generate_extension_tools.py
           git diff --exit-code extensions/hippocampy/src/generated_tools.ts
@@ -58,16 +82,19 @@ jobs:
       # B314: fail if inline Cypher outside the allowlist (or execute_raw()
       # escape-hatch call sites) increased relative to scripts/cypher_baseline.json.
       - name: Check Cypher ratchet
+        if: steps.scope.outputs.notes_only != 'true'
         run: python scripts/check_cypher_ratchet.py
 
       # B518: fail on a new graph term (edge/property in schema.py) that no SPARQL
       # query reads, relative to .github/scripts/write_only_terms_baseline.txt.
       - name: Check write-only graph terms
+        if: steps.scope.outputs.notes_only != 'true'
         run: python .github/scripts/check_write_only_terms.py
 
       # B406: fail if queries reference non-existent properties relative to
       # scripts/schema_conformance_baseline.json.
       - name: Check schema conformance
+        if: steps.scope.outputs.notes_only != 'true'
         run: python scripts/check_schema_conformance.py
 
       # B408: fail if PR branch is stale relative to main's HEAD (to prevent
@@ -75,7 +102,20 @@ jobs:
       - name: Check branch is current with main
         run: python scripts/check_branch_current.py
 
+      # Principle 4: no benchmark name or conversation id in the code of campy/
+      # (comments and docstrings excepted). Stdlib only.
+      - name: Check benchmark names
+        if: steps.scope.outputs.notes_only != 'true'
+        run: python scripts/check_benchmark_names.py
+
+      # Principle 2: regex call sites in the answering code must not rise above
+      # scripts/answer_regex_baseline.json. Stdlib only.
+      - name: Check answer-code regex ratchet
+        if: steps.scope.outputs.notes_only != 'true'
+        run: python scripts/check_answer_regex_ratchet.py
+
       - name: Check dependency floor drift
+        if: steps.scope.outputs.notes_only != 'true'
         run: python scripts/check_dependency_pin_drift.py
 
       # Fail if a backlog card's `Plan:` header names a backlog/plans/*.md
@@ -93,4 +133,5 @@ jobs:
       # choice in an asyncio test suite where the main thread may be
       # parked in the event loop.
       - name: Run test suite
+        if: steps.scope.outputs.notes_only != 'true'
         run: pytest tests/ -q --timeout=60 --timeout-method=thread
