@@ -159,3 +159,34 @@ def test_report_sections_without_store_or_gh():
     graph = {"observations": 10, "with_subject_id": 8, "with_object_id": 2, "link_preds": 4, "link_preds_with_object": 1}
     report = dr.build_report(commits, 7, merged=[], graph=graph, regex=(1, 3))
     assert "object-linked (object_id): 2 (20.0%)" in report and "+1 / -3" in report
+
+
+# --- step 0e: merged changes that moved a measure --------------------------------------------------
+
+def test_row_moved_by_counts_or_score():
+    assert dr.row_moved({"gained": 30, "lost": 10, "baseline": 0.5, "branch": 0.51})       # net 20 > 15
+    assert not dr.row_moved({"gained": 20, "lost": 10, "baseline": 0.5, "branch": 0.6})   # counts win: net 10
+    assert dr.row_moved({"gained": None, "lost": None, "baseline": 0.50, "branch": 0.53})
+    assert not dr.row_moved({"gained": None, "lost": None, "baseline": 0.50, "branch": 0.51})
+    assert not dr.row_moved({"gained": None, "lost": None, "baseline": None, "branch": 0.6})
+
+
+def test_measures_moved_counts_prs():
+    table = "## Score effect\n| suite | main | branch | gained | lost |\n|---|---|---|---|---|\n"
+    prs = [
+        _pr(1, "2026-11-01", table + "| LoCoMo cat 1-4 | 0.500 | 0.540 | 40 | 8 |\nPrediction: +20 to +40\n"),
+        _pr(2, "2026-11-02", table + "| LoCoMo cat 1-4 | 0.500 | 0.505 | 12 | 8 |\n"),
+        _pr(3, "2026-11-03", "## Score effect\nNone — docs\nPrediction: none — docs\n"),
+        _pr(4, "2026-11-04", "no sections\nPrediction: outside the section\n"),
+    ]
+    mm = dr.measures_moved(prs)
+    assert mm == {"merged": 4, "gated": [1, 2], "moved": [1], "predicted": [1, 3]}
+    assert dr.measures_moved(None) == {"merged": 0, "gated": [], "moved": [], "predicted": []}
+
+
+def test_report_has_measures_moved_section():
+    commits = [{"sha": "a", "subject": "x", "body": "", "files": ["campy/x.py"]}]
+    assert "gh unavailable: unknown" in dr.build_report(commits, 7, merged=None)
+    report = dr.build_report(commits, 7, merged=[_pr(9, "2026-11-01", "## Score effect\nPrediction: +5\n")])
+    assert "## Measures moved (merged PRs)" in report and "stated a Prediction line: 1" in report
+    assert "moved a measure beyond noise (net > 15 questions or > 0.018): 0" in report
