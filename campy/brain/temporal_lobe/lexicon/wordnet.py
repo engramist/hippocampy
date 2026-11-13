@@ -267,8 +267,8 @@ def hypernym_support(child_label: str, parent_keys: set[str], cutoff: float = SE
 # --- B564: action kinds and role heads --------------------------------------------------
 #
 # An action kind is a WordNet noun synset under `event.n.01` (`act.n.02` is itself under it, so one root
-# reaches every action). The model never names the sense: `action_sense` picks it by rule from the verb or
-# activity noun the turn contains, and `action_chain` is the hypernym chain written as BROADER with
+# reaches every action). The model never names the sense: `action_options` lists the closed set of senses a word
+# can name (the model picks one by number), and `action_chain` is the hypernym chain written as BROADER with
 # `link_source "wordnet"`. The ids are WordNet's synset names, so no id is invented.
 
 ACTION_ROOT = "event.n.01"
@@ -359,28 +359,55 @@ def action_chain(syn: Any, root: Any) -> tuple[tuple[tuple[str, str], ...], tupl
     return tuple(sorted(set(edges))), tuple(sorted(labels.items()))
 
 
-def action_sense(words: list[str]) -> ActionSense | None:
-    """The action kind of the first of `words` (lemmas, most specific first: the whole phrase with `_`, then its
-    head) that has one: the most frequent event noun sense (lemma counts), direct before derived on a tie, then
-    WordNet's sense order. A light verb has none (and stops the search); no WordNet or no sense gives None."""
+@dataclass(frozen=True)
+class ActionOption:
+    synset: str                                   # "hike.n.01"
+    lemma: str                                    # first lemma of the synset
+    gloss: str
+
+
+MAX_ACTION_OPTIONS = 6
+
+
+def action_options(lemma: str, cap: int = MAX_ACTION_OPTIONS) -> list[ActionOption]:
+    """The closed set of action kinds a word can name (B564 form 2): its noun senses under `event.n.01`, direct
+    first and then through the verb's nominalisations, ordered by lemma count then WordNet's order, one row per
+    synset, at most `cap`. A light verb, an unknown word or no WordNet gives []. The model picks among these by
+    number; it never names a synset."""
+    wn = _wn()
+    word = (lemma or "").lower().replace(" ", "_")
+    if wn is None or not word or word in LIGHT_VERBS:
+        return []
+    try:
+        cands = sorted(_action_candidates(wn, word, wn.synset(ACTION_ROOT)), key=lambda c: c[:3])
+        out: list[ActionOption] = []
+        seen: set[str] = set()
+        for _n, _d, _o, syn in cands:
+            if syn.name() in seen:
+                continue
+            seen.add(syn.name())
+            out.append(ActionOption(syn.name(), syn.lemmas()[0].name().replace("_", " "), syn.definition()))
+            if len(out) >= cap:
+                break
+        return out
+    except Exception:
+        _logger.debug("action options lookup failed for %r", lemma, exc_info=True)
+        return []
+
+
+def action_sense_of(synset_name: str) -> ActionSense | None:
+    """The `ActionSense` (chain and labels up to `event.n.01`) of a synset the closed option list named."""
     wn = _wn()
     if wn is None:
         return None
     try:
         root = wn.synset(ACTION_ROOT)
-        for w in words:
-            lemma = (w or "").lower().replace(" ", "_")
-            if not lemma or lemma in LIGHT_VERBS:
-                if lemma in LIGHT_VERBS:
-                    return None
-                continue
-            cands = _action_candidates(wn, lemma, root)
-            if not cands:
-                continue
-            best = min(cands, key=lambda c: c[:3])[3]
-            chain, labels = action_chain(best, root)
-            return ActionSense(best.name(), best.lemmas()[0].name().replace("_", " "), chain,
-                               tuple((k, v.replace("_", " ")) for k, v in labels))
+        syn = wn.synset(synset_name)
+        if not _under(syn, root):
+            return None
+        chain, labels = action_chain(syn, root)
+        return ActionSense(syn.name(), syn.lemmas()[0].name().replace("_", " "), chain,
+                           tuple((k, v.replace("_", " ")) for k, v in labels))
     except Exception:
-        _logger.debug("action sense lookup failed for %r", words, exc_info=True)
-    return None
+        _logger.debug("action sense lookup failed for %r", synset_name, exc_info=True)
+        return None
