@@ -36,8 +36,16 @@ _Last updated: 2026-11-10 (step 0 result)_
   - `scripts/drift_report.py`: "watch: score flat while code landed" (28 commits in 7 days, 4 with a gate result).
 - **Step 0b (fact contract): done.** `docs/fact-contract.md`, approved 2026-11-10: keep the 9 predicates and add action,
   with and place roles; text objects allowed but flagged; action kinds from an independent source.
-- **Step 1 (capture writes the roles): design approved 2026-11-10, with a shared-node measure, a sense-accuracy gate and a
-  side-effect guard** (`learnings/step1-capture-roles.md`). Building, flag `[observations] roles`, default off.
+- **Step 1 (capture writes the roles).**
+  - **First form killed 2026-11-11.** It added free-span fields to the fact prompt. On re-captured conv-26:
+    - anchored 47.3% (kill line 50%) and shared 34.2% (kill line 35%);
+    - `HAS_ACTION` on 25 of 135 did/plans facts, 5 of the 25 with the wrong sense;
+    - only 168 of 389 (quote, object_text) pairs equal to flag off, because the longer prompt changed the extraction.
+  - **Corrected conv-26 baseline.** Under one definition (a fact counts only with a subject), anchored is 35.1% and shared
+    16.0%, with ceilings of 51.3% and 46.1%.
+  - **Second form (closed choice) approved 2026-11-12.** It keeps the fact prompt, adds a second call that picks from
+    WordNet senses and turn-linked entities, and splits the gate into mechanism (pass/kill) and coverage (reported).
+    The offline check found 508 of 809 questions with a gold-turn event fact it could share. Building, same flag.
 - Steps 2-4: not started.
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
