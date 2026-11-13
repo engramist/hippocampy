@@ -46,6 +46,13 @@ _Last updated: 2026-11-12 (plan revised; rulings table added)_
   - **Second form (closed choice in a separate call, fact prompt untouched): built on `claude/step1-form2` (PR 411),
     paused by the 2026-11-12 revision** until step Q's baseline and query-hit line exist. Design:
     `learnings/step1-capture-roles.md` section 8.
+- **Step 0d (always-missed questions): done 2026-11-12** (`learnings/step0d-always-missed.md`). 337 of 809 questions are
+  wrong in every one of 16 replay arms:
+  - 303 real misses;
+  - 29 with the key or label wrong;
+  - 5 whose answer is not in the conversation;
+  - 24 more flagged as possible judge errors.
+  The 34 test-fault ids are reported next to every later score.
 - **Plan revised 2026-11-12:** steps 0c (per-conversation replay stores), 0d (always-missed questions), 0e (predictions in
   CI) and Q (a thin graph query, whose hits become the measure for steps 1 and 2) come before step 1 continues. None
   started.
@@ -60,6 +67,7 @@ One row per measured result. "Proposed" rows are the lead's recommendation and w
 | Walk turns merged into the conversation section (B563) | 0.440-0.447 against 0.480 with the walk off, 300 questions | Stopped; not built |
 | A stronger model as the reader | 0.463 against 0.470, 300 questions; abstains on a third | Stopped |
 | Roles as free spans in the fact prompt (first form, PR 410) | conv-26: anchored 47.3%, shared 34.2%, both under their kill lines; only 43% of facts matched flag-off | Stopped 2026-11-11; its fields come out with the second form |
+| Always-missed review (step 0d) | 337 always-missed; 34 test faults (29 key or label, 5 not in the conversation), 24 judge doubts | Kept: the ids are reported next to every later score; the denominator stays 809 |
 | LongMemEval runs R108, R109 | not run | Parked until step 4 |
 | Concept walk (store-wide and anchored, B556-B560) | lowers accuracy on 300 questions; about 2% of its rows hold gold | Not ruled. Proposed: off until step 4, then retested once or deleted |
 | Graph vote and question analysis | neutral on accuracy; recall up, non-answers down | Not ruled. Proposed: kept |
