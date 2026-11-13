@@ -1,15 +1,16 @@
-"""B564: the roles of an event fact (flag `[observations] roles`, default off).
+"""B564: the roles of an event fact (flag `[observations] roles`, default off), form 2: closed choice.
 
 Real spaCy and WordNet (skipped when absent), real Oxigraph store, scripted LLM, no model. Pins:
 - the flag (default off, env CAMPY_OBSERVATION_ROLES, not in the principled profile) and flag-off byte identity:
-  the four prompts hash to the values captured before the change, and a run with role keys in the replies writes
-  exactly the structure captured before the change;
-- WordNet action senses (most frequent event noun sense, light verbs, chain to event.n.01);
-- the rule on hand-written turns taken from the step-1 sample: spans confirmed in the turn and the clause of the
-  fact's quote, held by another fact, pronouns, lists, speakers, admitted entities, nameless ObjectPhrases;
-- the B546 object path extended to physical values;
+  the four prompts hash to the values captured before the change, and a run writes exactly the structure captured
+  before the change;
+- with the flag ON the extraction messages and max_tokens equal the flag-off ones (the fact prompt is untouched);
+- the closed candidate sets (action heads, WordNet event options, partner and place options from the graph);
+- the roles call: one per turn with a candidate, none otherwise; answers by option number; out-of-range, wrong-role
+  and non-JSON answers write nothing and are counted;
+- the fallback (dependency parse) only after a 0, no options, or a failed call (counted apart);
 - the writes (idempotent, first wins, no embedding, no vector row for an action Concept) and the collision guards;
-- the NamedQueries: role_fill, by_action_kind, with_participant, at_place (and the listing forms).
+- the NamedQueries: turn_entity_options, session_speakers, role_fill, by_action_kind, with_participant, at_place.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from campy.brain.hippocampus.graph.queries import REGISTRY
 from campy.brain.temporal_lobe.lexicon import wordnet as wn_mod
 from campy.brain.temporal_lobe.observations import extract as ex
 from campy.brain.temporal_lobe.observations import roles as R
+from campy.brain.temporal_lobe.observations import typed_objects as T
 from tests import b564_helpers as H
 from tests.b564_helpers import LLM, NS, Q, World, cfg, claim, extract
 
@@ -99,9 +101,6 @@ def test_flag_not_active_in_the_shipped_template():
 
 def test_flag_off_prompts_hash_as_before():
     assert H.prompt_hashes() == GOLDEN["prompts"]
-    kw = dict(entities=True, cardinality=True)
-    assert ex.build_messages("t t t", "Sam", "2023-05-03", roles=False, **kw) == \
-        ex.build_messages("t t t", "Sam", "2023-05-03", **kw)
 
 
 async def test_flag_off_writes_what_it_wrote_before(db, gw):
@@ -118,57 +117,64 @@ async def test_flag_off_with_the_key_absent_or_false_is_the_same(tmp_path):
     assert dbs[0] == dbs[1] == GOLDEN["run"]
 
 
-def test_flag_on_prompt_adds_the_three_fields_last():
-    off = ex.build_messages("I visited Paris.", "Sam", "2023-05-03", entities=True)[1]["content"]
-    on = ex.build_messages("I visited Paris.", "Sam", "2023-05-03", entities=True, roles=True)[1]["content"]
-    for key in ('- "action":', '- "with":', '- "place":'):
-        assert key in on and key not in off
-    assert on.index('- "place":') < on.index('- "confidence":') and on.index('- "confidence":') > on.index('- "action":')
-    assert on.replace(ex._ROLE_FIELDS, '- "confidence": a number from 0 to 1\n') == off
-
-
-async def test_flag_on_asks_for_more_tokens_flag_off_does_not(db, gw, world):
+async def test_flag_on_extraction_call_is_the_flag_off_call(db, gw, world):
     await seed(world)
-    llm = LLM(claim("I visited Paris last year", "Paris"))
-    await extract(db, ON, world, "I visited Paris last year, it was lovely.", llm)
-    assert llm.calls[0][1]["max_tokens"] == ex.ROLES_MAX_TOKENS
-    llm = LLM(claim("I visited Paris last year", "Paris"))
-    await extract(db, cfg(typed_objects=True), world, "I visited Paris last year, it was lovely.", llm)
-    assert llm.calls[0][1]["max_tokens"] == ex.MAX_TOKENS
+    text = "I visited Paris last year, it was lovely."
+    for entities in (False, True):
+        kw = dict(entities=entities)
+        a, b = LLM(claim("I visited Paris last year", "Paris")), LLM(claim("I visited Paris last year", "Paris"))
+        await extract(db, cfg(typed_objects=True, roles=True, **kw), world, text, a)
+        await extract(db, cfg(typed_objects=True, **kw), world, text, b)
+        assert a.extraction_calls[0] == b.extraction_calls[0]            # same messages, same max_tokens
+        assert a.extraction_calls[0][1]["max_tokens"] in (ex.MAX_TOKENS, ex.ENTITY_MAX_TOKENS)
+    assert not hasattr(ex, "ROLES_MAX_TOKENS") and not hasattr(ex, "_ROLE_FIELDS")
+    assert ex.build_messages(text, "Sam", "2023-05-03") == ex.build_messages(text, "Sam", "2023-05-03", entities=False)
 
 
-# --- WordNet action senses -------------------------------------------------------------------
+async def test_flag_on_extraction_messages_equal_the_flag_off_golden(db, gw, world):
+    """The golden turns, flag on: the extraction messages and max_tokens are the flag-off ones."""
+    await seed(world)
+    for text, c, admit in H.ROLE_TURNS:
+        on, off = LLM(c), LLM(c)
+        await extract(db, cfg(typed_objects=True, object_roles=True, entities=True, roles=True), world, text, on,
+                      admit=admit)
+        await extract(db, cfg(typed_objects=True, object_roles=True, entities=True), world, text, off, admit=admit)
+        assert on.extraction_calls == off.extraction_calls
 
-@needs_wordnet
-def test_action_sense_is_the_most_frequent_event_noun_sense():
-    for words, synset in ((["hike"], "hike.n.01"), (["visit"], "visit.n.01"), (["explore"], "exploration.n.01"),
-                          (["collaborate"], "collaboration.n.01"), (["cook"], "cooking.n.01"),
-                          (["tell"], "telling.n.02"), (["swim"], "swimming.n.01")):
-        s = wn_mod.action_sense(words)
-        assert s is not None and s.synset == synset and s.concept_id == "wn:" + synset, words
-    assert wn_mod.action_sense(["hike"]).lemma == "hike"
 
-
-@needs_wordnet
-def test_action_without_a_sense_or_a_light_verb_has_none():
-    for words in (["bike"], ["volunteer"], ["chat"], ["blog"], ["go"], ["make"], ["xyzzy"], []):
-        assert wn_mod.action_sense(words) is None, words
-    assert wn_mod.action_sense(["pottery_class", "class"]).synset == "course.n.01"      # whole phrase, then head
-
+# --- WordNet action options -------------------------------------------------------------------
 
 @needs_wordnet
-def test_chain_runs_to_event_and_every_parent_is_an_event():
+def test_action_options_are_event_senses_ordered_by_count_and_capped():
+    opts = wn_mod.action_options("hike")
+    assert opts[0].synset == "hike.n.01" and opts[0].lemma == "hike" and opts[0].gloss
+    assert all(o.synset.split(".")[1] == "n" for o in opts) and len({o.synset for o in opts}) == len(opts)
+    assert [o.synset for o in wn_mod.action_options("explore")][:1] == ["exploration.n.01"]    # via nominalisation
+    assert [o.synset for o in wn_mod.action_options("visit")][:1] == ["visit.n.01"]
+    assert len(wn_mod.action_options("run")) <= wn_mod.MAX_ACTION_OPTIONS == 6
+    assert len(wn_mod.action_options("run", cap=2)) == 2
+
+
+@needs_wordnet
+def test_action_options_none_for_light_verbs_and_words_without_an_event_sense():
+    for w in ("go", "make", "take", "xyzzy", "", "feel"):
+        assert wn_mod.action_options(w) == [] or w == "feel", w
+    assert wn_mod.action_options("bike") == [] and wn_mod.action_options("volunteer") == []
+
+
+@needs_wordnet
+def test_action_sense_of_builds_the_chain_to_event():
     wn = wn_mod._wn()
     root = wn.synset("event.n.01")
-    s = wn_mod.action_sense(["hike"])
+    s = wn_mod.action_sense_of("hike.n.01")
     children = {c for c, _p in s.chain}
     parents = {p for _c, p in s.chain}
+    assert s.concept_id == "wn:hike.n.01" and s.lemma == "hike"
     assert "event.n.01" in parents and "act.n.02" in parents and "hike.n.01" in children
     assert ("walk.n.04", "travel.n.01") in s.chain
     assert all(wn_mod._under(wn.synset(p), root) for p in parents)
     assert {k for k, _l in s.labels} == children | parents
-    v = wn_mod.action_sense(["visit"])                                                    # two paths, both reach event
-    assert ("group_action.n.01", "event.n.01") in v.chain or ("group_action.n.01", "act.n.02") in v.chain
+    assert wn_mod.action_sense_of("dog.n.01") is None and wn_mod.action_sense_of("nope.n.99") is None
 
 
 @needs_wordnet
@@ -180,179 +186,302 @@ def test_role_heads_and_places():
     assert wn_mod.first_sense_under("photo", wn_mod.PHYSICAL_ROOTS) and not wn_mod.first_sense_under("job", wn_mod.PHYSICAL_ROOTS)
 
 
-# --- the proposal ------------------------------------------------------------------------------
+# --- the closed candidate sets -----------------------------------------------------------------
 
-def test_propose_cleans_the_three_fields():
-    p = R.propose({"action": " hike ", "with": ["Anna", "anna", "my friends", None, {"x": 1}], "place": "null"})
-    assert (p.action, p.with_, p.place) == ("hike", ["Anna", "my friends"], None)
-    assert R.propose({"with": "Anna"}).with_ == ["Anna"]
-    assert not R.propose({"action": None, "with": [], "place": "None"})
-    assert R.propose({"action": ["hike"]}).action is None
-    assert len(R.propose({"with": [f"p{i}" for i in range(9)]}).with_) == R.MAX_WITH
-    assert R.propose({"place": "x" * 80}).place is None
+def _nlp():
+    return T._nlp({})
 
 
-def test_find_spans_folds_backticks_and_case():
-    assert R.find_spans("I visited my mom`s house", "my mom's house") == [(10, 24)]
-    assert R.find_spans("Visited the Park", "the park") == [(8, 16)]
-    assert R.find_spans("a parking lot", "park") == []
-
-
-# --- the rule and the writes, on turns of the step-1 sample ----------------------------------------
-
-@needs_wordnet
-async def test_told_anna_the_story_action_and_admitted_participant(db, gw, world):
-    await seed(world)
-    text = ("Hey Jolene! Hope you're having a good one. Last Friday I told Anna the story of my life and they were "
-            "super kind about it. It was so nice to have a meaningful connection.")
-    c = claim("I told Anna the story of my life", "tell", time="Last Friday", action="told", **{"with": ["Anna"]})
-    _mid, stats = await extract(db, ON, world, text, LLM(c), admit=[("c-anna", "Anna", "PERSON")], speaker="Deborah")
-    q = "I told Anna the story of my life"
-    assert targets(db, "HAS_ACTION") == {(q, "wn:telling.n.02")}
-    assert targets(db, "HAS_PARTICIPANT") == {(q, "c-anna")}
-    assert targets(db, "HAS_PLACE") == set()
-    assert stats.roles["action_written"] == 1 and stats.roles["participant_concept_written"] == 1
+def _opts(quote, obj):
+    counts = R.Counter()
+    f = R.FactIn("o1", quote, "did", obj, "c-sam")
+    return R.action_options_for(_nlp(), f, counts), counts
 
 
 @needs_wordnet
-async def test_visited_my_moms_house_action_and_nameless_place(db, gw, world):
-    await seed(world)
-    text = "Yep, last month I visited my mom`s house which holds a special place in my heart."
-    c = claim("last month I visited my mom`s house", "visit", time="last month", action="visited",
-              place="my mom's house")
-    await extract(db, ON, world, text, LLM(c), speaker="Deborah")
-    q = "last month I visited my mom`s house"
-    assert targets(db, "HAS_ACTION") == {(q, "wn:visit.n.01")}
-    assert targets(db, "HAS_PLACE") == {(q, "phrase:my mom`s house")}
-    assert world.count("ObjectPhrase") == 1
-    chain = world.edges("BROADER")
-    assert any(o == "wn%3Aevent.n.01" for _s, o in chain) or any(o == "wn%3Aact.n.02" for _s, o in chain)
+def test_light_verb_uses_the_objects_noun():
+    opts, _ = _opts("even went on a hike", "go on a hike")
+    assert opts and opts[0].synset == "hike.n.01"
+    opts, _ = _opts("I took my kids to a pottery workshop", "take my kids to a pottery workshop")
+    assert opts and any("workshop" in o.lemma for o in opts)
 
 
 @needs_wordnet
-async def test_planning_sentence_three_facts_one_clause(db, gw, world):
-    """One clause holds three facts: a span held by another fact's quote does not attach to this one."""
-    await seed(world)
-    text = ("I'm planning to explore the city, try out different local cuisines, and perhaps collaborate with "
-            "musicians in the area.")
-    c1 = claim("I'm planning to explore the city", "explore the city", predicate="plans", action="explore",
-               place="the city")
-    c2 = claim("try out different local cuisines", "different local cuisines", predicate="plans",
-               action="try out", **{"with": ["musicians"]})
-    c3 = claim("collaborate with musicians in the area", "collaborate with musicians", predicate="plans",
-               action="collaborate", **{"with": ["musicians"]}, place="the area")
-    _mid, stats = await extract(db, ON, world, text, LLM(c1, c2, c3), speaker="Calvin")
-    got = targets(db, "HAS_ACTION")
-    assert {("I'm planning to explore the city", "wn:exploration.n.01"),
-            ("collaborate with musicians in the area", "wn:collaboration.n.01")} <= got
-    assert not any("audition" in t for _q, t in got)                  # "try out" is a phrasal verb, not "try-out"
-    assert targets(db, "HAS_PARTICIPANT") == {("collaborate with musicians in the area", "phrase:musicians")}
-    assert targets(db, "HAS_PLACE") == {("I'm planning to explore the city", "phrase:the city"),
-                                        ("collaborate with musicians in the area", "phrase:the area")}
-    assert stats.roles["rejected:held_by_other_fact"] == 1
+def test_verb_root_gets_nominalisation_options():
+    opts, _ = _opts("I visited my mom`s house", "visit")
+    assert opts[0].synset == "visit.n.01"
 
 
 @needs_wordnet
-async def test_even_went_on_a_hike_action_chain_and_pronoun_dropped(db, gw, world):
+def test_head_not_in_the_quote_has_no_options():
+    opts, counts = _opts("I had a great time", "hike")
+    assert opts == [] and counts["action_head_not_in_quote"] == 1
+
+
+@needs_wordnet
+def test_no_head_and_no_event_sense_are_counted():
+    opts, counts = _opts("I did it", "it")
+    assert opts == [] and counts["action_no_head"] + counts["action_head_not_in_quote"] == 1
+    opts, counts = _opts("I went biking", "bike")
+    assert opts == [] and counts["action_no_event_sense"] == 1
+
+
+@needs_wordnet
+def test_options_are_capped_at_six_and_pooled_across_heads():
+    opts, _ = _opts("I ran a run and a game", "run a run and a game")
+    assert 0 < len(opts) <= 6
+    assert len({o.synset for o in opts}) == len(opts)
+
+
+# --- the roles call, on hand-written turns -------------------------------------------------------
+
+TURN = "Last weekend I went camping with Melanie in Paris and it was fun."
+QUOTE = "I went camping with Melanie in Paris"
+
+
+async def _turn(db, gw, world, *, roles, admit=(("c-mel", "Melanie", "PERSON"), ("c-paris", "Paris", "GPE")),
+                text=TURN, c=None, speakers=True, cfg_=None):
     await seed(world)
-    text = "We explored nature, roasted marshmallows around the campfire and even went on a hike. The view was amazing!"
-    c = claim("even went on a hike", "go on a hike", action="hike", **{"with": ["We"]})
-    _mid, stats = await extract(db, ON, world, text, LLM(c), speaker="Melanie")
-    assert targets(db, "HAS_ACTION") == {("even went on a hike", "wn:hike.n.01")}
-    assert targets(db, "HAS_PARTICIPANT") == set()
-    assert stats.roles["rejected:with_pronoun_or_subject"] == 1
+    llm = LLM(c or claim(QUOTE, "go camping"), roles=roles)
+    mid = await world.message(text, speaker="Sam")
+    for cid, name, label in admit:
+        await world.admit(mid, cid, name, label)
+    if speakers:
+        await world.concept("c-ann", "Ann")
+        other = await world.message("Hi Sam", speaker="Ann")
+        world.session("s1", mid, other)
+        await world.spoken_by(mid, "c-sam")
+        await world.spoken_by(other, "c-ann")
+    stats = ex.ObservationWorkerStats()
+    await ex.process_turn(db, cfg_ or ON, llm, mid, stats)
+    return llm, stats, mid
+
+
+@needs_wordnet
+async def test_one_call_picks_by_number_and_writes_each_role(db, gw, world):
+    llm, stats, _mid = await _turn(db, gw, world, roles=[{"fact": 1, "action": 1, "with": [1], "place": 1}])
+    assert len(llm.roles_calls) == 1 and len(llm.extraction_calls) == 1
+    msgs, kw = llm.roles_calls[0]
+    assert kw == {"max_tokens": R.ROLES_CALL_MAX_TOKENS}
+    body = msgs[-1]["content"]
+    assert f'Fact 1: "{QUOTE}"' in body and "action: 1 " in body and "0 none" in body
+    assert "with:" in body and "Ann" in body and "Melanie" in body and "place: 1 Paris" in body
+    assert msgs[0]["role"] == "system" and "JSON only" in body
+    assert targets(db, "HAS_ACTION") == {(QUOTE, "wn:camping.n.01")}
+    assert len(targets(db, "HAS_PARTICIPANT")) == 1
+    assert targets(db, "HAS_PLACE") == {(QUOTE, "c-paris")}
+    c = stats.roles
+    assert c["calls"] == 1 and c["action_shown"] == 1 and c["action_written"] == 1
+    assert c["partner_written_concept"] == 1 and c["place_written_concept"] == 1
     ids = {unquote(s) for s, _o in world.edges("BROADER")} | {unquote(o) for _s, o in world.edges("BROADER")}
-    assert {"wn:hike.n.01", "wn:walk.n.04", "wn:travel.n.01", "wn:act.n.02", "wn:event.n.01"} <= ids
+    assert "wn:event.n.01" in ids
 
 
 @needs_wordnet
-async def test_biking_has_no_sense_but_the_neighbour_is_a_nameless_participant(db, gw, world):
-    await seed(world)
-    text = "Had a blast biking nearby with my neighbor last week."
-    c = claim("Had a blast biking nearby with my neighbor", "bike", action="biking", **{"with": ["my neighbor"]})
-    _mid, stats = await extract(db, ON, world, text, LLM(c), speaker="Sam")
+async def test_partner_options_exclude_the_subject_and_are_numbered_speakers_first(db, gw, world):
+    llm, _s, _m = await _turn(db, gw, world, roles=[{"fact": 1, "with": [2]}])
+    body = llm.roles_calls[0][0][-1]["content"]
+    line = next(x for x in body.splitlines() if x.strip().startswith("with:"))
+    assert line.index("1 Ann") < line.index("2 Melanie") and "Sam" not in line
+    assert {t for _q, t in targets(db, "HAS_PARTICIPANT")} == {"c-mel"}
+
+
+@needs_wordnet
+async def test_no_call_when_no_fact_has_a_candidate(db, gw, world):
+    llm, stats, _m = await _turn(db, gw, world, roles=[], admit=(), speakers=False,
+                                 text="We had a super fun day out and it was great.",
+                                 c=claim("We had a super fun day out", "fun day", subject="we", predicate="did"))
+    assert llm.roles_calls == [] and stats.roles.get("calls", 0) == 0
+    llm, _s, _m = await _turn(db, gw, world, roles=[], admit=(), speakers=False, c=claim(
+        "I feel great", "feel great", predicate="has_attribute"))
+    assert llm.roles_calls == []                                     # not an event fact
+
+
+@needs_wordnet
+async def test_no_subject_fact_gets_no_options_and_is_counted(db, gw, world):
+    llm, stats, _m = await _turn(db, gw, world, roles=[], speakers=False,
+                                 text="Last weekend Zed went camping with Melanie in Paris.",
+                                 c=claim("Zed went camping with Melanie", "go camping", subject="Zed"))
+    assert llm.roles_calls == [] and stats.roles["no_subject"] == 1
     assert targets(db, "HAS_ACTION") == set()
-    assert targets(db, "HAS_PARTICIPANT") == {("Had a blast biking nearby with my neighbor", "phrase:my neighbor")}
-    assert stats.roles["rejected:action_no_sense"] == 1
 
 
 @needs_wordnet
-async def test_made_a_dish_light_verb_writes_no_action(db, gw, world):
-    await seed(world)
-    text = "The cooking class has been great. Last night I made this yummy grilled dish, so good!"
-    c = claim("Last night I made this yummy grilled dish", "made", action="made")
-    _mid, stats = await extract(db, ON, world, text, LLM(c), speaker="Sam")
-    assert targets(db, "HAS_ACTION") == set() and stats.roles["rejected:action_light_verb"] == 1
-    assert world.count("Concept") == 1                                    # no action Concept either
+async def test_answer_zero_writes_nothing_and_counts(db, gw, world):
+    _l, stats, _m = await _turn(db, gw, world, roles=[{"fact": 1, "action": 0, "with": [], "place": 0}],
+                                text="I went camping with Melanie and it was fun.", admit=(("c-mel", "Melanie", "PERSON"),),
+                                c=claim("I went camping with Melanie", "go camping"))
+    c = stats.roles
+    assert c["action_picked_0"] == 1 and c["partner_picked_0"] == 1 and c["place_no_options"] == 1
+    assert targets(db, "HAS_ACTION") == set() and targets(db, "HAS_PARTICIPANT") == set()
 
 
 @needs_wordnet
-async def test_an_action_is_for_did_and_plans_only(db, gw, world):
-    await seed(world)
-    text = "Taking a walk around is a great way to destress, too."
-    c = claim("Taking a walk around is a great way to destress", "taking a walk around", predicate="prefers",
-              action="walk")
-    _mid, stats = await extract(db, ON, world, text, LLM(c), speaker="Dave")
-    assert targets(db, "HAS_ACTION") == set() and stats.roles["rejected:predicate_not_event"] == 1
+async def test_out_of_range_wrong_role_and_wrong_type_write_nothing(db, gw, world):
+    for roles in ([{"fact": 1, "action": 9, "with": [7], "place": 5}],            # not shown
+                  [{"fact": 1, "action": [1], "with": "Melanie", "place": "Paris"}],   # a list for action; names
+                  [{"fact": 1, "action": True, "with": [True], "place": -1}]):
+        d = OxigraphClient(Path(world.db.path if hasattr(world.db, "path") else ".").parent / f"o{abs(hash(str(roles)))}.db")
+        g = GraphGateway(d, REGISTRY)
+        w = World(d, g)
+        _l, stats, _m = await _turn(d, g, w, roles=roles)
+        c = stats.roles
+        assert c["action_pick_out_of_range"] >= 1 and c["place_pick_out_of_range"] >= 1 and c["partner_pick_out_of_range"] >= 1
+        assert targets(d, "HAS_ACTION") == set() and targets(d, "HAS_PARTICIPANT") == set() \
+            and targets(d, "HAS_PLACE") == set()
+        assert c.get("action_written", 0) == 0 and c.get("partner_written_concept", 0) == 0
+        assert not any(k.endswith("fallback_phrase") for k in c)             # a rejection is not a "no"
 
 
 @needs_wordnet
-async def test_exploring_some_parks_place(db, gw, world):
-    await seed(world)
-    text = "I love exploring some parks near my house on weekends."
-    c = claim("I love exploring some parks near my house", "exploring some parks", action="exploring",
-              place="some parks")
-    await extract(db, ON, world, text, LLM(c), speaker="Sam")
-    assert targets(db, "HAS_ACTION") == {("I love exploring some parks near my house", "wn:exploration.n.01")}
-    assert targets(db, "HAS_PLACE") == {("I love exploring some parks near my house", "phrase:some parks")}
+async def test_with_mixed_valid_and_invalid_numbers_keeps_the_valid_one(db, gw, world):
+    _l, stats, _m = await _turn(db, gw, world, roles=[{"fact": 1, "with": [2, 99, 2]}])
+    assert {t for _q, t in targets(db, "HAS_PARTICIPANT")} == {"c-mel"}
+    assert stats.roles["partner_pick_out_of_range"] == 1 and stats.roles["partner_written_concept"] == 1
 
 
 @needs_wordnet
-async def test_admitted_place_and_an_unknown_person_is_not_a_participant(db, gw, world):
-    await seed(world)
-    await world.concept("c-mel", "Melanie")
-    text = "I went hiking with Melanie in Paris last year."
-    c = claim("I went hiking with Melanie in Paris last year", "hiking", action="hiking", **{"with": ["Melanie"]},
-              place="Paris")
-    await extract(db, ON, world, text, LLM(c), admit=[("c-paris", "Paris", "GPE")], speaker="Sam")
-    q = "I went hiking with Melanie in Paris last year"
-    assert targets(db, "HAS_PLACE") == {(q, "c-paris")}
-    assert targets(db, "HAS_PARTICIPANT") == set()      # Melanie is neither admitted here nor a speaker of the conversation
+async def test_a_role_with_no_options_ignores_the_answer(db, gw, world):
+    _l, stats, _m = await _turn(db, gw, world, roles=[{"fact": 1, "place": 1}], admit=(("c-mel", "Melanie", "PERSON"),),
+                                text="I went camping with Melanie and it was fun.",
+                                c=claim("I went camping with Melanie", "go camping"))
+    assert targets(db, "HAS_PLACE") == set() and stats.roles["place_no_options"] == 1
 
 
 @needs_wordnet
-async def test_speaker_of_the_conversation_is_a_participant(db, gw, world):
-    await seed(world)
-    await world.concept("c-mel", "Melanie")
-    await world.message("Hello Sam, how was the week?", speaker="Melanie")       # Melanie speaks in the conversation
-    text = "Last weekend I went camping with Melanie and it was fun."
-    c = claim("I went camping with Melanie", "camping", action="camping", **{"with": ["Melanie"]})
-    await extract(db, ON, world, text, LLM(c), speaker="Sam")
-    assert targets(db, "HAS_PARTICIPANT") == {("I went camping with Melanie", "c-mel")}
+async def test_non_json_reply_is_unparseable_and_writes_no_pick(db, gw, world):
+    for reply in ("I would pick 1", "{\"fact\": 1}", "[1, 2]", ""):
+        d = OxigraphClient(Path(world.db.path if hasattr(world.db, "path") else ".").parent / f"u{abs(hash(reply))}.db")
+        g = GraphGateway(d, REGISTRY)
+        w = World(d, g)
+        _l, stats, _m = await _turn(d, g, w, roles=reply)
+        assert stats.roles["unparseable"] == 1 and stats.roles.get("action_written", 0) == 0
+        assert targets(d, "HAS_ACTION") == set() and targets(d, "HAS_PARTICIPANT") == set()
 
 
 @needs_wordnet
-async def test_rejections_not_in_turn_and_not_in_clause(db, gw, world):
-    await seed(world)
-    text = "I visited Paris while my sister stayed home and Bob was away."
-    c = claim("I visited Paris", "Paris", action="visited", **{"with": ["Bob", "my sister", "Zed"]}, place="home")
-    _mid, stats = await extract(db, ON, world, text, LLM(c), speaker="Sam")
-    assert stats.roles["rejected:not_in_turn"] == 1                 # Zed
-    assert stats.roles["rejected:not_in_clause"] >= 2               # Bob, my sister: other clauses
-    assert targets(db, "HAS_PARTICIPANT") == set() and targets(db, "HAS_PLACE") == set()
-    assert targets(db, "HAS_ACTION") == {("I visited Paris", "wn:visit.n.01")}
+async def test_a_failed_call_is_counted_and_the_fact_stays(db, gw, world):
+    _l, stats, _m = await _turn(db, gw, world, roles=RuntimeError("boom"))
+    assert stats.roles["call_failed"] == 1 and stats.created == 1
+    assert world.count("Observation") == 1 and stats.errors == 0
+    assert targets(db, "HAS_ACTION") == set()
+
+
+# --- the fallback ----------------------------------------------------------------------------------
+
+FB_TEXT = "Yesterday I went camping with my neighbor to the park and it was fun."
+FB_QUOTE = "I went camping with my neighbor to the park"
 
 
 @needs_wordnet
-async def test_a_with_list_writes_each_good_member_and_drops_the_bad_one(db, gw, world):
+async def test_fallback_runs_after_a_zero_and_writes_phrases(db, gw, world):
+    _l, stats, _m = await _turn(db, gw, world, roles=[{"fact": 1, "action": 0, "with": [], "place": 0}],
+                                text=FB_TEXT, c=claim(FB_QUOTE, "go camping"), admit=(("c-mel", "Melanie", "PERSON"),
+                                                                                     ("c-paris", "Paris", "GPE")))
+    assert {t for _q, t in targets(db, "HAS_PARTICIPANT")} == {"phrase:my neighbor"}
+    assert {t for _q, t in targets(db, "HAS_PLACE")} == {"phrase:the park"}
+    c = stats.roles
+    assert c["partner_fallback_phrase"] == 1 and c["place_fallback_phrase"] == 1
+    assert not any(k.endswith("after_failure") for k in c)
+
+
+@needs_wordnet
+async def test_fallback_runs_when_there_are_no_options_and_no_call_is_made(db, gw, world):
+    llm, stats, _m = await _turn(db, gw, world, roles=[], text=FB_TEXT, c=claim(FB_QUOTE, "camping at the park"),
+                                 admit=(), speakers=False)
+    # action options may exist ("camping"), so a call may be made; partner/place had no options either way
+    assert stats.roles["partner_no_options"] == 1 and stats.roles["place_no_options"] == 1
+    assert {t for _q, t in targets(db, "HAS_PARTICIPANT")} == {"phrase:my neighbor"}
+
+
+@needs_wordnet
+async def test_fallback_never_runs_after_a_pick(db, gw, world):
+    _l, stats, _m = await _turn(db, gw, world, roles=[{"fact": 1, "with": [1], "place": 1}], text=FB_TEXT,
+                                c=claim(FB_QUOTE, "go camping"),
+                                admit=(("c-mel", "Melanie", "PERSON"), ("c-paris", "Paris", "GPE")))
+    assert {t for _q, t in targets(db, "HAS_PLACE")} == {"c-paris"}
+    assert not any("phrase" in t for _q, t in targets(db, "HAS_PARTICIPANT"))
+    assert not any(k.startswith(("partner_fallback", "place_fallback")) for k in stats.roles)
+
+
+@needs_wordnet
+async def test_fallback_after_a_failed_call_is_counted_apart(db, gw, world):
+    _l, stats, _m = await _turn(db, gw, world, roles="not json", text=FB_TEXT, c=claim(FB_QUOTE, "go camping"),
+                                admit=(("c-mel", "Melanie", "PERSON"), ("c-paris", "Paris", "GPE")))
+    c = stats.roles
+    assert c["partner_fallback_phrase_after_failure"] == 1 and c["place_fallback_phrase_after_failure"] == 1
+    assert not any(k in c for k in ("partner_fallback_phrase", "place_fallback_phrase"))
+
+
+@needs_wordnet
+def test_fallback_phrases_need_person_and_place_heads_inside_the_clause():
+    nlp = _nlp()
+    doc = nlp("I went hiking with my friends to the park and then saw a film in the evening. Bob sat in the park.")
+    q = (0, doc.text.index(" and then"))
+    assert R.fallback_phrases(doc, q, "partner", frozenset()) == ["my friends"]
+    assert R.fallback_phrases(doc, q, "place", frozenset()) == ["the park"]
+    assert R.fallback_phrases(nlp("I went with it."), (0, 14), "partner", frozenset()) == []
+    assert R.fallback_phrases(nlp("I went with my friends."), (0, 23), "partner", frozenset({"friends"})) == []
+
+
+# --- the answer parser -------------------------------------------------------------------------------
+
+def test_parse_answers():
+    assert R.parse_answers('[{"fact": 1, "action": 2}]') == {1: {"fact": 1, "action": 2}}
+    assert R.parse_answers('```json\n[{"fact": "2", "place": 1}]\n```') == {2: {"fact": "2", "place": 1}}
+    assert R.parse_answers("no") is None and R.parse_answers(None) is None and R.parse_answers("[1]") is None
+    assert R.parse_answers('{"fact": 1}') is None
+
+
+def test_pick_accepts_only_shown_numbers():
+    from collections import Counter
+    c = Counter()
+    assert R.pick({"action": 2}, "action", "action", 3, c) == ([2], "picked")
+    assert R.pick({"action": 4}, "action", "action", 3, c) == ([], "rejected")
+    assert R.pick({"action": 0}, "action", "action", 3, c) == ([], "zero")
+    assert R.pick({"with": [1, 3, 9]}, "with", "partner", 3, c) == ([1, 3], "picked")
+    assert R.pick({"with": []}, "with", "partner", 3, c) == ([], "zero")
+    assert R.pick({"place": [1]}, "place", "place", 3, c) == ([], "rejected")
+    assert R.pick({}, "place", "place", 3, c) == ([], "no_answer")
+    assert c["action_pick_out_of_range"] == 1 and c["partner_pick_out_of_range"] == 1
+
+
+# --- the counts are logged -----------------------------------------------------------------------------
+
+@needs_wordnet
+async def test_counts_are_logged_every_25_call_turns_and_only_when_changed(db, gw, world, caplog):
+    import logging
+    ex._roles_logged = {}
+    stats = ex.ObservationWorkerStats()
+    stats.roles = {"calls": 3, "action_written": 2}
+    with caplog.at_level(logging.INFO, logger=ex.__name__):
+        assert ex.log_roles_counts(stats) is True
+        assert ex.log_roles_counts(stats) is False                      # unchanged: not repeated
+        stats.roles["calls"] = 4
+        assert ex.log_roles_counts(stats) is True
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("[Roles] counts")]
+    assert lines == ["[Roles] counts {'action_written': 2, 'calls': 3}", "[Roles] counts {'action_written': 2, 'calls': 4}"]
+    assert ex.ROLES_LOG_EVERY == 25
+
+
+@needs_wordnet
+async def test_the_worker_logs_on_the_25th_call_turn(db, gw, world, caplog, monkeypatch):
+    import logging
+    ex._roles_logged = {}
     await seed(world)
-    text = "Yesterday I had lunch with Anna, my friends and the weather."
-    c = claim("I had lunch with Anna, my friends and the weather", "lunch", action="lunch",
-              **{"with": ["Anna", "my friends", "the weather"]})
-    _mid, stats = await extract(db, ON, world, text, LLM(c), admit=[("c-anna", "Anna", "PERSON")], speaker="Sam")
-    got = {t for _q, t in targets(db, "HAS_PARTICIPANT")}
-    assert got == {"c-anna", "phrase:my friends"}
-    assert stats.roles["rejected:with_not_person"] == 1
+    stats = ex.ObservationWorkerStats()
+    stats.roles = {"calls": 24}
+    mid = await world.message(TURN, speaker="Sam")
+    await world.admit(mid, "c-mel", "Melanie", "PERSON")
+    with caplog.at_level(logging.INFO, logger=ex.__name__):
+        await ex.process_turn(db, ON, LLM(claim(QUOTE, "go camping"), roles=[{"fact": 1}]), mid, stats)
+    assert stats.roles["calls"] == 25
+    assert any(r.getMessage().startswith("[Roles] counts") and "'calls': 25" in r.getMessage() for r in caplog.records)
+
+
+def test_the_daemon_worker_logs_when_the_queue_drains():
+    src = (Path(__file__).parent.parent / "campy" / "brain_daemon.py").read_text()
+    assert "log_roles_counts(stats)" in src and "self._observation_queue.empty()" in src
 
 
 # --- the B546 object path extended to physical values -------------------------------------------------
@@ -385,11 +514,12 @@ async def test_is_a_and_has_attribute_common_noun_values_get_a_phrase_only_with_
 async def test_rerun_is_idempotent_first_action_wins_and_action_concepts_have_no_embedding(db, gw, world):
     await seed(world)
     text = "We explored nature and even went on a hike. Then I visited my aunt."
-    c = claim("even went on a hike", "hike", action="hike")
-    await extract(db, ON, world, text, LLM(c))
+    c = claim("even went on a hike", "go on a hike")
+    pick1 = [{"fact": 1, "action": 1}]
+    await extract(db, ON, world, text, LLM(c, roles=pick1))
     first = world.signature()
     mid = "m1"
-    await ex.process_turn(db, ON, LLM(c), mid, ex.ObservationWorkerStats())
+    await ex.process_turn(db, ON, LLM(c, roles=pick1), mid, ex.ObservationWorkerStats())
     assert world.signature() == first
     (oid,) = {s for s, _ in world.edges("HAS_ACTION")}
     await gw.run("roles.ensure_action_concept", cid="wn:visit.n.01", text="visit", now=H.T0)
@@ -406,7 +536,7 @@ async def test_no_vector_or_text_index_row_for_an_action_concept(db, gw, world):
     from campy.brain.hippocampus.graph.vector_store import mint_uri
     await seed(world)
     await extract(db, ON, world, "We explored nature and even went on a hike.",
-                  LLM(claim("even went on a hike", "hike", action="hike")))
+                  LLM(claim("even went on a hike", "go on a hike"), roles=[{"fact": 1, "action": 1}]))
     vs = db.vector_store
     assert vs.get_vector(mint_uri("Concept", "c-sam")) is not None            # control: ordinary Concepts are indexed
     action_ids = ["wn:hike.n.01", "wn:walk.n.04", "wn:act.n.02", "wn:event.n.01"]
@@ -531,7 +661,22 @@ async def _store(world, gw, db):
 async def test_role_fill_counts_standing_and_shared(db, gw, world):
     await _store(world, gw, db)
     rows = {(r["standing"], r["shared"]): r["n"] for r in await gw.run("observations.role_fill")}
-    assert rows == {("anchored", True): 2, ("anchored", False): 1, ("text", False): 1, ("unanchored", True): 1}
+    assert rows == {("anchored", True): 2, ("anchored", False): 1, ("text", False): 1, ("unanchored", False): 1}
+
+
+@needs_wordnet
+async def test_role_fill_shared_needs_the_subject_so_shared_is_a_subset_of_anchored(db, gw, world):
+    f = await _store(world, gw, db)
+    rows = await gw.run("observations.role_fill")
+    by = {(r["standing"], r["shared"]): r["n"] for r in rows}
+    assert by.get(("unanchored", True), 0) == 0                    # a Concept role edge, no subject: not shared
+    shared = sum(n for (st, sh), n in by.items() if sh)
+    anchored = sum(n for (st, sh), n in by.items() if st == "anchored")
+    assert shared <= anchored
+    await world.concept("c-x", "X")
+    await f.fact(None, "Nobody owns a hike", day=7, obj="c-x", subject_id=False)
+    by = {(r["standing"], r["shared"]): r["n"] for r in await gw.run("observations.role_fill")}
+    assert by[("unanchored", False)] == 2
 
 
 @needs_wordnet
@@ -594,3 +739,59 @@ async def test_deprecated_facts_are_not_read(db, gw, world):
     assert await _ids(gw, "facts.by_action_kind", sid="c-sam", kid="wn:hike.n.01") == []
     rows = {(r["standing"], r["shared"]): r["n"] for r in await gw.run("observations.role_fill")}
     assert sum(rows.values()) == 4
+
+
+@needs_wordnet
+async def test_turn_entity_options_filters_by_label_and_excludes_the_subject(db, gw, world):
+    await seed(world)
+    mid = await world.message("Sam met Anna and Bob at Acme in Paris near the Alps and the Louvre.")
+    other = await world.message("Another turn", speaker="Sam")
+    for cid, name, label in (("c-anna", "Anna", "PERSON"), ("c-acme", "Acme", "ORG"), ("c-fr", "French", "NORP"),
+                             ("c-paris", "Paris", "GPE"), ("c-alps", "Alps", "LOC"), ("c-louvre", "Louvre", "FAC"),
+                             ("c-may", "May", "DATE")):
+        await world.admit(mid, cid, name, label)
+    await world.admit(mid, "c-samx", "Sam", "PERSON")
+    await world.admit(other, "c-other", "Other", "PERSON")                    # a different turn: not read
+    await world.concept("c-k", "kind thing", kind=True)
+    await gw.run("concept_links.link_message_concept", mid=mid, cid="c-k")      # a kind with no label: not an option
+    rows = await gw.run("roles.turn_entity_options", mid=mid, sid="c-samx")
+    got = {(r["concept_id"], r["ner_label"]) for r in rows}
+    assert got == {("c-anna", "PERSON"), ("c-acme", "ORG"), ("c-fr", "NORP"), ("c-paris", "GPE"), ("c-alps", "LOC"),
+                   ("c-louvre", "FAC")}
+    assert not [r for r in await gw.run("roles.turn_entity_options", mid=mid, sid="c-anna") if r["concept_id"] == "c-anna"]
+    assert await gw.run("roles.turn_entity_options", mid="nope", sid="c-sam") == []
+
+
+@needs_wordnet
+async def test_session_speakers_are_spoken_by_edges_of_the_same_session_minus_the_subject(db, gw, world):
+    for cid, t in (("c-sam", "Sam"), ("c-ann", "Ann"), ("c-bo", "Bo")):
+        await world.concept(cid, t)
+    a = await world.message("one", speaker="Sam")
+    b = await world.message("two", speaker="Ann")
+    c = await world.message("three", speaker="Bo")
+    world.session("s1", a, b)
+    world.session("s2", c)
+    for mid, cid in ((a, "c-sam"), (b, "c-ann"), (c, "c-bo")):
+        await world.spoken_by(mid, cid)
+    rows = await gw.run("roles.session_speakers", mid=a, sid="c-sam")
+    assert [r["concept_id"] for r in rows] == ["c-ann"]                         # Bo is another session
+    assert {r["concept_id"] for r in await gw.run("roles.session_speakers", mid=a, sid="c-zzz")} == {"c-sam", "c-ann"}
+
+
+@needs_wordnet
+async def test_without_spoken_by_the_speaker_list_is_empty_and_counted(db, gw, world):
+    llm, stats, _m = await _turn(db, gw, world, roles=[{"fact": 1}], speakers=False,
+                                 admit=(("c-paris", "Paris", "GPE"),), text="Last weekend I went camping in Paris.",
+                                 c=claim("I went camping in Paris", "go camping"))
+    assert stats.roles["partner_no_options"] == 1
+    body = llm.roles_calls[0][0][-1]["content"]
+    assert "with:" not in body and "place: 1 Paris" in body
+
+
+@needs_wordnet
+async def test_the_other_speaker_is_an_option_on_every_fact(db, gw, world):
+    llm, stats, _m = await _turn(db, gw, world, roles=[{"fact": 1, "with": [1]}], admit=(),
+                                 text="Last weekend I went camping and it was fun.",
+                                 c=claim("I went camping", "go camping"))
+    assert {t for _q, t in targets(db, "HAS_PARTICIPANT")} == {"c-ann"}
+    assert stats.roles["partner_written_concept"] == 1
