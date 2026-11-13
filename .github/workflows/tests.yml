@@ -102,6 +102,18 @@ jobs:
       - name: Check branch is current with main
         run: python scripts/check_branch_current.py
 
+      # Principle 4: no benchmark name or conversation id in the code of campy/
+      # (comments and docstrings excepted). Stdlib only.
+      - name: Check benchmark names
+        if: steps.scope.outputs.notes_only != 'true'
+        run: python scripts/check_benchmark_names.py
+
+      # Principle 2: regex call sites in the answering code must not rise above
+      # scripts/answer_regex_baseline.json. Stdlib only.
+      - name: Check answer-code regex ratchet
+        if: steps.scope.outputs.notes_only != 'true'
+        run: python scripts/check_answer_regex_ratchet.py
+
       - name: Check dependency floor drift
         if: steps.scope.outputs.notes_only != 'true'
         run: python scripts/check_dependency_pin_drift.py
