@@ -172,9 +172,9 @@ def _line(label: str, items: list[str]) -> str:
     return f"  {label}: " + "   ".join(f"{i} {t}" for i, t in enumerate(items, 1)) + "   0 none"
 
 
-def build_messages(text: str, shown: list[Options]) -> list[dict]:
-    """The call: the turn, then each shown fact's quote with its numbered options per role."""
-    from campy.brain.temporal_lobe.observations.extract import SYSTEM_PROMPT
+def build_messages(text: str, shown: list[Options], system_prompt: str) -> list[dict]:
+    """The call: the turn, then each shown fact's quote with its numbered options per role. `system_prompt` is the
+    extraction's own (passed in by extract.py, so this module does not import it back)."""
     blocks = []
     for n, o in enumerate(shown, 1):
         lines = [f'Fact {n}: "{o.fact.quote}"']
@@ -186,7 +186,7 @@ def build_messages(text: str, shown: list[Options]) -> list[dict]:
             lines.append(_line("place", [p.label for p in o.place]))
         blocks.append("\n".join(lines))
     body = " ".join((text or "").split()).replace('"""', "'''")
-    return [{"role": "system", "content": SYSTEM_PROMPT},
+    return [{"role": "system", "content": system_prompt},
             {"role": "user", "content": _PROMPT.format(text=body, facts="\n".join(blocks))}]
 
 
@@ -320,7 +320,7 @@ async def _fallback(gw: Any, doc, qspan, f: FactIn, role: str, counts: Counter, 
     counts[f"{role}_fallback_phrase{suffix}"] += 1
 
 
-async def link_turn(gw: Any, tctx: Any, facts: list[FactIn], llm_client: Any) -> RolesStats:
+async def link_turn(gw: Any, tctx: Any, facts: list[FactIn], llm_client: Any, *, system_prompt: str) -> RolesStats:
     """The write-time entry, once per turn after every fact of it is written. `tctx` is the turn's
     `typed_objects.TurnContext` (text, message id, speaker, spaCy); `facts` its did / plans facts; `llm_client` the
     extraction client. At most one call, and none when no fact has a candidate. Never raises for one bad fact."""
@@ -339,7 +339,7 @@ async def link_turn(gw: Any, tctx: Any, facts: list[FactIn], llm_client: Any) ->
     if shown:
         counts["calls"] += 1
         try:
-            raw = await asyncio.to_thread(llm_client.chat, build_messages(text, shown),
+            raw = await asyncio.to_thread(llm_client.chat, build_messages(text, shown, system_prompt),
                                           max_tokens=ROLES_CALL_MAX_TOKENS)
         except Exception:
             counts["call_failed"] += 1

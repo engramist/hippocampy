@@ -1164,7 +1164,7 @@ class BrainDaemon:
                 if self._observation_queue.empty():
                     log_roles_counts(stats)       # B564: drained; logs only when the counts changed
             except Exception:
-                pass
+                _logger.debug("[Roles] counts log failed", exc_info=True)   # a log line must never stop the worker
             try:
                 delta = _stats_delta(before, stats)
                 emit_activity("observations", config=self.config, lane="status", status="turn",

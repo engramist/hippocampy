@@ -125,17 +125,17 @@ ENTITY_MAX_TOKENS = 768     # two more short fields per fact
 
 
 ROLES_LOG_EVERY = 25     # B564: log the cumulative roles counts every this many turns that made a roles call
-_roles_logged: dict[str, int] = {}
+_roles_logged: dict[str, int] = {}     # the last counts logged (mutated in place)
 
 
 def log_roles_counts(stats: "ObservationWorkerStats") -> bool:
     """One INFO line `[Roles] counts {...}` (cumulative), only when the counts changed since the last line, so an
     idle worker does not repeat it. Returns whether it logged."""
-    global _roles_logged
     snap = {k: v for k, v in sorted(stats.roles.items()) if v}
     if not snap or snap == _roles_logged:
         return False
-    _roles_logged = dict(snap)
+    _roles_logged.clear()
+    _roles_logged.update(snap)
     _logger.info("[Roles] counts %s", snap)
     return True
 
@@ -564,7 +564,8 @@ async def _extract_turn(
             if tctx is _UNSET:
                 tctx = await typed_objects.turn_context(gw, config, message_id, text, speaker)
             if tctx is not None:
-                rstats = await roles_mod.link_turn(gw, tctx, role_facts, llm_client)
+                rstats = await roles_mod.link_turn(gw, tctx, role_facts, llm_client,
+                                                  system_prompt=SYSTEM_PROMPT)
                 for k, v in rstats.as_dict().items():
                     stats.roles[k] = stats.roles.get(k, 0) + v
                 if rstats.counts["calls"] and stats.roles.get("calls", 0) % ROLES_LOG_EVERY == 0:
