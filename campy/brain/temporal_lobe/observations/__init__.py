@@ -7,6 +7,7 @@ from campy.brain.temporal_lobe.observations.backfill import BackfillStats, backf
 from campy.brain.temporal_lobe.observations.extract import (  # noqa: F401
     ObservationWorkerStats,
     build_messages,
+    log_roles_counts,
     parse_observations,
     process_turn,
 )
