@@ -34,14 +34,37 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # A change that touches only learnings/ (plan, status, dated notes) cannot change
+      # what the code does: no test, script or package reads that folder. The job still
+      # reports success, so the required check is satisfied, but the slow steps are skipped.
+      - name: Detect notes-only change
+        id: scope
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          notes_only=false
+          if [ -n "$BASE_REF" ]; then
+            git fetch --quiet origin "$BASE_REF"
+            files=$(git diff --name-only "origin/$BASE_REF...HEAD")
+            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -qv '^learnings/'; then
+              notes_only=true
+            fi
+          fi
+          echo "notes_only=$notes_only" >> "$GITHUB_OUTPUT"
+          echo "notes_only=$notes_only"
 
       - name: Initialize CodeQL
+        if: steps.scope.outputs.notes_only != 'true'
         uses: github/codeql-action/init@v3
         with:
           languages: python
           config-file: .github/codeql/codeql-config.yml
 
       - name: Perform CodeQL Analysis
+        if: steps.scope.outputs.notes_only != 'true'
         uses: github/codeql-action/analyze@v3
 
   # -------------------------------------------------------------------------
@@ -54,16 +77,40 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # A change that touches only learnings/ (plan, status, dated notes) cannot change
+      # what the code does: no test, script or package reads that folder. The job still
+      # reports success, so the required check is satisfied, but the slow steps are skipped.
+      - name: Detect notes-only change
+        id: scope
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          notes_only=false
+          if [ -n "$BASE_REF" ]; then
+            git fetch --quiet origin "$BASE_REF"
+            files=$(git diff --name-only "origin/$BASE_REF...HEAD")
+            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -qv '^learnings/'; then
+              notes_only=true
+            fi
+          fi
+          echo "notes_only=$notes_only" >> "$GITHUB_OUTPUT"
+          echo "notes_only=$notes_only"
 
       - name: Set up Python 3.11
+        if: steps.scope.outputs.notes_only != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install review tools
+        if: steps.scope.outputs.notes_only != 'true'
         run: pip install semgrep pip-audit
 
       - name: Run Semgrep
+        if: steps.scope.outputs.notes_only != 'true'
         # || true: let review_gate.py be the gate, not the Semgrep exit code
         run: |
           semgrep \
@@ -74,6 +121,7 @@ jobs:
             campy/ || true
 
       - name: Audit project dependencies (isolated from review tooling)
+        if: steps.scope.outputs.notes_only != 'true'
         # Install the project into a clean venv, freeze its resolved deps, and
         # audit only those — so Semgrep/pip-audit's own dependencies don't show
         # up as spurious findings. Covers both requirements.txt and pyproject.toml.
@@ -89,6 +137,7 @@ jobs:
             --output pip-audit-results.json || true
 
       - name: Post findings and gate
+        if: steps.scope.outputs.notes_only != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
