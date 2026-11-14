@@ -71,6 +71,8 @@ def load_patent_conformance_graph(
             if not line:
                 continue
             item = json.loads(line)
+            if item.get("_type") == "reifier":
+                continue          # B570: a steward reifier is not an edge; test_migration_roundtrip checks it
             is_rel = (
                 item.get("_type") == "rel"
                 or "_from_table" in item

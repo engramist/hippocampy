@@ -249,3 +249,49 @@ def test_unclassified_edges_raise_during_migration(tmp_path: Path) -> None:
             import_graph_dump(ox_client, dump_kuzu, vector_store=vs)
     finally:
         ox_client.close()
+
+
+async def _reifier_roundtrip(tmp_path: Path, rows: list[dict[str, Any]]) -> dict[tuple[str, str, str], dict]:
+    """B570: write each fixture reifier row through the vocabulary steward's own SPARQL (propose, add_evidence,
+    agree) and read the records back with `steward.proposals`."""
+    from campy.brain.hippocampus.graph.gateway import GraphGateway
+    from campy.brain.hippocampus.graph.queries import REGISTRY
+
+    db = OxigraphClient(tmp_path / "reifiers.db")
+    gw = GraphGateway(db, REGISTRY)
+    try:
+        for r in rows:
+            for pk in (r["_from_pk"], r["_to_pk"]):
+                await gw.run("temporal_lobe.dict_create_concept", cid=pk, text=f"label-{pk}", emb=[1.0] + [0.0] * 383,
+                             gist="Entity", stype="Thing", now=datetime(2026, 9, 1))
+            name = r["_table"].lower()
+            await gw.run(f"steward.propose_{name}", cid=r["_from_pk"], pid=r["_to_pk"], reason=r["steward_reason"])
+            await gw.run(f"steward.add_evidence_{name}", cid=r["_from_pk"], pid=r["_to_pk"], lsrc=r["link_source"],
+                         es=r["evidence_set"])
+            await gw.run(f"steward.agree_{name}", cid=r["_from_pk"], pid=r["_to_pk"], lsrc=r["link_source"],
+                         by=r["agreed_by"])
+        got = await gw.run("steward.proposals")
+        return {(str(x["relation"]), str(x["child"]), str(x["parent"])): x for x in got}
+    finally:
+        db.close()
+
+
+async def test_steward_reifier_rows_roundtrip_through_the_stewards_sparql(tmp_path: Path) -> None:
+    """B570: the reifier annotation columns of INSTANCE_OF and BROADER (REIFIER_ANNOTATION_COLUMNS) live on the
+    steward's reifier nodes, not on the edge. Every fixture reifier row is written through the steward's own writes
+    and read back with every annotation; removing any of those writes fails this test."""
+    from campy.brain.hippocampus.graph.oxigraph_client import REIFIER_ANNOTATION_COLUMNS
+
+    rows = [json.loads(line) for line in EXHAUSTIVE_FIXTURE_PATH.read_text().splitlines() if line.strip()]
+    reifiers = [r for r in rows if r.get("_type") == "reifier"]
+    assert {r["_table"] for r in reifiers} == set(REIFIER_ANNOTATION_COLUMNS)
+    for r in rows:
+        if r.get("_type") == "rel" and r["_table"] in REIFIER_ANNOTATION_COLUMNS:
+            assert not set(REIFIER_ANNOTATION_COLUMNS[r["_table"]]) & set(r), r["_table"]
+    got = await _reifier_roundtrip(tmp_path, reifiers)
+    for r in reifiers:
+        rec = got[(r["_table"], f"label-{r['_from_pk']}", f"label-{r['_to_pk']}")]
+        assert (str(rec["source"]), str(rec["status"])) == (r["link_source"], r["link_status"])
+        assert int(rec["sets"]) == 1                                # evidence_set written
+        assert str(rec["agreed_by"]) == r["agreed_by"]              # agreed_by written
+        assert str(rec["reason"]) == r["steward_reason"]            # steward_reason written (propose)

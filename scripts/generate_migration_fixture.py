@@ -41,6 +41,7 @@ from campy.brain.hippocampus.graph.export import _parse_column_types
 from campy.brain.hippocampus.table_registry import pk_for
 from campy.brain.hippocampus.graph.oxigraph_client import (
     EDGE_REIFICATION,
+    REIFIER_ANNOTATION_COLUMNS,
     UNCLASSIFIED_ESCALATED_TABLES,
     classify_edge,
 )
@@ -211,7 +212,10 @@ def generate_rel_rows(
                 "_to_pk": to_id,
             }
 
+            annotations = REIFIER_ANNOTATION_COLUMNS.get(rname, ())
             for col, ctype in rinfo["columns"].items():
+                if col in annotations:
+                    continue          # B570: a reifier annotation, carried on the reifier row below
                 if ctype == "TIMESTAMP":
                     props[col] = f"2026-09-0{occ_idx}T10:00:00Z"
                 elif ctype in ("DOUBLE", "FLOAT"):
@@ -224,6 +228,17 @@ def generate_rel_rows(
                     props[col] = f"{rname.lower()}-{col}-{occ_idx}"
 
             rows.append(props)
+            if annotations and occ_idx == 1:
+                # B570: the steward's reifier of this edge, with every annotation column; checked through the
+                # steward's own SPARQL (tests/test_migration_roundtrip.py), never through write_edge
+                rows.append({
+                    "_type": "reifier", "_label": rname, "_table": rname,
+                    "_from_table": from_t, "_from_pk": from_id, "_to_table": to_t, "_to_pk": to_id,
+                    "link_source": "steward", "link_status": "candidate",
+                    "evidence_set": f"{rname.lower()}-evidence_set-1",
+                    "steward_reason": f"{rname.lower()}-steward_reason-1",
+                    "agreed_by": "wordnet",
+                })
 
     return rows
 
@@ -285,6 +300,16 @@ def verify_conformance(
         for col in cols:
             assert col in first_row, f"Star table {star_t} missing property {col}"
 
+    # 5b. B570: every rel table with reifier annotations has exactly one reifier row carrying all of them, and its
+    # edge row carries none of them
+    for rt, cols in REIFIER_ANNOTATION_COLUMNS.items():
+        reifiers = [r for r in rel_rows if r["_type"] == "reifier" and r["_table"] == rt]
+        assert len(reifiers) == 1, f"Expected one reifier row for {rt}, got {len(reifiers)}"
+        assert all(c in reifiers[0] for c in cols), f"Reifier row for {rt} misses an annotation column"
+        for r in rel_rows:
+            if r["_type"] == "rel" and r["_table"] == rt:
+                assert not any(c in r for c in cols), f"Edge row {rt} carries a reifier annotation"
+
     # 6. Datatypes verified
     all_datatypes = set()
     for cols in node_schemas.values():
@@ -339,7 +364,9 @@ def main() -> None:
     write_fixture(args.out, node_rows + rel_rows)
     print(f"Generated exhaustive migration fixture at {args.out}")
     print(f"  Nodes: {len(node_rows)} rows across {len(node_schemas)} tables")
-    print(f"  Edges: {len(rel_rows)} rows across {len(set(r['_table'] for r in rel_rows))} tables")
+    print(f"  Edges: {sum(r['_type'] == 'rel' for r in rel_rows)} rows across "
+          f"{len(set(r['_table'] for r in rel_rows if r['_type'] == 'rel'))} tables")
+    print(f"  Reifiers: {sum(r['_type'] == 'reifier' for r in rel_rows)} rows (B570: steward annotations)")
     print(f"  Classified reification: 15 occurrence (multiple occurrences), 30 star (plain+quoted), 68 plain")
     print(f"  Unclassified tables: 13 verified to raise in classify_edge()")
 
