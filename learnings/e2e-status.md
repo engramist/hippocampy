@@ -2,16 +2,20 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-14 (step 3 kill line hit; held for the user)_
+_Last updated: 2026-11-14 (step 3 and step 1 option B: kill lines hit; held for the user)_
 
 ## Waiting for the user
 
-1. **Who a fact may be about, and the predicate set:** "we" and unnamed others ("my kids"), and verbs outside the nine.
+In the order the review session set; the numbers and options are in `~/campy-lead/reports/2026-11-14-decisions-for-the-user.md`.
+
+1. **Step 3, after its kill line (2026-11-14):** the graph facts section helps when its rows hold the gold turn
+   (+13 against main on 111) and hurts when it fires without one (-25 on 302). When it should fire is a new design.
+2. **The action word, after option B's kill line (2026-11-14):** the rule-chosen word lifts conv-26 hits 14 to 27,
+   but 17 of 50 words misname what happened (phrasal verbs, aspectual or light verbs, the noun chosen). A form that
+   handles those is a new design.
+3. **Who a fact may be about, and the predicate set:** "we" and unnamed others ("my kids"), and verbs outside the nine.
    These are the largest capture-recall losses, and they are a contract and prompt change.
-2. **The step 0c ruling:** keep the per-conversation stores as the replay baseline (proposed).
-3. **Step 3, after its kill line (2026-11-14):** the graph facts section helps when its rows hold the gold turn
-   (+13 against main on 111) and hurts when it fires without one (-25 on 302). When it should fire is a new design;
-   the facts for that decision are in `~/campy-lead/reports/`.
+4. **The step 0c ruling:** keep the per-conversation stores as the replay baseline (proposed).
 
 Ruled by the user 2026-11-13: step 3 runs first, on today's 111 hits; roles are option B (a word-level action kind,
 with form 2's partner and place roles kept).
@@ -48,8 +52,32 @@ with form 2's partner and place roles kept).
   - `scripts/drift_report.py`: "watch: score flat while code landed" (28 commits in 7 days, 4 with a gate result).
 - **Step 0b (fact contract): done.** `docs/fact-contract.md`, approved 2026-11-10: keep the 9 predicates and add action,
   with and place roles; text objects allowed but flagged; action kinds from an independent source.
-- **Step 1 (capture writes the roles): stopped 2026-11-13 on the sense line; the contract question is held for the
+- **Step 1 (capture writes the roles): option B stopped 2026-11-14 on the action-word line; held for the
   user.** Flag `[observations] roles`, default off. Design: `learnings/step1-capture-roles.md`.
+  - **Option B (word-level action kind by rule, partner and place by closed choice; PR 411 draft, run s1onB):
+    kill line hit 2026-11-14.** conv-26 capture on the pinned tree (f2133c58, the s1off capture code), measured on a copy.
+
+    | Line | Result | |
+    |---|---|---|
+    | query hits on conv-26 against 14: pass +5, kill under +2 | 27 (+13 net; 13 gained, 0 lost) | pass |
+    | facts equal s1off | 389 of 389, identical (predicate, object, quote) | pass |
+    | did/plans facts with HAS_ACTION: kill under 50% | 109 of 177 (62%) | pass |
+    | 50 action words, hand-checked (sample drawn before the hits): at most 20% wrong | 17 wrong (34%); 13 (26%) counting four borderline as right | **kill** |
+    | replay of the 152, flag on against flag off | not run: the step stopped | |
+
+    - The 17 wrong words: a phrasal verb cut to its head 4 (look after, hang out, look into, sign up); an aspectual or
+      light verb kept for the activity 8 (start, finish, try, had a blast, a good time, a great time, me-time, make it
+      happen); a noun or the wrong verb chosen 5 (make some art, a support group, kids who need it, let them know, up
+      for the challenge).
+    - Gains by role: action 10, partner 2, both 1, place 0. Three gains rest on a word that is wrong or not an action
+      (support, sign, class); without them +10. 2 of the 17 wrong and 2 of the 33 right sample words sit on a fact
+      behind a gain.
+    - Of the 10 action gains, 8 come through a word that is the fact's head noun or main verb with no light, aspectual
+      or phrasal construction (lost: sign up, had a picnic); 7 if "class" (in "made it in pottery class") is also
+      counted as not an action.
+    - Outcomes: written 110; no head 12; head not in quote 10; no event word 23; second word dropped 8; no subject 24.
+      77 action Concepts, 22 shared by two or more facts; 6 action labels equal a non-action Concept's label
+      (adoption, event, painting, support, work, workshop).
   - **First form (free spans in the fact prompt, PR 410): killed 2026-11-11.** Anchored 47.3% and shared 34.2%, both
     under their kill lines; only 168 of 389 facts matched flag-off.
   - **Second form (a closed choice in a separate call, PR 411, draft): measured 2026-11-13 on conv-26** (store s1on2,
@@ -240,6 +268,7 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Roles (steps 1 and 2) | options A, B, C under step 1 | Ruled by the user 2026-11-13: option B (word-level action kind; partner and place roles kept); step 2 folded into step 1 where it is the same construction |
 | Closed-class Concepts (B565, PR 422) | hits 111 unchanged; miss table restated (216 / 224 / 81) | Kept 2026-11-13 (review session, delegated) |
 | Graph facts section (step 3, PR 428) | fired on 413; gold among rows 75 vs main 62 of 111 (+13); no gold row 129 vs 154 of 302 (-25); overall 418 vs 432 and 426 | Kill line hit 2026-11-14; flag off; held for the user |
+| Roles, option B (word-level action kind, PR 411) | query hits 14 to 27 (+13 net, pass); action words 34% wrong (kill line hit) | Stopped 2026-11-14; held for the user |
 | LongMemEval runs R108, R109 | not run | Parked until step 4 |
 | Concept walk (store-wide and anchored, B556-B560) | lowers accuracy on 300 questions; about 2% of its rows hold gold | Parked 2026-11-13: off until step 4, then retested once or deleted |
 | Graph vote and question analysis | neutral on accuracy; recall up, non-answers down | Kept 2026-11-13 |
