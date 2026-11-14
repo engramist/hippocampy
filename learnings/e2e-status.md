@@ -2,7 +2,7 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-14 (step 1 form 3: pass at the edge; the next step is with the user)_
+_Last updated: 2026-11-14 (item 3 kill line hit; partner role held for the user)_
 
 ## Waiting for the user
 
@@ -11,6 +11,12 @@ _Last updated: 2026-11-14 (step 1 form 3: pass at the edge; the next step is wit
    the user rules. The review session recommends dropping the model-chosen partner, so that a co-participant edge is
    written only by item 3's rule (a person the quote names in a "we" fact). The full re-capture waits for this.
    The facts are in `~/campy-lead/reports/2026-11-14-step1-form3-result.md` and `...-form3-followup.md`.
+
+2. **Item 3, after its kill line (2026-11-14):** asking the extractor for facts about "we" and people named by relation
+   (two sentence replacements in the prompt) made it reply with nothing on most turns that had facts. Whether there is
+   a next form (anchoring only the "we" and "my ..." facts the model already proposes, with the prompt untouched) is
+   with the user; an offline measurement of that reading is being made for the decision. The wording is not to be
+   tried again in another phrasing.
 
 Earlier rulings, 2026-11-14 (the decisions page, `~/campy-lead/reports/2026-11-14-decisions-for-the-user.md`):
 1. **Step 3:** option C. The flag stays off. The section as built is re-measured after the capture work and one full
@@ -289,6 +295,15 @@ with form 2's partner and place roles kept).
   | 3 | 18 | 7 | 9 | 9 | -2 | 0 | 33 | 12 | 12 |
   | 4 | 240 | 128 | 147 | 144 | -16 | 5 | 194 | 140 | 137 |
 
+- **Item 3 (who a fact may be about; PR 432, flag `[observations] group_subjects`): kill line hit 2026-11-14; flag
+  off.** The fact extractor alone was re-run three times (flag off, on, off again) on 57 gold turns with no fact,
+  60 control turns and 40 turns with facts (their facts archived in the copy first), on the cleaned stores.
+  - Fact-bearing turns: 36 of 40 lost a fact that both flag-off runs wrote; 58 of 76 stable facts were lost. The two
+    flag-off runs were identical. Line: more than 2 turns.
+  - Cause, checked on 3 lost turns re-run alone: with the flag on the model replies `[]`, where the flag-off prompt gets
+    3-4 proposals. The only difference is the two sentence replacements. A wording effect, not the anchoring rule.
+  - Gold: 11 of 57 turns gained a fact (prediction 8-15); control: 2 of 60. On the flag-on arm the rule wrote 14
+    group-subject facts and 1 relation fact without error.
 - Step 4: not started.
 
 ## Rulings
@@ -316,6 +331,7 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | One store per conversation (step 0c), ruling | as above | Ruled by the user 2026-11-14: kept; the per-conversation stores are the replay baseline |
 | Roles, form 3 (candidates by rule, closed choice; branch claude/step1-form3) | conv-26 query hits 14 to 28 (+14); action words 10 of 50 wrong | Pass at the edge 2026-11-14 (review session; the line not moved); partner links fell 140 to 100; next step with the user |
 | Partner by closed choice (forms 2, B, 3) | counts passed; option B's 138 links include 54 to the other speaker with no support in the quote; form 3 hand-check 29 of 30 wrong | Hand-check 2026-11-14; not to be written as built; held for the user. Roles are hand-checked like the action word from now on (a gated line of at most 20% wrong at the full re-capture) |
+| Group and relation subjects by prompt change (item 3, PR 432) | gold +11 turns; 58 of 76 stable facts lost on fact-bearing turns | Kill line hit 2026-11-14; flag off; held for the user |
 | LongMemEval runs R108, R109 | not run | Parked until step 4 |
 | Concept walk (store-wide and anchored, B556-B560) | lowers accuracy on 300 questions; about 2% of its rows hold gold | Parked 2026-11-13: off until step 4, then retested once or deleted |
 | Graph vote and question analysis | neutral on accuracy; recall up, non-answers down | Kept 2026-11-13 |
