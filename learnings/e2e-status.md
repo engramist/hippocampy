@@ -12,7 +12,10 @@ _Last updated: 2026-11-13 (capture-recall diagnosis; waiting list)_
    These are the largest capture-recall losses, and they are a contract and prompt change.
 3. **The step 0c ruling:** keep the per-conversation stores as the replay baseline (proposed).
 4. **Order:** whether step 3 (answer from the graph) may run on today's 111 hits before steps 1 and 2. The design is
-   ready (lead's report `2026-11-13-step3-design.md`).
+   ready (lead's report `2026-11-13-step3-design.md`). A query hit is worth about 0.06 of a correct answer today (the
+   111 hit questions are answered 59% against 53% for the rest), so steps 1 and 2 cannot move the score until step 3
+   exists. Recommendation (review session, 2026-11-13): run step 3 on today's 111 hits first (one replay arm, about 3 h
+   GPU, no capture), then decide the roles with the worth of a hit known.
 
 - **Step 0 (fix the test): done.** All 809 category 1-4 questions of conv-26/41/48/49/50, replayed on the kept
   stores with the gate's answer model, judge (3 votes) and settings. Working files: `~/campy-lead/scratch/step0/`.
