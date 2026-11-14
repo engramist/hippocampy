@@ -15,7 +15,8 @@ Reads:
   query_hits.objects                 the other Concepts named by a term (label or altLabel), not action kinds, that a
   query_hits.objects_in_sessions     turn MENTIONS or a fact's object reaches by INSTANCE_OF / BROADER*
   query_hits.facts                   the subject's live facts whose HAS_OBJECT is K, an instance of K, or narrower,
-                                     each with its EVIDENCED_BY turn and date (oldest first)
+                                     each with its EVIDENCED_BY turn and date (oldest first), its predicate, quote,
+                                     time phrase and the object's kinds (step 3 renders these)
   query_hits.facts_count             the same facts counted: distinct objects and distinct facts (graph count, folded in)
   query_hits.facts_latest            the newest of the same facts
   query_hits.facts_exist             whether any such fact exists (false is the answer "not recorded")
@@ -183,12 +184,19 @@ QUERY_HIT_QUERIES = [
                      "kind BROADER* below K, each with its EVIDENCED_BY turn and date, oldest first. Empty is "
                      "'not recorded'"),
         sparql=f"""
-            SELECT DISTINCT ?observation_id ?object_id ?object_text ?message ?evidence_message_id ?occurred_at
+            SELECT ?observation_id ?object_id ?object_text ?message ?evidence_message_id ?occurred_at
+                   ?predicate ?quote ?time_text (GROUP_CONCAT(DISTINCT ?kind_label; separator="|") AS ?kinds)
             WHERE {{
               {_FACTS_BODY}
               OPTIONAL {{ ?x campy:concept_id ?object_id }}
               OPTIONAL {{ ?x campy:text_raw ?object_text }}
+              OPTIONAL {{ ?o campy:predicate ?predicate }}
+              OPTIONAL {{ ?o campy:evidence_text ?quote }}
+              OPTIONAL {{ ?o campy:time_text ?time_text }}
+              OPTIONAL {{ ?x campy:INSTANCE_OF ?_kind . ?_kind campy:text_raw ?kind_label }}
             }}
+            GROUP BY ?observation_id ?object_id ?object_text ?message ?evidence_message_id ?occurred_at
+                     ?predicate ?quote ?time_text
             ORDER BY ?occurred_at ?observation_id ?evidence_message_id
             """,
     ),
@@ -212,11 +220,18 @@ QUERY_HIT_QUERIES = [
         mutating=False,
         description="The newest of query_hits.facts' rows (by its turn's date), with its object and turn",
         sparql=f"""
-            SELECT ?observation_id ?object_id ?object_text ?message ?evidence_message_id ?occurred_at WHERE {{
+            SELECT ?observation_id ?object_id ?object_text ?message ?evidence_message_id ?occurred_at ?predicate
+                   ?quote ?time_text (GROUP_CONCAT(DISTINCT ?kind_label; separator="|") AS ?kinds) WHERE {{
               {_FACTS_BODY}
               OPTIONAL {{ ?x campy:concept_id ?object_id }}
               OPTIONAL {{ ?x campy:text_raw ?object_text }}
+              OPTIONAL {{ ?o campy:predicate ?predicate }}
+              OPTIONAL {{ ?o campy:evidence_text ?quote }}
+              OPTIONAL {{ ?o campy:time_text ?time_text }}
+              OPTIONAL {{ ?x campy:INSTANCE_OF ?_kind . ?_kind campy:text_raw ?kind_label }}
             }}
+            GROUP BY ?observation_id ?object_id ?object_text ?message ?evidence_message_id ?occurred_at
+                     ?predicate ?quote ?time_text
             ORDER BY DESC(?occurred_at) DESC(?observation_id)
             LIMIT 1
             """,

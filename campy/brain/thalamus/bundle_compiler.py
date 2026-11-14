@@ -254,8 +254,13 @@ async def compile_bundle(
         return bundle
 
     # Stage 1b (B524, flag): a count/list question about one subject, answered by a graph query.
+    # Step 3 (flag `[retrieval] graph_facts`): the subject-anchored query_hits rows replace graph_count when on.
+    from campy.brain.thalamus.graph_facts import build_graph_facts_section, graph_facts_enabled
     from campy.brain.thalamus.graph_count import build_graph_count_section
-    count_section = await build_graph_count_section(db, query, config, analysis=analysis)
+    if graph_facts_enabled(config):
+        count_section = await build_graph_facts_section(db, query, config, analysis=analysis)
+    else:
+        count_section = await build_graph_count_section(db, query, config, analysis=analysis)
     if count_section and count_section.content:
         sections.append(count_section)
         cumulative_tokens += count_section.token_estimate

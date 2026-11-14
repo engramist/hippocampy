@@ -32,6 +32,10 @@ _DEFAULT_CONFIG = {
         # X have") adds a `graph_count` bundle section computed by a subject-anchored graph query (needs the
         # B522 object_roles and B523 ownership_rule edges). Gate pending.
         "graph_count": False,
+        # Step 3 of the e2e plan (default OFF; env CAMPY_GRAPH_FACTS=1 turns it on; in no profile until gated): the
+        # subject-anchored query_hits.* rows enter the bundle as a `graph_facts` section in the fact contract's
+        # fixed-shape lines, shaped by the question analysis. When on, the graph_count section is not built.
+        "graph_facts": False,
         # B547 (default OFF; env CAMPY_QUESTION_ANALYSIS=1 turns it on; on under profile "principled"): the
         # question is analysed once (shape, subject, kind, the Concepts it names) at the top of the bundle
         # compile and the stages read that instead of parsing it themselves. Gate: with the profile (B545).
@@ -330,6 +334,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_GRAPH_LINKING_LIMIT": ("retrieval", "graph_linking_limit", _parse_nonneg_int),
     # B524: count/list questions answered by a subject-anchored graph query (bundle section).
     "CAMPY_GRAPH_COUNT": ("retrieval", "graph_count", _parse_bool),
+    # Step 3: the query_hits rows as a fixed-shape bundle section (replaces graph_count when on).
+    "CAMPY_GRAPH_FACTS": ("retrieval", "graph_facts", _parse_bool),
     # B547: the question is analysed once; stages read the analysis (bundle section `reads`, `bundle.analysis`).
     "CAMPY_QUESTION_ANALYSIS": ("retrieval", "question_analysis", _parse_bool),
     # B548: the graph votes in conversation seed selection (needs question_analysis).
