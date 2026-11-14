@@ -4,16 +4,18 @@ B564 form 2: the roles of an event fact, by closed choice (flag `[observations] 
 
 The fact prompt is untouched: with the flag on, the extraction call is the flag-off call. After ALL of a turn's
 facts are written (so its MENTIONS and admitted entities are in the graph), the rule builds a closed candidate set
-for each did / plans fact, and ONE extra call per turn shows the model each fact's quote with numbered options per
-role. The model answers with option numbers only (0 = none). The rule accepts only a number that was shown for that
+for each did / plans fact, and ONE extra call per turn shows the model each fact's quote with numbered partner and
+place options. The model answers with option numbers only (0 = none). The rule accepts only a number that was shown for that
 fact and that role; anything else is a counted rejection and writes nothing. The model never writes a name, a span,
 a synset or an id (P3). The only writer of the edges, through the NamedQueries in `graph/queries/roles.py`.
 
 Options (every one from the graph or from WordNet, never from the model):
-  action   the head of the fact's `object_text` (its root lemma; when that is a light verb or not a verb / noun, the
-           object's nouns and other non-light verbs), which must occur among the lemmas of the quote. Options are the head's WordNet noun
-           senses under event.n.01 (direct, then through nominalisations), at most 6, shown as `lemma: gloss`.
-           The pick writes the synset as an action Concept, its hypernym chain as BROADER, and HAS_ACTION.
+  action   (option B, user ruling 2026-11-13; no model, no sense) ONE word by rule from the fact's `object_text`,
+           kept when its lemma occurs in the quote (`action_word`): a noun root with an event sense is its lemma; a
+           verb root is its event nominalisation ("adopt" -> adoption), else its own lemma; a light-verb root takes
+           the first of its objects that has an event sense ("go to a council meeting" -> meeting). Written as the
+           action Concept `action:<word>` (kind_scheme "action", no embedding, no BROADER, one node per word) and
+           HAS_ACTION. The only word knowledge is the light-verb list and the event.n.01 test.
   with     the other speakers of the session (`roles.session_speakers`, SPOKEN_BY) and the Concepts the source turn
            MENTIONS with ner_label PERSON / ORG / NORP (`roles.turn_entity_options`), other than the fact's subject.
   place    the Concepts the turn MENTIONS with ner_label GPE / LOC / FAC.
@@ -45,7 +47,7 @@ from campy.brain.temporal_lobe.observations import typed_objects as T
 
 _logger = logging.getLogger(__name__)
 
-RULE_VERSION = "b564-2"
+RULE_VERSION = "b564-3"
 _PHRASE_NS = uuid.UUID("b5640000-0000-0000-0000-000000000000")
 EVENT_PREDICATES = frozenset({"did", "plans"})
 PARTNER_LABELS = frozenset({"PERSON", "ORG", "NORP"})
@@ -56,8 +58,8 @@ PLACE_PREPS = frozenset({"to", "at", "in"})
 _PROMPT = (
     "Pick from the numbered options only; never write a name. Answer 0 when no option fits.\n"
     'Message: """{text}"""\n{facts}\n'
-    'Reply with JSON only, one object per fact: [{{"fact": 1, "action": 0, "with": [1], "place": 0}}]\n'
-    '"action" and "place" are one option number. "with" is a list of option numbers. 0 or [] means none. '
+    'Reply with JSON only, one object per fact: [{{"fact": 1, "with": [1], "place": 0}}]\n'
+    '"place" is one option number. "with" is a list of option numbers. 0 or [] means none. '
     "Leave out a role that shows no options."
 )
 
@@ -106,6 +108,64 @@ def action_heads(doc) -> list[str]:
     return [t.lemma_.lower() for t in doc if t is not root and t.lemma_.isalpha()
             and (t.pos_ in ("NOUN", "PROPN")
                  or (t.pos_ == "VERB" and t.lemma_.lower() not in wn_mod.LIGHT_VERBS))]
+
+
+_OBJECT_DEPS = frozenset({"dobj", "pobj", "attr", "oprd"})
+
+
+def _word_of(tok) -> str | None:
+    """The action word a head token names: a noun with an event sense is its own lemma; a verb is its event
+    nominalisation, else its own lemma; anything else names none."""
+    lemma = tok.lemma_.lower()
+    if tok.pos_ in ("NOUN", "PROPN"):
+        return lemma if wn_mod.has_event_sense(lemma) else None
+    if tok.pos_ == "VERB" and lemma not in wn_mod.LIGHT_VERBS:
+        return wn_mod.event_nominalisation(lemma) or lemma
+    return None
+
+
+def action_word(nlp, fact: FactIn, counts: Counter) -> str | None:
+    """Option B (user ruling 2026-11-13): the ONE word that names what happened in an event fact, by rule; the model
+    is not asked and no sense is chosen. From the fact's `object_text`, kept only when its lemma occurs in the quote:
+      * root a noun (not light): its lemma, when it has a sense under event.n.01;
+      * root a verb (not light): its event nominalisation ("adopt" -> adoption), else the verb's own lemma;
+      * root a light verb, or neither: the first noun among the root's objects (direct or prepositional) with an
+        event sense ("go to a council meeting for adoption" -> meeting); else the first other head that names one.
+    Counted by reason: action_no_head, action_head_not_in_quote, action_no_event_word; a second qualifying word
+    is dropped (first wins) and counted as action_second_word_dropped."""
+    doc = nlp(fact.object_text or "")
+    root = next((t for t in doc if t.dep_ == "ROOT"), None)
+    in_quote = _lemmas(nlp(fact.quote))
+    if root is not None and root.pos_ in ("VERB", "NOUN") and root.lemma_.isalpha() \
+            and root.lemma_.lower() not in wn_mod.LIGHT_VERBS:
+        heads = [root]
+    else:
+        ri = root.i if root is not None else -1          # spaCy makes a new Token per access: compare by index
+        objects = [t for t in doc if t.i != ri and t.pos_ in ("NOUN", "PROPN") and t.dep_ in _OBJECT_DEPS
+                   and (t.head.i == ri or t.head.head.i == ri)]
+        taken = {t.i for t in objects}
+        others = [t for t in doc if t.i != ri and t.i not in taken and t.lemma_.isalpha()
+                  and (t.pos_ in ("NOUN", "PROPN") or (t.pos_ == "VERB" and t.lemma_.lower() not in wn_mod.LIGHT_VERBS))]
+        heads = objects + others
+    if not heads:
+        counts["action_no_head"] += 1
+        return None
+    heads = [t for t in heads if t.lemma_.lower() in in_quote]
+    if not heads:
+        counts["action_head_not_in_quote"] += 1
+        return None
+    words = list(dict.fromkeys(w for w in (_word_of(t) for t in heads) if w))
+    if not words:
+        counts["action_no_event_word"] += 1
+        return None
+    if len(words) > 1:
+        counts["action_second_word_dropped"] += 1
+    return words[0]
+
+
+def action_concept_id(word: str) -> str:
+    """One action Concept per word, shared by every fact that names it."""
+    return "action:" + word.lower().replace(" ", "_")
 
 
 def action_options_for(nlp, fact: FactIn, counts: Counter) -> list[wn_mod.ActionOption]:
@@ -162,7 +222,7 @@ async def build_options(gw: Any, nlp, message_id: str, facts: list[FactIn], coun
                              if str(r["ner_label"]) in PARTNER_LABELS])
         place = _dedupe([Opt(str(r["concept_id"]), str(r["text_raw"])) for r in ent
                          if str(r["ner_label"]) in T.PLACE_LABELS])
-        out.append(Options(f, action_options_for(nlp, f, counts), partner, place))
+        out.append(Options(f, [], partner, place))     # option B: the action is chosen by rule (`action_word`)
     return out
 
 
@@ -331,8 +391,19 @@ async def link_turn(gw: Any, tctx: Any, facts: list[FactIn], llm_client: Any, *,
     if doc is None:
         doc = tctx.docs[tctx.message_id] = tctx.nlp(text)
     options = await build_options(gw, tctx.nlp, tctx.message_id, facts, counts)
+    now = datetime.now(timezone.utc)
+    for o in options:                          # option B: the action word, by rule, no model
+        try:
+            word = action_word(tctx.nlp, o.fact, counts)
+            if word:
+                cid = action_concept_id(word)
+                await gw.run("roles.ensure_action_concept", cid=cid, text=word, now=now)
+                await gw.run("roles.link_action", oid=o.fact.oid, cid=cid)
+                counts["action_written"] += 1
+        except Exception:
+            counts["errors"] += 1
+            _logger.warning("[Roles] action failed oid=%s", o.fact.oid[:8], exc_info=True)
     shown = [o for o in options if o.any()]
-    counts["action_shown"] += sum(1 for o in shown if o.action)
 
     answers: dict[int, dict] | None = None
     failure = False

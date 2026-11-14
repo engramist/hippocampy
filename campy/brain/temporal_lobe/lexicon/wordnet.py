@@ -369,6 +369,48 @@ class ActionOption:
 MAX_ACTION_OPTIONS = 6
 
 
+def has_event_sense(word: str) -> bool:
+    """B564 option B: True when `word` has any noun sense under `event.n.01` (the only test of what a word can name;
+    no sense is chosen)."""
+    wn = _wn()
+    w = (word or "").lower().replace(" ", "_")
+    if wn is None or not w:
+        return False
+    try:
+        root = wn.synset(ACTION_ROOT)
+        return any(_under(s, root) for s in wn.synsets(w, pos="n"))
+    except Exception:
+        return False
+
+
+def event_nominalisation(verb: str) -> str | None:
+    """B564 option B: the noun WORD a verb is nominalised to (WordNet's derivationally related forms) that has a
+    sense under `event.n.01`, the most frequent by lemma count ("adopt" -> "adoption"); None when there is none.
+    Only the word is returned, never a sense."""
+    wn = _wn()
+    v = (verb or "").lower().replace(" ", "_")
+    if wn is None or not v or v in LIGHT_VERBS:
+        return None
+    try:
+        root = wn.synset(ACTION_ROOT)
+        best: tuple[int, int, str] | None = None
+        order = 0
+        for vs in wn.synsets(v, pos="v"):
+            for vl in vs.lemmas():
+                if vl.name().lower() != v:
+                    continue
+                for d in vl.derivationally_related_forms():
+                    ds = d.synset()
+                    order += 1
+                    if ds.pos() == "n" and _under(ds, root):
+                        cand = (-d.count(), order, d.name().lower().replace("_", " "))
+                        if best is None or cand < best:
+                            best = cand
+        return best[2] if best else None
+    except Exception:
+        return None
+
+
 def action_options(lemma: str, cap: int = MAX_ACTION_OPTIONS) -> list[ActionOption]:
     """The closed set of action kinds a word can name (B564 form 2): its noun senses under `event.n.01`, direct
     first and then through the verb's nominalisations, ordered by lemma count then WordNet's order, one row per
