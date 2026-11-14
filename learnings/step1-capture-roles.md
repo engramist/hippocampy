@@ -173,3 +173,180 @@ One PR, one flag:
 Decision (6.1 of the code plan): action Concepts are excluded from the text lookups and from the vector and text indexes, so
 a word never resolves to one; step 3 resolves question verbs through the same WordNet sense function and
 `roles.action_concept`.
+
+## 7. Form 1 result (killed 2026-11-11)
+
+Form 1 (sections 3-6: three free-span fields added to the fact prompt) was re-captured on conv-26 and hit both kill lines:
+
+| conv-26 | flag off | R111 | form 1 |
+|---|---|---|---|
+| Facts | 389 | 389 | 383 |
+| Anchored | 34.7% | 35.0% | 47.3% |
+| Shared | 21.9% | 22.1% | 34.2% |
+| `did`/`plans` with `HAS_ACTION` | | | 25 of 135 |
+| (quote, object_text) pairs equal to flag off | 389 of 389 (vs R111) | | 168 of 389 |
+
+The longer prompt changed what was extracted (`did` facts fell from 119 to 82), and 5 of the 25 actions had the wrong
+sense ("picnic" → `cinch.n.01`). The flag-off capture repeats R111 exactly, so the extraction itself is deterministic and
+the shift came from the prompt.
+
+**Baseline correction.** Section 5's conv-26 "today" (42.1% anchored) does not reproduce. Counted the way
+`observations.role_fill` counts (live facts with a subject, the conversation selected by `SENT_IN`), conv-26 today is
+**35.0% anchored and 22.1% shared**. The shared baseline matches section 5 (22.3%); the anchored one does not.
+
+## 8. Form 2: closed choice (approved 2026-11-12)
+
+The flag, edges and queries are the same as in form 1: `[observations] roles` / `CAMPY_OBSERVATION_ROLES`, default off,
+in no profile. Form 2 writes `HAS_ACTION`, `HAS_PARTICIPANT` and `HAS_PLACE`; it reads `EVIDENCED_BY`, `MENTIONS`,
+`SPOKEN_BY` and `ner_label` (all written today). The free-span fields of form 1 are removed. **The fact prompt is
+untouched:** with the flag on, the extraction call is byte-for-byte the flag-off call.
+
+### 8.1 A second, closed call after the turn's facts are written
+
+For each turn, once its facts are written, the rule builds a closed candidate set for each of its `did`/`plans` facts
+(sections 8.2-8.3). A turn with no candidate set makes no call. Otherwise one call per turn shows each event fact's
+quote and its numbered options, and the model answers per fact with an option number or `0` (none):
+
+```
+Fact 1: "Last Fri I finally took my kids to a pottery workshop."
+  action: 1 workshop: a brief intensive course for a small group ...   2 workshop: small workplace where handcrafts ...   0 none
+  with:   1 Melanie   0 none
+```
+
+The rule accepts only an option number shown for that fact and that role. Anything else is a counted rejection and
+writes nothing. The model never writes a name, a span, a synset or an id (P3).
+
+### 8.2 Action candidates (closed: WordNet event senses with glosses)
+
+- The head is the root lemma of the fact's `object_text`. When that root is a light verb (`go`, `get`, `take`, `make`,
+  `do`, `have`, `be`, `give`, `put`, `keep`, `let`, `come`), the heads are the object's nouns instead ("go on a hike"
+  → `hike`, "take my kids to a pottery workshop" → `workshop`).
+- **Confirmed:** the head lemma must occur in the fact's quote (spaCy lemmas). Otherwise there is no candidate set.
+- The options are the head's WordNet noun senses under `event.n.01`: direct, then through the verb's nominalisations.
+  They are ordered by lemma count and capped at 6, each shown as `lemma: gloss`.
+- Written: the picked synset as the action Concept, with its hypernym chain as `BROADER` and the same Concept
+  rules as form 1 (no embedding, no index, out of the text lookups).
+- **Measured on the flag-off store:**
+  - 110 of 177 event facts (62%) get at least one sense once the head must occur in the quote (121 without that check). The median is 1 option, the mean 2.0 and the cap is 6.
+  - The other 56 are mostly feelings and states ("love it", "feel alone", "be a mom") or true WordNet gaps
+    ("volunteering", "biking").
+  - A verb-hypernym walk recovers 15 of the 56, but almost all wrongly ("see" → `sensing`, "feel" → `decision`,
+    "volunteering" → `informing`), so it is **not** in the design.
+
+### 8.3 Partner and place candidates (closed: speakers and admitted Concepts already linked to the source turn)
+
+- **Partner options:**
+  - the conversation's speakers other than the fact's subject (from `SPOKEN_BY`);
+  - every Concept the source turn `MENTIONS` with `ner_label` PERSON / ORG / NORP, other than the subject.
+- **Place options:** every Concept the source turn `MENTIONS` with `ner_label` GPE / LOC / FAC.
+- A picked option writes `HAS_PARTICIPANT` / `HAS_PLACE` to that Concept.
+- **Fallback, only when the model answers 0 or there were no options** (no model): a dependency-parse rule inside the
+  quote's clause. A `with`-object whose head is under `person.n.01` / `social_group.n.01` gives `HAS_PARTICIPANT`; a
+  `to`/`at`/`in` object whose head is under the form-1 place roots gives `HAS_PLACE`. Both point to a per-fact
+  `ObjectPhrase`. Neither counts as shared. Common-noun places are a step-2 input (8.6).
+- **Measured on the flag-off store:**
+  - 67 of 177 event facts have an admitted entity as a partner option, in addition to the other speaker, who is an
+    option on every fact.
+  - **Only 1 of 177 has a place option.** Conv-26's places ("the beach", "the museum", "my mom's house") are not
+    admitted entities, so place will almost always come from the phrase fallback.
+
+### 8.4 A rejection count per rule, logged
+
+Each rule counts every outcome by reason:
+- action: `no_head`, `head_not_in_quote`, `no_event_sense`, `picked_0`, `pick_out_of_range`, `written`;
+- partner and place: `no_options`, `picked_0`, `pick_out_of_range`, `written_concept`, `fallback_phrase`,
+  `fallback_none`;
+- per turn: `call_failed`, `unparseable`.
+
+The counts sum in `ObservationWorkerStats.roles`, and one INFO line `[Roles] counts {...}` goes to the daemon log every
+25 turns and at drain, so a capture's rejection mix can be read from its log. Form 1 kept these counts but never logged
+them.
+
+### 8.5 One definition, and the ceilings
+
+A fact counts only if it has a subject (`HAS_SUBJECT` or `subject_id`); a fact without one is unanchored (P8).
+
+- **anchored:** a subject, and a role edge or a typed value.
+- **shared:** a subject, and a role edge to a Concept.
+
+So shared is a subset of anchored. `observations.role_fill` is changed to match: its shared count now also needs the
+subject. The earlier inversion (shared ceiling above anchored) came from 24 conv-26 facts that have a `HAS_OBJECT`
+Concept but no subject. The ceiling adds every event fact with at least one action sense or an admitted-entity option.
+Measured on the R111 copy (`measure/q809.py`):
+
+| conv-26 (388 facts, 55 without subject) | Today | Ceiling | Ceiling, speakers not counted as entity options |
+|---|---|---|---|
+| Anchored | 136 (35.1%) | 199 (51.3%) | 188 (48.5%) |
+| Shared | 62 (16.0%) | 179 (46.1%) | 161 (41.5%) |
+
+All five conversations: 2,320 facts. Anchored is 36.3% today with a ceiling of 55.0%. Shared is 15.7% today with a
+ceiling of 49.1%.
+
+**Reach on the questions (offline check, RUNS.md `q809check`).** 508 of 809 questions have a gold-turn event fact that
+form 2 could give a shared edge:
+
+| Category | Questions with such a fact |
+|---|---|
+| 1 | 122 of 153 |
+| 2 | 133 of 171 |
+| 3 | 35 of 51 |
+| 4 | 218 of 434 |
+
+With speakers not counted as entity options, the total is 475.
+
+### 8.6 The gate, split
+
+**Mechanism: pass or kill for form 2.** All four must hold:
+
+| | Passes | Killed | Why this line |
+|---|---|---|---|
+| M1. Facts unchanged | flag-on (quote, object_text) pairs equal flag-off, 389 of 389 | any difference | The fact prompt is untouched and s1off repeats R111 exactly, so any difference is a bug in form 2 |
+| M2. Action picks | of the event facts shown action options, 75% or more get `HAS_ACTION` | under 50% | The options come from a word confirmed in the fact's own quote, and form 1's frequency pick was right on 20 of 25, so a fitting option is almost always shown. Under 50% means the model turns down a fitting option on most facts, and the closed call is not working |
+| M3. Senses | of 50 hand-checked actions, 20% or fewer wrong | more than 20% | As before |
+| M4. Replay | conv-26's 152 questions, flag on, within 6 of flag off | a drop of more than 6 | As before |
+
+- **Reported, not gated:** the pick rates for partner and place. A 0 is often right there: the other speaker is shown on
+  every fact, and few facts are done with them.
+- **Sample size:** about 110 conv-26 event facts get action options. At 75%, that is about 80 actions, enough for the 50
+  hand-checked senses.
+
+**Coverage: reported, lines unchanged.**
+
+- Shared: pass 45%, kill 35%. Anchored is reported only.
+- **Note:** under the one definition, conv-26's shared ceiling is 46.1% (41.5% without speakers). 45% needs 98% of it, so
+  shared will most likely land under 45% even if the mechanism works.
+- If shared is under 45%, there is no third form. Bring the gap, split by cause:
+  1. no event sense;
+  2. the place or partner is not an admitted entity, which includes the common-noun places below;
+  3. text by nature (non-event predicates, feelings and states);
+  4. no subject;
+  5. the model picked 0 although options were shown.
+
+**Common-noun places** ("the beach", "the museum", "my mom's house") stay per-fact phrases in this step. They are an input
+to step 2 (places as Concepts, `LOCATED_IN`), and the count of fallback place phrases is reported for it.
+
+### 8.7 Added capture time
+
+- **Estimate, not measured** (no separate run): 127 of conv-26's 419 turns hold an event fact, so at most 127 extra
+  calls. Each has a short prompt (a quote plus about 2 glossed options per role) and a few output tokens per fact, so
+  about 2-4 s per call locally.
+- That is **4-8 minutes on the 56-minute flag-off capture (+7-15%)**. It goes in RUNS.md before the run. The run log
+  will give the measured time.
+
+### 8.8 Code (one PR, after approval)
+
+- **`roles.py`:**
+  - drop the span confirmation and the `propose` path;
+  - add the candidate builders (8.2, 8.3), the closed-call prompt and its parser, the dependency-parse fallback, and the
+    counted rejections (8.4).
+- **`extract.py`:** remove `_ROLE_FIELDS` and `ROLES_MAX_TOKENS`, so the fact prompt is untouched with the flag on. Add
+  the per-turn roles call after the turn's facts are written.
+- **Reused unchanged:** the edges, schema, shapes, the action-Concept rules, and every query except one: `observations.role_fill`'s shared count also needs the subject (8.5).
+- **Tests:**
+  - the extraction messages with the flag on equal the flag-off golden;
+  - candidate sets on hand-written turns;
+  - out-of-range and unparseable answers write nothing;
+  - the fallback runs only after a 0 or when there are no options;
+  - the counts are logged.
+- **In the same PR:** the plan row (the mechanism gate and the coverage lines of 8.6), and `e2e-status.md` (step 1: first form killed
+  2026-11-11, with its numbers).

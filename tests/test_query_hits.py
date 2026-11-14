@@ -19,7 +19,7 @@ from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 from campy.brain.hippocampus.graph.queries import REGISTRY
 from campy.brain.hippocampus.graph.queries.query_hits import question_terms
 from campy.brain.hippocampus.graph.vector_store import mint_uri
-from tests.b564_helpers import NS, Q, World
+from tests.b564_helpers import NS, Q, T0, World
 
 SESSION = "demo-chat-1"
 OTHER_SESSION = "demo-chat-2"
@@ -186,3 +186,34 @@ async def test_facts_aggregates(db, gw):
     assert str(latest["occurred_at"]).startswith("2023-05-09")
     assert (await gw.run("query_hits.facts_exist", sid="c-nora", kids=["k-pet"]))[0]["exists"] is True
     assert (await gw.run("query_hits.facts_exist", sid="c-theo", kids=["c-guitar"]))[0]["exists"] is False
+
+
+# --- step 1: the role reads ------------------------------------------------------------------------
+
+async def add_roles(db, gw, facts):
+    await gw.run("roles.ensure_action_concept", cid="wn:adoption.n.01", text="adoption", now=T0)
+    await gw.run("roles.ensure_action_concept", cid="wn:act.n.02", text="act", now=T0)
+    await kinds.link_broader(gw, "wn:adoption.n.01", "wn:act.n.02")
+    for key in ("biscuit", "mochi", "rex"):
+        await gw.run("roles.link_action", oid=facts[key], cid="wn:adoption.n.01")
+    await World(db, gw).concept("c-studio", "studio")
+    await gw.run("roles.link_place", oid=facts["pottery"], cid="c-studio")
+    await gw.run("roles.link_participant", oid=facts["guitar"], cid="c-ivy")
+
+
+async def role_targets(gw, question, sid):
+    rows = await gw.run("query_hits.role_targets", terms=[t for t, _ in question_terms(question)], sid=sid)
+    return [(r["kid"], r["role"]) for r in rows]
+
+
+async def test_role_targets_are_the_subjects_roles(db, gw):
+    mids, facts = await build(db, gw)
+    await add_roles(db, gw, facts)
+    assert await role_targets(gw, "When was Nora's adoption?", "c-nora") == [("wn:adoption.n.01", "action")]
+    assert await role_targets(gw, "What act did Nora do?", "c-nora") == [("wn:act.n.02", "action")]  # BROADER*
+    assert await role_targets(gw, "Where is Nora's studio?", "c-nora") == [("c-studio", "place")]
+    assert await role_targets(gw, "Did Nora play with Ivy?", "c-nora") == [("c-ivy", "participant")]
+    assert await role_targets(gw, "Where is Theo's studio?", "c-theo") == []      # not one of Theo's facts
+    rows = await gw.run("facts.by_action_kind", sid="c-nora", kid="wn:adoption.n.01")
+    assert [(r["observation_id"], r["evidence_message_id"]) for r in rows] == [
+        (facts["biscuit"], mids["adopt"]), (facts["mochi"], mids["mochi"])]

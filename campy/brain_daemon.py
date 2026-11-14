@@ -143,7 +143,11 @@ from campy.brain.temporal_lobe.loop import step2_gist, step3_schema_org
 from campy.brain.temporal_lobe.loop.orchestrator import run_loop
 from campy.brain.temporal_lobe.loop.tracker_branch import tracker_side_branch_enabled, warn_if_tracker_without_admission
 from campy.brain.hippocampus.observations import observations_enabled
-from campy.brain.temporal_lobe.observations import ObservationWorkerStats, process_turn as process_observation_turn
+from campy.brain.temporal_lobe.observations import (
+    ObservationWorkerStats,
+    log_roles_counts,
+    process_turn as process_observation_turn,
+)
 from campy.brain.thalamus.tools._shared import init_observation_queue
 from campy.brain.brainstem.sweep import run_sweep
 from campy.paths import (
@@ -1156,6 +1160,11 @@ class BrainDaemon:
                 print(f"[Observations] Error processing message {ident}: {e}")
             finally:
                 self._observation_queue.task_done()
+            try:
+                if self._observation_queue.empty():
+                    log_roles_counts(stats)       # B564: drained; logs only when the counts changed
+            except Exception:
+                _logger.debug("[Roles] counts log failed", exc_info=True)   # a log line must never stop the worker
             try:
                 delta = _stats_delta(before, stats)
                 emit_activity("observations", config=self.config, lane="status", status="turn",
