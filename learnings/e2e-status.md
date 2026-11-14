@@ -2,20 +2,16 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-13 (capture-recall diagnosis; waiting list)_
+_Last updated: 2026-11-13 (user rulings: step 3 first, roles option B)_
 
 ## Waiting for the user
 
-1. **Roles:** partner and place alone (A), or with a word-level action kind (B) or a rule-picked sense (C); and
-   whether step 2's own rules are dropped or folded in. The options table is under "Held for the user" below.
-2. **Who a fact may be about, and the predicate set:** "we" and unnamed others ("my kids"), and verbs outside the nine.
+1. **Who a fact may be about, and the predicate set:** "we" and unnamed others ("my kids"), and verbs outside the nine.
    These are the largest capture-recall losses, and they are a contract and prompt change.
-3. **The step 0c ruling:** keep the per-conversation stores as the replay baseline (proposed).
-4. **Order:** whether step 3 (answer from the graph) may run on today's 111 hits before steps 1 and 2. The design is
-   ready (lead's report `2026-11-13-step3-design.md`). A query hit is worth about 0.06 of a correct answer today (the
-   111 hit questions are answered 59% against 53% for the rest), so steps 1 and 2 cannot move the score until step 3
-   exists. Recommendation (review session, 2026-11-13): run step 3 on today's 111 hits first (one replay arm, about 3 h
-   GPU, no capture), then decide the roles with the worth of a hit known.
+2. **The step 0c ruling:** keep the per-conversation stores as the replay baseline (proposed).
+
+Ruled by the user 2026-11-13: step 3 runs first, on today's 111 hits; roles are option B (a word-level action kind,
+with form 2's partner and place roles kept).
 
 - **Step 0 (fix the test): done.** All 809 category 1-4 questions of conv-26/41/48/49/50, replayed on the kept
   stores with the gate's answer model, judge (3 votes) and settings. Working files: `~/campy-lead/scratch/step0/`.
@@ -199,6 +195,8 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Query hits baseline (step Q) | 111 of 809 hits; subject resolved 801; largest miss: object is text (291) | Kept 2026-11-13 (review session, delegated): the measure for steps 1 and 2, with the approved lines above |
 | Closed-choice roles (form 2, PR 411) | query hits +7 net (pass); senses 32% wrong (kill line hit) | Stopped 2026-11-13; held for the user (options A, B, C under step 1) |
 | Kinds and places (step 2, rules a-d) | pre-build check estimates +4 to +13 | Stopped 2026-11-13 before build; held for the user with step 1's roles |
+| Order: step 3 before steps 1 and 2 | a query hit is worth about 0.06 of a correct answer today (59% against 53%) | Ruled by the user 2026-11-13: step 3 runs first on today's 111 hits |
+| Roles (steps 1 and 2) | options A, B, C under step 1 | Ruled by the user 2026-11-13: option B (word-level action kind; partner and place roles kept); step 2 folded into step 1 where it is the same construction |
 | Closed-class Concepts (B565, PR 422) | hits 111 unchanged; miss table restated (216 / 224 / 81) | Kept 2026-11-13 (review session, delegated) |
 | LongMemEval runs R108, R109 | not run | Parked until step 4 |
 | Concept walk (store-wide and anchored, B556-B560) | lowers accuracy on 300 questions; about 2% of its rows hold gold | Parked 2026-11-13: off until step 4, then retested once or deleted |
