@@ -274,6 +274,10 @@ def hypernym_support(child_label: str, parent_keys: set[str], cutoff: float = SE
 ACTION_ROOT = "event.n.01"
 # A light verb names no activity ("went", "made"): the activity is in its object. Never given a sense.
 LIGHT_VERBS = frozenset({"go", "get", "take", "make", "do", "have", "be", "give", "put", "keep", "let", "come"})
+# B564 form 3: aspectual verbs, a closed grammatical class (verbs of beginning, continuing, ending and attempting),
+# taken from English grammar, not from any conversation. Their complement names the activity ("started playing").
+ASPECTUAL_VERBS = frozenset({"begin", "start", "finish", "stop", "quit", "continue", "keep", "try", "resume", "end",
+                             "cease"})
 PERSON_ROOTS = ("person.n.01", "social_group.n.01")
 PLACE_ROOTS = ("location.n.01", "structure.n.01", "geological_formation.n.01", "body_of_water.n.01",
                "vegetation.n.01")
@@ -379,6 +383,19 @@ def has_event_sense(word: str) -> bool:
     try:
         root = wn.synset(ACTION_ROOT)
         return any(_under(s, root) for s in wn.synsets(w, pos="n"))
+    except Exception:
+        return False
+
+
+def is_verb_lemma(phrase: str) -> bool:
+    """B564 form 3: True when WordNet lists `phrase` ("look after") as one verb lemma (a lookup in the lexicon, no
+    sense is chosen). Used only to keep a verb and its preposition together as one action word."""
+    wn = _wn()
+    name = "_".join((phrase or "").lower().split())
+    if wn is None or "_" not in name:
+        return False
+    try:
+        return any(lem.name().lower() == name for syn in wn.synsets(name, pos="v") for lem in syn.lemmas())
     except Exception:
         return False
 

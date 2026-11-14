@@ -192,81 +192,76 @@ def _nlp():
     return T._nlp({})
 
 
-def _opts(quote, obj):
+def _cands(quote, obj):
     counts = R.Counter()
-    f = R.FactIn("o1", quote, "did", obj, "c-sam")
-    return R.action_options_for(_nlp(), f, counts), counts
+    return R.action_candidates(_nlp(), R.FactIn("o1", quote, "did", obj, "c-sam"), counts), counts
+
+
+# --- form 3: candidate words by rule (user ruling 2026-11-14); made-up sentences --------------------------
+
+@needs_wordnet
+def test_plain_root_is_its_own_candidate():
+    assert _cands("Nora adopted a kitten", "adopt a kitten")[0] == ["adoption"]       # verb: event nominalisation
+    assert _cands("Nora ran a charity race", "a charity race")[0] == ["race"]         # noun root with an event sense
 
 
 @needs_wordnet
-def test_light_verb_uses_the_objects_noun():
-    opts, _ = _opts("even went on a hike", "go on a hike")
-    assert opts and opts[0].synset == "hike.n.01"
-    opts, _ = _opts("I took my kids to a pottery workshop", "take my kids to a pottery workshop")
-    assert opts and any("workshop" in o.lemma for o in opts)
+def test_verb_with_particle_is_one_candidate_and_the_bare_verb_is_not_offered():
+    got, c = _cands("Theo signed up for a chess class", "sign up for a chess class")
+    assert got[0] == "sign up" and "sign" not in got and c["action_cand_particle"] == 1
+    assert _cands("we hung out by the river", "hang out")[0] == ["hang out"]
 
 
 @needs_wordnet
-def test_verb_root_gets_nominalisation_options():
-    opts, _ = _opts("I visited my mom`s house", "visit")
-    assert opts[0].synset == "visit.n.01"
+def test_verb_with_preposition_listed_in_wordnet_is_one_candidate():
+    got, c = _cands("Theo looks after his sister", "look after his sister")
+    assert got == ["look after"] and c["action_cand_prep_wordnet"] == 1
 
 
 @needs_wordnet
-def test_head_not_in_the_quote_has_no_options():
-    opts, counts = _opts("I had a great time", "hike")
-    assert opts == [] and counts["action_head_not_in_quote"] == 1
+def test_verb_with_preposition_not_listed_or_after_a_light_verb_is_not_joined():
+    got, c = _cands("Nora walked to the market", "walk to the market")          # "walk to": no WordNet lemma
+    assert got[0] == "walk" and "walk to" not in got and c["action_cand_prep_wordnet"] == 0
+    got, c = _cands("Nora went to a council meeting", "go to a council meeting")
+    assert got == ["meeting"] and c["action_cand_prep_wordnet"] == 0         # WordNet lists "go to"; go is light
 
 
 @needs_wordnet
-def test_no_head_and_no_event_sense_are_counted():
-    opts, counts = _opts("I did it", "it")
-    assert opts == [] and counts["action_no_head"] + counts["action_head_not_in_quote"] == 1
-    opts, counts = _opts("I went biking", "bike")
-    assert opts == [] and counts["action_no_event_sense"] == 1
+def test_aspectual_verb_offers_its_verb_complement():
+    assert _cands("Theo started playing the cello", "start playing the cello")[0] == ["playing"]
+    assert _cands("Nora finished the marathon", "finish")[0] == ["marathon"]     # a bare aspectual verb: from the quote
 
 
 @needs_wordnet
-def test_options_are_capped_at_six_and_pooled_across_heads():
-    opts, _ = _opts("I ran a run and a game", "run a run and a game")
-    assert 0 < len(opts) <= 6
-    assert len({o.synset for o in opts}) == len(opts)
-
-
-# --- option B: the action word, by rule (user ruling 2026-11-13) ----------------------------------
-
-def _word(quote, obj):
-    counts = R.Counter()
-    return R.action_word(_nlp(), R.FactIn("o1", quote, "did", obj, "c-sam"), counts), counts
+def test_light_verb_offers_its_noun_complement():
+    assert _cands("We had a picnic by the lake", "have a picnic")[0] == ["picnic"]
+    assert _cands("Nora went on a hike", "go on a hike")[0] == ["hike"]           # through the preposition's object
 
 
 @needs_wordnet
-def test_action_word_light_verb_takes_its_event_object():
-    assert _word("I went on a hike with Ann", "go on a hike")[0] == "hike"
-    w, c = _word("I took my kids to a dance workshop", "take my kids to a dance workshop")
-    assert w == "workshop" and c["action_second_word_dropped"] == 1       # "kids" names no event; first wins
+def test_a_compound_modifier_is_never_taken():
+    got, c = _cands("Theo went to a chess club", "go to a chess club")
+    assert got == [] and c["action_no_event_word"] == 1          # "club" has no event sense; "chess" is a modifier
 
 
 @needs_wordnet
-def test_action_word_noun_head():
-    assert _word("I ran a charity race last week", "a charity race")[0] == "race"
+def test_a_relative_clause_is_not_followed():
+    got, _c = _cands("we gave a home to dogs who need it", "give a home to dogs who need it")
+    assert "need" not in got
 
 
 @needs_wordnet
-def test_action_word_verb_head_with_and_without_a_nominalisation():
-    assert _word("I adopted a kitten", "adopt a kitten")[0] == "adoption"      # nominalisation with an event sense
-    assert _word("I painted the fence", "paint the fence")[0] == "painting"
-    assert _word("I own a boat", "own a boat")[0] == "own"                       # none: the verb's own lemma
+def test_candidates_must_be_in_the_quote_and_are_capped():
+    got, c = _cands("Theo bought a boat", "a red kite")
+    assert got == [] and c["action_head_not_in_quote"] + c["action_no_event_word"] == 1
+    got, _c = _cands("Theo signed up for a chess class", "sign up for a chess class")
+    assert len(got) <= R.MAX_ACTION_CANDIDATES
 
 
 @needs_wordnet
-def test_no_event_word_writes_nothing_and_is_counted():
-    w, c = _word("I went biking", "bike")
-    assert w is None and c["action_no_event_word"] == 1
-    w, c = _word("I went camping", "go camping somewhere else")
-    assert w == "camping"
-    w, c = _word("I bought a boat", "a red kite")
-    assert w is None and c["action_head_not_in_quote"] == 1
+def test_aspectual_list_is_in_the_lexicon_next_to_the_light_verbs():
+    assert {"start", "finish", "try", "keep"} <= wn_mod.ASPECTUAL_VERBS
+    assert wn_mod.is_verb_lemma("look after") and not wn_mod.is_verb_lemma("walk to") and not wn_mod.is_verb_lemma("look")
 
 
 def test_action_concept_is_one_node_per_word():
@@ -300,19 +295,20 @@ async def _turn(db, gw, world, *, roles, admit=(("c-mel", "Melanie", "PERSON"), 
 
 @needs_wordnet
 async def test_one_call_picks_by_number_and_writes_each_role(db, gw, world):
-    llm, stats, _mid = await _turn(db, gw, world, roles=[{"fact": 1, "with": [1], "place": 1}])
+    llm, stats, _mid = await _turn(db, gw, world, roles=[{"fact": 1, "action": 1, "with": [1], "place": 1}])
     assert len(llm.roles_calls) == 1 and len(llm.extraction_calls) == 1
     msgs, kw = llm.roles_calls[0]
     assert kw == {"max_tokens": R.ROLES_CALL_MAX_TOKENS}
     body = msgs[-1]["content"]
-    assert f'Fact 1: "{QUOTE}"' in body and "action:" not in body and "0 none" in body      # option B: no action pick
+    assert f'Fact 1: "{QUOTE}"' in body and "action: 1 camping   0 none" in body          # form 3: shown with none
     assert "with:" in body and "Ann" in body and "Melanie" in body and "place: 1 Paris" in body
     assert msgs[0]["role"] == "system" and "JSON only" in body
-    assert targets(db, "HAS_ACTION") == {(QUOTE, "action:camping")}                            # the rule's word
+    assert targets(db, "HAS_ACTION") == {(QUOTE, "action:camping")}                            # the picked word
     assert len(targets(db, "HAS_PARTICIPANT")) == 1
     assert targets(db, "HAS_PLACE") == {(QUOTE, "c-paris")}
     c = stats.roles
-    assert c["calls"] == 1 and c["action_written"] == 1 and "action_shown" not in c
+    assert c["calls"] == 1 and c["action_written"] == 1 and c["action_picked"] == 1 and c["action_picked_pos1"] == 1
+    assert c["action_one_candidate"] == 1 and c["action_offered_pos1"] == 1
     assert c["partner_written_concept"] == 1 and c["place_written_concept"] == 1
     ids = {unquote(s) for s, _o in world.edges("BROADER")} | {unquote(o) for _s, o in world.edges("BROADER")}
     assert not any(i.startswith(("action:", "wn:")) for i in ids)                            # no BROADER for actions
@@ -349,20 +345,20 @@ async def test_no_subject_fact_gets_no_options_and_is_counted(db, gw, world):
 
 @needs_wordnet
 async def test_answer_zero_writes_nothing_and_counts(db, gw, world):
-    _l, stats, _m = await _turn(db, gw, world, roles=[{"fact": 1, "with": [], "place": 0}],
+    _l, stats, _m = await _turn(db, gw, world, roles=[{"fact": 1, "action": 0, "with": [], "place": 0}],
                                 text="I went camping with Melanie and it was fun.", admit=(("c-mel", "Melanie", "PERSON"),),
                                 c=claim("I went camping with Melanie", "go camping"))
     c = stats.roles
     assert c["partner_picked_0"] == 1 and c["place_no_options"] == 1
     assert targets(db, "HAS_PARTICIPANT") == set()
-    assert targets(db, "HAS_ACTION") == {("I went camping with Melanie", "action:camping")}   # by rule, not by pick
+    assert targets(db, "HAS_ACTION") == set() and c["action_none"] == 1                     # 0 writes nothing
 
 
 @needs_wordnet
 async def test_out_of_range_wrong_role_and_wrong_type_write_nothing(db, gw, world):
-    for roles in ([{"fact": 1, "with": [7], "place": 5}],                         # not shown
-                  [{"fact": 1, "with": "Melanie", "place": "Paris"}],                  # names
-                  [{"fact": 1, "with": [True], "place": -1}]):
+    for roles in ([{"fact": 1, "action": 4, "with": [7], "place": 5}],             # not shown
+                  [{"fact": 1, "action": "camping", "with": "Melanie", "place": "Paris"}],   # names
+                  [{"fact": 1, "action": [1], "with": [True], "place": -1}]):
         d = OxigraphClient(Path(world.db.path if hasattr(world.db, "path") else ".").parent / f"o{abs(hash(str(roles)))}.db")
         g = GraphGateway(d, REGISTRY)
         w = World(d, g)
@@ -370,8 +366,8 @@ async def test_out_of_range_wrong_role_and_wrong_type_write_nothing(db, gw, worl
         c = stats.roles
         assert c["place_pick_out_of_range"] >= 1 and c["partner_pick_out_of_range"] >= 1
         assert targets(d, "HAS_PARTICIPANT") == set() and targets(d, "HAS_PLACE") == set()
-        assert targets(d, "HAS_ACTION") == {(QUOTE, "action:camping")}       # the rule's word, whatever the reply
-        assert c["action_written"] == 1 and c.get("partner_written_concept", 0) == 0
+        assert targets(d, "HAS_ACTION") == set() and c["action_invalid"] == 1      # no fallback to a rule word
+        assert c.get("action_written", 0) == 0 and c.get("partner_written_concept", 0) == 0
         assert not any(k.endswith("fallback_phrase") for k in c)             # a rejection is not a "no"
 
 
@@ -397,8 +393,9 @@ async def test_non_json_reply_is_unparseable_and_writes_no_pick(db, gw, world):
         g = GraphGateway(d, REGISTRY)
         w = World(d, g)
         _l, stats, _m = await _turn(d, g, w, roles=reply)
-        assert stats.roles["unparseable"] == 1 and stats.roles["action_written"] == 1
-        assert targets(d, "HAS_ACTION") == {(QUOTE, "action:camping")} and targets(d, "HAS_PARTICIPANT") == set()
+        assert stats.roles["unparseable"] == 1 and stats.roles["action_invalid"] == 1
+        assert stats.roles.get("action_written", 0) == 0
+        assert targets(d, "HAS_ACTION") == set() and targets(d, "HAS_PARTICIPANT") == set()
 
 
 @needs_wordnet
@@ -406,7 +403,7 @@ async def test_a_failed_call_is_counted_and_the_fact_stays(db, gw, world):
     _l, stats, _m = await _turn(db, gw, world, roles=RuntimeError("boom"))
     assert stats.roles["call_failed"] == 1 and stats.created == 1
     assert world.count("Observation") == 1 and stats.errors == 0
-    assert targets(db, "HAS_ACTION") == {(QUOTE, "action:camping")}         # the action needs no call
+    assert targets(db, "HAS_ACTION") == set() and stats.roles["action_call_failed"] == 1   # no call, no action
 
 
 # --- the fallback ----------------------------------------------------------------------------------
@@ -557,7 +554,7 @@ async def test_rerun_is_idempotent_first_action_wins_and_action_concepts_have_no
     await seed(world)
     text = "We explored nature and even went on a hike. Then I visited my aunt."
     c = claim("even went on a hike", "go on a hike")
-    pick1 = []
+    pick1 = [{"fact": 1, "action": 1}]
     await extract(db, ON, world, text, LLM(c, roles=pick1))
     first = world.signature()
     mid = "m1"
@@ -578,7 +575,7 @@ async def test_no_vector_or_text_index_row_for_an_action_concept(db, gw, world):
     from campy.brain.hippocampus.graph.vector_store import mint_uri
     await seed(world)
     await extract(db, ON, world, "We explored nature and even went on a hike.",
-                  LLM(claim("even went on a hike", "go on a hike"), roles=[]))
+                  LLM(claim("even went on a hike", "go on a hike"), roles=[{"fact": 1, "action": 1}]))
     vs = db.vector_store
     assert vs.get_vector(mint_uri("Concept", "c-sam")) is not None            # control: ordinary Concepts are indexed
     action_ids = ["action:hike"]
