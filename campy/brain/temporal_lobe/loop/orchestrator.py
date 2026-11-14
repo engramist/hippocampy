@@ -660,6 +660,12 @@ async def _store_concept(entity: dict, step4: dict, vector: list[float],
 
     B12: anomaly_result from check_anomalies is passed to flag anomalous nodes.
     """
+    # B565: a closed-class word (we, it, what, something...) is never a Concept.
+    from campy.brain.temporal_lobe.lexicon.closed_class import is_closed_class
+    if is_closed_class(entity.get("text")):
+        _logger.debug("_store_concept: closed-class word %r refused", entity.get("text"))
+        return None
+
     confidence = step4["confidence"]
     anomaly_type = None
     flagged_for_review = False

@@ -113,7 +113,10 @@ async def admit_parsed(gw: Any, message_id: str, doc: Any, entities: list[dict],
 
 
 async def _concept_for(gw: Any, text: str, embedding_model: str) -> str | None:
-    """The live Concept the existing lookups find for `text`, else a new one."""
+    """The live Concept the existing lookups find for `text`, else a new one; None for a closed-class word (B565)."""
+    from campy.brain.temporal_lobe.lexicon.closed_class import is_closed_class
+    if is_closed_class(text):
+        return None
     for query in ("orchestrator.find_concept_by_exact_text", "orchestrator.find_concept_by_label_text"):
         rows = await gw.run(query, t=text)
         if rows:

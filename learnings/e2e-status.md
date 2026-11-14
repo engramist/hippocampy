@@ -2,7 +2,16 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-12 (plan revised; rulings table added)_
+_Last updated: 2026-11-13 (user rulings: step 3 first, roles option B)_
+
+## Waiting for the user
+
+1. **Who a fact may be about, and the predicate set:** "we" and unnamed others ("my kids"), and verbs outside the nine.
+   These are the largest capture-recall losses, and they are a contract and prompt change.
+2. **The step 0c ruling:** keep the per-conversation stores as the replay baseline (proposed).
+
+Ruled by the user 2026-11-13: step 3 runs first, on today's 111 hits; roles are option B (a word-level action kind,
+with form 2's partner and place roles kept).
 
 - **Step 0 (fix the test): done.** All 809 category 1-4 questions of conv-26/41/48/49/50, replayed on the kept
   stores with the gate's answer model, judge (3 votes) and settings. Working files: `~/campy-lead/scratch/step0/`.
@@ -108,7 +117,69 @@ _Last updated: 2026-11-12 (plan revised; rulings table added)_
 - **Plan revised 2026-11-12:** steps 0c (per-conversation replay stores), 0d (always-missed questions), 0e (predictions in
   CI) and Q (a thin graph query, whose hits become the measure for steps 1 and 2) come before step 1 continues. 0c, 0d
   and Q done; 0e in review (PR 419).
-- Step 2: design in review (it does not depend on the action role). Steps 3-4: not started.
+- **B565 (2026-11-13, PR 422): closed-class words are never Concepts.** On cleaned copies of the five step-0c
+  principled stores, 31 pronoun Concepts were archived. Step Q's table is restated:
+  - hits: 111 (unchanged, none gained or lost);
+  - object is text: 216 (from 291);
+  - question names no object Concept: 224 (from 117);
+  - object not reached: 81 (from 113);
+  - no subject edge 90, no fact on a gold turn 79, subject unresolved 8: unchanged.
+  59 facts are left without a live subject. Follow-up: B566.
+- **Step 2 (kinds and places): stopped 2026-11-13 before build; held for the user with step 1's roles.**
+  - The line was restated and approved 2026-11-13 (review session, delegated), scoped to step 2's own 77 targets: on the
+    809, against 111, pass +31 net, kill under +10.
+  - Pre-build check on the cleaned copies (whether each rule's trigger occurs in the target questions' gold turns):
+
+    | Rule | Targets | What the gold turns hold | Estimated reach |
+    |---|---|---|---|
+    | (a) kind for an untyped object entity | 8 | "another cat named Bailey" (WordNet has no path from cat to pet); "his name is Kyle" (no kind noun) | 0 to 2 |
+    | (b) BROADER between existing kinds | 5 | each names a context word, not the answer's kind; no hypernym exists | about 0 |
+    | (c) LOCATED_IN "X in Y" | 20 | "in Y" in 4 gold turns, X an event or common noun (a show in Tokyo): step 1's HAS_PLACE | 0 to 1 |
+    | (d) head-noun kind for non-event objects | 44 | the head is the named label on 4; a WordNet hypernym on 6 | +4 to +10 |
+
+    Total: **+4 to +13**, against kill under +10 and pass +31.
+- **Held for the user: which roles capture writes (steps 1 and 2 together).** Of the 297 misses left after B565, the
+  questions name:
+  - an event's partner: 113;
+  - an activity: 61;
+  - a kind or place where the gold facts are events only: 46;
+  - something within step 2's own rules: 77.
+
+  | Option | Writes | Questions it can reach | Expected net on 809 | GPU |
+  |---|---|---|---|---|
+  | A: partner and place roles only (form 2 without the action pick) | `HAS_PARTICIPANT`, `HAS_PLACE` | partner 113, event places | about +10 (conv-26 +2, scaled) | five re-captures, about 5 h |
+  | B: A plus a word-level action kind (lemma, no sense), which also types did/plans object phrases | A plus `HAS_ACTION` to a lemma kind | A plus activity 61 and event-only 46 | about +35 to +40 (conv-26 +7 to +8, scaled) | about 5 h |
+  | C: A plus a rule-picked WordNet sense with `BROADER` | A plus `HAS_ACTION` to a sense | the same as B | about +35 (conv-26 about +7, scaled) | about 5 h, plus a 50-sense check |
+  | Step 2's own rules (a-d), with any option | kinds and LOCATED_IN | 77 | +4 to +13 | none beyond the option's |
+
+  Scaling conv-26 to 809 is rough: conv-26 is one conversation of five. For the user to answer in one line: A, B or C,
+  and whether step 2's rules are dropped or folded in.
+- **Capture recall, diagnosed 2026-11-13** (re-run of the extractor on the 57 substantive gold turns with no fact, and
+  60 control turns; it reproduced the original capture):
+
+  | Stage | Gold (57) | Control (60) |
+  |---|---|---|
+  | Called, proposed nothing | 27 (47%) | 41 (68%) |
+  | Proposals all rejected by a rule | 23 (40%) | 17 (28%) |
+  | Reply malformed | 7 (12%) | 2 (3%) |
+  | Not called, or written then archived | 0 | 0 |
+
+  - Of the 27 gold "proposed nothing" turns, 12 are about "we" or third persons, which the prompt leaves out. That is a
+    contract question (waiting list item 2).
+  - The rejections are right by the rules (verbs outside the nine, no object, an ungrounded subject), except "prefer"
+    for "prefers" on 3 turns. That is fixed as B567.
+  - 8 of the 9 malformed replies are cut at the output limit with 7-8 complete facts before the cut. A parser salvage
+    design is in review.
+  - About 140 misses are capture recall: 62 substantive gold turns with no fact, 75 where no fact carries the
+    question's words, and 13 short turns. No roles option touches them.
+- **"you" facts anchored on the other speaker (probe): closed.** 55 facts rewired: hits 111, none gained; 1 of 90
+  moved; 17 of 20 point at the right person, but 12 of 20 are compliments or questions.
+- **What a query hit is worth today (stored step-0c replays):**
+  - the 111 hit questions are answered 65 (59%) by principled and 62 (56%) by main;
+  - the 698 others are answered 53% and 52%.
+  - Hits by category (n / principled / main): cat 1 22/7/8, cat 2 29/15/15, cat 3 4/2/2, cat 4 56/41/37.
+  - So hits barely move the score until step 3 puts the rows in the prompt. 46 hit questions are answered wrong today.
+- Steps 3-4: not started. The step 3 design is ready for the order ruling (waiting list item 4).
 
 ## Rulings
 
@@ -123,6 +194,10 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | One store per conversation (step 0c) | foreign-turn prompts 0 of 809 in both arms; principled 0.534, main 0.527 (+14, +10, inside noise) | Not ruled. Proposed: kept; these stores are the replay baseline and step Q is measured on them |
 | Query hits baseline (step Q) | 111 of 809 hits; subject resolved 801; largest miss: object is text (291) | Kept 2026-11-13 (review session, delegated): the measure for steps 1 and 2, with the approved lines above |
 | Closed-choice roles (form 2, PR 411) | query hits +7 net (pass); senses 32% wrong (kill line hit) | Stopped 2026-11-13; held for the user (options A, B, C under step 1) |
+| Kinds and places (step 2, rules a-d) | pre-build check estimates +4 to +13 | Stopped 2026-11-13 before build; held for the user with step 1's roles |
+| Order: step 3 before steps 1 and 2 | a query hit is worth about 0.06 of a correct answer today (59% against 53%) | Ruled by the user 2026-11-13: step 3 runs first on today's 111 hits |
+| Roles (steps 1 and 2) | options A, B, C under step 1 | Ruled by the user 2026-11-13: option B (word-level action kind; partner and place roles kept); step 2 folded into step 1 where it is the same construction |
+| Closed-class Concepts (B565, PR 422) | hits 111 unchanged; miss table restated (216 / 224 / 81) | Kept 2026-11-13 (review session, delegated) |
 | LongMemEval runs R108, R109 | not run | Parked until step 4 |
 | Concept walk (store-wide and anchored, B556-B560) | lowers accuracy on 300 questions; about 2% of its rows hold gold | Parked 2026-11-13: off until step 4, then retested once or deleted |
 | Graph vote and question analysis | neutral on accuracy; recall up, non-answers down | Kept 2026-11-13 |

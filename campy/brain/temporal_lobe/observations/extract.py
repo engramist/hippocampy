@@ -28,6 +28,7 @@ speaker (Phase 4), the pattern route and batching (design 5a/2; 3b is per turn).
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import re
@@ -175,6 +176,9 @@ class ObservationWorkerStats:
     typed_objects: dict[str, int] = field(default_factory=dict)   # B546: counts of the typed-object rule (flag on)
     roles: dict[str, int] = field(default_factory=dict)           # B564: counts of the roles rule (flag on)
     entity_concepts_created: int = 0   # B504: new Concepts (entity or kind)
+    predicate_normalised: int = 0  # B567: a proposed predicate mapped to the allowed form with the same lemma
+    cut_replies: int = 0         # B568: replies cut before the array closed, with complete facts kept
+    salvaged_items: int = 0      # B568: the complete facts kept from cut replies
     queue_dropped: int = 0       # set by the daemon when the queue is full
     errors: int = 0              # a turn that raised (logged, skipped)
 
@@ -213,6 +217,28 @@ def build_messages(text: str, speaker: str | None, occurred_at: Any, max_chars: 
     return [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]
 
 
+def predicate_lemma_key(predicate: str) -> str:
+    """B567: the lemma key of a predicate: words joined by "_", the first word (the verb) reduced to its lemma with
+    WordNet ("prefers" -> "prefer", "relates to" -> "relate_to", "has_attribute" -> "have_attribute"). Without WordNet
+    the key is the predicate itself, so nothing is mapped."""
+    from campy.brain.temporal_lobe.lexicon import wordnet as wn_lex
+    parts = [w for w in predicate.lower().replace(" ", "_").split("_") if w]
+    if not parts:
+        return ""
+    wn = wn_lex._wn()
+    if wn is not None:
+        parts[0] = wn.morphy(parts[0], "v") or parts[0]
+    return "_".join(parts)
+
+
+@functools.lru_cache(maxsize=1)
+def predicate_by_lemma() -> dict[str, str]:
+    """B567: lemma key -> allowed predicate, derived once from `observations.PREDICATES` (the nine), never a list of
+    seen errors: "prefer" -> "prefers", "plan" -> "plans", "do" -> "did", "relate_to" -> "relates_to". A form whose key
+    matches no allowed predicate ("wrote", "was") is still rejected by the predicate check."""
+    return {predicate_lemma_key(p): p for p in obs.PREDICATES}
+
+
 def parse_observations(raw: str | None) -> list[dict] | None:
     """Parse the model's reply into a list of dicts. None means the reply was
     malformed (not JSON, or not a list of objects); an empty list means "no
@@ -238,6 +264,39 @@ def parse_observations(raw: str | None) -> list[dict] | None:
         if isinstance(data, list):
             return [x for x in data if isinstance(x, dict)] if all(isinstance(x, dict) for x in data) else None
     return None
+
+
+def salvage_cut_reply(raw: str | None) -> list[dict]:
+    """B568: the complete top-level objects of a JSON array that was cut off before it closed (the reply reached the
+    output token limit). Objects are decoded one by one from the opening "[" until one fails; the partial last one is
+    dropped. Returns [] when the reply is not a cut array (no "[", or the array is closed: then it is malformed for
+    another reason, such as a stray quote, and stays rejected) or holds no complete object. Every kept object goes
+    through the same rules as any proposal."""
+    if not raw:
+        return []
+    text = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.IGNORECASE)
+    start = text.find("[")
+    if start < 0 or text.rstrip().rstrip("`").rstrip().endswith("]"):
+        return []
+    decoder = json.JSONDecoder()
+    items: list[dict] = []
+    pos = start + 1
+    while True:
+        nxt = text.find("{", pos)
+        if nxt < 0:
+            break
+        between = text[pos:nxt].strip().strip(",").strip()
+        if between:                      # anything but whitespace and commas between items: not a clean array
+            break
+        try:
+            obj, end = decoder.raw_decode(text, nxt)
+        except ValueError:
+            break
+        if not isinstance(obj, dict):
+            break
+        items.append(obj)
+        pos = end
+    return items
 
 
 def _clean(value: Any) -> str | None:
@@ -437,8 +496,13 @@ async def _extract_turn(
 
     proposals = parse_observations(raw)
     if proposals is None:
-        stats.malformed += 1
-        return 0
+        proposals = salvage_cut_reply(raw)        # B568: a reply cut at the token limit keeps its complete facts
+        if not proposals:
+            stats.malformed += 1
+            return 0
+        stats.cut_replies += 1
+        stats.salvaged_items += len(proposals)
+        _logger.info("[Observations] msg=%s reply cut; salvaged_items=%d", message_id[:8], len(proposals))
     if len(proposals) > MAX_PER_TURN:
         stats.truncated_proposals += len(proposals) - MAX_PER_TURN
         proposals = proposals[:MAX_PER_TURN]
@@ -590,6 +654,11 @@ async def _draft_from_proposal(
 ) -> obs.ObservationDraft | None:
     subject = _clean(p.get("subject"))
     predicate = (_clean(p.get("predicate")) or "").lower()
+    if predicate and predicate not in obs.PREDICATES:
+        allowed = predicate_by_lemma().get(predicate_lemma_key(predicate))
+        if allowed:                  # B567: another form of an allowed predicate ("prefer" for "prefers")
+            predicate = allowed
+            stats.predicate_normalised += 1
     object_text = _render_object(p.get("object"))
     if object_text is None and isinstance(p.get("object"), (dict, list, tuple)):
         stats.rejected["object_unrenderable"] = stats.rejected.get("object_unrenderable", 0) + 1
