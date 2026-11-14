@@ -500,6 +500,10 @@ REIFIER_ANNOTATION_COLUMNS: dict[str, tuple[str, ...]] = {
     "INSTANCE_OF": ("link_source", "link_status", "evidence_set", "steward_reason", "agreed_by"),
     "BROADER": ("link_source", "link_status", "evidence_set", "steward_reason", "agreed_by"),
 }
+# The asserted triple of an annotated edge must stay plain: write_edge refuses properties on it, so the annotation
+# columns can only ever reach a reifier, and every walk keeps reading the asserted triple.
+assert all(EDGE_REIFICATION.get(t) == "plain" for t in REIFIER_ANNOTATION_COLUMNS), \
+    "B570: an edge with reifier annotation columns must be classified plain"
 
 UNCLASSIFIED_ESCALATED_TABLES: dict[str, str] = {
     # --- spec §4.2d: no write call site exists anywhere in the repo
