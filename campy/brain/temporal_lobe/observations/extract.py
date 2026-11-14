@@ -46,6 +46,7 @@ from campy.brain.temporal_lobe.observations.timeparse import normalize_time
 from campy.brain.hippocampus.entity_admission import admit_turn_parsed, names_in  # B544
 from campy.brain.temporal_lobe.observations import evidence_entities as evid  # B554
 from campy.brain.temporal_lobe.observations import roles as roles_mod  # B564
+from campy.brain.temporal_lobe.observations import subjects as subjects_mod  # item 3
 
 _logger = logging.getLogger(__name__)
 
@@ -134,6 +135,14 @@ _ROLE_FIELDS = (
     '- "place": where it happened, exactly as written ("my mom\'s house", "the park"), or null\n'
     '- "confidence": a number from 0 to 1\n')
 ROLES_MAX_TOKENS = 1024     # three more fields per fact, up to MAX_PER_TURN facts
+# Item 3 (flag `[observations] group_subjects`, user ruling 2026-11-14): who a fact may be about. Applied by string
+# replacement, so with the flag off the prompt is byte-identical. The nine predicates and every other rule stay.
+_SUBJECTS_OLD = "Extract the facts the speaker states about themselves or about a named person in this message."
+_SUBJECTS_NEW = ("Extract the facts the speaker states about themselves, about a group they are part of "
+                 '("we", "my sister and I"), or about a person they name or name by relation ("Anna", "my kids") '
+                 "in this message.")
+_SUBJECT_EXAMPLES_OLD = '("I", "my sister", "Caroline")'
+_SUBJECT_EXAMPLES_NEW = '("I", "we", "my kids", "my sister", "Caroline")'
 
 
 @dataclass
@@ -170,6 +179,7 @@ class ObservationWorkerStats:
     kind_alt_labels: int = 0     # B508: altLabels accumulated on kinds
     typed_objects: dict[str, int] = field(default_factory=dict)   # B546: counts of the typed-object rule (flag on)
     roles: dict[str, int] = field(default_factory=dict)           # B564: counts of the roles rule (flag on)
+    subjects: dict[str, int] = field(default_factory=dict)        # item 3: group / relation subjects (flag on)
     entity_concepts_created: int = 0   # B504: new Concepts (entity or kind)
     predicate_normalised: int = 0  # B567: a proposed predicate mapped to the allowed form with the same lemma
     cut_replies: int = 0         # B568: replies cut before the array closed, with complete facts kept
@@ -197,7 +207,8 @@ class ObservationWorkerStats:
 # --- prompt and parsing -----------------------------------------------------------
 
 def build_messages(text: str, speaker: str | None, occurred_at: Any, max_chars: int = 600,
-                   *, entities: bool = False, cardinality: bool = False, roles: bool = False) -> list[dict]:
+                   *, entities: bool = False, cardinality: bool = False, roles: bool = False,
+                   group_subjects: bool = False) -> list[dict]:
     """The chat messages for one turn. The speaker and the turn's date go in so
     "I"/"my" attach to the speaker and relative time can be kept as written."""
     body = " ".join((text or "").split())[:max_chars]
@@ -208,6 +219,9 @@ def build_messages(text: str, speaker: str | None, occurred_at: Any, max_chars: 
         template = template.replace('- "confidence": a number from 0 to 1\n', _ATTRIBUTE_FIELD, 1)
     if roles:
         template = template.replace('- "confidence": a number from 0 to 1\n', _ROLE_FIELDS, 1)
+    if group_subjects:
+        template = template.replace(_SUBJECTS_OLD, _SUBJECTS_NEW, 1).replace(_SUBJECT_EXAMPLES_OLD,
+                                                                            _SUBJECT_EXAMPLES_NEW, 1)
     prompt = template.format(
         speaker=(speaker or "unknown"), date=date, text=body.replace('"""', "'''"),
     )
@@ -472,8 +486,10 @@ async def _extract_turn(
     owl_on = obs.owl_properties_enabled(config)
     roles_on = obs.object_roles_enabled(config)
     capture_roles_on = obs.capture_roles_enabled(config)      # B564
+    group_on = obs.group_subjects_enabled(config)             # item 3
     messages = build_messages(text, speaker, occurred_at, int(cfg.get("max_turn_chars", 600)),
-                              entities=entities_on, cardinality=owl_on, roles=capture_roles_on)
+                              entities=entities_on, cardinality=owl_on, roles=capture_roles_on,
+                              group_subjects=group_on)
 
     # B544 (flag `[loop] entity_admission`): the turn's named entities are Concepts before any
     # claim is linked to Concepts by its words, whichever of this worker and run_loop ran first.
@@ -522,7 +538,8 @@ async def _extract_turn(
     writes = obs.WriteStats()
     role_facts: list[roles_mod.FactIn] = []       # B564: the facts whose roles are confirmed once the turn is written
     for p in proposals:
-        draft = await _draft_from_proposal(gw, p, message_id, text, speaker, named, speaker_id, occurred_at, stats)
+        draft = await _draft_from_proposal(gw, p, message_id, text, speaker, named, speaker_id, occurred_at, stats,
+                                           group_subjects=group_on)
         if draft is None:
             writes.record(obs.WriteResult("rejected", None, "malformed_proposal"))
             continue
@@ -550,6 +567,15 @@ async def _extract_turn(
         result = await obs.record_observation(
             db, draft, config=config, supersede=obs.observations_supersede_enabled(config))
         writes.record(result)
+        if draft.anchor is not None and result.ok and result.observation_id:
+            try:          # item 3: a group subject is marked, and its named partners linked
+                linked = await subjects_mod.after_write(gw, result.observation_id, draft.anchor, message_id=message_id,
+                                                        speaker_id=speaker_id, speaker=speaker,
+                                                        quote=draft.evidence_text)
+                if linked:
+                    stats.subjects["group_partners_linked"] = stats.subjects.get("group_partners_linked", 0) + linked
+            except Exception:
+                _logger.warning("[Subjects] failed msg=%s", message_id[:8], exc_info=True)
         if proposed_entity and result.ok and result.observation_id:
             # B504: the validated entity (and kind) become Concepts before B503 links by text,
             # so the linker's index already holds them
@@ -646,6 +672,7 @@ async def _extract_turn(
 async def _draft_from_proposal(
     gw: Any, p: dict, message_id: str, text: str, speaker: str | None,
     named: bool, speaker_id: str | None, occurred_at: Any, stats: ObservationWorkerStats,
+    *, group_subjects: bool = False,
 ) -> obs.ObservationDraft | None:
     subject = _clean(p.get("subject"))
     predicate = (_clean(p.get("predicate")) or "").lower()
@@ -661,6 +688,9 @@ async def _draft_from_proposal(
     if not (subject and predicate and object_text and quote):
         return None
 
+    anchor = None
+    if group_subjects and named and speaker_id:
+        anchor = subjects_mod.classify(subject, quote)       # item 3: "we" and people named by relation
     first_person = subject.lower() in _FIRST_PERSON
     if not first_person and named and subject.lower() == speaker.strip().lower() \
             and subject.lower() not in quote.lower() and obs._FIRST_PERSON_RE.search(quote):
@@ -674,6 +704,13 @@ async def _draft_from_proposal(
             display_subject, subject_id = speaker.strip(), speaker_id
         else:
             subject = display_subject = obs._UNKNOWN_SPEAKER_SUBJECT
+    elif anchor is not None and anchor.kind == "group":
+        subject_id = speaker_id                               # the speaker, as one of the group (flagged after write)
+        stats.subjects["group"] = stats.subjects.get("group", 0) + 1
+    elif anchor is not None and anchor.kind == "relation":
+        lemma, phrase = anchor.relation
+        subject_id = await subjects_mod.ensure_relation(gw, speaker_id, speaker, lemma, phrase)
+        stats.subjects["relation"] = stats.subjects.get("relation", 0) + 1
     else:
         subject_id = await find_existing_concept(gw, subject)
     if subject_id:
@@ -716,6 +753,7 @@ async def _draft_from_proposal(
         time_precision=resolved.precision if resolved else None,
         speaker=speaker if named else None,
         observed_at=observed_at,
+        anchor=anchor,
     )
     # Searchable sentence names the speaker, not "I".
     shown = obs.ObservationDraft(**{**draft.__dict__, "subject_text": display_subject})

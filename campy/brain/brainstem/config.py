@@ -198,6 +198,10 @@ _DEFAULT_CONFIG = {
         # 2026-11-10 plan passes its gate): the extraction form gains "action", "with" and "place"; a rule confirms each
         # span in the turn and writes HAS_ACTION (a WordNet action Concept), HAS_PARTICIPANT and HAS_PLACE. No backfill.
         "roles": False,
+        # Item 3 of the 2026-11-10 plan (user ruling 2026-11-14; default OFF; env CAMPY_OBSERVATION_GROUP_SUBJECTS=1; in no
+        # profile): the extraction prompt also asks for facts about "we" and people named by relation ("my kids"); a rule
+        # anchors "we" on the speaker (group_subject) and "my kids" on a relation Concept RELATION_OF the speaker.
+        "group_subjects": False,
         "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
         # B538 (default ON; env CAMPY_TURN_DATES=0 turns it off): every user turn's relative time
         # expressions ("yesterday", "last week") are resolved by rule against the turn's date at
@@ -370,6 +374,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_EVIDENCE_ENTITY_LINKS": ("observations", "evidence_entity_links", _parse_bool),
     # B564: the action / with / place roles of a fact (default off; not in a profile yet).
     "CAMPY_OBSERVATION_ROLES": ("observations", "roles", _parse_bool),
+    # Item 3: "we" and people named by relation as subjects (default off; in no profile).
+    "CAMPY_OBSERVATION_GROUP_SUBJECTS": ("observations", "group_subjects", _parse_bool),
     # B538: relative dates in user turns resolved by rule at capture and shown inline (default on).
     "CAMPY_TURN_DATES": ("observations", "turn_dates", _parse_bool),
     # B499: rule-based supersession of attribute Observations (default off).

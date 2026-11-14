@@ -23,6 +23,7 @@
 @prefix owl:   <http://www.w3.org/2002/07/owl#> .
 @prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
 
 campy:KindScheme a skos:ConceptScheme ;
     skos:prefLabel "Campy kinds" ;
@@ -108,6 +109,14 @@ campy:HAS_PLACE a owl:ObjectProperty, owl:FunctionalProperty ;
 campy:HAS_PARTICIPANT a owl:ObjectProperty ;
     rdfs:domain campy:Observation ;
     rdfs:comment "Who the subject did it with (a Concept or a nameless ObjectPhrase); any number." .
+
+campy:RELATION_OF a owl:ObjectProperty, owl:FunctionalProperty ;
+    rdfs:domain campy:Concept ; rdfs:range campy:Concept ;
+    rdfs:comment "A person named by relation (\"my kids\") -> the speaker whose relation it is; at most one." .
+
+campy:group_subject a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:domain campy:Observation ; rdfs:range xsd:boolean ;
+    rdfs:comment "True when the subject is the speaker as one of a group (\"we\"), not the speaker alone." .
 
 campy:DEPRECATED_BY a owl:ObjectProperty ;
     rdfs:domain campy:Observation ; rdfs:range campy:Observation ;

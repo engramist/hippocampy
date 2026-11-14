@@ -167,6 +167,11 @@ campy:ObservationShape a sh:NodeShape ;
         sh:path campy:HAS_PARTICIPANT ; sh:name "HAS_PARTICIPANT" ;
         sh:or ( [ sh:class campy:Concept ] [ sh:class campy:ObjectPhrase ] ) ;
     ] ;
+    # Item 3: the subject is the speaker as one of a group ("we"); a single boolean.
+    sh:property [
+        sh:path campy:group_subject ; sh:name "group_subject" ;
+        sh:maxCount 1 ; sh:datatype xsd:boolean ;
+    ] ;
     # B509: an attribute Observation states a value of at most one attribute property.
     sh:property [
         sh:path campy:HAS_PROPERTY ; sh:name "HAS_PROPERTY" ;
@@ -283,6 +288,15 @@ campy:ConceptShape a sh:NodeShape ;
         sh:maxCount 1 ; sh:datatype xsd:boolean ;
     ] ;
     sh:property [ sh:path campy:CO_OCCURS_WITH ; sh:class campy:Concept ] ;
+    # Item 3: a person named by relation belongs to at most one speaker.
+    sh:property [
+        sh:path campy:RELATION_OF ; sh:name "RELATION_OF" ;
+        sh:maxCount 1 ; sh:class campy:Concept ;
+    ] ;
+    sh:property [
+        sh:path campy:relation_label ; sh:name "relation_label" ;
+        sh:maxCount 1 ; sh:datatype xsd:string ;
+    ] ;
     sh:property [ sh:path campy:HAS_ALT_LABEL ; sh:class campy:Label ] ;
     sh:property [ sh:path campy:HAS_PREF_LABEL ; sh:class campy:Label ] .
 
