@@ -2,11 +2,16 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-14 (user rulings: step 3 option C, action word form 3, subjects option A, step 0c kept)_
+_Last updated: 2026-11-14 (step 1 form 3: pass at the edge; the next step is with the user)_
 
 ## Waiting for the user
 
-Nothing is waiting on the user. Ruled 2026-11-14 (the decisions page, `~/campy-lead/reports/2026-11-14-decisions-for-the-user.md`):
+1. **Step 1 after form 3 (2026-11-14):** the word line passed at its edge (10 of 50), and partner links fell from 140
+   to 100 when the action line joined the partner/place call. The links lost were the other speaker named as a partner
+   without a joint activity, plus junk names. How step 1 goes forward is with the user; no capture runs meanwhile.
+   The facts are in `~/campy-lead/reports/2026-11-14-step1-form3-result.md` and `...-form3-followup.md`.
+
+Earlier rulings, 2026-11-14 (the decisions page, `~/campy-lead/reports/2026-11-14-decisions-for-the-user.md`):
 1. **Step 3:** option C. The flag stays off. The section as built is re-measured after the capture work and one full
    re-capture; there is no new fire rule.
 2. **The action word:** one new form (form 3). A rule proposes candidate words from the fact's own text, and a closed
@@ -54,8 +59,32 @@ with form 2's partner and place roles kept).
   - `scripts/drift_report.py`: "watch: score flat while code landed" (28 commits in 7 days, 4 with a gate result).
 - **Step 0b (fact contract): done.** `docs/fact-contract.md`, approved 2026-11-10: keep the 9 predicates and add action,
   with and place roles; text objects allowed but flagged; action kinds from an independent source.
-- **Step 1 (capture writes the roles): option B stopped 2026-11-14 on the action-word line; held for the
-  user.** Flag `[observations] roles`, default off. Design: `learnings/step1-capture-roles.md`.
+- **Step 1 (capture writes the roles): form 3 passed its lines 2026-11-14 (the word line at its edge); the next step is
+  with the user.** Flag `[observations] roles`, default off. Design: `learnings/step1-capture-roles.md`.
+  - **Form 3 (candidate words by rule, closed choice with "none" in the partner/place call; branch
+    `claude/step1-form3`, run s1onF3; the last form).**
+
+    | Line | Result | |
+    |---|---|---|
+    | query hits on conv-26 against 14: pass +5, kill under +2 | 28 (+14 net; 14 gained, 0 lost) | pass |
+    | facts 389 of 389 | identical to s1off | pass |
+    | action facts with a candidate that get HAS_ACTION: kill under 50% | 104-105 of 109 (96%) | pass |
+    | 50 written action words, hand-checked (sample drawn before the hits): at most 20% wrong | 10 of 50 (20%) | pass at the edge (±2 items on borderline readings; ruled a pass, the line not moved) |
+    | replay of the 152, flag on against flag off: within 6 | running | |
+
+    - The rule's new candidates fix the phrasal verbs (look after, hang out, look into, sign up) and the aspectual
+      complement (started playing -> playing). Option B's 17 wrong words: right 5, none 0, no candidate 4, still
+      wrong 8.
+    - The choice barely filters: "none" on 3 of 109 facts; the first candidate taken in 102 of 105 picks. Writing the
+      first candidate without a choice would change 7 words: the sample would read 11 of 50, and hits would be 27.
+    - What is left wrong: the complement of a light verb (have a good time, have fun, had a blast, make a difference,
+      start a chapter) and nouns that name a thing or place. The complement rule holds 5 of the 10 sampled wrong
+      words; no single existing check separates them.
+    - Partners: 140 links under option B, 100 under form 3. With the action line in the same call, the model answers
+      "none" for the partner far more often. By their quotes, none of the 58 lost links is a real co-participant:
+      54 name the other speaker, 4 are junk names. Form 3's actions with option B's partners give 29 hits (the one
+      extra is a partner-carried hit).
+    - Calls per turn are unchanged (114). Capture time was 67 min against 56.
   - **Option B (word-level action kind by rule, partner and place by closed choice; PR 411 draft, run s1onB):
     kill line hit 2026-11-14.** conv-26 capture on the pinned tree (f2133c58, the s1off capture code), measured on a copy.
 
@@ -275,6 +304,7 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Action word decision | option B 34% wrong | Ruled by the user 2026-11-14: form 3 (candidates by rule, closed choice with "none"); the last form, after which the action role is dropped if its line is hit |
 | Who a fact may be about | 12 of 27 no-proposal gold turns about "we" or third persons | Ruled by the user 2026-11-14: option A ("we" and people named by relation); the nine predicates stay |
 | One store per conversation (step 0c), ruling | as above | Ruled by the user 2026-11-14: kept; the per-conversation stores are the replay baseline |
+| Roles, form 3 (candidates by rule, closed choice; branch claude/step1-form3) | conv-26 query hits 14 to 28 (+14); action words 10 of 50 wrong | Pass at the edge 2026-11-14 (review session; the line not moved); partner links fell 140 to 100; next step with the user |
 | LongMemEval runs R108, R109 | not run | Parked until step 4 |
 | Concept walk (store-wide and anchored, B556-B560) | lowers accuracy on 300 questions; about 2% of its rows hold gold | Parked 2026-11-13: off until step 4, then retested once or deleted |
 | Graph vote and question analysis | neutral on accuracy; recall up, non-answers down | Kept 2026-11-13 |
