@@ -172,6 +172,8 @@ class ObservationWorkerStats:
     roles: dict[str, int] = field(default_factory=dict)           # B564: counts of the roles rule (flag on)
     entity_concepts_created: int = 0   # B504: new Concepts (entity or kind)
     predicate_normalised: int = 0  # B567: a proposed predicate mapped to the allowed form with the same lemma
+    cut_replies: int = 0         # B568: replies cut before the array closed, with complete facts kept
+    salvaged_items: int = 0      # B568: the complete facts kept from cut replies
     queue_dropped: int = 0       # set by the daemon when the queue is full
     errors: int = 0              # a turn that raised (logged, skipped)
 
@@ -259,6 +261,39 @@ def parse_observations(raw: str | None) -> list[dict] | None:
         if isinstance(data, list):
             return [x for x in data if isinstance(x, dict)] if all(isinstance(x, dict) for x in data) else None
     return None
+
+
+def salvage_cut_reply(raw: str | None) -> list[dict]:
+    """B568: the complete top-level objects of a JSON array that was cut off before it closed (the reply reached the
+    output token limit). Objects are decoded one by one from the opening "[" until one fails; the partial last one is
+    dropped. Returns [] when the reply is not a cut array (no "[", or the array is closed: then it is malformed for
+    another reason, such as a stray quote, and stays rejected) or holds no complete object. Every kept object goes
+    through the same rules as any proposal."""
+    if not raw:
+        return []
+    text = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.IGNORECASE)
+    start = text.find("[")
+    if start < 0 or text.rstrip().rstrip("`").rstrip().endswith("]"):
+        return []
+    decoder = json.JSONDecoder()
+    items: list[dict] = []
+    pos = start + 1
+    while True:
+        nxt = text.find("{", pos)
+        if nxt < 0:
+            break
+        between = text[pos:nxt].strip().strip(",").strip()
+        if between:                      # anything but whitespace and commas between items: not a clean array
+            break
+        try:
+            obj, end = decoder.raw_decode(text, nxt)
+        except ValueError:
+            break
+        if not isinstance(obj, dict):
+            break
+        items.append(obj)
+        pos = end
+    return items
 
 
 def _clean(value: Any) -> str | None:
@@ -459,8 +494,13 @@ async def _extract_turn(
 
     proposals = parse_observations(raw)
     if proposals is None:
-        stats.malformed += 1
-        return 0
+        proposals = salvage_cut_reply(raw)        # B568: a reply cut at the token limit keeps its complete facts
+        if not proposals:
+            stats.malformed += 1
+            return 0
+        stats.cut_replies += 1
+        stats.salvaged_items += len(proposals)
+        _logger.info("[Observations] msg=%s reply cut; salvaged_items=%d", message_id[:8], len(proposals))
     if len(proposals) > MAX_PER_TURN:
         stats.truncated_proposals += len(proposals) - MAX_PER_TURN
         proposals = proposals[:MAX_PER_TURN]
