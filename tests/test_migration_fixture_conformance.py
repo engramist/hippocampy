@@ -101,7 +101,7 @@ def test_exhaustive_migration_fixture_file_conformance():
             item = json.loads(line)
             if item.get("_type") == "node":
                 node_rows.append(item)
-            elif item.get("_type") == "rel":
+            elif item.get("_type") in ("rel", "reifier"):     # B570: steward reifier rows sit with the edges
                 rel_rows.append(item)
 
     verify_conformance(node_schemas, rel_schemas, node_rows, rel_rows)

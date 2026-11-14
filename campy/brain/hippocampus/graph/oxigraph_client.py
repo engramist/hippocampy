@@ -493,6 +493,14 @@ EDGE_REIFICATION: dict[str, EdgeReification] = {
 # spec §4.2c and moved into EDGE_REIFICATION as "star"; see that dict.)
 # ---------------------------------------------------------------------------
 
+# B570: columns in a rel table's DDL that are NOT properties of the edge. They are annotations on the vocabulary
+# steward's reifier nodes (`?r rdf:reifies <<( a P b )>>`, queries/steward.py; kinds.link_broader_sourced for BROADER's
+# link_source), written by SPARQL, never by write_edge. The asserted triple stays plain, which is what every walk reads.
+REIFIER_ANNOTATION_COLUMNS: dict[str, tuple[str, ...]] = {
+    "INSTANCE_OF": ("link_source", "link_status", "evidence_set", "steward_reason", "agreed_by"),
+    "BROADER": ("link_source", "link_status", "evidence_set", "steward_reason", "agreed_by"),
+}
+
 UNCLASSIFIED_ESCALATED_TABLES: dict[str, str] = {
     # --- spec §4.2d: no write call site exists anywhere in the repo
     # (grepped campy/, web/, benchmarks/, tests/ for the literal table name
