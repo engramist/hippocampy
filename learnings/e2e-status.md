@@ -2,7 +2,17 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-12 (plan revised; rulings table added)_
+_Last updated: 2026-11-13 (capture-recall diagnosis; waiting list)_
+
+## Waiting for the user
+
+1. **Roles:** partner and place alone (A), or with a word-level action kind (B) or a rule-picked sense (C); and
+   whether step 2's own rules are dropped or folded in. The options table is under "Held for the user" below.
+2. **Who a fact may be about, and the predicate set:** "we" and unnamed others ("my kids"), and verbs outside the nine.
+   These are the largest capture-recall losses, and they are a contract and prompt change.
+3. **The step 0c ruling:** keep the per-conversation stores as the replay baseline (proposed).
+4. **Order:** whether step 3 (answer from the graph) may run on today's 111 hits before steps 1 and 2. The design is
+   ready (lead's report `2026-11-13-step3-design.md`).
 
 - **Step 0 (fix the test): done.** All 809 category 1-4 questions of conv-26/41/48/49/50, replayed on the kept
   stores with the gate's answer model, judge (3 votes) and settings. Working files: `~/campy-lead/scratch/step0/`.
@@ -145,7 +155,32 @@ _Last updated: 2026-11-12 (plan revised; rulings table added)_
 
   Scaling conv-26 to 809 is rough: conv-26 is one conversation of five. For the user to answer in one line: A, B or C,
   and whether step 2's rules are dropped or folded in.
-- Steps 3-4: not started.
+- **Capture recall, diagnosed 2026-11-13** (re-run of the extractor on the 57 substantive gold turns with no fact, and
+  60 control turns; it reproduced the original capture):
+
+  | Stage | Gold (57) | Control (60) |
+  |---|---|---|
+  | Called, proposed nothing | 27 (47%) | 41 (68%) |
+  | Proposals all rejected by a rule | 23 (40%) | 17 (28%) |
+  | Reply malformed | 7 (12%) | 2 (3%) |
+  | Not called, or written then archived | 0 | 0 |
+
+  - Of the 27 gold "proposed nothing" turns, 12 are about "we" or third persons, which the prompt leaves out. That is a
+    contract question (waiting list item 2).
+  - The rejections are right by the rules (verbs outside the nine, no object, an ungrounded subject), except "prefer"
+    for "prefers" on 3 turns. That is fixed as B567.
+  - 8 of the 9 malformed replies are cut at the output limit with 7-8 complete facts before the cut. A parser salvage
+    design is in review.
+  - About 140 misses are capture recall: 62 substantive gold turns with no fact, 75 where no fact carries the
+    question's words, and 13 short turns. No roles option touches them.
+- **"you" facts anchored on the other speaker (probe): closed.** 55 facts rewired: hits 111, none gained; 1 of 90
+  moved; 17 of 20 point at the right person, but 12 of 20 are compliments or questions.
+- **What a query hit is worth today (stored step-0c replays):**
+  - the 111 hit questions are answered 65 (59%) by principled and 62 (56%) by main;
+  - the 698 others are answered 53% and 52%.
+  - Hits by category (n / principled / main): cat 1 22/7/8, cat 2 29/15/15, cat 3 4/2/2, cat 4 56/41/37.
+  - So hits barely move the score until step 3 puts the rows in the prompt. 46 hit questions are answered wrong today.
+- Steps 3-4: not started. The step 3 design is ready for the order ruling (waiting list item 4).
 
 ## Rulings
 
