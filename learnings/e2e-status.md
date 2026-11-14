@@ -2,20 +2,22 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-14 (step 3 and step 1 option B: kill lines hit; held for the user)_
+_Last updated: 2026-11-14 (user rulings: step 3 option C, action word form 3, subjects option A, step 0c kept)_
 
 ## Waiting for the user
 
-In the order the review session set; the numbers and options are in `~/campy-lead/reports/2026-11-14-decisions-for-the-user.md`.
+Nothing is waiting on the user. Ruled 2026-11-14 (the decisions page, `~/campy-lead/reports/2026-11-14-decisions-for-the-user.md`):
+1. **Step 3:** option C. The flag stays off. The section as built is re-measured after the capture work and one full
+   re-capture; there is no new fire rule.
+2. **The action word:** one new form (form 3). A rule proposes candidate words from the fact's own text, and a closed
+   choice picks one or "none". This is the last form: if its word line is hit, the action role is dropped and partner
+   and place go forward alone.
+3. **Who a fact may be about:** option A only. "we" and people named by relation ("my kids") may be subjects; the
+   nine predicates stay.
+4. **Step 0c:** kept. The per-conversation stores are the replay baseline.
 
-1. **Step 3, after its kill line (2026-11-14):** the graph facts section helps when its rows hold the gold turn
-   (+13 against main on 111) and hurts when it fires without one (-25 on 302). When it should fire is a new design.
-2. **The action word, after option B's kill line (2026-11-14):** the rule-chosen word lifts conv-26 hits 14 to 27,
-   but 17 of 50 words misname what happened (phrasal verbs, aspectual or light verbs, the noun chosen). A form that
-   handles those is a new design.
-3. **Who a fact may be about, and the predicate set:** "we" and unnamed others ("my kids"), and verbs outside the nine.
-   These are the largest capture-recall losses, and they are a contract and prompt change.
-4. **The step 0c ruling:** keep the per-conversation stores as the replay baseline (proposed).
+Order: form 3, then the subjects change, then one full re-capture of the five conversations, then step 3
+re-measured, then step 4. One GPU job at a time.
 
 Ruled by the user 2026-11-13: step 3 runs first, on today's 111 hits; roles are option B (a word-level action kind,
 with form 2's partner and place roles kept).
@@ -269,6 +271,10 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Closed-class Concepts (B565, PR 422) | hits 111 unchanged; miss table restated (216 / 224 / 81) | Kept 2026-11-13 (review session, delegated) |
 | Graph facts section (step 3, PR 428) | fired on 413; gold among rows 75 vs main 62 of 111 (+13); no gold row 129 vs 154 of 302 (-25); overall 418 vs 432 and 426 | Kill line hit 2026-11-14; flag off; held for the user |
 | Roles, option B (word-level action kind, PR 411) | query hits 14 to 27 (+13 net, pass); action words 34% wrong (kill line hit) | Stopped 2026-11-14; held for the user |
+| Step 3 decision | the decisions page, 2026-11-14 | Ruled by the user 2026-11-14: option C, flag off; re-measured as built after the capture work and one full re-capture; no new fire rule |
+| Action word decision | option B 34% wrong | Ruled by the user 2026-11-14: form 3 (candidates by rule, closed choice with "none"); the last form, after which the action role is dropped if its line is hit |
+| Who a fact may be about | 12 of 27 no-proposal gold turns about "we" or third persons | Ruled by the user 2026-11-14: option A ("we" and people named by relation); the nine predicates stay |
+| One store per conversation (step 0c), ruling | as above | Ruled by the user 2026-11-14: kept; the per-conversation stores are the replay baseline |
 | LongMemEval runs R108, R109 | not run | Parked until step 4 |
 | Concept walk (store-wide and anchored, B556-B560) | lowers accuracy on 300 questions; about 2% of its rows hold gold | Parked 2026-11-13: off until step 4, then retested once or deleted |
 | Graph vote and question analysis | neutral on accuracy; recall up, non-answers down | Kept 2026-11-13 |
