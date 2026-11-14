@@ -41,6 +41,7 @@ from campy.brain.hippocampus import kinds as kinds_mod
 from campy.brain.hippocampus import observations as obs
 from campy.brain.hippocampus.concept_links import concept_index, norm_key
 from campy.brain.hippocampus.graph import embeddings as emb
+from campy.brain.temporal_lobe.lexicon.closed_class import is_closed_class
 
 _logger = logging.getLogger(__name__)
 
@@ -126,7 +127,7 @@ async def _concept_for(gw: Any, name: str, index: dict[str, list[str]], stats: A
                        embedding_model: str) -> str | None:
     """A live Concept for `name` (same normalised key), or a new one."""
     key = norm_key(name)
-    if not key:
+    if not key or is_closed_class(name):   # B565: a closed-class word is never a Concept
         return None
     ids = index.get(key)
     if ids:
