@@ -14,6 +14,8 @@ Reads:
                                      label (the `_in_sessions` form keeps to the given Sessions)
   query_hits.objects                 the other Concepts named by a term (label or altLabel), not action kinds, that a
   query_hits.objects_in_sessions     turn MENTIONS or a fact's object reaches by INSTANCE_OF / BROADER*
+  query_hits.relation_subject        a person named by relation of the subject ("Nora's kids"): the relation
+                                     Concepts RELATION_OF the subject whose relation_label is a question term
   query_hits.facts                   the subject's live facts whose HAS_OBJECT is K, an instance of K, or narrower,
                                      each with its EVIDENCED_BY turn and date (oldest first), its predicate, quote,
                                      time phrase and the object's kinds (step 3 renders these)
@@ -173,6 +175,25 @@ QUERY_HIT_QUERIES = [
         mutating=False,
         description="query_hits.objects kept to the turns SENT_IN the given Session IRIs",
         sparql=_objects_sparql(scoped=True),
+    ),
+    NamedQuery(
+        name="query_hits.relation_subject",
+        cypher=("MATCH (r:Concept)-[:RELATION_OF]->(s:Concept {concept_id: $sid}) WHERE r.relation_label IN $terms "
+                "RETURN r.concept_id AS rid, r.relation_label AS label"),
+        params=("terms", "sid"),
+        mutating=False,
+        description=("The relation Concepts of the subject (RELATION_OF it) whose relation_label is one of the "
+                     "question's terms: 'Nora's kids' reads the kids' own facts. Never another speaker's relation"),
+        sparql="""
+            SELECT DISTINCT ?rid ?label WHERE {
+              VALUES ?term { }
+              ?s a campy:Concept ; campy:concept_id ?sid .
+              ?r campy:RELATION_OF ?s ; campy:relation_label ?term ; campy:concept_id ?rid .
+              FILTER NOT EXISTS { ?r campy:archived true }
+              BIND(?term AS ?label)
+            }
+            ORDER BY ?rid
+            """,
     ),
     NamedQuery(
         name="query_hits.facts",

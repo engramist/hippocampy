@@ -1531,6 +1531,9 @@ REL_TABLES = [
     "CREATE REL TABLE IF NOT EXISTS HAS_ACTION (FROM Observation TO Concept)",
     "CREATE REL TABLE IF NOT EXISTS HAS_PARTICIPANT (FROM Observation TO Concept, FROM Observation TO ObjectPhrase)",
     "CREATE REL TABLE IF NOT EXISTS HAS_PLACE (FROM Observation TO Concept, FROM Observation TO ObjectPhrase)",
+    # Item 3 (flag [observations] group_subjects): a person named by relation ("my kids") is a Concept owned by the
+    # speaker, RELATION_OF the speaker's Concept (at most one). Plain edge.
+    "CREATE REL TABLE IF NOT EXISTS RELATION_OF (FROM Concept TO Concept)",
     # B503: graph linking (flag CAMPY_GRAPH_LINKING). MENTIONS: a user Message
     # names a Concept (rule match, never a model). IS_A: Concept -> category
     # Concept, written only from an is_a Observation whose subject and object
@@ -1944,7 +1947,9 @@ SCHEMA_MIGRATIONS: list[tuple[str, str, str]] = [
     ("Concept",         "archived", "BOOLEAN"),
     ("Concept",         "kind_scheme", "STRING"),     # B508: 'kind' puts the Concept in campy:KindScheme
     ("Concept",         "ner_label", "STRING"),       # B544: the NER label that admitted the Concept as a named entity
-    ("Concept",         "entity_standing", "STRING"), # B549: confirmed | doubtful | unverified, derived by rule from independent signals
+    ("Concept",         "entity_standing", "STRING"),
+    ("Concept",         "relation_label", "STRING"),  # item 3: the head lemma of a person named by relation ("kid")
+    ("Observation",     "group_subject", "BOOLEAN"),  # item 3: the subject is the speaker as one of a group ("we") # B549: confirmed | doubtful | unverified, derived by rule from independent signals
     ("Observation",     "attr_value", "STRING"),     # B509
     ("Observation",     "attr_value_kind", "STRING"),     # B509
     ("Observation",     "attr_value_num", "DOUBLE"),     # B509
