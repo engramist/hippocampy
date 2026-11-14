@@ -24,7 +24,7 @@ Retrieval and answer-stage levers, prompt layout, cap tuning, replay ablations, 
 
 ## Steps
 
-Each step is one PR, designed and reviewed against `skills/campy-graph/SKILL.md` before code. Order since 2026-11-12: 0c, 0d, Q, then 1, 2, 3, 4. Step 0e can run alongside.
+Each step is one PR, designed and reviewed against `skills/campy-graph/SKILL.md` before code. Order since 2026-11-13 (ruled by the user): 0c, 0d, Q done; then 3 on today's query hits, then 1 (roles option B), then 2 folded into 1 where it is the same construction, then 3 re-measured, then 4. Step 0e is done.
 
 | # | Step | Measure | Passes when | Killed when |
 |---|---|---|---|---|
