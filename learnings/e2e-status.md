@@ -6,9 +6,10 @@ _Last updated: 2026-11-14 (step 1 form 3: pass at the edge; the next step is wit
 
 ## Waiting for the user
 
-1. **Step 1 after form 3 (2026-11-14):** the word line passed at its edge (10 of 50), and partner links fell from 140
-   to 100 when the action line joined the partner/place call. The links lost were the other speaker named as a partner
-   without a joint activity, plus junk names. How step 1 goes forward is with the user; no capture runs meanwhile.
+1. **Step 1 after form 3 (2026-11-14):** form 3's action word stands (the word line passed at its edge, 10 of 50).
+   The partner role as built is wrong in 29 of 30 hand-checked links. It is not written in any further capture until
+   the user rules. The review session recommends dropping the model-chosen partner, so that a co-participant edge is
+   written only by item 3's rule (a person the quote names in a "we" fact). The full re-capture waits for this.
    The facts are in `~/campy-lead/reports/2026-11-14-step1-form3-result.md` and `...-form3-followup.md`.
 
 Earlier rulings, 2026-11-14 (the decisions page, `~/campy-lead/reports/2026-11-14-decisions-for-the-user.md`):
@@ -80,10 +81,19 @@ with form 2's partner and place roles kept).
     - What is left wrong: the complement of a light verb (have a good time, have fun, had a blast, make a difference,
       start a chapter) and nouns that name a thing or place. The complement rule holds 5 of the 10 sampled wrong
       words; no single existing check separates them.
-    - Partners: 140 links under option B, 100 under form 3. With the action line in the same call, the model answers
+    - Partners: 138 links under option B, 100 under form 3. With the action line in the same call, the model answers
       "none" for the partner far more often. By their quotes, none of the 58 lost links is a real co-participant:
-      54 name the other speaker, 4 are junk names. Form 3's actions with option B's partners give 29 hits (the one
-      extra is a partner-carried hit).
+      54 name the other speaker with no support in the quote, 4 are junk names.
+    - **Partner hand-check (2026-11-14, not pre-registered, not gated): 29 of 30 random form 3 partner links are not
+      a co-participant by the quote.** 73 of the 100 links name one of the two conversation speakers; most of the rest
+      are a modifier ("an LGBTQ art show") or a junk name. Without any partner edge the hits are 26 (form 3: 28). The
+      two that go (q0, q39) rested on "LGBTQ" as a modifier, not on a co-participant.
+    - Only 4 of 170 event quotes on conv-26 name a co-participant ("with the kids" ×2, "with the gang", "with my
+      dad"), and none by a name.
+    - Places: 10 written, all by the parse fallback; 9 are where the fact happened by the quote, and 1 is right by the
+      turn but not named in the quote.
+    - Known weakness, not acted on: the complement rule (the word after a light or aspectual verb) holds 5 of the 10
+      sampled wrong words.
     - Calls per turn are unchanged (114). Capture time was 67 min against 56.
   - **Option B (word-level action kind by rule, partner and place by closed choice; PR 411 draft, run s1onB):
     kill line hit 2026-11-14.** conv-26 capture on the pinned tree (f2133c58, the s1off capture code), measured on a copy.
@@ -305,6 +315,7 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Who a fact may be about | 12 of 27 no-proposal gold turns about "we" or third persons | Ruled by the user 2026-11-14: option A ("we" and people named by relation); the nine predicates stay |
 | One store per conversation (step 0c), ruling | as above | Ruled by the user 2026-11-14: kept; the per-conversation stores are the replay baseline |
 | Roles, form 3 (candidates by rule, closed choice; branch claude/step1-form3) | conv-26 query hits 14 to 28 (+14); action words 10 of 50 wrong | Pass at the edge 2026-11-14 (review session; the line not moved); partner links fell 140 to 100; next step with the user |
+| Partner by closed choice (forms 2, B, 3) | counts passed; option B's 138 links include 54 to the other speaker with no support in the quote; form 3 hand-check 29 of 30 wrong | Hand-check 2026-11-14; not to be written as built; held for the user. Roles are hand-checked like the action word from now on (a gated line of at most 20% wrong at the full re-capture) |
 | LongMemEval runs R108, R109 | not run | Parked until step 4 |
 | Concept walk (store-wide and anchored, B556-B560) | lowers accuracy on 300 questions; about 2% of its rows hold gold | Parked 2026-11-13: off until step 4, then retested once or deleted |
 | Graph vote and question analysis | neutral on accuracy; recall up, non-answers down | Kept 2026-11-13 |
