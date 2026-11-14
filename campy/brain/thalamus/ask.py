@@ -100,6 +100,10 @@ _SECTION_DESCRIPTIONS: dict[str, str] = {
               "each stamped with its date — later dates supersede earlier ones",
     "graph_count": "the count of the user's recorded ownership claims of the asked kind, from a graph query; "
                    "objects of unknown kind are listed separately; each item cites its turn",
+    "graph_facts": "computed from the memory graph: the asked person's recorded facts about what the question names, "
+                   "one per line as [fact] person · relation · object (kind) · when · said <date of the turn> · "
+                   "\"the words it came from\"; a [computed: ...] line, when present, is the count, list, latest or "
+                   "yes/no worked out from those rows",
     "assistant_said": "what the assistant (you) said earlier on this, oldest first — your own past words, quoted to answer a question about them; they are not facts the user stated",
     "graph": "graph relationships connecting the entities above",
     "tabular": "structured tabular data",
