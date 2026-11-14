@@ -10,7 +10,7 @@ _Last updated: 2026-11-14 (step 3 kill line hit; held for the user)_
    These are the largest capture-recall losses, and they are a contract and prompt change.
 2. **The step 0c ruling:** keep the per-conversation stores as the replay baseline (proposed).
 3. **Step 3, after its kill line (2026-11-14):** the graph facts section helps when its rows hold the gold turn
-   (+12 against main on 106) and hurts when it fires without one (-24 on 307). When it should fire is a new design;
+   (+13 against main on 111) and hurts when it fires without one (-25 on 302). When it should fire is a new design;
    the facts for that decision are in `~/campy-lead/reports/`.
 
 Ruled by the user 2026-11-13: step 3 runs first, on today's 111 hits; roles are option B (a word-level action kind,
@@ -183,7 +183,7 @@ with form 2's partner and place roles kept).
   - Hits by category (n / principled / main): cat 1 22/7/8, cat 2 29/15/15, cat 3 4/2/2, cat 4 56/41/37.
   - So hits barely move the score until step 3 puts the rows in the prompt. 46 hit questions are answered wrong today.
   - Corrected by step 3 (2026-11-14): with the rows in the prompt, a question whose gold turn is among the rows goes
-    from 58 to 70 of 106 against main.
+    from 62 to 75 of 111 against main (the step-Q hits; all 111 have a gold turn among their rows).
 - **Step 3 (graph facts section, PR 428, flag `CAMPY_GRAPH_FACTS`): kill line hit 2026-11-14; flag off.** Replay of
   the 809 on the B565-cleaned per-conversation stores, against the stored principled flag-off arm and main.
   It fired on 413 questions, not the predicted 100-115: the prediction counted hits (a gold turn among at most 25 rows),
@@ -192,13 +192,16 @@ with form 2's partner and place roles kept).
 
   | | n | step 3 | principled | main | step 3 - main | non-answers (step 3 / principled / main) |
   |---|---|---|---|---|---|---|
-  | fired, gold turn among the rows | 106 | 70 | 62 | 58 | +12 | 10 / 19 / 26 |
-  | fired, no gold row | 307 | 134 | 156 | 158 | -24 | 94 / 70 / 69 |
+  | fired, gold turn among the rows | 111 | 75 | 65 | 62 | +13 | 7 / 18 / 24 |
+  | fired, no gold row | 302 | 129 | 153 | 154 | -25 | 97 / 71 / 71 |
   | not fired | 396 | 214 | 214 | 210 | +4 | 72 / 72 / 73 |
   | all | 809 | 418 | 432 | 426 | -8 | |
 
-  - Without the 34 test-fault ids: gold among the rows 68 of 100 against main 56; no gold row 134 of 297 against 158.
-  - On the no-gold-row questions, 35 are lost against principled and 13 gained; 25 of the 35 losses are non-answers.
+  - Gold among the rows is read from the rows' EVIDENCED_BY turns (the live queries re-run on the same store copies).
+  - Without the 34 test-fault ids: gold among the rows 73 of 105 against main 60; no gold row 129 of 292 against 154.
+  - On the no-gold-row questions, 36 are lost against principled and 12 gained; 26 of the 36 losses are non-answers.
+    In 29 of the 36 the gold turn is elsewhere in the same prompt (the instruction to answer only from the lines is
+    the existing answer prompt, B475, in every arm).
   - Not fired: 0 changed against principled, so the cleaned stores do not confound the result.
 
   | Shape (fired) | n | step 3 | principled | main | step 3 - main | test faults |
@@ -236,7 +239,7 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Order: step 3 before steps 1 and 2 | a query hit is worth about 0.06 of a correct answer today (59% against 53%) | Ruled by the user 2026-11-13: step 3 runs first on today's 111 hits |
 | Roles (steps 1 and 2) | options A, B, C under step 1 | Ruled by the user 2026-11-13: option B (word-level action kind; partner and place roles kept); step 2 folded into step 1 where it is the same construction |
 | Closed-class Concepts (B565, PR 422) | hits 111 unchanged; miss table restated (216 / 224 / 81) | Kept 2026-11-13 (review session, delegated) |
-| Graph facts section (step 3, PR 428) | fired on 413; gold among rows 70 vs main 58 of 106 (+12); no gold row 134 vs 158 of 307 (-24); overall 418 vs 432 and 426 | Kill line hit 2026-11-14; flag off; held for the user |
+| Graph facts section (step 3, PR 428) | fired on 413; gold among rows 75 vs main 62 of 111 (+13); no gold row 129 vs 154 of 302 (-25); overall 418 vs 432 and 426 | Kill line hit 2026-11-14; flag off; held for the user |
 | LongMemEval runs R108, R109 | not run | Parked until step 4 |
 | Concept walk (store-wide and anchored, B556-B560) | lowers accuracy on 300 questions; about 2% of its rows hold gold | Parked 2026-11-13: off until step 4, then retested once or deleted |
 | Graph vote and question analysis | neutral on accuracy; recall up, non-answers down | Kept 2026-11-13 |
