@@ -8,7 +8,6 @@ subject, and how many facts are left without a live subject.
 """
 import argparse
 import asyncio
-import os
 import sys
 from pathlib import Path
 
