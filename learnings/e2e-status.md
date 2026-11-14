@@ -108,7 +108,44 @@ _Last updated: 2026-11-12 (plan revised; rulings table added)_
 - **Plan revised 2026-11-12:** steps 0c (per-conversation replay stores), 0d (always-missed questions), 0e (predictions in
   CI) and Q (a thin graph query, whose hits become the measure for steps 1 and 2) come before step 1 continues. 0c, 0d
   and Q done; 0e in review (PR 419).
-- Step 2: design in review (it does not depend on the action role). Steps 3-4: not started.
+- **B565 (2026-11-13, PR 422): closed-class words are never Concepts.** On cleaned copies of the five step-0c
+  principled stores, 31 pronoun Concepts were archived. Step Q's table is restated:
+  - hits: 111 (unchanged, none gained or lost);
+  - object is text: 216 (from 291);
+  - question names no object Concept: 224 (from 117);
+  - object not reached: 81 (from 113);
+  - no subject edge 90, no fact on a gold turn 79, subject unresolved 8: unchanged.
+  59 facts are left without a live subject. Follow-up: B566.
+- **Step 2 (kinds and places): stopped 2026-11-13 before build; held for the user with step 1's roles.**
+  - The line was restated and approved 2026-11-13 (review session, delegated), scoped to step 2's own 77 targets: on the
+    809, against 111, pass +31 net, kill under +10.
+  - Pre-build check on the cleaned copies (whether each rule's trigger occurs in the target questions' gold turns):
+
+    | Rule | Targets | What the gold turns hold | Estimated reach |
+    |---|---|---|---|
+    | (a) kind for an untyped object entity | 8 | "another cat named Bailey" (WordNet has no path from cat to pet); "his name is Kyle" (no kind noun) | 0 to 2 |
+    | (b) BROADER between existing kinds | 5 | each names a context word, not the answer's kind; no hypernym exists | about 0 |
+    | (c) LOCATED_IN "X in Y" | 20 | "in Y" in 4 gold turns, X an event or common noun (a show in Tokyo): step 1's HAS_PLACE | 0 to 1 |
+    | (d) head-noun kind for non-event objects | 44 | the head is the named label on 4; a WordNet hypernym on 6 | +4 to +10 |
+
+    Total: **+4 to +13**, against kill under +10 and pass +31.
+- **Held for the user: which roles capture writes (steps 1 and 2 together).** Of the 297 misses left after B565, the
+  questions name:
+  - an event's partner: 113;
+  - an activity: 61;
+  - a kind or place where the gold facts are events only: 46;
+  - something within step 2's own rules: 77.
+
+  | Option | Writes | Questions it can reach | Expected net on 809 | GPU |
+  |---|---|---|---|---|
+  | A: partner and place roles only (form 2 without the action pick) | `HAS_PARTICIPANT`, `HAS_PLACE` | partner 113, event places | about +10 (conv-26 +2, scaled) | five re-captures, about 5 h |
+  | B: A plus a word-level action kind (lemma, no sense), which also types did/plans object phrases | A plus `HAS_ACTION` to a lemma kind | A plus activity 61 and event-only 46 | about +35 to +40 (conv-26 +7 to +8, scaled) | about 5 h |
+  | C: A plus a rule-picked WordNet sense with `BROADER` | A plus `HAS_ACTION` to a sense | the same as B | about +35 (conv-26 about +7, scaled) | about 5 h, plus a 50-sense check |
+  | Step 2's own rules (a-d), with any option | kinds and LOCATED_IN | 77 | +4 to +13 | none beyond the option's |
+
+  Scaling conv-26 to 809 is rough: conv-26 is one conversation of five. For the user to answer in one line: A, B or C,
+  and whether step 2's rules are dropped or folded in.
+- Steps 3-4: not started.
 
 ## Rulings
 
@@ -123,6 +160,8 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | One store per conversation (step 0c) | foreign-turn prompts 0 of 809 in both arms; principled 0.534, main 0.527 (+14, +10, inside noise) | Not ruled. Proposed: kept; these stores are the replay baseline and step Q is measured on them |
 | Query hits baseline (step Q) | 111 of 809 hits; subject resolved 801; largest miss: object is text (291) | Kept 2026-11-13 (review session, delegated): the measure for steps 1 and 2, with the approved lines above |
 | Closed-choice roles (form 2, PR 411) | query hits +7 net (pass); senses 32% wrong (kill line hit) | Stopped 2026-11-13; held for the user (options A, B, C under step 1) |
+| Kinds and places (step 2, rules a-d) | pre-build check estimates +4 to +13 | Stopped 2026-11-13 before build; held for the user with step 1's roles |
+| Closed-class Concepts (B565, PR 422) | hits 111 unchanged; miss table restated (216 / 224 / 81) | Kept 2026-11-13 (review session, delegated) |
 | LongMemEval runs R108, R109 | not run | Parked until step 4 |
 | Concept walk (store-wide and anchored, B556-B560) | lowers accuracy on 300 questions; about 2% of its rows hold gold | Parked 2026-11-13: off until step 4, then retested once or deleted |
 | Graph vote and question analysis | neutral on accuracy; recall up, non-answers down | Kept 2026-11-13 |
