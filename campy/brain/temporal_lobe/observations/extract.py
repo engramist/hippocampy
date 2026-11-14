@@ -28,6 +28,7 @@ speaker (Phase 4), the pattern route and batching (design 5a/2; 3b is per turn).
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import re
@@ -170,6 +171,7 @@ class ObservationWorkerStats:
     typed_objects: dict[str, int] = field(default_factory=dict)   # B546: counts of the typed-object rule (flag on)
     roles: dict[str, int] = field(default_factory=dict)           # B564: counts of the roles rule (flag on)
     entity_concepts_created: int = 0   # B504: new Concepts (entity or kind)
+    predicate_normalised: int = 0  # B567: a proposed predicate mapped to the allowed form with the same lemma
     queue_dropped: int = 0       # set by the daemon when the queue is full
     errors: int = 0              # a turn that raised (logged, skipped)
 
@@ -208,6 +210,28 @@ def build_messages(text: str, speaker: str | None, occurred_at: Any, max_chars: 
         speaker=(speaker or "unknown"), date=date, text=body.replace('"""', "'''"),
     )
     return [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]
+
+
+def predicate_lemma_key(predicate: str) -> str:
+    """B567: the lemma key of a predicate: words joined by "_", the first word (the verb) reduced to its lemma with
+    WordNet ("prefers" -> "prefer", "relates to" -> "relate_to", "has_attribute" -> "have_attribute"). Without WordNet
+    the key is the predicate itself, so nothing is mapped."""
+    from campy.brain.temporal_lobe.lexicon import wordnet as wn_lex
+    parts = [w for w in predicate.lower().replace(" ", "_").split("_") if w]
+    if not parts:
+        return ""
+    wn = wn_lex._wn()
+    if wn is not None:
+        parts[0] = wn.morphy(parts[0], "v") or parts[0]
+    return "_".join(parts)
+
+
+@functools.lru_cache(maxsize=1)
+def predicate_by_lemma() -> dict[str, str]:
+    """B567: lemma key -> allowed predicate, derived once from `observations.PREDICATES` (the nine), never a list of
+    seen errors: "prefer" -> "prefers", "plan" -> "plans", "do" -> "did", "relate_to" -> "relates_to". A form whose key
+    matches no allowed predicate ("wrote", "was") is still rejected by the predicate check."""
+    return {predicate_lemma_key(p): p for p in obs.PREDICATES}
 
 
 def parse_observations(raw: str | None) -> list[dict] | None:
@@ -585,6 +609,11 @@ async def _draft_from_proposal(
 ) -> obs.ObservationDraft | None:
     subject = _clean(p.get("subject"))
     predicate = (_clean(p.get("predicate")) or "").lower()
+    if predicate and predicate not in obs.PREDICATES:
+        allowed = predicate_by_lemma().get(predicate_lemma_key(predicate))
+        if allowed:                  # B567: another form of an allowed predicate ("prefer" for "prefers")
+            predicate = allowed
+            stats.predicate_normalised += 1
     object_text = _render_object(p.get("object"))
     if object_text is None and isinstance(p.get("object"), (dict, list, tuple)):
         stats.rejected["object_unrenderable"] = stats.rejected.get("object_unrenderable", 0) + 1
