@@ -50,6 +50,7 @@ from campy.brain.hippocampus.graph.queries.properties import PROPERTY_QUERIES
 from campy.brain.hippocampus.graph.queries.turn_mentions import TURN_MENTION_QUERIES
 from campy.brain.hippocampus.graph.queries.question_analysis import QUESTION_ANALYSIS_QUERIES
 from campy.brain.hippocampus.graph.queries.query_hits import QUERY_HIT_QUERIES
+from campy.brain.hippocampus.graph.queries.subjects import SUBJECT_QUERIES
 from campy.brain.hippocampus.graph.queries.entity_hygiene import ENTITY_HYGIENE_QUERIES
 
 REGISTRY = QueryRegistry()
@@ -89,6 +90,7 @@ REGISTRY.register_all(PROPERTY_QUERIES)
 REGISTRY.register_all(TURN_MENTION_QUERIES)
 REGISTRY.register_all(QUESTION_ANALYSIS_QUERIES)
 REGISTRY.register_all(QUERY_HIT_QUERIES)
+REGISTRY.register_all(SUBJECT_QUERIES)
 REGISTRY.register_all(ENTITY_HYGIENE_QUERIES)
 
 # B454: re-attach sqlite-vec/FTS indexing for sparql= node-creates (they bypass

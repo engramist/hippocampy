@@ -147,6 +147,13 @@ def capture_roles_enabled(config: dict | None) -> bool:
     return bool(((config or {}).get("observations") or {}).get("roles", False))
 
 
+def group_subjects_enabled(config: dict | None) -> bool:
+    """`[observations] group_subjects` (default FALSE; env `CAMPY_OBSERVATION_GROUP_SUBJECTS=1` turns it on) (item 3,
+    user ruling 2026-11-14): the extraction prompt also asks for facts about "we" and people named by relation, and a
+    rule anchors them (temporal_lobe/observations/subjects.py). Off: prompt and writes are exactly as before."""
+    return bool(((config or {}).get("observations") or {}).get("group_subjects", False))
+
+
 def typed_objects_enabled(config: dict | None) -> bool:
     """`[observations] typed_objects` (default FALSE; env `CAMPY_TYPED_OBJECTS=1` turns it on) (B546): the
     object of a fact is linked (HAS_OBJECT) to an existing entity Concept or to an ObjectPhrase node and typed
@@ -206,6 +213,7 @@ class ObservationDraft:
     attr_cardinality: str | None = None  # B509: the extractor's advice, "one" | "many"; a candidate, never decides
     attr_name: str | None = None         # B511: the extractor's structured attribute, set only after
     attr_value: str | None = None        #       attribute_names.validate_structured passed
+    anchor: Any = None                   # item 3: subjects.Anchor of a group or relation subject; not part of the claim
 
 
 @dataclass(frozen=True)

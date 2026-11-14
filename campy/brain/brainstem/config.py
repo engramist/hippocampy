@@ -32,6 +32,10 @@ _DEFAULT_CONFIG = {
         # X have") adds a `graph_count` bundle section computed by a subject-anchored graph query (needs the
         # B522 object_roles and B523 ownership_rule edges). Gate pending.
         "graph_count": False,
+        # Step 3 of the e2e plan (default OFF; env CAMPY_GRAPH_FACTS=1 turns it on; in no profile until gated): the
+        # subject-anchored query_hits.* rows enter the bundle as a `graph_facts` section in the fact contract's
+        # fixed-shape lines, shaped by the question analysis. When on, the graph_count section is not built.
+        "graph_facts": False,
         # B547 (default OFF; env CAMPY_QUESTION_ANALYSIS=1 turns it on; on under profile "principled"): the
         # question is analysed once (shape, subject, kind, the Concepts it names) at the top of the bundle
         # compile and the stages read that instead of parsing it themselves. Gate: with the profile (B545).
@@ -194,6 +198,10 @@ _DEFAULT_CONFIG = {
         # 2026-11-10 plan passes its gate): the extraction form gains "action", "with" and "place"; a rule confirms each
         # span in the turn and writes HAS_ACTION (a WordNet action Concept), HAS_PARTICIPANT and HAS_PLACE. No backfill.
         "roles": False,
+        # Item 3 of the 2026-11-10 plan (user ruling 2026-11-14; default OFF; env CAMPY_OBSERVATION_GROUP_SUBJECTS=1; in no
+        # profile): the extraction prompt also asks for facts about "we" and people named by relation ("my kids"); a rule
+        # anchors "we" on the speaker (group_subject) and "my kids" on a relation Concept RELATION_OF the speaker.
+        "group_subjects": False,
         "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
         # B538 (default ON; env CAMPY_TURN_DATES=0 turns it off): every user turn's relative time
         # expressions ("yesterday", "last week") are resolved by rule against the turn's date at
@@ -330,6 +338,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_GRAPH_LINKING_LIMIT": ("retrieval", "graph_linking_limit", _parse_nonneg_int),
     # B524: count/list questions answered by a subject-anchored graph query (bundle section).
     "CAMPY_GRAPH_COUNT": ("retrieval", "graph_count", _parse_bool),
+    # Step 3: the query_hits rows as a fixed-shape bundle section (replaces graph_count when on).
+    "CAMPY_GRAPH_FACTS": ("retrieval", "graph_facts", _parse_bool),
     # B547: the question is analysed once; stages read the analysis (bundle section `reads`, `bundle.analysis`).
     "CAMPY_QUESTION_ANALYSIS": ("retrieval", "question_analysis", _parse_bool),
     # B548: the graph votes in conversation seed selection (needs question_analysis).
@@ -364,6 +374,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_EVIDENCE_ENTITY_LINKS": ("observations", "evidence_entity_links", _parse_bool),
     # B564: the action / with / place roles of a fact (default off; not in a profile yet).
     "CAMPY_OBSERVATION_ROLES": ("observations", "roles", _parse_bool),
+    # Item 3: "we" and people named by relation as subjects (default off; in no profile).
+    "CAMPY_OBSERVATION_GROUP_SUBJECTS": ("observations", "group_subjects", _parse_bool),
     # B538: relative dates in user turns resolved by rule at capture and shown inline (default on).
     "CAMPY_TURN_DATES": ("observations", "turn_dates", _parse_bool),
     # B499: rule-based supersession of attribute Observations (default off).

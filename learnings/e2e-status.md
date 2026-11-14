@@ -2,13 +2,22 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-13 (user rulings: step 3 first, roles option B)_
+_Last updated: 2026-11-14 (user rulings: step 3 option C, action word form 3, subjects option A, step 0c kept)_
 
 ## Waiting for the user
 
-1. **Who a fact may be about, and the predicate set:** "we" and unnamed others ("my kids"), and verbs outside the nine.
-   These are the largest capture-recall losses, and they are a contract and prompt change.
-2. **The step 0c ruling:** keep the per-conversation stores as the replay baseline (proposed).
+Nothing is waiting on the user. Ruled 2026-11-14 (the decisions page, `~/campy-lead/reports/2026-11-14-decisions-for-the-user.md`):
+1. **Step 3:** option C. The flag stays off. The section as built is re-measured after the capture work and one full
+   re-capture; there is no new fire rule.
+2. **The action word:** one new form (form 3). A rule proposes candidate words from the fact's own text, and a closed
+   choice picks one or "none". This is the last form: if its word line is hit, the action role is dropped and partner
+   and place go forward alone.
+3. **Who a fact may be about:** option A only. "we" and people named by relation ("my kids") may be subjects; the
+   nine predicates stay.
+4. **Step 0c:** kept. The per-conversation stores are the replay baseline.
+
+Order: form 3, then the subjects change, then one full re-capture of the five conversations, then step 3
+re-measured, then step 4. One GPU job at a time.
 
 Ruled by the user 2026-11-13: step 3 runs first, on today's 111 hits; roles are option B (a word-level action kind,
 with form 2's partner and place roles kept).
@@ -45,8 +54,32 @@ with form 2's partner and place roles kept).
   - `scripts/drift_report.py`: "watch: score flat while code landed" (28 commits in 7 days, 4 with a gate result).
 - **Step 0b (fact contract): done.** `docs/fact-contract.md`, approved 2026-11-10: keep the 9 predicates and add action,
   with and place roles; text objects allowed but flagged; action kinds from an independent source.
-- **Step 1 (capture writes the roles): stopped 2026-11-13 on the sense line; the contract question is held for the
+- **Step 1 (capture writes the roles): option B stopped 2026-11-14 on the action-word line; held for the
   user.** Flag `[observations] roles`, default off. Design: `learnings/step1-capture-roles.md`.
+  - **Option B (word-level action kind by rule, partner and place by closed choice; PR 411 draft, run s1onB):
+    kill line hit 2026-11-14.** conv-26 capture on the pinned tree (f2133c58, the s1off capture code), measured on a copy.
+
+    | Line | Result | |
+    |---|---|---|
+    | query hits on conv-26 against 14: pass +5, kill under +2 | 27 (+13 net; 13 gained, 0 lost) | pass |
+    | facts equal s1off | 389 of 389, identical (predicate, object, quote) | pass |
+    | did/plans facts with HAS_ACTION: kill under 50% | 109 of 177 (62%) | pass |
+    | 50 action words, hand-checked (sample drawn before the hits): at most 20% wrong | 17 wrong (34%); 13 (26%) counting four borderline as right | **kill** |
+    | replay of the 152, flag on against flag off | not run: the step stopped | |
+
+    - The 17 wrong words: a phrasal verb cut to its head 4 (look after, hang out, look into, sign up); an aspectual or
+      light verb kept for the activity 8 (start, finish, try, had a blast, a good time, a great time, me-time, make it
+      happen); a noun or the wrong verb chosen 5 (make some art, a support group, kids who need it, let them know, up
+      for the challenge).
+    - Gains by role: action 10, partner 2, both 1, place 0. Three gains rest on a word that is wrong or not an action
+      (support, sign, class); without them +10. 2 of the 17 wrong and 2 of the 33 right sample words sit on a fact
+      behind a gain.
+    - Of the 10 action gains, 8 come through a word that is the fact's head noun or main verb with no light, aspectual
+      or phrasal construction (lost: sign up, had a picnic); 7 if "class" (in "made it in pottery class") is also
+      counted as not an action.
+    - Outcomes: written 110; no head 12; head not in quote 10; no event word 23; second word dropped 8; no subject 24.
+      77 action Concepts, 22 shared by two or more facts; 6 action labels equal a non-action Concept's label
+      (adoption, event, painting, support, work, workshop).
   - **First form (free spans in the fact prompt, PR 410): killed 2026-11-11.** Anchored 47.3% and shared 34.2%, both
     under their kill lines; only 168 of 389 facts matched flag-off.
   - **Second form (a closed choice in a separate call, PR 411, draft): measured 2026-11-13 on conv-26** (store s1on2,
@@ -179,7 +212,45 @@ with form 2's partner and place roles kept).
   - the 698 others are answered 53% and 52%.
   - Hits by category (n / principled / main): cat 1 22/7/8, cat 2 29/15/15, cat 3 4/2/2, cat 4 56/41/37.
   - So hits barely move the score until step 3 puts the rows in the prompt. 46 hit questions are answered wrong today.
-- Steps 3-4: not started. The step 3 design is ready for the order ruling (waiting list item 4).
+  - Corrected by step 3 (2026-11-14): with the rows in the prompt, a question whose gold turn is among the rows goes
+    from 62 to 75 of 111 against main (the step-Q hits; all 111 have a gold turn among their rows).
+- **Step 3 (graph facts section, PR 428, flag `CAMPY_GRAPH_FACTS`): kill line hit 2026-11-14; flag off.** Replay of
+  the 809 on the B565-cleaned per-conversation stores, against the stored principled flag-off arm and main.
+  It fired on 413 questions, not the predicted 100-115: the prediction counted hits (a gold turn among at most 25 rows),
+  but the section fires on any subject with a named object Concept and 1-25 facts, so hits are a subset (all 111 fired).
+  On the 413 it answered 204, against 218 (principled) and 216 (main): the kill line (at or below main) is hit.
+
+  | | n | step 3 | principled | main | step 3 - main | non-answers (step 3 / principled / main) |
+  |---|---|---|---|---|---|---|
+  | fired, gold turn among the rows | 111 | 75 | 65 | 62 | +13 | 7 / 18 / 24 |
+  | fired, no gold row | 302 | 129 | 153 | 154 | -25 | 97 / 71 / 71 |
+  | not fired | 396 | 214 | 214 | 210 | +4 | 72 / 72 / 73 |
+  | all | 809 | 418 | 432 | 426 | -8 | |
+
+  - Gold among the rows is read from the rows' EVIDENCED_BY turns (the live queries re-run on the same store copies).
+  - Without the 34 test-fault ids: gold among the rows 73 of 105 against main 60; no gold row 129 of 292 against 154.
+  - On the no-gold-row questions, 36 are lost against principled and 12 gained; 26 of the 36 losses are non-answers.
+    In 29 of the 36 the gold turn is elsewhere in the same prompt (the instruction to answer only from the lines is
+    the existing answer prompt, B475, in every arm).
+  - Not fired: 0 changed against principled, so the cleaned stores do not confound the result.
+
+  | Shape (fired) | n | step 3 | principled | main | step 3 - main | test faults |
+  |---|---|---|---|---|---|---|
+  | fact | 237 | 119 | 133 | 134 | -15 | 6 |
+  | list | 64 | 23 | 23 | 18 | +5 | 5 |
+  | dated | 92 | 49 | 48 | 51 | -2 | 4 |
+  | exists | 15 | 10 | 11 | 11 | -1 | 0 |
+  | latest | 0 | - | - | - | - | - |
+  | count | 5 | 3 | 3 | 2 | +1 | 1 |
+
+  | Category | fired n | step 3 | principled | main | step 3 - main | test faults | not fired n | step 3 | main |
+  |---|---|---|---|---|---|---|---|---|---|
+  | 1 | 64 | 20 | 15 | 14 | +6 | 6 | 89 | 23 | 23 |
+  | 2 | 91 | 49 | 47 | 49 | 0 | 5 | 80 | 39 | 38 |
+  | 3 | 18 | 7 | 9 | 9 | -2 | 0 | 33 | 12 | 12 |
+  | 4 | 240 | 128 | 147 | 144 | -16 | 5 | 194 | 140 | 137 |
+
+- Step 4: not started.
 
 ## Rulings
 
@@ -198,6 +269,12 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Order: step 3 before steps 1 and 2 | a query hit is worth about 0.06 of a correct answer today (59% against 53%) | Ruled by the user 2026-11-13: step 3 runs first on today's 111 hits |
 | Roles (steps 1 and 2) | options A, B, C under step 1 | Ruled by the user 2026-11-13: option B (word-level action kind; partner and place roles kept); step 2 folded into step 1 where it is the same construction |
 | Closed-class Concepts (B565, PR 422) | hits 111 unchanged; miss table restated (216 / 224 / 81) | Kept 2026-11-13 (review session, delegated) |
+| Graph facts section (step 3, PR 428) | fired on 413; gold among rows 75 vs main 62 of 111 (+13); no gold row 129 vs 154 of 302 (-25); overall 418 vs 432 and 426 | Kill line hit 2026-11-14; flag off; held for the user |
+| Roles, option B (word-level action kind, PR 411) | query hits 14 to 27 (+13 net, pass); action words 34% wrong (kill line hit) | Stopped 2026-11-14; held for the user |
+| Step 3 decision | the decisions page, 2026-11-14 | Ruled by the user 2026-11-14: option C, flag off; re-measured as built after the capture work and one full re-capture; no new fire rule |
+| Action word decision | option B 34% wrong | Ruled by the user 2026-11-14: form 3 (candidates by rule, closed choice with "none"); the last form, after which the action role is dropped if its line is hit |
+| Who a fact may be about | 12 of 27 no-proposal gold turns about "we" or third persons | Ruled by the user 2026-11-14: option A ("we" and people named by relation); the nine predicates stay |
+| One store per conversation (step 0c), ruling | as above | Ruled by the user 2026-11-14: kept; the per-conversation stores are the replay baseline |
 | LongMemEval runs R108, R109 | not run | Parked until step 4 |
 | Concept walk (store-wide and anchored, B556-B560) | lowers accuracy on 300 questions; about 2% of its rows hold gold | Parked 2026-11-13: off until step 4, then retested once or deleted |
 | Graph vote and question analysis | neutral on accuracy; recall up, non-answers down | Kept 2026-11-13 |

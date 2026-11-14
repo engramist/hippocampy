@@ -14,8 +14,11 @@ Reads:
                                      label (the `_in_sessions` form keeps to the given Sessions)
   query_hits.objects                 the other Concepts named by a term (label or altLabel), not action kinds, that a
   query_hits.objects_in_sessions     turn MENTIONS or a fact's object reaches by INSTANCE_OF / BROADER*
+  query_hits.relation_subject        a person named by relation of the subject ("Nora's kids"): the relation
+                                     Concepts RELATION_OF the subject whose relation_label is a question term
   query_hits.facts                   the subject's live facts whose HAS_OBJECT is K, an instance of K, or narrower,
-                                     each with its EVIDENCED_BY turn and date (oldest first)
+                                     each with its EVIDENCED_BY turn and date (oldest first), its predicate, quote,
+                                     time phrase and the object's kinds (step 3 renders these)
   query_hits.facts_count             the same facts counted: distinct objects and distinct facts (graph count, folded in)
   query_hits.facts_latest            the newest of the same facts
   query_hits.facts_exist             whether any such fact exists (false is the answer "not recorded")
@@ -179,6 +182,25 @@ QUERY_HIT_QUERIES = [
         sparql=_objects_sparql(scoped=True),
     ),
     NamedQuery(
+        name="query_hits.relation_subject",
+        cypher=("MATCH (r:Concept)-[:RELATION_OF]->(s:Concept {concept_id: $sid}) WHERE r.relation_label IN $terms "
+                "RETURN r.concept_id AS rid, r.relation_label AS label"),
+        params=("terms", "sid"),
+        mutating=False,
+        description=("The relation Concepts of the subject (RELATION_OF it) whose relation_label is one of the "
+                     "question's terms: 'Nora's kids' reads the kids' own facts. Never another speaker's relation"),
+        sparql="""
+            SELECT DISTINCT ?rid ?label WHERE {
+              VALUES ?term { }
+              ?s a campy:Concept ; campy:concept_id ?sid .
+              ?r campy:RELATION_OF ?s ; campy:relation_label ?term ; campy:concept_id ?rid .
+              FILTER NOT EXISTS { ?r campy:archived true }
+              BIND(?term AS ?label)
+            }
+            ORDER BY ?rid
+            """,
+    ),
+    NamedQuery(
         name="query_hits.facts",
         cypher=_FACTS_CYPHER + ("RETURN DISTINCT o.observation_id AS observation_id, x.concept_id AS object_id, "
                                 "m.message_id AS evidence_message_id"),
@@ -188,12 +210,19 @@ QUERY_HIT_QUERIES = [
                      "kind BROADER* below K, each with its EVIDENCED_BY turn and date, oldest first. Empty is "
                      "'not recorded'"),
         sparql=f"""
-            SELECT DISTINCT ?observation_id ?object_id ?object_text ?message ?evidence_message_id ?occurred_at
+            SELECT ?observation_id ?object_id ?object_text ?message ?evidence_message_id ?occurred_at
+                   ?predicate ?quote ?time_text (GROUP_CONCAT(DISTINCT ?kind_label; separator="|") AS ?kinds)
             WHERE {{
               {_FACTS_BODY}
               OPTIONAL {{ ?x campy:concept_id ?object_id }}
               OPTIONAL {{ ?x campy:text_raw ?object_text }}
+              OPTIONAL {{ ?o campy:predicate ?predicate }}
+              OPTIONAL {{ ?o campy:evidence_text ?quote }}
+              OPTIONAL {{ ?o campy:time_text ?time_text }}
+              OPTIONAL {{ ?x campy:INSTANCE_OF ?_kind . ?_kind campy:text_raw ?kind_label }}
             }}
+            GROUP BY ?observation_id ?object_id ?object_text ?message ?evidence_message_id ?occurred_at
+                     ?predicate ?quote ?time_text
             ORDER BY ?occurred_at ?observation_id ?evidence_message_id
             """,
     ),
@@ -217,11 +246,18 @@ QUERY_HIT_QUERIES = [
         mutating=False,
         description="The newest of query_hits.facts' rows (by its turn's date), with its object and turn",
         sparql=f"""
-            SELECT ?observation_id ?object_id ?object_text ?message ?evidence_message_id ?occurred_at WHERE {{
+            SELECT ?observation_id ?object_id ?object_text ?message ?evidence_message_id ?occurred_at ?predicate
+                   ?quote ?time_text (GROUP_CONCAT(DISTINCT ?kind_label; separator="|") AS ?kinds) WHERE {{
               {_FACTS_BODY}
               OPTIONAL {{ ?x campy:concept_id ?object_id }}
               OPTIONAL {{ ?x campy:text_raw ?object_text }}
+              OPTIONAL {{ ?o campy:predicate ?predicate }}
+              OPTIONAL {{ ?o campy:evidence_text ?quote }}
+              OPTIONAL {{ ?o campy:time_text ?time_text }}
+              OPTIONAL {{ ?x campy:INSTANCE_OF ?_kind . ?_kind campy:text_raw ?kind_label }}
             }}
+            GROUP BY ?observation_id ?object_id ?object_text ?message ?evidence_message_id ?occurred_at
+                     ?predicate ?quote ?time_text
             ORDER BY DESC(?occurred_at) DESC(?observation_id)
             LIMIT 1
             """,
