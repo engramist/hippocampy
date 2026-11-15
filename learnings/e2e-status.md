@@ -341,6 +341,7 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | The other `principled` switches | not measured one by one | Parked 2026-11-13: each is on by default or deleted at step 4 |
 | Partner role by closed choice | 29 of 30 hand-checked links wrong | Dropped by the user 2026-11-15; co-participant edges by rule only |
 | Subject change, anchor only | "we" part 5 hits, 17% wrong; relation part 2 hits, 50% wrong | User 2026-11-15: build the "we" part, prompt untouched; relation part left out |
+| "We" anchor design (review session, 2026-11-15) | pre-build check: partner by "PERSON named in the quote" 4 of 6 wrong; narrowed to "X and I" or object of "with": 1 link, right | Approved to build behind `group_anchor` (off): speaker as subject, `group_subject` true, partner by the narrowed rule only, PERSON only. Under 10 partner links in the re-capture is "too few to judge", not a pass |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
