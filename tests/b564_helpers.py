@@ -49,6 +49,16 @@ class World:
         self.db.store.update(f'INSERT DATA {{ <{mint_uri("Concept", cid)}> {NS}ner_label> "{label}" }}')
         await self.gw.run("concept_links.link_message_concept", mid=mid, cid=cid)
 
+    def session(self, sid, *mids):
+        """The messages are SENT_IN one Session."""
+        su = mint_uri("Session", sid)
+        self.db.store.update(f'INSERT DATA {{ <{su}> a {NS}Session> ; {NS}session_id> "{sid}" }}')
+        for mid in mids:
+            self.db.store.update(f"INSERT DATA {{ <{mint_uri('Message', mid)}> {NS}SENT_IN> <{su}> }}")
+
+    async def spoken_by(self, mid, cid):
+        await self.gw.run("spoken_by.link_spoken_by", mid=mid, cid=cid)
+
     def edges(self, edge):
         rows = self.db._execute_and_collect(f"SELECT ?s ?o WHERE {{ ?s {NS}{edge}> ?o }}")
         return {(str(r["s"]).rsplit("/", 1)[-1], str(r["o"]).rsplit("/", 1)[-1]) for r in rows}
@@ -66,13 +76,35 @@ class World:
 
 
 class LLM:
-    def __init__(self, *items):
+    """A scripted client. The extraction call gets `items` as its JSON list; the roles call (form 2: its user
+    message starts with "Pick from") gets `roles`: a string, an exception to raise, or a list of answer objects."""
+
+    def __init__(self, *items, roles=None):
         self.reply = json.dumps(list(items))
+        self.roles = roles
         self.calls = []
+
+    @property
+    def extraction_calls(self):
+        return [c for c in self.calls if not self._is_roles(c[0])]
+
+    @property
+    def roles_calls(self):
+        return [c for c in self.calls if self._is_roles(c[0])]
+
+    @staticmethod
+    def _is_roles(messages):
+        return messages[-1]["content"].startswith("Pick from")
 
     def chat(self, messages, **kwargs):
         self.calls.append((messages, kwargs))
-        return self.reply
+        if not self._is_roles(messages):
+            return self.reply
+        if isinstance(self.roles, Exception):
+            raise self.roles
+        if isinstance(self.roles, str):
+            return self.roles
+        return json.dumps(self.roles if self.roles is not None else [])
 
 
 def claim(quote, obj, *, predicate="did", subject="I", **extra):
@@ -125,5 +157,5 @@ async def flag_off_signature(db, gw, extra_flags=None):
     for text, c, admit in ROLE_TURNS:
         llm = LLM(c)
         await extract(db, config, world, text, llm, admit=admit)
-        max_tokens.update(k.get("max_tokens") for _m, k in llm.calls)
+        max_tokens.update(k.get("max_tokens") for _m, k in llm.extraction_calls)
     return {"signature": world.signature(), "max_tokens": sorted(max_tokens)}
