@@ -101,7 +101,6 @@ def _lemmas(doc) -> set[str]:
     return {t.lemma_.lower() for t in doc if t.lemma_.isalpha()}
 
 
-_OBJECT_DEPS = frozenset({"dobj", "pobj", "attr", "oprd"})
 
 
 def _word_of(tok) -> str | None:
