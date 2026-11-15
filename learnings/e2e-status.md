@@ -2,21 +2,23 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-14 (item 3 kill line hit; partner role held for the user)_
+_Last updated: 2026-11-15 (user ruled: partner dropped; "we" anchoring only; full re-capture path open)_
 
 ## Waiting for the user
 
-1. **Step 1 after form 3 (2026-11-14):** form 3's action word stands (the word line passed at its edge, 10 of 50).
-   The partner role as built is wrong in 29 of 30 hand-checked links. It is not written in any further capture until
-   the user rules. The review session recommends dropping the model-chosen partner, so that a co-participant edge is
-   written only by item 3's rule (a person the quote names in a "we" fact). The full re-capture waits for this.
-   The facts are in `~/campy-lead/reports/2026-11-14-step1-form3-result.md` and `...-form3-followup.md`.
+Nothing (2026-11-15).
 
-2. **Item 3, after its kill line (2026-11-14):** asking the extractor for facts about "we" and people named by relation
-   (two sentence replacements in the prompt) made it reply with nothing on most turns that had facts. Whether there is
-   a next form (anchoring only the "we" and "my ..." facts the model already proposes, with the prompt untouched) is
-   with the user; an offline measurement of that reading is being made for the decision. The wording is not to be
-   tried again in another phrasing.
+Ruled by the user 2026-11-15:
+1. **Partner role:** the model-chosen partner is dropped (29 of 30 hand-checked links were wrong). The action word
+   (form 3) and place stay. A co-participant edge is written only by a rule.
+2. **Subject change:** the "we"/group part only, anchored by rule on facts the model already proposes, with the
+   extraction prompt untouched (measured offline: 56 facts, 5 hits, 3 of 18 wrong). The relation part ("my ...") stays
+   out (6 of 12 wrong). The prompt wording is not tried again.
+
+Next, in order: the "we" anchoring behind its flag (design to the review session first); the partner line removed
+from the shared call and form 3 merged behind its flag; one conv-26 confirming capture (hits within 2 of 26, the same
+50 words re-read, facts 389/389); then the paired full re-capture of the five conversations on the approved lines;
+then step 3 re-measured; then step 4.
 
 Earlier rulings, 2026-11-14 (the decisions page, `~/campy-lead/reports/2026-11-14-decisions-for-the-user.md`):
 1. **Step 3:** option C. The flag stays off. The section as built is re-measured after the capture work and one full
@@ -337,6 +339,8 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Graph vote and question analysis | neutral on accuracy; recall up, non-answers down | Kept 2026-11-13 |
 | Graph count | fired on 0 of 300 questions | Stopped as a separate lever 2026-11-13: folded into step Q's queries or deleted |
 | The other `principled` switches | not measured one by one | Parked 2026-11-13: each is on by default or deleted at step 4 |
+| Partner role by closed choice | 29 of 30 hand-checked links wrong | Dropped by the user 2026-11-15; co-participant edges by rule only |
+| Subject change, anchor only | "we" part 5 hits, 17% wrong; relation part 2 hits, 50% wrong | User 2026-11-15: build the "we" part, prompt untouched; relation part left out |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
