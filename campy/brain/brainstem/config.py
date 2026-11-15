@@ -202,6 +202,10 @@ _DEFAULT_CONFIG = {
         # profile): the extraction prompt also asks for facts about "we" and people named by relation ("my kids"); a rule
         # anchors "we" on the speaker (group_subject) and "my kids" on a relation Concept RELATION_OF the speaker.
         "group_subjects": False,
+        # User ruling 2026-11-15 (default OFF; env CAMPY_OBSERVATION_GROUP_ANCHOR=1; in no profile): a fact the extractor
+        # already proposes about "we" gets the speaker as subject (group_subject = true), by rule; the prompt is untouched
+        # and no relation ("my ...") Concept is made. A partner only as the PERSON X in "X and I" or after "with".
+        "group_anchor": False,
         "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
         # B538 (default ON; env CAMPY_TURN_DATES=0 turns it off): every user turn's relative time
         # expressions ("yesterday", "last week") are resolved by rule against the turn's date at
@@ -376,6 +380,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_OBSERVATION_ROLES": ("observations", "roles", _parse_bool),
     # Item 3: "we" and people named by relation as subjects (default off; in no profile).
     "CAMPY_OBSERVATION_GROUP_SUBJECTS": ("observations", "group_subjects", _parse_bool),
+    # 2026-11-15: "we" facts anchored on the speaker by rule, prompt untouched (default off; in no profile).
+    "CAMPY_OBSERVATION_GROUP_ANCHOR": ("observations", "group_anchor", _parse_bool),
     # B538: relative dates in user turns resolved by rule at capture and shown inline (default on).
     "CAMPY_TURN_DATES": ("observations", "turn_dates", _parse_bool),
     # B499: rule-based supersession of attribute Observations (default off).

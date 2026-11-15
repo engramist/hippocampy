@@ -486,7 +486,8 @@ async def _extract_turn(
     owl_on = obs.owl_properties_enabled(config)
     roles_on = obs.object_roles_enabled(config)
     capture_roles_on = obs.capture_roles_enabled(config)      # B564
-    group_on = obs.group_subjects_enabled(config)             # item 3
+    group_on = obs.group_subjects_enabled(config)             # item 3 (killed prompt form; off)
+    anchor_on = obs.group_anchor_enabled(config)              # 2026-11-15: "we" anchored by rule, prompt untouched
     messages = build_messages(text, speaker, occurred_at, int(cfg.get("max_turn_chars", 600)),
                               entities=entities_on, cardinality=owl_on, roles=capture_roles_on,
                               group_subjects=group_on)
@@ -539,7 +540,7 @@ async def _extract_turn(
     role_facts: list[roles_mod.FactIn] = []       # B564: the facts whose roles are confirmed once the turn is written
     for p in proposals:
         draft = await _draft_from_proposal(gw, p, message_id, text, speaker, named, speaker_id, occurred_at, stats,
-                                           group_subjects=group_on)
+                                           group_subjects=group_on, group_anchor=anchor_on)
         if draft is None:
             writes.record(obs.WriteResult("rejected", None, "malformed_proposal"))
             continue
@@ -569,9 +570,11 @@ async def _extract_turn(
         writes.record(result)
         if draft.anchor is not None and result.ok and result.observation_id:
             try:          # item 3: a group subject is marked, and its named partners linked
+                only_anchor = anchor_on and not group_on
                 linked = await subjects_mod.after_write(gw, result.observation_id, draft.anchor, message_id=message_id,
                                                         speaker_id=speaker_id, speaker=speaker,
-                                                        quote=draft.evidence_text)
+                                                        quote=draft.evidence_text, relations=not only_anchor,
+                                                        narrow=only_anchor)
                 if linked:
                     stats.subjects["group_partners_linked"] = stats.subjects.get("group_partners_linked", 0) + linked
             except Exception:
@@ -672,7 +675,7 @@ async def _extract_turn(
 async def _draft_from_proposal(
     gw: Any, p: dict, message_id: str, text: str, speaker: str | None,
     named: bool, speaker_id: str | None, occurred_at: Any, stats: ObservationWorkerStats,
-    *, group_subjects: bool = False,
+    *, group_subjects: bool = False, group_anchor: bool = False,
 ) -> obs.ObservationDraft | None:
     subject = _clean(p.get("subject"))
     predicate = (_clean(p.get("predicate")) or "").lower()
@@ -689,8 +692,10 @@ async def _draft_from_proposal(
         return None
 
     anchor = None
-    if group_subjects and named and speaker_id:
+    if (group_subjects or group_anchor) and named and speaker_id:
         anchor = subjects_mod.classify(subject, quote)       # item 3: "we" and people named by relation
+        if anchor is not None and anchor.kind == "relation" and not group_subjects:
+            anchor = None                                     # 2026-11-15: the group anchor leaves "my ..." as it was
     first_person = subject.lower() in _FIRST_PERSON
     if not first_person and named and subject.lower() == speaker.strip().lower() \
             and subject.lower() not in quote.lower() and obs._FIRST_PERSON_RE.search(quote):

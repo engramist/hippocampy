@@ -101,6 +101,9 @@ entities = true
 # Item 3: facts about "we" (the speaker, flagged group_subject) and people named by relation ("my kids": a Concept
 # RELATION_OF the speaker). Off until measured; in no profile. CAMPY_OBSERVATION_GROUP_SUBJECTS=1 turns it on.
 # group_subjects = false  # item 3
+# "we" facts the extractor already proposes get the speaker as subject (group_subject), prompt untouched; partners
+# only as the person in "X and I" or after "with". Off until gated; in no profile. CAMPY_OBSERVATION_GROUP_ANCHOR=1.
+# group_anchor = false  # 2026-11-15
 # B499: newer attribute value supersedes older by string rule. Off; owl_properties replaces it.
 supersede = false
 # B538: relative time expressions in user turns ("yesterday", "last week") resolved by rule against

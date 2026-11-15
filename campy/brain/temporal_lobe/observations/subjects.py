@@ -98,16 +98,46 @@ async def ensure_relation(gw: Any, speaker_id: str, speaker: str, lemma: str, ph
     return cid
 
 
+def coparticipant_names(quote: str) -> list[str]:
+    """User ruling 2026-11-15 (the group anchor): the names a rule takes as co-participants of a "we" fact, from the
+    dependency parse of the quote only: a PERSON entity that is the X of "X and I" / "I and X" (a conjunct of I/me),
+    or the object of "with". Lower-cased; the graph decides which of them is a Concept the turn MENTIONS."""
+    from campy.brain.temporal_lobe.observations import typed_objects as T
+    doc = T._nlp({})(quote or "")
+    out: list[str] = []
+    for ent in doc.ents:
+        if ent.label_ != "PERSON":
+            continue
+        head = ent.root
+        first = {"i", "me"}
+        coord = (head.dep_ == "conj" and head.head.lower_ in first) or \
+                any(c.dep_ == "conj" and c.lower_ in first for c in head.children)
+        with_obj = head.dep_ == "pobj" and head.head.lower_ == "with"
+        if coord or with_obj:
+            out.append(ent.text.lower())
+    return list(dict.fromkeys(out))
+
+
 async def after_write(gw: Any, oid: str, anchor: Anchor, *, message_id: str, speaker_id: str, speaker: str,
-                      quote: str) -> int:
-    """For a written group-subject fact: mark it and link its named partners. Returns the partners linked."""
+                      quote: str, relations: bool = True, narrow: bool = False) -> int:
+    """For a written group-subject fact: mark it and link its named partners. Returns the partners linked.
+    `relations=False` (the group anchor) makes no relation Concept for a coordinated "my partner". `narrow=True` (the
+    group anchor) takes a partner only as a PERSON in "X and I" or after "with" (`coparticipant_names`), never an
+    ORG / NORP and never the speaker; otherwise any PERSON / ORG / NORP the turn mentions whose label is in the quote."""
     if anchor.kind != "group":
         return 0
     await gw.run("subjects.mark_group_subject", oid=oid)
-    partners = [r["concept_id"] for r in await gw.run("subjects.turn_named_people", mid=message_id, sid=speaker_id,
-                                                         quote=quote)]
-    for lemma, phrase in anchor.partners:
-        partners.append(await ensure_relation(gw, speaker_id, speaker, lemma, phrase))
+    if narrow:
+        names = coparticipant_names(quote)
+        partners = [r["concept_id"] for r in await gw.run("subjects.turn_persons_named", mid=message_id,
+                                                             sid=speaker_id, names=names)] if names else []
+    else:
+        partners = [r["concept_id"] for r in await gw.run("subjects.turn_named_people", mid=message_id,
+                                                             sid=speaker_id, quote=quote)]
+    if relations:
+        for lemma, phrase in anchor.partners:
+            partners.append(await ensure_relation(gw, speaker_id, speaker, lemma, phrase))
     for cid in dict.fromkeys(partners):
-        await gw.run("roles.link_participant", oid=oid, cid=cid)
-    return len(set(partners))
+        if cid != speaker_id:
+            await gw.run("roles.link_participant", oid=oid, cid=cid)
+    return len(set(partners) - {speaker_id})

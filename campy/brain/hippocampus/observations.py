@@ -154,6 +154,13 @@ def group_subjects_enabled(config: dict | None) -> bool:
     return bool(((config or {}).get("observations") or {}).get("group_subjects", False))
 
 
+def group_anchor_enabled(config: dict | None) -> bool:
+    """`[observations] group_anchor` (default FALSE; env `CAMPY_OBSERVATION_GROUP_ANCHOR=1`) (user ruling 2026-11-15):
+    a "we" fact the extractor already proposes is anchored on the speaker by rule; the prompt is untouched and no
+    relation Concept is made (temporal_lobe/observations/subjects.py). Off: writes are exactly as before."""
+    return bool(((config or {}).get("observations") or {}).get("group_anchor", False))
+
+
 def typed_objects_enabled(config: dict | None) -> bool:
     """`[observations] typed_objects` (default FALSE; env `CAMPY_TYPED_OBJECTS=1` turns it on) (B546): the
     object of a fact is linked (HAS_OBJECT) to an existing entity Concept or to an ObjectPhrase node and typed

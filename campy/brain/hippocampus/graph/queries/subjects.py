@@ -10,6 +10,8 @@ Writes:
   subjects.link_relation_of          `relation Concept -RELATION_OF-> speaker Concept` (at most one, first wins)
   subjects.mark_group_subject        `Observation.group_subject = true`: the speaker as one of a group ("we")
 Reads:
+  subjects.turn_persons_named        the PERSON Concepts a turn MENTIONS whose label is one of the given names (the
+                                     group anchor's co-participants: the X of "X and I", or the object of "with")
   subjects.turn_named_people         the Concepts a turn MENTIONS as PERSON / ORG / NORP, other than the subject, whose
                                      label occurs in the quote (the named partners of a "we" fact)
 """
@@ -86,6 +88,26 @@ SUBJECT_QUERIES = [
               ?o a campy:Observation ; campy:observation_id ?oid .
               OPTIONAL { ?o campy:group_subject ?old }
             }
+            """,
+    ),
+    NamedQuery(
+        name="subjects.turn_persons_named",
+        cypher=("MATCH (m:Message {message_id: $mid})-[:MENTIONS]->(c:Concept) "
+                "WHERE c.ner_label = 'PERSON' AND c.concept_id <> $sid AND toLower(c.text_raw) IN $names "
+                "RETURN c.concept_id AS concept_id"),
+        params=("mid", "sid", "names"),
+        mutating=False,
+        description=("The PERSON Concepts a turn MENTIONS, other than the speaker, whose label is one of the given names "
+                     "(the people a rule found as 'X' in 'X and I' or after 'with'): the co-participants of a 'we' fact"),
+        sparql="""
+            SELECT DISTINCT ?concept_id WHERE {
+              VALUES ?name { }
+              ?m campy:message_id ?mid ; campy:MENTIONS ?c .
+              ?c a campy:Concept ; campy:concept_id ?concept_id ; campy:ner_label "PERSON" ; campy:text_raw ?text .
+              FILTER(?concept_id != ?sid && LCASE(STR(?text)) = ?name)
+              FILTER NOT EXISTS { ?c campy:archived true }
+            }
+            ORDER BY ?concept_id
             """,
     ),
     NamedQuery(

@@ -66,6 +66,7 @@ def test_every_documented_override_applies():
         "CAMPY_EVIDENCE_ENTITY_LINKS": "1",
         "CAMPY_OBSERVATION_ROLES": "1",
         "CAMPY_OBSERVATION_GROUP_SUBJECTS": "1",
+        "CAMPY_OBSERVATION_GROUP_ANCHOR": "1",
         "CAMPY_OBSERVATIONS_OWNERSHIP_RULE": "1",
         "CAMPY_GRAPH_COUNT": "1",
         "CAMPY_GRAPH_FACTS": "1",
