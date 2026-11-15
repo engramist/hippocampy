@@ -339,9 +339,9 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Graph vote and question analysis | neutral on accuracy; recall up, non-answers down | Kept 2026-11-13 |
 | Graph count | fired on 0 of 300 questions | Stopped as a separate lever 2026-11-13: folded into step Q's queries or deleted |
 | The other `principled` switches | not measured one by one | Parked 2026-11-13: each is on by default or deleted at step 4 |
+| Partner role by closed choice | 29 of 30 hand-checked links wrong | Dropped by the user 2026-11-15; co-participant edges by rule only |
+| Subject change, anchor only | "we" part 5 hits, 17% wrong; relation part 2 hits, 50% wrong | User 2026-11-15: build the "we" part, prompt untouched; relation part left out |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
 graph query.
-| Partner role by closed choice | 29 of 30 hand-checked links wrong | Dropped by the user 2026-11-15; co-participant edges by rule only |
-| Subject change, anchor only | "we" part 5 hits, 17% wrong; relation part 2 hits, 50% wrong | User 2026-11-15: build the "we" part, prompt untouched; relation part left out |
