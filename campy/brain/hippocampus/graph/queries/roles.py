@@ -15,6 +15,9 @@ Writes (idempotent; the rule decides, nothing here chooses):
 
 Reads (every row of a fact carries its EVIDENCED_BY Message id and date; an empty result is "not recorded"):
   roles.action_concept              the action Concept of an id (the closed-set lookup; also the existence check)
+  roles.turn_entity_options         the Concepts a turn MENTIONS with a ner_label, other than the fact's subject
+                                    (form 2: the closed partner and place options of the roles call)
+  roles.session_speakers            the Concepts that spoke (SPOKEN_BY) in the turn's session, other than the subject
   observations.role_fill            the step-1 measure: facts counted by standing and by "shared"
   facts.by_action_kind              the subject's facts whose action is a kind of K (BROADER* path)
   facts.with_participant            the subject's facts done with a given Concept
@@ -209,6 +212,50 @@ ROLE_QUERIES: tuple[NamedQuery, ...] = (
             """,
     ),
     NamedQuery(
+        name="roles.turn_entity_options",
+        cypher=("MATCH (m:Message {message_id: $mid})-[:MENTIONS]->(c:Concept) "
+                "WHERE c.archived = false AND c.ner_label IS NOT NULL AND c.concept_id <> $sid "
+                "RETURN DISTINCT c.concept_id AS concept_id, c.text_raw AS text_raw, c.ner_label AS ner_label"),
+        params=("mid", "sid"),
+        mutating=False,
+        description=("The named entities a user turn MENTIONS (Concepts with a ner_label, not kinds, not action "
+                     "kinds), other than the fact's subject Concept: the closed partner (PERSON, ORG, NORP) and "
+                     "place (GPE, LOC, FAC) options of the roles call, one row per Concept with its label"),
+        sparql="""
+            SELECT DISTINCT ?concept_id ?text_raw ?ner_label WHERE {
+              ?m a campy:Message ; campy:message_id ?mid ; campy:MENTIONS ?c .
+              ?c a campy:Concept ; campy:concept_id ?concept_id ; campy:text_raw ?text_raw ; campy:ner_label ?ner_label .
+              FILTER (?ner_label IN ("PERSON", "ORG", "NORP", "GPE", "LOC", "FAC"))
+              FILTER (?concept_id != ?sid)
+              FILTER NOT EXISTS { ?c campy:archived true }
+              FILTER NOT EXISTS { ?c campy:kind_scheme "kind" }
+              FILTER NOT EXISTS { ?c campy:kind_scheme "action" }
+            }
+            ORDER BY ?ner_label ?concept_id
+            """,
+    ),
+    NamedQuery(
+        name="roles.session_speakers",
+        cypher=("MATCH (m:Message {message_id: $mid})-[:SENT_IN]->(s:Session)<-[:SENT_IN]-(m2:Message), "
+                "(m2)-[:SPOKEN_BY]->(c:Concept) WHERE c.archived = false AND c.concept_id <> $sid "
+                "RETURN DISTINCT c.concept_id AS concept_id, c.text_raw AS text_raw"),
+        params=("mid", "sid"),
+        mutating=False,
+        description=("The Concepts that spoke in the turn's session (Message -SPOKEN_BY-> Concept over the Messages "
+                     "SENT_IN the same Session), other than the fact's subject Concept: the other speakers, the "
+                     "closed partner options every fact of the turn has. Empty without SPOKEN_BY edges"),
+        sparql="""
+            SELECT DISTINCT ?concept_id ?text_raw WHERE {
+              ?m a campy:Message ; campy:message_id ?mid ; campy:SENT_IN ?s .
+              ?m2 campy:SENT_IN ?s ; campy:SPOKEN_BY ?c .
+              ?c a campy:Concept ; campy:concept_id ?concept_id ; campy:text_raw ?text_raw .
+              FILTER (?concept_id != ?sid)
+              FILTER NOT EXISTS { ?c campy:archived true }
+            }
+            ORDER BY ?concept_id
+            """,
+    ),
+    NamedQuery(
         name="observations.role_fill",
         cypher="MATCH (o:Observation) WHERE o.archived = false RETURN 'anchored' AS standing, false AS shared, count(o) AS n",
         params=(),
@@ -224,7 +271,7 @@ ROLE_QUERIES: tuple[NamedQuery, ...] = (
               BIND(EXISTS {{ ?o campy:HAS_OBJECT ?_x1 }} || EXISTS {{ ?o campy:HAS_ACTION ?_x2 }}
                    || EXISTS {{ ?o campy:HAS_PARTICIPANT ?_x3 }} || EXISTS {{ ?o campy:HAS_PLACE ?_x4 }}
                    || EXISTS {{ ?o campy:attr_value_kind ?_k . FILTER(?_k != "text") }} AS ?anch)
-              BIND(EXISTS {{ ?o ?_r ?_c . ?_c a campy:Concept .
+              BIND(?subj && EXISTS {{ ?o ?_r ?_c . ?_c a campy:Concept .
                             FILTER(?_r IN (campy:HAS_OBJECT, campy:HAS_ACTION, campy:HAS_PARTICIPANT, campy:HAS_PLACE)) }}
                    AS ?shared)
               BIND(IF(!?subj, "unanchored", IF(?anch, "anchored", "text")) AS ?standing)
