@@ -15,9 +15,8 @@ Ruled by the user 2026-11-15:
    extraction prompt untouched (measured offline: 56 facts, 5 hits, 3 of 18 wrong). The relation part ("my ...") stays
    out (6 of 12 wrong). The prompt wording is not tried again.
 
-Next, in order: the "we" anchoring behind its flag (design to the review session first); the partner line removed
-from the shared call and form 3 merged behind its flag; one conv-26 confirming capture (hits within 2 of 26, the same
-50 words re-read, facts 389/389); then the paired full re-capture of the five conversations on the approved lines;
+Done 2026-11-15: the "we" anchoring is on main behind `group_anchor` (off); form 3 without the model-chosen partner
+is on main behind `roles` (off); the conv-26 confirming capture met its lines. Next: the paired full re-capture of the five conversations on the approved lines;
 then step 3 re-measured; then step 4.
 
 Earlier rulings, 2026-11-14 (the decisions page, `~/campy-lead/reports/2026-11-14-decisions-for-the-user.md`):
@@ -342,6 +341,7 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Partner role by closed choice | 29 of 30 hand-checked links wrong | Dropped by the user 2026-11-15; co-participant edges by rule only |
 | Subject change, anchor only | "we" part 5 hits, 17% wrong; relation part 2 hits, 50% wrong | User 2026-11-15: build the "we" part, prompt untouched; relation part left out |
 | "We" anchor design (review session, 2026-11-15) | pre-build check: partner by "PERSON named in the quote" 4 of 6 wrong; narrowed to "X and I" or object of "with": 1 link, right | Approved to build behind `group_anchor` (off): speaker as subject, `group_subject` true, partner by the narrowed rule only, PERSON only. Under 10 partner links in the re-capture is "too few to judge", not a pass |
+| Confirming capture, partner line removed (conv-26, 2026-11-15) | hits 26 (line: within 2 of 26); facts 389/389; same 50 words: 3 right words now unwritten, no wrong word changed; 10 of 50 wrong (10 of the 47 written, 21.3%); invalid or missing action answers 10 against 1 | Review session: prerequisite met as pre-registered (the picks did not shift). Not counted as evidence the words are under 20% wrong; the re-capture's 100 written words decide the action role, wrong-rates over written edges only |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
