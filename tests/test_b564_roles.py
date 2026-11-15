@@ -301,26 +301,28 @@ async def test_one_call_picks_by_number_and_writes_each_role(db, gw, world):
     assert kw == {"max_tokens": R.ROLES_CALL_MAX_TOKENS}
     body = msgs[-1]["content"]
     assert f'Fact 1: "{QUOTE}"' in body and "action: 1 camping   0 none" in body          # form 3: shown with none
-    assert "with:" in body and "Ann" in body and "Melanie" in body and "place: 1 Paris" in body
+    assert "with:" not in body and "Ann" not in body and "place: 1 Paris" in body       # 2026-11-15: no partner offered
     assert msgs[0]["role"] == "system" and "JSON only" in body
     assert targets(db, "HAS_ACTION") == {(QUOTE, "action:camping")}                            # the picked word
-    assert len(targets(db, "HAS_PARTICIPANT")) == 1
+    assert targets(db, "HAS_PARTICIPANT") == set()          # "with" in the reply is ignored; no person head to parse
     assert targets(db, "HAS_PLACE") == {(QUOTE, "c-paris")}
     c = stats.roles
     assert c["calls"] == 1 and c["action_written"] == 1 and c["action_picked"] == 1 and c["action_picked_pos1"] == 1
     assert c["action_one_candidate"] == 1 and c["action_offered_pos1"] == 1
-    assert c["partner_written_concept"] == 1 and c["place_written_concept"] == 1
+    assert "partner_written_concept" not in c and c["partner_no_options"] == 1 and c["place_written_concept"] == 1
     ids = {unquote(s) for s, _o in world.edges("BROADER")} | {unquote(o) for _s, o in world.edges("BROADER")}
     assert not any(i.startswith(("action:", "wn:")) for i in ids)                            # no BROADER for actions
 
 
 @needs_wordnet
-async def test_partner_options_exclude_the_subject_and_are_numbered_speakers_first(db, gw, world):
-    llm, _s, _m = await _turn(db, gw, world, roles=[{"fact": 1, "with": [2]}])
+async def test_no_partner_is_offered_even_with_speakers_and_named_people(db, gw, world):
+    """2026-11-15 ruling: the model-chosen partner is dropped. Neither the session's other speaker nor a named person
+    the turn mentions is offered, and a "with" answer writes nothing."""
+    llm, stats, _m = await _turn(db, gw, world, roles=[{"fact": 1, "action": 1, "with": [1, 2]}])
     body = llm.roles_calls[0][0][-1]["content"]
-    line = next(x for x in body.splitlines() if x.strip().startswith("with:"))
-    assert line.index("1 Ann") < line.index("2 Melanie") and "Sam" not in line
-    assert {t for _q, t in targets(db, "HAS_PARTICIPANT")} == {"c-mel"}
+    assert not any(x.strip().startswith("with:") for x in body.splitlines()) and '"with"' not in body
+    assert not any(t.startswith("c-") for _q, t in targets(db, "HAS_PARTICIPANT"))
+    assert stats.roles["partner_no_options"] == 1 and "partner_written_concept" not in stats.roles
 
 
 @needs_wordnet
@@ -349,7 +351,7 @@ async def test_answer_zero_writes_nothing_and_counts(db, gw, world):
                                 text="I went camping with Melanie and it was fun.", admit=(("c-mel", "Melanie", "PERSON"),),
                                 c=claim("I went camping with Melanie", "go camping"))
     c = stats.roles
-    assert c["partner_picked_0"] == 1 and c["place_no_options"] == 1
+    assert c["partner_no_options"] == 1 and c["place_no_options"] == 1
     assert targets(db, "HAS_PARTICIPANT") == set()
     assert targets(db, "HAS_ACTION") == set() and c["action_none"] == 1                     # 0 writes nothing
 
@@ -364,18 +366,11 @@ async def test_out_of_range_wrong_role_and_wrong_type_write_nothing(db, gw, worl
         w = World(d, g)
         _l, stats, _m = await _turn(d, g, w, roles=roles)
         c = stats.roles
-        assert c["place_pick_out_of_range"] >= 1 and c["partner_pick_out_of_range"] >= 1
+        assert c["place_pick_out_of_range"] >= 1 and "partner_pick_out_of_range" not in c
         assert targets(d, "HAS_PARTICIPANT") == set() and targets(d, "HAS_PLACE") == set()
         assert targets(d, "HAS_ACTION") == set() and c["action_invalid"] == 1      # no fallback to a rule word
         assert c.get("action_written", 0) == 0 and c.get("partner_written_concept", 0) == 0
         assert not any(k.endswith("fallback_phrase") for k in c)             # a rejection is not a "no"
-
-
-@needs_wordnet
-async def test_with_mixed_valid_and_invalid_numbers_keeps_the_valid_one(db, gw, world):
-    _l, stats, _m = await _turn(db, gw, world, roles=[{"fact": 1, "with": [2, 99, 2]}])
-    assert {t for _q, t in targets(db, "HAS_PARTICIPANT")} == {"c-mel"}
-    assert stats.roles["partner_pick_out_of_range"] == 1 and stats.roles["partner_written_concept"] == 1
 
 
 @needs_wordnet
@@ -434,13 +429,13 @@ async def test_fallback_runs_when_there_are_no_options_and_no_call_is_made(db, g
 
 
 @needs_wordnet
-async def test_fallback_never_runs_after_a_pick(db, gw, world):
+async def test_fallback_never_runs_after_a_place_pick_and_the_partner_is_the_parse_only(db, gw, world):
     _l, stats, _m = await _turn(db, gw, world, roles=[{"fact": 1, "with": [1], "place": 1}], text=FB_TEXT,
                                 c=claim(FB_QUOTE, "go camping"),
                                 admit=(("c-mel", "Melanie", "PERSON"), ("c-paris", "Paris", "GPE")))
     assert {t for _q, t in targets(db, "HAS_PLACE")} == {"c-paris"}
-    assert not any("phrase" in t for _q, t in targets(db, "HAS_PARTICIPANT"))
-    assert not any(k.startswith(("partner_fallback", "place_fallback")) for k in stats.roles)
+    assert {t for _q, t in targets(db, "HAS_PARTICIPANT")} == {"phrase:my neighbor"}     # the rule, not the model
+    assert not any(k.startswith("place_fallback") for k in stats.roles)
 
 
 @needs_wordnet
@@ -448,8 +443,8 @@ async def test_fallback_after_a_failed_call_is_counted_apart(db, gw, world):
     _l, stats, _m = await _turn(db, gw, world, roles="not json", text=FB_TEXT, c=claim(FB_QUOTE, "go camping"),
                                 admit=(("c-mel", "Melanie", "PERSON"), ("c-paris", "Paris", "GPE")))
     c = stats.roles
-    assert c["partner_fallback_phrase_after_failure"] == 1 and c["place_fallback_phrase_after_failure"] == 1
-    assert not any(k in c for k in ("partner_fallback_phrase", "place_fallback_phrase"))
+    assert c["partner_fallback_phrase"] == 1 and c["place_fallback_phrase_after_failure"] == 1   # no partner options
+    assert "place_fallback_phrase" not in c
 
 
 @needs_wordnet
@@ -828,9 +823,9 @@ async def test_without_spoken_by_the_speaker_list_is_empty_and_counted(db, gw, w
 
 
 @needs_wordnet
-async def test_the_other_speaker_is_an_option_on_every_fact(db, gw, world):
+async def test_the_other_speaker_is_never_a_partner(db, gw, world):
     llm, stats, _m = await _turn(db, gw, world, roles=[{"fact": 1, "with": [1]}], admit=(),
                                  text="Last weekend I went camping and it was fun.",
                                  c=claim("I went camping", "go camping"))
-    assert {t for _q, t in targets(db, "HAS_PARTICIPANT")} == {"c-ann"}
-    assert stats.roles["partner_written_concept"] == 1
+    assert targets(db, "HAS_PARTICIPANT") == set()
+    assert "partner_written_concept" not in stats.roles

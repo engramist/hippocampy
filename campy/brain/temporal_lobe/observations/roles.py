@@ -20,8 +20,9 @@ Options (every one from the graph or from WordNet, never from the model):
            "action", no embedding, no BROADER, one node per word) and HAS_ACTION. 0, a missing or invalid answer, an
            unparseable reply or a failed call write nothing (no fallback). The only word knowledge is the light and
            aspectual verb lists, WordNet's verb-lemma list and the event.n.01 test.
-  with     the other speakers of the session (`roles.session_speakers`, SPOKEN_BY) and the Concepts the source turn
-           MENTIONS with ner_label PERSON / ORG / NORP (`roles.turn_entity_options`), other than the fact's subject.
+  with     NOT offered (user ruling 2026-11-15): the model-chosen partner is dropped; it was wrong in 29 of 30
+           hand-checked links (mostly the session's other speaker). A co-participant edge comes only from a rule: the
+           dependency-parse fallback below, and item 3's group anchor.
   place    the Concepts the turn MENTIONS with ner_label GPE / LOC / FAC.
 
 Fallback (no model), only when the model answered 0 or there were no options (or the call failed): a dependency
@@ -50,10 +51,9 @@ from campy.brain.temporal_lobe.observations import typed_objects as T
 
 _logger = logging.getLogger(__name__)
 
-RULE_VERSION = "b564-4"
+RULE_VERSION = "b564-5"
 _PHRASE_NS = uuid.UUID("b5640000-0000-0000-0000-000000000000")
 EVENT_PREDICATES = frozenset({"did", "plans"})
-PARTNER_LABELS = frozenset({"PERSON", "ORG", "NORP"})
 MAX_WITH = 4
 ROLES_CALL_MAX_TOKENS = 256          # a few option numbers per fact, up to MAX_PER_TURN facts
 PLACE_PREPS = frozenset({"to", "at", "in"})
@@ -61,9 +61,9 @@ PLACE_PREPS = frozenset({"to", "at", "in"})
 _PROMPT = (
     "Pick from the numbered options only; never write a name. Answer 0 when no option fits.\n"
     'Message: """{text}"""\n{facts}\n'
-    'Reply with JSON only, one object per fact: [{{"fact": 1, "action": 1, "with": [1], "place": 0}}]\n'
+    'Reply with JSON only, one object per fact: [{{"fact": 1, "action": 1, "place": 0}}]\n'
     '"action" is one option number: the word that names what the person did; 0 when no option names it. '
-    '"place" is one option number. "with" is a list of option numbers. 0 or [] means none. '
+    '"place" is one option number; 0 means none. '
     "Leave out a role that shows no options."
 )
 
@@ -227,7 +227,6 @@ async def build_options(gw: Any, nlp, message_id: str, facts: list[FactIn], coun
     """The candidate sets of every fact with a subject. Partner and place options come from NamedQueries anchored on
     the turn's message id (SPARQL filters by label and excludes the subject); the two reads are cached by subject."""
     entities: dict[str, list[dict]] = {}
-    speakers: dict[str, list[dict]] = {}
     out: list[Options] = []
     for f in facts:
         if not f.subject_id:
@@ -236,11 +235,8 @@ async def build_options(gw: Any, nlp, message_id: str, facts: list[FactIn], coun
         sid = f.subject_id
         if sid not in entities:
             entities[sid] = list(await gw.run("roles.turn_entity_options", mid=message_id, sid=sid))
-            speakers[sid] = list(await gw.run("roles.session_speakers", mid=message_id, sid=sid))
         ent = entities[sid]
-        partner = _dedupe([Opt(str(r["concept_id"]), str(r["text_raw"])) for r in speakers[sid]]
-                          + [Opt(str(r["concept_id"]), str(r["text_raw"])) for r in ent
-                             if str(r["ner_label"]) in PARTNER_LABELS])
+        partner: list[Opt] = []          # 2026-11-15: no model-chosen partner; the parse fallback still runs
         place = _dedupe([Opt(str(r["concept_id"]), str(r["text_raw"])) for r in ent
                          if str(r["ner_label"]) in T.PLACE_LABELS])
         out.append(Options(f, action_candidates(nlp, f, counts), partner, place))
