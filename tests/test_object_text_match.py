@@ -10,13 +10,13 @@ match alone; more than MAX_FACTS giving no section; the bounded cache; nothing w
 
 from __future__ import annotations
 
+import importlib
 import math
 from types import SimpleNamespace
 
 import pytest
 
 from campy.brain.brainstem.config import _DEFAULT_CONFIG, apply_env_overrides
-from campy.brain.hippocampus.graph import embeddings as embeddings_mod
 from campy.brain.hippocampus.graph.gateway import GraphGateway, NamedQuery, QueryRegistry
 from campy.brain.hippocampus.graph.oxigraph_client import OxigraphClient
 from campy.brain.hippocampus.graph.queries import REGISTRY
@@ -31,6 +31,12 @@ from tests.test_query_hits import build, fact
 ON = {"retrieval": {"graph_facts": True, "object_text_match": True}}
 GF_ONLY = {"retrieval": {"graph_facts": True}}
 DIM = 384
+
+
+def _embeddings():
+    """The embeddings module as the code under test imports it now (another test file may have swapped the module
+    in sys.modules, so a reference taken when this file was collected could be a different object)."""
+    return importlib.import_module("campy.brain.hippocampus.graph.embeddings")
 
 
 def unit(*head):
@@ -69,15 +75,15 @@ class Embedder:
 @pytest.fixture(autouse=True)
 def _fresh_cache(monkeypatch):
     otm._cache.clear()
-    monkeypatch.setattr(embeddings_mod, "embed", lambda text, model_name=None: unit(1))
-    monkeypatch.setattr(embeddings_mod, "embed_batch", Embedder({}))
+    monkeypatch.setattr(_embeddings(), "embed", lambda text, model_name=None: unit(1))
+    monkeypatch.setattr(_embeddings(), "embed_batch", Embedder({}))
     yield
     otm._cache.clear()
 
 
 def stub(monkeypatch, table):
     emb = Embedder(table)
-    monkeypatch.setattr(embeddings_mod, "embed_batch", emb)
+    monkeypatch.setattr(_embeddings(), "embed_batch", emb)
     return emb
 
 
@@ -331,7 +337,7 @@ async def test_embedder_error_falls_back_to_exact_labels(db, gw, monkeypatch):
 
     def boom(texts, model_name=None):
         raise RuntimeError("no embedder")
-    monkeypatch.setattr(embeddings_mod, "embed_batch", boom)
+    monkeypatch.setattr(_embeddings(), "embed_batch", boom)
     q = "What pets does Nora have?"
     base = await gf.build_graph_facts_section(db, q, GF_ONLY, analysis=None)
     on = await gf.build_graph_facts_section(db, q, ON, analysis=None)
@@ -349,7 +355,7 @@ def test_cache_is_bounded_lru_and_embeds_each_text_once(monkeypatch):
     otm._vectors(["a1", "a2", "a3", "a1"])
     assert sum(len(c) for c in emb.calls) == 3                       # a repeat is not embedded again
     otm._vectors(["a1", "b1"])                                       # b1 enters, a2 (least recently used) leaves
-    assert len(otm._cache) == 3 and (embeddings_mod.MODEL_NAME, "a2") not in otm._cache
+    assert len(otm._cache) == 3 and (_embeddings().MODEL_NAME, "a2") not in otm._cache
     otm._vectors(["a2"])
     assert sum(len(c) for c in emb.calls) == 5
 
