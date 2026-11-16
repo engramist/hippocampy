@@ -19,6 +19,7 @@ improvement work starts with `2026-10-summary.md`, then
 | [2026-10-scoring-fix-and-round5.md](2026-10-scoring-fix-and-round5.md) | The adversarial-abstention scoring bug and its consequences (Observations gain was an artefact), the corrected held-out baseline table (Campy 0.450 vs full history 0.383 on conv-30), and #318/#319 closed |
 | [2026-10-metric-switch.md](2026-10-metric-switch.md) | Gates switched to the benchmark's published metric (LoCoMo categories 1–4, pooled, no p threshold); #322 neighbours merged (+9 points); earlier closed gates re-scored |
 | [2026-10-20-freeze-and-drift-controls.md](2026-10-20-freeze-and-drift-controls.md) | R68 (#318 adds nothing on top of Observations), the LongMemEval freeze and the memory guard, drift controls (B495), old PRs cleared (B496) |
+| [lessons-learned.md](lessons-learned.md) | The full trail, oldest first: every trial with why it was run, what was tried, the result and the decision. Appended after every test or trial |
 | [e2e-status.md](e2e-status.md) | Live state of the plan: current milestone, pins, latest numbers, golden stores, open PRs, next actions. Updated after every step |
 
 ## Adding a note
