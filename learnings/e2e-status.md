@@ -2,7 +2,7 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-16 (full re-capture reported: hits +71 net; the action-word line is hit; held for the user)_
+_Last updated: 2026-11-16 (full re-capture and vector-resolution measurements reported; three decisions with the user)_
 
 ## Waiting for the user
 
@@ -15,8 +15,13 @@ _Last updated: 2026-11-16 (full re-capture reported: hits +71 net; the action-wo
    judged by the fact's quote alone. The run line said "by the quote"; 10 right places are named elsewhere in the
    same turn. The review session did not settle this in the favourable direction; it is the user's call.
 
-Step 3 re-measured and step 4 wait for ruling 1. The vector-resolution measurement runs its two readings that do not
-use the action role.
+3. **Object-text matching (2026-11-16, measured offline at the user's request):** resolving a question's words to
+   the object text of the subject's own facts by vector passes its lines at cosine 0.75 (+116 net hits on 190, 1
+   lost, 5 of 50 matches wrong) and at 0.85 (+81, 1 of 50). Whether to build it, and where it sits in the order, is
+   the user's call. It bears on ruling 1: 57 of the action role's 61 gained hits are reached by object-text matching
+   with no action read; on top of the 0.75 rule the action role adds +22 hits.
+
+Step 3 re-measured and step 4 wait for ruling 1. Nothing is built from the measurements until the user rules.
 
 Ruled by the user 2026-11-15:
 1. **Partner role:** the model-chosen partner is dropped (29 of 30 hand-checked links were wrong). The action word
@@ -355,6 +360,10 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Question words resolved to entities by vector (user, 2026-11-15) | not measured; step Q matches exact labels only | User: measure offline on store copies after the full re-capture result. A measurement only; no code on main until its result has a ruling. It does not change the order (step 3 re-measured, then step 4) |
 | Full re-capture, five conversations, flags on against off (2026-11-16) | query hits 190 against 119 (+73, 2 lost; +79 against 111); facts 6 of 2,731 missing; action words 21 of 100 wrong; places 4 of 30 wrong by the turn (14 by the quote alone); "we" facts 6 of 30 wrong; rule-written partner links 61, 4 of 30 wrong; replay 434 against 436 | Hits, facts, "we" facts, partner links and replay pass. The action-word line is hit: held for the user. The place wording: held for the user |
 | Vector-resolution design (review session, 2026-11-15) | not yet run | Approved as a measurement: readings A (entity vectors), B (object text) and C (role labels), thresholds 0.65/0.75/0.85 fixed in advance, 50 hand-checked matches per reading. C waits for the action ruling. A pass is a result for the user, not a go-ahead to build |
+| Vector resolution, reading A: question words to entity vectors (2026-11-16) | 0.65: +17 net, 20 of 50 wrong; 0.75: +10, 18 of 50 wrong; 0.85: +3 | Killed by its lines (every threshold over 20% wrong). Not re-run with another term filter |
+| Vector resolution, reading B: question words to the object text of the subject's facts (2026-11-16) | 0.65: +151 net, 11 of 50 wrong; 0.75: +116, 1 lost, 5 of 50 wrong; 0.85: +81, 1 lost, 1 of 50 wrong; rows per new hit 4.6 against 4.8 | Passes at 0.75 and 0.85. A result for the user; nothing built |
+| Lexical control: lemma match on object text, no vectors (2026-11-16) | +161 net, 5 lost, 11 of 50 wrong; 6.8 rows per new hit | Killed on its wrong-rate line. Reaches 65 hits the vectors do not; the vectors reach 16 it does not |
+| What the action role adds beyond object-text matching (2026-11-16) | of its 61 gained hits, 57 are reached with no action read (40 by vectors at 0.75, 52 by lemmas); 4 by neither. Flags off plus vectors at 0.75: 275 hits against 119 | Reported to the user with ruling 1. Reading C (role labels) stays deferred |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
