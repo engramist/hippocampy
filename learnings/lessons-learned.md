@@ -300,3 +300,61 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - flag off 123 and 119;
   - 1,862 new-candidate matches, of which 3 of 50 sampled are wrong (3 to 5 on the borderline calls): a boot camp read as a camping trip, an LGBTQ conference as LGBTQ rights, and a guitar style as "individual styles".
 - **Decision:** passed; merged with the flag off. Step 3 with object text (S3-OT) runs next, then step 3 as built (S3-asbuilt).
+
+### 2026-11-16 Step 3 re-measured with object-text matching (S3-OT)
+- **Why:** the user ruled to build object-text matching at 0.75 and then re-measure step 3 on top of it. OT-1 had shown the build lifts gold-row firings from 123 to 279.
+- **What:**
+  - **Replay:** all 809 questions on copies of the five recapture flags-on stores, from main b82ded76.
+  - **Flags:** `graph_facts` and `object_text_match` on; walk off; linking limit 0.
+  - **Graph reads:** the section reads `HAS_SUBJECT`/`subject_id`, `HAS_OBJECT` and `object_text`, and `EVIDENCED_BY` → Message. Nothing is written.
+  - **Judging:** the same judge, 3 votes and the same cache.
+  - **Baseline:** the stored replay with both flags off (434).
+  - **Firing groups:** from the section's own code path, run offline on the same copies.
+- **Lines (pre-registered):**
+  - PASS: net at least +15, and the fired-no-gold-row group loses at most 10 net.
+  - KILL: net 0 or less, or the no-gold group loses more than 24.
+  - Prediction: net -10 to +15.
+- **Result:**
+  - **Overall:** 414 vs 434, **net -20** (+41 / -61); -17 without the 34 test faults. Non-answers 44 against 48.
+  - **Fired with a gold row:** 279, +9 (32 / 23).
+  - **Fired with no gold row:** 361, **-29** (9 / 38).
+  - **Not fired:** 169, 0.
+  - **By source** (gold-row group / no-gold group):
+    - exact labels only: +2 on 47 / -7 on 106;
+    - exact labels plus matched text: +5 on 139 / -15 on 130;
+    - matched text only: +2 on 93 / -7 on 125.
+  - **By category:** 1: -1, 2: +4, 3: -2, 4: -21.
+  - **Size:** 8.1 lines (4.16 facts) per firing.
+- **Breakdown of the stored records** (no new run; a gold turn is "in the prompt" when the first 60 normalised characters of its text are in the conversation section):
+  - **Ceiling:** gold-row questions score 177 of 279 against 168 without the section. A rule that fired only on gold rows, which no rule can know, would gain at most +9, under the +15 line. The fire rule is not the whole story: where the section is right, it adds little.
+  - **Gold turn already in view:** 249 of the 279 gold-row questions had a gold turn in the conversation section already (rcon right 160 of 168, rcon wrong 89 of 111). The section mostly repeats what retrieval had supplied.
+  - **The 102 gold-row questions still wrong:**
+    - the gold shows as a turn and as a fact row in 84, as a fact row only in 18;
+    - 11 are non-answers;
+    - 27 are date questions and 5 arithmetic;
+    - 10 are test faults and 6 judge doubts.
+  - **What the lost answers became** (non-answer / quotes a section row / neither):
+    - gold-row losses: 3 / 3 / 17;
+    - no-gold losses: 3 / 7 / 28.
+  - **No-gold firings:** a gold turn was elsewhere in the prompt in 254 of 361, and absent in 104.
+- **Coverage of the conversation section, rcon on all 809:**
+  - **Accuracy by bucket:** every gold turn present 0.71 (524); some 0.15 (94); none 0.24 (187); no gold text 4.
+  - **Without the test faults:** 0.73, 0.16 and 0.25.
+  - **Without every gold turn:** 0.21 (59 of 281). Category 1 has every gold turn in view on only 32 of 153.
+  - **Caution:** the buckets are not randomly assigned. Questions whose gold turns are all retrieved may be easier ones.
+- **Ruling (review session, 2026-11-16):** kill on both lines, accepted. The flag stays off. No fire rule or cap change is tried; held for the user.
+- **Lesson:** more query hits did not become answers. Even with the gold among its rows, the section mostly repeats turns the reader already had, and when it fires without the gold it costs answers.
+
+### 2026-11-16 Step 3 re-measured as built (S3-asbuilt, the control)
+- **Why:** to separate the section's own effect from object-text matching's. Step 3 "re-measured as built after the re-capture" was an open item of the 2026-11-14 ruling.
+- **What:** the same replay as S3-OT (same stores, commit, judge and baseline) with `object_text_match` off.
+- **Lines (pre-registered):** KILL at net 0 or less. Prediction: -15 to 0.
+- **Result:**
+  - **Overall:** 423 vs 434, **net -11** (+26 / -37); -10 without the test faults. Non-answers 43.
+  - **Fired with a gold row:** 123, +13.
+  - **Fired with no gold row:** 299, -24.
+  - **Not fired:** 387, 0.
+  - **By category:** 1: 0, 2: +3, 3: -2, 4: -12.
+  - **Paired against S3-OT:** +42 / -33, net +9 for as built.
+- **Ruling:** kill as predicted; held for the user with S3-OT.
+- **Lesson:** matching made the section fire more often (gold-row firings 123 to 279, no-gold firings 299 to 361) without raising its net where it holds the gold (+13 to +9). The gold-only ceiling is under +15 in both forms.

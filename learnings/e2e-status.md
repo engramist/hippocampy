@@ -2,11 +2,23 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-16 (object-text matching built behind `object_text_match`, off; OT-1 passed; S3-OT next)_
+_Last updated: 2026-11-16 (S3-OT and S3-asbuilt both hit their kill lines; held for the user; baselines on the 809 running)_
 
 ## Waiting for the user
 
-Nothing. The full trail of trials is in `lessons-learned.md`; every test or trial is appended there with its result.
+**Step 3 after the object-text build (held 2026-11-16).** Both re-measurements of the graph facts section hit their
+kill lines against the stored flag-off replay (434 of 809):
+- with object-text matching (S3-OT): net -20 (fired with a gold row +9 on 279, fired with no gold row -29 on 361);
+- as built (S3-asbuilt): net -11 (gold row +13 on 123, no gold row -24 on 299).
+
+Even a section that fired only on gold rows would gain at most +9 (with matching) or +13 (as built), under the +15
+line. 249 of the 279 gold-row questions already had a gold turn in the conversation section, so the section mostly
+repeats what retrieval supplied. No fire rule or cap change is tried (2026-11-14 ruling). The decision on what comes
+next is the user's. Details: `lessons-learned.md`, entries of 2026-11-16 for S3-OT and S3-asbuilt.
+
+Meanwhile the baselines on the 809 run as a reference measurement (approved below).
+
+The full trail of trials is in `lessons-learned.md`; every test or trial is appended there with its result.
 
 Ruled by the user 2026-11-16:
 1. **Action word:** dropped, as the 2026-11-14 ruling says (21 of 100 written words wrong; object-text matching
@@ -370,6 +382,9 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Lessons file (user, 2026-11-16) | `lessons-learned.md` written back to 2026-09-28 | User: every test or trial is appended to it (why, what, result, decision) in the same PR as its status update |
 | Object-text matching design (review session, 2026-11-16) | reference measured before the build (vecq-4, exact object Concepts plus object text at 0.75, no role reads): 279 hits on the flags-on stores, 275 on the flags-off stores; exact only 123 and 119 | Approved to build behind `object_text_match` (off, in no profile): reads the subject's live facts, their object text and `EVIDENCED_BY`; writes nothing; threshold 0.75 and 3 texts per term fixed as constants. Run OT-1: the build reproduces 279 and 275 within 3, at most 10 of 50 sampled matches wrong. Run S3-OT (graph facts with object text, against the stored 434): pass net +15 or more with the no-gold-row group losing at most 10; kill at net 0 or below, or that group losing more than 24; between is the user's call. Prediction: near 0, because the fire rule is unchanged. The as-built step 3 arm also runs, as the control and to close the 2026-11-14 ruling |
 | Object-text matching build, run OT-1 (2026-11-16) | built path: 279 (flags on) and 275 (flags off), 0 ids differing from vecq-4; flag off 123 and 119; 3 of 50 new matches wrong (range 3-5) | Passed every line; merged with the flag off. S3-OT next |
+| Step 3 with object-text matching, S3-OT (2026-11-16) | 414 vs 434 (net -20); gold row +9 on 279, no gold row -29 on 361 (line: >24); without the 34 test faults -17 | Kill on both lines; flag stays off; held for the user |
+| Step 3 as built, S3-asbuilt (2026-11-16) | 423 vs 434 (net -11); gold row +13 on 123, no gold row -24 on 299 | Kill as predicted (line: net <= 0); held for the user with S3-OT |
+| Baselines on the 809 (design, 2026-11-16) | design approved by the review session 2026-11-16: per-conversation runs, same answer model, judge, votes and cache as rcon; no pass or kill line; predictions no memory 0.02-0.06, naive retrieval 0.30-0.42, full history 0.45-0.62 | Running |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
