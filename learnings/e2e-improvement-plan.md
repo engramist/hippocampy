@@ -86,6 +86,14 @@ What changed, and why. Every change below was ruled by the user (2026-11-15 and 
 5. **Step 3 is re-measured twice:** with object-text matching (S3-OT), then as built (S3-asbuilt), against the stored flag-off replay of the re-captured stores. S3-asbuilt is the control that isolates object text's own effect.
 6. **Baselines on the 809 are added as a reference measurement, not a step:** no memory, naive retrieval and full history, with the same answer model, judge and settings as the step-0c replays. They run after S3-asbuilt, with no pass or kill line. The last baselines were on 44-60 questions in October.
 
+## Revision, 2026-11-16 (evening)
+
+Step 3 is killed in both forms re-measured on the re-captured stores: with object-text matching (net -20) and as
+built (net -11), against the stored flag-off replay. The gold-only ceiling (+9 and +13) is under the +15 line, so the
+fire rule alone would not rescue it; the section mostly repeats turns already in the conversation section (249 of
+279). Step 4 does not start on top of step 3. What comes next is held for the user. The baselines on the 809 run
+meanwhile as the reference the next direction will be read against.
+
 ## Not known yet
 
 - The query-hit lines for steps 1 and 2 do not exist until step Q's baseline is in.
