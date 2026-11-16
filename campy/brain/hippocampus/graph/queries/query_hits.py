@@ -18,10 +18,13 @@ Reads:
                                      Concepts RELATION_OF the subject whose relation_label is a question term
   query_hits.facts                   the subject's live facts whose HAS_OBJECT is K, an instance of K, or narrower,
                                      each with its EVIDENCED_BY turn and date (oldest first), its predicate, quote,
-                                     time phrase and the object's kinds (step 3 renders these)
+                                     time phrase and the object's kinds (step 3 renders these); with the optional
+                                     `texts` it also takes the live facts whose object_text is one of them
   query_hits.facts_count             the same facts counted: distinct objects and distinct facts (graph count, folded in)
   query_hits.facts_latest            the newest of the same facts
   query_hits.facts_exist             whether any such fact exists (false is the answer "not recorded")
+  query_hits.labels_in               which given lower-cased terms equal a Concept label or altLabel (lower-cased)
+  query_hits.object_texts_of_subject the distinct object_text of the subject's live facts (object-text matching)
   query_hits.role_targets            step 1: the Concepts named by a term that are a role of one of the subject's live
                                      facts: its action kind or a kind BROADER* above it (HAS_ACTION), a participant
                                      (HAS_PARTICIPANT) or a place (HAS_PLACE); the role is returned with each. The
@@ -125,17 +128,43 @@ def _objects_sparql(scoped: bool) -> str:
             """
 
 
-# The subject's live facts whose object ?x is K, an instance of K, or an instance of a kind narrower than K.
+# The subject's live facts: those whose object ?x is K, an instance of K, or an instance of a kind narrower than K
+# (the kids branch, which binds ?x), together with those whose own `object_text` is one of the given texts (the text
+# branch, which leaves ?x unbound; the projection tail binds it from the fact when it has an object Concept). With
+# no texts the text branch has an empty VALUES block and yields nothing, so the rows are the kids branch's alone.
 _FACTS_BODY = """
-              VALUES ?kid { }
-              ?k a campy:Concept ; campy:concept_id ?kid .
-              ?x (campy:INSTANCE_OF|campy:BROADER)* ?k .
-              ?o campy:HAS_OBJECT ?x ; a campy:Observation ; campy:observation_id ?observation_id ;
+              {
+                VALUES ?kid { }
+                ?k a campy:Concept ; campy:concept_id ?kid .
+                ?x (campy:INSTANCE_OF|campy:BROADER)* ?k .
+                ?o campy:HAS_OBJECT ?x .
+              } UNION {
+                VALUES ?text { }
+                ?o campy:object_text ?text .
+              }
+              ?o a campy:Observation ; campy:observation_id ?observation_id ;
                  campy:EVIDENCED_BY ?message .
               { ?o campy:HAS_SUBJECT ?_s . ?_s campy:concept_id ?sid } UNION { ?o campy:subject_id ?sid }
               ?message campy:message_id ?evidence_message_id .
               OPTIONAL { ?message campy:occurred_at ?occurred_at }
 """ + _LIVE_FACT
+
+# The row's object: ?x joins on the kids branch's binding, or is bound from the fact for a text-branch row. Everything
+# that reads ?x sits inside this one OPTIONAL, so a fact with no object Concept never joins an unbound ?x to every
+# Concept. The Observation's own literal is the object text only when there is no object Concept.
+_FACTS_TAIL = """
+              OPTIONAL {
+                ?o campy:HAS_OBJECT ?x .
+                OPTIONAL { ?x campy:concept_id ?object_id }
+                OPTIONAL { ?x campy:text_raw ?_concept_text }
+                OPTIONAL { ?x campy:INSTANCE_OF ?_kind . ?_kind campy:text_raw ?kind_label }
+              }
+              OPTIONAL { ?o campy:object_text ?_literal_text }
+              BIND(IF(BOUND(?x), ?_concept_text, ?_literal_text) AS ?object_text)
+              OPTIONAL { ?o campy:predicate ?predicate }
+              OPTIONAL { ?o campy:evidence_text ?quote }
+              OPTIONAL { ?o campy:time_text ?time_text }
+"""
 
 _FACTS_CYPHER = ("MATCH (o:Observation {subject_id: $sid})-[:HAS_OBJECT]->(x)-[:INSTANCE_OF|BROADER*0..]->"
                  "(k:Concept) WHERE k.concept_id IN $kids AND o.archived = false "
@@ -205,6 +234,7 @@ QUERY_HIT_QUERIES = [
         cypher=_FACTS_CYPHER + ("RETURN DISTINCT o.observation_id AS observation_id, x.concept_id AS object_id, "
                                 "m.message_id AS evidence_message_id"),
         params=("sid", "kids"),
+        optional_params=("texts",),
         mutating=False,
         description=("The subject's live facts whose HAS_OBJECT is one of the Concepts K, an instance of K or of a "
                      "kind BROADER* below K, each with its EVIDENCED_BY turn and date, oldest first. Empty is "
@@ -214,12 +244,7 @@ QUERY_HIT_QUERIES = [
                    ?predicate ?quote ?time_text (GROUP_CONCAT(DISTINCT ?kind_label; separator="|") AS ?kinds)
             WHERE {{
               {_FACTS_BODY}
-              OPTIONAL {{ ?x campy:concept_id ?object_id }}
-              OPTIONAL {{ ?x campy:text_raw ?object_text }}
-              OPTIONAL {{ ?o campy:predicate ?predicate }}
-              OPTIONAL {{ ?o campy:evidence_text ?quote }}
-              OPTIONAL {{ ?o campy:time_text ?time_text }}
-              OPTIONAL {{ ?x campy:INSTANCE_OF ?_kind . ?_kind campy:text_raw ?kind_label }}
+              {_FACTS_TAIL}
             }}
             GROUP BY ?observation_id ?object_id ?object_text ?message ?evidence_message_id ?occurred_at
                      ?predicate ?quote ?time_text
@@ -230,11 +255,15 @@ QUERY_HIT_QUERIES = [
         name="query_hits.facts_count",
         cypher=_FACTS_CYPHER + "RETURN count(DISTINCT x) AS objects, count(DISTINCT o) AS facts",
         params=("sid", "kids"),
+        optional_params=("texts",),
         mutating=False,
         description="How many distinct objects and distinct live facts query_hits.facts finds for the subject",
         sparql=f"""
-            SELECT (COUNT(DISTINCT ?x) AS ?objects) (COUNT(DISTINCT ?o) AS ?facts) WHERE {{
+            SELECT (COUNT(DISTINCT ?obj) AS ?objects) (COUNT(DISTINCT ?o) AS ?facts) WHERE {{
               {_FACTS_BODY}
+              OPTIONAL {{ ?o campy:HAS_OBJECT ?x }}
+              OPTIONAL {{ ?o campy:object_text ?_literal_text }}
+              BIND(COALESCE(?x, ?_literal_text) AS ?obj)
             }}
             """,
     ),
@@ -243,18 +272,14 @@ QUERY_HIT_QUERIES = [
         cypher=_FACTS_CYPHER + ("RETURN o.observation_id AS observation_id, m.message_id AS evidence_message_id "
                                 "ORDER BY m.occurred_at DESC LIMIT 1"),
         params=("sid", "kids"),
+        optional_params=("texts",),
         mutating=False,
         description="The newest of query_hits.facts' rows (by its turn's date), with its object and turn",
         sparql=f"""
             SELECT ?observation_id ?object_id ?object_text ?message ?evidence_message_id ?occurred_at ?predicate
                    ?quote ?time_text (GROUP_CONCAT(DISTINCT ?kind_label; separator="|") AS ?kinds) WHERE {{
               {_FACTS_BODY}
-              OPTIONAL {{ ?x campy:concept_id ?object_id }}
-              OPTIONAL {{ ?x campy:text_raw ?object_text }}
-              OPTIONAL {{ ?o campy:predicate ?predicate }}
-              OPTIONAL {{ ?o campy:evidence_text ?quote }}
-              OPTIONAL {{ ?o campy:time_text ?time_text }}
-              OPTIONAL {{ ?x campy:INSTANCE_OF ?_kind . ?_kind campy:text_raw ?kind_label }}
+              {_FACTS_TAIL}
             }}
             GROUP BY ?observation_id ?object_id ?object_text ?message ?evidence_message_id ?occurred_at
                      ?predicate ?quote ?time_text
@@ -266,12 +291,50 @@ QUERY_HIT_QUERIES = [
         name="query_hits.facts_exist",
         cypher=_FACTS_CYPHER + "RETURN count(o) > 0 AS exists",
         params=("sid", "kids"),
+        optional_params=("texts",),
         mutating=False,
         description="Whether the subject has any live fact query_hits.facts would return (false: 'not recorded')",
         sparql=f"""
             SELECT ((COUNT(?o) > 0) AS ?exists) WHERE {{
               {_FACTS_BODY}
             }}
+            """,
+    ),
+    NamedQuery(
+        name="query_hits.labels_in",
+        cypher=("MATCH (c:Concept) WHERE toLower(c.text_raw) IN $terms "
+                "RETURN DISTINCT toLower(c.text_raw) AS term"),
+        params=("terms",),
+        mutating=False,
+        description=("Which of the given lower-cased terms equal the label or an altLabel of some Concept, compared "
+                     "lower-cased (any Concept, archived or not); the rest name no Concept"),
+        sparql="""
+            SELECT DISTINCT ?term WHERE {
+              { VALUES ?term { } }
+              { SELECT ?term WHERE {
+                  ?c a campy:Concept .
+                  { ?c campy:text_raw ?label } UNION { ?c campy:HAS_ALT_LABEL ?_l . ?_l campy:text ?label }
+                  BIND(LCASE(STR(?label)) AS ?term)
+              } }
+            }
+            ORDER BY ?term
+            """,
+    ),
+    NamedQuery(
+        name="query_hits.object_texts_of_subject",
+        cypher="MATCH (o:Observation {subject_id: $sid}) WHERE o.archived = false RETURN DISTINCT o.object_text AS object_text",
+        params=("sid",),
+        mutating=False,
+        description=("The distinct object_text of the subject's live facts (the pool a question word is matched "
+                     "against by vector)"),
+        sparql="""
+            SELECT DISTINCT ?object_text WHERE {
+              ?o a campy:Observation ; campy:object_text ?object_text .
+              { ?o campy:HAS_SUBJECT ?_s . ?_s campy:concept_id ?sid } UNION { ?o campy:subject_id ?sid }
+              FILTER NOT EXISTS { ?o campy:archived true }
+              FILTER NOT EXISTS { ?o campy:DEPRECATED_BY ?_newer }
+            }
+            ORDER BY ?object_text
             """,
     ),
     NamedQuery(

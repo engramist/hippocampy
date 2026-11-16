@@ -14,6 +14,11 @@ notify_turn = None
 
 # Track which modules were stubbed by this file so teardown_module can clean up.
 _STUBBED_KEYS: set[str] = set()
+# B571: the sys.modules entries this file may replace, as they were before setup_module; teardown puts
+# back exactly these objects, so a real module another file imported is never dropped or duplicated.
+_SNAPSHOT_KEYS = ['sentence_transformers', 'kuzu', 'spacy', 'spacy.lang', 'spacy.lang.en', 'campy.brain.hippocampus.graph.embeddings', 'campy.brain.hippocampus.quest', 'campy.brain.temporal_lobe.warm_frontier', 'campy.brain.thalamus.working_memory', 'campy.brain.hippocampus.hippocampus', 'campy.brain.thalamus.tools']
+_SAVED: dict = {}
+_BEFORE: set = set()  # module names loaded before setup_module
 
 
 def _stub(name, **attrs):
@@ -28,6 +33,10 @@ def _stub(name, **attrs):
 
 def setup_module(module):
     """Install stubs and import campy.brain.thalamus.tools right before tests run."""
+    _SAVED.clear()
+    _SAVED.update({k: sys.modules.get(k) for k in _SNAPSHOT_KEYS})
+    _BEFORE.clear()
+    _BEFORE.update(sys.modules)
     global report_outcome, current_truth, notify_turn
 
     # Stub external dependencies that kuzu needs
@@ -96,14 +105,19 @@ def setup_module(module):
 
 
 def teardown_module(module):
-    """Remove stubs and the tools module."""
-    for key in _STUBBED_KEYS:
+    """Put back the sys.modules entries exactly as they were before setup_module (B571). Modules first
+    imported while the stubs were in place bound those stubs, so they are dropped too; the next import loads
+    them again against the real modules."""
+    for key in set(sys.modules) - _BEFORE:
         sys.modules.pop(key, None)
-    sys.modules.pop("campy.brain.thalamus.tools", None)
-    for key in ["campy.brain.hippocampus.graph.embeddings", "campy.brain.hippocampus.quest",
-                "campy.brain.temporal_lobe.warm_frontier", "campy.brain.thalamus.working_memory",
-                "campy.brain.hippocampus.hippocampus"]:
-        sys.modules.pop(key, None)
+    for key, mod in _SAVED.items():
+        if mod is None:
+            sys.modules.pop(key, None)
+        else:
+            sys.modules[key] = mod
+    _SAVED.clear()
+    _BEFORE.clear()
+    _STUBBED_KEYS.clear()
 
 class _Result:
     def __init__(self, rows=None):
