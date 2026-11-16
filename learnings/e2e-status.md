@@ -2,26 +2,18 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-16 (full re-capture and vector-resolution measurements reported; three decisions with the user)_
+_Last updated: 2026-11-16 (the user ruled on the action word, the place line and object-text matching; design of the matching next)_
 
 ## Waiting for the user
 
-1. **The action word, after the full re-capture (2026-11-16):** its line is hit. 21 of 100 hand-checked written action
-   words are wrong (the line is at most 20; the borderline calls give 18 to 23). Under the 2026-11-14 ruling (form 3
-   is the last form) that drops the action role. The role carries 61 of the 73 gained query hits; without its reads
-   the gain is +16 net, under the +30 pass line. 5 of the 21 wrong words come from the rule's own verb-to-noun step
-   (a fault in the rule, not the model's choice). Nothing is built or changed on the role until the user rules.
-2. **The place line's wording (2026-11-16):** 4 of 30 place links are wrong judged by the whole turn (13%), 14 of 30
-   judged by the fact's quote alone. The run line said "by the quote"; 10 right places are named elsewhere in the
-   same turn. The review session did not settle this in the favourable direction; it is the user's call.
+Nothing. The full trail of trials is in `lessons-learned.md`; every test or trial is appended there with its result.
 
-3. **Object-text matching (2026-11-16, measured offline at the user's request):** resolving a question's words to
-   the object text of the subject's own facts by vector passes its lines at cosine 0.75 (+116 net hits on 190, 1
-   lost, 5 of 50 matches wrong) and at 0.85 (+81, 1 of 50). Whether to build it, and where it sits in the order, is
-   the user's call. It bears on ruling 1: 57 of the action role's 61 gained hits are reached by object-text matching
-   with no action read; on top of the 0.75 rule the action role adds +22 hits.
-
-Step 3 re-measured and step 4 wait for ruling 1. Nothing is built from the measurements until the user rules.
+Ruled by the user 2026-11-16:
+1. **Action word:** dropped, as the 2026-11-14 ruling says (21 of 100 written words wrong; object-text matching
+   reaches 57 of its 61 gained hits). The `roles` flag stays off and in no profile; no code is deleted yet.
+2. **Place line:** judged by the whole turn (4 of 30 wrong). The place role is kept.
+3. **Object-text matching by vector at cosine 0.75:** built next, behind a flag (off, in no profile), design first.
+   Step 3 is then re-measured on top of it, as its own pre-registered run; then step 4.
 
 Ruled by the user 2026-11-15:
 1. **Partner role:** the model-chosen partner is dropped (29 of 30 hand-checked links were wrong). The action word
@@ -364,6 +356,8 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Vector resolution, reading B: question words to the object text of the subject's facts (2026-11-16) | 0.65: +151 net, 11 of 50 wrong; 0.75: +116, 1 lost, 5 of 50 wrong; 0.85: +81, 1 lost, 1 of 50 wrong; rows per new hit 4.6 against 4.8 | Passes at 0.75 and 0.85. A result for the user; nothing built |
 | Lexical control: lemma match on object text, no vectors (2026-11-16) | +161 net, 5 lost, 11 of 50 wrong; 6.8 rows per new hit | Killed on its wrong-rate line. Reaches 65 hits the vectors do not; the vectors reach 16 it does not |
 | What the action role adds beyond object-text matching (2026-11-16) | of its 61 gained hits, 57 are reached with no action read (40 by vectors at 0.75, 52 by lemmas); 4 by neither. Flags off plus vectors at 0.75: 275 hits against 119 | Reported to the user with ruling 1. Reading C (role labels) stays deferred |
+| Action word, place line, object-text matching (user, 2026-11-16) | as the three rows above and the full re-capture row | User: action word dropped; places judged by the turn and kept; object-text matching at 0.75 built next behind a flag, design first, then step 3 re-measured |
+| Lessons file (user, 2026-11-16) | `lessons-learned.md` written back to 2026-09-28 | User: every test or trial is appended to it (why, what, result, decision) in the same PR as its status update |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
