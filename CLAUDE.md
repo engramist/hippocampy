@@ -17,6 +17,8 @@ Default workflow:
 4. Summarize changed files, commands run, and results.
 5. Commit when satisfied.
 
+After every test, trial or measurement (benchmark run, gate, replay, offline measurement, hand-check): append a detailed entry to `learnings/lessons-learned.md` (why it was run, what was done, the lines set before the run, the result, the decision) in the same PR as the result, and update `learnings/e2e-improvement-plan.md` if the result changes direction. The plan, the lessons file and the live status (`learnings/e2e-status.md`) all live in `learnings/`.
+
 Optional delegation workflow:
 - If requested, or if the task is large/multi-file, follow `GEMINI-DELEGATION.md`.
 - You may still create a detailed `B-<feature>.md` plan first, then delegate to Gemini CLI.

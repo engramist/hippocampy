@@ -55,6 +55,10 @@ At step 4 every one of the 15 `principled` switches is either on by default or d
 - If a step's graph number moves and the score doesn't, I say so and stop before starting another lever.
 - Every result ends in a ruling, recorded in the Rulings table of `e2e-status.md`: kept, stopped, parked (needs the user to restart), or not ruled. A result is not left without one past the next step's start.
 - A gain is claimed only from a replay on stored stores or when it exceeds the noise. Otherwise the report says "no measurable change".
+- **After every test or trial, two documents are updated in the same PR as the result** (ruled by the user 2026-11-16):
+  1. `lessons-learned.md` gets a detailed entry: why we ran it, what we did (edges read and written, flags, stores, what it was compared with), the lines set before the run, the result with its numbers, and the decision.
+  2. This plan is updated if the result changes direction: a step added, dropped, reordered or redefined. The change is dated under a "Revision" heading with its reason. A change of direction is the user's ruling; the plan records it, it does not make it.
+  A result PR without its lessons entry is not merged. `e2e-status.md` stays the current-state page.
 
 ## Revision, 2026-11-12
 
