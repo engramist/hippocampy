@@ -2,11 +2,21 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-15 (user ruled: partner dropped; "we" anchoring only; full re-capture path open)_
+_Last updated: 2026-11-16 (full re-capture reported: hits +71 net; the action-word line is hit; held for the user)_
 
 ## Waiting for the user
 
-Nothing (2026-11-15).
+1. **The action word, after the full re-capture (2026-11-16):** its line is hit. 21 of 100 hand-checked written action
+   words are wrong (the line is at most 20; the borderline calls give 18 to 23). Under the 2026-11-14 ruling (form 3
+   is the last form) that drops the action role. The role carries 61 of the 73 gained query hits; without its reads
+   the gain is +16 net, under the +30 pass line. 5 of the 21 wrong words come from the rule's own verb-to-noun step
+   (a fault in the rule, not the model's choice). Nothing is built or changed on the role until the user rules.
+2. **The place line's wording (2026-11-16):** 4 of 30 place links are wrong judged by the whole turn (13%), 14 of 30
+   judged by the fact's quote alone. The run line said "by the quote"; 10 right places are named elsewhere in the
+   same turn. The review session did not settle this in the favourable direction; it is the user's call.
+
+Step 3 re-measured and step 4 wait for ruling 1. The vector-resolution measurement runs its two readings that do not
+use the action role.
 
 Ruled by the user 2026-11-15:
 1. **Partner role:** the model-chosen partner is dropped (29 of 30 hand-checked links were wrong). The action word
@@ -343,6 +353,8 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | "We" anchor design (review session, 2026-11-15) | pre-build check: partner by "PERSON named in the quote" 4 of 6 wrong; narrowed to "X and I" or object of "with": 1 link, right | Approved to build behind `group_anchor` (off): speaker as subject, `group_subject` true, partner by the narrowed rule only, PERSON only. Under 10 partner links in the re-capture is "too few to judge", not a pass |
 | Confirming capture, partner line removed (conv-26, 2026-11-15) | hits 26 (line: within 2 of 26); facts 389/389; same 50 words: 3 right words now unwritten, no wrong word changed; 10 of 50 wrong (10 of the 47 written, 21.3%); invalid or missing action answers 10 against 1 | Review session: prerequisite met as pre-registered (the picks did not shift). Not counted as evidence the words are under 20% wrong; the re-capture's 100 written words decide the action role, wrong-rates over written edges only |
 | Question words resolved to entities by vector (user, 2026-11-15) | not measured; step Q matches exact labels only | User: measure offline on store copies after the full re-capture result. A measurement only; no code on main until its result has a ruling. It does not change the order (step 3 re-measured, then step 4) |
+| Full re-capture, five conversations, flags on against off (2026-11-16) | query hits 190 against 119 (+73, 2 lost; +79 against 111); facts 6 of 2,731 missing; action words 21 of 100 wrong; places 4 of 30 wrong by the turn (14 by the quote alone); "we" facts 6 of 30 wrong; rule-written partner links 61, 4 of 30 wrong; replay 434 against 436 | Hits, facts, "we" facts, partner links and replay pass. The action-word line is hit: held for the user. The place wording: held for the user |
+| Vector-resolution design (review session, 2026-11-15) | not yet run | Approved as a measurement: readings A (entity vectors), B (object text) and C (role labels), thresholds 0.65/0.75/0.85 fixed in advance, 50 hand-checked matches per reading. C waits for the action ruling. A pass is a result for the user, not a go-ahead to build |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
