@@ -24,6 +24,8 @@ improvement work starts with `2026-10-summary.md`, then
 
 ## Adding a note
 
+- **After every test or trial:** append a detailed entry to `lessons-learned.md` (why, what, lines, result, decision)
+  and, if the result changes direction, update `e2e-improvement-plan.md`. Same PR as the result.
 - One file per campaign or milestone, named `YYYY-MM-<topic>.md`.
 - Lead with the numbers and the commits they came from.
 - Record what did *not* work as carefully as what did.

@@ -9,7 +9,9 @@ Conventions: ids and counts only, no answer-key values; models are named by role
 
 ## Adding an entry (required after every test or trial)
 
-Append to the last section, in the same PR as the status-file update:
+Append to the last section, in the same PR as the status-file update. If the result changes direction (a step added,
+dropped, reordered or redefined), update `e2e-improvement-plan.md` in that PR too, under a dated "Revision" heading.
+A result PR without its entry here is not merged.
 
 ```
 ### <date> <short name> (<run id, PR or card>)
