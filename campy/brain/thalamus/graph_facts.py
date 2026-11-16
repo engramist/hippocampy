@@ -9,6 +9,10 @@ What fires, and what it shows, is decided by the graph and the question analysis
   * the SHAPE is the question analysis's closed set (count, list, latest, when, yes_no, ...). It decides only how
     the rows are presented, and which computed block (`facts_count`, `facts_latest`, `facts_exist`) heads them.
 
+With `[retrieval] object_text_match` also on (env `CAMPY_OBJECT_TEXT_MATCH`, default off, in no profile), the
+facts whose own object text a question word matches by vector (object_text_match.py) join the exact-label ones in
+the same queries, and the section can fire on those alone; the 1..MAX_FACTS rule is over the union.
+
 Python formats the rows; it does not count, filter or join them. Every rendered row keeps its source turn (date and
 the quote). Behind `[retrieval] graph_facts` (env `CAMPY_GRAPH_FACTS`, default off, in no profile). When it is on,
 the bundle compiler does not build the graph_count section (graph count is folded into these queries); the
@@ -86,6 +90,20 @@ def render(shape: str, subject: str, rows: list[dict], count: dict | None = None
     return "\n".join(lines)
 
 
+async def _matched_texts(gw, sid: str, pairs, subject: str, config: dict) -> list[str]:
+    """The object texts of the subject's facts the question's words match by vector, or [] (flag off, or any failure:
+    the exact-label read then answers alone)."""
+    from campy.brain.thalamus.object_text_match import object_text_match_enabled, resolve_object_texts
+
+    if not object_text_match_enabled(config):
+        return []
+    try:
+        return await resolve_object_texts(gw, sid, pairs, subject)
+    except Exception as e:
+        _logger.warning("object_text_match failed, reading exact labels only: %s", e)
+        return []
+
+
 async def build_graph_facts_section(db, query: str, config: dict, analysis=None):
     """The `graph_facts` BundleSection, or None (flag off, no subject or object Concept resolved, no fact, too broad,
     or any failure). The normal pipeline answers either way."""
@@ -103,20 +121,21 @@ async def build_graph_facts_section(db, query: str, config: dict, analysis=None)
             return None
         sid, subject = subj[0]["sid"], str(subj[0].get("label") or "")
         kids = [r["kid"] for r in await gw.run("query_hits.objects", terms=[t for t, _ in pairs], sid=sid)]
-        if not kids:
+        texts = await _matched_texts(gw, sid, pairs, subject, config)
+        if not kids and not texts:
             return None
-        counted = await gw.run("query_hits.facts_count", sid=sid, kids=kids)
+        counted = await gw.run("query_hits.facts_count", sid=sid, kids=kids, texts=texts)
         n_facts = int((counted[0].get("facts") if counted else 0) or 0)
         if n_facts == 0 or n_facts > MAX_FACTS:
             return None
-        rows = await gw.run("query_hits.facts", sid=sid, kids=kids)
+        rows = await gw.run("query_hits.facts", sid=sid, kids=kids, texts=texts)
         shape = getattr(analysis, "shape", None) or "open"
         latest = exists = None
         if shape == "latest":
-            got = await gw.run("query_hits.facts_latest", sid=sid, kids=kids)
+            got = await gw.run("query_hits.facts_latest", sid=sid, kids=kids, texts=texts)
             latest = got[0] if got else None
         if shape == "yes_no":
-            got = await gw.run("query_hits.facts_exist", sid=sid, kids=kids)
+            got = await gw.run("query_hits.facts_exist", sid=sid, kids=kids, texts=texts)
             exists = bool(got[0].get("exists")) if got else None
         text = render(shape, subject, rows, counted[0] if counted else None, latest, exists)
         return BundleSection(

@@ -70,6 +70,7 @@ def test_every_documented_override_applies():
         "CAMPY_OBSERVATIONS_OWNERSHIP_RULE": "1",
         "CAMPY_GRAPH_COUNT": "1",
         "CAMPY_GRAPH_FACTS": "1",
+        "CAMPY_OBJECT_TEXT_MATCH": "1",
         "CAMPY_QUESTION_ANALYSIS": "1",
         "CAMPY_GRAPH_VOTE": "1",
         "CAMPY_KIND_HYGIENE": "1",
@@ -97,6 +98,7 @@ def test_every_documented_override_applies():
     assert cfg["retrieval"]["question_analysis"] is True
     assert cfg["retrieval"]["graph_vote"] is True
     assert cfg["retrieval"]["graph_facts"] is True
+    assert cfg["retrieval"]["object_text_match"] is True
     assert cfg["loop"]["entity_admission"] is True
     assert cfg["loop"]["entity_standing"] is True
     assert cfg["loop"]["tracker_side_branch"] is True
