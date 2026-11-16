@@ -270,3 +270,33 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
 - **Place:** judged by the whole turn (4 of 30 wrong); the place role is kept.
 - **Object-text matching at 0.75:** build it as the next step, behind a flag, design first; then re-measure step 3 on top of it.
 - **Open caveat:** the match reads a fact's text at question time. It does not turn that text into a graph entity, so capture still leaves most objects unlinked.
+
+### 2026-11-16 Reference numbers for the object-text build (vecq-4)
+- **Why:** the build must reproduce a number fixed before it is written, so its first run can only show it right or wrong.
+- **What:** offline on the recap store copies, CPU only, nothing written. Exact object Concepts plus object-text matches at 0.75 (top 3 per term, vecq-1's term filter), with no role reads, since the `graph_facts` section reads none. Also counted: which questions the section would fire on (subject resolved, 1 to 25 distinct facts) and whether a gold turn is among the rows.
+- **Lines:** no lever line. The script is wrong if the flags-off stores do not give vecq-3's 275.
+- **Result:**
+  - Flags-off stores: exact 119, with object text 275 (reproduced).
+  - Flags-on stores: exact 123, with object text 279.
+  - Firings 415 to 631: 156 more with a gold row, 60 more without one; 4.15 rows per firing.
+  - Embedding: 11,553 distinct texts in 5.8 s on CPU; at most 289 per subject.
+- **Decision (review session, 2026-11-16):** design approved; the build's line (OT-1) is 279 ± 3 and 275 ± 3.
+- **Lesson:** applying step 3's per-group rates to these counts projects about +25 from the gold-row firings and about -28 from the no-gold firings. More hits can still net zero answers while the section fires without a gold row.
+
+### 2026-11-16 Object-text matching built, run OT-1 (branch `claude/object-text-match`, flag `object_text_match`)
+- **Why:** reading B at 0.75 passed offline, and the user ruled to build it before step 3 is re-measured.
+- **What:**
+  - **The match:** at question time, each question word that is not a Concept label is matched by vector against the distinct object text of the subject's own live facts. Up to 3 texts per word at cosine 0.75 or above are kept; both numbers are constants.
+  - **The read:** the four `query_hits.facts*` queries take the matched texts as a second branch beside the exact-label objects. Count, latest and exists are computed over both together, and nothing is written.
+  - **Edges read:** `HAS_SUBJECT` (or the subject literal), the fact's object text, `HAS_OBJECT`, `INSTANCE_OF`, `BROADER` and `EVIDENCED_BY`.
+  - **Scope:** the flag is off, in no profile, and acts only inside the `graph_facts` section.
+  - **The run:** measured with step Q's script on fresh copies of the re-capture stores.
+- **Lines:**
+  - 279 ± 3 and 275 ± 3, with at most 5 ids differing from vecq-4;
+  - flag off unchanged (123 and 119);
+  - at most 10 of 50 sampled new matches wrong (seed 20261127, drawn before the hits).
+- **Result:**
+  - 279 and 275, with 0 ids different on either arm;
+  - flag off 123 and 119;
+  - 1,862 new-candidate matches, of which 3 of 50 sampled are wrong (3 to 5 on the borderline calls): a boot camp read as a camping trip, an LGBTQ conference as LGBTQ rights, and a guitar style as "individual styles".
+- **Decision:** passed; merged with the flag off. Step 3 with object text (S3-OT) runs next, then step 3 as built (S3-asbuilt).

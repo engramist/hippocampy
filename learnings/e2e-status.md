@@ -2,7 +2,7 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-16 (the user ruled on the action word, the place line and object-text matching; design of the matching next)_
+_Last updated: 2026-11-16 (object-text matching built behind `object_text_match`, off; OT-1 passed; S3-OT next)_
 
 ## Waiting for the user
 
@@ -14,6 +14,16 @@ Ruled by the user 2026-11-16:
 2. **Place line:** judged by the whole turn (4 of 30 wrong). The place role is kept.
 3. **Object-text matching by vector at cosine 0.75:** built next, behind a flag (off, in no profile), design first.
    Step 3 is then re-measured on top of it, as its own pre-registered run; then step 4.
+
+Done 2026-11-16: object-text matching is built behind `[retrieval] object_text_match` (off, in no profile; it acts
+only with `graph_facts` on). **Run OT-1 passed every line:**
+- the build gives 279 hits on the flags-on stores and 275 on the flags-off stores, the same as the offline
+  reference (vecq-4), with 0 question ids different;
+- flag off gives 123 and 119, unchanged;
+- 3 of 50 sampled new matches are wrong (3 to 5 on the borderline calls; the line is at most 10).
+
+Next: S3-OT (step 3 with object text, one GPU replay arm against the stored 434), then S3-asbuilt, then the baselines
+on the 809 as a reference measurement.
 
 Ruled by the user 2026-11-15:
 1. **Partner role:** the model-chosen partner is dropped (29 of 30 hand-checked links were wrong). The action word
@@ -359,6 +369,7 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Action word, place line, object-text matching (user, 2026-11-16) | as the three rows above and the full re-capture row | User: action word dropped; places judged by the turn and kept; object-text matching at 0.75 built next behind a flag, design first, then step 3 re-measured |
 | Lessons file (user, 2026-11-16) | `lessons-learned.md` written back to 2026-09-28 | User: every test or trial is appended to it (why, what, result, decision) in the same PR as its status update |
 | Object-text matching design (review session, 2026-11-16) | reference measured before the build (vecq-4, exact object Concepts plus object text at 0.75, no role reads): 279 hits on the flags-on stores, 275 on the flags-off stores; exact only 123 and 119 | Approved to build behind `object_text_match` (off, in no profile): reads the subject's live facts, their object text and `EVIDENCED_BY`; writes nothing; threshold 0.75 and 3 texts per term fixed as constants. Run OT-1: the build reproduces 279 and 275 within 3, at most 10 of 50 sampled matches wrong. Run S3-OT (graph facts with object text, against the stored 434): pass net +15 or more with the no-gold-row group losing at most 10; kill at net 0 or below, or that group losing more than 24; between is the user's call. Prediction: near 0, because the fire rule is unchanged. The as-built step 3 arm also runs, as the control and to close the 2026-11-14 ruling |
+| Object-text matching build, run OT-1 (2026-11-16) | built path: 279 (flags on) and 275 (flags off), 0 ids differing from vecq-4; flag off 123 and 119; 3 of 50 new matches wrong (range 3-5) | Passed every line; merged with the flag off. S3-OT next |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
