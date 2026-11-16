@@ -14,13 +14,10 @@ Read by `graph_facts.build_graph_facts_section` behind `[retrieval] object_text_
 from __future__ import annotations
 
 import asyncio
-import logging
 import threading
 from array import array
 from collections import OrderedDict
 from math import sqrt
-
-_logger = logging.getLogger(__name__)
 
 THRESHOLD = 0.75        # cosine at or above which a pool text is a match (a module constant, not a config key)
 TOP_K = 3               # texts kept per question term
