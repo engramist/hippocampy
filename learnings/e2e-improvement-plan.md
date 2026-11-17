@@ -106,6 +106,8 @@ Ruled by the user after reading why answers fail with all their evidence in view
 2. **A second score.** Beside the strict score, the same judging with an opening refusal ignored (a pure refusal still fails), applied to every arm. The strict score stays the headline.
 3. **The abstain instruction.** One replay with a changed instruction, measured on the 809 and on the adversarial questions together, so the trade is visible. This is a wording change (P5): one arm, pre-registered, no tuning.
 
+**Order (ruled by the user 2026-11-17):** the running baselines job (no memory, naive retrieval, the timing probe) finishes first; then the second score, fact sentences and the abstain-instruction replay, as each is ready; full history last. The run queue is kept at the top of `e2e-status.md`.
+
 Still open and not scheduled: the rebuilt capture lane (B542), which is what would make the triples richer than nine predicates and a free-text object.
 
 ## Not known yet
