@@ -130,6 +130,9 @@ class ContextBundle:
     compilation_ms: float = 0.0
     # B547: the question analysis (QuestionAnalysis.to_dict()) when `[retrieval] question_analysis` is on.
     analysis: Optional[dict] = None
+    # Fact sentences (`[retrieval] fact_sentences`): the per-call record (sentences, fact ids, source messages,
+    # duplicate-Observation counts); None when the flag is off. Not part of `to_dict`.
+    fact_sentences: Optional[dict] = None
 
     def to_dict(self) -> dict:
         """Serialize for MCP response."""
@@ -335,7 +338,12 @@ async def compile_bundle(
     # Stage 3b (B454): what the user actually said about this. Consolidation keeps
     # entity labels, not statements, so raw user turns are the only place a fact
     # like "we migrated to PostgreSQL 16" lives.
+    fact_sentences_record = None
     if conversation_section and conversation_section.content:
+        from campy.brain.thalamus.fact_sentences import attach_fact_sentences, fact_sentences_enabled
+        if fact_sentences_enabled(config):
+            fact_sentences_record = await attach_fact_sentences(
+                db, query, config, conversation_section, semantic_section)
         sections.append(conversation_section)
         cumulative_tokens += conversation_section.token_estimate
         sources.extend(conversation_section.source_node_ids)
@@ -423,6 +431,7 @@ async def compile_bundle(
         sources=list(set(sources)),  # Deduplicate
         compilation_ms=(time.time() - start_time) * 1000,
         analysis=analysis_dict,
+        fact_sentences=fact_sentences_record,
     )
 
     return bundle

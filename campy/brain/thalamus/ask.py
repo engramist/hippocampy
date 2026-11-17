@@ -456,6 +456,9 @@ async def run_ask(
             (post_tokens / total_tokens) if total_tokens > 0 else 1.0,
         )
 
+    if meta is not None and getattr(bundle, "fact_sentences", None) is not None:
+        meta["fact_sentences"] = bundle.fact_sentences
+
     # 3. Build prompt and send
     prompt = _bundle_to_prompt(bundle, query, config)
     variants = _harness_variants(config)

@@ -135,6 +135,10 @@ graph_linking = true
 # own live facts (top 3 per word, cosine >= 0.75); matched facts are read with the exact-label ones in the graph_facts
 # section. Needs graph_facts. Off until gated. CAMPY_OBJECT_TEXT_MATCH=1 turns it on.
 # object_text_match = false  # in no profile
+# Fact sentences (placement A): each matched fact of the asked person whose source turn is shown in the conversation
+# section is rendered by rule as one sentence on the line right after that turn. Exact-label objects only. Off until
+# gated. CAMPY_FACT_SENTENCES=1 turns it on.
+# fact_sentences = false  # in no profile
 # B547: the question is analysed once (shape, subject, kind, Concepts named) and the stages read it. Off until gated.
 # CAMPY_QUESTION_ANALYSIS=1 turns it on.
 # question_analysis = false  # B547; on under profile "principled"

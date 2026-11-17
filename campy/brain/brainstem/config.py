@@ -41,6 +41,12 @@ _DEFAULT_CONFIG = {
         # subject's own live facts (top 3 per word, cosine >= 0.75); the matched facts are read with the exact-label
         # ones in the graph_facts section. Reads only; writes nothing.
         "object_text_match": False,
+        # Fact sentences, placement A (default OFF; env CAMPY_FACT_SENTENCES=1 turns it on; in no profile until
+        # gated): each matched fact of the asked person whose source turn is in the conversation section is rendered
+        # by rule as one plain sentence on the line right after that turn ("→ fact: ..."). Exact-label objects only
+        # (object_text_match is not used). Reads only; writes nothing. Flag off, or on with nothing matching, leaves
+        # the prompt byte-identical.
+        "fact_sentences": False,
         # B547 (default OFF; env CAMPY_QUESTION_ANALYSIS=1 turns it on; on under profile "principled"): the
         # question is analysed once (shape, subject, kind, the Concepts it names) at the top of the bundle
         # compile and the stages read that instead of parsing it themselves. Gate: with the profile (B545).
@@ -351,6 +357,7 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_GRAPH_FACTS": ("retrieval", "graph_facts", _parse_bool),
     # Object-text matching: question words matched by vector to the object text of the subject's facts (graph_facts).
     "CAMPY_OBJECT_TEXT_MATCH": ("retrieval", "object_text_match", _parse_bool),
+    "CAMPY_FACT_SENTENCES": ("retrieval", "fact_sentences", _parse_bool),
     # B547: the question is analysed once; stages read the analysis (bundle section `reads`, `bundle.analysis`).
     "CAMPY_QUESTION_ANALYSIS": ("retrieval", "question_analysis", _parse_bool),
     # B548: the graph votes in conversation seed selection (needs question_analysis).
