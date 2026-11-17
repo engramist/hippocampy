@@ -577,3 +577,26 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - **Shown to the reader:** 13 of the 35 wrong facts already appear as an Observation line in at least one control prompt (67 prompts); 10 of the 21 clear-wrong ones do. Of the 65 right facts, 39 appear.
 - **Ruling:** none; for the user's decision on B542.
 - **Lesson:** about a third of stored facts are not true statements about a person. The error is concentrated in has_attribute and is_a, and in facts with no subject. "did" facts are the most reliable (5 of 30). The reader already sees some of these wrong facts as Observation lines today.
+
+### 2026-11-17 Baselines: naive retrieval, and the full-history timing probe (job 1001)
+- **Why:** to place the 53.6% control between no memory (2.6%) and plain retrieval, and to size the full-history run before it is queued.
+- **What:**
+  - Naive retrieval: the harness `naive_rag` baseline (embedding retriever) on the 809, with the same answer model and the same judge (3 votes, cache), and the daemon stopped.
+  - Probe: the `full_context` baseline on 5 questions, to time one answer.
+  - Lines: none (reference). Predictions: naive retrieval 30-42%; full history only if the probe projects under 40 h.
+- **Result:**
+  - **Naive retrieval: 36.1% (292), -17.5 points against 53.6%; reference.** By conversation: 42.1, 42.8, 30.4, 34.6 and 32.3%. Non-answers: 10. No errors or overflow; largest prompt 769 tokens. Inside the prediction.
+  - Memory during naive judging (8% judging line): free 14-15%, swap 2.3-6.1 GB.
+  - **Probe: stopped by the memory guard.** At full-history context the answer model took 21.2 GB, and free memory fell to 9-10% against the 12% line. The guard stopped the job 6 minutes in, before the first answer. There was no retry, and no projection.
+- **Ruling:** none; full history is held for the user.
+- **Lesson:** Campy's memory adds 17.5 points over plain retrieval of turns at the same reader. The full-history reference cannot be measured on this machine under the guards as they stand.
+
+### 2026-11-17 Second-score agreement check (job 1002)
+- **Why:** before rescoring six arms with a second column that ignores an opening refusal, check that the second pass agrees with 25 hand-read answers.
+- **What:** `second_score.py` on the 25 agreement ids of `rcon`: refusal stripped, then judged by the same judge with 2 votes. Line set before the run: at least 18 of the 20 full-key answers right, and at most 1 of the 5 not-full ones.
+- **Result:**
+  - Full key: 18 of 20 right (pass). conv-26_q80 gets no second pass, as known beforehand; conv-48_q143's stripped remainder is only a partial sentence.
+  - **Not full: 2 of 5 right: FAIL.** Both are dates worked out or left vague ("the week of 2023-02-27" from "last week"; "a few days ago, according to his conversation on 2023-12-17"), which the judge credits.
+  - Strict 0 of 25, second 20 of 25, 172 s.
+- **Ruling:** stopped as pre-registered; the six-arm pass (run 3) is not run.
+- **Lesson:** once the refusal is stripped, the judge is lenient on derived and vague dates. A second column would raise partial answers as well as complete ones, so it is not a clean measure of the abstention cost.
