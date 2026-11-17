@@ -2,11 +2,18 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-16 (the user accepted the step 3 kill; baselines requeued as they are, guard unchanged)_
+_Last updated: 2026-11-16 (baselines stopped a third time by the memory guard at judging; held for the user)_
 
 ## Waiting for the user
 
-Nothing is held. The full trail of trials is in `lessons-learned.md`; every test or trial is appended there with its result.
+**Baselines judging does not fit under the memory guard (held again 2026-11-16, 21:28).** Requeued as it was at the
+user's choice, the job was stopped a third time: the judge alone settles at 12% then 11% free with today's apps open
+(swap 1.4 to 4.1 GB and rising), at or under the guard's 12% line. The user chooses between closing apps and a lower
+line for judging phases only. Nothing new is stored; the five no-memory answer files remain. Until then: no retry, no
+threshold change, no other judge, quantisation or judging model. Card B574 covers the guard and runner not restarting
+after a reboot.
+
+The full trail of trials is in `lessons-learned.md`; every test or trial is appended there with its result.
 
 Ruled by the user 2026-11-16 (night), on the review session's recommendations:
 1. **Graph facts as a prompt section: the kill is accepted.** Both re-measurements lost (414 and 423 against 434),
