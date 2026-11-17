@@ -640,3 +640,21 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - The three published judges share one prompt (Mem0's, reused by Zep and MemOS). It leans generous ("touches on the same topic"), and says nothing about answers that decline then answer, partial lists or hedging. Ours fails all three explicitly. Dates are treated about the same.
 - **Ruling:** none; reported to the user. No change to our judge.
 - **Lesson:** our judge accuracy is a lower bound against the published judge, and our F1 is depressed by the cite format. Neither number can be set beside a paper's without saying so.
+
+### 2026-11-17 Would a speaker rule have stopped run 5's category-5 answers? (offline count, no design)
+- **Why:** the input to the user's choice between accepting run 5's kill and designing a subject check by rule (review session request).
+- **What:**
+  - From the stored run-5 records, with no GPU.
+  - **The rule:** the question names exactly one speaker, A; the line the answer quotes was spoken by the other speaker, B, and does not mention A.
+  - **Speaker of a line:** the dataset turn's speaker, which capture writes as SPOKEN_BY.
+  - **The quoted line:** the answer's quoted text, matched to its turn. Otherwise the answer's `[Speaker, date]` label. If the answer quotes nothing, the shown turn with the most word overlap with the answer, chosen without the gold.
+  - Script: `scratch/cite/speaker_rule.py` in the plan lead's working area.
+- **Result:**
+  - **(a) Category 5, the 60 answers that now answer: the rule stops 16.** conv-26 q169, q171, q181, q183, q194; conv-41 q161; conv-48 q194, q202, q210, q212, q217, q230, q232, q238; conv-49 q163; conv-50 q175.
+    - Not stopped: 25 quote a line the asked person spoke; 16 quote the other speaker in a line that names the asked person; 3 questions name neither or both speakers.
+  - **(b) The 809, the 67 gained: the rule wrongly stops 1** (conv-48 q36). 60 quote the asked person, and 6 questions name both speakers. Across all 485 right answers in the changed arm, it fires on 3.
+  - **(c) The rule can apply** to 727 of the 809 (89.9%) and 219 of the 222 (98.6%): those name exactly one speaker.
+  - **Derived:** with the rule, category-5 refusals would be about 86 of 222 (38.7%; 70 now plus the 16 stopped), against the control's 58.6%. That is still about 20 points down, so the rule as specified does not bring run 5 inside its 10-point line.
+  - **The first count (14 of 60, a 23 / 16 / 7 split)** left 7 answers unchecked. The gold-free best-matching shown turn, for answers that quote nothing, settled 4 of them (2 stopped, 2 quoting the asked person). The 3 that name neither or both speakers stay outside the rule.
+- **Ruling:** none; counts only, for the user.
+- **Lesson:** a speaker rule is nearly free on the 809, but stops only about a quarter of the category-5 answers. Most of them answer from the asked person's own line, or from a line that names them, so a check on who spoke cannot see the trap.
