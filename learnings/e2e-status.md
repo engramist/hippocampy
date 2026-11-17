@@ -454,6 +454,9 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Second-score design (review session, 2026-11-17) | detection and stripping rules fixed in the harness and self-tested; only strict-wrong answers that open with a refusal get a second pass on the stripped text, same judge and votes | Approved. The agreement check gates reporting. The strict column decides every pass and kill |
 | Abstain-instruction design (review session, 2026-11-17) | one changed wording, written once; flag `answer_style = cite_answer`; the 809 and the 222 adversarial questions, each against its own control | Approved with the lines in the run queue. One arm, no second wording; closed if it fails. The wording was written after reading the 809's failures, so a pass is not a held-out result |
 | Run order (user, 2026-11-17) | full history may take 14-34 hours | User: the three short runs go before full history; the current baselines job finishes first |
+| Baseline: naive retrieval (2026-11-17) | 36.1% (292), -17.5 points against 53.6% | Reference; no line |
+| Full-history timing probe (2026-11-17) | stopped by the memory guard before its first answer: free 9-10% against the 12% line, answer model at 21.2 GB | Held for the user (review session, 2026-11-17): run 6 cannot run under the 12% line as built; no fix, variant or retry without the user |
+| Second-score agreement check (2026-11-17) | 18 of 20 full answers right (line 18); 2 of 5 partial answers right (line 1): failed | Held for the user (review session, 2026-11-17): run 3 is not queued and no second column is reported; no fix, variant or retry without the user |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
