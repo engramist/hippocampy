@@ -22,6 +22,8 @@ run's own control (the same stores without the change). Noise is ±1.7 points; a
 | Graph facts with object-text matching (2026-11-16) | 51.2% (414) | -2.5 | killed |
 | Baselines (no memory, naive retrieval, full history) | running | | |
 
+In every arm about 3 points are answers that open with an abstention and then give the key; the judge fails them by its written rule. The arms differ by at most 0.6 points on this, so no comparison changes.
+
 Two other measures, which are not accuracy and are never mixed with it:
 
 - **Query hits:** the share of the 809 questions where a graph query finds a fact from the right turn. 13.7% before
