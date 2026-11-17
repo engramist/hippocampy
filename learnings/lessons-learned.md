@@ -396,3 +396,17 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - The guard's 12% line is kept. No app is closed; the baselines job is requeued as it is, and a third guard stop comes back to the user.
 - **Plan:** revised the same night ("Revision, 2026-11-16 (night)"): step 4 waits, and the next direction is the user's once the baselines are reported.
 - **Lesson:** three measurements of the same section (418, 423, 414 against 426 to 434) agree. Putting the right fact in front of the 8B answer model adds little when the source turn is already in view, and a section without the answer costs answers.
+
+### 2026-11-16 Baselines judging, third memory-guard stop (job 1001 requeued as it was)
+- **Why:** the user chose to requeue the job unchanged: no app closed, guard line at 12%.
+- **What:**
+  - Job 1001, unchanged: the personal daemon was stopped for the whole job, the answer model unloaded before judging, and the job resumed from the stored no-memory answers.
+  - The guard and the runner were both confirmed running first.
+- **Result:**
+  - 82% free at the start, at 21:24.
+  - The judge alone settled at **12%** (four samples from 21:25 to 21:26), then **11%** (three samples).
+  - Swap went from 1.4 GB to 4.1 GB in those three minutes and was still rising.
+  - The guard stopped the job at 21:28.
+  - Nothing new is stored: no verdicts for any arm, and naive retrieval and the probe never started. The five no-memory answer files remain.
+- **Ruling:** no retry; back to the user (closing apps, or a lower line for judging phases only).
+- **Lesson:** with today's apps open, the judge by itself sits at or below the 12% line on this 32 GB machine. Removing the other model clients does not change that.
