@@ -180,3 +180,14 @@ def test_answer_style_env_override(monkeypatch):
     assert load_config()["ask"]["answer_style"] == "cite_answer"
     monkeypatch.delenv("CAMPY_ANSWER_STYLE")
     assert load_config()["ask"]["answer_style"] == "cite"
+
+
+def test_default_prompt_golden_before_cite_answer():
+    """Golden: the default ("cite") prompt for the fixture bundle is byte-identical to main before cite_answer was
+    added (sha256 of the prompt computed on main d8f2d233)."""
+    import hashlib
+    bundle = _bundle_with_plan_section()
+    for cfg in (None, {"ask": {"answer_style": "cite"}}):
+        prompt = _bundle_to_prompt(bundle, bundle.query, cfg)
+        assert hashlib.sha256(prompt.encode()).hexdigest() == (
+            "882e5c476887ffb011019e93c4f8c280d0482da91a41505eb706fb5f9dc0cede")
