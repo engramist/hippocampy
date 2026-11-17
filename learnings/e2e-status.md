@@ -2,7 +2,7 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-17 14:30 (run 5 killed on its category-5 line; +6.3 points on the 809)_
+_Last updated: 2026-11-17 afternoon (user ruled on the four decisions after run 5; probe and published-judge re-score queued)_
 
 ## Scoreboard (one test set, one measure)
 
@@ -54,11 +54,17 @@ before it starts and gets a lessons entry when it ends.
 | 3 | Second score, six stored arms | a second column: an opening refusal ignored | closed by the user 2026-11-17: not run; the second score is dropped | no line; expected +2.5 to +3.5 points on every arm, gaps unchanged |
 | 4 | Fact sentences by rule, next to their source turn | whether plain sentences built from the graph's facts help the reader | closed by the user 2026-11-17: stopped at the faithfulness check (6 of 50 wrong; line 5), left stopped; code kept on its branch, not merged | pass above +1.9 points; kill at 0 or below; prediction -0.5 to +1.5 |
 | 5 | Changed abstain instruction | whether the reader stops declining with the evidence in view | killed: 809 at 60.0% (+6.3 points, pass); category-5 refusals 58.6% → 31.5% (-27.1 points, over the 10-point kill line) | pass above +1.9 points with correct refusals on the 222 adversarial questions falling by at most 5 points; kill at 0 or below, or refusals falling by more than 10; prediction +0.5 to +2.5 |
-| 6 | Full history baseline | the reader with every turn in view | held: decided by the user after run 5 (the probe could not run under the 12% line) | reference, no line; prediction 45-62% |
+| 6 | Full history baseline | the reader with every turn in view | probe again at an 8% answering line (user, 2026-11-17 afternoon); the full run only if the projection is under 40 hours | reference, no line; prediction 45-62% |
 
 Not queued, and the user's to schedule: the rebuilt capture lane (B542).
 
 ## Waiting for the user
+
+Ruled by the user 2026-11-17 (afternoon), in the plan lead's session ("go with your recommendations"), on the plan lead's four recommendations:
+1. **Run 5 (abstain instruction): the kill is kept.** The flag stays off and in no profile.
+2. **Full history (run 6): one more probe** with the answering line at 8% (the judging line) for the probe only, and the 30 GB swap ceiling. The full run only if the probe projects under 40 hours.
+3. **Published judge: re-score** the stored control and run-5 answers with the published LoCoMo judge prompt (Mem0's, reused by Zep and MemOS), on our local judge. This is a separate column; our judge stays the headline.
+4. **Capture rebuild (B542): the next direction.** A design comes first; no GPU until the user approves it.
 
 Ruled by the user 2026-11-17 (morning), on the review session's recommendations:
 1. **Fact sentences (run 4): left stopped.** About a third of stored facts are wrong (35 of 100, range 21-56%), so
@@ -469,6 +475,7 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Full-history timing probe (2026-11-17) | stopped by the memory guard before its first answer: free 9-10% against the 12% line, answer model at 21.2 GB | Held for the user (review session, 2026-11-17): run 6 cannot run under the 12% line as built; no fix, variant or retry without the user |
 | Second-score agreement check (2026-11-17) | 18 of 20 full answers right (line 18); 2 of 5 partial answers right (line 1): failed | Held for the user (review session, 2026-11-17): run 3 is not queued and no second column is reported; no fix, variant or retry without the user |
 | Changed abstain instruction, run 5 (2026-11-17) | 809: 60.0% (485), +6.3 points (gained 67, lost 16); category 5: refusals 58.6% → 31.5%, 60 of the 61 now answer for real | Killed as pre-registered (category-5 line); the flag stays off. Held for the user: any follow-up (for example a subject check before answering) is a new design |
+| Four decisions after run 5 (user, 2026-11-17 afternoon) | run 5's kill, full history, the published judge, the capture rebuild | User, "go with your recommendations": run 5's kill kept; full history probed again at an 8% answering line, the full run only under 40 hours; published-judge re-score of the control and run 5 as a separate column; capture rebuild (B542) next, design first |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
