@@ -624,7 +624,19 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - By category: 1 -2, 2 +23, 3 +8, 4 +22. Non-answers 168 → 58.
   - 39 of the 67 declines with gold in view are now right.
   - **Category 5: refusals 58.6% → 31.5%, -27.1 points: KILL.** abstained_strict 0.9% in both arms. 61 stopped refusing and 1 started. Only 1 of the 61 is a refusal worded so the rule misses it; 60 give a real answer, usually the other speaker's fact for a speaker-swapped question.
-- **Ruling:** killed as pre-registered; the flag stays off. Held for the user.
+- **Both halves, plainly:** this is the largest gain of the plan on the published metric (+6.3 points on the 809, 51 net), and it is killed. On the adversarial questions the reader stopped declining: 60 of the 61 that flipped now answer, mostly with the other speaker's fact.
+- **P4 caution:** the wording was written after reading the 809's failures (the 67 declines), so part of the 809 gain may be fitted to those questions. Category 5 is the held-out side, and it failed.
+- **Would a speaker rule have caught them? (counted 2026-11-17, offline from the stored answers; no design)**
+  - The rule: the question names speaker A, and the line the answer quotes is spoken by speaker B (the dataset turn's speaker, which capture writes as SPOKEN_BY) with no mention of A.
+  - The quoted line is read from the answer's quote, or its `[Speaker, date]` label, and matched to its turn.
+  - **Category 5, the 60 now answering: the rule catches 14.** Of the rest:
+    - 23 quote a line the asked person spoke;
+    - 16 quote the other speaker in a line that names the asked person;
+    - 7 cannot be checked: 2 have no quote, 2 have a quote not found, and 3 questions name neither or both speakers.
+  - **809, the 67 gained: the rule would block 1.** 54 quote the asked person, and 12 cannot be checked.
+  - Across all 485 right answers in the changed arm, it fires on 3.
+  - **Reading:** a speaker rule costs almost nothing on the 809, but catches only about a quarter of the category-5 answers. Most quote the asked person's own line, or a line that names them.
+- **Ruling:** killed as pre-registered (review session, 2026-11-17); the flag stays off and in no profile, and there is no second wording. Held for the user.
 - **Lesson:** the instruction fixes the declines it targets, but the reader cannot tell a line about the asked person from a line about someone else. So permission to answer also answers the trap questions. Wording moves both sides together; separating them needs a structural check on the subject (P5).
 
 ### 2026-11-17 LoCoMo's own F1 beside the judge score, and our judge against the published ones
