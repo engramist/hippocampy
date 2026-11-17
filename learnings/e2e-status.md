@@ -2,27 +2,19 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-16 (step 3 held for the user; baselines stopped twice by the memory guard at judging, held for the user)_
+_Last updated: 2026-11-16 (the user accepted the step 3 kill; baselines to be requeued with memory freed, guard unchanged)_
 
 ## Waiting for the user
 
-**Step 3 after the object-text build (held 2026-11-16).** Both re-measurements of the graph facts section hit their
-kill lines against the stored flag-off replay (434 of 809):
-- with object-text matching (S3-OT): net -20 (fired with a gold row +9 on 279, fired with no gold row -29 on 361);
-- as built (S3-asbuilt): net -11 (gold row +13 on 123, no gold row -24 on 299).
+Nothing is held. The full trail of trials is in `lessons-learned.md`; every test or trial is appended there with its result.
 
-Even a section that fired only on gold rows would gain at most +9 (with matching) or +13 (as built), under the +15
-line. 249 of the 279 gold-row questions already had a gold turn in the conversation section, so the section mostly
-repeats what retrieval supplied. No fire rule or cap change is tried (2026-11-14 ruling). The decision on what comes
-next is the user's. Details: `lessons-learned.md`, entries of 2026-11-16 for S3-OT and S3-asbuilt.
-
-**Baselines on the 809: judging does not fit under the memory guard (held 2026-11-16).** The judge model alone took
-free memory from 84% to 11% (swap 2.5 to 4.5 GB), and the guard (12%, the user's line since the 2026-10-20 freeze)
-stopped the job twice. The user chooses: free memory by closing apps, or allow a lower guard line for judging phases
-only. Until then: no retry, no threshold change, no other judge, quantisation or judging model. Stored: the five
-no-memory answer files (809 answers, one timed out). Details: `lessons-learned.md`, 2026-11-16 baselines entry.
-
-The full trail of trials is in `lessons-learned.md`; every test or trial is appended there with its result.
+Ruled by the user 2026-11-16 (night), on the review session's recommendations:
+1. **Graph facts as a prompt section: the kill is accepted.** Both re-measurements lost (414 and 423 against 434),
+   and even firing only on gold rows would gain under the +15 line. `graph_facts` and `object_text_match` stay off
+   and in no profile. No new lever starts until the baselines on the 809 are in; the next direction is then the
+   user's, read against the full-history baseline and the coverage table (every gold turn in view 0.71; otherwise 0.21).
+2. **Baselines judging: free memory, keep the guard.** The guard's line stays at 12%. The job is requeued unchanged
+   once enough memory is free with the other apps closed.
 
 Ruled by the user 2026-11-16:
 1. **Action word:** dropped, as the 2026-11-14 ruling says (21 of 100 written words wrong; object-text matching
@@ -389,6 +381,7 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Step 3 with object-text matching, S3-OT (2026-11-16) | 414 vs 434 (net -20); gold row +9 on 279, no gold row -29 on 361 (line: >24); without the 34 test faults -17 | Kill on both lines; flag stays off; held for the user |
 | Step 3 as built, S3-asbuilt (2026-11-16) | 423 vs 434 (net -11); gold row +13 on 123, no gold row -24 on 299 | Kill as predicted (line: net <= 0); held for the user with S3-OT |
 | Baselines on the 809 (design, 2026-11-16) | design approved by the review session 2026-11-16: per-conversation runs, same answer model, judge, votes and cache as rcon; no pass or kill line; predictions no memory 0.02-0.06, naive retrieval 0.30-0.42, full history 0.45-0.62 | Approved; stopped twice by the memory guard at judging; held for the user |
+| Step 3 kill and the baselines' memory (user, 2026-11-16 night) | S3-OT net -20, S3-asbuilt net -11; the judge alone at the guard's 12% line | User: the kill is accepted, graph facts stay out of the prompt, no new lever until the baselines are in; the guard stays at 12% and memory is freed by closing apps before the requeue |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
