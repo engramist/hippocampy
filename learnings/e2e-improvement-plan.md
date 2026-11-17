@@ -108,6 +108,8 @@ Ruled by the user after reading why answers fail with all their evidence in view
 
 **Order (ruled by the user 2026-11-17):** the running baselines job (no memory, naive retrieval, the timing probe) finishes first; then the second score, fact sentences and the abstain-instruction replay, as each is ready; full history last. The run queue is kept at the top of `e2e-status.md`.
 
+**Outcome (ruled by the user 2026-11-17 morning):** fact sentences stopped at their faithfulness check and are left stopped (the code is not merged); the second score is dropped after failing its agreement check, so only the strict score is reported; full history is decided after the abstain replay; the capture rebuild (B542) is the next direction question.
+
 Still open and not scheduled: the rebuilt capture lane (B542), which is what would make the triples richer than nine predicates and a free-text object.
 
 ## Not known yet

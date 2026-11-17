@@ -600,3 +600,13 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - Strict 0 of 25, second 20 of 25, 172 s.
 - **Ruling:** stopped as pre-registered; the six-arm pass (run 3) is not run.
 - **Lesson:** once the refusal is stripped, the judge is lenient on derived and vague dates. A second column would raise partial answers as well as complete ones, so it is not a clean measure of the abstention cost.
+
+### 2026-11-17 (morning) Rulings on the held runs (user)
+- **Why:** three of the six queued runs ended held: fact sentences stopped at the faithfulness check (6 of 50 wrong; line 5), the second score failed its agreement check (2 of 5 partial answers passed; line 1), and the full-history probe was stopped by the memory guard (the answer model took 21.2 GB at full-history context).
+- **Decision (user, on the review session's recommendations):**
+  - Fact sentences are left stopped; the line is not moved. The code stays on its branch and is not merged.
+  - The second score is dropped; only the strict score is reported. The scoreboard notes that every arm loses about 3 points to answers that decline and then give the key.
+  - Full history is decided after the abstain replay.
+  - The capture rebuild (B542) is the next direction question; the review session recommends after the abstain replay.
+- **Lesson:** both stops were caught by checks set before any GPU time (a faithfulness sample and an agreement sample), at a cost of minutes, not hours. The fact-sentence stop also measured something larger than itself: the stored facts' own error rate.
+
