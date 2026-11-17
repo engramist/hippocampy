@@ -410,3 +410,13 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - Nothing new is stored: no verdicts for any arm, and naive retrieval and the probe never started. The five no-memory answer files remain.
 - **Ruling:** no retry; back to the user (closing apps, or a lower line for judging phases only).
 - **Lesson:** with today's apps open, the judge by itself sits at or below the 12% line on this 32 GB machine. Removing the other model clients does not change that.
+
+### 2026-11-16 Baselines judging, fourth attempt under a lower guard line (job 1001, started 22:21; running)
+- **Why:** the judge alone sits at 11-12% free on this machine, at the guard's 12% line, and stopped the job three times. The user chose "Lower line for judging" over closing apps.
+- **What:**
+  - **Guard:** 12% free at all times except while a judging phase holds a flag file, when the line is 8%. The user gave no number; 8% is the plan lead's choice, three to four points under the judge's steady state.
+  - **Second guard:** added at the review session's request after swap was seen climbing: the job stops if swap stays above 30 GB for three checks (the highest ever logged before was 26.8 GB). It only adds a stop.
+  - **Job:** unchanged otherwise. The personal daemon is stopped for the whole job; the answer model is unloaded before judging and the judge after; it resumes from the stored no-memory answers, then naive retrieval, the timing probe, and full history if the probe projects under 40 hours.
+- **Result so far (first hour):** free memory 11-16%; swap rose from 2.1 GB to 13.9 GB in twelve minutes, then held in a band of 12-16 GB; neither guard fired. Judging is about half its usual speed (one conversation in about 55 minutes against about 25). The baselines' numbers are entered when the job ends.
+- **Lesson:** a free-memory line alone does not see memory pressure. The system held free memory at 12% by swapping, so the pressure showed only in swap; a guard needs both.
+
