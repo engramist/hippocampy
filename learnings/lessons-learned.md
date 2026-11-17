@@ -626,3 +626,17 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - **Category 5: refusals 58.6% → 31.5%, -27.1 points: KILL.** abstained_strict 0.9% in both arms. 61 stopped refusing and 1 started. Only 1 of the 61 is a refusal worded so the rule misses it; 60 give a real answer, usually the other speaker's fact for a speaker-swapped question.
 - **Ruling:** killed as pre-registered; the flag stays off. Held for the user.
 - **Lesson:** the instruction fixes the declines it targets, but the reader cannot tell a line about the asked person from a line about someone else. So permission to answer also answers the trap questions. Wording moves both sides together; separating them needs a structural check on the subject (P5).
+
+### 2026-11-17 LoCoMo's own F1 beside the judge score, and our judge against the published ones
+- **Why:** user request (2026-11-17), so our numbers can be set beside the LoCoMo paper's and beside the memory papers' judge scores.
+- **What:**
+  - Token F1 for every arm on the scoreboard, from the stored answers, with the harness's `locomo10.scoring.locomo_f1` unchanged. Stemming was on. All ten arms have every answer text stored (one no-memory answer is empty and scores 0).
+  - The published judge prompts, read from released code at pinned commits (Mem0, Zep, MemOS), compared rule by rule with ours (`learnings/judge-comparison.md`).
+  - No GPU and no pipeline change. Lines: none (a measurement and a reading).
+- **Result:**
+  - F1 runs from 11.6 to 13.3 across the memory arms, against 52-60% judge accuracy. No memory: 3.0. Naive retrieval: 10.3, only 2.4 below the control, against 17.5 points by the judge.
+  - The run-5 instruction gains +0.6 F1.
+  - Our answers have a median of 37 words against a 4-word key, because the cite instruction adds the quoted line. The baselines' answers are short. So F1 here mostly measures answer length, and is not comparable to systems told to answer in a few words.
+  - The three published judges share one prompt (Mem0's, reused by Zep and MemOS). It leans generous ("touches on the same topic"), and says nothing about answers that decline then answer, partial lists or hedging. Ours fails all three explicitly. Dates are treated about the same.
+- **Ruling:** none; reported to the user. No change to our judge.
+- **Lesson:** our judge accuracy is a lower bound against the published judge, and our F1 is depressed by the cite format. Neither number can be set beside a paper's without saying so.
