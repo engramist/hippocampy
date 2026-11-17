@@ -4,6 +4,36 @@ Live state of `e2e-improvement-plan.md`. One entry per step result; earlier hist
 
 _Last updated: 2026-11-16 23:30 (baselines running under the lower judging line the user allowed; nothing held)_
 
+## Scoreboard (one test set, one measure)
+
+Every row is the same 809 questions (LoCoMo categories 1-4, five conversations), answered by the 8B answer model and
+scored by the 26B judge. **Accuracy** is the share answered correctly. **Change** is in percentage points against the
+run's own control (the same stores without the change). Noise is ±1.7 points; a change counts as a gain only above
++1.9 points (15 questions).
+
+| Run | Accuracy | Change against its control | Verdict |
+|---|---|---|---|
+| `main` profile | 52.7% (426) | reference | |
+| `principled` profile | 53.4% (432) | +0.7 against `main` | inside noise |
+| Re-captured stores, capture flags off | 53.9% (436) | reference for the re-capture | |
+| Re-captured stores, capture flags on | 53.6% (434) | -0.2 | no change; the control for the three rows below |
+| Graph facts in the prompt, first build (2026-11-14) | 51.7% (418) | -1.7 against 53.4% | killed |
+| Graph facts in the prompt, re-measured (2026-11-16) | 52.3% (423) | -1.4 | killed |
+| Graph facts with object-text matching (2026-11-16) | 51.2% (414) | -2.5 | killed |
+| Baselines (no memory, naive retrieval, full history) | running | | |
+
+Two other measures, which are not accuracy and are never mixed with it:
+
+- **Query hits:** the share of the 809 questions where a graph query finds a fact from the right turn. 13.7% before
+  this plan; 14.7% on the re-captured stores; 23.5% with the role edges; 34.5% with object-text matching. Hits rose
+  20 points and accuracy did not move.
+- **Evidence in view:** on 64.8% of questions every source turn is in the prompt, and those are answered 71.0%
+  correctly. On the other 34.7%, accuracy is 21.0%.
+
+Reporting rule (user, 2026-11-16): every result is given as accuracy in percent on the 809 and its change in
+percentage points against its control, with the noise band; raw counts once, in brackets. A number on any other set
+of questions says so in the same sentence.
+
 ## Waiting for the user
 
 Nothing is held. The baselines on the 809 are running (job requeued 2026-11-16 22:21); their result, and then the

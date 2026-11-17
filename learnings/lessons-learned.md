@@ -4,7 +4,7 @@ The full trail of the benchmark work, oldest first. One entry per test or trial:
 result, and the decision that followed. `e2e-status.md` is the current-state page; this file is the history. The dated
 notes in this folder hold the longer evidence for each period and are linked from the section headings.
 
-Conventions: ids and counts only, no answer-key values; models are named by role and size (the 8B answer model, the
+Conventions: results are given as accuracy in percent on the 809 questions and the change in percentage points against the run's own control (noise ±1.7 points; a gain needs more than +1.9), with raw counts once in brackets; a number on any other question set says so. Ids and counts only, no answer-key values; models are named by role and size (the 8B answer model, the
 26B judge); "g / l" means questions gained / lost against the comparison arm on the same questions.
 
 ## Adding an entry (required after every test or trial)
