@@ -153,3 +153,41 @@ def test_prompt_escapes_literal_boundary_tags_in_memory_text():
     prompt = _bundle_to_prompt(bundle, bundle.query)
     assert "&lt;/campy-memory&gt;" in prompt
     assert "</campy-memory>" not in prompt
+
+
+def test_cite_answer_style_is_the_one_approved_variant():
+    """2026-11-17: "cite_answer" replaces only the instruction line; everything else in the prompt is the cite prompt's."""
+    bundle = _bundle_with_plan_section()
+    cite = _bundle_to_prompt(bundle, bundle.query, {"ask": {"answer_style": "cite"}})
+    alt = _bundle_to_prompt(bundle, bundle.query, {"ask": {"answer_style": "cite_answer"}})
+    from campy.brain.thalamus.ask import _ANSWER_INSTRUCTION_CITE, _ANSWER_INSTRUCTION_CITE_ANSWER
+    assert _ANSWER_INSTRUCTION_CITE_ANSWER in alt and _ANSWER_INSTRUCTION_CITE not in alt
+    assert alt.replace(_ANSWER_INSTRUCTION_CITE_ANSWER, _ANSWER_INSTRUCTION_CITE) == cite
+    assert "even if you must work out a date from it" in alt
+    assert "Only if no line answers it, say you don't have that information." in alt
+
+
+def test_default_prompt_unchanged_by_the_new_style():
+    bundle = _bundle_with_plan_section()
+    base = _bundle_to_prompt(bundle, bundle.query, None)
+    assert base == _bundle_to_prompt(bundle, bundle.query, {"ask": {"answer_style": "cite"}})
+    assert "work out a date" not in base
+
+
+def test_answer_style_env_override(monkeypatch):
+    from campy.brain.brainstem.config import load_config
+    monkeypatch.setenv("CAMPY_ANSWER_STYLE", "cite_answer")
+    assert load_config()["ask"]["answer_style"] == "cite_answer"
+    monkeypatch.delenv("CAMPY_ANSWER_STYLE")
+    assert load_config()["ask"]["answer_style"] == "cite"
+
+
+def test_default_prompt_golden_before_cite_answer():
+    """Golden: the default ("cite") prompt for the fixture bundle is byte-identical to main before cite_answer was
+    added (sha256 of the prompt computed on main d8f2d233)."""
+    import hashlib
+    bundle = _bundle_with_plan_section()
+    for cfg in (None, {"ask": {"answer_style": "cite"}}):
+        prompt = _bundle_to_prompt(bundle, bundle.query, cfg)
+        assert hashlib.sha256(prompt.encode()).hexdigest() == (
+            "882e5c476887ffb011019e93c4f8c280d0482da91a41505eb706fb5f9dc0cede")

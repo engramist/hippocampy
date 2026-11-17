@@ -159,6 +159,19 @@ _ANSWER_INSTRUCTION_CITE = (
 )
 
 
+# 2026-11-17 (approved, one variant, written once): "cite_answer" keeps the cite form and tells the reader to answer
+# when a line answers, even if a date must be worked out, and to abstain only when no line answers. Not in any profile.
+_ANSWER_INSTRUCTION_CITE_ANSWER = (
+    "Answer only from the lines below. Give a short answer, then quote the "
+    "line you used. If a line answers the question, even if you must work "
+    "out a date from it, give that answer and do not say the information is "
+    "missing. Only if no line answers it, say you don't have that information."
+)
+
+_ANSWER_INSTRUCTIONS = {"cite": _ANSWER_INSTRUCTION_CITE, "legacy": _ANSWER_INSTRUCTION_LEGACY,
+                        "cite_answer": _ANSWER_INSTRUCTION_CITE_ANSWER}
+
+
 def _answer_style(config: Optional[dict]) -> str:
     """M1.3: resolve config["ask"]["answer_style"] -> "cite" (default) | "legacy".
 
@@ -166,7 +179,7 @@ def _answer_style(config: Optional[dict]) -> str:
     """
     raw = ((config or {}).get("ask") or {}).get("answer_style") or "cite"
     style = str(raw).strip().lower()
-    if style not in ("cite", "legacy"):
+    if style not in _ANSWER_INSTRUCTIONS:
         _logger.warning("Unknown [ask] answer_style %r; using 'cite'.", raw)
         return "cite"
     return style
@@ -230,9 +243,7 @@ def _bundle_to_prompt(bundle, query: str, config: Optional[dict] = None) -> str:
     if has_content:
         parts.insert(
             1,
-            _ANSWER_INSTRUCTION_LEGACY
-            if _answer_style(config) == "legacy"
-            else _ANSWER_INSTRUCTION_CITE,
+            _ANSWER_INSTRUCTIONS[_answer_style(config)],
         )
     else:
         # B305: the bundle can now come back genuinely empty (relevance floor
