@@ -610,3 +610,19 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - The capture rebuild (B542) is the next direction question; the review session recommends after the abstain replay.
 - **Lesson:** both stops were caught by checks set before any GPU time (a faithfulness sample and an agreement sample), at a cost of minutes, not hours. The fact-sentence stop also measured something larger than itself: the stored facts' own error rate.
 
+
+### 2026-11-17 Run 5: the changed abstain instruction (cite_answer)
+- **Why:** 67 of the 152 wrong answers with every gold turn in view were declines. The current instruction tells the reader to say it lacks the information, and the changed one tells it to answer whenever a line answers, a worked-out date included.
+- **What:**
+  - Tree at main 4b1404fa. Re-captured flags-on store copies, linking limit 0 (the control's flags).
+  - Changed arm on the 809 (`CAMPY_ANSWER_STYLE=cite_answer`), judged by the same judge (3 votes) and cache against the stored control (53.6%).
+  - Control and changed arms on the 222 category-5 (adversarial) questions, scored judge-free by the harness `abstained` / `abstained_strict` rule.
+  - Check before the run: with the flag off, the tree gave byte-identical prompts to the stored control (30 of 30).
+  - Lines: PASS above +1.9 points with category-5 refusals falling by at most 5 points. KILL at 0 or below, or refusals falling by more than 10. Prediction: +0.5 to +2.5 points; refusals down 3 to 8.
+- **Result:**
+  - **809: 60.0% (485), +6.3 points against 53.6%.** Gained 67, lost 16. Without the 34 test faults: 55.6% → 61.9%.
+  - By category: 1 -2, 2 +23, 3 +8, 4 +22. Non-answers 168 → 58.
+  - 39 of the 67 declines with gold in view are now right.
+  - **Category 5: refusals 58.6% → 31.5%, -27.1 points: KILL.** abstained_strict 0.9% in both arms. 61 stopped refusing and 1 started. Only 1 of the 61 is a refusal worded so the rule misses it; 60 give a real answer, usually the other speaker's fact for a speaker-swapped question.
+- **Ruling:** killed as pre-registered; the flag stays off. Held for the user.
+- **Lesson:** the instruction fixes the declines it targets, but the reader cannot tell a line about the asked person from a line about someone else. So permission to answer also answers the trap questions. Wording moves both sides together; separating them needs a structural check on the subject (P5).
