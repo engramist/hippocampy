@@ -393,6 +393,6 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
 - **Why:** both step 3 re-measurements hit their kill lines, and the baselines were stopped twice by the memory guard at judging.
 - **Decision (user, on the review session's recommendations):**
   - The step 3 kill is accepted. Graph facts stay out of the prompt; `graph_facts` and `object_text_match` stay off. No new lever starts until the baselines are in.
-  - The guard's 12% line is kept. Memory is freed by closing other apps, and the baselines job is requeued unchanged.
+  - The guard's 12% line is kept. No app is closed; the baselines job is requeued as it is, and a third guard stop comes back to the user.
 - **Plan:** revised the same night ("Revision, 2026-11-16 (night)"): step 4 waits, and the next direction is the user's once the baselines are reported.
 - **Lesson:** three measurements of the same section (418, 423, 414 against 426 to 434) agree. Putting the right fact in front of the 8B answer model adds little when the source turn is already in view, and a section without the answer costs answers.

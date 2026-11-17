@@ -2,7 +2,7 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-16 (the user accepted the step 3 kill; baselines to be requeued with memory freed, guard unchanged)_
+_Last updated: 2026-11-16 (the user accepted the step 3 kill; baselines requeued as they are, guard unchanged)_
 
 ## Waiting for the user
 
@@ -13,8 +13,8 @@ Ruled by the user 2026-11-16 (night), on the review session's recommendations:
    and even firing only on gold rows would gain under the +15 line. `graph_facts` and `object_text_match` stay off
    and in no profile. No new lever starts until the baselines on the 809 are in; the next direction is then the
    user's, read against the full-history baseline and the coverage table (every gold turn in view 0.71; otherwise 0.21).
-2. **Baselines judging: free memory, keep the guard.** The guard's line stays at 12%. The job is requeued unchanged
-   once enough memory is free with the other apps closed.
+2. **Baselines judging: requeue as it is, keep the guard.** The guard's line stays at 12% and no app is closed. The
+   job is requeued unchanged; if the guard stops it a third time it comes back to the user.
 
 Ruled by the user 2026-11-16:
 1. **Action word:** dropped, as the 2026-11-14 ruling says (21 of 100 written words wrong; object-text matching
@@ -381,7 +381,7 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Step 3 with object-text matching, S3-OT (2026-11-16) | 414 vs 434 (net -20); gold row +9 on 279, no gold row -29 on 361 (line: >24); without the 34 test faults -17 | Kill on both lines; flag stays off; held for the user |
 | Step 3 as built, S3-asbuilt (2026-11-16) | 423 vs 434 (net -11); gold row +13 on 123, no gold row -24 on 299 | Kill as predicted (line: net <= 0); held for the user with S3-OT |
 | Baselines on the 809 (design, 2026-11-16) | design approved by the review session 2026-11-16: per-conversation runs, same answer model, judge, votes and cache as rcon; no pass or kill line; predictions no memory 0.02-0.06, naive retrieval 0.30-0.42, full history 0.45-0.62 | Approved; stopped twice by the memory guard at judging; held for the user |
-| Step 3 kill and the baselines' memory (user, 2026-11-16 night) | S3-OT net -20, S3-asbuilt net -11; the judge alone at the guard's 12% line | User: the kill is accepted, graph facts stay out of the prompt, no new lever until the baselines are in; the guard stays at 12% and memory is freed by closing apps before the requeue |
+| Step 3 kill and the baselines' memory (user, 2026-11-16 night) | S3-OT net -20, S3-asbuilt net -11; the judge alone at the guard's 12% line | User: the kill is accepted, graph facts stay out of the prompt, no new lever until the baselines are in; the guard stays at 12%, no app is closed, and the job is requeued as it is; a third guard stop comes back to the user |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
