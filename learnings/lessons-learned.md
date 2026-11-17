@@ -549,3 +549,31 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
     - The 6 are 4 distinct facts, all in one conversation. Every one renders a stored fact as stored; the rendering rules produced no wrong sentence in the sample.
 - **Ruling (review session, 2026-11-17):** the stop is accepted as pre-registered. The line is not moved and nothing is discounted after the fact. Fact sentences are not run; held for the user. The code stays on its branch.
 - **Lesson:** a sentence built by rule states its fact plainly next to a true turn, so a capture error becomes a confident false claim. The sentences exposed the stored facts' error rate rather than the rendering's.
+
+### 2026-11-17 How often a stored fact is wrong (FACT-ACC, offline, hand-read)
+- **Why:** every error the fact-sentence check found was in the stored fact, not the rendering. This sizes the capture error for the user's decision on the capture rebuild (B542).
+- **What:**
+  - **Sample:** 100 live facts, 20 per conversation, from fresh copies of the five re-captured flags-on stores (seed 20261118 over sorted observation ids, drawn before reading).
+  - **Reading:** each fact (subject, predicate, polarity, object, place, partner, time) was read by hand against its source turn and given one label, with borderline calls marked.
+  - **Graph reads:** Observation literals, HAS_SUBJECT/subject_id, HAS_OBJECT, HAS_PLACE, HAS_PARTICIPANT, EVIDENCED_BY → Message text. Nothing written; no GPU and no model.
+  - **Lines:** none (pre-registered in `scratch/factacc/RUNS.md`). Prediction: 15-30% wrong.
+- **Result:**
+  - **35 of 100 wrong:** 21 clear and 14 borderline.
+    - If every borderline call went the other way, the count runs from 21 to 56, since 21 facts judged right were also borderline.
+    - The point estimate is above the prediction.
+  - **By label:**
+
+    | Label | n |
+    |---|---|
+    | Not a fact about anyone (a question, small talk, an opinion with no subject) | 14 |
+    | Wrong object or place | 9 |
+    | Wrong person | 5 |
+    | Wrong tense or polarity | 4 |
+    | Wrong predicate | 3 |
+
+  - **By predicate (wrong of sampled):** has_attribute 11/19, is_a 7/13, prefers 5/17, did 5/30, plans 4/15, relates_to 2/4, owns 1/2.
+  - **By conversation:** 9, 7, 6, 9 and 4 of 20.
+  - **No subject:** 10 facts have no subject edge or literal, and all 10 are wrong.
+  - **Shown to the reader:** 13 of the 35 wrong facts already appear as an Observation line in at least one control prompt (67 prompts); 10 of the 21 clear-wrong ones do. Of the 65 right facts, 39 appear.
+- **Ruling:** none; for the user's decision on B542.
+- **Lesson:** about a third of stored facts are not true statements about a person. The error is concentrated in has_attribute and is_a, and in facts with no subject. "did" facts are the most reliable (5 of 30). The reader already sees some of these wrong facts as Observation lines today.
