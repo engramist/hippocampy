@@ -358,3 +358,33 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - **Paired against S3-OT:** +42 / -33, net +9 for as built.
 - **Ruling:** kill as predicted; held for the user with S3-OT.
 - **Lesson:** matching made the section fire more often (gold-row firings 123 to 279, no-gold firings 299 to 361) without raising its net where it holds the gold (+13 to +9). The gold-only ceiling is under +15 in both forms.
+
+### 2026-11-16 Baselines on the 809, first attempt (stopped twice by the memory guard at judging)
+- **Why:** a reference for the 809, approved by the review session as a measurement with no pass or kill line. The last baselines were on 44-60 questions in October. Full history is the arm the next direction will be read against.
+- **What ran:**
+  - **Harness and runs:** the evaluation harness (`baselines.py` via `run_all.py --baselines-only`), one run per conversation, categories 1-4.
+  - **Settings:** pinned to the replay tree's config, so the answer model and the small embedder come from it, never the personal config.
+  - **Answering:** native chat endpoint at temperature 0, with the context sized per prompt.
+  - **Judging:** the replays' judge, 3 votes and cache (`judge_arm.py`), after a converter that checks the ids against the 809.
+  - **Order:** no memory, naive retrieval (k=5), a 5-question timing probe, then full history. These ran as queue jobs under the memory guard.
+  - **Graph:** no graph read or written.
+- **Stop 1 (job 1000, 17:29):**
+  - All five no-memory runs finished: 809 answers, about 2 s each, with no context overflow.
+  - The guard stopped the job one minute into judging (free 11% for 3 checks).
+  - **Cause:** the personal daemon was up. It reloaded the answer model at its own larger context while the judge loaded, so both were resident.
+  - The same contention slowed the last conversation (21 min against about 5) and timed out one call, conv-50_q114. The harness scores it wrong; it was not re-run.
+  - **The trap:** the judging script unloads the answer model once, at its start, and that does not hold while another client can reload it. The S3 replays' judging used the same script with the daemon up, and only timing kept it clear.
+- **Stop 2 (job 1001, 17:56):**
+  - **Set-up:** the daemon was stopped for the whole job, the answer model unloaded before judging, and the job resumed from the stored answers.
+  - **What happened:** the judge alone (17.4 GB resident) took free memory from 84% to 20%, 15%, 12% and then 11%, with swap rising from 2.5 to 4.5 GB. The guard stopped the job again three minutes into judging.
+  - **Cause:** no contention this time. The judge by itself now sits at the guard's line on this machine, with the user's other apps open. From 11-04 to 11-10 the judge sat at 13-14% free on most samples.
+- **The guard was not running from 11-10 07:49 to 11-16 16:44.**
+  - The machine rebooted at 11-10 07:50, and neither the guard nor the queue runner starts by itself.
+  - So the recapture, vecq, S3-OT and S3-asbuilt judging ran unguarded, probably at the same memory level.
+  - Both are running again since 11-16 16:44, as background processes that a reboot will end.
+- **Stored:**
+  - the five raw no-memory files;
+  - the five converted answer files (`step0c/out/bl_no_memory_conv-*.answers.json`), with one timed-out question;
+  - no verdicts.
+- **Ruling (review session, 2026-11-16):** held for the user. The user chooses between freeing memory (closing apps) and a lower guard line for judging phases only. No retry, threshold change, smaller judge, other quantisation or other judging model until they answer.
+- **Lesson:** a GPU job's memory budget includes every other client of the model server. Unloading at the start of a phase does not hold while another client can reload the model. The guard must be restarted after a reboot.

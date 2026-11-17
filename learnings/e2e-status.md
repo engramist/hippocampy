@@ -2,7 +2,7 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-16 (S3-OT and S3-asbuilt both hit their kill lines; held for the user; baselines on the 809 running)_
+_Last updated: 2026-11-16 (step 3 held for the user; baselines stopped twice by the memory guard at judging, held for the user)_
 
 ## Waiting for the user
 
@@ -16,7 +16,11 @@ line. 249 of the 279 gold-row questions already had a gold turn in the conversat
 repeats what retrieval supplied. No fire rule or cap change is tried (2026-11-14 ruling). The decision on what comes
 next is the user's. Details: `lessons-learned.md`, entries of 2026-11-16 for S3-OT and S3-asbuilt.
 
-Meanwhile the baselines on the 809 run as a reference measurement (approved below).
+**Baselines on the 809: judging does not fit under the memory guard (held 2026-11-16).** The judge model alone took
+free memory from 84% to 11% (swap 2.5 to 4.5 GB), and the guard (12%, the user's line since the 2026-10-20 freeze)
+stopped the job twice. The user chooses: free memory by closing apps, or allow a lower guard line for judging phases
+only. Until then: no retry, no threshold change, no other judge, quantisation or judging model. Stored: the five
+no-memory answer files (809 answers, one timed out). Details: `lessons-learned.md`, 2026-11-16 baselines entry.
 
 The full trail of trials is in `lessons-learned.md`; every test or trial is appended there with its result.
 
@@ -384,7 +388,7 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Object-text matching build, run OT-1 (2026-11-16) | built path: 279 (flags on) and 275 (flags off), 0 ids differing from vecq-4; flag off 123 and 119; 3 of 50 new matches wrong (range 3-5) | Passed every line; merged with the flag off. S3-OT next |
 | Step 3 with object-text matching, S3-OT (2026-11-16) | 414 vs 434 (net -20); gold row +9 on 279, no gold row -29 on 361 (line: >24); without the 34 test faults -17 | Kill on both lines; flag stays off; held for the user |
 | Step 3 as built, S3-asbuilt (2026-11-16) | 423 vs 434 (net -11); gold row +13 on 123, no gold row -24 on 299 | Kill as predicted (line: net <= 0); held for the user with S3-OT |
-| Baselines on the 809 (design, 2026-11-16) | design approved by the review session 2026-11-16: per-conversation runs, same answer model, judge, votes and cache as rcon; no pass or kill line; predictions no memory 0.02-0.06, naive retrieval 0.30-0.42, full history 0.45-0.62 | Running |
+| Baselines on the 809 (design, 2026-11-16) | design approved by the review session 2026-11-16: per-conversation runs, same answer model, judge, votes and cache as rcon; no pass or kill line; predictions no memory 0.02-0.06, naive retrieval 0.30-0.42, full history 0.45-0.62 | Approved; stopped twice by the memory guard at judging; held for the user |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
