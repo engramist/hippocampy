@@ -62,9 +62,9 @@ Not queued, and the user's to schedule: the rebuilt capture lane (B542).
 
 Ruled by the user 2026-11-17 (afternoon), in the plan lead's session ("go with your recommendations"), on the plan lead's four recommendations:
 1. **Run 5 (abstain instruction): the kill is kept.** The flag stays off and in no profile.
-2. **Full history (run 6): one more probe** with the answering line at 8% (the judging line) for the probe only, and the 30 GB swap ceiling. The full run only if the probe projects under 40 hours.
+2. **Full history (run 6): one more probe** with the answering line at 8% (the judging line) for the probe only, and the 30 GB swap ceiling. The full run only if the probe projects under 40 hours. The full run also needs a check with the review session first.
 3. **Published judge: re-score** the stored control and run-5 answers with the published LoCoMo judge prompt (Mem0's, reused by Zep and MemOS), on our local judge. This is a separate column; our judge stays the headline.
-4. **Capture rebuild (B542): the next direction.** A design comes first; no GPU until the user approves it.
+4. **Capture rebuild (B542): the next direction.** A design comes first; no GPU until the user approves it. The design names the edges it writes. Its measures include the hand-read fact accuracy on a fresh 100-fact sample against FACT-ACC's 35% (same labels and reader rules), query hits and the 809 replay. The speaker rule is not pursued.
 
 Ruled by the user 2026-11-17 (morning), on the review session's recommendations:
 1. **Fact sentences (run 4): left stopped.** About a third of stored facts are wrong (35 of 100, range 21-56%), so

@@ -112,6 +112,19 @@ Ruled by the user after reading why answers fail with all their evidence in view
 
 Still open and not scheduled: the rebuilt capture lane (B542), which is what would make the triples richer than nine predicates and a free-text object.
 
+## Revision, 2026-11-17 (afternoon)
+
+Ruled by the user in the plan lead's session ("go with your recommendations"), after run 5 and the speaker-rule counts.
+
+1. **The abstain instruction (run 5) stays killed.** It gained +6.3 points on the 809, but category-5 refusals fell 27.1 points against a 10-point line. The flag stays off.
+2. **The speaker rule is not pursued.** It would stop 16 of the 60 category-5 answers and leave refusals about 20 points down, still outside run 5's line.
+3. **The capture rebuild (B542) is the next direction.** About a third of stored facts are wrong (FACT-ACC, 35 of 100), and every graph lever so far has run on those facts.
+   - A design comes first, and no GPU until the user approves it.
+   - The design names every edge it writes.
+   - Its measures include: the hand-read fact accuracy on a fresh 100-fact sample against FACT-ACC's 35%, with the same labels and reader rules; query hits; and the 809 replay.
+4. **Full history:** one more 5-question probe at an 8% answering line (the flag file, for the probe only), with the 30 GB swap ceiling. The full run needs the projection under 40 hours and a check with the review session first, since it takes a day or more on a machine the user also uses.
+5. **The published judge:** the stored control and run-5 answers are re-scored with the published LoCoMo judge prompt (Mem0 @ b3ede5b7; Zep and MemOS reuse it), category 5 skipped as theirs. It is a separate column, and our judge stays the headline.
+
 ## Not known yet
 
 - The query-hit lines for steps 1 and 2 do not exist until step Q's baseline is in.
