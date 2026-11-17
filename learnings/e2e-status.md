@@ -11,20 +11,22 @@ scored by the 26B judge. **Accuracy** is the share answered correctly. **Change*
 run's own control (the same stores without the change). Noise is ±1.7 points; a change counts as a gain only above
 +1.9 points (15 questions).
 
-| Run | Accuracy | Change against its control | Verdict |
-|---|---|---|---|
-| `main` profile | 52.7% (426) | reference | |
-| `principled` profile | 53.4% (432) | +0.7 against `main` | inside noise |
-| Re-captured stores, capture flags off | 53.9% (436) | reference for the re-capture | |
-| Re-captured stores, capture flags on | 53.6% (434) | -0.2 | no change; the control for the three rows below |
-| Graph facts in the prompt, first build (2026-11-14) | 51.7% (418) | -1.7 against 53.4% | killed |
-| Graph facts in the prompt, re-measured (2026-11-16) | 52.3% (423) | -1.4 | killed |
-| Graph facts with object-text matching (2026-11-16) | 51.2% (414) | -2.5 | killed |
-| Baseline: no memory (2026-11-17) | 2.6% (21) | -51.0 against 53.6% | reference |
-| Baseline: naive retrieval (2026-11-17) | 36.1% (292) | -17.5 against 53.6% | reference |
-| Baseline: full history | not run: the timing probe was stopped by the memory guard before its first answer | | held for the user |
-| Fact sentences next to their source turn | not run, stopped at the faithfulness check (6 of 50 wrong; line 5) | | stopped |
-| Changed abstain instruction (2026-11-17) | 60.0% (485) | +6.3 against 53.6% | killed: refusals on the 222 adversarial questions fell 27.1 points (line 10) |
+| Run | Accuracy | Change against its control | Verdict | F1 (LoCoMo's own metric) | F1 change against the same control |
+|---|---|---|---|---|---|
+| `main` profile | 52.7% (426) | reference | | 12.5 | reference |
+| `principled` profile | 53.4% (432) | +0.7 against `main` | inside noise | 12.3 | -0.2 |
+| Re-captured stores, capture flags off | 53.9% (436) | reference for the re-capture | | 12.7 | reference |
+| Re-captured stores, capture flags on | 53.6% (434) | -0.2 | no change; the control for the three rows below | 12.7 | +0.1 |
+| Graph facts in the prompt, first build (2026-11-14) | 51.7% (418) | -1.7 against 53.4% | killed | 11.8 | -0.5 |
+| Graph facts in the prompt, re-measured (2026-11-16) | 52.3% (423) | -1.4 | killed | 12.0 | -0.7 |
+| Graph facts with object-text matching (2026-11-16) | 51.2% (414) | -2.5 | killed | 11.6 | -1.1 |
+| Baseline: no memory (2026-11-17) | 2.6% (21) | -51.0 against 53.6% | reference | 3.0 | -9.8 |
+| Baseline: naive retrieval (2026-11-17) | 36.1% (292) | -17.5 against 53.6% | reference | 10.3 | -2.4 |
+| Baseline: full history | not run: the timing probe was stopped by the memory guard before its first answer | | held for the user | | |
+| Fact sentences next to their source turn | not run, stopped at the faithfulness check (6 of 50 wrong; line 5) | | stopped | | |
+| Changed abstain instruction (2026-11-17) | 60.0% (485) | +6.3 against 53.6% | killed: refusals on the 222 adversarial questions fell 27.1 points (line 10) | 13.3 | +0.6 |
+
+The judge score is the headline because token F1 fails correct paraphrases and long answers. Our cite answers add the quoted line (median 37 words against a 4-word key), so F1 here mostly measures answer length. F1 is shown so these numbers can be set beside the LoCoMo paper's. It was computed from the stored answers with the harness's `locomo10.scoring.locomo_f1`, unchanged. That function mirrors the official evaluation: it lowercases, drops commas, punctuation and a/an/the/and, Porter-stems, and takes token-overlap F1. Category 1 scores each gold item against the best of the comma-split answer, and category 3 uses the first gold alternative. F1 changes are within the F1 column only. How our judge differs from the published judges: `learnings/judge-comparison.md`.
 
 In every arm about 3 points are answers that open with an abstention and then give the key; the judge fails them by its written rule. The arms differ by at most 0.6 points on this, so no comparison changes.
 
@@ -463,7 +465,7 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Abstain-instruction design (review session, 2026-11-17) | one changed wording, written once; flag `answer_style = cite_answer`; the 809 and the 222 adversarial questions, each against its own control | Approved with the lines in the run queue. One arm, no second wording; closed if it fails. The wording was written after reading the 809's failures, so a pass is not a held-out result |
 | Run order (user, 2026-11-17) | full history may take 14-34 hours | User: the three short runs go before full history; the current baselines job finishes first |
 | Fact sentences, second score, full history (user, 2026-11-17 morning) | run 4 stopped at its faithfulness check; run 2 failed its agreement line; run 6's probe stopped by the guard; 35 of 100 stored facts wrong | User: fact sentences left stopped (code not merged); the second score dropped, strict only; full history decided after run 5; the capture rebuild (B542) is the next direction question, with the review session's recommendation after run 5 |
-| Baseline: naive retrieval (2026-11-17) | 36.1% (292), -17.5 points against 53.6% | Reference; no line |
+| Baseline: naive retrieval (2026-11-17) | 36.1% (292), -17.5 points against 53.6% | Reference; no line | 10.3 | -2.4 |
 | Full-history timing probe (2026-11-17) | stopped by the memory guard before its first answer: free 9-10% against the 12% line, answer model at 21.2 GB | Held for the user (review session, 2026-11-17): run 6 cannot run under the 12% line as built; no fix, variant or retry without the user |
 | Second-score agreement check (2026-11-17) | 18 of 20 full answers right (line 18); 2 of 5 partial answers right (line 1): failed | Held for the user (review session, 2026-11-17): run 3 is not queued and no second column is reported; no fix, variant or retry without the user |
 | Changed abstain instruction, run 5 (2026-11-17) | 809: 60.0% (485), +6.3 points (gained 67, lost 16); category 5: refusals 58.6% → 31.5%, 60 of the 61 now answer for real | Killed as pre-registered (category-5 line); the flag stays off. Held for the user: any follow-up (for example a subject check before answering) is a new design |
