@@ -2,16 +2,23 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-16 (baselines stopped a third time by the memory guard at judging; held for the user)_
+_Last updated: 2026-11-16 23:30 (baselines running under the lower judging line the user allowed; nothing held)_
 
 ## Waiting for the user
 
-**Baselines judging does not fit under the memory guard (held again 2026-11-16, 21:28).** Requeued as it was at the
-user's choice, the job was stopped a third time: the judge alone settles at 12% then 11% free with today's apps open
-(swap 1.4 to 4.1 GB and rising), at or under the guard's 12% line. The user chooses between closing apps and a lower
-line for judging phases only. Nothing new is stored; the five no-memory answer files remain. Until then: no retry, no
-threshold change, no other judge, quantisation or judging model. Card B574 covers the guard and runner not restarting
-after a reboot.
+Nothing is held. The baselines on the 809 are running (job requeued 2026-11-16 22:21); their result, and then the
+next direction, come to the user.
+
+**Baselines judging under a lower guard line (ruled by the user 2026-11-16, about 22:15, in the plan lead's
+session: "Lower line for judging").** As applied:
+- The memory guard keeps 12% free at all times except during a judging phase, which marks itself with a flag file;
+  while the flag exists the line is 8%. The user named no number; 8% is the plan lead's choice (the judge settles at
+  11-12%), and the user can change it. The earlier guard script is kept as a backup.
+- A second guard, added at the review session's request, stops the job if swap stays above 30 GB for three checks.
+  It only adds a stop.
+- The personal daemon is stopped for the whole job. Answering phases, the timing probe and full history stay at 12%.
+- Observed in the first hour of judging: free 11-16%, swap rising from 2.1 GB to a band of 12-16 GB and levelling
+  there; neither guard fired; judging runs at about half its usual speed.
 
 The full trail of trials is in `lessons-learned.md`; every test or trial is appended there with its result.
 
@@ -389,6 +396,7 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Step 3 as built, S3-asbuilt (2026-11-16) | 423 vs 434 (net -11); gold row +13 on 123, no gold row -24 on 299 | Kill as predicted (line: net <= 0); held for the user with S3-OT |
 | Baselines on the 809 (design, 2026-11-16) | design approved by the review session 2026-11-16: per-conversation runs, same answer model, judge, votes and cache as rcon; no pass or kill line; predictions no memory 0.02-0.06, naive retrieval 0.30-0.42, full history 0.45-0.62 | Approved; stopped twice by the memory guard at judging; held for the user |
 | Step 3 kill and the baselines' memory (user, 2026-11-16 night) | S3-OT net -20, S3-asbuilt net -11; the judge alone at the guard's 12% line | User: the kill is accepted, graph facts stay out of the prompt, no new lever until the baselines are in; the guard stays at 12%, no app is closed, and the job is requeued as it is; a third guard stop comes back to the user |
+| Baselines judging, guard line (user, 2026-11-16 about 22:15) | three guard stops with the judge alone at 11-12% free | User: a lower line for judging phases only. Applied as 8% while a judging phase holds its flag (the plan lead's number), 12% otherwise; a 30 GB swap ceiling added as a second stop. Job requeued 22:21 |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
