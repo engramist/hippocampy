@@ -447,3 +447,37 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
 - **Presentation:** gold position (median 11 of 24), prompt length (about 2,100 tokens) and an Observation line for the gold fact (42% wrong against 40% right) are the same for the 152 wrong and the 372 right.
 - **Ruling:** none. It informs the user's choice of direction after the baselines. Report: `~/campy-lead/reports/2026-11-17-all-in-view-wrong.md`; labels: `scratch/allin/labels.txt`.
 - **Lesson:** with every gold turn in view, the largest loss is the reader declining to answer (8.3 points), not where or how the evidence is placed. The coverage buckets are not random, so these questions may differ from the others in difficulty.
+
+### 2026-11-17 Scorer and prompt check on the abstentions (stored records only)
+- **Why:** the classification found 67 abstentions with every gold turn in view (8.3 points of the 809). 25 of them abstain and then state the key (3.1 points). The user asked whether this is the scorer (P6) or the prompt.
+- **What:**
+  - The scoring path of the 25: the harness's pure-abstention filter, or the judge's votes from the cache.
+  - The same pattern counted in five arms: an answer that opens with an abstention but is not a pure abstention.
+  - The answer prompt's abstain instruction and its git history.
+  - Two rule counts over the 67: no shared content word, and a date needed from a relative phrase.
+  - No graph read or written, no GPU, no lines (a description).
+- **Result:**
+  - **The 25:**
+    - 1 failed by the filter: its date sat inside a second abstention clause, which the filter reads as the abstention's topic.
+    - 17 failed by the judge with both votes WRONG.
+    - 7 failed by the judge on a 1-1 split, with the third vote WRONG.
+    - The judge's prompt says an answer that "says the information is unavailable" is WRONG, so it follows its own written rule.
+    - By reading, 20 of the 25 state the full key (2.5 points). By rule (every key word present), 15.
+  - **The pattern in every arm:**
+
+    | Arm | Accuracy | Pattern | Judged right | Wrong but with every key word |
+    |---|---|---|---|---|
+    | Step-0 replay, `main` (shared store) | 51.4% | 126 | 2 | 27 (3.3 pts) |
+    | Step-0 replay, `principled` (shared store) | 51.7% | 135 | 2 | 30 (3.7 pts) |
+    | Control (re-captured, flags on) | 53.6% | 117 | 1 | 25 (3.1 pts) |
+    | Graph facts as built | 52.3% | 129 | 1 | 27 (3.3 pts) |
+    | Graph facts with object text | 51.2% | 128 | 3 | 28 (3.5 pts) |
+
+  - **The instruction's history:**
+    - The answer prompt's "cite" instruction (answer only from the lines, quote one, otherwise say the information is not there) was added on 2026-10-10 (B475, PR 299). It made the reader abstain on the adversarial category 5, which the 809 does not include.
+    - The system prompt's "say so explicitly" line dates from 2026-06-14.
+  - **The 67:**
+    - 5 share no content word with any gold turn (0.6 points).
+    - 27 need a date from a relative phrase (3.3 points; 25 are category 2). **24 of those 27 already showed the gold turn with the phrase resolved inline.**
+- **Ruling (review session, 2026-11-17):** accepted. No scorer change and no prompt change; both are the user's call and have been taken to them.
+- **Lesson:** about 3 points in every arm are answers the judge fails for opening with an abstention while giving the key. The level is shared, so no comparison between arms changes. And a resolved date shown inline does not stop the reader from abstaining.
