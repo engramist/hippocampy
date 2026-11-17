@@ -420,3 +420,30 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
 - **Result so far (first hour):** free memory 11-16%; swap rose from 2.1 GB to 13.9 GB in twelve minutes, then held in a band of 12-16 GB; neither guard fired. Judging is about half its usual speed (one conversation in about 55 minutes against about 25). The baselines' numbers are entered when the job ends.
 - **Lesson:** a free-memory line alone does not see memory pressure. The system held free memory at 12% by swapping, so the pressure showed only in swap; a guard needs both.
 
+
+### 2026-11-17 Why answers are wrong with every gold turn in view (offline classification)
+- **Why:** the user asked why questions with every source turn in the prompt are still answered wrong, and whether the evidence is presented badly.
+- **What:**
+  - **Data:** the stored records of the control run (re-captured stores, capture flags on, 53.6% on the 809). Its conversation section holds every gold turn on 524 questions. Of these, 152 are wrong, which is 18.8 points of the 809.
+  - **Reading:** each of the 152 was read by hand (question, key, answer, gold turns with their preceding turn, Observation lines) and given one label. Test-fault and judge-doubt ids are class 1. An answer opening with an abstention is class 2. Both rules are checked in code.
+  - **Graph:** nothing read or written, and no GPU.
+  - **Lines:** none; a description, not a lever.
+- **Result** (share of 152, points of the 809):
+
+  | Class | Share of 152 | Points of 809 |
+  |---|---|---|
+  | Abstained with the evidence in view | 44% | **8.3** |
+  | Test fault or judge doubt | 18% | 3.5 |
+  | Answered from another turn or line | 14% | 2.6 |
+  | Partial list | 10% | 1.9 |
+  | Other | 7% | 1.2 |
+  | Date reading wrong | 5% | 1.0 |
+  | Needs inference | 2% | 0.4 |
+  | Neighbouring turn not in view | 0% | 0.0 |
+
+  - Of the abstentions, 25 state the key after abstaining (3.1 points).
+  - "Other" includes 4 where the key is only in the gold turn's image caption (7 in all classes) and 3 answers that give the key but are judged wrong.
+  - Neighbouring turn: 32 of the 152 lack the gold turn's preceding turn, but none was judged to turn on it.
+- **Presentation:** gold position (median 11 of 24), prompt length (about 2,100 tokens) and an Observation line for the gold fact (42% wrong against 40% right) are the same for the 152 wrong and the 372 right.
+- **Ruling:** none. It informs the user's choice of direction after the baselines. Report: `~/campy-lead/reports/2026-11-17-all-in-view-wrong.md`; labels: `scratch/allin/labels.txt`.
+- **Lesson:** with every gold turn in view, the largest loss is the reader declining to answer (8.3 points), not where or how the evidence is placed. The coverage buckets are not random, so these questions may differ from the others in difficulty.
