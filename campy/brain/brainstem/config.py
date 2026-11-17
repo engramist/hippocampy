@@ -349,6 +349,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_GRAPH_COUNT": ("retrieval", "graph_count", _parse_bool),
     # Step 3: the query_hits rows as a fixed-shape bundle section (replaces graph_count when on).
     "CAMPY_GRAPH_FACTS": ("retrieval", "graph_facts", _parse_bool),
+    # 2026-11-17: the answer instruction style (cite | legacy | cite_answer); cite is the default.
+    "CAMPY_ANSWER_STYLE": ("ask", "answer_style", str),
     # Object-text matching: question words matched by vector to the object text of the subject's facts (graph_facts).
     "CAMPY_OBJECT_TEXT_MATCH": ("retrieval", "object_text_match", _parse_bool),
     # B547: the question is analysed once; stages read the analysis (bundle section `reads`, `bundle.analysis`).
