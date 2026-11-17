@@ -654,5 +654,7 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
     - Not stopped: 25 quote a line the asked person spoke; 16 quote the other speaker in a line that names the asked person; 3 questions name neither or both speakers.
   - **(b) The 809, the 67 gained: the rule wrongly stops 1** (conv-48 q36). 60 quote the asked person, and 6 questions name both speakers. Across all 485 right answers in the changed arm, it fires on 3.
   - **(c) The rule can apply** to 727 of the 809 (89.9%) and 219 of the 222 (98.6%): those name exactly one speaker.
+  - **Derived:** with the rule, category-5 refusals would be about 86 of 222 (38.7%; 70 now plus the 16 stopped), against the control's 58.6%. That is still about 20 points down, so the rule as specified does not bring run 5 inside its 10-point line.
+  - **The first count (14 of 60, a 23 / 16 / 7 split)** left 7 answers unchecked. The gold-free best-matching shown turn, for answers that quote nothing, settled 4 of them (2 stopped, 2 quoting the asked person). The 3 that name neither or both speakers stay outside the rule.
 - **Ruling:** none; counts only, for the user.
 - **Lesson:** a speaker rule is nearly free on the 809, but stops only about a quarter of the category-5 answers. Most of them answer from the asked person's own line, or from a line that names them, so a check on who spoke cannot see the trap.
