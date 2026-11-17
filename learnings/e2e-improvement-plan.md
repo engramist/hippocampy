@@ -98,6 +98,16 @@ meanwhile as the reference the next direction will be read against.
 
 Ruled by the user. The kill of step 3 is accepted: graph facts are not fed to the answer model as a prompt section, in either form, and no fire rule is tried. Step 4 (the whole gate) has no candidate to gate, so it waits. No new lever starts until the baselines on the 809 are reported; the next direction is the user's ruling, read against the full-history baseline and the coverage table. What the capture work produced stays on main behind flags (place, the rule-written partner, the "we" anchor, object-text matching), unused by any profile.
 
+## Revision, 2026-11-17
+
+Ruled by the user after reading why answers fail with all their evidence in view (the reader declines: 8.3 points; a strict scorer: about 3 points in every arm; misreadings: the rest of 18.8). Three items are added after the baselines, each with a design approved before code and its own pre-registered run. None is step 4.
+
+1. **Fact sentences built by rule.** The subject's matching facts are rendered as plain sentences by fixed templates, with no model call, each attached to its source turn in the conversation section. Behind a flag; exact labels only. It reads the same edges as step Q and writes none.
+2. **A second score.** Beside the strict score, the same judging with an opening refusal ignored (a pure refusal still fails), applied to every arm. The strict score stays the headline.
+3. **The abstain instruction.** One replay with a changed instruction, measured on the 809 and on the adversarial questions together, so the trade is visible. This is a wording change (P5): one arm, pre-registered, no tuning.
+
+Still open and not scheduled: the rebuilt capture lane (B542), which is what would make the triples richer than nine predicates and a free-text object.
+
 ## Not known yet
 
 - The query-hit lines for steps 1 and 2 do not exist until step Q's baseline is in.

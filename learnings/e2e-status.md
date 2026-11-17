@@ -38,8 +38,9 @@ of questions says so in the same sentence.
 
 ## Waiting for the user
 
-Nothing is held. The baselines on the 809 are running (job requeued 2026-11-16 22:21); their result, and then the
-next direction, come to the user.
+Nothing is held. The baselines on the 809 are running (job requeued 2026-11-16 22:21). Queued behind them, each
+with its own pre-registered run (ruled by the user 2026-11-17): fact sentences built by rule, a second score that
+ignores an opening refusal, and a changed abstain instruction.
 
 **Baselines judging under a lower guard line (ruled by the user 2026-11-16, about 22:15, in the plan lead's
 session: "Lower line for judging").** As applied:
@@ -429,6 +430,9 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Baselines on the 809 (design, 2026-11-16) | design approved by the review session 2026-11-16: per-conversation runs, same answer model, judge, votes and cache as rcon; no pass or kill line; predictions no memory 0.02-0.06, naive retrieval 0.30-0.42, full history 0.45-0.62 | Approved; stopped twice by the memory guard at judging; held for the user |
 | Step 3 kill and the baselines' memory (user, 2026-11-16 night) | S3-OT net -20, S3-asbuilt net -11; the judge alone at the guard's 12% line | User: the kill is accepted, graph facts stay out of the prompt, no new lever until the baselines are in; the guard stays at 12%, no app is closed, and the job is requeued as it is; a third guard stop comes back to the user |
 | Baselines judging, guard line (user, 2026-11-16 about 22:15) | three guard stops with the judge alone at 11-12% free | User: a lower line for judging phases only. Applied as 8% while a judging phase holds its flag (the plan lead's number), 12% otherwise; a 30 GB swap ceiling added as a second stop. Job requeued 22:21 |
+| Fact sentences by rule (user, 2026-11-17) | the 152 all-evidence failures cost 18.8 points; 32 have a matching fact by exact label | User likes sentences built by rule, no model call. Review session: design approved to build behind a flag (off), a line attached to its source turn, exact labels only; faithfulness check of 50 sentences (at most 5 wrong) before any GPU; replay after the baselines; pass above +1.9 points, kill at 0 or below; prediction -0.5 to +1.5 |
+| Second score (user, 2026-11-17) | about 3 points in every arm are answers that decline and then give the key | User: report a second score beside the strict one, with an opening refusal ignored; strict stays the headline; applied to every arm. Design first |
+| Abstain instruction (user, 2026-11-17) | declining with the evidence in view costs 8.3 points; the instruction dates from 2026-10-10 and serves the adversarial category | User: test a changed instruction as one pre-registered replay after the baselines, measured on the 809 and the adversarial questions together. Design first |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
