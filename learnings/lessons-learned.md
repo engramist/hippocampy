@@ -481,3 +481,23 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
     - 27 need a date from a relative phrase (3.3 points; 25 are category 2). **24 of those 27 already showed the gold turn with the phrase resolved inline.**
 - **Ruling (review session, 2026-11-17):** accepted. No scorer change and no prompt change; both are the user's call and have been taken to them.
 - **Lesson:** about 3 points in every arm are answers the judge fails for opening with an abstention while giving the key. The level is shared, so no comparison between arms changes. And a resolved date shown inline does not stop the reader from abstaining.
+
+### 2026-11-17 Reading the results with the user: rulings, and why the triples are still thin
+- **Why:** the user asked why questions with all their evidence in view still fail, proposed giving the answer model plain sentences built from the graph's facts, and asked what became of the capture work that was meant to enrich the triples.
+- **What was established (all on the 809, control 53.6%):**
+  - Evidence in view: on 64.8% of questions every source turn is in the prompt (71.0% correct); on the other 34.7% accuracy is 21.0%. Wrong answers with all evidence in view cost 18.8 points; wrong answers with evidence missing cost 27.4.
+  - Of the 18.8 points, 8.3 are the reader declining to answer with the evidence in view. The instruction that tells it to decline was added on 2026-10-10 for the adversarial category, which is outside the 809.
+  - In every arm about 3 points are answers that decline and then state the key; the judge fails them by its written rule. The arms differ by at most 0.6 points on this.
+  - A resolved date printed next to the turn did not stop the declining (24 of 27 relative-date cases already had it).
+  - Position, prompt length and an existing fact line did not separate right answers from wrong ones.
+- **Why the triples are still thin (what happened to the capture work):**
+  - **Built and on main (flags, mostly in the `principled` profile):** every named entity of a user turn becomes a Concept (B544), the object of a fact can be a typed entity (B546), an entity's standing is decided by rule (B549), a fact is linked to the entities its evidence names (B554), the speaker edge (B560), the dependency-parse rules of step 1 (place, the "X and I" partner, the "we" anchor). These fixed what they aimed at: named entities are no longer dropped (the 2026-10-27 root cause).
+  - **Not built:** the rebuilt capture lane (B542: the model answers closed questions per turn, choosing the relation from a vocabulary and the object as an exact span with a kind). Its card is still open at the design phase. The 2026-11-10 fact contract kept the nine predicates and added roles instead.
+  - **Tried and dropped:** every model-chosen role (senses 32% wrong, action words 21-34%, partner 29 of 30).
+  - **So today:** a fact is a subject, one of nine predicates (two of them, "did" and "has attribute", hold over half the facts) and an object that is usually a free-text phrase, because what people say they did is mostly not a named entity. Only 32 of the 152 all-evidence failures have a matching fact by exact label.
+- **Rulings (user, 2026-11-17):**
+  1. Fact sentences built by rule from the graph, with no model call, attached to their source turn: approved by the review session to build behind a flag; run after the baselines. Prediction -0.5 to +1.5 points.
+  2. A second score is reported beside the strict one: the same judging with an opening refusal ignored (a pure refusal still fails). The strict score stays the headline; the second is applied to every arm.
+  3. A changed abstain instruction is tested as one pre-registered replay after the baselines, measured on the 809 and on the adversarial questions together.
+- **Lesson:** "the evidence is there and the answer is wrong" had three different causes under it (declining, a strict scorer, and real misreadings), and none of them was where the evidence sat in the prompt. Classify the failures by reading them before choosing a lever.
+
