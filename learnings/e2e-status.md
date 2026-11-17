@@ -2,7 +2,7 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-16 23:30 (baselines running under the lower judging line the user allowed; nothing held)_
+_Last updated: 2026-11-17 04:00 (baselines done; probe stopped by the memory guard; second-score check failed; run 5 waits for PR 462; full history held for the user)_
 
 ## Scoreboard (one test set, one measure)
 
@@ -21,7 +21,8 @@ run's own control (the same stores without the change). Noise is ±1.7 points; a
 | Graph facts in the prompt, re-measured (2026-11-16) | 52.3% (423) | -1.4 | killed |
 | Graph facts with object-text matching (2026-11-16) | 51.2% (414) | -2.5 | killed |
 | Baseline: no memory (2026-11-17) | 2.6% (21) | -51.0 against 53.6% | reference |
-| Baselines: naive retrieval, full history | running | | |
+| Baseline: naive retrieval (2026-11-17) | 36.1% (292) | -17.5 against 53.6% | reference |
+| Baseline: full history | not run: the timing probe was stopped by the memory guard before its first answer | | held for the user |
 | Fact sentences next to their source turn | not run, stopped at the faithfulness check (6 of 50 wrong; line 5) | | stopped |
 
 In every arm about 3 points are answers that open with an abstention and then give the key; the judge fails them by its written rule. The arms differ by at most 0.6 points on this, so no comparison changes.
@@ -45,20 +46,19 @@ before it starts and gets a lessons entry when it ends.
 
 | # | Run | What it tests | State | Lines (strict accuracy on the 809 unless said) |
 |---|---|---|---|---|
-| 1 | Baselines job: no memory, naive retrieval, timing probe | where 53.6% stands against no memory and plain retrieval | running: no memory done (2.6%, -51.0 points, reference); naive retrieval and the probe running | reference, no line; predictions 2-6% and 30-42% |
-| 2 | Second score, agreement check | whether the second pass agrees with 25 hand-read answers | queued behind run 1 | at least 18 of 20 full answers pass, at most 1 of 5 partial ones |
-| 3 | Second score, six stored arms | a second column: an opening refusal ignored | waits for run 2 | no line; expected +2.5 to +3.5 points on every arm, gaps unchanged |
+| 1 | Baselines job: no memory, naive retrieval, timing probe | where 53.6% stands against no memory and plain retrieval | done: no memory 2.6% (-51.0 points), naive retrieval 36.1% (-17.5 points), both reference; the probe was stopped by the memory guard (free 9-10% against the 12% line, answer model at 21.2 GB) before its first answer, so there is no projection | reference, no line; predictions 2-6% and 30-42% |
+| 2 | Second score, agreement check | whether the second pass agrees with 25 hand-read answers | failed: 18 of 20 full answers right (pass), 2 of 5 partial ones right (line 1): the six arms are not run | at least 18 of 20 full answers pass, at most 1 of 5 partial ones |
+| 3 | Second score, six stored arms | a second column: an opening refusal ignored | not run: run 2 failed its line | no line; expected +2.5 to +3.5 points on every arm, gaps unchanged |
 | 4 | Fact sentences by rule, next to their source turn | whether plain sentences built from the graph's facts help the reader | not run: FS-0 passed (30 gold-fact firings among the 152; line 25); stopped at the faithfulness check, 6 of 50 wrong (line 5); held for the user | pass above +1.9 points; kill at 0 or below; prediction -0.5 to +1.5 |
-| 5 | Changed abstain instruction | whether the reader stops declining with the evidence in view | designed; waits for its PR | pass above +1.9 points with correct refusals on the 222 adversarial questions falling by at most 5 points; kill at 0 or below, or refusals falling by more than 10; prediction +0.5 to +2.5 |
-| 6 | Full history baseline | the reader with every turn in view | last; only if the probe projects under 40 hours | reference, no line; prediction 45-62% |
+| 5 | Changed abstain instruction | whether the reader stops declining with the evidence in view | designed; PR 462 green, waits for merge | pass above +1.9 points with correct refusals on the 222 adversarial questions falling by at most 5 points; kill at 0 or below, or refusals falling by more than 10; prediction +0.5 to +2.5 |
+| 6 | Full history baseline | the reader with every turn in view | held for the user: the probe could not run under the 12% line | reference, no line; prediction 45-62% |
 
 Not queued, and the user's to schedule: the rebuilt capture lane (B542).
 
 ## Waiting for the user
 
-Nothing is held. The baselines on the 809 are running (job requeued 2026-11-16 22:21). Queued behind them, each
-with its own pre-registered run (ruled by the user 2026-11-17): fact sentences built by rule, a second score that
-ignores an opening refusal, and a changed abstain instruction.
+- **Full history (run 6).** At full-history context the answer model alone takes 21.2 GB and free memory falls to 9-10%, under the 12% answering line, before one answer. It cannot run under the guards as built. Whether and how it runs is the user's call.
+- **The second score (run 3).** The agreement check failed on the partial answers: the judge credits a vague or derived date once the refusal is stripped. A changed stripper or line would be a new pre-registered run.
 
 **Baselines judging under a lower guard line (ruled by the user 2026-11-16, about 22:15, in the plan lead's
 session: "Lower line for judging").** As applied:
@@ -454,6 +454,9 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Second-score design (review session, 2026-11-17) | detection and stripping rules fixed in the harness and self-tested; only strict-wrong answers that open with a refusal get a second pass on the stripped text, same judge and votes | Approved. The agreement check gates reporting. The strict column decides every pass and kill |
 | Abstain-instruction design (review session, 2026-11-17) | one changed wording, written once; flag `answer_style = cite_answer`; the 809 and the 222 adversarial questions, each against its own control | Approved with the lines in the run queue. One arm, no second wording; closed if it fails. The wording was written after reading the 809's failures, so a pass is not a held-out result |
 | Run order (user, 2026-11-17) | full history may take 14-34 hours | User: the three short runs go before full history; the current baselines job finishes first |
+| Baseline: naive retrieval (2026-11-17) | 36.1% (292), -17.5 points against 53.6% | Reference; no line |
+| Full-history timing probe (2026-11-17) | stopped by the memory guard before its first answer: free 9-10% against the 12% line, answer model at 21.2 GB | Held for the user (review session, 2026-11-17): run 6 cannot run under the 12% line as built; no fix, variant or retry without the user |
+| Second-score agreement check (2026-11-17) | 18 of 20 full answers right (line 18); 2 of 5 partial answers right (line 1): failed | Held for the user (review session, 2026-11-17): run 3 is not queued and no second column is reported; no fix, variant or retry without the user |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
