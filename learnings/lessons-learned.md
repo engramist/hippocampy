@@ -658,3 +658,13 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - **The first count (14 of 60, a 23 / 16 / 7 split)** left 7 answers unchecked. The gold-free best-matching shown turn, for answers that quote nothing, settled 4 of them (2 stopped, 2 quoting the asked person). The 3 that name neither or both speakers stay outside the rule.
 - **Ruling:** none; counts only, for the user.
 - **Lesson:** a speaker rule is nearly free on the 809, but stops only about a quarter of the category-5 answers. Most of them answer from the asked person's own line, or from a line that names them, so a check on who spoke cannot see the trap.
+
+### 2026-11-17 Rulings after run 5 (user)
+- **Why:** run 5, the speaker-rule counts, the F1 column and the judge comparison were in. Four decisions were with the user.
+- **What:** the user ruled "go with your recommendations" on the plan lead's four recommendations:
+  - run 5's kill is kept;
+  - full history gets one more probe at an 8% answering line, with the full run only under 40 hours;
+  - the control and run 5 are re-scored with the published judge prompt, as a separate column;
+  - the capture rebuild (B542) is next, design first.
+- **Result:** the probe and the re-score were pre-registered (`scratch/baselines/RUNS.md`, `scratch/pubjudge/RUNS.md`) and queued.
+- **Lesson:** the run-5 kill stands even though it is the largest gain on the 809. The adversarial side is the held-out check, and it failed.
