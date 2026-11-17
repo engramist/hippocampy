@@ -36,6 +36,22 @@ Reporting rule (user, 2026-11-16): every result is given as accuracy in percent 
 percentage points against its control, with the noise band; raw counts once, in brackets. A number on any other set
 of questions says so in the same sentence.
 
+## Run queue (order ruled by the user 2026-11-17)
+
+One GPU job at a time, under the guards (12% free; 8% while judging; 30 GB swap). Each run has its lines written
+before it starts and gets a lessons entry when it ends.
+
+| # | Run | What it tests | State | Lines (strict accuracy on the 809 unless said) |
+|---|---|---|---|---|
+| 1 | Baselines job: no memory, naive retrieval, timing probe | where 53.6% stands against no memory and plain retrieval | running: no-memory judged on 4 of 5 conversations | reference, no line; predictions 2-6% and 30-42% |
+| 2 | Second score, agreement check | whether the second pass agrees with 25 hand-read answers | queued behind run 1 | at least 18 of 20 full answers pass, at most 1 of 5 partial ones |
+| 3 | Second score, six stored arms | a second column: an opening refusal ignored | waits for run 2 | no line; expected +2.5 to +3.5 points on every arm, gaps unchanged |
+| 4 | Fact sentences by rule, next to their source turn | whether plain sentences built from the graph's facts help the reader | being built; waits for its count (FS-0), a faithfulness check (at most 5 of 50 wrong) and its PR | pass above +1.9 points; kill at 0 or below; prediction -0.5 to +1.5 |
+| 5 | Changed abstain instruction | whether the reader stops declining with the evidence in view | designed; waits for its PR | pass above +1.9 points with correct refusals on the 222 adversarial questions falling by at most 5 points; kill at 0 or below, or refusals falling by more than 10; prediction +0.5 to +2.5 |
+| 6 | Full history baseline | the reader with every turn in view | last; only if the probe projects under 40 hours | reference, no line; prediction 45-62% |
+
+Not queued, and the user's to schedule: the rebuilt capture lane (B542).
+
 ## Waiting for the user
 
 Nothing is held. The baselines on the 809 are running (job requeued 2026-11-16 22:21). Queued behind them, each
@@ -433,6 +449,9 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Fact sentences by rule (user, 2026-11-17) | the 152 all-evidence failures cost 18.8 points; 32 have a matching fact by exact label | User likes sentences built by rule, no model call. Review session: design approved to build behind a flag (off), a line attached to its source turn, exact labels only; faithfulness check of 50 sentences (at most 5 wrong) before any GPU; replay after the baselines; pass above +1.9 points, kill at 0 or below; prediction -0.5 to +1.5 |
 | Second score (user, 2026-11-17) | about 3 points in every arm are answers that decline and then give the key | User: report a second score beside the strict one, with an opening refusal ignored; strict stays the headline; applied to every arm. Design first |
 | Abstain instruction (user, 2026-11-17) | declining with the evidence in view costs 8.3 points; the instruction dates from 2026-10-10 and serves the adversarial category | User: test a changed instruction as one pre-registered replay after the baselines, measured on the 809 and the adversarial questions together. Design first |
+| Second-score design (review session, 2026-11-17) | detection and stripping rules fixed in the harness and self-tested; only strict-wrong answers that open with a refusal get a second pass on the stripped text, same judge and votes | Approved. The agreement check gates reporting. The strict column decides every pass and kill |
+| Abstain-instruction design (review session, 2026-11-17) | one changed wording, written once; flag `answer_style = cite_answer`; the 809 and the 222 adversarial questions, each against its own control | Approved with the lines in the run queue. One arm, no second wording; closed if it fails. The wording was written after reading the 809's failures, so a pass is not a held-out result |
+| Run order (user, 2026-11-17) | full history may take 14-34 hours | User: the three short runs go before full history; the current baselines job finishes first |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
 replay (0.480 vs 0.480). 21.6% of facts in that store link to an object entity; no question was answered by a
