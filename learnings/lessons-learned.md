@@ -411,13 +411,19 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
 - **Ruling:** no retry; back to the user (closing apps, or a lower line for judging phases only).
 - **Lesson:** with today's apps open, the judge by itself sits at or below the 12% line on this 32 GB machine. Removing the other model clients does not change that.
 
-### 2026-11-16 Baselines judging, fourth attempt under a lower guard line (job 1001, started 22:21; running)
+### 2026-11-16 Baselines judging, fourth attempt under a lower guard line (job 1001, started 22:21)
 - **Why:** the judge alone sits at 11-12% free on this machine, at the guard's 12% line, and stopped the job three times. The user chose "Lower line for judging" over closing apps.
 - **What:**
   - **Guard:** 12% free at all times except while a judging phase holds a flag file, when the line is 8%. The user gave no number; 8% is the plan lead's choice, three to four points under the judge's steady state.
   - **Second guard:** added at the review session's request after swap was seen climbing: the job stops if swap stays above 30 GB for three checks (the highest ever logged before was 26.8 GB). It only adds a stop.
   - **Job:** unchanged otherwise. The personal daemon is stopped for the whole job; the answer model is unloaded before judging and the judge after; it resumes from the stored no-memory answers, then naive retrieval, the timing probe, and full history if the probe projects under 40 hours.
 - **Result so far (first hour):** free memory 11-16%; swap rose from 2.1 GB to 13.9 GB in twelve minutes, then held in a band of 12-16 GB; neither guard fired. Judging is about half its usual speed (one conversation in about 55 minutes against about 25). The baselines' numbers are entered when the job ends.
+- **No-memory judging, full curve (22:21 to 00:39, 270 samples):**
+  - Free memory held at 11-14% (11%: 26 samples, 12%: 95, 13%: 107, 14%: 25).
+  - Swap went from 2.7 GB at the start to a peak of 16.7 GB at 23:26, then down to 2.4 GB at the end.
+  - Neither guard fired, and the 30 GB ceiling was never approached.
+  - Judging took 22-36 min per conversation, 2 h 17 min in all.
+- **No-memory result:** 2.6% on the 809 (21), -51.0 points against the 53.6% control; a reference, with no line. The prediction was 2-6%. Non-answers: 36. One question timed out during the first attempt's answering and is scored wrong; it was not re-run.
 - **Lesson:** a free-memory line alone does not see memory pressure. The system held free memory at 12% by swapping, so the pressure showed only in swap; a guard needs both.
 
 
@@ -513,3 +519,61 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
 - **Order (user):** the running baselines job, then the second score, fact sentences and the abstain replay as each is ready, then full history.
 - **Lesson:** none yet; results are entered as each run ends.
 
+
+### 2026-11-17 Fact sentences built by rule; FS-0; faithfulness check (stopped)
+- **Why:** the user asked for the subject's facts to be rendered by rule as plain sentences, next to the turn the reader already reads (placement A, exact-label objects only). It was approved by the review session on 2026-11-17 behind `[retrieval] fact_sentences` (default off, in no profile).
+- **What:**
+  - **Build:** branch `claude/fact-sentences` (pushed, not merged).
+    - One grouped NamedQuery, `fact_sentences.rows`, reads HAS_SUBJECT/subject_id, the predicate, HAS_OBJECT (label and kind) or object_text, polarity, time and its resolved date, EVIDENCED_BY → Message, HAS_PLACE, the rule-written partner and group_subject. It writes nothing.
+    - The query computes the join to the shown turns, the lists, the 6-item cap and the over-cap exclusion.
+    - Python fills a fixed template per predicate and polarity, rewrites first-person words to the subject, and applies the declared per-turn (2) and per-prompt (6) caps.
+    - 90 tests; the full suite passes.
+  - **FS-0:** a compile-only replay of the 809 with the built path on copies of the five re-captured flags-on stores, with no answer model.
+  - **Faithfulness check:** 50 sentences sampled from all 639 (seed 20261117, before any outcome existed), each read by hand against its source turn.
+- **Lines (pre-registered):**
+  - FS-0 goes on only with at least 25 gold-fact firings among the 152.
+  - Faithfulness: at most 5 of 50 wrong; 6 or more stops the step.
+- **Result:**
+  - **FS-0 reproduces the control exactly:** the conversation sections are identical on all 809 once the fact lines are removed, and all 457 prompts with no firing are byte-identical.
+  - **Firings:** 352 (99 with a sentence on a gold turn, 253 without), 1.82 sentences per firing.
+  - **Reach:**
+    - among the 152 wrong with every gold turn in view: 77 firings, **30 gold-fact firings** (line 25: passed);
+    - among the 281 missing-evidence questions: 13;
+    - among the 372 already right: 163 firings.
+  - **Duplicates:** 60% of sentences (382 of 639) repeat a fact already shown as an Observation line.
+  - **Faithfulness: 6 of 50 wrong (line 5): stopped.** By cause:
+    - wrong person: 1;
+    - a future stated as past: 2;
+    - a present fact stored as a plan: 2;
+    - a non-place stored as the place: 1.
+    - The 6 are 4 distinct facts, all in one conversation. Every one renders a stored fact as stored; the rendering rules produced no wrong sentence in the sample.
+- **Ruling (review session, 2026-11-17):** the stop is accepted as pre-registered. The line is not moved and nothing is discounted after the fact. Fact sentences are not run; held for the user. The code stays on its branch.
+- **Lesson:** a sentence built by rule states its fact plainly next to a true turn, so a capture error becomes a confident false claim. The sentences exposed the stored facts' error rate rather than the rendering's.
+
+### 2026-11-17 How often a stored fact is wrong (FACT-ACC, offline, hand-read)
+- **Why:** every error the fact-sentence check found was in the stored fact, not the rendering. This sizes the capture error for the user's decision on the capture rebuild (B542).
+- **What:**
+  - **Sample:** 100 live facts, 20 per conversation, from fresh copies of the five re-captured flags-on stores (seed 20261118 over sorted observation ids, drawn before reading).
+  - **Reading:** each fact (subject, predicate, polarity, object, place, partner, time) was read by hand against its source turn and given one label, with borderline calls marked.
+  - **Graph reads:** Observation literals, HAS_SUBJECT/subject_id, HAS_OBJECT, HAS_PLACE, HAS_PARTICIPANT, EVIDENCED_BY → Message text. Nothing written; no GPU and no model.
+  - **Lines:** none (pre-registered in `scratch/factacc/RUNS.md`). Prediction: 15-30% wrong.
+- **Result:**
+  - **35 of 100 wrong:** 21 clear and 14 borderline.
+    - If every borderline call went the other way, the count runs from 21 to 56, since 21 facts judged right were also borderline.
+    - The point estimate is above the prediction.
+  - **By label:**
+
+    | Label | n |
+    |---|---|
+    | Not a fact about anyone (a question, small talk, an opinion with no subject) | 14 |
+    | Wrong object or place | 9 |
+    | Wrong person | 5 |
+    | Wrong tense or polarity | 4 |
+    | Wrong predicate | 3 |
+
+  - **By predicate (wrong of sampled):** has_attribute 11/19, is_a 7/13, prefers 5/17, did 5/30, plans 4/15, relates_to 2/4, owns 1/2.
+  - **By conversation:** 9, 7, 6, 9 and 4 of 20.
+  - **No subject:** 10 facts have no subject edge or literal, and all 10 are wrong.
+  - **Shown to the reader:** 13 of the 35 wrong facts already appear as an Observation line in at least one control prompt (67 prompts); 10 of the 21 clear-wrong ones do. Of the 65 right facts, 39 appear.
+- **Ruling:** none; for the user's decision on B542.
+- **Lesson:** about a third of stored facts are not true statements about a person. The error is concentrated in has_attribute and is_a, and in facts with no subject. "did" facts are the most reliable (5 of 30). The reader already sees some of these wrong facts as Observation lines today.
