@@ -94,6 +94,10 @@ fire rule alone would not rescue it; the section mostly repeats turns already in
 279). Step 4 does not start on top of step 3. What comes next is held for the user. The baselines on the 809 run
 meanwhile as the reference the next direction will be read against.
 
+## Revision, 2026-11-16 (night)
+
+Ruled by the user. The kill of step 3 is accepted: graph facts are not fed to the answer model as a prompt section, in either form, and no fire rule is tried. Step 4 (the whole gate) has no candidate to gate, so it waits. No new lever starts until the baselines on the 809 are reported; the next direction is the user's ruling, read against the full-history baseline and the coverage table. What the capture work produced stays on main behind flags (place, the rule-written partner, the "we" anchor, object-text matching), unused by any profile.
+
 ## Not known yet
 
 - The query-hit lines for steps 1 and 2 do not exist until step Q's baseline is in.
