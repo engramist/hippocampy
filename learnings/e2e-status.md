@@ -2,7 +2,7 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-18 (B542 closed by the user after its screens; open decisions listed under "Waiting for the user")_
+_Last updated: 2026-11-18 night (step 4: no pass, a tie; ND-3 and ND-4 stopped; the next direction is the review session's to pick)_
 
 ## Scoreboard (one test set, one measure)
 
@@ -15,6 +15,8 @@ run's own control (the same stores without the change). Noise is ±1.7 points; a
 |---|---|---|---|---|---|
 | `main` profile | 52.7% (426) | reference | | 12.5 | reference |
 | `principled` profile | 53.4% (432) | +0.7 against `main` | inside noise | 12.3 | -0.2 |
+| Step 4, `main` profile, fresh captures (2026-11-18) | 53.9% (436) | reference | | | |
+| Step 4, `principled` profile, fresh captures (2026-11-18) | 54.1% (438) | +0.2 against step 4's `main` | no pass (line: more than +15 questions); a tie, agreeing with the row above | | |
 | Re-captured stores, capture flags off | 53.9% (436) | reference for the re-capture | | 12.7 | reference |
 | Re-captured stores, capture flags on | 53.6% (434) | -0.2 | no change; the control for the three rows below | 12.7 | +0.1 |
 | Graph facts in the prompt, first build (2026-11-14) | 51.7% (418) | -1.7 against 53.4% | killed | 11.8 | -0.5 |
@@ -67,16 +69,15 @@ before it starts and gets a lessons entry when it ends.
 
 | 7 | B542 capture rebuild, step 1: paired, blinded fact screen (no GPU) | whether parse rules on the closed-question lane make stored facts more accurate without losing right facts | stopped on the coverage line: lane 52 wrong of 100, llm-1 53 (blinded, same reading); right facts per 100 turns 15.5 against 41.0 (38%, line 60%); step 1b (larger reader, conv-48 and conv-49), read at the user's request: lane 15 wrong of 40 against llm-1 19, coverage 108%, meets its scaled lines on a weak sample (about 0.9 standard errors); step 1c (larger-reader replies for the other three conversations, GPU job 1006) stopped by the memory guard 78 seconds in (free 10% against 12%, model at 18.1 GB), no retry; **closed by the user 2026-11-18 ("Close B542")** | continue at 10 or more fewer wrong and coverage at least 60%; stop if no better or coverage under 60%; prediction lane 18-30 wrong, llm-1 28-40, coverage 40-80% |
 
+| 8 | Step 4, the whole gate: fresh captures, `principled` against `main` (jobs 1007 and 1008) | whether the principled profile beats main with the four capture fixes since step 0c | **no pass:** 54.1% against 53.9%, +0.2 points, net +2 questions (gained 25, lost 23); by category 1 +2.6, 2 +0.6, 3 -2.0, 4 -0.5 points; without the 34 test faults +0.3 points; no guard stops, 0 judge errors | pass above +15 questions net; no kill line; prediction -0.5 to +2.0 points |
+
 B542 is closed (user, 2026-11-18); step 2 was never queued.
 
 ## Waiting for the user
 
-**Open now (2026-11-18):**
-1. **Running: step 4, the whole gate** (user, 2026-11-18: "follow the plan").
-   - Fresh captures of the five conversations for `principled` and `main` (job 1007, about 11 h), then the 809 replay and judging (job 1008, about 6 h). Tree detached at main 949d6353, with the step-0c recipe unchanged.
-   - Pass above +15 questions net (above +1.9 points). There is no kill line. LongMemEval runs only after a pass. Prediction: -0.5 to +2.0 points.
-   - After the result, the user rules on each of the 15 principled switches: on by default, or deleted.
-   - The next direction follows from this result. Capture stays llm-1 until then.
+**Open now (2026-11-18, night):**
+1. **Step 4 did not pass** (54.1% against 53.9%, +0.2 points, net +2 questions against the +15 line). With step 0c's +0.7 points, two measurements agree: `principled` ties `main`. LongMemEval stays parked. **For the user:** each of the 15 principled switches goes on by default or is deleted, with no third state.
+   - The next direction is the review session's to pick under the delegation. Subject-anchored turn retrieval has no surviving variant (ND-1/ND-2 lexical, ND-3 vector-ranked, ND-4 the category-1 fallback all stopped offline).
 2. **Full history (run 6): skipped** (user, 2026-11-18). The guard is not lowered.
 3. **Direction and GPU authority delegated** (user, 2026-11-18: "you can do these 'pick a new direction, start a GPU experiment,' just have good reasons for why you did them"). The review session now picks directions and approves GPU experiments, and records its reasons in the Rulings table and the plan before anything runs. The guard lines and the other standing constraints are unchanged. The first pick is in the plan's 2026-11-18 revision: retrieval coverage, by subject-anchored turn retrieval.
 
@@ -510,6 +511,10 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | ND-1 and ND-2, subject-anchored turn reach (2026-11-18, offline) | today's edges: top 10 holds a gold turn on 18 of the 187 no-gold questions (9.6%); with a MENTIONS edge for every name and noun (simulated): 46 (24.6%), a ceiling of about +2.7 points | Not ruled: input to the next-direction options note for the user |
 | ND-1 / ND-2 against the direction's stop (review session, 2026-11-18) | subject-anchored turns reach a gold turn in the top 10 on 9.6% of the 187 "none" questions with today's edges (ND-1), and 24.6% with MENTIONS simulated for every name and noun (ND-2, a ceiling about +2.7 points before any loss); with ND-2, only 63.5% of the "all" questions reach a gold turn that vector retrieval already finds | **Dropped before any GPU time,** on the stop set when the direction was picked (fewer than 25% of the "none" questions). Option A (write MENTIONS for every name and noun) is not taken: its ceiling, measured on dataset text rather than built edges, already sits under 25%, and its realistic gain straddles the +1.9 line. Reason: the missed gold turns mostly share no word with the question, so a lexical anchor cannot find what vector retrieval missed. Next, offline: ND-3 sizes the pre-named fallback, the 74 category-1 questions with only some gold turns in view |
 | Correction to the ND-1/ND-2 ruling (review session, 2026-11-18) | ND-1 and ND-2 rank the anchored turns by lexical term match; the measure asked for ranks them by vector score within the subject's turns | The drop in the row above applies only to the lexical-anchored variant and to option A. The vector-ranked anchored variant has not been measured yet. It is pre-registered as ND-3, with two stops: under 25% of the "none" questions gain a gold turn, or a net estimate under +15 questions on the 809. It has a replace mode and an add-5 mode. The category-1 fallback is ND-4. Both are offline and wait for an empty queue and free memory above 40% |
+| Step 4, the whole gate (2026-11-18) | principled 54.1% (438) against main 53.9% (436): +0.2 points, net +2 questions (gained 25, lost 23); category 1 +2.6, 2 +0.6, 3 -2.0, 4 -0.5 points; without the 34 test faults +0.3 points | **No pass** (line: more than +15 questions; no kill line). Inside the prediction (-0.5 to +2.0). Agrees with step 0c (+0.7): the profiles tie. LongMemEval stays parked. The 15 principled switches go to the user: on by default or deleted |
+| ND-0 and ND-3, vector-ranked subject-anchored turns (2026-11-18, offline) | anchor edges exist (SPOKEN_BY on every Message; 89.9% of questions resolve to a subject Concept with MENTIONS into it). R: 26.7% of the 187 "none" questions gain a gold turn, but 29.4% of the 524 "all" lose one, net estimate -60.4 questions. A (add 5): 12.3% gain, net estimate +10.2 | **Stopped** on the pre-registered lines: no mode clears both (25% of "none"; net above +15). The vector-ranked anchored variant is dropped with no GPU time |
+| ND-4, category-1 "some" fallback (2026-11-18, offline) | every gold turn in the store's vector top 30 for 12 of the 74 (top 15: 9; top 20: 11); missing gold turns rank at a median of 89.5; 3 of 12,376 turns ranked above them are near-duplicates of a shown turn | **Stopped** (line: under 25 of the 74 at 30; prediction 20-35). The missing turns are far down the vector ranking, not crowded out. The fallback is dropped; the next direction is the review session's to pick |
+| B542 steps 1 and 2 (user, 2026-11-18, relayed by the review session) | the B542 design, with the paired blinded screen first | User: "Approve steps 1 and 2". Superseded the same day: step 1 stopped on its coverage line, step 1c was stopped by the memory guard, and the user closed B542 before step 2 was queued |
 | Four decisions after run 5 (user, 2026-11-17 afternoon) | run 5's kill, full history, the published judge, the capture rebuild | User, "go with your recommendations": run 5's kill kept; full history probed again at an 8% answering line, the full run only under 40 hours; published-judge re-score of the control and run 5 as a separate column; capture rebuild (B542) next, design first |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on

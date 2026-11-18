@@ -800,3 +800,44 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
     - ND-2: a ceiling of about +2.7 points, if the 46 were answered at the all-in-view rate (71%) and the added turns cost nothing.
 - **Ruling:** not ruled; input to the user's next-direction decision (`~/campy-lead/reports/2026-11-18-next-direction-options.md`).
 - **Lesson:** the subject-anchored path through SPOKEN_BY is there today, but capture's MENTIONS are too sparse to carry it. About 3 per turn leaves most question words with no Concept. Writing a mention for every name and noun is the capture fix that would make the query worth gating (P8: fix capture first). ND-2 is a simulation on clean dataset text, so the real number needs the rule written into store copies first.
+
+### 2026-11-18 Step 4, the whole gate: `principled` against `main` on fresh captures (GPU jobs 1007 and 1008)
+- **Why:** the plan's closing gate. Four default-on capture fixes (B565, B567, B568, B570) had landed in both profiles since step 0c, so step 0c's +0.7 points needed a second measurement before the 15 principled switches are ruled on. Run on the user's "follow the plan".
+- **What:**
+  - Fresh captures of conv-26/41/48/49/50 for each profile, on a tree detached at main 949d6353, with step 0c's recipe unchanged.
+  - The 809 replayed on each store (principled with the concept walk off; main with `CAMPY_PROFILE=main`), judged by the 26B judge under the 8% judging line.
+  - Pre-registered in `scratch/step4/RUNS.md` in the plan lead's working area.
+- **Lines:** pass if principled beats main by more than 15 questions net. No kill line. Prediction -0.5 to +2.0 points. LongMemEval only after a pass.
+- **Result:**
+  - principled 54.1% (438) against main 53.9% (436): **+0.2 points**, net +2 questions (gained 25, lost 23). Without the 34 test faults: 56.1% against 55.9%, +0.3 points.
+  - By category: 1 +2.6 points (net +4 of 153), 2 +0.6 (+1 of 171), 3 -2.0 (-1 of 51), 4 -0.5 (-2 of 434).
+  - Step 0c beside it: +0.7 points (net +6). Same-arm repeatability: principled moved +0.7 points between the two captures (769 of 809 same verdict), main +1.2 points (779 of 809).
+  - No guard stops, 0 judge errors. Captures took 10.3 h, replay and judging 3.9 h.
+- **Ruling:** no pass. LongMemEval stays parked. The 15 principled switches go to the user: on by default or deleted.
+- **Lesson:** two measurements agree that the profiles tie: the principled switches neither help nor hurt the score at this capture quality. Between two fresh captures the same profile moves about 1 point, so the step-to-step drift is the size of the effect being looked for.
+
+### 2026-11-18 ND-0 and ND-3: subject-anchored turns ranked by vector (offline, no GPU)
+- **Why:** the review session's correction to the ND-1/ND-2 drop. ND-1 and ND-2 ranked anchored turns by term match; the direction asked for a vector rank within the subject's turns.
+- **What:**
+  - ND-0: the edge check on copies of the control stores (SPOKEN_BY, MENTIONS into the speakers' Concepts).
+  - ND-3: for each question naming one speaker, the Messages SPOKEN_BY or MENTIONing that speaker (one anchored SPARQL query), ranked by the cosine between the raw question and each Message's stored vector (the store's own embedding model, on the CPU). R mode replaces the control's conversation section with the top N (N = the control's own turn count, median 24); A mode adds the anchored top 5 not already shown.
+  - Run after the step-4 result was sent, with the queue empty, at 90% free memory. Pre-registered in `scratch/nd1/RUNS.md`.
+- **Lines:** stop if under 25% of the 187 "none" questions gain a gold turn, or if the net estimate is under +15 questions; the direction continues only if one mode clears both. Prediction: 30-50% of "none" gain; 15-30% of "all" lose a gold turn under R.
+- **Result:**
+  - ND-0: every Message has SPOKEN_BY; 47-83% of Messages per store MENTION a person; on 727 of the 809 questions (89.9%) the subject resolves to a Concept with MENTIONS into it.
+  - R: 50 of the 187 "none" gain a gold turn (26.7%), 30 gain all their missing ones. But 154 of the 524 "all" lose a gold turn (29.4%). Net estimate 25.9 - 86.2 = **-60.4 questions**.
+  - A: 23 of the 187 gain (12.3%); net estimate **+10.2 questions**. Median 125 added tokens (p90 230).
+  - "some" (94): R gains for 39.4%, mostly category 1 (29 of 74), and loses a shown gold turn for 39.4%.
+- **Ruling:** stopped. R clears the reach line but not the net line; A clears neither. The vector-ranked anchored variant is dropped with no GPU time.
+- **Lesson:** the anchor edges are there (P8 holds for this query), but a subject anchor plus the question's vector is a worse selector than the existing retrieval: it finds a missing gold turn on a quarter of the "none" questions only by dropping a found one on almost a third of the "all" questions. Added as extra turns, it finds too few.
+
+### 2026-11-18 ND-4: where the category-1 "some" questions' missing gold turns rank (offline, no GPU)
+- **Why:** the direction's pre-named fallback: whether a larger turn budget would bring every gold turn into view for the multi-turn questions that already show some.
+- **What:** the 74 category-1 questions in the "some" bucket. The stored records hold no retrieval ranks, so each dataset turn was ranked by the store's own vector score (cosine of the raw question against every Message vector, one vector per turn). Near-duplicate crowding: turns ranked above the worst missing gold turn, by the same speaker in the same session, with cosine at least 0.9 to a shown turn.
+- **Lines:** stop if under 25 of the 74 have every gold turn in the top 30. Prediction 20-35, with most missing gold turns just below the budget.
+- **Result:**
+  - Every gold turn in the top 15, 20 and 30: **9, 11 and 12 of the 74**.
+  - The 164 missing gold turns (1 more has no vector) rank at a median of 89.5 (25th percentile 27, 75th 209); 43 are within 30, 88 within 100.
+  - Of the 12,376 non-gold turns ranked above the worst missing gold turn, 3 are near-duplicates of a shown turn.
+- **Ruling:** stopped, under the line and below the prediction. The fallback is dropped; the next direction is the review session's to pick.
+- **Lesson:** the missing gold turns of multi-turn questions are not just over the budget's edge, and they are not crowded out by duplicates. The question's vector ranks them far down, so a larger budget recovers few of them. A lever for these questions has to reach them by something other than similarity to the question.
