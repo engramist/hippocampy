@@ -2,7 +2,7 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-18 (published-judge re-score done; full-history probe stopped by the guard a second time)_
+_Last updated: 2026-11-18 (B542 step 1 stopped on its coverage line; held for the user)_
 
 ## Scoreboard (one test set, one measure)
 
@@ -65,7 +65,9 @@ before it starts and gets a lessons entry when it ends.
 | 5 | Changed abstain instruction | whether the reader stops declining with the evidence in view | killed: 809 at 60.0% (+6.3 points, pass); category-5 refusals 58.6% → 31.5% (-27.1 points, over the 10-point kill line) | pass above +1.9 points with correct refusals on the 222 adversarial questions falling by at most 5 points; kill at 0 or below, or refusals falling by more than 10; prediction +0.5 to +2.5 |
 | 6 | Full history baseline | the reader with every turn in view | stopped twice by the guard, at 12% and at 8%; held for the user (second probe: free memory fell from 52% to 5-6% within 80 seconds of the 20.9 GB answer model loading; swap 4.1 → 8.2 GB; no projection, no retry) | reference, no line; prediction 45-62% |
 
-Not queued, and the user's to schedule: the rebuilt capture lane (B542).
+| 7 | B542 capture rebuild, step 1: paired, blinded fact screen (no GPU) | whether parse rules on the closed-question lane make stored facts more accurate without losing right facts | stopped on the coverage line: lane 52 wrong of 100, llm-1 53 (blinded, same reading); right facts per 100 turns 15.5 against 41.0 (38%, line 60%); step 1b (larger reader) drawn, not read; held for the user | continue at 10 or more fewer wrong and coverage at least 60%; stop if no better or coverage under 60%; prediction lane 18-30 wrong, llm-1 28-40, coverage 40-80% |
+
+B542 step 2 (re-capture, GPU) is not queued: step 1 stopped.
 
 ## Waiting for the user
 
@@ -486,6 +488,8 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Changed abstain instruction, run 5 (2026-11-17) | 809: 60.0% (485), +6.3 points (gained 67, lost 16); category 5: refusals 58.6% → 31.5%, 60 of the 61 now answer for real | Killed as pre-registered (category-5 line); the flag stays off. Held for the user: any follow-up (for example a subject check before answering) is a new design |
 | Full-history probe at the 8% line (2026-11-17) | stopped by the memory guard: free 5-6% against the 8% line within 80 seconds of the answer model loading (20.9 GB); swap 4.1 → 8.2 GB; no answer, no projection | Held for the user (review session, 2026-11-17): run 6 is stopped twice by the guard, at 12% and at 8%; no retry, and the plan lead recommends against a lower line |
 | Published-judge re-score (2026-11-18) | control 69.8% (565); run 5 75.4% (610), +5.6 points; 1 judge error in 809 | A measurement for comparison with the papers, with no pass or kill line; inside the predicted 62-75% for the control, just above +2 to +5 for the change. Our judge stays the headline; run 5's kill stands (the published judge skips category 5) |
+| B542 design (user, 2026-11-18) | closed-question lane, parse rules confirm, candidates tagged with `fact_status`, replaces llm-1 behind a flag; paired blinded screen first | User, "go with your recommendations": replace, tag candidates, the 8B reader, the lines as revised by the review session |
+| B542 step 1, fact screen (2026-11-18) | lane 52 wrong of 100 against llm-1 53, blinded; coverage 38% of llm-1's right facts per 100 turns, against a 60% line | Stopped as pre-registered (coverage line). Held for the user: whether to read step 1b (the larger reader, 91% of llm-1's fact count) and whether B542 continues |
 | Four decisions after run 5 (user, 2026-11-17 afternoon) | run 5's kill, full history, the published judge, the capture rebuild | User, "go with your recommendations": run 5's kill kept; full history probed again at an 8% answering line, the full run only under 40 hours; published-judge re-score of the control and run 5 as a separate column; capture rebuild (B542) next, design first |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on

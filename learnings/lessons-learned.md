@@ -692,3 +692,51 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - Answer by answer, the published judge passes every answer ours passes. It also passes 131 more on the control and 125 more on run 5.
 - **Ruling:** a measurement only. Our judge stays the headline, and run 5's kill stands, since the published judge skips category 5.
 - **Lesson:** the published prompt is a strict superset of ours on these answers: about 16 points more generous and never stricter. So a paper's judge score is roughly our accuracy plus 16 points on our answers, and run 5's gain survives the change of judge almost unchanged. My prediction that this prompt would shrink the gain was wrong: run 5 mostly turned refusals into full answers, which both judges pass.
+
+### 2026-11-18 B542 step 1: do parse rules on the closed-question lane make stored facts more accurate? (paired, blinded, no GPU)
+- **Why:** the user approved the B542 capture-rebuild design ("go with your recommendations"). Step 1 screens it before any GPU time.
+- **What:**
+  - **Lane:** the earlier B542 lane's saved replies from the 8B reader, for the five conversations of the 809, put through frozen parse rules:
+    - not a question;
+    - the subject a person on a closed list;
+    - the subject decided by rule from the object's clause;
+    - a whole, specific object from the turn's own text;
+    - tense and polarity from the main verb;
+    - is_a only as a copular complement.
+    Answers that fail a rule are candidates. Nothing was written to any store, and no model was called.
+  - **llm-1:** fresh facts from copies of the control stores, with FACT-ACC's 100 left out.
+  - **Sample:** one seed, 20 facts per conversation from each source. The 200 were shuffled, rendered in one form, and read with FACT-ACC's six labels. The source key was opened only after the last label.
+  - Scripts and pre-registration: `scratch/b542s1/` in the plan lead's working area (rules frozen by sha256 before the draw).
+- **Lines set before the run:**
+  - continue if the lane has at least 10 fewer wrong of 100 and at least 60% of llm-1's right facts per 100 turns;
+  - stop if it is no better, or under 60%;
+  - in between, to the user.
+  - Prediction: lane 18-30 wrong, llm-1 28-40, coverage 40-80%.
+- **Result:**
+  - **Wrong of 100:** lane 52 (range 35-69), llm-1 53 (range 43-76). No accuracy gain.
+  - **Coverage: stopped.** Right facts per 100 turns: lane 15.5 (32.2 confirmed × 48% right), llm-1 41.0 (87.2 × 47%), or 38%, against the 60% line.
+  - **By label:**
+
+    | Label | lane | llm-1 |
+    |---|---|---|
+    | wrong object | 24 | 26 |
+    | not a fact about anyone | 15 | 12 |
+    | wrong predicate | 7 | 7 |
+    | wrong tense or polarity | 3 | 1 |
+    | wrong person | 3 | 7 |
+
+  - **Candidates per rule** (2,643 answers):
+    - the rule-decided subject 759;
+    - malformed answers 408;
+    - object checks 303;
+    - question sentences 207;
+    - tense 46;
+    - is_a 3;
+    - the closed subject list 1.
+  - **Overlap:** of llm-1's right facts that could be matched to a dataset turn, the lane confirms the same turn and subject on 19 of 33.
+  - **Blinding leak, found at reading:** 30 of the 100 llm-1 items showed a stored date and the image caption, so they were recognisable as llm-1. The lane items never were.
+  - **Step 1b** (the larger reader's saved replies, conv-48 and conv-49) was drawn but not read, per the stop rule. Its screen confirms 91% of llm-1's fact count there.
+- **Ruling:** stopped as pre-registered. Held for the user: whether to read step 1b, and whether B542 continues.
+- **Lesson:**
+  - With the 8B reader, the parse rules cut wrong-person errors (7 → 3) but not the main error: an object that is a fragment or the wrong noun ("make", "go", "a ton"). The rules also cost about 60% of the right facts. Better gates on a weak reader's answers do not make the stored facts more accurate.
+  - The same labels read blind gave llm-1 53 wrong, against FACT-ACC's 35 read unblinded. So one reading of 100 facts is not a stable baseline. Only a paired reading supports a comparison.
