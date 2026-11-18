@@ -72,7 +72,11 @@ B542 is closed (user, 2026-11-18); step 2 was never queued.
 ## Waiting for the user
 
 **Open now (2026-11-18):**
-1. **The next direction.** None has been ruled since B542 closed. Capture stays llm-1, and nothing is queued.
+1. **Running: step 4, the whole gate** (user, 2026-11-18: "follow the plan").
+   - Fresh captures of the five conversations for `principled` and `main` (job 1007, about 11 h), then the 809 replay and judging (job 1008, about 6 h). Tree detached at main 949d6353, with the step-0c recipe unchanged.
+   - Pass above +15 questions net (above +1.9 points). There is no kill line. LongMemEval runs only after a pass. Prediction: -0.5 to +2.0 points.
+   - After the result, the user rules on each of the 15 principled switches: on by default, or deleted.
+   - The next direction follows from this result. Capture stays llm-1 until then.
 2. **Full history (run 6).** Stopped twice by the memory guard, at 12% and at 8%. The review session recommends skipping it for now and not lowering the guard. The alternatives are an otherwise empty machine, a subset of questions, or a larger machine.
 
 ### Settled rulings (kept for the trail)

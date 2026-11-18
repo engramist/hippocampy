@@ -140,7 +140,7 @@ Ruled by the user ("Close B542"), after the B542 screens.
    - **Full history:** the second probe, at the 8% line, was stopped by the memory guard before its first answer (free 5-6%, answer model at 20.9 GB). Run 6 is held for the user. The review session recommends skipping it and not lowering the guard.
    - **The published judge:** recorded as a separate table in `e2e-status.md`. Control 69.8%, run 5 75.4% (+5.6 points). It never decides a pass or kill.
 
-**Open now, for the user:** the next direction (none ruled), and whether run 6 is skipped. Nothing is queued.
+**Since then (user, 2026-11-18: "follow the plan"):** step 4, the whole gate, is running as written in the steps table. It is a fresh ingest of the 809, `principled` against `main`, on main 949d6353, which holds four default-on capture fixes made since step 0c. Pass above +15 questions net, with no kill line. Its result leads to the ruling on the 15 principled switches, and then to the next direction. Still open: whether run 6 is skipped.
 
 ## Not known yet
 
