@@ -157,6 +157,11 @@ Ruled by the user ("Close B542"), after the B542 screens.
   3. **A design reviewed against `skills/campy-graph/SKILL.md`,** with lines pre-registered: pass above +1.9 points on the 809; kill at 0 or below, or category-5 refusals falling more than 5 points.
   4. **One GPU gate,** queued after step 4 (job 1008) ends.
 - **What would change the pick:** if the edge check or the sizing shows that anchored queries reach few missing gold turns, this direction is dropped before any GPU time. The next candidate is then the "some" group's multi-turn questions (category 1).
+- **Outcome (review session, 2026-11-18): dropped on that stop.**
+  - ND-1: the anchored query reached a gold turn in the top 10 on 9.6% of the "none" questions.
+  - ND-2: with every name and noun simulated as MENTIONS, it reached 24.6%, about +2.7 points at most.
+  - Both are under the 25% stop. Even in ND-2 the lexical query missed a gold turn on 36.5% of the "all" questions, so it is a weaker selector than the vector retrieval already in place.
+  - Next is ND-3, offline sizing of the fallback: for the 74 category-1 "some" questions, where the missing gold turns rank in the existing retrieval and why they are cut. No GPU until a candidate clears its own stop.
 
 ## Not known yet
 
