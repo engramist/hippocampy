@@ -775,3 +775,28 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
 - **Result:** stopped by the memory guard 78 seconds in. The model loaded at 18.1 GB, and free memory fell from 74% to 10% within 30 seconds and held there for three checks; swap rose from 2.9 to 7.2 GB. 3 windows of conv-26 were written. Nothing was drawn or read.
 - **Ruling:** held for the user. There was no retry, and no lower line.
 - **Lesson:** the reader that made step 1b look better does not fit on this machine under the 12% line. The earlier run held 12-13% free, under a looser scratch guard. So a larger-reader capture arm (B542 step 2) is not runnable as built either: it would need the same model for about 3-5 hours of capture.
+
+### 2026-11-18 ND-1 and ND-2: how far would subject-anchored turn retrieval reach? (offline, no GPU)
+- **Why:** sizing for the next-direction options note (review session request). Of the 809, the control prompt held no gold turn on 187 questions (23.1%, answered 24% right) and only some on 94 (11.6%).
+- **What:**
+  - Read-only SPARQL on fresh copies of the control stores, with no model and no embeddings.
+  - **Anchor:** the speaker the question names, when it names exactly one.
+  - **Question terms:** named entities, noun chunks and noun lemmas, matched exactly to Concept labels.
+  - **ND-1, query A:** turns `SPOKEN_BY` the subject that `MENTIONS` a question term, ranked by terms matched, then by date. Query B adds turns that mention the subject.
+  - **ND-2:** the same query A, with `MENTIONS` simulated for every name and noun of each turn (the same term rule on the dataset text). A what-if of an edge capture could write.
+  - Pre-registered in `scratch/nd1/RUNS.md` in the plan lead's working area.
+- **Lines:** none (sizing). Predictions: ND-1 top-10 reach on the 187 at 15-30%; ND-2 at 15-30% with result sizes over 50 at the 90th percentile.
+- **Result:**
+  - **ND-1:**
+    - The top 10 holds a gold turn on 18 of the 187 (9.6%), below the prediction. B: 15.
+    - Misses: no question word matches a Concept 77; matched but no gold turn 57; no single-speaker anchor 22; gold below the top 10 16.
+    - Capture writes about 3 MENTIONS per turn. Check on the 524 questions with all gold in view: 27.7%.
+  - **ND-2:**
+    - The top 10 holds a gold turn on 46 of the 187 (24.6%), by category 1: 9, 2: 11, 3: 3, 4: 23.
+    - Result size median 11, p90 40.
+    - On the 94 partly-covered questions: 44, an upper bound that counts gold turns already shown.
+  - **Worth on the 809:**
+    - ND-1: about +1.0 point, under the +1.9 bar.
+    - ND-2: a ceiling of about +2.7 points, if the 46 were answered at the all-in-view rate (71%) and the added turns cost nothing.
+- **Ruling:** not ruled; input to the user's next-direction decision (`~/campy-lead/reports/2026-11-18-next-direction-options.md`).
+- **Lesson:** the subject-anchored path through SPOKEN_BY is there today, but capture's MENTIONS are too sparse to carry it. About 3 per turn leaves most question words with no Concept. Writing a mention for every name and noun is the capture fix that would make the query worth gating (P8: fix capture first). ND-2 is a simulation on clean dataset text, so the real number needs the rule written into store copies first.
