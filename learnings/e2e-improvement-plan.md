@@ -1,6 +1,6 @@
 # Plan, 2026-11-10: put the facts in the graph, then answer from it
 
-Approved 2026-11-10. Revised 2026-11-12 (see "Revision, 2026-11-12" below). Replaces the plan last touched 2026-10-21 (in git history).
+Approved 2026-11-10. Revised several times since; the latest is "Revision, 2026-11-18" below, and the revisions read in date order. Replaces the plan last touched 2026-10-21 (in git history).
 
 ## Goal
 
@@ -135,6 +135,12 @@ Ruled by the user ("Close B542"), after the B542 screens.
    - The flag, the `fact_status` property and the reader filter were never built.
 2. **FACT-ACC's 35% is not a stable baseline.** Fresh llm-1 facts read blind came out 53 wrong of 100. A future capture change is measured by a paired, blinded reading against fresh llm-1 facts, not against a stored figure.
 3. Capture stays llm-1. No next direction was ruled with this closure.
+4. **Outcomes of the 2026-11-17 (afternoon) items:**
+   - **Run 5's kill is kept.**
+   - **Full history:** the second probe, at the 8% line, was stopped by the memory guard before its first answer (free 5-6%, answer model at 20.9 GB). Run 6 is held for the user. The review session recommends skipping it and not lowering the guard.
+   - **The published judge:** recorded as a separate table in `e2e-status.md`. Control 69.8%, run 5 75.4% (+5.6 points). It never decides a pass or kill.
+
+**Open now, for the user:** the next direction (none ruled), and whether run 6 is skipped. Nothing is queued.
 
 ## Not known yet
 
