@@ -158,18 +158,18 @@ def test_the_rule_reads_no_claim_words():
 
 # --- flag --------------------------------------------------------------------------------------
 
-def test_flag_default_off_keyless_env_profile_and_packaged_template():
-    assert ev.evidence_entity_links_enabled(_DEFAULT_CONFIG) is False
+def test_flag_default_on_keyless_env_profile_and_packaged_template():
+    assert ev.evidence_entity_links_enabled(_DEFAULT_CONFIG) is True
     assert ev.evidence_entity_links_enabled({}) is False
     assert ev.evidence_entity_links_enabled({"observations": {}}) is False
     on = apply_env_overrides({"observations": {}}, {"CAMPY_EVIDENCE_ENTITY_LINKS": "1"})
     assert ev.evidence_entity_links_enabled(on) is True
     off = apply_env_overrides({"observations": {"evidence_entity_links": True}}, {"CAMPY_EVIDENCE_ENTITY_LINKS": "0"})
     assert ev.evidence_entity_links_enabled(off) is False
-    assert PROFILES["principled"]["observations"]["evidence_entity_links"] is True
+    assert PROFILES["principled"] == PROFILES["main"] == {}
     path = Path(orch.__file__).parents[3] / "data/config/campy.toml"
     assert "evidence_entity_links" not in tomllib.loads(path.read_text()).get("observations", {})
-    assert "# evidence_entity_links = false" in path.read_text()
+    assert "# evidence_entity_links = true" in path.read_text()
 
 
 def test_the_new_queries_are_registered_with_a_sparql_form():

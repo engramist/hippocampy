@@ -1,6 +1,7 @@
-"""B545: the pipeline profile switch.
+"""B545: the pipeline profile switch; B575: the former `principled` members are the built-in defaults.
 
-`main` (default) is today's config; `principled` sets the declared member flags. Precedence for one flag:
+`main` (default) is today's config. Since B575 (step 4 and step 0c: two ties) both profiles are the empty table, so
+they resolve to the same config; the name `principled` is kept so recorded runs still load. Precedence for one flag:
 its env var > an explicit value in the user's config file > the profile > the built-in default. Each
 member is checked through the helper the pipeline really calls, on a key-less user config (the B514
 convention reads a missing key as off, so the profile has to put the key there).
@@ -48,7 +49,6 @@ MEMBERS = {
     ("observations", "kind_hygiene"): kinds.kind_hygiene_enabled,        # B525
     ("observations", "wordnet_kinds"): kinds.wordnet_kinds_enabled,      # B534
     ("observations", "vocab_steward"): steward_enabled,                  # B535
-    ("retrieval", "graph_linking_limit"): graph_linking_limit,           # B503 walk
     ("retrieval", "question_analysis"): question_analysis_enabled,       # B547
     ("retrieval", "graph_vote"): graph_vote_enabled,                     # B548
     ("observations", "typed_objects"): obs.typed_objects_enabled,        # B546
@@ -61,9 +61,10 @@ MEMBERS = {
 }
 
 
-def test_every_profile_member_has_a_test_helper():
-    declared = {(s, k) for s, items in PROFILES["principled"].items() for k in items}
-    assert declared == set(MEMBERS)
+def test_both_profiles_are_the_defaults():
+    assert PROFILES == {"main": {}, "principled": {}}
+    assert all(_DEFAULT_CONFIG[s][k] is True for s, k in MEMBERS)
+    assert _DEFAULT_CONFIG["retrieval"]["graph_linking_limit"] == 0      # the walk was deleted from the profile
 
 
 def test_main_is_todays_config_exactly(tmp_path):
@@ -77,19 +78,13 @@ def test_main_is_todays_config_exactly(tmp_path):
     assert PROFILES["main"] == {}
 
 
+@pytest.mark.parametrize("profile", ["main", "principled"])
 @pytest.mark.parametrize("member", sorted(MEMBERS))
-def test_principled_turns_each_member_on_for_a_keyless_config(tmp_path, monkeypatch, member):
-    monkeypatch.setenv(PROFILE_ENV, "principled")
+def test_each_member_is_on_for_a_keyless_config_under_both_profiles(tmp_path, monkeypatch, member, profile):
+    monkeypatch.setenv(PROFILE_ENV, profile)
     cfg = load_config(write(tmp_path))
-    value = MEMBERS[member](cfg)
-    if member == ("retrieval", "graph_linking_limit"):
-        assert value == 12
-    else:
-        assert value is True
-    # and main leaves it off
-    monkeypatch.delenv(PROFILE_ENV)
-    main_value = MEMBERS[member](load_config(write(tmp_path)))
-    assert main_value in (False, 0)
+    assert MEMBERS[member](cfg) is True
+    assert graph_linking_limit(cfg) == 0
 
 
 def test_profile_from_the_config_file(tmp_path):
@@ -100,7 +95,7 @@ def test_profile_from_the_config_file(tmp_path):
 def test_env_profile_beats_the_file_profile(tmp_path, monkeypatch):
     monkeypatch.setenv(PROFILE_ENV, "main")
     cfg = load_config(write(tmp_path, '[pipeline]\nprofile = "principled"\n'))
-    assert cfg["_profile"] == "main" and obs.object_roles_enabled(cfg) is False
+    assert cfg["_profile"] == "main" and obs.object_roles_enabled(cfg) is True
 
 
 def test_per_flag_env_beats_the_profile(tmp_path, monkeypatch):
@@ -113,14 +108,14 @@ def test_per_flag_env_beats_the_profile(tmp_path, monkeypatch):
     assert obs.object_roles_enabled(cfg) is True            # untouched members stay on
     report = profile_report(cfg)["flags"]
     assert report["observations.kind_hygiene"] == {"value": False, "source": "env"}
-    assert report["observations.object_roles"]["source"] == "profile"
+    assert report["observations.object_roles"]["source"] == "default"
 
 
 def test_every_member_with_an_env_var_can_be_turned_off_by_it(tmp_path, monkeypatch):
     by_key = {(sec, key): var for var, (sec, key, _p) in ENV_OVERRIDES.items()}
     monkeypatch.setenv(PROFILE_ENV, "principled")
     for (section, key), var in by_key.items():
-        if key not in {k for items in PROFILES["principled"].values() for k in items} or key == "graph_linking_limit":
+        if (section, key) not in MEMBERS:
             continue
         monkeypatch.setenv(var, "0")
         assert load_config(write(tmp_path))[section][key] is False, var
@@ -156,7 +151,7 @@ def test_report_lists_members_and_stay_on_flags(tmp_path, monkeypatch):
     monkeypatch.setenv(PROFILE_ENV, "principled")
     rep = profile_report(load_config(write(tmp_path)))
     assert rep["profile"] == "principled"
-    assert rep["flags"]["retrieval.graph_linking_limit"] == {"value": 12, "source": "profile"}
+    assert rep["flags"]["retrieval.graph_linking_limit"] == {"value": 0, "source": "default"}
     assert rep["flags"]["observations.turn_dates"] == {"value": True, "source": "default"}
     assert rep["flags"]["loop.entity_admission"]["value"] is True
 
@@ -174,9 +169,8 @@ TEMPLATES = [REPO / "campy.toml", REPO / "campy" / "data" / "config" / "campy.to
 @pytest.mark.parametrize("template", TEMPLATES, ids=lambda p: str(p.relative_to(REPO)))
 def test_shipped_templates_set_no_profile_member(template):
     raw = tomllib.loads(template.read_text())
-    for section, items in PROFILES["principled"].items():
-        for key in items:
-            assert key not in (raw.get(section) or {}), f"{template.name} pins {section}.{key}"
+    for section, key in MEMBERS:
+        assert key not in (raw.get(section) or {}), f"{template.name} pins {section}.{key}"
 
 
 @pytest.mark.parametrize("template", TEMPLATES, ids=lambda p: str(p.relative_to(REPO)))
@@ -204,9 +198,9 @@ def test_fresh_isolated_home_resolves_every_member_on(tmp_path, monkeypatch, tem
     cfg = load_config()
     assert cfg["_config_path"] == str(home / "config.toml")
     for member, helper in MEMBERS.items():
-        value = helper(cfg)
-        assert (value == 12) if member == ("retrieval", "graph_linking_limit") else (value is True), member
-    assert all(v["source"] == "profile" for k, v in profile_report(cfg)["flags"].items()
+        assert helper(cfg) is True, member
+    assert graph_linking_limit(cfg) == 0
+    assert all(v["source"] == "default" for k, v in profile_report(cfg)["flags"].items()
                if tuple(k.split(".")) in MEMBERS)
 
 
@@ -219,8 +213,8 @@ def test_main_effective_config_is_unchanged_by_the_template_edit(tmp_path):
     """Under profile main, the resolved flag values for a copy of the shipped template are the built-in defaults."""
     cfg = load_config(str(TEMPLATES[1]))
     assert cfg["_profile"] == "main"
-    assert cfg["observations"]["object_roles"] is False and cfg["observations"]["ownership_rule"] is False
-    assert cfg["retrieval"]["graph_count"] is False and cfg["retrieval"]["graph_linking_limit"] == 0
+    assert cfg["observations"]["object_roles"] is True and cfg["observations"]["ownership_rule"] is True
+    assert cfg["retrieval"]["graph_count"] is True and cfg["retrieval"]["graph_linking_limit"] == 0
     for section, key in [("observations", "object_roles"), ("observations", "ownership_rule"),
                          ("retrieval", "graph_count"), ("retrieval", "graph_linking_limit")]:
         assert cfg[section][key] == _DEFAULT_CONFIG[section][key]

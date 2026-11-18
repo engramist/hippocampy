@@ -137,18 +137,18 @@ def _dump(db):
 # --- the flag ----------------------------------------------------------------------------
 
 async def test_flag_default_keyless_env_template_and_profile():
-    assert tb.tracker_side_branch_enabled(_DEFAULT_CONFIG) is False
+    assert tb.tracker_side_branch_enabled(_DEFAULT_CONFIG) is True
     assert tb.tracker_side_branch_enabled({}) is False
     assert tb.tracker_side_branch_enabled({"loop": {}}) is False
     on = apply_env_overrides({"loop": {}}, {"CAMPY_TRACKER_SIDE_BRANCH": "1"})
     assert tb.tracker_side_branch_enabled(on) is True
     off = apply_env_overrides({"loop": {"tracker_side_branch": True}}, {"CAMPY_TRACKER_SIDE_BRANCH": "0"})
     assert tb.tracker_side_branch_enabled(off) is False
-    assert PROFILES["principled"]["loop"]["tracker_side_branch"] is True
-    assert PROFILES["principled"]["loop"]["entity_admission"] is True
+    assert PROFILES["principled"] == PROFILES["main"] == {}
+    assert PROFILES["principled"] == PROFILES["main"] == {}
     path = Path(orch.__file__).parents[3] / "data/config/campy.toml"
     assert "tracker_side_branch" not in tomllib.loads(path.read_text()).get("loop", {})
-    assert "# tracker_side_branch = false" in path.read_text()
+    assert "# tracker_side_branch = true" in path.read_text()
     assert "deprecated" in tb.STATUS
 
 

@@ -147,10 +147,10 @@ def test_a_kind_word_alone_is_not_an_entity(nlp):
 
 # --- flag -----------------------------------------------------------------------------
 
-def test_flag_default_off_env_on():
-    assert _DEFAULT_CONFIG["observations"]["ownership_rule"] is False
+def test_flag_default_on_env_on():
+    assert _DEFAULT_CONFIG["observations"]["ownership_rule"] is True
     assert obs.ownership_rule_enabled({}) is False
-    assert obs.ownership_rule_enabled(_DEFAULT_CONFIG) is False
+    assert obs.ownership_rule_enabled(_DEFAULT_CONFIG) is True
     assert obs.ownership_rule_enabled(apply_env_overrides({}, {"CAMPY_OBSERVATIONS_OWNERSHIP_RULE": "1"})) is True
     assert obs.ownership_rule_enabled(apply_env_overrides(
         {"observations": {"ownership_rule": True}}, {"CAMPY_OBSERVATIONS_OWNERSHIP_RULE": "0"})) is False
@@ -167,9 +167,9 @@ def test_shipped_toml_leaves_the_flag_to_the_default():
     import tomllib
 
     path = Path(__file__).resolve().parents[1] / "campy" / "data" / "config" / "campy.toml"
-    # B545: not set in the template (an explicit value would pin it against the profile); default is off
+    # B545/B575: not set in the template; the default (on since B575) comes from _DEFAULT_CONFIG
     assert "ownership_rule" not in tomllib.loads(path.read_text())["observations"]
-    assert obs.ownership_rule_enabled(load_defaults()) is False
+    assert obs.ownership_rule_enabled(load_defaults()) is True
 
 
 # --- the writer, on a real store ---------------------------------------------------------

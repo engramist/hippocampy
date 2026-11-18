@@ -534,20 +534,20 @@ async def test_a_failing_analysis_falls_back_to_the_stages_own_parsing(db, gw, m
 
 # --- the flag and the profile ------------------------------------------------------------------
 
-def test_flag_default_off_and_env_turns_it_on(monkeypatch):
-    assert _DEFAULT_CONFIG["retrieval"]["question_analysis"] is False
-    assert qa.question_analysis_enabled({}) is False
-    monkeypatch.setenv("CAMPY_QUESTION_ANALYSIS", "1")
-    cfg = apply_env_overrides({"retrieval": {"question_analysis": False}})
-    assert qa.question_analysis_enabled(cfg) is True
+def test_flag_default_on_and_env_turns_it_on(monkeypatch):
+    assert _DEFAULT_CONFIG["retrieval"]["question_analysis"] is True
+    assert qa.question_analysis_enabled({}) is False                 # a bare dict without defaults reads off
+    monkeypatch.setenv("CAMPY_QUESTION_ANALYSIS", "0")
+    cfg = apply_env_overrides({"retrieval": {"question_analysis": True}})
+    assert qa.question_analysis_enabled(cfg) is False
 
 
-def test_principled_profile_turns_it_on_for_a_keyless_config(tmp_path, monkeypatch):
+def test_both_profiles_turn_it_on_for_a_keyless_config(tmp_path, monkeypatch):
     path = tmp_path / "config.toml"
     path.write_text('[llm]\nprovider = "ollama"\n')
     monkeypatch.delenv("CAMPY_QUESTION_ANALYSIS", raising=False)
     monkeypatch.delenv(PROFILE_ENV, raising=False)
-    assert qa.question_analysis_enabled(load_config(str(path))) is False
+    assert qa.question_analysis_enabled(load_config(str(path))) is True     # B575: on by default
     monkeypatch.setenv(PROFILE_ENV, "principled")
     assert qa.question_analysis_enabled(load_config(str(path))) is True
     monkeypatch.setenv("CAMPY_QUESTION_ANALYSIS", "0")

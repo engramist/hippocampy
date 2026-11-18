@@ -28,10 +28,10 @@ _DEFAULT_CONFIG = {
         # is gated separately. CAMPY_GRAPH_LINKING_LIMIT=12 restores the v1 walk.
         "graph_linking": True,
         "graph_linking_limit": 0,
-        # B524 (default OFF; env CAMPY_GRAPH_COUNT=1 turns it on): a count/list question ("how many pets does
+        # B524 (default ON since B575; env CAMPY_GRAPH_COUNT=0 turns it off): a count/list question ("how many pets does
         # X have") adds a `graph_count` bundle section computed by a subject-anchored graph query (needs the
         # B522 object_roles and B523 ownership_rule edges). Gate pending.
-        "graph_count": False,
+        "graph_count": True,
         # Step 3 of the e2e plan (default OFF; env CAMPY_GRAPH_FACTS=1 turns it on; in no profile until gated): the
         # subject-anchored query_hits.* rows enter the bundle as a `graph_facts` section in the fact contract's
         # fixed-shape lines, shaped by the question analysis. When on, the graph_count section is not built.
@@ -41,15 +41,15 @@ _DEFAULT_CONFIG = {
         # subject's own live facts (top 3 per word, cosine >= 0.75); the matched facts are read with the exact-label
         # ones in the graph_facts section. Reads only; writes nothing.
         "object_text_match": False,
-        # B547 (default OFF; env CAMPY_QUESTION_ANALYSIS=1 turns it on; on under profile "principled"): the
+        # B547 (default ON since B575; env CAMPY_QUESTION_ANALYSIS=0 turns it off): the
         # question is analysed once (shape, subject, kind, the Concepts it names) at the top of the bundle
         # compile and the stages read that instead of parsing it themselves. Gate: with the profile (B545).
-        "question_analysis": False,
-        # B548 (default OFF; env CAMPY_GRAPH_VOTE=1 turns it on; on under profile "principled"): the graph's
+        "question_analysis": True,
+        # B548 (default ON since B575; env CAMPY_GRAPH_VOTE=0 turns it off): the graph's
         # list (evidence turns of the subject's Observations that match the kind asked or the entities named)
         # joins vector and lexical in conversation seed selection. Needs question_analysis. Gate: with the
         # profile (B545).
-        "graph_vote": False,
+        "graph_vote": True,
         # B508/B514: SKOS vocabulary for kinds (default ON; env CAMPY_SKOS_VOCAB=0 turns it off;
         # part of the R96 stack, see graph_linking). Kinds are
         # consolidated by rule (same label, head noun), entity -INSTANCE_OF-> kind and
@@ -116,26 +116,26 @@ _DEFAULT_CONFIG = {
         "max_co_occurrence_pairs": 45,
         # B544: every named entity (PERSON, WORK_OF_ART, GPE, ORG, PRODUCT, LOC, FAC, EVENT,
         # NORP) step 1 finds in a user turn becomes a Concept with its NER label and a MENTIONS
-        # edge from the turn, whatever Loop steps 2 and 4 decide. Default OFF until its gate.
-        # CAMPY_ENTITY_ADMISSION=1 turns it on.
-        "entity_admission": False,
-        # B549 (default OFF; env CAMPY_ENTITY_STANDING=1 turns it on): an admitted entity's standing
+        # edge from the turn, whatever Loop steps 2 and 4 decide. Default ON since B575.
+        # CAMPY_ENTITY_ADMISSION=0 turns it off.
+        "entity_admission": True,
+        # B549 (default ON since B575; env CAMPY_ENTITY_STANDING=0 turns it off): an admitted entity's standing
         # (confirmed | doubtful | unverified) is derived by rule from a speaker list and capitalisation evidence, the
         # tagger's label staying evidence; a wrapped span ("Yep Deb") is trimmed to the name it holds. The kind guard,
         # the kind-label guard and the B547 persons read it. A no-op without entity_admission. Gate: part of the
         # principled-profile gate.
-        "entity_standing": False,
-        # B543 (default OFF; env CAMPY_TRACKER_SIDE_BRANCH=1 turns it on; on under profile "principled"): Loop steps
+        "entity_standing": True,
+        # B543 (default ON since B575; env CAMPY_TRACKER_SIDE_BRANCH=0 turns it off): Loop steps
         # 2-7 (the original decision tracker, deprecated) only add records: a contradiction verdict stores the new
         # Concept and a DisambiguationEvent and archives nothing, and a Loop failure never drops the turn's
         # Observation extraction. Warns at daemon start when entity_admission is off. Gate: part of the
         # principled-profile gate.
-        "tracker_side_branch": False,
-        # B560 (default OFF; env CAMPY_SPOKEN_BY=1 turns it on; on under profile "principled"): a user turn's named
+        "tracker_side_branch": True,
+        # B560 (default ON since B575; env CAMPY_SPOKEN_BY=0 turns it off): a user turn's named
         # speaker is linked from the turn by `Message -SPOKEN_BY-> Concept` (the speaker's Person Concept, the one the
         # Loop already seeds). The concept walk (B503, B560) reads it to keep only the subject's own turns. Gate: part
         # of the principled-profile gate.
-        "spoken_by": False,
+        "spoken_by": True,
     },
     # B472 Phase 3: source-grounded Observations. On by default
     # (3c gate: LoCoMo-10 65 gained/39 lost p~0.014; shown only when the
@@ -165,41 +165,41 @@ _DEFAULT_CONFIG = {
         # the SHACL shapes before writing. Gate R93: neutral, 1 gained / 1 lost. If pyshacl/rdflib
         # cannot be imported the gate logs once and is skipped.
         "shacl_gate": True,
-        # B522 (default OFF; env CAMPY_OBSERVATIONS_OBJECT_ROLES=1 turns it on): each Observation
+        # B522 (default ON since B575; env CAMPY_OBSERVATIONS_OBJECT_ROLES=0 turns it off): each Observation
         # records its subject and object Concepts as HAS_SUBJECT / HAS_OBJECT edges (OBSERVATION_ABOUT
         # is unchanged). Gate pending.
-        "object_roles": False,
-        # B523 (default OFF; env CAMPY_OBSERVATIONS_OWNERSHIP_RULE=1 turns it on): a grammar rule writes
+        "object_roles": True,
+        # B523 (default ON since B575; env CAMPY_OBSERVATIONS_OWNERSHIP_RULE=0 turns it off): a grammar rule writes
         # `owns` Observations for first-person possession of an existing Concept ("my X Name", "I
         # adopted Name"), whatever predicate the extractor chose. Gate pending.
-        "ownership_rule": False,
-        # B525 (default OFF; env CAMPY_KIND_HYGIENE=1 turns it on): a kind label is written as a clean singular
+        "ownership_rule": True,
+        # B525 (default ON since B575; env CAMPY_KIND_HYGIENE=0 turns it off): a kind label is written as a clean singular
         # noun ("my dogs" -> "dog", the wording kept as an altLabel) and a meta-noun ("name", "thing", ...) is
         # never a kind. Gate pending.
-        "kind_hygiene": False,
-        # B534 (default OFF; env CAMPY_WORDNET_KINDS=1 turns it on): when a kind is created, WordNet (if
+        "kind_hygiene": True,
+        # B534 (default ON since B575; env CAMPY_WORDNET_KINDS=0 turns it off): when a kind is created, WordNet (if
         # installed) proposes BROADER links to existing kinds that are its hypernyms, and from existing
         # narrower kinds to it. Closed set; each link carries link_source "wordnet". Gate pending.
-        "wordnet_kinds": False,
-        # B535 (default OFF; env CAMPY_VOCAB_STEWARD=1 turns it on): a vocabulary steward above the NLP pipeline
+        "wordnet_kinds": True,
+        # B535 (default ON since B575; env CAMPY_VOCAB_STEWARD=0 turns it off): a vocabulary steward above the NLP pipeline
         # proposes kind parents, entity kinds and reviews of WordNet links, each from a closed numbered list.
         # Everything it writes is a candidate (invisible to retrieval) until an independent source agrees
         # (WordNet's closure, the same proposal from two evidence sets, or a second model family set under
         # [llm.steward_second]). The steward's own model is [llm.steward] (default: the global [llm]). Gate pending.
-        "vocab_steward": False,
-        # B546 (default OFF; env CAMPY_TYPED_OBJECTS=1 turns it on): the object of a fact is a typed entity. At
+        "vocab_steward": True,
+        # B546 (default ON since B575; env CAMPY_TYPED_OBJECTS=0 turns it off): the object of a fact is a typed entity. At
         # Observation write time a rule links the object to an existing admitted Concept (HAS_OBJECT) or, when no
         # entity is named, to one ObjectPhrase node per Observation, and types it (INSTANCE_OF) from a kind the
         # sentence states, WordNet places, the conversation's speakers, or the head noun matched to a kind that
         # exists; else it is only a candidate. No model call; no Concept is created except a kind. Gate pending
         # (judged with the principled profile, B545).
-        "typed_objects": False,
-        # B554 (default OFF; env CAMPY_EVIDENCE_ENTITY_LINKS=1 turns it on): an Observation is linked
+        "typed_objects": True,
+        # B554 (default ON since B575; env CAMPY_EVIDENCE_ENTITY_LINKS=0 turns it off): an Observation is linked
         # (OBSERVATION_ABOUT) to every entity B544 admitted whose occurrence lies in its evidence: the quote located
         # in its source turn, then the clause holding it (dependency parse). The model's wording plays no part.
         # A no-op without [loop] entity_admission. Gate: part of the principled-profile gate.
-        "evidence_entity_links": False,
-        # B564 (default OFF; env CAMPY_OBSERVATION_ROLES=1 turns it on; NOT in profile "principled" until step 1 of the
+        "evidence_entity_links": True,
+        # B564 (default OFF; env CAMPY_OBSERVATION_ROLES=1 turns it on; in no profile until step 1 of the
         # 2026-11-10 plan passes its gate): the extraction form gains "action", "with" and "place"; a rule confirms each
         # span in the turn and writes HAS_ACTION (a WordNet action Concept), HAS_PARTICIPANT and HAS_PLACE. No backfill.
         "roles": False,
@@ -359,13 +359,13 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_GRAPH_VOTE": ("retrieval", "graph_vote", _parse_bool),
     # B508: SKOS vocabulary for kinds (consolidation, INSTANCE_OF vs BROADER).
     "CAMPY_SKOS_VOCAB": ("retrieval", "skos_vocab", _parse_bool),
-    # B544: admit every named entity of a user turn as a Concept (default off).
+    # B544: admit every named entity of a user turn as a Concept (default on since B575).
     "CAMPY_ENTITY_ADMISSION": ("loop", "entity_admission", _parse_bool),
-    # B549: a named entity's standing is derived by rule; the tagger's label stays evidence (default off).
+    # B549: a named entity's standing is derived by rule; the tagger's label stays evidence (default on since B575).
     "CAMPY_ENTITY_STANDING": ("loop", "entity_standing", _parse_bool),
-    # B543: Loop steps 2-7 (the deprecated decision tracker) only add records (default off).
+    # B543: Loop steps 2-7 (the deprecated decision tracker) only add records (default on since B575).
     "CAMPY_TRACKER_SIDE_BRANCH": ("loop", "tracker_side_branch", _parse_bool),
-    # B560: a turn's named speaker is linked by SPOKEN_BY (default off).
+    # B560: a turn's named speaker is linked by SPOKEN_BY (default on since B575).
     "CAMPY_SPOKEN_BY": ("loop", "spoken_by", _parse_bool),
     # B507: the SHACL write gate (default off).
     "CAMPY_SHACL_GATE": ("observations", "shacl_gate", _parse_bool),
@@ -447,36 +447,11 @@ PROFILE_ENV = "CAMPY_PROFILE"
 
 PROFILES: dict[str, dict[str, dict[str, object]]] = {
     "main": {},
-    "principled": {
-        "loop": {
-            # B544: every named entity becomes a Concept with its NER label, whatever Loop steps 2-7 decide.
-            # (PR #387; until it merges the key is unread and harmless.)
-            "entity_admission": True,
-            # B549: the standing of an admitted entity is derived by rule; the kind guard and B547 read it.
-            "entity_standing": True,
-            # B543: the decision tracker (steps 2-7) only adds records; it never removes or withholds.
-            "tracker_side_branch": True,
-            # B560: Message -SPOKEN_BY-> the speaker's Concept; the concept walk anchors on it.
-            "spoken_by": True,
-        },
-        "observations": {
-            "object_roles": True,       # B522: typed HAS_SUBJECT / HAS_OBJECT edges on Observations
-            "ownership_rule": True,     # B523: first-person possession decided by a grammar rule
-            "kind_hygiene": True,       # B525: kind labels are clean singular nouns
-            "wordnet_kinds": True,      # B534: WordNet proposes BROADER links between kinds
-            "vocab_steward": True,      # B535: steward proposes kind links and kinds; a rule promotes
-            "typed_objects": True,      # B546: the object of a fact is a typed entity (HAS_OBJECT, INSTANCE_OF by rule)
-            "evidence_entity_links": True,   # B554: a fact is linked to the admitted entities its evidence names
-        },
-        "retrieval": {
-            "graph_count": True,        # B524: count/list questions answered by a subject-anchored query
-            "question_analysis": True,  # B547: the question is analysed once; the stages read the analysis
-            "graph_vote": True,         # B548: the graph's evidence turns are a third list in seed fusion
-            # B503 concept walk: 12 is the cap the walk was built and gated with (concept_links.DEFAULT_WALK_LIMIT;
-            # gated in R95 as the v1 walk, see backlog/B514.md and B510.md). Re-gated as part of this profile.
-            "graph_linking_limit": 12,
-        },
-    },
+    # B575 (review session ruling under the user's delegation, 2026-11-18): step 4 and step 0c measured the old
+    # principled profile tied with main twice (+0.2 and +0.7 points on the 809), so its 14 members are now the
+    # built-in defaults and the concept walk (graph_linking_limit 12) was deleted from it. "principled" is kept
+    # as a name for the same config, so recorded runs and scripts that set CAMPY_PROFILE=principled still load.
+    "principled": {},
 }
 
 # Flags `campy status` and benchmark provenance report: every profile member, plus current-default
@@ -484,7 +459,13 @@ PROFILES: dict[str, dict[str, dict[str, object]]] = {
 PROFILE_STAYS_ON = (
     ("observations", "enabled"), ("observations", "retrieval"), ("observations", "entities"),
     ("observations", "owl_properties"), ("observations", "shacl_gate"), ("observations", "turn_dates"),
-    ("retrieval", "graph_linking"), ("retrieval", "skos_vocab"),
+    ("retrieval", "graph_linking"), ("retrieval", "skos_vocab"), ("retrieval", "graph_linking_limit"),
+    # B575: the former principled members, default on since step 4.
+    ("loop", "entity_admission"), ("loop", "entity_standing"), ("loop", "tracker_side_branch"), ("loop", "spoken_by"),
+    ("observations", "object_roles"), ("observations", "ownership_rule"), ("observations", "kind_hygiene"),
+    ("observations", "wordnet_kinds"), ("observations", "vocab_steward"), ("observations", "typed_objects"),
+    ("observations", "evidence_entity_links"),
+    ("retrieval", "graph_count"), ("retrieval", "question_analysis"), ("retrieval", "graph_vote"),
 )
 
 
@@ -574,6 +555,10 @@ def apply_profile(config: dict, environ=None) -> dict:
             else:
                 config[section][key] = copy.deepcopy(value)
                 sources[f"{section}.{key}"] = "profile"
+    # B575: any reported flag the file sets is "file", profile member or not (both profiles are empty now).
+    for section, key in profile_flag_keys():
+        if isinstance(config.get(section), dict) and key in config[section]:
+            sources.setdefault(f"{section}.{key}", "file")
     config["_profile"] = name
     config["_profile_sources"] = sources
     return config

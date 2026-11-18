@@ -328,9 +328,9 @@ async def test_compile_bundle_carries_the_section_only_with_the_flag(db, gw):
 
 # --- the flag ----------------------------------------------------------------------
 
-def test_flag_default_off_and_env_turns_it_on(monkeypatch):
-    assert _DEFAULT_CONFIG["retrieval"]["graph_count"] is False
-    monkeypatch.setenv("CAMPY_GRAPH_COUNT", "1")
-    cfg = apply_env_overrides({"retrieval": {"graph_count": False}})
-    assert gc.graph_count_enabled(cfg) is True
+def test_flag_default_on_and_env_turns_it_on(monkeypatch):
+    assert _DEFAULT_CONFIG["retrieval"]["graph_count"] is True
+    monkeypatch.setenv("CAMPY_GRAPH_COUNT", "0")
+    cfg = apply_env_overrides({"retrieval": {"graph_count": True}})
+    assert gc.graph_count_enabled(cfg) is False
     assert gc.graph_count_enabled({}) is False

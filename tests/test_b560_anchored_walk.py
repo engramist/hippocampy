@@ -109,12 +109,12 @@ def analysis(*concepts, subject=None, tie=False, unresolved=()):
 
 # --- the flag -----------------------------------------------------------------------
 
-async def test_flag_default_off_env_on_and_in_the_principled_profile():
-    assert _DEFAULT_CONFIG["loop"]["spoken_by"] is False
-    assert sb.spoken_by_enabled(_DEFAULT_CONFIG) is False and sb.spoken_by_enabled({}) is False
+async def test_flag_default_on_env_on_and_in_the_principled_profile():
+    assert _DEFAULT_CONFIG["loop"]["spoken_by"] is True
+    assert sb.spoken_by_enabled(_DEFAULT_CONFIG) is True and sb.spoken_by_enabled({}) is False
     assert sb.spoken_by_enabled({"loop": {"spoken_by": True}}) is True
     assert apply_env_overrides({"loop": {}}, {"CAMPY_SPOKEN_BY": "1"})["loop"]["spoken_by"] is True
-    assert PROFILES["principled"]["loop"]["spoken_by"] is True
+    assert PROFILES["principled"] == PROFILES["main"] == {}
     assert "spoken_by" not in PROFILES["main"].get("loop", {})
 
 

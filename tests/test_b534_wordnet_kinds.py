@@ -307,8 +307,8 @@ async def test_flag_off_writes_nothing(gw, wn):
     assert await _links(gw) == {} and stats.kinds_wordnet == 0
 
 
-def test_flag_default_off_and_env_on():
-    assert _DEFAULT_CONFIG["observations"]["wordnet_kinds"] is False
+def test_flag_default_on_and_env_on():
+    assert _DEFAULT_CONFIG["observations"]["wordnet_kinds"] is True
     assert kinds_mod.wordnet_kinds_enabled(None) is False
     assert kinds_mod.wordnet_kinds_enabled({"observations": {"wordnet_kinds": True}}) is True
     assert apply_env_overrides({"observations": {}}, {"CAMPY_WORDNET_KINDS": "1"})["observations"]["wordnet_kinds"] is True
