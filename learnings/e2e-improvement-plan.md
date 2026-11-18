@@ -173,3 +173,17 @@ Ruled by the user ("Close B542"), after the B542 screens.
 - The query-hit lines for steps 1 and 2 do not exist until step Q's baseline is in.
 - Step 1 needs GPU time to re-capture one conversation (about 1 hour a pass). Step 0c needs about ten captures once (five conversations, two profiles).
 - No LoCoMo conversation is still unseen. LongMemEval is the only held-out set.
+
+## Revision, 2026-11-18 (night): the switches ruled; next, reranking (ND-5)
+
+- **The 15 principled switches** (review session, under the user's delegation, after step 4 tied): 14 on by default, and the concept walk (graph_linking_limit 12) deleted, its code removed under B576. Reasons are in the Rulings table. Code: B575. The step-4 cost check passed: principled capture took 1.03× main's time and its stores are 1.06× main's size.
+- **Next direction: better ranking of the candidate turns, sized offline as ND-5** (review session).
+  - **Why:** ND-3 and ND-4 show the missing gold turns are in the candidate set, but the question's MiniLM vector ranks them low (median rank 89.5). The budget, duplicates and anchor edges are not the cause. A stronger scorer over that set is the direct fix, and it keeps the reader on verbatim, source-linked turns (P3).
+  - **ND-5:**
+    - **Candidates:** for every question of the 809, the control prompt's conversation turns plus the top 100 Messages by stored vector score.
+    - **Scorer:** a cross-encoder or a stronger embedding model already on disk; nothing is downloaded without the user's OK.
+    - **Cut:** rerank, then cut to the control's own turn budget for the question (replace mode).
+    - **Measures:** gold reach on none / some / all, and ND-3's net estimate by category.
+  - **Stops:** under 25% of the "none" questions gain a gold turn; a net estimate under +15 questions; more than 10% of the "all" questions lose a gold turn.
+  - **Runs:** CPU only, with the queue empty and the same memory gate. The prediction is set in `scratch/nd1/RUNS.md` before the run.
+  - **If it clears:** a design reviewed against `skills/campy-graph/SKILL.md`, then one GPU gate: pass above +1.9 points, kill at 0 or below, or category-5 refusals falling more than 5 points.
