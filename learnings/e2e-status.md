@@ -2,7 +2,7 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-18 (B542 closed by the user after its screens)_
+_Last updated: 2026-11-18 (B542 closed by the user after its screens; open decisions listed under "Waiting for the user")_
 
 ## Scoreboard (one test set, one measure)
 
@@ -70,6 +70,12 @@ before it starts and gets a lessons entry when it ends.
 B542 is closed (user, 2026-11-18); step 2 was never queued.
 
 ## Waiting for the user
+
+**Open now (2026-11-18):**
+1. **The next direction.** None has been ruled since B542 closed. Capture stays llm-1, and nothing is queued.
+2. **Full history (run 6).** Stopped twice by the memory guard, at 12% and at 8%. The review session recommends skipping it for now and not lowering the guard. The alternatives are an otherwise empty machine, a subset of questions, or a larger machine.
+
+### Settled rulings (kept for the trail)
 
 Ruled by the user 2026-11-17 (afternoon), in the plan lead's session ("go with your recommendations"), on the plan lead's four recommendations:
 1. **Run 5 (abstain instruction): the kill is kept.** The flag stays off and in no profile.
