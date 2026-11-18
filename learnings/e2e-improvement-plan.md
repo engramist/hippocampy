@@ -140,7 +140,23 @@ Ruled by the user ("Close B542"), after the B542 screens.
    - **Full history:** the second probe, at the 8% line, was stopped by the memory guard before its first answer (free 5-6%, answer model at 20.9 GB). Run 6 is held for the user. The review session recommends skipping it and not lowering the guard.
    - **The published judge:** recorded as a separate table in `e2e-status.md`. Control 69.8%, run 5 75.4% (+5.6 points). It never decides a pass or kill.
 
-**Since then (user, 2026-11-18: "follow the plan"):** step 4, the whole gate, is running as written in the steps table. It is a fresh ingest of the 809, `principled` against `main`, on main 949d6353, which holds four default-on capture fixes made since step 0c. Pass above +15 questions net, with no kill line. Its result leads to the ruling on the 15 principled switches, and then to the next direction. Still open: whether run 6 is skipped.
+**Since then (user, 2026-11-18: "follow the plan"):** step 4, the whole gate, is running as written in the steps table. It is a fresh ingest of the 809, `principled` against `main`, on main 949d6353, which holds four default-on capture fixes made since step 0c. Pass above +15 questions net, with no kill line. Its result leads to the ruling on the 15 principled switches.
+
+**Full history (run 6) is skipped** (user, 2026-11-18).
+
+**Delegation (user, 2026-11-18).** The review session may pick a new direction and start GPU experiments, "just have good reasons for why you did them". The guard lines and the other standing constraints are unchanged.
+
+**Next direction, picked by the review session (2026-11-18): retrieval coverage by subject-anchored turn retrieval.**
+- **The gap is retrieval, not the reader.** On the control, a question with every gold turn in the prompt is right 71.0% of the time (64.8% of questions). With some gold turns it is right 14.9% (11.6% of questions), and with none 24.1% (23.1%). Moving the last two groups to the first group's rate is worth at most about 17 points on the 809. That is an upper bound, not a forecast, but no other gap we have measured comes close.
+- **Turns, not facts.** Stored facts are 35-53% wrong, depending on the reading. Graph facts in the prompt were killed three times, and the capture rebuild did not make facts more accurate on the 8B. So the graph chooses which turns reach the reader (P2), and the reader sees the verbatim turns, each linked to its source (P3). A wrong fact can then only cost a slot, never state a falsehood.
+- **Why not the answer stage now.** Run 5 showed that making the reader answer more trades directly against category 5. The reader model is fixed by the machine's memory.
+- **The plan already pointed here.** Retrieval levers were paused "until step 4", and step 4 is running.
+- **Order:**
+  1. **Edge check (P8):** does capture write what an anchored query needs, such as Message `MENTIONS` to the subject's Concept and `SPOKEN_BY`, on the 809's stores? If an edge is missing, capture is fixed first.
+  2. **Offline sizing on store copies (no GPU):** for each "none" or "some" question, does a query anchored on its subject reach a missing gold turn within the prompt's turn budget? This gives a kill line before any GPU time.
+  3. **A design reviewed against `skills/campy-graph/SKILL.md`,** with lines pre-registered: pass above +1.9 points on the 809; kill at 0 or below, or category-5 refusals falling more than 5 points.
+  4. **One GPU gate,** queued after step 4 (job 1008) ends.
+- **What would change the pick:** if the edge check or the sizing shows that anchored queries reach few missing gold turns, this direction is dropped before any GPU time. The next candidate is then the "some" group's multi-turn questions (category 1).
 
 ## Not known yet
 
