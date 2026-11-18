@@ -740,3 +740,27 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
 - **Lesson:**
   - With the 8B reader, the parse rules cut wrong-person errors (7 → 3) but not the main error: an object that is a fragment or the wrong noun ("make", "go", "a ton"). The rules also cost about 60% of the right facts. Better gates on a weak reader's answers do not make the stored facts more accurate.
   - The same labels read blind gave llm-1 53 wrong, against FACT-ACC's 35 read unblinded. So one reading of 100 facts is not a stable baseline. Only a paired reading supports a comparison.
+
+### 2026-11-18 B542 step 1b: the same screen on the larger reader's saved replies (paired, blinded, no GPU)
+- **Why:** step 1 stopped with the 8B reader. The user asked for step 1b to be read, to see whether a stronger reader changes the picture.
+- **What:**
+  - The same frozen rules and method as step 1, on the larger, judge-class model's saved lane replies for conv-48 and conv-49.
+  - 20 + 20 facts per conversation (40 lane, 40 fresh llm-1, with step 1's and FACT-ACC's facts left out), seed 20261120. One shuffled list, with the key opened after the last label.
+- **Lines set before the run:** at least 4 fewer wrong of 40, and at least 60% of llm-1's right facts per 100 turns. Informs the reader choice only; it does not start step 2.
+- **Result:**
+  - **Wrong of 40:** lane 15 (37.5%; range 9-23), llm-1 19 (47.5%; range 12-30). Difference -4, exactly the line.
+  - **Coverage:** right facts per 100 turns, lane 43.6 against llm-1's 40.4 (108%).
+  - **By label:**
+
+    | Label | lane | llm-1 |
+    |---|---|---|
+    | wrong object | 8 | 3 |
+    | not a fact about anyone | 6 | 8 |
+    | wrong predicate | 1 | 4 |
+    | wrong person | 0 | 3 |
+    | wrong tense or polarity | 0 | 1 |
+
+  - **Blinding leak:** 13 of the 40 llm-1 items were recognisable by a stored date and caption.
+  - **Weight:** about 0.9 standard errors on 40 facts per source.
+- **Ruling:** meets its lines. Held for the user: whether to make larger-reader replies for the other three conversations (one GPU job, near the memory guard), then a full paired 100 + 100 reading, or to close B542.
+- **Lesson:** the reader matters more than the rules. With the larger reader, the same rules remove the wrong-person and wrong-predicate errors and keep coverage. With the 8B reader, they only cost coverage. The object choice is the remaining error for both readers.
