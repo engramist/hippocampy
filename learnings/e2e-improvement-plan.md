@@ -161,7 +161,9 @@ Ruled by the user ("Close B542"), after the B542 screens.
   - ND-1: the anchored query reached a gold turn in the top 10 on 9.6% of the "none" questions.
   - ND-2: with every name and noun simulated as MENTIONS, it reached 24.6%, about +2.7 points at most.
   - Both are under the 25% stop. Even in ND-2 the lexical query missed a gold turn on 36.5% of the "all" questions, so it is a weaker selector than the vector retrieval already in place.
-  - Next is ND-3, offline sizing of the fallback: for the 74 category-1 "some" questions, where the missing gold turns rank in the existing retrieval and why they are cut. No GPU until a candidate clears its own stop.
+  - **Corrected the same night:** ND-1 and ND-2 ranked by term match, so the drop covers only the lexical-anchored variant and option A. The vector-ranked anchored variant is measured as ND-3. Its stops: under 25% of the "none" questions gain a gold turn, or a net estimate under +15 questions. It is read in a replace mode and in an add-5 mode.
+  - Then ND-4, the fallback: for the 74 category-1 "some" questions, where the missing gold turns rank in the existing retrieval and why they are cut. Its stop: fewer than 25 of the 74 with every gold turn in view at a budget of 30.
+  - No GPU until a candidate clears its own stops. Both measures wait for step 4 to end.
 
 ## Not known yet
 
