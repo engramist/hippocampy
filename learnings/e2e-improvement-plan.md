@@ -163,6 +163,9 @@ Ruled by the user ("Close B542"), after the B542 screens.
   - Both are under the 25% stop. Even in ND-2 the lexical query missed a gold turn on 36.5% of the "all" questions, so it is a weaker selector than the vector retrieval already in place.
   - **Corrected the same night:** ND-1 and ND-2 ranked by term match, so the drop covers only the lexical-anchored variant and option A. The vector-ranked anchored variant is measured as ND-3. Its stops: under 25% of the "none" questions gain a gold turn, or a net estimate under +15 questions. It is read in a replace mode and in an add-5 mode.
   - Then ND-4, the fallback: for the 74 category-1 "some" questions, where the missing gold turns rank in the existing retrieval and why they are cut. Its stop: fewer than 25 of the 74 with every gold turn in view at a budget of 30.
+  - **ND-3 and ND-4 outcome (2026-11-18, night): both stopped.** ND-3 replace mode reaches 26.7% of the "none" questions but its net estimate is -60.4 questions (29.4% of the "all" questions lose a gold turn); add mode reaches 12.3%, net +10.2. ND-4: 12 of the 74 have every gold turn in the vector top 30, against 25. The direction has no surviving variant and is closed.
+
+**Step 4 result (2026-11-18, night): no pass.** `principled` 54.1% against `main` 53.9% on the 809, +0.2 points, net +2 questions against the +15 line. Step 0c measured +0.7: the two agree that the profiles tie. As written above, each of the 15 principled switches now goes on by default or is deleted, as the user rules; LongMemEval stays parked. The next direction is the review session's to pick under the delegation, with its reasons recorded before anything runs.
   - No GPU until a candidate clears its own stops. Both measures wait for step 4 to end.
 
 ## Not known yet
