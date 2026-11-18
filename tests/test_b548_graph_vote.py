@@ -38,9 +38,9 @@ def msg(i):
 
 # --- the flag -------------------------------------------------------------------------
 
-def test_flag_default_off_env_and_profile():
-    assert _DEFAULT_CONFIG["retrieval"]["graph_vote"] is False
-    assert PROFILES["principled"]["retrieval"]["graph_vote"] is True
+def test_flag_default_on_env_and_profile():
+    assert _DEFAULT_CONFIG["retrieval"]["graph_vote"] is True
+    assert PROFILES["principled"] == PROFILES["main"] == {}
     assert gv.graph_vote_enabled({}) is False
     assert gv.graph_vote_enabled(apply_env_overrides({"retrieval": {}}, {"CAMPY_GRAPH_VOTE": "1"})) is True
 

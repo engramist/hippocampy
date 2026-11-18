@@ -91,8 +91,8 @@ def _mentions(db, mid):
 
 # --- the flag ---------------------------------------------------------------------------
 
-async def test_flag_off_by_default_and_keyless():
-    assert ea.entity_admission_enabled(_DEFAULT_CONFIG) is False
+async def test_flag_on_by_default_keyless_dict_reads_off():
+    assert ea.entity_admission_enabled(_DEFAULT_CONFIG) is True
     assert ea.entity_admission_enabled({}) is False
     assert ea.entity_admission_enabled({"loop": {}}) is False
 
@@ -103,7 +103,7 @@ async def test_flag_env_override_and_packaged_toml():
     cfg = apply_env_overrides({"loop": {"entity_admission": True}}, {"CAMPY_ENTITY_ADMISSION": "0"})
     assert ea.entity_admission_enabled(cfg) is False
     packaged = tomllib.loads((Path(orch.__file__).parents[3] / "data/config/campy.toml").read_text())
-    # B545: the template leaves profile members unset, so profile "principled" can turn it on
+    # B545/B575: the template leaves the key unset; the default comes from _DEFAULT_CONFIG
     assert "entity_admission" not in packaged.get("loop", {})
 
 

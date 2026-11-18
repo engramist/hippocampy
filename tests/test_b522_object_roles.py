@@ -96,22 +96,22 @@ async def literal(gw, oid, col):
 
 # --- the flag -------------------------------------------------------------------------
 
-def test_flag_default_off_env_on():
-    assert _DEFAULT_CONFIG["observations"]["object_roles"] is False
+def test_flag_default_on_env_on():
+    assert _DEFAULT_CONFIG["observations"]["object_roles"] is True
     assert obs.object_roles_enabled({}) is False
-    assert obs.object_roles_enabled(_DEFAULT_CONFIG) is False
+    assert obs.object_roles_enabled(_DEFAULT_CONFIG) is True
     assert obs.object_roles_enabled(apply_env_overrides({}, {"CAMPY_OBSERVATIONS_OBJECT_ROLES": "1"})) is True
     assert obs.object_roles_enabled(
         apply_env_overrides({"observations": {"object_roles": True}}, {"CAMPY_OBSERVATIONS_OBJECT_ROLES": "0"})) is False
 
 
 def test_shipped_toml_leaves_the_flag_to_the_default():
-    """B545: the template must not set the flag (an explicit value would pin it against the profile)."""
+    """B545/B575: the template does not set the flag; the default (on since B575) comes from _DEFAULT_CONFIG."""
     import tomllib
 
     path = Path(__file__).resolve().parents[1] / "campy" / "data" / "config" / "campy.toml"
     assert "object_roles" not in tomllib.loads(path.read_text())["observations"]
-    assert _DEFAULT_CONFIG["observations"]["object_roles"] is False
+    assert _DEFAULT_CONFIG["observations"]["object_roles"] is True
 
 
 # --- writes ---------------------------------------------------------------------------

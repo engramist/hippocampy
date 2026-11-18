@@ -117,18 +117,18 @@ def test_trim_leaves_an_unknown_remainder_and_a_mid_sentence_span():
 
 # --- the flag ----------------------------------------------------------------------------------
 
-def test_flag_default_off_keyless_env_profile_and_packaged_template():
-    assert es.entity_standing_enabled(_DEFAULT_CONFIG) is False
+def test_flag_default_on_keyless_env_profile_and_packaged_template():
+    assert es.entity_standing_enabled(_DEFAULT_CONFIG) is True
     assert es.entity_standing_enabled({}) is False
     assert es.entity_standing_enabled({"loop": {}}) is False
     on = apply_env_overrides({"loop": {}}, {"CAMPY_ENTITY_STANDING": "1"})
     assert es.entity_standing_enabled(on) is True
     off = apply_env_overrides({"loop": {"entity_standing": True}}, {"CAMPY_ENTITY_STANDING": "0"})
     assert es.entity_standing_enabled(off) is False
-    assert PROFILES["principled"]["loop"]["entity_standing"] is True
+    assert PROFILES["principled"] == PROFILES["main"] == {}
     path = Path(orch.__file__).parents[3] / "data/config/campy.toml"
     assert "entity_standing" not in tomllib.loads(path.read_text()).get("loop", {})
-    assert "# entity_standing = false" in path.read_text()
+    assert "# entity_standing = true" in path.read_text()
 
 
 def test_the_new_queries_are_registered_with_a_sparql_form():

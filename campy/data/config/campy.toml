@@ -52,8 +52,9 @@ port = 7799
 # On by default. The
 # dedicated worker makes one extra LLM call per user turn (CAMPY_OBSERVATIONS_ENABLED=0
 # turns it off without editing this file).
-# B545: members of the "principled" profile (see docs/pipeline-map.md) are NOT set explicitly below; an explicit
-# value here would pin the flag against [pipeline] profile / CAMPY_PROFILE. Defaults live in _DEFAULT_CONFIG.
+# B575: the former members of the "principled" profile are on by default (step 4 and step 0c: two ties with main);
+# both profiles are now the same config. They are left unset here (the defaults live in _DEFAULT_CONFIG), so a copied
+# template never pins them; each keeps its env var to turn it off.
 [observations]
 enabled = true
 llm_enabled = true       # only read when enabled
@@ -80,20 +81,20 @@ owl_properties = true
 # CAMPY_OBSERVATIONS_ENTITIES=0 turns it off.
 entities = true
 # B522: record each Observation's subject and object Concepts as HAS_SUBJECT / HAS_OBJECT edges
-# (OBSERVATION_ABOUT stays). Off until gated. CAMPY_OBSERVATIONS_OBJECT_ROLES=1 turns it on.
-# object_roles = false  # B522; on under profile "principled"
+# (OBSERVATION_ABOUT stays). On since B575. CAMPY_OBSERVATIONS_OBJECT_ROLES=0 turns it off.
+# object_roles = true  # B522; default on since B575 (from _DEFAULT_CONFIG)
 # B523: a grammar rule writes `owns` Observations (subject = the speaker, object = an existing Concept)
-# for first-person possession ("my dog Toby", "I adopted Buddy"). Off until gated.
-# CAMPY_OBSERVATIONS_OWNERSHIP_RULE=1 turns it on.
-# ownership_rule = false  # B523; on under profile "principled"
+# for first-person possession ("my dog Toby", "I adopted Buddy"). On since B575.
+# CAMPY_OBSERVATIONS_OWNERSHIP_RULE=0 turns it off.
+# ownership_rule = true  # B523; default on since B575 (from _DEFAULT_CONFIG)
 # B546: the object of a fact is a typed entity: at write time a rule links it (HAS_OBJECT) to an admitted entity or
 # an ObjectPhrase node and types it (INSTANCE_OF) from a kind the sentence states, WordNet places, the speakers
-# or its head noun; no model. Off until gated. CAMPY_TYPED_OBJECTS=1 turns it on.
-# typed_objects = false  # B546; on under profile "principled"
+# or its head noun; no model. On since B575. CAMPY_TYPED_OBJECTS=0 turns it off.
+# typed_objects = true  # B546; default on since B575 (from _DEFAULT_CONFIG)
 # B554: an Observation is linked (OBSERVATION_ABOUT) to every entity B544 admitted whose occurrence lies in its
 # evidence (the quote located in its turn, then its clause by the dependency parse); no model, needs entity_admission.
-# Off until gated. CAMPY_EVIDENCE_ENTITY_LINKS=1 turns it on.
-# evidence_entity_links = false  # B554; on under profile "principled"
+# On since B575. CAMPY_EVIDENCE_ENTITY_LINKS=0 turns it off.
+# evidence_entity_links = true  # B554; default on since B575 (from _DEFAULT_CONFIG)
 # B564: the extraction form also asks for an action, a with list and a place; a rule confirms each span in the turn and
 # writes HAS_ACTION (a WordNet action Concept, no embedding), HAS_PARTICIPANT and HAS_PLACE, and lets has_attribute /
 # is_a hold a physical common noun. Off until gated; in no profile yet; no backfill. CAMPY_OBSERVATION_ROLES=1 turns it on.
@@ -122,11 +123,11 @@ conversation_embedded_statements = true
 # 0.517 vs 0.525, 7 gained / 8 lost, neutral; Observations linked to a Concept 79.5% -> 94.9%).
 # graph_linking_limit = 0 means the retrieval walk adds no section (the v1 walk lost: R95 7 / 14).
 graph_linking = true
-# graph_linking_limit = 0  # B503 walk cap; 12 under profile "principled" (default 0 comes from _DEFAULT_CONFIG)
+# graph_linking_limit = 0  # B503 walk cap; the walk is off and was deleted from the profile (B575); its code goes in B576
 # B524: a count/list question ("how many pets does X have") adds a graph_count bundle section computed by a
-# subject-anchored graph query (needs object_roles and ownership_rule). Off until gated.
-# CAMPY_GRAPH_COUNT=1 turns it on.
-# graph_count = false  # B524; on under profile "principled"
+# subject-anchored graph query (needs object_roles and ownership_rule). On since B575.
+# CAMPY_GRAPH_COUNT=0 turns it off.
+# graph_count = true  # B524; default on since B575 (from _DEFAULT_CONFIG)
 # Step 3 of the e2e plan: the subject-anchored query_hits rows enter the bundle as a graph_facts section (fact
 # contract lines, shaped by the question analysis); graph_count is not built while it is on. Off until gated.
 # CAMPY_GRAPH_FACTS=1 turns it on.
@@ -135,34 +136,34 @@ graph_linking = true
 # own live facts (top 3 per word, cosine >= 0.75); matched facts are read with the exact-label ones in the graph_facts
 # section. Needs graph_facts. Off until gated. CAMPY_OBJECT_TEXT_MATCH=1 turns it on.
 # object_text_match = false  # in no profile
-# B547: the question is analysed once (shape, subject, kind, Concepts named) and the stages read it. Off until gated.
-# CAMPY_QUESTION_ANALYSIS=1 turns it on.
-# question_analysis = false  # B547; on under profile "principled"
+# B547: the question is analysed once (shape, subject, kind, Concepts named) and the stages read it. On since B575.
+# CAMPY_QUESTION_ANALYSIS=0 turns it off.
+# question_analysis = true  # B547; default on since B575 (from _DEFAULT_CONFIG)
 # B548: the graph's evidence turns (the subject's Observations matching the kind asked or the entities named) are a
-# third ranked list in conversation seed selection. Needs question_analysis. Off until gated.
-# CAMPY_GRAPH_VOTE=1 turns it on.
-# graph_vote = false  # B548; on under profile "principled"
+# third ranked list in conversation seed selection. Needs question_analysis. On since B575.
+# CAMPY_GRAPH_VOTE=0 turns it off.
+# graph_vote = true  # B548; default on since B575 (from _DEFAULT_CONFIG)
 skos_vocab = true
 
 [loop]
 # B544: every named entity (PERSON, WORK_OF_ART, GPE, ORG, PRODUCT, LOC, FAC, EVENT, NORP) found in a
 # user turn becomes a Concept with its NER label and a MENTIONS edge, whatever Loop steps 2 and 4
-# decide. Off by default; on under profile "principled" (B545). CAMPY_ENTITY_ADMISSION=1 turns it on.
-# entity_admission = false
+# decide. On by default since B575. CAMPY_ENTITY_ADMISSION=0 turns it off.
+# entity_admission = true  # default on since B575 (from _DEFAULT_CONFIG)
 # B549: an admitted entity's standing (confirmed / doubtful / unverified) is derived by rule (speakers, capitalisation
 # evidence in its conversation) and a wrapped span ("Yep Deb") is trimmed to the name it holds; the tagger's label
-# stays evidence. Needs entity_admission. Off by default; on under profile "principled" (B545).
-# CAMPY_ENTITY_STANDING=1 turns it on.
-# entity_standing = false
+# stays evidence. Needs entity_admission. On by default since B575.
+# CAMPY_ENTITY_STANDING=0 turns it off.
+# entity_standing = true  # default on since B575 (from _DEFAULT_CONFIG)
 # B543: Loop steps 2-7 (the original decision tracker, deprecated) only add records: a contradiction verdict stores the
 # new Concept and a DisambiguationEvent and archives nothing; a Loop failure never drops the turn's Observation
-# extraction. Warns at start when entity_admission is off. Off by default; on under profile "principled" (B545).
-# CAMPY_TRACKER_SIDE_BRANCH=1 turns it on.
-# tracker_side_branch = false
+# extraction. Warns at start when entity_admission is off. On by default since B575.
+# CAMPY_TRACKER_SIDE_BRANCH=0 turns it off.
+# tracker_side_branch = true  # default on since B575 (from _DEFAULT_CONFIG)
 # B560: a turn's named speaker is linked by `Message -SPOKEN_BY-> Concept` (the speaker's Person Concept). The concept
-# walk reads it, so a linked turn must be the question's subject's own. Off by default; on under profile "principled"
-# (B545). CAMPY_SPOKEN_BY=1 turns it on.
-# spoken_by = false
+# walk reads it, so a linked turn must be the question's subject's own. On by default since B575.
+# CAMPY_SPOKEN_BY=0 turns it off.
+# spoken_by = true  # default on since B575 (from _DEFAULT_CONFIG)
 
 [wiki_projection]
 enabled = true

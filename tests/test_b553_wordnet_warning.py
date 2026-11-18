@@ -28,9 +28,11 @@ def _cfg(tmp_path, profile: str):
     return load_config(str(path))
 
 
-def test_every_wordnet_member_is_a_principled_member():
-    members = {(s, k) for s, items in PROFILES["principled"].items() for k in items}
-    assert set(PROFILE_NEEDS_WORDNET) <= members
+def test_every_wordnet_member_is_on_by_default():
+    # B575: the former principled members are the defaults; both profiles are the same config
+    from campy.brain.brainstem.config import _DEFAULT_CONFIG
+    assert all(_DEFAULT_CONFIG[s][k] is True for s, k in PROFILE_NEEDS_WORDNET)
+    assert PROFILES["principled"] == PROFILES["main"] == {}
 
 
 def test_principled_without_wordnet_names_the_degraded_members(tmp_path):
@@ -39,8 +41,10 @@ def test_principled_without_wordnet_names_the_degraded_members(tmp_path):
     assert wordnet_degraded(cfg, available=True) == []
 
 
-def test_main_without_wordnet_degrades_nothing(tmp_path):
-    assert wordnet_degraded(_cfg(tmp_path, "main"), available=False) == []
+def test_main_without_wordnet_degrades_the_same_members_as_principled(tmp_path):
+    # B575: main now runs the WordNet members by default, so it warns the same way
+    assert wordnet_degraded(_cfg(tmp_path, "main"), available=False) == wordnet_degraded(_cfg(tmp_path, "principled"), available=False)
+    assert len(wordnet_degraded(_cfg(tmp_path, "main"), available=False)) == len(PROFILE_NEEDS_WORDNET)
 
 
 def test_a_member_pinned_off_in_the_file_is_not_reported(tmp_path):

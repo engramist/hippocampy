@@ -553,13 +553,13 @@ async def test_instantiated_kinds_ignore_phrases(db, gw, world):
 
 # --- flag, profile, template -----------------------------------------------------------------
 
-def test_flag_default_off_env_on_and_in_the_principled_profile(monkeypatch):
-    assert _DEFAULT_CONFIG["observations"]["typed_objects"] is False
-    assert obs.typed_objects_enabled({}) is False and obs.typed_objects_enabled(_DEFAULT_CONFIG) is False
+def test_flag_default_on_env_on_and_in_the_principled_profile(monkeypatch):
+    assert _DEFAULT_CONFIG["observations"]["typed_objects"] is True
+    assert obs.typed_objects_enabled({}) is False and obs.typed_objects_enabled(_DEFAULT_CONFIG) is True
     assert obs.typed_objects_enabled(apply_env_overrides({}, {"CAMPY_TYPED_OBJECTS": "1"})) is True
     assert obs.typed_objects_enabled(
         apply_env_overrides({"observations": {"typed_objects": True}}, {"CAMPY_TYPED_OBJECTS": "0"})) is False
-    assert PROFILES["principled"]["observations"]["typed_objects"] is True and PROFILES["main"] == {}
+    assert PROFILES["principled"] == PROFILES["main"] == {} and PROFILES["main"] == {}
 
 
 def test_shipped_templates_carry_only_a_commented_line():

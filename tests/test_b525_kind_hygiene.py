@@ -92,8 +92,8 @@ def test_without_spacy_a_suffix_rule_applies(monkeypatch):
     assert kinds_mod.normalise_kind_label("glasses") == "glasses"
 
 
-def test_flag_default_off_and_env_on():
-    assert _DEFAULT_CONFIG["observations"]["kind_hygiene"] is False
+def test_flag_default_on_and_env_on():
+    assert _DEFAULT_CONFIG["observations"]["kind_hygiene"] is True
     assert kinds_mod.kind_hygiene_enabled(None) is False
     assert kinds_mod.kind_hygiene_enabled({"observations": {"kind_hygiene": True}}) is True
     assert apply_env_overrides({"observations": {}}, {"CAMPY_KIND_HYGIENE": "1"})["observations"]["kind_hygiene"] is True
