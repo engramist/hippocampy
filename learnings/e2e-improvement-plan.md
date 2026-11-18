@@ -125,6 +125,17 @@ Ruled by the user in the plan lead's session ("go with your recommendations"), a
 4. **Full history:** one more 5-question probe at an 8% answering line (the flag file, for the probe only), with the 30 GB swap ceiling. The full run needs the projection under 40 hours and a check with the review session first, since it takes a day or more on a machine the user also uses.
 5. **The published judge:** the stored control and run-5 answers are re-scored with the published LoCoMo judge prompt (Mem0 @ b3ede5b7; Zep and MemOS reuse it), category 5 skipped as theirs. It is a separate column, and our judge stays the headline.
 
+## Revision, 2026-11-18
+
+Ruled by the user ("Close B542"), after the B542 screens.
+
+1. **The capture rebuild (B542) is closed as built.**
+   - With the 8B reader, parse rules on the closed-question lane gave no accuracy gain on a paired, blinded reading (52 wrong of 100 against llm-1's 53), and kept only 38% of llm-1's right facts.
+   - The larger reader looked better on two conversations (15 wrong of 40 against 19), but it does not fit on this machine under the 12% memory line: the guard stopped its job 78 seconds in.
+   - The flag, the `fact_status` property and the reader filter were never built.
+2. **FACT-ACC's 35% is not a stable baseline.** Fresh llm-1 facts read blind came out 53 wrong of 100. A future capture change is measured by a paired, blinded reading against fresh llm-1 facts, not against a stored figure.
+3. Capture stays llm-1. No next direction was ruled with this closure.
+
 ## Not known yet
 
 - The query-hit lines for steps 1 and 2 do not exist until step Q's baseline is in.

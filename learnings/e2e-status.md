@@ -2,7 +2,7 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-18 (B542 step 1 stopped on its coverage line; held for the user)_
+_Last updated: 2026-11-18 (B542 closed by the user after its screens)_
 
 ## Scoreboard (one test set, one measure)
 
@@ -65,9 +65,9 @@ before it starts and gets a lessons entry when it ends.
 | 5 | Changed abstain instruction | whether the reader stops declining with the evidence in view | killed: 809 at 60.0% (+6.3 points, pass); category-5 refusals 58.6% → 31.5% (-27.1 points, over the 10-point kill line) | pass above +1.9 points with correct refusals on the 222 adversarial questions falling by at most 5 points; kill at 0 or below, or refusals falling by more than 10; prediction +0.5 to +2.5 |
 | 6 | Full history baseline | the reader with every turn in view | stopped twice by the guard, at 12% and at 8%; held for the user (second probe: free memory fell from 52% to 5-6% within 80 seconds of the 20.9 GB answer model loading; swap 4.1 → 8.2 GB; no projection, no retry) | reference, no line; prediction 45-62% |
 
-| 7 | B542 capture rebuild, step 1: paired, blinded fact screen (no GPU) | whether parse rules on the closed-question lane make stored facts more accurate without losing right facts | stopped on the coverage line: lane 52 wrong of 100, llm-1 53 (blinded, same reading); right facts per 100 turns 15.5 against 41.0 (38%, line 60%); step 1b (larger reader, conv-48 and conv-49), read at the user's request: lane 15 wrong of 40 against llm-1 19, coverage 108%, meets its scaled lines on a weak sample (about 0.9 standard errors); step 1c (larger-reader replies for the other three conversations, GPU job 1006) stopped by the memory guard 78 seconds in (free 10% against 12%, model at 18.1 GB), no retry; held for the user | continue at 10 or more fewer wrong and coverage at least 60%; stop if no better or coverage under 60%; prediction lane 18-30 wrong, llm-1 28-40, coverage 40-80% |
+| 7 | B542 capture rebuild, step 1: paired, blinded fact screen (no GPU) | whether parse rules on the closed-question lane make stored facts more accurate without losing right facts | stopped on the coverage line: lane 52 wrong of 100, llm-1 53 (blinded, same reading); right facts per 100 turns 15.5 against 41.0 (38%, line 60%); step 1b (larger reader, conv-48 and conv-49), read at the user's request: lane 15 wrong of 40 against llm-1 19, coverage 108%, meets its scaled lines on a weak sample (about 0.9 standard errors); step 1c (larger-reader replies for the other three conversations, GPU job 1006) stopped by the memory guard 78 seconds in (free 10% against 12%, model at 18.1 GB), no retry; **closed by the user 2026-11-18 ("Close B542")** | continue at 10 or more fewer wrong and coverage at least 60%; stop if no better or coverage under 60%; prediction lane 18-30 wrong, llm-1 28-40, coverage 40-80% |
 
-B542 step 2 (re-capture, GPU) is not queued: step 1 stopped.
+B542 is closed (user, 2026-11-18); step 2 was never queued.
 
 ## Waiting for the user
 
@@ -492,6 +492,7 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | B542 step 1, fact screen (2026-11-18) | lane 52 wrong of 100 against llm-1 53, blinded; coverage 38% of llm-1's right facts per 100 turns, against a 60% line | Stopped as pre-registered (coverage line). Held for the user: whether to read step 1b (the larger reader, 91% of llm-1's fact count) and whether B542 continues |
 | B542 step 1b, larger reader (2026-11-18) | lane 15 wrong of 40 against llm-1 19, blinded; coverage 108% of llm-1's right facts per 100 turns | Meets the scaled lines (4 fewer; 60%), at the margin and on 40 facts per source. Informs the reader choice only. Held for the user: larger-reader replies for the other three conversations (one GPU job, near the memory guard) and a full paired reading, or close B542 |
 | B542 step 1c, GPU job 1006 (2026-11-18) | stopped by the memory guard 78 seconds in: free 10% against the 12% line, the larger model at 18.1 GB, swap 2.9 → 7.2 GB; 3 windows of one conversation written | No retry (standing rule). Held for the user: the larger reader cannot run on this machine under the 12% line as it stands, so step 1c's reading cannot run |
+| B542 closure (user, 2026-11-18) | 8B arm stopped on its coverage line with no accuracy gain; larger reader met its lines on 40 facts but does not fit under the 12% memory line | User, "Close B542": closed as built, no code merged; the guard is not lowered |
 | Four decisions after run 5 (user, 2026-11-17 afternoon) | run 5's kill, full history, the published judge, the capture rebuild | User, "go with your recommendations": run 5's kill kept; full history probed again at an 8% answering line, the full run only under 40 hours; published-judge re-score of the control and run 5 as a separate column; capture rebuild (B542) next, design first |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on
