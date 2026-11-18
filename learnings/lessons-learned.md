@@ -764,3 +764,14 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - **Weight:** about 0.9 standard errors on 40 facts per source.
 - **Ruling:** meets its lines. Held for the user: whether to make larger-reader replies for the other three conversations (one GPU job, near the memory guard), then a full paired 100 + 100 reading, or to close B542.
 - **Lesson:** the reader matters more than the rules. With the larger reader, the same rules remove the wrong-person and wrong-predicate errors and keep coverage. With the 8B reader, they only cost coverage. The object choice is the remaining error for both readers.
+
+### 2026-11-18 B542 step 1c: the larger reader on the other three conversations (GPU job 1006)
+- **Why:** step 1b met its lines on a weak sample. The user approved one GPU job ("Run the GPU job") to make the larger reader's replies for conv-26, conv-41 and conv-50, so that a full paired, blinded 100 + 100 reading could follow.
+- **What:**
+  - The earlier lane's runner for the larger reader, unchanged, from the same base store copies, writing only reply files.
+  - The daemon and the 8B model stopped first.
+  - The standing guards: 12% free, since this is not judging; 30 GB swap.
+  - Pre-registered in `scratch/b542s1/RUNS.md`, including that a guard stop means no retry. The leak fix for the reading (dataset text and dates for every item) was set before any draw.
+- **Result:** stopped by the memory guard 78 seconds in. The model loaded at 18.1 GB, and free memory fell from 74% to 10% within 30 seconds and held there for three checks; swap rose from 2.9 to 7.2 GB. 3 windows of conv-26 were written. Nothing was drawn or read.
+- **Ruling:** held for the user. There was no retry, and no lower line.
+- **Lesson:** the reader that made step 1b look better does not fit on this machine under the 12% line. The earlier run held 12-13% free, under a looser scratch guard. So a larger-reader capture arm (B542 step 2) is not runnable as built either: it would need the same model for about 3-5 hours of capture.
