@@ -2,7 +2,7 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-17 afternoon (user ruled on the four decisions after run 5; probe and published-judge re-score queued)_
+_Last updated: 2026-11-18 (published-judge re-score done; full-history probe stopped by the guard a second time)_
 
 ## Scoreboard (one test set, one measure)
 
@@ -22,13 +22,22 @@ run's own control (the same stores without the change). Noise is ±1.7 points; a
 | Graph facts with object-text matching (2026-11-16) | 51.2% (414) | -2.5 | killed | 11.6 | -1.1 |
 | Baseline: no memory (2026-11-17) | 2.6% (21) | -51.0 against 53.6% | reference | 3.0 | -9.8 |
 | Baseline: naive retrieval (2026-11-17) | 36.1% (292) | -17.5 against 53.6% | reference | 10.3 | -2.4 |
-| Baseline: full history | not run: the timing probe was stopped by the memory guard before its first answer | | held for the user | | |
+| Baseline: full history | not run: both timing probes were stopped by the memory guard, at the 12% and at the 8% line | | held for the user | | |
 | Fact sentences next to their source turn | not run, stopped at the faithfulness check (6 of 50 wrong; line 5) | | stopped | | |
 | Changed abstain instruction (2026-11-17) | 60.0% (485) | +6.3 against 53.6% | killed: refusals on the 222 adversarial questions fell 27.1 points (line 10) | 13.3 | +0.6 |
 
 The judge score is the headline because token F1 fails correct paraphrases and long answers. Our cite answers add the quoted line (median 37 words against a 4-word key), so F1 here mostly measures answer length. F1 is shown so these numbers can be set beside the LoCoMo paper's. It was computed from the stored answers with the harness's `locomo10.scoring.locomo_f1`, unchanged. That function mirrors the official evaluation: it lowercases, drops commas, punctuation and a/an/the/and, Porter-stems, and takes token-overlap F1. Category 1 scores each gold item against the best of the comma-split answer, and category 3 uses the first gold alternative. F1 changes are within the F1 column only. How our judge differs from the published judges: `learnings/judge-comparison.md`.
 
 In every arm about 3 points are answers that open with an abstention and then give the key; the judge fails them by its written rule. The arms differ by at most 0.6 points on this, so no comparison changes.
+
+**Published judge (a separate measure, 2026-11-18).** The same stored answers, judged by the prompt the memory papers publish (Mem0's, reused verbatim by Zep and MemOS; read from released code at mem0ai/mem0 b3ede5b7), on our local judge model with one call at temperature 0. It is shown only so our numbers can be set beside those papers'. It never decides a pass or kill, and its changes are within this table only.
+
+| Run | Published-judge accuracy | Change against the same control |
+|---|---|---|
+| Re-captured stores, capture flags on (the control) | 69.8% (565) | reference |
+| Changed abstain instruction (killed) | 75.4% (610) | +5.6 (gained 61, lost 16) |
+
+Judge errors: 1 of 809 on run 5, none on the control (void line 2%). Answer by answer, the published judge passes every answer ours passes. It also passes 131 more on the control and 125 more on run 5, so our judge is about 16 points stricter and never the more generous one.
 
 Two other measures, which are not accuracy and are never mixed with it:
 
@@ -54,7 +63,7 @@ before it starts and gets a lessons entry when it ends.
 | 3 | Second score, six stored arms | a second column: an opening refusal ignored | closed by the user 2026-11-17: not run; the second score is dropped | no line; expected +2.5 to +3.5 points on every arm, gaps unchanged |
 | 4 | Fact sentences by rule, next to their source turn | whether plain sentences built from the graph's facts help the reader | closed by the user 2026-11-17: stopped at the faithfulness check (6 of 50 wrong; line 5), left stopped; code kept on its branch, not merged | pass above +1.9 points; kill at 0 or below; prediction -0.5 to +1.5 |
 | 5 | Changed abstain instruction | whether the reader stops declining with the evidence in view | killed: 809 at 60.0% (+6.3 points, pass); category-5 refusals 58.6% → 31.5% (-27.1 points, over the 10-point kill line) | pass above +1.9 points with correct refusals on the 222 adversarial questions falling by at most 5 points; kill at 0 or below, or refusals falling by more than 10; prediction +0.5 to +2.5 |
-| 6 | Full history baseline | the reader with every turn in view | probe again at an 8% answering line (user, 2026-11-17 afternoon); the full run only if the projection is under 40 hours | reference, no line; prediction 45-62% |
+| 6 | Full history baseline | the reader with every turn in view | stopped twice by the guard, at 12% and at 8%; held for the user (second probe: free memory fell from 52% to 5-6% within 80 seconds of the 20.9 GB answer model loading; swap 4.1 → 8.2 GB; no projection, no retry) | reference, no line; prediction 45-62% |
 
 Not queued, and the user's to schedule: the rebuilt capture lane (B542).
 
@@ -475,6 +484,8 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Full-history timing probe (2026-11-17) | stopped by the memory guard before its first answer: free 9-10% against the 12% line, answer model at 21.2 GB | Held for the user (review session, 2026-11-17): run 6 cannot run under the 12% line as built; no fix, variant or retry without the user |
 | Second-score agreement check (2026-11-17) | 18 of 20 full answers right (line 18); 2 of 5 partial answers right (line 1): failed | Held for the user (review session, 2026-11-17): run 3 is not queued and no second column is reported; no fix, variant or retry without the user |
 | Changed abstain instruction, run 5 (2026-11-17) | 809: 60.0% (485), +6.3 points (gained 67, lost 16); category 5: refusals 58.6% → 31.5%, 60 of the 61 now answer for real | Killed as pre-registered (category-5 line); the flag stays off. Held for the user: any follow-up (for example a subject check before answering) is a new design |
+| Full-history probe at the 8% line (2026-11-17) | stopped by the memory guard: free 5-6% against the 8% line within 80 seconds of the answer model loading (20.9 GB); swap 4.1 → 8.2 GB; no answer, no projection | Held for the user (review session, 2026-11-17): run 6 is stopped twice by the guard, at 12% and at 8%; no retry, and the plan lead recommends against a lower line |
+| Published-judge re-score (2026-11-18) | control 69.8% (565); run 5 75.4% (610), +5.6 points; 1 judge error in 809 | A measurement for comparison with the papers, with no pass or kill line; inside the predicted 62-75% for the control, just above +2 to +5 for the change. Our judge stays the headline; run 5's kill stands (the published judge skips category 5) |
 | Four decisions after run 5 (user, 2026-11-17 afternoon) | run 5's kill, full history, the published judge, the capture rebuild | User, "go with your recommendations": run 5's kill kept; full history probed again at an 8% answering line, the full run only under 40 hours; published-judge re-score of the control and run 5 as a separate column; capture rebuild (B542) next, design first |
 
 Before this plan: the whole `principled` profile was gated on 300 questions (2026-11-07) and tied `main` on

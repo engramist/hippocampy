@@ -668,3 +668,27 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - the capture rebuild (B542) is next, design first.
 - **Result:** the probe and the re-score were pre-registered (`scratch/baselines/RUNS.md`, `scratch/pubjudge/RUNS.md`) and queued.
 - **Lesson:** the run-5 kill stands even though it is the largest gain on the 809. The adversarial side is the held-out check, and it failed.
+
+### 2026-11-17 Full-history probe at the 8% line (run 6, second probe)
+- **Why:** user ruling (2026-11-17 afternoon): probe full history once more with the answering line lowered to 8% (the judging line) for the probe only, and run in full only if it projects under 40 hours.
+- **What:** five questions on one conversation (`run_all.py --baselines-only --baselines full_context --locomo10-max-questions 5`), with the judge flag set so the memory guard used 8%, the daemon and the judge model stopped, and the 30 GB swap ceiling. Pre-registered in `scratch/baselines/RUNS.md` (plan lead's working area).
+- **Lines set before the run:** none on accuracy. A projection under 40 hours allows the full run (after a check with the review session). A guard stop means no retry, and it goes back to the user.
+- **Result:** stopped by the memory guard before its first answer. Free memory fell from 52% to 5-6% within 80 seconds of the answer model loading (20.9 GB at full-history context), and swap rose from 4.1 to 8.2 GB. No answer and no projection.
+- **Ruling:** held for the user (review session): run 6 has been stopped twice by the guard, at 12% and at 8%.
+- **Lesson:** at full-history context, the answer model alone takes the machine below any guard line we would accept. Lowering the line again would trade a baseline number for the risk of a swap storm. Full history cannot run on this machine as built.
+
+### 2026-11-18 Re-score with the published judge prompt
+- **Why:** user ruling (2026-11-17 afternoon): re-score the control and run 5 with the judge prompt the memory papers publish, as a separate column, so our numbers can be set beside theirs.
+- **What:**
+  - Mem0's ACCURACY_PROMPT, read from the released file at mem0ai/mem0 b3ede5b7 (deleted from main later; Zep and MemOS reuse it verbatim).
+  - One call per answer, temperature 0, a JSON label, on our local 26B judge model. The model is the only difference from the papers' setup.
+  - The stored answers of the control (re-captured stores, capture flags on) and of run 5, on the 809. No pre-filter. No GPU beyond the judge, and no pipeline change.
+  - Script: `scratch/pubjudge/pub_judge.py` in the plan lead's working area.
+- **Lines set before the run:** control expected 62-75%; run 5's change expected +2 to +5 points (smaller than our +6.3, since this prompt already passes many decline-then-answer replies). No pass or kill line. A judge error rate above 2% voids the result.
+- **Result:**
+  - Control: 69.8% (565), inside the prediction. Our judge: 53.6%.
+  - Run 5: 75.4% (610), +5.6 points (gained 61, lost 16). Just above the predicted range; our judge gave +6.3.
+  - Judge errors: 1 of 809 on run 5, none on the control. The result stands.
+  - Answer by answer, the published judge passes every answer ours passes. It also passes 131 more on the control and 125 more on run 5.
+- **Ruling:** a measurement only. Our judge stays the headline, and run 5's kill stands, since the published judge skips category 5.
+- **Lesson:** the published prompt is a strict superset of ours on these answers: about 16 points more generous and never stricter. So a paper's judge score is roughly our accuracy plus 16 points on our answers, and run 5's gain survives the change of judge almost unchanged. My prediction that this prompt would shrink the gain was wrong: run 5 mostly turned refusals into full answers, which both judges pass.
