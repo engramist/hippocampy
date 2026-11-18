@@ -692,3 +692,86 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - Answer by answer, the published judge passes every answer ours passes. It also passes 131 more on the control and 125 more on run 5.
 - **Ruling:** a measurement only. Our judge stays the headline, and run 5's kill stands, since the published judge skips category 5.
 - **Lesson:** the published prompt is a strict superset of ours on these answers: about 16 points more generous and never stricter. So a paper's judge score is roughly our accuracy plus 16 points on our answers, and run 5's gain survives the change of judge almost unchanged. My prediction that this prompt would shrink the gain was wrong: run 5 mostly turned refusals into full answers, which both judges pass.
+
+### 2026-11-18 B542 step 1: do parse rules on the closed-question lane make stored facts more accurate? (paired, blinded, no GPU)
+- **Why:** the user approved the B542 capture-rebuild design ("go with your recommendations"). Step 1 screens it before any GPU time.
+- **What:**
+  - **Lane:** the earlier B542 lane's saved replies from the 8B reader, for the five conversations of the 809, put through frozen parse rules:
+    - not a question;
+    - the subject a person on a closed list;
+    - the subject decided by rule from the object's clause;
+    - a whole, specific object from the turn's own text;
+    - tense and polarity from the main verb;
+    - is_a only as a copular complement.
+    Answers that fail a rule are candidates. Nothing was written to any store, and no model was called.
+  - **llm-1:** fresh facts from copies of the control stores, with FACT-ACC's 100 left out.
+  - **Sample:** one seed, 20 facts per conversation from each source. The 200 were shuffled, rendered in one form, and read with FACT-ACC's six labels. The source key was opened only after the last label.
+  - Scripts and pre-registration: `scratch/b542s1/` in the plan lead's working area (rules frozen by sha256 before the draw).
+- **Lines set before the run:**
+  - continue if the lane has at least 10 fewer wrong of 100 and at least 60% of llm-1's right facts per 100 turns;
+  - stop if it is no better, or under 60%;
+  - in between, to the user.
+  - Prediction: lane 18-30 wrong, llm-1 28-40, coverage 40-80%.
+- **Result:**
+  - **Wrong of 100:** lane 52 (range 35-69), llm-1 53 (range 43-76). No accuracy gain.
+  - **Coverage: stopped.** Right facts per 100 turns: lane 15.5 (32.2 confirmed × 48% right), llm-1 41.0 (87.2 × 47%), or 38%, against the 60% line.
+  - **By label:**
+
+    | Label | lane | llm-1 |
+    |---|---|---|
+    | wrong object | 24 | 26 |
+    | not a fact about anyone | 15 | 12 |
+    | wrong predicate | 7 | 7 |
+    | wrong tense or polarity | 3 | 1 |
+    | wrong person | 3 | 7 |
+
+  - **Candidates per rule** (2,643 answers):
+    - the rule-decided subject 759;
+    - malformed answers 408;
+    - object checks 303;
+    - question sentences 207;
+    - tense 46;
+    - is_a 3;
+    - the closed subject list 1.
+  - **Overlap:** of llm-1's right facts that could be matched to a dataset turn, the lane confirms the same turn and subject on 19 of 33.
+  - **Blinding leak, found at reading:** 30 of the 100 llm-1 items showed a stored date and the image caption, so they were recognisable as llm-1. The lane items never were.
+  - **Step 1b** (the larger reader's saved replies, conv-48 and conv-49) was drawn but not read, per the stop rule. Its screen confirms 91% of llm-1's fact count there.
+- **Ruling:** stopped as pre-registered. Held for the user: whether to read step 1b, and whether B542 continues.
+- **Lesson:**
+  - With the 8B reader, the parse rules cut wrong-person errors (7 → 3) but not the main error: an object that is a fragment or the wrong noun ("make", "go", "a ton"). The rules also cost about 60% of the right facts. Better gates on a weak reader's answers do not make the stored facts more accurate.
+  - The same labels read blind gave llm-1 53 wrong, against FACT-ACC's 35 read unblinded. So one reading of 100 facts is not a stable baseline. Only a paired reading supports a comparison.
+
+### 2026-11-18 B542 step 1b: the same screen on the larger reader's saved replies (paired, blinded, no GPU)
+- **Why:** step 1 stopped with the 8B reader. The user asked for step 1b to be read, to see whether a stronger reader changes the picture.
+- **What:**
+  - The same frozen rules and method as step 1, on the larger, judge-class model's saved lane replies for conv-48 and conv-49.
+  - 20 + 20 facts per conversation (40 lane, 40 fresh llm-1, with step 1's and FACT-ACC's facts left out), seed 20261120. One shuffled list, with the key opened after the last label.
+- **Lines set before the run:** at least 4 fewer wrong of 40, and at least 60% of llm-1's right facts per 100 turns. Informs the reader choice only; it does not start step 2.
+- **Result:**
+  - **Wrong of 40:** lane 15 (37.5%; range 9-23), llm-1 19 (47.5%; range 12-30). Difference -4, exactly the line.
+  - **Coverage:** right facts per 100 turns, lane 43.6 against llm-1's 40.4 (108%).
+  - **By label:**
+
+    | Label | lane | llm-1 |
+    |---|---|---|
+    | wrong object | 8 | 3 |
+    | not a fact about anyone | 6 | 8 |
+    | wrong predicate | 1 | 4 |
+    | wrong person | 0 | 3 |
+    | wrong tense or polarity | 0 | 1 |
+
+  - **Blinding leak:** 13 of the 40 llm-1 items were recognisable by a stored date and caption.
+  - **Weight:** about 0.9 standard errors on 40 facts per source.
+- **Ruling:** meets its lines. Held for the user: whether to make larger-reader replies for the other three conversations (one GPU job, near the memory guard), then a full paired 100 + 100 reading, or to close B542.
+- **Lesson:** the reader matters more than the rules. With the larger reader, the same rules remove the wrong-person and wrong-predicate errors and keep coverage. With the 8B reader, they only cost coverage. The object choice is the remaining error for both readers.
+
+### 2026-11-18 B542 step 1c: the larger reader on the other three conversations (GPU job 1006)
+- **Why:** step 1b met its lines on a weak sample. The user approved one GPU job ("Run the GPU job") to make the larger reader's replies for conv-26, conv-41 and conv-50, so that a full paired, blinded 100 + 100 reading could follow.
+- **What:**
+  - The earlier lane's runner for the larger reader, unchanged, from the same base store copies, writing only reply files.
+  - The daemon and the 8B model stopped first.
+  - The standing guards: 12% free, since this is not judging; 30 GB swap.
+  - Pre-registered in `scratch/b542s1/RUNS.md`, including that a guard stop means no retry. The leak fix for the reading (dataset text and dates for every item) was set before any draw.
+- **Result:** stopped by the memory guard 78 seconds in. The model loaded at 18.1 GB, and free memory fell from 74% to 10% within 30 seconds and held there for three checks; swap rose from 2.9 to 7.2 GB. 3 windows of conv-26 were written. Nothing was drawn or read.
+- **Ruling:** held for the user. There was no retry, and no lower line.
+- **Lesson:** the reader that made step 1b look better does not fit on this machine under the 12% line. The earlier run held 12-13% free, under a looser scratch guard. So a larger-reader capture arm (B542 step 2) is not runnable as built either: it would need the same model for about 3-5 hours of capture.
