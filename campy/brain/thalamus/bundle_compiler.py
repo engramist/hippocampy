@@ -1042,6 +1042,12 @@ async def _stage_conversation(db, query: str, config: dict, analysis=None) -> Op
                 "thalamus.bundle_conversation",
                 query_embedding=query_embedding, query_text=query, limit=limit, order=order, **extra,
             )
+        # B578: the turn reranker (flag; off by default); the full-history section is left as it is
+        if rows and not all((r.get("full_history") if isinstance(r, dict) else False) for r in rows):
+            from campy.brain.thalamus.turn_rerank import rerank_conversation
+
+            rows = await rerank_conversation(db, list(rows), query, query_embedding, config,
+                                             graph_turns=graph_turns or (), order=order)
         content, node_ids = [], []
         # B538: the resolved dates of the relative time expressions in these turns
         mentions = await _turn_mentions(db, config, [

@@ -1073,6 +1073,38 @@ class GraphGateway:
 
         raise NotImplementedError(f"No Python handler or SPARQL translation implemented for NamedQuery {name!r}")
 
+    def _bundle_conversation_rerank_candidates(self, params: dict[str, Any]) -> list[Any]:
+        """B578: the top `limit` live user Messages by vector score, best first, for the turn reranker.
+        No similarity floor (ND-5 ranked every turn); the question's own echo (cosine >= 0.985) is dropped, as
+        in `_bundle_conversation_impl`; one row per (speaker, text), the newest kept. Reads only."""
+        vs = self._vector_store
+        limit = int(params.get("limit", 100))
+        if limit <= 0 or vs is None:
+            return []
+        prefixes = (f"{CID_BASE}Message/", f"{DATA_BASE}Message/")
+        hits = [uri for uri, score in vs.search_vectors(params["query_embedding"], k=_typed_search_k(limit * 20))
+                if uri.startswith(prefixes) and score < 0.985][: limit * 4]
+        by_uri = {r["s"]: r for r in self._hydrate_messages(hits)}
+        norm = lambda t: " ".join(str(t).lower().split())
+        out: list[Any] = []
+        seen: set[tuple[str, str]] = set()
+        for uri in hits:
+            row = by_uri.get(uri)
+            text = str((row or {}).get("text") or "").strip()
+            if not row or not text or bool(row.get("archived")) or str(row.get("role") or "user") != "user":
+                continue
+            key = (str(row.get("speaker") or ""), norm(text))
+            if key in seen:
+                continue
+            seen.add(key)
+            created = row.get("created")
+            created = created.isoformat() if hasattr(created, "isoformat") else str(created or "")
+            out.append(RowDict({"text": text, "role": "user", "created_at": created, "speaker": row.get("speaker"),
+                                "node_id": uri, "node_type": "Message"}))
+            if len(out) >= limit:
+                break
+        return out
+
     def _bundle_conversation(self, params: dict[str, Any]) -> list[Any]:
         return self._bundle_conversation_impl(params, 0)
 
@@ -1810,6 +1842,8 @@ class GraphGateway:
             return self._bundle_conversation_budget(params)
         if name == "thalamus.bundle_conversation_windows":
             return self._bundle_conversation_windows(params)
+        if name == "thalamus.bundle_conversation_rerank_candidates":
+            return self._bundle_conversation_rerank_candidates(params)
         if name == "thalamus.bundle_assistant_words":
             return self._bundle_assistant_words(params)
         if name == "thalamus.bundle_observations":

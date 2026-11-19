@@ -50,6 +50,14 @@ _DEFAULT_CONFIG = {
         # joins vector and lexical in conversation seed selection. Needs question_analysis. Gate: with the
         # profile (B545).
         "graph_vote": True,
+        # B578 (default OFF; env CAMPY_TURN_RERANK=1 turns it on; in no profile until gated): a cross-encoder
+        # reranks the conversation section's turns plus the top 100 Messages by vector score and keeps the
+        # section's own turn count; graph-vote turns keep their slots. The model is read from a local folder
+        # (turn_rerank_path, env CAMPY_TURN_RERANK_PATH); nothing is downloaded, and without it the section
+        # is unchanged. Offline sizing: ND-5.
+        "turn_rerank": False,
+        "turn_rerank_model": "Xenova/ms-marco-MiniLM-L-6-v2",
+        "turn_rerank_path": "",
         # B508/B514: SKOS vocabulary for kinds (default ON; env CAMPY_SKOS_VOCAB=0 turns it off;
         # part of the R96 stack, see graph_linking). Kinds are
         # consolidated by rule (same label, head noun), entity -INSTANCE_OF-> kind and
@@ -357,6 +365,9 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_QUESTION_ANALYSIS": ("retrieval", "question_analysis", _parse_bool),
     # B548: the graph votes in conversation seed selection (needs question_analysis).
     "CAMPY_GRAPH_VOTE": ("retrieval", "graph_vote", _parse_bool),
+    # B578: the turn reranker (off by default) and the local folder its model is read from.
+    "CAMPY_TURN_RERANK": ("retrieval", "turn_rerank", _parse_bool),
+    "CAMPY_TURN_RERANK_PATH": ("retrieval", "turn_rerank_path", str.strip),
     # B508: SKOS vocabulary for kinds (consolidation, INSTANCE_OF vs BROADER).
     "CAMPY_SKOS_VOCAB": ("retrieval", "skos_vocab", _parse_bool),
     # B544: admit every named entity of a user turn as a Concept (default on since B575).
@@ -466,6 +477,8 @@ PROFILE_STAYS_ON = (
     ("observations", "wordnet_kinds"), ("observations", "vocab_steward"), ("observations", "typed_objects"),
     ("observations", "evidence_entity_links"),
     ("retrieval", "graph_count"), ("retrieval", "question_analysis"), ("retrieval", "graph_vote"),
+    # B578: off by default; reported so a run records whether the reranker was on.
+    ("retrieval", "turn_rerank"),
 )
 
 
