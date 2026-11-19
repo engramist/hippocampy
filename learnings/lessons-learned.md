@@ -925,3 +925,19 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - Truncation union 0 (slot 32768); server prompt tokens median 2,372, max 2,993.
 - **Ruling:** pass. One measurement; the flag stays off until the review session rules on a default flip or asks for a second measurement.
 - **Lesson:** the reranker helps only when it does not pay in neighbours (replace mode, -2.2) or in length (add mode, -5.3). With both held fixed, the same scorer gains 2.3 points, and refusals fall rather than rise. ND-7's context coverage predicted the sign, where plain gold coverage had not. The "all" bucket still loses 2.3 points, from the 46% of control turns that are replaced; it is the closest line. This is one measurement, so no memory entry yet.
+
+### 2026-11-19 B578 window-mode confirmation (job 1012): the second sample, on the rcon stores
+- **Why:** job 1011 passed at +2.3 against a +1.9 line, with ±1.7 noise, on the third construction tried on the same 809. The review session asked for one confirming measurement before the default flips. LoCoMo has no unused conversations, so the most independent sample on this machine was the control's rcon stores: a re-capture of the same conversations at a different commit and profile.
+- **What:** job 1012 at main 45a1abe1 (hc-b578wingate), on arm only (b12on, b12c5on), `CAMPY_TURN_RERANK=1 CAMPY_TURN_RERANK_MODE=window`, walk 0, small cross-encoder, on `scratch/recap/stores/on_*`. Off arms rcon and r5c5ctl reused after flag-off `--no-answer` bundles at 45a1abe1 were 25/25 and 20/20 byte-identical to their recorded prompts. Pre-registered in `scratch/b578c/RUNS.md`. Edges read: the session sequence of turns; nothing written.
+- **Lines:** confirmed if 1012's own change is above 0 and the pooled change over 1011 and 1012 is above +1.9. Kill at 0 or below, at category-5 refusals down more than 5, or at the "all" bucket down more than 3. Confounded at 17+ truncated. Prediction +0.5 to +2.5.
+- **Result:**
+  - 56.5% (457) against 53.6% (434), **+2.8 points**, net +23 (gained 65, lost 42); without faults +3.2.
+  - By category: cat 1 +4.6, cat 2 +0.6, cat 3 +2.0, cat 4 +3.2.
+  - Buckets: "none" +14.6, "some" +7.4, "all" -1.9.
+  - Category-5 abstention 55.4% against 58.6% (-3.2). Refusals on the 809: 154 against 168. Truncation union 0.
+  - Pooled +2.6 over 1011 and 1012. The confirmed line is met; no kill line hit.
+- **Independence check (after scoring, before reporting):**
+  - The two store sets give byte-identical prompts on 682 of 809 questions in both arms. On those the on-arm answers are identical (the answer model is deterministic), and 2 verdicts flip on re-judging. So 1012 is a new sample on only 127 questions, and the pooled figure counts the 682 twice.
+  - On the 682: 1011 net +9, 1012 net +11. On the 127: 1011 net +10 (+7.9 points), 1012 net +12 (+9.4 points).
+- **Ruling:** the confirmed line is met. The default flip is held for the review session, given the shared prompts.
+- **Lesson:** a re-capture of the same conversations is not an independent sample when capture differences do not reach the bundle. Check how many bundles two store sets share before calling a second run a replication. It is a cheap check, and it should go into pre-registration next time. The effect's sign held on the 127 differing questions in both runs and in every category, but two agreeing measurements here means 809 + 127, not 1,618.
