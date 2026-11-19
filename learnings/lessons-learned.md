@@ -861,3 +861,16 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - Two checks before believing it. 29 prompt items across the 809 do not map to a distinct turn, so replace mode hands those slots to turns; negligible. Two questions counted as gaining every missing gold turn also lost a shown one (−1.1). Corrected: **about +22.8 questions, about +2.8 points**. This is a ceiling, since it assumes the all-in-view rate.
 - **Ruling:** passes all three stops; the prediction was wrong. "Close" does not apply, so the base model is not fetched. Next: a design for a reranking stage in the retrieval path behind a flag, reviewed against the graph skill, then one GPU gate (pass above +1.9 points; kill at 0 or below, or if category-5 refusals fall more than 5 points). Both wait for the review session.
 - **Lesson:** the retrieval gap is a ranking problem, not a reach problem. The candidate set already holds the gold turns, and a scorer that reads the question and the turn together keeps the gold turns already shown far better than a vector score (6.9% lost against 29.4%). Only one of two measurements so far, so no memory entry until the GPU gate agrees.
+
+### 2026-11-19 B578 GPU gate: the cross-encoder turn reranker, off against on
+- **Why:** ND-5 passed offline (46.0% of "none" questions gained a gold turn; net estimate about +22.8 questions). The review session approved B578 (PR 483, flag `[retrieval] turn_rerank`, graph-vote turns pinned) and one GPU gate.
+- **What:** job 1009 at main 457d8d1a on step 4's principled stores (copies), walk 0, both arms on the same tree. `CAMPY_TURN_RERANK=0` against `=1` with the pinned model path. The 809 were judged by the 26B judge (3 votes); the 222 category-5 questions were scored judge-free. Replay errors 0, judge errors 0.
+- **Lines (set before queueing):** pass above +1.9 points; kill at 0 or below, or if category-5 refusals fall more than 5 points. Prediction +0.5 to +2.5.
+- **Result:**
+  - Off 54.1% (438), on **51.9% (420)**, **-2.2 points**: gained 57, lost 75. Without the 34 test faults, -2.1.
+  - By category: 1 +3.9, 2 -2.9, 3 0.0, 4 -4.4.
+  - Category-5 refusals 57.2% → 60.8% (+3.6).
+  - Coverage moves off→on: none→all 55, none→some 26, some→all 27, all→some 20, all→none 18, some→none 3. Accuracy by the off bucket: none 22.7% → 35.1% (+12.4), some +1.0, all 71.5% → 63.6% (-7.9).
+  - On the 484 questions with every gold turn in both arms: 73.6% → 66.5% (gained 19, lost 53). Only 33% of the off arm's turns survive. Median latency 6.49 s → 6.95 s.
+- **Ruling:** **killed** (on the kill line). The flag stays off and the code stays, off by default. The next step is the review session's.
+- **Lesson:** a scorer that finds the gold turn is not the same as a better prompt. Replace mode swaps out the turns next to the evidence (fusion seeds plus two neighbours each side), and the answer model needs that dialogue. Gold-turn recall cannot see the loss, so ND-5's offline estimate measured the wrong thing for a change that replaces context (P6). An offline check for a context change has to count the turns it removes, not only the gold turns it keeps. ND-5 and the gate disagree, so this goes to no memory entry.
