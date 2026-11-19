@@ -887,3 +887,17 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
 - **Ruling:** no stop hit; the review session accepted it. The code PR comes next, then the gate with a truncation validity rule.
 - **Lesson:** the windows matter. 23 of the 83 "none" gains reach a gold turn only through a seed's neighbours, which is the same context replace mode threw away. The context bound is tight: one rendered conv-26 prompt in add mode is about 4.1k tokens (16,449 chars), so the gate counts truncation from the server rather than trusting chars/4.
 
+### 2026-11-19 B578 add-mode GPU gate: reranked turns added with their windows, off against on
+- **Why:** replace mode was killed (-2.2 points) for dropping the evidence turns' neighbours. ND-6 sized an additive mode offline and hit no stop. The review session approved the code (PR 486) and one gate, with a truncation validity rule.
+- **What:** job 1010 at main c4036c9c on step 4's s4p stores (copies), walk 0. The on arm ran `CAMPY_TURN_RERANK=1`, `CAMPY_TURN_RERANK_MODE=add` (`b9on_*`, `b9c5on_*`). The off arm reused job 1009's `b8off_*` and `b8c5off_*`, after 25 of 25 and 20 of 20 flag-off bundles matched byte for byte at both commits. The 809 were judged by the 26B judge; category 5 was scored judge-free. Replay errors 0, judge errors 0. The server's prompt token count was recorded on all 809 and all 222.
+- **Lines (set before queueing):** pass above +1.9 points; kill at 0 or below, category-5 refusals down more than 5 points, or the "all" bucket down more than 3 points; confounded if 17 or more of the 809 are truncated (the union of the slot detector and the ratio detector). Prediction +0.5 to +2.5.
+- **Result:**
+  - Off 54.1% (438), on **48.8% (395)**, **-5.3 points**: gained 48, lost 91. Without the 34 faults, -5.3.
+  - By category: 1 +4.6, 2 -12.3, 3 -5.9, 4 -6.0.
+  - Category-5 refusals 57.2% → 72.1% (+14.9).
+  - Accuracy by the off bucket: none 22.7% → 34.6% (+11.9), some +4.1, all 71.5% → 58.4% (**-13.0**). Coverage moves: none→all 64, none→some 17, some→all 31, and no question lost coverage.
+  - Truncation: slot detector 0, ratio detector 0, union 0. All 1,031 replay prompts ran at slot 32,768; server prompt tokens median 3,828, max 4,590.
+  - Why it lost: refusals on the 809 rose 167 → 242. Of the 91 lost, 63 are refusals and 28 wrong answers; in the "all" bucket 79 were lost, 57 of them refusals. Median prompt chars 8,390 → 13,774.
+- **Ruling:** **killed** on two lines (0 or below; "all" bucket -13.0). Not confounded. The flag stays off.
+- **Lesson:** with every gold turn already in view and none removed, adding about 1.6x more context made the local answer model refuse questions it had answered. Retrieval coverage and answer accuracy came apart a second time, now in the other direction: more context, not less. ND-6's transition estimate assumed extra turns cost nothing, and that assumption is what failed. An offline check for a context change needs a measure of how the answer stage reacts to the size of what it reads, not only the gold turns it gains or keeps. A measurement slip worth keeping: the ratio detector's final pass first read the judge model's 4,096-slot load (one second after the last replay) as an answer slot. The log read now stops at the end of the replays. The in-job slot detector, which ran inside the replay window, was right. Both gates agree that this reranker, in either mode, loses on the 809 with this answer model.
+

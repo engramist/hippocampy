@@ -111,7 +111,7 @@ are scored by a local cross-encoder against the question ("speaker: text"), and 
 (replace mode). The graph-vote turns keep their slots. Nothing is stored, and a missing model leaves the section
 unchanged. Offline sizing: ND-5. Replace mode was **killed** at its gate (2026-11-19, -2.2 points): it drops the turns
 next to the evidence. `turn_rerank_mode = "add"` keeps every section turn and adds the top 5 new candidates, each with the
-section's own session window, in session order (ND-6). Status: **add mode gate pending**.
+section's own session window, in session order (ND-6). Status: **killed in both modes** (replace -2.2 points, add -5.3 points on the 809; add mode raised refusals, 63 of its 91 lost answers). The flag stays off.
 
 ## 7. Prompt
 
