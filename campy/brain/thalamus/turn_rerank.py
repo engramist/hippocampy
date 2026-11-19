@@ -20,6 +20,10 @@ Two modes, `[retrieval] turn_rerank_mode` (env `CAMPY_TURN_RERANK_MODE`):
 - "add" (ruled 2026-11-19; offline sizing ND-6): keep every turn the section already has and add the top `ADD_K`
   candidates that are not in it, each with the section's own neighbour window (the existing session windows,
   `thalamus.bundle_conversation_seed_windows`). Nothing is dropped, so the graph-vote turns stay too.
+- "window" (ruled 2026-11-19; offline sizing ND-7): the section keeps its own turn count. The graph-vote turns keep
+  their slots; then the reranked seeds, best first, each followed by its session window (the section's own
+  neighbour window), until the count is reached, the last window cut short (`thalamus.bundle_conversation_window_fill`).
+  The prompt keeps its length and every seed keeps its neighbours.
 
 `[retrieval] turn_rerank` (default false; env `CAMPY_TURN_RERANK=1`), in no profile until gated.
 `turn_rerank_model` names the fastembed cross-encoder, and `turn_rerank_path` is the local folder that holds it.
@@ -40,7 +44,7 @@ BATCH_SIZE = 32
 THREADS = 4
 DEFAULT_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2"
 ADD_K = 5           # add mode: new turns per question; fixed by the ruling (ND-3's registered add value)
-MODES = ("replace", "add")
+MODES = ("replace", "add", "window")
 
 Scorer = Callable[[str, Sequence[str]], Sequence[float]]
 
@@ -55,7 +59,7 @@ def turn_rerank_enabled(config: dict | None) -> bool:
 
 
 def turn_rerank_mode(config: dict | None) -> str:
-    """`[retrieval] turn_rerank_mode`: "replace" (default) or "add"; anything else is "replace", with one warning."""
+    """`[retrieval] turn_rerank_mode`: "replace" (default), "add" or "window"; anything else is "replace", with one warning."""
     mode = str(((config or {}).get("retrieval") or {}).get("turn_rerank_mode") or "replace").strip().lower()
     if mode not in MODES:
         _warn_once("mode:" + mode, "turn_rerank_mode %r is not one of %s; using 'replace'", mode, MODES)
@@ -146,6 +150,23 @@ def add_seeds(rows: list, candidates: list, query: str, scorer: Scorer, *, k: in
     return [r for _, _, r in ranked[:k]]
 
 
+def rank_pool(rows: list, candidates: list, query: str, scorer: Scorer, *, exclude: set[str]) -> list:
+    """Window mode: rows + candidates (deduplicated by node id, ids in `exclude` left out), best first by the scorer."""
+    seen: set[str] = set(exclude)
+    pool: list = []
+    for r in list(rows) + list(candidates):
+        nid = str(r.get("node_id") or "")
+        if not nid or nid in seen or not r.get("text"):
+            continue
+        seen.add(nid)
+        pool.append(r)
+    if not pool:
+        return []
+    scores = list(scorer(query, [_doc(r) for r in pool]))
+    ranked = sorted(((-float(s), i, r) for i, (s, r) in enumerate(zip(scores, pool))), key=lambda x: (x[0], x[1]))
+    return [r for _, _, r in ranked]
+
+
 def merge_added(rows: list, added: list, *, order: str = "time") -> list:
     """Add mode fallback (the windows query failed): the section's rows, all kept, plus the added turns not already
     in them. "time": one stable sort by time; "rank": the section, then the added turns in the order given. The
@@ -179,7 +200,20 @@ async def rerank_conversation(db, rows: list, query: str, query_embedding, confi
 
         candidates = await get_gateway(db).run(
             "thalamus.bundle_conversation_rerank_candidates", query_embedding=query_embedding, limit=POOL)
-        if turn_rerank_mode(config) == "add":
+        mode = turn_rerank_mode(config)
+        if mode == "window":
+            ids = {str(r.get("node_id") or "") for r in rows}
+            pin_ids = [u for u in dict.fromkeys(str(u) for u in list(graph_turns)[:GRAPH_VOTE_TOP]) if u in ids]
+            pinned_rows = [r for r in rows if str(r.get("node_id") or "") in set(pin_ids)]
+            seeds = rank_pool(list(rows), list(candidates or []), query, scorer, exclude=set(pin_ids))
+            filled = await get_gateway(db).run(
+                "thalamus.bundle_conversation_window_fill", pinned=pinned_rows, seeds=seeds, query_text=query,
+                neighbours=neighbours, budget=len(rows), order=order)
+            got = {str(r.get("node_id") or "") for r in (filled or [])}
+            if filled and len(filled) <= len(rows) and set(pin_ids) <= got:
+                return list(filled)
+            return rows  # fallback: the section unchanged
+        if mode == "add":
             seeds = add_seeds(list(rows), list(candidates or []), query, scorer, k=ADD_K)
             if not seeds:
                 return rows

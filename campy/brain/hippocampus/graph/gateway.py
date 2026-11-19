@@ -1205,8 +1205,38 @@ class GraphGateway:
             _logger.debug("_bundle_conversation_seed_windows failed", exc_info=True)
             return None
 
+    def _bundle_conversation_window_fill(self, params: dict[str, Any]) -> list[Any]:
+        """B578 window mode (`thalamus.bundle_conversation_window_fill`; ND-7): the pinned turns (`pinned`, the graph
+        vote's turns in the section) first, then the reranked seeds (`seeds`, best first), each seed followed by its
+        session window (distance 1, then 2, ... up to `neighbours`; the conversation stage's own window: SENT_IN
+        session order, user turns only, no archived turns, no echo of the question), until `budget` turns are chosen.
+        The last window may be cut short; a turn already chosen does not count twice. Ordered as the stage orders its
+        windows. On failure, None (the caller keeps the section)."""
+        pinned = [r for r in (params.get("pinned") or []) if r.get("node_id")]
+        have = {r["node_id"] for r in pinned}
+        seeds, seen = [], set(have)
+        for r in params.get("seeds") or []:
+            nid = r.get("node_id")
+            if nid and nid not in seen:
+                seen.add(nid)
+                seeds.append(r)
+        budget = max(0, int(params.get("budget") or 0))
+        n = max(0, int(params.get("neighbours") or 0))
+        order = str(params.get("order") or "time").lower()
+        if order not in CONVERSATION_ORDERS:
+            order = "time"
+        if not seeds and not pinned:
+            return []
+        try:
+            return self._expand_windows(pinned + seeds, {"query_text": params.get("query_text")}, n, 0, order,
+                                        fill_budget=budget, fill_pinned=have)
+        except Exception:
+            _logger.debug("_bundle_conversation_window_fill failed", exc_info=True)
+            return None
+
     def _expand_windows(self, matched: list[Any], params: dict[str, Any], n: int, cap: int,
-                        order: str, expand_only: Optional[set] = None) -> list[Any]:
+                        order: str, expand_only: Optional[set] = None,
+                        fill_budget: Optional[int] = None, fill_pinned: Optional[set] = None) -> list[Any]:
         prefixes = (f"{CID_BASE}Message/", f"{DATA_BASE}Message/")
         qnorm = " ".join(str(params.get("query_text") or "").strip().lower().split())
         rank_of = {r["node_id"]: i for i, r in enumerate(matched)}
@@ -1259,7 +1289,28 @@ class GraphGateway:
         for sid, seq in seqs.items():
             for i, v in enumerate(seq):
                 pos[v["uri"]] = (sid, i)
-        chosen = set(rank_of)
+        if fill_budget is not None:
+            # B578 window mode: pinned turns, then each seed with its window in rank order, up to the budget
+            keep = set(fill_pinned or ())
+            chosen = {r["node_id"] for r in matched if r["node_id"] in keep}
+            for r in matched:
+                if len(chosen) >= fill_budget:
+                    break
+                if r["node_id"] in keep:
+                    continue
+                chosen.add(r["node_id"])
+                where = pos.get(r["node_id"])
+                if where is None:
+                    continue
+                sid, i = where
+                for d in range(1, n + 1):
+                    for j in (i - d, i + d):
+                        if len(chosen) < fill_budget and 0 <= j < len(seqs[sid]):
+                            chosen.add(seqs[sid][j]["uri"])
+            matched = [r for r in matched if r["node_id"] in chosen]
+            n = 0  # no further expansion below
+        else:
+            chosen = set(rank_of)
         added = 0
         for d in range(1, n + 1):
             for r in matched:
@@ -1861,6 +1912,8 @@ class GraphGateway:
 
         if name == "thalamus.bundle_conversation_seed_windows":  # B578 add mode: seeds given, no vector needed
             return self._bundle_conversation_seed_windows(params)
+        if name == "thalamus.bundle_conversation_window_fill":  # B578 window mode: seeds given, no vector needed
+            return self._bundle_conversation_window_fill(params)
 
         if query_embedding is None or not self._vector_store:
             return []
