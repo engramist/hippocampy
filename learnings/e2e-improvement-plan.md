@@ -187,3 +187,4 @@ Ruled by the user ("Close B542"), after the B542 screens.
   - **Stops:** under 25% of the "none" questions gain a gold turn; a net estimate under +15 questions; more than 10% of the "all" questions lose a gold turn.
   - **Runs:** CPU only, with the queue empty and the same memory gate. The prediction is set in `scratch/nd1/RUNS.md` before the run.
   - **If it clears:** a design reviewed against `skills/campy-graph/SKILL.md`, then one GPU gate: pass above +1.9 points, kill at 0 or below, or category-5 refusals falling more than 5 points.
+  - **Outcome (2026-11-18):** cleared on the small cross-encoder. "none" gain 46.0%, "all" loss 6.9%, net estimate about +22.8 questions (a ceiling). The design is next, then the GPU gate.

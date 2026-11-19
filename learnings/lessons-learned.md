@@ -841,3 +841,23 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - Of the 12,376 non-gold turns ranked above the worst missing gold turn, 3 are near-duplicates of a shown turn.
 - **Ruling:** stopped, under the line and below the prediction. The fallback is dropped; the next direction is the review session's to pick.
 - **Lesson:** the missing gold turns of multi-turn questions are not just over the budget's edge, and they are not crowded out by duplicates. The question's vector ranks them far down, so a larger budget recovers few of them. A lever for these questions has to reach them by something other than similarity to the question.
+
+### 2026-11-18 ND-5: a cross-encoder reranks the candidate turns (offline, CPU, no GPU)
+- **Why:** the review session's direction after ND-3/ND-4. The missing gold turns are mostly in a 100-turn candidate set, but the question's vector ranks them low, so the question is whether a stronger scorer over the same set puts them in the prompt.
+- **What:**
+  - Scorer: a small public MS MARCO cross-encoder (about 92 MB), downloaded on the user's OK, pinned to a commit and checked by sha256, then run through the installed fastembed on the CPU.
+  - Candidates per question: the control prompt's turns plus the top 100 dataset turns by the store's own vector score (one vector per turn). Each candidate is scored as "speaker: turn text" against the raw question, then cut to the control's own turn count (replace mode).
+  - Run on the same five control stores and records as ND-3, with the queue empty and free memory 62% at the start. It never went under 63% during the run.
+  - Pre-registered in `scratch/nd1/RUNS.md` in the plan lead's working area.
+- **Lines:**
+  - Stops: under 25% of the "none" questions gain a gold turn; a net estimate under +15 questions; more than 10% of the "all" questions lose a gold turn.
+  - "Close" (set before the run): a stop is hit, but "none" gain is at least 20% or the net estimate is at least +8. Close would allow the larger base model.
+  - Prediction: "none" gain 15–25%, "all" losses 15–30%, net estimate −20 to +5, so a STOP.
+- **Result:**
+  - "none" (187): **86 gain a gold turn (46.0%)**, and 58 gain every missing one (31.0%). None lose one. Gains by category: 1: 31, 2: 11, 3: 8, 4: 36.
+  - "some" (94): 52 gain (55.3%) and 16 lose a shown gold turn (17.0%).
+  - "all" (524): **36 lose a gold turn (6.9%)**, against 29.4% for ND-3's vector rank.
+  - Net estimate **+23.9 questions** (by category: 1 +12.6, 2 +4.1, 3 +0.8, 4 +6.3).
+  - Two checks before believing it. 29 prompt items across the 809 do not map to a distinct turn, so replace mode hands those slots to turns; negligible. Two questions counted as gaining every missing gold turn also lost a shown one (−1.1). Corrected: **about +22.8 questions, about +2.8 points**. This is a ceiling, since it assumes the all-in-view rate.
+- **Ruling:** passes all three stops; the prediction was wrong. "Close" does not apply, so the base model is not fetched. Next: a design for a reranking stage in the retrieval path behind a flag, reviewed against the graph skill, then one GPU gate (pass above +1.9 points; kill at 0 or below, or if category-5 refusals fall more than 5 points). Both wait for the review session.
+- **Lesson:** the retrieval gap is a ranking problem, not a reach problem. The candidate set already holds the gold turns, and a scorer that reads the question and the turn together keeps the gold turns already shown far better than a vector score (6.9% lost against 29.4%). Only one of two measurements so far, so no memory entry until the GPU gate agrees.
