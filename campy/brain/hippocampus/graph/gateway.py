@@ -1181,8 +1181,32 @@ class GraphGateway:
             _logger.debug("_bundle_conversation_windows expansion failed", exc_info=True)
             return self._bundle_conversation_budget({**params})
 
+    def _bundle_conversation_seed_windows(self, params: dict[str, Any]) -> list[Any]:
+        """B578 add mode (`thalamus.bundle_conversation_seed_windows`): the section's rows (`rows`, all kept) plus
+        the seed turns (`seeds`), each seed with the same session window the conversation stage gives a matched
+        turn (`_expand_windows`: SENT_IN session order, user turns only, no archived turns, no echo of the
+        question). The section's rows are not expanded again. Ordered as the stage orders its windows, so a seed
+        lands inside its session's dialogue (LoCoMo turns of one session share one timestamp). On failure, None
+        (the caller falls back)."""
+        rows = [r for r in (params.get("rows") or []) if r.get("node_id")]
+        have = {r["node_id"] for r in rows}
+        seeds = [r for r in (params.get("seeds") or []) if r.get("node_id") and r["node_id"] not in have]
+        n = int(params.get("neighbours") or 0)
+        order = str(params.get("order") or "time").lower()
+        if order not in CONVERSATION_ORDERS:
+            order = "time"
+        if not seeds:
+            return list(rows)
+        cap = max(0, int(params.get("neighbour_cap") or 0))
+        try:
+            return self._expand_windows(rows + seeds, {"query_text": params.get("query_text")}, n, cap, order,
+                                        expand_only={r["node_id"] for r in seeds})
+        except Exception:
+            _logger.debug("_bundle_conversation_seed_windows failed", exc_info=True)
+            return None
+
     def _expand_windows(self, matched: list[Any], params: dict[str, Any], n: int, cap: int,
-                        order: str) -> list[Any]:
+                        order: str, expand_only: Optional[set] = None) -> list[Any]:
         prefixes = (f"{CID_BASE}Message/", f"{DATA_BASE}Message/")
         qnorm = " ".join(str(params.get("query_text") or "").strip().lower().split())
         rank_of = {r["node_id"]: i for i, r in enumerate(matched)}
@@ -1239,6 +1263,8 @@ class GraphGateway:
         added = 0
         for d in range(1, n + 1):
             for r in matched:
+                if expand_only is not None and r["node_id"] not in expand_only:
+                    continue  # B578 add mode: only the seeds get new windows
                 where = pos.get(r["node_id"])
                 if where is None:
                     continue
@@ -1832,6 +1858,9 @@ class GraphGateway:
             emb = self._vector_store.get_vector(mint_uri("MainQuest", qid)) if self._vector_store else None
             return [RowDict({"q.embedding": emb, "q.name": qname})]
 
+
+        if name == "thalamus.bundle_conversation_seed_windows":  # B578 add mode: seeds given, no vector needed
+            return self._bundle_conversation_seed_windows(params)
 
         if query_embedding is None or not self._vector_store:
             return []

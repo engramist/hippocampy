@@ -125,6 +125,7 @@ an error that names the variable. The full table is
 | `CAMPY_GRAPH_VOTE` | `[retrieval].graph_vote` | off (B548); `1` adds the graph's list to conversation seed selection: the evidence turns of the question's subject's Observations that match the kind asked (object under it by `HAS_OBJECT`/`INSTANCE_OF`/`BROADER*`) or, with no kind asked, the Concepts the question names (`OBSERVATION_ABOUT`), ranked by one named query and fused by reciprocal rank with the vector and lexical lists (weight 1, top 6). No model call. Does nothing while `CAMPY_QUESTION_ANALYSIS` is off, for a tied or unresolved subject, or when the query finds nothing. On under the `principled` profile |
 | `CAMPY_TURN_RERANK` | `[retrieval].turn_rerank` | off (B578); `1` reranks the conversation section's turns plus the top 100 user Messages by vector score with a local cross-encoder and keeps the section's own turn count; graph-vote turns keep their slots. Needs `CAMPY_TURN_RERANK_PATH`; without a model the section is unchanged. In no profile until gated |
 | `CAMPY_TURN_RERANK_PATH` | `[retrieval].turn_rerank_path` | empty (B578); the local folder holding the cross-encoder's ONNX files. Nothing is downloaded |
+| `CAMPY_TURN_RERANK_MODE` | `[retrieval].turn_rerank_mode` | `replace` (B578); `add` keeps every turn of the conversation section and adds the reranker's top 5 new turns, each with the section's neighbour window. Only read with `CAMPY_TURN_RERANK` on |
 
 `CAMPY_HOME` sets where all state lives.
 

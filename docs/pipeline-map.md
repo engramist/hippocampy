@@ -109,7 +109,9 @@ The turn reranker (B578, `[retrieval] turn_rerank`, default off, in no profile u
 conversation section's turns plus the top 100 live user Messages by vector score (`thalamus.bundle_conversation_rerank_candidates`)
 are scored by a local cross-encoder against the question ("speaker: text"), and the section keeps its own turn count
 (replace mode). The graph-vote turns keep their slots. Nothing is stored, and a missing model leaves the section
-unchanged. Offline sizing: ND-5. Status: **gate pending**.
+unchanged. Offline sizing: ND-5. Replace mode was **killed** at its gate (2026-11-19, -2.2 points): it drops the turns
+next to the evidence. `turn_rerank_mode = "add"` keeps every section turn and adds the top 5 new candidates, each with the
+section's own session window, in session order (ND-6). Status: **add mode gate pending**.
 
 ## 7. Prompt
 

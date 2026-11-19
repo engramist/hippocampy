@@ -145,6 +145,7 @@ graph_linking = true
 # graph_vote = true  # B548; default on since B575 (from _DEFAULT_CONFIG)
 # turn_rerank = false  # B578: cross-encoder reranks the conversation turns (off; needs turn_rerank_path)
 # turn_rerank_path = ""  # B578: local folder holding the cross-encoder; nothing is downloaded
+# turn_rerank_mode = "replace"  # B578: "replace" keeps the section's turn count; "add" keeps it all and adds 5 turns with their neighbours
 skos_vocab = true
 
 [loop]

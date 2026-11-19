@@ -198,3 +198,4 @@ Ruled by the user ("Close B542"), after the B542 screens.
 - **Next (review session, 2026-11-19): the additive mode.** Add k = 5 reranked turns that are not already in the section, each with the section's neighbour window, for every question; no turn the section builds today is dropped, and vote turns stay pinned.
   - **Offline sizing first** (CPU, queue empty). Stops: "none" gold gain under 25%; median prompt growth over 50%; any "all" loss is a bug.
   - **Then one GPU gate:** pass above +1.9 points; kill at 0 or below, category-5 refusals down more than 5 points, or the "all" bucket down more than 3 points. Prediction +0.5 to +2.5. Reasons are in the Rulings row.
+  - **Outcome (2026-11-19):** ND-6 passed every stop. "none" gain 44.4%, no "all" loss, median prompt growth 41.7%, the largest prompt 3,842 tokens (chars/4). Next: the add-mode code PR, then the gate, with the truncation validity rule: more than 2% of the on arm's prompts truncated means confounded.
