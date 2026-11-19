@@ -82,7 +82,7 @@ B542 is closed (user, 2026-11-18); step 2 was never queued.
    - **ND-5 passed offline, on the small cross-encoder:** "none" questions gaining a gold turn 46.0% (line 25%); "all" questions losing one 6.9% (line 10%); net estimate about +22.8 questions, about +2.8 points (line +15; a ceiling).
    - The base model is not needed. **Next, for the review session:** design a reranking stage behind a flag, then one GPU gate.
 3. **Full history (run 6): skipped** (user, 2026-11-18). The guard is not lowered.
-3. **Direction and GPU authority delegated** (user, 2026-11-18: "you can do these 'pick a new direction, start a GPU experiment,' just have good reasons for why you did them"). The review session now picks directions and approves GPU experiments, and records its reasons in the Rulings table and the plan before anything runs. The guard lines and the other standing constraints are unchanged. The first pick is in the plan's 2026-11-18 revision: retrieval coverage, by subject-anchored turn retrieval.
+4. **Direction and GPU authority delegated** (user, 2026-11-18: "you can do these 'pick a new direction, start a GPU experiment,' just have good reasons for why you did them"). The review session now picks directions and approves GPU experiments, and records its reasons in the Rulings table and the plan before anything runs. The guard lines and the other standing constraints are unchanged. The first pick is in the plan's 2026-11-18 revision: retrieval coverage, by subject-anchored turn retrieval.
 
 ### Settled rulings (kept for the trail)
 

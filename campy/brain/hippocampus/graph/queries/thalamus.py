@@ -1641,6 +1641,17 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         # No sparql= — Python handler in GraphGateway._bundle_conversation_windows.
     ),
     NamedQuery(
+        name="thalamus.bundle_conversation_rerank_candidates",
+        cypher="MATCH (m:Message {role: 'user'}) "
+               "RETURN m.text_raw as text, m.role as role, m.created_at as created_at "
+               "ORDER BY array_cosine_similarity(m.embedding, $query_embedding) DESC LIMIT $limit",
+        params=("query_embedding", "limit"),
+        mutating=False,
+        description="B578: the turn reranker's extra candidates -- the top `limit` live user Messages by vector "
+                    "score, best first, one per (speaker, text), the question's own echo dropped",
+        # No sparql= — Python handler in GraphGateway._bundle_conversation_rerank_candidates.
+    ),
+    NamedQuery(
         name="thalamus.bundle_assistant_words",
         cypher="MATCH (m:Message {role: 'assistant'}) "
                "WHERE (1 - array_cosine_similarity(m.embedding, $query_embedding)) < 0.70 "

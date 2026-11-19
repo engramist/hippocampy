@@ -105,6 +105,12 @@ the conversation fusion as a third list at weight 1 and skip the lexical-only ga
 nothing asked: the two-list path, unchanged. It reaches conversation seed selection only; the Observation stage's own
 lists are not changed.
 
+The turn reranker (B578, `[retrieval] turn_rerank`, default off, in no profile until gated): after fusion, the
+conversation section's turns plus the top 100 live user Messages by vector score (`thalamus.bundle_conversation_rerank_candidates`)
+are scored by a local cross-encoder against the question ("speaker: text"), and the section keeps its own turn count
+(replace mode). The graph-vote turns keep their slots. Nothing is stored, and a missing model leaves the section
+unchanged. Offline sizing: ND-5. Status: **gate pending**.
+
 ## 7. Prompt
 
 Sections in order: exact facts, semantic (Observations, or the old stage), linked (the subject's own turns the concept walk finds; off on main),
