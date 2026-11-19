@@ -189,3 +189,11 @@ Ruled by the user ("Close B542"), after the B542 screens.
   - **If it clears:** a design reviewed against `skills/campy-graph/SKILL.md`, then one GPU gate: pass above +1.9 points, kill at 0 or below, or category-5 refusals falling more than 5 points.
   - **Outcome (2026-11-18):** cleared on the small cross-encoder. "none" gain 46.0%, "all" loss 6.9%, net estimate about +22.8 questions (a ceiling). The design is next, then the GPU gate.
   - **Next (review session, 2026-11-18): B578, a reranking stage** in the conversation section, behind `[retrieval] turn_rerank`, off by default. Graph-vote turns are pinned, since a model score does not override a graph query (P2, P3). Otherwise it is ND-5's construction, with nothing swept. One GPU gate on step 4's stores, both arms at the same commit: pass above +1.9 points, kill at 0 or below, or category-5 refusals down more than 5 points. Predicted +0.5 to +2.5 points by bucket moves, so a pass is not expected to be easy. Reasons are in the Rulings row.
+
+## Revision, 2026-11-19: the reranking stage is killed in replace mode
+
+- **B578 gate (job 1009):** the reranker on scores 51.9% on the 809 against 54.1% off, **-2.2 points**, on the kill line (0 or below). The flag stays off.
+- **Why it lost:** gold-turn coverage rose as ND-5 predicted, and the "none" questions gained 12.4 points. But replace mode keeps only 33% of the section's turns, so the turns next to the evidence are swapped out for isolated high-scoring turns. On the 484 questions that kept every gold turn, accuracy fell 7.1 points.
+- **What changes:** gold-turn coverage alone is not a valid offline stand-in for a change that replaces the section's context (P6). An offline check for a context change also has to count the turns it removes from questions already in view.
+- **Next:** the review session's to pick. One candidate, not queued: an additive mode that keeps the section and adds the reranker's top new turns, reading the same edges.
+
