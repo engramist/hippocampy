@@ -913,3 +913,15 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
 - **Ruling:** no stop hit. Next is a code PR (mode "window"), then one GPU gate with job 1010's lines, after the review session reviews the design.
 - **Lesson:** an offline stand-in should be checked against the gates already run before it is trusted. Context coverage separates the two killed modes from this one, where plain gold coverage scored replace mode as a gain. Seeds with windows reach most of the "none" gain from about 6 seeds instead of 24, so turn budget, not reach, was the constraint. This is one measurement, so no memory entry yet.
 
+### 2026-11-19 B578 window-mode GPU gate: budget-neutral reranked windows, off against on
+- **Why:** ND-7 cleared offline. This is the last reranker construction: vote turns pinned, then the reranked seeds, each with its ±2 session window, up to the control section's own turn count. The prompt stays the same length and keeps every seed's neighbours.
+- **What:** job 1011 at main 45a1abe1 (PR 490), s4p stores, walk 0, `CAMPY_TURN_RERANK=1 CAMPY_TURN_RERANK_MODE=window`, small cross-encoder. The 809 and category 5 were replayed and judged. The control was b8off/b8c5off, reused after 25/25 and 20/20 byte-identical flag-off bundles at 45a1abe1. Pre-registered in `scratch/b578w/RUNS.md`. Edges read: the session sequence of turns (window fill, `thalamus.bundle_conversation_window_fill`); nothing written.
+- **Lines:** pass above +1.9 points. Kill at 0 or below, at category-5 refusals down more than 5, or at the "all" bucket down more than 3. Confounded at 17+ truncated, by either detector (slot and ratio, the server log cut at the end of the replays). Prediction (review session): +0.5 to +2.5. Diagnostic: refusals on the 809.
+- **Result:**
+  - 56.5% (457) against 54.1% (438), **+2.3 points**, net +19 (gained 61, lost 42). Without the 34 faults: +2.7.
+  - By category: cat 1 +2.0, cat 2 +1.2, cat 3 +2.0, cat 4 +3.0 (net +13).
+  - Buckets (off arm): "none" 22.7% → 37.8% (+15.1); "some" +4.1; "all" 71.5% → 69.2% (-2.3; line -3). Coverage moves: none→all 57, all→none 16.
+  - Category-5 abstention 55.9% against 57.2% (-1.4). Refusals on the 809: 153 against 167 (-14); 15 of the 42 lost answers are refusals.
+  - Truncation union 0 (slot 32768); server prompt tokens median 2,372, max 2,993.
+- **Ruling:** pass. One measurement; the flag stays off until the review session rules on a default flip or asks for a second measurement.
+- **Lesson:** the reranker helps only when it does not pay in neighbours (replace mode, -2.2) or in length (add mode, -5.3). With both held fixed, the same scorer gains 2.3 points, and refusals fall rather than rise. ND-7's context coverage predicted the sign, where plain gold coverage had not. The "all" bucket still loses 2.3 points, from the 46% of control turns that are replaced; it is the closest line. This is one measurement, so no memory entry yet.
