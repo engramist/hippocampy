@@ -874,3 +874,16 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - On the 484 questions with every gold turn in both arms: 73.6% → 66.5% (gained 19, lost 53). Only 33% of the off arm's turns survive. Median latency 6.49 s → 6.95 s.
 - **Ruling:** **killed** (on the kill line). The flag stays off and the code stays, off by default. The next step is the review session's.
 - **Lesson:** a scorer that finds the gold turn is not the same as a better prompt. Replace mode swaps out the turns next to the evidence (fusion seeds plus two neighbours each side), and the answer model needs that dialogue. Gold-turn recall cannot see the loss, so ND-5's offline estimate measured the wrong thing for a change that replaces context (P6). An offline check for a context change has to count the turns it removes, not only the gold turns it keeps. ND-5 and the gate disagree, so this goes to no memory entry.
+
+### 2026-11-19 ND-6: B578 add mode, sized offline (CPU)
+- **Why:** the B578 gate killed replace mode because it dropped the evidence turns' neighbours. The review session ruled an additive mode and asked for offline sizing before any code.
+- **What:** ND-5's records, stores and pinned small cross-encoder. For every question, the top 5 reranked candidates not in the control section were added, each with ±2 turns of the conversation, and nothing was dropped. Run at main c819693e on CPU with the queue empty; free memory never went under 64%. Pre-registered in `scratch/nd1/RUNS.md`.
+- **Lines:** stop if "none" gain is under 25%, median prompt growth over 50%, or any prompt over 4,096 tokens; any "all" loss is a bug. Prediction: none gain 30–45%, growth 35–60%, net +15 to +25.
+- **Result:**
+  - "none" 83 of 187 gain a gold turn (44.4%), 66 every missing one (35.3%); 60 of the 83 through the 5 seeds, 23 only through the windows. "some" 49 of 94 (52.1%). "all" loss 0.
+  - Turns added median 23 (max 25); prompt growth median 41.7%, p90 53.8%, max 126.8%.
+  - Prompt after: median 2,954 tokens, max 3,842 (chars/4); none over 4,096.
+  - Transition net +43.7 questions (+5.4 points), a ceiling that assumes extra turns cost nothing.
+- **Ruling:** no stop hit; the review session accepted it. The code PR comes next, then the gate with a truncation validity rule.
+- **Lesson:** the windows matter. 23 of the 83 "none" gains reach a gold turn only through a seed's neighbours, which is the same context replace mode threw away. The context bound is tight: one rendered conv-26 prompt in add mode is about 4.1k tokens (16,449 chars), so the gate counts truncation from the server rather than trusting chars/4.
+

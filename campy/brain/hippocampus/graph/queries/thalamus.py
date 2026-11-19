@@ -1652,6 +1652,16 @@ THALAMUS_QUERIES: tuple[NamedQuery, ...] = (
         # No sparql= — Python handler in GraphGateway._bundle_conversation_rerank_candidates.
     ),
     NamedQuery(
+        name="thalamus.bundle_conversation_seed_windows",
+        cypher="MATCH (m:Message {role: 'user'})-[:SENT_IN]->(s:Session) RETURN m.text_raw as text, m.created_at "
+               "as created_at ORDER BY m.created_at ASC",
+        params=("rows", "seeds", "query_text", "neighbours", "neighbour_cap", "order"),
+        mutating=False,
+        description="B578 add mode: the section's rows, all kept, plus the seed turns, each with the conversation "
+                    "stage's own session window (up to `neighbours` user turns either side), in session order",
+        # No sparql= — Python handler in GraphGateway._bundle_conversation_seed_windows.
+    ),
+    NamedQuery(
         name="thalamus.bundle_assistant_words",
         cypher="MATCH (m:Message {role: 'assistant'}) "
                "WHERE (1 - array_cosine_similarity(m.embedding, $query_embedding)) < 0.70 "

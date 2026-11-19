@@ -58,6 +58,9 @@ _DEFAULT_CONFIG = {
         "turn_rerank": False,
         "turn_rerank_model": "Xenova/ms-marco-MiniLM-L-6-v2",
         "turn_rerank_path": "",
+        # B578 add mode (ruled 2026-11-19): "replace" (default; killed at the gate) keeps the section's turn count;
+        # "add" keeps every section turn and adds the top 5 new turns with their neighbour windows (ND-6).
+        "turn_rerank_mode": "replace",
         # B508/B514: SKOS vocabulary for kinds (default ON; env CAMPY_SKOS_VOCAB=0 turns it off;
         # part of the R96 stack, see graph_linking). Kinds are
         # consolidated by rule (same label, head noun), entity -INSTANCE_OF-> kind and
@@ -368,6 +371,7 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     # B578: the turn reranker (off by default) and the local folder its model is read from.
     "CAMPY_TURN_RERANK": ("retrieval", "turn_rerank", _parse_bool),
     "CAMPY_TURN_RERANK_PATH": ("retrieval", "turn_rerank_path", str.strip),
+    "CAMPY_TURN_RERANK_MODE": ("retrieval", "turn_rerank_mode", lambda v: str(v).strip().lower()),
     # B508: SKOS vocabulary for kinds (consolidation, INSTANCE_OF vs BROADER).
     "CAMPY_SKOS_VOCAB": ("retrieval", "skos_vocab", _parse_bool),
     # B544: admit every named entity of a user turn as a Concept (default on since B575).
@@ -478,7 +482,7 @@ PROFILE_STAYS_ON = (
     ("observations", "evidence_entity_links"),
     ("retrieval", "graph_count"), ("retrieval", "question_analysis"), ("retrieval", "graph_vote"),
     # B578: off by default; reported so a run records whether the reranker was on.
-    ("retrieval", "turn_rerank"),
+    ("retrieval", "turn_rerank"), ("retrieval", "turn_rerank_mode"),
 )
 
 

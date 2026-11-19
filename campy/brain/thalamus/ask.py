@@ -495,6 +495,10 @@ async def run_ask(
     # hippocampus.py, step7_5_lesson.py); this was the one call site that
     # never got migrated.
     answer = await llm.achat(messages)
+    # B578 gate: the answer call's token usage as the server reported it (prompt_tokens is the prompt the model
+    # actually read, so a value at the context size means the prompt was truncated). Measurement only.
+    if meta is not None:
+        meta["answer_usage"] = dict(getattr(llm, "last_usage", None) or {}) or None
 
     if "H2" in variants:
         # B447: _h2_empty_claim_guard calls llm.chat() synchronously when it

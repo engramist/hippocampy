@@ -1047,7 +1047,7 @@ async def _stage_conversation(db, query: str, config: dict, analysis=None) -> Op
             from campy.brain.thalamus.turn_rerank import rerank_conversation
 
             rows = await rerank_conversation(db, list(rows), query, query_embedding, config,
-                                             graph_turns=graph_turns or (), order=order)
+                                             graph_turns=graph_turns or (), order=order, neighbours=neighbours)
         content, node_ids = [], []
         # B538: the resolved dates of the relative time expressions in these turns
         mentions = await _turn_mentions(db, config, [

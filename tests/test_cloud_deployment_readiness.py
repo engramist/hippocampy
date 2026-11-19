@@ -76,6 +76,7 @@ def test_every_documented_override_applies():
         "CAMPY_GRAPH_VOTE": "1",
         "CAMPY_TURN_RERANK": "1",
         "CAMPY_TURN_RERANK_PATH": " /models/reranker ",
+        "CAMPY_TURN_RERANK_MODE": " Add ",
         "CAMPY_KIND_HYGIENE": "1",
         "CAMPY_WORDNET_KINDS": "1",
         "CAMPY_VOCAB_STEWARD": "1",
@@ -102,6 +103,7 @@ def test_every_documented_override_applies():
     assert cfg["retrieval"]["graph_vote"] is True
     assert cfg["retrieval"]["turn_rerank"] is True
     assert cfg["retrieval"]["turn_rerank_path"] == "/models/reranker"
+    assert cfg["retrieval"]["turn_rerank_mode"] == "add"
     assert cfg["retrieval"]["graph_facts"] is True
     assert cfg["ask"]["answer_style"] == "cite_answer"
     assert cfg["retrieval"]["object_text_match"] is True
