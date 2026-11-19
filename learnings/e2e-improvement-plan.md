@@ -195,5 +195,6 @@ Ruled by the user ("Close B542"), after the B542 screens.
 - **B578 gate (job 1009):** the reranker on scores 51.9% on the 809 against 54.1% off, **-2.2 points**, on the kill line (0 or below). The flag stays off.
 - **Why it lost:** gold-turn coverage rose as ND-5 predicted, and the "none" questions gained 12.4 points. But replace mode keeps only 33% of the section's turns, so the turns next to the evidence are swapped out for isolated high-scoring turns. On the 484 questions that kept every gold turn, accuracy fell 7.1 points.
 - **What changes:** gold-turn coverage alone is not a valid offline stand-in for a change that replaces the section's context (P6). An offline check for a context change also has to count the turns it removes from questions already in view.
-- **Next:** the review session's to pick. One candidate, not queued: an additive mode that keeps the section and adds the reranker's top new turns, reading the same edges.
-
+- **Next (review session, 2026-11-19): the additive mode.** Add k = 5 reranked turns that are not already in the section, each with the section's neighbour window, for every question; no turn the section builds today is dropped, and vote turns stay pinned.
+  - **Offline sizing first** (CPU, queue empty). Stops: "none" gold gain under 25%; median prompt growth over 50%; any "all" loss is a bug.
+  - **Then one GPU gate:** pass above +1.9 points; kill at 0 or below, category-5 refusals down more than 5 points, or the "all" bucket down more than 3 points. Prediction +0.5 to +2.5. Reasons are in the Rulings row.
