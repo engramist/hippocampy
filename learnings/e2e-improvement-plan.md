@@ -199,3 +199,10 @@ Ruled by the user ("Close B542"), after the B542 screens.
   - **Offline sizing first** (CPU, queue empty). Stops: "none" gold gain under 25%; median prompt growth over 50%; any "all" loss is a bug.
   - **Then one GPU gate:** pass above +1.9 points; kill at 0 or below, category-5 refusals down more than 5 points, or the "all" bucket down more than 3 points. Prediction +0.5 to +2.5. Reasons are in the Rulings row.
   - **Outcome (2026-11-19):** ND-6 passed every stop. "none" gain 44.4%, no "all" loss, median prompt growth 41.7%, the largest prompt 3,842 tokens (chars/4). Next: the add-mode code PR, then the gate, with the truncation validity rule: more than 2% of the on arm's prompts truncated means confounded.
+
+## Revision, 2026-11-19 (morning): the reranking stage is closed
+
+- **B578 add-mode gate (job 1010):** 48.8% on the 809 against 54.1%, **-5.3 points**. It hit the kill line and the "all"-bucket line (-13.0). No prompt was truncated, so the result is valid.
+- **Why it lost:** retrieval improved ("none" +11.9 points, no question lost coverage). But prompts grew about 1.6x, and the answer model refused more: refusals on the 809 rose 167 → 242, and 63 of the 91 lost answers are refusals.
+- **What changes:** both modes are killed, so B578 is closed with the flag off. Two gates now show that gold-turn coverage does not carry over to accuracy when the section's size changes in either direction. Any further retrieval lever that changes the context's size needs an offline measure of the answer stage's response to that size (P6).
+- **Next:** the review session's call. The evidence points at the answer stage (refusal under longer context), not at retrieval reach.
