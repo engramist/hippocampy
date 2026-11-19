@@ -33,11 +33,11 @@ def _ids(rows):
     return [r["node_id"].rsplit("/", 1)[-1] for r in rows]
 
 
-def test_mode_defaults_to_replace_and_rejects_unknown(caplog):
+def test_mode_defaults_to_window_and_rejects_unknown(caplog):
     tr._warned.clear()
-    assert tr.turn_rerank_mode({}) == "replace"
+    assert tr.turn_rerank_mode({}) == "window"
     assert tr.turn_rerank_mode({"retrieval": {"turn_rerank_mode": " ADD "}}) == "add"
-    assert tr.turn_rerank_mode({"retrieval": {"turn_rerank_mode": "both"}}) == "replace"
+    assert tr.turn_rerank_mode({"retrieval": {"turn_rerank_mode": "both"}}) == "window"
     assert any("turn_rerank_mode" in r.getMessage() for r in caplog.records)
     tr._warned.clear()
 
@@ -116,7 +116,7 @@ async def test_flag_off_bundle_is_the_same_whatever_the_mode(gw, monkeypatch):
     r = {"conversation_limit": 1, "conversation_neighbours": 1, "conversation_token_budget": 0}
     kw = dict(include_tabular=False, include_summaries=False)
     dump = lambda b: [(s.section_type, s.content, s.source_node_ids) for s in b.sections]
-    base = await bc.compile_bundle("ridge trail", gw._client, {"retrieval": dict(r)}, **kw)
+    base = await bc.compile_bundle("ridge trail", gw._client, {"retrieval": {**r, "turn_rerank": False}}, **kw)
     off_add = await bc.compile_bundle("ridge trail", gw._client,
                                       {"retrieval": {**r, "turn_rerank": False, "turn_rerank_mode": "add"}}, **kw)
     assert dump(base) == dump(off_add)

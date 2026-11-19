@@ -50,17 +50,18 @@ _DEFAULT_CONFIG = {
         # joins vector and lexical in conversation seed selection. Needs question_analysis. Gate: with the
         # profile (B545).
         "graph_vote": True,
-        # B578 (default OFF; env CAMPY_TURN_RERANK=1 turns it on; in no profile until gated): a cross-encoder
-        # reranks the conversation section's turns plus the top 100 Messages by vector score and keeps the
-        # section's own turn count; graph-vote turns keep their slots. The model is read from a local folder
-        # (turn_rerank_path, env CAMPY_TURN_RERANK_PATH); nothing is downloaded, and without it the section
-        # is unchanged. Offline sizing: ND-5.
-        "turn_rerank": False,
+        # B578 (default ON since the window-mode gates, 2026-11-19; env CAMPY_TURN_RERANK=0 turns it off): a
+        # cross-encoder reranks the conversation section's turns plus the top 100 Messages by vector score;
+        # graph-vote turns keep their slots. The model is read from a local folder (turn_rerank_path, env
+        # CAMPY_TURN_RERANK_PATH); nothing is downloaded, and without it the section is unchanged (one
+        # warning per process). Gates: job 1011 +2.3 points, job 1012 +2.8 (682 of 809 prompts shared).
+        "turn_rerank": True,
         "turn_rerank_model": "Xenova/ms-marco-MiniLM-L-6-v2",
         "turn_rerank_path": "",
-        # B578 add mode (ruled 2026-11-19): "replace" (default; killed at the gate) keeps the section's turn count;
-        # "add" keeps every section turn and adds the top 5 new turns with their neighbour windows (ND-6).
-        "turn_rerank_mode": "replace",
+        # B578 modes: "window" (default; ND-7, passed both gates) keeps the section's turn count and fills it with
+        # reranked seeds, each with its session window; "replace" (killed, -2.2) and "add" (killed, -5.3) remain
+        # for comparison only.
+        "turn_rerank_mode": "window",
         # B508/B514: SKOS vocabulary for kinds (default ON; env CAMPY_SKOS_VOCAB=0 turns it off;
         # part of the R96 stack, see graph_linking). Kinds are
         # consolidated by rule (same label, head noun), entity -INSTANCE_OF-> kind and
@@ -481,7 +482,7 @@ PROFILE_STAYS_ON = (
     ("observations", "wordnet_kinds"), ("observations", "vocab_steward"), ("observations", "typed_objects"),
     ("observations", "evidence_entity_links"),
     ("retrieval", "graph_count"), ("retrieval", "question_analysis"), ("retrieval", "graph_vote"),
-    # B578: off by default; reported so a run records whether the reranker was on.
+    # B578: on by default (window mode); reported so a run records whether the reranker was on.
     ("retrieval", "turn_rerank"), ("retrieval", "turn_rerank_mode"),
 )
 

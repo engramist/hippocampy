@@ -143,9 +143,9 @@ graph_linking = true
 # third ranked list in conversation seed selection. Needs question_analysis. On since B575.
 # CAMPY_GRAPH_VOTE=0 turns it off.
 # graph_vote = true  # B548; default on since B575 (from _DEFAULT_CONFIG)
-# turn_rerank = false  # B578: cross-encoder reranks the conversation turns (off; needs turn_rerank_path)
+# turn_rerank = true  # B578: cross-encoder reranks the conversation turns (on; a no-op without turn_rerank_path)
 # turn_rerank_path = ""  # B578: local folder holding the cross-encoder; nothing is downloaded
-# turn_rerank_mode = "replace"  # B578: "replace" keeps the section's turn count; "add" keeps it all and adds 5 turns with their neighbours
+# turn_rerank_mode = "window"  # B578: "window" (default) fills the section's turn count with reranked seeds and their session windows; "replace" and "add" were killed
 skos_vocab = true
 
 [loop]

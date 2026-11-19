@@ -65,7 +65,8 @@ async def test_flag_off_and_missing_model_leave_rows_unchanged(caplog):
     rows = [_row(1, "a", "2023-01-01")]
     called = []
     stub = lambda q, d: called.append(1) or [1.0] * len(d)
-    assert await tr.rerank_conversation(None, rows, "q", QUERY_EMB, {"retrieval": {}}, scorer=stub) is rows
+    assert await tr.rerank_conversation(None, rows, "q", QUERY_EMB, {"retrieval": {"turn_rerank": False}},
+                                        scorer=stub) is rows
     assert not called
     tr._scorers.clear(); tr._warned.clear()
     cfg = {"retrieval": {"turn_rerank": True, "turn_rerank_path": ""}}
@@ -138,7 +139,7 @@ async def test_whole_bundle_other_sections_unchanged_with_flag_on(gw, monkeypatc
     monkeypatch.setattr(tr, "load_scorer", lambda cfg: _stub(["Ann: my cat sleeps"]))
     r = {"conversation_limit": 2, "conversation_neighbours": 0, "conversation_token_budget": 0}
     kw = dict(include_tabular=False, include_summaries=False)
-    off = await bc.compile_bundle("ridge trail", gw._client, {"retrieval": dict(r)}, **kw)
+    off = await bc.compile_bundle("ridge trail", gw._client, {"retrieval": {**r, "turn_rerank": False}}, **kw)
     on = await bc.compile_bundle("ridge trail", gw._client, {"retrieval": {**r, "turn_rerank": True}}, **kw)
     other = lambda b: [(s.section_type, s.content) for s in b.sections if s.section_type != "conversation"]
     assert other(on) == other(off)
