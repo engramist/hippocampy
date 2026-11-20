@@ -77,8 +77,9 @@ async def test_call_brain_uses_mcp_adapter_timeout_for_every_method(monkeypatch,
     split (2.0s / 3.0s) is gone, not just relabeled."""
     seen = {}
 
-    async def fake_call_brain_soft(method, params, *, timeout, default):
+    async def fake_call_brain_soft(method, params, *, timeout, default, raise_daemon_errors=False):
         seen["timeout"] = timeout
+        seen["raise_daemon_errors"] = raise_daemon_errors
         return {"ok": True}
 
     monkeypatch.setattr(mcp_server, "call_brain_soft", fake_call_brain_soft)
@@ -88,3 +89,4 @@ async def test_call_brain_uses_mcp_adapter_timeout_for_every_method(monkeypatch,
     assert result == {"ok": True}
     assert seen["timeout"] == brain_transport.MCP_ADAPTER_TIMEOUT
     assert seen["timeout"] not in (2.0, 3.0)
+    assert seen["raise_daemon_errors"] is True  # B580: daemon-replied errors are errors, not "offline"
