@@ -1020,3 +1020,15 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - the determinism check counted a crashed worker as a match (both answers empty); errors and empty answers now fail it.
   - After the fixes, the off replay was byte-equal to the harness answer, and the on replay loaded the model and changed 2 of 19 turns.
 - **Lesson:** with the observation reads off, the Loop itself costs about half of capture time, so "light" capture is not light. Also: a kept-store path parsed from a log is not evidence of which store a question used; take it from the record. Any equality check must fail on errors and empty answers.
+
+### 2026-11-20 ND-12: a stronger scorer for window mode (offline, CPU)
+- **Why:** ND-11 read its stop as "reach is not the limit; ranking is". The review session ruled one lever: swap the small cross-encoder for a base-size reranker, with the candidates and the fill unchanged.
+- **What:** `scratch/nd12/nd12.py` (from ND-11's harness), pre-registered in `scratch/nd12/RUNS.md`. The base model was downloaded with the user's own approval at a pinned commit, and its checksums were verified. Simulated window mode as shipped (rows + vector top 100) with the base scorer. The secondary arm used the base scorer on ND-11's subject pool. Control: job 1011's real window-on sections, context-coverage buckets. No edges written.
+- **Lines:** stop if the "none" gain is under 20%, the "all" loss is over 5%, chars rise more than 10%, or scoring exceeds 10 s. Prediction: none gain 15–30%, all loss 2–6%.
+- **Result:**
+  - "none" gain 49 of 247 (19.8%) and "all" loss 45 of 455 (9.9%): **two stops**. "some" +9/-33. Chars +0.8%. Scoring 5.31 s median.
+  - Ceiling -2.8 questions (-0.34 points).
+  - Lever only (against the small-scorer simulation): none +38/-4, all +3/-43.
+  - Gold rank on the 159 no-gold misses in the simulated pool: median 4 for both scorers (109 with gold in the pool). In the subject pool, 5 and 6.
+- **Ruling:** stopped.
+- **Lesson:** the bigger web-search reranker is worse here: it trades "all" questions for a few "none" ones. More important, the gold-rank readout shows the small scorer already ranks a gold turn near the top in the simulation for most of the 159. Yet the real pipeline's section lacks it, and the simulation matches the real section on only 582 of 809. So ND-11's "ranking is the limit" was an inference from the simulation, and it is not supported. The missing gold is lost in a part of the real pipeline that the harness does not reproduce. Before another retrieval lever, log the real pipeline's own pool and ordering. An offline stand-in validated on two kills (ND-7) can still be wrong about the mechanism. One measurement; no memory entry.
