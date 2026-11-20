@@ -103,6 +103,11 @@ def _jsonrpc_request(method: str, params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+class DaemonReplyError(RuntimeError):
+    """B580: the daemon was reached and replied with an error (for example a query it could not run). Distinct from
+    an unreachable daemon (``DAEMON_OFFLINE`` / ``DAEMON_HTTP_ERROR``), which callers may treat as offline."""
+
 async def _call_socket(
     socket_file: Path,
     method: str,
@@ -121,7 +126,7 @@ async def _call_socket(
 
     response = json.loads(line)
     if "error" in response:
-        raise RuntimeError(response["error"]["message"])
+        raise DaemonReplyError(response["error"]["message"])
     return response.get("result", {})
 
 
@@ -152,7 +157,7 @@ def _call_http_sync(
 
     payload = json.loads(raw)
     if "error" in payload:
-        raise RuntimeError(payload["error"]["message"])
+        raise DaemonReplyError(payload["error"]["message"])
 
     result = payload.get("result", {})
     content = result.get("content") if isinstance(result, dict) else None
@@ -316,6 +321,7 @@ async def call_brain_soft(
     *,
     timeout: float,
     default: Any = None,
+    raise_daemon_errors: bool = False,
 ) -> Any:
     """Fail-open wrapper around `call_brain()`.
 
@@ -338,6 +344,13 @@ async def call_brain_soft(
     """
     try:
         result = await call_brain(method, params, timeout=timeout)
+    except DaemonReplyError as exc:
+        # B580: an error the daemon replied with is recorded like any soft failure, but with raise_daemon_errors
+        # (the MCP adapters) it is re-raised, so it is reported as an error and never mistaken for "offline".
+        _record_soft_failure(method, exc)
+        if raise_daemon_errors:
+            raise
+        return default
     except Exception as exc:
         _logger.debug(
             "call_brain_soft: %s failed (%s: %s) — degrading to default",
@@ -349,3 +362,47 @@ async def call_brain_soft(
         return default
     _record_soft_success()
     return result
+
+
+async def replay_offline_queue(queue_path: Path, call) -> dict[str, int]:
+    """B580: replay a JSONL offline queue through ``call(method, params)``.
+
+    An entry the daemon answers is done; an entry the daemon replies to with an error (``DaemonReplyError``) can never
+    succeed on replay, so it is dropped with a soft-failure record; an entry that finds the daemon unreachable again is
+    kept, with every entry after it, for the next replay. Malformed lines are dropped."""
+    counts = {"replayed": 0, "dropped": 0, "kept": 0}
+    if not queue_path.exists():
+        return counts
+    try:
+        lines = queue_path.read_text(encoding="utf-8").splitlines()
+        queue_path.unlink()
+    except Exception:
+        return counts
+    keep: list[str] = []
+    for n, line in enumerate(lines):
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+            method, params = entry["method"], entry["params"]
+        except Exception:
+            counts["dropped"] += 1
+            continue
+        try:
+            await call(method, params)
+            counts["replayed"] += 1
+        except DaemonReplyError as exc:
+            _record_soft_failure(method, exc)
+            counts["dropped"] += 1
+        except Exception:
+            keep = [ln for ln in lines[n:] if ln.strip()]
+            break
+    if keep:
+        try:
+            queue_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(queue_path, "a", encoding="utf-8") as f:
+                f.write("\n".join(keep) + "\n")
+        except Exception:
+            pass
+        counts["kept"] = len(keep)
+    return counts

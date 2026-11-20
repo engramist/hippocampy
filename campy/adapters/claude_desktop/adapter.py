@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from datetime import datetime, timezone
 from campy.brain.brainstem.activity_log import WRITE_METHODS
-from campy.brain_transport import CAPTURE_TIMEOUT, CONTEXT_TIMEOUT, call_brain_soft
+from campy.brain_transport import CAPTURE_TIMEOUT, CONTEXT_TIMEOUT, call_brain_soft, replay_offline_queue
 from campy.paths import get_daemon_socket_path, runtime_dir
 from campy.brain.thalamus.tool_schemas import TOOLS
 
@@ -81,7 +81,7 @@ async def _call_brain(method: str, params: dict) -> dict:
     existing try/except RuntimeError call site below — is unchanged.
     """
     timeout = CAPTURE_TIMEOUT if method in WRITE_METHODS else CONTEXT_TIMEOUT
-    result = await call_brain_soft(method, params, timeout=timeout, default=_SOFT_FAIL)
+    result = await call_brain_soft(method, params, timeout=timeout, default=_SOFT_FAIL, raise_daemon_errors=True)
     if result is _SOFT_FAIL:
         raise RuntimeError(f"DAEMON_OFFLINE: soft-failure calling {method}")
     return result
@@ -135,25 +135,12 @@ _daemon_online = True
 
 
 async def _replay_offline_queue() -> None:
-    """
-    W5 fix: replay messages queued while the daemon was offline.
-    Called after a successful brain call confirms the daemon is back online.
-    """
-    if not OFFLINE_QUEUE.exists():
-        return
+    """Replay messages queued while the daemon was offline (B580: brain_transport.replay_offline_queue drops an entry
+    the daemon replies to with an error and keeps the rest when the daemon is unreachable again)."""
     try:
-        lines = OFFLINE_QUEUE.read_text(encoding="utf-8").splitlines()
-        if not lines:
-            return
-        OFFLINE_QUEUE.unlink()  # clear queue before replaying (idempotent)
-        for line in lines:
-            try:
-                entry = json.loads(line)
-                await _call_brain(entry["method"], entry["params"])
-            except Exception:
-                pass  # best-effort replay — don't re-queue failed replays
+        await replay_offline_queue(OFFLINE_QUEUE, _call_brain)
     except Exception:
-        pass
+        pass  # best-effort replay
 
 
 async def handle_mcp_request(request: dict) -> dict:

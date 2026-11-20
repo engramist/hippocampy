@@ -1604,6 +1604,21 @@ PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 """
 
 
+class IRI(str):
+    """B580: an explicit IRI parameter. A plain ``str`` binds as an IRI only when it lies under the store's own bases
+    (CID_BASE, CAMPY_NS, DATA_BASE) AND is a syntactically valid IRI; anything else, free text that happens to start
+    with "http(s)://" included, binds as a literal. Wrap an external IRI (vocabulary, PROV, schema.org) in ``IRI(...)``."""
+
+
+# characters an IRI reference may not hold (RFC 3987 / SPARQL IRIREF): whitespace and control characters, <>"{}|^`\
+_IRI_FORBIDDEN = re.compile(r'[\x00-\x20<>"{}|^`\\]')
+
+
+def _is_own_iri(val: str) -> bool:
+    return (val.startswith(CID_BASE) or val.startswith(CAMPY_NS) or val.startswith(DATA_BASE)) \
+        and not _IRI_FORBIDDEN.search(val)
+
+
 def _format_sparql_term(val: Any) -> str:
     if val is None:
         return "UNDEF"
@@ -1615,8 +1630,12 @@ def _format_sparql_term(val: Any) -> str:
         return repr(val)
     if isinstance(val, datetime):
         return f'"{_format_datetime(val)}"^^<{_XSD_DATETIME}>'
+    if isinstance(val, ox.NamedNode):
+        return f"<{val.value}>"
+    if isinstance(val, IRI):
+        return f"<{val}>"
     if isinstance(val, str):
-        if val.startswith(CID_BASE) or val.startswith(CAMPY_NS) or val.startswith("http://") or val.startswith("https://"):
+        if _is_own_iri(val):  # B580: never by an http(s) prefix alone
             return f"<{val}>"
         return str(ox.Literal(val))
     return str(ox.Literal(str(val)))

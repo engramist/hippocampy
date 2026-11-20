@@ -1032,3 +1032,24 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - Gold rank on the 159 no-gold misses in the simulated pool: median 4 for both scorers (109 with gold in the pool). In the subject pool, 5 and 6.
 - **Ruling:** stopped.
 - **Lesson:** the bigger web-search reranker is worse here: it trades "all" questions for a few "none" ones. More important, the gold-rank readout shows the small scorer already ranks a gold turn near the top in the simulation for most of the 159. Yet the real pipeline's section lacks it, and the simulation matches the real section on only 582 of 809. So ND-11's "ranking is the limit" was an inference from the simulation, and it is not supported. The missing gold is lost in a part of the real pipeline that the harness does not reproduce. Before another retrieval lever, log the real pipeline's own pool and ordering. An offline stand-in validated on two kills (ND-7) can still be wrong about the mechanism. One measurement; no memory entry.
+
+### 2026-11-20 B580: capture integrity, text starting with a URL bound as an IRI (found by an LME capture)
+- **Why:** job 1014 (the LME sign check) lost question 6a1eabeb. Both attempts failed on the same user turn, which begins
+  with a YouTube URL holding a backslash. The first reading, a model swap, was wrong: the Ollama log showed one 8B
+  runner throughout, and the 17 GB reading was that runner's prompt cache.
+- **What:** the failed stores' `fail_open_state.json` held the query error. `_format_sparql_term` bound any `str`
+  starting with `http(s)://` as an IRI, the Message text included. The MCP adapter reported the daemon's error as
+  "offline", queued the turn, and the harness gave up on the question. Before changing the rule, the full suite ran
+  with the old rule instrumented: 0 external IRIs passed through parameters.
+- **Lines:** none (a correctness fix; no GPU gate, ruled by the review session). Exposure counted instead.
+- **Result:**
+  - Fixed on main: literal by default, an IRI only for valid own-base values or an explicit `IRI(...)`.
+  - The adapters report a daemon-replied error as an error.
+  - Offline replay drops poisoned entries and keeps entries when the daemon is unreachable. Before, those were lost.
+  - Six tests; the main one fails on the old code with the same query error.
+  - Exposure: LoCoMo-10 0 turns; LME-s 100 1 turn; personal store copy 0 mistyped Messages and no offline queue.
+- **Ruling:** merged as a correctness fix. The personal daemon picks it up at the restart after job 1014. Job 1014
+  runs from a frozen tree and keeps its one lost question (n=99).
+- **Lesson:** "daemon offline" can be a query error in disguise, so read `fail_open_state.json` before blaming
+  resources. Binding a parameter's type by its text prefix is unsafe whenever free text and identifiers share a
+  parameter path: type by the caller's intent, not by content.
