@@ -185,6 +185,11 @@ def _answer_style(config: Optional[dict]) -> str:
     return style
 
 
+def _boundary_per_section(config: Optional[dict]) -> bool:
+    """ND-15: `[answer] boundary_per_section` (off by default): one B339 boundary per section, not per line."""
+    return bool(((config or {}).get("answer") or {}).get("boundary_per_section", False))
+
+
 def _bundle_to_prompt(bundle, query: str, config: Optional[dict] = None) -> str:
     """Flatten compressed bundle sections into a single prompt string.
 
@@ -192,7 +197,7 @@ def _bundle_to_prompt(bundle, query: str, config: Optional[dict] = None) -> str:
     wrapping it in boundary tags, so raw item text is passed through here
     unescaped — escaping it again at this call site would double-escape it.
     """
-    from campy.brain.thalamus.memory_formatter import format_memory_with_boundary
+    from campy.brain.thalamus.memory_formatter import format_memory_with_boundary, format_section_with_boundary
     from campy.brain.hippocampus.turn_mentions import TURN_DATES_SUFFIX, turn_dates_enabled
 
     parts = [f"Query: {query}\n\nContext from memory:\n"]
@@ -223,7 +228,11 @@ def _bundle_to_prompt(bundle, query: str, config: Optional[dict] = None) -> str:
                 rendered_items.append(item["source"])
         
         # B339: Wrap rendered items with data/instruction boundaries
-        if rendered_items:
+        if rendered_items and _boundary_per_section(config):
+            # ND-15: one boundary per section holding all its lines (same lines, escaping and order)
+            rendered_items = [format_section_with_boundary(rendered_items, source=section_type,
+                                                           trust_level="stored_data")]
+        elif rendered_items:
             bounded_items = []
             for item_text in rendered_items:
                 # Format each memory item with source and trust markers
