@@ -941,3 +941,22 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - On the 682: 1011 net +9, 1012 net +11. On the 127: 1011 net +10 (+7.9 points), 1012 net +12 (+9.4 points).
 - **Ruling:** the confirmed line is met. The default flip is held for the review session, given the shared prompts.
 - **Lesson:** a re-capture of the same conversations is not an independent sample when capture differences do not reach the bundle. Check how many bundles two store sets share before calling a second run a replication. It is a cheap check, and it should go into pre-registration next time. The effect's sign held on the 127 differing questions in both runs and in every category, but two agreeing measurements here means 809 + 127, not 1,618.
+
+### 2026-11-19 ND-8: miss analysis of the window-mode control (offline, CPU)
+- **Why:** window mode became the default. After it, the largest pool of misses had every gold turn in view, so the next lever was no longer at retrieval. The review session ruled that the next stage be chosen by counted miss classes, not by taste (P6).
+- **What:** the 352 wrong answers of job 1011's on arm (window mode, s4p stores, 809 questions). Each was given its bucket: all 173, some 78, none 99, n/a 2. Each was tagged by rule (`scratch/nd8/nd8.py`; precedence e > f > a > b > c > d):
+  - (e) one of the 34 known key faults;
+  - (f) gold not in view;
+  - (a) a refusal by `locomo10.scoring.abstention`;
+  - (b) category 2, a date or duration key, and a gold turn with a relative time expression;
+  - (c) two or more gold turns and a count/list/order cue;
+  - (d) the rest.
+  A seeded 40 of the "all"-bucket misses were hand-checked. Pre-registered in `scratch/nd8/RUNS.md`. Edges: none; stored answers only.
+- **Lines:** the next lever goes to the largest class (20% or more of the misses) with a P2/P8 construction. Hand agreement under 80% would replace the rule counts. Prediction (review session): (b)+(c) over 40% of the "all"-bucket misses, (a) 15–25%.
+- **Result:**
+  - All misses: f 159 (45.2%), a 83 (23.6%), d 57 (16.2%), e 33 (9.4%), c 13 (3.7%), b 7 (2.0%).
+  - "All"-bucket misses: a 48.0%, d 32.4%, e 8.1%, c 7.5%, b 4.0%. Secondary tags: any b 36, any c 21.
+  - Hand check: 33 of 40 agree (82.5%). The rule under-tags (c) for list questions whose cue is not in its pattern (4), and misses 2 judge artefacts and 1 bare-weekday date.
+  - 32 of the 83 in-view refusals contain 60% or more of the key's words after an opening refusal ("I don't have that information. However, ..."); 7 are bare refusals.
+- **Ruling:** by the registered rule, (a), the answer stage. The prediction missed on both parts. The design is the review session's.
+- **Lesson:** with the gold in view, the model most often refuses, and often refuses and then answers anyway. Date arithmetic and graph-computable aggregation are small classes on this set, even counting the secondary tags (at most 33%). The plan's graph-answer direction should not be sized on this set's in-view misses alone. Regex cues under-count list questions, so a hand check is needed before trusting a small class. One measurement; no memory entry.
