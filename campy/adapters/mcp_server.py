@@ -16,7 +16,7 @@ import sys
 import os
 from pathlib import Path
 from datetime import datetime, timezone
-from campy.brain_transport import MCP_ADAPTER_TIMEOUT, call_brain_soft, socket_path
+from campy.brain_transport import MCP_ADAPTER_TIMEOUT, call_brain_soft, replay_offline_queue, socket_path
 from campy.paths import get_daemon_socket_path, runtime_dir
 
 SOCKET_PATH   = get_daemon_socket_path()
@@ -87,7 +87,7 @@ async def _call_brain(method: str, params: dict) -> dict:
     external contract — and every existing try/except RuntimeError call
     site below — is unchanged.
     """
-    result = await call_brain_soft(method, params, timeout=MCP_ADAPTER_TIMEOUT, default=_SOFT_FAIL)
+    result = await call_brain_soft(method, params, timeout=MCP_ADAPTER_TIMEOUT, default=_SOFT_FAIL, raise_daemon_errors=True)
     if result is _SOFT_FAIL:
         raise RuntimeError(f"DAEMON_OFFLINE: soft-failure calling {method}")
     return result
@@ -126,22 +126,12 @@ _daemon_online = True
 
 
 async def _replay_offline_queue() -> None:
-    """Replay messages queued while the daemon was offline."""
-    if not OFFLINE_QUEUE.exists():
-        return
+    """Replay messages queued while the daemon was offline (B580: brain_transport.replay_offline_queue drops an entry
+    the daemon replies to with an error and keeps the rest when the daemon is unreachable again)."""
     try:
-        lines = OFFLINE_QUEUE.read_text(encoding="utf-8").splitlines()
-        if not lines:
-            return
-        OFFLINE_QUEUE.unlink()
-        for line in lines:
-            try:
-                entry = json.loads(line)
-                await _call_brain(entry["method"], entry["params"])
-            except Exception:
-                pass  # best-effort replay
+        await replay_offline_queue(OFFLINE_QUEUE, _call_brain)
     except Exception:
-        pass
+        pass  # best-effort replay
 
 
 async def handle_mcp_request(request: dict) -> dict:
