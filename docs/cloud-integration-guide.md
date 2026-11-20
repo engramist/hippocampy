@@ -126,6 +126,7 @@ an error that names the variable. The full table is
 | `CAMPY_TURN_RERANK` | `[retrieval].turn_rerank` | on (B578, since 2026-11-19; `0` turns it off); it reranks the conversation section's turns plus the top 100 user Messages by vector score with a local cross-encoder and keeps the section's own turn count; graph-vote turns keep their slots. Needs `CAMPY_TURN_RERANK_PATH`; without a model the section is unchanged, with one warning per process |
 | `CAMPY_TURN_RERANK_PATH` | `[retrieval].turn_rerank_path` | empty (B578); the local folder holding the cross-encoder's ONNX files. Nothing is downloaded |
 | `CAMPY_TURN_RERANK_MODE` | `[retrieval].turn_rerank_mode` | `window` (B578, the default); `replace` keeps the section's turn count with the reranker's top turns (killed at its gate); `add` keeps every turn of the conversation section and adds the reranker's top 5 new turns, each with the section's neighbour window; `window` keeps the section's turn count, filled by the graph-vote turns and then the reranker's seeds, each with its neighbour window. Only read with `CAMPY_TURN_RERANK` on |
+| `CAMPY_ANSWER_BOUNDARY_PER_SECTION` | `[answer].boundary_per_section` | `1` puts one `<retrieved_memory>` boundary around each prompt section instead of one per line; lines, escaping and order are unchanged (ND-15, off by default) |
 
 `CAMPY_HOME` sets where all state lives.
 

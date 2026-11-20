@@ -72,6 +72,7 @@ def test_every_documented_override_applies():
         "CAMPY_GRAPH_FACTS": "1",
         "CAMPY_OBJECT_TEXT_MATCH": "1",
         "CAMPY_ANSWER_STYLE": "cite_answer",
+        "CAMPY_ANSWER_BOUNDARY_PER_SECTION": "1",
         "CAMPY_QUESTION_ANALYSIS": "1",
         "CAMPY_GRAPH_VOTE": "1",
         "CAMPY_TURN_RERANK": "1",
@@ -106,6 +107,7 @@ def test_every_documented_override_applies():
     assert cfg["retrieval"]["turn_rerank_mode"] == "add"
     assert cfg["retrieval"]["graph_facts"] is True
     assert cfg["ask"]["answer_style"] == "cite_answer"
+    assert cfg["answer"]["boundary_per_section"] is True
     assert cfg["retrieval"]["object_text_match"] is True
     assert cfg["loop"]["entity_admission"] is True
     assert cfg["loop"]["entity_standing"] is True
