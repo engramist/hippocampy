@@ -15,19 +15,19 @@ cross-encoder, and keeps the section's own turn count (replace mode). Nothing el
 
 Two modes, `[retrieval] turn_rerank_mode` (env `CAMPY_TURN_RERANK_MODE`):
 
-- "replace" (default; the B578 gate killed it, -2.2 points): keep the section's own turn count, as above. It drops
+- "replace" (the B578 gate killed it, -2.2 points): keep the section's own turn count, as above. It drops
   the turns next to the evidence, which the answer needs;
 - "add" (ruled 2026-11-19; offline sizing ND-6): keep every turn the section already has and add the top `ADD_K`
   candidates that are not in it, each with the section's own neighbour window (the existing session windows,
   `thalamus.bundle_conversation_seed_windows`). Nothing is dropped, so the graph-vote turns stay too.
-- "window" (ruled 2026-11-19; offline sizing ND-7): the section keeps its own turn count. The graph-vote turns keep
+- "window" (the default; ruled 2026-11-19; offline sizing ND-7; gates +2.3 and +2.8 points, jobs 1011 and 1012): the section keeps its own turn count. The graph-vote turns keep
   their slots; then the reranked seeds, best first, each followed by its session window (the section's own
   neighbour window), until the count is reached, the last window cut short (`thalamus.bundle_conversation_window_fill`).
   The prompt keeps its length and every seed keeps its neighbours.
 
-`[retrieval] turn_rerank` (default false; env `CAMPY_TURN_RERANK=1`), in no profile until gated.
+`[retrieval] turn_rerank` (default true since 2026-11-19; env `CAMPY_TURN_RERANK=0` turns it off).
 `turn_rerank_model` names the fastembed cross-encoder, and `turn_rerank_path` is the local folder that holds it.
-There is no download: a missing or unreadable model leaves the rows unchanged, with one warning.
+There is no download: a missing or unreadable model leaves the rows unchanged, with one warning per process.
 The pool (100) and the batch size are fixed at ND-5's values; nothing is tuned on the benchmark.
 """
 
@@ -54,16 +54,16 @@ _warned: set[str] = set()
 
 
 def turn_rerank_enabled(config: dict | None) -> bool:
-    """`[retrieval] turn_rerank` (default false; env `CAMPY_TURN_RERANK=1` turns it on)."""
-    return bool(((config or {}).get("retrieval") or {}).get("turn_rerank", False))
+    """`[retrieval] turn_rerank` (default true; env `CAMPY_TURN_RERANK=0` turns it off)."""
+    return bool(((config or {}).get("retrieval") or {}).get("turn_rerank", True))
 
 
 def turn_rerank_mode(config: dict | None) -> str:
-    """`[retrieval] turn_rerank_mode`: "replace" (default), "add" or "window"; anything else is "replace", with one warning."""
-    mode = str(((config or {}).get("retrieval") or {}).get("turn_rerank_mode") or "replace").strip().lower()
+    """`[retrieval] turn_rerank_mode`: "window" (default), "replace" or "add"; anything else is "window", with one warning."""
+    mode = str(((config or {}).get("retrieval") or {}).get("turn_rerank_mode") or "window").strip().lower()
     if mode not in MODES:
-        _warn_once("mode:" + mode, "turn_rerank_mode %r is not one of %s; using 'replace'", mode, MODES)
-        return "replace"
+        _warn_once("mode:" + mode, "turn_rerank_mode %r is not one of %s; using 'window'", mode, MODES)
+        return "window"
     return mode
 
 

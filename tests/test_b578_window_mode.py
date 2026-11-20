@@ -76,7 +76,7 @@ async def test_flag_off_bundle_is_the_same_in_window_mode(gw, monkeypatch):
     r = {"conversation_limit": 1, "conversation_neighbours": 1, "conversation_token_budget": 0}
     kw = dict(include_tabular=False, include_summaries=False)
     dump = lambda b: [(s.section_type, s.content, s.source_node_ids) for s in b.sections]
-    base = await bc.compile_bundle("ridge trail", gw._client, {"retrieval": dict(r)}, **kw)
+    base = await bc.compile_bundle("ridge trail", gw._client, {"retrieval": {**r, "turn_rerank": False}}, **kw)
     off = await bc.compile_bundle("ridge trail", gw._client,
                                   {"retrieval": {**r, "turn_rerank": False, "turn_rerank_mode": "window"}}, **kw)
     assert dump(base) == dump(off)

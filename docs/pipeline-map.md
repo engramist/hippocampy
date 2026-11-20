@@ -105,13 +105,13 @@ the conversation fusion as a third list at weight 1 and skip the lexical-only ga
 nothing asked: the two-list path, unchanged. It reaches conversation seed selection only; the Observation stage's own
 lists are not changed.
 
-The turn reranker (B578, `[retrieval] turn_rerank`, default off, in no profile until gated): after fusion, the
+The turn reranker (B578, `[retrieval] turn_rerank`, default on in window mode since 2026-11-19): after fusion, the
 conversation section's turns plus the top 100 live user Messages by vector score (`thalamus.bundle_conversation_rerank_candidates`)
 are scored by a local cross-encoder against the question ("speaker: text"), and the section keeps its own turn count
 (replace mode). The graph-vote turns keep their slots. Nothing is stored, and a missing model leaves the section
 unchanged. Offline sizing: ND-5. Replace mode was **killed** at its gate (2026-11-19, -2.2 points): it drops the turns
 next to the evidence. `turn_rerank_mode = "add"` keeps every section turn and adds the top 5 new candidates, each with the
-section's own session window, in session order (ND-6). Status: **killed in both modes** (replace -2.2 points, add -5.3 points on the 809; add mode raised refusals, 63 of its 91 lost answers). The flag stays off. A third mode, "window" (ND-7: the graph-vote turns, then reranked seeds each with its session window, up to the section's own turn count), cleared offline and passed its gate (+2.3 points on the 809, 2026-11-19); the flag stays off until the default flip is ruled.
+section's own session window, in session order (ND-6). Status of the first two modes: **killed** (replace -2.2 points, add -5.3 points on the 809; add mode raised refusals, 63 of its 91 lost answers). A third mode, "window" (ND-7: the graph-vote turns, then reranked seeds each with its session window, up to the section's own turn count), cleared offline and passed its gate (+2.3 points on the 809, job 1011) and a confirmation (+2.8, job 1012; 682 of 809 prompts shared with 1011, so 127 questions are new). **Window mode is the default** (review session, 2026-11-19); without a model path the section is unchanged.
 
 ## 7. Prompt
 
