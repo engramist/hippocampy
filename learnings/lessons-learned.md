@@ -1053,3 +1053,17 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
 - **Lesson:** "daemon offline" can be a query error in disguise, so read `fail_open_state.json` before blaming
   resources. Binding a parameter's type by its text prefix is unsafe whenever free text and identifiers share a
   parameter path: type by the caller's intent, not by content.
+
+### 2026-11-20 ND-14: what separates in-view hits from in-view misses (offline, stored answers)
+- **Why:** the user asked to focus on wrong answers where the right line is in the prompt (8 of 10 in a random sample of 1011's misses read for the user). The hedge line is closed (ND-9, ND-10 died on category 5), so before a third answer-stage change the review session asked what property of the prompt separates these misses.
+- **What:** `~/campy-lead/scratch/nd14/nd14.py` over 1011's on-arm answers (the 809), no store, no model, no GPU. In view = every gold turn's first 60 characters appear as a conversation line in the prompt. Hits against misses on the earliest gold turn's position, prompt length, same-speaker turns and semantic-section overlap, within category.
+- **Lines:** a 10-point miss-rate gap in at least 3 of 4 categories sends a layout lever (position) or a shorter-prompt lever (length) to a GPU gate; otherwise the misses are read as reader capacity. Prediction: position gap 3-8 points, length gap 5-12.
+- **Result:**
+  - In view 513, misses 151 (29.4%); 5 questions skipped (evidence ids not in the dataset).
+  - Position: 1 of 4 at 10 points (temporal +18.8; others -11.5, -7.1, -0.3; all +7.9). No layout lever.
+  - Length: 3 of 4 (multi-hop +10.5, 14 against 15 questions; open-domain +63.3, 5 against 6; single-hop +12.0, 114 against 115); temporal -16.7; all +6.4. Met on paper.
+  - Same-speaker turns 1 of 4; semantic overlap 30.1% against 29.0%.
+  - Found after: per-line boundary tags are 28.8% of each prompt (median), section headers 8.0%.
+  - Process slip: free memory read 38% in the minute the run started (start line 40%); the run was a seconds-long JSON read.
+- **Ruling:** ND-15, one boundary per section, a GPU gate after job 1014 (lines in the Rulings row). The ceiling read with the larger model goes to the user.
+- **Lesson:** a within-category line needs a minimum cell size; without one, two cells of 5 and 14 questions carried a "3 of 4". Also: position in the prompt does not explain the in-view misses here, so reordering is not the lever. And a quarter of what the 8B reads is markup between lines, which nobody had counted.
