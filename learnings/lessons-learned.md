@@ -1008,3 +1008,15 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - Fidelity: the simulated control equals the real section on 582 of 809. The lever alone gives "none" +34/-4 and "all" +1/-12.
 - **Ruling:** stopped.
 - **Lesson:** for the no-gold misses the candidate pool was not the binding limit. Once the subject's turns are in the pool, the gold turn is almost always reachable (154/159), but a pair scorer against the question ranks it below the turn budget. These are multi-hop and implicit-evidence questions where the evidence turn does not look like the question. A further lever here must change what the turn is scored against (for example an entity or relation the question names), not the pool. Also: on the control, questions with no gold turn in context are right 41.3% of the time, above the "some" bucket (29.1%), so "no gold in context" overstates the loss. One measurement; no memory entry.
+
+### 2026-11-19 LongMemEval light-capture probe (job 1013)
+- **Why:** LongMemEval is the only independent sample left for window mode. The review session asked whether a lighter capture would make all 500 questions affordable.
+- **What:** one LME-s multi-session question (484 turns) captured at main 6d84f5bf with the observation model reads off (`CAMPY_OBSERVATIONS_ENABLED=0`, `_RETRIEVAL=0`, `_ENTITIES=0`), with memory sampled every 15 s. Pre-registered in `scratch/lme/RUNS.md`.
+- **Lines (decision rule):** at 0.5 s per turn or less, all 500; 0.5–2 s, the largest sample fitting 4 days; above 2 s, a 100-question sign check.
+- **Result:** 1,714 s for 484 turns, **3.54 s per turn**. Capture minimum free memory 21% (RSS 9.5 GB); judging 19% (17.9 GB).
+- **Ruling:** (b). The review session then ruled default capture for the 100 questions, since light capture saves only about 2 times.
+- **Also found (dry runs of the replay harness):**
+  - the probe job had kept the wrong temp store, the first path in the log, an empty helper store; the fix takes each record's `store`;
+  - the determinism check counted a crashed worker as a match (both answers empty); errors and empty answers now fail it.
+  - After the fixes, the off replay was byte-equal to the harness answer, and the on replay loaded the model and changed 2 of 19 turns.
+- **Lesson:** with the observation reads off, the Loop itself costs about half of capture time, so "light" capture is not light. Also: a kept-store path parsed from a log is not evidence of which store a question used; take it from the record. Any equality check must fail on errors and empty answers.
