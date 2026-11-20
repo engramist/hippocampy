@@ -971,3 +971,20 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - **Killed**, about six times past the line on both runs. The 809 re-judge was not run, and no GPU was used.
 - **Ruling:** killed. The hedge rule is not built.
 - **Lesson:** the "refuse, then offer something related" shape is the model's normal way of declining. It is more common on adversarial questions (36% of the 222) than on answerable ones (8% of the 809). Read in isolation, the hedge looks like a lost answer; next to category 5 it is the abstention signal. Any fix for in-view refusals has to tell the two apart from the evidence (does the context support the question's premise?), not from the answer's surface. Check category 5 first: it is cheap (judge-free) and decided this run before any GPU time. One measurement, but the effect is large and identical on both runs.
+
+### 2026-11-19 ND-10: the hedge rule gated on SPOKEN_BY by the question's subject
+- **Why:** ND-9 showed the hedge shape carries the abstention signal. The review session ruled one independent, subject-anchored graph source (P3, P8): commit to a hedge's continuation only if its best evidence turn was spoken by the question's resolved subject.
+- **What:** `scratch/nd10/nd10.py`, pre-registered in `scratch/nd10/RUNS.md`, at main 45a1abe1 on copies of the s4p (1011) and rcon (1012) stores, CPU only.
+  - Each ND-9-triggered answer had its bundle recompiled. Its conversation texts matched the stored ones every time.
+  - The evidence turn is the prompt turn the pinned small cross-encoder scores highest against the continuation.
+  - The subject comes from `analyse_for_bundle`; unresolved or several subjects keep the abstention.
+  - The gate is an ASK on `<turn> campy:SPOKEN_BY <subject Concept>`.
+  - Edges read: SPOKEN_BY; nothing written.
+- **Lines:** first kill, judge-free: category-5 correct abstention down more than 5 points on either run. Then, if clear, a re-judge of the changed 809 answers with pass above +1.9. Prediction: category-5 -2 to -8; 809 +0.5 to +2.0.
+- **Result:**
+  - Hedges passing the gate: on the 809, 42 of 63 (1011) and 45 of 66 (1012); on the 222, 34 of 79 and 31 of 78.
+  - "Spoken by another": 5 of 63 answerable hedges, against 43 of 79 adversarial ones.
+  - Category-5 correct abstention: 55.9% → 42.8% (-13.1 points) and 55.4% → 43.7% (-11.7).
+  - **Killed**; the re-judge was not run, and no GPU was used.
+- **Ruling:** killed. The hedge line is closed for good (review session's ruling).
+- **Lesson:** the subject-speaker edge is a real separator: "spoken by another" is about 7 times more common on adversarial hedges. But about 40% of adversarial hedges rest on the subject's own turn, with the right person and a swapped detail. A speaker check cannot catch those; only a check of the question's premise against the turn's content could, and that is a model judgement, not a graph fact. Two hedge constructions failed on the same judge-free line, and both were stopped within minutes, before any GPU time. Checking category 5 first is the cheap order for any answer-stage lever.
