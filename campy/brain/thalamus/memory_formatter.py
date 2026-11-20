@@ -94,6 +94,24 @@ def format_memory_with_boundary(
     )
 
 
+def format_section_with_boundary(
+    contents: list[str],
+    source: str = "stored_data",
+    trust_level: str = "stored_data",
+) -> str:
+    """ND-15: wrap all lines of one prompt section in a single B339 boundary.
+
+    Every line is stripped and escaped exactly as format_memory_with_boundary
+    does, and the lines are joined with the same blank line. Removing the open
+    and close tags therefore gives byte-equal text to the per-line form.
+    A blank line stays an empty string in its place, as in the per-line form.
+    """
+    escaped = [escape_memory_content(c.strip()) if c and c.strip() else "" for c in contents]
+    if not any(escaped):
+        return "\n\n".join(escaped)
+    return _DATA_BOUNDARY_TEMPLATE.format(source=source, trust=trust_level, content="\n\n".join(escaped))
+
+
 def get_boundary_system_instruction() -> str:
     """
     B339: Return the system instruction that teaches the LLM about
