@@ -988,3 +988,23 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - **Killed**; the re-judge was not run, and no GPU was used.
 - **Ruling:** killed. The hedge line is closed for good (review session's ruling).
 - **Lesson:** the subject-speaker edge is a real separator: "spoken by another" is about 7 times more common on adversarial hedges. But about 40% of adversarial hedges rest on the subject's own turn, with the right person and a swapped detail. A speaker check cannot catch those; only a check of the question's premise against the turn's content could, and that is a model judgement, not a graph fact. Two hedge constructions failed on the same judge-free line, and both were stopped within minutes, before any GPU time. Checking category 5 first is the cheap order for any answer-stage lever.
+
+### 2026-11-19 ND-11: subject-anchored candidates for the window reranker (offline, CPU)
+- **Why:** the largest miss pool after ND-8 is the 159 with no gold turn in view. ND-4 found missing gold far down the vector ranking, so window mode's candidate set (section turns + top 100 by vector) may never hold it. The review session ruled widening the set with a subject-anchored graph query (P2, P8), keeping the validated ranking and fill (P7).
+- **What:** `scratch/nd11/nd11.py`, pre-registered in `scratch/nd11/RUNS.md`, on copies of the s4p stores with 45a1abe1 code, CPU only. Simulated window mode:
+  - flag-off rows give N; vote turns are pinned;
+  - candidates are the rows plus the top 100 by vector, plus every Message `SPOKEN_BY` a resolved subject (analyse_for_bundle);
+  - the small cross-encoder scores against the question;
+  - ±2 session windows fill to N.
+  The control is the real window-on sections of job 1011, with context-coverage buckets. Edges read: SPOKEN_BY; nothing written. A 30-question smoke test came first (harness check only).
+- **Lines:** stop if the "none" context gain is under 20%, the "all" context loss is over 5%, chars rise more than 10%, or median scoring exceeds 5 s. Prediction: "none" gain 10–25%, "all" loss 3–8%; a stop likely.
+- **Result:**
+  - "none" (247): gain 44 (17.8%), which is the **stop**.
+  - "some" (103): +14/-7.
+  - "all" (455): loss 16 (3.5%).
+  - Chars +2.1%. Scoring median 2.20 s (p90 2.63). Candidates median 332 (today 112).
+  - Ceiling +7.2 questions (+0.89 points).
+  - Reach: 154 of the 159 no-gold-in-view misses have a missing gold turn spoken by a resolved subject.
+  - Fidelity: the simulated control equals the real section on 582 of 809. The lever alone gives "none" +34/-4 and "all" +1/-12.
+- **Ruling:** stopped.
+- **Lesson:** for the no-gold misses the candidate pool was not the binding limit. Once the subject's turns are in the pool, the gold turn is almost always reachable (154/159), but a pair scorer against the question ranks it below the turn budget. These are multi-hop and implicit-evidence questions where the evidence turn does not look like the question. A further lever here must change what the turn is scored against (for example an entity or relation the question names), not the pool. Also: on the control, questions with no gold turn in context are right 41.3% of the time, above the "some" bucket (29.1%), so "no gold in context" overstates the loss. One measurement; no memory entry.
