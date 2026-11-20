@@ -402,7 +402,9 @@ async def replay_offline_queue(queue_path: Path, call) -> dict[str, int]:
             queue_path.parent.mkdir(parents=True, exist_ok=True)
             with open(queue_path, "a", encoding="utf-8") as f:
                 f.write("\n".join(keep) + "\n")
-        except Exception:
-            pass
+        except Exception as exc:
+            # Best-effort like the rest of the offline queue: a replay must never fail its caller. The entries are
+            # lost only if the queue file itself cannot be written; say so instead of swallowing it silently.
+            _logger.warning("replay_offline_queue: could not re-queue %d entries to %s: %s", len(keep), queue_path, exc)
         counts["kept"] = len(keep)
     return counts
