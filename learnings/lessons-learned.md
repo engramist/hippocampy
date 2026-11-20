@@ -960,3 +960,14 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - 32 of the 83 in-view refusals contain 60% or more of the key's words after an opening refusal ("I don't have that information. However, ..."); 7 are bare refusals.
 - **Ruling:** by the registered rule, (a), the answer stage. The prediction missed on both parts. The design is the review session's.
 - **Lesson:** with the gold in view, the model most often refuses, and often refuses and then answers anyway. Date arithmetic and graph-computable aggregation are small classes on this set, even counting the secondary tags (at most 33%). The plan's graph-answer direction should not be sized on this set's in-view misses alone. Regex cues under-count list questions, so a hand check is needed before trusting a small class. Recorded undercount: the hand proportions put (c) near 17% of the in-view misses, against 7.5% by rule. One measurement; no memory entry.
+
+### 2026-11-19 ND-9: the hedge rule, sized on stored answers
+- **Why:** ND-8 found that 32 of the 83 in-view refusals open with a refusal and then answer anyway. The review session ruled a deterministic rule to commit to the continuation, sized exactly on the stored answers of jobs 1011 and 1012, with category 5 as the deciding line.
+- **What:** `scratch/nd9/hedge.py`, pre-registered in `scratch/nd9/RUNS.md`. When the first sentence is an abstention by `locomo10.scoring.abstention` and the rest (20 characters or more) opens "However", "But" or "That said", the answer becomes the rest without the connective. Applied to every answer of b10on/b10c5on (1011) and b12on/b12c5on (1012). No edges; answers only.
+- **Lines:** kill if category-5 correct abstention falls more than 5 points on either run, or the 809 change is 0 or below. Pass above +1.9 on 1011 with 1012 above 0. Prediction: +1.5 to +3.0 on the 809; category-5 abstention down 2–6.
+- **Result:**
+  - Changed: 63 of 809 and 79 of 222 (1011); 66 of 809 and 78 of 222 (1012).
+  - Category-5 correct abstention: 55.9% → 25.2% (-30.6 points) and 55.4% → 25.2% (-30.2).
+  - **Killed**, about six times past the line on both runs. The 809 re-judge was not run, and no GPU was used.
+- **Ruling:** killed. The hedge rule is not built.
+- **Lesson:** the "refuse, then offer something related" shape is the model's normal way of declining. It is more common on adversarial questions (36% of the 222) than on answerable ones (8% of the 809). Read in isolation, the hedge looks like a lost answer; next to category 5 it is the abstention signal. Any fix for in-view refusals has to tell the two apart from the evidence (does the context support the question's premise?), not from the answer's surface. Check category 5 first: it is cheap (judge-free) and decided this run before any GPU time. One measurement, but the effect is large and identical on both runs.
