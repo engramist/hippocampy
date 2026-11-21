@@ -1067,3 +1067,33 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - Process slip: free memory read 38% in the minute the run started (start line 40%); the run was a seconds-long JSON read.
 - **Ruling:** ND-15, one boundary per section, a GPU gate after job 1014 (lines in the Rulings row). The ceiling read with the larger model goes to the user.
 - **Lesson:** a within-category line needs a minimum cell size; without one, two cells of 5 and 14 questions carried a "3 of 4". Also: position in the prompt does not explain the in-view misses here, so reordering is not the lever. And a quarter of what the 8B reads is markup between lines, which nobody had counted.
+
+### 2026-11-21 ND-15: one memory boundary per prompt section (GPU gate, job 1015)
+- **Why:** ND-14 found the per-line `<retrieved_memory>` tags take 28.8% of each prompt (median) and met its shorter-prompt line on paper. This is the one shortening that drops no evidence, so the review session ruled a gate.
+- **What:**
+  - `[answer] boundary_per_section` (PR 513, off by default, `CAMPY_ANSWER_BOUNDARY_PER_SECTION=1`) wraps each prompt section in one B339 boundary. Every line stays escaped. The lines, their order, the headers, the instruction and the system instruction are unchanged.
+  - Job 1015 on main a2584016 replayed the 809 and the 222 on the s4p stores with window mode on (1011's settings). Control: 1011's on arms. Judge: the 26B, 3 votes. Category 5 was scored judge-free.
+  - Before the replay, a byte check rebuilt each of 1011's 1,031 stored prompts from its text. Flag off equalled the stored prompt and flag on, with the tags stripped, equalled flag off, on 1,031 of 1,031. After the replay, a tag check found 0 prompts with per-line boundaries.
+- **Lines:** pass above +1.9 points on the 809 with category-5 correct abstention down at most 5; kill at 0 or below, or category 5 down more than 10; between is the review session's call. Prediction: -1.0 to +2.5.
+- **Result:**
+  - 57.1% (462) against 56.5% (457), **+0.6 points**, net +5 (gained 54, lost 49). Between the lines; the prediction was in range.
+  - By category:
+
+    | Category | Change (points) | Net questions |
+    |---|---|---|
+    | multi-hop | +2.6 | +4 of 153 |
+    | temporal | +2.9 | +5 of 171 |
+    | open-domain | -5.9 | -3 of 51 |
+    | single-hop | -0.2 | -1 of 434 |
+
+  - Category-5 correct abstention: 52.3% against 55.9%, -3.6. Refusals on the 809: 122 against 153.
+  - ND-14's in-view set (513): +1.8 points. 46 of the 151 in-view misses are now right, and 37 in-view questions that were right are now wrong.
+  - Single-hop in-view length terciles: short +0.9, middle -10.4, long +10.4 (about 115 each).
+  - Tags fell from 29.5% to 2.6% of each prompt, and median prompt tokens from 2,372 to 1,780.
+  - Truncation 0 (slot 32,768, the same as the control). The conversation section was identical to the control on 809 of 809. No replay or judge errors.
+- **Ruling (review session):** not shipped as a score lever. The flag stays off by default, the code stays on main, and there is no second measurement. It is recorded as an option for a reader-change design only.
+- **Lesson:**
+  - Markup removal moved refusals more than accuracy: 31 fewer refusals, with category-5 abstention down 3.6. The per-line tags seem to carry some "decline" signal, so prompt markup is not pure cost.
+  - The terciles swung ±10.4 in opposite directions at n about 115, so a single tercile gap of that size, like ND-14's +12.0, is within what noise gives here.
+  - The offline byte check (rebuild each stored prompt, then check that flag off reproduces it exactly) caught nothing this time. It is still the cheap way to show a layout lever changes only layout before spending a GPU run.
+
