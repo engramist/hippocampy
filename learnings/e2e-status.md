@@ -2,7 +2,7 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-21 (ND-15 judged: +0.6, not shipped; ND-16 result: the reader is the main limit, 60.6% of the in-view misses right; ND-17 running)_
+_Last updated: 2026-11-21 (ND-17 result: the checker passes, +2.2 over random escalation at 21.8% escalated; the answer-model decision is the user's)_
 
 ## Scoreboard (one test set, one measure)
 
@@ -35,6 +35,7 @@ run's own control (the same stores without the change). Noise is ±1.7 points; a
 | **Control from 2026-11-19: window mode on (the default), step 4 stores** | **56.5% (457)** | reference for later gates | default since the review session's ruling; memory entry waits for an independent sample | | |
 | ND-15: one memory boundary per section, window mode on (job 1015, 2026-11-21) | 57.1% (462) | +0.6 against 56.5% (the control above) | **not shipped** (between the lines: pass above +1.9, kill at 0 or below); gained 54, lost 49; category-5 abstention -3.6; truncated 0; the flag stays off | | |
 | ND-16 ceiling read: the 26B reads 1011's stored prompts (2026-11-20, job 1016b) | 65.5% (530) | +9.0 against the control above (same prompts, only the reader changed) | **reader is the main limit** (line: 50%+ of the 160 in-view misses right; 60.6%); gained 117, lost 44; 15 still capped (+9.6 without); not a shippable arm | | |
+| ND-17 answer checker: escalate the unsure 8B answers to the 26B's ND-16 answer (2026-11-21, job 1017, stored verdicts) | 60.7% (491) | +2.2 against same-rate random escalation (58.5%); +4.2 against the 8B alone | **pass** (line: more than +1.9 over random with at most 50% escalated); 21.8% escalated; AUC 0.79; category 5 unmeasured; not a shippable arm | | |
 | Changed abstain instruction (2026-11-17) | 60.0% (485) | +6.3 against 53.6% | killed: refusals on the 222 adversarial questions fell 27.1 points (line 10) | 13.3 | +0.6 |
 
 The judge score is the headline because token F1 fails correct paraphrases and long answers. Our cite answers add the quoted line (median 37 words against a 4-word key), so F1 here mostly measures answer length. F1 is shown so these numbers can be set beside the LoCoMo paper's. It was computed from the stored answers with the harness's `locomo10.scoring.locomo_f1`, unchanged. That function mirrors the official evaluation: it lowercases, drops commas, punctuation and a/an/the/and, Porter-stems, and takes token-overlap F1. Category 1 scores each gold item against the best of the comma-split answer, and category 3 uses the first gold alternative. F1 changes are within the F1 column only. How our judge differs from the published judges: `learnings/judge-comparison.md`.
