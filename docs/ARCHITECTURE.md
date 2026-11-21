@@ -108,6 +108,16 @@ evidence came in).
 | Where the detail lives | [backlog/B387.md](../backlog/B387.md) (card, on `main`); full Gate-0 licence writeup is in the commit message and PR description for "feat(B387): finish torch-free NER" — commit `1de6a1c` on branch `feat/b387-torch-free-ingestion`, not yet on `main` as of this writing |
 | Decision rule | Not formally fixed. If counsel review finds the CoNLL-2003/Reuters training-data provenance disqualifying, the NER model choice (or its training-data lineage) needs replacement before the non-provisional filing deadline (March 25, 2027); no such finding has been reported. |
 
+### Is the local answer model the limit on accuracy?
+
+| Field | Detail |
+|---|---|
+| Status | `open`, awaiting the user's decision on the answer model |
+| Why it matters | After window mode (B578), 160 of the 352 LoCoMo misses have every gold turn in the prompt and are still wrong. Prompt levers on those (layout, ND-14; one boundary per section, ND-15, +0.6 points) moved little. |
+| Evidence so far | ND-16 (2026-11-21): the 26B reading the same 809 stored prompts byte for byte scores 65.5% against the 8B answer model's 56.5% (+9.0 points), and gets 60.6% of the 160 in-view misses right but 8.8% of the 159 with no gold in view. ND-17 (2026-11-21): an open-weights 2B decision model gives P(correct) for each 8B answer; escalating to the 26B below 0.5 sends 21.8% on and scores 60.7%, +2.2 points over the same rate at random (AUC 0.79; multi-hop 0.52). Both are offline reads of stored prompts, judged by the 26B (which may favour its own phrasing), with category 5 unmeasured. The 26B cannot share the machine with capture as it stands. |
+| Where the detail lives | `learnings/lessons-learned.md` (ND-16, ND-17); `learnings/e2e-status.md` (scoreboard, Rulings rows ND-16 and ND-17, "Waiting for the user") |
+| Decision rule | ND-16's line was fixed in advance: at least 50% of the 160 right means the reader is the main limit (met). ND-17's line: more than +1.9 over same-rate random with at most 50% escalated earns a flagged checker stage and an end-to-end gate including category 5 (met). Which answer model to build on is the user's call. |
+
 ## Project Mission
 
 **HippoCampy (Campy) — Phase 0: Standalone Brain Daemon** — Build a standalone local AI memory system backed by a Gated Consolidation Loop and a Graph-Native Kùzu database. The system exposes MCP STDIO adapters for Claude Code and Codex. OpenClaw integration is deferred to a later phase.

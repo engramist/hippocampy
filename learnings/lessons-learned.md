@@ -1054,6 +1054,14 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   resources. Binding a parameter's type by its text prefix is unsafe whenever free text and identifiers share a
   parameter path: type by the caller's intent, not by content.
 
+### 2026-11-20 LongMemEval sign check (job 1014): stopped by the user at 10 of 100 questions
+- **Why:** LongMemEval is the only independent second sample for window mode (LoCoMo +2.3 and +2.8, but the two LoCoMo samples share 682 of 809 prompts). Job 1013's probe gave 3.54 s per turn with light capture, so the rule chose (b): a 100-question sign check with today's default capture.
+- **What:** 100 stratified LME-s questions (49,874 turns) captured at hc-lme 6d84f5bf with window mode's model path set, each store to be kept and then replayed window on against off. Pre-registered in `scratch/lme/RUNS.md`. A watchdog checked the capture rate every 5 minutes.
+- **Lines:** kill at 0 or below; pass above +4.8 points (a sign check, not a confirmation); speed stop above 10.0 s per turn after 5 or more questions; at least 95% of stores kept; determinism at least 95%.
+- **Result:** no score. The user stopped it ("stop the long run we need to figure this out first") so the GPU could take the ND-16 ceiling read. By then 10 of 100 questions (5,032 turns) were captured in about 8 hours at 5.67 s per turn, under the speed stop. Question 6a1eabeb was lost to the B580 bug (entry above). The job is not resumable: the keep step (`lme_keep.py`) runs only at the end, so the captured stores were never mapped. They sit unmapped in `scratch/lme/tmp/` (13 directories, 342 MB).
+- **Ruling:** stopped, no verdict on window mode. A restart is the user's call and would start capture again from the first question (about 80 hours at the observed rate).
+- **Lesson:** a multi-day job should keep and map each store as it finishes, not at the end, so a stop keeps what was paid for. Default capture ran at 5.67 s per turn here, under step 4's 6.69.
+
 ### 2026-11-20 ND-14: what separates in-view hits from in-view misses (offline, stored answers)
 - **Why:** the user asked to focus on wrong answers where the right line is in the prompt (8 of 10 in a random sample of 1011's misses read for the user). The hedge line is closed (ND-9, ND-10 died on category 5), so before a third answer-stage change the review session asked what property of the prompt separates these misses.
 - **What:** `~/campy-lead/scratch/nd14/nd14.py` over 1011's on-arm answers (the 809), no store, no model, no GPU. In view = every gold turn's first 60 characters appear as a conversation line in the prompt. Hits against misses on the earliest gold turn's position, prompt length, same-speaker turns and semantic-section overlap, within category.
