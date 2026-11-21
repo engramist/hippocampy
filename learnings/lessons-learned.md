@@ -1136,3 +1136,23 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - Of the 8B's 457 right answers, 18 were escalated and lost.
 - **Ruling (review session):** passes its line. Category 5 is unmeasured, and the escalation target is the 26B, which cannot share the machine with capture as it stands; so the design step waits on the user's call on the answer model (ND-16's open decision). Nothing ships.
 - **Lesson:** a small checker separates right from wrong answers well where the answer is a single fact (single-hop and temporal, AUC above 0.8) and not at all on multi-hop (0.52). It catches refusals easily and confident misreadings rarely, so most of its value is in routing the "I don't have that" answers. Also: escalation inherits the stronger model's weaknesses, as on open-domain, so routing by confidence can lose where the strong model is worse.
+
+### 2026-11-21 ND-18a: the answer checker on category 5 (offline, GPU, judge-free)
+- **Why:** the user chose option 2: the 8B answers, the checker accepts its answer or escalates the unsure ones to the 26B. ND-17 measured only the 809. On those, the checker caught refusals, which are wrong there. On category 5 a refusal is the right answer, so the same habit could send correct refusals to a 26B whose category-5 behaviour had never been measured.
+- **What:** job 1018 (scripts in `~/campy-lead/scratch/nd18/`; tree 45a1abe1 for the 26B client; main c2e36636 for the ruling).
+  - `nd18a_check.py` is `nd17_check.py` with only the source arm and output path changed: the same package, wording and threshold, on 1011's 222 stored category-5 on-arm answers.
+  - `nd18a_answer.py`: the 26B answered the escalated questions from the same stored prompts, with the same system prompt and client, temperature 0 and an output cap of 8,192.
+  - `nd18a_analyze.py` scores by the harness's abstention rule, the measure behind 1011's 55.9% (124 of 222, reproduced before the run).
+- **Lines (set before the run):** correct abstention down at most 5 points lets ND-18b go ahead; down more than 10 kills option 2 as designed; between is the review session's call. Prediction: 25-50% escalated; the 26B declines 40-75% of those; change -8 to +1 points.
+- **Result:**
+  - Escalated 132 of 222 (59.5%; on the 809 it was 21.8%). 87 of the 132 were questions the 8B had declined.
+  - The 26B declined 125 of the 132 (94.7%). It answered none that the 8B had declined, and it declined 38 that the 8B had answered.
+  - Policy correct abstention **73.0% (162) against 55.9% (124): +17.1 points.** None still capped, none skipped, no errors; determinism 0.0.
+  - The checker's P is lower on the 8B's refusals (AUC 0.37 against "abstained"), as expected. The escalation is harmless because the 26B declines too.
+  - Memory: the checker phase ran at 72% free or more. The 26B phase sat at 13% free for 71 of 78 samples, one point above the 12% guard, with nothing else loaded. Checker load 1.8 s warm; about 19 s per 26B answer; 47 minutes in total.
+- **Ruling (review session):** passes its line by a wide margin, so ND-18b goes ahead, amended for memory: nothing else may be resident while the 26B answers.
+- **Lesson:**
+  - The risk was the right one to test, but it ran the other way. The checker is unsure on most adversarial questions, including the 8B's wrong answers to them, and the 26B tells answerable from unanswerable better than the 8B in both directions: fewer refusals on the 809 (rough text count 120 against 152) and more correct ones on category 5.
+  - Overall escalation including category 5 is 308 of 1,031 (29.9%), not 21.8%, so the cost estimate for the stage must count it.
+  - The 26B alone uses nearly all the headroom on this machine, so any stage that calls it must free the other models first.
+
