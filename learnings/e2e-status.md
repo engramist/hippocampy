@@ -2,7 +2,7 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-21 (ND-17 result: the checker passes, +2.2 over random escalation at 21.8% escalated; the answer-model decision is the user's)_
+_Last updated: 2026-11-21 (Waiting for the user brought up to date: the answer-model decision, job 1014's stop, ND-13 not run; ND-17 passed, +2.2 over random escalation)_
 
 ## Scoreboard (one test set, one measure)
 
@@ -83,9 +83,19 @@ before it starts and gets a lessons entry when it ends.
 
 B542 is closed (user, 2026-11-18); step 2 was never queued.
 
+Jobs after run 8 (B578's gates, 1011 to 1017: ND-15, ND-16, ND-17 and the LongMemEval probe and sign check) are recorded in the scoreboard, the Rulings table and the lessons file, not in this table. The queue is empty (2026-11-21).
+
 ## Waiting for the user
 
-**Open now (2026-11-18, night):**
+**Open now (2026-11-21):**
+1. **The answer model (ND-16, ND-17).** ND-16: the 26B on the same prompts gives 65.5% against 56.5% (+9.0 points) and gets 60.6% of the 160 in-view misses right, so the reader is the main limit. ND-17: a 2B decision model that escalates only the unsure answers to the 26B gives 60.7% (+2.2 against same-rate random; +4.2 against the 8B alone) at 21.8% escalated. Both are read on stored prompts with the 26B judging its own answers, and neither covers category 5. **For the user:** (a) the 26B answers everything; (b) the 8B plus the checker, escalating unsure answers to the 26B (the review session's lean); (c) a mid-size answer model first. The next design (a flagged stage and an end-to-end gate including category 5) waits on this.
+2. **LongMemEval job 1014: stopped by the user** at 10 of 100 questions (2026-11-20), not resumable. A restart (about 80 hours of capture) is the user's call.
+3. **ND-13 (fidelity diagnostic on the real window-mode path) is not run.** It is for the 159 misses with no gold turn in view, which the 26B leaves mostly wrong (8.8% right). CPU only; it needs 40% free and no GPU job.
+4. ND-14 (no layout lever) and ND-15 (+0.6, the flag stays off) are closed; their rows are in the scoreboard and Rulings.
+
+The run queue is empty and the GPU is free (2026-11-21).
+
+**Earlier (2026-11-18, night):**
 1. **Step 4 did not pass** (54.1% against 53.9%, +0.2 points, net +2 questions against the +15 line). With step 0c's +0.7 points, two measurements agree: `principled` ties `main`. LongMemEval stays parked. **For the user:** each of the 15 principled switches goes on by default or is deleted, with no third state.
    - **Ruled (review session, under the user's delegation):** 14 switches on by default and the concept walk deleted (B575, code PR). Subject-anchored turn retrieval has no surviving variant (ND-1/ND-2 lexical, ND-3 vector-ranked, ND-4 the category-1 fallback all stopped offline).
 2. **Next direction: reranking the candidate turns, sized offline as ND-5** (review session, 2026-11-18). The user approved the downloads ("Both, as needed").
@@ -486,7 +496,7 @@ One row per measured result. Rulings dated 2026-11-13 were approved by the user 
 | Roles, form 3 (candidates by rule, closed choice; branch claude/step1-form3) | conv-26 query hits 14 to 28 (+14); action words 10 of 50 wrong | Pass at the edge 2026-11-14 (review session; the line not moved); partner links fell 140 to 100; next step with the user |
 | Partner by closed choice (forms 2, B, 3) | counts passed; option B's 138 links include 54 to the other speaker with no support in the quote; form 3 hand-check 29 of 30 wrong | Hand-check 2026-11-14; not to be written as built; held for the user. Roles are hand-checked like the action word from now on (a gated line of at most 20% wrong at the full re-capture) |
 | Group and relation subjects by prompt change (item 3, PR 432) | gold +11 turns; 58 of 76 stable facts lost on fact-bearing turns | Kill line hit 2026-11-14; flag off; held for the user |
-| LongMemEval runs R108, R109 | not run | Parked until step 4 |
+| LongMemEval runs R108, R109 | not run | Parked until step 4; superseded 2026-11-19 by the window-mode sign check (probe job 1013, then job 1014, stopped by the user at 10 of 100 questions on 2026-11-20) |
 | Concept walk (store-wide and anchored, B556-B560) | lowers accuracy on 300 questions; about 2% of its rows hold gold | Parked 2026-11-13: off until step 4, then retested once or deleted |
 | Graph vote and question analysis | neutral on accuracy; recall up, non-answers down | Kept 2026-11-13 |
 | Graph count | fired on 0 of 300 questions | Stopped as a separate lever 2026-11-13: folded into step Q's queries or deleted |
