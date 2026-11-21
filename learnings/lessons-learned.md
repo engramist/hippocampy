@@ -1097,3 +1097,17 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - The terciles swung ±10.4 in opposite directions at n about 115, so a single tercile gap of that size, like ND-14's +12.0, is within what noise gives here.
   - The offline byte check (rebuild each stored prompt, then check that flag off reproduces it exactly) caught nothing this time. It is still the cheap way to show a layout lever changes only layout before spending a GPU run.
 
+### 2026-11-20 ND-16: the 26B reads 1011's stored prompts, a ceiling read (GPU, no store)
+- **Why:** the user asked to "feed the same saved prompts to the bigger 26B model". ND-8 found 160 misses with every gold turn in view, and ND-14 found that position does not separate them. The open question was whether the 8B reader is the limit or the prompt is.
+- **What:** `~/campy-lead/scratch/nd16/nd16_answer.py` (job 1016b, tree 45a1abe1). The 26B answered 1011's on-arm stored prompts for the 809 byte for byte, with the same system prompt, temperature 0 and client code; only the model and the output cap changed. Then the usual judge (the 26B, 3 votes, judge_arm.py). Analysis: `nd16_analyze.py`, on stored verdicts only.
+  - Job 1016 was stopped at 31 answers: the 26B's hidden reasoning counts against the 2,048-token output cap, and 5 of 31 answers came back empty. Job 1016b raised the cap to 8,192 and kept the answers the old cap never bound (amendment, PR 515).
+- **Lines (set before the run):** the 26B right on at least 50% of the 160 means the reader is the main limit, and the next step is the user's; at most 20% means the prompt is the limit; in between, both. Prediction: 809 at 62-68%; in-view misses right 35-55%; no-gold misses right under 10%.
+- **Result:**
+  - The 809: 65.5% (530) against 56.5% (457), +9.0 points; gained 117, lost 44. Without the 15 answers still capped or empty: 66.8% against 57.2% on 794, +9.6.
+  - By category: multi-hop +8.5, temporal +17.0, open-domain -17.6 (51 questions, net -9), single-hop +9.2.
+  - **In-view misses: 60.6% right (97 of 160).** By ND-8 class: refusal in view 54 of 83, date 5 of 7, aggregation 6 of 13, misreading 32 of 57.
+  - Gold not in view: 8.8% right (14 of 159), so it is not guessing. Key/judge artefacts: 6 of 33.
+  - Prompt tokens: median 2,725, max 3,434, well inside the context. Completion tokens: median 655, with 15 at the 8,192 cap or empty. Rough refusal count by text match: 120 against 152.
+  - Runtime: about 22 s per answer, against about 2 s for the 8B; answering took 5.4 h and judging 2.1 h.
+- **Ruling:** the line is met, so **the reader is the main limit on the in-view misses.** The next step is the user's: the answer model, or a reading aid. Nothing ships from this read, since the 26B cannot share the machine with capture as it stands. ND-17 (an answer checker that escalates only its unsure questions to the 26B) is queued and uses these answers.
+- **Lesson:** a reasoning model's hidden tokens count against the same output cap, so a cap that never binds one model can empty another model's answers. Check completion tokens against the cap on the first ten answers of any new model. Also: the gap between "the right line is in the prompt" and "the answer is right" is mostly reader capacity. Prompt layout (ND-14) and tag clutter (ND-15, +0.6) moved it little, while a stronger reader on the same bytes fixed 61% of it. Caveat: the 26B also judges, so some of the gain may be its own phrasing; open-domain fell, so the gain is not uniform.
